@@ -1,50 +1,60 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ps::*;
-use ntkrnl_sys::ddk::{FastIoIsPossible, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER};
+use ntkrnl_sys::base::{BOOLEAN, NTSTATUS, STATUS_SUCCESS};
+use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_RANGE_NOT_LOCKED};
+use ntkrnl_sys::ddk::{
+    IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PEPROCESS, PFILE_OBJECT, PIO_STACK_LOCATION,
+    PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PVOID, ULONG,
+};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{FCB, PCCB, PFCB, PIRP_CONTEXT, TYPE_OF_OPEN};
-use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, _EPROCESS, _IO_STATUS_BLOCK};
+use crate::types::{FCB_DATA, PCCB, PFCB, PIRP_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen};
+use ntkrnl_sys::ddk::{POPLOCK, PFILE_LOCK, _FAST_IO_POSSIBLE_FastIoIsPossible};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlCheckOplock, FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastUnlockAll, FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible, FsRtlProcessFileLock};
-use crate::glue::{CDFS_BUG_CHECK_LOCKCTRL, Fcb};
+use crate::ddk_shims::{
+    FsRtlCheckOplock, FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastUnlockAll,
+    FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible,
+    FsRtlProcessFileLock,
+};
+use crate::glue::CDFS_BUG_CHECK_LOCKCTRL;
 
-extern "C" {
-    static mut IrpContext: *mut core::ffi::c_void;
-}
 extern "system" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN);
+    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+    fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN) -> BOOLEAN;
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
     fn CdOplockComplete();
-    fn ASSERT_FILE_OBJECT(FileObject: PFILE_OBJECT);
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> TYPE_OF_OPEN;
-    fn FsRtlFastLock(FileLock: *mut core::ffi::c_void, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: u32, FailImmediately: BOOLEAN, ExclusiveLock: BOOLEAN, IoStatus: PIO_STATUS_BLOCK, DeviceObject: PDEVICE_OBJECT, Wait: BOOLEAN) -> BOOLEAN;
-    fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
-    fn FsRtlAreThereCurrentFileLocks(FileLock: *mut FILE_LOCK) -> u8;
+    fn FsRtlFastLock(FileLock: PFILE_LOCK, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: ULONG, FailImmediately: BOOLEAN, ExclusiveLock: BOOLEAN, IoStatus: PIO_STATUS_BLOCK, DeviceObject: PDEVICE_OBJECT, Wait: BOOLEAN) -> BOOLEAN;
+    fn FsRtlAreThereCurrentFileLocks(FileLock: PFILE_LOCK) -> BOOLEAN;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_LOCKCTRL;
 
-const FastIoIsPossible: u32 = 0;
+// TYPE_OF_OPEN value for a user file open. Verified == 4 against the
+// _TYPE_OF_OPEN enum in cdstruc.h (UnopenedFileObject=0 .. UserFileOpen=4).
+const UserFileOpen: TYPE_OF_OPEN = _TYPE_OF_OPEN_UserFileOpen;
 
-// Forward declarations for unknown externals
-const UserFileOpen: u32 = 0; // FIXME: correct value for TYPE_OF_OPEN
+// FAST_IO_POSSIBLE enum value. Verified == 1 against ntkrnl_sys (FastIoIsNotPossible=0,
+// FastIoIsPossible=1, FastIoIsQuestionable=2) — the original translation fabricated 0.
+const FastIoIsPossible: BOOLEAN = _FAST_IO_POSSIBLE_FastIoIsPossible as BOOLEAN;
+
+// Fcb->FileLock reads the FCB_DATA arm of the FCB anonymous union (__bindgen_anon_2).
+#[inline(always)]
+unsafe fn fcb_file_lock(Fcb: PFCB) -> PFILE_LOCK {
+    let fcb_data = &(*Fcb).__bindgen_anon_2 as *const _ as *const FCB_DATA;
+    (*fcb_data).FileLock
+}
 #[no_mangle]
 pub unsafe extern "C" fn CdCommonLockControl(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
     // PAGED_CODE();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     let TypeOfOpen: TYPE_OF_OPEN;
@@ -64,13 +74,12 @@ pub unsafe extern "C" fn CdCommonLockControl(
     }
 
     let oplock = CdGetFcbOplock(Fcb);
-    let completion_routine: POPLOCK_WAIT_COMPLETE_ROUTINE = core::mem::transmute(CdOplockComplete);
     Status = FsRtlCheckOplock(
         oplock,
         Irp,
         IrpContext as *mut c_void,
-        completion_routine,
-        core::ptr::null_mut(), // NULL PostIrpRoutine
+        core::mem::transmute(CdOplockComplete as unsafe extern "system" fn()),
+        None, // NULL PostIrpRoutine
     );
 
     if Status != STATUS_SUCCESS {
@@ -80,26 +89,26 @@ pub unsafe extern "C" fn CdCommonLockControl(
     CdVerifyFcbOperation(IrpContext, Fcb);
 
     // if (Fcb->FileLock == NULL) { CdCreateFileLock(...); }
-    if (*Fcb).FileLock.is_null() {
+    if fcb_file_lock(Fcb).is_null() {
         CdCreateFileLock(IrpContext, Fcb, 1); // TRUE
     }
 
-    Status = FsRtlProcessFileLock((*Fcb).FileLock, Irp, core::ptr::null_mut());
+    Status = FsRtlProcessFileLock(fcb_file_lock(Fcb), Irp, core::ptr::null_mut());
 
     CdLockFcb(IrpContext, Fcb);
-    (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
+    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
     CdUnlockFcb(IrpContext, Fcb);
 
     CdCompleteRequest(IrpContext, core::ptr::null_mut(), Status);
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastLock(
+pub unsafe extern "system" fn CdFastLock(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
     Length: PLARGE_INTEGER,
     ProcessId: PEPROCESS,
-    Key: u32,
+    Key: ULONG,
     FailImmediately: BOOLEAN,
     ExclusiveLock: BOOLEAN,
     IoStatus: PIO_STATUS_BLOCK,
@@ -111,9 +120,9 @@ pub unsafe extern "C" fn CdFastLock(
 
     // PAGED_CODE();
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    let _ = DeviceObject; // UNREFERENCED_PARAMETER( DeviceObject )
 
-    ASSERT_FILE_OBJECT(FileObject);
+    // ASSERT_FILE_OBJECT( FileObject ) -- debug-only assert, no-op in retail.
 
     (*IoStatus).Information = 0;
 
@@ -124,23 +133,23 @@ pub unsafe extern "C" fn CdFastLock(
         return 1;
     }
 
-    if !CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) {
+    if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) == 0 {
         return 0;
     }
 
     FsRtlEnterFileSystem();
 
     'try_block: {
-        if !FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) {
+        if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
             break 'try_block;
         }
 
-        if (*Fcb).FileLock.is_null() && !CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) {
+        if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
             break 'try_block;
         }
 
         Results = FsRtlFastLock(
-            (*Fcb).FileLock,
+            fcb_file_lock(Fcb),
             FileObject,
             FileOffset,
             Length,
@@ -154,9 +163,9 @@ pub unsafe extern "C" fn CdFastLock(
         );
 
         if Results != 0 {
-            if (*Fcb).IsFastIoPossible == FastIoIsPossible {
+            if (*Fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible == FastIoIsPossible {
                 CdLockFcb(core::ptr::null_mut(), Fcb);
-                (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
                 CdUnlockFcb(core::ptr::null_mut(), Fcb);
             }
         }
@@ -167,18 +176,18 @@ pub unsafe extern "C" fn CdFastLock(
     Results
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastUnlockSingle(
-    FileObject: *mut FILE_OBJECT,
-    FileOffset: *mut LARGE_INTEGER,
-    Length: *mut LARGE_INTEGER,
-    ProcessId: *mut _EPROCESS,
-    Key: u32,
-    IoStatus: *mut _IO_STATUS_BLOCK,
-    DeviceObject: *mut DEVICE_OBJECT,
-) -> u8 {
-    let mut results: u8 = 0; // FALSE
+pub unsafe extern "system" fn CdFastUnlockSingle(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: PLARGE_INTEGER,
+    ProcessId: PEPROCESS,
+    Key: ULONG,
+    IoStatus: PIO_STATUS_BLOCK,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    let mut results: BOOLEAN = 0; // FALSE
 
-    // UNREFERENCED_PARAMETER
+    // UNREFERENCED_PARAMETER( DeviceObject )
     let _ = DeviceObject;
 
     // PAGED_CODE() -- omitted
@@ -187,11 +196,10 @@ pub unsafe extern "C" fn CdFastUnlockSingle(
     (*IoStatus).Information = 0;
 
     // Decode the file object
-    let mut fcb: *mut Fcb = core::ptr::null_mut();
-    let type_of_open = CdFastDecodeFileObject(FileObject, &mut fcb as *mut *mut Fcb);
+    let mut fcb: PFCB = core::ptr::null_mut();
+    let type_of_open = CdFastDecodeFileObject(FileObject, &mut fcb as *mut PFCB);
 
-    // Must be UserFileOpen (value 0)
-    if type_of_open != 0 /* UserFileOpen */ {
+    if type_of_open != UserFileOpen {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
         return 1; // TRUE
     }
@@ -202,7 +210,7 @@ pub unsafe extern "C" fn CdFastUnlockSingle(
     }
 
     // If no file lock, return immediately
-    if (*fcb).FileLock.is_null() {
+    if fcb_file_lock(fcb).is_null() {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_RANGE_NOT_LOCKED;
         return 1; // TRUE
     }
@@ -213,22 +221,19 @@ pub unsafe extern "C" fn CdFastUnlockSingle(
     'sehtry: loop {
         // Check oplock state
         let oplock = CdGetFcbOplock(fcb);
-        if !FsRtlOplockIsFastIoPossible(oplock) {
+        if FsRtlOplockIsFastIoPossible(oplock) == 0 {
             break 'sehtry; // try_return NOTHING
         }
 
         // Create file lock if it doesn't exist
-        if (*fcb).FileLock.is_null() {
-            let created = CdCreateFileLock(core::ptr::null_mut(), fcb, 0); // FALSE
-            if created == 0 {
-                break 'sehtry; // try_return NOTHING
-            }
+        if fcb_file_lock(fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), fcb, 0) == 0 {
+            break 'sehtry; // try_return NOTHING
         }
 
         // Success path
         results = 1; // TRUE
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
-            (*fcb).FileLock,
+            fcb_file_lock(fcb),
             FileObject,
             FileOffset,
             Length,
@@ -239,11 +244,11 @@ pub unsafe extern "C" fn CdFastUnlockSingle(
         );
 
         // Update FastIoPossible if no locks remain and it's not already set
-        if FsRtlAreThereCurrentFileLocks((*fcb).FileLock) == 0
-            && (*fcb).IsFastIoPossible != FastIoIsPossible
+        if FsRtlAreThereCurrentFileLocks(fcb_file_lock(fcb)) == 0
+            && (*fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible != FastIoIsPossible
         {
             CdLockFcb(core::ptr::null_mut(), fcb);
-            (*fcb).IsFastIoPossible = CdIsFastIoPossible(fcb);
+            (*fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(fcb);
             CdUnlockFcb(core::ptr::null_mut(), fcb);
         }
 
@@ -257,65 +262,64 @@ pub unsafe extern "C" fn CdFastUnlockSingle(
     results
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastUnlockAll(
-    FileObject: *mut FILE_OBJECT,
-    ProcessId: *mut _EPROCESS,
-    IoStatus: *mut _IO_STATUS_BLOCK,
-    DeviceObject: *mut DEVICE_OBJECT,
-) -> u8 /* BOOLEAN */ {
+pub unsafe extern "system" fn CdFastUnlockAll(
+    FileObject: PFILE_OBJECT,
+    ProcessId: PEPROCESS,
+    IoStatus: PIO_STATUS_BLOCK,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
     // Local equivalents
-    let mut Results: u8 = 0u8; // FALSE
-    let TypeOfOpen: u32;
-    let Fcb: *mut FCB;
+    let TypeOfOpen: TYPE_OF_OPEN;
+    let mut Fcb: PFCB = core::ptr::null_mut();
 
     // PAGED_CODE(); – ignore
-    // UNREFERENCED_PARAMETER( DeviceObject ); -> suppress warning
-    let _ = DeviceObject;
+    let _ = DeviceObject; // UNREFERENCED_PARAMETER( DeviceObject )
 
-    (*IoStatus).Information = core::ptr::null_mut();
+    (*IoStatus).Information = 0;
 
-    TypeOfOpen = CdFastDecodeFileObject(FileObject, &mut Fcb as *mut _);
+    TypeOfOpen = CdFastDecodeFileObject(FileObject, &mut Fcb as *mut PFCB);
 
     if TypeOfOpen != UserFileOpen {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
-        return 1u8; // TRUE
+        return 1; // TRUE
     }
 
     if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) == 0 {
-        return 0u8; // FALSE
+        return 0; // FALSE
     }
 
-    if (*Fcb).FileLock.is_null() {
+    if fcb_file_lock(Fcb).is_null() {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_RANGE_NOT_LOCKED;
-        return 1u8;
+        return 1;
     }
 
     FsRtlEnterFileSystem();
 
     let final_result = {
-        let mut results: u8 = 0u8;
+        let mut results: BOOLEAN = 0;
         loop {
             // _SEH2_TRY start
             if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
                 break; // try_return( NOTHING )
             }
 
-            if (*Fcb).FileLock.is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
+            if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
                 break; // try_return( NOTHING )
             }
 
-            results = 1u8; // TRUE
+            results = 1; // TRUE
 
             (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAll(
-                (*Fcb).FileLock,
+                fcb_file_lock(Fcb),
                 FileObject,
                 ProcessId,
                 core::ptr::null_mut(),
             );
 
-            CdLockFcb(IrpContext, Fcb);
-            (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
-            CdUnlockFcb(IrpContext, Fcb);
+            // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
+            CdLockFcb(core::ptr::null_mut(), Fcb);
+            (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+            CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
             // try_exit: NOTHING; -- fall through to loop exit
             break; // normal exit from try block
@@ -328,56 +332,57 @@ pub unsafe extern "C" fn CdFastUnlockAll(
     final_result
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastUnlockAllByKey(
+pub unsafe extern "system" fn CdFastUnlockAllByKey(
     FileObject: PFILE_OBJECT,
     ProcessId: PVOID,
     Key: ULONG,
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-    let _ = DeviceObject; // UNREFERENCED_PARAMETER
+) -> BOOLEAN {
+    let _ = DeviceObject; // UNREFERENCED_PARAMETER( DeviceObject )
     (*IoStatus).Information = 0;
 
     let mut Fcb: PFCB = core::ptr::null_mut();
     let TypeOfOpen = CdFastDecodeFileObject(FileObject, core::ptr::addr_of_mut!(Fcb));
     if TypeOfOpen != UserFileOpen {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
-        return 1u8; // TRUE
+        return 1; // TRUE
     }
 
     if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) == 0 {
-        return 0u8; // FALSE
+        return 0; // FALSE
     }
 
-    if (*Fcb).FileLock.is_null() {
+    if fcb_file_lock(Fcb).is_null() {
         (*IoStatus).__bindgen_anon_1.Status = STATUS_RANGE_NOT_LOCKED;
-        return 1u8;
+        return 1;
     }
 
     FsRtlEnterFileSystem();
-    let mut Results: u8 = 0;
+    let mut Results: BOOLEAN = 0;
 
     loop {
         // _SEH2_TRY begins
         if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
             break; // try_return
         }
-        if (*Fcb).FileLock.is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
+        if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
             break;
         }
 
         Results = 1;
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
-            (*Fcb).FileLock,
+            fcb_file_lock(Fcb),
             FileObject,
-            ProcessId,
+            ProcessId as PEPROCESS,
             Key,
             core::ptr::null_mut(),
         );
 
-        CdLockFcb(IrpContext, Fcb);
-        (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
-        CdUnlockFcb(IrpContext, Fcb);
+        // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
+        CdLockFcb(core::ptr::null_mut(), Fcb);
+        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+        CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
         break;
     }

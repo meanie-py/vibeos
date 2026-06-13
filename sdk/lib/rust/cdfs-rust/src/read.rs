@@ -1,10 +1,12 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::NT_SUCCESS;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::constants::{STATUS_SUCCESS, STATUS_END_OF_FILE, STATUS_FILE_LOCK_CONFLICT, STATUS_INVALID_DEVICE_REQUEST, STATUS_PENDING, STATUS_CANT_WAIT, STATUS_UNEXPECTED_IO_ERROR};
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcCopyRead, CcInitializeCacheMap, CcMdlRead, CcSetReadAheadGranularity, IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
+use ntkrnl_sys::base::NTSTATUS;
+use ntkrnl_sys::base::STATUS_SUCCESS;
+use ntkrnl_sys::constants::{STATUS_END_OF_FILE, STATUS_FILE_LOCK_CONFLICT, STATUS_INVALID_DEVICE_REQUEST, STATUS_PENDING};
+use crate::glue::STATUS_CANT_WAIT;
+// STATUS_UNEXPECTED_IO_ERROR (ntstatus.h 0xC00000E9); not present in ntkrnl-sys constants.
+const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000E9u32 as i32;
+use ntkrnl_sys::rtl::RtlZeroMemory;
+use ntkrnl_sys::ddk::{CcCopyRead, CcInitializeCacheMap, CcMdlRead, CcSetReadAheadGranularity, IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PIO_STACK_LOCATION, PLARGE_INTEGER, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CCB_FLAG_ALLOW_EXTENDED_DASD_IO, CCB_FLAG_DISMOUNT_ON_CLOSE, CD_DATA, CD_IO_CONTEXT, CdOplockComplete, CdPrePostIrp, FCB, FCB_STATE_RAWSECTOR_MASK, IRP_CONTEXT, IRP_CONTEXT_FLAG_ALLOC_IO, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_WAIT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen};
@@ -14,15 +16,18 @@ use crate::ddk_shims::{FsRtlCheckOplock};
 use crate::glue::{CDFS_BUG_CHECK_READ, FO_SYNCHRONOUS_IO, IRP_MN_MDL, IRP_NOCACHE, IRP_PAGING_IO};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckLockForReadAccess, FsRtlNormalizeNtstatus};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{SetFlag};
+// flag macros + CdRaiseStatus live in ddk_shims (C #defines), not real exports.
+use crate::ddk_shims::{FlagOn, BooleanFlagOn, SetFlag, ClearFlag, CdRaiseStatus};
+// SECTOR_MASK from cdfs cd.h; FCB_DATA union view; ERESOURCE_THREAD for IoContext.
+use crate::types::{SECTOR_MASK, FCB_DATA};
+use ntkrnl_sys::ddk::ERESOURCE_THREAD;
+use ntkrnl_sys::ddk::ULONG_PTR;
 
 extern "C" {
     static mut CdData: CD_DATA;
 }
 extern "system" {
-    fn Add2Ptr(Base: *mut c_void, Offset: u32, CastType: usize) -> *mut c_void; // approximation fn BlockAlign(Vcb: *mut VCB, ByteCount: u32) -> u32;
-    fn BooleanFlagOn(Flags: u32, Mask: u32) -> i32; // BOOLEAN fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdAcquireFileSharedStarveExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
@@ -33,14 +38,10 @@ extern "system" {
     fn CdNonCachedRead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
     fn CdNonCachedXARead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
     fn CdNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn ClearFlag(Flags: *mut u32, Mask: u32);
     fn ExGetCurrentResourceThread() -> *mut c_void;
-    fn FlagOn(Flags: u32, Mask: u32) -> u32;
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
-    fn SectorOffset(Value: i64) -> u32; // assumes returns non-zero if unaligned fn SetFlag(Flags: *mut u32, Mask: u32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -57,6 +58,8 @@ pub unsafe extern "C" fn CdCommonRead(
     // Global CdData reference (provided by caller)
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
+    // C: CD_IO_CONTEXT LocalIoContext; (function-scope stack object)
+    let mut LocalIoContext: CD_IO_CONTEXT = core::mem::zeroed();
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     // Early zero-length check
@@ -65,7 +68,7 @@ pub unsafe extern "C" fn CdCommonRead(
         return STATUS_SUCCESS;
     }
 
-    let mut TypeOfOpen: TYPE_OF_OPEN;
+    let TypeOfOpen: TYPE_OF_OPEN;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();
     TypeOfOpen = CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
@@ -81,12 +84,12 @@ pub unsafe extern "C" fn CdCommonRead(
     Wait = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) != 0;
     let PagingIo: bool;
     PagingIo = FlagOn((*Irp).Flags, IRP_PAGING_IO) != 0;
-    let NonCachedIo: bool;
+    let mut NonCachedIo: bool;
     NonCachedIo = FlagOn((*Irp).Flags, IRP_NOCACHE) != 0;
     let SynchronousIo: bool;
     SynchronousIo = FlagOn((*(*IrpSp).FileObject).Flags, FO_SYNCHRONOUS_IO) != 0;
 
-    let StartingOffset: i64 = (*IrpSp).Parameters.Read.ByteOffset.QuadPart;
+    let mut StartingOffset: i64 = (*IrpSp).Parameters.Read.ByteOffset.QuadPart;
     let OriginalByteCount: u32 = (*IrpSp).Parameters.Read.Length;
     let mut ByteCount: u32 = OriginalByteCount;
     let mut ByteRange: i64 = StartingOffset + ByteCount as i64;
@@ -101,10 +104,9 @@ pub unsafe extern "C" fn CdCommonRead(
         CdAcquireFileShared(IrpContext, Fcb);
     }
 
-    // SEH simulate: try-finally
-    let mut _se_status: NTSTATUS = Status;
-    let mut _se_irp: *mut IRP = Irp;
-    let mut _se_irp_context: *mut IRP_CONTEXT = IrpContext;
+    // SEH simulate: try-finally. Status/Irp/IrpContext are mutated in-place inside
+    // the try body and must persist past the finally (matching the C control flow);
+    // only ReleaseFile is finally-state.
     let mut _se_release_file: i32 = 1; // ReleaseFile = TRUE
 
     {
@@ -113,7 +115,7 @@ pub unsafe extern "C" fn CdCommonRead(
             // ---- begin of C _SEH2_TRY block ----
 
             if (TypeOfOpen != UserVolumeOpen) || (Ccb.is_null()) ||
-                !FlagOn((*Ccb).Flags, CCB_FLAG_DISMOUNT_ON_CLOSE)
+                FlagOn((*Ccb).Flags, CCB_FLAG_DISMOUNT_ON_CLOSE) == 0
             {
                 CdVerifyFcbOperation(IrpContext, Fcb);
             }
@@ -122,7 +124,7 @@ pub unsafe extern "C" fn CdCommonRead(
                 if FlagOn((*Fcb).FcbState, FCB_STATE_RAWSECTOR_MASK) != 0 {
                     SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST);
                     // try_return( Status = STATUS_CANT_WAIT );
-                    _se_status = STATUS_CANT_WAIT;
+                    Status = STATUS_CANT_WAIT;
                     break;
                 }
             }
@@ -133,8 +135,12 @@ pub unsafe extern "C" fn CdCommonRead(
                     CdGetFcbOplock(Fcb),
                     Irp,
                     IrpContext as *mut c_void,
-                    CdOplockComplete as *mut c_void,
-                    CdPrePostIrp as *mut c_void,
+                    core::mem::transmute::<_, POPLOCK_WAIT_COMPLETE_ROUTINE>(
+                        CdOplockComplete as *const c_void,
+                    ),
+                    core::mem::transmute::<_, POPLOCK_FS_PREPOST_IRP>(
+                        CdPrePostIrp as *const c_void,
+                    ),
                 );
                 if Status != STATUS_SUCCESS {
                     Irp = core::ptr::null_mut();
@@ -142,73 +148,85 @@ pub unsafe extern "C" fn CdCommonRead(
                     // try_return( NOTHING );
                     break;
                 }
-                if !PagingIo && ((*Fcb).FileLock).is_null() == false &&
-                    !FsRtlCheckLockForReadAccess((*Fcb).FileLock, Irp)
+                let FcbData = core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_DATA;
+                if !PagingIo && (*FcbData).FileLock.is_null() == false &&
+                    FsRtlCheckLockForReadAccess((*FcbData).FileLock, Irp) == 0
                 {
-                    _se_status = STATUS_FILE_LOCK_CONFLICT;
+                    Status = STATUS_FILE_LOCK_CONFLICT;
                     break;
                 }
             }
 
             if (TypeOfOpen != UserVolumeOpen) ||
-                (!FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) != 0)
+                (FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) == 0)
             {
-                if StartingOffset >= (*Fcb).FileSize.QuadPart {
-                    _se_status = STATUS_END_OF_FILE;
+                let FcbFileSize = (*Fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart;
+                if StartingOffset >= FcbFileSize {
+                    Status = STATUS_END_OF_FILE;
                     break;
                 }
-                if ByteRange > (*Fcb).FileSize.QuadPart {
-                    ByteCount = ((*Fcb).FileSize.QuadPart - StartingOffset) as u32;
-                    ByteRange = (*Fcb).FileSize.QuadPart;
+                if ByteRange > FcbFileSize {
+                    ByteCount = (FcbFileSize - StartingOffset) as u32;
+                    ByteRange = FcbFileSize;
                 }
             }
 
             // Non-cached path
             if NonCachedIo {
-                let ReadByteCount = BlockAlign((*Fcb).Vcb, ByteCount);
-                if SectorOffset(StartingOffset) != 0 ||
-                    SectorOffset(ReadByteCount as i64) != 0 ||
+                // BlockAlign(V,L) = ((ULONG)(L) + (V)->BlockMask) & (V)->BlockInverseMask
+                let Vcb = (*Fcb).Vcb;
+                let mut ReadByteCount =
+                    (ByteCount.wrapping_add((*Vcb).BlockMask)) & (*Vcb).BlockInverseMask;
+                // SectorOffset(L) = ((ULONG)(ULONG_PTR)(L)) & SECTOR_MASK
+                if (StartingOffset as u32 & SECTOR_MASK) != 0 ||
+                    (ReadByteCount & SECTOR_MASK) != 0 ||
                     (ReadByteCount > OriginalByteCount)
                 {
                     if !Wait {
                         CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
                     }
-                    // ReadByteCount unchanged, but we set to ByteCount later
+                    //  Make sure we don't overwrite the buffer.
+                    ReadByteCount = ByteCount;
                 }
 
-                if (*IrpContext).IoContext.is_null() ||
+                if (*IrpContext).__bindgen_anon_1.IoContext.is_null() ||
                     FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO) == 0
                 {
                     if Wait {
-                        (*IrpContext).IoContext = &mut LocalIoContext as *mut CD_IO_CONTEXT;
+                        (*IrpContext).__bindgen_anon_1.IoContext =
+                            &mut LocalIoContext as *mut CD_IO_CONTEXT;
                         ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
                     } else {
-                        (*IrpContext).IoContext = CdAllocateIoContext();
+                        (*IrpContext).__bindgen_anon_1.IoContext = CdAllocateIoContext();
                         SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
                     }
                 }
 
+                let IoCtx = (*IrpContext).__bindgen_anon_1.IoContext;
+
                 RtlZeroMemory(
-                    (*IrpContext).IoContext as *mut c_void,
+                    IoCtx as *mut c_void,
                     core::mem::size_of::<CD_IO_CONTEXT>(),
                 );
 
-                (*(*IrpContext).IoContext).AllocatedContext =
-                    BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
+                (*IoCtx).AllocatedContext =
+                    BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO) as u8;
 
                 if Wait {
                     KeInitializeEvent(
-                        &mut (*(*IrpContext).IoContext).SyncEvent,
+                        (*IoCtx).__bindgen_anon_1.SyncEvent.as_mut() as *mut _,
                         _EVENT_TYPE_NotificationEvent,
                         0, // FALSE
                     );
                 } else {
-                    (*(*IrpContext).IoContext).ResourceThreadId = ExGetCurrentResourceThread();
-                    (*(*IrpContext).IoContext).Resource = (*Fcb).Resource;
-                    (*(*IrpContext).IoContext).RequestedByteCount = ByteCount;
+                    (*IoCtx).__bindgen_anon_1.__bindgen_anon_1.as_mut().ResourceThreadId =
+                        ExGetCurrentResourceThread() as usize as ERESOURCE_THREAD;
+                    (*IoCtx).__bindgen_anon_1.__bindgen_anon_1.as_mut().Resource =
+                        (*Fcb).__bindgen_anon_1.Header.as_ref().Resource;
+                    (*IoCtx).__bindgen_anon_1.__bindgen_anon_1.as_mut().RequestedByteCount = ByteCount;
                 }
 
-                (*Irp).IoStatus.Information = ReadByteCount as usize;
+                (*Irp).IoStatus.Information = ReadByteCount as ULONG_PTR;
 
                 let read_status: NTSTATUS;
                 if FlagOn((*Fcb).FcbState, FCB_STATE_RAWSECTOR_MASK) != 0 {
@@ -238,7 +256,7 @@ pub unsafe extern "C" fn CdCommonRead(
                             let len = (ReadByteCount - ByteCount) as usize;
                             RtlZeroMemory(target, len);
                         }
-                        (*Irp).IoStatus.Information = ByteCount as usize;
+                        (*Irp).IoStatus.Information = ByteCount as ULONG_PTR;
                     }
                     if SynchronousIo && !PagingIo && NT_SUCCESS(Status) {
                         (*(*IrpSp).FileObject).CurrentByteOffset.QuadPart = ByteRange;
@@ -252,7 +270,9 @@ pub unsafe extern "C" fn CdCommonRead(
             if (*IrpSp).FileObject.is_null() == false && (*(*IrpSp).FileObject).PrivateCacheMap.is_null() {
                 CcInitializeCacheMap(
                     (*IrpSp).FileObject,
-                    &mut (*Fcb).AllocationSize as *mut _ as *mut PCC_FILE_SIZES,
+                    core::ptr::addr_of_mut!(
+                        (*Fcb).__bindgen_anon_1.Header.as_mut().AllocationSize
+                    ) as PCC_FILE_SIZES,
                     0, // FALSE
                     &mut CdData.CacheManagerCallbacks as *mut _,
                     Fcb as *mut c_void,
@@ -263,18 +283,18 @@ pub unsafe extern "C" fn CdCommonRead(
                 );
             }
 
-            if FlagOn((*IrpContext).MinorFunction, IRP_MN_MDL) == 0 {
+            if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
                 let mut SystemBuffer: *mut c_void = core::ptr::null_mut();
                 CdMapUserBuffer(IrpContext, &mut SystemBuffer);
-                if !CcCopyRead(
+                if CcCopyRead(
                     (*IrpSp).FileObject,
-                    &mut StartingOffset as *mut i64 as *mut LARGE_INTEGER,
+                    &mut StartingOffset as *mut i64 as PLARGE_INTEGER,
                     ByteCount,
                     if Wait { 1 } else { 0 },
                     SystemBuffer,
                     &mut (*Irp).IoStatus,
-                ) {
-                    _se_status = STATUS_CANT_WAIT;
+                ) == 0 {
+                    Status = STATUS_CANT_WAIT;
                     break;
                 }
                 if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
@@ -283,7 +303,7 @@ pub unsafe extern "C" fn CdCommonRead(
             } else {
                 CcMdlRead(
                     (*IrpSp).FileObject,
-                    &mut StartingOffset as *mut i64 as *mut LARGE_INTEGER,
+                    &mut StartingOffset as *mut i64 as PLARGE_INTEGER,
                     ByteCount,
                     &mut (*Irp).MdlAddress,
                     &mut (*Irp).IoStatus,
@@ -304,11 +324,6 @@ pub unsafe extern "C" fn CdCommonRead(
             CdReleaseFile(IrpContext, Fcb);
         }
     } // end SEH simulate block
-
-    // Restore variables
-    Status = _se_status;
-    Irp = _se_irp;
-    IrpContext = _se_irp_context;
 
     if Status == STATUS_CANT_WAIT {
         Status = CdFsdPostRequest(IrpContext, Irp);

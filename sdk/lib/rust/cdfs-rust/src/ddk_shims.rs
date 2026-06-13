@@ -258,3 +258,26 @@ const DO_VERIFY_VOLUME: u32 = 0x00000002;
 #[no_mangle] pub extern "C" fn ASSERT_EXCLUSIVE_CDDATA() {}
 #[no_mangle] pub unsafe extern "C" fn ASSERT_EXCLUSIVE_VCB(_Vcb: *mut VCB) {}
 #[no_mangle] pub unsafe extern "C" fn ASSERT_OPTIONAL_IRP_CONTEXT(_IrpContext: *mut IRP_CONTEXT) {}
+
+// cd.h: CdRaiseStatus(IC,S) = CdRaiseStatusEx(IC,S,FALSE,BugCheckFileId,__LINE__).
+// CdRaiseStatusEx raises via the SEH path and does not return -> `!`. Centralized here
+// so every module imports ONE symbol instead of a private per-module extern (which the
+// resolver can't share -> "not accessible" cross-module errors).
+extern "system" {
+    pub fn CdRaiseStatusEx(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS,
+        NormalizeStatus: BOOLEAN, FileId: u32, Line: u32);
+}
+#[no_mangle]
+pub unsafe extern "C" fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> ! {
+    CdRaiseStatusEx(IrpContext, Status, 0, 0, 0);
+    loop {}
+}
+
+// cd.h integer/pointer helper macros (generic; safe central shims).
+//   BlockAlign(V,L) = ((V)+(L-1)) & ~(L-1)   ; LlBlockAlign is the i64 form.
+//   Add2Ptr(P,I)    = (PUCHAR)(P) + (I)
+#[inline] pub fn BlockAlign(v: u32, l: u32) -> u32 { (v.wrapping_add(l - 1)) & !(l - 1) }
+#[inline] pub fn BlockAlignI64(v: i64, l: i64) -> i64 { (v.wrapping_add(l - 1)) & !(l - 1) }
+#[inline] pub unsafe fn Add2Ptr(p: *mut core::ffi::c_void, i: usize) -> *mut core::ffi::c_void {
+    (p as *mut u8).add(i) as *mut core::ffi::c_void
+}

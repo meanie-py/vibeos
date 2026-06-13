@@ -1,54 +1,65 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::ex::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{EqualTo, GreaterThan, LessThan, PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, RtlSplay};
-use core::ffi::c_void;
+use ntkrnl_sys::rtl::RtlZeroMemory;
+use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, FSRTL_COMPARISON_RESULT};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_NAME, FCB, FSRTL_COMPARISON_RESULT, IRP_CONTEXT, NAME_LINK, PREFIX_ENTRY, VCB};
+use crate::types::{CD_NAME, FCB, FCB_INDEX, IRP_CONTEXT, NAME_LINK, PREFIX_ENTRY, VCB, IRP_CONTEXT_FLAG_WAIT, CdDissectName};
 use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::glue::{CDFS_BUG_CHECK_PREFXSUP};
+use crate::glue::{CDFS_BUG_CHECK_PREFXSUP, CDFS_NTC_FCB_INDEX, STATUS_CANT_WAIT, CdPagedPool};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertAsRightChild};
+use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertAsRightChild,
+    FlagOn, ClearFlag, Add2Ptr, CdRaiseStatus};
 
 extern "system" {
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
-    fn ClearFlag(Flags: *mut u32, Mask: u32);
     fn CdFreePool(Pool: *mut *mut u16);
     fn SafeNodeType(fcb: *mut FCB) -> u32;
-    fn CdDissectName(irp_context: *mut IRP_CONTEXT, local_remaining_name: *mut _UNICODE_STRING, final_name: *mut _UNICODE_STRING);
     fn CdLockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
     fn CdUnlockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
     fn CdReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
-    fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL #[no_mangle] fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL #[no_mangle] fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL #[no_mangle] fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL pub unsafe extern "C" fn CdFindNameLink(irp_context: *mut IRP_CONTEXT, root_node: *mut *mut RTL_SPLAY_LINKS, name: *const _UNICODE_STRING) -> *mut NAME_LINK;
-    fn Add2Ptr(p: *mut core::ffi::c_void, offset: u32) -> *mut core::ffi::c_void;
+    fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL
+    // SHARED NEED: cdfs-local static, not yet translated.
+    //   PNAME_LINK CdFindNameLink(PIRP_CONTEXT, PRTL_SPLAY_LINKS *RootNode, PUNICODE_STRING Name);
+    fn CdFindNameLink(irp_context: *mut IRP_CONTEXT, root_node: *mut *mut RTL_SPLAY_LINKS, name: *const _UNICODE_STRING) -> *mut NAME_LINK;
+    // SHARED NEED: cdfs-local static, not yet translated.
+    //   FSRTL_COMPARISON_RESULT CdFullCompareNames(PIRP_CONTEXT, PUNICODE_STRING, PUNICODE_STRING);
+    fn CdFullCompareNames(IrpContext: *mut IRP_CONTEXT, Name1: *const _UNICODE_STRING, Name2: *const _UNICODE_STRING) -> FSRTL_COMPARISON_RESULT;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_PREFXSUP;
 
-unsafe extern "system" fn RtlLeftChild(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
-unsafe extern "system" fn RtlRightChild(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
-unsafe extern "system" fn CdFullCompareNames(IrpContext: *mut IRP_CONTEXT, Name1: *const _UNICODE_STRING, Name2: *const _UNICODE_STRING) -> i32;
+// ntrtl.h splay-link FORCEINLINEs (read child pointers in place). Not exports.
+#[inline]
+unsafe fn RtlLeftChild(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS {
+    (*Links).LeftChild
+}
+#[inline]
+unsafe fn RtlRightChild(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS {
+    (*Links).RightChild
+}
 
-// Constants (placeholders – actual values may need to be defined elsewhere)
-const CDFS_NTC_FCB_INDEX: u32 = 0x206;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const STATUS_CANT_WAIT: i32 = 0xC00000098u32 as i32;
+// CONTAINING_RECORD( Fcb, FCB_INDEX, .. ): the FCB_INDEX overlay lives in the
+// trailing anonymous union (__bindgen_anon_2) of FCB.  ExactCaseRoot/IgnoreCaseRoot
+// are FCB_INDEX fields accessed through this overlay.
+#[inline]
+unsafe fn FcbIndex(Fcb: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_INDEX
+}
 
-// Extern declarations for unknown functions
-
-// Constants approximated from original source
-const CdPagedPool: u32 = 1; // PagedPool
-const TAG_PREFIX_ENTRY: u32 = 0; // original value unspecified
-const TAG_PREFIX_NAME: u32 = 0; // original value unspecified
-const PREFIX_FLAG_EXACT_CASE_IN_TREE: u32 = 0x0002;
-const PREFIX_FLAG_IGNORE_CASE_IN_TREE: u32 = 0x0004;
-const BYTE_COUNT_EMBEDDED_NAME: u32 = 8; // approximate size of embedded array
+// cdprocs.h
+const TAG_PREFIX_ENTRY: u32 = 0x43647065; // 'epdC'
+const TAG_PREFIX_NAME: u32 = 0x4364706e;  // 'npdC'
+// cdstruc.h
+const PREFIX_FLAG_EXACT_CASE_IN_TREE: u32 = 0x00000001;
+const PREFIX_FLAG_IGNORE_CASE_IN_TREE: u32 = 0x00000002;
+const BYTE_COUNT_EMBEDDED_NAME: u32 = 32;
+// FSRTL_COMPARISON_RESULT values (ntrtl.h: LessThan=-1, EqualTo=0, GreaterThan=1)
+#[allow(dead_code)]
+const LessThan: FSRTL_COMPARISON_RESULT = -1; // used by untranslated CdFindNameLink in C
+const EqualTo: FSRTL_COMPARISON_RESULT = 0;
+const GreaterThan: FSRTL_COMPARISON_RESULT = 1;
 #[no_mangle]
 pub unsafe extern "C" fn CdInsertPrefix(
     IrpContext: *mut IRP_CONTEXT,
@@ -67,7 +78,7 @@ pub unsafe extern "C" fn CdInsertPrefix(
             if (*Fcb).ShortNamePrefix.is_null() {
                 let alloc = ExAllocatePoolWithTag(
                     CdPagedPool,
-                    core::mem::size_of::<PREFIX_ENTRY>() as u32,
+                    core::mem::size_of::<PREFIX_ENTRY>(),
                     TAG_PREFIX_ENTRY,
                 ) as *mut PREFIX_ENTRY;
                 if alloc.is_null() {
@@ -80,17 +91,17 @@ pub unsafe extern "C" fn CdInsertPrefix(
         }
 
         let PrefixFlags: u32;
-        let mut NameLink: *mut NAME_LINK;
-        let mut TreeRoot: *mut *mut RTL_SPLAY_LINKS;
+        let NameLink: *mut NAME_LINK;
+        let TreeRoot: *mut *mut RTL_SPLAY_LINKS;
 
         if IgnoreCase != 0 {
             PrefixFlags = PREFIX_FLAG_IGNORE_CASE_IN_TREE;
             NameLink = core::ptr::addr_of_mut!((*PrefixEntry).IgnoreCaseName);
-            TreeRoot = core::ptr::addr_of_mut!((*ParentFcb).IgnoreCaseRoot);
+            TreeRoot = core::ptr::addr_of_mut!((*FcbIndex(ParentFcb)).IgnoreCaseRoot);
         } else {
             PrefixFlags = PREFIX_FLAG_EXACT_CASE_IN_TREE;
             NameLink = core::ptr::addr_of_mut!((*PrefixEntry).ExactCaseName);
-            TreeRoot = core::ptr::addr_of_mut!((*ParentFcb).ExactCaseRoot);
+            TreeRoot = core::ptr::addr_of_mut!((*FcbIndex(ParentFcb)).ExactCaseRoot);
         }
 
         // Check if neither name is in the tree
@@ -100,7 +111,7 @@ pub unsafe extern "C" fn CdInsertPrefix(
             if (*Name).FileName.Length > BYTE_COUNT_EMBEDDED_NAME as u16 {
                 NameBuffer = ExAllocatePoolWithTag(
                     CdPagedPool,
-                    ((*Name).FileName.Length as u32) * 2,
+                    ((*Name).FileName.Length as usize) * 2,
                     TAG_PREFIX_NAME,
                 ) as *mut u16;
                 if NameBuffer.is_null() {
@@ -112,7 +123,7 @@ pub unsafe extern "C" fn CdInsertPrefix(
             (*PrefixEntry).ExactCaseName.FileName.Buffer = NameBuffer;
             let ign_buf = Add2Ptr(
                 NameBuffer as *mut core::ffi::c_void,
-                (*Name).FileName.Length as u32,
+                (*Name).FileName.Length as usize,
             ) as *mut u16;
             (*PrefixEntry).IgnoreCaseName.FileName.Buffer = ign_buf;
 
@@ -156,7 +167,7 @@ pub unsafe extern "C" fn CdRemovePrefix(
             PREFIX_FLAG_IGNORE_CASE_IN_TREE,
         ) != 0
         {
-            (*(*Fcb).ParentFcb).IgnoreCaseRoot = ntkrnl_sys::ddk::RtlDelete(core::ptr::addr_of_mut!(
+            (*FcbIndex((*Fcb).ParentFcb)).IgnoreCaseRoot = RtlDelete(core::ptr::addr_of_mut!(
                 (*short_name_prefix).IgnoreCaseName.Links
             ));
         }
@@ -166,7 +177,7 @@ pub unsafe extern "C" fn CdRemovePrefix(
             PREFIX_FLAG_EXACT_CASE_IN_TREE,
         ) != 0
         {
-            (*(*Fcb).ParentFcb).ExactCaseRoot = ntkrnl_sys::ddk::RtlDelete(core::ptr::addr_of_mut!(
+            (*FcbIndex((*Fcb).ParentFcb)).ExactCaseRoot = RtlDelete(core::ptr::addr_of_mut!(
                 (*short_name_prefix).ExactCaseName.Links
             ));
         }
@@ -177,30 +188,30 @@ pub unsafe extern "C" fn CdRemovePrefix(
         );
     }
 
-    let file_name_prefix = &(*Fcb).FileNamePrefix;
+    let file_name_prefix = core::ptr::addr_of_mut!((*Fcb).FileNamePrefix);
 
     if FlagOn(
-        file_name_prefix.PrefixFlags,
+        (*file_name_prefix).PrefixFlags,
         PREFIX_FLAG_IGNORE_CASE_IN_TREE,
     ) != 0
     {
-        (*(*Fcb).ParentFcb).IgnoreCaseRoot = ntkrnl_sys::ddk::RtlDelete(core::ptr::addr_of_mut!(
-            file_name_prefix.IgnoreCaseName.Links
+        (*FcbIndex((*Fcb).ParentFcb)).IgnoreCaseRoot = RtlDelete(core::ptr::addr_of_mut!(
+            (*file_name_prefix).IgnoreCaseName.Links
         ));
     }
 
     if FlagOn(
-        file_name_prefix.PrefixFlags,
+        (*file_name_prefix).PrefixFlags,
         PREFIX_FLAG_EXACT_CASE_IN_TREE,
     ) != 0
     {
-        (*(*Fcb).ParentFcb).ExactCaseRoot = ntkrnl_sys::ddk::RtlDelete(core::ptr::addr_of_mut!(
-            file_name_prefix.ExactCaseName.Links
+        (*FcbIndex((*Fcb).ParentFcb)).ExactCaseRoot = RtlDelete(core::ptr::addr_of_mut!(
+            (*file_name_prefix).ExactCaseName.Links
         ));
     }
 
     ClearFlag(
-        core::ptr::addr_of_mut!(file_name_prefix.PrefixFlags) as *mut u32,
+        core::ptr::addr_of_mut!((*file_name_prefix).PrefixFlags),
         PREFIX_FLAG_IGNORE_CASE_IN_TREE | PREFIX_FLAG_EXACT_CASE_IN_TREE,
     );
 
@@ -246,7 +257,7 @@ pub unsafe extern "C" fn CdFindPrefix(
         if ignore_case != 0 {
             name_link = CdFindNameLink(
                 irp_context,
-                core::ptr::addr_of_mut!((*(*current_fcb)).IgnoreCaseRoot),
+                core::ptr::addr_of_mut!((*FcbIndex(*current_fcb)).IgnoreCaseRoot),
                 &final_name as *const _UNICODE_STRING,
             );
             prefix_entry = if !name_link.is_null() {
@@ -258,7 +269,7 @@ pub unsafe extern "C" fn CdFindPrefix(
         } else {
             name_link = CdFindNameLink(
                 irp_context,
-                core::ptr::addr_of_mut!((*(*current_fcb)).ExactCaseRoot),
+                core::ptr::addr_of_mut!((*FcbIndex(*current_fcb)).ExactCaseRoot),
                 &final_name as *const _UNICODE_STRING,
             );
             prefix_entry = if !name_link.is_null() {
@@ -291,14 +302,14 @@ pub unsafe extern "C" fn CdFindPrefix(
             (*(*prefix_entry).Fcb).FcbReference += 1;
             CdUnlockVcb(irp_context, (*irp_context).Vcb);
 
-            CdReleaseFcb(irp_context, *(*current_fcb));
+            CdReleaseFcb(irp_context, *current_fcb);
             CdAcquireFcbExclusive(irp_context, (*prefix_entry).Fcb, 0);
 
             CdLockVcb(irp_context, (*irp_context).Vcb);
             (*(*prefix_entry).Fcb).FcbReference -= 1;
             CdUnlockVcb(irp_context, (*irp_context).Vcb);
         } else {
-            CdReleaseFcb(irp_context, *(*current_fcb));
+            CdReleaseFcb(irp_context, *current_fcb);
         }
 
         *current_fcb = (*prefix_entry).Fcb;
@@ -345,16 +356,16 @@ pub unsafe extern "C" fn CdInsertNameLink(
         // If the tree prefix is greater than the new prefix then
         // we go down the left subtree
         if Comparison == GreaterThan {
-            if RtlLeftChild(core::ptr::addr_of!((*Node).Links)).is_null() {
+            if RtlLeftChild(core::ptr::addr_of_mut!((*Node).Links)).is_null() {
                 // There isn't a left child so we insert ourselves as the new left child
                 RtlInsertAsLeftChild(
-                    core::ptr::addr_mut!((*Node).Links),
-                    core::ptr::addr_mut!((*NameLink).Links),
+                    core::ptr::addr_of_mut!((*Node).Links),
+                    core::ptr::addr_of_mut!((*NameLink).Links),
                 );
                 break;
             } else {
                 // There is a left child so simply go down that path
-                Node = ((RtlLeftChild(core::ptr::addr_of!((*Node).Links)) as *const u8)
+                Node = ((RtlLeftChild(core::ptr::addr_of_mut!((*Node).Links)) as *const u8)
                     .sub(core::mem::offset_of!(NAME_LINK, Links)))
                     as *mut NAME_LINK;
             }
@@ -362,16 +373,16 @@ pub unsafe extern "C" fn CdInsertNameLink(
             // The tree prefix is either less than or a proper prefix of the new string.
             // We treat both cases as less than when we do insert. So we want to go down
             // the right subtree, first check to see if we have a right subtree.
-            if RtlRightChild(core::ptr::addr_of!((*Node).Links)).is_null() {
+            if RtlRightChild(core::ptr::addr_of_mut!((*Node).Links)).is_null() {
                 // These isn't a right child so we insert ourselves as the new right child
                 RtlInsertAsRightChild(
-                    core::ptr::addr_mut!((*Node).Links),
-                    core::ptr::addr_mut!((*NameLink).Links),
+                    core::ptr::addr_of_mut!((*Node).Links),
+                    core::ptr::addr_of_mut!((*NameLink).Links),
                 );
                 break;
             } else {
                 // There is a right child so simply go down that path
-                Node = ((RtlRightChild(core::ptr::addr_of!((*Node).Links)) as *const u8)
+                Node = ((RtlRightChild(core::ptr::addr_of_mut!((*Node).Links)) as *const u8)
                     .sub(core::mem::offset_of!(NAME_LINK, Links)))
                     as *mut NAME_LINK;
             }

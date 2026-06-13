@@ -2,11 +2,9 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{CcMapData, RtlOemToUnicodeN, FSRTL_ADVANCED_FCB_HEADER, _LARGE_INTEGER};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_NAME, COMPOUND_PATH_ENTRY, FCB, IRP_CONTEXT, PATH_ENTRY, PATH_ENUM_CONTEXT, PIRP_CONTEXT, VCB};
-use ntkrnl_sys::ddk::{POOL_TYPE};
+use crate::types::{CD_NAME, COMPOUND_PATH_ENTRY, FCB, FCB_INDEX, IRP_CONTEXT, PATH_ENTRY, PATH_ENTRY_FLAG_ALLOC_BUFFER, PATH_ENUM_CONTEXT, VCB, VCB_STATE_JOLIET};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 use crate::glue::{CDFS_BUG_CHECK_PATHSUP};
@@ -15,7 +13,6 @@ use crate::types::{RAW_PATH_ENTRY};
 use crate::cddata::{CdUnicodeDirectoryNames};
 
 extern "C" {
-    fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
     fn CdUnpinData(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn CdFreePool(Data: *mut *mut core::ffi::c_void);
 }
@@ -31,14 +28,31 @@ extern "system" {
     fn WordAlign(Value: u32) -> u32;
     fn PAGED_CODE();
     fn CdConvertBigToLittleEndian( IrpContext: *mut IRP_CONTEXT, DiskName: *const u8, DiskNameLen: u32, Buffer: *mut u8, );
-    fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut FILE_NAME, OutputName: *mut FILE_NAME, );
+    fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut CD_NAME, OutputName: *mut CD_NAME, );
     fn NT_ASSERT(cond: bool);
     fn __analysis_assert(cond: bool);
     fn SectorTruncate(offset: u32) -> i64;
     fn CdIsNameInExpression( IrpContext: *mut IRP_CONTEXT, name1: *mut CD_NAME, name2: *mut CD_NAME, unknown: u32, exact: u8, ) -> u8;
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdQueryFidPathTableOffset(FileId: u32) -> u32;
+}
+
+// FCB field accessors. The FSRTL header lives in the leading anonymous union
+// and the FCB_INDEX overlay (FileObject/Ordinal/ChildPathTableOffset/...) lives
+// in the trailing anonymous union. See dirsup.rs for the same pattern.
+#[inline]
+unsafe fn FcbHeader(Fcb: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_1) as *mut FSRTL_ADVANCED_FCB_HEADER
+}
+#[inline]
+unsafe fn FcbIndex(Fcb: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_INDEX
+}
+
+// CdQueryFidPathTableOffset(I) is a macro: ((I).HighPart)  [cdstruc.h:1832]
+#[inline]
+unsafe fn CdQueryFidPathTableOffset(FileId: crate::types::FILE_ID) -> u32 {
+    FileId.__bindgen_anon_1.HighPart as u32
 }
 
 // ---- file-scope preamble (translated) ----
@@ -57,9 +71,7 @@ pub unsafe extern "C" fn CdLookupPathEntry(
     compound_path_entry: *mut COMPOUND_PATH_ENTRY,
 ) {
     let path_context: *mut PATH_ENUM_CONTEXT = core::ptr::addr_of_mut!((*compound_path_entry).PathContext);
-    let mut current_base_offset: i64;
-
-    current_base_offset = SectorTruncate(path_entry_offset);
+    let current_base_offset: i64 = SectorTruncate(path_entry_offset);
 
     CdMapPathTableBlock(
         irp_context,
@@ -68,7 +80,7 @@ pub unsafe extern "C" fn CdLookupPathEntry(
         path_context,
     );
 
-    (*path_context).DataOffset = (path_entry_offset as i64) - (*path_context).BaseOffset;
+    (*path_context).DataOffset = path_entry_offset - (*path_context).BaseOffset;
 
     let _ = CdUpdatePathEntryFromRawPathEntry(
         irp_context,
@@ -81,11 +93,11 @@ pub unsafe extern "C" fn CdLookupPathEntry(
 
 #[no_mangle]
 pub unsafe extern "C" fn CdLookupNextPathEntry(
-    IrpContext: *mut PIRP_CONTEXT,
+    IrpContext: *mut IRP_CONTEXT,
     PathContext: *mut PATH_ENUM_CONTEXT,
     PathEntry: *mut PATH_ENTRY,
 ) -> u8 {
-    let mut current_base_offset: LONGLONG = 0;
+    let current_base_offset: LONGLONG;
 
     // PAGED_CODE();
 
@@ -96,7 +108,7 @@ pub unsafe extern "C" fn CdLookupNextPathEntry(
             return 0u8;
         }
     } else if (*PathContext).DataOffset >= SECTOR_SIZE {
-        current_base_offset = (*PathContext).BaseOffset + SECTOR_SIZE as LONGLONG;
+        current_base_offset = (*PathContext).BaseOffset as LONGLONG + SECTOR_SIZE as LONGLONG;
 
         CdMapPathTableBlock(
             IrpContext,
@@ -133,17 +145,17 @@ pub unsafe extern "C" fn CdFindPathEntry(
     // PAGED_CODE();
 
     StartingOffset = CdQueryFidPathTableOffset((*ParentFcb).FileId);
-    StartingOrdinal = (*ParentFcb).Ordinal;
+    StartingOrdinal = (*FcbIndex(ParentFcb)).Ordinal;
 
-    if (*ParentFcb).Ordinal > MAXUSHORT {
+    if (*FcbIndex(ParentFcb)).Ordinal > MAXUSHORT {
         CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
     }
 
     CdLockFcb(IrpContext, ParentFcb);
 
-    if (*ParentFcb).ChildPathTableOffset != 0 {
-        StartingOffset = (*ParentFcb).ChildPathTableOffset;
-        StartingOrdinal = (*ParentFcb).ChildOrdinal;
+    if (*FcbIndex(ParentFcb)).ChildPathTableOffset != 0 {
+        StartingOffset = (*FcbIndex(ParentFcb)).ChildPathTableOffset;
+        StartingOrdinal = (*FcbIndex(ParentFcb)).ChildOrdinal;
         UpdateChildOffset = 0;
     } else if ParentFcb == (*(*ParentFcb).Vcb).RootIndexFcb {
         UpdateChildOffset = 0;
@@ -156,12 +168,12 @@ pub unsafe extern "C" fn CdFindPathEntry(
     // do { ... } while (CdLookupNextPathEntry(...))
     loop {
         // If we are beyond this directory then return FALSE.
-        if (*CompoundPathEntry).PathEntry.ParentOrdinal > (*ParentFcb).Ordinal {
+        if (*CompoundPathEntry).PathEntry.ParentOrdinal > (*FcbIndex(ParentFcb)).Ordinal {
             if UpdateChildOffset != 0 {
                 CdLockFcb(IrpContext, ParentFcb);
 
-                (*ParentFcb).ChildPathTableOffset = StartingOffset;
-                (*ParentFcb).ChildOrdinal = StartingOrdinal;
+                (*FcbIndex(ParentFcb)).ChildPathTableOffset = StartingOffset;
+                (*FcbIndex(ParentFcb)).ChildOrdinal = StartingOrdinal;
 
                 CdUnlockFcb(IrpContext, ParentFcb);
             }
@@ -169,12 +181,12 @@ pub unsafe extern "C" fn CdFindPathEntry(
         }
 
         // If we are within the children of this directory then check for a match.
-        if (*CompoundPathEntry).PathEntry.ParentOrdinal == (*ParentFcb).Ordinal {
+        if (*CompoundPathEntry).PathEntry.ParentOrdinal == (*FcbIndex(ParentFcb)).Ordinal {
             if UpdateChildOffset != 0 {
                 CdLockFcb(IrpContext, ParentFcb);
 
-                (*ParentFcb).ChildPathTableOffset = (*CompoundPathEntry).PathEntry.PathTableOffset;
-                (*ParentFcb).ChildOrdinal = (*CompoundPathEntry).PathEntry.Ordinal;
+                (*FcbIndex(ParentFcb)).ChildPathTableOffset = (*CompoundPathEntry).PathEntry.PathTableOffset;
+                (*FcbIndex(ParentFcb)).ChildOrdinal = (*CompoundPathEntry).PathEntry.Ordinal;
 
                 CdUnlockFcb(IrpContext, ParentFcb);
 
@@ -184,7 +196,7 @@ pub unsafe extern "C" fn CdFindPathEntry(
             CdUpdatePathEntryName(
                 IrpContext,
                 core::ptr::addr_of_mut!((*CompoundPathEntry).PathEntry),
-                IgnoreCase,
+                IgnoreCase as i32,
             );
 
             if CdIsNameInExpression(
@@ -224,19 +236,21 @@ pub unsafe extern "C" fn CdMapPathTableBlock(
     mut BaseOffset: i64,
     PathContext: *mut PATH_ENUM_CONTEXT,
 ) {
-    // local constants (typical values)
+    // local constants. VACB_MAPPING_GRANULARITY = 0x40000 (cctypes.h).
+    //   VACB_MAPPING_MASK       = VACB_MAPPING_GRANULARITY - 1          (cdstruc.h)
+    //   LAST_VACB_SECTOR_OFFSET = VACB_MAPPING_GRANULARITY - SECTOR_SIZE (cdstruc.h)
     const SECTOR_SIZE: u32 = 2048;
-    const VACB_MAPPING_MASK: u32 = 0x7FFFF;
-    const LAST_VACB_SECTOR_OFFSET: u32 = 0x7F800;
-    const CdPagedPool: POOL_TYPE = 1; // PagedPool
-    const TAG_SPANNING_PATH_TABLE: u32 = 0x5350414E; // 'SPAN'
+    const VACB_MAPPING_MASK: u32 = 0x40000 - 1;          // 0x3FFFF
+    const LAST_VACB_SECTOR_OFFSET: u32 = 0x40000 - SECTOR_SIZE; // 0x3F800
+    let CdPagedPool = crate::glue::CdPagedPool;
+    const TAG_SPANNING_PATH_TABLE: u32 = 0x70736443; // 'psdC'  (cdprocs.h)
 
     // PAGED_CODE(); // no‑op
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    let _ = IrpContext; // UNREFERENCED_PARAMETER
 
     let mut CurrentLength: u32 = 2 * SECTOR_SIZE;
 
-    let delta: i64 = (*Fcb).FileSize.QuadPart - BaseOffset;
+    let delta: i64 = (*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset;
     let delta_u32: u32 = delta as u32;
     if CurrentLength >= delta_u32 {
         CurrentLength = delta_u32;
@@ -264,8 +278,8 @@ pub unsafe extern "C" fn CdMapPathTableBlock(
 
             let mut Sector: *mut core::ffi::c_void = core::ptr::null_mut();
             CcMapData(
-                (*Fcb).FileObject,
-                &mut BaseOffset as *mut i64 as *mut i64, // PLARGE_INTEGER
+                (*FcbIndex(Fcb)).FileObject,
+                &mut BaseOffset as *mut i64 as *mut _LARGE_INTEGER, // PLARGE_INTEGER
                 SectorSize,
                 1, // TRUE
                 &mut (*PathContext).Bcb as *mut *mut core::ffi::c_void,
@@ -289,8 +303,8 @@ pub unsafe extern "C" fn CdMapPathTableBlock(
         }
 
         CcMapData(
-            (*Fcb).FileObject,
-            &mut BaseOffset as *mut i64 as *mut i64,
+            (*FcbIndex(Fcb)).FileObject,
+            &mut BaseOffset as *mut i64 as *mut _LARGE_INTEGER,
             CurrentLength,
             1,
             &mut (*PathContext).Bcb as *mut *mut core::ffi::c_void,
@@ -324,13 +338,16 @@ pub unsafe extern "C" fn CdUpdatePathEntryFromRawPathEntry(
         CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
     }
 
+    // MIN_RAW_PATH_ENTRY_LEN = FIELD_OFFSET( RAW_PATH_ENTRY, DirId ) + 1  (cd.h)
+    let min_raw_path_entry_len: u32 =
+        core::mem::offset_of!(RAW_PATH_ENTRY, DirId) as u32 + 1;
+
     if (*(PathContext)).LastDataBlock != 0 && VerifyBounds != 0 {
         RemainingDataLength = (*(PathContext)).DataLength - (*(PathContext)).DataOffset;
 
         if (RemainingDataLength as usize) < core::mem::size_of::<RAW_PATH_ENTRY>() {
-            let name_len = (*PathEntry).DirNameLen;
-            let min_entry = core::mem::size_of::<RAW_PATH_ENTRY>() - 1;
-            if (RemainingDataLength as usize) < min_entry || (RemainingDataLength as usize) < (name_len as usize + min_entry - 1) {
+            if RemainingDataLength < min_raw_path_entry_len
+                || RemainingDataLength < (CdRawPathIdLen(IrpContext, RawPathEntry) + min_raw_path_entry_len - 1) {
                 CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
             }
         }
@@ -346,12 +363,11 @@ pub unsafe extern "C" fn CdUpdatePathEntryFromRawPathEntry(
     (*PathEntry).DiskOffset += CdRawPathXar(IrpContext, RawPathEntry);
 
     CopyUchar2(
-        core::ptr::addr_of_mut!((*PathEntry).ParentOrdinal),
+        core::ptr::addr_of_mut!((*PathEntry).ParentOrdinal) as *mut u16,
         core::ptr::addr_of!((*RawPathEntry).ParentNum),
     );
 
-    let min_entry = core::mem::size_of::<RAW_PATH_ENTRY>() - 1;
-    (*PathEntry).PathEntryLength = (*PathEntry).DirNameLen + min_entry - 1;
+    (*PathEntry).PathEntryLength = (*PathEntry).DirNameLen + min_raw_path_entry_len - 1;
     (*PathEntry).PathEntryLength = WordAlign((*PathEntry).PathEntryLength);
 
     (*PathEntry).DirName = core::ptr::addr_of!((*RawPathEntry).DirId) as *mut i8;
@@ -365,18 +381,18 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     IgnoreCase: i32,
 ) {
     let mut Length: u32;
-    let mut Status: i32;
+    let Status: i32;
 
     PAGED_CODE();
 
     // Check for self entry (length 1 and first byte zero)
     if (*PathEntry).DirName.read() == 0 && (*PathEntry).DirNameLen == 1 {
         // Ensure no allocated buffer
-        NT_ASSERT(((*PathEntry).Flags & 0x1) == 0); // PATH_ENTRY_FLAG_ALLOC_BUFFER
+        NT_ASSERT(((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0);
 
         (*PathEntry).CdDirName.FileName = CdUnicodeDirectoryNames[0];
         (*PathEntry).CdDirName.VersionString.Length = 0;
-        (*PathEntry).CdCaseDirName = (*PathEntry).CdDirName;
+        (*PathEntry).CdCaseDirName = core::ptr::read(&(*PathEntry).CdDirName as *const CD_NAME);
         return;
     }
 
@@ -387,42 +403,42 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     }
 
     // If not Joliet disk, convert length to bytes (WCHAR size = 2)
-    if ((*IrpContext).Vcb.VcbState & 0x2) == 0 { // VCB_STATE_JOLIET
+    if ((*(*IrpContext).Vcb).VcbState & VCB_STATE_JOLIET) == 0 {
         Length *= core::mem::size_of::<u16>() as u32;
     }
 
     // Decide whether to use embedded buffer or allocate
-    let namebuffer_size = core::mem::size_of_val(core::ptr::addr_of!((*PathEntry).NameBuffer)) as u32;
-    if ((*PathEntry).Flags & 0x1) == 0 // PATH_ENTRY_FLAG_ALLOC_BUFFER
+    let namebuffer_size = core::mem::size_of_val(&(*PathEntry).NameBuffer) as u32;
+    if ((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0
         && Length <= namebuffer_size
     {
         (*PathEntry).CdDirName.FileName.MaximumLength = namebuffer_size as u16;
         (*PathEntry).CdDirName.FileName.Buffer = core::ptr::addr_of_mut!((*PathEntry).NameBuffer) as *mut u16;
     } else {
         if Length > (*PathEntry).CdDirName.FileName.MaximumLength as u32 {
-            if ((*PathEntry).Flags & 0x1) != 0 { // PATH_ENTRY_FLAG_ALLOC_BUFFER
-                CdFreePool(&mut (*PathEntry).CdDirName.FileName.Buffer as *mut *mut u16 as *mut *mut u8);
-                (*PathEntry).Flags &= !0x1; // Clear PATH_ENTRY_FLAG_ALLOC_BUFFER
+            if ((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) != 0 {
+                CdFreePool(&mut (*PathEntry).CdDirName.FileName.Buffer as *mut *mut u16 as *mut *mut core::ffi::c_void);
+                (*PathEntry).Flags &= !PATH_ENTRY_FLAG_ALLOC_BUFFER;
             }
 
             (*PathEntry).CdDirName.FileName.Buffer = FsRtlAllocatePoolWithTag(
-                1, // CdPagedPool
+                crate::glue::CdPagedPool,
                 Length,
-                0x454E7450, // TAG_PATH_ENTRY_NAME
+                0x6e506443, // TAG_PATH_ENTRY_NAME 'nPdC' (cdprocs.h)
             ) as *mut u16;
 
-            (*PathEntry).Flags |= 0x1; // Set PATH_ENTRY_FLAG_ALLOC_BUFFER
+            (*PathEntry).Flags |= PATH_ENTRY_FLAG_ALLOC_BUFFER;
             (*PathEntry).CdDirName.FileName.MaximumLength = Length as u16;
         }
     }
 
     // Convert the name
-    if ((*IrpContext).Vcb.VcbState & 0x2) == 0 { // VCB_STATE_JOLIET
+    if ((*(*IrpContext).Vcb).VcbState & VCB_STATE_JOLIET) == 0 {
         Status = RtlOemToUnicodeN(
             (*PathEntry).CdDirName.FileName.Buffer,
             (*PathEntry).CdDirName.FileName.MaximumLength as u32,
             core::ptr::addr_of_mut!(Length),
-            (*PathEntry).DirName,
+            (*PathEntry).DirName as *const i8,
             (*PathEntry).DirNameLen,
         );
         NT_ASSERT(Status == 0); // STATUS_SUCCESS
@@ -431,7 +447,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     } else {
         CdConvertBigToLittleEndian(
             IrpContext,
-            (*PathEntry).DirName,
+            (*PathEntry).DirName as *const u8,
             (*PathEntry).DirNameLen,
             (*PathEntry).CdDirName.FileName.Buffer as *mut u8,
         );
@@ -465,7 +481,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
             core::ptr::addr_of_mut!((*PathEntry).CdCaseDirName),
         );
     } else {
-        (*PathEntry).CdCaseDirName = (*PathEntry).CdDirName;
+        (*PathEntry).CdCaseDirName = core::ptr::read(&(*PathEntry).CdDirName as *const CD_NAME);
     }
 }
 

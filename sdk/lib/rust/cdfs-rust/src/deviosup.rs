@@ -139,7 +139,7 @@ const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000002;
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0;
 const VCB_STATE_AUDIO_DISK: u32 = 0;
 const NotificationEvent: u32 = 1;
-const STATUS_CANT_WAIT: NTSTATUS = 0xC0002001;
+const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // real value (was fabricated 0xC0002001)
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 #[no_mangle]
 pub unsafe extern "C" fn CdLbnToMmSsFf(mut Blocks: u32, Msf: *mut u8) {
@@ -881,7 +881,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
             debug_assert!(SafeNodeType(Fcb) != 0x1234); // CDFS_NTC_FCB_INDEX
 
             if ((*IrpContext).Flags & 0x1) == 0 { // IRP_CONTEXT_FLAG_WAIT
-                CdRaiseStatus(IrpContext, 0xC000009A); // STATUS_CANT_WAIT
+                CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
             }
 
             (*ThisIoRun).TransferBufferOffset = SectorOffset(DiskOffset as u32) as u32;

@@ -7,7 +7,18 @@ use core::ffi::c_void;
 use crate::types::{FCB, IRP_CONTEXT, PIRP_CONTEXT, VCB, VCB_STATE_DISMOUNTED, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbDismountInProgress as VcbDismountInProgress, _VCB_CONDITION_VcbInvalid as VcbInvalid, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::glue::{CDFS_BUG_CHECK_VERFYSUP, FO_CLEANUP_COMPLETE, IO_TYPE_VPB, IRP_MN_COMPLETE, IRP_PAGING_IO, STATUS_FILE_CLOSED, STATUS_FILE_INVALID, STATUS_VERIFY_REQUIRED, STATUS_VOLUME_DISMOUNTED, STATUS_WRONG_VOLUME, VPB_LOCKED, VPB_MOUNTED, VPB_REMOVE_PENDING};
+use crate::glue::{CDFS_BUG_CHECK_VERFYSUP, CDFS_RESIDUAL_REFERENCE, FO_CLEANUP_COMPLETE, IO_TYPE_VPB, IRP_MN_COMPLETE, IRP_PAGING_IO, STATUS_FILE_CLOSED, STATUS_FILE_INVALID, STATUS_VERIFY_REQUIRED, STATUS_VOLUME_DISMOUNTED, STATUS_WRONG_VOLUME, VPB_LOCKED, VPB_MOUNTED, VPB_REMOVE_PENDING};
+use crate::types::VCB_STATE_VPB_NOT_ON_DEVICE;
+
+// CDFS_RESIDUAL_USER_REFERENCE: cddata.h #define (3)
+const CDFS_RESIDUAL_USER_REFERENCE: i32 = 3;
+// IO_REMOUNT: xdk/iotypes.h #define (0x1)
+const IO_REMOUNT: u32 = 0x1;
+// IRP_MN_MOUNT_VOLUME / IRP_MN_VERIFY_VOLUME: xdk/iotypes.h (0x01 / 0x02)
+const IRP_MN_MOUNT_VOLUME: u8 = 0x01;
+const IRP_MN_VERIFY_VOLUME: u8 = 0x02;
+// IOCTL_CDROM_CHECK_VERIFY: ntddcdrm.h CTL_CODE(FILE_DEVICE_CD_ROM=2, 0x200, METHOD_BUFFERED=0, FILE_READ_ACCESS=1)
+const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 << 2) | 0u32;
 
 extern "C" {
     fn ASSERT_IRP_CONTEXT(arg: *mut IRP_CONTEXT);
@@ -35,46 +46,35 @@ extern "C" {
     fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
     fn CdIsRawDevice(IrpContext: *mut IRP_CONTEXT, Status: i32) -> u8;
     fn _SEH2_TRY();
-    fn _SEH2_EXCEPT(filter: fn(/* ... */) -> i32);
+    fn _SEH2_EXCEPT(filter: i32);
     fn _SEH2_END();
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
     fn _SEH2_GetExceptionCode() -> i32;
-    fn CdExceptionFilter( _: *mut PIRP_CONTEXT, _: *mut core::ffi::c_void, ) -> i32;
-    fn CdProcessException( IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP, ExceptionCode: i32, ) -> NTSTATUS;
-    fn CdOperationIsDasdOpen(IrpContext: *mut PIRP_CONTEXT) -> i32;
-    fn CdAcquireVcbShared( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB, Force: i32, );
-    fn CdAcquireCdData(IrpContext: *mut PIRP_CONTEXT);
-    fn CdReleaseCdData(IrpContext: *mut PIRP_CONTEXT);
-    fn CdCompleteRequest( IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP, Status: NTSTATUS, );
-    fn CdFsdPostRequest( IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP, ) -> NTSTATUS;
-    fn CdNormalizeAndRaiseStatus( IrpContext: *mut PIRP_CONTEXT, Status: NTSTATUS, );
-    fn ASSERT_IRP(_: *mut PIRP);
+    fn CdExceptionFilter( _: PIRP_CONTEXT, _: *mut core::ffi::c_void, ) -> i32;
+    fn CdProcessException( IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32, ) -> NTSTATUS;
+    fn CdOperationIsDasdOpen(IrpContext: PIRP_CONTEXT) -> i32;
+    fn CdAcquireVcbShared( IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: i32, );
+    fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
+    fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
+    fn CdCompleteRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS, );
+    fn CdFsdPostRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
+    fn CdNormalizeAndRaiseStatus( IrpContext: PIRP_CONTEXT, Status: NTSTATUS, );
+    fn ASSERT_IRP(_: PIRP);
     fn IoVerifyVolume( DeviceToVerify: PDEVICE_OBJECT, AllowRawMount: i32, ) -> NTSTATUS;
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
-    fn IoSetHardErrorOrVerifyDevice( Irp: *mut PIRP, DeviceToVerify: PDEVICE_OBJECT, );
-    fn IoGetCurrentIrpStackLocation(Irp: *mut PIRP) -> *mut IO_STACK_LOCATION;
+    fn IoSetHardErrorOrVerifyDevice( Irp: PIRP, DeviceToVerify: PDEVICE_OBJECT, );
+    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> *mut IO_STACK_LOCATION;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_VERFYSUP;
 
-const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 0x0002; // TODO: verify the actual value
 #[no_mangle]
 pub unsafe extern "C" fn CdPerformVerify(
-    IrpContext: *mut PIRP_CONTEXT,
-    Irp: *mut PIRP,
+    mut IrpContext: PIRP_CONTEXT,
+    mut Irp: PIRP,
     DeviceToVerify: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    // Declare externs for SEH macros and other unknown functions/constants
-
-    // Constants likely defined by the codebase
-    const VcbMounted: u32 = 0;      // placeholder
-    const VcbNotMounted: u32 = 1;   // placeholder
-    const VcbInvalid: u32 = 2;      // placeholder
-    const VcbDismountInProgress: u32 = 3; // placeholder
-    const CDFS_RESIDUAL_REFERENCE: u32 = 0; // placeholder
-    const IO_REMOUNT: u32 = 0;      // placeholder
-
     let mut Vcb: *mut VCB;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: *mut IO_STACK_LOCATION;
@@ -84,8 +84,8 @@ pub unsafe extern "C" fn CdPerformVerify(
 
     // Early return if this is a mount/verify FSCTL
     if ((*IrpContext).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL)
-        && (((*IrpContext).MinorFunction == 0) /*IRP_MN_MOUNT_VOLUME*/ // placeholder
-            || ((*IrpContext).MinorFunction == 1)) /* IRP_MN_VERIFY_VOLUME */
+        && (((*IrpContext).MinorFunction == IRP_MN_MOUNT_VOLUME)
+            || ((*IrpContext).MinorFunction == IRP_MN_VERIFY_VOLUME))
     {
         return CdFsdPostRequest(IrpContext, Irp);
     }
@@ -94,13 +94,10 @@ pub unsafe extern "C" fn CdPerformVerify(
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     // CONTAINING_RECORD: cast to VOLUME_DEVICE_OBJECT* then take &Vcb
-    Vcb = core::ptr::addr_of_mut!(
-        (*((*IrpSp).DeviceObject as *mut u8)
-            .sub(core::mem::offset_of!(VOLUME_DEVICE_OBJECT, DeviceObject))
-            as *mut VOLUME_DEVICE_OBJECT)
-    )
-    .Vcb
-        as *mut VCB;
+    let Vdo: *mut VOLUME_DEVICE_OBJECT = ((*IrpSp).DeviceObject as *mut u8)
+        .sub(core::mem::offset_of!(VOLUME_DEVICE_OBJECT, DeviceObject))
+        as *mut VOLUME_DEVICE_OBJECT;
+    Vcb = core::ptr::addr_of_mut!((*Vdo).Vcb);
 
     // SEH_TRY block: we approximate with a guarded region via macros/functions
     _SEH2_TRY();
@@ -124,7 +121,7 @@ pub unsafe extern "C" fn CdPerformVerify(
     if (((*Vcb).VcbCondition == VcbNotMounted)
         || ((*Vcb).VcbCondition == VcbInvalid)
         || ((*Vcb).VcbCondition == VcbDismountInProgress))
-        && ((*Vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE)
+        && ((*Vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE as i32)
     {
         CdReleaseVcb(IrpContext, Vcb);
         CdAcquireCdData(IrpContext);
@@ -139,7 +136,7 @@ pub unsafe extern "C" fn CdPerformVerify(
         && (*(*IrpSp).FileObject).RelatedFileObject.is_null()
         && (Status == STATUS_SUCCESS || Status == STATUS_WRONG_VOLUME)
     {
-        (*(*Irp).IoStatus).Information = IO_REMOUNT;
+        (*Irp).IoStatus.Information = IO_REMOUNT as _;
         CdCompleteRequest(IrpContext, Irp, STATUS_REPARSE);
         Status = STATUS_REPARSE;
         Irp = core::ptr::null_mut();
@@ -194,11 +191,11 @@ pub unsafe extern "C" fn CdCheckForDismount(
 
         CdLockVcb(IrpContext, Vcb);
 
-        if (*Vcb).VcbCondition != 0 /* VcbDismountInProgress */ {
-            if (*Vcb).VcbUserReference <= 0 /* CDFS_RESIDUAL_USER_REFERENCE */ || Force != 0 {
+        if (*Vcb).VcbCondition != VcbDismountInProgress {
+            if (*Vcb).VcbUserReference <= CDFS_RESIDUAL_USER_REFERENCE || Force != 0 {
                 CdUnlockVcb(IrpContext, Vcb);
                 UnlockVcb = 0;
-                VcbPresent = CdDismountVcb(IrpContext, Vcb);
+                VcbPresent = CdDismountVcb(IrpContext, Vcb) as i32;
             }
         } else if (*Vcb).VcbReference == 0 {
             IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
@@ -221,7 +218,7 @@ pub unsafe extern "C" fn CdCheckForDismount(
         if VcbPresent != 0 {
             CdReleaseVcb(IrpContext, Vcb);
         } else {
-            _Analysis_assume_lock_not_held_((*Vcb).VcbResource as *mut core::ffi::c_void);
+            _Analysis_assume_lock_not_held_(core::ptr::addr_of_mut!((*Vcb).VcbResource) as *mut core::ffi::c_void);
         }
 
         VcbPresent
@@ -230,7 +227,7 @@ pub unsafe extern "C" fn CdCheckForDismount(
 #[no_mangle]
 pub unsafe extern "C" fn CdMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
     let mut marked: i32 = 0;
-    let mut saved_irql: KIRQL;
+    let mut saved_irql: KIRQL = 0;
 
     IoAcquireVpbSpinLock(&raw mut saved_irql);
 
@@ -305,7 +302,7 @@ pub unsafe extern "C" fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB
                     if FlagOn((*Vcb).VcbState, VCB_STATE_VPB_NOT_ON_DEVICE) == 0
                         && DevMarkedForVerify == 0
                     {
-                        DevMarkedForVerify = CdMarkDevForVerifyIfVcbMounted(Vcb);
+                        DevMarkedForVerify = CdMarkDevForVerifyIfVcbMounted(Vcb) as u8;
                     }
                     ForceVerify = 1;
                     // NOTE that we no longer update the media change count here. We
@@ -393,7 +390,7 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
                 || (*IrpSp).MajorFunction == IRP_MJ_CLOSE
                 || (*IrpSp).MajorFunction == IRP_MJ_QUERY_INFORMATION
                 || ((*IrpSp).MajorFunction == IRP_MJ_READ
-                    && ((*IrpSp).MinorFunction & IRP_MN_COMPLETE) != 0)
+                    && ((*IrpSp).MinorFunction & IRP_MN_COMPLETE as u8) != 0)
             {
                 // NOTHING
                 {}
@@ -442,7 +439,6 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
 
     return 1;
 }
-#[no_mangle] #[no_mangle]
 #[no_mangle] pub unsafe extern "C" fn CdDismountVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
@@ -501,11 +497,11 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
         if FinalReference == 0 {
             NT_ASSERT( (!(*Vcb).SwapVpb.is_null()) as i32 );
 
-            (*(*Vcb).SwapVpb).Type = IO_TYPE_VPB;
-            (*(*Vcb).SwapVpb).Size = core::mem::size_of::<VPB>();
+            (*(*Vcb).SwapVpb).Type = IO_TYPE_VPB as i16;
+            (*(*Vcb).SwapVpb).Size = core::mem::size_of::<VPB>() as i16;
             (*(*Vcb).SwapVpb).RealDevice = (*OldVpb).RealDevice;
             (*(*(*Vcb).SwapVpb).RealDevice).Vpb = (*Vcb).SwapVpb;
-            (*(*Vcb).SwapVpb).Flags = FlagOn( (*OldVpb).Flags, VPB_REMOVE_PENDING );
+            (*(*Vcb).SwapVpb).Flags = FlagOn( (*OldVpb).Flags as u32, VPB_REMOVE_PENDING ) as u16;
 
             IoReleaseVpbSpinLock(SavedIrql);
 
@@ -515,8 +511,9 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
         } else {
             (*OldVpb).ReferenceCount -= 1;
             (*OldVpb).DeviceObject = core::ptr::null_mut();
-            ClearFlag(core::ptr::addr_of_mut!((*OldVpb).Flags), VPB_MOUNTED);
-            ClearFlag(core::ptr::addr_of_mut!((*OldVpb).Flags), VPB_LOCKED);
+            // ClearFlag DDK macro: (Flags) &= ~(SingleFlag). Vpb.Flags is USHORT (u16).
+            (*OldVpb).Flags &= !(VPB_MOUNTED as u16);
+            (*OldVpb).Flags &= !(VPB_LOCKED as u16);
 
             (*Vcb).Vpb = core::ptr::null_mut();
 

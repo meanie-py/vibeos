@@ -5,31 +5,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ps::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, FAST_IO_CHECK_IF_POSSIBLE, FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PVPB, PsGetCurrentThread};
+use ntkrnl_sys::ddk::{FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PVPB, PsGetCurrentThread, IRP, _UNICODE_STRING};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, PIRP_CONTEXT, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
-use ntkrnl_sys::ddk::{IRP, PsGetCurrentThread, _UNICODE_STRING};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected};
+use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, PIRP_CONTEXT, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected, FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced, ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag};
 use crate::glue::{CDFS_BUG_CHECK_CDDATA, CDFS_NTC_IRP_CONTEXT, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
-use crate::types::{PIRP_CONTEXT, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
-use ntkrnl_sys::ddk::{PsGetCurrentThread};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced};
-use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
-use crate::types::{PIRP_CONTEXT};
-use ntkrnl_sys::ddk::{PsGetCurrentThread};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag, IoCompleteRequest};
-use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
-use crate::types::{PIRP_CONTEXT};
-use ntkrnl_sys::ddk::{PsGetCurrentThread};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{IoCompleteRequest};
-use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
-use crate::types::{PIRP_CONTEXT};
-use ntkrnl_sys::ddk::{PsGetCurrentThread};
 
 extern "system" {
     fn AssertVerifyDevice(IrpContext: *mut IRP_CONTEXT, Status: i32);
@@ -45,22 +26,22 @@ extern "system" {
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut *mut FCB) -> TYPE_OF_OPEN;
     fn ASSERT_OPTIONAL_IRP(Irp: ntkrnl_sys::ddk::PIRP);
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
-    fn CdCommonCleanup(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonClose(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonCreate(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonDevControl(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonDirControl(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonFsControl(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonLockControl(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonPnp(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonQueryInfo(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonQueryVolInfo(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonRead(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonSetInfo(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonShutdown(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCommonWrite(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCompleteMdl(IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
-    fn CdCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, Wait: u8) -> ntkrnl_sys::ddk::PIRP_CONTEXT;
+    fn CdCommonCleanup(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonClose(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonCreate(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonDevControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonDirControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonFsControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonLockControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonPnp(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonQueryInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonQueryVolInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonRead(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonSetInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonShutdown(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCommonWrite(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCompleteMdl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
+    fn CdCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, Wait: u8) -> crate::types::PIRP_CONTEXT;
     fn SafeNodeType(Ptr: *mut core::ffi::c_void) -> u32;
     fn __try_except( try_fn: unsafe extern "C" fn(*mut core::ffi::c_void) -> i32, filter_fn: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void) -> i32, handler_fn: unsafe extern "C" fn(*mut core::ffi::c_void, u32) -> i32, context: *mut core::ffi::c_void, ) -> i32;
 }
@@ -77,13 +58,13 @@ pub static mut CdInterestingExceptionCodes: [i32; 10] = [
 ];
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CDDATA;
 
-pub static mut CdData: CD_DATA = CD_DATA::default();
-pub static mut CdFastIoDispatch: FAST_IO_DISPATCH = FAST_IO_DISPATCH::default();
+pub static mut CdData: CD_DATA = unsafe { core::mem::zeroed() };
+pub static mut CdFastIoDispatch: FAST_IO_DISPATCH = unsafe { core::mem::zeroed() };
 
 pub static mut CdUnicodeSelfArray: [u16; 1] = [0x002Eu16];
 pub static mut CdUnicodeParentArray: [u16; 2] = [0x002Eu16, 0x002Eu16];
 
-pub static CdUnicodeDirectoryNames: [_UNICODE_STRING; 2] = [
+pub static mut CdUnicodeDirectoryNames: [_UNICODE_STRING; 2] = [
     _UNICODE_STRING { Length: 2, MaximumLength: 2, Buffer: core::ptr::addr_of_mut!(CdUnicodeSelfArray) as *mut u16 },
     _UNICODE_STRING { Length: 4, MaximumLength: 4, Buffer: core::ptr::addr_of_mut!(CdUnicodeParentArray) as *mut u16 },
 ];
@@ -108,7 +89,7 @@ pub const CdAudioDirentsPerSector: u32 = SECTOR_SIZE / CdAudioDirentSize;
 pub const CdAudioSystemUseOffset: u32 = (core::mem::offset_of!(RAW_DIRENT, FileId)
     + core::mem::size_of::<[i8; 11]>()) as u32;
 
-pub static CdJolietEscape: [*const i8; 3] = [
+pub static mut CdJolietEscape: [*const i8; 3] = [
     b"%/@\0".as_ptr() as *const i8,
     b"%/C\0".as_ptr() as *const i8,
     b"%/E\0".as_ptr() as *const i8,
@@ -156,10 +137,24 @@ pub static mut CdXAFileHeader: [i32; 11] = [
     -44i32,
 ];
 
-pub static mut CdTelemetryData: CDFS_TELEMETRY_DATA_CONTEXT = CDFS_TELEMETRY_DATA_CONTEXT::default();
+// C source: `CDFS_TELEMETRY_DATA_CONTEXT CdTelemetryData;` is guarded by
+// `#ifdef CDFS_TELEMETRY_DATA`, which is NOT defined in the ReactOS build, so
+// the symbol is compiled out. Gated identically here.
+#[cfg(feature = "cdfs_telemetry_data")]
+pub static mut CdTelemetryData: CDFS_TELEMETRY_DATA_CONTEXT = unsafe { core::mem::zeroed() };
 
 const IRP_INPUT_OPERATION: u32 = 0x4;
 const IO_CD_ROM_INCREMENT: i8 = 1;
+
+// IRP_MJ_* major codes not re-exported by ntkrnl_sys::constants on this target.
+// Values verified against sdk/include/xdk/iotypes.h. Typed UCHAR to match the
+// IRP_CONTEXT.MajorFunction field so the match arms below are refutable (without
+// these, an undefined name in a match arm silently becomes a catch-all binding).
+const IRP_MJ_QUERY_VOLUME_INFORMATION: u8 = 0x0a;
+const IRP_MJ_DIRECTORY_CONTROL: u8 = 0x0c;
+const IRP_MJ_DEVICE_CONTROL: u8 = 0x0e;
+const IRP_MJ_SHUTDOWN: u8 = 0x10;
+const IRP_MJ_PNP: u8 = 0x1b;
 
 #[no_mangle]
 pub unsafe extern "system" fn CdFsdDispatch(
@@ -168,10 +163,10 @@ pub unsafe extern "system" fn CdFsdDispatch(
 ) -> i32 {
     struct CdFsdDispatchTryContext {
         ThreadContext: THREAD_CONTEXT,
-        IrpContext: ntkrnl_sys::ddk::PIRP_CONTEXT,
+        IrpContext: crate::types::PIRP_CONTEXT,
         Wait: u8,
         Status: i32,
-        SaveIrql: ntkrnl_sys::ke::KIRQL,
+        SaveIrql: ntkrnl_sys::base::KIRQL,
         PreviousTopLevel: *mut core::ffi::c_void,
         Irp: ntkrnl_sys::ddk::PIRP,
         DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT,
@@ -190,11 +185,11 @@ pub unsafe extern "system" fn CdFsdDispatch(
                 ctx.IrpContext = CdCreateIrpContext(ctx.Irp, ctx.Wait);
                 CdSetThreadContext(ctx.IrpContext, &mut ctx.ThreadContext as *mut THREAD_CONTEXT);
                 NT_ASSERT(
-                    (!CdTestTopLevel || SafeNodeType((*ctx.IrpContext).TopLevel as *mut core::ffi::c_void) == CDFS_NTC_IRP_CONTEXT) as u8
+                    (CdTestTopLevel == 0 || SafeNodeType((*ctx.IrpContext).TopLevel as *mut core::ffi::c_void) == CDFS_NTC_IRP_CONTEXT) as i32
                 );
             } else {
                 SetFlag(&mut (*ctx.IrpContext).Flags as *mut u32, IRP_CONTEXT_FLAG_MORE_PROCESSING);
-                CdCleanupIrpContext(ctx.IrpContext, 0);
+                CdCleanupIrpContext(ctx.IrpContext as *mut core::ffi::c_void, 0);
             }
 
             let major = (*ctx.IrpContext).MajorFunction;
@@ -202,7 +197,7 @@ pub unsafe extern "system" fn CdFsdDispatch(
                 IRP_MJ_CREATE => CdCommonCreate(ctx.IrpContext, ctx.Irp),
                 IRP_MJ_CLOSE => CdCommonClose(ctx.IrpContext, ctx.Irp),
                 IRP_MJ_READ => {
-                    if FlagOn((*ctx.IrpContext).MinorFunction, IRP_MN_COMPLETE) != 0 {
+                    if FlagOn((*ctx.IrpContext).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
                         CdCompleteMdl(ctx.IrpContext, ctx.Irp)
                     } else {
                         CdCommonRead(ctx.IrpContext, ctx.Irp)
@@ -221,11 +216,11 @@ pub unsafe extern "system" fn CdFsdDispatch(
                 IRP_MJ_SHUTDOWN => CdCommonShutdown(ctx.IrpContext, ctx.Irp),
                 _ => {
                     let status = STATUS_INVALID_DEVICE_REQUEST;
-                    CdCompleteRequest(ctx.IrpContext, ctx.Irp, status);
+                    CdCompleteRequest(ctx.IrpContext as *mut core::ffi::c_void, ctx.Irp, status);
                     status
                 }
             };
-            ctx.__bindgen_anon_1.Status = status;
+            ctx.Status = status;
             if status != STATUS_CANT_WAIT {
                 return status;
             }
@@ -234,13 +229,13 @@ pub unsafe extern "system" fn CdFsdDispatch(
 
     unsafe extern "C" fn filter_fn(context: *mut core::ffi::c_void, exception_info: *mut core::ffi::c_void) -> i32 {
         let ctx = &mut *(context as *mut CdFsdDispatchTryContext);
-        CdExceptionFilter(ctx.IrpContext, exception_info)
+        CdExceptionFilter(ctx.IrpContext, exception_info as PEXCEPTION_POINTERS)
     }
 
     unsafe extern "C" fn handler_fn(context: *mut core::ffi::c_void, exception_code: u32) -> i32 {
         let ctx = &mut *(context as *mut CdFsdDispatchTryContext);
-        let status = CdProcessException(ctx.IrpContext, ctx.Irp, exception_code);
-        ctx.__bindgen_anon_1.Status = status;
+        let status = CdProcessException(ctx.IrpContext, ctx.Irp, exception_code as i32);
+        ctx.Status = status;
         status
     }
 
@@ -274,13 +269,14 @@ pub unsafe extern "system" fn CdFsdDispatch(
         }
     }
 
-    NT_ASSERT((!CdTestTopLevel || (try_ctx.PreviousTopLevel == IoGetTopLevelIrp() as *mut core::ffi::c_void)) as u8);
+    NT_ASSERT((CdTestTopLevel == 0 || (try_ctx.PreviousTopLevel == IoGetTopLevelIrp() as *mut core::ffi::c_void)) as i32);
     FsRtlExitFileSystem();
-    NT_ASSERT((try_ctx.SaveIrql == ntkrnl_sys::ke::KeGetCurrentIrql()) as u8);
+    NT_ASSERT((try_ctx.SaveIrql == ntkrnl_sys::ke::KeGetCurrentIrql()) as i32);
     final_status
 }
 
-const STATUS_UNEXPECTED_IO_ERROR: i32 = 0xC00000FF;
+// ntstatus.h: STATUS_UNEXPECTED_IO_ERROR = 0xC00000E9 (grind fabricated 0xC00000FF).
+const STATUS_UNEXPECTED_IO_ERROR: i32 = 0xC00000E9u32 as i32;
 #[no_mangle]
 pub unsafe extern "C" fn CdRaiseStatusEx(
     IrpContext: *mut IRP_CONTEXT,
@@ -294,7 +290,7 @@ pub unsafe extern "C" fn CdRaiseStatusEx(
     if CdTraceRaises != 0 {
         ntkrnl_sys::driver_ddk::DbgPrint(
             b"%p CdRaiseStatusEx 0x%x @ fid %d, line %d\n\0".as_ptr() as *const i8,
-            ntkrnl_sys::ps::PsGetCurrentThread() as *mut core::ffi::c_void,
+            ntkrnl_sys::ddk::PsGetCurrentThread() as *mut core::ffi::c_void,
             Status,
             FileId,
             Line,
@@ -362,7 +358,7 @@ pub unsafe extern "C" fn CdExceptionFilter(
     }
 
     if !IrpContext.is_null() {
-        if (*IrpContext).ExceptionStatus == ntkrnl_sys::constants::STATUS_SUCCESS {
+        if (*IrpContext).ExceptionStatus == ntkrnl_sys::base::STATUS_SUCCESS {
             (*IrpContext).ExceptionStatus = ExceptionCode;
         } else {
             TestStatus = 0; // FALSE
@@ -389,7 +385,7 @@ pub unsafe extern "C" fn CdProcessException(
 ) -> ntkrnl_sys::base::NTSTATUS {
     let mut Device: ntkrnl_sys::ddk::PDEVICE_OBJECT = core::ptr::null_mut();
     let Vpb: ntkrnl_sys::ddk::PVPB;
-    let Thread: ntkrnl_sys::ddk::PETHREAD;
+    let mut Thread: ntkrnl_sys::ddk::PETHREAD;
 
     ASSERT_OPTIONAL_IRP_CONTEXT(IrpContext);
     ASSERT_IRP(Irp);
@@ -401,61 +397,43 @@ pub unsafe extern "C" fn CdProcessException(
 
     ExceptionCode = (*IrpContext).ExceptionStatus;
 
-    // _SEH2_TRY block approximated with catch_unwind
-    let exception_code = ExceptionCode;
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut code = exception_code;
-        {
-            if code == ntkrnl_sys::base::STATUS_CANT_WAIT {
-                if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST) != 0 {
-                    code = CdFsdPostRequest(IrpContext, Irp);
-                }
-            } else if code == ntkrnl_sys::base::STATUS_VERIFY_REQUIRED
-                && FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0
-                && KeAreAllApcsDisabled() != 0
-            {
-                code = CdFsdPostRequest(IrpContext, Irp);
-            }
+    // _SEH2_TRY / _SEH2_EXCEPT( CdExceptionFilter(...) ).  Under DUMMY_PSEH the
+    // _SEH2_EXCEPT handler is dead code, so the protected body runs straight
+    // through (children of CdFsdPostRequest can raise, which propagates).
+    if ExceptionCode == STATUS_CANT_WAIT {
+        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST) != 0 {
+            ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
         }
-        code
-    }));
-    let mut ExceptionCode_local = match result {
-        Ok(code) => code,
-        Err(_e) => {
-            // Caught an exception; apply filter with null exception info (SEH info not available)
-            if CdExceptionFilter(IrpContext, core::ptr::null_mut()) != 0 {
-                // If filter returns EXCEPTION_EXECUTE_HANDLER, get exception code (not available)
-                ntkrnl_sys::constants::STATUS_INVALID_PARAMETER
-            } else {
-                ntkrnl_sys::constants::STATUS_INVALID_PARAMETER
-            }
-        }
-    };
-    ExceptionCode = ExceptionCode_local;
+    } else if ExceptionCode == STATUS_VERIFY_REQUIRED
+        && FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0
+        && KeAreAllApcsDisabled() != 0
+    {
+        ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
+    }
 
-    if ExceptionCode == ntkrnl_sys::constants::STATUS_PENDING
-        || ExceptionCode == ntkrnl_sys::base::STATUS_CANT_WAIT {
+    if ExceptionCode == STATUS_PENDING
+        || ExceptionCode == STATUS_CANT_WAIT {
         return ExceptionCode;
     }
 
-    ClearFlag((*IrpContext).Flags, IRP_CONTEXT_FLAG_MORE_PROCESSING);
+    ClearFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_MORE_PROCESSING);
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) == 0 {
-        CdCompleteRequest(IrpContext, Irp, ExceptionCode);
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, ExceptionCode);
         return ExceptionCode;
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = ExceptionCode;
 
     if IoIsErrorUserInduced(ExceptionCode) != 0 {
-        if ExceptionCode == ntkrnl_sys::constants::STATUS_VERIFY_REQUIRED {
+        if ExceptionCode == STATUS_VERIFY_REQUIRED {
             Device = IoGetDeviceToVerify((*Irp).Tail.Overlay.Thread);
             IoSetDeviceToVerify((*Irp).Tail.Overlay.Thread, core::ptr::null_mut());
 
             if Device.is_null() {
                 Device = IoGetDeviceToVerify(PsGetCurrentThread());
                 IoSetDeviceToVerify(PsGetCurrentThread(), core::ptr::null_mut());
-                NT_ASSERT(!Device.is_null());
+                NT_ASSERT((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {
@@ -463,8 +441,8 @@ pub unsafe extern "C" fn CdProcessException(
             }
 
             if Device.is_null() {
-                ExceptionCode = ntkrnl_sys::constants::STATUS_DRIVER_INTERNAL_ERROR;
-                CdCompleteRequest(IrpContext, Irp, ExceptionCode);
+                ExceptionCode = STATUS_DRIVER_INTERNAL_ERROR;
+                CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, ExceptionCode);
                 return ExceptionCode;
             }
 
@@ -472,7 +450,7 @@ pub unsafe extern "C" fn CdProcessException(
         }
 
         if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_POPUPS) != 0 {
-            CdCompleteRequest(IrpContext, Irp, ExceptionCode);
+            CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, ExceptionCode);
             return ExceptionCode;
         } else {
             let file_object = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
@@ -488,7 +466,7 @@ pub unsafe extern "C" fn CdProcessException(
             if Device.is_null() {
                 Thread = PsGetCurrentThread();
                 Device = IoGetDeviceToVerify(Thread);
-                NT_ASSERT(!Device.is_null());
+                NT_ASSERT((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {
@@ -496,7 +474,7 @@ pub unsafe extern "C" fn CdProcessException(
             }
 
             if Device.is_null() {
-                CdCompleteRequest(IrpContext, Irp, ExceptionCode);
+                CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, ExceptionCode);
                 return ExceptionCode;
             }
 
@@ -505,12 +483,12 @@ pub unsafe extern "C" fn CdProcessException(
 
             IoSetDeviceToVerify(Thread, core::ptr::null_mut());
 
-            CdCompleteRequest(IrpContext, core::ptr::null_mut(), ntkrnl_sys::constants::STATUS_SUCCESS);
+            CdCompleteRequest(IrpContext as *mut core::ffi::c_void, core::ptr::null_mut(), ntkrnl_sys::base::STATUS_SUCCESS);
             return ntkrnl_sys::constants::STATUS_PENDING;
         }
     }
 
-    CdCompleteRequest(IrpContext, Irp, ExceptionCode);
+    CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, ExceptionCode);
     return ExceptionCode;
 }
 
@@ -536,7 +514,7 @@ pub unsafe extern "C" fn CdCompleteRequest(
 
         AssertVerifyDeviceIrp(Irp);
 
-        ntkrnl_sys::ddk::IoCompleteRequest(Irp, IO_CD_ROM_INCREMENT);
+        IoCompleteRequest(Irp, IO_CD_ROM_INCREMENT);
     }
 }
 #[no_mangle]
@@ -620,9 +598,9 @@ pub unsafe extern "C" fn CdFastIoCheckIfPossible(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> i32 {
-    let mut Fcb: *mut FCB;
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
     let TypeOfOpen: TYPE_OF_OPEN;
-    let mut LargeLength: LARGE_INTEGER;
+    let mut LargeLength: LARGE_INTEGER = core::mem::zeroed();
 
     // PAGED_CODE()
     if unsafe { KeGetCurrentIrql() } > APC_LEVEL {
@@ -639,14 +617,17 @@ pub unsafe extern "C" fn CdFastIoCheckIfPossible(
 
     LargeLength.QuadPart = Length as i64;
 
-    if ((*Fcb).FileLock.is_null()
+    // C: Fcb->FileLock — lives in the FCB_DATA arm of the FCB type union
+    // (bindgen collapsed __bindgen_anon_2 to an opaque blob; reinterpret it).
+    let FcbData = core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut crate::types::FCB_DATA;
+    if ((*FcbData).FileLock.is_null()
         || FsRtlFastCheckLockForRead(
-            (*Fcb).FileLock,
+            (*FcbData).FileLock,
             FileOffset,
             &mut LargeLength,
             LockKey,
             FileObject,
-            PsGetCurrentProcess(),
+            PsGetCurrentProcess() as *mut core::ffi::c_void,
         ) != 0)
     {
         return 1;

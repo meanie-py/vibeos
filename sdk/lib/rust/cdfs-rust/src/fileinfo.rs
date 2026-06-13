@@ -1,27 +1,53 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceSharedLite, ExReleaseResourceLite, FAST_IO_QUERY_BASIC_INFO, FAST_IO_QUERY_NETWORK_OPEN_INFO, FAST_IO_QUERY_STANDARD_INFO, FILE_ACCESS_INFORMATION, FILE_ALIGNMENT_INFORMATION, FILE_BASIC_INFORMATION, FILE_EA_INFORMATION, FILE_INTERNAL_INFORMATION, FILE_MODE_INFORMATION, FILE_NETWORK_OPEN_INFORMATION, FILE_POSITION_INFORMATION, FILE_STANDARD_INFORMATION, FileAllInformation, FileAlternateNameInformation, FileBasicInformation, FileEaInformation, FileInternalInformation, FileNameInformation, FileNetworkOpenInformation, FilePositionInformation, FileStandardInformation, PDEVICE_OBJECT, PFILE_ALL_INFORMATION, PFILE_BASIC_INFORMATION, PFILE_EA_INFORMATION, PFILE_INTERNAL_INFORMATION, PFILE_NAME_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_POSITION_INFORMATION, PFILE_STANDARD_INFORMATION, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PUNICODE_STRING};
-use core::ffi::c_void;
+use ntkrnl_sys::base::{NTSTATUS, BOOLEAN, ULONG, PULONG, LONGLONG, STATUS_SUCCESS};
+use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_NOT_FOUND};
+use ntkrnl_sys::rtl::RtlCopyMemory;
+use ntkrnl_sys::ddk::{ExAcquireResourceSharedLite, ExReleaseResourceLite, FILE_ACCESS_INFORMATION, FILE_ALIGNMENT_INFORMATION, FILE_BASIC_INFORMATION, FILE_EA_INFORMATION, FILE_INTERNAL_INFORMATION, FILE_MODE_INFORMATION, FILE_NETWORK_OPEN_INFORMATION, FILE_POSITION_INFORMATION, FILE_STANDARD_INFORMATION, LARGE_INTEGER, PDEVICE_OBJECT, PFILE_BASIC_INFORMATION, PFILE_INTERNAL_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_POSITION_INFORMATION, PFILE_STANDARD_INFORMATION, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP};
+use ntkrnl_sys::ddk::{
+    _FILE_INFORMATION_CLASS_FileAllInformation as FileAllInformation,
+    _FILE_INFORMATION_CLASS_FileAlternateNameInformation as FileAlternateNameInformation,
+    _FILE_INFORMATION_CLASS_FileBasicInformation as FileBasicInformation,
+    _FILE_INFORMATION_CLASS_FileEaInformation as FileEaInformation,
+    _FILE_INFORMATION_CLASS_FileInternalInformation as FileInternalInformation,
+    _FILE_INFORMATION_CLASS_FileNameInformation as FileNameInformation,
+    _FILE_INFORMATION_CLASS_FileNetworkOpenInformation as FileNetworkOpenInformation,
+    _FILE_INFORMATION_CLASS_FilePositionInformation as FilePositionInformation,
+    _FILE_INFORMATION_CLASS_FileStandardInformation as FileStandardInformation,
+};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, CCB_FLAG_OPEN_WITH_VERSION, COMPOUND_PATH_ENTRY, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FILE_ENUM_CONTEXT, FILE_ID, FILE_INFORMATION_CLASS, IRP_CONTEXT, PATH_ENTRY, PCCB, PFCB, PIRP_CONTEXT, TYPE_OF_OPEN};
-use ntkrnl_sys::ddk::{FILE_ALL_INFORMATION, FILE_NAME_INFORMATION, FILE_OBJECT, IO_STACK_LOCATION, _UNICODE_STRING};
+use crate::types::{CCB, CCB_FLAG_OPEN_BY_ID, CCB_FLAG_OPEN_WITH_VERSION, CD_NAME, COMPOUND_PATH_ENTRY, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_INDEX, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, PATH_ENTRY, PCCB, PFCB, PIRP_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+use ntkrnl_sys::ddk::{FILE_ALL_INFORMATION, FILE_NAME_INFORMATION, FILE_OBJECT, IO_STACK_LOCATION, _UNICODE_STRING, _FSRTL_ADVANCED_FCB_HEADER};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
-use crate::glue::{STATUS_DISK_CORRUPT_ERROR};
+use crate::glue::{STATUS_DISK_CORRUPT_ERROR, FILE_ATTRIBUTE_DIRECTORY};
+
+// FCB_STATE_INITIALIZED — cdstruc.h: (0x00000001)
+const FCB_STATE_INITIALIZED: ULONG = 0x00000001;
+// FO_NO_INTERMEDIATE_BUFFERING — iotypes.h: 0x00000008
+const FO_NO_INTERMEDIATE_BUFFERING: ULONG = 0x00000008;
+
+// Accessor for the unnamed FSRTL_ADVANCED_FCB_HEADER spliced into the FCB
+// (C: Fcb->AllocationSize / Fcb->FileSize / Fcb->Resource / Fcb->IsFastIoPossible).
+#[inline(always)]
+unsafe fn cd_fcb_header(Fcb: *mut FCB) -> *mut _FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_1) as *mut _FSRTL_ADVANCED_FCB_HEADER
+}
+// Accessor for the unnamed FCB_INDEX spliced into the FCB (C: Fcb->Ordinal etc.).
+#[inline(always)]
+unsafe fn cd_fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_INDEX
+}
 
 extern "system" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn PAGED_CODE();
-    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN return fn CdVerifyFcbOperation(arg: *const core::ffi::c_void, Fcb: PFCB) -> i32; // BOOLEAN fn FlagOn(Flags: u32, Flag: u32) -> i32; // BOOLEAN fn UNREFERENCED_PARAMETER(p: *const core::ffi::c_void);
+    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
     fn FlagOn(Flags: u32, Bit: u32) -> u8;
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
@@ -31,11 +57,11 @@ extern "system" {
     fn CdInitializeFileContext(IrpContext: *mut IRP_CONTEXT, Context: *mut FILE_ENUM_CONTEXT);
     fn CdLookupPathEntry( IrpContext: *mut IRP_CONTEXT, Offset: ULONG, Ordinal: ULONG, SomeFlag: BOOLEAN, Entry: *mut COMPOUND_PATH_ENTRY, );
     fn CdUpdatePathEntryName(IrpContext: *mut IRP_CONTEXT, PathEntry: *mut PATH_ENTRY, Flag: BOOLEAN);
-    fn CdFindDirectory( IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, Name: *mut _UNICODE_STRING, Flag: BOOLEAN, FileContext: *mut FILE_ENUM_CONTEXT, ) -> BOOLEAN;
+    fn CdFindDirectory( IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, Name: *mut CD_NAME, Flag: BOOLEAN, FileContext: *mut FILE_ENUM_CONTEXT, ) -> BOOLEAN;
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn CdInitializeDirContext(IrpContext: *mut IRP_CONTEXT, Context: *mut DIRENT_ENUM_CONTEXT);
     fn CdInitializeDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
-    fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Offset: DIRENT_OFFSET, Context: *mut DIRENT_ENUM_CONTEXT, );
+    fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Offset: ULONG, Context: *mut DIRENT_ENUM_CONTEXT, );
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Context: *mut DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
     fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Flag: BOOLEAN);
     fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> BOOLEAN;
@@ -45,42 +71,18 @@ extern "system" {
     fn CdCleanupCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
     fn CdCleanupFileContext(IrpContext: *mut IRP_CONTEXT, Context: *mut FILE_ENUM_CONTEXT);
     fn CdQueryFidPathTableOffset(FileId: FILE_ID) -> ULONG;
-    fn CdQueryFidDirentOffset(FileId: FILE_ID) -> DIRENT_OFFSET;
+    fn CdQueryFidDirentOffset(FileId: FILE_ID) -> ULONG;
     fn NT_ASSERT(cond: i32);
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = 0; // CDFS_BUG_CHECK_FILEINFO
 
-// Forward declarations for functions/constants not in available imports
-
-// Constants assumed available from project headers (caller collects)
-// Assume UserFileOpen, UserDirectoryOpen, FCB_STATE_INITIALIZED are defined
-
-// Placeholder constants (replace with actual values)
-const UserFileOpen: u32 = 0; // PLACEHOLDER
-const UserDirectoryOpen: u32 = 1; // PLACEHOLDER
-const FCB_STATE_INITIALIZED: u32 = 0; // PLACEHOLDER
-const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10; // PLACEHOLDER
-
-
-// placeholders for constants that will be filled in by the caller
-const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001; // caller fills actual value
-
-// extern declarations for functions called but not in the available imports
-
-// opaque types for C structs – actual definitions provided by caller assembly
-type IrpContext = core::ffi::c_void;
-type Irp = core::ffi::c_void;
-type Fcb = core::ffi::c_void; // must have fields FcbState, etc. – caller supplies real def
-type Ccb = core::ffi::c_void; // must have field Flags – caller supplies real def
-type NTSTATUS = i32;
-
 // The translated function
 #[no_mangle]
 pub unsafe extern "C" fn CdCommonQueryInfo(
-    IrpContext: *mut IrpContext,
-    Irp: *mut Irp,
+    IrpContext: PIRP_CONTEXT,
+    Irp: PIRP,
 ) -> NTSTATUS {
     // Local variables
     let mut Status: NTSTATUS = STATUS_SUCCESS; // STATUS_SUCCESS from ntkrnl_sys::base
@@ -91,8 +93,8 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
     let mut Buffer: *mut FILE_ALL_INFORMATION = (*Irp).AssociatedIrp.SystemBuffer as *mut _;
 
     let mut TypeOfOpen: u32;
-    let mut Fcb: *mut Fcb = core::ptr::null_mut();
-    let mut Ccb: *mut Ccb = core::ptr::null_mut();
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
 
     let mut ReleaseFcb: u8 = 0; // BOOLEAN FALSE
 
@@ -289,10 +291,6 @@ pub unsafe extern "C" fn CdCommonSetInfo(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const FilePositionInformation: FILE_INFORMATION_CLASS = 14; // typical value
-    const UserFileOpen: TYPE_OF_OPEN = 1;
-    const FO_NO_INTERMEDIATE_BUFFERING: u32 = 0x00000001; // typical
-
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
 
     let TypeOfOpen: TYPE_OF_OPEN;
@@ -365,9 +363,9 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
 ) -> i32 {
     let mut Result: i32 = 0;
     let mut TypeOfOpen: u32;
-    let mut Fcb: PFCB;
+    let mut Fcb: PFCB = core::ptr::null_mut();
 
-    UNREFERENCED_PARAMETER(DeviceObject as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
     ASSERT_FILE_OBJECT(FileObject);
     FsRtlEnterFileSystem();
 
@@ -378,13 +376,13 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
         return 0;
     }
 
-    if ExAcquireResourceSharedLite((*Fcb).Resource, Wait) == 0 {
+    if ExAcquireResourceSharedLite((*cd_fcb_header(Fcb)).Resource, Wait as BOOLEAN) == 0 {
         FsRtlExitFileSystem();
         return 0;
     }
 
     if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) != 0 {
-        let creation: i64 = (*Fcb).CreationTime.QuadPart;
+        let creation: i64 = (*Fcb).CreationTime;
         (*Buffer).CreationTime.QuadPart = creation;
         (*Buffer).LastWriteTime.QuadPart = creation;
         (*Buffer).ChangeTime.QuadPart = creation;
@@ -395,7 +393,7 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
         Result = 1;
     }
 
-    ExReleaseResourceLite((*Fcb).Resource);
+    ExReleaseResourceLite((*cd_fcb_header(Fcb)).Resource);
     FsRtlExitFileSystem();
     return Result;
 }
@@ -420,12 +418,12 @@ pub unsafe extern "C" fn CdFastQueryStdInfo(
     let type_of_open = CdFastDecodeFileObject(file_object, core::ptr::addr_of_mut!(fcb));
 
     if (type_of_open != UserFileOpen) &&
-       ((type_of_open != UserDirectoryOpen) || !FlagOn((*fcb).FcbState, FCB_STATE_INITIALIZED) != 0) {
+       ((type_of_open != UserDirectoryOpen) || FlagOn((*fcb).FcbState, FCB_STATE_INITIALIZED) == 0) {
         FsRtlExitFileSystem();
         return 0;
     }
 
-    if !ExAcquireResourceSharedLite((*fcb).Resource, wait) != 0 {
+    if ExAcquireResourceSharedLite((*cd_fcb_header(fcb)).Resource, wait as BOOLEAN) == 0 {
         FsRtlExitFileSystem();
         return 0;
     }
@@ -438,8 +436,8 @@ pub unsafe extern "C" fn CdFastQueryStdInfo(
                 (*buffer).EndOfFile.QuadPart = 0;
                 (*buffer).Directory = 1;
             } else {
-                (*buffer).AllocationSize.QuadPart = (*fcb).AllocationSize.QuadPart;
-                (*buffer).EndOfFile.QuadPart = (*fcb).FileSize.QuadPart;
+                (*buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
+                (*buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
                 (*buffer).Directory = 0;
             }
 
@@ -454,7 +452,7 @@ pub unsafe extern "C" fn CdFastQueryStdInfo(
     }
 
     // _SEH2_FINALLY block
-    ExReleaseResourceLite((*fcb).Resource);
+    ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
     FsRtlExitFileSystem();
 
     result
@@ -467,11 +465,6 @@ pub unsafe extern "C" fn CdFastQueryNetworkInfo(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> i32 {
-    const UserFileOpen: u32 = 0; // placeholder
-    const UserDirectoryOpen: u32 = 1; // placeholder
-    const FCB_STATE_INITIALIZED: u32 = 0; // placeholder
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10; // standard Windows value, may need adjustment
-
     let mut result: i32 = 0;
     let type_of_open: u32;
     let mut fcb: PFCB = core::ptr::null_mut();
@@ -491,7 +484,7 @@ pub unsafe extern "C" fn CdFastQueryNetworkInfo(
         return 0;
     }
 
-    if ntkrnl_sys::ddk::ExAcquireResourceSharedLite((*fcb).Resource, Wait) == 0 {
+    if ntkrnl_sys::ddk::ExAcquireResourceSharedLite((*cd_fcb_header(fcb)).Resource, Wait as BOOLEAN) == 0 {
         FsRtlExitFileSystem();
         return 0;
     }
@@ -511,8 +504,8 @@ pub unsafe extern "C" fn CdFastQueryNetworkInfo(
                 (*Buffer).AllocationSize.QuadPart = 0;
                 (*Buffer).EndOfFile.QuadPart = 0;
             } else {
-                (*Buffer).AllocationSize.QuadPart = (*fcb).AllocationSize.QuadPart;
-                (*Buffer).EndOfFile.QuadPart = (*fcb).FileSize.QuadPart;
+                (*Buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
+                (*Buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
             }
 
             (*IoStatus).__bindgen_anon_1.Status = ntkrnl_sys::base::STATUS_SUCCESS;
@@ -523,7 +516,7 @@ pub unsafe extern "C" fn CdFastQueryNetworkInfo(
     }
     // _SEH2_FINALLY
     {
-        ntkrnl_sys::ddk::ExReleaseResourceLite((*fcb).Resource);
+        ntkrnl_sys::ddk::ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
         FsRtlExitFileSystem();
     }
 
@@ -539,7 +532,10 @@ pub unsafe extern "C" fn CdQueryBasicInfo(
     // PAGED_CODE();
     let _ = IrpContext;
     core::ptr::write_bytes(Buffer as *mut u8, 0, core::mem::size_of::<ntkrnl_sys::ddk::FILE_BASIC_INFORMATION>());
-    (*Buffer).LastWriteTime.QuadPart = (*Buffer).CreationTime.QuadPart = (*Buffer).ChangeTime.QuadPart = (*Fcb).CreationTime;
+    let creation: LONGLONG = (*Fcb).CreationTime;
+    (*Buffer).CreationTime.QuadPart = creation;
+    (*Buffer).LastWriteTime.QuadPart = creation;
+    (*Buffer).ChangeTime.QuadPart = creation;
     (*Buffer).LastAccessTime.QuadPart = 0;
     (*Buffer).FileAttributes = (*Fcb).FileAttributes;
     *Length -= core::mem::size_of::<ntkrnl_sys::ddk::FILE_BASIC_INFORMATION>() as u32;
@@ -547,8 +543,8 @@ pub unsafe extern "C" fn CdQueryBasicInfo(
 
 #[no_mangle]
 pub unsafe extern "C" fn CdQueryStandardInfo(
-    IrpContext: *mut IrpContext,
-    Fcb: *mut Fcb,
+    IrpContext: PIRP_CONTEXT,
+    Fcb: PFCB,
     Buffer: *mut FILE_STANDARD_INFORMATION,
     Length: *mut u32,
 ) {
@@ -566,8 +562,8 @@ pub unsafe extern "C" fn CdQueryStandardInfo(
         (*Buffer).EndOfFile.QuadPart = 0;
         (*Buffer).Directory = 1;
     } else {
-        (*Buffer).AllocationSize.QuadPart = (*Fcb).AllocationSize.QuadPart;
-        (*Buffer).EndOfFile.QuadPart = (*Fcb).FileSize.QuadPart;
+        (*Buffer).AllocationSize.QuadPart = (*cd_fcb_header(Fcb)).AllocationSize.QuadPart;
+        (*Buffer).EndOfFile.QuadPart = (*cd_fcb_header(Fcb)).FileSize.QuadPart;
         (*Buffer).Directory = 0;
     }
 
@@ -632,7 +628,7 @@ pub unsafe extern "C" fn CdQueryNameInfo(
         // NT_ASSERT(*Length >= sizeof(ULONG))
         assert!(*length as usize >= core::mem::size_of::<u32>());
 
-        let mut status: i32 = ntkrnl_sys::constants::STATUS_SUCCESS;
+        let mut status: i32 = STATUS_SUCCESS;
         let mut length_to_copy: u32;
 
         // Buffer->FileNameLength = LengthToCopy = FileObject->FileName.Length
@@ -644,11 +640,11 @@ pub unsafe extern "C" fn CdQueryNameInfo(
 
         if length_to_copy > *length {
             length_to_copy = *length;
-            status = ntkrnl_sys::constants::STATUS_BUFFER_OVERFLOW;
+            status = STATUS_BUFFER_OVERFLOW;
         }
 
         // RtlCopyMemory(Buffer->FileName, FileObject->FileName.Buffer, LengthToCopy)
-        ntkrnl_sys::rtl::RtlCopyMemory(
+        RtlCopyMemory(
             (*buffer).FileName.as_mut_ptr() as *mut core::ffi::c_void,
             (*file_object).FileName.Buffer as *const core::ffi::c_void,
             length_to_copy as usize,
@@ -670,9 +666,9 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
     let mut DirContext: DIRENT_ENUM_CONTEXT = core::mem::zeroed();
     let mut Dirent: DIRENT = core::mem::zeroed();
     let mut CompoundPathEntry: COMPOUND_PATH_ENTRY = core::mem::zeroed();
-    let mut FileContext: FILE_ENUM_CONTEXT;
+    let mut FileContext: FILE_ENUM_CONTEXT = core::mem::zeroed();
 
-    let mut ParentFcb: *mut FCB = core::ptr::null_mut();
+    let mut ParentFcb: PFCB = core::ptr::null_mut();
     let mut ReleaseParentFcb: BOOLEAN = 0;
     let mut CleanupFileLookup: BOOLEAN = 0;
     let mut CleanupDirectoryLookup: BOOLEAN = 0;
@@ -709,7 +705,7 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
             CdLookupPathEntry(
                 IrpContext,
                 CdQueryFidPathTableOffset((*Fcb).FileId),
-                (*Fcb).Ordinal,
+                (*cd_fcb_index(Fcb)).Ordinal,
                 0,
                 &mut CompoundPathEntry,
             );
@@ -726,8 +722,8 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
                 CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
             }
 
-            name_to_use = &raw mut (*(*(* &mut FileContext).InitialDirent)).Dirent.CdCaseFileName.FileName;
-            dirent_offset = (*(*(* &mut FileContext).InitialDirent)).Dirent.DirentOffset;
+            name_to_use = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
+            dirent_offset = (*FileContext.InitialDirent).Dirent.DirentOffset;
         } else {
             CdInitializeDirContext(IrpContext, &mut DirContext);
             CdInitializeDirent(IrpContext, &mut Dirent);
@@ -749,8 +745,8 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
 
             CdUpdateDirentName(IrpContext, &mut Dirent, 1);
 
-            name_to_use = &raw mut (* &mut Dirent).CdCaseFileName.FileName;
-            dirent_offset = (* &mut Dirent).DirentOffset;
+            name_to_use = core::ptr::addr_of_mut!(Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
+            dirent_offset = Dirent.DirentOffset;
         }
 
         if CdIs8dot3Name(IrpContext, *name_to_use) != 0 {
@@ -799,10 +795,10 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
 
 #[no_mangle]
 pub unsafe extern "C" fn CdQueryNetworkInfo(
-    IrpContext: *mut PIRP_CONTEXT,
-    Fcb: *mut PFCB,
-    Buffer: *mut PFILE_NETWORK_OPEN_INFORMATION,
-    Length: *mut u32,
+    IrpContext: PIRP_CONTEXT,
+    Fcb: PFCB,
+    Buffer: PFILE_NETWORK_OPEN_INFORMATION,
+    Length: PULONG,
 ) {
     // PAGED_CODE(); is a debug assertion – skipped in mechanical translation
 
@@ -810,7 +806,7 @@ pub unsafe extern "C" fn CdQueryNetworkInfo(
     let _ = IrpContext;
 
     // Buffer->LastWriteTime.QuadPart = Buffer->CreationTime.QuadPart = Buffer->ChangeTime.QuadPart = Fcb->CreationTime;
-    let creation_quad = (*Fcb).CreationTime.QuadPart;
+    let creation_quad: LONGLONG = (*Fcb).CreationTime;
     (*Buffer).LastWriteTime.QuadPart = creation_quad;
     (*Buffer).CreationTime.QuadPart = creation_quad;
     (*Buffer).ChangeTime.QuadPart = creation_quad;
@@ -819,15 +815,12 @@ pub unsafe extern "C" fn CdQueryNetworkInfo(
 
     (*Buffer).FileAttributes = (*Fcb).FileAttributes;
 
-    // if (FlagOn( Fcb->FileAttributes, FILE_ATTRIBUTE_DIRECTORY ))
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-
     if ((*Fcb).FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
         (*Buffer).AllocationSize.QuadPart = 0;
         (*Buffer).EndOfFile.QuadPart = 0;
     } else {
-        (*Buffer).AllocationSize.QuadPart = (*Fcb).AllocationSize.QuadPart;
-        (*Buffer).EndOfFile.QuadPart = (*Fcb).FileSize.QuadPart;
+        (*Buffer).AllocationSize.QuadPart = (*cd_fcb_header(Fcb)).AllocationSize.QuadPart;
+        (*Buffer).EndOfFile.QuadPart = (*cd_fcb_header(Fcb)).FileSize.QuadPart;
     }
 
     // *Length -= sizeof( FILE_NETWORK_OPEN_INFORMATION );
