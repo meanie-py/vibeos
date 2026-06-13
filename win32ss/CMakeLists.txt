@@ -110,7 +110,7 @@ list(APPEND SOURCE
     # reactx/ntddraw/dvp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dvp.rs) — cohabitation [DirectDraw flip]
     # reactx/ntddraw/mocomp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_mocomp.rs) — cohabitation [DirectDraw flip]
     # reactx/ntddraw/eng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_eng.rs) — cohabitation [DirectDraw flip]
-    reactx/ntddraw/dxeng.c  # KEPT C: ntddraw_dxeng.rs is table-only (gaEngFuncs DRVFN[43]); 41/43 DxEng* bodies still extern "C" → dxeng.c. Flip needs those bodies translated first.
+    # reactx/ntddraw/dxeng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dxeng.rs) — cohabitation [DirectDraw flip: all 42 DxEng* bodies + gaEngFuncs table now Rust]
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     # user/ntuser/callback.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callback.rs) — cohabitation [ntuser wave 28]
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
