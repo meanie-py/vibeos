@@ -21,6 +21,8 @@ use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{KEVENT};
 // resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{KTIMER};
+// resolve_imports.py: explicit kernel/private-type imports
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
@@ -123,8 +125,6 @@ struct Vcb {
     CleanVolumeTimer: KTIMER,
     CleanVolumeDpc: KDPC,
 }
-type KTIMER = core::ffi::c_void;
-type KDPC = core::ffi::c_void;
 type KSPIN_LOCK = u64;
 
 #[repr(C)]

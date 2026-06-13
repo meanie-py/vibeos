@@ -11,6 +11,8 @@ use crate::types::{CCB, DCB, DIRENT, FAT_DATA, FAT_TIME, IRP_CONTEXT, VCB};
 use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PFILE_OBJECT, PNOTIFY_SYNC};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDoesNameContainWildCards, FsRtlEnterFileSystem, FsRtlExitFileSystem};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{_UNICODE_STRING};
 
 extern "C" {
     static mut FatData: FAT_DATA;
@@ -109,7 +111,6 @@ type PDCB = *mut core::ffi::c_void;
 type PCCB = *mut core::ffi::c_void;
 type PBCB = *mut core::ffi::c_void;
 type PDIRENT = *mut core::ffi::c_void;
-type _UNICODE_STRING = core::ffi::c_void; // placeholder
 
 // File-level global array (assumed available)
 

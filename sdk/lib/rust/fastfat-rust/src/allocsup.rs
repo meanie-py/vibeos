@@ -22,6 +22,9 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlN
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{STATUS_FILE_CORRUPT_ERROR};
 use crate::types::{FAT12_DIRTY_ENTRY, FAT16_DIRTY_ENTRY, FAT32_DIRTY_ENTRY, FAT32_ENTRY_MASK, FAT_CLEAN_ENTRY, FAT_DIRTY_BIT_INDEX, FAT_ENTRY, IRP_CONTEXT_FLAG_DISABLE_DIRTY, IRP_CONTEXT_FLAG_WAIT, PFCB, PIRP_CONTEXT, PLBO, PVCB, VCB_STATE_FLAG_MOUNT_IN_PROGRESS, _CLUSTER_TYPE_FatClusterAvailable as FatClusterAvailable, _CLUSTER_TYPE_FatClusterBad as FatClusterBad, _CLUSTER_TYPE_FatClusterLast as FatClusterLast, _CLUSTER_TYPE_FatClusterNext as FatClusterNext, _CLUSTER_TYPE_FatClusterReserved as FatClusterReserved};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{VCB};
+use ntkrnl_sys::ddk::{MDL};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, arg: usize);
@@ -97,9 +100,6 @@ const FAT_CLUSTER_AVAILABLE: u32 = 0;
 const FAT_CLUSTER_LAST: u32 = 0x0FFFFFFF;
 
 // Opaque types
-type VCBC = u8; /* placeholder */
-type VCB = VCBC; // for clarity
-type MDL = u8;
 
 const TAG_FAT_WINDOW: u32 = 0x57746146;
 const FatMaxLarge: i64 = i64::MAX;

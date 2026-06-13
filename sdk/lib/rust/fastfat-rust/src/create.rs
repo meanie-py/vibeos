@@ -21,6 +21,8 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{IO_SECURITY_CONTEXT, _DEVICE_OBJECT, _IRP, _KEVENT};
 // resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{_DEVICE_OBJECT, _IRP, _KEVENT};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn PAGED_CODE();

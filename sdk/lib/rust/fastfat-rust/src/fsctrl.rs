@@ -21,6 +21,8 @@ use core::ptr;
 use crate::ddk_shims::{FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
 use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 use ntkrnl_sys::ddk::{ERESOURCE, FILE_LOCK, FILE_OBJECT, IO_STACK_LOCATION, IRP, OPLOCK, PETHREAD, RtlOemStringToCountedUnicodeString, SECTION_OBJECT_POINTERS, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{RtlOemStringToCountedUnicodeString};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, ...);

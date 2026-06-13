@@ -23,6 +23,10 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithQuotaTag, FsRtlIsNtstatusExpected, I
 use crate::ddk_shims::{IoCallDriver};
 use crate::types::{_FAT_IO_CONTEXT, _IRP_CONTEXT, _VCB};
 use ntkrnl_sys::ddk::{PIO_COMPLETION_ROUTINE, WORK_QUEUE_TYPE, _DEVICE_OBJECT, _IO_STACK_LOCATION, _IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{IoCallDriver};
+use crate::types::{IO_RUN, IRP_CONTEXT, VCB};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, MDL};
 
 extern "C" {
     static mut FatIoCallDriverCount: u32;
@@ -428,14 +432,6 @@ pub type PFAT_PAGING_FILE_CONTEXT = *mut FAT_PAGING_FILE_CONTEXT;
 // Forward declarations for unknown functions and globals
 
 // Opaque type declarations (assumed to exist elsewhere)
-type IRP_CONTEXT = core::ffi::c_void;
-type VCB = core::ffi::c_void;
-type IRP = core::ffi::c_void;
-type IO_RUN = core::ffi::c_void;
-type FAT_IO_CONTEXT = core::ffi::c_void;
-type IO_STACK_LOCATION = core::ffi::c_void;
-type MDL = core::ffi::c_void;
-type DEVICE_OBJECT = core::ffi::c_void;
 
 // Use the provided imports for known NT functions
 

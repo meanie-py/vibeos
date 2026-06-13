@@ -15,6 +15,8 @@ use ntkrnl_sys::ddk::{IRP};
 use crate::glue::{DEBUG_TRACE_SHUTDOWN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, PDEVICE_OBJECT};
 
 type FAT_FLUSH_TYPE = i32;
 type VOLUME_CONDITION = i32;

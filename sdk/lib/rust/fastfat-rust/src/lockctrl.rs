@@ -11,6 +11,8 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, OPLOCK, PFILE_LOCK,
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible, FsRtlProcessFileLock};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{EXCEPTION_POINTERS};
 
 extern "C" {
     fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);
@@ -52,7 +54,6 @@ const STATUS_INVALID_PARAMETER: u32 = 0xC000000D; // from ntkrnl_sys::constants
 
 const DBG: i32 = 0x00002000; // DEBUG_TRACE_LOCKCTRL
 
-type EXCEPTION_POINTERS = core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdLockControl(
