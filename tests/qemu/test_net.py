@@ -30,10 +30,33 @@ way.
 from __future__ import annotations
 
 import socket
+import time
 
 import pytest
 
 from tests.qemu.vm import QemuVM
+
+
+def _wait_for_marker(vm: QemuVM, marker: str, timeout: float = 90.0) -> bool:
+    """Poll the live serial log for a marker that may land AFTER boot completes.
+
+    The kernel TDI self-test runs concurrently with boot and finishes its
+    connect/send/receive round-trip late (after `shell ready`), so its markers
+    are not reliably inside the static `_boot_output` capture window. The live
+    log is appended for the VM's whole lifetime, so poll it instead.
+    """
+    if marker in vm._boot_output:
+        return True
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            text = vm.live_log_path.read_text(errors="replace")
+        except OSError:
+            text = ""
+        if marker in text:
+            return True
+        time.sleep(0.5)
+    return False
 
 # Markers — keep in sync with the netstack-rust self-test (see module docstring).
 MARK_M1_OK = "[NETSTACK] M1 raw frame RX/TX OK"
@@ -173,9 +196,9 @@ def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
     OK proves the full SEND->host-echo->RECEIVE data path with real MDLs.
     """
     _require_net_config(vm)
-    assert MARK_TDI_CONNECT in vm._boot_output, (
+    assert _wait_for_marker(vm, MARK_TDI_CONNECT), (
         "TDI CONNECT did not complete (dispatch/inbox/completion-bridge path)"
     )
-    assert MARK_TDI_RT in vm._boot_output, (
+    assert _wait_for_marker(vm, MARK_TDI_RT), (
         "TDI SEND/RECEIVE round-trip did not complete (MDL data path)"
     )

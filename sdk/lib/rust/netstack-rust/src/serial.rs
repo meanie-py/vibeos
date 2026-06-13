@@ -33,7 +33,13 @@ pub fn emit(args: fmt::Arguments) {
     let _ = w.write_fmt(args);
     w.buf[w.len] = 0; // NUL-terminate for %s
     unsafe {
-        DbgPrint(b"%s\0".as_ptr(), w.buf.as_ptr());
+        // Leading sacrificial space: during the busy boot phase netstack's output
+        // interleaves with concurrent kernel DbgPrint on the same UART, and QEMU's
+        // serial emulation occasionally drops the FIRST byte under that contention
+        // (observed: "[NETSTACK] dhcp lease" -> "NETSTACK] dhcp lease", ~50% on the
+        // DHCP marker, which lands mid-boot). A throwaway leading byte absorbs that
+        // drop so the "[NETSTACK] ..." marker the net tests match arrives intact.
+        DbgPrint(b" %s\0".as_ptr(), w.buf.as_ptr());
     }
 }
 
