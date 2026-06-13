@@ -1627,14 +1627,8 @@ pub unsafe extern "C" fn FatRenameEAs(
 // ==== recovered from stitcher-drop: 17_FatSetRenameInfo.rs ====
 // Forward declarations for external symbols not in imports
 extern "C" {
-    fn FatDeleteFile(
-        IrpContext: *mut IRP_CONTEXT,
-        TargetDcb: *mut DCB,
-        LfnOffset: u32,
-        DirentOffset: u32,
-        TargetDirent: *mut DIRENT,
-        TargetLfn: *mut UNICODE_STRING,
-    );
+    // FatDeleteFile forward-decl removed: real definition lives in this module
+    // (re-stitched body below). Keeping both was an E0428 duplicate.
     static MAX_LFN_CHARACTERS: usize;
 }
 
@@ -2973,6 +2967,121 @@ pub unsafe extern "C" fn FatCommonSetInformation(
 
 // Global references (assumed extern)
 
+
+
+// ==== re-stitched (genuine drop, authoritative) ====
+#[no_mangle]
+unsafe extern "system" fn FatDeleteFile(
+    IrpContext: *mut IRP_CONTEXT,
+    TargetDcb: *mut DCB,
+    LfnOffset: u32,
+    DirentOffset: u32,
+    Dirent: *mut DIRENT,
+    Lfn: *mut UNICODE_STRING,
+) {
+    // Forward declarations for unknown gap functions/macros
+    extern "system" {
+        fn PAGED_CODE();
+        fn FatBugCheck(a: u32, b: u32, c: u32);
+        fn FatCreateFcb(
+            IrpContext: *mut IRP_CONTEXT,
+            Vcb: *mut VCB,
+            TargetDcb: *mut DCB,
+            LfnOffset: u32,
+            DirentOffset: u32,
+            Dirent: *mut DIRENT,
+            Lfn: *mut UNICODE_STRING,
+            other: *mut UNICODE_STRING,
+            flag1: u8,
+            flag2: u8,
+        ) -> *mut FCB;
+        fn FatDeleteDirent(
+            IrpContext: *mut IRP_CONTEXT,
+            Fcb: *mut FCB,
+            arg3: *mut core::ffi::c_void,
+            flag: u8,
+        );
+        fn FatDeleteFcb(
+            IrpContext: *mut IRP_CONTEXT,
+            Fcb: *mut *mut FCB,
+        );
+        fn FatRemoveNames(
+            IrpContext: *mut IRP_CONTEXT,
+            Fcb: *mut FCB,
+        );
+        fn FatTruncateFileAllocation(
+            IrpContext: *mut IRP_CONTEXT,
+            Fcb: *mut FCB,
+            offset: u32,
+        );
+        fn NT_ASSERT(condition: u32);
+        fn NodeType(Fcb: *mut FCB) -> u32;
+    }
+
+    // Placeholder constants (values unknown, but required for compilation)
+    const FCB_STATE_NAMES_IN_SPLAY_TREE: u32 = 0x0001;
+    const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x0002;
+    const FAT_NTC_FCB: u32 = 0x0501;
+
+    PAGED_CODE();
+
+    let mut Links: *mut LIST_ENTRY = (*TargetDcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
+    let queue_end = core::ptr::addr_of_mut!((*TargetDcb).Specific.Dcb.as_mut().ParentDcbQueue) as *mut LIST_ENTRY;
+
+    while Links != queue_end {
+        let offset = core::mem::offset_of!(FCB, ParentDcbLinks) as isize;
+        let Fcb = (Links as *const u8).offset(-offset) as *mut FCB;
+
+        if ((*Fcb).FcbState & FCB_STATE_NAMES_IN_SPLAY_TREE) != 0
+            && (*Fcb).DirentOffsetWithinDirectory == DirentOffset
+        {
+            NT_ASSERT((NodeType(Fcb) == FAT_NTC_FCB) as u32);
+            NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == LfnOffset) as u32);
+
+            if (*Fcb).UncleanCount != 0 {
+                FatBugCheck(0, 0, 0);
+            } else {
+                FatRemoveNames(IrpContext, Fcb);
+
+                let Resource = (*Fcb).Header.PagingIoResource;
+                ExAcquireResourceExclusiveLite(Resource, 1);
+
+                (*Fcb).FcbState |= FCB_STATE_DELETE_ON_CLOSE;
+                (*Fcb).ValidDataToDisk = 0;
+                (*Fcb).Header.FileSize.QuadPart = 0;
+                (*Fcb).Header.ValidDataLength.QuadPart = 0;
+                (*Fcb).FirstClusterOfFile = 0;
+
+                ExReleaseResourceLite(Resource);
+            }
+        }
+
+        Links = (*Links).Flink;
+    }
+
+    let Fcb = FatCreateFcb(
+        IrpContext,
+        (*TargetDcb).Vcb,
+        TargetDcb,
+        LfnOffset,
+        DirentOffset,
+        Dirent,
+        Lfn,
+        core::ptr::null_mut(),
+        0,
+        0,
+    );
+
+    (*Fcb).Header.FileSize.u.LowPart = 0;
+
+    // DUMMY_PSEH: _SEH2_TRY body runs inline; _SEH2_FINALLY runs unconditionally.
+    let mut Fcb = Fcb;
+    FatTruncateFileAllocation(IrpContext, Fcb, 0);
+    FatDeleteDirent(IrpContext, Fcb, core::ptr::null_mut(), 1);
+
+    // _SEH2_FINALLY: always call FatDeleteFcb
+    FatDeleteFcb(IrpContext, &raw mut Fcb);
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

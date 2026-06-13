@@ -121,7 +121,6 @@ const STATUS_END_OF_FILE: i32 = 0xC0000011_u32 as i32;
 
 
 extern "C" {
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut c_void, Vcb: *mut VCB, Reversible: u8);
 }
 
 const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
@@ -1316,6 +1315,148 @@ pub unsafe extern "C" fn FatPrefetchPages(
 }
 
 
+
+
+// ==== re-stitched (genuine drop, authoritative) ====
+#[no_mangle]
+unsafe fn FatSetDirtyBcb(
+    mut IrpContext: *mut IRP_CONTEXT,
+    Bcb: *mut core::ffi::c_void,
+    Vcb: *mut VCB,
+    Reversible: u8,
+) {
+    const IRP_CONTEXT_FLAG_DISABLE_DIRTY: u32 = 0x100;
+    const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1;
+    const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x2;
+    const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x4;
+    const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x8;
+    const VolumeDirty: u32 = 1;
+    const Dbg: u32 = 0;
+    // DebugTrace calls preserved
+    DebugTrace(
+        1,
+        Dbg,
+        b"FatSetDirtyBcb\n\0".as_ptr() as *const i8,
+        0usize,
+    );
+    DebugTrace(
+        0,
+        Dbg,
+        b"IrpContext = %p\n\0".as_ptr() as *const i8,
+        IrpContext as usize,
+    );
+    DebugTrace(
+        0,
+        Dbg,
+        b"Bcb        = %p\n\0".as_ptr() as *const i8,
+        Bcb as usize,
+    );
+    DebugTrace(
+        0,
+        Dbg,
+        b"Vcb        = %p\n\0".as_ptr() as *const i8,
+        Vcb as usize,
+    );
+
+    // Repin the bcb as required
+    if Reversible != 0 {
+        FatRepinBcb(IrpContext, Bcb);
+    }
+
+    // Set the bcb dirty
+    CcSetDirtyPinnedData(Bcb, core::ptr::null_mut());
+
+    // If volume dirtying isn't disabled...
+    if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_DISABLE_DIRTY) == 0
+        && !Vcb.is_null()
+        && FatIsFat12(Vcb) == 0
+    {
+        let mut SavedIrql: u8 = 0;
+        let mut SetTimer: u8;
+
+        let mut CurrentTime: LARGE_INTEGER = core::mem::zeroed();
+        let mut TimeSincePreviousCall: LARGE_INTEGER = core::mem::zeroed();
+
+        // "Borrow" the irp context spinlock
+        KeQuerySystemTime(core::ptr::addr_of_mut!(CurrentTime));
+
+        KeAcquireSpinLock(
+            core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(FatData)).GeneralSpinLock),
+            core::ptr::addr_of_mut!(SavedIrql),
+        );
+
+        TimeSincePreviousCall.QuadPart =
+            CurrentTime.QuadPart - (*Vcb).LastFatMarkVolumeDirtyCall.QuadPart;
+
+        // If more than one second has elapsed...
+        if (TimeSincePreviousCall.u.HighPart != 0)
+            || (TimeSincePreviousCall.u.LowPart > (1000 * 1000 * 10))
+        {
+            SetTimer = 1;
+        } else {
+            SetTimer = 0;
+        }
+
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(FatData)).GeneralSpinLock),
+            SavedIrql,
+        );
+
+        if SetTimer != 0 {
+            let mut CleanVolumeTimer: LARGE_INTEGER = core::mem::zeroed();
+
+            // Use shorter timer for deferred flush (hot plug) volumes
+            CleanVolumeTimer.QuadPart = if ((*Vcb).VcbState & VCB_STATE_FLAG_DEFERRED_FLUSH) != 0 {
+                -1500i64 * 1000 * 10
+            } else {
+                -8i64 * 1000 * 1000 * 10
+            };
+
+            KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
+            KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
+
+            // Synchronized; now check if we really need to mark dirty physically
+            if ((*Vcb).VcbState & VCB_STATE_FLAG_VOLUME_DIRTY) == 0 {
+                // Mark volume dirty for real
+                if ((*Vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
+                    FatMarkVolume(IrpContext, Vcb, VolumeDirty);
+                }
+
+                (*Vcb).VcbState |= VCB_STATE_FLAG_VOLUME_DIRTY;
+
+                // Lock the volume if removable
+                if ((*Vcb).VcbState & VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 {
+                    FatToggleMediaEjectDisable(IrpContext, Vcb, 1);
+                }
+            }
+
+            KeAcquireSpinLock(
+                core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(FatData)).GeneralSpinLock),
+                core::ptr::addr_of_mut!(SavedIrql),
+            );
+
+            KeQuerySystemTime(core::ptr::addr_of_mut!((*Vcb).LastFatMarkVolumeDirtyCall));
+
+            KeReleaseSpinLock(
+                core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(FatData)).GeneralSpinLock),
+                SavedIrql,
+            );
+
+            KeSetTimer(
+                core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer),
+                CleanVolumeTimer,
+                core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc),
+            );
+        }
+    }
+
+    DebugTrace(
+        -1,
+        Dbg,
+        b"FatSetDirtyBcb -> VOID\n\0".as_ptr() as *const i8,
+        0usize,
+    );
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

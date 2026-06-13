@@ -339,7 +339,6 @@ pub unsafe extern "system" fn FatPagingFileCompletionRoutineCatch(
 }
 // ---- re-stitched from bank: 20260612-152050-deviosup.c/05_FatSingleNonAlignedSync.rs ----
 extern "system" {
-    fn FatWaitSync(irp_context: *mut IRP_CONTEXT);
 }
 
 #[no_mangle]
@@ -2214,6 +2213,41 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
     zero_mdl
 }
 
+
+
+// ==== re-stitched (genuine drop, authoritative) ====
+#[no_mangle]
+pub unsafe extern "system" fn FatWaitSync(IrpContext: *mut IRP_CONTEXT) {
+    const Dbg: i32 = 0;
+    const Executive: u32 = 0; // KWAIT_REASON::Executive
+    // PAGED_CODE() omitted (no-op in free build)
+
+    DebugTrace(
+        1,
+        Dbg,
+        b"FatWaitSync, Context = %p\n\0".as_ptr() as *const i8,
+        (*IrpContext).FatIoContext,
+    );
+
+    KeWaitForSingleObject(
+        core::ptr::addr_of_mut!((*((*IrpContext).FatIoContext)).Wait.SyncEvent) as *mut _,
+        Executive,
+        KernelMode,
+        0,
+        core::ptr::null_mut(),
+    );
+
+    KeClearEvent(
+        core::ptr::addr_of_mut!((*((*IrpContext).FatIoContext)).Wait.SyncEvent) as *mut _,
+    );
+
+    DebugTrace(
+        -1,
+        Dbg,
+        b"FatWaitSync -> VOID\n\0".as_ptr() as *const i8,
+        0,
+    );
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE
