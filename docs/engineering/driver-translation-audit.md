@@ -36,7 +36,8 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **mountmgr.sys** | drivers/storage/mountmgr | ✅ LANDED (crp) | mountmgr-rust | Mount manager (9.4K, DeepSeek+c2rust, $0.87). Boot-start WDM, cohab, **cold smoke ×3 ✓ boot**. 4 runtime bugs fixed (empty RTL_CONSTANT_STRINGs, PWSTR/UNICODE_STRING, AllocatePool width, element-vs-byte overflow). |
 | **scsiport.sys** | drivers/storage/port/scsiport | ✅ LANDED (crp) | scsiport-rust | SCSI port driver (8.4K, 8 .c, DeepSeek+c2rust ~$0.67), WDM **export driver** (45 ScsiPort* exports; Notification/DebugPrint cdecl varargs). **Boot-loaded + on the LiveCD IDE read-stack** (uniata miniport) → fully boot-exercised. Cohab (guid.c stays C, sptilib kept). cargo-clean ×3, links ×3 (45/45 exports), **cold smoke ×3 ✓ boot**. 7 runtime bugs fixed (element-vs-byte ×3, lost `PortConfig+1`, ZST-array ptr `.add()`, live-DPRINT slowdown, SCAN_IN_PROGRESS fabricated as 0x1=FROZEN_QUEUE wedge, Rust-ABI fn-addr escape, hand-rolled va_arg on amd64) — all catalogued in the field manual. |
 | **fs_rec.sys** | drivers/filesystems/fs_rec | ✅ LANDED (crp) | fs_rec-rust | FS recognizer (~2.8K LOC, 11 modular files), **boot-loaded** → smoke-exercised. WDM, imports ntoskrnl+hal only. DeepSeek+c2rust (~$0.12). cold smoke ×3 ✓ boot. Merged 1ac0c71839d. |
-| fastfat.sys | drivers/filesystems/fastfat | ⚪ not started | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
+| **atapi.sys** | drivers/storage/ide/atapi | ✅ LANDED (crp) | atapi-rust | NT4-DDK ATAPI IDE SCSIPORT miniport (6.5K LOC, single TU, ~30 fns). NOT in txtsetup (live IDE path is uniata.sys) → **link-clean ×3 is the bar**. HAND-translated (link-only-verified ⇒ hand > DeepSeek) via **5-way parallel Claude subagents** over a shared signature-manifest contract — see [[feedback_parallel_subagent_translation]]. cargo-clean ×3 + links ×3 (i386 `_DriverEntry@8`, amd64/arm64 `DriverEntry`). Cohab (atapi.c kept on disk). New gen_driver_types.sh `atapi` case (+`BUILD_ROOT` override). Merged ab471845959. |
+| fastfat.sys | drivers/filesystems/fastfat | ⚪ not started (active on fastfat-port) | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe
 Queue), arbiter-rust (resource arbiter, linked by pcix), ntoskrnl_vista.
@@ -71,10 +72,9 @@ duplicate SRB/sense harvesting.
 
 ## Candidate targets (not yet started)
 
-- **ide / atapi** (drivers/storage/ide, 7 files / ~8.6K) — ATA/ATAPI class stack.
-  pciide + **pciidex now Rust** (see LANDED table). Remaining: uniata (C++, the live
-  PNP0600 driver — L2 tree-sitter track) and the legacy atapi.c miniport (6.5K, NOT in
-  txtsetup → not boot-exercised). Storage-relevant, WDM.
+- **ide / atapi** (drivers/storage/ide) — ATA/ATAPI class stack. pciide + **pciidex +
+  atapi.c miniport now Rust** (all in the LANDED table). Remaining: only **uniata**
+  (C++, the live PNP0600 driver — L2 tree-sitter track, not a C-translate).
 - **fastfat.sys** (drivers/filesystems/fastfat, 34 files / 68.8K) — FAT FS, boot
   media. Classic kernel-bug surface; well-specified. Multi-session.
 - **mup.sys** (drivers/filesystems/mup, ~2.6K) — Multiple UNC Provider, network
