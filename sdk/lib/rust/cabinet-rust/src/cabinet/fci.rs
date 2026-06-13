@@ -199,9 +199,17 @@ extern "C" {
     fn list_remove(entry: *mut list);
     fn list_init(list: *mut list);
     fn list_add_tail(head: *mut core::ffi::c_void, entry: *mut core::ffi::c_void);
-    fn deflateInit2(strm: *mut z_stream, level: i32, method: i32, windowBits: i32, memLevel: i32, strategy: i32) -> i32;
+    // NB: the C source calls the `deflateInit2(...)` MACRO, which expands to
+    // deflateInit2_(..., ZLIB_VERSION, sizeof(z_stream)). The original
+    // transliteration declared a 6-arg `deflateInit2` symbol that does NOT
+    // exist in zlib (no real fn — it's a macro), so it stayed UNRESOLVED —
+    // tolerated only because the link is -shared and nothing exercises the
+    // compress path at boot. Declare the real exported entry point and expand
+    // the macro at the call site so MSZIP compression actually works (zlib-rs).
+    fn deflateInit2_(strm: *mut z_stream, level: i32, method: i32, windowBits: i32, memLevel: i32, strategy: i32, version: *const core::ffi::c_char, stream_size: i32) -> i32;
     fn deflate(strm: *mut z_stream, flush: i32) -> i32;
     fn deflateEnd(strm: *mut z_stream) -> i32;
+    fn zlibVersion() -> *const core::ffi::c_char;
     fn list_add_before(pos: *mut list, entry: *mut list);
     fn assert(cond: i32);
     fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
@@ -644,7 +652,7 @@ unsafe extern "C" fn compress_MSZIP(fci: *mut FCI_Int) -> u16 {
     stream.zalloc = Some(zalloc);
     stream.zfree = Some(zfree);
     stream.opaque = fci as *mut core::ffi::c_void;
-    if deflateInit2(&raw mut stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK {
+    if deflateInit2_(&raw mut stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY, zlibVersion(), core::mem::size_of::<z_stream>() as i32) != Z_OK {
         set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
         return 0;
     }

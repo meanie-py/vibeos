@@ -40,7 +40,9 @@ fn main() {
             // libwine.a dropped — cabinet-rust's only wine surface is the
             // TRACE/WARN/ERR/FIXME/debugstr_a debug shims, already provided
             // header-free by rust_cohab_stub.c (c_shims above).
-            "sdk/lib/3rdparty/zlib/libzlib.a",
+            // libzlib.a dropped — cabinet-rust now depends on the pure-Rust
+            // libz-rs-sys (zlib-rs) crate for the deflate* C symbols (compress/
+            // MSZIP); FDI inflate was already cabinet's own Rust. (step 7)
             // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
