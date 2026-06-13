@@ -373,6 +373,13 @@ def _strip_known_off_ifdefs(text: str) -> str:
 # function — font.c found 2 of 14). Resolving them (drop the directive lines,
 # keep the live branch) lets tree-sitter parse the body.
 _KNOWN_UNDEFINED_SYMS = ("FONT_CACHE_PRESENT",)
+# Symbols the build defines to 1 (`-DDBG=1` for the checked/debug kernel). A bare
+# `#if DBG` body sits INSIDE function bodies (the FAT/CDFS drivers wrap their SEH
+# frames in `#if DBG`); tree-sitter-c recovers catastrophically from a `#if/#endif`
+# inside a compound statement (swallows every following function — fsctrl.c lost 50
+# of 76, FatMountVolume among them). Resolving `#if DBG` → keep the live branch,
+# drop the directive lines, lets the SEH parse with balanced braces.
+_KNOWN_DEFINED_TRUE_SYMS = ("DBG",)
 _PP_IF = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef)\b[ \t]*(.*)$')
 
 
@@ -380,10 +387,17 @@ def _eval_pp_cond(kw: str, expr: str) -> Optional[bool]:
     """Resolve a preprocessor condition to True/False, or None if unknown."""
     expr = expr.split('//')[0].split('/*')[0].strip()
     if kw == 'if':
-        return {'0': False, '1': True}.get(expr)
+        v = {'0': False, '1': True}.get(expr)
+        if v is not None:
+            return v
+        if expr in _KNOWN_DEFINED_TRUE_SYMS:   # bare `#if DBG` → DBG=1 in the build
+            return True
+        return None
     sym = expr.split()[0] if expr.split() else ''
     if sym in _KNOWN_UNDEFINED_SYMS:
         return kw == 'ifndef'          # #ifndef UNDEF → True, #ifdef UNDEF → False
+    if sym in _KNOWN_DEFINED_TRUE_SYMS:
+        return kw == 'ifdef'           # #ifdef DBG → True, #ifndef DBG → False
     return None
 
 
