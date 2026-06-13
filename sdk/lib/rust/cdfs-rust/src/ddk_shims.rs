@@ -233,3 +233,28 @@ pub unsafe fn RtlInsertAsRightChild(ParentLinks: PRTL_SPLAY_LINKS, ChildLinks: P
     (*ParentLinks).RightChild = ChildLinks;
     (*ChildLinks).Parent = ParentLinks;
 }
+
+// ===========================================================================
+// cdfs flag/debug macro shims. The grind declares these per-module as extern
+// fns (consistent call shape: SetFlag(&mut x.Flags, F); FlagOn(x.Flags, F) != 0)
+// but leaves them undefined at link. #[no_mangle] provides BOTH the path import
+// (modules that call bare) AND the link symbol (modules with their own extern decl).
+// ===========================================================================
+use crate::types::{VCB, IRP_CONTEXT};
+
+#[no_mangle] pub extern "C" fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN { ((Flags & Flag) != 0) as BOOLEAN }
+#[no_mangle] pub extern "C" fn BooleanFlagOn(Flags: u32, Flag: u32) -> BOOLEAN { ((Flags & Flag) != 0) as BOOLEAN }
+#[no_mangle] pub unsafe extern "C" fn SetFlag(Flags: *mut u32, Flag: u32) { *Flags |= Flag; }
+#[no_mangle] pub unsafe extern "C" fn ClearFlag(Flags: *mut u32, Flag: u32) { *Flags &= !Flag; }
+
+// cd.h: CdMarkRealDevVerifyOk(DO) = ClearFlag(DO->Flags, DO_VERIFY_VOLUME)
+const DO_VERIFY_VOLUME: u32 = 0x00000002;
+#[no_mangle] pub unsafe extern "C" fn CdMarkRealDevVerifyOk(DevObj: PDEVICE_OBJECT) {
+    (*DevObj).Flags &= !DO_VERIFY_VOLUME;
+}
+
+// Debug ASSERT macros — no-ops at retail (DBG=0). #[no_mangle] for the per-module externs.
+#[no_mangle] pub extern "C" fn ASSERT_IRP(_Irp: PIRP) {}
+#[no_mangle] pub extern "C" fn ASSERT_EXCLUSIVE_CDDATA() {}
+#[no_mangle] pub unsafe extern "C" fn ASSERT_EXCLUSIVE_VCB(_Vcb: *mut VCB) {}
+#[no_mangle] pub unsafe extern "C" fn ASSERT_OPTIONAL_IRP_CONTEXT(_IrpContext: *mut IRP_CONTEXT) {}

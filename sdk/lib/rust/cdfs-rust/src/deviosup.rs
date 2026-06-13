@@ -6,18 +6,17 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ERESOURCE_THREAD, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoBuildSynchronousFsdRequest, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoMarkIrpPending, IoReadAccess, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteAccess, KEVENT, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL};
+use ntkrnl_sys::ddk::{ERESOURCE_THREAD, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoBuildSynchronousFsdRequest, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, _LOCK_OPERATION_IoReadAccess as IoReadAccess, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{AUDIO_PLAY_HEADER, CD_IO_CONTEXT, CD_SECTOR_CACHE_CHUNK, FCB, IRP_CONTEXT, LOCK_OPERATION, PFCB, PIRP_CONTEXT, RIFF_HEADER, TRACK_DATA, VCB};
-use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, IO_STACK_LOCATION, IRP, MDL, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
+use crate::types::{AUDIO_PLAY_HEADER, CD_IO_CONTEXT, CD_SECTOR_CACHE_CHUNK, FCB, IRP_CONTEXT, PFCB, PIRP_CONTEXT, RIFF_HEADER, TRACK_DATA, VCB};
+use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, IO_STACK_LOCATION, IRP, LARGE_INTEGER, LOCK_OPERATION, MDL, _ETHREAD};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlIsNtstatusExpected};
-use crate::glue::{Fcb, IrpContext, STATUS_VERIFY_REQUIRED, Vcb};
+use crate::glue::{STATUS_VERIFY_REQUIRED};
 use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
-use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
+use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA, _TRACK_MODE_TYPE_XAForm2 as XAForm2, _TRACK_MODE_TYPE_YellowMode2 as YellowMode2};
 
 extern "C" {
     fn PAGED_CODE();
@@ -36,10 +35,13 @@ extern "system" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn ASSERT_IRP(Irp: PIRP);
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
-    fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value fn _SEH2_TRY(); // these mimic the MSVC __try/__except/__end fn _SEH2_EXCEPT(code: i32);
+    fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value
+    // these mimic the MSVC __try/__except/__end
+    fn _SEH2_TRY();
+    fn _SEH2_EXCEPT(code: i32);
     fn _SEH2_END();
     fn _SEH2_GetExceptionCode() -> i32;
-    fn CdLookupAllocation(IrpContext: *mut IrpContext, Fcb: *mut Fcb, CurrentFileOffset: i64, DiskOffset: *mut i64, CurrentByteCount: *mut u32);
+    fn CdLookupAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, CurrentFileOffset: i64, DiskOffset: *mut i64, CurrentByteCount: *mut u32);
     fn LlSectorTruncate(offset: i64) -> i64;
     fn SectorTruncate(size: u32) -> u32;
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -93,6 +95,8 @@ const FCB_STATE_DA_FILE: u32 = 0; // unknown value
 
 // SL_OVERRIDE_VERIFY_VOLUME constant (value from WinNT.h)
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00020000;
+// EXCEPTION_EXECUTE_HANDLER (value 1, matches ntkrnl_sys hal_ddk definition)
+const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 
 // Forward declarations for functions not available in our imports
 
@@ -164,10 +168,10 @@ pub unsafe extern "C" fn CdNonCachedRead(
     ByteCount: u32,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut IoRuns: [IO_RUN; MAX_PARALLEL_IOS] = core::mem::zeroed();
+    let mut IoRuns: [IO_RUN; MAX_PARALLEL_IOS as usize] = core::mem::zeroed();
     let mut RunCount: u32 = 0;
     let mut CleanupRunCount: u32 = 0;
-    let mut UserBuffer: *mut core::ffi::c_void;
+    let mut UserBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut UserBufferOffset: u32 = 0;
     let mut CurrentOffset: i64 = StartingOffset;
     let mut RemainingByteCount: u32 = ByteCount;
@@ -200,7 +204,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
         && (VcbMounted == (*(*IrpContext).Vcb).VcbCondition)
     {
         if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
-            let sync_event: *mut KEVENT = &mut (*(*IrpContext).IoContext).SyncEvent as *mut KEVENT;
+            let sync_event: *mut KEVENT = (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT;
             KeInitializeEvent(sync_event, _EVENT_TYPE_NotificationEvent as u32, 0);
             (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
         }
@@ -212,7 +216,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
             // main do-while loop
             loop {
                 // Zero the IoRuns array
-                core::ptr::write_bytes(IoRuns.as_mut_ptr(), 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS]>());
+                core::ptr::write_bytes(IoRuns.as_mut_ptr(), 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS as usize]>());
 
                 Unaligned = CdPrepareBuffers(
                     IrpContext,
@@ -297,7 +301,8 @@ pub unsafe extern "C" fn CdNonCachedRead(
         CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), CleanupRunCount, 1, 0);
     }
 
-    result // return Status from the try block
+    let _ = result;
+    Status // return Status from the try block
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdNonCachedXARead(
@@ -331,57 +336,57 @@ pub unsafe extern "C" fn CdNonCachedXARead(
 
     PAGED_CODE();
 
-    if (*(*irp_context).irp).mdl_address.is_null() {
-        CdCreateUserMdl(irp_context, byte_count, 1, ntkrnl_sys::ddk::IoWriteAccess);
+    if (*(*irp_context).Irp).MdlAddress.is_null() {
+        CdCreateUserMdl(irp_context, byte_count, 1, IoWriteAccess);
     }
 
-    if current_offset + remaining_byte_count as i64 > (*fcb).file_size.quad_part {
-        remaining_byte_count = ((*fcb).file_size.quad_part - current_offset) as u32;
+    if current_offset + remaining_byte_count as i64 > (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart {
+        remaining_byte_count = ((*fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart - current_offset) as u32;
     }
 
     CdMapUserBuffer(irp_context, core::ptr::addr_of_mut!(user_buffer));
 
     'try_body: loop {
         if current_offset < core::mem::size_of::<RIFF_HEADER>() as i64 {
-            if FlagOn((*fcb).fcb_state, FCB_STATE_DA_FILE) != 0 {
-                if FlagOn((*(*fcb).vcb).vcb_state, VCB_STATE_AUDIO_DISK) != 0 {
+            if FlagOn((*fcb).FcbState, FCB_STATE_DA_FILE) != 0 {
+                if FlagOn((*(*fcb).Vcb).VcbState, VCB_STATE_AUDIO_DISK) != 0 {
                     let audio_play_header: *mut AUDIO_PLAY_HEADER = core::ptr::addr_of_mut!(local_riff_header) as *mut AUDIO_PLAY_HEADER;
-                    let mut track_data: *const TRACK_DATA = (core::ptr::addr_of!((*(*(*fcb).vcb).cdrom_toc).track_data) as *const TRACK_DATA)
-                        .add((*fcb).xa_file_number as usize);
+                    let mut track_data: *const TRACK_DATA = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
+                        .add((*fcb).XAFileNumber as usize);
 
                     ntkrnl_sys::rtl::RtlCopyMemory(
                         audio_play_header as *mut core::ffi::c_void,
                         core::ptr::addr_of!(CdAudioPlayHeader) as *const core::ffi::c_void,
-                        core::mem::size_of::<AUDIO_PLAY_HEADER>() as u32,
+                        core::mem::size_of::<AUDIO_PLAY_HEADER>(),
                     );
 
-                    (*audio_play_header).disk_id = (*(*(*fcb).vcb).vpb).serial_number;
-                    (*audio_play_header).track_number = (*track_data).track_number;
+                    (*audio_play_header).DiskID = (*(*(*fcb).Vcb).Vpb).SerialNumber;
+                    (*audio_play_header).TrackNumber = (*track_data).TrackNumber as u16;
 
-                    SwapCopyUchar4(core::ptr::addr_of_mut!(address), core::ptr::addr_of!((*track_data).address) as *mut u8);
-                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).track_address) as *mut u8);
+                    SwapCopyUchar4(core::ptr::addr_of_mut!(address), core::ptr::addr_of!((*track_data).Address) as *mut u8);
+                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackAddress) as *mut u8);
 
                     SwapCopyUchar4(
-                        core::ptr::addr_of_mut!((*audio_play_header).starting_sector),
-                        core::ptr::addr_of!((*track_data).address) as *mut u8,
+                        core::ptr::addr_of_mut!((*audio_play_header).StartingSector),
+                        core::ptr::addr_of!((*track_data).Address) as *mut u8,
                     );
 
-                    track_data = (core::ptr::addr_of!((*(*(*fcb).vcb).cdrom_toc).track_data) as *const TRACK_DATA)
-                        .add((*fcb).xa_file_number as usize + 1);
+                    track_data = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
+                        .add((*fcb).XAFileNumber as usize + 1);
 
                     SwapCopyUchar4(
-                        core::ptr::addr_of_mut!((*audio_play_header).sector_count),
-                        core::ptr::addr_of!((*track_data).address) as *mut u8,
+                        core::ptr::addr_of_mut!((*audio_play_header).SectorCount),
+                        core::ptr::addr_of!((*track_data).Address) as *mut u8,
                     );
 
-                    if (*audio_play_header).sector_count < (*audio_play_header).starting_sector {
-                        (*audio_play_header).sector_count = 0;
+                    if (*audio_play_header).SectorCount < (*audio_play_header).StartingSector {
+                        (*audio_play_header).SectorCount = 0;
                     } else {
-                        (*audio_play_header).sector_count -= (*audio_play_header).starting_sector;
+                        (*audio_play_header).SectorCount -= (*audio_play_header).StartingSector;
                     }
 
-                    address = (*audio_play_header).sector_count - 150;
-                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).track_length) as *mut u8);
+                    address = (*audio_play_header).SectorCount - 150;
+                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackLength) as *mut u8);
 
                     this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
 
@@ -390,7 +395,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                         (audio_play_header as *mut u8)
                             .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
                             as *const core::ffi::c_void,
-                        this_byte_count,
+                        this_byte_count as usize,
                     );
                 } else {
                     riff_header = core::ptr::addr_of_mut!(local_riff_header);
@@ -398,11 +403,11 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                     ntkrnl_sys::rtl::RtlCopyMemory(
                         riff_header as *mut core::ffi::c_void,
                         core::ptr::addr_of!(CdXAAudioPhileHeader) as *const core::ffi::c_void,
-                        core::mem::size_of::<RIFF_HEADER>() as u32,
+                        core::mem::size_of::<RIFF_HEADER>(),
                     );
 
-                    (*riff_header).chunk_size += (*fcb).file_size.low_part;
-                    (*riff_header).raw_sectors += (*fcb).file_size.low_part;
+                    (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
+                    (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
 
                     this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
 
@@ -411,24 +416,24 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                         (riff_header as *mut u8)
                             .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
                             as *const core::ffi::c_void,
-                        this_byte_count,
+                        this_byte_count as usize,
                     );
                 }
             } else {
-                NT_ASSERT(FlagOn((*fcb).fcb_state, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
+                NT_ASSERT(FlagOn((*fcb).FcbState, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
 
                 riff_header = core::ptr::addr_of_mut!(local_riff_header);
 
                 ntkrnl_sys::rtl::RtlCopyMemory(
                     riff_header as *mut core::ffi::c_void,
                     core::ptr::addr_of!(CdXAFileHeader) as *const core::ffi::c_void,
-                    core::mem::size_of::<RIFF_HEADER>() as u32,
+                    core::mem::size_of::<RIFF_HEADER>(),
                 );
 
-                (*riff_header).chunk_size += (*fcb).file_size.low_part;
-                (*riff_header).raw_sectors += (*fcb).file_size.low_part;
-                (*riff_header).attributes = (*fcb).xa_attributes as u16;
-                (*riff_header).file_number = (*fcb).xa_file_number as u8;
+                (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
+                (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
+                (*riff_header).Attributes = (*fcb).XAAttributes as u16;
+                (*riff_header).FileNumber = (*fcb).XAFileNumber as u8;
 
                 this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
 
@@ -437,7 +442,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                     (riff_header as *mut u8)
                         .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
                         as *const core::ffi::c_void,
-                    this_byte_count,
+                    this_byte_count as usize,
                 );
             }
 
@@ -453,16 +458,16 @@ pub unsafe extern "C" fn CdNonCachedXARead(
             if trying_yellowbook_mode2 == 0 {
                 ntkrnl_sys::rtl::RtlZeroMemory(
                     io_runs.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&io_runs) as u32,
+                    core::mem::size_of_val(&io_runs),
                 );
                 ntkrnl_sys::rtl::RtlZeroMemory(
                     raw_reads.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&raw_reads) as u32,
+                    core::mem::size_of_val(&raw_reads),
                 );
 
                 CdPrepareXABuffers(
                     irp_context,
-                    (*irp_context).irp,
+                    (*irp_context).Irp,
                     fcb,
                     user_buffer,
                     user_buffer_offset,
@@ -480,15 +485,15 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                 CdMultipleXAAsync(irp_context, run_count, io_runs.as_mut_ptr(), raw_reads.as_mut_ptr(), track_mode);
                 CdWaitSync(irp_context);
 
-                status = (*(*irp_context).irp).io_status.status;
+                status = (*(*irp_context).Irp).IoStatus.__bindgen_anon_1.Status;
 
                 if !ntkrnl_sys::base::NT_SUCCESS(status) {
                     if trying_yellowbook_mode2 == 0
-                        && FlagOn((*fcb).fcb_state, FCB_STATE_MODE2FORM2_FILE) != 0
+                        && FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE) != 0
                     {
                         trying_yellowbook_mode2 = 1;
                         track_mode = YellowMode2;
-                        (*(*irp_context).io_context).status = ntkrnl_sys::base::STATUS_SUCCESS;
+                        (*(*irp_context).__bindgen_anon_1.IoContext).Status = ntkrnl_sys::base::STATUS_SUCCESS;
                         continue;
                     }
 
@@ -498,8 +503,8 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                 cleanup_run_count = 0;
 
                 if trying_yellowbook_mode2 != 0 {
-                    SetFlag(core::ptr::addr_of_mut!((*fcb).fcb_state), FCB_STATE_MODE2_FILE);
-                    ClearFlag(core::ptr::addr_of_mut!((*fcb).fcb_state), FCB_STATE_MODE2FORM2_FILE);
+                    SetFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2_FILE);
+                    ClearFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2FORM2_FILE);
                     trying_yellowbook_mode2 = 0;
                 }
 
@@ -512,7 +517,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
             user_buffer_offset += this_byte_count;
         }
 
-        KeFlushIoBuffers((*(*irp_context).irp).mdl_address, 1, 0);
+        KeFlushIoBuffers((*(*irp_context).Irp).MdlAddress, 1, 0);
 
         break 'try_body;
     }
@@ -551,7 +556,7 @@ pub unsafe extern "C" fn CdVolumeDasdWrite(
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) != 0 {
         CdWaitSync(IrpContext);
-        status = (*(*(*IrpContext).Irp)).IoStatus.__bindgen_anon_1.Status;
+        status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
     } else {
         ClearFlag(
             core::ptr::addr_of_mut!((*IrpContext).Flags),
@@ -581,7 +586,7 @@ pub unsafe extern "C" fn CdReadSectors(
     let io_status_ptr = core::ptr::addr_of_mut!((*(*IrpContext).Irp).IoStatus) as *mut _IO_STATUS_BLOCK;
 
     irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_READ,
+        IRP_MJ_READ as u32,
         TargetDeviceObject,
         Buffer,
         ByteCount,
@@ -595,16 +600,15 @@ pub unsafe extern "C" fn CdReadSectors(
     }
 
     let stack_loc: *mut IO_STACK_LOCATION = IoGetNextIrpStackLocation(irp);
-    let flags_ptr = core::ptr::addr_of_mut!((*stack_loc).Flags);
-    SetFlag(flags_ptr, SL_OVERRIDE_VERIFY_VOLUME);
+    (*stack_loc).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
 
     let mut status: NTSTATUS = IoCallDriver(TargetDeviceObject, irp);
 
     if status == STATUS_PENDING {
         status = KeWaitForSingleObject(
-            &mut event as *mut KEVENT,
+            &mut event as *mut KEVENT as *mut c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             0,
             core::ptr::null_mut(),
         );
@@ -640,14 +644,14 @@ pub unsafe extern "C" fn CdCreateUserMdl(
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP((*IrpContext).Irp);
-    NT_ASSERT(((*IrpContext).Irp).MdlAddress.is_null() as i32);
+    NT_ASSERT((*(*IrpContext).Irp).MdlAddress.is_null() as i32);
 
     //
     // Allocate the Mdl, and Raise if we fail.
     //
 
     Mdl = IoAllocateMdl(
-        (*IrpContext).Irp.UserBuffer,
+        (*(*IrpContext).Irp).UserBuffer,
         BufferLength,
         0, // FALSE
         0, // FALSE
@@ -664,17 +668,17 @@ pub unsafe extern "C" fn CdCreateUserMdl(
         {
             MmProbeAndLockPages(
                 Mdl,
-                (*IrpContext).Irp.RequestorMode,
+                (*(*IrpContext).Irp).RequestorMode,
                 IoWriteAccess,
             );
             Status = STATUS_SUCCESS;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER);
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER as i32);
         {
             Status = _SEH2_GetExceptionCode();
 
             IoFreeMdl(Mdl);
-            (*IrpContext).Irp.MdlAddress = core::ptr::null_mut();
+            (*(*IrpContext).Irp).MdlAddress = core::ptr::null_mut();
 
             if FsRtlIsNtstatusExpected(Status) == 0 {
                 Status = STATUS_INVALID_USER_BUFFER;
@@ -750,16 +754,16 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
 
     if OverrideVerify != 0 {
         let stack_loc = IoGetNextIrpStackLocation(Irp);
-        (*stack_loc).Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+        (*stack_loc).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
     }
 
     Status = IoCallDriver(Device, Irp);
 
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event,
+            &mut Event as *mut KEVENT as *mut c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             0,
             core::ptr::null_mut(),
         );
@@ -785,7 +789,7 @@ pub unsafe extern "fastcall" fn CdPerformDevIoCtrl(
 ) -> i32 {
     PAGED_CODE();
     CdPerformDevIoCtrlEx(
-        IrpContext,
+        IrpContext as *mut c_void,
         IoControlCode,
         Device,
         core::ptr::null_mut(),
@@ -812,7 +816,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrl(
 ) -> i32 {
     PAGED_CODE();
     CdPerformDevIoCtrlEx(
-        IrpContext,
+        IrpContext as *mut c_void,
         IoControlCode,
         Device,
         core::ptr::null_mut(),
@@ -826,9 +830,9 @@ pub unsafe extern "C" fn CdPerformDevIoCtrl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdPrepareBuffers(
-    IrpContext: *mut IrpContext,
-    Irp: *mut Irp,
-    Fcb: *mut Fcb,
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: *mut IRP,
+    Fcb: *mut FCB,
     UserBuffer: *mut core::ffi::c_void,
     UserBufferOffset: u32,
     StartingOffset: i64,
@@ -874,20 +878,20 @@ pub unsafe extern "C" fn CdPrepareBuffers(
         if ((DiskOffset as u32 & 2047) != 0) || // SECTOR_MASK = SECTOR_SIZE-1 (2047)
            (((CurrentByteCount & 2047) != 0) && (CurrentByteCount < 2048)) // SECTOR_SIZE = 2048
         {
-            debug_assert!(SafeNodeType(Fcb as *mut core::ffi::c_void) != 0x1234); // CDFS_NTC_FCB_INDEX
+            debug_assert!(SafeNodeType(Fcb) != 0x1234); // CDFS_NTC_FCB_INDEX
 
             if ((*IrpContext).Flags & 0x1) == 0 { // IRP_CONTEXT_FLAG_WAIT
                 CdRaiseStatus(IrpContext, 0xC000009A); // STATUS_CANT_WAIT
             }
 
-            (*ThisIoRun).TransferBufferOffset = SectorOffset(DiskOffset);
+            (*ThisIoRun).TransferBufferOffset = SectorOffset(DiskOffset as u32) as u32;
 
             (*ThisIoRun).DiskOffset = LlSectorTruncate(DiskOffset);
 
             (*ThisIoRun).DiskByteCount = SectorAlign((*ThisIoRun).TransferBufferOffset + CurrentByteCount);
 
-            if (*ThisIoRun).DiskByteCount > PAGE_SIZE {
-                (*ThisIoRun).DiskByteCount = PAGE_SIZE;
+            if (*ThisIoRun).DiskByteCount > PAGE_SIZE as u32 {
+                (*ThisIoRun).DiskByteCount = PAGE_SIZE as u32;
             }
 
             if (*ThisIoRun).TransferBufferOffset + CurrentByteCount > (*ThisIoRun).DiskByteCount {
@@ -898,13 +902,13 @@ pub unsafe extern "C" fn CdPrepareBuffers(
 
             (*ThisIoRun).TransferBuffer = FsRtlAllocatePoolWithTag(
                 0, // CdNonPagedPool (NonPagedPool = 0)
-                PAGE_SIZE,
+                PAGE_SIZE as u32,
                 0x426F4942, // TAG_IO_BUFFER ('IoBb')
             );
 
             (*ThisIoRun).TransferMdl = IoAllocateMdl(
                 (*ThisIoRun).TransferBuffer,
-                PAGE_SIZE,
+                PAGE_SIZE as u32,
                 0, // FALSE
                 0, // FALSE
                 core::ptr::null_mut(),
@@ -979,7 +983,7 @@ pub unsafe extern "C" fn CdPrepareXABuffers(
     let mut ThisIoRun: *mut IO_RUN = IoRuns;
     let mut PerformedCopy: i32; // BOOL
 
-    let RawSectorOffset: u32;
+    let mut RawSectorOffset: u32;
     let mut RemainingRawByteCount: u32 = ByteCount;
     let mut CurrentRawOffset: i64 = StartingOffset - core::mem::size_of::<RIFF_HEADER>() as i64;
 
@@ -1076,8 +1080,8 @@ pub unsafe extern "C" fn CdPrepareXABuffers(
 
                 while ADDRESS_AND_SIZE_TO_SPAN_PAGES(
                     CurrentUserBuffer,
-                    RawSectorAlign(CurrentRawByteCount),
-                ) > (*(*Fcb).Vcb).MaximumPhysicalPages
+                    RawSectorAlign(CurrentRawByteCount) as usize,
+                ) > (*(*Fcb).Vcb).MaximumPhysicalPages as usize
                 {
                     CurrentRawByteCount -= RAW_SECTOR_SIZE;
                     CurrentCookedByteCount -= SECTOR_SIZE;
@@ -1115,13 +1119,13 @@ pub unsafe extern "C" fn CdPrepareXABuffers(
 
                 (*ThisIoRun).TransferBuffer = FsRtlAllocatePoolWithTag(
                     CdNonPagedPool,
-                    PAGE_SIZE,
+                    PAGE_SIZE as u32,
                     TAG_IO_BUFFER,
                 );
 
                 (*ThisIoRun).TransferMdl = IoAllocateMdl(
                     (*ThisIoRun).TransferBuffer,
-                    PAGE_SIZE,
+                    PAGE_SIZE as u32,
                     0, // FALSE
                     0, // FALSE
                     core::ptr::null_mut(),
@@ -1164,7 +1168,7 @@ pub unsafe extern "C" fn CdFinishBuffers(
     IoRuns: *mut IO_RUN,
     RunCount: u32,
     FinalCleanup: i32,
-    SaveXABuffer: i32,
+    mut SaveXABuffer: i32,
 ) -> i32 {
     let mut FlushIoBuffers: i32 = 0;
     let mut RemainingEntries: u32 = RunCount;
@@ -1223,7 +1227,7 @@ pub unsafe extern "C" fn CdFinishBuffers(
     FlushIoBuffers
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSyncCompletionRoutine(
+pub unsafe extern "system" fn CdSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: *mut core::ffi::c_void,
@@ -1232,7 +1236,7 @@ pub unsafe extern "C" fn CdSyncCompletionRoutine(
     // _Analysis_assume_(Contxt != NULL); // static analysis hint, omitted
     let _ = &Irp;
     let _ = &DeviceObject;
-    KeSetEvent(event, 0, 0);
+    KeSetEvent(event as *mut c_void, 0, 0);
     return 0xC0000016; // STATUS_MORE_PROCESSING_REQUIRED
 }
 #[no_mangle]
@@ -1255,7 +1259,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     IrpContext: *mut IRP_CONTEXT,
     Run: *mut IO_RUN,
 ) -> u8 {
-    let mut Vcb: *mut Vcb = (*IrpContext).Vcb;
+    let mut Vcb: *mut VCB = (*IrpContext).Vcb;
     let mut Lbn: u32 = SectorsFromLlBytes((*Run).DiskOffset);
     let mut Remaining: u32 = SectorsFromBytes((*Run).DiskByteCount);
     let mut UserBuffer: *mut u8 = (*Run).TransferBuffer as *mut u8;
@@ -1346,8 +1350,8 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
             }
 
             IoReuseIrp((*Vcb).SectorCacheIrp, 0i32);
-            KeClearEvent(&(*Vcb).SectorCacheEvent);
-            (*(*Vcb).SectorCacheIrp).Tail.Overlay.Thread = PsGetCurrentThread();
+            KeClearEvent(core::ptr::addr_of_mut!((*Vcb).SectorCacheEvent) as *mut c_void);
+            (*(*Vcb).SectorCacheIrp).Tail.Overlay.Thread = PsGetCurrentThread() as *mut _ETHREAD;
 
             IrpSp = IoGetNextIrpStackLocation((*Vcb).SectorCacheIrp);
             (*IrpSp).MajorFunction = IRP_MJ_READ as u8;
@@ -1372,7 +1376,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
                 // A real SEH-aware implementation would replace this with proper macros.
                 MmProbeAndLockPages(
                     (*(*Vcb).SectorCacheIrp).MdlAddress,
-                    0i32,
+                    0i8,
                     IoWriteAccess as u32,
                 );
 
@@ -1396,7 +1400,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
 
             IoSetCompletionRoutine(
                 (*Vcb).SectorCacheIrp,
-                Some(CdSyncCompletionRoutine),
+                core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
                 &mut (*Vcb).SectorCacheEvent as *mut KEVENT as *mut core::ffi::c_void,
                 1,
                 1,
@@ -1411,7 +1415,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
                 KeWaitForSingleObject(
                     &(*Vcb).SectorCacheEvent as *const KEVENT as *mut core::ffi::c_void,
                     _KWAIT_REASON_Executive,
-                    0i32,
+                    0i8,
                     0,
                     core::ptr::null_mut(),
                 );
@@ -1452,18 +1456,18 @@ pub unsafe extern "C" fn CdMultipleAsync(
 ) {
     // PAGED_CODE();
 
-    let CompletionRoutine: PIO_COMPLETION_ROUTINE;
-    let IrpSp: *mut IO_STACK_LOCATION;
-    let Mdl: *mut MDL;
-    let Irp: *mut IRP;
+    let mut CompletionRoutine: PIO_COMPLETION_ROUTINE;
+    let mut IrpSp: *mut IO_STACK_LOCATION;
+    let mut Mdl: *mut MDL;
+    let mut Irp: *mut IRP;
     let MasterIrp: *mut IRP;
     let UnwindRunCount: u32;
-    let UseSectorCache: BOOLEAN;
+    let mut UseSectorCache: BOOLEAN;
 
-    CompletionRoutine = CdMultiSyncCompletionRoutine as PIO_COMPLETION_ROUTINE;
+    CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiSyncCompletionRoutine as usize);
 
     if (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) {
-        CompletionRoutine = CdMultiAsyncCompletionRoutine as PIO_COMPLETION_ROUTINE;
+        CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiAsyncCompletionRoutine as usize);
     }
 
     if ((SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX) &&
@@ -1534,7 +1538,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
         IoSetCompletionRoutine(
             Irp,
             CompletionRoutine,
-            (*IrpContext).IoContext as *mut c_void,
+            (*IrpContext).__bindgen_anon_1.IoContext as *mut c_void,
             1,
             1,
             1,
@@ -1553,7 +1557,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
         if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) != 0 {
             (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
             KeSetEvent(
-                &mut (*(*IrpContext).IoContext).SyncEvent,
+                (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void,
                 0,
                 0,
             );
@@ -1561,8 +1565,8 @@ pub unsafe extern "C" fn CdMultipleAsync(
         return;
     }
 
-    (*(*IrpContext).IoContext).IrpCount = RunCount;
-    (*(*IrpContext).IoContext).MasterIrp = MasterIrp;
+    (*(*IrpContext).__bindgen_anon_1.IoContext).IrpCount = RunCount as i32;
+    (*(*IrpContext).__bindgen_anon_1.IoContext).MasterIrp = MasterIrp;
 
     (*MasterIrp).AssociatedIrp.IrpCount = 1;
 
@@ -1570,15 +1574,15 @@ pub unsafe extern "C" fn CdMultipleAsync(
         (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0)
     {
         NT_ASSERT(
-            ((*(*IrpContext).IoContext).ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD,
+            (((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD) as i32,
         );
 
-        let io_context_ptr = (*IrpContext).IoContext as usize;
-        (*(*IrpContext).IoContext).ResourceThreadId = (io_context_ptr | 3) as ERESOURCE_THREAD;
+        let io_context_ptr = (*IrpContext).__bindgen_anon_1.IoContext as usize;
+        (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_mut().ResourceThreadId = (io_context_ptr | 3) as ERESOURCE_THREAD;
 
         ExSetResourceOwnerPointer(
-            (*(*IrpContext).IoContext).Resource,
-            (*(*IrpContext).IoContext).ResourceThreadId as *mut c_void,
+            (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource,
+            (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as *mut c_void,
         );
     }
 
@@ -1624,7 +1628,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     // Iterate through the runs, set up associated IRPs
     for UnwindRunCount in 0..RunCount {
         // Create an associated IRP
-        let stack_size = (*(*IrpContext).Vcb).TargetDeviceObject.read().StackSize;
+        let stack_size = (*(*(*IrpContext).Vcb).TargetDeviceObject).StackSize;
         let stack_count = stack_size.wrapping_add(1) as i8;
         (*ThisIoRun).SavedIrp = IoMakeAssociatedIrp(MasterIrp, stack_count);
         Irp = (*ThisIoRun).SavedIrp;
@@ -1673,8 +1677,8 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
         // Completion routine
         IoSetCompletionRoutine(
             Irp,
-            Some(CdMultiSyncCompletionRoutine),
-            (*IrpContext).IoContext,
+            core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiSyncCompletionRoutine as usize),
+            (*IrpContext).__bindgen_anon_1.IoContext as *mut c_void,
             1,
             1,
             1,
@@ -1701,8 +1705,8 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     }
 
     // Set associated IRP count on master IRP (plus one to keep the I/O system from completing)
-    (*(*IrpContext).IoContext).IrpCount = RunCount;
-    (*(*IrpContext).IoContext).MasterIrp = MasterIrp;
+    (*(*IrpContext).__bindgen_anon_1.IoContext).IrpCount = RunCount as i32;
+    (*(*IrpContext).__bindgen_anon_1.IoContext).MasterIrp = MasterIrp;
 
     // Set master IRP count to 1 so that on last associated IRP completion the master is completed
     (*MasterIrp).AssociatedIrp.IrpCount = 1;
@@ -1713,7 +1717,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
         (*IoRuns.add(UnwindRunCount as usize)).SavedIrp = core::ptr::null_mut();
 
         // Call driver; ignore return value as error is handled in completion routine
-        let _ = IoCallDriver((*IrpContext).Vcb.read().TargetDeviceObject, Irp);
+        let _ = IoCallDriver((*(*IrpContext).Vcb).TargetDeviceObject, Irp);
     }
 }
 #[no_mangle]
@@ -1725,14 +1729,14 @@ pub unsafe extern "C" fn CdSingleAsync(
     PAGED_CODE();
 
     if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX)
-        && !(*Fcb).Vcb.SectorCacheBuffer.is_null()
+        && !(*(*Fcb).Vcb).SectorCacheBuffer.is_null()
         && (VcbMounted == (*(*IrpContext).Vcb).VcbCondition)
     {
         if CdReadDirDataThroughCache(IrpContext, Run) != 0 {
             if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
                 (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 KeSetEvent(
-                    core::ptr::addr_of_mut!((*(*IrpContext).IoContext).SyncEvent),
+                    ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void),
                     0,
                     0,
                 );
@@ -1744,24 +1748,25 @@ pub unsafe extern "C" fn CdSingleAsync(
     let mut CompletionRoutine: PIO_COMPLETION_ROUTINE;
 
     if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
-        CompletionRoutine = CdSingleSyncCompletionRoutine;
+        CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSingleSyncCompletionRoutine as usize);
     } else {
-        CompletionRoutine = CdSingleAsyncCompletionRoutine;
+        CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSingleAsyncCompletionRoutine as usize);
 
         if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_TOP_LEVEL) != 0 {
+            let io_ctx = (*IrpContext).__bindgen_anon_1.IoContext;
             NT_ASSERT(
-                if ((*IrpContext).IoContext.ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread()
+                if ((*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD
                     { 1 }
                 else
                     { 0 },
             );
 
-            (*IrpContext).IoContext.ResourceThreadId =
-                ((*IrpContext).IoContext as ULONG_PTR) | 3;
+            (*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_mut().ResourceThreadId =
+                ((io_ctx as ULONG_PTR) | 3) as ERESOURCE_THREAD;
 
             ExSetResourceOwnerPointer(
-                (*IrpContext).IoContext.Resource,
-                (*IrpContext).IoContext.ResourceThreadId as *mut core::ffi::c_void,
+                (*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource,
+                (*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as *mut core::ffi::c_void,
             );
         }
     }
@@ -1769,7 +1774,7 @@ pub unsafe extern "C" fn CdSingleAsync(
     IoSetCompletionRoutine(
         (*IrpContext).Irp,
         CompletionRoutine,
-        (*IrpContext).IoContext as *mut core::ffi::c_void,
+        (*IrpContext).__bindgen_anon_1.IoContext as *mut core::ffi::c_void,
         1,
         1,
         1,
@@ -1781,24 +1786,24 @@ pub unsafe extern "C" fn CdSingleAsync(
     (*IrpSp).Parameters.Read.Length = (*Run).DiskByteCount;
     (*IrpSp).Parameters.Read.ByteOffset.QuadPart = (*Run).DiskOffset;
 
-    IoCallDriver((*IrpContext).Vcb.TargetDeviceObject, (*IrpContext).Irp);
+    IoCallDriver((*(*IrpContext).Vcb).TargetDeviceObject, (*IrpContext).Irp);
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdWaitSync(IrpContext: *mut IRP_CONTEXT) {
     // PAGED_CODE();  // placeholder for pageable code check
     KeWaitForSingleObject(
-        core::ptr::addr_of_mut!((*(*IrpContext).IoContext).SyncEvent),
+        ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void),
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0, // FALSE
         core::ptr::null_mut() // NULL timeout
     );
     KeClearEvent(
-        core::ptr::addr_of_mut!((*(*IrpContext).IoContext).SyncEvent)
+        ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void)
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
+pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1811,10 +1816,8 @@ pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
 
         if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             // InterlockedExchange( &IoContext->Status, Irp->IoStatus.Status )
-            core::intrinsics::atomic_xchg_seqcst(
-                &raw mut (*IoContext).__bindgen_anon_1.Status,
-                (*Irp).IoStatus.__bindgen_anon_1.Status,
-            );
+            (*(&raw mut (*IoContext).Status as *mut core::sync::atomic::AtomicI32))
+                .swap((*Irp).IoStatus.__bindgen_anon_1.Status, core::sync::atomic::Ordering::SeqCst);
             (*(*IoContext).MasterIrp).IoStatus.Information = 0;
         }
 
@@ -1823,8 +1826,8 @@ pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
         IoFreeIrp(Irp);
 
         if InterlockedDecrement(&raw mut (*IoContext).IrpCount) == 0 {
-            (*(*IoContext).MasterIrp).IoStatus.__bindgen_anon_1.Status = (*IoContext).__bindgen_anon_1.Status;
-            KeSetEvent(&raw mut (*IoContext).SyncEvent, 0, 0);
+            (*(*IoContext).MasterIrp).IoStatus.__bindgen_anon_1.Status = (*IoContext).Status;
+            KeSetEvent((*IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void, 0, 0);
         }
 
         let _ = DeviceObject; // UNREFERENCED_PARAMETER
@@ -1833,7 +1836,7 @@ pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
+pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     _DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
     Context: *mut core::ffi::c_void,
@@ -1846,7 +1849,7 @@ pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
     // UNREFERENCED_PARAMETER( DeviceObject ); handled by prefix _DeviceObject
 
     if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
-        let status_ptr: *mut NTSTATUS = core::ptr::addr_of_mut!((*IoContext).__bindgen_anon_1.Status);
+        let status_ptr: *mut NTSTATUS = core::ptr::addr_of_mut!((*IoContext).Status);
         let new_val = (*Irp).IoStatus.__bindgen_anon_1.Status;
         (*(status_ptr as *mut core::sync::atomic::AtomicI32)).swap(new_val, core::sync::atomic::Ordering::SeqCst);
         // InterlockedExchange equivalent
@@ -1855,15 +1858,15 @@ pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
     if InterlockedDecrement(core::ptr::addr_of_mut!((*IoContext).IrpCount)) == 0 {
         IoMarkIrpPending((*IoContext).MasterIrp);
 
-        (*(*IoContext).MasterIrp).IoStatus.__bindgen_anon_1.Status = (*IoContext).__bindgen_anon_1.Status;
+        (*(*IoContext).MasterIrp).IoStatus.__bindgen_anon_1.Status = (*IoContext).Status;
         (*(*IoContext).MasterIrp).IoStatus.Information = 0;
 
         if NT_SUCCESS((*(*IoContext).MasterIrp).IoStatus.__bindgen_anon_1.Status) {
-            (*(*IoContext).MasterIrp).IoStatus.Information = (*IoContext).RequestedByteCount;
+            (*(*IoContext).MasterIrp).IoStatus.Information = (*IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().RequestedByteCount as _;
         }
 
         // _Analysis_assume_lock_held_(...); (annotation, omitted)
-        ExReleaseResourceForThreadLite((*IoContext).Resource, (*IoContext).ResourceThreadId);
+        ExReleaseResourceForThreadLite((*IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource, (*IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId);
 
         CdFreeIoContext(IoContext);
 
@@ -1876,7 +1879,7 @@ pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSingleSyncCompletionRoutine(
+pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1891,13 +1894,13 @@ pub unsafe extern "C" fn CdSingleSyncCompletionRoutine(
     }
 
     let cd_context: *mut CD_IO_CONTEXT = Context as *mut CD_IO_CONTEXT;
-    let event_ptr = core::ptr::addr_of_mut!((*cd_context).SyncEvent);
+    let event_ptr = (*cd_context).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void;
     KeSetEvent(event_ptr, 0, 0);
 
     0x103 // STATUS_MORE_PROCESSING_REQUIRED
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSingleAsyncCompletionRoutine(
+pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -1913,13 +1916,13 @@ pub unsafe extern "C" fn CdSingleAsyncCompletionRoutine(
     (*Irp).IoStatus.Information = 0;
 
     if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
-        (*Irp).IoStatus.Information = (*io_context).RequestedByteCount;
+        (*Irp).IoStatus.Information = (*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().RequestedByteCount as _;
     }
 
     IoMarkIrpPending(Irp);
 
-    _Analysis_assume_lock_held_((*io_context).Resource as *mut core::ffi::c_void);
-    ExReleaseResourceForThreadLite((*io_context).Resource, (*io_context).ResourceThreadId);
+    _Analysis_assume_lock_held_((*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource as *mut core::ffi::c_void);
+    ExReleaseResourceForThreadLite((*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource, (*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId);
 
     CdFreeIoContext(io_context);
     return STATUS_SUCCESS;
@@ -1954,7 +1957,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
         NT_ASSERT((StartingOffset == 0) as i32);
 
         RawPath = LocalBuffer.as_mut_ptr() as *mut RAW_PATH_ISO;
-        RtlZeroMemory(RawPath as *mut c_void, LOCAL_BUF_SIZE as u32);
+        RtlZeroMemory(RawPath as *mut c_void, LOCAL_BUF_SIZE);
 
         (*RawPath).DirIdLen = 1;
         (*RawPath).ParentNum = 1;
@@ -1973,13 +1976,13 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
             RtlZeroMemory(
                 RawDirent as *mut c_void,
-                core::mem::offset_of!(RAW_DIRENT, FileId) as u32,
+                core::mem::offset_of!(RAW_DIRENT, FileId),
             );
 
             (*RawDirent).DirLen = (core::mem::offset_of!(RAW_DIRENT, FileId) + 1) as u8;
             (*RawDirent).FileIdLen = 1;
             (*RawDirent).FileId[0] = b'\0';
-            SetFlag(&raw mut (*RawDirent).FlagsISO, CD_ATTRIBUTE_DIRECTORY);
+            (*RawDirent).FlagsISO |= CD_ATTRIBUTE_DIRECTORY;
 
             (*RawDirent).RecordTime[0] = 95;
             (*RawDirent).RecordTime[1] = 1;
@@ -1990,13 +1993,13 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
             RtlZeroMemory(
                 RawDirent as *mut c_void,
-                core::mem::offset_of!(RAW_DIRENT, FileId) as u32,
+                core::mem::offset_of!(RAW_DIRENT, FileId),
             );
 
             (*RawDirent).DirLen = (core::mem::offset_of!(RAW_DIRENT, FileId) + 1) as u8;
             (*RawDirent).FileIdLen = 1;
             (*RawDirent).FileId[0] = b'\x01';
-            SetFlag(&raw mut (*RawDirent).FlagsISO, CD_ATTRIBUTE_DIRECTORY);
+            (*RawDirent).FlagsISO |= CD_ATTRIBUTE_DIRECTORY;
 
             (*RawDirent).RecordTime[0] = 95;
             (*RawDirent).RecordTime[1] = 1;
@@ -2023,13 +2026,13 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
         loop {
             loop {
-                if CurrentTrack >= (*(*(*IrpContext).Vcb).CdromToc).TrackCount {
+                if CurrentTrack >= (*(*IrpContext).Vcb).TrackCount {
                     break;
                 }
                 ThisTrack = &raw mut (*(*(*IrpContext).Vcb).CdromToc).TrackData[CurrentTrack as usize];
 
                 RawDirent = (CurrentSector.add(SectorOffset as usize)) as *mut RAW_DIRENT;
-                RtlZeroMemory(RawDirent as *mut c_void, CdAudioDirentSize);
+                RtlZeroMemory(RawDirent as *mut c_void, CdAudioDirentSize as usize);
 
                 (*RawDirent).DirLen = CdAudioDirentSize as u8;
                 (*RawDirent).FileIdLen = CdAudioFileNameLength as u8;
@@ -2053,8 +2056,8 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
                 (*RawDirent).FileId[AUDIO_NAME_ONES_OFFSET as usize] = TrackOnes;
 
                 SystemUse = (RawDirent as *mut u8).add(CdAudioSystemUseOffset as usize) as *mut SYSTEM_USE_XA;
-                (*SystemUse).Attributes = SYSTEM_USE_XA_DA;
-                (*SystemUse).Signature = SYSTEM_XA_SIGNATURE;
+                (*SystemUse).Attributes = SYSTEM_USE_XA_DA as u16;
+                (*SystemUse).Signature = SYSTEM_XA_SIGNATURE as u16;
                 (*SystemUse).FileNumber = CurrentTrack as u8;
 
                 EntryCount += 1;
@@ -2068,7 +2071,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
             RtlZeroMemory(
                 CurrentSector.add(SectorOffset as usize) as *mut c_void,
-                SECTOR_SIZE - SectorOffset,
+                (SECTOR_SIZE - SectorOffset) as usize,
             );
 
             EntryCount = 0;
@@ -2107,7 +2110,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0);
     IoSetCompletionRoutine(
         Irp,
-        Some(CdSyncCompletionRoutine as PIO_COMPLETION_ROUTINE),
+        core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
         &mut Event as *mut KEVENT as *mut core::ffi::c_void,
         1,
         1,
@@ -2120,7 +2123,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
         KeWaitForSingleObject(
             &mut Event as *mut KEVENT as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             0,
             core::ptr::null_mut(),
         );
@@ -3827,7 +3830,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //             //
 //
 //             ThisIoRun->TransferMdl = IoAllocateMdl( ThisIoRun->TransferBuffer,
-//                                                     PAGE_SIZE,
+//                                                     PAGE_SIZE as u32,
 //                                                     FALSE,
 //                                                     FALSE,
 //                                                     NULL );
@@ -4302,7 +4305,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //                 //
 //
 //                 ThisIoRun->TransferMdl = IoAllocateMdl( ThisIoRun->TransferBuffer,
-//                                                         PAGE_SIZE,
+//                                                         PAGE_SIZE as u32,
 //                                                         FALSE,
 //                                                         FALSE,
 //                                                         NULL );
@@ -4845,7 +4848,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //             IrpSp->Parameters.Read.ByteOffset.QuadPart = LlBytesFromSectors( StartBlock);
 //
 //             IoSetCompletionRoutine( Vcb->SectorCacheIrp,
-//                                     CdSyncCompletionRoutine,
+//                                     core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
 //                                     &Vcb->SectorCacheEvent,
 //                                     TRUE,
 //                                     TRUE,
@@ -4975,11 +4978,11 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //     //  Set up things according to whether this is truely async.
 //     //
 //
-//     CompletionRoutine = CdMultiSyncCompletionRoutine;
+//     CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiSyncCompletionRoutine as usize);
 //
 //     if (!FlagOn( IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT )) {
 //
-//         CompletionRoutine = CdMultiAsyncCompletionRoutine;
+//         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiAsyncCompletionRoutine as usize);
 //     }
 //
 //     //
@@ -5329,7 +5332,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //         //
 //
 //         IoSetCompletionRoutine( Irp,
-//                                 CdMultiSyncCompletionRoutine,
+//                                 core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiSyncCompletionRoutine as usize),
 //                                 IrpContext->IoContext,
 //                                 TRUE,
 //                                 TRUE,
@@ -5472,11 +5475,11 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //
 //     if (FlagOn( IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT )) {
 //
-//         CompletionRoutine = CdSingleSyncCompletionRoutine;
+//         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSingleSyncCompletionRoutine as usize);
 //
 //     } else {
 //
-//         CompletionRoutine = CdSingleAsyncCompletionRoutine;
+//         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSingleAsyncCompletionRoutine as usize);
 //
 //         //
 //         //  If we (FS) acquired locks, transition the lock owners to an object, since
@@ -6302,7 +6305,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
 //     KeInitializeEvent( &Event, NotificationEvent, FALSE );
 //
 //     IoSetCompletionRoutine( Irp,
-//                             CdSyncCompletionRoutine,
+//                             core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
 //                             &Event,
 //                             TRUE,
 //                             TRUE,

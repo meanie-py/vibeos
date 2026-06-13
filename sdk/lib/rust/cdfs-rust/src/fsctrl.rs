@@ -12,15 +12,15 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, IO_STACK_LOCATION, 
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlNotifyVolumeEvent};
 use crate::glue::{CDFS_BUG_CHECK_FSCTRL, CDFS_RESIDUAL_REFERENCE, Ccb, FSRTL_VOLUME_MOUNT, FSRTL_VOLUME_UNLOCK, Fcb, IrpContext, SL_ALLOW_RAW_MOUNT, STATUS_NOT_LOCKED, STATUS_WRONG_VOLUME, TAG_VOL_DESC, Vcb};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::cddata::{CdData};
-
-extern "C" {
-    static mut CdData: CdData;
-}
+use crate::cddata::CdData;
+use crate::types::{VCB_CONDITION, _VCB_CONDITION_VcbDismountInProgress, _VCB_CONDITION_VcbInvalid, _VCB_CONDITION_VcbNotMounted, FCB_DATA, FCB_INDEX, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpenValue};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{CdMarkRealDevVerifyOk};
+use crate::glue::{CdNonPagedPool};
 extern "system" {
-    fn CdPurgeVolume(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u32);
+    fn CdPurgeVolume(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u8) -> NTSTATUS;
     fn CdReleaseVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
-    fn CdAcquireVcbExclusive(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u32);
+    fn CdAcquireVcbExclusive(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u8);
     fn CdFspClose(vcb: *mut VCB);
     fn IoAcquireVpbSpinLock(SpinLock: *mut u8);
     fn IoReleaseVpbSpinLock(Irql: u8);
@@ -49,10 +49,10 @@ extern "system" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
-    static CdIsoId: u8;
-    static CdHsgId: u8;
+    static CdIsoId: [i8; 5];
+    static CdHsgId: [i8; 5];
     fn CdRaiseStatus(IrpContext: *mut IrpContext, Status: NTSTATUS) -> !;
-    fn CdPerformDevIoCtrl( IrpContext: *mut IrpContext, IoControlCode: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut core::ffi::c_void, BufferLength: u32, MinorFunction: i32, Override: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> NTSTATUS;
+    fn CdPerformDevIoCtrl( IrpContext: *mut IrpContext, IoControlCode: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut core::ffi::c_void, BufferLength: u32, InternalDeviceIoControl: u8, OverrideVerify: u8, Iosb: *mut _IO_STATUS_BLOCK, ) -> NTSTATUS;
     fn CdReadSectors( IrpContext: *mut IrpContext, ByteOffset: i64, LengthInBytes: u32, RaiseOnError: i32, Buffer: *mut i8, TargetDevice: *mut DEVICE_OBJECT, ) -> i32;
     fn CdRvdId(RawIsoVd: *mut i8, Flags: u32) -> *mut i8;
     fn CdRvdVersion(RawIsoVd: *mut i8, Flags: u32) -> u32;
@@ -61,14 +61,21 @@ extern "system" {
     fn RtlEqualMemory(Source1: *const core::ffi::c_void, Source2: *const core::ffi::c_void, Length: usize) -> i32;
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
     fn FlagOn(flags: u32, flag: u32) -> i32;
-    fn CdSerial32(RawIsoVd: *mut u8, SectorSize: u32) -> u32;
+    fn CdSerial32(RawIsoVd: *mut i8, SectorSize: u32) -> u32;
     fn NT_ASSERT(expression: i32);
-    fn CdRvdEsc(RawIsoVd: *mut u8, State: u32) -> *mut u8;
-    fn CdRvdVolId(RawIsoVd: *mut u8, State: u32) -> *mut u8;
-    fn CdConvertBigToLittleEndian(IrpContext: *mut IrpContext, Src: *mut u8, SrcLen: u32, Dst: *mut u8);
+    fn CdRvdEsc(RawIsoVd: *mut i8, State: u32) -> *mut i8;
+    fn CdRvdVolId(RawIsoVd: *mut i8, State: u32) -> *mut i8;
+    fn CdConvertBigToLittleEndian(IrpContext: *mut IrpContext, Src: *mut i8, SrcLen: u32, Dst: *mut i8);
     fn RtlOemToUnicodeN(Dest: *mut u16, DestBytes: u32, ResultLength: *mut u32, Src: *const u8, SrcBytes: u32) -> i32;
-    fn CdInvalidateVolumes(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void) -> i32;
+    fn CdInvalidateVolumes(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> i32;
     fn CdMountVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
+    fn CdIsRawDevice(IrpContext: *mut IRP_CONTEXT, Status: i32) -> u8;
+}
+
+// Add2Ptr is a C macro: ((PVOID)((PUCHAR)(P) + (I)))
+#[inline]
+unsafe fn Add2Ptr(p: *mut core::ffi::c_void, offset: usize) -> *mut core::ffi::c_void {
+    (p as *mut u8).add(offset) as *mut core::ffi::c_void
 }
 
 // ---- file-scope preamble (translated) ----
@@ -82,6 +89,8 @@ const VPB_LOCKED: u32 = 0x0001;
 const VCB_STATE_LOCKED: u32 = 0x8000;
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
 const CDFS_RESIDUAL_USER_REFERENCE: u32 = 1;
+// IOCTL_CDROM_CHECK_VERIFY = CTL_CODE(FILE_DEVICE_CD_ROM(2), 0x0200, METHOD_BUFFERED(0), FILE_READ_ACCESS(1))
+const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 << 2) | 0u32;
 
 // External functions local to the CDFS driver (not in ntkrnl_sys)
 
@@ -96,7 +105,7 @@ const SECTOR_SIZE: usize = 2048;                      // typical CD sector size
 
 // Forward extern declarations for functions not in imports
 
-const UserVolumeOpen: OPEN_TYPE = 0; // actual value from C enum OPEN_TYPE
+const UserVolumeOpen: i32 = UserVolumeOpenValue as i32; // TYPE_OF_OPEN::UserVolumeOpen == 2
 const FSRTL_VOLUME_LOCK: ULONG = 1;   // typical; actual value may differ
 const FSRTL_VOLUME_LOCK_FAILED: ULONG = 2; // typical
 
@@ -133,7 +142,7 @@ const VCB_STATE_HSG: u32 = 0x00000200;
 // External declarations for macros/functions used by this function
 
 // Constants not provided — guess / placeholder values
-const VcbNotMounted: i32 = 0; // first enum value
+const VcbNotMounted: u32 = 0; // first enum value (VCB_CONDITION)
 
 // Assume the following global / type definitions exist elsewhere.
 // The caller will supply the actual definitions.
@@ -156,7 +165,7 @@ unsafe fn CdLockVolumeInternal(
     vcb: *mut VCB,
     file_object: *mut FILE_OBJECT,
 ) -> NTSTATUS {
-    let mut saved_irql: KIRQL;
+    let mut saved_irql: KIRQL = 0;
     let mut final_status: NTSTATUS =
         if !file_object.is_null() { STATUS_ACCESS_DENIED } else { STATUS_DEVICE_BUSY };
     let remaining_user_references: u32 = if !file_object.is_null() { 1 } else { 0 };
@@ -182,14 +191,14 @@ unsafe fn CdLockVolumeInternal(
 
     let vpb = (*vcb).Vpb;
     // if (!FlagOn( Vcb->Vpb->Flags, VPB_LOCKED ) && ...)
-    if !((*vpb).Flags & VPB_LOCKED) != 0
+    if ((*vpb).Flags & VPB_LOCKED as u16) == 0
         && (*vcb).VcbCleanup == remaining_user_references
-        && (*vcb).VcbUserReference == CDFS_RESIDUAL_USER_REFERENCE + remaining_user_references
+        && (*vcb).VcbUserReference == (CDFS_RESIDUAL_USER_REFERENCE + remaining_user_references) as i32
     {
         // SetFlag( Vcb->VcbState, VCB_STATE_LOCKED )
         (*vcb).VcbState |= VCB_STATE_LOCKED;
         // SetFlag( Vcb->Vpb->Flags, VPB_LOCKED )
-        (*vpb).Flags |= VPB_LOCKED;
+        (*vpb).Flags |= VPB_LOCKED as u16;
         (*vcb).VolumeLockFileObject = file_object;
         final_status = STATUS_SUCCESS;
     }
@@ -205,7 +214,7 @@ pub unsafe extern "C" fn CdUnlockVolumeInternal(
     FileObject: *mut FILE_OBJECT,
 ) -> i32 {
     let mut status: i32 = STATUS_NOT_LOCKED;
-    let mut saved_irql: u8;
+    let mut saved_irql: u8 = 0;
 
     // UNREFERENCED_PARAMETER(IrpContext)
     let _ = IrpContext;
@@ -213,13 +222,13 @@ pub unsafe extern "C" fn CdUnlockVolumeInternal(
     IoAcquireVpbSpinLock(&mut saved_irql as *mut u8);
 
     // FlagOn(Vcb->Vpb->Flags, VPB_LOCKED) && FileObject == Vcb->VolumeLockFileObject
-    if ((*(*Vcb).Vpb).Flags & VPB_LOCKED) != 0
+    if ((*(*Vcb).Vpb).Flags & VPB_LOCKED as u16) != 0
         && FileObject == (*Vcb).VolumeLockFileObject
     {
         // ClearFlag(Vcb->VcbState, VCB_STATE_LOCKED)
         (*Vcb).VcbState &= !VCB_STATE_LOCKED;
         // ClearFlag(Vcb->Vpb->Flags, VPB_LOCKED)
-        (*(*Vcb).Vpb).Flags &= !VPB_LOCKED;
+        (*(*Vcb).Vpb).Flags &= !(VPB_LOCKED as u16);
         (*Vcb).VolumeLockFileObject = core::ptr::null_mut();
         status = STATUS_SUCCESS;
     }
@@ -256,7 +265,7 @@ pub unsafe extern "C" fn CdCommonFsControl(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> i32 {
     let Status: i32;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
@@ -312,7 +321,7 @@ pub unsafe extern "C" fn CdReMountOldVcb(
     NewVcb: *mut VCB,
     DeviceObjectWeTalkTo: *mut DEVICE_OBJECT,
 ) {
-    let SavedIrql: KIRQL;
+    let mut SavedIrql: KIRQL = 0;
     let mut Index: u32;
     let mut Buffer: *mut u8;
 
@@ -322,9 +331,9 @@ pub unsafe extern "C" fn CdReMountOldVcb(
 
     IoAcquireVpbSpinLock(&mut SavedIrql as *mut KIRQL);
 
-    (*(*NewVcb).Vpb).RealDevice.Vpb = (*OldVcb).Vpb;
+    (*(*(*NewVcb).Vpb).RealDevice).Vpb = (*OldVcb).Vpb;
 
-    (*OldVcb).Vpb.RealDevice = (*(*NewVcb).Vpb).RealDevice;
+    (*(*OldVcb).Vpb).RealDevice = (*(*NewVcb).Vpb).RealDevice;
     (*OldVcb).TargetDeviceObject = DeviceObjectWeTalkTo;
 
     CdUpdateVcbCondition(OldVcb, VcbMounted);
@@ -342,7 +351,7 @@ pub unsafe extern "C" fn CdReMountOldVcb(
         while Index < CD_SEC_CACHE_CHUNKS {
             (*OldVcb).SecCacheChunks[Index as usize].Buffer = Buffer;
             (*OldVcb).SecCacheChunks[Index as usize].BaseLbn = u32::MAX;
-            Buffer = Buffer.add((CD_SEC_CHUNK_BLOCKS * SECTOR_SIZE) as usize);
+            Buffer = Buffer.add(CD_SEC_CHUNK_BLOCKS as usize * SECTOR_SIZE);
             Index += 1;
         }
     }
@@ -357,7 +366,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
     // Declare all locals exactly as in C
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let Vpb: PVPB = (*IrpSp).Parameters.VerifyVolume.Vpb;
-    let Vcb: PVCB = &mut (*(*IrpSp).Parameters.VerifyVolume.DeviceObject as *mut VOLUME_DEVICE_OBJECT).Vcb as *mut VCB;
+    let Vcb: PVCB = &mut (*((*IrpSp).Parameters.VerifyVolume.DeviceObject as *mut VOLUME_DEVICE_OBJECT)).Vcb as *mut VCB;
 
     let mut RawIsoVd: PCHAR = core::ptr::null_mut();
     let mut CdromToc: *mut CDROM_TOC_LARGE = core::ptr::null_mut();
@@ -369,9 +378,9 @@ pub unsafe extern "C" fn CdVerifyVolume(
     let mut ReturnError: BOOLEAN;
     let mut ReleaseVcb: BOOLEAN = 0u8; // FALSE
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut AnsiLabel: STRING;
-    let mut UnicodeLabel: _UNICODE_STRING;
-    let mut VolumeLabel: [u16; VOLUME_ID_LENGTH] = [0u16; VOLUME_ID_LENGTH];
+    let mut AnsiLabel: STRING = core::mem::zeroed();
+    let mut UnicodeLabel: _UNICODE_STRING = core::mem::zeroed();
+    let mut VolumeLabel: [u16; VOLUME_ID_LENGTH as usize] = [0u16; VOLUME_ID_LENGTH as usize];
     let mut VolumeLabelLength: ULONG;
     let mut Index: ULONG;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -409,16 +418,14 @@ pub unsafe extern "C" fn CdVerifyVolume(
             (*Vcb).TargetDeviceObject,
             ((&mut MediaChangeCount) as *mut ULONG) as *mut core::ffi::c_void,
             core::mem::size_of::<ULONG>() as ULONG,
-            core::ptr::null_mut(),
-            0u32,
-            0u8, // FALSE
-            1u8, // TRUE
+            0u8, // FALSE - InternalDeviceIoControl
+            1u8, // TRUE  - OverrideVerify
             &mut Iosb,
         );
 
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             // If we will allow a raw mount then return WRONG_VOLUME
-            if (FlagOn((*IrpSp).Flags, SL_ALLOW_RAW_MOUNT)) != 0 {
+            if (FlagOn((*IrpSp).Flags as u32, SL_ALLOW_RAW_MOUNT)) != 0 {
                 Status = STATUS_WRONG_VOLUME;
             }
             break 'try_inner; // try_return( Status )
@@ -474,13 +481,13 @@ pub unsafe extern "C" fn CdVerifyVolume(
                 // Allocate buffer for sector buffer
                 RawIsoVd = FsRtlAllocatePoolWithTag(
                     CdNonPagedPool,
-                    ROUND_TO_PAGES(2u32 * SECTOR_SIZE),
+                    ROUND_TO_PAGES(2usize * SECTOR_SIZE) as u32,
                     TAG_VOL_DESC,
                 ) as PCHAR;
 
                 // Read the primary volume descriptor
                 ReturnError = 0u8; // FALSE
-                if (FlagOn((*IrpSp).Flags, SL_ALLOW_RAW_MOUNT)) != 0 {
+                if (FlagOn((*IrpSp).Flags as u32, SL_ALLOW_RAW_MOUNT)) != 0 {
                     ReturnError = 1u8; // TRUE
                 }
 
@@ -489,8 +496,8 @@ pub unsafe extern "C" fn CdVerifyVolume(
                     Vcb,
                     RawIsoVd,
                     (*Vcb).BlockFactor,
-                    ReturnError,
-                    1u8, // TRUE
+                    ReturnError as i32,
+                    1i32, // TRUE
                 ) == 0
                 {
                     Status = STATUS_WRONG_VOLUME;
@@ -508,7 +515,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
                     CdFindActiveVolDescriptor(IrpContext, Vcb, RawIsoVd, 1u8);
 
                     // Compare serial numbers
-                    if (*Vpb).SerialNumber != CdSerial32(RawIsoVd, SECTOR_SIZE) {
+                    if (*Vpb).SerialNumber != CdSerial32(RawIsoVd, SECTOR_SIZE as u32) {
                         Status = STATUS_WRONG_VOLUME;
                         break 'try_inner; // try_return
                     }
@@ -516,7 +523,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
                     // Verify volume labels
                     if (FlagOn((*Vcb).VcbState, VCB_STATE_JOLIET)) == 0 {
                         // Compute length of volume name
-                        AnsiLabel.Buffer = CdRvdVolId(RawIsoVd, (*Vcb).VcbState) as *const u8 as *mut u8 as *mut i8;
+                        AnsiLabel.Buffer = CdRvdVolId(RawIsoVd, (*Vcb).VcbState) as *mut i8;
                         AnsiLabel.MaximumLength = VOLUME_ID_LENGTH as u16;
                         AnsiLabel.Length = VOLUME_ID_LENGTH as u16;
 
@@ -555,9 +562,9 @@ pub unsafe extern "C" fn CdVerifyVolume(
                     VolumeLabelLength = (Index * (core::mem::size_of::<u16>() as ULONG)) as u16 as ULONG;
 
                     // Check that the label matches
-                    if ((*Vpb).VolumeLabelLength != VolumeLabelLength) ||
+                    if ((*Vpb).VolumeLabelLength as u32 != VolumeLabelLength) ||
                         (RtlEqualMemory(
-                            (*Vpb).VolumeLabel as *const core::ffi::c_void,
+                            (*Vpb).VolumeLabel.as_ptr() as *const core::ffi::c_void,
                             VolumeLabel.as_ptr() as *const core::ffi::c_void,
                             VolumeLabelLength as usize,
                         ) == 0)
@@ -575,8 +582,10 @@ pub unsafe extern "C" fn CdVerifyVolume(
 
         // See if we need to provide notification of remount
         if (FlagOn((*Vcb).VcbState, VCB_STATE_NOTIFY_REMOUNT)) != 0 {
-            ClearFlag((*Vcb).VcbState, VCB_STATE_NOTIFY_REMOUNT);
-            FileObjectToNotify = (*(*Vcb).RootIndexFcb).FileObject;
+            ClearFlag(&mut (*Vcb).VcbState, VCB_STATE_NOTIFY_REMOUNT);
+            // RootIndexFcb->FileObject reads the FCB_INDEX arm of the FCB anonymous union.
+            let root_index = &(*(*Vcb).RootIndexFcb).__bindgen_anon_2 as *const _ as *const FCB_INDEX;
+            FileObjectToNotify = (*root_index).FileObject;
             ObReferenceObject(FileObjectToNotify as *mut core::ffi::c_void);
         }
 
@@ -637,7 +646,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
 #[no_mangle]
 pub unsafe extern "C" fn CdOplockRequest(
     IrpContext: *mut IrpContext,
-    Irp: *mut IRP,
+    mut Irp: *mut IRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0; // STATUS_SUCCESS is 0
     let mut Fcb: *mut Fcb = core::ptr::null_mut();
@@ -649,22 +658,22 @@ pub unsafe extern "C" fn CdOplockRequest(
 
     if CdDecodeFileObject(
         IrpContext,
-        (*(IrpSp as *mut core::ffi::c_void as *mut PIO_STACK_LOCATION)).FileObject,
+        (*IrpSp).FileObject,
         &mut Fcb,
         &mut Ccb,
-    ) != UserFileOpen
+    ) != UserFileOpen as i32
     {
         CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER as NTSTATUS);
         return STATUS_INVALID_PARAMETER as NTSTATUS;
     }
 
-    SetFlag(&mut (*(IrpContext as *mut IrpContext)).Flags as *mut ULONG, IRP_CONTEXT_FLAG_WAIT);
+    SetFlag(&mut (*IrpContext).Flags as *mut ULONG, IRP_CONTEXT_FLAG_WAIT);
     ClearFlag(
-        &mut (*(IrpContext as *mut IrpContext)).Flags as *mut ULONG,
+        &mut (*IrpContext).Flags as *mut ULONG,
         IRP_CONTEXT_FLAG_FORCE_POST,
     );
 
-    let fs_control_code = (*(IrpSp as *mut PIO_STACK_LOCATION))
+    let fs_control_code = (*IrpSp)
         .Parameters
         .FileSystemControl
         .FsControlCode;
@@ -677,12 +686,14 @@ pub unsafe extern "C" fn CdOplockRequest(
             CdAcquireFcbExclusive(IrpContext, Fcb, 0); // FALSE -> 0
 
             if fs_control_code == FSCTL_REQUEST_OPLOCK_LEVEL_2 {
-                if !(*(Fcb as *const Fcb)).FileLock.is_null() {
+                // Fcb->FileLock reads the FCB_DATA arm of the FCB anonymous union.
+                let fcb_data = &(*Fcb).__bindgen_anon_2 as *const _ as *const FCB_DATA;
+                if !(*fcb_data).FileLock.is_null() {
                     OplockCount =
-                        FsRtlAreThereCurrentFileLocks((*(Fcb as *const Fcb)).FileLock) as ULONG;
+                        FsRtlAreThereCurrentFileLocks((*fcb_data).FileLock) as ULONG;
                 }
             } else {
-                OplockCount = (*(Fcb as *const Fcb)).FcbCleanup as ULONG;
+                OplockCount = (*Fcb).FcbCleanup as ULONG;
             }
         }
         FSCTL_OPLOCK_BREAK_ACKNOWLEDGE
@@ -704,7 +715,8 @@ pub unsafe extern "C" fn CdOplockRequest(
         Status = FsRtlOplockFsctrl(CdGetFcbOplock(Fcb), Irp, OplockCount);
 
         CdLockFcb(IrpContext, Fcb);
-        (*(Fcb as *mut Fcb)).IsFastIoPossible = CdIsFastIoPossible(Fcb);
+        // Fcb->IsFastIoPossible lives in the embedded FSRTL_ADVANCED_FCB_HEADER (Header union arm).
+        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
         CdUnlockFcb(IrpContext, Fcb);
 
         Irp = core::ptr::null_mut();
@@ -723,8 +735,8 @@ pub unsafe extern "C" fn CdLockVolume(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    let Fcb: *mut FCB;
-    let Ccb: *mut CCB;
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
 
     if CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb) != UserVolumeOpen {
         CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
@@ -746,7 +758,7 @@ pub unsafe extern "C" fn CdLockVolume(
     }
     // SEH_FINALLY block
     CdReleaseVcb(IrpContext, Vcb);
-    if _abnormal != 0 || !NT_SUCCESS(Status) {
+    if _abnormal || !NT_SUCCESS(Status) {
         FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_LOCK_FAILED);
     }
 
@@ -829,7 +841,7 @@ pub unsafe extern "C" fn CdDismountVolume(
     SetFlag(&mut (*IrpContext).Flags as *mut u32, IRP_CONTEXT_FLAG_WAIT);
 
     CdAcquireCdData(IrpContext);
-    CdAcquireVcbExclusive(IrpContext, Vcb, 0i32);
+    CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
 
     if (*Vcb).VcbCondition != VcbMounted {
         Status = STATUS_VOLUME_DISMOUNTED;
@@ -902,15 +914,15 @@ pub unsafe extern "C" fn CdIsVolumeDirty(
         return STATUS_VOLUME_DISMOUNTED;
     }
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<u32>() as u64;
+    (*Irp).IoStatus.Information = core::mem::size_of::<u32>() as u32;
 
     CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
     STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdIsVolumeMounted(
-    IrpContext: *mut PIRP_CONTEXT,
-    Irp: *mut PIRP,
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: PIRP,
 ) -> i32 {
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut Fcb: *mut Fcb = core::ptr::null_mut();
@@ -959,20 +971,20 @@ pub unsafe extern "C" fn CdAllowExtendedDasdIo(irp_context: *mut IRP_CONTEXT, ir
 pub unsafe extern "C" fn CdScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
     // PAGED_CODE();
 
-    let head: *const LIST_ENTRY = core::ptr::addr_of!(crate::CdData.VcbQueue);
+    let head: *mut LIST_ENTRY = core::ptr::addr_of_mut!(CdData.VcbQueue);
     let mut links: *mut LIST_ENTRY = (*head).Flink;
 
     while links != head {
-        let vcb: *mut VCB = (links as usize - core::mem::offset_of!(VCB, VcbLinks)) as *mut VCB;
+        let vcb: *mut VCB = (links as usize - core::mem::offset_of!(VCB, __bindgen_anon_1)) as *mut VCB;
 
         //  Move to the next link now since the current Vcb may be deleted.
         links = (*links).Flink;
 
         //  If dismount is already underway then check if this Vcb can go away.
-        if (*vcb).VcbCondition == VCB_CONDITION::VcbDismountInProgress
-            || (*vcb).VcbCondition == VCB_CONDITION::VcbInvalid
-            || ((*vcb).VcbCondition == VCB_CONDITION::VcbNotMounted
-                && (*vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE)
+        if (*vcb).VcbCondition == _VCB_CONDITION_VcbDismountInProgress
+            || (*vcb).VcbCondition == _VCB_CONDITION_VcbInvalid
+            || ((*vcb).VcbCondition == _VCB_CONDITION_VcbNotMounted
+                && (*vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE as i32)
         {
             CdCheckForDismount(IrpContext, vcb, 0); // FALSE
         }
@@ -1021,7 +1033,7 @@ pub unsafe extern "C" fn CdFindPrimaryVd(
 
             RtlZeroMemory(
                 CdromToc as *mut core::ffi::c_void,
-                core::mem::size_of::<CDROM_TOC_LARGE>() as u32,
+                core::mem::size_of::<CDROM_TOC_LARGE>(),
             );
 
             Status = CdPerformDevIoCtrl(
@@ -1079,7 +1091,7 @@ pub unsafe extern "C" fn CdFindPrimaryVd(
             if CdReadSectors(
                 IrpContext,
                 LlBytesFromSectors(BaseSector + SectorOffset),
-                SECTOR_SIZE, // assumed constant; we'll just use 2048
+                SECTOR_SIZE as u32, // assumed constant; we'll just use 2048
                 if ThisPass == 1 || ReturnOnError != 0 { 1 } else { 0 },
                 RawIsoVd,
                 (*Vcb).TargetDeviceObject,
@@ -1143,8 +1155,8 @@ pub unsafe extern "C" fn CdIsRemount(
     // PAGED_CODE(); (macro call)
     PAGED_CODE();
 
-    // UNREFERENCED_PARAMETER(IrpContext) -> volatile self-assignment
-    core::ptr::write_volatile(&mut IrpContext, IrpContext);
+    // UNREFERENCED_PARAMETER(IrpContext)
+    let _ = IrpContext;
 
     let Vpb: *mut VPB = (*Vcb).Vpb;
     let mut OldVpb: *mut VPB;
@@ -1156,7 +1168,7 @@ pub unsafe extern "C" fn CdIsRemount(
     while Link != head {
         // *OldVcb = CONTAINING_RECORD(Link, VCB, VcbLinks);
         *OldVcb = (Link as *mut u8)
-            .sub(core::mem::offset_of!(VCB, VcbLinks))
+            .sub(core::mem::offset_of!(VCB, __bindgen_anon_1))
             as *mut VCB;
 
         // Skip ourselves
@@ -1201,8 +1213,8 @@ pub unsafe extern "C" fn CdIsRemount(
                     ) != 0)
                 && ((*Vpb).VolumeLabelLength == (*OldVpb).VolumeLabelLength)
                 && (RtlEqualMemory(
-                    (*OldVpb).VolumeLabel as *const core::ffi::c_void,
-                    (*Vpb).VolumeLabel as *const core::ffi::c_void,
+                    (*OldVpb).VolumeLabel.as_ptr() as *const core::ffi::c_void,
+                    (*Vpb).VolumeLabel.as_ptr() as *const core::ffi::c_void,
                     (*Vpb).VolumeLabelLength as usize,
                 ) != 0)
             {
@@ -1217,7 +1229,7 @@ pub unsafe extern "C" fn CdIsRemount(
     Remount
 }
 
-static CdJolietEscape: [[u8; 3usize]; 3usize];
+use crate::cddata::CdJolietEscape;
 
 const VD_SECONDARY: u8 = 2;
 const ESC_SEQ_LEN: u32 = 3;
@@ -1228,12 +1240,12 @@ const VCB_STATE_JOLIET: u32 = 0x02;
 unsafe extern "C" fn CdFindActiveVolDescriptor(
     irp_context: *mut IrpContext,
     vcb: *mut Vcb,
-    raw_iso_vd: *mut u8,
+    raw_iso_vd: *mut i8,
     verify_volume: u8,
 ) {
     let mut found_secondary_vd: u8 = 0;
     let mut sector_offset: u32 = FIRST_VD_SECTOR;
-    let mut length: u32;
+    let mut length: u32 = 0;
     let mut index: u32;
 
     // PAGED_CODE(); // omitted as it's a no-op
@@ -1245,7 +1257,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
             CdReadSectors(
                 irp_context,
                 LlBytesFromSectors((*vcb).BaseSector + sector_offset),
-                SECTOR_SIZE,
+                SECTOR_SIZE as u32,
                 0,
                 raw_iso_vd,
                 (*vcb).TargetDeviceObject,
@@ -1262,20 +1274,20 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
                 break;
             }
 
-            if CdRvdDescType(raw_iso_vd, VCB_STATE_JOLIET) == VD_SECONDARY
+            if CdRvdDescType(raw_iso_vd, VCB_STATE_JOLIET) == VD_SECONDARY as u32
                 && (RtlEqualMemory(
                     CdRvdEsc(raw_iso_vd, VCB_STATE_JOLIET) as *const core::ffi::c_void,
-                    CdJolietEscape[0].as_ptr() as *const core::ffi::c_void,
+                    CdJolietEscape[0] as *const core::ffi::c_void,
                     ESC_SEQ_LEN as usize,
                 ) != 0
                     || RtlEqualMemory(
                         CdRvdEsc(raw_iso_vd, VCB_STATE_JOLIET) as *const core::ffi::c_void,
-                        CdJolietEscape[1].as_ptr() as *const core::ffi::c_void,
+                        CdJolietEscape[1] as *const core::ffi::c_void,
                         ESC_SEQ_LEN as usize,
                     ) != 0
                     || RtlEqualMemory(
                         CdRvdEsc(raw_iso_vd, VCB_STATE_JOLIET) as *const core::ffi::c_void,
-                        CdJolietEscape[2].as_ptr() as *const core::ffi::c_void,
+                        CdJolietEscape[2] as *const core::ffi::c_void,
                         ESC_SEQ_LEN as usize,
                     ) != 0)
             {
@@ -1304,7 +1316,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
         return;
     }
 
-    (*(*vcb).Vpb).SerialNumber = CdSerial32(raw_iso_vd, SECTOR_SIZE);
+    (*(*vcb).Vpb).SerialNumber = CdSerial32(raw_iso_vd, SECTOR_SIZE as u32);
 
     NT_ASSERT(
         ((VOLUME_ID_LENGTH * core::mem::size_of::<u16>() as u32) <= MAXIMUM_VOLUME_LABEL_LENGTH) as i32,
@@ -1327,12 +1339,12 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
             irp_context,
             CdRvdVolId(raw_iso_vd, (*vcb).VcbState),
             VOLUME_ID_LENGTH,
-            (*(*vcb).Vpb).VolumeLabel.as_mut_ptr() as *mut u8,
+            (*(*vcb).Vpb).VolumeLabel.as_mut_ptr() as *mut i8,
         );
         (*(*vcb).Vpb).VolumeLabelLength = (VOLUME_ID_LENGTH * core::mem::size_of::<u16>() as u32) as u16;
     }
 
-    index = (*(*vcb).Vpb).VolumeLabelLength / core::mem::size_of::<u16>() as u16;
+    index = (*(*vcb).Vpb).VolumeLabelLength as u32 / core::mem::size_of::<u16>() as u32;
     while index > 0 {
         if (*(*vcb).Vpb).VolumeLabel[(index - 1) as usize] != 0
             && (*(*vcb).Vpb).VolumeLabel[(index - 1) as usize] != ' ' as u16
@@ -1341,7 +1353,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
         }
         index -= 1;
     }
-    (*(*vcb).Vpb).VolumeLabelLength = (index * core::mem::size_of::<u16>() as u16) as u16;
+    (*(*vcb).Vpb).VolumeLabelLength = (index * core::mem::size_of::<u16>() as u32) as u16;
 }
 
 

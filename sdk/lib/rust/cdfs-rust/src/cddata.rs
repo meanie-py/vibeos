@@ -20,6 +20,16 @@ use crate::ddk_shims::{FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserI
 use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
 use crate::types::{PIRP_CONTEXT};
 use ntkrnl_sys::ddk::{PsGetCurrentThread};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag, IoCompleteRequest};
+use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
+use crate::types::{PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{PsGetCurrentThread};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{IoCompleteRequest};
+use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
+use crate::types::{PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{PsGetCurrentThread};
 
 extern "system" {
     fn AssertVerifyDevice(IrpContext: *mut IRP_CONTEXT, Status: i32);

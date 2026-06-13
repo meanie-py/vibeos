@@ -79,3 +79,6 @@ pub const XA_SECTOR_SIZE: u32 = 2352;
 // ---- grind-noise type aliases: the translation used the variable-naming convention
 // (Fcb/Vcb/Ccb/IrpContext) as TYPE names in places; map them to the real substrate structs.
 pub use crate::types::{FCB as Fcb, VCB as Vcb, CCB as Ccb, IRP_CONTEXT as IrpContext};
+
+// cd.h pool aliases: CdPagedPool=PagedPool, CdNonPagedPool=NonPagedPoolNx (->NonPagedPool @0x502).
+pub use ntkrnl_sys::ddk::{_POOL_TYPE_PagedPool as CdPagedPool, _POOL_TYPE_NonPagedPool as CdNonPagedPool};

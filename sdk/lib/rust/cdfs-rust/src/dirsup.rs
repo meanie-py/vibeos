@@ -4,14 +4,16 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_NAME, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, DIRENT_FLAG_ALLOC_BUFFER, FCB, FILE_CONTEXT_MULTIPLE_DIRENTS, FILE_ENUM_CONTEXT, IRP_CONTEXT, PDIRENT, PIRP_CONTEXT, RIFF_HEADER, VCB, VCB_STATE_CDXA, VCB_STATE_JOLIET, XA_EXTENT_TYPE, _XA_EXTENT_TYPE_CDAudio as CDAudio, _XA_EXTENT_TYPE_Mode2Form2Data as Mode2Form2Data};
-use ntkrnl_sys::ddk::{_UNICODE_STRING};
+use crate::types::{CD_NAME, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, DIRENT_FLAG_ALLOC_BUFFER, FCB, FCB_INDEX, FILE_CONTEXT_MULTIPLE_DIRENTS, FILE_ENUM_CONTEXT, IRP_CONTEXT, PDIRENT, PIRP_CONTEXT, RIFF_HEADER, VCB, VCB_STATE_CDXA, VCB_STATE_JOLIET, XA_EXTENT_TYPE, _XA_EXTENT_TYPE_CDAudio as CDAudio, _XA_EXTENT_TYPE_Form1Data as Form1Data, _XA_EXTENT_TYPE_Mode2Form2Data as Mode2Form2Data};
+use ntkrnl_sys::ddk::{_UNICODE_STRING, FSRTL_ADVANCED_FCB_HEADER};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
-use crate::glue::{CDFS_BUG_CHECK_DIRSUP, IrpContext, STATUS_FILE_CORRUPT_ERROR, TAG_DIRENT_NAME};
+use crate::glue::{CDFS_BUG_CHECK_DIRSUP, STATUS_FILE_CORRUPT_ERROR, TAG_DIRENT_NAME};
 use crate::types::{CD_ATTRIBUTE_MULTI, RAW_DIRENT, SECTOR_SHIFT, SYSTEM_USE_XA, SYSTEM_USE_XA_DA, SYSTEM_USE_XA_FORM2, SYSTEM_XA_SIGNATURE, XA_SECTOR_SIZE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdUnicodeDirectoryNames};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CdPagedPool};
 
 extern "C" {
     fn CdRawDirent( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, ) -> *mut RAW_DIRENT;
@@ -19,9 +21,7 @@ extern "C" {
     fn CopyUchar4( dest: *mut u32, src: *const u8, );
     fn CdRaiseStatus( IrpContext: *mut IRP_CONTEXT, Status: i32, ) -> !;
     fn WordAlign(offset: u32) -> u32;
-    static DIRENT_FLAG_NOT_PERSISTENT: u32;
-    static Form1Data: XA_EXTENT_TYPE;
-    fn SectorBlockOffset(Vcb: *mut VCB, Offset: LARGE_INTEGER) -> ULONG;
+    fn SectorBlockOffset(Vcb: *mut VCB, Offset: ULONG) -> ULONG;
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
 extern "system" {
@@ -30,10 +30,7 @@ extern "system" {
     fn CdConvertNameToCdName(IrpContext: PIRP_CONTEXT, FileName: *mut CD_NAME);
     fn CdUpcaseName(IrpContext: PIRP_CONTEXT, ExactName: *const CD_NAME, UpcasedName: *mut CD_NAME);
     fn CdIsLegalName(IrpContext: PIRP_CONTEXT, Name: *const _UNICODE_STRING) -> BOOLEAN;
-    fn CdFreePool(Pool: *mut *mut std::ffi::c_void);
-    fn SetFlag(Flags: *mut ULONG, Flag: ULONG);
-    fn ClearFlag(Flags: *mut ULONG, Flag: ULONG);
-    fn FlagOn(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
+    fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
     fn NT_ASSERT(condition: BOOLEAN);
     fn __analysis_assert(condition: BOOLEAN);
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
@@ -57,11 +54,40 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_DIRSUP;
 const MIN_RAW_DIRENT_LEN: u32 = 34;
 
 const SHORT_NAME_SHIFT: u32 = 5;
-const CD_ATTRIBUTE_ASSOC: u32 = 0x0001;
-const CD_ATTRIBUTE_DIRECTORY: u32 = 0x0002;
-const DIRENT_FLAG_CONSTANT_ENTRY: u32 = 0x0004;
+const CD_ATTRIBUTE_ASSOC: u32 = 0x04;
+const CD_ATTRIBUTE_DIRECTORY: u32 = 0x02;
+const DIRENT_FLAG_CONSTANT_ENTRY: u32 = 0x02;
+const DIRENT_FLAG_NOT_PERSISTENT_VAL: u32 = 0;
 
 const SECTOR_SIZE: u32 = 2048;
+
+// FsRtl FlagOn/SetFlag/ClearFlag are C macros (operate on the lvalue directly),
+// not exported functions; inline them so they work on the actual field widths.
+#[inline]
+unsafe fn FlagOnU32(flags: u32, flag: u32) -> bool {
+    (flags & flag) != 0
+}
+#[inline]
+unsafe fn SetFlagU8(flags: *mut u8, flag: u32) {
+    *flags |= flag as u8;
+}
+#[inline]
+unsafe fn ClearFlagU8(flags: *mut u8, flag: u32) {
+    *flags &= !(flag as u8);
+}
+
+// FCB field accessors. In the on-disk-mirroring bindgen layout, the FSRTL
+// header lives in the leading anonymous union and the FCB_INDEX overlay
+// (FileObject/StreamOffset) lives in the trailing anonymous union.
+#[inline]
+unsafe fn FcbHeader(Fcb: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_1) as *mut FSRTL_ADVANCED_FCB_HEADER
+}
+#[inline]
+unsafe fn FcbIndex(Fcb: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_INDEX
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn CdLookupDirent(
     IrpContext: *mut IRP_CONTEXT,
@@ -72,17 +98,17 @@ pub unsafe extern "C" fn CdLookupDirent(
     // PAGED_CODE();
     let mut BaseOffset: i64;
 
-    (*DirContext).BaseOffset = SectorTruncate(DirentOffset);
-    BaseOffset = (*DirContext).BaseOffset;
+    (*DirContext).BaseOffset = SectorTruncate(DirentOffset) as u32;
+    BaseOffset = (*DirContext).BaseOffset as i64;
     (*DirContext).DataLength = SECTOR_SIZE;
     (*DirContext).SectorOffset = SectorOffset(DirentOffset);
 
-    if ((*DirContext).DataLength as i64 > ((*Fcb).FileSize.QuadPart - BaseOffset)) {
-        (*DirContext).DataLength = ((*Fcb).FileSize.QuadPart - BaseOffset) as u32;
+    if ((*DirContext).DataLength as i64 > ((*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset)) {
+        (*DirContext).DataLength = ((*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset) as u32;
     }
 
     CcMapData(
-        (*Fcb).FileObject,
+        (*FcbIndex(Fcb)).FileObject,
         &mut BaseOffset as *mut i64 as PLARGE_INTEGER,
         (*DirContext).DataLength,
         1, // TRUE
@@ -117,10 +143,10 @@ pub unsafe extern "C" fn CdLookupNextDirent(
         CdUnpinData(IrpContext, &raw mut (*NextDirContext).Bcb as *mut *mut core::ffi::c_void);
 
         CcMapData(
-            (*Fcb).FileObject,
-            &raw mut CurrentBaseOffset as *mut LARGE_INTEGER,
+            (*FcbIndex(Fcb)).FileObject,
+            &raw mut CurrentBaseOffset as PLARGE_INTEGER,
             (*CurrentDirContext).DataLength,
-            1u8, // TRUE
+            1u32, // TRUE
             &raw mut (*NextDirContext).Bcb as *mut *mut core::ffi::c_void,
             &raw mut (*NextDirContext).Sector as *mut *mut core::ffi::c_void,
         );
@@ -159,8 +185,8 @@ pub unsafe extern "C" fn CdLookupNextDirent(
         if (*NextDirContext).Bcb.is_null() {
             TempUlong = SECTOR_SIZE;
 
-            if TempUlong > ((*Fcb).FileSize.QuadPart as i64 - CurrentBaseOffset) as u32 {
-                TempUlong = ((*Fcb).FileSize.QuadPart as i64 - CurrentBaseOffset) as u32;
+            if TempUlong > ((*FcbHeader(Fcb)).FileSize.QuadPart as i64 - CurrentBaseOffset) as u32 {
+                TempUlong = ((*FcbHeader(Fcb)).FileSize.QuadPart as i64 - CurrentBaseOffset) as u32;
 
                 // If the length is zero then there is no dirent.
                 if TempUlong == 0 {
@@ -169,10 +195,10 @@ pub unsafe extern "C" fn CdLookupNextDirent(
             }
 
             CcMapData(
-                (*Fcb).FileObject,
-                &raw mut CurrentBaseOffset as *mut LARGE_INTEGER,
+                (*FcbIndex(Fcb)).FileObject,
+                &raw mut CurrentBaseOffset as PLARGE_INTEGER,
                 TempUlong,
-                1u8, // TRUE
+                1u32, // TRUE
                 &raw mut (*NextDirContext).Bcb as *mut *mut core::ffi::c_void,
                 &raw mut (*NextDirContext).Sector as *mut *mut core::ffi::c_void,
             );
@@ -223,14 +249,14 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
 
     // Clear all current state flags except the flag indicating that
     // we allocated a name string.
-    (*Dirent).Flags &= !DIRENT_FLAG_NOT_PERSISTENT;
+    (*Dirent).Flags &= !(DIRENT_FLAG_NOT_PERSISTENT_VAL as u8);
 
     // The dirent offset is the sum of the start of the sector and the
     // sector offset.
     (*Dirent).DirentOffset = (*DirContext).BaseOffset + (*DirContext).SectorOffset;
 
     // Copy the dirent length from the raw dirent.
-    (*Dirent).DirentLength = (*RawDirent).DirLen;
+    (*Dirent).DirentLength = (*RawDirent).DirLen as u32;
 
     // The starting offset on disk is computed by finding the starting
     // logical block and stepping over the Xar block.
@@ -238,7 +264,7 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
         core::ptr::addr_of_mut!((*Dirent).StartingOffset),
         &raw const (*RawDirent).FileLoc as *const u8,
     );
-    (*Dirent).StartingOffset += (*RawDirent).XarLen;
+    (*Dirent).StartingOffset += (*RawDirent).XarLen as u32;
 
     // Do a safe copy to get the data length.
     CopyUchar4(
@@ -247,10 +273,10 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
     );
 
     // Save a pointer to the time stamps.
-    (*Dirent).CdTime = (*RawDirent).RecordTime as *mut i8;
+    (*Dirent).CdTime = (*RawDirent).RecordTime.as_ptr() as *mut i8;
 
     // Copy the dirent flags.
-    (*Dirent).DirentFlags = CdRawDirentFlags(IrpContext, RawDirent);
+    (*Dirent).DirentFlags = CdRawDirentFlags(IrpContext, RawDirent) as u8;
 
     // For both the file unit and interleave skip we want to take the
     // logical block count.
@@ -258,8 +284,8 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
     (*Dirent).InterleaveGapSize = 0;
 
     if (*RawDirent).IntLeaveSize != 0 {
-        (*Dirent).FileUnitSize = (*RawDirent).IntLeaveSize;
-        (*Dirent).InterleaveGapSize = (*RawDirent).IntLeaveSkip;
+        (*Dirent).FileUnitSize = (*RawDirent).IntLeaveSize as u32;
+        (*Dirent).InterleaveGapSize = (*RawDirent).IntLeaveSkip as u32;
     }
 
     // Get the name length and remember a pointer to the start of the
@@ -269,7 +295,7 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
         CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
     }
 
-    (*Dirent).FileNameLen = (*RawDirent).FileIdLen;
+    (*Dirent).FileNameLen = (*RawDirent).FileIdLen as u32;
     (*Dirent).FileName = (*RawDirent).FileId.as_ptr() as *mut i8;
 
     // If there are any remaining bytes at the end of the dirent then
@@ -283,7 +309,7 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
     let name_len = (*Dirent).FileNameLen as u32;
     let required_length = file_id_offset + name_len + 1;
 
-    if ((*Dirent).DirentFlags & CD_ATTRIBUTE_DIRECTORY) == 0
+    if !FlagOnU32((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_DIRECTORY)
         && (*Dirent).DirentLength > required_length
     {
         (*Dirent).SystemUseOffset = WordAlign(file_id_offset + name_len);
@@ -291,7 +317,7 @@ pub unsafe extern "C" fn CdUpdateDirentFromRawDirent(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdUpdateDirentName(
-    IkpContext: PIRP_CONTEXT,
+    IrpContext: PIRP_CONTEXT,
     Dirent: PDIRENT,
     IgnoreCase: ULONG,
 ) -> () {
@@ -302,11 +328,11 @@ pub unsafe extern "C" fn CdUpdateDirentName(
 
         PAGED_CODE();
 
-        if ((*Dirent).FileNameLen == 1) && (FlagOn((*Dirent).DirentFlags, CD_ATTRIBUTE_DIRECTORY) != 0) {
+        if ((*Dirent).FileNameLen == 1) && FlagOnU32((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_DIRECTORY) {
             DirectoryValue = *((*Dirent).FileName as *const u8);
 
             if (DirectoryValue == 0) || (DirectoryValue == 1) {
-                if FlagOn((*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER) != 0 {
+                if FlagOnU32((*Dirent).Flags as u32, DIRENT_FLAG_ALLOC_BUFFER) {
                     CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
                 }
 
@@ -314,15 +340,15 @@ pub unsafe extern "C" fn CdUpdateDirentName(
 
                 (*Dirent).CdFileName.VersionString.Length = 0;
 
-                (*Dirent).CdCaseFileName = (*Dirent).CdFileName;
+                (*Dirent).CdCaseFileName = core::ptr::read(&(*Dirent).CdFileName as *const CD_NAME);
 
-                SetFlag(&mut (*Dirent).Flags, DIRENT_FLAG_CONSTANT_ENTRY);
+                SetFlagU8(&mut (*Dirent).Flags, DIRENT_FLAG_CONSTANT_ENTRY);
 
                 return;
             }
         }
 
-        ClearFlag(&mut (*Dirent).Flags, DIRENT_FLAG_CONSTANT_ENTRY);
+        ClearFlagU8(&mut (*Dirent).Flags, DIRENT_FLAG_CONSTANT_ENTRY);
 
         Length = (*Dirent).FileNameLen;
 
@@ -330,20 +356,20 @@ pub unsafe extern "C" fn CdUpdateDirentName(
             Length = Length.wrapping_mul(2);
         }
 
-        if FlagOn((*(*IrpContext).Vcb).VcbState, VCB_STATE_JOLIET) == 0 {
+        if !FlagOnU32((*(*IrpContext).Vcb).VcbState, VCB_STATE_JOLIET) {
             Length = Length.wrapping_mul(core::mem::size_of::<WCHAR>() as ULONG);
         }
 
-        if FlagOn((*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER) == 0
+        if !FlagOnU32((*Dirent).Flags as u32, DIRENT_FLAG_ALLOC_BUFFER)
             && (Length <= core::mem::size_of::<[u16; 32]>() as ULONG)
         {
             (*Dirent).CdFileName.FileName.MaximumLength = core::mem::size_of::<[u16; 32]>() as USHORT;
             (*Dirent).CdFileName.FileName.Buffer = (*Dirent).NameBuffer.as_mut_ptr();
         } else {
             if Length > (*Dirent).CdFileName.FileName.MaximumLength as ULONG {
-                if FlagOn((*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER) != 0 {
+                if FlagOnU32((*Dirent).Flags as u32, DIRENT_FLAG_ALLOC_BUFFER) {
                     CdFreePool(&mut (*Dirent).CdFileName.FileName.Buffer as *mut _ as *mut _);
-                    ClearFlag(&mut (*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER);
+                    ClearFlagU8(&mut (*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER);
                 }
 
                 (*Dirent).CdFileName.FileName.Buffer = FsRtlAllocatePoolWithTag(
@@ -352,23 +378,23 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                     TAG_DIRENT_NAME,
                 ) as *mut WCHAR;
 
-                SetFlag(&mut (*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER);
+                SetFlagU8(&mut (*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER);
 
                 (*Dirent).CdFileName.FileName.MaximumLength = Length as USHORT;
             }
         }
 
-        if FlagOn((*(*IrpContext).Vcb).VcbState, VCB_STATE_JOLIET) == 0 {
+        if !FlagOnU32((*(*IrpContext).Vcb).VcbState, VCB_STATE_JOLIET) {
             Status = RtlOemToUnicodeN(
                 (*Dirent).CdFileName.FileName.Buffer,
-                (*Dirent).CdFileName.FileName.MaximumLength,
+                (*Dirent).CdFileName.FileName.MaximumLength as u32,
                 &mut Length,
                 (*Dirent).FileName as *const i8,
                 (*Dirent).FileNameLen,
             );
 
-            __analysis_assert(Status == STATUS_SUCCESS);
-            NT_ASSERT(Status == STATUS_SUCCESS);
+            __analysis_assert((Status == STATUS_SUCCESS) as BOOLEAN);
+            NT_ASSERT((Status == STATUS_SUCCESS) as BOOLEAN);
             (*Dirent).CdFileName.FileName.Length = Length as USHORT;
         } else {
             CdConvertBigToLittleEndian(
@@ -412,7 +438,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 let dst: *mut u8 = (NewVersion as *mut u8).sub(core::mem::size_of::<WCHAR>());
 
                 // memmove implementation (overlapping-safe)
-                if dst < src {
+                if (dst as *const u8) < src {
                     for i in 0..count {
                         *dst.add(i) = *src.add(i);
                     }
@@ -433,7 +459,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
         }
 
         if IgnoreCase == 0 {
-            (*Dirent).CdCaseFileName = (*Dirent).CdFileName;
+            (*Dirent).CdCaseFileName = core::ptr::read(&(*Dirent).CdFileName as *const CD_NAME);
         } else {
             (*Dirent).CdCaseFileName.FileName.Buffer = (*Dirent)
                 .CdFileName
@@ -480,17 +506,17 @@ pub unsafe extern "C" fn CdFindFile(
         IrpContext,
         Fcb,
         FileContext,
-        (*Fcb).StreamOffset,
+        (*FcbIndex(Fcb)).StreamOffset as i64,
     );
 
     loop {
         Dirent = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent);
 
-        if ((*Dirent).DirentFlags & (CD_ATTRIBUTE_ASSOC | CD_ATTRIBUTE_DIRECTORY)) == 0 {
-            CdUpdateDirentName(IrpContext, Dirent, IgnoreCase);
+        if !FlagOnU32((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_ASSOC | CD_ATTRIBUTE_DIRECTORY) {
+            CdUpdateDirentName(IrpContext, Dirent, IgnoreCase as u32);
 
-            if ((*Dirent).Flags & DIRENT_FLAG_CONSTANT_ENTRY) != 0 {
-                if !CdLookupNextInitialFileDirent(IrpContext, Fcb, FileContext) != 0 {
+            if FlagOnU32((*Dirent).Flags as u32, DIRENT_FLAG_CONSTANT_ENTRY) {
+                if CdLookupNextInitialFileDirent(IrpContext, Fcb, FileContext) == 0 {
                     break;
                 }
                 continue;
@@ -509,7 +535,7 @@ pub unsafe extern "C" fn CdFindFile(
             }
 
             if ((*Dirent).DirentOffset >> SHORT_NAME_SHIFT) as u32 == ShortNameDirentOffset
-                && (*(*Name).VersionString.Length as *const u16) as u32 == 0
+                && (*Name).VersionString.Length as u32 == 0
                 && CdIs8dot3Name(
                     IrpContext,
                     core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
@@ -519,8 +545,8 @@ pub unsafe extern "C" fn CdFindFile(
                     IrpContext,
                     core::ptr::addr_of_mut!((*Dirent).CdCaseFileName.FileName),
                     (*Dirent).DirentOffset,
-                    (*(*FileContext).ShortName.FileName).Buffer,
-                    core::ptr::addr_of_mut!((*(*FileContext).ShortName.FileName).Length),
+                    (*FileContext).ShortName.FileName.Buffer,
+                    core::ptr::addr_of_mut!((*FileContext).ShortName.FileName.Length),
                 );
 
                 if CdIsNameInExpression(
@@ -560,15 +586,15 @@ pub unsafe extern "C" fn CdFindDirectory(
 
     CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
 
-    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*Fcb).StreamOffset);
+    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as i64);
 
     loop {
         let dirent: *mut DIRENT = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent);
 
-        if FlagOn((*dirent).DirentFlags, 0x02u32) != 0 {
-            CdUpdateDirentName(IrpContext, dirent, IgnoreCase);
+        if FlagOnU32((*dirent).DirentFlags as u32, CD_ATTRIBUTE_DIRECTORY) {
+            CdUpdateDirentName(IrpContext, dirent, IgnoreCase as u32);
 
-            if FlagOn((*dirent).Flags, 0x08u32) != 0 {
+            if FlagOnU32((*dirent).Flags as u32, DIRENT_FLAG_CONSTANT_ENTRY) {
                 continue;
             }
 
@@ -599,7 +625,7 @@ pub unsafe extern "C" fn CdLookupLastFileDirent(
     FileContext: *mut FILE_ENUM_CONTEXT,
 ) {
 
-    let mut ExtentType: XA_EXTENT_TYPE = XA_EXTENT_TYPE::Form1Data;
+    let mut ExtentType: XA_EXTENT_TYPE = Form1Data;
     let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT;
     let mut CurrentDirent: *mut DIRENT = core::ptr::null_mut();
     let mut FirstPass: i32 = 1;
@@ -655,7 +681,7 @@ pub unsafe extern "C" fn CdLookupLastFileDirent(
             (*FileContext).FileSize += (*CurrentDirent).DataLength as LONGLONG;
         }
 
-        if ((*CurrentDirent).DirentFlags & CD_ATTRIBUTE_MULTI) == 0 {
+        if !FlagOnU32((*CurrentDirent).DirentFlags as u32, CD_ATTRIBUTE_MULTI) {
             break;
         }
 
@@ -692,7 +718,7 @@ pub unsafe extern "C" fn CdCleanupFileContext(
     FileContext: *mut FILE_ENUM_CONTEXT,
 ) {
     let mut Count: u32 = 2;
-    let CurrentCompoundDirent: *mut COMPOUND_DIRENT;
+    let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT;
 
     PAGED_CODE();
 
@@ -723,7 +749,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     PAGED_CODE();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
-    NT_ASSERT((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as i32);
+    NT_ASSERT((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN);
 
     if ((*DirContext).SectorOffset >= (*DirContext).DataLength) ||
         ((*DirContext).Sector.is_null())
@@ -734,14 +760,14 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     RawDirent = CdRawDirent(IrpContext, DirContext);
 
     if (*RawDirent).DirLen != 0 {
-        if ((*RawDirent).DirLen > ((*DirContext).DataLength - (*DirContext).SectorOffset)) ||
-            ((*RawDirent).DirLen < MIN_RAW_DIRENT_LEN) ||
-            ((*RawDirent).DirLen < (MIN_RAW_DIRENT_LEN - 1 + (*RawDirent).FileIdLen))
+        if ((*RawDirent).DirLen as u32 > ((*DirContext).DataLength - (*DirContext).SectorOffset)) ||
+            (((*RawDirent).DirLen as u32) < MIN_RAW_DIRENT_LEN) ||
+            (((*RawDirent).DirLen as u32) < (MIN_RAW_DIRENT_LEN - 1 + (*RawDirent).FileIdLen as u32))
         {
             CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
         }
 
-        NextDirentOffset = (*RawDirent).DirLen;
+        NextDirentOffset = (*RawDirent).DirLen as u32;
 
         if NextDirentOffset == ((*DirContext).DataLength - (*DirContext).SectorOffset) {
             NextDirentOffset = 0;
@@ -764,13 +790,13 @@ pub unsafe extern "C" fn CdCheckForXAExtent(
     let DirentLen = (*Dirent).DirentLength;
     let SystemUseOffset = (*Dirent).SystemUseOffset;
 
-    if DirentLen - SystemUseOffset >= core::mem::size_of::<SYSTEM_USE_XA>() {
+    if DirentLen - SystemUseOffset >= core::mem::size_of::<SYSTEM_USE_XA>() as u32 {
         let SystemUseArea = (RawDirent as *mut u8).add(SystemUseOffset as usize) as *mut SYSTEM_USE_XA;
 
-        if (*SystemUseArea).Signature == SYSTEM_XA_SIGNATURE {
-            if ((*SystemUseArea).Attributes & SYSTEM_USE_XA_DA) != 0 {
+        if (*SystemUseArea).Signature == SYSTEM_XA_SIGNATURE as u16 {
+            if ((*SystemUseArea).Attributes & SYSTEM_USE_XA_DA as u16) != 0 {
                 ExtentType = CDAudio;
-            } else if ((*SystemUseArea).Attributes & SYSTEM_USE_XA_FORM2) != 0 {
+            } else if ((*SystemUseArea).Attributes & SYSTEM_USE_XA_FORM2 as u16) != 0 {
                 ExtentType = Mode2Form2Data;
             }
 

@@ -9,6 +9,8 @@ use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, VCB};
 use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_DEVCTRL};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CDROM_DISK_DATA};
 
 extern "system" {
     fn PAGED_CODE();

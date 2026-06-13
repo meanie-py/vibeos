@@ -5,20 +5,23 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLONG, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, GenericEqual, GenericGreaterThan, GenericLessThan, _IO_STATUS_BLOCK, IoDeleteDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_LOCK, PIO_STACK_LOCATION, PLARGE_INTEGER, PRTL_GENERIC_ALLOCATE_ROUTINE, PRTL_GENERIC_COMPARE_ROUTINE, PRTL_GENERIC_FREE_ROUTINE, PRTL_GENERIC_TABLE, PVPB, RTL_GENERIC_ALLOCATE_ROUTINE, RTL_GENERIC_COMPARE_ROUTINE, RTL_GENERIC_FREE_ROUTINE, RtlInitializeGenericTable, RtlLookupElementGenericTable, VPB};
+use ntkrnl_sys::ddk::{CLONG, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, _IO_STATUS_BLOCK, IoDeleteDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_LOCK, PIO_STACK_LOCATION, PLARGE_INTEGER, PRTL_GENERIC_ALLOCATE_ROUTINE, PRTL_GENERIC_COMPARE_ROUTINE, PRTL_GENERIC_FREE_ROUTINE, PRTL_GENERIC_TABLE, PVPB, RtlInitializeGenericTable, RtlLookupElementGenericTable, VPB};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, CDROM_TOC_LARGE, CD_MCB_ENTRY, COMPOUND_DIRENT, DIRENT, FCB, FCB_NONPAGED, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, IRP_CONTEXT_FLAG_IN_TEARDOWN, IRP_CONTEXT_LITE, NODE_TYPE_CODE, PATH_ENTRY, PFCB, TRACK_DATA, VCB, VCB_STATE_AUDIO_DISK, VCB_STATE_CDXA, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress};
+use crate::types::{CCB, CDROM_TOC_LARGE, CD_MCB_ENTRY, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_DATA, FCB_INDEX, FCB_NONPAGED, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, IRP_CONTEXT_FLAG_IN_TEARDOWN, IRP_CONTEXT_LITE, NODE_TYPE_CODE, PATH_ENTRY, PFCB, TRACK_DATA, VCB, VCB_STATE_AUDIO_DISK, VCB_STATE_CDXA, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, ExFreePoolWithTag, FAST_MUTEX, FSRTL_ADVANCED_FCB_HEADER, OPLOCK, RTL_GENERIC_TABLE, _RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlInitializeOplock, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts};
 use crate::glue::{CDFS_NTC_FCB_DATA, CDFS_NTC_FCB_INDEX, CDFS_NTC_FCB_NONPAGED, CDFS_NTC_FCB_PATH_TABLE, CDFS_NTC_VCB, CDFS_RESIDUAL_REFERENCE, TAG_VPB};
 use crate::types::{RAW_DIRENT, RAW_PATH_ISO};
-use ntkrnl_sys::ddk::{_RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
 use crate::ddk_shims::{FsRtlFreeFileLock, FsRtlUninitializeOplock};
-use ntkrnl_sys::ddk::{_RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{ASSERT_EXCLUSIVE_CDDATA, ASSERT_EXCLUSIVE_VCB};
+use crate::glue::{CdNonPagedPool};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CDROM_READ_TOC_EX};
 
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -37,18 +40,18 @@ extern "system" {
     fn _SEH2_AbnormalTermination() -> i32;
     fn CdUpdateMediaChangeCount(Vcb: *mut VCB, MediaChangeCount: ULONG);
     fn CdUpdateVcbCondition(Vcb: *mut VCB, condition: u32); // assuming VcbMountInProgress is u32 enum fn FlagOn(Flags: ULONG, Flag: ULONG) -> i32;
-    fn BytesFromBlocks(Vcb: *mut VCB, BlockOffset: u32) -> LARGE_INTEGER;
+    fn BytesFromBlocks(Vcb: *mut VCB, BlockOffset: u32) -> u32;
     fn SectorBlockOffset(Vcb: *mut VCB, DiskOffset: u32) -> u32;
     fn CdAddInitialAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DiskOffset: u32, Size: u32);
     fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefInc: i32, UserRefInc: i32);
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
     fn RtlInsertElementGenericTable( Table: *mut RTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void, BufferSize: u32, NewElement: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn CdAddAllocationFromDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, McbEntryOffset: u32, FileOffset: i64, Dirent: *mut DIRENT);
-    fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: u32, Time: *mut LARGE_INTEGER);
+    fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: *mut i8, Time: *mut LARGE_INTEGER);
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdLookupNextDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, CurrentDirContext: *mut DIR_CONTEXT, PreviousDirContext: *const DIR_CONTEXT) -> i32;
+    fn CdLookupNextDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, CurrentDirContext: *mut DIRENT_ENUM_CONTEXT, PreviousDirContext: *const DIRENT_ENUM_CONTEXT) -> i32;
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdUpdateDirentFromRawDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, DirContext: *const DIR_CONTEXT, Dirent: *mut DIRENT);
+    fn CdUpdateDirentFromRawDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT);
     fn LlBlockAlign(Vcb: *mut VCB, FileSize: i64) -> i64;
     fn CdAllocateCcb(IrpContext: *mut IRP_CONTEXT) -> *mut CCB;
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
@@ -101,6 +104,32 @@ extern "system" {
 // ZST placeholders (`pub struct FCB;` etc.) were struct-shadow stubs — the same class
 // the fastfat lane killed in 4e736e07d1f — and have been removed so field access resolves
 // to the real structs instead of cascading E0609/E0610.
+
+// The C FCB has two anonymous unions that bindgen collapsed to opaque storage:
+//   __bindgen_anon_1 = { FSRTL_ADVANCED_FCB_HEADER Header; <unnamed header> }
+//   __bindgen_anon_2 = { ULONG FcbType; FCB_DATA; FCB_INDEX }
+// These helpers reinterpret that storage as the real substrate structs so the
+// C field accesses (Fcb->NodeTypeCode, Fcb->FileSize, Fcb->FcbQueue, ...) resolve.
+#[inline(always)]
+unsafe fn fcb_hdr(f: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_1) as *mut FSRTL_ADVANCED_FCB_HEADER
+}
+#[inline(always)]
+unsafe fn fcb_idx(f: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_2) as *mut FCB_INDEX
+}
+#[inline(always)]
+unsafe fn fcb_data(f: *mut FCB) -> *mut FCB_DATA {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_2) as *mut FCB_DATA
+}
+
+// SIZEOF_FCB_DATA / SIZEOF_FCB_INDEX: C macros =
+//   FIELD_OFFSET(FCB, FcbType) + sizeof(FCB_DATA|FCB_INDEX)
+// FcbType is the first member of __bindgen_anon_2, so its offset == offset_of anon_2.
+const SIZEOF_FCB_DATA: u32 =
+    (core::mem::offset_of!(FCB, __bindgen_anon_2) + core::mem::size_of::<FCB_DATA>()) as u32;
+const SIZEOF_FCB_INDEX: u32 =
+    (core::mem::offset_of!(FCB, __bindgen_anon_2) + core::mem::size_of::<FCB_INDEX>()) as u32;
 
 #[repr(C)]
 pub struct FCB_TABLE_ELEMENT {
@@ -166,12 +195,11 @@ union BiasedTocLength {
     Length: u16,
 }
 
-// Placeholder tag constant – must match the actual pool tag used in CdAllocateFcbNonpaged.
-// In real code this would be something like 0x434402A0, defined elsewhere.
-const TAG_FCB_NONPAGED: u32 = 0x_FCB_NPAG; // TODO: replace with correct tag value
+// Pool tags: cdprocs.h multichar constants, used directly as their u32 value.
+const TAG_FCB_NONPAGED: u32 = 0x6e666443; // 'nfdC'  (TAG_FCB_NONPAGED)
 
 const CdPagedPool: u32 = 1; // PagedPool
-const TAG_FCB_TABLE: u32 = u32::from_ne_bytes(*b"FtbC");
+const TAG_FCB_TABLE: u32 = 0x74666443; // 'tfdC'  (TAG_FCB_TABLE)
 
 #[no_mangle]
 pub unsafe extern "system" fn CdInitializeVcb(
@@ -195,8 +223,8 @@ pub unsafe extern "system" fn CdInitializeVcb(
 
     // Vcb->NodeTypeCode = CDFS_NTC_VCB;
     // Vcb->NodeByteSize = sizeof( VCB );
-    (*Vcb).NodeTypeCode = CDFS_NTC_VCB;
-    (*Vcb).NodeByteSize = core::mem::size_of::<VCB>() as u16; // adjust if needed, but assume field is u16
+    (*Vcb).NodeTypeCode = CDFS_NTC_VCB as u16;
+    (*Vcb).NodeByteSize = core::mem::size_of::<VCB>() as i16;
 
     // InitializeListHead( &Vcb->DirNotifyList );
     InitializeListHead(core::ptr::addr_of_mut!((*Vcb).DirNotifyList));
@@ -212,7 +240,7 @@ pub unsafe extern "system" fn CdInitializeVcb(
                 CdNonPagedPool,
                 core::mem::size_of::<VPB>() as ULONG,
                 TAG_VPB,
-            );
+            ) as *mut _;
         }
         // _SEH2_FINALLY
         {
@@ -239,17 +267,17 @@ pub unsafe extern "system" fn CdInitializeVcb(
     // InsertHeadList( &CdData.VcbQueue, &Vcb->VcbLinks );
     InsertHeadList(
         core::ptr::addr_of_mut!(CdData.VcbQueue) as *mut _,
-        core::ptr::addr_of_mut!((*Vcb).VcbLinks) as *mut _,
+        (*Vcb).__bindgen_anon_1.VcbLinks.as_mut() as *mut _,
     );
 
     // ObReferenceObject( TargetDeviceObject );
-    ObReferenceObject(TargetDeviceObject);
+    ObReferenceObject(TargetDeviceObject as *mut core::ffi::c_void);
     (*Vcb).TargetDeviceObject = TargetDeviceObject;
     (*Vcb).Vpb = Vpb;
 
     // if (FlagOn( Vpb->RealDevice->Characteristics, FILE_REMOVABLE_MEDIA )) {
     if FlagOn(
-        (*(*(*Vpb).RealDevice)).Characteristics,
+        (*(*Vpb).RealDevice).Characteristics,
         FILE_REMOVABLE_MEDIA,
     ) != 0
     {
@@ -259,9 +287,11 @@ pub unsafe extern "system" fn CdInitializeVcb(
     // RtlInitializeGenericTable( &Vcb->FcbTable, ... )
     RtlInitializeGenericTable(
         core::ptr::addr_of_mut!((*Vcb).FcbTable),
-        Some(CdFcbTableCompare as PRTL_GENERIC_COMPARE_ROUTINE),
-        Some(CdAllocateFcbTable as PRTL_GENERIC_ALLOCATE_ROUTINE),
-        Some(CdDeallocateFcbTable as PRTL_GENERIC_FREE_ROUTINE),
+        // The Rtl generic-table callback ABI is stdcall on i386; the cdfs callbacks are
+        // declared extern "C". Transmute the fn items to the bindgen Option<fn> type.
+        core::mem::transmute::<_, PRTL_GENERIC_COMPARE_ROUTINE>(CdFcbTableCompare as *const ()),
+        core::mem::transmute::<_, PRTL_GENERIC_ALLOCATE_ROUTINE>(CdAllocateFcbTable as *const ()),
+        core::mem::transmute::<_, PRTL_GENERIC_FREE_ROUTINE>(CdDeallocateFcbTable as *const ()),
         core::ptr::null_mut(),
     );
 
@@ -269,7 +299,7 @@ pub unsafe extern "system" fn CdInitializeVcb(
     CdUpdateVcbCondition(Vcb, VcbMountInProgress);
 
     // Vcb->VcbReference = 1 + CDFS_RESIDUAL_REFERENCE;
-    (*Vcb).VcbReference = 1 + CDFS_RESIDUAL_REFERENCE;
+    (*Vcb).VcbReference = (1 + CDFS_RESIDUAL_REFERENCE) as i32;
 
     // Vcb->CdromToc = CdromToc; ...
     (*Vcb).CdromToc = CdromToc;
@@ -369,22 +399,22 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 Vcb,
                 SectorBlockOffset(Vcb, StartingBlock),
             );
-            (*path_table_fcb).StreamOffset = stream_offset;
-            (*path_table_fcb).FileSize.QuadPart = (stream_offset + ByteCount) as LONGLONG;
-            (*path_table_fcb).ValidDataLength.QuadPart = (*path_table_fcb).FileSize.QuadPart;
-            (*path_table_fcb).AllocationSize.QuadPart =
-                LlSectorAlign((*path_table_fcb).FileSize.QuadPart);
+            (*fcb_idx(path_table_fcb)).StreamOffset = stream_offset;
+            (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = (stream_offset + ByteCount) as LONGLONG;
+            (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
+            (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
+                LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
 
             CdLockFcb(IrpContext, path_table_fcb);
             CdAddInitialAllocation(
                 IrpContext,
                 path_table_fcb,
                 StartingBlock,
-                (*path_table_fcb).AllocationSize.QuadPart,
+                (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart as u32,
             );
             CdUnlockFcb(IrpContext, path_table_fcb);
 
-            (*path_table_fcb).Resource = &raw mut (*Vcb).FileResource as *mut _;
+            (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
             (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
             CdCreateInternalStream(
                 IrpContext,
@@ -409,7 +439,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
             CdSetFidPathTableOffset(
                 &raw mut (*root_index_fcb).FileId,
-                (*path_table_fcb).StreamOffset,
+                (*fcb_idx(path_table_fcb)).StreamOffset as i64,
             );
             CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
 
@@ -418,9 +448,9 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 &raw mut PathEntry.DiskOffset,
                 core::ptr::addr_of!((*RawDirent).FileLoc) as *const u8,
             );
-            PathEntry.DiskOffset += (*RawDirent).XarLen;
+            PathEntry.DiskOffset += (*RawDirent).XarLen as u32;
             PathEntry.Ordinal = 1;
-            PathEntry.PathTableOffset = (*path_table_fcb).StreamOffset;
+            PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
 
             CdInitializeFcbFromPathEntry(
                 IrpContext,
@@ -451,21 +481,21 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             UnlockVcb = false;
 
             StartingBlock = CdRvdVolSz(RawIsoVd, (*Vcb).VcbState);
-            (*volume_dasd_fcb).FileSize.QuadPart = LlBytesFromBlocks(Vcb, StartingBlock);
-            (*volume_dasd_fcb).AllocationSize.QuadPart = (*volume_dasd_fcb).FileSize.QuadPart;
-            (*volume_dasd_fcb).ValidDataLength.QuadPart = (*volume_dasd_fcb).FileSize.QuadPart;
+            (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart = LlBytesFromBlocks(Vcb, StartingBlock);
+            (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
+            (*fcb_hdr(volume_dasd_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
 
             CdLockFcb(IrpContext, volume_dasd_fcb);
             McbEntry = core::ptr::addr_of!((*volume_dasd_fcb).Mcb.McbArray) as *mut CD_MCB_ENTRY;
             (*McbEntry).FileOffset = 0;
             (*McbEntry).DiskOffset = 0;
-            (*McbEntry).ByteCount = (*volume_dasd_fcb).AllocationSize.QuadPart;
+            (*McbEntry).ByteCount = (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart;
             (*McbEntry).DataBlockByteCount = (*McbEntry).ByteCount;
             (*McbEntry).TotalBlockByteCount = (*McbEntry).ByteCount;
             (*volume_dasd_fcb).Mcb.CurrentEntryCount = 1;
             CdUnlockFcb(IrpContext, volume_dasd_fcb);
 
-            (*volume_dasd_fcb).Resource = &raw mut (*Vcb).FileResource as *mut _;
+            (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
             (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
             (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
 
@@ -496,11 +526,11 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             UnlockVcb = false;
 
             let dir_id_offset = core::mem::offset_of!(RAW_PATH_ISO, DirId) as LONGLONG;
-            (*path_table_fcb).FileSize.QuadPart = dir_id_offset + 2;
-            (*path_table_fcb).ValidDataLength.QuadPart = (*path_table_fcb).FileSize.QuadPart;
-            (*path_table_fcb).AllocationSize.QuadPart =
-                LlSectorAlign((*path_table_fcb).FileSize.QuadPart);
-            (*path_table_fcb).Resource = &raw mut (*Vcb).FileResource as *mut _;
+            (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = dir_id_offset + 2;
+            (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
+            (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
+                LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
+            (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
             (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
             CdCreateInternalStream(
                 IrpContext,
@@ -525,7 +555,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
             CdSetFidPathTableOffset(
                 &raw mut (*root_index_fcb).FileId,
-                (*path_table_fcb).StreamOffset,
+                (*fcb_idx(path_table_fcb)).StreamOffset as i64,
             );
             CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
 
@@ -535,7 +565,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 core::mem::size_of::<PATH_ENTRY>(),
             );
             PathEntry.Ordinal = 1;
-            PathEntry.PathTableOffset = (*path_table_fcb).StreamOffset;
+            PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
 
             CdInitializeFcbFromPathEntry(
                 IrpContext,
@@ -547,9 +577,9 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             let mut root_directory_size = ((*Vcb).TrackCount + 2) * CdAudioDirentSize;
             root_directory_size = SectorAlign(root_directory_size);
             let root_size = root_directory_size as LONGLONG;
-            (*root_index_fcb).AllocationSize.QuadPart = root_size;
-            (*root_index_fcb).ValidDataLength.QuadPart = root_size;
-            (*root_index_fcb).FileSize.QuadPart = root_size;
+            (*fcb_hdr(root_index_fcb)).AllocationSize.QuadPart = root_size;
+            (*fcb_hdr(root_index_fcb)).ValidDataLength.QuadPart = root_size;
+            (*fcb_hdr(root_index_fcb)).FileSize.QuadPart = root_size;
             (*root_index_fcb).FcbState |= FCB_STATE_INITIALIZED;
 
             CdCreateInternalStream(
@@ -573,14 +603,14 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             CdUnlockVcb(IrpContext, Vcb);
             UnlockVcb = false;
 
-            (*volume_dasd_fcb).Resource = &raw mut (*Vcb).FileResource as *mut _;
+            (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
             (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
             (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
 
-            (*(*Vcb).Vpb).VolumeLabelLength = CdAudioLabelLength;
+            (*(*Vcb).Vpb).VolumeLabelLength = CdAudioLabelLength as u16;
             core::ptr::copy_nonoverlapping(
                 core::ptr::addr_of!(CdAudioLabel) as *const u8,
-                (*(*Vcb).Vpb).VolumeLabel.as_mut_ptr(),
+                (*(*Vcb).Vpb).VolumeLabel.as_mut_ptr() as *mut u8,
                 CdAudioLabelLength as usize,
             );
 
@@ -608,15 +638,15 @@ pub unsafe extern "C" fn CdDeleteVcb(
         ASSERT_EXCLUSIVE_VCB(Vcb);
         UNREFERENCED_PARAMETER(IrpContext);
 
-        CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb));
-        CdFreePool(core::ptr::addr_of_mut!((*Vcb).Vpb));
+        CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);
+        CdFreePool(core::ptr::addr_of_mut!((*Vcb).Vpb) as *mut *mut core::ffi::c_void);
 
         if !(*Vcb).TargetDeviceObject.is_null() {
-            ObDereferenceObject((*Vcb).TargetDeviceObject);
+            ObDereferenceObject((*Vcb).TargetDeviceObject as *mut core::ffi::c_void);
         }
 
-        CdFreePool(core::ptr::addr_of_mut!((*Vcb).XASector));
-        CdFreePool(core::ptr::addr_of_mut!((*Vcb).SectorCacheBuffer));
+        CdFreePool(core::ptr::addr_of_mut!((*Vcb).XASector) as *mut *mut core::ffi::c_void);
+        CdFreePool(core::ptr::addr_of_mut!((*Vcb).SectorCacheBuffer) as *mut *mut core::ffi::c_void);
 
         if !(*Vcb).SectorCacheIrp.is_null() {
             IoFreeIrp((*Vcb).SectorCacheIrp);
@@ -624,12 +654,12 @@ pub unsafe extern "C" fn CdDeleteVcb(
             ExDeleteResourceLite(core::ptr::addr_of_mut!((*Vcb).SectorCacheResource));
         }
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*Vcb).VcbLinks));
+        RemoveEntryList((*Vcb).__bindgen_anon_1.VcbLinks.as_mut());
 
         ExDeleteResourceLite(core::ptr::addr_of_mut!((*Vcb).VcbResource));
         ExDeleteResourceLite(core::ptr::addr_of_mut!((*Vcb).FileResource));
 
-        CdFreePool(core::ptr::addr_of_mut!((*Vcb).CdromToc));
+        CdFreePool(core::ptr::addr_of_mut!((*Vcb).CdromToc) as *mut *mut core::ffi::c_void);
 
         if !(*Vcb).NotifySync.is_null() {
             FsRtlNotifyUninitializeSync(core::ptr::addr_of_mut!((*Vcb).NotifySync));
@@ -647,7 +677,7 @@ pub unsafe extern "C" fn CdCreateFcb(
     IrpContext: *mut IRP_CONTEXT,
     FileId: FILE_ID,
     NodeTypeCode: NODE_TYPE_CODE,
-    FcbExisted: *mut u8,
+    mut FcbExisted: *mut u8,
 ) -> *mut FCB {
     // PAGED_CODE() macro – emit the call
     PAGED_CODE();
@@ -662,24 +692,24 @@ pub unsafe extern "C" fn CdCreateFcb(
     NewFcb = CdLookupFcbTable(IrpContext, (*IrpContext).Vcb, FileId);
 
     if NewFcb.is_null() {
-        match NodeTypeCode {
+        match NodeTypeCode as u32 {
             CDFS_NTC_FCB_PATH_TABLE | CDFS_NTC_FCB_INDEX => {
                 NewFcb = CdAllocateFcbIndex(IrpContext);
-                RtlZeroMemory(NewFcb as *mut core::ffi::c_void, SIZEOF_FCB_INDEX);
-                (*NewFcb).NodeByteSize = SIZEOF_FCB_INDEX;
-                InitializeListHead(core::ptr::addr_of_mut!((*NewFcb).FcbQueue));
+                RtlZeroMemory(NewFcb as *mut core::ffi::c_void, SIZEOF_FCB_INDEX as usize);
+                (*fcb_hdr(NewFcb)).NodeByteSize = SIZEOF_FCB_INDEX as i16;
+                InitializeListHead(core::ptr::addr_of_mut!((*fcb_idx(NewFcb)).FcbQueue));
             }
             CDFS_NTC_FCB_DATA => {
                 NewFcb = CdAllocateFcbData(IrpContext);
-                RtlZeroMemory(NewFcb as *mut core::ffi::c_void, SIZEOF_FCB_DATA);
-                (*NewFcb).NodeByteSize = SIZEOF_FCB_DATA;
+                RtlZeroMemory(NewFcb as *mut core::ffi::c_void, SIZEOF_FCB_DATA as usize);
+                (*fcb_hdr(NewFcb)).NodeByteSize = SIZEOF_FCB_DATA as i16;
             }
             _ => {
                 CdBugCheck(0, 0, 0);
             }
         }
 
-        (*NewFcb).NodeTypeCode = NodeTypeCode;
+        (*fcb_hdr(NewFcb)).NodeTypeCode = NodeTypeCode as i16;
         (*NewFcb).Vcb = (*IrpContext).Vcb;
         (*NewFcb).FileId = FileId;
 
@@ -688,7 +718,7 @@ pub unsafe extern "C" fn CdCreateFcb(
         (*NewFcb).FcbNonpaged = CdCreateFcbNonpaged(IrpContext);
 
         if (*NewFcb).FcbNonpaged.is_null() {
-            CdFreePool(core::ptr::addr_of_mut!(NewFcb));
+            CdFreePool(core::ptr::addr_of_mut!(NewFcb) as *mut *mut core::ffi::c_void);
             CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
         }
 
@@ -698,11 +728,11 @@ pub unsafe extern "C" fn CdCreateFcb(
             (*(*NewFcb).FcbNonpaged).AdvancedFcbHeaderMutex
         ));
         FsRtlSetupAdvancedHeader(
-            core::ptr::addr_of_mut!((*NewFcb).Header),
+            fcb_hdr(NewFcb),
             core::ptr::addr_of_mut!((*(*NewFcb).FcbNonpaged).AdvancedFcbHeaderMutex),
         );
 
-        if NodeTypeCode == CDFS_NTC_FCB_DATA {
+        if NodeTypeCode as u32 == CDFS_NTC_FCB_DATA {
             FsRtlInitializeOplock(CdGetFcbOplock(NewFcb));
         }
     } else {
@@ -726,13 +756,13 @@ pub unsafe extern "C" fn CdInitializeFcbFromPathEntry(
     let fcb = &mut *Fcb;
     let path_entry = &*PathEntry;
 
-    fcb.StreamOffset = BytesFromBlocks(fcb.Vcb, SectorBlockOffset(fcb.Vcb, path_entry.DiskOffset));
-    fcb.Ordinal = path_entry.Ordinal;
-    fcb.Resource = core::ptr::addr_of_mut!((*fcb.Vcb).FileResource);
+    (*fcb_idx(Fcb)).StreamOffset = BytesFromBlocks(fcb.Vcb, SectorBlockOffset(fcb.Vcb, path_entry.DiskOffset));
+    (*fcb_idx(Fcb)).Ordinal = path_entry.Ordinal;
+    (*fcb_hdr(Fcb)).Resource = core::ptr::addr_of_mut!((*fcb.Vcb).FileResource);
 
-    fcb.AllocationSize.QuadPart = SECTOR_SIZE as i64;
-    fcb.FileSize.QuadPart = SECTOR_SIZE as i64;
-    fcb.ValidDataLength.QuadPart = SECTOR_SIZE as i64;
+    (*fcb_hdr(Fcb)).AllocationSize.QuadPart = SECTOR_SIZE as i64;
+    (*fcb_hdr(Fcb)).FileSize.QuadPart = SECTOR_SIZE as i64;
+    (*fcb_hdr(Fcb)).ValidDataLength.QuadPart = SECTOR_SIZE as i64;
 
     CdAddInitialAllocation(IrpContext, Fcb, path_entry.DiskOffset, SECTOR_SIZE);
 
@@ -740,7 +770,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromPathEntry(
 
     if !ParentFcb.is_null() {
         fcb.ParentFcb = ParentFcb;
-        InsertTailList(&mut (*ParentFcb).FcbQueue, &mut fcb.FcbLinks);
+        InsertTailList(&mut (*fcb_idx(ParentFcb)).FcbQueue, &mut fcb.FcbLinks);
         CdIncrementReferenceCounts(IrpContext, ParentFcb, 1, 1);
     }
 
@@ -774,15 +804,15 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
     CdLockFcb(IrpContext, Fcb);
 
     // try block start
-    (*Fcb).Resource = core::ptr::addr_of_mut!((*(*IrpContext).Vcb).FileResource);
+    (*fcb_hdr(Fcb)).Resource = core::ptr::addr_of_mut!((*(*IrpContext).Vcb).FileResource);
 
-    (*Fcb).FileSize.QuadPart = (*FileContext).FileSize;
-    (*Fcb).ValidDataLength.QuadPart = (*FileContext).FileSize;
+    (*fcb_hdr(Fcb)).FileSize.QuadPart = (*FileContext).FileSize;
+    (*fcb_hdr(Fcb)).ValidDataLength.QuadPart = (*FileContext).FileSize;
 
-    (*Fcb).AllocationSize.QuadPart = LlBlockAlign((*Fcb).Vcb, (*FileContext).FileSize);
+    (*fcb_hdr(Fcb)).AllocationSize.QuadPart = LlBlockAlign((*Fcb).Vcb, (*FileContext).FileSize);
 
     (*Fcb).FileAttributes |= FILE_ATTRIBUTE_READONLY;
-    if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN) != 0 {
+    if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN as u8) != 0 {
         (*Fcb).FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
     }
 
@@ -813,7 +843,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
             core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
         );
 
-        if ((*CurrentCompoundDirent).Dirent.DirentFlags & CD_ATTRIBUTE_MULTI) == 0 {
+        if ((*CurrentCompoundDirent).Dirent.DirentFlags & CD_ATTRIBUTE_MULTI as u8) == 0 {
             break;
         }
 
@@ -845,7 +875,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
     (*Fcb).ParentFcb = ParentFcb;
 
     InsertTailList(
-        core::ptr::addr_of_mut!((*ParentFcb).FcbQueue),
+        core::ptr::addr_of_mut!((*fcb_idx(ParentFcb)).FcbQueue),
         core::ptr::addr_of_mut!((*Fcb).FcbLinks),
     );
 
@@ -870,7 +900,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
     CdUnlockFcb(IrpContext, Fcb);
 }
 
-const CDFS_NTC_CCB: u32 = 0xCCB; // placeholder value
+const CDFS_NTC_CCB: u32 = 0x0307; // nodetype.h CDFS_NTC_CCB
 #[no_mangle]
 pub unsafe extern "C" fn CdCreateCcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -884,15 +914,15 @@ pub unsafe extern "C" fn CdCreateCcb(
 
     NewCcb = CdAllocateCcb(IrpContext);
     RtlZeroMemory(NewCcb as *mut core::ffi::c_void, core::mem::size_of::<CCB>());
-    (*NewCcb).NodeTypeCode = CDFS_NTC_CCB;
-    (*NewCcb).NodeByteSize = core::mem::size_of::<CCB>() as u16;
+    (*NewCcb).NodeTypeCode = CDFS_NTC_CCB as u16;
+    (*NewCcb).NodeByteSize = core::mem::size_of::<CCB>() as i16;
     (*NewCcb).Flags = Flags;
     (*NewCcb).Fcb = Fcb;
 
     NewCcb
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdDeleteCcb(IrpContext: *mut IRP_CONTEXT, Ccb: *mut CCB) {
+pub unsafe extern "C" fn CdDeleteCcb(IrpContext: *mut IRP_CONTEXT, mut Ccb: *mut CCB) {
     let _ = IrpContext;
     if !(*Ccb).SearchExpression.FileName.Buffer.is_null() {
         CdFreePool(core::ptr::addr_of_mut!((*Ccb).SearchExpression.FileName.Buffer) as *mut *mut core::ffi::c_void);
@@ -901,7 +931,7 @@ pub unsafe extern "C" fn CdDeleteCcb(IrpContext: *mut IRP_CONTEXT, Ccb: *mut CCB
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdCleanupIrpContext(
-    IrpContext: *mut IRP_CONTEXT,
+    mut IrpContext: *mut IRP_CONTEXT,
     Post: i32,
 ) {
     // PAGED_CODE();
@@ -910,19 +940,19 @@ pub unsafe extern "C" fn CdCleanupIrpContext(
             CdRestoreThreadContext(IrpContext);
         }
         if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO) != 0 {
-            CdFreeIoContext((*IrpContext).IoContext);
+            CdFreeIoContext((*IrpContext).__bindgen_anon_1.IoContext as *mut c_void);
         }
         if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ON_STACK) == 0 {
             if CdData.IrpContextDepth < CdData.IrpContextMaxDepth {
                 CdLockCdData();
                 PushEntryList(
-                    &mut CdData.IrpContextList,
+                    core::ptr::addr_of_mut!(CdData.IrpContextList) as *mut SINGLE_LIST_ENTRY,
                     IrpContext as *mut SINGLE_LIST_ENTRY,
                 );
                 CdData.IrpContextDepth += 1;
                 CdUnlockCdData();
             } else {
-                CdFreePool(&mut IrpContext as *mut *mut IRP_CONTEXT);
+                CdFreePool(&mut IrpContext as *mut *mut IRP_CONTEXT as *mut *mut core::ffi::c_void);
             }
         }
     } else if Post != 0 {
@@ -936,16 +966,16 @@ pub unsafe extern "C" fn CdCleanupIrpContext(
     return;
 }
 
-const CDFS_NTC_IRP_CONTEXT: u32 = 0; // TODO: placeholder
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0; // placeholder
+const CDFS_NTC_IRP_CONTEXT: u32 = 0x0308; // nodetype.h CDFS_NTC_IRP_CONTEXT
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // cdstruc.h IRP_CONTEXT_FLAG_WAIT
 #[no_mangle]
 pub unsafe extern "C" fn CdInitializeStackIrpContext(IrpContext: *mut IRP_CONTEXT, IrpContextLite: *mut IRP_CONTEXT_LITE) {
     // PAGED_CODE();
 
     RtlZeroMemory(IrpContext as *mut core::ffi::c_void, core::mem::size_of::<IRP_CONTEXT>());
 
-    (*IrpContext).NodeTypeCode = CDFS_NTC_IRP_CONTEXT;
-    (*IrpContext).NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as u16;
+    (*IrpContext).NodeTypeCode = CDFS_NTC_IRP_CONTEXT as u16;
+    (*IrpContext).NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as i16;
 
     SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_ON_STACK);
 
@@ -986,7 +1016,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
         loop {
             if SafeNodeType(CurrentFcb) != CDFS_NTC_FCB_DATA
                 && (*CurrentFcb).FcbUserReference == 0
-                && !(*CurrentFcb).FileObject.is_null()
+                && !(*fcb_idx(CurrentFcb)).FileObject.is_null()
             {
                 CdDeleteInternalStream(IrpContext, CurrentFcb);
             }
@@ -1061,7 +1091,7 @@ pub unsafe extern "C" fn CdLookupFcbTable(
 
     Hit = RtlLookupElementGenericTable(
         core::ptr::addr_of_mut!((*Vcb).FcbTable),
-        core::ptr::addr_of!(Key) as *const core::ffi::c_void,
+        core::ptr::addr_of_mut!(Key) as *mut core::ffi::c_void,
     ) as *mut FCB_TABLE_ELEMENT;
 
     if !Hit.is_null() {
@@ -1152,10 +1182,10 @@ pub unsafe extern "C" fn CdProcessToc(
     }
 
     current_track = 0;
-    local_track_count = (*CdromToc).LastTrack - (*CdromToc).FirstTrack + 1;
+    local_track_count = (*CdromToc).LastTrack as u32 - (*CdromToc).FirstTrack as u32 + 1;
     {
         let base = CdromToc as *const u8;
-        let field = core::ptr::addr_of!((*CdromToc).TrackData[local_track_count + 1]) as *const u8;
+        let field = core::ptr::addr_of!((*CdromToc).TrackData[(local_track_count + 1) as usize]) as *const u8;
         local_toc_length = (field as usize - base as usize) as u32;
     }
 
@@ -1167,9 +1197,9 @@ pub unsafe extern "C" fn CdProcessToc(
     }
 
     loop {
-        track = &raw mut (*CdromToc).TrackData[current_track] as *mut TRACK_DATA;
+        track = &raw mut (*CdromToc).TrackData[current_track as usize] as *mut TRACK_DATA;
 
-        if ((*track).Control & TOC_DATA_TRACK) != 0 {
+        if ((*track).Control() as u32 & TOC_DATA_TRACK) != 0 {
             if ((*DiskFlags) & CDROM_DISK_AUDIO_TRACK) != 0
                 && ((*DiskFlags) & CDROM_DISK_DATA_TRACK) == 0
             {
@@ -1193,7 +1223,7 @@ pub unsafe extern "C" fn CdProcessToc(
                     *dst.add(3) = *src.add(0);
                 }
 
-                (*track).TrackNumber = TOC_LAST_TRACK;
+                (*track).TrackNumber = TOC_LAST_TRACK as u8;
                 *DiskFlags |= CDROM_DISK_DATA_TRACK;
                 break;
             }
@@ -1213,7 +1243,7 @@ pub unsafe extern "C" fn CdProcessToc(
     *TrackCount = current_track;
     {
         let base = CdromToc as *const u8;
-        let field = core::ptr::addr_of!((*CdromToc).TrackData[current_track + 1]) as *const u8;
+        let field = core::ptr::addr_of!((*CdromToc).TrackData[(current_track + 1) as usize]) as *const u8;
         *Length = (field as usize - base as usize) as u32;
     }
     biased_toc_length.Length = (*Length as u16) - 2;
@@ -1245,9 +1275,7 @@ pub unsafe extern "C" fn CdDeleteFcb(
         );
     }
 
-    FsRtlTeardownPerStreamContexts(
-        core::ptr::addr_of!((*Fcb).Header) as *mut FSRTL_ADVANCED_FCB_HEADER,
-    );
+    FsRtlTeardownPerStreamContexts(fcb_hdr(Fcb));
 
     CdUninitializeMcb(IrpContext, Fcb);
     CdDeleteFcbNonpaged(IrpContext, (*Fcb).FcbNonpaged);
@@ -1258,18 +1286,18 @@ pub unsafe extern "C" fn CdDeleteFcb(
     if buffer_ptr != file_name_buffer_ptr && !buffer_ptr.is_null() {
         CdFreePool(core::ptr::addr_of_mut!(
             (*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer
-        ));
+        ) as *mut *mut core::ffi::c_void);
     }
 
     if !(*Fcb).ShortNamePrefix.is_null() {
-        CdFreePool(core::ptr::addr_of_mut!((*Fcb).ShortNamePrefix));
+        CdFreePool(core::ptr::addr_of_mut!((*Fcb).ShortNamePrefix) as *mut *mut core::ffi::c_void);
     }
 
-    match (*Fcb).NodeTypeCode {
+    match (*fcb_hdr(Fcb)).NodeTypeCode as u32 {
         CDFS_NTC_FCB_PATH_TABLE | CDFS_NTC_FCB_INDEX => {
-            NT_ASSERT(((*Fcb).FileObject.is_null()) as i32);
+            NT_ASSERT(((*fcb_idx(Fcb)).FileObject.is_null()) as i32);
             NT_ASSERT(IsListEmpty(
-                core::ptr::addr_of!((*Fcb).FcbQueue) as *mut LIST_ENTRY,
+                core::ptr::addr_of!((*fcb_idx(Fcb)).FcbQueue) as *mut LIST_ENTRY,
             ) as i32);
             if Fcb == (*(*Fcb).Vcb).RootIndexFcb {
                 Vcb = (*Fcb).Vcb;
@@ -1281,8 +1309,8 @@ pub unsafe extern "C" fn CdDeleteFcb(
             CdDeallocateFcbIndex(IrpContext, Fcb as *mut core::ffi::c_void);
         }
         CDFS_NTC_FCB_DATA => {
-            if !(*Fcb).FileLock.is_null() {
-                FsRtlFreeFileLock((*Fcb).FileLock);
+            if !(*fcb_data(Fcb)).FileLock.is_null() {
+                FsRtlFreeFileLock((*fcb_data(Fcb)).FileLock);
             }
             FsRtlUninitializeOplock(CdGetFcbOplock(Fcb));
             if Fcb == (*(*Fcb).Vcb).VolumeDasdFcb {
@@ -1315,8 +1343,8 @@ pub unsafe extern "C" fn CdCreateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *m
     if !FcbNonpaged.is_null() {
         core::ptr::write_bytes(FcbNonpaged, 0u8, core::mem::size_of::<FCB_NONPAGED>());
 
-        (*FcbNonpaged).NodeTypeCode = CDFS_NTC_FCB_NONPAGED;
-        (*FcbNonpaged).NodeByteSize = core::mem::size_of::<FCB_NONPAGED>() as u32;
+        (*FcbNonpaged).NodeTypeCode = CDFS_NTC_FCB_NONPAGED as u16;
+        (*FcbNonpaged).NodeByteSize = core::mem::size_of::<FCB_NONPAGED>() as i16;
 
         ExInitializeResourceLite(core::ptr::addr_of_mut!((*FcbNonpaged).FcbResource));
         ExInitializeFastMutex(core::ptr::addr_of_mut!((*FcbNonpaged).FcbMutex));
@@ -1351,11 +1379,11 @@ pub unsafe extern "C" fn CdFcbTableCompare(
     let Id2: FILE_ID = core::ptr::read_unaligned(Fid2 as *const FILE_ID);
 
     if Id1.QuadPart < Id2.QuadPart {
-        return ntkrnl_sys::ddk::GenericLessThan;
+        return GenericLessThan;
     } else if Id1.QuadPart > Id2.QuadPart {
-        return ntkrnl_sys::ddk::GenericGreaterThan;
+        return GenericGreaterThan;
     } else {
-        return ntkrnl_sys::ddk::GenericEqual;
+        return GenericEqual;
     }
 
     let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
@@ -1372,12 +1400,12 @@ pub unsafe extern "C" fn CdAllocateFcbTable(
 #[no_mangle]
 pub unsafe extern "C" fn CdDeallocateFcbTable(
     FcbTable: *mut RTL_GENERIC_TABLE,
-    Buffer: *mut core::ffi::c_void,
+    mut Buffer: *mut core::ffi::c_void,
 ) {
     // PAGED_CODE(); // macro not expanded
 
     unsafe {
-        CdFreePool(core::ptr::addr_of_mut!(Buffer));
+        CdFreePool(core::ptr::addr_of_mut!(Buffer) as *mut *mut core::ffi::c_void);
     }
     let _ = FcbTable;
 }
@@ -1387,7 +1415,7 @@ pub unsafe extern "C" fn CdTocSerial(
     CdromToc: *mut CDROM_TOC_LARGE,
 ) -> u32 {
     let mut SerialNumber: u32 = 0;
-    let ThisTrack: *const TRACK_DATA;
+    let mut ThisTrack: *const TRACK_DATA;
     let LastTrack: *const TRACK_DATA;
     let mut Address: u32 = 0;
     let mut MsfAddress: u32 = 0;
@@ -1396,8 +1424,8 @@ pub unsafe extern "C" fn CdTocSerial(
 
     // Compute pointer to leadout track (LastTrack)
     let track_count = (*CdromToc).LastTrack.wrapping_sub((*CdromToc).FirstTrack) as usize + 1;
-    LastTrack = (&(*CdromToc).TrackData as *const TRACK_DATA).add(track_count);
-    ThisTrack = &(*CdromToc).TrackData as *const TRACK_DATA;
+    LastTrack = ((*CdromToc).TrackData.as_ptr()).add(track_count);
+    ThisTrack = (*CdromToc).TrackData.as_ptr();
 
     if (*CdromToc).LastTrack.wrapping_sub((*CdromToc).FirstTrack) <= 1 {
         SwapCopyUchar4(

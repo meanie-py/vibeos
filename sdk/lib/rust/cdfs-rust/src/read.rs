@@ -14,6 +14,8 @@ use crate::ddk_shims::{FsRtlCheckOplock};
 use crate::glue::{CDFS_BUG_CHECK_READ, FO_SYNCHRONOUS_IO, IRP_MN_MDL, IRP_NOCACHE, IRP_PAGING_IO};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckLockForReadAccess, FsRtlNormalizeNtstatus};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{SetFlag};
 
 extern "C" {
     static mut CdData: CD_DATA;

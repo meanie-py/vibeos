@@ -147,6 +147,36 @@ where
     }
 }
 #[repr(C)]
+#[derive(Default)]
+pub struct __IncompleteArrayField<T>(::core::marker::PhantomData<T>, [T; 0]);
+impl<T> __IncompleteArrayField<T> {
+    #[inline]
+    pub const fn new() -> Self {
+        __IncompleteArrayField(::core::marker::PhantomData, [])
+    }
+    #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self as *const _ as *const T
+    }
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self as *mut _ as *mut T
+    }
+    #[inline]
+    pub unsafe fn as_slice(&self, len: usize) -> &[T] {
+        ::core::slice::from_raw_parts(self.as_ptr(), len)
+    }
+    #[inline]
+    pub unsafe fn as_mut_slice(&mut self, len: usize) -> &mut [T] {
+        ::core::slice::from_raw_parts_mut(self.as_mut_ptr(), len)
+    }
+}
+impl<T> ::core::fmt::Debug for __IncompleteArrayField<T> {
+    fn fmt(&self, fmt: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        fmt.write_str("__IncompleteArrayField")
+    }
+}
+#[repr(C)]
 pub struct __BindgenUnionField<T>(::core::marker::PhantomData<T>);
 impl<T> __BindgenUnionField<T> {
     #[inline]
@@ -189,6 +219,60 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
     }
 }
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
+pub const IOCTL_CDROM_BASE: u32 = 2;
+pub const MINIMUM_CDROM_INQUIRY_SIZE: u32 = 36;
+pub const MAXIMUM_CDROM_INQUIRY_SIZE: u32 = 260;
+pub const MAXIMUM_NUMBER_TRACKS: u32 = 100;
+pub const MAXIMUM_CDROM_SIZE: u32 = 804;
+pub const MINIMUM_CDROM_READ_TOC_EX_SIZE: u32 = 2;
+pub const CDROM_DISK_AUDIO_TRACK: u32 = 1;
+pub const CDROM_DISK_DATA_TRACK: u32 = 2;
+pub const CDROM_READ_TOC_EX_FORMAT_TOC: u32 = 0;
+pub const CDROM_READ_TOC_EX_FORMAT_SESSION: u32 = 1;
+pub const CDROM_READ_TOC_EX_FORMAT_FULL_TOC: u32 = 2;
+pub const CDROM_READ_TOC_EX_FORMAT_PMA: u32 = 3;
+pub const CDROM_READ_TOC_EX_FORMAT_ATIP: u32 = 4;
+pub const CDROM_READ_TOC_EX_FORMAT_CDTEXT: u32 = 5;
+pub const IOCTL_CDROM_SUB_Q_CHANNEL: u32 = 0;
+pub const IOCTL_CDROM_CURRENT_POSITION: u32 = 1;
+pub const IOCTL_CDROM_MEDIA_CATALOG: u32 = 2;
+pub const IOCTL_CDROM_TRACK_ISRC: u32 = 3;
+pub const CDROM_CD_TEXT_PACK_ALBUM_NAME: u32 = 128;
+pub const CDROM_CD_TEXT_PACK_PERFORMER: u32 = 129;
+pub const CDROM_CD_TEXT_PACK_SONGWRITER: u32 = 130;
+pub const CDROM_CD_TEXT_PACK_COMPOSER: u32 = 131;
+pub const CDROM_CD_TEXT_PACK_ARRANGER: u32 = 132;
+pub const CDROM_CD_TEXT_PACK_MESSAGES: u32 = 133;
+pub const CDROM_CD_TEXT_PACK_DISC_ID: u32 = 134;
+pub const CDROM_CD_TEXT_PACK_GENRE: u32 = 135;
+pub const CDROM_CD_TEXT_PACK_TOC_INFO: u32 = 136;
+pub const CDROM_CD_TEXT_PACK_TOC_INFO2: u32 = 137;
+pub const CDROM_CD_TEXT_PACK_UPC_EAN: u32 = 142;
+pub const CDROM_CD_TEXT_PACK_SIZE_INFO: u32 = 143;
+pub const ADR_NO_MODE_INFORMATION: u32 = 0;
+pub const ADR_ENCODES_CURRENT_POSITION: u32 = 1;
+pub const ADR_ENCODES_MEDIA_CATALOG: u32 = 2;
+pub const ADR_ENCODES_ISRC: u32 = 3;
+pub const AUDIO_STATUS_NOT_SUPPORTED: u32 = 0;
+pub const AUDIO_STATUS_IN_PROGRESS: u32 = 17;
+pub const AUDIO_STATUS_PAUSED: u32 = 18;
+pub const AUDIO_STATUS_PLAY_COMPLETE: u32 = 19;
+pub const AUDIO_STATUS_PLAY_ERROR: u32 = 20;
+pub const AUDIO_STATUS_NO_STATUS: u32 = 21;
+pub const AUDIO_WITH_PREEMPHASIS: u32 = 1;
+pub const DIGITAL_COPY_PERMITTED: u32 = 2;
+pub const AUDIO_DATA_TRACK: u32 = 4;
+pub const TWO_FOUR_CHANNEL_AUDIO: u32 = 8;
+pub const CD_RAW_READ_C2_SIZE: u32 = 296;
+pub const CD_RAW_READ_SUBCODE_SIZE: u32 = 96;
+pub const CD_RAW_SECTOR_WITH_C2_SIZE: u32 = 2648;
+pub const CD_RAW_SECTOR_WITH_SUBCODE_SIZE: u32 = 2448;
+pub const CD_RAW_SECTOR_WITH_C2_AND_SUBCODE_SIZE: u32 = 2744;
+pub const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 64;
+pub const CDROM_LOCK_IGNORE_VOLUME: u32 = 1;
+pub const CDROM_NO_MEDIA_NOTIFICATIONS: u32 = 2;
+pub const CDROM_NOT_IN_EXCLUSIVE_MODE: u32 = 0;
+pub const CDROM_IN_EXCLUSIVE_MODE: u32 = 1;
 pub const SECTOR_SIZE: u32 = 2048;
 pub const RAW_SECTOR_SIZE: u32 = 2352;
 pub const SECTOR_MASK: u32 = 2047;
@@ -373,6 +457,1885 @@ impl _TRACK_DATA {
     }
 }
 pub type TRACK_DATA = _TRACK_DATA;
+pub type PTRACK_DATA = *mut _TRACK_DATA;
+#[repr(C)]
+pub struct _CDROM_DISK_DATA {
+    pub DiskData: ULONG,
+}
+pub type CDROM_DISK_DATA = _CDROM_DISK_DATA;
+pub type PCDROM_DISK_DATA = *mut _CDROM_DISK_DATA;
+#[repr(C)]
+pub struct _CDROM_PLAY_AUDIO_MSF {
+    pub StartingM: UCHAR,
+    pub StartingS: UCHAR,
+    pub StartingF: UCHAR,
+    pub EndingM: UCHAR,
+    pub EndingS: UCHAR,
+    pub EndingF: UCHAR,
+}
+pub type CDROM_PLAY_AUDIO_MSF = _CDROM_PLAY_AUDIO_MSF;
+pub type PCDROM_PLAY_AUDIO_MSF = *mut _CDROM_PLAY_AUDIO_MSF;
+#[repr(C)]
+pub struct _CDROM_READ_TOC_EX {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub SessionTrack: UCHAR,
+    pub Reserved2: UCHAR,
+    pub Reserved3: UCHAR,
+}
+impl _CDROM_READ_TOC_EX {
+    #[inline]
+    pub fn Format(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Format(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Format_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Format_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved1(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved1(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved1_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved1_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Msf(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Msf(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Msf_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Msf_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        Format: UCHAR,
+        Reserved1: UCHAR,
+        Msf: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 4u8, {
+            let Format: u8 = unsafe { ::core::mem::transmute(Format) };
+            Format as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 3u8, {
+            let Reserved1: u8 = unsafe { ::core::mem::transmute(Reserved1) };
+            Reserved1 as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let Msf: u8 = unsafe { ::core::mem::transmute(Msf) };
+            Msf as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_READ_TOC_EX = _CDROM_READ_TOC_EX;
+pub type PCDROM_READ_TOC_EX = *mut _CDROM_READ_TOC_EX;
+#[repr(C)]
+pub struct _CDROM_SEEK_AUDIO_MSF {
+    pub M: UCHAR,
+    pub S: UCHAR,
+    pub F: UCHAR,
+}
+pub type CDROM_SEEK_AUDIO_MSF = _CDROM_SEEK_AUDIO_MSF;
+pub type PCDROM_SEEK_AUDIO_MSF = *mut _CDROM_SEEK_AUDIO_MSF;
+#[repr(C)]
+pub struct _CDROM_SUB_Q_DATA_FORMAT {
+    pub Format: UCHAR,
+    pub Track: UCHAR,
+}
+pub type CDROM_SUB_Q_DATA_FORMAT = _CDROM_SUB_Q_DATA_FORMAT;
+pub type PCDROM_SUB_Q_DATA_FORMAT = *mut _CDROM_SUB_Q_DATA_FORMAT;
+#[repr(C)]
+pub struct _CDROM_TOC {
+    pub Length: [UCHAR; 2usize],
+    pub FirstTrack: UCHAR,
+    pub LastTrack: UCHAR,
+    pub TrackData: [TRACK_DATA; 100usize],
+}
+pub type CDROM_TOC = _CDROM_TOC;
+pub type PCDROM_TOC = *mut _CDROM_TOC;
+#[repr(C)]
+pub struct _CDROM_TOC_SESSION_DATA {
+    pub Length: [UCHAR; 2usize],
+    pub FirstCompleteSession: UCHAR,
+    pub LastCompleteSession: UCHAR,
+    pub TrackData: [TRACK_DATA; 1usize],
+}
+pub type CDROM_TOC_SESSION_DATA = _CDROM_TOC_SESSION_DATA;
+pub type PCDROM_TOC_SESSION_DATA = *mut _CDROM_TOC_SESSION_DATA;
+#[repr(C)]
+pub struct _CDROM_TOC_ATIP_DATA_BLOCK {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 3usize]>,
+    pub Reserved7: UCHAR,
+    pub LeadInMsf: [UCHAR; 3usize],
+    pub Reserved8: UCHAR,
+    pub LeadOutMsf: [UCHAR; 3usize],
+    pub Reserved9: UCHAR,
+    pub A1Values: [UCHAR; 3usize],
+    pub Reserved10: UCHAR,
+    pub A2Values: [UCHAR; 3usize],
+    pub Reserved11: UCHAR,
+    pub A3Values: [UCHAR; 3usize],
+    pub Reserved12: UCHAR,
+}
+impl _CDROM_TOC_ATIP_DATA_BLOCK {
+    #[inline]
+    pub fn CdrwReferenceSpeed(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_CdrwReferenceSpeed(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn CdrwReferenceSpeed_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_CdrwReferenceSpeed_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved3(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(3usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved3(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(3usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved3_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                3usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved3_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                3usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn WritePower(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_WritePower(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn WritePower_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_WritePower_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn True1(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_True1(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn True1_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_True1_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved4(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(8usize, 6u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved4(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(8usize, 6u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved4_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                8usize,
+                6u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved4_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                8usize,
+                6u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn UnrestrictedUse(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(14usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_UnrestrictedUse(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(14usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn UnrestrictedUse_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                14usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_UnrestrictedUse_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                14usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved5(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(15usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved5(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(15usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved5_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                15usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved5_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                15usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn A3Valid(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(16usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_A3Valid(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(16usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn A3Valid_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                16usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_A3Valid_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                16usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn A2Valid(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(17usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_A2Valid(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(17usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn A2Valid_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                17usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_A2Valid_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                17usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn A1Valid(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(18usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_A1Valid(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(18usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn A1Valid_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                18usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_A1Valid_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                18usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved6(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(19usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved6(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(19usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved6_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                19usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved6_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                19usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn IsCdrw(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(22usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_IsCdrw(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(22usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn IsCdrw_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                22usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_IsCdrw_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                22usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn True2(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(23usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_True2(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(23usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn True2_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                23usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_True2_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                23usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        CdrwReferenceSpeed: UCHAR,
+        Reserved3: UCHAR,
+        WritePower: UCHAR,
+        True1: UCHAR,
+        Reserved4: UCHAR,
+        UnrestrictedUse: UCHAR,
+        Reserved5: UCHAR,
+        A3Valid: UCHAR,
+        A2Valid: UCHAR,
+        A1Valid: UCHAR,
+        Reserved6: UCHAR,
+        IsCdrw: UCHAR,
+        True2: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 3usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 3usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 3u8, {
+            let CdrwReferenceSpeed: u8 = unsafe { ::core::mem::transmute(CdrwReferenceSpeed) };
+            CdrwReferenceSpeed as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 1u8, {
+            let Reserved3: u8 = unsafe { ::core::mem::transmute(Reserved3) };
+            Reserved3 as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 3u8, {
+            let WritePower: u8 = unsafe { ::core::mem::transmute(WritePower) };
+            WritePower as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let True1: u8 = unsafe { ::core::mem::transmute(True1) };
+            True1 as u64
+        });
+        __bindgen_bitfield_unit.set(8usize, 6u8, {
+            let Reserved4: u8 = unsafe { ::core::mem::transmute(Reserved4) };
+            Reserved4 as u64
+        });
+        __bindgen_bitfield_unit.set(14usize, 1u8, {
+            let UnrestrictedUse: u8 = unsafe { ::core::mem::transmute(UnrestrictedUse) };
+            UnrestrictedUse as u64
+        });
+        __bindgen_bitfield_unit.set(15usize, 1u8, {
+            let Reserved5: u8 = unsafe { ::core::mem::transmute(Reserved5) };
+            Reserved5 as u64
+        });
+        __bindgen_bitfield_unit.set(16usize, 1u8, {
+            let A3Valid: u8 = unsafe { ::core::mem::transmute(A3Valid) };
+            A3Valid as u64
+        });
+        __bindgen_bitfield_unit.set(17usize, 1u8, {
+            let A2Valid: u8 = unsafe { ::core::mem::transmute(A2Valid) };
+            A2Valid as u64
+        });
+        __bindgen_bitfield_unit.set(18usize, 1u8, {
+            let A1Valid: u8 = unsafe { ::core::mem::transmute(A1Valid) };
+            A1Valid as u64
+        });
+        __bindgen_bitfield_unit.set(19usize, 3u8, {
+            let Reserved6: u8 = unsafe { ::core::mem::transmute(Reserved6) };
+            Reserved6 as u64
+        });
+        __bindgen_bitfield_unit.set(22usize, 1u8, {
+            let IsCdrw: u8 = unsafe { ::core::mem::transmute(IsCdrw) };
+            IsCdrw as u64
+        });
+        __bindgen_bitfield_unit.set(23usize, 1u8, {
+            let True2: u8 = unsafe { ::core::mem::transmute(True2) };
+            True2 as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_TOC_ATIP_DATA_BLOCK = _CDROM_TOC_ATIP_DATA_BLOCK;
+pub type PCDROM_TOC_ATIP_DATA_BLOCK = *mut _CDROM_TOC_ATIP_DATA_BLOCK;
+#[repr(C)]
+pub struct _CDROM_TOC_ATIP_DATA {
+    pub Length: [UCHAR; 2usize],
+    pub Reserved1: UCHAR,
+    pub Reserved2: UCHAR,
+    pub Descriptors: __IncompleteArrayField<CDROM_TOC_ATIP_DATA_BLOCK>,
+}
+pub type CDROM_TOC_ATIP_DATA = _CDROM_TOC_ATIP_DATA;
+pub type PCDROM_TOC_ATIP_DATA = *mut _CDROM_TOC_ATIP_DATA;
+#[repr(C)]
+pub struct _CDROM_TOC_CD_TEXT_DATA_BLOCK {
+    pub PackType: UCHAR,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub SequenceNumber: UCHAR,
+    pub _bitfield_align_2: [u8; 0],
+    pub _bitfield_2: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_anon_1: _CDROM_TOC_CD_TEXT_DATA_BLOCK__bindgen_ty_1,
+    pub CRC: [UCHAR; 2usize],
+}
+#[repr(C)]
+pub struct _CDROM_TOC_CD_TEXT_DATA_BLOCK__bindgen_ty_1 {
+    pub Text: __BindgenUnionField<[UCHAR; 12usize]>,
+    pub WText: __BindgenUnionField<[WCHAR; 6usize]>,
+    pub bindgen_union_field: [u16; 6usize],
+}
+impl _CDROM_TOC_CD_TEXT_DATA_BLOCK {
+    #[inline]
+    pub fn TrackNumber(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 7u8) as u8) }
+    }
+    #[inline]
+    pub fn set_TrackNumber(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 7u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn TrackNumber_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                7u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_TrackNumber_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                7u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn ExtensionFlag(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_ExtensionFlag(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn ExtensionFlag_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_ExtensionFlag_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        TrackNumber: UCHAR,
+        ExtensionFlag: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 7u8, {
+            let TrackNumber: u8 = unsafe { ::core::mem::transmute(TrackNumber) };
+            TrackNumber as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let ExtensionFlag: u8 = unsafe { ::core::mem::transmute(ExtensionFlag) };
+            ExtensionFlag as u64
+        });
+        __bindgen_bitfield_unit
+    }
+    #[inline]
+    pub fn CharacterPosition(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_2.get(0usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_CharacterPosition(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_2.set(0usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn CharacterPosition_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_2),
+                0usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_CharacterPosition_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_2),
+                0usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn BlockNumber(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_2.get(4usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_BlockNumber(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_2.set(4usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn BlockNumber_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_2),
+                4usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_BlockNumber_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_2),
+                4usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Unicode(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_2.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Unicode(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_2.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Unicode_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_2),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Unicode_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_2),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_2(
+        CharacterPosition: UCHAR,
+        BlockNumber: UCHAR,
+        Unicode: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 4u8, {
+            let CharacterPosition: u8 = unsafe { ::core::mem::transmute(CharacterPosition) };
+            CharacterPosition as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 3u8, {
+            let BlockNumber: u8 = unsafe { ::core::mem::transmute(BlockNumber) };
+            BlockNumber as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let Unicode: u8 = unsafe { ::core::mem::transmute(Unicode) };
+            Unicode as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_TOC_CD_TEXT_DATA_BLOCK = _CDROM_TOC_CD_TEXT_DATA_BLOCK;
+pub type PCDROM_TOC_CD_TEXT_DATA_BLOCK = *mut _CDROM_TOC_CD_TEXT_DATA_BLOCK;
+#[repr(C)]
+pub struct _CDROM_TOC_CD_TEXT_DATA {
+    pub Length: [UCHAR; 2usize],
+    pub Reserved1: UCHAR,
+    pub Reserved2: UCHAR,
+    pub Descriptors: __IncompleteArrayField<CDROM_TOC_CD_TEXT_DATA_BLOCK>,
+}
+pub type CDROM_TOC_CD_TEXT_DATA = _CDROM_TOC_CD_TEXT_DATA;
+pub type PCDROM_TOC_CD_TEXT_DATA = *mut _CDROM_TOC_CD_TEXT_DATA;
+#[repr(C)]
+pub struct _CDROM_TOC_FULL_TOC_DATA_BLOCK {
+    pub SessionNumber: UCHAR,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub Reserved1: UCHAR,
+    pub Point: UCHAR,
+    pub MsfExtra: [UCHAR; 3usize],
+    pub Zero: UCHAR,
+    pub Msf: [UCHAR; 3usize],
+}
+impl _CDROM_TOC_FULL_TOC_DATA_BLOCK {
+    #[inline]
+    pub fn Control(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Control(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Control_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Control_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Adr(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Adr(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Adr_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Adr_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(Control: UCHAR, Adr: UCHAR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 4u8, {
+            let Control: u8 = unsafe { ::core::mem::transmute(Control) };
+            Control as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 4u8, {
+            let Adr: u8 = unsafe { ::core::mem::transmute(Adr) };
+            Adr as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_TOC_FULL_TOC_DATA_BLOCK = _CDROM_TOC_FULL_TOC_DATA_BLOCK;
+pub type PCDROM_TOC_FULL_TOC_DATA_BLOCK = *mut _CDROM_TOC_FULL_TOC_DATA_BLOCK;
+#[repr(C)]
+pub struct _CDROM_TOC_FULL_TOC_DATA {
+    pub Length: [UCHAR; 2usize],
+    pub FirstCompleteSession: UCHAR,
+    pub LastCompleteSession: UCHAR,
+    pub Descriptors: __IncompleteArrayField<CDROM_TOC_FULL_TOC_DATA_BLOCK>,
+}
+pub type CDROM_TOC_FULL_TOC_DATA = _CDROM_TOC_FULL_TOC_DATA;
+pub type PCDROM_TOC_FULL_TOC_DATA = *mut _CDROM_TOC_FULL_TOC_DATA;
+#[repr(C)]
+pub struct _CDROM_TOC_PMA_DATA {
+    pub Length: [UCHAR; 2usize],
+    pub Reserved1: UCHAR,
+    pub Reserved2: UCHAR,
+    pub Descriptors: __IncompleteArrayField<CDROM_TOC_FULL_TOC_DATA_BLOCK>,
+}
+pub type CDROM_TOC_PMA_DATA = _CDROM_TOC_PMA_DATA;
+pub type PCDROM_TOC_PMA_DATA = *mut _CDROM_TOC_PMA_DATA;
+#[repr(C)]
+pub struct _SUB_Q_HEADER {
+    pub Reserved: UCHAR,
+    pub AudioStatus: UCHAR,
+    pub DataLength: [UCHAR; 2usize],
+}
+pub type SUB_Q_HEADER = _SUB_Q_HEADER;
+pub type PSUB_Q_HEADER = *mut _SUB_Q_HEADER;
+#[repr(C)]
+pub struct _SUB_Q_MEDIA_CATALOG_NUMBER {
+    pub Header: SUB_Q_HEADER,
+    pub FormatCode: UCHAR,
+    pub Reserved: [UCHAR; 3usize],
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub MediaCatalog: [UCHAR; 15usize],
+}
+impl _SUB_Q_MEDIA_CATALOG_NUMBER {
+    #[inline]
+    pub fn Reserved1(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 7u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved1(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 7u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved1_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                7u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved1_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                7u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Mcval(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Mcval(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Mcval_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Mcval_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(Reserved1: UCHAR, Mcval: UCHAR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 7u8, {
+            let Reserved1: u8 = unsafe { ::core::mem::transmute(Reserved1) };
+            Reserved1 as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let Mcval: u8 = unsafe { ::core::mem::transmute(Mcval) };
+            Mcval as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type SUB_Q_MEDIA_CATALOG_NUMBER = _SUB_Q_MEDIA_CATALOG_NUMBER;
+pub type PSUB_Q_MEDIA_CATALOG_NUMBER = *mut _SUB_Q_MEDIA_CATALOG_NUMBER;
+#[repr(C)]
+pub struct _SUB_Q_TRACK_ISRC {
+    pub Header: SUB_Q_HEADER,
+    pub FormatCode: UCHAR,
+    pub Reserved0: UCHAR,
+    pub Track: UCHAR,
+    pub Reserved1: UCHAR,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub TrackIsrc: [UCHAR; 15usize],
+}
+impl _SUB_Q_TRACK_ISRC {
+    #[inline]
+    pub fn Reserved2(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 7u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved2(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 7u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved2_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                7u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved2_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                7u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Tcval(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(7usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Tcval(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(7usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Tcval_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                7usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Tcval_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                7usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(Reserved2: UCHAR, Tcval: UCHAR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 7u8, {
+            let Reserved2: u8 = unsafe { ::core::mem::transmute(Reserved2) };
+            Reserved2 as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let Tcval: u8 = unsafe { ::core::mem::transmute(Tcval) };
+            Tcval as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type SUB_Q_TRACK_ISRC = _SUB_Q_TRACK_ISRC;
+pub type PSUB_Q_TRACK_ISRC = *mut _SUB_Q_TRACK_ISRC;
+#[repr(C)]
+pub struct _SUB_Q_CURRENT_POSITION {
+    pub Header: SUB_Q_HEADER,
+    pub FormatCode: UCHAR,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub TrackNumber: UCHAR,
+    pub IndexNumber: UCHAR,
+    pub AbsoluteAddress: [UCHAR; 4usize],
+    pub TrackRelativeAddress: [UCHAR; 4usize],
+}
+impl _SUB_Q_CURRENT_POSITION {
+    #[inline]
+    pub fn Control(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Control(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Control_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Control_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn ADR(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 4u8) as u8) }
+    }
+    #[inline]
+    pub fn set_ADR(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn ADR_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                4u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_ADR_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(Control: UCHAR, ADR: UCHAR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 4u8, {
+            let Control: u8 = unsafe { ::core::mem::transmute(Control) };
+            Control as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 4u8, {
+            let ADR: u8 = unsafe { ::core::mem::transmute(ADR) };
+            ADR as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type SUB_Q_CURRENT_POSITION = _SUB_Q_CURRENT_POSITION;
+pub type PSUB_Q_CURRENT_POSITION = *mut _SUB_Q_CURRENT_POSITION;
+#[repr(C)]
+pub struct _SUB_Q_CHANNEL_DATA {
+    pub CurrentPosition: __BindgenUnionField<SUB_Q_CURRENT_POSITION>,
+    pub MediaCatalog: __BindgenUnionField<SUB_Q_MEDIA_CATALOG_NUMBER>,
+    pub TrackIsrc: __BindgenUnionField<SUB_Q_TRACK_ISRC>,
+    pub bindgen_union_field: [u8; 24usize],
+}
+pub type SUB_Q_CHANNEL_DATA = _SUB_Q_CHANNEL_DATA;
+pub type PSUB_Q_CHANNEL_DATA = *mut _SUB_Q_CHANNEL_DATA;
+#[repr(C)]
+pub struct _CDROM_AUDIO_CONTROL {
+    pub LbaFormat: UCHAR,
+    pub LogicalBlocksPerSecond: USHORT,
+}
+pub type CDROM_AUDIO_CONTROL = _CDROM_AUDIO_CONTROL;
+pub type PCDROM_AUDIO_CONTROL = *mut _CDROM_AUDIO_CONTROL;
+#[repr(C)]
+pub struct _VOLUME_CONTROL {
+    pub PortVolume: [UCHAR; 4usize],
+}
+pub type VOLUME_CONTROL = _VOLUME_CONTROL;
+pub type PVOLUME_CONTROL = *mut _VOLUME_CONTROL;
+pub const _TRACK_MODE_TYPE_YellowMode2: _TRACK_MODE_TYPE = 0;
+pub const _TRACK_MODE_TYPE_XAForm2: _TRACK_MODE_TYPE = 1;
+pub const _TRACK_MODE_TYPE_CDDA: _TRACK_MODE_TYPE = 2;
+pub const _TRACK_MODE_TYPE_RawWithC2AndSubCode: _TRACK_MODE_TYPE = 3;
+pub const _TRACK_MODE_TYPE_RawWithC2: _TRACK_MODE_TYPE = 4;
+pub const _TRACK_MODE_TYPE_RawWithSubCode: _TRACK_MODE_TYPE = 5;
+pub type _TRACK_MODE_TYPE = ::core::ffi::c_uint;
+pub use self::_TRACK_MODE_TYPE as TRACK_MODE_TYPE;
+pub type PTRACK_MODE_TYPE = *mut _TRACK_MODE_TYPE;
+#[repr(C)]
+pub struct __RAW_READ_INFO {
+    pub DiskOffset: LARGE_INTEGER,
+    pub SectorCount: ULONG,
+    pub TrackMode: TRACK_MODE_TYPE,
+}
+pub type RAW_READ_INFO = __RAW_READ_INFO;
+pub type PRAW_READ_INFO = *mut __RAW_READ_INFO;
+pub const _EXCLUSIVE_ACCESS_REQUEST_TYPE_ExclusiveAccessQueryState: _EXCLUSIVE_ACCESS_REQUEST_TYPE =
+    0;
+pub const _EXCLUSIVE_ACCESS_REQUEST_TYPE_ExclusiveAccessLockDevice: _EXCLUSIVE_ACCESS_REQUEST_TYPE =
+    1;
+pub const _EXCLUSIVE_ACCESS_REQUEST_TYPE_ExclusiveAccessUnlockDevice:
+    _EXCLUSIVE_ACCESS_REQUEST_TYPE = 2;
+pub type _EXCLUSIVE_ACCESS_REQUEST_TYPE = ::core::ffi::c_uint;
+pub use self::_EXCLUSIVE_ACCESS_REQUEST_TYPE as EXCLUSIVE_ACCESS_REQUEST_TYPE;
+pub type PEXCLUSIVE_ACCESS_REQUEST_TYPE = *mut _EXCLUSIVE_ACCESS_REQUEST_TYPE;
+#[repr(C)]
+pub struct _CDROM_EXCLUSIVE_ACCESS {
+    pub RequestType: EXCLUSIVE_ACCESS_REQUEST_TYPE,
+    pub Flags: ULONG,
+}
+pub type CDROM_EXCLUSIVE_ACCESS = _CDROM_EXCLUSIVE_ACCESS;
+pub type PCDROM_EXCLUSIVE_ACCESS = *mut _CDROM_EXCLUSIVE_ACCESS;
+#[repr(C)]
+pub struct _CDROM_EXCLUSIVE_LOCK {
+    pub Access: CDROM_EXCLUSIVE_ACCESS,
+    pub CallerName: [UCHAR; 64usize],
+}
+pub type CDROM_EXCLUSIVE_LOCK = _CDROM_EXCLUSIVE_LOCK;
+pub type PCDROM_EXCLUSIVE_LOCK = *mut _CDROM_EXCLUSIVE_LOCK;
+#[repr(C)]
+pub struct _CDROM_EXCLUSIVE_LOCK_STATE {
+    pub LockState: BOOLEAN,
+    pub CallerName: [UCHAR; 64usize],
+}
+pub type CDROM_EXCLUSIVE_LOCK_STATE = _CDROM_EXCLUSIVE_LOCK_STATE;
+pub type PCDROM_EXCLUSIVE_LOCK_STATE = *mut _CDROM_EXCLUSIVE_LOCK_STATE;
+pub const _CDROM_SPEED_REQUEST_CdromSetSpeed: _CDROM_SPEED_REQUEST = 0;
+pub const _CDROM_SPEED_REQUEST_CdromSetStreaming: _CDROM_SPEED_REQUEST = 1;
+pub type _CDROM_SPEED_REQUEST = ::core::ffi::c_uint;
+pub use self::_CDROM_SPEED_REQUEST as CDROM_SPEED_REQUEST;
+pub type PCDROM_SPEED_REQUEST = *mut _CDROM_SPEED_REQUEST;
+pub const _WRITE_ROTATION_CdromDefaultRotation: _WRITE_ROTATION = 0;
+pub const _WRITE_ROTATION_CdromCAVRotation: _WRITE_ROTATION = 1;
+pub type _WRITE_ROTATION = ::core::ffi::c_uint;
+pub use self::_WRITE_ROTATION as WRITE_ROTATION;
+pub type PWRITE_ROTATION = *mut _WRITE_ROTATION;
+#[repr(C)]
+pub struct _CDROM_SET_SPEED {
+    pub RequestType: CDROM_SPEED_REQUEST,
+    pub ReadSpeed: USHORT,
+    pub WriteSpeed: USHORT,
+    pub RotationControl: WRITE_ROTATION,
+}
+pub type CDROM_SET_SPEED = _CDROM_SET_SPEED;
+pub type PCDROM_SET_SPEED = *mut _CDROM_SET_SPEED;
+#[repr(C)]
+pub struct _CDROM_SET_STREAMING {
+    pub RequestType: CDROM_SPEED_REQUEST,
+    pub ReadSize: ULONG,
+    pub ReadTime: ULONG,
+    pub WriteSize: ULONG,
+    pub WriteTime: ULONG,
+    pub StartLba: ULONG,
+    pub EndLba: ULONG,
+    pub RotationControl: WRITE_ROTATION,
+    pub RestoreDefaults: BOOLEAN,
+    pub SetExact: BOOLEAN,
+    pub RandomAccess: BOOLEAN,
+    pub Persistent: BOOLEAN,
+}
+pub type CDROM_SET_STREAMING = _CDROM_SET_STREAMING;
+pub type PCDROM_SET_STREAMING = *mut _CDROM_SET_STREAMING;
+pub const _STREAMING_CONTROL_REQUEST_TYPE_CdromStreamingDisable: _STREAMING_CONTROL_REQUEST_TYPE =
+    1;
+pub const _STREAMING_CONTROL_REQUEST_TYPE_CdromStreamingEnableForReadOnly:
+    _STREAMING_CONTROL_REQUEST_TYPE = 2;
+pub const _STREAMING_CONTROL_REQUEST_TYPE_CdromStreamingEnableForWriteOnly:
+    _STREAMING_CONTROL_REQUEST_TYPE = 3;
+pub const _STREAMING_CONTROL_REQUEST_TYPE_CdromStreamingEnableForReadWrite:
+    _STREAMING_CONTROL_REQUEST_TYPE = 4;
+pub type _STREAMING_CONTROL_REQUEST_TYPE = ::core::ffi::c_uint;
+pub use self::_STREAMING_CONTROL_REQUEST_TYPE as STREAMING_CONTROL_REQUEST_TYPE;
+pub type PSTREAMING_CONTROL_REQUEST_TYPE = *mut _STREAMING_CONTROL_REQUEST_TYPE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CDROM_STREAMING_CONTROL {
+    pub RequestType: STREAMING_CONTROL_REQUEST_TYPE,
+}
+pub type CDROM_STREAMING_CONTROL = _CDROM_STREAMING_CONTROL;
+pub type PCDROM_STREAMING_CONTROL = *mut _CDROM_STREAMING_CONTROL;
+pub const _CDROM_OPC_INFO_TYPE_SimpleOpcInfo: _CDROM_OPC_INFO_TYPE = 1;
+pub type _CDROM_OPC_INFO_TYPE = ::core::ffi::c_uint;
+pub use self::_CDROM_OPC_INFO_TYPE as CDROM_OPC_INFO_TYPE;
+pub type PCDROM_OPC_INFO_TYPE = *mut _CDROM_OPC_INFO_TYPE;
+#[repr(C)]
+pub struct _CDROM_SIMPLE_OPC_INFO {
+    pub RequestType: CDROM_OPC_INFO_TYPE,
+    pub Exclude0: BOOLEAN,
+    pub Exclude1: BOOLEAN,
+}
+pub type CDROM_SIMPLE_OPC_INFO = _CDROM_SIMPLE_OPC_INFO;
+pub type PCDROM_SIMPLE_OPC_INFO = *mut _CDROM_SIMPLE_OPC_INFO;
+pub const _CDROM_PERFORMANCE_REQUEST_TYPE_CdromPerformanceRequest: _CDROM_PERFORMANCE_REQUEST_TYPE =
+    1;
+pub const _CDROM_PERFORMANCE_REQUEST_TYPE_CdromWriteSpeedRequest: _CDROM_PERFORMANCE_REQUEST_TYPE =
+    2;
+pub type _CDROM_PERFORMANCE_REQUEST_TYPE = ::core::ffi::c_uint;
+pub use self::_CDROM_PERFORMANCE_REQUEST_TYPE as CDROM_PERFORMANCE_REQUEST_TYPE;
+pub type PCDROM_PERFORMANCE_REQUEST_TYPE = *mut _CDROM_PERFORMANCE_REQUEST_TYPE;
+pub const _CDROM_PERFORMANCE_TYPE_CdromReadPerformance: _CDROM_PERFORMANCE_TYPE = 1;
+pub const _CDROM_PERFORMANCE_TYPE_CdromWritePerformance: _CDROM_PERFORMANCE_TYPE = 2;
+pub type _CDROM_PERFORMANCE_TYPE = ::core::ffi::c_uint;
+pub use self::_CDROM_PERFORMANCE_TYPE as CDROM_PERFORMANCE_TYPE;
+pub type PCDROM_PERFORMANCE_TYPE = *mut _CDROM_PERFORMANCE_TYPE;
+pub const _CDROM_PERFORMANCE_EXCEPTION_TYPE_CdromNominalPerformance:
+    _CDROM_PERFORMANCE_EXCEPTION_TYPE = 1;
+pub const _CDROM_PERFORMANCE_EXCEPTION_TYPE_CdromEntirePerformanceList:
+    _CDROM_PERFORMANCE_EXCEPTION_TYPE = 2;
+pub const _CDROM_PERFORMANCE_EXCEPTION_TYPE_CdromPerformanceExceptionsOnly:
+    _CDROM_PERFORMANCE_EXCEPTION_TYPE = 3;
+pub type _CDROM_PERFORMANCE_EXCEPTION_TYPE = ::core::ffi::c_uint;
+pub use self::_CDROM_PERFORMANCE_EXCEPTION_TYPE as CDROM_PERFORMANCE_EXCEPTION_TYPE;
+pub type PCDROM_PERFORMANCE_EXCEPTION_TYPE = *mut _CDROM_PERFORMANCE_EXCEPTION_TYPE;
+pub const _CDROM_PERFORMANCE_TOLERANCE_TYPE_Cdrom10Nominal20Exceptions:
+    _CDROM_PERFORMANCE_TOLERANCE_TYPE = 1;
+pub type _CDROM_PERFORMANCE_TOLERANCE_TYPE = ::core::ffi::c_uint;
+pub use self::_CDROM_PERFORMANCE_TOLERANCE_TYPE as CDROM_PERFORMANCE_TOLERANCE_TYPE;
+pub type PCDROM_PERFORMANCE_TOLERANCE_TYPE = *mut _CDROM_PERFORMANCE_TOLERANCE_TYPE;
+#[repr(C)]
+pub struct _CDROM_PERFORMANCE_REQUEST {
+    pub RequestType: CDROM_PERFORMANCE_REQUEST_TYPE,
+    pub PerformanceType: CDROM_PERFORMANCE_TYPE,
+    pub Exceptions: CDROM_PERFORMANCE_EXCEPTION_TYPE,
+    pub Tolerance: CDROM_PERFORMANCE_TOLERANCE_TYPE,
+    pub StaringLba: ULONG,
+}
+pub type CDROM_PERFORMANCE_REQUEST = _CDROM_PERFORMANCE_REQUEST;
+pub type PCDROM_PERFORMANCE_REQUEST = *mut _CDROM_PERFORMANCE_REQUEST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CDROM_WRITE_SPEED_REQUEST {
+    pub RequestType: CDROM_PERFORMANCE_REQUEST_TYPE,
+}
+pub type CDROM_WRITE_SPEED_REQUEST = _CDROM_WRITE_SPEED_REQUEST;
+pub type PCDROM_WRITE_SPEED_REQUEST = *mut _CDROM_WRITE_SPEED_REQUEST;
+#[repr(C)]
+pub struct _CDROM_PERFORMANCE_HEADER {
+    pub DataLength: [UCHAR; 4usize],
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub Reserved2: [UCHAR; 3usize],
+    pub Data: __IncompleteArrayField<UCHAR>,
+}
+impl _CDROM_PERFORMANCE_HEADER {
+    #[inline]
+    pub fn Except(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Except(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Except_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Except_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Write(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Write(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Write_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Write_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved1(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 6u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved1(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 6u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved1_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                6u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved1_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                6u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        Except: UCHAR,
+        Write: UCHAR,
+        Reserved1: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let Except: u8 = unsafe { ::core::mem::transmute(Except) };
+            Except as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let Write: u8 = unsafe { ::core::mem::transmute(Write) };
+            Write as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 6u8, {
+            let Reserved1: u8 = unsafe { ::core::mem::transmute(Reserved1) };
+            Reserved1 as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_PERFORMANCE_HEADER = _CDROM_PERFORMANCE_HEADER;
+pub type PCDROM_PERFORMANCE_HEADER = *mut _CDROM_PERFORMANCE_HEADER;
+#[repr(C)]
+pub struct _CDROM_NOMINAL_PERFORMANCE_DESCRIPTOR {
+    pub StartLba: [UCHAR; 4usize],
+    pub StartPerformance: [UCHAR; 4usize],
+    pub EndLba: [UCHAR; 4usize],
+    pub EndPerformance: [UCHAR; 4usize],
+}
+pub type CDROM_NOMINAL_PERFORMANCE_DESCRIPTOR = _CDROM_NOMINAL_PERFORMANCE_DESCRIPTOR;
+pub type PCDROM_NOMINAL_PERFORMANCE_DESCRIPTOR = *mut _CDROM_NOMINAL_PERFORMANCE_DESCRIPTOR;
+#[repr(C)]
+pub struct _CDROM_EXCEPTION_PERFORMANCE_DESCRIPTOR {
+    pub Lba: [UCHAR; 4usize],
+    pub Time: [UCHAR; 2usize],
+}
+pub type CDROM_EXCEPTION_PERFORMANCE_DESCRIPTOR = _CDROM_EXCEPTION_PERFORMANCE_DESCRIPTOR;
+pub type PCDROM_EXCEPTION_PERFORMANCE_DESCRIPTOR = *mut _CDROM_EXCEPTION_PERFORMANCE_DESCRIPTOR;
+#[repr(C)]
+pub struct _CDROM_WRITE_SPEED_DESCRIPTOR {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub Reserved3: [UCHAR; 3usize],
+    pub EndLba: [UCHAR; 4usize],
+    pub ReadSpeed: [UCHAR; 4usize],
+    pub WriteSpeed: [UCHAR; 4usize],
+}
+impl _CDROM_WRITE_SPEED_DESCRIPTOR {
+    #[inline]
+    pub fn MixedReadWrite(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_MixedReadWrite(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn MixedReadWrite_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_MixedReadWrite_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Exact(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Exact(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Exact_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Exact_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved1(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 1u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved1(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved1_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                1u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved1_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn WriteRotationControl(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(3usize, 2u8) as u8) }
+    }
+    #[inline]
+    pub fn set_WriteRotationControl(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(3usize, 2u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn WriteRotationControl_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                3usize,
+                2u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_WriteRotationControl_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                3usize,
+                2u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Reserved2(&self) -> UCHAR {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(5usize, 3u8) as u8) }
+    }
+    #[inline]
+    pub fn set_Reserved2(&mut self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            self._bitfield_1.set(5usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Reserved2_raw(this: *const Self) -> UCHAR {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                5usize,
+                3u8,
+            ) as u8)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Reserved2_raw(this: *mut Self, val: UCHAR) {
+        unsafe {
+            let val: u8 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                5usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        MixedReadWrite: UCHAR,
+        Exact: UCHAR,
+        Reserved1: UCHAR,
+        WriteRotationControl: UCHAR,
+        Reserved2: UCHAR,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let MixedReadWrite: u8 = unsafe { ::core::mem::transmute(MixedReadWrite) };
+            MixedReadWrite as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let Exact: u8 = unsafe { ::core::mem::transmute(Exact) };
+            Exact as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 1u8, {
+            let Reserved1: u8 = unsafe { ::core::mem::transmute(Reserved1) };
+            Reserved1 as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 2u8, {
+            let WriteRotationControl: u8 = unsafe { ::core::mem::transmute(WriteRotationControl) };
+            WriteRotationControl as u64
+        });
+        __bindgen_bitfield_unit.set(5usize, 3u8, {
+            let Reserved2: u8 = unsafe { ::core::mem::transmute(Reserved2) };
+            Reserved2 as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type CDROM_WRITE_SPEED_DESCRIPTOR = _CDROM_WRITE_SPEED_DESCRIPTOR;
+pub type PCDROM_WRITE_SPEED_DESCRIPTOR = *mut _CDROM_WRITE_SPEED_DESCRIPTOR;
 pub type NODE_TYPE_CODE = USHORT;
 pub type NODE_BYTE_SIZE = CSHORT;
 pub type FILE_ID = LARGE_INTEGER;
