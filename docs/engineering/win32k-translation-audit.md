@@ -1,5 +1,19 @@
 # Win32k C→Rust Translation Audit
 
+> **2026-06-13 — DirectDraw flip: 8/9 `reactx/ntddraw` files flipped C→Rust**
+> (commit `5825b175fba`). The 9 `ntddraw_*.rs` banked Opus translations were
+> wired INERT (compiled but C-first cohab kept them dead). Retired the 8
+> fully-translated C files (ddraw, dd, ddsurf, d3d, d3dkmt, dvp, mocomp, eng)
+> from `win32k_residue`'s SOURCE — their Rust `#[no_mangle]` symbols now win.
+> Verified link-clean (Rust covers 100% of those 8 files' C T-symbol surface)
+> and **boots green ×3 (i386/amd64/arm64, warm; cold ×3 owed)**.
+> **`dxeng.c` KEPT as C**: `ntddraw_dxeng.rs` is table-only — it ports the
+> `gaEngFuncs` DRVFN[43] dispatch table but 41/43 `DxEng*` bodies are still
+> `extern "C"` into `dxeng.c`. Completing dxeng (translate the 41 `DxEng*`
+> bodies) is the remaining DirectDraw work. After this flip, win32k.sys has
+> **5 live C files**: `dxeng.c`, `safe_user_io.c`, `user/rtl/{image,text}.c`,
+> `gdi/dib/dib_new.c`.
+
 > **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
 
 Last updated **2026-06-04**. **Status: Phase 1 (handle tables) DONE;
