@@ -635,7 +635,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     CdUnlockFcb(IrpContext, Fcb);
 
     // Show that we opened the file.
-    (*(*IrpContext).Irp).IoStatus.Information = Information;
+    (*(*IrpContext).Irp).IoStatus.Information = Information as _;
 
     // Point to the section object pointer in the non-paged Fcb.
     (*(*IrpSp).FileObject).SectionObjectPointer = core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).SegmentObject);

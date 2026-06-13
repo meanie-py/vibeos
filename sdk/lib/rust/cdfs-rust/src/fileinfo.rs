@@ -268,7 +268,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
         } // end 'outer_switch loop
 
         // Set information field (after outer switch, inside try)
-        (*Irp).IoStatus.Information = initial_length - Length;
+        (*Irp).IoStatus.Information = (initial_length - Length) as _;
 
         // exit try block to run finally
         break 'try_block;
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
         (*Buffer).LastAccessTime.QuadPart = 0;
         (*Buffer).FileAttributes = (*Fcb).FileAttributes;
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32;
+        (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as _;
         Result = 1;
     }
 
@@ -445,7 +445,7 @@ pub unsafe extern "C" fn CdFastQueryStdInfo(
             (*buffer).DeletePending = 0;
 
             (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*io_status).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as u32;
+            (*io_status).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as _;
 
             result = 1;
         }
@@ -509,7 +509,7 @@ pub unsafe extern "C" fn CdFastQueryNetworkInfo(
             }
 
             (*IoStatus).__bindgen_anon_1.Status = ntkrnl_sys::base::STATUS_SUCCESS;
-            (*IoStatus).Information = core::mem::size_of::<ntkrnl_sys::ddk::FILE_NETWORK_OPEN_INFORMATION>() as u32;
+            (*IoStatus).Information = core::mem::size_of::<ntkrnl_sys::ddk::FILE_NETWORK_OPEN_INFORMATION>() as _;
             result = 1;
         }
         break;

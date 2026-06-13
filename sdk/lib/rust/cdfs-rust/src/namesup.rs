@@ -562,8 +562,8 @@ pub unsafe extern "C" fn CdFullCompareNames(
     i = RtlCompareMemory(
         (*NameA).Buffer as *const core::ffi::c_void,
         (*NameB).Buffer as *const core::ffi::c_void,
-        MinLength as u32,
-    );
+        MinLength as _,
+    ) as _;
 
     if i < MinLength as u32 {
         return if *((*NameA).Buffer as *const u16).add((i / 2) as usize)

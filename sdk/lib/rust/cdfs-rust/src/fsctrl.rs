@@ -431,7 +431,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
             break 'try_inner; // try_return( Status )
         }
 
-        if Iosb.Information != core::mem::size_of::<ULONG>() as ULONG {
+        if Iosb.Information != core::mem::size_of::<ULONG>() as _ {
             MediaChangeCount = 0;
         }
 
@@ -914,7 +914,7 @@ pub unsafe extern "C" fn CdIsVolumeDirty(
         return STATUS_VOLUME_DISMOUNTED;
     }
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<u32>() as u32;
+    (*Irp).IoStatus.Information = core::mem::size_of::<u32>() as _;
 
     CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
     STATUS_SUCCESS

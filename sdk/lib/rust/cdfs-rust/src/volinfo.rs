@@ -106,7 +106,7 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
         _ => Status,   // default: no-op, keep original Status
     };
 
-    (*Irp).IoStatus.Information = (*IrpSp).Parameters.QueryVolume.Length - Length;
+    (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
 
     // _SEH2_FINALLY block — always executed
     CdReleaseVcb(IrpContext, (*Fcb).Vcb);

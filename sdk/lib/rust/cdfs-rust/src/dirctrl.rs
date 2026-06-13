@@ -458,7 +458,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
 
     // ----- End of outer SEH block -----
 
-    (*Irp).IoStatus.Information = Information;
+    (*Irp).IoStatus.Information = Information as _;
     CdCompleteRequest(IrpContext, Irp, Status);
     return Status;
 }

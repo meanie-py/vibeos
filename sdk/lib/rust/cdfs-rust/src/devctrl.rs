@@ -61,7 +61,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
         }
 
         (*((*Irp).AssociatedIrp.SystemBuffer as *mut CDROM_DISK_DATA)).DiskData = (*(*Fcb).Vcb).DiskFlags;
-        (*Irp).IoStatus.Information = core::mem::size_of::<CDROM_DISK_DATA>() as u32;
+        (*Irp).IoStatus.Information = core::mem::size_of::<CDROM_DISK_DATA>() as _;
         CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
