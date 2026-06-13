@@ -21,9 +21,10 @@ this harness; change them in both places or not at all.
     [NETSTACK] dhcp lease 10.0.2.x        M3: DHCPv4 lease obtained from slirp
     [NETSTACK] dns OK                     M3: A-record resolved via 10.0.2.3
 
-Future-milestone checks are xfail(strict=True): the suite is green today, and
-the moment the engine starts passing a check, the strict XPASS forces the
-marker's removal — an honest ratchet, never a weakened test.
+M0-M3 all pass today. Milestones land behind xfail(strict=True) ratchets while
+in progress, then flip to real asserts the moment the engine passes them — an
+honest ratchet, never a weakened test. M4+ (TDI/AFD) checks get added the same
+way.
 """
 
 from __future__ import annotations
@@ -40,10 +41,6 @@ MARK_PING = "[NETSTACK] ping gateway OK"
 MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
 MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
 MARK_DNS = "[NETSTACK] dns OK"
-
-XFAIL_M3 = pytest.mark.xfail(
-    reason="netstack DHCP/DNS not yet implemented (smoltcp lane M3)", strict=True)
-
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -120,14 +117,12 @@ def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
 # M3 — DHCPv4 lease + DNS through slirp's built-in servers.
 # --------------------------------------------------------------------------- #
 
-@XFAIL_M3
 def test_dhcp_lease(vm: QemuVM) -> None:
     """Kernel self-test obtained a DHCPv4 lease from slirp (10.0.2.x)."""
     _require_net_config(vm)
     assert MARK_DHCP in vm._boot_output
 
 
-@XFAIL_M3
 def test_dns_resolve(vm: QemuVM) -> None:
     """Kernel self-test resolved an A record via the slirp DNS forwarder."""
     _require_net_config(vm)
