@@ -18,7 +18,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 static mut LdtLock: KSPIN_LOCK = 0;
 static mut GdtLock: KSPIN_LOCK = 0;
 
-const KGDT_NUMBER: usize = 128;
+const KGDT_NUMBER: usize = 0xA;
 const KGDT_LDT: ULONG = 0x48;
 const KGDT_R3_TEB: ULONG = 0x38;
 

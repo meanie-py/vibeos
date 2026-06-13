@@ -26,13 +26,10 @@ include_directories(
 # because csrss.exe wrote its OWN copy at NtCreatePort time). csrss.rc is
 # version-only (non-load-bearing) → not linked. Keep all .c on disk.
 
-# libnt.a (native CRT startup, _NtProcessStartup@4) reused, as a FILE path for
-# parallel-build ordering. csrsrv/ntdll import libs are self-hosted in-cargo.
-set(CSRSS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/nt/libnt.a)
-
+# ZERO cmake .a: libnt.a dropped — the native CRT startup _NtProcessStartup@4
+# is now a Rust port in smss-csrss-rust (crate::entry_point). csrsrv/ntdll
+# import libs are self-hosted in-cargo, so csrss.exe links no cmake .a at all.
 add_cargo_module(csrss csrss-cargo csrss.exe
     KIND native
     BODY_CRATE smss-csrss-rust
-    DESTINATION reactos/system32
-    EXTRA_DEPENDS ${CSRSS_REUSED})
+    DESTINATION reactos/system32)

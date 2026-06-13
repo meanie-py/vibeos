@@ -46,6 +46,12 @@ members = [
     "condrv-cargo",
     "pciide-rust",
     "pciide-cargo",
+    "pci-cargo",
+    "classpnp-cargo",
+    "usbd-cargo",
+    "processr-cargo",
+    "swenum-cargo",
+    "hidparse-cargo",
     "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",
@@ -93,6 +99,7 @@ members = [
     "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntkrnlmp-cargo",
+    "ntoskrnl-vista-rust",
     "uefildr-cargo",
     "rosload-cargo",
     "ntdll-cargo",
@@ -129,6 +136,8 @@ members = [
     "fs_rec-rust",
     "pciidex-rust",
     "scsiport-rust",
+    "atapi-rust",
+    "mup-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
@@ -162,6 +171,8 @@ members = [
     "winreg-stub",
     "mlang-rust",
     "cabinet-rust",
+    "cabinet-cargo",
+    "mlang-cargo",
 ]
 resolver = "2"
 

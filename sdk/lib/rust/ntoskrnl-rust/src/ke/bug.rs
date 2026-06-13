@@ -140,7 +140,7 @@ const DBG_STATUS_FATAL: ULONG = 0x05;
 
 const SCREEN_WIDTH: ULONG = 640;
 const SCREEN_HEIGHT: ULONG = 480;
-const BV_COLOR_BLUE: ULONG = 1;
+const BV_COLOR_BLUE: ULONG = 0x4;
 const BV_COLOR_WHITE: ULONG = 15;
 
 const HeadlessCmdStartBugCheck: ULONG = 0;

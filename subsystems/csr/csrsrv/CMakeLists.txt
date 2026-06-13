@@ -18,13 +18,13 @@ spec2def(csrsrv.dll csrsrv.spec ADD_IMPORTLIB)
 # omitted; cargo links the whole staticlib. csrsrv.rc is version-only →
 # omitted. Keep all .c on disk (never delete the C — translation philosophy).
 
-# The leaf statics the cargo link reuses (libsmlib the C Sm* client, pseh) live
-# in sdk/lib, so DEPENDS on their .a FILE paths for parallel-build ordering. The
-# ntdll import lib is generated in-cargo from ntdll.spec. The csrsrv.def the
-# cargo link's spec2def emits is in its own build dir.
+# The lone cmake .a the cargo link reuses is libsmlib (the C Sm* client —
+# _SmConnectToSm@16 et al., genuinely referenced; ~942 LOC translation debt),
+# so DEPENDS on its .a FILE path for parallel-build ordering. libpseh.a was
+# dropped (probe: zero PSEH-runtime refs under DUMMY_PSEH). The ntdll import lib
+# is generated in-cargo from ntdll.spec; the csrsrv.def is spec2def'd in-cargo.
 set(CSRSRV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/smlib/libsmlib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/smlib/libsmlib.a)
 
 add_cargo_module(csrsrv csrsrv-cargo csrsrv.dll
     KIND win32dll

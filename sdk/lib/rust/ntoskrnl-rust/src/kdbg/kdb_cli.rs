@@ -212,7 +212,7 @@ const SysDbgReadControlSpace: ULONG = 1;
 
 // AMD64 constant — only used when KdbpCmdRegs runs on amd64.
 #[cfg(target_arch = "x86_64")]
-const AMD64_DEBUG_CONTROL_SPACE_KSPECIAL: ULONG_PTR = 0;
+const AMD64_DEBUG_CONTROL_SPACE_KSPECIAL: ULONG_PTR = 0x2;
 
 // _FIRMWARE_REENTRY value used by HalReturnToFirmware (HAL_REBOOT_ROUTINE).
 #[allow(non_upper_case_globals)]

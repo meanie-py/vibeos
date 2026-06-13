@@ -594,7 +594,7 @@ pub unsafe extern "system" fn RtlComputePrivatizedDllName_U(
 ) -> NTSTATUS {
     const RTL_FIND_CHAR_IN_UNICODE_STRING_START_AT_END: ULONG = 0x00000001;
     const RTL_USER_PROCESS_PARAMETERS_NORMALIZED: ULONG = 0x00000001;
-    const TAG_USTR: ULONG = 0x53_5452_55; // placeholder tag
+    const TAG_USTR: ULONG = 0x52545355; // placeholder tag
     const UNICODE_STRING_MAX_BYTES: ULONG = 65534;
     const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106u32 as NTSTATUS;
 

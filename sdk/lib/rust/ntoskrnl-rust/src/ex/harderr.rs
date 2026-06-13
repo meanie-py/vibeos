@@ -33,7 +33,7 @@ extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut ntkrnl_sys::ddk::_LARGE_INTEGER);
 }
 
-const MAXIMUM_HARDERROR_PARAMETERS: usize = 4;
+const MAXIMUM_HARDERROR_PARAMETERS: usize = 0x5;
 const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 328;
 const LPC_ERROR_EVENT: u16 = 0x00000008;
 

@@ -19,7 +19,7 @@ extern "C" {
     fn strnlen(s: PCSTR, maxlen: usize) -> usize;
 }
 
-const PACKET_TYPE_KD_DEBUG_IO: ULONG = 7;
+const PACKET_TYPE_KD_DEBUG_IO: ULONG = 0x3;
 const PACKET_MAX_SIZE: usize = 4000;
 const DbgKdPrintStringApi: ULONG = 0x00003230;
 const DbgKdGetStringApi: ULONG = 0x00003231;

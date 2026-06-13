@@ -153,6 +153,9 @@ const DACL_SET: ULONG = 4;
 const TAG_SHUTDOWN_ENTRY: ULONG = 0x54554853;
 const TAG_IO_TIMER: ULONG = 0x4D544F49;
 
+#[cfg(target_pointer_width = "64")]
+const MEMORY_ALLOCATION_ALIGNMENT: usize = 16;
+#[cfg(target_pointer_width = "32")]
 const MEMORY_ALLOCATION_ALIGNMENT: usize = 8;
 
 const DRVO_INITIALIZED: ULONG = 0x10;
@@ -217,7 +220,7 @@ const Executive: i32 = 0;
 const NotificationEvent: i32 = 0;
 const SynchronizationEvent: i32 = 1;
 
-const LockQueueIoDatabaseLock: ULONG = 11;
+const LockQueueIoDatabaseLock: ULONG = 0x0000000A;
 
 #[repr(C)]
 enum IOP_DEVICE_LIST_OPERATION {

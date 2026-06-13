@@ -6,7 +6,7 @@ use ntkrnl_sys::ex::ExFreePoolWithTag;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_NO_LDT: NTSTATUS = 0xC0000117_u32 as NTSTATUS;
-const TAG_KERNEL: ULONG = u32::from_le_bytes(*b"Kern");
+const TAG_KERNEL: ULONG = 0x2020654B;
 
 extern "system" {
     fn Ke386GetGdtEntryThread(

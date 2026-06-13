@@ -55,7 +55,7 @@ pub static DRVMGMT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
 
 const MUTANT_INCREMENT: i32 = 1;
 const WrVirtualMemory: u32 = 18; // _KWAIT_REASON_WrVirtualMemory
-const LDRP_IMAGE_VERIFYING: ULONG = 0x00004000;
+const LDRP_IMAGE_VERIFYING: ULONG = 0x2000000;
 
 #[repr(C)]
 struct DRIVER_SPECIFIED_VERIFIER_THUNKS {

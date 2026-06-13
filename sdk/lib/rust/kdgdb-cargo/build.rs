@@ -25,18 +25,20 @@ fn main() {
         other => panic!("kdgdb-cargo: unsupported arch {other} (i386/amd64 only; kdgdb has no arm64)"),
     };
 
+    // cnt-rust-lib float feature: i386 softfloat omits it, amd64 enables it.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         .rust_staticlib("kdgdb-rust")
         .spec2def("drivers/base/kdgdb/kdgdb.spec", "kdcom.dll")
-        .static_libs(&[
-            "sdk/lib/cportlib/libcportlib.a",
-            "sdk/lib/cportlib/libcport_rust.a",
-            // kdgdb formats GDB packets with sprintf/_snprintf/strcmp/strstr/
-            // _strupr/atol/strlen — the CRT from libcntpr (+ cnt-rust twin).
-            "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-            "sdk/lib/crt/libmemcmp.a",
-        ])
+        // Cp* serial → `cport-rust` cargo sibling (subsumes libcportlib.a stub +
+        // libcport_rust.a); cntpr_rust → `cnt-rust-lib`; memcmp →
+        // compiler-builtins-mem. kdgdb formats GDB packets with sprintf/_snprintf
+        // — those live ONLY in the C printf tail, so liblibcntpr.a is KEPT
+        // (cnt-rust-lib supplies strcmp/strstr/_strupr/atol/strlen, not sprintf).
+        .rust_lib("cport-rust", &[], true)
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        .static_libs(&["sdk/lib/crt/liblibcntpr.a"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

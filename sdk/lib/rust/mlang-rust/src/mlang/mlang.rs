@@ -2,10 +2,30 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 
 extern "C" {  // CRT (cdecl) — were wrongly declared stdcall (_name@N undefined)
-    fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32;
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
+}
+
+/// `_wcsicmp` (the C source calls the old `wcsicmp` name, bridged by oldnames.a
+/// to msvcrt's `_wcsicmp`). Self-contained Rust impl so mlang needs no cmake
+/// oldnames.a / CRT alias: ASCII case-insensitive wide compare. mlang's sole
+/// caller passes RFC1766 language tags (ASCII), for which ASCII folding is
+/// bit-identical to `_wcsicmp`'s locale folding.
+unsafe fn wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
+    let (mut a, mut b) = (s1, s2);
+    loop {
+        let fold = |c: u16| -> u16 { if (b'A' as u16..=b'Z' as u16).contains(&c) { c + 0x20 } else { c } };
+        let (c1, c2) = (fold(*a), fold(*b));
+        if c1 != c2 {
+            return c1 as i32 - c2 as i32;
+        }
+        if c1 == 0 {
+            return 0;
+        }
+        a = a.add(1);
+        b = b.add(1);
+    }
 }
 
 // ---- MIMECONTF constants (from mlang.h tagMIMECONTF enum) ----

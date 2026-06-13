@@ -343,10 +343,10 @@ pub const INSTALL_MORE_MEMORY: ULONG = 0x7D;
 // MDL flags
 // ============================================================================
 
-pub const MDL_IO_SPACE: ULONG = 0x0020;
+pub const MDL_IO_SPACE: ULONG = 0x800;
 pub const MDL_MAPPED_TO_SYSTEM_VA: ULONG = 0x0001;
 pub const MDL_SOURCE_IS_NONPAGED_POOL: ULONG = 0x0004;
-pub const MDL_PARTIAL: ULONG = 0x0008;
+pub const MDL_PARTIAL: ULONG = 0x10;
 pub const MDL_WRITE_OPERATION: ULONG = 0x0080;
 
 // ============================================================================
