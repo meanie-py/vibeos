@@ -92,23 +92,16 @@ const UserVolumeOpen: OPEN_TYPE = 0; // actual value from C enum OPEN_TYPE
 const FSRTL_VOLUME_LOCK: ULONG = 1;   // typical; actual value may differ
 const FSRTL_VOLUME_LOCK_FAILED: ULONG = 2; // typical
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 1u32;
 const FSRTL_VOLUME_DISMOUNT: u32 = 2u32;
-const VcbMounted: u32 = 1u32;
 const VcbDismountInProgress: u32 = 2u32;
 const VcbInvalid: u32 = 3u32;
 const VCB_STATE_DISMOUNTED: u32 = 2u32;
 const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 8u32;
-const UserVolumeOpen: u32 = 0u32;
 const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026Eu32 as i32;
 
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000F6u32 as i32;
-const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026Eu32 as i32;
-const UserVolumeOpen: i32 = 3; // TYPE_OF_OPEN enum value
-const VcbMounted: i32 = 1; // VcbCondition value
 
 // Constants: these placeholder values must be replaced by the real definitions from the C code.
-const UserVolumeOpen: i32 = 0;
 const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0;
 
 // Constants that are not imported
@@ -132,7 +125,6 @@ const VCB_STATE_HSG: u32 = 0x00000200;
 // External declarations for macros/functions used by this function
 
 // Constants not provided — guess / placeholder values
-const VCB_STATE_AUDIO_DISK: u32 = 0x0001; // likely correct for this driver
 const VcbNotMounted: i32 = 0; // first enum value
 
 // Assume the following global / type definitions exist elsewhere.
@@ -897,7 +889,7 @@ pub unsafe extern "C" fn CdIsVolumeDirty(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (*Fcb).Vcb->VcbCondition != VcbMounted {
+    if (*(*Fcb).Vcb).VcbCondition != VcbMounted {
         CdCompleteRequest(IrpContext, Irp, STATUS_VOLUME_DISMOUNTED);
         return STATUS_VOLUME_DISMOUNTED;
     }
@@ -1217,19 +1209,12 @@ pub unsafe extern "C" fn CdIsRemount(
     Remount
 }
 
-static CdIsoId: [u8; 5usize];
 static CdJolietEscape: [[u8; 3usize]; 3usize];
 
-const FIRST_VD_SECTOR: u32 = 16;
-const SECTOR_SIZE: u32 = 2048;
-const VOL_ID_LEN: u32 = 5;
-const VERSION_1: u8 = 1;
-const VD_TERMINATOR: u8 = 255;
 const VD_SECONDARY: u8 = 2;
 const ESC_SEQ_LEN: u32 = 3;
 const VOLUME_ID_LENGTH: u32 = 32;
 const MAXIMUM_VOLUME_LABEL_LENGTH: u32 = 64;
-const VCB_STATE_ISO: u32 = 0x01;
 const VCB_STATE_JOLIET: u32 = 0x02;
 
 unsafe extern "C" fn CdFindActiveVolDescriptor(

@@ -85,8 +85,6 @@ const CD_ATTRIBUTE_DIRECTORY: u32 = 0x02;
 
 // Unknown constants – adjust values per the original driver's definitions.
 const UserDirectoryOpen: u32 = 2;     // guess for TYPE_OF_OPEN
-const CDFS_NTC_FCB_INDEX: u32 = 1;    // guess
-const CCB_FLAG_OPEN_BY_ID: u32 = 0x01;
 const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x02;
 const CCB_FLAG_IGNORE_CASE: u32 = 0x04;
 #[no_mangle]

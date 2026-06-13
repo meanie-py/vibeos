@@ -57,17 +57,9 @@ const UserDirectoryOpen: u32 = 1; // PLACEHOLDER
 const FCB_STATE_INITIALIZED: u32 = 0; // PLACEHOLDER
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10; // PLACEHOLDER
 
-unsafe extern "C" {
-    fn FlagOn(Flags: u32, Bit: u32) -> i32;
-}
-
-const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 
 // placeholders for constants that will be filled in by the caller
-const FCB_STATE_INITIALIZED: u32 = 0x00000001; // caller fills actual value
 const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001; // caller fills actual value
-const UserFileOpen: u32 = 0; // caller fills actual value
-const UserDirectoryOpen: u32 = 1; // caller fills actual value
 
 // extern declarations for functions called but not in the available imports
 
@@ -110,7 +102,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
 
     // SEH2_TRY .. SEH2_FINALLY .. SEH2_END emulation
     // The try block will be enclosed in a loop to allow a clean break to the finally block.
-    'try: loop {
+    'try_block: loop {
         // Outer switch on TypeOfOpen (emulated with a loop containing a match)
         'outer_switch: loop {
             match TypeOfOpen {
@@ -271,7 +263,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
         (*Irp).IoStatus.Information = initial_length - Length;
 
         // exit try block to run finally
-        break 'try;
+        break 'try_block;
     } // end 'try loop
 
     // _SEH2_FINALLY : release the file if acquired
@@ -364,65 +356,41 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
     Buffer: PFILE_BASIC_INFORMATION,
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
-) -> i32 // BOOLEAN {
+) -> i32 {
     let mut Result: i32 = 0;
-    let mut TypeOfOpen: u32; // TYPE_OF_OPEN
+    let mut TypeOfOpen: u32;
     let mut Fcb: PFCB;
 
-    // PAGED_CODE(); -- ignored for translation
-
-    // UNREFERENCED_PARAMETER( DeviceObject );
     UNREFERENCED_PARAMETER(DeviceObject as *const core::ffi::c_void);
-
     ASSERT_FILE_OBJECT(FileObject);
-
     FsRtlEnterFileSystem();
 
-    // Decode the file object to find the type of open and the Fcb
     TypeOfOpen = CdFastDecodeFileObject(FileObject, core::ptr::addr_of_mut!(Fcb));
 
-    // We only support this request on user file or directory objects.
-    if TypeOfOpen != UserFileOpen
-        && (TypeOfOpen != UserDirectoryOpen
-            || FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0)
-    {
+    if TypeOfOpen != UserFileOpen && (TypeOfOpen != UserDirectoryOpen || FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0) {
         FsRtlExitFileSystem();
-        return 0; // FALSE
+        return 0;
     }
 
-    // Acquire the file shared to access the Fcb.
     if ExAcquireResourceSharedLite((*Fcb).Resource, Wait) == 0 {
         FsRtlExitFileSystem();
         return 0;
     }
 
-    // _SEH2_TRY block – no early exits, cleanup afterwards
-    {
-        // Only deal with 'good' Fcb's.
-        if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) != 0 {
-            // Fill in the input buffer from the Fcb fields.
-            let creation: i64 = (*Fcb).CreationTime.QuadPart;
-            (*Buffer).CreationTime.QuadPart = creation;
-            (*Buffer).LastWriteTime.QuadPart = creation;
-            (*Buffer).ChangeTime.QuadPart = creation;
-
-            (*Buffer).LastAccessTime.QuadPart = 0;
-
-            (*Buffer).FileAttributes = (*Fcb).FileAttributes;
-
-            // Update the IoStatus block with the size of this data.
-            (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32;
-
-            Result = 1; // TRUE
-        }
+    if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) != 0 {
+        let creation: i64 = (*Fcb).CreationTime.QuadPart;
+        (*Buffer).CreationTime.QuadPart = creation;
+        (*Buffer).LastWriteTime.QuadPart = creation;
+        (*Buffer).ChangeTime.QuadPart = creation;
+        (*Buffer).LastAccessTime.QuadPart = 0;
+        (*Buffer).FileAttributes = (*Fcb).FileAttributes;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32;
+        Result = 1;
     }
 
-    // _SEH2_FINALLY cleanup: always executed after the try block
     ExReleaseResourceLite((*Fcb).Resource);
     FsRtlExitFileSystem();
-
-    // _SEH2_END
     return Result;
 }
 #[no_mangle]

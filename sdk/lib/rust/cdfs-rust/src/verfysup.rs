@@ -54,12 +54,6 @@ extern "C" {
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_VERFYSUP;
 
 const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 0x0002; // TODO: verify the actual value
-
-unsafe extern "system" {
-    fn PAGED_CODE();
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
-    fn CdRealDevNeedsVerify(Device: *mut DEVICE_OBJECT) -> i32;
-}
 #[no_mangle]
 pub unsafe extern "C" fn CdPerformVerify(
     IrpContext: *mut PIRP_CONTEXT,
@@ -86,7 +80,7 @@ pub unsafe extern "C" fn CdPerformVerify(
     // Early return if this is a mount/verify FSCTL
     if ((*IrpContext).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL)
         && (((*IrpContext).MinorFunction == 0) /*IRP_MN_MOUNT_VOLUME*/ // placeholder
-            || ((*IrpContext).MinorFunction == 1)) /* IRP_MN_VERIFY_VOLUME */)
+            || ((*IrpContext).MinorFunction == 1)) /* IRP_MN_VERIFY_VOLUME */
     {
         return CdFsdPostRequest(IrpContext, Irp);
     }

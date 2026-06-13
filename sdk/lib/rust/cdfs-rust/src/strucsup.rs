@@ -72,7 +72,6 @@ extern "system" {
     fn LlBytesFromBlocks(Vcb: *mut VCB, Block: u32) -> LONGLONG;
     fn LlSectorAlign(Value: LONGLONG) -> LONGLONG;
     fn SectorAlign(Value: u32) -> u32;
-    static CdInternalStreamNames: [_UNICODE_STRING; 2];
     static CdXaId: [u8; 8];
     static CdAudioLabel: [u8; 32];
     fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: u32) -> u32;
@@ -934,7 +933,6 @@ pub unsafe extern "C" fn CdCleanupIrpContext(
 }
 
 const CDFS_NTC_IRP_CONTEXT: u32 = 0; // TODO: placeholder
-const IRP_CONTEXT_FLAG_ON_STACK: u32 = 0; // placeholder
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0; // placeholder
 #[no_mangle]
 pub unsafe extern "C" fn CdInitializeStackIrpContext(IrpContext: *mut IRP_CONTEXT, IrpContextLite: *mut IRP_CONTEXT_LITE) {
@@ -1255,7 +1253,7 @@ pub unsafe extern "C" fn CdDeleteFcb(
         core::ptr::addr_of!((*Fcb).FileNamePrefix.FileNameBuffer) as *mut u16;
     if buffer_ptr != file_name_buffer_ptr && !buffer_ptr.is_null() {
         CdFreePool(core::ptr::addr_of_mut!(
-            (*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer,
+            (*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer
         ));
     }
 

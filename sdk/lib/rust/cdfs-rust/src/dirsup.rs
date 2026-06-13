@@ -10,9 +10,7 @@ extern "C" {
     fn CopyUchar4( dest: *mut u32, src: *const u8, );
     fn CdRaiseStatus( IrpContext: *mut IRP_CONTEXT, Status: i32, ) -> !;
     fn WordAlign(offset: u32) -> u32;
-    static STATUS_FILE_CORRUPT_ERROR: i32;
     static DIRENT_FLAG_NOT_PERSISTENT: u32;
-    static CD_ATTRIBUTE_DIRECTORY: u32;
     static Form1Data: XA_EXTENT_TYPE;
     fn SectorBlockOffset(Vcb: *mut VCB, Offset: LARGE_INTEGER) -> ULONG;
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
@@ -47,7 +45,6 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_DIRSUP;
 
-const STATUS_FILE_CORRUPT_ERROR: u32 = 0xC000010E;
 const MIN_RAW_DIRENT_LEN: u32 = 34;
 
 const SHORT_NAME_SHIFT: u32 = 5;
@@ -56,7 +53,6 @@ const CD_ATTRIBUTE_DIRECTORY: u32 = 0x0002;
 const DIRENT_FLAG_CONSTANT_ENTRY: u32 = 0x0004;
 
 const SECTOR_SIZE: u32 = 2048;
-const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC000010E;
 #[no_mangle]
 pub unsafe extern "C" fn CdLookupDirent(
     IrpContext: *mut IRP_CONTEXT,
@@ -92,8 +88,6 @@ pub unsafe extern "C" fn CdLookupDirent(
     (*DirContext).NextDirentOffset = CdCheckRawDirentBounds(IrpContext, DirContext);
 }
 
-const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000109;
-const SECTOR_SIZE: u32 = 2048;
 #[no_mangle]
 pub unsafe extern "C" fn CdLookupNextDirent(
     IrpContext: *mut IRP_CONTEXT,
@@ -332,9 +326,9 @@ pub unsafe extern "C" fn CdUpdateDirentName(
         }
 
         if FlagOn((*Dirent).Flags, DIRENT_FLAG_ALLOC_BUFFER) == 0
-            && (Length <= core::mem::size_of::< decltype((*Dirent).NameBuffer) >() as ULONG)
+            && (Length <= core::mem::size_of::<[u16; 32]>() as ULONG)
         {
-            (*Dirent).CdFileName.FileName.MaximumLength = core::mem::size_of::< decltype((*Dirent).NameBuffer) >() as USHORT;
+            (*Dirent).CdFileName.FileName.MaximumLength = core::mem::size_of::<[u16; 32]>() as USHORT;
             (*Dirent).CdFileName.FileName.Buffer = (*Dirent).NameBuffer.as_mut_ptr();
         } else {
             if Length > (*Dirent).CdFileName.FileName.MaximumLength as ULONG {
@@ -393,7 +387,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 ((*Dirent).CdFileName.FileName.Length as usize - core::mem::size_of::<WCHAR>()) / 2,
             )
             .read()
-            == L'.'
+            == 0x2Eu16
         {
             if (*Dirent).CdFileName.VersionString.Length != 0 {
                 let NewVersion: *mut WCHAR = (*Dirent)

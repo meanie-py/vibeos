@@ -57,8 +57,6 @@ extern "system" {
     fn ClearFlag(flags: *mut u32, mask: u32);
     fn KeFlushIoBuffers(mdl: *mut MDL, flush_io: i32, flush_cpu_cache: i32);
     fn CdLockUserBuffer(IrpContext: PIRP_CONTEXT, ByteCount: u32, Access: u32);
-    static IRP_CONTEXT_FLAG_WAIT: u32;
-    static IRP_CONTEXT_FLAG_ALLOC_IO: u32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -79,12 +77,6 @@ pub struct IO_RUN {
 }
 pub type PIO_RUN = *mut IO_RUN;
 
-pub static mut CdMultiSyncCompletionRoutine: IO_COMPLETION_ROUTINE = unsafe { core::mem::zeroed() };
-pub static mut CdMultiAsyncCompletionRoutine: IO_COMPLETION_ROUTINE = unsafe { core::mem::zeroed() };
-pub static mut CdSingleSyncCompletionRoutine: IO_COMPLETION_ROUTINE = unsafe { core::mem::zeroed() };
-pub static mut CdSingleAsyncCompletionRoutine: IO_COMPLETION_ROUTINE = unsafe { core::mem::zeroed() };
-pub static mut CdSyncCompletionRoutine: IO_COMPLETION_ROUTINE = unsafe { core::mem::zeroed() };
-
 const FCB_STATE_MODE2FORM2_FILE: u32 = 0; // unknown value
 const FCB_STATE_MODE2_FILE: u32 = 0; // unknown value
 const FCB_STATE_DA_FILE: u32 = 0; // unknown value
@@ -100,7 +92,6 @@ const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC0000098u32 as i32;
 const RAW_SECTOR_SIZE: u32 = 2352; // placeholder, must match CDFS
 const SECTOR_SHIFT: u32 = 11;      // log2 of SECTOR_SIZE
 const SECTOR_SIZE: u32 = 2048;
-const MAX_PARALLEL_IOS: u32 = 5;
 const TAG_IO_BUFFER: u32 = 0x494F4344; // 'CDOI' backwards? placeholder
 const CdNonPagedPool: u32 = 0; // NonPagedPool value
 
@@ -112,7 +103,6 @@ const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC000_0016i32;
 
 const CDFS_NTC_FCB_PATH_TABLE: u32 = 6;
 const CD_ATTRIBUTE_DIRECTORY: u8 = 0x02;
-const SECTOR_SIZE: u32 = 2048;
 const CdAudioDirentSize: u32 = 32;
 const CdAudioDirentsPerSector: u32 = SECTOR_SIZE / CdAudioDirentSize;
 const CdAudioFileNameLength: u32 = 12;
@@ -132,17 +122,11 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
 const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000002;
 
 // Constants (TODO: replace with correct numeric values)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0;
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0;
 const VCB_STATE_AUDIO_DISK: u32 = 0;
-const CDFS_NTC_FCB_INDEX: u32 = 0;
-const CDFS_NTC_FCB_PATH_TABLE: u32 = 0;
-const VcbMounted: u32 = 0;
 const NotificationEvent: u32 = 1;
-const MAX_PARALLEL_IOS: usize = 5;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC0002001;
 const STATUS_PENDING: NTSTATUS = 0x00000103;
-const STATUS_SUCCESS: NTSTATUS = 0x00000000;
 #[no_mangle]
 pub unsafe extern "C" fn CdLbnToMmSsFf(mut Blocks: u32, Msf: *mut u8) {
     Blocks += 150;
@@ -1449,10 +1433,6 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     Result
 }
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001; // Placeholder value; caller must provide correct value
-const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000002; // Placeholder value; caller must provide correct value
-const CDFS_NTC_FCB_INDEX: u32 = 0x00000006; // Placeholder value; caller must provide correct value
-const VcbMounted: u32 = 0x00000002; // Placeholder value; caller must provide correct value
 #[no_mangle]
 pub unsafe extern "C" fn CdMultipleAsync(
     IrpContext: *mut IRP_CONTEXT,
@@ -1606,8 +1586,6 @@ pub unsafe extern "C" fn CdMultipleAsync(
 
 // Forward declarations for undefined symbols
 
-const RAW_SECTOR_SIZE: u32 = 2352;   // typical CDDA raw sector size
-const SECTOR_SHIFT: u32 = 11;        // 1 << SECTOR_SHIFT == 2048 (cooked sector)
 const IOCTL_CDROM_RAW_READ: u32 = 0x2403E;
 #[no_mangle]
 pub unsafe extern "C" fn CdMultipleXAAsync(

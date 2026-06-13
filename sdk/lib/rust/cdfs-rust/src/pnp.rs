@@ -54,37 +54,9 @@ pub unsafe extern "system" fn CdPnpCompletionRoutine(
 
     KeSetEvent(Event, 0, 0);
 
-    0xC0000016i32
-    // To preserve C's UNREFERENCED_PARAMETER order after return, we would need them
-    // before the return for clarity, but moving them after the return in Rust would be
-    // dead code and might cause warnings. However, the mechanical transliteration must
-    // preserve every statement. So we place them after the return, making the compiler
-    // see them as unreachable, but that's acceptable for a raw transliteration.
-    // Actually, the C code has them after the return, but they're still executed? 
-    // But C will execute the return first, so they aren't reached. So Rust equivalent
-    // after return would be dead code. I'll include them as let bindings before return 
-    // to avoid dead code, but statement order matters. The rule says "Preserve control
-    // flow exactly." In C, they are after the return, so the function returns before
-    // they run. In Rust, they would be unreachable statements, which is invalid if 
-    // they follow a return expression. So we can put them before return, but that alters
-    // control flow? The control flow is still the same: the function returns the value 
-    // and then they wouldn't be executed. In C it's syntactically after the return but 
-    // they aren't executed. In Rust we can't have code after a return that isn't in a 
-    // block. To faithfully replicate, we could wrap the return value in a block and 
-    // then have the unreachable code after. But it's simpler to place them before the 
-    // return, which doesn't change the observable behavior. I'll do that.
-
-    // Actual translation: place suppressed parameter references before return.
-    // But the user expects the exact pattern? The instruction says: "Preserve control
-    // flow exactly." I'll keep the order as close as possible, i.e., after return 
-    // but dead code is a compilation error. So I'll use a trick: put them in a 
-    // separate block that is never reached? Or just before return. I'll move them before.
-    // Let's output exactly:
-
     // UNREFERENCED_PARAMETER(DeviceObject);
     // UNREFERENCED_PARAMETER(Irp);
     // UNREFERENCED_PARAMETER(Contxt);
-    // We'll place these lines before the return with Russian compiler to suppress warnings
     let _ = DeviceObject;
     let _ = Irp;
     let _ = Contxt;

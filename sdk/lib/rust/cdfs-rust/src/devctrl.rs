@@ -14,7 +14,6 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_DEVCTRL;
-pub static mut CdDevCtrlCompletionRoutine: Option<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS> = None;
 #[no_mangle]
 pub unsafe extern "C" fn CdCommonDevControl(
     IrpContext: *mut IRP_CONTEXT,

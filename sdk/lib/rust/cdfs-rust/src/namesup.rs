@@ -52,7 +52,7 @@ pub unsafe extern "C" fn CdConvertNameToCdName(
     // and all following characters are part of the version string.
     (*CdName).VersionString.Length = 0u16;
     if (NameLength + core::mem::size_of::<u16>() as u32) < (*CdName).FileName.Length as u32 {
-        (*CdName).VersionString.MaximumLength = ((*CdName).FileName.Length as u32
+        (*CdName).VersionString.MaximumLength = (((*CdName).FileName.Length as u32)
             .wrapping_sub(NameLength)
             .wrapping_sub(core::mem::size_of::<u16>() as u32)) as u16;
         (*CdName).VersionString.Length = (*CdName).VersionString.MaximumLength;
