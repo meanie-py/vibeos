@@ -8,7 +8,8 @@
 //!   spec2def-generated csrsrv.def ; image base 0x10000000 (i386) /
 //!   0x180000000 (amd64/arm64).
 //!   inputs: libsmss_csrss_rust.a (FULL flip — all 7 csrsrv .c, default
-//!   features) + libsmlib + libpseh + the ntdll import lib.
+//!   features) + the ntdll import lib. ZERO cmake .a (libsmlib/libpseh dropped
+//!   — Sm* is body-defined via the smclient.rs port; see note below).
 //!
 //! csrsrv is a FULL flip; the lone C csrsrv_rust_stub.c is an empty TU →
 //! omitted (cargo links the whole staticlib). csrsrv.rc is version-only →
@@ -30,6 +31,14 @@ fn main() {
         o => panic!("csrsrv-cargo: unsupported arch {o}"),
     };
 
+    // ZERO cmake .a. The Sm* client (libsmlib) is no longer reused: smclient.c
+    // is already a Rust port (smss-csrss-rust/src/smlib/smclient.rs), compiled
+    // into THIS body under default features (`pub mod smlib`). The body defines
+    // all 7 Sm* exports + SmBaseTag itself, so the cmake libsmlib.a was inert
+    // (its members never extracted — an .a member only loads to satisfy an
+    // UNDEFINED symbol, and these are all body-defined). Residue probe (nm -u
+    // body ∩ nm libsmlib.a) = empty ×3. libpseh.a was already dropped (DUMMY_PSEH
+    // dead handlers + Rust body never emits PSEH). csrsrv is now fully cargo-native.
     Linker::new(target_json)
         // Default (kitchen-sink) features — same as cmake's bare
         // `cargo build -p smss-csrss-rust`. Win32Dll → user-mode target.
@@ -37,12 +46,6 @@ fn main() {
         // 35 csrsrv.spec exports via a spec2def-generated .def.
         .spec2def("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libsmlib (C Sm* client — _SmConnectToSm@16 et al., referenced by the
-        // Rust body; ~942 LOC of genuine C, translation debt) reused from cmake.
-        // libpseh.a DROPPED: nm -u confirms zero PSEH-runtime refs (DUMMY_PSEH
-        // dead handlers + Rust body never emits PSEH). The lone remaining cmake
-        // .a here is the real Sm-client lib, not a dead floor lib.
-        .static_libs(&["sdk/lib/smlib/libsmlib.a"])
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,

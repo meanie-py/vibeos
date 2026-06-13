@@ -8,9 +8,9 @@
 //!   (amd64/arm64) ; --gc-sections ; image base 0x400000 (i386) /
 //!   0x140000000 (amd64/arm64).
 //!   inputs: libsmss_csrss_rust.a (FULL flip — all 9 smss .c, built
-//!   `smss_exe_only`) + libpseh/libsmlib/libchkstk + the ntdll import lib.
-//!   (libnt's _NtProcessStartup@4 is now a Rust port in smss-csrss-rust →
-//!   crate::entry_point, so libnt.a is no longer linked.)
+//!   `smss_exe_only`) + the ntdll import lib. ZERO cmake .a — libnt's
+//!   _NtProcessStartup@4 and libsmlib's Sm* are both body-defined Rust ports
+//!   now, and libpseh/libchkstk proved inert (residue probe). See note below.
 //!
 //! smss is a FULL flip (all 9 .c → Rust; the lone C `smss_rust_stub.c` is an
 //! empty TU, omitted). The body crate smss-csrss-rust builds the STANDARD
@@ -44,15 +44,16 @@ fn main() {
         // kernel json — NativeExe would otherwise build the kernel json.
         .rust_user_target()
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libnt.a DROPPED — the native CRT startup _NtProcessStartup@4 is now a
-        // Rust port in smss-csrss-rust (crate::entry_point, smss_exe_only). pseh,
-        // the Sm* client lib (libsmlib, real C debt), and chkstk are still reused
-        // from cmake. No msvcrtex/oldnames (native exe, minimal CRT).
-        .static_libs(&[
-            "sdk/lib/pseh/libpseh.a",
-            "sdk/lib/smlib/libsmlib.a",
-            "sdk/lib/crt/libchkstk.a",
-        ])
+        // ZERO cmake .a. All previously-reused archives proved INERT via the
+        // residue probe (nm -u body ∩ nm <cmake.a> T = empty ×3):
+        //   - libnt.a: _NtProcessStartup@4 is now a Rust port (crate::entry_point).
+        //   - libsmlib.a: smclient.c is a Rust port (smclient.rs), compiled into
+        //     this body under smss_exe_only (`pub mod smlib`) — the body defines
+        //     all 7 Sm* + SmBaseTag itself, so libsmlib's members never extract.
+        //   - libpseh.a: DUMMY_PSEH dead handlers + Rust body emits no PSEH.
+        //   - libchkstk.a: body has no undefined stack-probe (__chkstk/___chkstk_ms/
+        //     __alloca_probe) symbol — none emitted for these frames.
+        // smss.exe is now fully cargo-native (native exe, minimal CRT, no oldnames).
         .link(ModuleKind::NativeExe {
             entry: entry.into(),
             image_base,
