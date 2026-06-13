@@ -36,6 +36,11 @@ const THREAD_ALL_ACCESS: u32 = 0x001F_03FF;
 /// runs for the life of the system.
 pub fn start() {
     let mut handle: HANDLE = null_mut();
+    // PKSTART_ROUTINE is extern "C" on amd64/arm64 but extern "stdcall" on i386;
+    // `worker` is extern "system" (the correct ABI per arch). They share the ABI
+    // but are nominally distinct Rust types, so bridge with a transmute.
+    let start: ntkrnl_sys::ddk::PKSTART_ROUTINE =
+        Some(unsafe { core::mem::transmute(worker as *const ()) });
     let status = unsafe {
         PsCreateSystemThread(
             &mut handle,
@@ -43,7 +48,7 @@ pub fn start() {
             null_mut(),
             null_mut(),
             null_mut(),
-            Some(worker),
+            start,
             null_mut(),
         )
     };
@@ -52,7 +57,7 @@ pub fn start() {
     }
 }
 
-unsafe extern "C" fn worker(_context: PVOID) {
+unsafe extern "system" fn worker(_context: PVOID) {
     nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
 
     let dev = match device::bringup() {

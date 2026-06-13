@@ -91,10 +91,14 @@ unsafe fn create_one(driver: PDRIVER_OBJECT, name: &'static [u16], label: &str) 
 /// Wire the TDI major-function dispatch table and create the transport devices.
 /// Returns the number of devices netstack actually owns.
 pub unsafe fn init(driver: PDRIVER_OBJECT) -> u32 {
-    // Route every major function through our single dispatcher.
+    // Route every major function through our single dispatcher. PDRIVER_DISPATCH
+    // is extern "C" on amd64/arm64 but extern "stdcall" on i386; `dispatch` is
+    // extern "system" (right ABI per arch) — bridge the nominal type gap with a
+    // transmute (same ABI, distinct Rust types).
     let mf = &mut (*driver).MajorFunction;
+    let entry = Some(core::mem::transmute::<_, _>(dispatch as *const ()));
     for i in 0..=IRP_MJ_MAXIMUM_FUNCTION {
-        mf[i] = Some(dispatch);
+        mf[i] = entry;
     }
 
     let mut owned = 0u32;
@@ -112,7 +116,7 @@ pub unsafe fn init(driver: PDRIVER_OBJECT) -> u32 {
     owned
 }
 
-unsafe extern "C" fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
     let stack = IoGetCurrentIrpStackLocation(irp);
     let major = (*stack).MajorFunction;
 
