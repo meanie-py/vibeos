@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CriticalWorkQueue, ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReadAccess, IoWriteAccess, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT, PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_WORKQUE};
 
 extern "system" {
     fn PAGED_CODE();

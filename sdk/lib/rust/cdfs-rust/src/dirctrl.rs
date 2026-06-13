@@ -4,6 +4,13 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FILE_BOTH_DIR_INFORMATION, FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION, FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION, FileBothDirectoryInformation, FileDirectoryInformation, FileFullDirectoryInformation, FileIdBothDirectoryInformation, FileIdFullDirectoryInformation, FileNamesInformation, IoGetCurrentIrpStackLocation, PFILE_BOTH_DIR_INFORMATION, PFILE_ID_BOTH_DIR_INFORMATION, PFILE_ID_FULL_DIR_INFORMATION, PFILE_NAMES_INFORMATION, PIO_STACK_LOCATION, PIRP, PSTRING, PUNICODE_STRING, RtlUpcaseUnicodeString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CCB_FLAG_ENUM_MATCH_ALL, CCB_FLAG_ENUM_NOMATCH_CONSTANT_ENTRY, CCB_FLAG_ENUM_RETURN_NEXT, CCB_FLAG_IGNORE_CASE, CD_NAME, DIRENT, DIRENT_FLAG_CONSTANT_ENTRY, FCB, FILE_ENUM_CONTEXT, IRP_CONTEXT, PCCB, PFCB, PFILE_ENUM_CONTEXT, PIRP_CONTEXT, PVCB};
+use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION, IRP, POOL_TYPE, _FILE_INFORMATION_CLASS_FileBothDirectoryInformation as FileBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileDirectoryInformation as FileDirectoryInformation, _FILE_INFORMATION_CLASS_FileFullDirectoryInformation as FileFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdBothDirectoryInformation as FileIdBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdFullDirectoryInformation as FileIdFullDirectoryInformation, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlNotifyFullChangeDirectory};
+use crate::glue::{CDFS_BUG_CHECK_DIRCTRL, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, STATUS_NO_MORE_FILES};
+use crate::types::{CD_ATTRIBUTE_ASSOC, CD_ATTRIBUTE_DIRECTORY, CD_ATTRIBUTE_HIDDEN};
 
 extern "system" {
     fn PAGED_CODE();

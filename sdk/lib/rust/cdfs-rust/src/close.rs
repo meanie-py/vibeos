@@ -3,6 +3,14 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CriticalWorkQueue, IO_WORKITEM_ROUTINE, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP, UserReference};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
+use ntkrnl_sys::ddk::{IO_WORKITEM, PFILE_OBJECT, WORK_QUEUE_TYPE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
+use crate::glue::{CDFS_BUG_CHECK_CLOSE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData};
 
 extern "system" {
     fn PAGED_CODE();

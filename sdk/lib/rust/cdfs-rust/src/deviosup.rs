@@ -8,6 +8,16 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ERESOURCE_THREAD, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoBuildSynchronousFsdRequest, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoMarkIrpPending, IoReadAccess, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteAccess, KEVENT, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{AUDIO_PLAY_HEADER, CD_IO_CONTEXT, CD_SECTOR_CACHE_CHUNK, FCB, IRP_CONTEXT, LOCK_OPERATION, PFCB, PIRP_CONTEXT, RIFF_HEADER, TRACK_DATA, VCB};
+use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, IO_STACK_LOCATION, IRP, MDL, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlIsNtstatusExpected};
+use crate::glue::{Fcb, IrpContext, STATUS_VERIFY_REQUIRED, Vcb};
+use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
+use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
 
 extern "C" {
     fn PAGED_CODE();

@@ -119,7 +119,10 @@ case "$DRIVER" in
   cdfs)
     DRIVER_DIR="${SRC}/drivers/filesystems/cdfs"
     WRAPPER_INC='#include "cdprocs.h"'
-    ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' )
+    # cd.h carries the ISO9660 on-disk raw structs (RAW_DIRENT/RAW_PATH_ENTRY/RAW_PATH_ISO/
+    # RAW_READ_INFO/SYSTEM_USE_XA/DIR_CONTEXT/FILE_NAME) referenced all over the driver —
+    # cdprocs.h #includes it, but without it allowlisted bindgen parsed-but-dropped them.
+    ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' --allowlist-file '.*[/\\]cd\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
     ;;
   partmgr)

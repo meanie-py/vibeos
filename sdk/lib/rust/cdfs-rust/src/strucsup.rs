@@ -7,6 +7,18 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CLONG, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, GenericEqual, GenericGreaterThan, GenericLessThan, _IO_STATUS_BLOCK, IoDeleteDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_LOCK, PIO_STACK_LOCATION, PLARGE_INTEGER, PRTL_GENERIC_ALLOCATE_ROUTINE, PRTL_GENERIC_COMPARE_ROUTINE, PRTL_GENERIC_FREE_ROUTINE, PRTL_GENERIC_TABLE, PVPB, RTL_GENERIC_ALLOCATE_ROUTINE, RTL_GENERIC_COMPARE_ROUTINE, RTL_GENERIC_FREE_ROUTINE, RtlInitializeGenericTable, RtlLookupElementGenericTable, VPB};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CDROM_TOC_LARGE, CD_MCB_ENTRY, COMPOUND_DIRENT, DIRENT, FCB, FCB_NONPAGED, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, IRP_CONTEXT_FLAG_IN_TEARDOWN, IRP_CONTEXT_LITE, NODE_TYPE_CODE, PATH_ENTRY, PFCB, TRACK_DATA, VCB, VCB_STATE_AUDIO_DISK, VCB_STATE_CDXA, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, ExFreePoolWithTag, FAST_MUTEX, FSRTL_ADVANCED_FCB_HEADER, OPLOCK, RTL_GENERIC_TABLE, _RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlInitializeOplock, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts};
+use crate::glue::{CDFS_NTC_FCB_DATA, CDFS_NTC_FCB_INDEX, CDFS_NTC_FCB_NONPAGED, CDFS_NTC_FCB_PATH_TABLE, CDFS_NTC_VCB, CDFS_RESIDUAL_REFERENCE, TAG_VPB};
+use crate::types::{RAW_DIRENT, RAW_PATH_ISO};
+use ntkrnl_sys::ddk::{_RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData};
+use crate::ddk_shims::{FsRtlFreeFileLock, FsRtlUninitializeOplock};
+use ntkrnl_sys::ddk::{_RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan};
 
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -84,19 +96,11 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub struct FCB;
-pub type PFCB = *mut FCB;
-
-pub struct Vcb;
-pub type PVCB = *mut Vcb;
-
-pub struct FcbNonpaged;
-pub type PFCB_NONPAGED = *mut FcbNonpaged;
-
-pub struct IrpContext;
-pub type PIRP_CONTEXT = *mut IrpContext;
-
-pub type FILE_ID = i64;
+// NOTE: the real FCB / VCB / FCB_NONPAGED / IRP_CONTEXT / FILE_ID layouts come from
+// crate::types (exact bindgen substrate), pulled in by resolve_imports.py. The grind's
+// ZST placeholders (`pub struct FCB;` etc.) were struct-shadow stubs — the same class
+// the fastfat lane killed in 4e736e07d1f — and have been removed so field access resolves
+// to the real structs instead of cascading E0609/E0610.
 
 #[repr(C)]
 pub struct FCB_TABLE_ELEMENT {

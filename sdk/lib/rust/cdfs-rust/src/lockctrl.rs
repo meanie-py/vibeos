@@ -4,6 +4,12 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::ddk::{FastIoIsPossible, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FCB, PCCB, PFCB, PIRP_CONTEXT, TYPE_OF_OPEN};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, _EPROCESS, _IO_STATUS_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckOplock, FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastUnlockAll, FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible, FsRtlProcessFileLock};
+use crate::glue::{CDFS_BUG_CHECK_LOCKCTRL, Fcb};
 
 extern "C" {
     static mut IrpContext: *mut core::ffi::c_void;

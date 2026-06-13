@@ -3,6 +3,11 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PVPB, VPB};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FCB, IRP_CONTEXT, PIRP_CONTEXT, VCB, VCB_STATE_DISMOUNTED, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbDismountInProgress as VcbDismountInProgress, _VCB_CONDITION_VcbInvalid as VcbInvalid, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_VERFYSUP, FO_CLEANUP_COMPLETE, IO_TYPE_VPB, IRP_MN_COMPLETE, IRP_PAGING_IO, STATUS_FILE_CLOSED, STATUS_FILE_INVALID, STATUS_VERIFY_REQUIRED, STATUS_VOLUME_DISMOUNTED, STATUS_WRONG_VOLUME, VPB_LOCKED, VPB_MOUNTED, VPB_REMOVE_PENDING};
 
 extern "C" {
     fn ASSERT_IRP_CONTEXT(arg: *mut IRP_CONTEXT);

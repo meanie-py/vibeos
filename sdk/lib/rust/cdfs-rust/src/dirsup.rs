@@ -3,6 +3,15 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_NAME, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, DIRENT_FLAG_ALLOC_BUFFER, FCB, FILE_CONTEXT_MULTIPLE_DIRENTS, FILE_ENUM_CONTEXT, IRP_CONTEXT, PDIRENT, PIRP_CONTEXT, RIFF_HEADER, VCB, VCB_STATE_CDXA, VCB_STATE_JOLIET, XA_EXTENT_TYPE, _XA_EXTENT_TYPE_CDAudio as CDAudio, _XA_EXTENT_TYPE_Mode2Form2Data as Mode2Form2Data};
+use ntkrnl_sys::ddk::{_UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
+use crate::glue::{CDFS_BUG_CHECK_DIRSUP, IrpContext, STATUS_FILE_CORRUPT_ERROR, TAG_DIRENT_NAME};
+use crate::types::{CD_ATTRIBUTE_MULTI, RAW_DIRENT, SECTOR_SHIFT, SYSTEM_USE_XA, SYSTEM_USE_XA_DA, SYSTEM_USE_XA_FORM2, SYSTEM_XA_SIGNATURE, XA_SECTOR_SIZE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdUnicodeDirectoryNames};
 
 extern "C" {
     fn CdRawDirent( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, ) -> *mut RAW_DIRENT;

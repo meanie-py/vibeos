@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PLONGLONG};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_MCB_ENTRY, DIRENT, FCB, IRP_CONTEXT, PIRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
+use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, Fcb, IrpContext, Vcb};
 
 extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IrpContext);

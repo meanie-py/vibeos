@@ -5,6 +5,13 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{EqualTo, GreaterThan, LessThan, PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, RtlSplay};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_NAME, FCB, FSRTL_COMPARISON_RESULT, IRP_CONTEXT, NAME_LINK, PREFIX_ENTRY, VCB};
+use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_PREFXSUP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertAsRightChild};
 
 extern "system" {
     fn PAGED_CODE();

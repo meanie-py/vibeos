@@ -6,6 +6,14 @@ use ntkrnl_sys::constants::{STATUS_SUCCESS, STATUS_END_OF_FILE, STATUS_FILE_LOCK
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcCopyRead, CcInitializeCacheMap, CcMdlRead, CcSetReadAheadGranularity, IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CCB_FLAG_ALLOW_EXTENDED_DASD_IO, CCB_FLAG_DISMOUNT_ON_CLOSE, CD_DATA, CD_IO_CONTEXT, CdOplockComplete, CdPrePostIrp, FCB, FCB_STATE_RAWSECTOR_MASK, IRP_CONTEXT, IRP_CONTEXT_FLAG_ALLOC_IO, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_WAIT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen};
+use ntkrnl_sys::ddk::{FILE_OBJECT, IRP, OPLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckOplock};
+use crate::glue::{CDFS_BUG_CHECK_READ, FO_SYNCHRONOUS_IO, IRP_MN_MDL, IRP_NOCACHE, IRP_PAGING_IO};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckLockForReadAccess, FsRtlNormalizeNtstatus};
 
 extern "C" {
     static mut CdData: CD_DATA;

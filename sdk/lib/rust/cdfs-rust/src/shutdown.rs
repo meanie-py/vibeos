@@ -5,6 +5,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoDeleteDevice, IoUnregisterFileSystem, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PIRP_CONTEXT, VCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_SHUTDOWN};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData};
 
 extern "system" {
     fn PAGED_CODE();

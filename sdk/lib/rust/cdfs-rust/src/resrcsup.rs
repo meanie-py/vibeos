@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FAST_IO_RELEASE_FILE, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT, PFS_FILTER_CALLBACK_DATA, PIRP, SyncTypeCreateSection};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FCB};
+use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_RESRCSUP};
 
 extern "C" {
     fn PAGED_CODE();

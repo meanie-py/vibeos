@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN};
+use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_WRITE};
 
 extern "system" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);

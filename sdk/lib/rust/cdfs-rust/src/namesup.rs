@@ -4,6 +4,14 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{EqualTo, GENERATE_NAME_CONTEXT, GreaterThan, LessThan, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_NAME, FSRTL_COMPARISON_RESULT, IRP_CONTEXT, PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{_UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlIsNameInExpression};
+use crate::glue::{CDFS_BUG_CHECK_NAMESUP, STATUS_DISK_CORRUPT_ERROR};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlIsFatDbcsLegal};
 
 extern "C" {
     fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: u32);

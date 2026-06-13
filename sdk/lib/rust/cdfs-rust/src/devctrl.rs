@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, VCB};
+use ntkrnl_sys::ddk::{IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_DEVCTRL};
 
 extern "system" {
     fn PAGED_CODE();

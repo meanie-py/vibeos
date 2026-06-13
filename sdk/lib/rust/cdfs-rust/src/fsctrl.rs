@@ -5,6 +5,14 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcWaitForCurrentLazyWriterActivity, DISK_GEOMETRY, GUID, _IO_STATUS_BLOCK, LUID, PCH, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PVPB, RtlOemStringToCountedUnicodeString, STRING};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CDROM_TOC_LARGE, CdCheckForDismount, CdFreeDirCache, CdProcessToc, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_FORCE_POST, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_NOTIFY_REMOUNT, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, IO_STACK_LOCATION, IRP, POPLOCK, VPB, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlNotifyVolumeEvent};
+use crate::glue::{CDFS_BUG_CHECK_FSCTRL, CDFS_RESIDUAL_REFERENCE, Ccb, FSRTL_VOLUME_MOUNT, FSRTL_VOLUME_UNLOCK, Fcb, IrpContext, SL_ALLOW_RAW_MOUNT, STATUS_NOT_LOCKED, STATUS_WRONG_VOLUME, TAG_VOL_DESC, Vcb};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData};
 
 extern "C" {
     static mut CdData: CdData;

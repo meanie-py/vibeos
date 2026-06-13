@@ -7,6 +7,19 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, FAST_IO_CHECK_IF_POSSIBLE, FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PVPB, PsGetCurrentThread};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, PIRP_CONTEXT, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+use ntkrnl_sys::ddk::{IRP, PsGetCurrentThread, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected};
+use crate::glue::{CDFS_BUG_CHECK_CDDATA, CDFS_NTC_IRP_CONTEXT, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
+use crate::types::{PIRP_CONTEXT, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
+use ntkrnl_sys::ddk::{PsGetCurrentThread};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced};
+use crate::glue::{STATUS_CANT_WAIT, STATUS_DRIVER_INTERNAL_ERROR, STATUS_VERIFY_REQUIRED};
+use crate::types::{PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{PsGetCurrentThread};
 
 extern "system" {
     fn AssertVerifyDevice(IrpContext: *mut IRP_CONTEXT, Status: i32);

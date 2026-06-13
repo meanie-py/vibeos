@@ -5,6 +5,14 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{CcMdlReadComplete, CcUninitializeCacheMap, IoGetCurrentIrpStackLocation, MmFlushForWrite, MmFlushImageSection, PCC_FILE_SIZES, PFILE_OBJECT, PIRP, PLARGE_INTEGER, PUNICODE_STRING};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_STATE_INITIALIZED, IRP_CONTEXT, PIRP_CONTEXT, VCB, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen};
+use ntkrnl_sys::ddk::{FILE_OBJECT, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{FILE_ATTRIBUTE_HIDDEN, STATUS_FILE_CORRUPT_ERROR};
+use crate::types::{CD_ATTRIBUTE_HIDDEN};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData, CdUnicodeSelfArray};
 
 extern "system" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);

@@ -189,6 +189,40 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
     }
 }
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
+pub const SECTOR_SIZE: u32 = 2048;
+pub const RAW_SECTOR_SIZE: u32 = 2352;
+pub const SECTOR_MASK: u32 = 2047;
+pub const INVERSE_SECTOR_MASK: i32 = -2048;
+pub const SECTOR_SHIFT: u32 = 11;
+pub const XA_SECTOR_SIZE: u32 = 2352;
+pub const FIRST_VD_SECTOR: u32 = 16;
+pub const VOL_ID_LEN: u32 = 5;
+pub const ESC_SEQ_LEN: u32 = 3;
+pub const VERSION_1: u32 = 1;
+pub const VD_TERMINATOR: u32 = 255;
+pub const VD_PRIMARY: u32 = 1;
+pub const VD_SECONDARY: u32 = 2;
+pub const VOLUME_ID_LENGTH: u32 = 32;
+pub const CD_SECTOR_SIZE: u32 = 2048;
+pub const ISO_VOL_ID: &[u8; 6] = b"CD001\0";
+pub const HSG_VOL_ID: &[u8; 6] = b"CDROM\0";
+pub const ISO_ATTR_MULTI: u32 = 128;
+pub const ISO_ATTR_DIRECTORY: u32 = 2;
+pub const TOC_DATA_TRACK: u32 = 4;
+pub const TOC_LAST_TRACK: u32 = 170;
+pub const LEN_ROOT_DE: u32 = 34;
+pub const MAX_FILE_ID_LENGTH: u32 = 255;
+pub const CD_ATTRIBUTE_HIDDEN: u32 = 1;
+pub const CD_ATTRIBUTE_DIRECTORY: u32 = 2;
+pub const CD_ATTRIBUTE_ASSOC: u32 = 4;
+pub const CD_ATTRIBUTE_MULTI: u32 = 128;
+pub const CD_BASE_YEAR: u32 = 1900;
+pub const BYTE_COUNT_8_DOT_3: u32 = 24;
+pub const SHORT_NAME_SHIFT: u32 = 5;
+pub const SYSTEM_USE_XA_FORM1: u32 = 8;
+pub const SYSTEM_USE_XA_FORM2: u32 = 16;
+pub const SYSTEM_USE_XA_DA: u32 = 64;
+pub const SYSTEM_XA_SIGNATURE: u32 = 16728;
 pub const BYTE_COUNT_EMBEDDED_NAME: u32 = 32;
 pub const PREFIX_FLAG_EXACT_CASE_IN_TREE: u32 = 1;
 pub const PREFIX_FLAG_IGNORE_CASE_IN_TREE: u32 = 2;
@@ -248,26 +282,6 @@ pub const DIRENT_FLAG_NOT_PERSISTENT: u32 = 0;
 pub const FILE_CONTEXT_MULTIPLE_DIRENTS: u32 = 1;
 pub const FID_DIR_MASK: u32 = 2147483648;
 pub const MdlMappingNoExecute: u32 = 0;
-pub use self::_BUS_QUERY_ID_TYPE as BUS_QUERY_ID_TYPE;
-pub use self::_DEVICE_POWER_STATE as DEVICE_POWER_STATE;
-pub use self::_DEVICE_RELATION_TYPE as DEVICE_RELATION_TYPE;
-pub use self::_DEVICE_TEXT_TYPE as DEVICE_TEXT_TYPE;
-pub use self::_DEVICE_USAGE_NOTIFICATION_TYPE as DEVICE_USAGE_NOTIFICATION_TYPE;
-pub use self::_DIRECTORY_NOTIFY_INFORMATION_CLASS as DIRECTORY_NOTIFY_INFORMATION_CLASS;
-pub use self::_FILE_INFORMATION_CLASS as FILE_INFORMATION_CLASS;
-pub use self::_FSINFOCLASS as FS_INFORMATION_CLASS;
-pub use self::_FSRTL_COMPARISON_RESULT as FSRTL_COMPARISON_RESULT;
-pub use self::_FS_FILTER_SECTION_SYNC_TYPE as FS_FILTER_SECTION_SYNC_TYPE;
-pub use self::_FS_FILTER_STREAM_FO_NOTIFICATION_TYPE as FS_FILTER_STREAM_FO_NOTIFICATION_TYPE;
-pub use self::_INTERFACE_TYPE as INTERFACE_TYPE;
-pub use self::_IO_ALLOCATION_ACTION as IO_ALLOCATION_ACTION;
-pub use self::_IRQ_DEVICE_POLICY as IRQ_DEVICE_POLICY;
-pub use self::_IRQ_PRIORITY as IRQ_PRIORITY;
-pub use self::_LOCK_OPERATION as LOCK_OPERATION;
-pub use self::_POWER_STATE_TYPE as POWER_STATE_TYPE;
-pub use self::_RTL_GENERIC_COMPARE_RESULTS as RTL_GENERIC_COMPARE_RESULTS;
-pub use self::_SECURITY_IMPERSONATION_LEVEL as SECURITY_IMPERSONATION_LEVEL;
-pub use self::_SYSTEM_POWER_STATE as SYSTEM_POWER_STATE;
 #[repr(C)]
 pub struct _TRACK_DATA {
     pub Reserved: UCHAR,
@@ -362,11 +376,191 @@ pub type TRACK_DATA = _TRACK_DATA;
 pub type NODE_TYPE_CODE = USHORT;
 pub type NODE_BYTE_SIZE = CSHORT;
 pub type FILE_ID = LARGE_INTEGER;
+pub type PFILE_ID = *mut FILE_ID;
+#[repr(C)]
+pub struct _RAW_ISO_VD {
+    pub DescType: UCHAR,
+    pub StandardId: [UCHAR; 5usize],
+    pub Version: UCHAR,
+    pub VolumeFlags: UCHAR,
+    pub SystemId: [UCHAR; 32usize],
+    pub VolumeId: [UCHAR; 32usize],
+    pub Reserved: [UCHAR; 8usize],
+    pub VolSpaceI: ULONG,
+    pub VolSpaceM: ULONG,
+    pub CharSet: [UCHAR; 32usize],
+    pub VolSetSizeI: USHORT,
+    pub VolSetSizeM: USHORT,
+    pub VolSeqNumI: USHORT,
+    pub VolSeqNumM: USHORT,
+    pub LogicalBlkSzI: USHORT,
+    pub LogicalBlkSzM: USHORT,
+    pub PathTableSzI: ULONG,
+    pub PathTableSzM: ULONG,
+    pub PathTabLocI: [ULONG; 2usize],
+    pub PathTabLocM: [ULONG; 2usize],
+    pub RootDe: [UCHAR; 34usize],
+    pub VolSetId: [UCHAR; 128usize],
+    pub PublId: [UCHAR; 128usize],
+    pub PreparerId: [UCHAR; 128usize],
+    pub AppId: [UCHAR; 128usize],
+    pub Copyright: [UCHAR; 37usize],
+    pub Abstract: [UCHAR; 37usize],
+    pub Bibliograph: [UCHAR; 37usize],
+    pub CreateDate: [UCHAR; 17usize],
+    pub ModDate: [UCHAR; 17usize],
+    pub ExpireDate: [UCHAR; 17usize],
+    pub EffectDate: [UCHAR; 17usize],
+    pub FileStructVer: UCHAR,
+    pub Reserved3: UCHAR,
+    pub ResApp: [UCHAR; 512usize],
+    pub Reserved4: [UCHAR; 653usize],
+}
+pub type RAW_ISO_VD = _RAW_ISO_VD;
+pub type PRAW_ISO_VD = *mut RAW_ISO_VD;
+#[repr(C)]
+pub struct _RAW_HSG_VD {
+    pub BlkNumI: ULONG,
+    pub BlkNumM: ULONG,
+    pub DescType: UCHAR,
+    pub StandardId: [UCHAR; 5usize],
+    pub Version: UCHAR,
+    pub VolumeFlags: UCHAR,
+    pub SystemId: [UCHAR; 32usize],
+    pub VolumeId: [UCHAR; 32usize],
+    pub Reserved: [UCHAR; 8usize],
+    pub VolSpaceI: ULONG,
+    pub VolSpaceM: ULONG,
+    pub CharSet: [UCHAR; 32usize],
+    pub VolSetSizeI: USHORT,
+    pub VolSetSizeM: USHORT,
+    pub VolSeqNumI: USHORT,
+    pub VolSeqNumM: USHORT,
+    pub LogicalBlkSzI: USHORT,
+    pub LogicalBlkSzM: USHORT,
+    pub PathTableSzI: ULONG,
+    pub PathTableSzM: ULONG,
+    pub PathTabLocI: [ULONG; 4usize],
+    pub PathTabLocM: [ULONG; 4usize],
+    pub RootDe: [UCHAR; 34usize],
+    pub VolSetId: [UCHAR; 128usize],
+    pub PublId: [UCHAR; 128usize],
+    pub PreparerId: [UCHAR; 128usize],
+    pub AppId: [UCHAR; 128usize],
+    pub Copyright: [UCHAR; 32usize],
+    pub Abstract: [UCHAR; 32usize],
+    pub CreateDate: [UCHAR; 16usize],
+    pub ModDate: [UCHAR; 16usize],
+    pub ExpireDate: [UCHAR; 16usize],
+    pub EffectDate: [UCHAR; 16usize],
+    pub FileStructVer: UCHAR,
+    pub Reserved3: UCHAR,
+    pub ResApp: [UCHAR; 512usize],
+    pub Reserved4: [UCHAR; 680usize],
+}
+pub type RAW_HSG_VD = _RAW_HSG_VD;
+pub type PRAW_HSG_VD = *mut RAW_HSG_VD;
+#[repr(C)]
+pub struct _RAW_JOLIET_VD {
+    pub DescType: UCHAR,
+    pub StandardId: [UCHAR; 5usize],
+    pub Version: UCHAR,
+    pub VolumeFlags: UCHAR,
+    pub SystemId: [UCHAR; 32usize],
+    pub VolumeId: [UCHAR; 32usize],
+    pub Reserved: [UCHAR; 8usize],
+    pub VolSpaceI: ULONG,
+    pub VolSpaceM: ULONG,
+    pub CharSet: [UCHAR; 32usize],
+    pub VolSetSizeI: USHORT,
+    pub VolSetSizeM: USHORT,
+    pub VolSeqNumI: USHORT,
+    pub VolSeqNumM: USHORT,
+    pub LogicalBlkSzI: USHORT,
+    pub LogicalBlkSzM: USHORT,
+    pub PathTableSzI: ULONG,
+    pub PathTableSzM: ULONG,
+    pub PathTabLocI: [ULONG; 2usize],
+    pub PathTabLocM: [ULONG; 2usize],
+    pub RootDe: [UCHAR; 34usize],
+    pub VolSetId: [UCHAR; 128usize],
+    pub PublId: [UCHAR; 128usize],
+    pub PreparerId: [UCHAR; 128usize],
+    pub AppId: [UCHAR; 128usize],
+    pub Copyright: [UCHAR; 37usize],
+    pub Abstract: [UCHAR; 37usize],
+    pub Bibliograph: [UCHAR; 37usize],
+    pub CreateDate: [UCHAR; 17usize],
+    pub ModDate: [UCHAR; 17usize],
+    pub ExpireDate: [UCHAR; 17usize],
+    pub EffectDate: [UCHAR; 17usize],
+    pub FileStructVer: UCHAR,
+    pub Reserved3: UCHAR,
+    pub ResApp: [UCHAR; 512usize],
+    pub Reserved4: [UCHAR; 653usize],
+}
+pub type RAW_JOLIET_VD = _RAW_JOLIET_VD;
+pub type PRAW_JOLIET_VD = *mut RAW_JOLIET_VD;
+#[repr(C)]
+pub struct _RAW_DIRENT {
+    pub DirLen: UCHAR,
+    pub XarLen: UCHAR,
+    pub FileLoc: [UCHAR; 4usize],
+    pub FileLocMot: [UCHAR; 4usize],
+    pub DataLen: [UCHAR; 4usize],
+    pub DataLenMot: [UCHAR; 4usize],
+    pub RecordTime: [UCHAR; 6usize],
+    pub FlagsHSG: UCHAR,
+    pub FlagsISO: UCHAR,
+    pub IntLeaveSize: UCHAR,
+    pub IntLeaveSkip: UCHAR,
+    pub Vssn: [UCHAR; 2usize],
+    pub VssnMot: [UCHAR; 2usize],
+    pub FileIdLen: UCHAR,
+    pub FileId: [UCHAR; 255usize],
+}
+pub type RAW_DIRENT = _RAW_DIRENT;
+pub type RAW_DIR_REC = RAW_DIRENT;
+pub type PRAW_DIR_REC = *mut RAW_DIRENT;
+pub type PRAW_DIRENT = *mut RAW_DIRENT;
+#[repr(C)]
+pub struct _RAW_PATH_ISO {
+    pub DirIdLen: UCHAR,
+    pub XarLen: UCHAR,
+    pub DirLoc: [USHORT; 2usize],
+    pub ParentNum: USHORT,
+    pub DirId: [UCHAR; 255usize],
+}
+pub type RAW_PATH_ISO = _RAW_PATH_ISO;
+pub type PRAW_PATH_ISO = *mut RAW_PATH_ISO;
+pub type RAW_PATH_ENTRY = RAW_PATH_ISO;
+pub type PRAW_PATH_ENTRY = *mut RAW_PATH_ISO;
+#[repr(C)]
+pub struct _RAW_PATH_HSG {
+    pub DirLoc: [USHORT; 2usize],
+    pub XarLen: UCHAR,
+    pub DirIdLen: UCHAR,
+    pub ParentNum: USHORT,
+    pub DirId: [UCHAR; 255usize],
+}
+pub type RAW_PATH_HSG = _RAW_PATH_HSG;
+pub type PRAW_PATH_HSG = *mut RAW_PATH_HSG;
+#[repr(C)]
+pub struct _SYSTEM_USE_XA {
+    pub OwnerId: [UCHAR; 4usize],
+    pub Attributes: USHORT,
+    pub Signature: USHORT,
+    pub FileNumber: UCHAR,
+    pub Reserved: [UCHAR; 5usize],
+}
+pub type SYSTEM_USE_XA = _SYSTEM_USE_XA;
+pub type PSYSTEM_USE_XA = *mut SYSTEM_USE_XA;
 pub const _XA_EXTENT_TYPE_Form1Data: _XA_EXTENT_TYPE = 0;
 pub const _XA_EXTENT_TYPE_Mode2Form2Data: _XA_EXTENT_TYPE = 1;
 pub const _XA_EXTENT_TYPE_CDAudio: _XA_EXTENT_TYPE = 2;
 pub type _XA_EXTENT_TYPE = ::core::ffi::c_uint;
 pub use self::_XA_EXTENT_TYPE as XA_EXTENT_TYPE;
+pub type PXA_EXTENT_TYPE = *mut XA_EXTENT_TYPE;
 pub type PBCB = PVOID;
 #[repr(C)]
 pub struct _CD_MCB {

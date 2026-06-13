@@ -6,6 +6,12 @@ use ntkrnl_sys::ddk::{ACCESS_MASK, FastIoIsNotPossible, IoCheckShareAccess, IoGe
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::null_mut;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CD_NAME, COMPOUND_PATH_ENTRY, FCB, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, PATH_ENTRY, TYPE_OF_OPEN, VCB};
+use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckOplock, FsRtlCurrentBatchOplock};
+use crate::glue::{CDFS_BUG_CHECK_CREATE, Ccb, FILE_NO_INTERMEDIATE_BUFFERING, FILE_OPENED, Fcb, STATUS_CANT_WAIT, Vcb};
 
 extern "system" {
     fn CdCreateCcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, UserCcbFlags: u32) -> *mut core::ffi::c_void;

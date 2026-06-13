@@ -4,6 +4,15 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_NAME, COMPOUND_PATH_ENTRY, FCB, IRP_CONTEXT, PATH_ENTRY, PATH_ENUM_CONTEXT, PIRP_CONTEXT, VCB};
+use ntkrnl_sys::ddk::{POOL_TYPE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
+use crate::glue::{CDFS_BUG_CHECK_PATHSUP};
+use crate::types::{RAW_PATH_ENTRY};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdUnicodeDirectoryNames};
 
 extern "C" {
     fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);

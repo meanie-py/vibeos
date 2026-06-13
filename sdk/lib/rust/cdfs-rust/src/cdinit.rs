@@ -7,6 +7,14 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DRIVER_INITIALIZE, DRIVER_UNLOAD, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, MmQuerySystemSize, PDEVICE_OBJECT, PDRIVER_DISPATCH, PDRIVER_OBJECT, PUNICODE_STRING, PopEntryList, RtlInitUnicodeString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CD_DATA, CdFilterCallbackAcquireForCreateSection, CdFsdDispatch, IRP_CONTEXT};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, DRIVER_OBJECT, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlRegisterFileSystemFilterCallbacks};
+use crate::glue::{CDFS_BUG_CHECK_CDINIT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cddata::{CdData, CdFastIoDispatch};
 
 extern "system" {
     fn CdFreePool(IrpContext: *mut *mut IRP_CONTEXT);

@@ -3,6 +3,14 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoReleaseVpbSpinLock, IoRemoveShareAccess, PFILE_OBJECT, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB_FLAG_DISMOUNT_ON_CLOSE, PCCB, PFCB, PIRP_CONTEXT, PVCB, TYPE_OF_OPEN, VCB_STATE_LOCKED, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
+use ntkrnl_sys::ddk::{PDEVICE_OBJECT, POPLOCK, POPLOCK_FS_PREPOST_IRP, POPLOCK_WAIT_COMPLETE_ROUTINE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlNotifyVolumeEvent};
+use crate::glue::{CDFS_BUG_CHECK_CLEANUP, FO_CLEANUP_COMPLETE, FO_FILE_MODIFIED, FSRTL_VOLUME_UNLOCK, VPB_LOCKED};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlNotifyCleanup};
 
 extern "system" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);

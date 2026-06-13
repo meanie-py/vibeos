@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, FileFsAttributeInformation, FileFsDeviceInformation, FileFsSizeInformation, FileFsVolumeInformation, IoGetCurrentIrpStackLocation, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
+use ntkrnl_sys::ddk::{PFILE_OBJECT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_VOLINFO};
 
 extern "system" {
     fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);

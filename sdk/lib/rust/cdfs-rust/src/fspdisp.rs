@@ -6,6 +6,11 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT, THREAD_CONTEXT, VOLUME_DEVICE_OBJECT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
+use crate::glue::{CDFS_BUG_CHECK_FSPDISP};
 
 extern "system" {
     fn CdCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);

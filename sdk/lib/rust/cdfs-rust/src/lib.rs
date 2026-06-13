@@ -3,6 +3,8 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
 pub mod types;
+pub mod glue;       // harvested #define consts + grind-noise aliases
+pub mod ddk_shims;  // FsRtl*/macro FORCEINLINE shims (shared w/ fastfat)
 
 pub mod allocsup;
 pub mod cachesup;

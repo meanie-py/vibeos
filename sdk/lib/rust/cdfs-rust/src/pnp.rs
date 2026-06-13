@@ -5,6 +5,10 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CDFS_BUG_CHECK_PNP, Vcb};
 
 extern "system" {
     fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Exclusive: u8) -> i32;
