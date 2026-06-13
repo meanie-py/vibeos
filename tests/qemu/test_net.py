@@ -44,6 +44,8 @@ MARK_DNS = "[NETSTACK] dns OK"
 MARK_TDI_OWNED = "[NETSTACK] TDI dispatch ready (4 of 4 devices owned)"
 MARK_OUT_SENT = "[NETSTACK] outbound TCP connected"
 MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
+MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
+MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -157,3 +159,23 @@ def test_outbound_tcp_client(vm: QemuVM) -> None:
     _require_net_config(vm)
     assert MARK_OUT_SENT in vm._boot_output, "outbound TCP connect/send did not complete"
     assert MARK_OUT_RECV in vm._boot_output, "outbound TCP recv (echo back) did not complete"
+
+
+def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
+    r"""M4: a kernel TDI client drives netstack's own \Device\Tcp through the
+    EXACT path AFD/winsock uses — open an address object + a connection object
+    (both via EA buffers: TransportAddress / ConnectionContext), ASSOCIATE,
+    CONNECT, SEND, RECEIVE — and gets the echo back through smoltcp + slirp.
+
+    This is the end-to-end proof of the TDI dispatch + message-passing inbox +
+    smoltcp completion bridge. CONNECT completing proves the bridge (dispatch
+    pends the IRP, the poll worker completes it on socket ESTABLISHED); RECEIVE
+    OK proves the full SEND->host-echo->RECEIVE data path with real MDLs.
+    """
+    _require_net_config(vm)
+    assert MARK_TDI_CONNECT in vm._boot_output, (
+        "TDI CONNECT did not complete (dispatch/inbox/completion-bridge path)"
+    )
+    assert MARK_TDI_RT in vm._boot_output, (
+        "TDI SEND/RECEIVE round-trip did not complete (MDL data path)"
+    )

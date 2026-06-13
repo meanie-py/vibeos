@@ -30,8 +30,10 @@ const GENERIC_RW: u32 = 0xC000_0000;
 const FILE_SHARE_RW: u32 = 3;
 const IRP_MJ_INTERNAL_DEVICE_CONTROL: u8 = 0x0F;
 /// METHOD_OUT_DIRECT — makes IoBuildDeviceIoControlRequest build Irp->MdlAddress
-/// from the OutputBuffer (used for SEND/RECEIVE data).
-const METHOD_OUT_DIRECT: u32 = 3;
+/// from the OutputBuffer (used for SEND/RECEIVE data). NT method codes are
+/// BUFFERED=0, IN_DIRECT=1, OUT_DIRECT=2, NEITHER=3 — OUT_DIRECT is 2 (passing 3
+/// is METHOD_NEITHER, which builds NO MDL → the transport sees MdlAddress=NULL).
+const METHOD_OUT_DIRECT: u32 = 2;
 
 const fn wdev<const N: usize>(s: &[u8]) -> [u16; N] {
     let mut a = [0u16; N];
