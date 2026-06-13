@@ -204,7 +204,9 @@ VOID FatBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
     for(;;);
 }
 
-#define STUB_BUGCHECK() KeBugCheckEx(0x23, 0xDEAD0000, 0, 0, 0)
+/* Print which stub was hit (to the debug/serial log) before halting, so an arm64
+ * boot reveals exactly which untranslated function blocks the FAT read/mount path. */
+#define STUB_BUGCHECK() do { DbgPrint("FASTFAT_STUB_HIT: %s\n", __func__); KeBugCheckEx(0x23, 0xDEAD0000, 0, 0, 0); } while(0)
 
 BOOLEAN FatAcquireExclusiveGlobal(PIRP_CONTEXT IrpContext)
 {
@@ -607,7 +609,7 @@ BOOLEAN FsRtlFastLock(
 VOID CollectCreateStatistics(PVCB a, NTSTATUS b)   { (void)a;(void)b; }
 VOID CollectCreateHitStatistics(PVCB a)             { (void)a; }
 VOID CollectDiskIoStats(PVCB a, PIRP b, ULONG c, ULONG d) { (void)a;(void)b;(void)c;(void)d; }
-VOID CompareNames(PUNICODE_STRING a, PUNICODE_STRING b) { (void)a;(void)b; STUB_BUGCHECK(); }
+/* CompareNames -> rust_cohab_fat.c (real macro) */
 VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(void)c; }
 
 /* ======================================================================
@@ -631,8 +633,7 @@ NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_B
 NTSTATUS FatSetEndOfFileInfo(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatOpenExistingDirectory(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8, PVOID a9, PVOID a10, PVOID a11, PVOID a12, PVOID a13, PVOID a14, PVOID a15, PVOID a16) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8;(void)a9;(void)a10;(void)a11;(void)a12;(void)a13;(void)a14;(void)a15;(void)a16; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatLowLevelReadWrite(PIRP_CONTEXT a, PDEVICE_OBJECT b, PIRP c, PVCB d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
 NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromFcb(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)

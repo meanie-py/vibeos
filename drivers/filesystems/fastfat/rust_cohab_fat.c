@@ -137,6 +137,17 @@ VOID SafeZeroMemory(PUCHAR At, ULONG ByteCount) { RtlZeroMemory(At, ByteCount); 
 /* CollectReadStats: FAT IO statistics accounting — no-op when stats disabled. */
 VOID CollectReadStats(PVCB Vcb, ULONG OpenType, ULONG BytesRead) { (void)Vcb; (void)OpenType; (void)BytesRead; }
 
+/* FatLowLevelReadWrite: the read/write primitive — the fatprocs.h macro is simply
+ * IoCallDriver(DeviceObject, Irp). (Hand-author wrongly bugcheck-stubbed it.) */
+#undef FatLowLevelReadWrite
+NTSTATUS FatLowLevelReadWrite(PIRP_CONTEXT IrpContext, PDEVICE_OBJECT DeviceObject, PIRP Irp, PVCB Vcb)
+{ (void)IrpContext; (void)Vcb; return IoCallDriver(DeviceObject, Irp); }
+
+/* CompareNames: directory-search name compare — capture the real fatprocs.h macro. */
+static COMPARISON __cap_CompareNames(PSTRING a, PSTRING b) { return CompareNames(a, b); }
+#undef CompareNames
+COMPARISON CompareNames(PSTRING NameA, PSTRING NameB) { return __cap_CompareNames(NameA, NameB); }
+
 /* ======================================================================
  * Read/alloc-path FAT macros (fat.h / fatprocs.h). fastfat-rust references
  * these via extern "C"; provide out-of-line copies using the REAL macros +
