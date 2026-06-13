@@ -242,6 +242,18 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "crt-dllmain-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt-startup-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt0-rust"
+version = "0.1.0"
+
+[[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
 

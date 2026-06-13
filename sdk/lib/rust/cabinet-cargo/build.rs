@@ -19,7 +19,7 @@
 //! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's libwine.a
 //! / libzlib.a / libmsvcrtex.a / oldnames.a + the spec2def host tool).
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -37,13 +37,13 @@ fn main() {
         .c_shims(&["dll/win32/cabinet/rust_cohab_stub.c"])
         .spec2def("dll/win32/cabinet/cabinet.spec", "cabinet.dll")
         // ZERO cmake-built .a: wine→c_shim (step 6), zlib→libz-rs-sys (step 7),
-        // msvcrtex→.msvcrtex_crt(), and oldnames.a dropped — the cold-link
+        // msvcrtex→.msvcrtex_crt(MsvcrtexKind::Dll), and oldnames.a dropped — the cold-link
         // confirms cabinet-rust references none of its _name aliases. The
         // floor is now fully cargo-native (+ msvcrt/kernel32/ntdll imports).
         // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
         // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
         // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::Dll)
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")

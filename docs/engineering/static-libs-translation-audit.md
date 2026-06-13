@@ -27,10 +27,11 @@ non-Rust floor. In rough order of "most cmake-coupled" → "least":
    in-group archive (lazy pull, byte-equiv to the cmake `.a`). Still C, still
    needs the cmake-generated headers + `compile_commands.json`, but **no
    prebuilt `.a`**. (libcntpr printf/scanf residue; blrtl; usersrv shim.)
-3. **`.msvcrtex_crt()`** — a packaged `c_from_compile_db("msvcrtex", …)` +
-   `asm_archive` for the ~40-file mingw CRT-startup set (entry +
-   `_CRT_INIT`/`_initterm` + security cookie + pei386 relocator + i386/amd64
-   stack-probe/integer asm). Added 2026-06-13; see "Debt" below.
+3. **`.msvcrtex_crt(MsvcrtexKind)`** — the mingw CRT-startup floor. Originally
+   (2026-06-13) a packaged `c_from_compile_db` + `asm_archive`; **now**
+   (2026-06-13, later) the three Rust staticlibs (crt-startup-rust /
+   crt-dllmain-rust / crt0-rust) + the `msvcrtex_asm` archive (the only C-side
+   residue is the i386/amd64 stack-probe/integer asm). See "Debt → DONE" below.
 4. **`.c_shims(&["x.c"])` / `.asm[_archive](…)`** — cargo compiles **header-free**
    C (or assembles asm) in-cargo. Closest to the "no headers" goal. (pseh
    `dummy.c`; the driver cohab stubs; the ntdll/ntoskrnl `*_rust_shims.c`.)
@@ -136,15 +137,25 @@ Sorted roughly by how entrenched (consumer count / centrality):
 Mechanism (2)/(3)/(4) C is off the prebuilt-`.a` hook but is still C — owed
 translation for the "all-Rust, no-headers" endpoint:
 
-- **msvcrtex CRT-startup — ~3,623 LOC C** (`sdk/lib/crt/startup/*.c` + a few
-  `math/misc/stdio/stdlib/wstring` TUs), now `.msvcrtex_crt()`-compiled in-cargo
-  for cabinet/mlang/lsass/winlogon/services/userinit. It's the mingw runtime
-  entry glue: `DllMainCRTStartup`/`[w]WinMainCRTStartup`, `_CRT_INIT` +
+- ✅ **msvcrtex CRT-startup → Rust (DONE 2026-06-13)** — the mingw runtime
+  entry glue (`DllMainCRTStartup`/`[w]WinMainCRTStartup`, `_CRT_INIT` +
   `.CRT$XI*/XC*` `_initterm` walk, `__security_init_cookie`,
-  `_pei386_runtime_relocator`, TLS callbacks, `__main`, `_fltused`, i386/amd64
-  `__chkstk`/`_alldiv`/`_aulldiv`. **Debt: port to Rust** (hard — linker-section
-  initializer arrays + CRT-init semantics; lower priority, runtime-untested by
-  smoke except via the spine exes).
+  `_pei386_runtime_relocator`, TLS callbacks + key-dtor registry, atexit table,
+  PE-section helpers, the gnu top-level exception handler + WIN64 ehandler
+  table, `__main`, `_fltused`, and the math/misc/ctype/_invalid_parameter/
+  rand_s/mbrtowc/wcrtomb leaves) is now three Rust staticlibs:
+  `crt-startup-rust` (the floor; exe/wexe/dll mutually-exclusive features),
+  `crt-dllmain-rust` (overridable default DllMain/DllEntryPoint), `crt0-rust`
+  (overridable GUI main/wmain→WinMain bridges). `.msvcrtex_crt(MsvcrtexKind)`
+  wires them. Only the i386/amd64 MSVC stack-probe + 64-bit integer asm
+  (`__chkstk`/`_alldiv`/`_aulldiv`/i386 ceilf/floorf) stays asm (`msvcrtex_asm`
+  archive). `dbgrpt.cpp` (`_CrtDbgReport*`) left untranslated — lazy-pulled
+  only by a `_DEBUG` libstdc++, unreferenced in release. Boot ×3 validated.
+  Key gotchas: `.CRT$X*` `#[link_section]` + `#[used]` boundary arrays
+  (lld $-sorts them); msvcrt dllimport DATA (`_acmdln`/`__initenv`/…) via the
+  import lib's `__imp_*` slots; **i686-windows-gnu PREPENDS `_` to
+  `#[link_name]`** (i386 names carry one fewer leading underscore); `exp2`
+  base in a `static mut` (not `black_box`, whose f64 ABI needs SSE).
 - **libcntpr i386 float residual** — the no-SSE tail (`nexttowardf`, dead
   `exp2f`/`_invoke_matherr`, `winesup`/`wctype`) → **step 8**. (Possible tie-in:
   the cnt-rust x87-return/`floatbits.rs` softfloat shim.)
@@ -166,7 +177,8 @@ translation for the "all-Rust, no-headers" endpoint:
    it dropped `liblibcntpr.a` entirely (no C residue needed; cnt-rust-lib +
    compiler-builtins cover it). The other 11 `liblibcntpr.a` consumers remain.
 5. **Kernel deep-C** (arbiter/csq/ntlsalib/rossym/…): per-lib translation arcs.
-6. **msvcrtex CRT-startup → Rust** (lower priority; the hard CRT-init port).
+6. ✅ **msvcrtex CRT-startup → Rust**: DONE 2026-06-13 (crt-startup-rust +
+   crt-dllmain-rust + crt0-rust; boot ×3). See the debt note above.
 
 ## Definition of done
 
