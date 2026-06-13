@@ -133,6 +133,7 @@ members = [
     "fs_rec-rust",
     "pciidex-rust",
     "scsiport-rust",
+    "atapi-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

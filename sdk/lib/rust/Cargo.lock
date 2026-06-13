@@ -63,6 +63,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
