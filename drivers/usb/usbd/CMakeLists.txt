@@ -12,5 +12,4 @@ spec2def(usbd.sys usbd.spec ADD_IMPORTLIB)
 # reuses memcmp. Version resource (usbd.rc) dropped. The spec2def(... ADD_IMPORTLIB)
 # above STAYS (consumers link the libusbd import lib, independent of this target).
 add_cargo_module(usbd usbd-cargo usbd.sys KIND kerneldll
-    BODY_CRATE usbd-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS memcmp)
+    BODY_CRATE usbd-rust DESTINATION reactos/system32/drivers)

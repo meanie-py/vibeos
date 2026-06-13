@@ -33,7 +33,7 @@ fn main() {
     }
     linker
         .spec2def("drivers/usb/usbd/usbd.spec", "usbd.sys")
-        .static_libs(&["sdk/lib/crt/libmemcmp.a"])
+        // memcmp comes from compiler-builtins-mem (build-std); libmemcmp.a dropped.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

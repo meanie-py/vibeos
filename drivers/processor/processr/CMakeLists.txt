@@ -8,6 +8,5 @@
 # ntoskrnl and reuses memcmp. Version resource (processr.rc) dropped; cpu.inf
 # install stays.
 add_cargo_module(processr processr-cargo processr.sys KIND kerneldll
-    BODY_CRATE processr-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS memcmp)
+    BODY_CRATE processr-rust DESTINATION reactos/system32/drivers)
 add_driver_inf(processr cpu.inf)

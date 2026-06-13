@@ -85,7 +85,7 @@ use crate::fstub::halstub::HalDispatchTable;
 pub static mut orgHalInitPnpDriver: pHalInitPnpDriver = None;
 
 const DRVO_INITIALIZED: ULONG = 0x00000010;
-const FLG_STOP_ON_EXCEPTION: ULONG = 0x00000004;
+const FLG_STOP_ON_EXCEPTION: ULONG = 0x1;
 
 // ============================================================================
 // libc-style helpers from msvcrt

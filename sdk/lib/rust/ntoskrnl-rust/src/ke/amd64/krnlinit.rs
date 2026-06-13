@@ -41,7 +41,7 @@ extern "system" {
 }
 
 const KF_RDTSC: ULONG = 0x00000002;
-const KF_CMPXCHG16B: ULONG = 0x00002000;
+const KF_CMPXCHG16B: ULONG = 0x100000;
 const HIGH_PRIORITY: i32 = 31;
 const Running: i32 = 2;
 const MAXCHAR: i8 = 127;

@@ -9,5 +9,4 @@
 # imports ks (ks.sys — the Ks* bus-enum entry points) + ntoskrnl + hal and
 # reuses memcmp. Version resource (swenum.rc) dropped.
 add_cargo_module(swenum swenum-cargo swenum.sys KIND kerneldll
-    BODY_CRATE swenum-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS memcmp)
+    BODY_CRATE swenum-rust DESTINATION reactos/system32/drivers)

@@ -40,12 +40,13 @@ fn main() {
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libwine.a (3rdparty C) + CRT statics, reused from cmake.
+        // libwine.a (3rdparty C) + oldnames, reused from cmake. libmsvcrtex.a
+        // (CRT startup) → compiled in-cargo via .msvcrtex_crt().
         .static_libs(&[
             "sdk/lib/3rdparty/libwine/libwine.a",
-            "sdk/lib/crt/libmsvcrtex.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
+        .msvcrtex_crt()
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

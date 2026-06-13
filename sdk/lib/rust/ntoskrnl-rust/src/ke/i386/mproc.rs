@@ -25,7 +25,7 @@ use ntkrnl_sys::ddk::{
     MmDeleteKernelStack,
 };
 
-const DOUBLE_FAULT_STACK_SIZE: usize = 0x1000;
+const DOUBLE_FAULT_STACK_SIZE: usize = 0x3000;
 
 #[repr(C, align(4096))]
 struct APINFO {

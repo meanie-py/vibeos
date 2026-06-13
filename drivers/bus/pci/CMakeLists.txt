@@ -13,5 +13,4 @@ include_directories(
 # -sse,-sse2) builds pci-rust and links the ntoskrnl/hal import libs + memcmp.
 # Version resource (pci.rc) dropped, as in every driver cargo cut.
 add_cargo_module(pci pci-cargo pci.sys KIND kerneldll
-    BODY_CRATE pci-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS memcmp)
+    BODY_CRATE pci-rust DESTINATION reactos/system32/drivers)

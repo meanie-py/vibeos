@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -229,6 +229,31 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
     ;;
+  atapi)
+    # The NT4-DDK ATAPI IDE miniport (drivers/storage/ide/atapi/atapi.c). It is a
+    # SCSIPORT miniport: its private register/IDENTIFY structs (IDE_REGISTERS_1/2/3,
+    # ATAPI_REGISTERS_1/2, IDENTIFY_DATA/IDENTIFY_DATA2, MODE_SENSE_10/MODE_SELECT_10/
+    # MODE_PARAMETER_HEADER_10, BROKEN_/NATIVE_MODE_CONTROLLER_INFORMATION) live in the
+    # driver's own atapi.h — allowlist it. The HW_DEVICE_EXTENSION / HW_LU_EXTENSION are
+    # defined in atapi.c (not a header), so a bindgen-only atapi_devext.h in the crate dir
+    # reproduces them (it embeds IDENTIFY_DATA + SCSI_REQUEST_BLOCK/SENSE_DATA/MECHANICAL_
+    # STATUS_INFORMATION_HEADER by value → those scsi.h/srb.h layouts must be emitted too).
+    # Like scsiport, _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen → UNBLOCK it so
+    # THIS driver's bindgen (which includes scsi.h) emits the full SRB. No version macros
+    # in the atapi CMakeLists → NT 5.2 default; NTDDI 0x05020400 (amd64 peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/ide/atapi"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "atapi.h"\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddstor.h>\n#include "atapi_devext.h"'
+    ALLOW_FILES=( --allowlist-file '.*ide[/\\]atapi[/\\]atapi\.h'
+                  --allowlist-file '.*atapi_devext\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -239,7 +264,7 @@ WRAPPER="/tmp/${DRIVER}_types_wrapper.h"
 printf '%s\n' "$WRAPPER_INC" > "$WRAPPER"
 
 run_arch() {
-  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${SRC}/build-${1}"
+  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_ROOT:-${SRC}}/build-${1}"
   local NTK="${NTKRNL_SYS}/bindgen_${ARCH}.rs"
   local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="

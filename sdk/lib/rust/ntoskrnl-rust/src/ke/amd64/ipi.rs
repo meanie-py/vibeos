@@ -9,7 +9,7 @@ use ntkrnl_sys::ddk::{
 
 const IPI_APC: ULONG = 1;
 const IPI_DPC: ULONG = 2;
-const IPI_FREEZE: ULONG = 3;
+const IPI_FREEZE: ULONG = 0x4;
 
 extern "system" {
     fn HalSendSoftwareInterrupt(TargetSet: KAFFINITY, Irql: KIRQL);

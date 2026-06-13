@@ -45,10 +45,16 @@ fn main() {
         .spec_stubs()
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
-            "sdk/lib/3rdparty/libwine/libwine.a",
+            // libwine.a dropped — mlang-rust's wine surface (TRACE/WARN/FIXME +
+            // IsEqualGUID/min/list_*/vtbl helpers) is already provided
+            // header-free by rust_cohab_stub.c (c_shims above).
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-            "sdk/lib/crt/libmsvcrtex.a",
+            // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
         ])
+        // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
+        // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
+        // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
+        .msvcrtex_crt()
         .import_lib("dll/win32/oleaut32/oleaut32.spec", "oleaut32.dll", "oleaut32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")

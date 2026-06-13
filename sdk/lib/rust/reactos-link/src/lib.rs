@@ -610,6 +610,111 @@ impl Linker {
         self
     }
 
+    /// Compile the mingw CRT-startup lib (`msvcrtex`) IN-cargo instead of
+    /// reusing the cmake-built `libmsvcrtex.a`. This is the "hidden" CRT glue
+    /// every user-mode PE links: it provides the entry point
+    /// (`DllMainCRTStartup` / `[w]WinMainCRTStartup` / `[w]mainCRTStartup`),
+    /// `_CRT_INIT` + the `.CRT$XI*/XC*` initializer-section walk (`_initterm`),
+    /// the security cookie, `_pei386_runtime_relocator`, TLS callbacks, the
+    /// `__main` ctor hook, `_fltused`, and the i386/amd64 MSVC stack-probe +
+    /// 64-bit integer intrinsics (`_chkstk`/`_alldiv`/`_aulldiv`).
+    ///
+    /// Replays msvcrtex.cmake's flag-exact clang invocations from
+    /// `compile_commands.json` (`CMakeFiles/msvcrtex.dir`) into an in-group
+    /// archive (lazy pull — only the objects the entry transitively references
+    /// link, identical to the cmake `.a`), plus the i386/amd64 stack-probe +
+    /// integer asm into a sibling `_asm` archive (the asm `#include`s asm.inc /
+    /// ks386.inc, resolved by the kernel asm `-I` chain like ntdll's chkstk_ms).
+    /// The source set mirrors msvcrtex.cmake for our build config (Clang,
+    /// `DLL_EXPORT_VERSION` 0x502 < 0x600 → the dbgrpt / _invalid_parameter /
+    /// rand_s / mbrtowc / wcrtomb extras are in). Drop
+    /// `sdk/lib/crt/libmsvcrtex.a` from `static_libs` when calling this.
+    pub fn msvcrtex_crt(mut self) -> Self {
+        // CRT_STARTUP_SOURCE (startup.cmake, non-MSVC branch) + msvcrtex.cmake's
+        // own additions. All repo-relative under sdk/lib/crt/.
+        let mut c: Vec<String> = [
+            // -- CRT_STARTUP_SOURCE --
+            "startup/_matherr.c",
+            "startup/crtexe.c",
+            "startup/wcrtexe.c",
+            "startup/crt_handler.c",
+            "startup/crtdll.c",
+            "startup/_newmode.c",
+            "startup/wildcard.c",
+            "startup/tlssup.c",
+            "startup/mingw_helpers.c",
+            "startup/natstart.c",
+            "startup/charmax.c",
+            "startup/atonexit.c",
+            "startup/dllmain.c",
+            "startup/pesect.c",
+            "startup/tlsmcrt.c",
+            "startup/tlsthrd.c",
+            "startup/tlsmthread.c",
+            "startup/cinitexe.c",
+            "startup/gs_support.c",
+            "startup/dll_argv.c",
+            "startup/dllargv.c",
+            "startup/wdllargv.c",
+            "startup/crt0_c.c",
+            "startup/crt0_w.c",
+            "startup/dllentry.c",
+            "startup/reactos.c",
+            "startup/gccmain.c",
+            "startup/pseudo-reloc.c",
+            "startup/pseudo-reloc-list.c",
+            // -- msvcrtex.cmake base --
+            "math/sincos.c",
+            "misc/fltused.c",
+            "misc/isblank.c",
+            "misc/iswblank.c",
+            "misc/ofmt_stub.c",
+            "stdio/acrt_iob_func.c",
+            // -- DLL_EXPORT_VERSION < 0x600 --
+            "misc/dbgrpt.cpp",
+            "stdlib/_invalid_parameter.c",
+            "stdlib/rand_s.c",
+            "wstring/mbrtowc.c",
+            "wstring/wcrtomb.c",
+            // -- Clang optimization helpers --
+            "math/round.c",
+            "math/roundf.c",
+            "math/exp2.c",
+            "math/exp2f.c",
+        ]
+        .iter()
+        .map(|s| format!("sdk/lib/crt/{s}"))
+        .collect();
+
+        // Per-arch: i386 Clang adds sqrtf.c (C); the MSVC stack-probe + 64-bit
+        // integer asm differs (arm64 has none — clang_rt.builtins-aarch64 covers
+        // __chkstk and there are no MSVC integer-intrinsic names).
+        let asm: &[&str] = match self.arch.name {
+            "i386" => {
+                c.push("sdk/lib/crt/math/i386/sqrtf.c".to_string());
+                &[
+                    "sdk/lib/crt/except/i386/chkstk_asm.s",
+                    "sdk/lib/crt/except/i386/chkstk_ms.s",
+                    "sdk/lib/crt/math/i386/alldiv_asm.s",
+                    "sdk/lib/crt/math/i386/aulldiv_asm.s",
+                    "sdk/lib/crt/math/i386/ceilf.S",
+                    "sdk/lib/crt/math/i386/floorf.S",
+                ]
+            }
+            "amd64" => &["sdk/lib/crt/except/amd64/chkstk_ms.s"],
+            _ => &[],
+        };
+
+        self.c_db_libs.push(("msvcrtex".to_string(), c));
+        if !asm.is_empty() {
+            self.asm_archives.push((
+                "msvcrtex_asm".to_string(),
+                asm.iter().map(|s| s.to_string()).collect(),
+            ));
+        }
+        self
+    }
+
     /// Checked-in `.res` (consumer-crate-relative), regenerated
     /// out-of-band (`tools/gen_*_res.py`).
     pub fn resource(mut self, manifest_rel: &str) -> Self {

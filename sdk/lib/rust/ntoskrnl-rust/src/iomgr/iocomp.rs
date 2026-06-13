@@ -82,8 +82,8 @@ static IoCompletionInfoClass: [_INFORMATION_CLASS_INFO; 1] = [
     },
 ];
 
-const IopCompletionPacketIrp: ULONG = 1;
-const IopCompletionPacketMini: ULONG = 2;
+const IopCompletionPacketIrp: ULONG = 0x00000000;
+const IopCompletionPacketMini: ULONG = 0x00000001;
 
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn IopUnloadSafeCompletion(

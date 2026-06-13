@@ -37,11 +37,17 @@ fn main() {
         .c_shims(&["dll/win32/cabinet/rust_cohab_stub.c"])
         .spec2def("dll/win32/cabinet/cabinet.spec", "cabinet.dll")
         .static_libs(&[
-            "sdk/lib/3rdparty/libwine/libwine.a",
+            // libwine.a dropped — cabinet-rust's only wine surface is the
+            // TRACE/WARN/ERR/FIXME/debugstr_a debug shims, already provided
+            // header-free by rust_cohab_stub.c (c_shims above).
             "sdk/lib/3rdparty/zlib/libzlib.a",
-            "sdk/lib/crt/libmsvcrtex.a",
+            // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
+        // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
+        // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
+        // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
+        .msvcrtex_crt()
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
