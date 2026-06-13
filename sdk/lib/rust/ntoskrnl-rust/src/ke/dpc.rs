@@ -105,7 +105,7 @@ const MAX_QUANTUM: LONG = 0x7f;
 const LOW_REALTIME_PRIORITY: LONG = 16;
 const DPC_NORMAL: usize = 0;
 const DPC_THREADED: usize = 1;
-const IPI_DPC: ULONG = 1;
+const IPI_DPC: ULONG = 0x2;
 
 const TimerNotificationObject: KOBJECTS = 8;
 const ThreadedDpcObject: KOBJECTS = 7;
@@ -115,7 +115,7 @@ const HighImportance: KDPC_IMPORTANCE = 2;
 const MediumImportance: KDPC_IMPORTANCE = 1;
 const LowImportance: KDPC_IMPORTANCE = 0;
 
-const WrQuantumEnd: u8 = 28;
+const WrQuantumEnd: u8 = 0x0000001E;
 const Standby: u8 = 3;
 const Running: u8 = 2;
 

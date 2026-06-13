@@ -2056,7 +2056,7 @@ struct IMAGE_IMPORT_BY_NAME {
 type LOADER_PARAMETER_BLOCK = ntkrnl_sys::ddk::_LOADER_PARAMETER_BLOCK;
 type MM_IMAGE_SECTION_OBJECT = core::ffi::c_void;
 const ViewUnmap: u32 = 1;
-const WrVirtualMemory: u32 = 7;
+const WrVirtualMemory: u32 = 0x00000012;
 const MUTANT_INCREMENT: i32 = 1;
 const LDRP_DEBUG_SYMBOLS_LOADED: ULONG = 0x100000;
 const LDRP_LOAD_IN_PROGRESS: ULONG = 0x1000;

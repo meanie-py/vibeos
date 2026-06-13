@@ -105,7 +105,7 @@ const Transition: UCHAR = 6;
 
 const ProcessInMemory: UCHAR = 0;
 
-const WrYieldExecution: UCHAR = 27;
+const WrYieldExecution: UCHAR = 0x00000021;
 
 const MUTANT_INCREMENT: LONG = 1;
 const IPI_DPC: ULONG = 2;

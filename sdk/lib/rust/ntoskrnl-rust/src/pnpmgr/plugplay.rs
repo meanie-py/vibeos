@@ -156,17 +156,17 @@ const DN_DRIVER_BLOCKED: ULONG = 0x00000040;
 const DN_LEGACY_DRIVER: ULONG = 0x00000080;
 const DN_CHILD_WITH_INVALID_ID: ULONG = 0x00000200;
 
-const DeviceNodeInitialized: ULONG = 0x301;
+const DeviceNodeInitialized: ULONG = 0x00000302;
 const DeviceNodeDriversAdded: ULONG = 0x303;
 const DeviceNodeStartPending: ULONG = 0x305;
 const DeviceNodeStartCompletion: ULONG = 0x306;
 const DeviceNodeStartPostWork: ULONG = 0x307;
 const DeviceNodeStarted: ULONG = 0x308;
 const DeviceNodeQueryStopped: ULONG = 0x309;
-const DeviceNodeEnumeratePending: ULONG = 0x30a;
-const DeviceNodeEnumerateCompletion: ULONG = 0x30b;
-const DeviceNodeStopped: ULONG = 0x30c;
-const DeviceNodeRestartCompletion: ULONG = 0x30d;
+const DeviceNodeEnumeratePending: ULONG = 0x0000030C;
+const DeviceNodeEnumerateCompletion: ULONG = 0x0000030D;
+const DeviceNodeStopped: ULONG = 0x0000030A;
+const DeviceNodeRestartCompletion: ULONG = 0x0000030B;
 
 const PNP_GET_PARENT_DEVICE: ULONG = 1;
 const PNP_GET_CHILD_DEVICE: ULONG = 2;
@@ -196,21 +196,21 @@ const PNP_PROPERTY_INSTALL_STATE: ULONG = 0xb;
 const PNP_PROPERTY_LOCATION_PATHS: ULONG = 0xc;
 const PNP_PROPERTY_CONTAINERID: ULONG = 0xd;
 
-const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 8;
+const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 0x00000011;
 const DevicePropertyPhysicalDeviceObjectName: DEVICE_REGISTRY_PROPERTY = 14;
 const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 19;
-const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 20;
-const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 21;
-const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 24;
-const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 26;
+const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 0x0000000D;
+const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 0x0000000E;
+const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 0x00000013;
+const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 0x00000010;
 const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 22;
-const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 27;
+const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 0x00000012;
 const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 28;
 
-const EjectionRelations: ULONG = 0;
-const RemovalRelations: ULONG = 1;
+const EjectionRelations: ULONG = 0x00000001;
+const RemovalRelations: ULONG = 0x00000003;
 const PowerRelations: ULONG = 2;
-const BusRelations: ULONG = 3;
+const BusRelations: ULONG = 0x00000000;
 
 const IRP_MN_QUERY_CAPABILITIES: UCHAR = 0x09;
 const IRP_MN_QUERY_DEVICE_RELATIONS: UCHAR = 0x07;
@@ -255,7 +255,7 @@ const PDCAP_D0_SUPPORTED: ULONG = 0x1;
 const PDCAP_D3_SUPPORTED: ULONG = 0x8;
 
 const PiActionEnumDeviceTree: ULONG = 0;
-const PiActionStartDevice: ULONG = 1;
+const PiActionStartDevice: ULONG = 0x00000004;
 const PiActionResetDevice: ULONG = 2;
 
 const MUTANT_INCREMENT: LONG = 1;
