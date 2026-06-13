@@ -63,6 +63,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
@@ -110,17 +117,25 @@ name = "byteswap"
 version = "0.1.0"
 
 [[package]]
+name = "cabinet-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "cabinet-rust"
 version = "0.1.0"
 dependencies = [
+ "libz-rs-sys",
  "ntdll-sys",
 ]
 
 [[package]]
 name = "cc"
-version = "1.2.63"
+version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556e016178bb5662a08681bbe0f00f8e17631781a4dfc8c45e466e4b185ec27f"
+checksum = "dad887fd958be91b5098c0248def011f4523ab786cd411be668777e55063501f"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -139,6 +154,13 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "classpnp-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "classpnp-rust"
@@ -228,6 +250,18 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "crt-dllmain-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt-startup-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt0-rust"
+version = "0.1.0"
+
+[[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
 
@@ -250,6 +284,13 @@ name = "csrss-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "disk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -299,6 +340,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs_rec-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -315,6 +363,10 @@ dependencies = [
 
 [[package]]
 name = "generictable"
+version = "0.1.0"
+
+[[package]]
+name = "guids-rust"
 version = "0.1.0"
 
 [[package]]
@@ -338,6 +390,13 @@ version = "0.1.0"
 [[package]]
 name = "hid-sys"
 version = "0.1.0"
+
+[[package]]
+name = "hidparse-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "hidparse-rust"
@@ -505,6 +564,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libz-rs-sys"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1116a951fd9d5110720bb2ae66f72ce5d7b10bd8aa8744924677157089ce13f"
+dependencies = [
+ "zlib-rs",
+]
+
+[[package]]
 name = "log"
 version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -568,13 +636,20 @@ version = "0.1.0"
 
 [[package]]
 name = "memchr"
-version = "2.8.1"
+version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "midl-rt"
 version = "0.1.0"
+
+[[package]]
+name = "mlang-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "mlang-rust"
@@ -592,6 +667,20 @@ dependencies = [
 
 [[package]]
 name = "mouclass-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mountmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mup-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -669,6 +758,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntoskrnl-vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ntprintf"
 version = "0.1.0"
 dependencies = [
@@ -712,6 +808,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "partmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "pci-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "pci-rust"
 version = "0.1.0"
 dependencies = [
@@ -727,6 +837,13 @@ dependencies = [
 
 [[package]]
 name = "pciide-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "pciidex-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -755,6 +872,13 @@ dependencies = [
 [[package]]
 name = "prefix"
 version = "0.1.0"
+
+[[package]]
+name = "processr-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "processr-rust"
@@ -787,9 +911,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rosload-cargo"
@@ -1000,6 +1124,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
+name = "scsiport-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "services-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1048,9 +1179,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.15.1"
+version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smss-cargo"
@@ -1076,6 +1207,13 @@ name = "svcctl-stub"
 version = "0.1.0"
 dependencies = [
  "midl-rt",
+ "reactos-link",
+]
+
+[[package]]
+name = "swenum-cargo"
+version = "0.1.0"
+dependencies = [
  "reactos-link",
 ]
 
@@ -1167,6 +1305,13 @@ name = "usb-sys"
 version = "0.1.0"
 
 [[package]]
+name = "usbd-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "usbd-rust"
 version = "0.1.0"
 dependencies = [
@@ -1202,6 +1347,13 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "win32k-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "win32k-kernel-rust"
@@ -1302,3 +1454,9 @@ dependencies = [
 [[package]]
 name = "wmilib-rust"
 version = "0.1.0"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be3d40e40a133f9c916ee3f9f4fa2d9d63435b5fbe1bfc6d9dae0aa0ada1513"

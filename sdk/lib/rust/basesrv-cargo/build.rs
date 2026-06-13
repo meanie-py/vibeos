@@ -49,8 +49,12 @@ fn main() {
         // csrsrv + ntdll import libs self-hosted from each .spec.
         .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // Leaf statics reused from cmake (the shared floor).
-        .static_libs(&["sdk/lib/crt/libchkstk.a", "sdk/lib/pseh/libpseh.a"])
+        // ZERO cmake .a: libchkstk.a + libpseh.a both dropped. Probe (nm -u on
+        // libsmss_csrss_rust.a ×3 arches) confirms the Rust body references
+        // neither __chkstk/___alloca (no >4KB frames in codegen) nor any PSEH
+        // runtime symbol (__except_handler3/__SEH_prolog — DUMMY_PSEH makes the
+        // handlers dead code, and Rust translations never emit PSEH at all).
+        // basesrv now compiles and links ZERO C.
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,

@@ -1,0 +1,13 @@
+# disk-rust — Rust translation of drivers/storage/class/disk (SCSI disk class
+# .sys). DeepSeek mechanical + c2rust-anchored translate. Built on classpnp's
+# Class* exports; ntkrnl-sys + crate::types (gen_driver_types.sh) kernel substrate.
+[package]
+name = "disk-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+name = "disk_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

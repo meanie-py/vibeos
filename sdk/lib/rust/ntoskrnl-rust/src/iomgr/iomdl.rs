@@ -45,8 +45,8 @@ unsafe fn MmPrepareMdlForReuse(mdl: PMDL) {
 
 // MdlFlags is CSHORT (i16) in bindgen, so define constants as i16
 const MDL_ALLOCATED_FIXED_SIZE: i16 = 0x0008;
-const MDL_ALLOCATED_MUST_SUCCEED: i16 = 0x0004;
-const MDL_IO_PAGE_READ: i16 = 0x0002;
+const MDL_ALLOCATED_MUST_SUCCEED: i16 = 0x4000;
+const MDL_IO_PAGE_READ: i16 = 0x40;
 const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x0004;
 const MDL_MAPPED_TO_SYSTEM_VA: i16 = 0x0001;
 const MDL_IO_SPACE: i16 = 0x0800;

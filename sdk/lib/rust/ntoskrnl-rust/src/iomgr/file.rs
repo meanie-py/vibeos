@@ -216,7 +216,7 @@ const TAG_IO_NAME: ULONG = 0x6D4E6F49;  // 'N OI' — IO name pool tag
 const TAG_EA: ULONG = 0x61456F49;        // '  AE' — EA pool tag
 
 const IOP_MAX_REPARSE_TRAVERSAL: ULONG = 0x20;
-const IopOtherTransfer: ULONG = 0;
+const IopOtherTransfer: ULONG = 0x00000002;
 
 const IOP_CREATE_FILE_OBJECT_EXTENSION: ULONG = 0x02;
 const IOP_USE_TOP_LEVEL_DEVICE_HINT: ULONG = 0x01;
@@ -358,15 +358,15 @@ const FileNetworkOpenInformation: FILE_INFORMATION_CLASS = 34;
 const FileNameInformation: FILE_INFORMATION_CLASS = 9;
 
 const QuerySecurityDescriptor: SECURITY_OPERATION_CODE = 1;
-const SetSecurityDescriptor: SECURITY_OPERATION_CODE = 2;
-const DeleteSecurityDescriptor: SECURITY_OPERATION_CODE = 3;
-const AssignSecurityDescriptor: SECURITY_OPERATION_CODE = 4;
+const SetSecurityDescriptor: SECURITY_OPERATION_CODE = 0x00000000;
+const DeleteSecurityDescriptor: SECURITY_OPERATION_CODE = 0x00000002;
+const AssignSecurityDescriptor: SECURITY_OPERATION_CODE = 0x00000003;
 
 const PRIVILEGE_SET_ALL_NECESSARY: ULONG = 1;
 
 const MUTANT_INCREMENT: LONG = 1;
 
-const LockQueueIoDatabaseLock: ULONG = 11;
+const LockQueueIoDatabaseLock: ULONG = 0x0000000A;
 
 const SynchronizationEvent: ULONG = 0;
 const NotificationEvent: ULONG = 1;

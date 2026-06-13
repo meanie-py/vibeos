@@ -138,7 +138,7 @@ const SECTION_MAP_WRITE: ACCESS_MASK = 0x0002;
 const ViewUnmap: ULONG = 2;
 const PAGE_READWRITE: ULONG = 0x04;
 
-const WrExecutive: ULONG = 0;
+const WrExecutive: ULONG = 0x00000007;
 const KernelMode: KPROCESSOR_MODE = 0i8;
 
 const SECURITY_DYNAMIC_TRACKING: u8 = 1;

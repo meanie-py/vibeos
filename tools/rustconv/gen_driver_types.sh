@@ -15,10 +15,10 @@
 # (FUNCTIONAL_DEVICE_EXTENSION, TRANSFER_PACKET, CLASS_*, FCB/VCB/CCB, ...) become local.
 #
 # Usage: gen_driver_types.sh <driver-name>
-#   driver-name ∈ { classpnp | cdrom | cdfs }   (config table below)
+#   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <classpnp|cdrom|cdfs>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -67,6 +67,46 @@ case "$DRIVER" in
                   --allowlist-file '.*ioevent\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
+  disk)
+    # disk.sys — the SCSI disk class driver (drivers/storage/class/disk). Built on
+    # classpnp: its FUNCTIONAL_DEVICE_EXTENSION / COMMON_DEVICE_EXTENSION / CLASS_INIT_DATA
+    # come from the PUBLIC classpnp.h, and its OWN private structs (DISK_DATA,
+    # DISK_GEOMETRY_EX_INTERNAL, UPDATE_DISK_GEOMETRY_WORKITEM_CONTEXT, REGISTER_*) live
+    # in disk.h. disk.h does NOT transitively reach wmistr.h/ntddstor.h/ntddscsi.h/
+    # ntdddisk.h/ntddvol.h, so pull them explicitly (allowlist can only filter PARSED
+    # types) for the WNODE_*/DISK_GEOMETRY_EX/VOLUME_* layouts the modules reference.
+    DRIVER_DIR="${SRC}/drivers/storage/class/disk"
+    WRAPPER_INC=$'#include "disk.h"\n#include <wmistr.h>\n#include <ntddstor.h>\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddvol.h>\n#include <ioevent.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]disk[/\\]disk\.h' --allowlist-file '.*classpnp\.h'
+                  --allowlist-file '.*classp\.h' --allowlist-file '.*scsi\.h'
+                  --allowlist-file '.*srb\.h' --allowlist-file '.*srbhelper\.h'
+                  --allowlist-file '.*ntddstor\.h' --allowlist-file '.*ntddscsi\.h'
+                  --allowlist-file '.*ntdddisk\.h' --allowlist-file '.*ntddvol\.h'
+                  --allowlist-file '.*wmidata\.h'
+                  --allowlist-file '.*wmistr\.h' --allowlist-file '.*storduid\.h'
+                  --allowlist-file '.*mountdev\.h' --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
+    ;;
+  mountmgr)
+    # mountmgr.sys — the mount manager (drivers/storage/mountmgr). Driver-PRIVATE
+    # structs (DEVICE_EXTENSION, DEVICE_INFORMATION, SYMLINK_INFORMATION,
+    # UNIQUE_ID_REPLACE_WORK_ITEM, ASSOCIATED_DEVICE_ENTRY, …) live in the driver's
+    # own mntmgr.h — allowlist it. mntmgr.h pulls mountdev.h / ntddvol.h /
+    # ntdddisk.h; the MOUNTMGR_* ioctl structs (MOUNTMGR_MOUNT_POINT,
+    # MOUNTMGR_CREATE_POINT_INPUT, MOUNTMGR_DRIVE_LETTER_*, …) live in the separate
+    # ddk/mountmgr.h, which the .c files reach only transitively — pull it
+    # explicitly so its layouts get emitted (allowlist can only filter PARSED types).
+    # Version macros mirror partmgr (the sibling storage-infra driver): WS03 0x502,
+    # NTDDI forced to 0x05020400 for the amd64 peb_teb.h ACTIVATION_CONTEXT_STACK reason.
+    DRIVER_DIR="${SRC}/drivers/storage/mountmgr"
+    WRAPPER_INC=$'#include "mntmgr.h"\n#include <mountmgr.h>'
+    ALLOW_FILES=( --allowlist-file '.*mountmgr[/\\]mntmgr\.h' --allowlist-file '.*mountmgr\.h'
+                  --allowlist-file '.*mountdev\.h' --allowlist-file '.*ntddvol\.h'
+                  --allowlist-file '.*ntdddisk\.h' --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   cdrom)
     # KMDF driver (set_module_type cdrom kmdfdriver) — needs the WDF 1.17 headers.
     DRIVER_DIR="${SRC}/drivers/storage/class/cdrom"
@@ -99,6 +139,89 @@ case "$DRIVER" in
     WRAPPER_INC='#include "cdprocs.h"'
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
+    ;;
+  partmgr)
+    # The partition manager (drivers/storage/partmgr). Driver-PRIVATE structs
+    # (FDO_EXTENSION, PARTITION_EXTENSION, BASIC_VOLUME_UNIQUE_ID,
+    # DISK_GEOMETRY_EX_INTERNAL) live in the driver's own partmgr.h — allowlist it.
+    # partmgr.h pulls mountdev.h / ntddvol.h / ntdddisk.h / ioevent.h; the
+    # MOUNTDEV_*, VOLUME_*, DISK_GEOMETRY/DRIVE_LAYOUT_INFORMATION_EX/
+    # PARTITION_INFORMATION_EX and DEVICE_EVENT_* types those define are NOT all in
+    # the shared ntkrnl-sys bindgen, so allowlist them too (blocklist keeps any that
+    # ARE shared on the single ddk identity). Version macros match the real partmgr
+    # compile command (WINVER/_WIN32_WINNT 0x502 + _WIN32_IE 0x603); NTDDI is forced
+    # to 0x05020400 (WS03SP1) for the same amd64 peb_teb.h ACTIVATION_CONTEXT_STACK
+    # reason as pcix.
+    DRIVER_DIR="${SRC}/drivers/storage/partmgr"
+    WRAPPER_INC=$'#include "partmgr.h"'
+    ALLOW_FILES=( --allowlist-file '.*partmgr[/\\]partmgr\.h' --allowlist-file '.*mountdev\.h'
+                  --allowlist-file '.*ntddvol\.h' --allowlist-file '.*ntdddisk\.h'
+                  --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  fs_rec)
+    # The filesystem recognizer (drivers/filesystems/fs_rec). Driver-PRIVATE structs
+    # (PACKED_BOOT_SECTOR, PACKED_BIOS_PARAMETER_BLOCK, BIOS_PARAMETER_BLOCK, TAG,
+    # EXTENT, AVDP, FILE_SYSTEM_TYPE, FS_REC_STATE, DEVICE_EXTENSION) live in the
+    # driver's own fs_rec.h. Each per-FS sniffer references on-disk superblock structs
+    # from its own header (btrfs.h/cdfs.h/ext.h/ffs.h/reiserfs.h/udfs.h) — all LOCAL to
+    # the fs_rec dir, so allowlist them path-scoped (the local cdfs.h is the 24-line
+    # boot-volume-descriptor one, NOT the cdfs FS driver's cdprocs/cdstruc). Only
+    # <ntifs.h> is pulled for kernel types (blocklisted → single ntkrnl-sys identity).
+    # fs_rec CMakeLists sets no version macros → NT 5.2 default; force NTDDI 0x05020400
+    # for the same amd64 peb_teb.h ACTIVATION_CONTEXT_STACK reason as pcix/partmgr.
+    DRIVER_DIR="${SRC}/drivers/filesystems/fs_rec"
+    WRAPPER_INC=$'#include "fs_rec.h"\n#include "btrfs.h"\n#include "cdfs.h"\n#include "ext.h"\n#include "ffs.h"\n#include "reiserfs.h"\n#include "udfs.h"'
+    ALLOW_FILES=( --allowlist-file '.*fs_rec[/\\]fs_rec\.h' --allowlist-file '.*fs_rec[/\\]btrfs\.h'
+                  --allowlist-file '.*fs_rec[/\\]cdfs\.h' --allowlist-file '.*fs_rec[/\\]ext\.h'
+                  --allowlist-file '.*fs_rec[/\\]ffs\.h' --allowlist-file '.*fs_rec[/\\]reiserfs\.h'
+                  --allowlist-file '.*fs_rec[/\\]udfs\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  pciidex)
+    # The PCI IDE bus extension (drivers/storage/ide/pciidex). Driver-PRIVATE structs
+    # (PCIIDEX_DRIVER_EXTENSION, COMMON_DEVICE_EXTENSION, FDO_DEVICE_EXTENSION,
+    # PDO_DEVICE_EXTENSION) live in the driver's own pciidex.h — allowlist it. pciidex.h
+    # pulls <ide.h> (sdk/include/ddk/ide.h), the shared IDE-miniport header defining
+    # IDE_CONTROLLER_PROPERTIES / IDE_CHANNEL_STATE / PCIIDE_* / the IdeBusData enums the
+    # modules reference; those are NOT in the ntkrnl-sys kernel bindgen, so allowlist
+    # ide.h too (blocklist keeps any shared ddk types on the single identity). No version
+    # macros in the pciidex CMakeLists → NT 5.2 default; NTDDI 0x05020400 (peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/ide/pciidex"
+    WRAPPER_INC=$'#include "pciidex.h"'
+    ALLOW_FILES=( --allowlist-file '.*pciidex[/\\]pciidex\.h' --allowlist-file '.*ddk[/\\]ide\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  scsiport)
+    # The SCSI port driver (drivers/storage/port/scsiport). Driver-PRIVATE structs
+    # (SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_PORT_COMMON_EXTENSION,
+    # SCSI_REQUEST_BLOCK_INFO, CONFIGURATION_INFO, SCSI_BUS_INFO, SCSI_PORT_INTERRUPT_DATA,
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8, ...) live in the driver's own scsiport.h — allowlist
+    # it. Those LUN/SRB-info structs embed SCSI DDK types (SCSI_REQUEST_BLOCK, CDB,
+    # SENSE_DATA, SCSI_PORT_CONFIGURATION_INFORMATION, ACCESS_RANGE) from <scsi.h> +
+    # <ntddscsi.h>, none of which are in the ntkrnl-sys kernel bindgen → allowlist those
+    # two headers too so bindgen emits exact SRB/CDB layouts (the blocklist keeps any
+    # shared ntkrnl-sys ddk types on the single identity). No version macros in the
+    # scsiport CMakeLists → NT 5.2 default; NTDDI 0x05020400 (peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/port/scsiport"
+    WRAPPER_INC=$'#include "scsiport.h"'
+    ALLOW_FILES=( --allowlist-file '.*scsiport[/\\]scsiport\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h' )
+    # _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen ({ _address: u8 }) — unblock it
+    # so this driver's bindgen (which includes scsi.h) emits the FULL SRB (SrbStatus/Cdb/
+    # DataBuffer/SrbFlags/...). Otherwise every Srb.<field> access resolves to the stub.
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
     ;;
   pcix)
     # The full MS-architecture PCI bus driver (drivers/bus/pcix). All driver-PRIVATE
@@ -144,6 +267,31 @@ case "$DRIVER" in
                -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
     EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
     ;;
+  atapi)
+    # The NT4-DDK ATAPI IDE miniport (drivers/storage/ide/atapi/atapi.c). It is a
+    # SCSIPORT miniport: its private register/IDENTIFY structs (IDE_REGISTERS_1/2/3,
+    # ATAPI_REGISTERS_1/2, IDENTIFY_DATA/IDENTIFY_DATA2, MODE_SENSE_10/MODE_SELECT_10/
+    # MODE_PARAMETER_HEADER_10, BROKEN_/NATIVE_MODE_CONTROLLER_INFORMATION) live in the
+    # driver's own atapi.h — allowlist it. The HW_DEVICE_EXTENSION / HW_LU_EXTENSION are
+    # defined in atapi.c (not a header), so a bindgen-only atapi_devext.h in the crate dir
+    # reproduces them (it embeds IDENTIFY_DATA + SCSI_REQUEST_BLOCK/SENSE_DATA/MECHANICAL_
+    # STATUS_INFORMATION_HEADER by value → those scsi.h/srb.h layouts must be emitted too).
+    # Like scsiport, _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen → UNBLOCK it so
+    # THIS driver's bindgen (which includes scsi.h) emits the full SRB. No version macros
+    # in the atapi CMakeLists → NT 5.2 default; NTDDI 0x05020400 (amd64 peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/ide/atapi"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "atapi.h"\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddstor.h>\n#include "atapi_devext.h"'
+    ALLOW_FILES=( --allowlist-file '.*ide[/\\]atapi[/\\]atapi\.h'
+                  --allowlist-file '.*atapi_devext\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -155,9 +303,10 @@ printf '%s\n' "$WRAPPER_INC" > "$WRAPPER"
 
 run_arch() {
   # BUILD_DIR supplies the configure-time-GENERATED headers (xdk/ddk/mc). A worktree
-  # without its own build dirs can borrow another tree's via BUILD_DIR_BASE (the source
-  # headers under $SRC are identical git content; only build-*/sdk/include is generated).
-  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_DIR_BASE:-${SRC}}/build-${1}"
+  # without its own build dirs can borrow another tree's via BUILD_ROOT (or legacy
+  # BUILD_DIR_BASE); source headers under $SRC are identical git content, only
+  # build-*/sdk/include is generated.
+  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_ROOT:-${BUILD_DIR_BASE:-${SRC}}}/build-${1}"
   local NTK="${NTKRNL_SYS}/bindgen_${ARCH}.rs"
   local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="

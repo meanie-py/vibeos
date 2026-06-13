@@ -246,216 +246,40 @@ endif()
 
 add_asm_files(win32k_asm ${ASM_SOURCE})
 
-# ── Rust win32k code — single umbrella staticlib (cohabitation) ──────
-# Analog of ntoskrnl's libkernel_rust.a. Each translated win32ss/*.c is
-# commented out in the SOURCE list above and its #[no_mangle] symbol is
-# provided here instead; --allow-multiple-definition + lld first-match
-# covers the swap-in window. Own rust-target dir (not shared with the
-# ntoskrnl build) so the two cargo invocations don't fight.
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_WIN32K_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-win32k-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_WIN32K_RUST_TARGET "i686-pc-windows-gnu")
-    set(RUST_WIN32K_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_WIN32K_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_WIN32K_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_WIN32K_RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_WIN32K_EXTRA_ENV "")
-endif()
-set(RUST_WIN32K_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwin32k_kernel_rust.a")
-add_custom_command(
-    OUTPUT ${RUST_WIN32K_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_WIN32K_TARGET_DIR} ${RUST_WIN32K_EXTRA_ENV}
-        cargo build --release --target ${RUST_WIN32K_RUST_TARGET}
-            -p win32k-kernel-rust
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_WIN32K_TARGET_DIR}/${RUST_WIN32K_RUST_TARGET}/release/libwin32k_kernel_rust.a
-        ${RUST_WIN32K_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/win32k-kernel-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/win32k-kernel-rust/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/sort.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/object.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/math.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/error.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/multidisp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/perfcnt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/driverobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/string.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/paint.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/float.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/engevent.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/mdevobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/semaphor.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/alphablend.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bitblt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/clip.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/copybits.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/debug.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/device.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/engbrush.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/engmisc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/engwindow.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gradient.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ldevobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/session.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/useratom.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/guicheck.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/prop.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/metric.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/caret.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/accelerator.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/vis.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ghost.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/power.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/usrheap.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntuser.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/callproc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/console.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/csr.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/file.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/shutdown.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/event.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/registry.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/class.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/desktop.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/winsta.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/clipboard.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/layered.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/timer.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/hotkey.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollex.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/monitor.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dde.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntstubs.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/windc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/simplecall.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/focus.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/misc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/nonclient.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntmouse.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/input.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/display.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/draw.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/hook.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollbar.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cursoricon.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ime.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/msgqueue.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/keyboard.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/main.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/defwnd.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/kbdlayout.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/menu.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/sysparams.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/window.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/message.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/painting.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/winpos.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/mouse.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/pandisp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/pathobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/pdevobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rlecomp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/stretchblt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/stubs.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/surface.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/transblt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/umpdstubs.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/xlateobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_helpers.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib1bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib4bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib8bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib16bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bpp.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bppc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bppc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_alphablend.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_stretchblt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/floodfill.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcattr.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rect.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bezier.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/utils.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/polyfill.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/brushbody.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/arc.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/stockobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/xformobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/drawing.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/line.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/fillshap.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/region.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcstate.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcobjs.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dclife.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcutil.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/pen.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/coord.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/palette.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cliprgn.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bitmaps.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dibobj.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/text.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/icm.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdipool.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/metafile.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/wingl.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/init.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/print.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdidev.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/path.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/font.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntbitblt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/freetype.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/d3dkmt.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/brush.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdibatch.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdidbg.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdikdbgext.rs
-            ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
-)
-add_custom_target(rust_win32k DEPENDS ${RUST_WIN32K_LIB})
+# ── C residue static lib ─────────────────────────────────────────────
+# The still-C remainder of win32k (DirectDraw, gendib tables, FORCEINLINE
+# rust shims, safe_user_io, user/rtl, i386 floatobj + dib asm), compiled by
+# cmake into a static archive the cargo link reuses (the same tier as
+# libhal.a / libcmlib.a / liblibcntpr.a). This was the force-linked object
+# list of the old `add_library(win32k MODULE …)`; win32k-cargo/build.rs
+# places this archive FIRST in the link's --start-group so C keeps the
+# cohab first-match precedence over libwin32k_kernel_rust.a, exactly as the
+# objects-before-rust-archive cmake link ordered it.
+add_library(win32k_residue STATIC ${SOURCE} ${win32k_asm})
+set_target_properties(win32k_residue PROPERTIES C_STANDARD 23)
+add_dependencies(win32k_residue bugcodes xdk asm)
+add_pch(win32k_residue pch.h SOURCE)
 
-add_library(win32k MODULE
-    ${SOURCE}
-    # gdi/ntgdi/brush.cpp  # replaced by Rust (sdk/lib/rust/win32k-rust/src/brush.rs) — cohabitation [Phase 2c wave 23: BRUSH object]
-    ${win32k_asm}
-    win32k.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
-
-set_module_type(win32k kernelmodedriver)
-set_target_properties(win32k PROPERTIES C_STANDARD 23)
-# Rust compiler_builtins / libclang_rt both provide __chkstk, and the
-# cohabitation swap-in window has C+Rust defining the same export.
-add_dependencies(win32k rust_win32k)
-target_link_options(win32k PRIVATE "LINKER:--allow-multiple-definition")
-target_link_libraries(win32k ${PSEH_LIB} dxguid libcntpr ${RUST_WIN32K_LIB})
-
-if(USE_DIBLIB)
-    target_link_libraries(win32k diblib)
-endif()
-
-add_importlibs(win32k ntoskrnl hal ftfd)
-add_pch(win32k pch.h SOURCE)
-add_cd_file(TARGET win32k DESTINATION reactos/system32 FOR all)
+# ── win32k.sys: cargo-driven link ──────────────────────────────────────
+# The Rust body (win32k-kernel-rust → libwin32k_kernel_rust.a) is built by
+# the reactos-link engine with the user hardfloat target + i386 -sse,-sse2
+# (.rust_user_target() — the same proven config the old rust_win32k
+# custom_command used), NOT the softfloat kernel json. Replaces
+# add_library(win32k MODULE) + set_module_type(kernelmodedriver) +
+# target_link_libraries + add_importlibs + add_pch + add_cd_file (and the
+# rust_win32k custom_command — the engine builds the body itself). KIND
+# kernelmodedriver → native-pefixup --kernelmodedriver + i386 fwd fix.
+# spec2def(win32k.sys win32k.spec ADD_IMPORTLIB) above STAYS — the libwin32k
+# import lib consumers (framebuf, …) are independent of this target.
+# EXTRA_DEPENDS = every cmake target whose .a the cargo link reuses
+# (win32k_residue/pseh/dxguid/libcntpr/chkstk/rust_cnt/memcmp) + the
+# generated-header providers (psdk/asm/bugcodes/xdk).
+add_cargo_module(win32k win32k-cargo win32k.sys
+    KIND kernelmodedriver
+    BODY_CRATES win32k-kernel-rust win32k-rust
+    EXTRA_DEPENDS
+        win32k_residue ${PSEH_LIB} dxguid libcntpr chkstk rust_cnt memcmp
+        psdk asm bugcodes xdk)
 
 if(ARCH STREQUAL "amd64")
     set_source_files_properties(sys-stubs.S PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/w32ksvc64.h)

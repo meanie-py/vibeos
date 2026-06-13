@@ -123,8 +123,8 @@ const TAG_BCB: ULONG = 0x63426343;
 const TAG_SHARED_CACHE_MAP: ULONG = 0x63536343;
 const TAG_VACB: ULONG = 0x61566343;
 const TAG_PRIVATE_CACHE_MAP: ULONG = 0x63506343;
-const FSRTL_CACHE_TOP_LEVEL_IRP: usize = 0x1;
-const LockQueueMasterLock: i32 = 17;
+const FSRTL_CACHE_TOP_LEVEL_IRP: usize = 0x2;
+const LockQueueMasterLock: i32 = 0x00000005;
 const SEC_RESERVE: ULONG = 0x4000000;
 
 #[no_mangle]

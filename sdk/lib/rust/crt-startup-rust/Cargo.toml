@@ -1,0 +1,50 @@
+# crt-startup-rust — Rust reimplementation of `msvcrtex` (the mingw-w64
+# CRT-startup floor) that every user-mode PE links.
+#
+# Replaces the in-cargo C compile of msvcrtex.cmake's sources
+# (reactos-link's `.msvcrtex_crt()`) with a single `#[no_mangle]`
+# staticlib providing the same ~190 symbols:
+#   - entry points: DllMainCRTStartup / [w]WinMainCRTStartup /
+#     [w]mainCRTStartup, __tmainCRTStartup, _CRT_INIT
+#   - the `.CRT$X*` initializer-section boundary arrays + `_initterm` walk
+#   - security cookie (__security_init_cookie / __report_gsfailure)
+#   - the pseudo-relocator (_pei386_runtime_relocator)
+#   - TLS callbacks + key-dtor machinery
+#   - atexit table (_onexit / atexit / __call_atexit)
+#   - PE-section helpers (_FindPESection*, _GetPEImageBase, …)
+#   - the gnu top-level exception handler + WIN64 ehandler table
+#   - misc intrinsics-adjacent leaves (_fltused, _matherr, sincos,
+#     round[f], exp2[f], isblank, iswblank, _invalid_parameter, rand_s,
+#     mbrtowc, wcrtomb, _setargv/…).
+#
+# The i386/amd64 MSVC stack-probe + 64-bit integer asm
+# (chkstk/alldiv/aulldiv/ceilf/floorf) is NOT here — it stays asm,
+# linked via reactos-link's `msvcrtex_asm` archive (Tier-B: chkstk
+# stays asm). See `docs/engineering/static-libs-translation-audit.md`.
+#
+# Built as a sibling rlib/staticlib via reactos-link's `.rust_lib(
+# "crt-startup-rust", …)` (kernel=false → standard user target; i386
+# gets `-sse,-sse2` from sdk/lib/rust/.cargo/config.toml, matching the
+# C msvcrtex codegen). The msvcrt + kernel32 imports it references
+# resolve through the consumer's import libs, exactly as the C did.
+
+[package]
+name = "crt-startup-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+# A consuming module links exactly ONE startup "personality", mirroring how
+# the C archive lazily pulled crtexe.o / wcrtexe.o / crtdll.o based on the
+# module's entry symbol. The shared CRT floor (cookie, tls, pesect, atexit,
+# math, …) is always compiled; only the entry/init module is feature-gated,
+# so an exe's `pre_c_init` (onexit sentinel = -1) and a dll's (= NULL) never
+# coexist in one image's `.CRT$X*` init walk.
+[features]
+default = []
+crtexe = []   # ANSI exe: [w]?mainCRTStartup + __getmainargs + main
+wcrtexe = []  # wide exe: w[main|WinMain]CRTStartup + __wgetmainargs + wmain
+crtdll = []   # dll: DllMainCRTStartup + _CRT_INIT

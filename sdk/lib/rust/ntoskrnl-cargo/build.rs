@@ -140,9 +140,9 @@ fn main() {
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
         // (cntpr_residue / cntpr_asm below). See cargo-drive-unification-plan.md.
         "sdk/lib/vcruntime/libsetjmp.a",
-        "sdk/lib/wdmguid/libwdmguid.a",
-        "sdk/lib/poguid/libpoguid.a",
-        "sdk/lib/ioevent/libioevent.a",
+        // wdmguid/poguid/ioevent (the 3 cmake C GUID libs) → `guids-rust`
+        // (.rust_lib below): 217 deduped #[no_mangle] GUID data constants. C
+        // kept on disk for any remaining cmake consumers.
         &hal_lib,
         "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
         "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
@@ -259,6 +259,8 @@ fn main() {
         // the real Hv*/Cmp*/Cm* symbols live in cmlib-rust (DEFAULT features, the
         // full kernel variant; NOT `bldr`, which is the loader's read-only build).
         .rust_lib("cmlib-rust", &[], true)
+        // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
+        .rust_lib("guids-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its

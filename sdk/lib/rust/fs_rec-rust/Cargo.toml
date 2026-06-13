@@ -1,0 +1,22 @@
+# fs_rec-rust — Rust translation of the filesystem recognizer driver
+# (drivers/filesystems/fs_rec, ~2.8K LOC: blockdev.c + fs_rec.c + one sniffer per FS
+# type: fat/fatx/cdfs/ntfs/udfs/ext/btrfs/reiserfs/ffs.c). BOOT-loaded recognizer
+# driver (Group "Boot File System", registers via IoRegisterFileSystem), so unlike
+# pcix it IS smoke-exercised. Driver-private structs (PACKED_BOOT_SECTOR,
+# BIOS_PARAMETER_BLOCK, TAG/EXTENT/AVDP, DEVICE_EXTENSION + per-FS on-disk superblocks)
+# come from the gen_driver_types.sh bindgen substrate (src/types.rs); kernel/FsRtl/Io
+# types resolve to the single ntkrnl-sys ddk identity. No GUID data symbols (recognizer
+# has no device-interface GUIDs), so the cohab keeps only a tiny stub C TU + the .rc.
+# crate-type = staticlib -> libfs_rec_rust.a, cohab-linked into the cmake-built
+# fs_rec.sys with the translated .c commented out. Built for all 3 arches.
+
+[package]
+name = "fs_rec-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

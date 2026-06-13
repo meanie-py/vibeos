@@ -15,14 +15,21 @@ fn main() {
         other => panic!("kdvm-cargo: unsupported arch {other} (i386/amd64 only)"),
     };
 
+    // cnt-rust-lib float feature: i386 softfloat omits it, amd64 enables it.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         .rust_staticlib("kdvm-rust")
         .spec2def("drivers/base/kdvm/kdvm.spec", "kdvbox.dll")
-        .static_libs(&[
-            "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-            "sdk/lib/crt/libmemcmp.a",
-        ])
+        // cntpr_rust → `cnt-rust-lib` cargo sibling; memcmp →
+        // compiler-builtins-mem. kdvm has no cportlib (it talks to the VBox
+        // backdoor via in-crate KdVmExchange port I/O).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // ZERO cmake .a: liblibcntpr.a DROPPED. The ONLY symbol kdvm pulled from
+        // it is `cnt_va_next_ptr` (cnt-rust-lib's scanf-engine va_arg helper from
+        // cnt-rust's own cabi/scanf_trampoline.c — Rust can't DEFINE variadics on
+        // stable). Compiled in-cargo via c_from_compile_db (ntdll-cargo pattern).
+        .c_from_compile_db("libcntpr", &["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

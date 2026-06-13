@@ -1,0 +1,31 @@
+      - ARITY: rust 0 params vs C 5
+      - param#2 u32 vs ULONG_PTR(unsigned long long): width 4 vs 8 [MEDIUM]
+      - param#2 u64 vs LDT_ENTRY(unsigned long): width 8 vs 4 [MEDIUM]
+      - param#2 u8 vs KWAIT_REASON(enum _KWAIT_REASON): width 1 vs 4 [MEDIUM]
+      - param#4 u64 vs LDT_ENTRY(unsigned long): width 8 vs 4 [MEDIUM]
+    C   : BOOLEAN ObpSetHandleAttributes(PHANDLE_TABLE_ENTRY, ULONG_PTR)
+    C   : NTSTATUS NtSetLdtEntries(ULONG, LDT_ENTRY, ULONG, LDT_ENTRY)
+    C   : void KeWaitForGate(PKGATE, KWAIT_REASON, KPROCESSOR_MODE)
+    C   : void KiThreadStartup(PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PVOID, BOOLEAN, KTRAP_FRAME)
+    rust: fn KeWaitForGate(PKGATE, u8, KPROCESSOR_MODE) -> ()
+    rust: fn KiThreadStartup() -> ()
+    rust: fn NtSetLdtEntries(ULONG, u64, ULONG, u64) -> NTSTATUS
+    rust: fn ObpSetHandleAttributes(*mut _HANDLE_TABLE_ENTRY, u32) -> BOOLEAN
+  C prototypes: 5034 FunctionDecls, 4536 typedefs
+  exported Rust fns: 3294 (deduped twins)
+  exported fns checked : 3294
+  matched to a C proto : 2225
+  mismatches           : 10  (4 shown, 6 LOW-suppressed)
+  no C proto (internal): 1069
+  signature OK         : 2215
+=== verify_signatures — arch=amd64 ===
+Dumping C AST (clang)...
+Scanning exported Rust fns...
+[HIGH] KiThreadStartup  (sdk/lib/rust/ntoskrnl-rust/src/ke/i386/thrdini.rs:98)
+[MEDIUM] KeWaitForGate  (sdk/lib/rust/ntoskrnl-rust/src/ke/gate.rs:59)
+[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:137)
+[MEDIUM] ObpSetHandleAttributes  (sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:227)
+clang:  .build-tools/llvm-mingw/bin/clang
+crate:  sdk/lib/rust/ntoskrnl-rust/src
+headers: build-amd64
+── coverage ──

@@ -9,3 +9,9 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }
+# Pure-Rust C-ABI zlib (Trifecta zlib-rs). no_std (default-features=false drops
+# std + rust-allocator); `export-symbols` emits the unprefixed C names
+# (deflateInit2/deflate/deflateEnd) cabinet's fci.rs extern "C" block calls.
+# cabinet always sets z_stream.zalloc/zfree, so allocation routes through
+# cabinet's own allocator — no global/rust/c allocator needed.
+libz-rs-sys = { version = "0.6.3", default-features = false, features = ["export-symbols"] }

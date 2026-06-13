@@ -10,12 +10,11 @@
 # exports — win32k's GDI loader calls the PE entry point).
 #
 # framebuf is the GDI display driver for every UEFI GOP/linear-framebuffer boot
-# on all three arches. add_cargo_module builds framebuf-rust, links it with
-# libcntpr (C/asm liblibcntpr.a + Rust libcntpr_rust.a) + the win32k import lib
-# (the Eng*/PALOBJ_*/DDI surface) into the shipping PE, applies the kernel-dll
-# post-link and registers it on the boot media. Unlike the kernelmodedrivers it
-# imports win32k, NOT ntoskrnl/hal. The version resource (framebuf.rc) is
-# dropped, as in the other cargo cuts.
+# on all three arches. add_cargo_module builds framebuf-rust + cnt-rust-lib
+# (cargo-native, the sole libcntpr provider) + the win32k import lib (the
+# Eng*/PALOBJ_*/DDI surface) into the shipping PE, applies the kernel-dll
+# post-link and registers it on the boot media. ZERO cmake .a: liblibcntpr.a +
+# libcntpr_rust.a both dropped (cold-link needs no C residue). Unlike the
+# kernelmodedrivers it imports win32k, NOT ntoskrnl/hal. framebuf.rc dropped.
 add_cargo_module(framebuf framebuf-cargo framebuf.dll KIND kerneldll
-    BODY_CRATE framebuf-rust DESTINATION reactos/system32
-    EXTRA_DEPENDS libcntpr)
+    BODY_CRATE framebuf-rust DESTINATION reactos/system32)
