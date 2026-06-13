@@ -141,6 +141,7 @@ members = [
     "scsiport-rust",
     "atapi-rust",
     "mup-rust",
+    "uniata-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
