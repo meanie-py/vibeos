@@ -47,13 +47,12 @@ pub unsafe extern "system" fn DriverEntry(
     // the stack. netstack owns \Device\Tcp etc.
     tdidev::init(DriverObject);
     // M4 verification: a kernel TDI client (tditest::spawn) that drives our own
-    // \Device\Tcp is DISABLED pending a blocker — opening a transport device
-    // WITH an EA buffer (TransportAddress / ConnectionContext, which AFD uses)
-    // hangs in the ReactOS IO manager create path BEFORE reaching our CREATE
-    // dispatch; a no-EA control-channel open works. Needs a kernel-debugger
-    // backtrace of the wedged ZwCreateFile to root-cause. The data path
-    // (tditrans/tdidev) is implemented + integrated; re-enable once unblocked.
-    let _ = tditest::spawn;
+    // \Device\Tcp via real IRPs (the exact path AFD uses) — open address +
+    // connection objects (EA buffers), associate, connect to the slirp echo,
+    // send, receive. Re-enabled after fixing the inbox synchronization (the
+    // prior KeAcquireSpinLockForDpc is a no-op in this tree → unsynchronized
+    // Vec race; now uses IrqlGuard/DISPATCH_LEVEL = real UP mutual exclusion).
+    tditest::spawn();
     0 // STATUS_SUCCESS
 }
 

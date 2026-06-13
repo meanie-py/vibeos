@@ -10,10 +10,10 @@ use core::ptr::null_mut;
 use core::sync::atomic::Ordering;
 
 use ntkrnl_sys::ddk::{
-    IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IofCallDriver, KeInitializeEvent,
-    KeWaitForSingleObject, KEVENT, LARGE_INTEGER, OBJECT_ATTRIBUTES, ObReferenceObjectByHandle,
-    ObfDereferenceObject, PDEVICE_OBJECT, PVOID, PsCreateSystemThread, UNICODE_STRING, ZwClose,
-    ZwCreateFile, _FILE_OBJECT,
+    ExAllocatePoolWithTag, ExFreePool, IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest,
+    IofCallDriver, KeInitializeEvent, KeWaitForSingleObject, KEVENT, LARGE_INTEGER,
+    OBJECT_ATTRIBUTES, ObReferenceObjectByHandle, ObfDereferenceObject, PDEVICE_OBJECT, PVOID,
+    PsCreateSystemThread, UNICODE_STRING, ZwClose, ZwCreateFile, _FILE_OBJECT,
 };
 use ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation;
 
@@ -251,33 +251,44 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     }
     nsprint!("[NETSTACK] TDI self-test: CONNECT OK\n");
 
-    // SEND a probe.
-    let mut payload = *b"TDI-SELFTEST-PROBE\n";
+    // SEND a probe. TDI SEND/RECEIVE describe the data buffer via Irp->MdlAddress;
+    // IoBuildDeviceIoControlRequest(METHOD_OUT_DIRECT) builds it + locks pages, and
+    // the transport maps it with MmGetSystemAddressForMdlSafe. That mapping path
+    // needs *pool* pages, not the kernel stack (a stack-backed MDL won't map to a
+    // system VA), so use NonPagedPool buffers — exactly what real AFD passes.
+    const PROBE: &[u8] = b"TDI-SELFTEST-PROBE\n";
+    let txbuf = ExAllocatePoolWithTag(0 /* NonPagedPool */ as _, PROBE.len() as _, u32::from_le_bytes(*b"NetT")) as *mut u8;
+    let rxbuf = ExAllocatePoolWithTag(0 as _, 64 as _, u32::from_le_bytes(*b"NetR")) as *mut u8;
+    if txbuf.is_null() || rxbuf.is_null() {
+        nsprint!("[NETSTACK] TDI self-test: pool alloc failed\n");
+        cleanup(conn_obj, conn_h, addr_h);
+        return;
+    }
+    core::ptr::copy_nonoverlapping(PROBE.as_ptr(), txbuf, PROBE.len());
     let st = run_tdi(
         dev,
         conn_fo,
         tdi::TDI_SEND,
-        payload.as_mut_ptr() as PVOID,
-        payload.len() as u32,
+        txbuf as PVOID,
+        PROBE.len() as u32,
         |p| {
             let req = p as *mut tdi::TDI_REQUEST_KERNEL_SEND;
-            (*req).SendLength = payload.len() as u32;
+            (*req).SendLength = PROBE.len() as u32;
             (*req).SendFlags = 0;
         },
     );
     nsprint!("[NETSTACK] TDI self-test: send {:#010x}\n", st as u32);
 
     // RECEIVE the echo back.
-    let mut rxbuf = [0u8; 64];
     let st = run_tdi(
         dev,
         conn_fo,
         tdi::TDI_RECEIVE,
-        rxbuf.as_mut_ptr() as PVOID,
-        rxbuf.len() as u32,
+        rxbuf as PVOID,
+        64,
         |p| {
             let req = p as *mut tdi::TDI_REQUEST_KERNEL_RECEIVE;
-            (*req).ReceiveLength = rxbuf.len() as u32;
+            (*req).ReceiveLength = 64;
             (*req).ReceiveFlags = 0;
         },
     );
@@ -287,6 +298,8 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         nsprint!("[NETSTACK] TDI self-test: receive {:#010x}\n", st as u32);
     }
 
+    ExFreePool(txbuf as PVOID);
+    ExFreePool(rxbuf as PVOID);
     cleanup(conn_obj, conn_h, addr_h);
 }
 

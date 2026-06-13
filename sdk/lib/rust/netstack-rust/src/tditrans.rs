@@ -17,9 +17,8 @@ use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp;
 use smoltcp::wire::IpAddress;
 
-use ntkrnl_sys::ddk::{
-    IofCompleteRequest, KeAcquireSpinLockForDpc, KeReleaseSpinLockForDpc, NTSTATUS, PIRP,
-};
+use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
+use ntkrnl_sys::guards::IrqlGuard;
 
 use crate::serial::nsprint;
 
@@ -54,19 +53,22 @@ pub enum Cmd {
     CloseAddr { id: u64 },
 }
 
-/// The inbox is guarded by a real KSPIN_LOCK (KeAcquireSpinLockForDpc raises to
-/// DISPATCH_LEVEL while held). A plain atomic spinlock deadlocks here: QEMU runs
-/// a single vCPU, so if the worker is preempted mid-critical-section a producer
-/// would spin at PASSIVE without ever yielding the CPU back. Raising IRQL
-/// prevents that preemption.
+/// The inbox is guarded by raising IRQL to DISPATCH_LEVEL across the brief
+/// push/swap. QEMU runs a SINGLE vCPU, so DISPATCH_LEVEL (which masks thread
+/// preemption) is full mutual exclusion between the producer (TDI dispatch,
+/// any thread, PASSIVE) and the consumer (poll worker, PASSIVE).
+///
+/// NOTE: `KeAcquireSpinLockForDpc` is a *no-op* in this tree (ntoskrnl/ke/
+/// spinlock.c returns the current IRQL without raising or acquiring) — it was
+/// stubbed for the early-boot Rust pool allocator. Using it here gave ZERO
+/// synchronization (an unsynchronized Vec race between two threads = UB/heap
+/// corruption). IrqlGuard uses the real KfRaiseIrql, so this is correct.
 struct Inbox {
-    lock: UnsafeCell<usize>, // KSPIN_LOCK (ULONG_PTR)
     queue: UnsafeCell<Vec<Cmd>>,
 }
 unsafe impl Sync for Inbox {}
 
 static INBOX: Inbox = Inbox {
-    lock: UnsafeCell::new(0),
     queue: UnsafeCell::new(Vec::new()),
 };
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -79,17 +81,15 @@ pub fn alloc_id() -> u64 {
 /// Post a command from the TDI dispatch (any thread).
 pub fn post(cmd: Cmd) {
     unsafe {
-        let irql = KeAcquireSpinLockForDpc(INBOX.lock.get() as *mut _);
+        let _irql = IrqlGuard::raise_to_dpc();
         (*INBOX.queue.get()).push(cmd);
-        KeReleaseSpinLockForDpc(INBOX.lock.get() as *mut _, irql);
     }
 }
 
 fn drain_into(out: &mut Vec<Cmd>) {
     unsafe {
-        let irql = KeAcquireSpinLockForDpc(INBOX.lock.get() as *mut _);
+        let _irql = IrqlGuard::raise_to_dpc();
         core::mem::swap(out, &mut *INBOX.queue.get());
-        KeReleaseSpinLockForDpc(INBOX.lock.get() as *mut _, irql);
     }
 }
 
