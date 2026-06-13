@@ -43,14 +43,11 @@ fn main() {
         .spec2def("dll/win32/mlang/mlang.spec", "mlang.dll")
         // mlang.spec has `stub`-only entries → compile + link mlang_stubs.c.
         .spec_stubs()
-        .static_libs(&[
-            "sdk/lib/uuid/libuuid.a",
-            // libwine.a dropped — mlang-rust's wine surface (TRACE/WARN/FIXME +
-            // IsEqualGUID/min/list_*/vtbl helpers) is already provided
-            // header-free by rust_cohab_stub.c (c_shims above).
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-            // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
-        ])
+        // ZERO cmake-built .a: wine→c_shim (step 6), msvcrtex→.msvcrtex_crt(),
+        // libuuid.a dropped (mlang-rust defines its own IID/CLSID GUIDs — the
+        // cold-link confirms no uuid symbol referenced), and oldnames.a dropped
+        // (its only alias need, `wcsicmp`, is now a self-contained Rust fn in
+        // mlang-rust). Fully cargo-native floor (+ the import libs below).
         // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
         // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
         // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
