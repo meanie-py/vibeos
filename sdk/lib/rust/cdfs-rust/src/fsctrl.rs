@@ -17,6 +17,11 @@ use crate::types::{VCB_CONDITION, _VCB_CONDITION_VcbDismountInProgress, _VCB_CON
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{CdMarkRealDevVerifyOk};
 use crate::glue::{CdNonPagedPool};
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject( IrpContext: *mut IrpContext, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut Fcb, Ccb: *mut *mut Ccb, ) -> /* UserFileOpen or enum */ i32; // return type unknown, assume i32 fn CdCompleteRequest(IrpContext: *mut IrpContext, Irp: *mut IRP, Status: NTSTATUS);
+}
+
 extern "system" {
     fn CdPurgeVolume(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u8) -> NTSTATUS;
     fn CdReleaseVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
@@ -26,7 +31,6 @@ extern "system" {
     fn IoReleaseVpbSpinLock(Irql: u8);
     fn CdUpdateVcbCondition(Vcb: *mut VCB, Condition: u32);
     fn CdUpdateMediaChangeCount(Vcb: *mut VCB, MediaChangeCount: u32);
-    fn CdDecodeFileObject( IrpContext: *mut IrpContext, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut Fcb, Ccb: *mut *mut Ccb, ) -> /* UserFileOpen or enum */ i32; // return type unknown, assume i32 fn CdCompleteRequest(IrpContext: *mut IrpContext, Irp: *mut IRP, Status: NTSTATUS);
     fn SetFlag(Flags: *mut ULONG, Flag: ULONG);
     fn ClearFlag(Flags: *mut ULONG, Flag: ULONG);
     fn CdAcquireFcbExclusive(IrpContext: *mut IrpContext, Fcb: *mut Fcb, Wait: BOOLEAN);

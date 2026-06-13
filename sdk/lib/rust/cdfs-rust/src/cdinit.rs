@@ -46,7 +46,7 @@ const IRP_MJ_DIRECTORY_CONTROL: i32 = 0x0c;
 
 // Declare external items not available in the given imports
 #[no_mangle]
-pub unsafe extern "C" fn DriverEntry(
+pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {

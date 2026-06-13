@@ -281,3 +281,118 @@ pub unsafe extern "C" fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTS
 #[inline] pub unsafe fn Add2Ptr(p: *mut core::ffi::c_void, i: usize) -> *mut core::ffi::c_void {
     (p as *mut u8).add(i) as *mut core::ffi::c_void
 }
+
+// ===========================================================================
+// cdfs link shims (round 2): debug macros, FORCEINLINEs, and intrinsic-ish
+// helpers the grind referenced per-module as extern "system"/"C" fns but left
+// undefined. ABI/decoration chosen to match the linker's demanded symbol:
+//   stdcall (_Name@N)  -> #[no_mangle] extern "system"
+//   cdecl   (_Name)    -> #[no_mangle] extern "C"
+// (#[no_mangle] + extern "system" on i686-gnu auto-decorates _Name@N; do NOT
+//  use #[export_name], which double-decorates.)
+// ===========================================================================
+use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
+    PSINGLE_LIST_ENTRY, _EVENT_TYPE_SynchronizationEvent, ULONG_PTR};
+
+// ntddk.h PAGED_CODE() — retail no-op (paging-IRQL assert only under DBG).
+#[no_mangle] pub extern "system" fn PAGED_CODE() {}
+
+// wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
+#[no_mangle] pub extern "system" fn NT_ASSERT(_Condition: i32) {}
+
+// cdfs debug ASSERT macros — retail no-ops.
+#[no_mangle] pub extern "system" fn ASSERT_OPTIONAL_IRP(_Irp: PIRP) {}
+#[no_mangle] pub extern "system" fn AssertVerifyDevice(_IrpContext: *mut IRP_CONTEXT, _Status: i32) {}
+#[no_mangle] pub extern "system" fn AssertVerifyDeviceIrp(_Irp: PIRP) {}
+
+// nodetype.h: CdBugCheck(A,B,C) = KeBugCheckEx(CDFS_FILE_SYSTEM, BugCheckFileId|__LINE__, A,B,C).
+//   CDFS_FILE_SYSTEM = 0x26 (sdk/include/reactos/mc/bugcodes.mc).
+//   The per-call-site BugCheckFileId|__LINE__ param was collapsed away when the
+//   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
+//   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
+const CDFS_FILE_SYSTEM: u32 = 0x26;
+#[no_mangle] pub unsafe extern "system" fn CdBugCheck(A: u32, B: u32, C: u32) {
+    KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
+}
+
+// cdprocs.h: CdFreePool(x) -> _CdFreePool((PVOID*)x): if *Pool != NULL { ExFreePool(*Pool); *Pool = NULL; }
+#[no_mangle] pub unsafe extern "system" fn CdFreePool(Pool: *mut *mut core::ffi::c_void) {
+    if !(*Pool).is_null() {
+        ExFreePool(*Pool);
+        *Pool = core::ptr::null_mut();
+    }
+}
+
+// ntddk.h PopEntryList FORCEINLINE (bindgen declares but doesn't define). cdecl.
+#[no_mangle] pub unsafe extern "C" fn PopEntryList(ListHead: PSINGLE_LIST_ENTRY) -> PSINGLE_LIST_ENTRY {
+    let first = (*ListHead).Next;
+    if !first.is_null() {
+        (*ListHead).Next = (*first).Next;
+    }
+    first
+}
+
+// xdk/exfuncs.h ExInitializeFastMutex FORCEINLINE (bindgen declares but doesn't
+// define). FM_LOCK_BIT = 1; KeInitializeEvent(&Event, SynchronizationEvent, FALSE). cdecl.
+const FM_LOCK_BIT: i32 = 1;
+#[no_mangle] pub unsafe extern "C" fn ExInitializeFastMutex(FastMutex: PFAST_MUTEX) {
+    (*FastMutex).Count = FM_LOCK_BIT;
+    (*FastMutex).Owner = core::ptr::null_mut();
+    (*FastMutex).Contention = 0;
+    KeInitializeEvent(
+        core::ptr::addr_of_mut!((*FastMutex).Event),
+        _EVENT_TYPE_SynchronizationEvent,
+        0, // FALSE
+    );
+}
+
+// ---------------------------------------------------------------------------
+// cdfs link shims (round 3): more debug-macros / cdprocs.h FORCEINLINEs+macros
+// referenced as stdcall fns (_Name@N) by the grind.
+// ---------------------------------------------------------------------------
+use ntkrnl_sys::ddk::{PIO_STACK_LOCATION, IoIsOperationSynchronous, BOOLEAN as DdkBOOLEAN,
+    PERESOURCE};
+use crate::types::{FCB, TYPE_OF_ACQUIRE, _TYPE_OF_ACQUIRE_AcquireShared, PIRP_CONTEXT};
+
+// ntddk.h: UNREFERENCED_PARAMETER(P) — retail no-op (grind lowered to stdcall fn).
+#[no_mangle] pub extern "system" fn UNREFERENCED_PARAMETER(_Param: PVOID) {}
+
+// cdfs debug ASSERT macros — retail no-ops.
+#[no_mangle] pub extern "system" fn ASSERT_IRP_CONTEXT(_Irp: *mut IRP_CONTEXT) {}
+#[no_mangle] pub extern "system" fn ASSERT_FILE_OBJECT(_FileObject: PFILE_OBJECT) {}
+
+// wdm.h FORCEINLINE IoGetCurrentIrpStackLocation: Irp->Tail.Overlay.CurrentStackLocation.
+// Declared both cdecl (_Io...) and stdcall (_Io...@4) across modules -> provide both.
+#[inline(always)]
+unsafe fn io_get_current_stack(Irp: PIRP) -> PIO_STACK_LOCATION {
+    ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation(Irp)
+}
+#[no_mangle] pub unsafe extern "system" fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION {
+    io_get_current_stack(Irp)
+}
+
+// cdprocs.h: CanFsdWait(I) = IoIsOperationSynchronous(I).
+#[no_mangle] pub unsafe extern "system" fn CanFsdWait(Irp: PIRP) -> DdkBOOLEAN {
+    IoIsOperationSynchronous(Irp)
+}
+
+// cdprocs.h (NTDDI < WIN8): CdGetFcbOplock(F) = &(F)->Oplock.  Oplock is the
+// first field of the FCB_DATA arm of the FCB's anonymous data union
+// (__bindgen_anon_2 in types_<arch>.rs), so its address == &__bindgen_anon_2.
+#[no_mangle] pub unsafe extern "system" fn CdGetFcbOplock(Fcb: *mut FCB) -> PVOID {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as PVOID
+}
+
+// cdprocs.h: CdAcquireFileShared(IC,F) = CdAcquireResource(IC, (F)->Resource, FALSE, AcquireShared).
+//   (F)->Resource lives in the FSRTL advanced header spliced as __bindgen_anon_1.Header.
+#[no_mangle] pub unsafe extern "system" fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: *mut FCB) {
+    let resource = (*Fcb).__bindgen_anon_1.Header.as_ref().Resource as PERESOURCE;
+    CdAcquireResource(IrpContext, resource, 0 /* FALSE */, _TYPE_OF_ACQUIRE_AcquireShared as TYPE_OF_ACQUIRE);
+}
+
+// CdAcquireResource: NTAPI cdfs internal (defined in resrcsup -> Rust). Declared in
+// types_<arch>.rs as extern "system"; re-declare here for the shim above.
+extern "system" {
+    fn CdAcquireResource(IrpContext: PIRP_CONTEXT, Resource: PERESOURCE,
+        IgnoreWait: DdkBOOLEAN, Type: TYPE_OF_ACQUIRE) -> DdkBOOLEAN;
+}

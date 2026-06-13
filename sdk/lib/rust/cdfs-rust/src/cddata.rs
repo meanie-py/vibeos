@@ -12,6 +12,11 @@ use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT,
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected, FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced, ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag};
 use crate::glue::{CDFS_BUG_CHECK_CDDATA, CDFS_NTC_IRP_CONTEXT, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut *mut FCB) -> TYPE_OF_OPEN;
+}
+
 extern "system" {
     fn AssertVerifyDevice(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn NT_ASSERT(cond: i32);
@@ -23,7 +28,6 @@ extern "system" {
     fn FlagOn(flags: u32, flag: u32) -> i32;
     fn SetFlag(flags: *mut u32, flag: u32);
     fn IoWithinStackLimits(address: usize, size: u32) -> i32;
-    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut *mut FCB) -> TYPE_OF_OPEN;
     fn ASSERT_OPTIONAL_IRP(Irp: ntkrnl_sys::ddk::PIRP);
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
     fn CdCommonCleanup(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
@@ -43,7 +47,6 @@ extern "system" {
     fn CdCompleteMdl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
     fn CdCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, Wait: u8) -> crate::types::PIRP_CONTEXT;
     fn SafeNodeType(Ptr: *mut core::ffi::c_void) -> u32;
-    fn __try_except( try_fn: unsafe extern "C" fn(*mut core::ffi::c_void) -> i32, filter_fn: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void) -> i32, handler_fn: unsafe extern "C" fn(*mut core::ffi::c_void, u32) -> i32, context: *mut core::ffi::c_void, ) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -256,12 +259,13 @@ pub unsafe extern "system" fn CdFsdDispatch(
 
     try_ctx.PreviousTopLevel = IoGetTopLevelIrp() as *mut core::ffi::c_void;
 
+    // Under DUMMY_PSEH the _SEH2_EXCEPT(filter_fn/handler_fn) arm is dead code,
+    // so the protected body (try_fn) runs straight through. filter_fn/handler_fn
+    // are retained as dead code (referenced via let _ to silence dead-code warns).
+    let _ = (filter_fn as usize, handler_fn as usize);
     let mut final_status: i32;
     loop {
-        final_status = __try_except(
-            try_fn,
-            filter_fn,
-            handler_fn,
+        final_status = try_fn(
             &mut try_ctx as *mut CdFsdDispatchTryContext as *mut core::ffi::c_void,
         );
         if final_status != STATUS_CANT_WAIT {
@@ -335,7 +339,7 @@ pub unsafe extern "C" fn CdRaiseStatusEx(
         (*IrpContext).ExceptionStatus = Status;
     }
     (*IrpContext).RaisedAtLineFile = (FileId << 16) | Line;
-    ntkrnl_sys::ex::ExRaiseStatus((*IrpContext).ExceptionStatus);
+    ntkrnl_sys::ddk::ExRaiseStatus((*IrpContext).ExceptionStatus);
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdExceptionFilter(
@@ -588,7 +592,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastIoCheckIfPossible(
+pub unsafe extern "system" fn CdFastIoCheckIfPossible(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
     Length: ULONG,

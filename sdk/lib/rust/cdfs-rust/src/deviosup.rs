@@ -51,7 +51,6 @@ extern "system" {
     fn CdAcquireCacheForUpdate(ctx: *mut IRP_CONTEXT);
     fn CdReleaseCache(ctx: *mut IRP_CONTEXT);
     fn KeGetCurrentIrql() -> u8;
-    fn RtlRaiseStatus(status: i32) -> !;
     fn SectorsFromLlBytes(offset: i64) -> u32;
     fn BytesFromSectors(sectors: u32) -> u32;
     fn LlBytesFromSectors(sectors: u32) -> i64;

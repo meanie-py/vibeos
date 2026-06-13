@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, ExFreePoolWithTag, FAST_MUTEX, FSRTL_ADVANC
 use crate::ddk_shims::{FsRtlInitializeOplock, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts};
 use crate::glue::{CDFS_NTC_FCB_DATA, CDFS_NTC_FCB_INDEX, CDFS_NTC_FCB_NONPAGED, CDFS_NTC_FCB_PATH_TABLE, CDFS_NTC_VCB, CDFS_RESIDUAL_REFERENCE, TAG_VPB};
 use crate::types::{RAW_DIRENT, RAW_PATH_ISO};
+use ntkrnl_sys::ddk::{PopEntryList, PIRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
 use crate::ddk_shims::{FsRtlFreeFileLock, FsRtlUninitializeOplock};
@@ -200,6 +201,94 @@ const TAG_FCB_NONPAGED: u32 = 0x6e666443; // 'nfdC'  (TAG_FCB_NONPAGED)
 
 const CdPagedPool: u32 = 1; // PagedPool
 const TAG_FCB_TABLE: u32 = 0x74666443; // 'tfdC'  (TAG_FCB_TABLE)
+
+// cdprocs.h: TAG_IRP_CONTEXT = 'cidC' = 0x63696443 (same multichar scheme as TAG_VPB).
+const TAG_IRP_CONTEXT: u32 = 0x63696443;
+// cdstruc.h IRP_CONTEXT_FLAG_FORCE_POST = 0x00000008 (types_i386.rs).
+const IRP_CONTEXT_FLAG_FORCE_POST: u32 = 0x00000008;
+// nodetype.h CDFS_NTC_IRP_CONTEXT (also in glue.rs).
+const CDFS_NTC_IRP_CONTEXT_LOCAL: u16 = crate::glue::CDFS_NTC_IRP_CONTEXT as u16;
+// iotypes.h IRP_MJ codes used by the fsdo sanity assert.
+const IRP_MJ_CREATE_LOCAL: u8 = 0x00;
+const IRP_MJ_CLOSE_LOCAL: u8 = 0x02;
+const IRP_MJ_CLEANUP_LOCAL: u8 = 0x12;
+
+// CdCreateIrpContext — translated from drivers/filesystems/cdfs/strucsup.c
+// (the grind dropped it). Allocates+initializes an IRP_CONTEXT from the Irp.
+// cdecl to match its C original (no NTAPI on the C definition); lld bridges the
+// stdcall-decorated call-site decls on i386.
+#[no_mangle]
+pub unsafe extern "C" fn CdCreateIrpContext(Irp: PIRP, Wait: BOOLEAN) -> *mut IRP_CONTEXT {
+    let mut NewIrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
+    let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
+
+    PAGED_CODE();
+
+    // The only operations a filesystem device object should receive are
+    // create/teardown of fsdo handles and non-fileobject operations (mount).
+    if (*IrpSp).DeviceObject == CdData.FileSystemDeviceObject
+        || (*IrpSp).DeviceObject == CdData.HddFileSystemDeviceObject
+    {
+        if !(*IrpSp).FileObject.is_null()
+            && (*IrpSp).MajorFunction != IRP_MJ_CREATE_LOCAL
+            && (*IrpSp).MajorFunction != IRP_MJ_CLEANUP_LOCAL
+            && (*IrpSp).MajorFunction != IRP_MJ_CLOSE_LOCAL
+        {
+            ntkrnl_sys::ddk::ExRaiseStatus(STATUS_INVALID_DEVICE_REQUEST);
+        }
+        // NT_ASSERT(...) — retail no-op.
+    }
+
+    // Look in our lookaside list for an IrpContext.
+    if CdData.IrpContextDepth != 0 {
+        CdLockCdData();
+        NewIrpContext =
+            PopEntryList(core::ptr::addr_of_mut!(CdData.IrpContextList)) as *mut IRP_CONTEXT;
+        if !NewIrpContext.is_null() {
+            CdData.IrpContextDepth -= 1;
+        }
+        CdUnlockCdData();
+    }
+
+    if NewIrpContext.is_null() {
+        // Not on the private list; allocate from pool.
+        NewIrpContext = FsRtlAllocatePoolWithTag(
+            CdNonPagedPool as u32,
+            core::mem::size_of::<IRP_CONTEXT>() as u32,
+            TAG_IRP_CONTEXT,
+        ) as *mut IRP_CONTEXT;
+    }
+
+    RtlZeroMemory(NewIrpContext as PVOID, core::mem::size_of::<IRP_CONTEXT>() as SIZE_T);
+
+    (*NewIrpContext).NodeTypeCode = CDFS_NTC_IRP_CONTEXT_LOCAL;
+    (*NewIrpContext).NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as crate::types::NODE_BYTE_SIZE;
+    (*NewIrpContext).Irp = Irp;
+
+    // Copy RealDevice for workque algorithms (updated later in Mount/Verify).
+    if !(*IrpSp).FileObject.is_null() {
+        (*NewIrpContext).RealDevice = (*(*IrpSp).FileObject).DeviceObject;
+    }
+
+    // Locate the volume device object and Vcb; skip if this is the fsdo.
+    if (*IrpSp).DeviceObject != CdData.FileSystemDeviceObject
+        && (*IrpSp).DeviceObject != CdData.HddFileSystemDeviceObject
+    {
+        (*NewIrpContext).Vcb =
+            core::ptr::addr_of_mut!((*((*IrpSp).DeviceObject as *mut VOLUME_DEVICE_OBJECT)).Vcb);
+    }
+
+    (*NewIrpContext).MajorFunction = (*IrpSp).MajorFunction;
+    (*NewIrpContext).MinorFunction = (*IrpSp).MinorFunction;
+
+    if Wait != 0 {
+        SetFlag(core::ptr::addr_of_mut!((*NewIrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+    } else {
+        SetFlag(core::ptr::addr_of_mut!((*NewIrpContext).Flags), IRP_CONTEXT_FLAG_FORCE_POST);
+    }
+
+    NewIrpContext
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn CdInitializeVcb(

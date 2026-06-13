@@ -23,6 +23,11 @@ use crate::types::{SECTOR_MASK, FCB_DATA};
 use ntkrnl_sys::ddk::ERESOURCE_THREAD;
 use ntkrnl_sys::ddk::ULONG_PTR;
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
+}
+
 extern "C" {
     static mut CdData: CD_DATA;
 }
@@ -31,7 +36,6 @@ extern "system" {
     fn CdAcquireFileSharedStarveExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, Buffer: *mut *mut c_void);

@@ -12,9 +12,13 @@ use crate::glue::{CDFS_BUG_CHECK_DEVCTRL};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CDROM_DISK_DATA};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut core::ffi::c_void, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
+}
+
 extern "system" {
     fn PAGED_CODE();
-    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut core::ffi::c_void, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
 }

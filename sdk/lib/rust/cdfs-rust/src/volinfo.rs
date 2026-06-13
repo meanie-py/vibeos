@@ -19,6 +19,11 @@ unsafe fn fcb_hdr(f: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_VOLINFO};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> u32;
+}
+
 extern "system" {
     fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
     fn PAGED_CODE();
@@ -29,7 +34,6 @@ extern "system" {
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8);
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> u32;
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 

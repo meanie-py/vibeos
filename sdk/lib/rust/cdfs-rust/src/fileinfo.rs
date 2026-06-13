@@ -37,9 +37,14 @@ unsafe fn cd_fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
     core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut FCB_INDEX
 }
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
+    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN
+}
+
 extern "system" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
-    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
@@ -47,7 +52,6 @@ extern "system" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn PAGED_CODE();
-    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
     fn FlagOn(Flags: u32, Bit: u32) -> u8;
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
@@ -354,7 +358,7 @@ pub unsafe extern "C" fn CdCommonSetInfo(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastQueryBasicInfo(
+pub unsafe extern "system" fn CdFastQueryBasicInfo(
     FileObject: PFILE_OBJECT,
     Wait: i32, // BOOLEAN
     Buffer: PFILE_BASIC_INFORMATION,
@@ -398,7 +402,7 @@ pub unsafe extern "C" fn CdFastQueryBasicInfo(
     return Result;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastQueryStdInfo(
+pub unsafe extern "system" fn CdFastQueryStdInfo(
     file_object: PFILE_OBJECT,
     wait: u8,
     buffer: PFILE_STANDARD_INFORMATION,
@@ -458,7 +462,7 @@ pub unsafe extern "C" fn CdFastQueryStdInfo(
     result
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdFastQueryNetworkInfo(
+pub unsafe extern "system" fn CdFastQueryNetworkInfo(
     FileObject: PFILE_OBJECT,
     Wait: i32,
     Buffer: PFILE_NETWORK_OPEN_INFORMATION,

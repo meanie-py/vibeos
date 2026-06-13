@@ -12,6 +12,11 @@ use crate::glue::{CDFS_BUG_CHECK_CLOSE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
+}
+
 extern "system" {
     fn PAGED_CODE();
     fn ASSERT_IRP_CONTEXT(p: PIRP_CONTEXT);
@@ -27,7 +32,6 @@ extern "system" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
     fn CdDeleteCcb(IrpContext: PIRP_CONTEXT, Ccb: PCCB);
-    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Param: i32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
     fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: i32);

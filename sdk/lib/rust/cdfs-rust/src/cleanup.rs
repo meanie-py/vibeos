@@ -12,6 +12,11 @@ use crate::glue::{CDFS_BUG_CHECK_CLEANUP, FO_CLEANUP_COMPLETE, FO_FILE_MODIFIED,
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlNotifyCleanup};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
+}
+
 extern "system" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
     fn ASSERT_IRP(Irp: PIRP);
@@ -21,7 +26,6 @@ extern "system" {
     fn CdBugCheck(Arg1: u32, Arg2: u32, Arg3: u32);
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: BOOLEAN);
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
     fn CdDecrementCleanupCounts(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
     fn CdHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: PDEVICE_OBJECT);

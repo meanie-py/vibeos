@@ -33,3 +33,15 @@ pub mod verfysup;
 pub mod volinfo;
 pub mod workque;
 pub mod write;
+
+// staticlib (libcdfs_rust.a) needs a panic handler + eh personality (no_std cohab),
+// gated off for `cargo test` where std provides them. Mirrors fs_rec-rust/disk-rust.
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}

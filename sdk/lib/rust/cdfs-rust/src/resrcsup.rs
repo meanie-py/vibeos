@@ -5,7 +5,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT, PFS_FILTER_CALLBACK_DATA, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{FCB};
+use crate::types::{FCB, IRP_CONTEXT};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_RESRCSUP};
@@ -32,8 +32,48 @@ const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u8 = 0xFF;
 const SyncTypeCreateSection: u32 = 1;
 const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x0000_012A;
 const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0000_0126;
+// CdAcquireResource — translated from drivers/filesystems/cdfs/resrcsup.c (grind
+// dropped it). The single routine used to acquire file-system resources.
+//   TYPE_OF_ACQUIRE: AcquireExclusive=0, AcquireShared=1, AcquireSharedStarveExclusive=2.
+//   IRP_CONTEXT_FLAG_WAIT = 0x00000004 (cdstruc.h).  STATUS_CANT_WAIT = 0xC00000D8.
+// Defined extern "system" to match the (@16) call-site decls on i386.
+const ACQUIRE_EXCLUSIVE: u32 = 0;
+const ACQUIRE_SHARED: u32 = 1;
+const ACQUIRE_SHARED_STARVE_EXCLUSIVE: u32 = 2;
+const IRP_CONTEXT_FLAG_WAIT_RS: u32 = 0x00000004;
 #[no_mangle]
-pub unsafe extern "C" fn CdAcquireForCache(Fcb: *mut FCB, Wait: i32) -> i32 {
+pub unsafe extern "system" fn CdAcquireResource(
+    IrpContext: *mut IRP_CONTEXT,
+    Resource: ntkrnl_sys::ddk::PERESOURCE,
+    IgnoreWait: u8,
+    Type: u32,
+) -> u8 {
+    let mut Wait: u8 = 0; // FALSE
+    PAGED_CODE();
+
+    if IgnoreWait == 0 && ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT_RS) != 0 {
+        Wait = 1; // TRUE
+    }
+
+    let Acquired: u8 = match Type {
+        ACQUIRE_EXCLUSIVE => ExAcquireResourceExclusiveLite(Resource, Wait),
+        ACQUIRE_SHARED => ExAcquireResourceSharedLite(Resource, Wait),
+        ACQUIRE_SHARED_STARVE_EXCLUSIVE => ExAcquireSharedStarveExclusive(Resource, Wait),
+        _ => {
+            NT_ASSERT(0); // NT_ASSERT(FALSE)
+            0
+        }
+    };
+
+    if Acquired == 0 && IgnoreWait == 0 {
+        crate::ddk_shims::CdRaiseStatus(IrpContext, crate::glue::STATUS_CANT_WAIT);
+    }
+
+    Acquired
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CdAcquireForCache(Fcb: *mut FCB, Wait: i32) -> i32 {
     // PAGED_CODE();
     if ExAcquireResourceSharedLite((*Fcb).__bindgen_anon_1.Header.as_ref().Resource, Wait as u8) == 0 {
         return 0;
@@ -45,7 +85,7 @@ pub unsafe extern "C" fn CdAcquireForCache(Fcb: *mut FCB, Wait: i32) -> i32 {
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdNoopAcquire(
+pub unsafe extern "system" fn CdNoopAcquire(
     Fcb: *mut core::ffi::c_void,
     Wait: u8,
 ) -> u8 {
@@ -58,9 +98,22 @@ pub unsafe extern "C" fn CdNoopAcquire(
     1
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE();
     UNREFERENCED_PARAMETER(Fcb);
+}
+
+// CdReleaseFromCache: NTAPI cache-manager release callback. The C body lived in
+// resrcsup.c (replaced by Rust); the grind dropped it. Faithful translation of
+// drivers/filesystems/cdfs/resrcsup.c CdReleaseFromCache.
+//   FSRTL_CACHE_TOP_LEVEL_IRP = (PIRP)1  (fsrtltypes.h)
+#[no_mangle]
+pub unsafe extern "system" fn CdReleaseFromCache(Fcb: *mut FCB) {
+    PAGED_CODE();
+    let fsrtl_cache_top_level_irp: *mut IRP = 1 as *mut IRP;
+    NT_ASSERT((IoGetTopLevelIrp() == fsrtl_cache_top_level_irp) as i32);
+    IoSetTopLevelIrp(core::ptr::null_mut());
+    ExReleaseResourceLite((*Fcb).__bindgen_anon_1.Header.as_ref().Resource);
 }
 
 #[no_mangle]

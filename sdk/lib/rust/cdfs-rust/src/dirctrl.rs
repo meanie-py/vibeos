@@ -12,6 +12,11 @@ use crate::ddk_shims::{FsRtlNotifyFullChangeDirectory};
 use crate::glue::{CDFS_BUG_CHECK_DIRCTRL, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, STATUS_NO_MORE_FILES};
 use crate::types::{CD_ATTRIBUTE_ASSOC, CD_ATTRIBUTE_DIRECTORY, CD_ATTRIBUTE_HIDDEN};
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> u32;
+}
+
 extern "system" {
     fn PAGED_CODE();
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN);
@@ -45,7 +50,6 @@ extern "system" {
     fn CdSetFidFromParentAndDirent(FileId: *mut i64, Fcb: *mut FCB, Dirent: *mut DIRENT);
     fn LlSectorAlign(FileSize: i64) -> i64;
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

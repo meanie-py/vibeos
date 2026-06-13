@@ -16,17 +16,21 @@ use crate::ddk_shims::{
 };
 use crate::glue::CDFS_BUG_CHECK_LOCKCTRL;
 
+// cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
+extern "C" {
+    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
+    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> TYPE_OF_OPEN;
+}
+
 extern "system" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
     fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
     fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN) -> BOOLEAN;
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
-    fn CdOplockComplete();
-    fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> TYPE_OF_OPEN;
+    fn CdOplockComplete(Context: PIRP_CONTEXT, Irp: PIRP);
     fn FsRtlFastLock(FileLock: PFILE_LOCK, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: ULONG, FailImmediately: BOOLEAN, ExclusiveLock: BOOLEAN, IoStatus: PIO_STATUS_BLOCK, DeviceObject: PDEVICE_OBJECT, Wait: BOOLEAN) -> BOOLEAN;
     fn FsRtlAreThereCurrentFileLocks(FileLock: PFILE_LOCK) -> BOOLEAN;
 }
@@ -78,7 +82,7 @@ pub unsafe extern "C" fn CdCommonLockControl(
         oplock,
         Irp,
         IrpContext as *mut c_void,
-        core::mem::transmute(CdOplockComplete as unsafe extern "system" fn()),
+        core::mem::transmute(CdOplockComplete as unsafe extern "system" fn(PIRP_CONTEXT, PIRP)),
         None, // NULL PostIrpRoutine
     );
 
