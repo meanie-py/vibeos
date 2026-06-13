@@ -26,8 +26,13 @@
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wunused-parameter"
 
-/* ---- (a) pre-include renames: FORCEINLINE functions ---- */
+/* ---- (a) pre-include renames: FORCEINLINE functions ----
+ * NOTE: symbol class is PER-ARCH. KeGetCurrentIrql is FORCEINLINE only on amd64
+ * (reads CR8); on i386/arm64 it is a real ntoskrnl import — provide nothing there.
+ */
+#if defined(_M_AMD64)
 #define KeGetCurrentIrql                __ff_inl_KeGetCurrentIrql
+#endif
 #define KeGetCurrentProcessorNumber     __ff_inl_KeGetCurrentProcessorNumber
 #define IoGetRemainingStackSize         __ff_inl_IoGetRemainingStackSize
 #define FsRtlSetupAdvancedHeader        __ff_inl_FsRtlSetupAdvancedHeader
@@ -38,9 +43,14 @@
  * (b) MACRO captures — wrap-then-undef-then-provide
  * ====================================================================== */
 
+/* KeQuerySystemTime / InterlockedPop|PushEntrySList are REAL exports on i386
+ * (KeQuerySystemTime@4 stdcall; Interlocked*@N fastcall) — providing them there
+ * duplicates the import. amd64/arm64: macros → provide. */
+#if !defined(_M_IX86)
 static VOID __cap_KeQuerySystemTime(PLARGE_INTEGER t) { KeQuerySystemTime(t); }
 #undef KeQuerySystemTime
 VOID KeQuerySystemTime(PLARGE_INTEGER CurrentTime) { __cap_KeQuerySystemTime(CurrentTime); }
+#endif
 
 static VOID __cap_KeAcquireSpinLock(PKSPIN_LOCK l, PKIRQL i) { KeAcquireSpinLock(l, i); }
 #undef KeAcquireSpinLock
@@ -50,6 +60,7 @@ static VOID __cap_KeFlushIoBuffers(PMDL m, BOOLEAN r, BOOLEAN d) { KeFlushIoBuff
 #undef KeFlushIoBuffers
 VOID KeFlushIoBuffers(PMDL Mdl, BOOLEAN ReadOperation, BOOLEAN DmaOperation) { __cap_KeFlushIoBuffers(Mdl, ReadOperation, DmaOperation); }
 
+#if !defined(_M_IX86)
 static PSLIST_ENTRY __cap_InterlockedPopEntrySList(PSLIST_HEADER h) { return InterlockedPopEntrySList(h); }
 #undef InterlockedPopEntrySList
 PSLIST_ENTRY InterlockedPopEntrySList(PSLIST_HEADER ListHead) { return __cap_InterlockedPopEntrySList(ListHead); }
@@ -57,6 +68,7 @@ PSLIST_ENTRY InterlockedPopEntrySList(PSLIST_HEADER ListHead) { return __cap_Int
 static PSLIST_ENTRY __cap_InterlockedPushEntrySList(PSLIST_HEADER h, PSLIST_ENTRY e) { return InterlockedPushEntrySList(h, e); }
 #undef InterlockedPushEntrySList
 PSLIST_ENTRY InterlockedPushEntrySList(PSLIST_HEADER ListHead, PSLIST_ENTRY ListEntry) { return __cap_InterlockedPushEntrySList(ListHead, ListEntry); }
+#endif
 
 static BOOLEAN __cap_IoIsErrorUserInduced(NTSTATUS s) { return IoIsErrorUserInduced(s); }
 #undef IoIsErrorUserInduced
@@ -74,8 +86,10 @@ BOOLEAN FsRtlIsLeadDbcsCharacter(UCHAR DbcsChar) { return __cap_FsRtlIsLeadDbcsC
  * (a) FORCEINLINE out-of-line providers — call the pre-renamed inline body
  * ====================================================================== */
 
+#if defined(_M_AMD64)
 #undef KeGetCurrentIrql
 KIRQL KeGetCurrentIrql(VOID) { return __ff_inl_KeGetCurrentIrql(); }
+#endif
 
 #undef KeGetCurrentProcessorNumber
 ULONG KeGetCurrentProcessorNumber(VOID) { return __ff_inl_KeGetCurrentProcessorNumber(); }
