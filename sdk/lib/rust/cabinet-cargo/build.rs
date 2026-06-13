@@ -37,7 +37,9 @@ fn main() {
         .c_shims(&["dll/win32/cabinet/rust_cohab_stub.c"])
         .spec2def("dll/win32/cabinet/cabinet.spec", "cabinet.dll")
         .static_libs(&[
-            "sdk/lib/3rdparty/libwine/libwine.a",
+            // libwine.a dropped — cabinet-rust's only wine surface is the
+            // TRACE/WARN/ERR/FIXME/debugstr_a debug shims, already provided
+            // header-free by rust_cohab_stub.c (c_shims above).
             "sdk/lib/3rdparty/zlib/libzlib.a",
             "sdk/lib/crt/libmsvcrtex.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",

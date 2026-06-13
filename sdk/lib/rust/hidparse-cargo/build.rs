@@ -39,7 +39,7 @@ fn main() {
     }
     linker
         .spec2def("drivers/hid/hidparse/hidparse.spec", "hidparse.sys")
-        .static_libs(&["sdk/lib/crt/libmemcmp.a"])
+        // memcmp comes from compiler-builtins-mem (build-std); libmemcmp.a dropped.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .link(ModuleKind::KernelDll {
             entry: entry.into(),

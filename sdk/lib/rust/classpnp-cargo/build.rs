@@ -34,30 +34,43 @@ fn main() {
             o => panic!("classpnp-cargo: unsupported arch {o} (i386/amd64/arm64 only)"),
         };
 
-    // C floor reused from cmake, in the cmake link-line order (C-first; the
-    // engine emits libclasspnp_rust.a after this group).
-    let mut static_libs: Vec<&str> = vec![
-        "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
-        "sdk/lib/crt/liblibcntpr.a",
-        "sdk/lib/pseh/libpseh.a",
-    ];
+    // cnt-rust-lib feature set: amd64/arm64 enable `float` (the forbid-unsafe
+    // floatcvt/scanf cabi surface); i386 omits it (no-SSE-illegal by-value f64
+    // returns stay C). Mirrors libcntpr.cmake's CNT_RUST_FEATURES + ntdll-cargo.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
+    // Remaining C floor reused from cmake (C-first link order). The libcntpr C
+    // residual (step 8) + chkstk asm stay cmake-built for now; ntoskrnl_vista
+    // (step 5) is now the cargo-native ntoskrnl-vista-rust sibling below, and
+    // pseh/cntpr_rust/memcmp are absorbed below too.
+    let mut static_libs: Vec<&str> = vec!["sdk/lib/crt/liblibcntpr.a"];
     if chkstk {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
-    static_libs.push("sdk/lib/crt/libcntpr_rust.a");
-    static_libs.push("sdk/lib/crt/libmemcmp.a");
 
     let mut linker = Linker::new(target_json)
         .rust_staticlib("classpnp-rust")
         .rust_user_target()
+        // cnt-rust-lib (libcntpr's Rust half) built as a cargo-native sibling
+        // staticlib instead of reusing cmake's libcntpr_rust.a — exactly the
+        // ntdll-cargo pattern. (The C residual liblibcntpr.a above stays until
+        // step 8.)
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // ntoskrnl_vista's classpnp-referenced subset (io/ke/po), translated to
+        // Rust — replaces the cmake-built libntoskrnl_vista.a for classpnp (the
+        // kernels keep the C lib). Matches the C .a's per-arch decoration.
+        .rust_lib("ntoskrnl-vista-rust", &[], true)
         // rust_cohab_stub.c provides the REVERSE_BYTES{,_SHORT,_QUAD} byte-swap
         // helpers + the _Analysis_assume_ SAL no-op that classpnp-rust calls as
         // C functions (header macros rustc can't emit as #[no_mangle] bodies).
-        // Header-free TU → compiled in-cargo via c_shims (was a source of the
-        // cmake classpnp MODULE; the cargo cut drops the MODULE so compile it
-        // here). Per-arch cdecl decoration matches (i386 _REVERSE_BYTES /
-        // __Analysis_assume_).
-        .c_shims(&["drivers/storage/class/classpnp/rust_cohab_stub.c"]);
+        // dummy.c provides the two _SEH2_Volatile* globals the C floor references
+        // under USE_DUMMY_PSEH (replaces libpseh.a — same as ntdll-cargo). Both
+        // header-free TUs → compiled in-cargo via c_shims. memcmp comes from
+        // compiler-builtins-mem (build-std), so libmemcmp.a is dropped too.
+        .c_shims(&[
+            "drivers/storage/class/classpnp/rust_cohab_stub.c",
+            "sdk/lib/pseh/dummy.c",
+        ]);
     if arch == "x86" {
         linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
     }

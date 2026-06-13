@@ -16,5 +16,4 @@ spec2def(hidparse.sys hidparse.spec ADD_IMPORTLIB)
 # (hidparse.rc) dropped. The user-mode hidparser_um (hid.dll) stays C. The
 # spec2def(... ADD_IMPORTLIB) above STAYS (consumers link the libhidparse implib).
 add_cargo_module(hidparse hidparse-cargo hidparse.sys KIND kerneldll
-    BODY_CRATES hidparse-rust hidparser-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS memcmp)
+    BODY_CRATES hidparse-rust hidparser-rust DESTINATION reactos/system32/drivers)

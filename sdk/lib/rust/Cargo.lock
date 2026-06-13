@@ -703,6 +703,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntoskrnl-vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ntprintf"
 version = "0.1.0"
 dependencies = [

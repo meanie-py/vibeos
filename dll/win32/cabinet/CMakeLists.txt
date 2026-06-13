@@ -15,4 +15,4 @@ spec2def(cabinet.dll cabinet.spec ADD_IMPORTLIB)
 # above STAYS (consumers link the libcabinet import lib, independent of this).
 add_cargo_module(cabinet cabinet-cargo cabinet.dll KIND win32dll
     BODY_CRATE cabinet-rust
-    EXTRA_DEPENDS wine zlib msvcrtex)
+    EXTRA_DEPENDS zlib msvcrtex)
