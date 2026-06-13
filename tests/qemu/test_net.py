@@ -1,0 +1,122 @@
+"""QEMU network tests — the smoltcp netstack check ladder.
+
+Part of the smoltcp netstack lane (docs/engineering/smoltcp-netstack-design.md).
+Deliberately SEPARATE from boot smoke: smoke proves the desktop boots, this
+proves the network stack works. Run it explicitly:
+
+    pytest tests/qemu/test_net.py -v --arch amd64-uefi-net --timeout 600
+
+The amd64-uefi-net config (vm.py:Amd64UefiNetConfig) is the real UEFI smoke
+boot plus a virtio-net-pci NIC on a slirp user netdev:
+    network 10.0.2.0/24 · gateway 10.0.2.2 · DNS 10.0.2.3 · built-in DHCP
+    host TCP echo path: 127.0.0.1:<echo_hostfwd_port> -> guest :7777
+
+Serial marker contract — emitted by the netstack-rust kernel self-test as the
+milestones land. These strings are the API between the kernel self-test and
+this harness; change them in both places or not at all.
+
+    [NETSTACK] ping gateway OK            M2: ICMP echo to 10.0.2.2 answered
+    [NETSTACK] tcp echo ready             M2: TCP echo listener up on :7777
+    [NETSTACK] dhcp lease 10.0.2.x        M3: DHCPv4 lease obtained from slirp
+    [NETSTACK] dns OK                     M3: A-record resolved via 10.0.2.3
+
+Future-milestone checks are xfail(strict=True): the suite is green today, and
+the moment the engine starts passing a check, the strict XPASS forces the
+marker's removal — an honest ratchet, never a weakened test.
+"""
+
+from __future__ import annotations
+
+import socket
+
+import pytest
+
+from tests.qemu.vm import QemuVM
+
+# Markers — keep in sync with the netstack-rust self-test (see module docstring).
+MARK_PING = "[NETSTACK] ping gateway OK"
+MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
+MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
+MARK_DNS = "[NETSTACK] dns OK"
+
+XFAIL_M2 = pytest.mark.xfail(
+    reason="netstack engine not yet implemented (smoltcp lane M2)", strict=True)
+XFAIL_M3 = pytest.mark.xfail(
+    reason="netstack DHCP/DNS not yet implemented (smoltcp lane M3)", strict=True)
+
+
+def _require_net_config(vm: QemuVM) -> None:
+    if vm.config.arch != "amd64-uefi-net":
+        pytest.skip("net tests need the net-enabled config: --arch amd64-uefi-net")
+
+
+# --------------------------------------------------------------------------- #
+# M0 gate — GREEN today: the NIC's presence must not break or stall boot.
+# --------------------------------------------------------------------------- #
+
+def test_boot_with_nic(vm: QemuVM) -> None:
+    """Boot reaches the full desktop with a virtio-net-pci NIC attached.
+
+    The vm fixture already failed the session if the boot marker never fired;
+    this asserts the full milestone chain so a NIC-induced regression (PCI
+    enumeration choking on VEN_1AF4, a driver wedging PnP, boot stalling on
+    an idle NIC) is attributed to the net config, not mistaken for flake.
+    """
+    _require_net_config(vm)
+    for milestone in vm.config.required_milestones:
+        assert milestone in vm._boot_output, (
+            f"milestone {milestone!r} missing from boot output with NIC attached"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# M2 — engine self-test: ICMP + TCP echo (no TDI, driven inside the kernel).
+# --------------------------------------------------------------------------- #
+
+@XFAIL_M2
+def test_selftest_ping_gateway(vm: QemuVM) -> None:
+    """Kernel self-test pinged the slirp gateway (10.0.2.2) and got a reply."""
+    _require_net_config(vm)
+    assert MARK_PING in vm._boot_output
+
+
+@XFAIL_M2
+def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
+    """Host connects through the hostfwd to the guest echo port; bytes bounce.
+
+    This is the first HOST-VISIBLE proof of TX+RX: frames crossed the virtqueue
+    both ways and smoltcp ran a real TCP handshake + data exchange.
+    """
+    _require_net_config(vm)
+    assert MARK_ECHO_READY in vm._boot_output, "guest never announced the echo listener"
+    payload = b"vibeos-netstack-echo-probe\n"
+    with socket.create_connection(
+        ("127.0.0.1", vm.config.echo_hostfwd_port), timeout=10.0
+    ) as s:
+        s.settimeout(10.0)
+        s.sendall(payload)
+        got = b""
+        while len(got) < len(payload):
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            got += chunk
+    assert got == payload, f"echo mismatch: sent {payload!r}, got {got!r}"
+
+
+# --------------------------------------------------------------------------- #
+# M3 — DHCPv4 lease + DNS through slirp's built-in servers.
+# --------------------------------------------------------------------------- #
+
+@XFAIL_M3
+def test_dhcp_lease(vm: QemuVM) -> None:
+    """Kernel self-test obtained a DHCPv4 lease from slirp (10.0.2.x)."""
+    _require_net_config(vm)
+    assert MARK_DHCP in vm._boot_output
+
+
+@XFAIL_M3
+def test_dns_resolve(vm: QemuVM) -> None:
+    """Kernel self-test resolved an A record via the slirp DNS forwarder."""
+    _require_net_config(vm)
+    assert MARK_DNS in vm._boot_output
