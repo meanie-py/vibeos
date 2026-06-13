@@ -1,7 +1,7 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, IO_WORKITEM_ROUTINE, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP, UserReference};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
@@ -20,7 +20,7 @@ extern "system" {
     fn CdLockCdData();
     fn CdUnlockCdData();
     fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, arg1: u8);
-    fn CdCompleteRequest( IrpContext: PIRP_CONTEXT, Status: *mut i32, StatusCode: i32, );
+    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
     fn IoQueueWorkItem( IoObject: *mut IO_WORKITEM, WorkerRoutine: unsafe extern "system" fn(PDEVICE_OBJECT, *mut core::ffi::c_void), QueueType: WORK_QUEUE_TYPE, Context: *mut core::ffi::c_void, );
     fn ASSERT_OPTIONAL_VCB(Vcb: PVCB);
@@ -43,31 +43,28 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CLOSE;
 
-// _Requires_lock_held_(_Global_critical_region_)
-#[no_mangle]
-pub unsafe extern "C" fn CdCommonClosePrivate(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Fcb: PFCB,
-    UserReference: ULONG,
-    FromFsd: BOOLEAN,
-) -> BOOLEAN;
-#[no_mangle]
-pub unsafe extern "C" fn CdQueueClose(
-    IrpContext: PIRP_CONTEXT,
-    Fcb: PFCB,
-    UserReference: ULONG,
-    DelayedClose: BOOLEAN,
-) ;
-#[no_mangle]
-pub unsafe extern "C" fn CdRemoveClose(
-    Vcb: PVCB,
-) -> PIRP_CONTEXT;
-#[no_mangle]
-pub unsafe extern "C" fn CdCloseWorker(
-    DeviceObject: PDEVICE_OBJECT,
-    Context: PVOID,
-) ;
+// Local support routines defined in close.c (cohab) — bodies not yet translated to Rust.
+// Declared extern so the in-file call sites resolve; the C cohab object provides them.
+extern "C" {
+    fn CdCommonClosePrivate(
+        IrpContext: PIRP_CONTEXT,
+        Vcb: PVCB,
+        Fcb: PFCB,
+        UserReference: ULONG,
+        FromFsd: BOOLEAN,
+    ) -> BOOLEAN;
+    fn CdQueueClose(
+        IrpContext: PIRP_CONTEXT,
+        Fcb: PFCB,
+        UserReference: ULONG,
+        DelayedClose: BOOLEAN,
+    );
+    fn CdRemoveClose(Vcb: PVCB) -> PIRP_CONTEXT;
+}
+// CdCloseWorker is NTAPI (stdcall on i386) — workitem routine.
+extern "system" {
+    fn CdCloseWorker(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
+}
 #[no_mangle]
 pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
     // Local variables
@@ -216,8 +213,8 @@ pub unsafe extern "C" fn CdCommonClose(
 ) -> NTSTATUS {
     let mut TypeOfOpen: TYPE_OF_OPEN;
     let mut Vcb: PVCB;
-    let mut Fcb: PFCB;
-    let mut Ccb: PCCB;
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
     let mut UserReference: u32 = 0;
     let mut PotentialVcbTeardown: i32 = 0; // BOOLEAN
 

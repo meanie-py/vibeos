@@ -61,7 +61,7 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_PATHSUP;
 const SECTOR_SIZE: u32 = 2048;
 
 const MAXUSHORT: u32 = 65535;
-const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC000_0032i32; // 0xC000_0032 as negative value
+const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
 #[no_mangle]
 pub unsafe extern "C" fn CdLookupPathEntry(
     irp_context: *mut IRP_CONTEXT,
@@ -322,7 +322,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryFromRawPathEntry(
     PathContext: *mut PATH_ENUM_CONTEXT,
     PathEntry: *mut PATH_ENTRY,
 ) -> u8 {
-    const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032;
+    const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
 
     PAGED_CODE();
 

@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{IRP_CONTEXT};
@@ -56,7 +56,7 @@ pub unsafe extern "system" fn CdPnpCompletionRoutine(
     let Event: PKEVENT = Contxt as PKEVENT;
     // _Analysis_assume_(Contxt != NULL);
 
-    KeSetEvent(Event, 0, 0);
+    KeSetEvent(Event as *mut c_void, 0, 0);
 
     // UNREFERENCED_PARAMETER(DeviceObject);
     // UNREFERENCED_PARAMETER(Irp);
@@ -65,7 +65,7 @@ pub unsafe extern "system" fn CdPnpCompletionRoutine(
     let _ = Irp;
     let _ = Contxt;
 
-    return 0xC0000016i32;
+    return 0xC0000016u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
 }
 
 

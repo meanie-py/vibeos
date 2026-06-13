@@ -100,7 +100,7 @@ const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 
 // Forward declarations for functions not available in our imports
 
-const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC0000098u32 as i32;
+const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32; // ntstatus.h STATUS_INVALID_USER_BUFFER (grind fabricated 0xC0000098=STATUS_FILE_INVALID)
 
 #[allow(non_camel_case_types)]
 const RAW_SECTOR_SIZE: u32 = 2352; // placeholder, must match CDFS
@@ -113,7 +113,7 @@ const CD_SEC_CACHE_CHUNKS: u32 = 16;
 const CD_SEC_CHUNK_BLOCKS: u32 = 32;
 const PASSIVE_LEVEL: u8 = 0;
 
-const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC000_0016i32;
+const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
 const CDFS_NTC_FCB_PATH_TABLE: u32 = 6;
 const CD_ATTRIBUTE_DIRECTORY: u8 = 0x02;
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
     let mut io_runs: [IO_RUN; MAX_PARALLEL_IOS] = core::mem::zeroed();
     let mut run_count: u32 = 0;
     let mut cleanup_run_count: u32 = 0;
-    let mut user_buffer: *mut core::ffi::c_void;
+    let mut user_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut user_buffer_offset: u32 = 0;
     let mut current_offset: i64 = starting_offset;
     let mut remaining_byte_count: u32 = byte_count;
@@ -717,7 +717,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
     Iosb: PIO_STATUS_BLOCK,
 ) -> i32 {
     const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000004;
-    const STATUS_VERIFY_REQUIRED: i32 = 0xC0000020;
+    const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32; // ntstatus.h STATUS_VERIFY_REQUIRED (grind fabricated 0xC0000020)
 
     let mut Status: i32;
     let Irp: PIRP;
@@ -1237,7 +1237,7 @@ pub unsafe extern "system" fn CdSyncCompletionRoutine(
     let _ = &Irp;
     let _ = &DeviceObject;
     KeSetEvent(event as *mut c_void, 0, 0);
-    return 0xC0000016; // STATUS_MORE_PROCESSING_REQUIRED
+    return 0xC0000016u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdFreeDirCache(IrpContext: *mut IRP_CONTEXT) {
@@ -1281,9 +1281,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     let mut Result: u8 = 0;
 
     // PAGED_CODE() expansion
-    if KeGetCurrentIrql() > PASSIVE_LEVEL {
-        RtlRaiseStatus(0xC0000185); // STATUS_INTERNAL_ERROR
-    }
+    PAGED_CODE(); // C source: PAGED_CODE() (DBG-only assert); grind fabricated RtlRaiseStatus(0xC0000185=STATUS_IO_DEVICE_ERROR)
 
     CdAcquireCacheForRead(IrpContext);
 
@@ -1875,7 +1873,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
         IoFreeMdl((*Irp).MdlAddress);
         IoFreeIrp(Irp);
 
-        return 0xC0000016; // STATUS_MORE_PROCESSING_REQUIRED
+        return 0xC0000016u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
     }
 }
 #[no_mangle]

@@ -170,7 +170,7 @@ const FCB_STATE_DA_FILE: u32 = 0x20;
 const FCB_STATE_INITIALIZED: u32 = 0x01;
 const FCB_STATE_IN_FCB_TABLE: u32 = 0x04;
 const CD_ATTRIBUTE_MULTI: u32 = 0x02;
-const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102;
+const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102u32 as i32;
 
 const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000001;
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x00000002;
@@ -1148,7 +1148,7 @@ pub unsafe extern "C" fn CdProcessToc(
     let mut track: *mut TRACK_DATA = core::ptr::null_mut();
 
     RtlZeroMemory(
-        &raw mut command as *mut u8,
+        &raw mut command as *mut core::ffi::c_void,
         core::mem::size_of::<CDROM_READ_TOC_EX>(),
     );
 

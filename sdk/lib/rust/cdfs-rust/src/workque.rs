@@ -1,14 +1,21 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReadAccess, IoWriteAccess, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, PIO_STACK_LOCATION, PIRP, WORK_QUEUE_TYPE};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{IRP_CONTEXT, PIRP_CONTEXT};
+use crate::types::{IRP_CONTEXT, PIRP_CONTEXT, PFCB, VOLUME_DEVICE_OBJECT, CdFspDispatch};
 use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_WORKQUE};
+use ntkrnl_sys::constants::{STATUS_PENDING, IRP_MJ_CREATE, IRP_MJ_READ, IRP_MJ_WRITE};
+use ntkrnl_sys::CONTAINING_RECORD;
+use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
+
+// Verified values (i386 bindgen):
+//   _LOCK_OPERATION_IoReadAccess = 0, _LOCK_OPERATION_IoWriteAccess = 1
+//   _WORK_QUEUE_TYPE_CriticalWorkQueue = 0
+const IoReadAccess: u32 = 0;
+const IoWriteAccess: u32 = 1;
+const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "system" {
     fn PAGED_CODE();
@@ -28,11 +35,83 @@ extern "system" {
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_WORKQUE;
 pub const FSP_PER_DEVICE_THRESHOLD: u32 = 2;
 #[no_mangle]
-pub unsafe extern "C" fn CdAddToWorkque(IrpContext: PIRP_CONTEXT, Irp: PIRP) ;
+pub unsafe extern "C" fn CdAddToWorkque(IrpContext: PIRP_CONTEXT, Irp: PIRP) {
+    let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-const IRP_MJ_DIRECTORY_CONTROL: u8 = 0x0D;
-const IRP_MN_MDL: u32 = 0x01;
-const IRP_MN_QUERY_DIRECTORY: u32 = 0x01;
+    //
+    //  Check if this request has an associated file object, and thus volume
+    //  device object.
+    //
+    if !(*IrpSp).FileObject.is_null() {
+        let Vdo: *mut VOLUME_DEVICE_OBJECT = CONTAINING_RECORD!(
+            (*IrpSp).DeviceObject,
+            VOLUME_DEVICE_OBJECT,
+            DeviceObject
+        );
+
+        //
+        //  Check to see if this request should be sent to the overflow
+        //  queue.  If not, then send it off to an exworker thread.
+        //
+        let mut SavedIrql: KIRQL = 0;
+        KeAcquireSpinLock(
+            core::ptr::addr_of_mut!((*Vdo).OverflowQueueSpinLock) as PKSPIN_LOCK,
+            core::ptr::addr_of_mut!(SavedIrql),
+        );
+
+        if (*Vdo).PostedRequestCount > FSP_PER_DEVICE_THRESHOLD as LONG {
+            //
+            //  We cannot currently respond to this IRP so we'll just enqueue it
+            //  to the overflow queue on the volume.
+            //
+            InsertTailList(
+                core::ptr::addr_of_mut!((*Vdo).OverflowQueue),
+                core::ptr::addr_of_mut!((*IrpContext).WorkQueueItem.List),
+            );
+
+            (*Vdo).OverflowQueueCount += 1;
+
+            KeReleaseSpinLock(
+                core::ptr::addr_of_mut!((*Vdo).OverflowQueueSpinLock) as PKSPIN_LOCK,
+                SavedIrql,
+            );
+
+            return;
+        } else {
+            //
+            //  We are going to send this Irp to an ex worker thread so up
+            //  the count.
+            //
+            (*Vdo).PostedRequestCount += 1;
+
+            KeReleaseSpinLock(
+                core::ptr::addr_of_mut!((*Vdo).OverflowQueueSpinLock) as PKSPIN_LOCK,
+                SavedIrql,
+            );
+        }
+    }
+
+    //
+    //  Send it off.....
+    //
+    ExInitializeWorkItem(
+        core::ptr::addr_of_mut!((*IrpContext).WorkQueueItem),
+        Some(CdFspDispatch),
+        IrpContext as PVOID,
+    );
+
+    ExQueueWorkItem(
+        core::ptr::addr_of_mut!((*IrpContext).WorkQueueItem),
+        CriticalWorkQueue,
+    );
+
+    return;
+}
+
+// Verified vs headers: IRP_MJ_DIRECTORY_CONTROL=12, IRP_MN_MDL=2, IRP_MN_QUERY_DIRECTORY=1
+const IRP_MJ_DIRECTORY_CONTROL: u8 = 12;
+const IRP_MN_MDL: u32 = 2;
+const IRP_MN_QUERY_DIRECTORY: u32 = 1;
 const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000001;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
@@ -64,28 +143,29 @@ pub unsafe extern "system" fn CdPrePostIrp(
 
     match (*IrpContext).MajorFunction {
         IRP_MJ_CREATE => {
-            if ((*IrpContext).TeardownFcb as usize != 0)
-                && (*(*IrpContext).TeardownFcb as *mut core::ffi::c_void as usize != 0)
+            if (!(*IrpContext).__bindgen_anon_1.TeardownFcb.is_null())
+                && (!(*(*IrpContext).__bindgen_anon_1.TeardownFcb).is_null())
             {
                 CdTeardownStructures(
                     IrpContext,
-                    *(*IrpContext).TeardownFcb as *mut core::ffi::c_void,
+                    *(*IrpContext).__bindgen_anon_1.TeardownFcb as *mut core::ffi::c_void,
                     core::ptr::addr_of_mut!(RemovedFcb),
                 );
                 if RemovedFcb == 0 {
-                    let lock = (*(*(*IrpContext).TeardownFcb)).FcbNonpaged.FcbResource;
+                    let fcb: PFCB = *(*IrpContext).__bindgen_anon_1.TeardownFcb;
+                    let lock = core::ptr::addr_of_mut!((*(*fcb).FcbNonpaged).FcbResource);
                     _Analysis_assume_lock_held_(lock as *mut core::ffi::c_void);
                     CdReleaseFcb(
                         IrpContext,
-                        *(*IrpContext).TeardownFcb as *mut core::ffi::c_void,
+                        fcb as *mut core::ffi::c_void,
                     );
                 }
-                *(*IrpContext).TeardownFcb = core::ptr::null_mut();
-                (*IrpContext).TeardownFcb = core::ptr::null_mut();
+                *(*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
+                (*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
             }
         }
         IRP_MJ_READ => {
-            if FlagOn((*IrpContext).MinorFunction, IRP_MN_MDL) == 0 {
+            if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
                 CdLockUserBuffer(
                     IrpContext,
                     (*IrpSp).Parameters.Read.Length,
@@ -94,7 +174,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
             }
         }
         IRP_MJ_WRITE => {
-            if FlagOn((*IrpContext).MinorFunction, IRP_MN_MDL) == 0 {
+            if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
                 CdLockUserBuffer(
                     IrpContext,
                     (*IrpSp).Parameters.Read.Length,
@@ -103,7 +183,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
             }
         }
         IRP_MJ_DIRECTORY_CONTROL => {
-            if (*IrpContext).MinorFunction == IRP_MN_QUERY_DIRECTORY {
+            if (*IrpContext).MinorFunction as u32 == IRP_MN_QUERY_DIRECTORY {
                 CdLockUserBuffer(
                     IrpContext,
                     (*IrpSp).Parameters.QueryDirectory.Length,
@@ -137,21 +217,21 @@ pub unsafe extern "system" fn CdOplockComplete(
     if (*Irp).IoStatus.__bindgen_anon_1.Status == STATUS_SUCCESS {
         match (*IrpContext).MajorFunction {
             IRP_MJ_CREATE => {
-                if !(*IrpContext).TeardownFcb.is_null() {
+                if !(*IrpContext).__bindgen_anon_1.TeardownFcb.is_null() {
                     CdTeardownStructures(
                         IrpContext,
-                        *((*IrpContext).TeardownFcb) as *mut core::ffi::c_void,
+                        *((*IrpContext).__bindgen_anon_1.TeardownFcb) as *mut core::ffi::c_void,
                         core::ptr::addr_of_mut!(RemovedFcb),
                     );
                     if RemovedFcb == 0 {
-                        let fcb = *((*IrpContext).TeardownFcb);
+                        let fcb = *((*IrpContext).__bindgen_anon_1.TeardownFcb);
                         let fcb_nonpaged = (*fcb).FcbNonpaged;
-                        let resource = (*fcb_nonpaged).FcbResource;
+                        let resource = core::ptr::addr_of_mut!((*fcb_nonpaged).FcbResource);
                         _Analysis_assume_lock_held_(resource as *mut core::ffi::c_void);
                         CdReleaseFcb(IrpContext, fcb as *mut core::ffi::c_void);
                     }
-                    *((*IrpContext).TeardownFcb) = core::ptr::null_mut();
-                    (*IrpContext).TeardownFcb = core::ptr::null_mut();
+                    *((*IrpContext).__bindgen_anon_1.TeardownFcb) = core::ptr::null_mut();
+                    (*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
                 }
             }
             _ => {}

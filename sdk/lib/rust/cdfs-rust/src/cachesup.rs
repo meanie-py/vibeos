@@ -1,18 +1,62 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
-use ntkrnl_sys::ob::*;
-use ntkrnl_sys::ddk::{CcMdlReadComplete, CcUninitializeCacheMap, IoGetCurrentIrpStackLocation, MmFlushForWrite, MmFlushImageSection, PCC_FILE_SIZES, PFILE_OBJECT, PIRP, PLARGE_INTEGER, PUNICODE_STRING};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{CcMdlReadComplete, CcUninitializeCacheMap, IoGetCurrentIrpStackLocation, MmFlushImageSection, _MMFLUSH_TYPE_MmFlushForWrite, PFILE_OBJECT, PIRP, FSRTL_ADVANCED_FCB_HEADER, RtlTimeFieldsToTime, TIME_FIELDS};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_STATE_INITIALIZED, IRP_CONTEXT, PIRP_CONTEXT, VCB, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen};
-use ntkrnl_sys::ddk::{FILE_OBJECT, _UNICODE_STRING};
+use crate::types::{DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_INDEX, FCB_STATE_INITIALIZED, IRP_CONTEXT, PIRP_CONTEXT, VCB, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen};
+use ntkrnl_sys::ddk::{FILE_OBJECT, LARGE_INTEGER, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FILE_ATTRIBUTE_HIDDEN, STATUS_FILE_CORRUPT_ERROR};
 use crate::types::{CD_ATTRIBUTE_HIDDEN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData, CdUnicodeSelfArray};
+use crate::ddk_shims::Add2Ptr;
+
+// Verified vs sdk/include/psdk/ntstatus.h: STATUS_UNABLE_TO_DELETE_SECTION 0xC000001B
+const STATUS_UNABLE_TO_DELETE_SECTION: NTSTATUS = 0xC000001B_u32 as i32;
+// Verified vs drivers/filesystems/cdfs/cd.h: CD_BASE_YEAR (1900), VCB_STATE_HSG (0x1)
+const CD_BASE_YEAR: i32 = 1900;
+const VCB_STATE_HSG: u32 = 0x00000001;
+// Verified vs drivers/filesystems/cdfs/cd.h: GMT_OFFSET_TO_NT ((LONGLONG)15*60*1000*1000*10)
+const GMT_OFFSET_TO_NT: i64 = 15 * 60 * 1000 * 1000 * 10;
+
+/// Helper accessor: FSRTL header is the unnamed FSRTL_ADVANCED_FCB_HEADER union member (anon_1).
+#[inline]
+unsafe fn fcb_header(Fcb: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_1).cast::<FSRTL_ADVANCED_FCB_HEADER>()
+}
+
+/// Helper accessor: FCB_INDEX is the unnamed union member (anon_2) for index/path-table Fcbs.
+#[inline]
+unsafe fn fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2).cast::<FCB_INDEX>()
+}
+
+/// Inlined from drivers/filesystems/cdfs/cd.h: CdConvertCdTimeToNtTime(IC,CD,NT) fn-macro.
+#[inline]
+unsafe fn CdConvertCdTimeToNtTime(
+    IrpContext: *mut IRP_CONTEXT,
+    CdTime: *mut i8,
+    NtTime: *mut LARGE_INTEGER,
+) {
+    let cd = CdTime as *mut core::ffi::c_void;
+    let mut TimeField: TIME_FIELDS = core::mem::zeroed();
+    TimeField.Year = (*(cd as *const i8) as i32 + CD_BASE_YEAR) as i16;
+    TimeField.Month = *(Add2Ptr(cd, 1) as *const i8) as i16;
+    TimeField.Day = *(Add2Ptr(cd, 2) as *const i8) as i16;
+    TimeField.Hour = *(Add2Ptr(cd, 3) as *const i8) as i16;
+    TimeField.Minute = *(Add2Ptr(cd, 4) as *const i8) as i16;
+    TimeField.Second = *(Add2Ptr(cd, 5) as *const i8) as i16;
+    TimeField.Milliseconds = 0;
+    RtlTimeFieldsToTime(&mut TimeField, NtTime);
+    let GmtOffset: i8 = *(Add2Ptr(cd, 6) as *const i8);
+    if FlagOn((*(*IrpContext).Vcb).VcbState, VCB_STATE_HSG) == 0
+        && GmtOffset != 0
+        && GmtOffset >= -48
+        && GmtOffset <= 52
+    {
+        (*NtTime).QuadPart += -(GmtOffset as i64) * GMT_OFFSET_TO_NT;
+    }
+}
 
 extern "system" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
@@ -37,8 +81,7 @@ extern "system" {
     fn CdTruncateAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Flags: u32, );
     fn CdAddInitialAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, Length: u32, );
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn CdConvertCdTimeToNtTime( IrpContext: *mut IRP_CONTEXT, CdTime: u32, NtTime: *mut LARGE_INTEGER, );
-    fn CcPurgeCacheSection( SegmentObject: *mut core::ffi::c_void, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN, );
+    fn CcPurgeCacheSection( SegmentObject: *mut core::ffi::c_void, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN, ) -> BOOLEAN;
     fn CdCleanupDirContext( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, );
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
     fn CdDecrementReferenceCounts( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Count: u32, Flags: u32, );
@@ -81,7 +124,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
 
     CdLockFcb(IrpContext, Fcb);
 
-    if !(*Fcb).FileObject.is_null() {
+    if !(*fcb_index(Fcb)).FileObject.is_null() {
         CdUnlockFcb(IrpContext, Fcb);
         return;
     }
@@ -93,7 +136,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
         loop {
             StreamFile = IoCreateStreamFileObjectLite(
                 core::ptr::null_mut(),
-                (*(*Vcb).Vpb).RealDevice,
+                (*(*Vcb).Vpb).RealDevice as *mut core::ffi::c_void,
             );
             if StreamFile.is_null() {
                 raise_status = STATUS_INSUFFICIENT_RESOURCES;
@@ -124,13 +167,13 @@ pub unsafe extern "C" fn CdCreateInternalStream(
 
             CcInitializeCacheMap(
                 StreamFile,
-                &mut (*Fcb).AllocationSize as *mut _ as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
                 1,
                 core::ptr::addr_of_mut!(CdData.CacheManagerCallbacks) as *mut core::ffi::c_void,
                 Fcb as *mut core::ffi::c_void,
             );
 
-            (*Fcb).FileObject = StreamFile;
+            (*fcb_index(Fcb)).FileObject = StreamFile;
             StreamFile = core::ptr::null_mut();
 
             if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
@@ -143,7 +186,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                 CdLookupDirent(
                     IrpContext,
                     Fcb,
-                    (*Fcb).StreamOffset,
+                    (*fcb_index(Fcb)).StreamOffset as i64,
                     &mut DirContext,
                 );
 
@@ -165,7 +208,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
 
                 NewDataLength = BlockAlign(
                     Vcb,
-                    Dirent.DataLength + (*Fcb).StreamOffset,
+                    Dirent.DataLength + (*fcb_index(Fcb)).StreamOffset,
                 );
 
                 if NewDataLength == 0 {
@@ -173,35 +216,35 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                     break;
                 }
 
-                if NewDataLength as i64 != (*Fcb).FileSize.QuadPart {
-                    (*Fcb).AllocationSize.QuadPart = NewDataLength as i64;
-                    (*Fcb).FileSize.QuadPart = NewDataLength as i64;
-                    (*Fcb).ValidDataLength.QuadPart = NewDataLength as i64;
+                if NewDataLength as i64 != (*fcb_header(Fcb)).FileSize.QuadPart {
+                    (*fcb_header(Fcb)).AllocationSize.QuadPart = NewDataLength as i64;
+                    (*fcb_header(Fcb)).FileSize.QuadPart = NewDataLength as i64;
+                    (*fcb_header(Fcb)).ValidDataLength.QuadPart = NewDataLength as i64;
 
                     CcSetFileSizes(
-                        (*Fcb).FileObject,
-                        &mut (*Fcb).AllocationSize as *mut _ as *mut core::ffi::c_void,
+                        (*fcb_index(Fcb)).FileObject,
+                        core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
                     );
 
                     CdTruncateAllocation(IrpContext, Fcb, 0);
                     CdAddInitialAllocation(
                         IrpContext,
                         Fcb,
-                        Dirent.StartingOffset,
+                        Dirent.StartingOffset as i64,
                         NewDataLength,
                     );
 
                     UpdateFcbSizes = 1;
                 }
 
-                if FlagOn(Dirent.DirentFlags, CD_ATTRIBUTE_HIDDEN) != 0 {
+                if FlagOn(Dirent.DirentFlags as u32, CD_ATTRIBUTE_HIDDEN) != 0 {
                     SetFlag(&mut (*Fcb).FileAttributes, FILE_ATTRIBUTE_HIDDEN);
                 }
 
                 CdConvertCdTimeToNtTime(
                     IrpContext,
                     Dirent.CdTime,
-                    &mut (*Fcb).CreationTime as *mut LARGE_INTEGER,
+                    core::ptr::addr_of_mut!((*Fcb).CreationTime) as *mut LARGE_INTEGER,
                 );
 
                 SetFlag(&mut (*Fcb).FcbState, FCB_STATE_INITIALIZED);
@@ -237,7 +280,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
         (*StreamFile).FileName.Length = 0;
 
         ObDereferenceObject(StreamFile as *mut core::ffi::c_void);
-        (*Fcb).FileObject = core::ptr::null_mut();
+        (*fcb_index(Fcb)).FileObject = core::ptr::null_mut();
     }
 
     if DecrementReference != 0 {
@@ -269,8 +312,8 @@ pub unsafe extern "C" fn CdDeleteInternalStream(
     CdLockFcb(IrpContext, Fcb);
 
     let mut FileObject: *mut FILE_OBJECT;
-    FileObject = (*Fcb).FileObject;
-    (*Fcb).FileObject = core::ptr::null_mut();
+    FileObject = (*fcb_index(Fcb)).FileObject;
+    (*fcb_index(Fcb)).FileObject = core::ptr::null_mut();
 
     CdUnlockFcb(IrpContext, Fcb);
 
@@ -283,7 +326,7 @@ pub unsafe extern "C" fn CdDeleteInternalStream(
         (*FileObject).FileName.MaximumLength = 0;
         (*FileObject).FileName.Length = 0;
 
-        ObDereferenceObject(FileObject);
+        ObDereferenceObject(FileObject as *mut core::ffi::c_void);
     }
 }
 #[no_mangle]
@@ -345,24 +388,24 @@ pub unsafe extern "C" fn CdPurgeVolume(
 
             let segment_ptr = core::ptr::addr_of_mut!((*(*ThisFcb).FcbNonpaged).SegmentObject);
             if !(*(*ThisFcb).FcbNonpaged).SegmentObject.ImageSectionObject.is_null() {
-                MmFlushImageSection(segment_ptr, MmFlushForWrite);
+                MmFlushImageSection(segment_ptr, _MMFLUSH_TYPE_MmFlushForWrite);
             }
 
             if !(*(*ThisFcb).FcbNonpaged).SegmentObject.DataSectionObject.is_null()
                 && CcPurgeCacheSection(
-                    segment_ptr,
+                    segment_ptr as *mut core::ffi::c_void,
                     core::ptr::null_mut(),
                     0,
                     0, // FALSE
                 ) == 0
                 && Status == ntkrnl_sys::base::STATUS_SUCCESS
             {
-                Status = ntkrnl_sys::constants::STATUS_UNABLE_TO_DELETE_SECTION;
+                Status = STATUS_UNABLE_TO_DELETE_SECTION;
             }
 
             if DismountUnderway != 0
                 && SafeNodeType(ThisFcb) != CDFS_NTC_FCB_DATA
-                && !(*ThisFcb).FileObject.is_null()
+                && !(*fcb_index(ThisFcb)).FileObject.is_null()
             {
                 CdDeleteInternalStream(IrpContext, ThisFcb);
             }
@@ -376,14 +419,14 @@ pub unsafe extern "C" fn CdPurgeVolume(
                 let segment_ptr = core::ptr::addr_of_mut!((*(*ThisFcb).FcbNonpaged).SegmentObject);
                 if !(*(*ThisFcb).FcbNonpaged).SegmentObject.DataSectionObject.is_null()
                     && CcPurgeCacheSection(
-                        segment_ptr,
+                        segment_ptr as *mut core::ffi::c_void,
                         core::ptr::null_mut(),
                         0,
                         0,
                     ) == 0
                     && Status == ntkrnl_sys::base::STATUS_SUCCESS
                 {
-                    Status = ntkrnl_sys::constants::STATUS_UNABLE_TO_DELETE_SECTION;
+                    Status = STATUS_UNABLE_TO_DELETE_SECTION;
                 }
 
                 CdDeleteInternalStream(IrpContext, ThisFcb);
@@ -403,14 +446,14 @@ pub unsafe extern "C" fn CdPurgeVolume(
                 let segment_ptr = core::ptr::addr_of_mut!((*(*ThisFcb).FcbNonpaged).SegmentObject);
                 if !(*(*ThisFcb).FcbNonpaged).SegmentObject.DataSectionObject.is_null()
                     && CcPurgeCacheSection(
-                        segment_ptr,
+                        segment_ptr as *mut core::ffi::c_void,
                         core::ptr::null_mut(),
                         0,
                         0,
                     ) == 0
                     && Status == ntkrnl_sys::base::STATUS_SUCCESS
                 {
-                    Status = ntkrnl_sys::constants::STATUS_UNABLE_TO_DELETE_SECTION;
+                    Status = STATUS_UNABLE_TO_DELETE_SECTION;
                 }
 
                 InterlockedDecrement(core::ptr::addr_of_mut!((*ThisFcb).FcbReference) as *mut i32);

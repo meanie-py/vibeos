@@ -5,7 +5,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DRIVER_INITIALIZE, DRIVER_UNLOAD, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, MmQuerySystemSize, PDEVICE_OBJECT, PDRIVER_DISPATCH, PDRIVER_OBJECT, PUNICODE_STRING, PopEntryList, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, MmQuerySystemSize, PDEVICE_OBJECT, PDRIVER_OBJECT, PUNICODE_STRING, PopEntryList, RtlInitUnicodeString};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CD_DATA, CdFilterCallbackAcquireForCreateSection, CdFsdDispatch, IRP_CONTEXT};
@@ -15,27 +15,22 @@ use crate::ddk_shims::{FsRtlRegisterFileSystemFilterCallbacks};
 use crate::glue::{CDFS_BUG_CHECK_CDINIT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData, CdFastIoDispatch};
+// NTAPI (stdcall on i386) fast-io / cache callbacks declared in the driver-private
+// substrate (types_<arch>.rs) with their real signatures.
+use crate::types::{
+    CdFastIoCheckIfPossible, CdFastQueryBasicInfo, CdFastQueryStdInfo, CdFastLock,
+    CdFastUnlockSingle, CdFastUnlockAll, CdFastUnlockAllByKey, CdReleaseForCreateSection,
+    CdFastQueryNetworkInfo, CdAcquireForCache, CdReleaseFromCache, CdNoopAcquire, CdNoopRelease,
+};
+use crate::ddk_shims::{
+    FsRtlCopyRead, FsRtlMdlReadDev, FsRtlMdlReadCompleteDev, FsRtlPrepareMdlWriteDev,
+    FsRtlMdlWriteCompleteDev,
+};
 
 extern "system" {
+    // cdfs-internal _CdFreePool (static INLINE in C); cdfs-private helper, not NTAPI table.
     fn CdFreePool(IrpContext: *mut *mut IRP_CONTEXT);
-    fn CdFastIoCheckIfPossible();
-    fn FsRtlCopyRead();
-    fn CdFastQueryBasicInfo();
-    fn CdFastQueryStdInfo();
-    fn CdFastLock();
-    fn CdFastUnlockSingle();
-    fn CdFastUnlockAll();
-    fn CdFastUnlockAllByKey();
-    fn CdReleaseForCreateSection();
-    fn CdFastQueryNetworkInfo();
-    fn FsRtlMdlReadDev();
-    fn FsRtlMdlReadCompleteDev();
-    fn FsRtlPrepareMdlWriteDev();
-    fn FsRtlMdlWriteCompleteDev();
-    fn CdAcquireForCache();
-    fn CdReleaseFromCache();
-    fn CdNoopAcquire();
-    fn CdNoopRelease();
+    #[cfg(feature = "CDFS_TELEMETRY_DATA")]
     fn CdInitializeTelemetry();
 }
 
@@ -59,11 +54,11 @@ pub unsafe extern "C" fn DriverEntry(
     let _ = RegistryPath;
 
     let mut Status: NTSTATUS;
-    let mut UnicodeString: _UNICODE_STRING;
-    let mut CdfsFileSystemDeviceObject: PDEVICE_OBJECT;
+    let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
+    let mut CdfsFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     #[cfg(feature = "__REACTOS__")]
-    let mut HddFileSystemDeviceObject: PDEVICE_OBJECT;
-    let mut FilterCallbacks: FS_FILTER_CALLBACKS;
+    let mut HddFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut FilterCallbacks: FS_FILTER_CALLBACKS = core::mem::zeroed();
 
     // Create the device object.
     RtlInitUnicodeString(&mut UnicodeString, b"\\Cdfs\0".as_ptr() as *const u16);
@@ -71,7 +66,7 @@ pub unsafe extern "C" fn DriverEntry(
     Status = IoCreateDevice(
         DriverObject,
         0,
-        &UnicodeString,
+        &mut UnicodeString,
         FILE_DEVICE_CD_ROM_FILE_SYSTEM,
         0,
         0, // FALSE
@@ -90,7 +85,7 @@ pub unsafe extern "C" fn DriverEntry(
         Status = IoCreateDevice(
             DriverObject,
             0,
-            &UnicodeString,
+            &mut UnicodeString,
             FILE_DEVICE_DISK_FILE_SYSTEM,
             0,
             0, // FALSE
@@ -103,7 +98,10 @@ pub unsafe extern "C" fn DriverEntry(
         }
     }
 
-    (*DriverObject).DriverUnload = Some(CdUnload);
+    // CdUnload is extern "system" (NTAPI); the bindgen DriverUnload field is the
+    // distinct extern "stdcall" fn-ptr type (same ABI on i386). Transmute, matching
+    // the dispatch/fast-io table assignments above.
+    (*DriverObject).DriverUnload = Some(core::mem::transmute(CdUnload as *const ()));
 
     // Initialize dispatch table.
     (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(
@@ -153,7 +151,7 @@ pub unsafe extern "C" fn DriverEntry(
 
     // Initialize the filter callbacks we use.
     RtlZeroMemory(
-        &mut FilterCallbacks as *mut FS_FILTER_CALLBACKS as *mut u8,
+        &mut FilterCallbacks as *mut FS_FILTER_CALLBACKS as *mut c_void,
         core::mem::size_of::<FS_FILTER_CALLBACKS>(),
     );
 
@@ -196,12 +194,12 @@ pub unsafe extern "C" fn DriverEntry(
     }
 
     IoRegisterFileSystem(CdfsFileSystemDeviceObject);
-    ObReferenceObject(CdfsFileSystemDeviceObject);
+    ObReferenceObject(CdfsFileSystemDeviceObject as *mut c_void);
 
     #[cfg(feature = "__REACTOS__")]
     {
         IoRegisterFileSystem(HddFileSystemDeviceObject);
-        ObReferenceObject(HddFileSystemDeviceObject);
+        ObReferenceObject(HddFileSystemDeviceObject as *mut c_void);
     }
 
     #[cfg(feature = "CDFS_TELEMETRY_DATA")]
@@ -210,7 +208,7 @@ pub unsafe extern "C" fn DriverEntry(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdUnload(DriverObject: *mut DRIVER_OBJECT) {
+pub unsafe extern "system" fn CdUnload(DriverObject: *mut DRIVER_OBJECT) {
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER(DriverObject)
     let _ = DriverObject;
@@ -246,28 +244,31 @@ pub unsafe extern "C" fn CdInitializeGlobalData(
     );
     CdFastIoDispatch.SizeOfFastIoDispatch = core::mem::size_of::<FAST_IO_DISPATCH>() as u32;
 
-    CdFastIoDispatch.FastIoCheckIfPossible = CdFastIoCheckIfPossible as _;
-    CdFastIoDispatch.FastIoRead = FsRtlCopyRead as _;
-    CdFastIoDispatch.FastIoQueryBasicInfo = CdFastQueryBasicInfo as _;
-    CdFastIoDispatch.FastIoQueryStandardInfo = CdFastQueryStdInfo as _;
-    CdFastIoDispatch.FastIoLock = CdFastLock as _;
-    CdFastIoDispatch.FastIoUnlockSingle = CdFastUnlockSingle as _;
-    CdFastIoDispatch.FastIoUnlockAll = CdFastUnlockAll as _;
-    CdFastIoDispatch.FastIoUnlockAllByKey = CdFastUnlockAllByKey as _;
-    CdFastIoDispatch.AcquireFileForNtCreateSection = core::ptr::null_mut() as _;
-    CdFastIoDispatch.ReleaseFileForNtCreateSection = CdReleaseForCreateSection as _;
-    CdFastIoDispatch.FastIoQueryNetworkOpenInfo = CdFastQueryNetworkInfo as _;
-    CdFastIoDispatch.MdlRead = FsRtlMdlReadDev as _;
-    CdFastIoDispatch.MdlReadComplete = FsRtlMdlReadCompleteDev as _;
-    CdFastIoDispatch.PrepareMdlWrite = FsRtlPrepareMdlWriteDev as _;
-    CdFastIoDispatch.MdlWriteComplete = FsRtlMdlWriteCompleteDev as _;
+    // NTAPI (stdcall on i386) callbacks: the substrate fn-item types use the cdfs-private
+    // signatures; transmute each fn item to the bindgen Option<extern "stdcall" fn> field
+    // alias. Same calling convention + pointer layout, so this is ABI-correct.
+    CdFastIoDispatch.FastIoCheckIfPossible = Some(core::mem::transmute(CdFastIoCheckIfPossible as *const ()));
+    CdFastIoDispatch.FastIoRead = Some(core::mem::transmute(FsRtlCopyRead as *const ()));
+    CdFastIoDispatch.FastIoQueryBasicInfo = Some(core::mem::transmute(CdFastQueryBasicInfo as *const ()));
+    CdFastIoDispatch.FastIoQueryStandardInfo = Some(core::mem::transmute(CdFastQueryStdInfo as *const ()));
+    CdFastIoDispatch.FastIoLock = Some(core::mem::transmute(CdFastLock as *const ()));
+    CdFastIoDispatch.FastIoUnlockSingle = Some(core::mem::transmute(CdFastUnlockSingle as *const ()));
+    CdFastIoDispatch.FastIoUnlockAll = Some(core::mem::transmute(CdFastUnlockAll as *const ()));
+    CdFastIoDispatch.FastIoUnlockAllByKey = Some(core::mem::transmute(CdFastUnlockAllByKey as *const ()));
+    CdFastIoDispatch.AcquireFileForNtCreateSection = None;
+    CdFastIoDispatch.ReleaseFileForNtCreateSection = Some(core::mem::transmute(CdReleaseForCreateSection as *const ()));
+    CdFastIoDispatch.FastIoQueryNetworkOpenInfo = Some(core::mem::transmute(CdFastQueryNetworkInfo as *const ()));
+    CdFastIoDispatch.MdlRead = Some(core::mem::transmute(FsRtlMdlReadDev as *const ()));
+    CdFastIoDispatch.MdlReadComplete = Some(core::mem::transmute(FsRtlMdlReadCompleteDev as *const ()));
+    CdFastIoDispatch.PrepareMdlWrite = Some(core::mem::transmute(FsRtlPrepareMdlWriteDev as *const ()));
+    CdFastIoDispatch.MdlWriteComplete = Some(core::mem::transmute(FsRtlMdlWriteCompleteDev as *const ()));
 
     RtlZeroMemory(
         core::ptr::addr_of_mut!(CdData).cast(),
         core::mem::size_of::<CD_DATA>(),
     );
-    CdData.NodeTypeCode = 0x2603i16; // CDFS_NTC_DATA_HEADER
-    CdData.NodeByteSize = core::mem::size_of::<CD_DATA>() as u32;
+    CdData.NodeTypeCode = 0x2603u16; // CDFS_NTC_DATA_HEADER (NODE_TYPE_CODE = USHORT)
+    CdData.NodeByteSize = core::mem::size_of::<CD_DATA>() as i16; // NODE_BYTE_SIZE = CSHORT
     CdData.DriverObject = DriverObject;
     CdData.FileSystemDeviceObject = FileSystemDeviceObject;
     #[cfg(feature = "reactos")]
@@ -286,10 +287,14 @@ pub unsafe extern "C" fn CdInitializeGlobalData(
     CdData.CacheManagerCallbacks.ReleaseFromReadAhead =
         core::mem::transmute::<*mut core::ffi::c_void, _>(CdReleaseFromCache as *mut core::ffi::c_void);
 
-    CdData.CacheManagerVolumeCallbacks.AcquireForLazyWrite = CdNoopAcquire;
-    CdData.CacheManagerVolumeCallbacks.ReleaseFromLazyWrite = CdNoopRelease;
-    CdData.CacheManagerVolumeCallbacks.AcquireForReadAhead = CdNoopAcquire;
-    CdData.CacheManagerVolumeCallbacks.ReleaseFromReadAhead = CdNoopRelease;
+    CdData.CacheManagerVolumeCallbacks.AcquireForLazyWrite =
+        Some(core::mem::transmute(CdNoopAcquire as *const ()));
+    CdData.CacheManagerVolumeCallbacks.ReleaseFromLazyWrite =
+        Some(core::mem::transmute(CdNoopRelease as *const ()));
+    CdData.CacheManagerVolumeCallbacks.AcquireForReadAhead =
+        Some(core::mem::transmute(CdNoopAcquire as *const ()));
+    CdData.CacheManagerVolumeCallbacks.ReleaseFromReadAhead =
+        Some(core::mem::transmute(CdNoopRelease as *const ()));
 
     ExInitializeFastMutex(core::ptr::addr_of_mut!(CdData.CdDataMutex));
     InitializeListHead(core::ptr::addr_of_mut!(CdData.AsyncCloseQueue));

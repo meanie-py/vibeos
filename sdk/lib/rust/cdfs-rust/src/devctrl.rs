@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, PIO_COMPLETION_ROUTINE, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, VCB};
@@ -28,8 +28,8 @@ pub unsafe extern "C" fn CdCommonDevControl(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
     let TypeOfOpen: TYPE_OF_OPEN;
-    let Fcb: *mut FCB;
-    let Ccb: *mut CCB;
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
 
     let IrpSp: PIO_STACK_LOCATION;
     let NextIrpSp: PIO_STACK_LOCATION;
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
 
     TypeOfOpen = CdDecodeFileObject(
         IrpContext,
-        (*IrpSp).FileObject,
+        (*IrpSp).FileObject as *mut core::ffi::c_void,
         &mut Fcb,
         &mut Ccb,
     );
@@ -55,12 +55,12 @@ pub unsafe extern "C" fn CdCommonDevControl(
     } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == 0x00024040 { // IOCTL_CDROM_DISK_TYPE
         CdVerifyVcb(IrpContext, (*Fcb).Vcb);
 
-        if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<CDROM_DISK_DATA>() {
+        if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<CDROM_DISK_DATA>() as u32 {
             CdCompleteRequest(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
-        (*(*Irp).AssociatedIrp.SystemBuffer as *mut CDROM_DISK_DATA).DiskData = (*(*Fcb).Vcb).DiskFlags;
+        (*((*Irp).AssociatedIrp.SystemBuffer as *mut CDROM_DISK_DATA)).DiskData = (*(*Fcb).Vcb).DiskFlags;
         (*Irp).IoStatus.Information = core::mem::size_of::<CDROM_DISK_DATA>() as u32;
         CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
 
     IoSetCompletionRoutine(
         Irp,
-        CdDevCtrlCompletionRoutine,
+        core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdDevCtrlCompletionRoutine as usize),
         core::ptr::null_mut(),
         1, // TRUE
         1,

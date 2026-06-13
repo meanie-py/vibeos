@@ -5,7 +5,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN};
+use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, SECTOR_MASK};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_WRITE};
@@ -15,8 +15,7 @@ extern "system" {
     fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !; // never returns fn BlockAlign(Vcb: *mut VCB, ByteCount: ULONG) -> ULONG;
-    fn SectorOffset(Offset: LONGLONG) -> ULONG;
+    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !; // never returns
     fn CdVolumeDasdWrite( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: LONGLONG, WriteByteCount: ULONG, ) -> NTSTATUS;
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut core::ffi::c_void);
@@ -38,10 +37,10 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_WRITE;
 
 // Constants (placeholder values; the caller will provide the correct ones)
 const STATUS_PENDING: NTSTATUS = 0x00000103;       // STATUS_PENDING
-const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011;    // STATUS_END_OF_FILE
-const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010;
-const STATUS_CANT_WAIT: NTSTATUS = 0xC000009A;
-const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000FF;
+const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011u32 as i32;    // STATUS_END_OF_FILE
+const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010u32 as i32;
+const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // ntstatus.h STATUS_CANT_WAIT (grind fabricated 0xC000009A=STATUS_INSUFFICIENT_RESOURCES)
+const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000E9u32 as i32;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x00000002;
 const FO_SYNCHRONOUS_IO: u32 = 0x00000010;
@@ -101,20 +100,23 @@ pub unsafe extern "C" fn CdCommonWrite(
         }
 
         if FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) == 0 {
-            if StartingOffset >= (*Fcb).FileSize.QuadPart {
+            if StartingOffset >= (*Fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart {
                 Status = STATUS_END_OF_FILE;
                 break 'try_exit; // try_return
             }
-            if ByteRange > (*Fcb).FileSize.QuadPart {
-                ByteCount = ((*Fcb).FileSize.QuadPart - StartingOffset) as ULONG;
-                ByteRange = (*Fcb).FileSize.QuadPart;
+            if ByteRange > (*Fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart {
+                ByteCount = ((*Fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart - StartingOffset) as ULONG;
+                ByteRange = (*Fcb).__bindgen_anon_1.Header.as_ref().FileSize.QuadPart;
             }
         }
 
-        let WriteByteCount: ULONG = BlockAlign((*Fcb).Vcb, ByteCount);
+        // BlockAlign(V,L) = ((ULONG)(L) + V->BlockMask) & V->BlockInverseMask
+        let Vcb = (*Fcb).Vcb;
+        let WriteByteCount: ULONG = (ByteCount.wrapping_add((*Vcb).BlockMask)) & (*Vcb).BlockInverseMask;
 
-        if SectorOffset(StartingOffset) != 0
-            || SectorOffset(WriteByteCount as LONGLONG) != 0
+        // SectorOffset(L) = ((ULONG)(ULONG_PTR)(L)) & SECTOR_MASK
+        if ((StartingOffset as ULONG) & SECTOR_MASK) != 0
+            || ((WriteByteCount as ULONG) & SECTOR_MASK) != 0
             || WriteByteCount > OriginalByteCount
         {
             if Wait == 0 {

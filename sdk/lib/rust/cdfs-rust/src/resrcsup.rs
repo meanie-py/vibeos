@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FAST_IO_RELEASE_FILE, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT, PFS_FILTER_CALLBACK_DATA, PIRP, SyncTypeCreateSection};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT, PFS_FILTER_CALLBACK_DATA, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB};
@@ -23,14 +23,19 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_RESRCSUP;
 
-const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u32 = 3;
-const SyncTypeCreateSection: u32 = 0;
-const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0xC000_007A; // 0xC000007A
-const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0010_0005;
+// Verified vs headers:
+//   FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION = (UCHAR)-1 = 0xFF (iotypes.h)
+//   _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeCreateSection = 1 (bindgen)
+//   STATUS_FILE_LOCKED_WITH_ONLY_READERS = 0x0000012A (ntstatus.h)
+//   STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY = 0x00000126 (ntstatus.h)
+const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u8 = 0xFF;
+const SyncTypeCreateSection: u32 = 1;
+const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x0000_012A;
+const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0000_0126;
 #[no_mangle]
-pub unsafe extern "C" fn CdAcquireForCache(Fcb: *mut Fcb, Wait: i32) -> i32 {
+pub unsafe extern "C" fn CdAcquireForCache(Fcb: *mut FCB, Wait: i32) -> i32 {
     // PAGED_CODE();
-    if ExAcquireResourceSharedLite((*Fcb).Resource, Wait) == 0 {
+    if ExAcquireResourceSharedLite((*Fcb).__bindgen_anon_1.Header.as_ref().Resource, Wait as u8) == 0 {
         return 0;
     }
     // NT_ASSERT(IoGetTopLevelIrp() == NULL);
@@ -76,20 +81,20 @@ pub unsafe extern "system" fn CdFilterCallbackAcquireForCreateSection(
     let _ = CompletionContext;
     FileObject = (*CallbackData).FileObject;
     if FileObject.is_null()
-        || (*(FileObject)).FsContext.is_null()
-        || (*(*(FileObject)).FsContext as *mut FCB)
+        || (*FileObject).FsContext.is_null()
+        || (*((*FileObject).FsContext as *mut FCB))
             .FcbNonpaged
             .is_null()
     {
         let fs_context = if !FileObject.is_null() {
-            (*(FileObject)).FsContext
+            (*FileObject).FsContext
         } else {
             core::ptr::null_mut()
         };
         let fcb_nonpaged = if !FileObject.is_null()
-            && !(*(FileObject)).FsContext.is_null()
+            && !(*FileObject).FsContext.is_null()
         {
-            (*(*(FileObject)).FsContext as *mut FCB).FcbNonpaged
+            (*((*FileObject).FsContext as *mut FCB)).FcbNonpaged
         } else {
             core::ptr::null_mut()
         };
@@ -101,13 +106,13 @@ pub unsafe extern "system" fn CdFilterCallbackAcquireForCreateSection(
         );
         return STATUS_INVALID_PARAMETER;
     }
-    let fcb = (*(*FileObject).FsContext as *mut FCB);
+    let fcb = (*FileObject).FsContext as *mut FCB;
     ExAcquireResourceExclusiveLite(
-        &mut (*(*fcb).FcbNonpaged).FcbResource as *mut _,
+        core::ptr::addr_of_mut!((*(*fcb).FcbNonpaged).FcbResource),
         1,
     );
-    ExAcquireSharedStarveExclusive((*fcb).Resource, 1);
-    if (*(*CallbackData).Parameters.AcquireForSectionSynchronization).SyncType
+    ExAcquireSharedStarveExclusive((*fcb).__bindgen_anon_1.Header.as_ref().Resource, 1);
+    if (*CallbackData).Parameters.AcquireForSectionSynchronization.SyncType
         == SyncTypeCreateSection
     {
         return STATUS_FILE_LOCKED_WITH_ONLY_READERS;
@@ -122,8 +127,8 @@ pub unsafe extern "system" fn CdReleaseForCreateSection(FileObject: PFILE_OBJECT
 
     let fcb: *mut FCB = (*FileObject).FsContext as *mut FCB;
 
-    ExReleaseResourceLite(&raw mut (*(*fcb).FcbNonpaged).FcbResource);
-    ExReleaseResourceLite(&raw mut (*fcb).Resource);
+    ExReleaseResourceLite(core::ptr::addr_of_mut!((*(*fcb).FcbNonpaged).FcbResource));
+    ExReleaseResourceLite((*fcb).__bindgen_anon_1.Header.as_ref().Resource);
 }
 
 

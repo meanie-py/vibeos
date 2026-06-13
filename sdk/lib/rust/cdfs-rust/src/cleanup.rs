@@ -4,7 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoReleaseVpbSpinLock, IoRemoveShareAccess, PFILE_OBJECT, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB_FLAG_DISMOUNT_ON_CLOSE, PCCB, PFCB, PIRP_CONTEXT, PVCB, TYPE_OF_OPEN, VCB_STATE_LOCKED, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
+use crate::types::{CCB_FLAG_DISMOUNT_ON_CLOSE, FCB_DATA, PCCB, PFCB, PIRP_CONTEXT, PVCB, TYPE_OF_OPEN, VCB_STATE_LOCKED, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, POPLOCK, POPLOCK_FS_PREPOST_IRP, POPLOCK_WAIT_COMPLETE_ROUTINE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlNotifyVolumeEvent};
@@ -55,8 +55,8 @@ pub unsafe extern "C" fn CdCommonCleanup(
     let mut VcbAcquired: BOOLEAN = 0;
 
     let Vcb: PVCB;
-    let Fcb: PFCB;
-    let mut Ccb: PCCB;
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
 
     let mut SavedIrql: KIRQL = 0;
 
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
     //  Use a try-finally to facilitate cleanup.
     //
 
-    let _seh2_result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+    {
         //
         //  Case on the type of open that we are trying to cleanup.
         //
@@ -171,7 +171,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                 FsRtlNotifyCleanup(
                     (*Vcb).NotifySync,
                     core::ptr::addr_of_mut!((*Vcb).DirNotifyList),
-                    Ccb,
+                    Ccb as *mut c_void,
                 );
             }
             UserFileOpen => {
@@ -184,18 +184,19 @@ pub unsafe extern "C" fn CdCommonCleanup(
                 FsRtlCheckOplock(
                     CdGetFcbOplock(Fcb),
                     Irp,
-                    IrpContext,
-                    core::ptr::null_mut() as POPLOCK_WAIT_COMPLETE_ROUTINE,
-                    core::ptr::null_mut() as POPLOCK_FS_PREPOST_IRP,
+                    IrpContext as *mut c_void,
+                    None as POPLOCK_WAIT_COMPLETE_ROUTINE,
+                    None as POPLOCK_FS_PREPOST_IRP,
                 );
 
                 //
                 //  Unlock all outstanding file locks.
                 //
 
-                if !(*Fcb).FileLock.is_null() {
+                let fcb_data = &(*Fcb).__bindgen_anon_2 as *const _ as *const FCB_DATA;
+                if !(*fcb_data).FileLock.is_null() {
                     FsRtlFastUnlockAll(
-                        (*Fcb).FileLock,
+                        (*fcb_data).FileLock,
                         FileObject,
                         IoGetRequestorProcess(Irp),
                         core::ptr::null_mut(),
@@ -213,7 +214,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                 //
 
                 CdLockFcb(IrpContext, Fcb);
-                (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
                 CdUnlockFcb(IrpContext, Fcb);
             }
             UserVolumeOpen => { }
@@ -252,10 +253,8 @@ pub unsafe extern "C" fn CdCommonCleanup(
 
             IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
 
-            ClearFlag(
-                core::ptr::addr_of_mut!((*(*Vcb).Vpb).Flags),
-                VPB_LOCKED,
-            );
+            // ClearFlag macro inlined: Vpb->Flags is USHORT (u16), shim ClearFlag takes *mut u32.
+            (*(*Vcb).Vpb).Flags &= !(VPB_LOCKED as u16);
             ClearFlag(
                 core::ptr::addr_of_mut!((*Vcb).VcbState),
                 VCB_STATE_LOCKED,
@@ -278,7 +277,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
             FileObject,
             core::ptr::addr_of_mut!((*Fcb).ShareAccess),
         );
-    }));
+    }
 
     //
     //  finally block
@@ -288,10 +287,6 @@ pub unsafe extern "C" fn CdCommonCleanup(
 
     if SendUnlockNotification != 0 {
         FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
-    }
-
-    if let Err(e) = _seh2_result {
-        ::std::panic::resume_unwind(e);
     }
 
     CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);

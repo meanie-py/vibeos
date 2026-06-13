@@ -6,39 +6,42 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoDeleteDevice, IoUnregisterFileSystem, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PIRP_CONTEXT, VCB};
+use crate::types::{IRP_CONTEXT, VCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_SHUTDOWN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
+use crate::ddk_shims::{FlagOn, SetFlag};
 
+// Real cdfs support routines (PIRP_CONTEXT == *mut IRP_CONTEXT).
 extern "system" {
-    fn PAGED_CODE();
-    fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn FlagOn(State: u32, Mask: u32) -> i32;
-    fn CdAcquireCdData(IrpContext: *mut PIRP_CONTEXT);
-    fn CdAcquireVcbExclusive(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
-    fn CdPurgeVolume(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
-    fn CdCheckForDismount(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB, Boolean: i32) -> i32;
-    fn CdReleaseVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB);
-    fn CdReleaseCdData(IrpContext: *mut PIRP_CONTEXT);
-    fn CdCompleteRequest(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP, Status: i32);
+    fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
+    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32) -> i32;
+    fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
+    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
 }
+
+// PAGED_CODE() is a DBG-only no-op verification macro.
+#[inline(always)] fn PAGED_CODE() {}
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_SHUTDOWN;
 
-const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 0x0001; // value unknown, placeholder
-const CD_FLAGS_SHUTDOWN: u32 = 0x0001; // placeholder
-const VCB_STATE_SHUTDOWN: u32 = 0x0001; // placeholder
-const VcbMounted: u32 = 0; // placeholder
+// cdstruc.h verified values:
+const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 0x00000200;
+const CD_FLAGS_SHUTDOWN: u16 = 0x0001;
+const VCB_STATE_SHUTDOWN: u32 = 0x00000400;
+const VcbMounted: u32 = 2; // _VCB_CONDITION::VcbMounted
 #[no_mangle]
-pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP) -> i32 {
+pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> i32 {
     unsafe {
         let mut Event: KEVENT = core::mem::zeroed();
         let mut Links: *mut LIST_ENTRY;
         let mut Vcb: *mut VCB;
-        let mut NewIrp: *mut PIRP;
+        let mut NewIrp: PIRP;
         let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
         let mut VcbPresent: i32;
         let mut Status: i32;
@@ -56,18 +59,18 @@ pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut PIRP_CONTEXT, Irp: *m
             0,
         );
 
-        SetFlag(
-            core::ptr::addr_of_mut!(CdData.Flags),
-            CD_FLAGS_SHUTDOWN,
-        );
+        // SetFlag( CdData.Flags, CD_FLAGS_SHUTDOWN ) — CdData.Flags is USHORT.
+        CdData.Flags |= CD_FLAGS_SHUTDOWN;
 
         CdAcquireCdData(IrpContext);
 
         Links = CdData.VcbQueue.Flink;
 
-        while Links != core::ptr::addr_of!(CdData.VcbQueue) {
+        while Links != core::ptr::addr_of_mut!(CdData.VcbQueue) {
+            // CONTAINING_RECORD( Links, VCB, VcbLinks ); VcbLinks is at offset 0
+            // of the VCB anon union __bindgen_anon_1.
             Vcb = ((Links as *mut u8 as usize).wrapping_sub(
-                core::mem::offset_of!(VCB, VcbLinks),
+                core::mem::offset_of!(VCB, __bindgen_anon_1),
             )) as *mut VCB;
 
             Links = (*Links).Flink;
@@ -83,7 +86,7 @@ pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut PIRP_CONTEXT, Irp: *m
             CdPurgeVolume(IrpContext, Vcb, 0);
 
             NewIrp = IoBuildSynchronousFsdRequest(
-                IRP_MJ_SHUTDOWN,
+                IRP_MJ_SHUTDOWN as u32,
                 (*Vcb).TargetDeviceObject,
                 core::ptr::null_mut(),
                 0,
@@ -97,15 +100,15 @@ pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut PIRP_CONTEXT, Irp: *m
 
                 if Status == STATUS_PENDING {
                     KeWaitForSingleObject(
-                        &raw mut Event as *mut KEVENT,
+                        &raw mut Event as *mut c_void,
                         _KWAIT_REASON_Executive,
-                        0i32,
+                        0i8,
                         0,
                         core::ptr::null_mut(),
                     );
                 }
 
-                KeClearEvent(&raw mut Event as *mut KEVENT);
+                KeClearEvent(&raw mut Event as *mut c_void);
             }
 
             SetFlag(

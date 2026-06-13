@@ -2,11 +2,20 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, FileFsAttributeInformation, FileFsDeviceInformation, FileFsSizeInformation, FileFsVolumeInformation, IoGetCurrentIrpStackLocation, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
+use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, IoGetCurrentIrpStackLocation, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
+use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsAttributeInformation as FileFsAttributeInformation, _FSINFOCLASS_FileFsDeviceInformation as FileFsDeviceInformation, _FSINFOCLASS_FileFsSizeInformation as FileFsSizeInformation, _FSINFOCLASS_FileFsVolumeInformation as FileFsVolumeInformation};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
-use ntkrnl_sys::ddk::{PFILE_OBJECT};
+use crate::types::{FCB, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
+use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER, PFILE_OBJECT};
+
+// The C FCB's first member is an anonymous union { FSRTL_ADVANCED_FCB_HEADER Header; ... }
+// which bindgen collapsed to opaque storage (__bindgen_anon_1). Reinterpret it as the
+// real header so the C field accesses (Fcb->AllocationSize, ...) resolve.
+#[inline(always)]
+unsafe fn fcb_hdr(f: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_1) as *mut FSRTL_ADVANCED_FCB_HEADER
+}
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_VOLINFO};
 
@@ -15,7 +24,8 @@ extern "system" {
     fn PAGED_CODE();
     fn LlSectorsFromBytes(bytes: i64) -> i64;
     fn ASSERT(condition: bool);
-    fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: *mut FILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
+    #[cfg(feature = "ntddi_win8")]
+    fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8);
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -86,6 +96,7 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
             (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_ATTRIBUTE_INFORMATION,
             &mut Length
         ),
+        #[cfg(feature = "ntddi_win8")]
         FileFsSectorSizeInformation => CdQueryFsSectorSizeInfo(
             IrpContext,
             (*Fcb).Vcb,
@@ -125,8 +136,8 @@ pub unsafe extern "C" fn CdQueryFsVolumeInfo(
 
     *Length -= core::mem::offset_of!(FILE_FS_VOLUME_INFORMATION, VolumeLabel) as u32;
 
-    if *Length >= (*((*Vcb).Vpb)).VolumeLabelLength {
-        BytesToCopy = (*((*Vcb).Vpb)).VolumeLabelLength;
+    if *Length >= (*((*Vcb).Vpb)).VolumeLabelLength as u32 {
+        BytesToCopy = (*((*Vcb).Vpb)).VolumeLabelLength as u32;
     } else {
         BytesToCopy = *Length;
         Status = STATUS_BUFFER_OVERFLOW;
@@ -158,7 +169,7 @@ pub unsafe extern "C" fn CdQueryFsSizeInfo(
 
     // Fill in the output buffer.
     (*Buffer).TotalAllocationUnits.QuadPart = LlSectorsFromBytes(
-        (*(*Vcb).VolumeDasdFcb).AllocationSize.QuadPart,
+        (*fcb_hdr((*Vcb).VolumeDasdFcb)).AllocationSize.QuadPart,
     );
 
     (*Buffer).AvailableAllocationUnits.QuadPart = 0;
@@ -237,7 +248,7 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
     *Length -= BytesToCopy;
 
     // Do the file system name
-    (*Buffer).FileSystemNameLength = BytesToCopy as i32; // LONG
+    (*Buffer).FileSystemNameLength = BytesToCopy; // LONG (u32 in substrate)
 
     static CDFS_WIDE: [u16; 5] = [67, 68, 70, 83, 0]; // L"CDFS"
     let dst = core::ptr::addr_of_mut!((*Buffer).FileSystemName) as *mut u16;
@@ -250,11 +261,12 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
 
     Status
 }
+#[cfg(feature = "ntddi_win8")]
 #[no_mangle]
 pub unsafe extern "C" fn CdQueryFsSectorSizeInfo(
-    IrpContext: *mut IrpContext,
-    Vcb: *mut Vcb,
-    Buffer: *mut FILE_FS_SECTOR_SIZE_INFORMATION,
+    IrpContext: PIRP_CONTEXT,
+    Vcb: PVCB,
+    Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION,
     Length: *mut u32,
 ) -> i32 {
     let mut Status: i32 = 0;

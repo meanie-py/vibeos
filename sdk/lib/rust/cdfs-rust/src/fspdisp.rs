@@ -26,10 +26,10 @@ extern "system" {
     fn CdCommonPnp(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
-    fn NT_ASSERT(condition: BOOL);
+    fn NT_ASSERT(condition: BOOLEAN);
     fn SetFlag(Flags: *mut u32, Mask: u32);
-    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: BOOL);
-    fn __analysis_assert(condition: BOOL);
+    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: BOOLEAN);
+    fn __analysis_assert(condition: BOOLEAN);
     static IRP_CONTEXT_FSP_FLAGS: u32;
     static IRP_CONTEXT_FLAG_MORE_PROCESSING: u32;
 }
@@ -42,13 +42,14 @@ pub unsafe extern "C" fn CdFspDispatch(
 ) {
     // Forward-declare unknown externals
 
-    // Constants (values assumed; will be provided by the assembler)
-    const STATUS_CANT_WAIT: NTSTATUS = 0x00000103;
+    // Constants
+    const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // ntstatus.h STATUS_CANT_WAIT (grind fabricated 0x00000103=STATUS_PENDING)
 
     let mut irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
     let mut irp: PIRP = (*irp_context).Irp;
     let mut irp_sp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
     let mut vol_do: *mut VOLUME_DEVICE_OBJECT = core::ptr::null_mut();
+    let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
 
     // If this request has an associated volume device object, remember it.
     if !(*irp_sp).FileObject.is_null() {
@@ -129,10 +130,10 @@ pub unsafe extern "C" fn CdFspDispatch(
         }
 
         // Volume overflow queue processing
-        let mut saved_irql: KIRQL;
+        let mut saved_irql: KIRQL = 0;
         let mut entry: *mut core::ffi::c_void = core::ptr::null_mut();
 
-        KeAcquireSpinLock(core::ptr::addr_of_mut!((*vol_do).OverflowQueueSpinLock), &mut saved_irql);
+        KeAcquireSpinLock(core::ptr::addr_of_mut!((*vol_do).OverflowQueueSpinLock) as PKSPIN_LOCK, &mut saved_irql);
 
         if (*vol_do).OverflowQueueCount > 0 {
             // There is overflow work to do in this volume.
@@ -143,7 +144,7 @@ pub unsafe extern "C" fn CdFspDispatch(
             entry = core::ptr::null_mut();
         }
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*vol_do).OverflowQueueSpinLock), saved_irql);
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*vol_do).OverflowQueueSpinLock) as PKSPIN_LOCK, saved_irql);
 
         // There wasn't an entry, break out of the loop and return to the Ex Worker thread.
         if entry.is_null() {
@@ -158,7 +159,7 @@ pub unsafe extern "C" fn CdFspDispatch(
 
         irp = (*irp_context).Irp;
         irp_sp = IoGetCurrentIrpStackLocation(irp);
-        __analysis_assert(!irp_sp.is_null());
+        __analysis_assert((!irp_sp.is_null()) as BOOLEAN);
 
         // Continue the outer loop
     }

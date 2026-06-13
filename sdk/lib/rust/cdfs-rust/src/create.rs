@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{ACCESS_MASK, _FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::null_mut;
@@ -16,7 +16,7 @@ use crate::glue::{CDFS_BUG_CHECK_CREATE, Ccb, FILE_NO_INTERMEDIATE_BUFFERING, FI
 extern "system" {
     fn CdCreateCcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, UserCcbFlags: u32) -> *mut core::ffi::c_void;
     fn CdFspClose(Vcb: *mut VCB);
-    fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut core::ffi::c_void;
+    fn CdGetFcbOplock(Fcb: *mut FCB) -> POPLOCK;
     fn CdIncrementCleanupCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, CleanupCount: u32);
     fn CdIsFastIoPossible(Fcb: *mut FCB) -> u32;
@@ -44,7 +44,7 @@ extern "system" {
     fn CdIllegalFcbAccess(IrpContext: *mut IRP_CONTEXT, TypeOfOpen: u32, DesiredAccess: u32) -> u8;
     fn CdInitializeCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
     fn CdInitializeFcbFromFileContext(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Parent: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT);
-    fn CdInitializeFcbFromPathEntry(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Parent: *mut FCB, Entry: *mut COMPOUND_PATH_ENTRY);
+    fn CdInitializeFcbFromPathEntry(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Parent: *mut FCB, Entry: *mut PATH_ENTRY);
     fn CdInitializeFileContext(IrpContext: *mut IRP_CONTEXT, Ctx: *mut FILE_ENUM_CONTEXT);
     fn CdLookupFcbTable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FileId: FILE_ID) -> *mut FCB;
     fn CdLookupInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT, StreamOffset: u32);
@@ -59,40 +59,42 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const BugCheckFileId: i32 = CDFS_BUG_CHECK_CREATE;
+pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CREATE;
 
 const FILE_ADD_FILE: u32 = 0x00000002;
 const FILE_ADD_SUBDIRECTORY: u32 = 0x00000004;
 const FILE_DELETE_CHILD: u32 = 0x00000040;
-const CDFS_RESIDUAL_USER_REFERENCE: u32 = 4;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const UserVolumeOpen: u32 = 0;
-const UserFileOpen: u32 = 1;
-const FILE_OPBATCH_BREAK_UNDERWAY: u32 = 0x00000020;
+const CDFS_RESIDUAL_USER_REFERENCE: i32 = 3;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+const UserVolumeOpen: u32 = 2;
+const UserFileOpen: u32 = 4;
+const FILE_OPBATCH_BREAK_UNDERWAY: u32 = 0x00000009;
 const FO_NO_INTERMEDIATE_BUFFERING: u32 = 0x00000008;
-const FO_CACHE_SUPPORTED: u32 = 0x00000001;
-const VCB_STATE_LOCKED: u32 = 0x00000001;
+const FO_CACHE_SUPPORTED: u32 = 0x00000040;
+const VCB_STATE_LOCKED: u32 = 0x00000010;
 
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022u32 as i32;
 const STATUS_INVALID_PARAMETER: i32 = 0xC000000Du32 as i32;
 const STATUS_FILE_IS_A_DIRECTORY: i32 = 0xC00000BAu32 as i32;
-const STATUS_NOT_A_DIRECTORY: i32 = 0xC00000BBu32 as i32;
+const STATUS_NOT_A_DIRECTORY: i32 = 0xC0000103u32 as i32; // ntstatus.h STATUS_NOT_A_DIRECTORY (grind fabricated 0xC00000BB=STATUS_NOT_SUPPORTED)
 const STATUS_PENDING: i32 = 0x103u32 as i32;
 const STATUS_SUCCESS: i32 = 0;
-const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000010;
-const CDFS_NTC_FCB_INDEX: u32 = 2;
-const CDFS_NTC_FCB_DATA: u32 = 1;
+const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001;
+const CDFS_NTC_FCB_INDEX: u32 = 0x0304;
+const CDFS_NTC_FCB_DATA: u32 = 0x0305;
 const FILE_NON_DIRECTORY_FILE: u32 = 0x00000040;
 const FILE_DIRECTORY_FILE: u32 = 0x00000010;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const CD_ATTRIBUTE_DIRECTORY: u32 = 0x02;
 
-// Forward declarations for unknown functions used in this translation.
-
-// Unknown constants – adjust values per the original driver's definitions.
-const UserDirectoryOpen: u32 = 2;     // guess for TYPE_OF_OPEN
-const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x02;
-const CCB_FLAG_IGNORE_CASE: u32 = 0x04;
+// TYPE_OF_OPEN values (cdprocs.h): UnopenedFileObject=0, StreamFileOpen=1,
+// UserVolumeOpen=2, UserDirectoryOpen=3, UserFileOpen=4.
+const UserDirectoryOpen: u32 = 3;
+// CCB flags (cdstruc.h).
+const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x00000002;
+const CCB_FLAG_IGNORE_CASE: u32 = 0x00000004;
+// FAST_IO_POSSIBLE enum value FastIoIsNotPossible == 0 (verified vs ntkrnl_sys).
+const FastIoIsNotPossible: BOOLEAN = _FAST_IO_POSSIBLE_FastIoIsNotPossible as BOOLEAN;
 #[no_mangle]
 pub unsafe extern "C" fn CdOpenByFileId(
     IrpContext: *mut IRP_CONTEXT,
@@ -107,17 +109,17 @@ pub unsafe extern "C" fn CdOpenByFileId(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdOpenExistingFcb(
-    IrpContext: *mut IrpContext,
+    IrpContext: *mut IRP_CONTEXT,
     IrpSp: *mut IO_STACK_LOCATION,
-    CurrentFcb: *mut *mut Fcb,
+    CurrentFcb: *mut *mut FCB,
     TypeOfOpen: TYPE_OF_OPEN,
     IgnoreCase: u8,
-    RelatedCcb: *mut Ccb,
+    RelatedCcb: *mut CCB,
 ) -> NTSTATUS {
-    const CCB_FLAG_IGNORE_CASE: u32 = 0x00000001;
-    const CCB_FLAG_OPEN_WITH_VERSION: u32 = 0x00000010;
-    const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000020;
-    const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x00000040;
+    const CCB_FLAG_IGNORE_CASE: u32 = 0x00000004;
+    const CCB_FLAG_OPEN_WITH_VERSION: u32 = 0x00000008;
+    const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001;
+    const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x00000002;
 
     let mut CcbFlags: u32 = 0;
     let mut Status: NTSTATUS = ntkrnl_sys::constants::STATUS_ACCESS_DENIED;
@@ -204,7 +206,7 @@ pub unsafe extern "system" fn CdOpenDirectoryFromPathEntry(
             CdLockVcb(IrpContext, Vcb);
             UnlockVcb = 1;
 
-            NextFcb = CdCreateFcb(IrpContext, &mut FileId, CDFS_NTC_FCB_INDEX, &mut FcbExisted);
+            NextFcb = CdCreateFcb(IrpContext, FileId, CDFS_NTC_FCB_INDEX, &mut FcbExisted);
 
             if FcbExisted == 0 {
                 CdInitializeFcbFromPathEntry(IrpContext, NextFcb, *CurrentFcb, PathEntry);
@@ -301,13 +303,13 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
     file_context: *mut FILE_ENUM_CONTEXT,
     related_ccb: *mut Ccb,
 ) -> i32 {
-    // Placeholder constants (values unknown)
-    const CCB_FLAG_OPEN_WITH_VERSION: u32 = 0x0001;
-    const CCB_FLAG_OPEN_BY_ID: u32 = 0x0002;
-    const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x0004;
-    const CCB_FLAG_IGNORE_CASE: u32 = 0x0008;
-    const CDFS_NTC_FCB_DATA: u32 = 0xBADF00D; // Replace with correct NODE_TYPE_CODE
-    const USER_FILE_OPEN: u32 = 0xDEADBEEF;    // Replace with actual TYPE_OF_OPEN value
+    // CCB flags (cdstruc.h); NTC code (nodetype.h); TYPE_OF_OPEN (cdprocs.h).
+    const CCB_FLAG_OPEN_WITH_VERSION: u32 = 0x00000008;
+    const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001;
+    const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 0x00000002;
+    const CCB_FLAG_IGNORE_CASE: u32 = 0x00000004;
+    const CDFS_NTC_FCB_DATA: u32 = 0x0305;
+    const USER_FILE_OPEN: u32 = 4; // UserFileOpen
 
     let mut ccb_flags: u32 = 0;
     let mut file_id: FILE_ID = core::mem::zeroed();
@@ -330,7 +332,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
     // --- _SEH2_TRY block ---
     {
         // Version string present?
-        if (*(*file_name).VersionString).Length != 0 {
+        if (*file_name).VersionString.Length != 0 {
             ccb_flags |= CCB_FLAG_OPEN_WITH_VERSION;
         }
 
@@ -392,7 +394,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
             if ignore_case != 0 {
                 CdInsertPrefix(irp_context, next_fcb, file_name, 1, 1, parent_fcb);
             }
-        } else if (*(*file_name).VersionString).Length == 0 {
+        } else if (*file_name).VersionString.Length == 0 {
             CdInsertPrefix(
                 irp_context,
                 next_fcb,
@@ -457,6 +459,8 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     let Fcb: *mut FCB = *CurrentFcb;
     let Ccb: *mut core::ffi::c_void;
 
+    let mut DesiredAccess = DesiredAccess;
+
     // PAGED_CODE(); // comment
 
     // Expand maximum allowed to something sensible for share access checking
@@ -475,7 +479,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     // If this a volume open and the user wants to lock the volume then
     // purge and lock the volume.
     if (TypeOfOpen <= UserVolumeOpen) &&
-        FlagOn((*IrpSp).Parameters.Create.ShareAccess, FILE_SHARE_READ) == 0
+        FlagOn((*IrpSp).Parameters.Create.ShareAccess as u32, FILE_SHARE_READ) == 0
     {
         // If there are open handles then fail this immediately.
         if (*Vcb).VcbCleanup != 0 {
@@ -513,7 +517,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
             // Store the address of the Fcb for a possible teardown into
             // the IrpContext. We will release this in the call to
             // prepost the Irp.
-            (*IrpContext).TeardownFcb = CurrentFcb;
+            (*IrpContext).__bindgen_anon_1.TeardownFcb = CurrentFcb;
 
             if FsRtlCurrentBatchOplock(CdGetFcbOplock(Fcb)) != 0 {
                 // We remember if a batch oplock break is underway for the
@@ -524,8 +528,8 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
                     CdGetFcbOplock(Fcb),
                     (*IrpContext).Irp,
                     IrpContext as *mut core::ffi::c_void,
-                    CdOplockComplete as *mut core::ffi::c_void,
-                    CdPrePostIrp as *mut core::ffi::c_void,
+                    core::mem::transmute::<_, POPLOCK_WAIT_COMPLETE_ROUTINE>(CdOplockComplete as *const ()),
+                    core::mem::transmute::<_, POPLOCK_FS_PREPOST_IRP>(CdPrePostIrp as *const ()),
                 );
 
                 if OplockStatus == STATUS_PENDING {
@@ -536,7 +540,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
             // Check the share access before breaking any exclusive oplocks.
             Status = IoCheckShareAccess(
                 DesiredAccess,
-                (*IrpSp).Parameters.Create.ShareAccess,
+                (*IrpSp).Parameters.Create.ShareAccess as u32,
                 (*IrpSp).FileObject,
                 &mut (*Fcb).ShareAccess as *mut _,
                 0,
@@ -552,20 +556,20 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
                 CdGetFcbOplock(Fcb),
                 (*IrpContext).Irp,
                 IrpContext as *mut core::ffi::c_void,
-                CdOplockComplete as *mut core::ffi::c_void,
-                CdPrePostIrp as *mut core::ffi::c_void,
+                core::mem::transmute::<_, POPLOCK_WAIT_COMPLETE_ROUTINE>(CdOplockComplete as *const ()),
+                core::mem::transmute::<_, POPLOCK_FS_PREPOST_IRP>(CdPrePostIrp as *const ()),
             );
 
             if OplockStatus == STATUS_PENDING {
                 return STATUS_PENDING;
             }
 
-            (*IrpContext).TeardownFcb = core::ptr::null_mut();
+            (*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
         } else {
             // Otherwise just do the sharing check.
             Status = IoCheckShareAccess(
                 DesiredAccess,
-                (*IrpSp).Parameters.Create.ShareAccess,
+                (*IrpSp).Parameters.Create.ShareAccess as u32,
                 (*IrpSp).FileObject,
                 &mut (*Fcb).ShareAccess as *mut _,
                 0,
@@ -584,7 +588,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     if (*Fcb).FcbCleanup == 0 {
         IoSetShareAccess(
             DesiredAccess,
-            (*IrpSp).Parameters.Create.ShareAccess,
+            (*IrpSp).Parameters.Create.ShareAccess as u32,
             (*IrpSp).FileObject,
             &mut (*Fcb).ShareAccess as *mut _,
         );
@@ -623,9 +627,9 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     CdLockFcb(IrpContext, Fcb);
 
     if TypeOfOpen == UserFileOpen {
-        (*Fcb).IsFastIoPossible = CdIsFastIoPossible(Fcb);
+        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb) as u8;
     } else {
-        (*Fcb).IsFastIoPossible = FastIoIsNotPossible;
+        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = FastIoIsNotPossible;
     }
 
     CdUnlockFcb(IrpContext, Fcb);
@@ -634,7 +638,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     (*(*IrpContext).Irp).IoStatus.Information = Information;
 
     // Point to the section object pointer in the non-paged Fcb.
-    (*(*IrpSp).FileObject).SectionObjectPointer = &(*Fcb).FcbNonpaged.SegmentObject;
+    (*(*IrpSp).FileObject).SectionObjectPointer = core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).SegmentObject);
 
     return OplockStatus;
 }

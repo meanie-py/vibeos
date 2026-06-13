@@ -2,10 +2,11 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{EqualTo, GENERATE_NAME_CONTEXT, GreaterThan, LessThan, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
+use ntkrnl_sys::ddk::{GENERATE_NAME_CONTEXT, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
+use ntkrnl_sys::ddk::{FSRTL_COMPARISON_RESULT, _FSRTL_COMPARISON_RESULT_EqualTo as EqualTo, _FSRTL_COMPARISON_RESULT_GreaterThan as GreaterThan, _FSRTL_COMPARISON_RESULT_LessThan as LessThan};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_NAME, FSRTL_COMPARISON_RESULT, IRP_CONTEXT, PIRP_CONTEXT};
+use crate::types::{CD_NAME, IRP_CONTEXT, PIRP_CONTEXT};
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlIsNameInExpression};
@@ -88,7 +89,7 @@ pub unsafe extern "C" fn CdConvertBigToLittleEndian(
     PAGED_CODE();
 
     if FlagOn(ByteCount, 1) != 0 {
-        CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+        CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR as u32);
     }
 
     core::ptr::copy_nonoverlapping(
@@ -231,7 +232,7 @@ pub unsafe extern "C" fn CdIs8dot3Name(
 
     UNREFERENCED_PARAMETER(irp_context);
 
-    NT_ASSERT(file_name.Length != 0);
+    NT_ASSERT((file_name.Length != 0) as i32);
     if file_name.Length as usize > BYTE_COUNT_8_DOT_3 {
         return 0;
     }
@@ -278,7 +279,7 @@ pub unsafe extern "C" fn CdIs8dot3Name(
         return 0;
     }
 
-    FsRtlIsFatDbcsLegal(dbcs_name, 0, 0, 0)
+    FsRtlIsFatDbcsLegal(dbcs_name, 0, 0, 0).into()
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdGenerate8dot3Name(
@@ -291,12 +292,12 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
     // PAGED_CODE();
 
     let mut Status: i32;
-    let mut ShortName: _UNICODE_STRING;
-    let mut BiasedShortName: _UNICODE_STRING;
+    let mut ShortName: _UNICODE_STRING = core::mem::zeroed();
+    let mut BiasedShortName: _UNICODE_STRING = core::mem::zeroed();
     let mut ShortNameBuffer: [u16; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()] = [0; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()];
     let mut BiasedShortNameBuffer: [u16; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()] = [0; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()];
 
-    let mut NameContext: GENERATE_NAME_CONTEXT;
+    let mut NameContext: GENERATE_NAME_CONTEXT = core::mem::zeroed();
     let mut BiasedDirentOffset: u32;
     let mut MaximumBaseBytes: u32;
     let mut BaseNameOffset: u32;
@@ -340,7 +341,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
 
     if !NT_SUCCESS(Status) {
         NT_ASSERT((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
-        CdRaiseStatus(IrpContext, Status);
+        CdRaiseStatus(IrpContext as PIRP_CONTEXT, Status as u32);
     }
 
     Length = 0;
@@ -389,7 +390,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
         }
 
         // Check for lead DBCS character in the OEM name.
-        if FsRtlIsLeadDbcsCharacter(*OemName.Buffer.add(OemNameOffset as usize)) != 0 {
+        if FsRtlIsLeadDbcsCharacter(*OemName.Buffer.add(OemNameOffset as usize) as u8) != 0 {
             OemNameOffset += 2;
             if (OemNameOffset as u32 + (BiasedShortName.Length as u32 / core::mem::size_of::<u16>() as u32)) > 8 {
                 OverflowBuffer = true;
@@ -435,7 +436,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdIsNameInExpression(
-    IrpContext: *mut IrpContext,
+    IrpContext: *mut IRP_CONTEXT,
     CurrentName: *mut CD_NAME,
     SearchExpression: *mut CD_NAME,
     WildcardFlags: ULONG,
@@ -443,7 +444,7 @@ pub unsafe extern "C" fn CdIsNameInExpression(
 ) -> BOOLEAN {
     let mut Match: BOOLEAN = 1;
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext as *const c_void);
+    UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
 
     if FlagOn(WildcardFlags, CCB_FLAG_ENUM_NAME_EXP_HAS_WILD) != 0 {
         Match = FsRtlIsNameInExpression(
@@ -491,7 +492,7 @@ pub unsafe extern "C" fn CdIsNameInExpression(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdShortNameDirentOffset(
-    IrpContext: *mut IrpContext,
+    IrpContext: *mut IRP_CONTEXT,
     Name: PUNICODE_STRING,
 ) -> u32 {
 
@@ -501,18 +502,18 @@ pub unsafe extern "C" fn CdShortNameDirentOffset(
     let mut NextWchar: *mut u16;
 
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
 
     RemainingByteCount = (*Name).Length as u32;
     NextWchar = (*Name).Buffer;
 
-    loop {
+    'outer: loop {
         if RemainingByteCount == 0 {
             break;
         }
         'increment: {
             if *NextWchar == b'.' as u16 {
-                break;
+                break 'outer;
             }
             if FoundTilde != 0 {
                 if (*NextWchar < b'0' as u16)
@@ -520,13 +521,13 @@ pub unsafe extern "C" fn CdShortNameDirentOffset(
                     || ((*NextWchar > b'9' as u16) && (*NextWchar < b'A' as u16))
                 {
                     ResultOffset = MAXULONG;
-                    break;
+                    break 'outer;
                 }
                 ResultOffset <<= 4;
                 if *NextWchar < b'A' as u16 {
-                    ResultOffset += *NextWchar - (b'0' as u16);
+                    ResultOffset += (*NextWchar - (b'0' as u16)) as u32;
                 } else {
-                    ResultOffset += (*NextWchar - (b'A' as u16)) + 10;
+                    ResultOffset += ((*NextWchar - (b'A' as u16)) + 10) as u32;
                 }
                 break 'increment;
             }
@@ -547,7 +548,7 @@ pub unsafe extern "C" fn CdFullCompareNames(
     NameA: PUNICODE_STRING,
     NameB: PUNICODE_STRING,
 ) -> FSRTL_COMPARISON_RESULT {
-    let mut i: usize;
+    let mut i: u32;
     let mut MinLength: u16 = (*NameA).Length;
     let mut Result: FSRTL_COMPARISON_RESULT = LessThan;
 
@@ -561,12 +562,12 @@ pub unsafe extern "C" fn CdFullCompareNames(
     i = RtlCompareMemory(
         (*NameA).Buffer as *const core::ffi::c_void,
         (*NameB).Buffer as *const core::ffi::c_void,
-        MinLength as usize,
+        MinLength as u32,
     );
 
-    if i < MinLength as usize {
-        return if *((*NameA).Buffer as *const u16).add(i / 2)
-            < *((*NameB).Buffer as *const u16).add(i / 2)
+    if i < MinLength as u32 {
+        return if *((*NameA).Buffer as *const u16).add((i / 2) as usize)
+            < *((*NameB).Buffer as *const u16).add((i / 2) as usize)
         {
             LessThan
         } else {

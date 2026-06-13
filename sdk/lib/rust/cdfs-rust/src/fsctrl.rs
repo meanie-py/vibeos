@@ -116,7 +116,7 @@ const VCB_STATE_DISMOUNTED: u32 = 2u32;
 const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 8u32;
 const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026Eu32 as i32;
 
-const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000F6u32 as i32;
+const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8u32 as i32; // ntstatus.h STATUS_INVALID_USER_BUFFER (grind fabricated 0xC00000F6=STATUS_INVALID_PARAMETER_8)
 
 // Constants: these placeholder values must be replaced by the real definitions from the C code.
 const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0;

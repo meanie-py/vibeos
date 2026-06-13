@@ -2,36 +2,55 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{PLONGLONG};
+use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_MCB_ENTRY, DIRENT, FCB, IRP_CONTEXT, PIRP_CONTEXT};
+use crate::types::{CD_MCB_ENTRY, DIRENT, FCB, FCB_INDEX, IRP_CONTEXT, PIRP_CONTEXT, VCB};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
-use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, Fcb, IrpContext, Vcb};
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FlagOn};
+use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA, CdPagedPool, Fcb, IrpContext, Vcb};
 
+// _CdFreePool((PVOID*)(x)) — real symbol provided by the cdfs glue/strucsup layer.
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: *mut IrpContext);
-    fn ASSERT_FCB(Fcb: *mut Fcb);
-    fn ASSERT_LOCKED_FCB(Fcb: *mut Fcb);
-    fn UNREFERENCED_PARAMETER(p: *mut IrpContext);
-    fn LlBytesFromBlocks(Vcb: *mut Vcb, blocks: u32) -> i64;
-    fn BlockAlign(Vcb: *mut Vcb, ByteCount: u32) -> u32;
-    fn FlagOn(Flags: u32, Mask: u32) -> bool;
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
-    fn PAGED_CODE();
-    fn NT_ASSERT(_: bool);
-    static CDFS_NTC_FCB_DATA: u32;
+}
+
+// DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
+// UNREFERENCED_PARAMETER expand to nothing in a retail build).
+#[inline(always)] fn PAGED_CODE() {}
+#[inline(always)] fn NT_ASSERT(_cond: bool) {}
+#[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
+#[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
+#[inline(always)] unsafe fn ASSERT_LOCKED_FCB(_p: *const FCB) {}
+#[inline(always)] fn UNREFERENCED_PARAMETER<T>(_p: T) {}
+
+// ---- cdfs private fn-macro inlines (cdprocs.h) ----
+//   __bindgen_anon_1 = { FSRTL_ADVANCED_FCB_HEADER Header; ... } — holds NodeTypeCode.
+//   __bindgen_anon_2 = { ULONG FcbType; FCB_DATA; FCB_INDEX }    — holds StreamOffset.
+#[inline(always)]
+unsafe fn fcb_hdr(f: *mut FCB) -> *mut FSRTL_ADVANCED_FCB_HEADER {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_1) as *mut FSRTL_ADVANCED_FCB_HEADER
+}
+#[inline(always)]
+unsafe fn fcb_idx(f: *mut FCB) -> *mut FCB_INDEX {
+    core::ptr::addr_of_mut!((*f).__bindgen_anon_2) as *mut FCB_INDEX
+}
+// LlBytesFromBlocks(V,B) = Int64ShllMod32( (LONGLONG)(B), (V)->BlockToByteShift )
+#[inline(always)]
+unsafe fn LlBytesFromBlocks(Vcb: *mut VCB, blocks: u32) -> i64 {
+    (blocks as i64) << (*Vcb).BlockToByteShift
+}
+// BlockAlign(V,L) = ((ULONG)(L) + (V)->BlockMask) & (V)->BlockInverseMask
+#[inline(always)]
+unsafe fn CdBlockAlign(Vcb: *mut VCB, byte_count: u32) -> u32 {
+    (byte_count.wrapping_add((*Vcb).BlockMask)) & (*Vcb).BlockInverseMask
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_ALLOCSUP;
 
-// Forward declarations and constants needed by this function
-
-const CD_ATTRIBUTE_MULTI: u32 = 0;       // placeholder
-const CdPagedPool: u32 = 0;              // placeholder for POOL_TYPE
-const TAG_MCB_ARRAY: u32 = 0;            // placeholder
+// cdprocs.h: #define TAG_MCB_ARRAY 'amdC' (Mcb array)
+const TAG_MCB_ARRAY: u32 = 0x616d6443;
 #[no_mangle]
 pub unsafe extern "C" fn CdAddAllocationFromDirent(
     IrpContext: *mut IrpContext,
@@ -76,10 +95,10 @@ pub unsafe extern "C" fn CdAddAllocationFromDirent(
     McbEntry = (*Fcb).Mcb.McbArray.add(McbEntryOffset as usize);
 
     (*McbEntry).DiskOffset = LlBytesFromBlocks((*Fcb).Vcb, (*Dirent).StartingOffset);
-    (*McbEntry).ByteCount = (*Dirent).DataLength;
+    (*McbEntry).ByteCount = (*Dirent).DataLength as i64;
 
-    if !FlagOn((*Dirent).DirentFlags, CD_ATTRIBUTE_MULTI) {
-        (*McbEntry).ByteCount = BlockAlign((*Fcb).Vcb, (*McbEntry).ByteCount);
+    if FlagOn((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_MULTI) == 0 {
+        (*McbEntry).ByteCount = CdBlockAlign((*Fcb).Vcb, (*McbEntry).ByteCount as u32) as i64;
     }
 
     (*McbEntry).FileOffset = StartingFileOffset;
@@ -98,7 +117,7 @@ pub unsafe extern "C" fn CdAddAllocationFromDirent(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdAddInitialAllocation(
-    IrpContext: *mut PIRP_CONTEXT,
+    IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     StartingBlock: u32,
     DataLength: i64,
@@ -106,15 +125,15 @@ pub unsafe extern "C" fn CdAddInitialAllocation(
     unsafe {
         PAGED_CODE();
         let _ = IrpContext;
-        ASSERT_IRP_CONTEXT(IrpContext);
+        ASSERT_IRP_CONTEXT(IrpContext as *const IRP_CONTEXT);
         ASSERT_FCB(Fcb);
         ASSERT_LOCKED_FCB(Fcb);
         NT_ASSERT(0 == (*Fcb).Mcb.CurrentEntryCount);
-        NT_ASSERT(CDFS_NTC_FCB_DATA != (*Fcb).NodeTypeCode);
+        NT_ASSERT(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
 
         let mcb_entry: *mut CD_MCB_ENTRY = (*Fcb).Mcb.McbArray;
         let disk_offset: i64 = LlBytesFromBlocks((*Fcb).Vcb, StartingBlock);
-        (*mcb_entry).DiskOffset = disk_offset - ((*Fcb).StreamOffset as i64);
+        (*mcb_entry).DiskOffset = disk_offset - ((*fcb_idx(Fcb)).StreamOffset as i64);
         (*mcb_entry).ByteCount = DataLength;
         (*mcb_entry).FileOffset = 0;
         (*mcb_entry).DataBlockByteCount = (*mcb_entry).ByteCount;
@@ -150,9 +169,9 @@ pub unsafe extern "C" fn CdInitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
-    ASSERT_IRP_CONTEXT(IrpContext as *mut core::ffi::c_void);
-    ASSERT_FCB(Fcb as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER(IrpContext);
+    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_FCB(Fcb);
 
     (*Fcb).Mcb.MaximumEntryCount = 1;
     (*Fcb).Mcb.CurrentEntryCount = 0;
@@ -166,12 +185,12 @@ pub unsafe extern "C" fn CdUninitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
 
     if (*Fcb).Mcb.MaximumEntryCount > 1 {
-        CdFreePool(core::ptr::addr_of_mut!((*Fcb).Mcb.McbArray));
+        CdFreePool(core::ptr::addr_of_mut!((*Fcb).Mcb.McbArray) as *mut *mut core::ffi::c_void);
     }
 
     return;
