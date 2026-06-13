@@ -68,6 +68,7 @@ members = [
     "pl011-rust",
     "processr-rust",
     "csq-rust",
+    "guids-rust",
     "arbiter-rust",
     "lsass-sys",
     "lsalib-rust",

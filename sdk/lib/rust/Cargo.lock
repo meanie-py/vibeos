@@ -358,6 +358,10 @@ name = "generictable"
 version = "0.1.0"
 
 [[package]]
+name = "guids-rust"
+version = "0.1.0"
+
+[[package]]
 name = "hal-cargo"
 version = "0.1.0"
 dependencies = [

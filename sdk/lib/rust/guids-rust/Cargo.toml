@@ -1,0 +1,12 @@
+# guids-rust — Rust translation of the kernel's three cmake C GUID libs
+# (sdk/lib/wdmguid, poguid, ioevent). 217 deduped #[no_mangle] GUID data
+# constants. crate-type staticlib+rlib → linked into ntoskrnl/ntkrnlmp via
+# .rust_lib("guids-rust") in place of libwdmguid.a/libpoguid.a/libioevent.a.
+# Pure data, no_std, no deps. C sources kept on disk (never-delete rule).
+[package]
+name = "guids-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
