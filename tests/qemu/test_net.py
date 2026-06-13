@@ -70,6 +70,8 @@ MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
+MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
+MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -220,4 +222,36 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     assert _wait_for_marker(vm, MARK_TDI_DGRAM), (
         "TDI SEND_DATAGRAM/RECEIVE_DATAGRAM round-trip did not complete "
         "(UDP datagram path + datagram event-indication upcall)"
+    )
+
+
+@pytest.mark.skip(
+    reason="BLOCKED on the Winsock2 catalog vs the amd64 boot 0x50. The usermode "
+    "vehicle is in place and verified up to the catalog gap: winlogon spawns "
+    "nettest.exe (DETACHED_PROCESS), main() runs, WSAStartup OK, and "
+    "OutputDebugStringA reaches the serial log. But socket() returns WSAEINVAL "
+    "(10022) because the Winsock2 protocol catalog (msafd providers) is empty on "
+    "the LiveCD. The catalog (drivers/network/netstack/netstack_winsock.inf) is "
+    "the correct fix, BUT baking it into the shared system hive deterministically "
+    "trips a BUGCHECK 0x50 in an early kernel driver (amd64 layout-sensitive 0x50 "
+    "family) before shell ready. So the usermode round-trip is blocked on that "
+    "separate latent driver bug — for which netstack_winsock.inf is now a "
+    "DETERMINISTIC repro. The netstack TRANSPORT itself (TCP+UDP via the exact AFD "
+    "TDI event-indication path) is proven by test_tdi_selftest_roundtrip + "
+    "test_tdi_datagram_roundtrip. Re-enable once the 0x50 is root-caused."
+)
+def test_usermode_winsock_roundtrip(vm: QemuVM) -> None:
+    r"""M5 capstone (BLOCKED — see skip reason): a REAL usermode winsock process
+    (nettest.exe, spawned by winlogon at desktop) drives the full stack from the
+    top — ws2_32 -> msafd -> AFD -> \Device\Tcp|Udp -> netstack -> smoltcp -> slirp.
+    Closes the loop the kernel self-tests open from the TDI side.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_USERMODE_TCP, timeout=120), (
+        "usermode winsock TCP round-trip did not complete "
+        "(ws2_32 -> AFD -> netstack TCP path)"
+    )
+    assert _wait_for_marker(vm, MARK_USERMODE_UDP, timeout=120), (
+        "usermode winsock UDP round-trip did not complete "
+        "(ws2_32 -> AFD -> netstack UDP datagram path)"
     )

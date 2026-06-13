@@ -725,6 +725,62 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
+    /* netstack (smoltcp) usermode winsock proof: spawn nettest.exe directly here
+     * rather than via explorer's HKCU..\Run / Startup-folder processing, which on
+     * amd64 doesn't reliably reach ProcessStartupItems() (the shell startup is
+     * slow/fragile — unrelated to the network stack). winlogon is the earliest
+     * guaranteed usermode launch point. nettest does a real ws2_32 -> msafd ->
+     * AFD -> netstack TCP+UDP round-trip and emits [NETTEST] markers to the debug
+     * serial; tests/qemu/test_net.py asserts on them. It retries briefly then
+     * exits, so it is harmless on boots with no NIC. We do not wait on it. */
+    {
+        let mut Si: STARTUPINFOW = zeroed();
+        let mut Pi: PROCESS_INFORMATION = zeroed();
+        let mut NetTestPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut NetTestLine: [u16; 12] = wstr_arr!("nettest.exe");
+
+        GetWindowsDirectoryW(NetTestPath.as_mut_ptr(), MAX_PATH);
+        wcscat(NetTestPath.as_mut_ptr(), wstr!("\\system32\\nettest.exe").as_ptr());
+
+        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+
+        // DETACHED_PROCESS (0x8): nettest is a console (win32cui) app, but winlogon
+        // has no console to inherit and the desktop console server isn't a sane
+        // parent here — without this, kernel32's PROCESS_ATTACH hangs connecting to
+        // CSRSS to allocate a console (observed: process stalls before main). The
+        // same flag is used for services.exe/lsass.exe. nettest emits only via
+        // OutputDebugStringA, so it needs no console.
+        const DETACHED_PROCESS: DWORD = 0x0000_0008;
+        let bResult = CreateProcessW(
+            NetTestPath.as_ptr(),
+            NetTestLine.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            DETACHED_PROCESS,
+            null_mut(),
+            null(),
+            &mut Si,
+            &mut Pi,
+        );
+
+        if bResult != 0 {
+            DbgPrint(
+                b"[WINLOGON] nettest.exe created (PID %lu)\n\0".as_ptr() as *const i8,
+                Pi.dwProcessId,
+            );
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        } else {
+            DbgPrint(
+                b"[WINLOGON] CreateProcessW(nettest.exe) FAILED (error %lu)\n\0".as_ptr()
+                    as *const i8,
+                GetLastError(),
+            );
+        }
+    }
+
     /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
      * shell's first paint already has g_FontListHead populated. The old async
      * CreateThread(FontLoadThread) here raced the shell and lost on i386. */

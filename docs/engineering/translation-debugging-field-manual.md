@@ -1001,6 +1001,40 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 KTRAP_FRAME, and `identify-object` on bogus pointers in one call. Run
 `qemu/build-index.sh <arch>` after each kernel build for offline symbol lookup.
 
+### 9.9 A registry/hive addition that "shouldn't matter" deterministically tripping an early BUGCHECK 0x50
+
+**Symptom:** You add benign data to a *baked* registry hive (e.g. an `add_registry_inf`
+`.inf` with new `HKLM,...` values — in our case the Winsock2 protocol catalog
+`netstack_winsock.inf`). The kernel code is untouched, yet boot now **deterministically**
+BUGCHECKs `0x50` (PAGE_FAULT_IN_NONPAGED_AREA) in an early driver — read-fault on a
+`0xfffff8a0...` paged-pool VA, faulting PC in the `0xfffff880...` driver region —
+*before* `shell ready`, at the same log line every run. Backing the hive change out
+restores a green boot.
+
+**Root cause:** The hive is loaded early by the config manager; growing/altering it
+shifts pool allocation order, which moves a **latent** memory bug (uninitialised read,
+off-by-one, use-after-free, a hand-mirrored `repr(C)` struct with a wrong offset) from
+"benign / lands on valid memory" to "lands on an unmapped page → 0x50." The registry
+data is innocent; it is a **layout perturbation** that *exposes* a pre-existing driver
+bug. This is the same family as the known amd64 taskbar 0x50 (`project_amd64_taskbar_
+bugcheck_0x50`), but the hive shift makes it **deterministic and early** instead of
+non-deterministic and post-`shell ready`.
+
+**What to do:**
+1. **Don't ship the hive change** — a baked `add_registry_inf` goes into the *shared*
+   system hive, so it breaks boot on *all* arches/configs, not just the one you tested.
+   Disable the `add_registry_inf(...)` line (keep the `.inf` artifact + a comment).
+2. **Treat it as a gift:** a deterministic, same-line repro of an otherwise
+   non-deterministic 0x50 is the easiest version to hunt. Symbolicate the faulting PC
+   (`0xfffff880...`) against the per-arch build index (`qemu/build-index.sh amd64`,
+   then `qemu/addr2sym.sh`) to name the driver, then bisect that driver's recent
+   translations. The layout shift is the *trigger*, not the *bug* — fix the driver,
+   not the hive.
+3. **Confirm causation cheaply:** revert only the hive line and re-run. Boot green ⇒
+   the addition is the trigger (not a flake). Two identical-line crashes ≠ the ~1/3
+   flake; determinism + a *pre*-`shell ready` PC that the flake never reaches is the
+   tell.
+
 ---
 
 *Maintenance: this manual is the fast-lookup index distilled from the project's debug
