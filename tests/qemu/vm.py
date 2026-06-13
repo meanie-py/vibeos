@@ -439,6 +439,13 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     ECHO_GUEST_PORT: int = 7777
     # Host port forwarded to the guest echo port; allocated in qemu_args().
     echo_hostfwd_port: int = 0
+    # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual
+    # address:port, which slirp pipes through `cat` on the host (a built-in
+    # line echo — no host-listener startup race). This is the path an outbound
+    # TCP client (and later winsock-via-AFD) uses; the guest's serial markers
+    # prove connect/send/recv.
+    GUESTFWD_ADDR: str = "10.0.2.100"
+    GUESTFWD_PORT: int = 9999
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
@@ -451,7 +458,8 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
             "-device", "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
-            f"-:{self.ECHO_GUEST_PORT}",
+            f"-:{self.ECHO_GUEST_PORT}"
+            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
         ]
 
 

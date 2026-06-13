@@ -42,6 +42,8 @@ MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
 MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
 MARK_DNS = "[NETSTACK] dns OK"
 MARK_TDI_OWNED = "[NETSTACK] TDI dispatch ready (4 of 4 devices owned)"
+MARK_OUT_SENT = "[NETSTACK] outbound TCP connected"
+MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -142,3 +144,16 @@ def test_tdi_devices_owned(vm: QemuVM) -> None:
     assert MARK_TDI_OWNED in vm._boot_output, (
         "netstack did not own the 4 TDI transport devices (tcpip collision?)"
     )
+
+
+def test_outbound_tcp_client(vm: QemuVM) -> None:
+    """The netstack engine connects OUT through the stack and round-trips data.
+
+    Proves the smoltcp connect/send/recv client path (the path the TDI/AFD layer
+    will sit on): guest -> virtio TX -> slirp guestfwd -> `cat` echo on the host
+    -> back. The connect happens at boot (after DHCP), so the markers land in the
+    boot output. A full client round-trip = connect + send + recv all work.
+    """
+    _require_net_config(vm)
+    assert MARK_OUT_SENT in vm._boot_output, "outbound TCP connect/send did not complete"
+    assert MARK_OUT_RECV in vm._boot_output, "outbound TCP recv (echo back) did not complete"

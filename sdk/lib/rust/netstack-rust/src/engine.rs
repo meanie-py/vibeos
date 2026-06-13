@@ -85,6 +85,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
         icmp::PacketBuffer::new(vec![icmp::PacketMetadata::EMPTY; 4], vec![0u8; 256]),
         icmp::PacketBuffer::new(vec![icmp::PacketMetadata::EMPTY; 4], vec![0u8; 256]),
     ));
+    // Outbound TCP client socket — connects out via the slirp guestfwd to a host
+    // listener, proving the connect/send/recv path the TDI layer will sit on.
+    let client_handle = sockets.add(tcp::Socket::new(
+        tcp::SocketBuffer::new(vec![0u8; 4096]),
+        tcp::SocketBuffer::new(vec![0u8; 4096]),
+    ));
     let dns_handle = sockets.add(dns::Socket::new(
         &[IpAddress::v4(DNS_IP[0], DNS_IP[1], DNS_IP[2], DNS_IP[3])],
         Vec::new(),
@@ -102,6 +108,9 @@ unsafe extern "system" fn worker(_context: PVOID) {
     let mut dns_started = false;
     let mut dns_attempts = 0u32;
     let mut dns_query = None;
+    let mut client_sent = false;
+    let mut client_done = false;
+    let mut client_attempts = 0u32;
 
     loop {
         let ts = now();
@@ -187,6 +196,36 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     Err(_) => {
                         // transient failure — allow a retry until the cap.
                         dns_query = None;
+                    }
+                }
+            }
+        }
+
+        // --- Outbound TCP client to the host via slirp guestfwd (10.0.2.100:9999) ---
+        // Retries until the host listener is up (the test starts it post-boot).
+        if dhcp_configured && !client_done {
+            let s = sockets.get_mut::<tcp::Socket>(client_handle);
+            if !s.is_open() {
+                let local_port = 49500 + (client_attempts % 4000) as u16;
+                let _ = s.connect(
+                    iface.context(),
+                    (IpAddress::v4(10, 0, 2, 100), 9999),
+                    local_port,
+                );
+                client_attempts += 1;
+            } else if s.may_send() && !client_sent {
+                if s.send_slice(b"VIBEOS-NETSTACK-OUTBOUND\n").is_ok() {
+                    client_sent = true;
+                    nsprint!("[NETSTACK] outbound TCP connected -> 10.0.2.100:9999, probe sent\n");
+                }
+            }
+            if s.can_recv() {
+                let mut tmp = [0u8; 64];
+                if let Ok(n) = s.recv_slice(&mut tmp) {
+                    if n > 0 {
+                        nsprint!("[NETSTACK] outbound TCP echo received ({} bytes) OK\n", n);
+                        client_done = true;
+                        s.close();
                     }
                 }
             }
