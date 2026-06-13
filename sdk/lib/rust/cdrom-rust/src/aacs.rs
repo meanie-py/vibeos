@@ -7,13 +7,15 @@ use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "C" {
+    fn TracePrint(level: i32, flag: i32, fmt: *const i8, ...);
+}
+extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferSize: u32, Retry: u8, Cdb: *const core::ffi::c_void, CdbLength: u32, ) -> i32;
     fn ScratchBuffer_ResetItems(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ClearStatus: u8);
     fn NT_ASSERT(cond: i32);
     fn REVERSE_SHORT(p: *mut u16);
-    fn TracePrint(level: i32, flag: i32, fmt: *const i8, ...);
     fn PAGED_CODE();
 }
 

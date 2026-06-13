@@ -10,7 +10,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExFreePool, IoAllocateMdl, IoBuildPartialMdl, IoFreeMdl, IoGetNextIrpStackLocation, KeCancelTimer, KeInitializeDpc, KeInitializeSpinLock, KeInitializeTimer, KeSetTimer, LARGE_INTEGER, MmBuildMdlForNonPagedPool, _KDPC};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn NT_ASSERT(condition: i32);
     fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
     fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, iotarget: *mut core::ffi::c_void, options: u32, timeout: *mut core::ffi::c_void, ) -> i32;
@@ -24,13 +24,36 @@ const TRACE_LEVEL_FATAL: u32 = 1;
 const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5u32 as i32;
 const STATUS_INTEGER_OVERFLOW: i32 = 0xC0000095u32 as i32;
 extern "C" {
-    fn WDF_REQUEST_REUSE_PARAMS_INIT( params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS, );
     fn TracePrint(level: u32, flag: u32, format: *const u8, status: NTSTATUS);
+    fn CdromDbgPrintExHistory(
+        component_id: u32,
+        level: u32,
+        format: *const i8,
+        srb_status: usize,
+        sense: usize,
+        asc: usize,
+        ascq: usize,
+        index1_signed: usize,
+        index1_hex: usize,
+        index2_signed: usize,
+        index2_hex: usize,
+    ) -> u32;
+    fn CdromDbgPrint1(format: *const i8, arg1: usize) -> u32;
+    fn CdromDbgPrint2(format: *const i8, arg1: usize, arg2: usize) -> u32;
+    fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
+    fn CdromDbgPrint4(format: *const i8, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> u32;
+    fn CdromDbgPrint5(format: *const i8, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) -> u32;
+}
+extern "system" {
+    fn WDF_REQUEST_REUSE_PARAMS_INIT( params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS, );
     fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: u32);
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn SET_FLAG(flags: *mut u32, flag: u32);
-    fn min(a: u32, b: u32) -> u32;
-    fn DbgPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...) -> u32;
+}
+// C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
+// ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
+#[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
+extern "system" {
     fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsRead: u8) -> u8; // BOOLEAN
     fn MmPrepareMdlForReuse(Mdl: *mut MDL);
     fn SRB_STATUS(srb_status: u8) -> u32;
@@ -65,7 +88,7 @@ const SRB_FLAGS_DATA_OUT: u32 = 0x00000080;
 const SRB_FLAGS_ADAPTER_CACHE_ENABLE: u32 = 0x200;  // was 0x00000100 (LLM-invented); bindgen-correct
 const FDO_HACK_NO_STREAMING: u32 = 0x20; // placeholder  // was 0x00000001 (LLM-invented); bindgen-correct
 
-const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x0001;
+const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x0002;
 const SRB_STATUS_ABORTED: u8 = 0x02;
 
 const TRACE_LEVEL_WARNING: u32 = 3;  // assumed value
@@ -125,7 +148,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     // Constants used by this function
     const TRACE_LEVEL_WARNING: u32 = 4;
     const TRACE_FLAG_INIT: u32 = 0x00000001;
-    const NonPagedPoolNx: u32 = 0x20;
+    const NonPagedPoolNx: u32 = 0x200;
     const CDROM_TAG_SCRATCH: u32 = 0x72534343; // 'CScr'
 
     // Forward declarations for unknown symbols
@@ -171,6 +194,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     (*DeviceExtension).ScratchContext.ScratchBufferSize = scratch_size;
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
+    CdromDbgPrint2(b"[SCRA] enter maxpat=%x scratch_size=%x\n\0".as_ptr() as *const i8,
+        (*DeviceExtension).DeviceAdditionalData.MaxPageAlignedTransferBytes as usize,
+        scratch_size as usize);
 
     // allocate the buffer
     if NT_SUCCESS(status) {
@@ -203,6 +229,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         }
     }
 
+    CdromDbgPrint2(b"[SCRA] after buf: st=%x buf=%p\n\0".as_ptr() as *const i8,
+        status as usize, (*DeviceExtension).ScratchContext.ScratchBuffer as usize);
+
     // allocate the MDL
     if NT_SUCCESS(status) {
         (*DeviceExtension).ScratchContext.ScratchBufferMdl = IoAllocateMdl(
@@ -224,6 +253,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             MmBuildMdlForNonPagedPool((*DeviceExtension).ScratchContext.ScratchBufferMdl);
         }
     }
+
+    CdromDbgPrint2(b"[SCRA] after mdl: st=%x mdl=%p\n\0".as_ptr() as *const i8,
+        status as usize, (*DeviceExtension).ScratchContext.ScratchBufferMdl as usize);
 
     // create the request
     if NT_SUCCESS(status) {
@@ -248,6 +280,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             );
         }
     }
+
+    CdromDbgPrint2(b"[SCRA] after reqcreate: st=%x req=%p\n\0".as_ptr() as *const i8,
+        status as usize, (*DeviceExtension).ScratchContext.ScratchRequest as usize);
 
     // allocate the srb
     if NT_SUCCESS(status) {
@@ -284,6 +319,11 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             );
         }
     }
+
+    CdromDbgPrint3(b"[SCRA] after srb+sense: st=%x srb=%p sense=%p\n\0".as_ptr() as *const i8,
+        status as usize,
+        (*DeviceExtension).ScratchContext.ScratchSrb as usize,
+        (*DeviceExtension).ScratchContext.ScratchSense as usize);
 
     // allocate the SRB history data
     if NT_SUCCESS(status) {
@@ -360,6 +400,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         }
     }
 
+    CdromDbgPrint2(b"[SCRA] after history+partialmdl: st=%x partmdl=%p\n\0".as_ptr() as *const i8,
+        status as usize, (*DeviceExtension).ScratchContext.PartialMdl as usize);
+
     // cleanup on failure
     if !NT_SUCCESS(status) {
         ScratchBuffer_Deallocate(DeviceExtension);
@@ -368,7 +411,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     (NT_SUCCESS(status)) as u8
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ResetItems(
+pub unsafe extern "system" fn ScratchBuffer_ResetItems(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     ResetRequestHistory: u8,
 ) {
@@ -459,6 +502,9 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
         let requestContext = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
         let originalRequest = (*requestContext).OriginalRequest;
         let mut status: i32 = 0; // STATUS_SUCCESS
+        CdromDbgPrint3(b"[PNRW] scratchreq=%p reqctx=%p origreq=%p\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).ScratchContext.ScratchRequest as usize,
+            requestContext as usize, originalRequest as usize);
 
         let transferSize = min(
             (*readWriteContext).EntireXferLen.wrapping_sub((*readWriteContext).TransferedBytes),
@@ -915,6 +961,14 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
             send_options,
             core::ptr::null_mut(),
         );
+        CdromDbgPrint5(
+            b"[SCR] send st=%x srbst=%x dtl=%x sync=%x req=%p\n\0".as_ptr() as *const i8,
+            status as usize,
+            (*srb).SrbStatus as usize,
+            (*srb).DataTransferLength as usize,
+            SynchronousSrb as usize,
+            (*DeviceExtension).ScratchContext.ScratchRequest as usize,
+        );
 
         if SynchronousSrb != 0 {
             let mut sense_size: usize;
@@ -1044,35 +1098,35 @@ pub unsafe extern "C" fn ValidateSrbHistoryDataPresumptions(
                     && (ascq == (*found).NormalizedSenseData.AdditionalSenseCodeQualifier)
                 {
                     if found_uncompressed_item && ((*found).ClassDriverUse != 0) {
-                        DbgPrintEx(
+                        CdromDbgPrintExHistory(
                             DPFLTR_CDROM_ID,
                             DPFLTR_ERROR_LEVEL,
                             b"History data has compressed history following uncompressed history for srbstatus/sense/asc/ascq of %02x/%02x/%02x/%02x at indices %d (%08x) and %d (%08x)\n\0"
                                 .as_ptr() as *const i8,
-                            srb_status as u32,
-                            sense as u32,
-                            asc as u32,
-                            ascq as u32,
-                            i as i32,
-                            i as u32,
-                            j as i32,
-                            j as u32,
+                            srb_status as usize,
+                            sense as usize,
+                            asc as usize,
+                            ascq as usize,
+                            i,
+                            i,
+                            j,
+                            j,
                         );
                         debug_assert!(false);
                     } else if found_partially_compressed_item && ((*found).ClassDriverUse == 0xFF) {
-                        DbgPrintEx(
+                        CdromDbgPrintExHistory(
                             DPFLTR_CDROM_ID,
                             DPFLTR_ERROR_LEVEL,
                             b"History data has fully compressed history following partially compressed history for srbstatus/sense/asc/ascq of %02x/%02x/%02x/%02x at indices %d (%08x) and %d (%08x)\n\0"
                                 .as_ptr() as *const i8,
-                            srb_status as u32,
-                            sense as u32,
-                            asc as u32,
-                            ascq as u32,
-                            i as i32,
-                            i as u32,
-                            j as i32,
-                            j as u32,
+                            srb_status as usize,
+                            sense as usize,
+                            asc as usize,
+                            ascq as usize,
+                            i,
+                            i,
+                            j,
+                            j,
                         );
                         debug_assert!(false);
                     }

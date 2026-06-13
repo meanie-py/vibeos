@@ -26,4 +26,4 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }

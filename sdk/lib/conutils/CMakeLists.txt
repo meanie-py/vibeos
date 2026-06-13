@@ -12,6 +12,7 @@ list(APPEND SOURCE
     # utils.c      — replaced by Rust implementation (sdk/lib/rust/conutils-rust/)
     # conutils.h
     rust_cohab_stub.c
+    rust_variadic_shim.c
     )
 
 set(CONUTILS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")

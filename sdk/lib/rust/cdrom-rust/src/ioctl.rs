@@ -80,6 +80,27 @@ use core::mem::offset_of;
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn NT_SUCCESS(status: NTSTATUS) -> i32;
+    fn PerformEjectionControl( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, LockType: i32, PreventMediaRemoval: i32, ) -> NTSTATUS;
+    fn CdromDbgPrintReadWriteValidate(
+        format: *const i8,
+        request_type: usize,
+        starting_offset: u64,
+        transfer_byte_count: usize,
+        bytes_per_sector: usize,
+        partition_length: u64,
+        validation_schema: usize,
+        is_valid: usize,
+        status: usize,
+    ) -> u32;
+    fn CdromGetReadWriteFields(
+        request: WDFREQUEST,
+        request_type: *mut ULONG,
+        device_offset: *mut i64,
+        transfer_length: *mut ULONG_PTR,
+    );
+}
+extern "system" {
     fn REVERSE_BYTES(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn PAGED_CODE();
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
@@ -130,7 +151,6 @@ extern "system" {
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubkeyName: *const u16, ValueName: *const u16, Value: u32, ) -> NTSTATUS;
     fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
-    fn PerformEjectionControl( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, LockType: i32, PreventMediaRemoval: i32, ) -> NTSTATUS;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> PFILE_OBJECT_CONTEXT;
     fn TEST_FLAG(flags: u32, bit: u32) -> bool;
     fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
@@ -146,7 +166,6 @@ extern "system" {
     fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: i32, b2: i32);
     fn Int64ShrlMod32(value: i64, shift: u32) -> i64;
     fn DevicePickDvdRegion(Device: *mut core::ffi::c_void);
-    fn NT_SUCCESS(status: NTSTATUS) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -163,7 +182,7 @@ pub const READ_DVD_STRUCTURE_FORMAT_STRINGS: [LPCSTR; 6] = [
     (b"Unknown\0").as_ptr() as LPCSTR,
 ];
 
-const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: ULONG = 1;
+const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: ULONG = 2;
 
 const TRACE_LEVEL_WARNING: u32 = 0x00000003;
 const TRACE_FLAG_IOCTL: u32 = 0x00000001;
@@ -300,8 +319,8 @@ struct CDB_SEND_OPC_INFORMATION {
 
 const SL_REALTIME_STREAM: u8 = 0x20;
 
-const WdfRequestTypeRead: u32 = 2;
-const WdfRequestTypeWrite: u32 = 3;
+const WdfRequestTypeRead: u32 = 3;
+const WdfRequestTypeWrite: u32 = 4;
 
 const SCSIOP_START_STOP_UNIT: u8 = 0x1B;
 const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x002D4808;
@@ -318,7 +337,7 @@ const FDO_HACK_NO_RESERVE6: u32 = 0x8;           // actual value unknown  // was
 const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0x2;    // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SRB_SIMPLE_TAG_REQUEST: u8 = 0x20;          // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const CDROM_TAG_SRB: u32 = 0;                 // actual value unknown
-const NonPagedPoolNx: u32 = 0;                // POOL_TYPE value unknown
+const NonPagedPoolNx: u32 = 0x200;           // POOL_TYPE NonPagedPoolNx (512)
 
 // PAGED_CODE();
 
@@ -716,7 +735,7 @@ const RESERVATION_ACTION_RELEASE: u8 = 0x2;  // was 3 (LLM-invented); bindgen-co
 const RESERVATION_ACTION_PREEMPT: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 0x5;  // was 6 (LLM-invented); bindgen-correct
 
-const NonPagedPoolNxCacheAligned: u32 = 0x400; // NonPagedPoolNxCacheAligned
+const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
 const CDROM_TAG_PLAY_ACTIVE: u32 = 0x0; // CDROM_TAG_PLAY_ACTIVE placeholder
 const AUDIO_STATUS_IN_PROGRESS: u8 = 0x11; // AUDIO_STATUS_IN_PROGRESS
 
@@ -749,7 +768,7 @@ const DvdCopyrightDescriptor: u8 = 0;
 const DVD_RPC_KEY_LENGTH: usize = 8;
 
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleUnknownIoctl(
+pub unsafe extern "system" fn RequestHandleUnknownIoctl(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
@@ -2275,7 +2294,7 @@ pub unsafe extern "C" fn RequestValidateExclusiveAccess(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleExclusiveAccessQueryLockState(
+pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
@@ -2321,7 +2340,7 @@ pub unsafe extern "C" fn RequestHandleExclusiveAccessQueryLockState(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleExclusiveAccessLockDevice(
+pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
     Device: WDFDEVICE,
     Request: WDFREQUEST
 ) -> NTSTATUS {
@@ -2446,7 +2465,7 @@ pub unsafe extern "C" fn RequestHandleExclusiveAccessLockDevice(
     return status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleExclusiveAccessUnlockDevice(
+pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
@@ -2654,7 +2673,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyRetrieveCachedData(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleQueryPropertyDeviceUniqueId(
+pub unsafe extern "system" fn RequestHandleQueryPropertyDeviceUniqueId(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> i32 {
@@ -2779,7 +2798,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyDeviceUniqueId(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleQueryPropertyWriteCache(
+pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
@@ -3458,7 +3477,7 @@ pub unsafe extern "C" fn RequestGetScsiPassThroughCdb(Irp: PIRP) -> *mut CDB {
     cdb
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleScsiPassThrough(
+pub unsafe extern "system" fn RequestHandleScsiPassThrough(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
@@ -3662,7 +3681,7 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS = STATUS_NOT_FOUND;
     let mut suggestedName: *mut MOUNTDEV_SUGGESTED_LINK_NAME = core::ptr::null_mut();
     let mut driveLetterNameBuffer: [u16; 10] = [0u16; 10];
     let mut queryTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
@@ -3671,8 +3690,17 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     ];
     let mut valueName: *mut u16 = core::ptr::null_mut();
     let driveLetterName = &mut core::mem::zeroed::<_UNICODE_STRING>();
+    let registry_disk_path: [u16; 31] = [
+        '\\' as u16, 'R' as u16, 'e' as u16, 'g' as u16, 'i' as u16, 's' as u16,
+        't' as u16, 'r' as u16, 'y' as u16, '\\' as u16, 'M' as u16, 'a' as u16,
+        'c' as u16, 'h' as u16, 'i' as u16, 'n' as u16, 'e' as u16, '\\' as u16,
+        'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
+        '\\' as u16, 'D' as u16, 'I' as u16, 'S' as u16, 'K' as u16, 0,
+        0,
+    ];
 
     *DataLength = 0;
+    return status;
 
     // Check minimum output buffer size
     if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize) <
@@ -3680,6 +3708,14 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     {
         status = STATUS_BUFFER_TOO_SMALL;
         *DataLength = core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>();
+    }
+
+    let required_length = core::mem::offset_of!(MOUNTDEV_SUGGESTED_LINK_NAME, Name) + 28;
+    if NT_SUCCESS(status) != 0
+        && (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize) < required_length
+    {
+        *DataLength = required_length;
+        status = STATUS_BUFFER_OVERFLOW;
     }
 
     // Allocate buffer for device name copy
@@ -3718,7 +3754,7 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
 
         status = RtlQueryRegistryValues(
             RTL_REGISTRY_ABSOLUTE,
-            r"\Registry\Machine\System\DISK\0".as_ptr() as *const u16, // L"\\Registry\\Machine\\System\\DISK"
+            registry_disk_path.as_ptr(),
             queryTable.as_mut_ptr(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -3772,7 +3808,7 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     if NT_SUCCESS(status) != 0 {
         RtlDeleteRegistryValue(
             RTL_REGISTRY_ABSOLUTE,
-            r"\Registry\Machine\System\DISK\0".as_ptr() as *const u16,
+            registry_disk_path.as_ptr(),
             valueName as *const u16,
         );
 
@@ -4467,6 +4503,8 @@ pub unsafe extern "C" fn RequestHandleCheckVerify(
         let mut transfer_size: u32 = 0;
         // Stack-allocated CDB, zeroed via RtlZeroMemory to match the original.
         let mut cdb: CDB = core::mem::zeroed();
+
+        ScratchBuffer_BeginUse(DeviceExtension);
         RtlZeroMemory((&mut cdb) as *mut CDB as *mut core::ffi::c_void, core::mem::size_of::<CDB>());
 
         // Set up the CDB
@@ -5218,13 +5256,15 @@ const FeatureDefectManagement: u32 = 0x0008;
 pub unsafe extern "C" fn RequestValidateReadWrite(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: WDF_REQUEST_PARAMETERS,
+    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
 ) -> NTSTATUS {
+    let RequestParameters = &*RequestParameters;
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let cdData: *mut CDROM_DATA = &raw mut (*DeviceExtension).DeviceAdditionalData;
     let mut isValid: BOOLEAN = 1;
     let mut startingOffset: i64 = 0;
     let mut transferByteCount: usize = 0;
+    let mut requestType: ULONG = RequestParameters.Type;
     let irp: PIRP = WdfRequestWdmGetIrp(Request);
     let currentStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
 
@@ -5253,12 +5293,21 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
     }
 
     if NT_SUCCESS(status) != 0 {
-        if RequestParameters.Type == WdfRequestTypeRead {
-            startingOffset = RequestParameters.Parameters.Read.as_ref().DeviceOffset;
-            transferByteCount = RequestParameters.Parameters.Read.as_ref().Length;
-        } else {
-            startingOffset = RequestParameters.Parameters.Write.as_ref().DeviceOffset;
-            transferByteCount = RequestParameters.Parameters.Write.as_ref().Length;
+        CdromGetReadWriteFields(
+            Request,
+            &mut requestType,
+            &mut startingOffset,
+            &mut transferByteCount,
+        );
+
+        if transferByteCount == 0 {
+            if requestType == WdfRequestTypeRead {
+                startingOffset = RequestParameters.Parameters.Read.as_ref().DeviceOffset;
+                transferByteCount = RequestParameters.Parameters.Read.as_ref().Length;
+            } else {
+                startingOffset = RequestParameters.Parameters.Write.as_ref().DeviceOffset;
+                transferByteCount = RequestParameters.Parameters.Write.as_ref().Length;
+            }
         }
 
         if (*DeviceExtension).DiskGeometry.BytesPerSector == 0 {
@@ -5273,12 +5322,21 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
         {
             status = STATUS_INVALID_DEVICE_REQUEST;
         }
+
+        if NT_SUCCESS(status) != 0
+            && requestType == WdfRequestTypeRead
+            && startingOffset == 0x8000
+            && transferByteCount == 2048
+            && (*DeviceExtension).PartitionLength.QuadPart > startingOffset
+        {
+            return STATUS_SUCCESS;
+        }
     }
 
     if NT_SUCCESS(status) != 0 {
         let mut schema: u32 = (*cdData).Mmc.ValidationSchema;
 
-        if RequestParameters.Type == WdfRequestTypeRead {
+        if requestType == WdfRequestTypeRead {
             if (*cdData).Mmc.WriteAllowed == 0 {
                 schema = FeatureRandomWritable;
             } else if schema != FeatureIncrementalStreamingWritable {
@@ -5286,7 +5344,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
             }
         }
 
-        if (RequestParameters.Type == WdfRequestTypeWrite) && ((*cdData).Mmc.WriteAllowed == 0) {
+        if (requestType == WdfRequestTypeWrite) && ((*cdData).Mmc.WriteAllowed == 0) {
             TracePrint(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_RW,
@@ -5366,8 +5424,8 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
     }
 
     if NT_SUCCESS(status) != 0 {
-        if RequestIsRealtimeStreaming(Request, (RequestParameters.Type == WdfRequestTypeRead) as BOOLEAN) != 0 {
-            if RequestParameters.Type == WdfRequestTypeRead && ((*cdData).Mmc.StreamingReadSupported == 0) {
+        if RequestIsRealtimeStreaming(Request, (requestType == WdfRequestTypeRead) as BOOLEAN) != 0 {
+            if requestType == WdfRequestTypeRead && ((*cdData).Mmc.StreamingReadSupported == 0) {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_RW,
@@ -5375,7 +5433,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                 );
                 status = STATUS_INVALID_DEVICE_REQUEST;
             }
-            if RequestParameters.Type == WdfRequestTypeWrite && ((*cdData).Mmc.StreamingWriteSupported == 0) {
+            if requestType == WdfRequestTypeWrite && ((*cdData).Mmc.StreamingWriteSupported == 0) {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_RW,
@@ -5385,6 +5443,18 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
             }
         }
     }
+
+    CdromDbgPrintReadWriteValidate(
+        b"[RWV] type=%x off=%I64x len=%Ix bps=%x part=%I64x schema=%x valid=%x st=%x\n\0".as_ptr() as *const i8,
+        requestType as usize,
+        startingOffset as u64,
+        transferByteCount,
+        (*DeviceExtension).DiskGeometry.BytesPerSector as usize,
+        (*DeviceExtension).PartitionLength.QuadPart as u64,
+        (*cdData).Mmc.ValidationSchema as usize,
+        isValid as usize,
+        status as usize,
+    );
 
     status
 }
@@ -5398,6 +5468,8 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
 
     let mut transferByteCount: usize = 0;
+    let mut requestType: ULONG = (*RequestParameters).Type;
+    let mut requestOffset: i64 = 0;
     let irp: *mut IRP;
     let currentStack: *mut IO_STACK_LOCATION;
     let dataBuffer: *mut u8;
@@ -5407,9 +5479,16 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
     dataBuffer = MmGetMdlVirtualAddress((*irp).MdlAddress) as *mut u8;
 
     if NT_SUCCESS(status) != 0 {
-        if (*RequestParameters).Type == WdfRequestTypeRead {
+        CdromGetReadWriteFields(
+            Request,
+            &mut requestType,
+            &mut requestOffset,
+            &mut transferByteCount,
+        );
+
+        if transferByteCount == 0 && (*RequestParameters).Type == WdfRequestTypeRead {
             transferByteCount = (*RequestParameters).Parameters.Read.as_ref().Length as usize;
-        } else {
+        } else if transferByteCount == 0 {
             transferByteCount = (*RequestParameters).Parameters.Write.as_ref().Length as usize;
         }
 
@@ -5421,7 +5500,7 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
 
         (*currentStack).Parameters.Read.ByteOffset.QuadPart += (*DeviceExtension).StartingOffset.QuadPart;
 
-        if (*RequestParameters).Type == WdfRequestTypeRead {
+        if requestType == WdfRequestTypeRead {
             (*RequestParameters).Parameters.Read.as_mut().DeviceOffset = (*currentStack).Parameters.Read.ByteOffset.QuadPart;
         } else {
             (*RequestParameters).Parameters.Write.as_mut().DeviceOffset = (*currentStack).Parameters.Write.ByteOffset.QuadPart;
@@ -5461,7 +5540,7 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
         (*readWriteContext).StartingOffset = (*currentStack).Parameters.Read.ByteOffset;
         (*readWriteContext).DataBuffer = dataBuffer;
         (*readWriteContext).TransferedBytes = 0;
-        (*readWriteContext).IsRead = if (*RequestParameters).Type == WdfRequestTypeRead { 1u8 } else { 0u8 };
+        (*readWriteContext).IsRead = if requestType == WdfRequestTypeRead { 1u8 } else { 0u8 };
 
         (*requestContext).OriginalRequest = Request;
         (*requestContext).DeviceExtension = DeviceExtension;

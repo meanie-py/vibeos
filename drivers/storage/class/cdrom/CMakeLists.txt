@@ -58,6 +58,7 @@ add_custom_target(rust_cdrom DEPENDS ${CDROM_RUST_LIB})
 list(APPEND SOURCE
     data.c
     guid.c
+    rust_dbgprint_shim.c
     cdrom.h)
 
 add_library(cdrom MODULE ${SOURCE} cdrom.rc)

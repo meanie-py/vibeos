@@ -50068,7 +50068,7 @@ unsafe extern "C" {
     pub static _WDF_CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
 }
 pub type SYNC_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(Device: WDFDEVICE, Request: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(Device: WDFDEVICE, Request: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PSYNC_HANDLER = SYNC_HANDLER;
 #[repr(C)]

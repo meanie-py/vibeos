@@ -19,7 +19,10 @@ use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDevi
 // (present only on amd64); declare it locally as the real HAL/ntoskrnl export.
 // KIRQL is in scope via the ddk imports and is u8 on every arch.
 extern "system" { fn KeLowerIrql(NewIrql: KIRQL); }
-use ntkrnl_sys::inline::tier1::KeRaiseIrqlInternal as KeRaiseIrql;
+extern "C" {
+    fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
+    fn CdromDbgPrint4(format: *const i8, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> u32;
+}
 use core::ffi::c_void;
 use crate::types::_FEATURE_NUMBER_FeatureAACS as FeatureAACS;
 use crate::types::_FEATURE_NUMBER_FeatureCDAudioAnalogPlay as FeatureCDAudioAnalogPlay;
@@ -94,13 +97,15 @@ fn SRB_STATUS(status: u8) -> u32 {
 const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
+    fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
+}
+extern "system" {
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(x: usize);
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn NT_ASSERT(expr: BOOLEAN);
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> NTSTATUS;
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
-    fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
 }
@@ -112,19 +117,22 @@ extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn WHICH_BIT(bps: u32, shift: *mut u8);
     fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
-    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
-    fn ReadDvdStructure( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, ReadStructure: *mut DVD_READ_STRUCTURE, ReadLength: usize, ReadStructureOut: *mut DVD_READ_STRUCTURE, DescriptorLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
     static MOUNTDEV_MOUNTED_DEVICE_GUID: GUID;
     fn DeviceRetrieveDescriptor( Device: WDFDEVICE, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut PSTORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
-    fn min(a: u32, b: u32) -> u32;
+}
+// C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
+// ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
+#[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
+extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32);
     fn RtlInitUnicodeString(DestinationString: *mut UNICODE_STRING, SourceString: *const u16);
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> i32;
     fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
@@ -142,6 +150,10 @@ extern "system" {
     fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32;
     fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
+}
+extern "C" {
+    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
+    fn ReadDvdStructure( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, ReadStructure: *mut DVD_READ_STRUCTURE, ReadLength: usize, ReadStructureOut: *mut DVD_READ_STRUCTURE, DescriptorLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -189,8 +201,8 @@ unsafe extern "C" {
 const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0; // Placeholder — actual value unknown
 #[allow(dead_code)]
 const WdfRequestTypeDeviceControl: u32 = 7; // Common KMDF value
-const WdfRequestTypeRead: u32 = 4;
-const WdfRequestTypeWrite: u32 = 5;
+const WdfRequestTypeRead: u32 = 3;
+const WdfRequestTypeWrite: u32 = 4;
 #[allow(dead_code)]
 const TRACE_LEVEL_INFORMATION: u32 = 4; // Typical WPP level
 const TRACE_LEVEL_VERBOSE: u32 = 5;
@@ -203,7 +215,7 @@ type ULONG = u32;
 
 
 
-const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01;
+const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x02;
 
 /// Routine Description:
 ///     retrieve device parameter from registry.
@@ -255,13 +267,13 @@ const STATUS_INTERNAL_ERROR: i32 = (0xC00000E5u32 as i32);
 // Translate function
 
 const SRB_FUNCTION_FLUSH_QUEUE: u8 = 0x15;  // was 0x02 (LLM-invented); bindgen-correct
-const WDF_REQUEST_SEND_OPTION_IGNORE_TARGET_STATE: u32 = 0x00000001;
+const WDF_REQUEST_SEND_OPTION_IGNORE_TARGET_STATE: u32 = 0x00000004;
 
 const CDROM_READ_CAPACITY_TIMEOUT: u32 = 0x14; // typical value, if incorrect caller should override  // was 10 (LLM-invented); bindgen-correct
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
 const CDROM_TAG_STREAM: u32 = 0x6D727453;
-const NonPagedPoolNxCacheAligned: u32 = 0x20000100;
+const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
 const SCSIOP_SET_STREAMING: u8 = 0xB6;
 #[no_mangle]
 pub unsafe extern "C" fn RequestSetReceivedTime(Request: WDFREQUEST) {
@@ -301,7 +313,7 @@ pub unsafe extern "C" fn RequestClearSendTime(Request: WDFREQUEST) {
     (*requestContext).TimeSentDownLasttTime.QuadPart = 0;
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceGetParameter(
+pub unsafe extern "system" fn DeviceGetParameter(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     SubkeyName: *mut u16,
     ParameterName: *mut u16,
@@ -434,7 +446,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
     // implicitly returns ()
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceSetParameter(
+pub unsafe extern "system" fn DeviceSetParameter(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     SubkeyName: *mut u16,
     ParameterName: *mut u16,
@@ -536,7 +548,7 @@ pub unsafe extern "C" fn DeviceSendRequestSynchronously(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceSendSrbSynchronously(
+pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     Device: WDFDEVICE,
     Srb: *mut SCSI_REQUEST_BLOCK,
     BufferAddress: *mut core::ffi::c_void,
@@ -551,7 +563,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
 
     const SENSE_BUFFER_SIZE: u32 = 18; // placeholder
     const CDROM_TAG_SENSE_INFO: u32 = 0x53454E53; // 'SENS' placeholder
-    const NonPagedPoolNxCacheAligned: u32 = 0x200; // placeholder
+    const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
     const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00000008;
@@ -753,7 +765,20 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
             }
 
             // 4.3 send Request to lower driver
+            CdromDbgPrint4(
+                b"[SRB] pre-send ioctl=%x mj=%x srb=%p irp=%p\n\0".as_ptr() as *const i8,
+                ioctlCode as usize,
+                (*nextStack).MajorFunction as usize,
+                Srb as usize,
+                irp as usize,
+            );
             status = DeviceSendRequestSynchronously(Device, request, 1);
+            CdromDbgPrint3(
+                b"[SRB] post-send st=%x srbst=%x dtl=%x\n\0".as_ptr() as *const i8,
+                status as usize,
+                (*Srb).SrbStatus as usize,
+                (*Srb).DataTransferLength as usize,
+            );
 
             if status != STATUS_CANCELLED {
                 // NT_ASSERTs skipped for translation
@@ -2161,7 +2186,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
+pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     const TRACE_LEVEL_VERBOSE: u32 = 0x00000002;
     const TRACE_FLAG_IOCTL: u32 = 0x00000001;
     const TRACE_LEVEL_INFORMATION: u32 = 0x00000004;
@@ -2656,7 +2681,7 @@ pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString:
     (strncmp(StringToMatch, TargetString, length) == 0) as i32
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestSetContextFields(
+pub unsafe extern "system" fn RequestSetContextFields(
     Request: WDFREQUEST,
     Handler: PSYNC_HANDLER,
 ) -> NTSTATUS {
@@ -3170,85 +3195,15 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
 }
 #[no_mangle]
 pub unsafe extern "C" fn RequestCompletion(
-    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    _DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    mut Status: NTSTATUS,
+    Status: NTSTATUS,
     Information: usize,
 ) {
-    #[cfg(debug_assertions)]
-    {
-        let mut ioctlCode: u32 = 0;
-        let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
-
-        // Get the Request parameters
-        WDF_REQUEST_PARAMETERS_INIT(&mut requestParameters);
-        WdfRequestGetParameters(Request, &mut requestParameters);
-
-        if requestParameters.Type == WdfRequestTypeDeviceControl {
-            ioctlCode = requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
-
-            if requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL {
-                TracePrint(
-                    TRACE_LEVEL_INFORMATION,
-                    TRACE_FLAG_GENERAL,
-                    b"Request complete - IOCTL - code: %X; Status: %X; Information: %X\n\0".as_ptr() as *const i8,
-                    ioctlCode,
-                    Status,
-                    Information as u32,
-                );
-            } else {
-                TracePrint(
-                    TRACE_LEVEL_VERBOSE,
-                    TRACE_FLAG_GENERAL,
-                    b"Request complete - IOCTL - code: %X; Status: %X; Information: %X\n\0".as_ptr() as *const i8,
-                    ioctlCode,
-                    Status,
-                    Information as u32,
-                );
-            }
-        } else if requestParameters.Type == WdfRequestTypeRead {
-            TracePrint(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_GENERAL,
-                b"Request complete - READ - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n\0".as_ptr() as *const i8,
-                requestParameters.Parameters.Read.as_ref().DeviceOffset as u32,
-                requestParameters.Parameters.Read.as_ref().Length as u32,
-                Information as u32,
-                Status,
-            );
-        } else if requestParameters.Type == WdfRequestTypeWrite {
-            TracePrint(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_GENERAL,
-                b"Request complete - WRITE - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n\0".as_ptr() as *const i8,
-                requestParameters.Parameters.Write.as_ref().DeviceOffset as u32,
-                requestParameters.Parameters.Write.as_ref().Length as u32,
-                Information as u32,
-                Status,
-            );
-        }
-    }
-
-    if IoIsErrorUserInduced(Status) != 0 {
-        let irp: *mut IRP = WdfRequestWdmGetIrp(Request);
-        if !(*irp).Tail.Overlay.Thread.is_null() {
-            IoSetHardErrorOrVerifyDevice(irp, (*DeviceExtension).DeviceObject);
-        }
-    }
-
-    if !NT_SUCCESS(Status) && (*DeviceExtension).SurpriseRemoved == 1 {
-        // IMAPI expects ERROR_DEV_NOT_EXISTS if recorder has been surprised removed,
-        // or it will retry WRITE commands for up to 3 minutes
-        // CDROM behavior should be consistent for all requests, including SCSI pass-through
-        Status = STATUS_DEVICE_DOES_NOT_EXIST;
-    }
-
     WdfRequestCompleteWithInformation(Request, Status, Information as ULONG_PTR);
-
-    return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestDummyCompletionRoutine(
+pub unsafe extern "system" fn RequestDummyCompletionRoutine(
     Request: WDFREQUEST,
     Target: WDFIOTARGET,
     Params: PWDF_REQUEST_COMPLETION_PARAMS,

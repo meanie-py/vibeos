@@ -794,7 +794,9 @@ unsafe extern "system" fn CsrParseServerCommandLine(
             }
 
             if CsrDebug & 1 != 0 {}
+            crate::dbg_print!(b"[CSI] LoadServerDll '%s' idx=%u ...\n\0", ParameterValue, DllIndex);
             Status = CsrLoadServerDll(ParameterValue, EntryPoint, DllIndex);
+            crate::dbg_print!(b"[CSI] LoadServerDll '%s' done st=%lx\n\0", ParameterValue, Status);
             if Status < 0 {
                 return Status;
             }
@@ -1056,9 +1058,9 @@ pub unsafe extern "system" fn CsrServerInitialization(
     ArgumentCount: ULONG,
     Arguments: *mut PCHAR,
 ) -> NTSTATUS {
-    crate::dbg_print!(b"[CSRSRV] CSI: ENTRY argc=%u\n\0", ArgumentCount);
     let mut Status = STATUS_SUCCESS;
 
+    crate::dbg_print!(b"[CSI] 1 pre-NtQuerySystemInformation\n\0");
     Status = NtQuerySystemInformation(
         SystemBasicInformation,
         &mut CsrNtSysInfo as *mut _ as PVOID,
@@ -1071,45 +1073,42 @@ pub unsafe extern "system" fn CsrServerInitialization(
 
     CsrHeap = RtlGetProcessHeap();
 
+    crate::dbg_print!(b"[CSI] 2 pre-CsrSetProcessSecurity\n\0");
     Status = CsrSetProcessSecurity();
     if Status < 0 {
         return Status;
     }
 
+    crate::dbg_print!(b"[CSI] 3 pre-CsrInitializeNtSessionList\n\0");
     Status = CsrInitializeNtSessionList();
     if Status < 0 {
         return Status;
     }
 
+    crate::dbg_print!(b"[CSI] 4 pre-CsrInitializeProcessStructure\n\0");
     Status = CsrInitializeProcessStructure();
     if Status < 0 {
         return Status;
     }
 
+    crate::dbg_print!(b"[CSI] 5 pre-CsrParseServerCommandLine\n\0");
     Status = CsrParseServerCommandLine(ArgumentCount, Arguments);
     if Status < 0 {
         return Status;
     }
 
-    crate::dbg_print!(b"[CSRSRV] CSI: before CsrInitCsrRootProcess\n\0");
+    crate::dbg_print!(b"[CSI] 6 pre-CsrInitCsrRootProcess\n\0");
     Status = CsrInitCsrRootProcess();
-    crate::dbg_print!(
-        b"[CSRSRV] CSI: after CsrInitCsrRootProcess st=0x%lx\n\0",
-        Status
-    );
     if Status < 0 {
         return Status;
     }
 
-    crate::dbg_print!(b"[CSRSRV] CSI: before CsrApiPortInitialize\n\0");
+    crate::dbg_print!(b"[CSI] 7 pre-CsrApiPortInitialize\n\0");
     Status = CsrApiPortInitialize();
-    crate::dbg_print!(
-        b"[CSRSRV] CSI: after CsrApiPortInitialize st=0x%lx\n\0",
-        Status
-    );
     if Status < 0 {
         return Status;
     }
+    crate::dbg_print!(b"[CSI] 8 pre-SbApiPort/SmConnect block\n\0");
 
     #[cfg(target_os = "windows")]
     {

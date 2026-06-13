@@ -15,12 +15,18 @@ use core::ptr;
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+}
+extern "system" {
     fn KeQueryTickCount(CurrentCount: *mut i64);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn IS_SCSIOP_READWRITE(opCode: u8) -> i32;
     fn SECONDS_TO_100NS_UNITS(seconds: i32) -> i64;
-    fn max(x: i64, y: i64) -> i64;
+}
+// C max() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
+// ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
+#[inline] fn max(x: i64, y: i64) -> i64 { core::cmp::max(x, y) }
+extern "system" {
     fn SRB_STATUS(status: u32) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
     fn PAGED_CODE();
@@ -432,7 +438,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceErrorHandlerForHitachiGD2000(
+pub unsafe extern "system" fn DeviceErrorHandlerForHitachiGD2000(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Srb: *mut SCSI_REQUEST_BLOCK,
     Status: *mut i32,
@@ -1692,21 +1698,21 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
     Retry: *mut u8,
     Status: *mut i32,
 ) {
-    const IOCTL_CDROM_GET_LAST_SESSION: u32 = 0x20040;
-    const IOCTL_CDROM_READ_TOC: u32 = 0x20000;
-    const IOCTL_CDROM_READ_TOC_EX: u32 = 0x20054;
-    const IOCTL_CDROM_GET_CONFIGURATION: u32 = 0x20058;
-    const IOCTL_CDROM_GET_VOLUME: u32 = 0x20014;
+    const IOCTL_CDROM_GET_LAST_SESSION: u32 = 0x24038;
+    const IOCTL_CDROM_READ_TOC: u32 = 0x24000;
+    const IOCTL_CDROM_READ_TOC_EX: u32 = 0x24054;
+    const IOCTL_CDROM_GET_CONFIGURATION: u32 = 0x24058;
+    const IOCTL_CDROM_GET_VOLUME: u32 = 0x24014;
     const STATUS_DATA_OVERRUN: i32 = 0xC000003Cu32 as i32;
     const STATUS_SUCCESS: i32 = 0x00000000;
-    const IOCTL_CDROM_READ_Q_CHANNEL: u32 = 0x2003C;
+    const IOCTL_CDROM_READ_Q_CHANNEL: u32 = 0x2402C;
     const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
-    const IOCTL_CDROM_CHECK_VERIFY: u32 = 0x20028;
+    const IOCTL_CDROM_CHECK_VERIFY: u32 = 0x24800;
     const IOCTL_STORAGE_CHECK_VERIFY: u32 = 0x2D4800;
-    const IOCTL_STORAGE_CHECK_VERIFY2: u32 = 0x2D4804;
-    const IOCTL_DISK_CHECK_VERIFY: u32 = 0x70004;
-    const IOCTL_CDROM_SET_SPEED: u32 = 0x20010;
+    const IOCTL_STORAGE_CHECK_VERIFY2: u32 = 0x2D0800;
+    const IOCTL_DISK_CHECK_VERIFY: u32 = 0x74800;
+    const IOCTL_CDROM_SET_SPEED: u32 = 0x24060;
 
     PAGED_CODE();
 

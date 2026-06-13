@@ -24,6 +24,7 @@
 #include <malloc.h>
 #include "msvcrt.h"
 #include "mtdll.h"
+#include "winternl.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
@@ -59,7 +60,7 @@ static void* msvcrt_heap_alloc(DWORD flags, size_t size)
     {
         void *memblock, *temp, **saved;
 
-        temp = HeapAlloc(sb_heap, flags, size+sizeof(void*)+SB_HEAP_ALIGN);
+        temp = RtlAllocateHeap(sb_heap, flags, size+sizeof(void*)+SB_HEAP_ALIGN);
         if(!temp) return NULL;
 
         memblock = ALIGN_PTR(temp, SB_HEAP_ALIGN, 0);
@@ -70,15 +71,15 @@ static void* msvcrt_heap_alloc(DWORD flags, size_t size)
 
     /* Lazy init if DllMain was never called (e.g. DLL mapped but not initialized) */
     if(!heap)
-        heap = GetProcessHeap();
+        heap = NtCurrentTeb()->Peb->ProcessHeap;
 
-    return HeapAlloc(heap, flags, size);
+    return RtlAllocateHeap(heap, flags, size);
 }
 
 static void* msvcrt_heap_realloc(DWORD flags, void *ptr, size_t size)
 {
-    if(!heap) heap = GetProcessHeap();
-    if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
+    if(!heap) heap = NtCurrentTeb()->Peb->ProcessHeap;
+    if(sb_heap && ptr && !RtlValidateHeap(heap, 0, ptr))
     {
         /* TODO: move data to normal heap if it exceeds sbh_threshold limit */
         void *memblock, *temp, **saved;
@@ -86,12 +87,12 @@ static void* msvcrt_heap_realloc(DWORD flags, void *ptr, size_t size)
 
         saved = SAVED_PTR(ptr);
         old_padding = (char*)ptr - (char*)*saved;
-        old_size = HeapSize(sb_heap, 0, *saved);
+        old_size = RtlSizeHeap(sb_heap, 0, *saved);
         if(old_size == -1)
             return NULL;
         old_size -= old_padding;
 
-        temp = HeapReAlloc(sb_heap, flags, *saved, size+sizeof(void*)+SB_HEAP_ALIGN);
+        temp = RtlReAllocateHeap(sb_heap, flags, *saved, size+sizeof(void*)+SB_HEAP_ALIGN);
         if(!temp) return NULL;
 
         memblock = ALIGN_PTR(temp, SB_HEAP_ALIGN, 0);
@@ -105,31 +106,31 @@ static void* msvcrt_heap_realloc(DWORD flags, void *ptr, size_t size)
         return memblock;
     }
 
-    return HeapReAlloc(heap, flags, ptr, size);
+    return RtlReAllocateHeap(heap, flags, ptr, size);
 }
 
 static BOOL msvcrt_heap_free(void *ptr)
 {
-    if(!heap) heap = GetProcessHeap();
-    if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
+    if(!heap) heap = NtCurrentTeb()->Peb->ProcessHeap;
+    if(sb_heap && ptr && !RtlValidateHeap(heap, 0, ptr))
     {
         void **saved = SAVED_PTR(ptr);
-        return HeapFree(sb_heap, 0, *saved);
+        return RtlFreeHeap(sb_heap, 0, *saved);
     }
 
-    return HeapFree(heap, 0, ptr);
+    return RtlFreeHeap(heap, 0, ptr);
 }
 
 static size_t msvcrt_heap_size(void *ptr)
 {
-    if(!heap) heap = GetProcessHeap();
-    if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
+    if(!heap) heap = NtCurrentTeb()->Peb->ProcessHeap;
+    if(sb_heap && ptr && !RtlValidateHeap(heap, 0, ptr))
     {
         void **saved = SAVED_PTR(ptr);
-        return HeapSize(sb_heap, 0, *saved);
+        return RtlSizeHeap(sb_heap, 0, *saved);
     }
 
-    return HeapSize(heap, 0, ptr);
+    return RtlSizeHeap(heap, 0, ptr);
 }
 
 /*********************************************************************
@@ -839,7 +840,7 @@ BOOL msvcrt_init_heap(void)
 #if _MSVCR_VER <= 100 && !defined(__REACTOS__)
     heap = HeapCreate(0, 0, 0);
 #else
-    heap = GetProcessHeap();
+    heap = NtCurrentTeb()->Peb->ProcessHeap;
 #endif
     return heap != NULL;
 }

@@ -179,8 +179,6 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     let mut i: ULONG;
     let mut ReplyPort: HANDLE;
 
-    crate::dbg_print!(b"[CSRSRV] ApiRequestThread: enter param=%p\n\0", Parameter);
-
     ReplyMsg = core::ptr::null_mut();
     ReplyPort = CsrApiPort;
 
@@ -190,19 +188,12 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        let mut connect_attempts: u32 = 0;
         while CsrConnectToUser().is_null() {
-            connect_attempts += 1;
-            crate::dbg_print!(
-                b"[CSRSRV] ApiRequestThread: CsrConnectToUser null, attempt %u\n\0",
-                connect_attempts
-            );
             let mut TimeOut: LARGE_INTEGER = core::mem::zeroed();
             TimeOut.QuadPart = -30 * 1000 * 1000 * 10;
             (*Teb).Win32ClientInfo[0] = 0;
             NtDelayExecution(0u8, &raw mut TimeOut);
         }
-        crate::dbg_print!(b"[CSRSRV] ApiRequestThread: CsrConnectToUser OK\n\0");
     }
 
     CurrentThread = (*Teb).CsrClientThread as PCSR_THREAD;
@@ -211,22 +202,9 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         Status = NtSetEvent(Parameter as HANDLE, core::ptr::null_mut());
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
         InterlockedIncrementUL(&raw mut CsrpDynamicThreadTotal);
-        crate::dbg_print!(
-            b"[CSRSRV] ApiRequestThread: NtSetEvent st=0x%lx, entering loop\n\0",
-            Status
-        );
     }
 
-    let mut loop_iter: u32 = 0;
     loop {
-        loop_iter += 1;
-        if loop_iter <= 5 {
-            crate::dbg_print!(
-                b"[CSRSRV] ApiReqThr: iter %u, calling NtReplyWaitReceivePort port=%p\n\0",
-                loop_iter,
-                ReplyPort
-            );
-        }
         (*Teb).RealClientId = (*Teb).ClientId;
 
         Status = NtReplyWaitReceivePort(
@@ -240,13 +218,6 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
             &raw mut ReceiveMsg.Header,
         );
 
-        if loop_iter <= 5 {
-            crate::dbg_print!(
-                b"[CSRSRV] ApiReqThr: iter %u, NtReplyWaitReceivePort st=0x%lx\n\0",
-                loop_iter,
-                Status
-            );
-        }
         if Status != STATUS_SUCCESS {
             if Status < 0 {
                 ReplyMsg = core::ptr::null_mut();
@@ -441,13 +412,6 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ServerId = ((raw_api_number) >> 16) & 0xFFFF;
         ServerDll = core::ptr::null_mut();
 
-        crate::dbg_print!(
-            b"[CSRSRV] LPC_REQ: ApiNumber=0x%lx ServerId=%lu MsgType=%lu\n\0",
-            raw_api_number,
-            ServerId,
-            MessageType
-        );
-
         if (ServerId >= CSR_SERVER_DLL_MAX) || {
             ServerDll = *CsrLoadedServerDll.as_ptr().add(ServerId as usize);
             ServerDll.is_null()
@@ -466,15 +430,6 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         }
 
         ApiId = ((raw_api_number) & 0xFFFF).wrapping_sub((*ServerDll).ApiBase);
-
-        crate::dbg_print!(
-            b"[CSRSRV] LPC_REQ: ServerDll=%p ApiBase=%lu HiApi=%lu ApiId=%lu DispatchTable=%p\n\0",
-            ServerDll,
-            (*ServerDll).ApiBase,
-            (*ServerDll).HighestApiSupported,
-            ApiId,
-            (*ServerDll).DispatchTable
-        );
 
         if ApiId >= (*ServerDll).HighestApiSupported {
             crate::dbg_print!(
@@ -510,19 +465,8 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ReplyCode = CsrReplyImmediately;
 
         let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
-        let dispatch_target: *mut core::ffi::c_void = *(dispatch_fn as *mut *mut core::ffi::c_void);
-        crate::dbg_print!(
-            b"[CSRSRV] LPC_REQ: dispatch_fn_slot=%p target=%p\n\0",
-            dispatch_fn,
-            dispatch_target
-        );
         if let Some(func) = *dispatch_fn {
             let st = func(&raw mut ReceiveMsg, &raw mut ReplyCode);
-            crate::dbg_print!(
-                b"[CSRSRV] LPC_REQ: dispatch returned st=0x%lx ReplyCode=%lu\n\0",
-                st,
-                ReplyCode
-            );
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = st;
         } else {
             crate::dbg_print!(b"[CSRSRV] LPC_REQ: dispatch fn is None (NULL slot)\n\0");
@@ -576,8 +520,6 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut ServerThread: PCSR_THREAD;
-    crate::dbg_print!(b"[CSRSRV] ApiPortInit: enter\n\0");
-
     Size = CsrDirectoryName.Length as ULONG + core::mem::size_of::<[u16; 10]>() as ULONG;
 
     CsrApiPortName.Buffer =
@@ -619,7 +561,6 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
         16 * PAGE_SIZE as ULONG,
     );
 
-    crate::dbg_print!(b"[CSRSRV] ApiPortInit: NtCreatePort st=0x%lx\n\0", Status);
     if Status >= 0 {
         Status = NtCreateEvent(
             &raw mut hRequestEvent,
@@ -628,12 +569,6 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
             _EVENT_TYPE_SynchronizationEvent,
             0u8,
         );
-        crate::dbg_print!(
-            b"[CSRSRV] ApiPortInit: NtCreateEvent st=0x%lx h=%p\n\0",
-            Status,
-            hRequestEvent
-        );
-
         if Status >= 0 {
             Status = RtlCreateUserThread(
                 NtCurrentProcess(),
@@ -647,66 +582,30 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
                 &raw mut hThread,
                 &raw mut ClientId,
             );
-            crate::dbg_print!(
-                b"[CSRSRV] ApiPortInit: RtlCreateUserThread st=0x%lx h=%p\n\0",
-                Status,
-                hThread
-            );
-
             if Status >= 0 {
-                let added =
-                    CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
-                crate::dbg_print!(
-                    b"[CSRSRV] ApiPortInit: CsrAddStaticServerThread -> %p (CsrRootProcess=%p)\n\0",
-                    added,
-                    CsrRootProcess
-                );
+                CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
 
                 ListHead = &raw mut (*CsrRootProcess).ThreadList;
                 NextEntry = (*ListHead).Flink;
-                crate::dbg_print!(
-                    b"[CSRSRV] ApiPortInit: resume loop start ListHead=%p Flink=%p\n\0",
-                    ListHead,
-                    NextEntry
-                );
 
-                let mut iter_n: u32 = 0;
                 while NextEntry != ListHead {
                     ServerThread = ((NextEntry as usize) - core::mem::offset_of!(_CSR_THREAD, Link))
                         as PCSR_THREAD;
-                    crate::dbg_print!(
-                        b"[CSRSRV] ApiPortInit: iter %u ServerThread=%p Flags=0x%x hT=%p\n\0",
-                        iter_n,
-                        ServerThread,
-                        (*ServerThread).Flags,
-                        (*ServerThread).ThreadHandle
-                    );
 
                     Status = NtResumeThread((*ServerThread).ThreadHandle, core::ptr::null_mut());
-                    crate::dbg_print!(b"[CSRSRV] ApiPortInit: NtResumeThread st=0x%lx\n\0", Status);
 
                     if (*ServerThread).Flags & CsrThreadIsServerThread != 0 {
                         Status = NtWaitForSingleObject(hRequestEvent, 0u8, core::ptr::null_mut());
-                        crate::dbg_print!(
-                            b"[CSRSRV] ApiPortInit: NtWaitForSingleObject st=0x%lx\n\0",
-                            Status
-                        );
                     }
 
                     NextEntry = (*NextEntry).Flink;
-                    iter_n += 1;
                 }
 
-                crate::dbg_print!(
-                    b"[CSRSRV] ApiPortInit: resume loop done iters=%u\n\0",
-                    iter_n
-                );
                 NtClose(hRequestEvent);
             }
         }
     }
 
-    crate::dbg_print!(b"[CSRSRV] ApiPortInit: exit st=0x%lx\n\0", Status);
     Status
 }
 

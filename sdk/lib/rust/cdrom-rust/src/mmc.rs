@@ -12,14 +12,18 @@ use core::ffi::c_void;
 extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
 }
-extern "C" {
+extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
     static TRACE_FLAG_IOCTL: u32;
     static TRACE_LEVEL_ERROR: u32;
     fn PAGED_CODE();
-    fn min(a: u32, b: u32) -> u32;
+}
+// C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
+// ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
+#[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
+extern "system" {
     fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
@@ -300,7 +304,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
+pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
     Device: WDFDEVICE,
     Buffer: *mut *mut GET_CONFIGURATION_HEADER,
     BytesReturned: *mut u32,
@@ -310,7 +314,7 @@ pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
     // Forward declarations for external symbols not in imports
     const STATUS_INTERNAL_ERROR: i32 = (0xC000000Fu32 as i32);
     const CDROM_TAG_FEATURE: u32 = 0x52444443; // 'CDDR' little-endian? typical tag
-    const NonPagedPoolNxCacheAligned: u32 = 0x200; // typical value
+    const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
     const TRACE_LEVEL_ERROR: u32 = 1;
     const TRACE_FLAG_IOCTL: u32 = 1;
 

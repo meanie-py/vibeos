@@ -63,9 +63,99 @@ def parse_ntstatus_cast(s: str) -> int | None:
     return None
 
 
-def build_c_catalog(reactos_root: Path) -> dict[str, int]:
-    """Build name→value mapping from C headers."""
-    catalog = {}
+# ── WDK constants absent from ReactOS headers ────────────────────────
+# These are real Windows DDK values that ReactOS headers do not define
+# (they only appear in SAL annotations or driver-private contexts). Without
+# a definition to cross-check against, a fabricated Rust value would pass
+# silently. Seed them explicitly. Verified against the Windows WDK.
+WDK_CONSTANT_SEED = {
+    # POOL_TYPE — the no-execute variants (wdm.h). NonPagedPoolNx = 512.
+    'NonPagedPoolNx': 512,                  # 0x200
+    'NonPagedPoolNxCacheAligned': 516,      # 0x204 = NonPagedPoolNx + 4
+    'NonPagedPoolSessionNx': 544,           # 0x220 = NonPagedPoolNx + 32
+}
+
+
+def _eval_enum_expr(expr: str, scope: dict[str, int]) -> int | None:
+    """Evaluate a C enum initializer: int/hex literals, prior enum names,
+    and the operators + - | << found in real POOL_TYPE-style enums. Returns
+    None if any token can't be resolved (so we don't fabricate a value)."""
+    expr = expr.strip()
+    if not expr:
+        return None
+    # Tokenize into names, numbers, and operators.
+    tokens = re.findall(r'0[xX][0-9A-Fa-f]+|\d+|[A-Za-z_][A-Za-z0-9_]*|<<|[|+\-]', expr)
+    if not tokens:
+        return None
+    py = []
+    for t in tokens:
+        if re.fullmatch(r'0[xX][0-9A-Fa-f]+', t):
+            py.append(str(int(t, 16)))
+        elif t.isdigit():
+            py.append(t)
+        elif t in ('<<', '|', '+', '-'):
+            py.append(t)
+        elif re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', t):
+            if t in scope:
+                py.append(str(scope[t]))
+            else:
+                return None  # unresolved name — bail rather than guess
+        else:
+            return None
+    try:
+        # Only arithmetic/bitwise over integers; no names/calls remain.
+        return int(eval(' '.join(py), {'__builtins__': {}}, {})) & 0xFFFFFFFF
+    except Exception:
+        return None
+
+
+def parse_c_enums(text: str, enum_acc: dict[str, set]) -> None:
+    """Parse `enum { ... }` bodies, assigning C enum semantics (sequential
+    counter, honoring `= EXPR` overrides). Accumulates name→{values seen}
+    into enum_acc (across all headers). A member whose initializer can't be
+    evaluated resets the counter so we never emit a wrong auto-incremented
+    value for the rest of that enum. The caller drops any name that collected
+    more than one distinct value (ambiguous — the same identifier lives in
+    multiple enums, e.g. `UserRequest`/`Isa`) so we never false-positive on it."""
+    for body in re.findall(r'\benum\b[^{};]*\{([^}]*)\}', text):
+        # Strip comments, then split members on top-level commas.
+        body = re.sub(r'/\*.*?\*/', '', body, flags=re.S)
+        body = re.sub(r'//.*', '', body)
+        scope: dict[str, int] = {}
+        nxt: int | None = 0
+        for member in body.split(','):
+            member = member.strip()
+            if not member:
+                continue
+            m = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s*(?:=\s*(.+))?$', member, re.S)
+            if not m:
+                nxt = None
+                continue
+            name, init = m.group(1), m.group(2)
+            if init is not None:
+                val = _eval_enum_expr(init, {**scope})
+            else:
+                val = nxt
+            if val is None:
+                nxt = None       # lost the counter — don't fabricate downstream
+                continue
+            scope[name] = val
+            enum_acc.setdefault(name, set()).add(val)
+            nxt = (val + 1) & 0xFFFFFFFF   # C enums are int — wrap (e.g. -1 → 0)
+
+
+def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str, int]:
+    """Build name→value mapping from C headers.
+
+    include_enums=False (default, used by the build gate): only #define values
+    and the WDK seed — high-confidence, zero false positives. include_enums=True
+    (the `--enums` finder): also merge C enum members. Enum members are powerful
+    for catching fabricated selectors but FP-prone, because a generic identifier
+    (`BusRelations`, `UserRequest`) can name a member of an enum that isn't in
+    our header list, then collide with a same-named member that is. Treat
+    `--enums` output as candidates for manual review, not a gate."""
+    catalog = dict(WDK_CONSTANT_SEED)
+    enum_acc: dict[str, set] = {}
 
     header_files = [
         reactos_root / 'sdk/include/xdk/iotypes.h',
@@ -83,7 +173,8 @@ def build_c_catalog(reactos_root: Path) -> dict[str, int]:
     for hfile in header_files:
         if not hfile.exists():
             continue
-        for line in hfile.read_text(errors='replace').splitlines():
+        text = hfile.read_text(errors='replace')
+        for line in text.splitlines():
             m = define_re.match(line.strip())
             if not m:
                 continue
@@ -107,6 +198,19 @@ def build_c_catalog(reactos_root: Path) -> dict[str, int]:
                 catalog[name] = val
                 continue
 
+        # Enum members (e.g. POOL_TYPE) — not #defines, but real constants.
+        parse_c_enums(text, enum_acc)
+
+    # Merge only UNAMBIGUOUS enum members: a name that resolved to more than
+    # one distinct value lives in multiple enums (generic identifiers like
+    # `UserRequest`, `Isa`, `BusRelations`) and can't be checked from a flat
+    # `const NAME = VALUE` line without knowing its enum type — skip it.
+    # #define/seed entries already in the catalog always win.
+    if include_enums:
+        for name, vals in enum_acc.items():
+            if len(vals) == 1:
+                catalog.setdefault(name, next(iter(vals)))
+
     return catalog
 
 
@@ -114,8 +218,9 @@ def build_c_catalog(reactos_root: Path) -> dict[str, int]:
 
 def parse_rust_const(line: str) -> tuple[str, int] | None:
     """Parse a Rust const definition, return (name, value) or None."""
-    # Pattern: const NAME: TYPE = VALUE;
-    m = re.match(r'const\s+([A-Z_][A-Z0-9_]*)\s*:\s*\w+\s*=\s*(.+?)\s*;', line.strip())
+    # Pattern: const NAME: TYPE = VALUE;  (NAME may be mixed-case, e.g.
+    # enum-derived constants like NonPagedPoolNx — not just SCREAMING_CASE)
+    m = re.match(r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\w+\s*=\s*(.+?)\s*;', line.strip())
     if not m:
         return None
     name, expr = m.group(1), m.group(2).strip()
@@ -225,12 +330,16 @@ def main():
     parser = argparse.ArgumentParser(description='Verify Rust constants against C headers')
     parser.add_argument('files', nargs='*', help='Rust files to check (default: all)')
     parser.add_argument('--fix', action='store_true', help='Auto-fix mismatches')
+    parser.add_argument('--enums', action='store_true',
+                        help='Also check against C enum members (FP-prone finder, '
+                             'not for gating — review hits manually)')
     args = parser.parse_args()
 
     reactos_root = Path(__file__).parent.parent.parent.parent  # tools/rustconv → reactos/
 
-    catalog = build_c_catalog(reactos_root)
-    print(f"C catalog: {len(catalog)} constants from headers")
+    catalog = build_c_catalog(reactos_root, include_enums=args.enums)
+    print(f"C catalog: {len(catalog)} constants from headers"
+          + (" (+enums)" if args.enums else ""))
 
     if args.files:
         rs_files = [Path(f) for f in args.files]

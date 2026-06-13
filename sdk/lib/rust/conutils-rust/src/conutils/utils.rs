@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 extern "system" {
     fn FindResourceExW(hModule: HINSTANCE, lpType: *const u16, lpName: *const u16, wLanguage: u16) -> HRSRC;
@@ -10,7 +11,6 @@ extern "system" {
     fn GetProcAddress(hModule: *mut c_void, lpProcName: *const i8) -> *mut c_void;
     fn GetFileType(hFile: *mut c_void) -> u32;
     fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: *mut u32) -> i32;
-    fn InterlockedCompareExchangePointer(Destination: *mut *mut c_void, Exchange: *mut c_void, Comperand: *mut c_void) -> *mut c_void;
 }
 
 const RT_STRING: u32 = 6;
@@ -23,7 +23,7 @@ const SUBLANG_NEUTRAL: u16 = 0x00;
 const MAKELANGID_LN_SN: u16 = ((SUBLANG_NEUTRAL as u16) << 10) | (LANG_NEUTRAL as u16);
 
 // Thread-safe function pointer for SetThreadUILanguage (from kernel32)
-static mut pfnSetThreadUILanguage: *mut c_void = core::ptr::null_mut();
+static pfnSetThreadUILanguage: AtomicPtr<c_void> = AtomicPtr::new(core::ptr::null_mut());
 
 unsafe fn LOWORD(dw: u32) -> u16 {
     dw as u16
@@ -137,7 +137,7 @@ pub unsafe extern "system" fn FormatMessageSafeW(
 
 #[no_mangle]
 pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
-    let initial = core::ptr::read_volatile(&pfnSetThreadUILanguage);
+    let initial = pfnSetThreadUILanguage.load(Ordering::Acquire);
     if initial.is_null() {
         let kernel32_name: [u16; 13] = [
             b'k' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'e' as u16, b'l' as u16,
@@ -150,13 +150,14 @@ pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
         if p_func.is_null() {
             return 0;
         }
-        InterlockedCompareExchangePointer(
-            core::ptr::addr_of_mut!(pfnSetThreadUILanguage),
-            p_func,
+        let _ = pfnSetThreadUILanguage.compare_exchange(
             core::ptr::null_mut(),
+            p_func,
+            Ordering::AcqRel,
+            Ordering::Acquire,
         );
     }
-    let fn_ptr = core::ptr::read_volatile(&pfnSetThreadUILanguage);
+    let fn_ptr = pfnSetThreadUILanguage.load(Ordering::Acquire);
     if !fn_ptr.is_null() {
         let func: unsafe extern "system" fn(LANGID) -> LANGID = core::mem::transmute(fn_ptr);
         func(lang_id)

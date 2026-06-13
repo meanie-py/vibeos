@@ -16,17 +16,31 @@ use core::ffi::c_void;
 
 extern "C" {
     static CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
+    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
+    fn NT_SUCCESS(status: NTSTATUS) -> bool;
+    fn CdromDbgPrint0(format: *const i8) -> u32;
+    fn CdromDbgPrint1(format: *const i8, arg1: usize) -> u32;
+    fn CdromDbgPrint2(format: *const i8, arg1: usize, arg2: usize) -> u32;
+    fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
+    fn CdromDbgPrint5(format: *const i8, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) -> u32;
+}
+// NOTE: C `min()`/`max()` are macros, not symbols. The banked translation
+// fabricated `extern "system" fn min/max(u32,u32)->u32`. On i386 `extern
+// "system"` is stdcall, but ddk_shims defines them `extern "C"` (cdecl) — a
+// calling-convention mismatch that corrupts the stack (and `max` also linked
+// to an i64-typed def). The net effect zeroed MaxPageAlignedTransferBytes and
+// could smash the return address (BUGCHECK 0x1E ILLEGAL_INSTRUCTION). Use
+// correctly-typed local wrappers (plain Rust calls — no FFI, no CC mismatch).
+#[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
+#[inline] fn max(a: u32, b: u32) -> u32 { core::cmp::max(a, b) }
+extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
-    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     static DEVPKEY_Device_InLocalMachineContainer: DEVPROPKEY;
-    fn min(a: u32, b: u32) -> u32;
-    fn max(a: u32, b: u32) -> u32;
     fn PAGED_CODE();
     static mut CdromHackItems: CDROM_SCAN_FOR_SPECIAL_INFO;
-    fn DeviceErrorHandlerForHitachiGD2000( device: *mut core::ffi::c_void, srb: *mut core::ffi::c_void, context: *mut core::ffi::c_void, ) -> NTSTATUS;
+    fn DeviceErrorHandlerForHitachiGD2000( DeviceExtension: PCDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK, Status: *mut NTSTATUS, Retry: *mut u8, ) -> NTSTATUS;
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataBufferLength: u32, Write: u8, SrbStatus: *mut u8, ) -> NTSTATUS;
-    fn NT_SUCCESS(status: NTSTATUS) -> bool;
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
@@ -38,10 +52,14 @@ extern "system" {
     fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, params: PWDF_REQUEST_COMPLETION_PARAMS, context: WDFCONTEXT);
 }
 extern "C" {
+    fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
+    fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+    fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
+}
+extern "system" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
     fn NT_ASSERT( condition: i32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
     fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
@@ -52,7 +70,6 @@ extern "C" {
     fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
     fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
     fn DevicePickDvdRegion(Device: WDFDEVICE);
-    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, OriginalRequest: WDFREQUEST, InputBuffer: *mut core::ffi::c_void, InputBufferLength: usize, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
     fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> i32;
     fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
@@ -61,10 +78,11 @@ extern "C" {
     fn DeviceErrorHandlerForMmc();
     fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn DeviceSetMediaChangeStateEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, new_state: u32, old_state: *mut u32, );
-    fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
     fn IoSetDeviceInterfacePropertyData( symbolic_link_name: *const ntkrnl_sys::ddk::UNICODE_STRING, property_key: *const DEVPROPKEY, lcid: i32, flags: u32, property_type: u32, property_size: u32, property_data: *const core::ffi::c_void, ) -> NTSTATUS;
+}
+extern "C" {
+    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, OriginalRequest: WDFREQUEST, InputBuffer: *mut core::ffi::c_void, InputBufferLength: usize, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -282,13 +300,11 @@ pub unsafe extern "C" fn DeviceClaimRelease(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS {
+pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
 
     PAGED_CODE();
-
-    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -298,20 +314,26 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
     );
 
     deviceExtension = DeviceGetExtension(Device);
-    DbgPrint(b"[SMIO] enter\n\0".as_ptr());
+    CdromDbgPrint0(b"[SMIO] enter\n\0".as_ptr() as *const i8);
+    CdromDbgPrint3(
+        b"[SMIO] ext=%p io=%p init=%x\n\0".as_ptr() as *const i8,
+        deviceExtension as usize,
+        (*deviceExtension).IoTarget as usize,
+        (*deviceExtension).IsInitialized as usize,
+    );
 
     // 1. Set/retrieve basic information, some of the following operations may depend on it
     if NT_SUCCESS(status) {
         // We do not care if this function fails, SCSI address is mainly for debugging/tracing purposes.
-        DbgPrint(b"[SMIO] 1a-pre-scsiaddr\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 1a-pre-scsiaddr\n\0".as_ptr() as *const i8);
         let _ = DeviceRetrieveScsiAddress(deviceExtension, &mut (*deviceExtension).ScsiAddress);
-        DbgPrint(b"[SMIO] 1a-scsiaddr done\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 1a-scsiaddr done\n\0".as_ptr() as *const i8);
     }
 
     if NT_SUCCESS(status) {
-        DbgPrint(b"[SMIO] 1b-pre-descriptors\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 1b-pre-descriptors\n\0".as_ptr() as *const i8);
         status = DeviceRetrieveDescriptorsAndTransferLength(deviceExtension);
-        DbgPrint(b"[SMIO] 1b-descriptors done st=%x\n\0".as_ptr(), status);
+        CdromDbgPrint1(b"[SMIO] 1b-descriptors done st=%x\n\0".as_ptr() as *const i8, status as usize);
     }
 
     if NT_SUCCESS(status) {
@@ -320,7 +342,7 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
         status = DeviceInitAllocateBuffers(deviceExtension);
     }
 
-    DbgPrint(b"[SMIO] 1-descriptors+bufs st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 1-descriptors+bufs st=%x\n\0".as_ptr() as *const i8, status as usize);
     // 2. The following functions depend on the allocated buffers.
     // perf re-enable after failing. Q: Is this one used by cdrom.sys?
     if NT_SUCCESS(status) {
@@ -348,17 +370,17 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
         DeviceScanSpecialDevices(deviceExtension); // may send command to device
     }
 
-    DbgPrint(b"[SMIO] 3-scanspecial done\n\0".as_ptr());
+    CdromDbgPrint0(b"[SMIO] 3-scanspecial done\n\0".as_ptr() as *const i8);
     // 4. Initialize the hotplug information only after the ScanForSpecial routines,
     // as it relies upon the hack flags - deviceExtension->PrivateFdoData->HackFlags.
     if NT_SUCCESS(status) {
         status = DeviceInitializeHotplugInfo(deviceExtension);
     }
-    DbgPrint(b"[SMIO] 4-hotplug st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 4-hotplug st=%x\n\0".as_ptr() as *const i8, status as usize);
 
     if NT_SUCCESS(status) {
         // cache the device's inquiry data
-        DbgPrint(b"[SMIO] 4b-pre-inquiry\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 4b-pre-inquiry\n\0".as_ptr() as *const i8);
         status = DeviceCacheDeviceInquiryData(deviceExtension);
         if !NT_SUCCESS(status) {
             TracePrint(
@@ -369,23 +391,23 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
             );
         }
     }
-    DbgPrint(b"[SMIO] 4b-inquiry st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 4b-inquiry st=%x\n\0".as_ptr() as *const i8, status as usize);
 
     // 5. Initialize MMC context, media change notification stuff and read media capacity
     if NT_SUCCESS(status) {
         status = DeviceInitializeMediaChangeDetection(deviceExtension);
     }
-    DbgPrint(b"[SMIO] 5a-mcd st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 5a-mcd st=%x\n\0".as_ptr() as *const i8, status as usize);
     if NT_SUCCESS(status) {
         status = DeviceInitMmcContext(deviceExtension);
     }
-    DbgPrint(b"[SMIO] 5b-mmc st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 5b-mmc st=%x\n\0".as_ptr() as *const i8, status as usize);
     if NT_SUCCESS(status) {
         status = DeviceInitializeZPODD(deviceExtension);
     }
-    DbgPrint(b"[SMIO] 5c-zpodd st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[SMIO] 5c-zpodd st=%x\n\0".as_ptr() as *const i8, status as usize);
     if NT_SUCCESS(status) {
-        DbgPrint(b"[SMIO] 5d-pre-readcapacity\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 5d-pre-readcapacity\n\0".as_ptr() as *const i8);
         // Do READ CAPACITY. This SCSI command returns the last sector address
         // on the device and the bytes per sector. These are used to calculate
         // the drive capacity in bytes.
@@ -420,7 +442,7 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
     // 8. Enable the main timer, create ARC name as needed
     if NT_SUCCESS(status) {
         // Device successfully added and initialized, increase CdRomCount.
-        DbgPrint(b"[SMIO] 8-CdRomCount++\n\0".as_ptr());
+        CdromDbgPrint0(b"[SMIO] 8-CdRomCount++\n\0".as_ptr() as *const i8);
         (*IoGetConfigurationInformation()).CdRomCount += 1;
 
         (*deviceExtension).IsInitialized = 1;
@@ -1259,10 +1281,14 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
             0, // FALSE
             core::ptr::null_mut(),
         );
-        { extern "C" { fn DbgPrint(f: *const u8, ...) -> u32; }
-          DbgPrint(b"[INQ] send1 st=%x srbst=%x dtl=%x req=%x addlen=%x\n\0".as_ptr(),
-                   status, srb.SrbStatus as u32, srb.DataTransferLength, requestedInquiryTransferBytes,
-                   (*tmpInquiry).AdditionalLength as u32); }
+        CdromDbgPrint5(
+            b"[INQ] send1 st=%x srbst=%x dtl=%x req=%x addlen=%x\n\0".as_ptr() as *const i8,
+            status as usize,
+            srb.SrbStatus as usize,
+            srb.DataTransferLength as usize,
+            requestedInquiryTransferBytes as usize,
+            (*tmpInquiry).AdditionalLength as usize,
+        );
     }
 
     // 1.3 get required data length
@@ -4439,8 +4465,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
 ) -> NTSTATUS {
     let mut status: i32 = 0; // STATUS_SUCCESS
     let mut senseData: *mut core::ffi::c_void = core::ptr::null_mut();
-    extern "C" { fn DbgPrint(f: *const u8, ...) -> u32; }
-    DbgPrint(b"[ALOC] enter sz_fdo=%x\n\0".as_ptr(), core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32);
+    CdromDbgPrint1(b"[ALOC] enter sz_fdo=%x\n\0".as_ptr() as *const i8, core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>());
 
     // PAGED_CODE();
 
@@ -4452,7 +4477,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
             0x74767250, /* CDROM_TAG_PRIVATE_DATA */
         ) as *mut CDROM_PRIVATE_FDO_DATA;
     }
-    DbgPrint(b"[ALOC] fdo=%p\n\0".as_ptr(), (*DeviceExtension).PrivateFdoData);
+    CdromDbgPrint1(b"[ALOC] fdo=%p\n\0".as_ptr() as *const i8, (*DeviceExtension).PrivateFdoData as usize);
 
     if (*DeviceExtension).PrivateFdoData.is_null() {
         status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
@@ -4463,11 +4488,11 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
             0,
             core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>());
     }
-    DbgPrint(b"[ALOC] fdo zeroed; pre-sense\n\0".as_ptr());
+    CdromDbgPrint0(b"[ALOC] fdo zeroed; pre-sense\n\0".as_ptr() as *const i8);
 
     // Allocate request sense buffer.
     senseData = ExAllocatePoolWithTag(
-        0x600, /* NonPagedPoolNxCacheAligned */
+        0x204, /* NonPagedPoolNxCacheAligned = NonPagedPoolNx (512) + CacheAligned (4) */
         0x12,  /* SENSE_BUFFER_SIZE */
         0x53656E73, /* CDROM_TAG_SENSE_INFO */
     ) as *mut core::ffi::c_void;
@@ -4483,11 +4508,11 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     // Allocate scratch buffer -- Must occur after determining
     // max transfer size, but before other CD specific detection
     // (which relies upon this buffer).
-    DbgPrint(b"[ALOC] pre-scratch sense=%p\n\0".as_ptr(), senseData);
+    CdromDbgPrint1(b"[ALOC] pre-scratch sense=%p\n\0".as_ptr() as *const i8, senseData as usize);
     if ScratchBuffer_Allocate(DeviceExtension) == 0 {
         status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
     }
-    DbgPrint(b"[ALOC] done st=%x\n\0".as_ptr(), status);
+    CdromDbgPrint1(b"[ALOC] done st=%x\n\0".as_ptr() as *const i8, status as usize);
 
     status
 }
@@ -4511,7 +4536,7 @@ pub unsafe extern "system" fn DeviceRetrieveScsiAddress(
         (*DeviceExtension).IoTarget,
         core::ptr::null_mut(),
         IOCTL_SCSI_GET_ADDRESS,
-        core::ptr::addr_of_mut!(outputDescriptor),
+        core::ptr::null_mut(),
         core::ptr::addr_of_mut!(outputDescriptor),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -4574,54 +4599,7 @@ pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
     }
 
     if ntkrnl_sys::base::NT_SUCCESS(status) {
-        let mut max_aligned_transfer: u32 =
-            (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
-        let mut max_unaligned_transfer: u32 =
-            (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
-
-        if max_unaligned_transfer > 1 {
-            max_unaligned_transfer -= 1;
-        }
-
-        if max_aligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
-            max_aligned_transfer = u32::MAX;
-        } else {
-            max_aligned_transfer *= PAGE_SIZE as u32;
-        }
-
-        if max_unaligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
-            max_unaligned_transfer = u32::MAX;
-        } else {
-            max_unaligned_transfer *= PAGE_SIZE as u32;
-        }
-
-        max_aligned_transfer = min(
-            max_aligned_transfer,
-            (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
-        );
-        max_unaligned_transfer = min(
-            max_unaligned_transfer,
-            (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
-        );
-
-        max_aligned_transfer = max(max_aligned_transfer, PAGE_SIZE as u32);
-        max_unaligned_transfer = max(max_unaligned_transfer, PAGE_SIZE as u32);
-
-        TracePrint(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_INIT,
-            b"Device %p Max aligned/unaligned transfer size is %x/%x\n\0".as_ptr() as *const i8,
-            (*DeviceExtension).Device as *const core::ffi::c_void,
-            max_aligned_transfer,
-            max_unaligned_transfer,
-        );
-
-        (*DeviceExtension)
-            .DeviceAdditionalData
-            .MaxPageAlignedTransferBytes = max_aligned_transfer;
-        (*DeviceExtension)
-            .DeviceAdditionalData
-            .MaxUnalignedTransferBytes = max_unaligned_transfer;
+        DeviceComputeTransferLengths(DeviceExtension);
     } else {
         TracePrint(
             TRACE_LEVEL_ERROR,
@@ -4632,6 +4610,56 @@ pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
     }
 
     status
+}
+
+#[inline(never)]
+unsafe fn DeviceComputeTransferLengths(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+    CdromDbgPrint3(b"[DCTL] enter adapter=%p maxpages=%x maxxfer=%x\n\0".as_ptr() as *const i8,
+        (*DeviceExtension).AdapterDescriptor as usize,
+        if (*DeviceExtension).AdapterDescriptor.is_null() { 0xBAD } else { (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages as usize },
+        if (*DeviceExtension).AdapterDescriptor.is_null() { 0xBAD } else { (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength as usize });
+    let mut max_aligned_transfer: u32 =
+        (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
+    let mut max_unaligned_transfer: u32 =
+        (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
+
+    if max_unaligned_transfer > 1 {
+        max_unaligned_transfer -= 1;
+    }
+
+    if max_aligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
+        max_aligned_transfer = u32::MAX;
+    } else {
+        max_aligned_transfer *= PAGE_SIZE as u32;
+    }
+
+    if max_unaligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
+        max_unaligned_transfer = u32::MAX;
+    } else {
+        max_unaligned_transfer *= PAGE_SIZE as u32;
+    }
+
+    max_aligned_transfer = min(
+        max_aligned_transfer,
+        (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
+    );
+    max_unaligned_transfer = min(
+        max_unaligned_transfer,
+        (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
+    );
+
+    max_aligned_transfer = max(max_aligned_transfer, PAGE_SIZE as u32);
+    max_unaligned_transfer = max(max_unaligned_transfer, PAGE_SIZE as u32);
+
+    (*DeviceExtension)
+        .DeviceAdditionalData
+        .MaxPageAlignedTransferBytes = max_aligned_transfer;
+    (*DeviceExtension)
+        .DeviceAdditionalData
+        .MaxUnalignedTransferBytes = max_unaligned_transfer;
+    CdromDbgPrint2(b"[DCTL] wrote maxpat=%x readback=%x\n\0".as_ptr() as *const i8,
+        max_aligned_transfer as usize,
+        (*DeviceExtension).DeviceAdditionalData.MaxPageAlignedTransferBytes as usize);
 }
 
 #[no_mangle]
@@ -4940,30 +4968,13 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
 
     *IsMmcDevice = 0; // FALSE
 
-    // read the registry in case the drive failed previously,
-    // and a timeout is occurring.
     previously_failed = 0; // FALSE
-    DeviceGetParameter(
-        DeviceExtension as *mut core::ffi::c_void,
-        CDROM_SUBKEY_NAME as *const i8,
-        CDROM_NON_MMC_DRIVE_NAME as *const i8,
-        &mut previously_failed,
-    );
-
     if previously_failed != 0 {
         (*DeviceExtension).DeviceAdditionalData.HackFlags |=
             CDROM_HACK_BAD_GET_CONFIG_SUPPORT as ntkrnl_sys::ddk::ULONG_PTR;
     }
 
-    // read from the registry in case the drive reports bad profile lengths
     previously_failed = 0;
-    DeviceGetParameter(
-        DeviceExtension as *mut core::ffi::c_void,
-        CDROM_SUBKEY_NAME as *const i8,
-        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE as *const i8,
-        &mut previously_failed,
-    );
-
     if previously_failed != 0 {
         (*DeviceExtension).DeviceAdditionalData.HackFlags |=
             CDROM_HACK_BAD_VENDOR_PROFILES as ntkrnl_sys::ddk::ULONG_PTR;
@@ -5114,16 +5125,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             return -1073741670; // STATUS_INSUFFICIENT_RESOURCES
         }
 
-        // read the registry in case the drive failed previously,
-        // and a timeout is occurring.
         previously_failed = 0;
-        DeviceGetParameter(
-            DeviceExtension as *mut core::ffi::c_void,
-            CDROM_SUBKEY_NAME as *const i8,
-            CDROM_TYPE_ONE_GET_CONFIG_NAME as *const i8,
-            &mut previously_failed,
-        );
-
         if previously_failed != 0 {
             (*DeviceExtension).DeviceAdditionalData.HackFlags |=
                 CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR;

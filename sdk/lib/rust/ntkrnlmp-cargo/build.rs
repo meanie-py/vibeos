@@ -123,13 +123,18 @@ fn main() {
     let mut static_libs: Vec<&str> = vec![
         "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
         "sdk/lib/cportlib/libcportlib.a",
+        "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/drivers/csq/libcsq.a",
+        "sdk/lib/drivers/csq/libcsq_rust.a",
         "sdk/lib/pseh/libpseh.a",
         "sdk/lib/drivers/arbiter/libarbiter.a",
+        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
         "sdk/lib/lsalib/libntlsalib.a",
+        "sdk/lib/lsalib/liblsalib_rust.a",
         "sdk/lib/rtl/librtl.a",
         "sdk/lib/rossym/librossym.a",
+        "sdk/lib/rossym/librossym_rust.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo

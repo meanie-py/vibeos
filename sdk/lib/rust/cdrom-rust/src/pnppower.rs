@@ -12,7 +12,7 @@ use ntkrnl_sys::ddk::_DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0;
 use ntkrnl_sys::ddk::_MONITOR_DISPLAY_STATE_PowerMonitorOff as PowerMonitorOff;
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
@@ -48,7 +48,7 @@ const SENSE_BUFFER_SIZE: u32 = 18;
 const TRACE_LEVEL_ERROR: u32 = 1;
 const TRACE_FLAG_GENERAL: u32 = 2;
 #[no_mangle]
-pub unsafe extern "C" fn RequestProcessShutdownFlush(device: WDFDEVICE, irp: PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn RequestProcessShutdownFlush(device: WDFDEVICE, irp: PIRP) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut currentStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn RequestProcessShutdownFlush(device: WDFDEVICE, irp: PIR
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestProcessSetPower(
+pub unsafe extern "system" fn RequestProcessSetPower(
     Device: WDFDEVICE,
     Irp: PIRP,
 ) -> NTSTATUS {

@@ -18,5 +18,5 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }
 kmdf-sys = { path = "../kmdf-sys" }

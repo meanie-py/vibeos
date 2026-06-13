@@ -8,6 +8,9 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+
+extern "system" {
     fn KeGetCurrentIrql() -> u8;
     fn RtlAssert( VoidExpression: *mut core::ffi::c_void, VoidFileName: *mut core::ffi::c_void, LineNumber: u32, VoidMessage: *mut core::ffi::c_char, );
 }

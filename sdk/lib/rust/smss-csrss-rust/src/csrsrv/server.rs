@@ -141,6 +141,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
         }
 
         RtlFreeUnicodeString(&mut TempString);
+        crate::dbg_print!(b"[CSLD] after LdrLoadDll st=%lx h=%p\n\0", Status, hServerDll);
         if Status < 0 {
             return Status;
         }
@@ -203,9 +204,11 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     if Status >= 0 {
+        crate::dbg_print!(b"[CSLD] pre-ServerDllInit proc=%p\n\0", ServerDllInitProcedure.map(|f| f as usize).unwrap_or(0));
         Status = 'seh: {
             if let Some(init_proc) = ServerDllInitProcedure {
                 let result = init_proc(ServerDll);
+                crate::dbg_print!(b"[CSLD] post-ServerDllInit ret=%lx\n\0", result);
                 if result < 0 {
                     break 'seh result;
                 }

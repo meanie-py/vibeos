@@ -17,6 +17,7 @@ extern "C" {
     static GUID_IO_MEDIA_ARRIVAL: GUID;
     static GUID_IO_MEDIA_REMOVAL: GUID;
     static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
+    static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn NT_ASSERT(condition: i32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn SRB_STATUS(srb_status: u8) -> u32;
@@ -28,7 +29,12 @@ extern "C" {
 }
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
+    fn CdromMcnPollMark();
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn NT_SUCCESS(status: NTSTATUS) -> bool;
+    fn strlen(s: *const u8) -> usize;
+}
+extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn RequestClearSendTime(request: *mut core::ffi::c_void);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
@@ -37,7 +43,6 @@ extern "C" {
     fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn UNREFERENCED_PARAMETER(param: NTSTATUS);
-    fn strlen(s: *const u8) -> usize;
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
     fn KeGetCurrentIrql() -> KIRQL;
@@ -52,7 +57,6 @@ extern "C" {
     static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
-    fn NT_SUCCESS(status: NTSTATUS) -> bool;
     fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
     fn DeviceReleaseQueue(Device: WDFDEVICE);
@@ -95,7 +99,7 @@ use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaPresent as MediaPresent;
 use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent;
 use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable;
 
-const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01; // typical value
+const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x02;
 
 // Constants needed by this module
 const KEY_ALL_ACCESS: u32 = 0xF003F;
@@ -126,7 +130,7 @@ const STATUS_INVALID_DEVICE_STATE: NTSTATUS = (0xC0000184u32 as i32) as NTSTATUS
 
 // Constants
 const CDROM_TAG_GESN: u32 = 0x4E534547; // 'GESN' tag (little-endian)
-const NonPagedPoolNxCacheAligned: u32 = 0x300; // NonPagedPoolNx (0x200) | CacheAligned (0x100)
+const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
 
 // Registry key/value name strings (wide strings, matching DeviceGetParameter/DeviceSetParameter PWSTR args)
 static CLASSP_REG_SUBKEY_NAME_W: [u16; 6] = [b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, 0];
@@ -705,11 +709,12 @@ pub unsafe extern "C" fn DeviceSendDelayedMediaChangeNotifications(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RequestSetupMcnRequest(
+pub unsafe extern "system" fn RequestSetupMcnRequest(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     UseGesn: u8, // BOOLEAN
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
+    CdromMcnPollMark();
     let srb: *mut SCSI_REQUEST_BLOCK;
     let irp: *mut IRP;
     let nextIrpStack: *mut IO_STACK_LOCATION;
@@ -1054,11 +1059,9 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
     }
 
     if status >= 0 {
-        // WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE (unknown macro, represented as extern)
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             &mut attributes,
-            // CDROM_REQUEST_CONTEXT is a type identifier; we pass a dummy pointer as sentinel
-            1 as *const core::ffi::c_void,
+            &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const core::ffi::c_void,
         );
         attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
         status = WdfRequestCreate(

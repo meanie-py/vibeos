@@ -99,6 +99,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ex.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ob.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/iomgr/arcname.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/obhandle.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/mod.rs
@@ -317,7 +318,7 @@ add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe
     EXTRA_DEPENDS
         ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
         ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
-        hal kdcom bootvid
+        hal kdcom libkdcom_implib_target bootvid libbootvid_implib_target
         psdk asm rust_kernel)
 
 add_subdirectory(ntkrnlmp)

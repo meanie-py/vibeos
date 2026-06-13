@@ -19,8 +19,10 @@ extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn PAGED_CODE();
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+}
+extern "system" {
+    fn PAGED_CODE();
     fn DeviceSendSrbSynchronously(device: PDEVICE_OBJECT, srb: *mut SCSI_REQUEST_BLOCK, buffer: *mut core::ffi::c_void, length: u32, request_sense: u8, sense_info: *mut u8) -> NTSTATUS;
     fn DeviceGetConfigurationWithAlloc( Device: PDEVICE_OBJECT, Buffer: *mut *mut core::ffi::c_void, BufferSize: *mut ULONG, Feature: u32, RequestType: u32, ) -> NTSTATUS;
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoControlCode: u32, LowerPdo: PDEVICE_OBJECT, );

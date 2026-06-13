@@ -46,8 +46,11 @@ pub struct CON_STREAM {
 
 // ---- file-scope globals ----
 
+#[no_mangle]
 pub static mut csStdIn: CON_STREAM = unsafe { core::mem::zeroed() };
+#[no_mangle]
 pub static mut csStdOut: CON_STREAM = unsafe { core::mem::zeroed() };
+#[no_mangle]
 pub static mut csStdErr: CON_STREAM = unsafe { core::mem::zeroed() };
 
 #[cfg(feature = "USE_CRT")]

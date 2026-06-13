@@ -52,5 +52,5 @@ add_cargo_module(ntkrnlmp ntkrnlmp-cargo ntkrnlmp.exe
     EXTRA_DEPENDS
         ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
         ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
-        hal kdcom bootvid
+        hal kdcom libkdcom_implib_target bootvid libbootvid_implib_target
         psdk asm rust_kernel)

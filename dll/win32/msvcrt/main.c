@@ -28,18 +28,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 /* Index to TLS */
 DWORD msvcrt_tls_index;
 
-static const char* msvcrt_get_reason(DWORD reason)
-{
-  switch (reason)
-  {
-  case DLL_PROCESS_ATTACH: return "DLL_PROCESS_ATTACH";
-  case DLL_PROCESS_DETACH: return "DLL_PROCESS_DETACH";
-  case DLL_THREAD_ATTACH:  return "DLL_THREAD_ATTACH";
-  case DLL_THREAD_DETACH:  return "DLL_THREAD_DETACH";
-  }
-  return "UNKNOWN";
-}
-
 static inline BOOL msvcrt_init_tls(void)
 {
   msvcrt_tls_index = TlsAlloc();
@@ -89,11 +77,6 @@ static inline void msvcrt_free_tls_mem(void)
  */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-  TRACE("(%p, %s, %p) pid(%lx), tid(%lx), tls(%lu)\n",
-        hinstDLL, msvcrt_get_reason(fdwReason), lpvReserved,
-        GetCurrentProcessId(), GetCurrentThreadId(),
-        msvcrt_tls_index);
-
   switch (fdwReason)
   {
   case DLL_PROCESS_ATTACH:

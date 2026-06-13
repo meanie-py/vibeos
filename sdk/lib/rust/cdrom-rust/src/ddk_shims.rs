@@ -68,15 +68,15 @@ pub unsafe extern "C" fn FREE_POOL(Ptr: *mut c_void) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn PagedCode() {}
+pub unsafe extern "system" fn PagedCode() {}
 #[no_mangle]
 pub unsafe extern "C" fn BootEnvironmentIsWinPE() -> BOOLEAN {
     0 // FALSE — cdrom is not running under WinPE in our boot path
 }
 #[no_mangle]
-pub unsafe extern "C" fn WPP_CLEANUP(_DriverObject: PDRIVER_OBJECT) {}
+pub unsafe extern "system" fn WPP_CLEANUP(_DriverObject: PDRIVER_OBJECT) {}
 #[no_mangle]
-pub unsafe extern "C" fn WPP_INIT_TRACING(
+pub unsafe extern "system" fn WPP_INIT_TRACING(
     _DriverObject: PDRIVER_OBJECT,
     _RegistryPath: PUNICODE_STRING,
 ) {
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn EXCLUSIVE_OWNER(CdData: *mut CDROM_DATA, FileObject: *m
 
 // ============================ WDF *_INIT struct-init macros (<wdf.h>) ============================
 #[no_mangle]
-pub unsafe extern "C" fn WDF_DRIVER_CONFIG_INIT(
+pub unsafe extern "system" fn WDF_DRIVER_CONFIG_INIT(
     Config: *mut WDF_DRIVER_CONFIG,
     EvtDriverDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD,
 ) {
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn WDF_DRIVER_CONFIG_INIT(
     (*Config).EvtDriverDeviceAdd = EvtDriverDeviceAdd;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_PNPPOWER_EVENT_CALLBACKS_INIT(
+pub unsafe extern "system" fn WDF_PNPPOWER_EVENT_CALLBACKS_INIT(
     Callbacks: *mut WDF_PNPPOWER_EVENT_CALLBACKS,
 ) {
     core::ptr::write_bytes(
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn WDF_PNPPOWER_EVENT_CALLBACKS_INIT(
     (*Callbacks).Size = core::mem::size_of::<WDF_PNPPOWER_EVENT_CALLBACKS>() as u32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS) {
+pub unsafe extern "system" fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS) {
     core::ptr::write_bytes(
         Parameters as *mut u8,
         0,
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUES
 // INIT: zero, Size, ExecutionLevel=WdfExecutionLevelInheritFromParent(1),
 //       SynchronizationScope=WdfSynchronizationScopeInheritFromParent(1).
 #[no_mangle]
-pub unsafe extern "C" fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+pub unsafe extern "system" fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
     Attributes: *mut WDF_OBJECT_ATTRIBUTES,
     ContextType: PCWDF_OBJECT_CONTEXT_TYPE_INFO,
 ) {
@@ -216,31 +216,31 @@ pub static FILE_OBJECT_CONTEXT_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_C
     EvtDriverGetUniqueContextType: None,
 });
 #[no_mangle]
-pub unsafe extern "C" fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION {
+pub unsafe extern "system" fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION {
     WdfObjectGetTypedContext(Device as WDFOBJECT, &CDROM_DEVICE_EXTENSION_TYPE_INFO.0)
         as PCDROM_DEVICE_EXTENSION
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT {
+pub unsafe extern "system" fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT {
     WdfObjectGetTypedContext(Request as WDFOBJECT, &CDROM_REQUEST_CONTEXT_TYPE_INFO.0)
         as *mut CDROM_REQUEST_CONTEXT
 }
 #[no_mangle]
-pub unsafe extern "C" fn FileObjectGetContext(
+pub unsafe extern "system" fn FileObjectGetContext(
     FileObject: WDFFILEOBJECT,
 ) -> *mut FILE_OBJECT_CONTEXT {
     WdfObjectGetTypedContext(FileObject as WDFOBJECT, &FILE_OBJECT_CONTEXT_TYPE_INFO.0)
         as *mut FILE_OBJECT_CONTEXT
 }
 #[no_mangle]
-pub unsafe extern "C" fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION {
+pub unsafe extern "system" fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION {
     WdfObjectGetTypedContext(Driver as WDFOBJECT, &CDROM_DRIVER_EXTENSION_TYPE_INFO.0)
         as *mut CDROM_DRIVER_EXTENSION
 }
 
 // ============================ more WDF *_INIT macros ============================
 #[no_mangle]
-pub unsafe extern "C" fn WDF_OBJECT_ATTRIBUTES_INIT(Attributes: *mut WDF_OBJECT_ATTRIBUTES) {
+pub unsafe extern "system" fn WDF_OBJECT_ATTRIBUTES_INIT(Attributes: *mut WDF_OBJECT_ATTRIBUTES) {
     core::ptr::write_bytes(Attributes as *mut u8, 0, core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>());
     (*Attributes).Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
     (*Attributes).ExecutionLevel = 1;       // WdfExecutionLevelInheritFromParent
@@ -257,15 +257,15 @@ unsafe fn io_queue_config_init(Config: *mut WDF_IO_QUEUE_CONFIG, DispatchType: i
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_IO_QUEUE_CONFIG_INIT(Config: *mut WDF_IO_QUEUE_CONFIG, DispatchType: i32) {
+pub unsafe extern "system" fn WDF_IO_QUEUE_CONFIG_INIT(Config: *mut WDF_IO_QUEUE_CONFIG, DispatchType: i32) {
     io_queue_config_init(Config, DispatchType, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(Config: *mut WDF_IO_QUEUE_CONFIG, DispatchType: i32) {
+pub unsafe extern "system" fn WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(Config: *mut WDF_IO_QUEUE_CONFIG, DispatchType: i32) {
     io_queue_config_init(Config, DispatchType, 1);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_FILEOBJECT_CONFIG_INIT(
+pub unsafe extern "system" fn WDF_FILEOBJECT_CONFIG_INIT(
     Config: *mut WDF_FILEOBJECT_CONFIG,
     EvtDeviceFileCreate: PFN_WDF_DEVICE_FILE_CREATE,
     EvtFileClose: PFN_WDF_FILE_CLOSE,
@@ -279,20 +279,20 @@ pub unsafe extern "C" fn WDF_FILEOBJECT_CONFIG_INIT(
     (*Config).AutoForwardCleanupClose = 2; // WdfUseDefault
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_WORKITEM_CONFIG_INIT(Config: *mut WDF_WORKITEM_CONFIG, EvtWorkItemFunc: PFN_WDF_WORKITEM) {
+pub unsafe extern "system" fn WDF_WORKITEM_CONFIG_INIT(Config: *mut WDF_WORKITEM_CONFIG, EvtWorkItemFunc: PFN_WDF_WORKITEM) {
     core::ptr::write_bytes(Config as *mut u8, 0, core::mem::size_of::<WDF_WORKITEM_CONFIG>());
     (*Config).Size = core::mem::size_of::<WDF_WORKITEM_CONFIG>() as u32;
     (*Config).EvtWorkItemFunc = EvtWorkItemFunc;
     (*Config).AutomaticSerialization = 1; // TRUE
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_REMOVE_LOCK_OPTIONS_INIT(Options: *mut WDF_REMOVE_LOCK_OPTIONS, Flags: u32) {
+pub unsafe extern "system" fn WDF_REMOVE_LOCK_OPTIONS_INIT(Options: *mut WDF_REMOVE_LOCK_OPTIONS, Flags: u32) {
     core::ptr::write_bytes(Options as *mut u8, 0, core::mem::size_of::<WDF_REMOVE_LOCK_OPTIONS>());
     (*Options).Size = core::mem::size_of::<WDF_REMOVE_LOCK_OPTIONS>() as u32;
     (*Options).Flags = Flags;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WDF_IO_TARGET_OPEN_PARAMS_INIT_EXISTING_DEVICE(
+pub unsafe extern "system" fn WDF_IO_TARGET_OPEN_PARAMS_INIT_EXISTING_DEVICE(
     Params: *mut WDF_IO_TARGET_OPEN_PARAMS,
     DeviceObject: PDEVICE_OBJECT,
 ) {
@@ -380,7 +380,7 @@ pub unsafe extern "C" fn CompareStorageDuids(
 
 // ============================ mechanical DDK/CRT macro + intrinsic glue ============================
 const STATUS_INTEGER_OVERFLOW_: NTSTATUS = 0xC0000095u32 as NTSTATUS;
-extern "C" {
+extern "system" {
     fn MmProbeAndLockPages(MemoryDescriptorList: PMDL, AccessMode: i8, Operation: i32);
 }
 #[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES(dest: *mut u32, src: *const u8) {
@@ -395,7 +395,7 @@ extern "C" {
 #[no_mangle] pub unsafe extern "C" fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32 {
     (m as u32) * 60 * 75 + (s as u32) * 75 + (f as u32) - 150
 }
-#[no_mangle] pub unsafe extern "C" fn TEST_FLAG(flags: u32, flag: u32) -> i32 { ((flags & flag) != 0) as i32 }
+#[no_mangle] pub unsafe extern "system" fn TEST_FLAG(flags: u32, flag: u32) -> i32 { ((flags & flag) != 0) as i32 }
 #[no_mangle] pub unsafe extern "C" fn WHICH_BIT(bps: u32, shift: *mut u8) { *shift = bps.trailing_zeros() as u8; }
 #[no_mangle] pub unsafe extern "C" fn CountOfSetBitsUChar(byte: u8) -> u8 { byte.count_ones() as u8 }
 #[no_mangle] pub unsafe extern "C" fn Int64ShrlMod32(value: i64, shift: u32) -> i64 { ((value as u64) >> shift) as i64 }
@@ -435,7 +435,12 @@ extern "C" {
 }
 #[no_mangle] pub unsafe extern "C" fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32 {
     MmProbeAndLockPages(mdl, mode as i8, access as i32);
-    1 // success (DUMMY_PSEH: no exception frame; faults bugcheck as in C with USE_DUMMY_PSEH)
+    // Returns the SEH "exception code": callers do `if status != 0 { break }`, i.e. 0 = success,
+    // non-zero = exception. Under DUMMY_PSEH a probe fault bugchecks (no frame to catch) so the
+    // exception path is unreachable — return STATUS_SUCCESS (0). Returning 1 made DeviceSendSrbSynchronously
+    // treat a successful MDL lock as an exception and bail before sending the SRB (st=1, SrbStatus
+    // PENDING, DataTransferLength 0 → INQUIRY STATUS_DEVICE_PROTOCOL_ERROR → no SCSI commands ever run).
+    0 // STATUS_SUCCESS
 }
 // CLASSP_REG_* registry key/value names (wide strings). TODO confirm exact strings vs classpnp.
 #[no_mangle] pub static CLASSP_REG_SUBKEY_NAME: [u16; 6] = [b'C' as u16, b'd' as u16, b'R' as u16, b'o' as u16, b'm' as u16, 0];
@@ -443,7 +448,7 @@ extern "C" {
     [b'U' as u16,b's' as u16,b'e' as u16,b'r' as u16,b'R' as u16,b'e' as u16,b'm' as u16,b'o' as u16,b'v' as u16,b'a' as u16,b'l' as u16,b'P' as u16,b'o' as u16,b'l' as u16,b'i' as u16,b'c' as u16,b'y' as u16,0];
 
 // ============================ final mechanical glue (whole-archive complete gap) ============================
-#[no_mangle] pub unsafe extern "C" fn SET_FLAG(flags: *mut u32, flag: u32) { *flags |= flag; }
+#[no_mangle] pub unsafe extern "system" fn SET_FLAG(flags: *mut u32, flag: u32) { *flags |= flag; }
 #[no_mangle] pub unsafe extern "C" fn SRB_STATUS(srb_status: u8) -> u32 { (srb_status & 0x3F) as u32 }
 #[no_mangle] pub unsafe extern "C" fn IS_SCSIOP_READ(opcode: u8) -> u8 {
     matches!(opcode, 0x08 | 0x28 | 0xA8 | 0x88) as u8 // READ(6/10/12/16)
@@ -489,18 +494,18 @@ extern "C" {
 }
 
 // ============================ more WDF *_INIT macros ============================
-#[no_mangle] pub unsafe extern "C" fn WDF_REQUEST_REUSE_PARAMS_INIT(Params: *mut WDF_REQUEST_REUSE_PARAMS, Flags: u32, Status: NTSTATUS) {
+#[no_mangle] pub unsafe extern "system" fn WDF_REQUEST_REUSE_PARAMS_INIT(Params: *mut WDF_REQUEST_REUSE_PARAMS, Flags: u32, Status: NTSTATUS) {
     core::ptr::write_bytes(Params as *mut u8, 0, core::mem::size_of::<WDF_REQUEST_REUSE_PARAMS>());
     (*Params).Size = core::mem::size_of::<WDF_REQUEST_REUSE_PARAMS>() as u32;
     (*Params).Flags = Flags;
     (*Params).Status = Status;
 }
-#[no_mangle] pub unsafe extern "C" fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32) {
+#[no_mangle] pub unsafe extern "system" fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32) {
     core::ptr::write_bytes(Options as *mut u8, 0, core::mem::size_of::<WDF_REQUEST_SEND_OPTIONS>());
     (*Options).Size = core::mem::size_of::<WDF_REQUEST_SEND_OPTIONS>() as u32;
     (*Options).Flags = Flags;
 }
-#[no_mangle] pub unsafe extern "C" fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(Descriptor: *mut WDF_MEMORY_DESCRIPTOR, Buffer: *mut c_void, BufferLength: u32) {
+#[no_mangle] pub unsafe extern "system" fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(Descriptor: *mut WDF_MEMORY_DESCRIPTOR, Buffer: *mut c_void, BufferLength: u32) {
     core::ptr::write_bytes(Descriptor as *mut u8, 0, core::mem::size_of::<WDF_MEMORY_DESCRIPTOR>());
     (*Descriptor).Type = 1; // WdfMemoryDescriptorTypeBuffer
     let bt = (*Descriptor).u.BufferType.as_mut();
