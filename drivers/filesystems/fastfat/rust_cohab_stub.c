@@ -613,8 +613,6 @@ VOID CollectCreateHitStatistics(PVCB a)             { (void)a; }
 VOID CollectDiskIoStats(PVCB a, PIRP b, ULONG c, ULONG d) { (void)a;(void)b;(void)c;(void)d; }
 VOID CompareNames(PUNICODE_STRING a, PUNICODE_STRING b) { (void)a;(void)b; STUB_BUGCHECK(); }
 VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(void)c; }
-VOID FatWaitSync(PIRP_CONTEXT a) { (void)a; STUB_BUGCHECK(); }
-VOID FatDeviceIsFatFsdo(PDEVICE_OBJECT a) { (void)a; STUB_BUGCHECK(); }
 
 /* ======================================================================
  * 10. BugCheck stubs for FAT functions not yet in Rust
@@ -634,11 +632,8 @@ NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryBpb(PIRP_CONTEXT a, PIRP b)           { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatMarkVolume(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatDeleteFile(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatSetEndOfFileInfo(PIRP_CONTEXT a, PIRP b, PFCB c, PVCB d)
     { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatCommonRead(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatOpenVolume(PIRP_CONTEXT a, PIRP b, PVCB c, PCCB d, PACCESS_MASK e, ULONG f, ULONG g)
     { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatOpenExistingDirectory(PIRP_CONTEXT a, PIRP b, PDCB c, PCCB d,
@@ -648,8 +643,6 @@ NTSTATUS FatLowLevelReadWrite(PIRP_CONTEXT a, PIRP b, PVCB c)
     { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatPerformVerifyDiskRead(PIRP_CONTEXT a, PVCB b, PVOID c, LBO d, ULONG e, BOOLEAN f)
     { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatPostStackOverflowRead(PIRP_CONTEXT a, PIRP b, PFCB c)
-    { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromFcb(PFCB a, PULONGLONG b)
     { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)
@@ -661,40 +654,18 @@ NTSTATUS fat_check_system_security_access(PIRP_CONTEXT a, PIRP b)
 NTSTATUS fat_supersede_or_overwrite_file(PIRP_CONTEXT a, PIRP b, PFCB c, PVCB d, BOOLEAN e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 
-VOID FatLookup12BitEntry(PVCB a, ULONG b, PULONG c)   { (void)a;(void)b;(void)c; STUB_BUGCHECK(); }
-VOID FatSet12BitEntry(PVCB a, ULONG b, ULONG c)        { (void)a;(void)b;(void)c; STUB_BUGCHECK(); }
-VOID FatUnpackBios(PVOID a, PVOID b)                   { (void)a;(void)b; STUB_BUGCHECK(); }
 VOID FatConstructDot(PIRP_CONTEXT a, PVCB b, PDCB c, PDIRENT d, PBCB e, PLARGE_INTEGER f)
     { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); }
 VOID FatConstructDotDot(PIRP_CONTEXT a, PVCB b, PDCB c, PDIRENT d, PBCB e, PLARGE_INTEGER f)
     { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); }
-VOID FatSetDirtyBcb(PIRP_CONTEXT a, PBCB b, PVCB c, BOOLEAN d)  { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
-VOID FatUnpinBcb(PIRP_CONTEXT a, PBCB *b)             { (void)a;(void)b; STUB_BUGCHECK(); }
 VOID FatNotifyReportChange(PIRP_CONTEXT a, PVCB b, PFCB c, ULONG d, ULONG e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); }
-VOID FatUpcaseEaName(PIRP_CONTEXT a, POEM_STRING b, POEM_STRING c) { (void)a;(void)b;(void)c; STUB_BUGCHECK(); }
-VOID FatMarkFcbCondition(PIRP_CONTEXT a, PFCB b, FCB_CONDITION c, BOOLEAN d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
-VOID FatVerifyIndexIsValid(PIRP_CONTEXT a, PVCB b, ULONG c) { (void)a;(void)b;(void)c; STUB_BUGCHECK(); }
 VOID Fat8QMdot3QM(PIRP_CONTEXT a, POEM_STRING b)       { (void)a;(void)b; STUB_BUGCHECK(); }
 
-ULONG FatBytesPerFat(PVCB a)      { (void)a; STUB_BUGCHECK(); return 0; }
-ULONG FatBytesPerCluster(PVCB a)  { (void)a; STUB_BUGCHECK(); return 0; }
-ULONG FatNumberOfClusters(PVCB a) { (void)a; STUB_BUGCHECK(); return 0; }
 ULONG FatFsdEntryCount(VOID)      { STUB_BUGCHECK(); return 0; }
 ULONG FatIoCallDriverCount(VOID)  { STUB_BUGCHECK(); return 0; }
-ULONG FatDirectoryKey(PVCB a, PDCB b, ULONG c) { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return 0; }
-ULONG FatReservedBytes(PVOID a)   { (void)a; STUB_BUGCHECK(); return 0; }
-ULONG FatRootDirectorySize(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
-ULONG FatIndexBitSize(PVOID a)    { (void)a; STUB_BUGCHECK(); return 0; }
 
-LBO   FatRootDirectoryLbo(PVOID a)  { (void)a; STUB_BUGCHECK(); return 0; }
-LBO   FatFileAreaLbo(PVOID a)       { (void)a; STUB_BUGCHECK(); return 0; }
-LBO   FatGetLboFromIndex(PVCB a, VBO b) { (void)a;(void)b; STUB_BUGCHECK(); return 0; }
-VBO   FatGetIndexFromLbo(PVCB a, LBO b) { (void)a;(void)b; STUB_BUGCHECK(); return 0; }
 
-BOOLEAN FatIsFat12(PVCB a)         { (void)a; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsFat32(PVCB a)         { (void)a; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatAreNamesEqual(PIRP_CONTEXT a, PUNICODE_STRING b, PUNICODE_STRING c, BOOLEAN d, PWCHAR e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT a, OEM_STRING b, BOOLEAN c, BOOLEAN d, BOOLEAN e)
@@ -704,11 +675,6 @@ BOOLEAN FatIsNameLongUnicodeValid(PIRP_CONTEXT a, PUNICODE_STRING b, BOOLEAN c, 
 BOOLEAN FatIsPathnameValid(PIRP_CONTEXT a, PUNICODE_STRING b, BOOLEAN c)
     { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatIsIoRangeValid(PVCB a, LBO b, ULONG c) { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsFileOplockable(PFCB a) { (void)a; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsFastIoPossible(PFCB a) { (void)a; STUB_BUGCHECK(); return FALSE; }
 
-PFCB    FatGetFirstChild(PDCB a)   { (void)a; STUB_BUGCHECK(); return NULL; }
-PFCB    FatGetNextSibling(PFCB a)  { (void)a; STUB_BUGCHECK(); return NULL; }
-POPLOCK FatGetFcbOplock(PFCB a)    { (void)a; STUB_BUGCHECK(); return NULL; }
 
 #pragma clang diagnostic pop
