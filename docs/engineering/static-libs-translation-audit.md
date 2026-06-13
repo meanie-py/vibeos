@@ -51,14 +51,19 @@ its C-first cohab floor.
 
 **Landed 2026-06-13 (this session):** bootvid + framebuf dropped their last
 `.a` (memcmp / libcntpr → cnt-rust-lib); **basesrv reached ZERO cmake .a**
-(inert pseh+chkstk dropped after an `nm -u` residue probe); csrsrv dropped pseh
-(libsmlib remains); lsass dropped oldnames. Two genuine C leaf libs were
-**translated to Rust**: `libdmilib.a` (`ParseSMBiosTables` → `i8042prt-rust::dmi`,
-i8042prt now ZERO .a) and `libnt.a` (`NtProcessStartup` → `smss-csrss-rust::
-entry_point`, **csrss.exe now ZERO .a**). The dmilib port also fixed a fabricated
-SYS_VENDOR/PRODUCT enum-slot bug. All five changes booted ×3. Modules now fully
-cargo-native (ZERO cmake .a): pci, usbd, processr, swenum, hidparse, classpnp,
-cabinet, mlang, bootvid, framebuf, i8042prt, basesrv, csrss (13).
+(inert pseh+chkstk dropped after an `nm -u` residue probe); lsass dropped
+oldnames. Two genuine C leaf libs were **translated to Rust**: `libdmilib.a`
+(`ParseSMBiosTables` → `i8042prt-rust::dmi`, i8042prt now ZERO .a) and `libnt.a`
+(`NtProcessStartup` → `smss-csrss-rust::entry_point`, **csrss.exe now ZERO .a**).
+The dmilib port also fixed a fabricated SYS_VENDOR/PRODUCT enum-slot bug.
+**csrsrv + smss reached ZERO cmake .a (commit `cf7a6caa082`)**: `libsmlib.a` is
+NOT translation debt — smclient.c is already a Rust port (`smclient.rs`, compiled
+into the body via `pub mod smlib`), smutils.c is dead (compiled nowhere), so the
+cmake target is a comment-only cohab stub. The body defines all 7 Sm* + SmBaseTag
+itself → libsmlib inert; smss's pseh/chkstk likewise inert (residue probe ×3).
+All booted ×3. Modules now fully cargo-native (ZERO cmake .a): pci, usbd,
+processr, swenum, hidparse, classpnp, cabinet, mlang, bootvid, framebuf,
+i8042prt, basesrv, csrss, **csrsrv, smss** (15).
 
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
 
@@ -68,8 +73,8 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
 | `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (11; classpnp dropped it 2026-06-13) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves. classpnp needed NO residue (cnt-rust-lib + compiler-builtins sufficed); the rest may follow. |
-| `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, smss, winsrv, win32k (6) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv dropped it 2026-06-13** (probe: zero PSEH-runtime refs in the Rust body). Remaining consumers can follow — trivial. |
-| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), smss, winlogon, services, winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv dropped it 2026-06-13** (probe: no >4KB-frame refs). → `global_asm!` crate or asm_archive everywhere. |
+| `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, winsrv, win32k (5) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss dropped it 2026-06-13** (probe: zero PSEH-runtime refs in the Rust body). Remaining consumers can follow — trivial. |
+| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winlogon, services, winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss dropped it 2026-06-13** (probe: no >4KB-frame refs). → `global_asm!` crate or asm_archive everywhere. |
 | `sdk/lib/crt/libcntpr_rust.a` | hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial (7) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel already do). |
 | `sdk/lib/crt/libmemcmp.a` | hal, win32k, bootvid, kdcom, kdgdb, kdvm (6) | One C fn. The 8 driver/DLL modules already dropped it (compiler-builtins-mem). Remaining = same one-line drop. |
 | `sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a` | userinit, winlogon, services (3) | `_name`→`name` MSVC alias archive. **cabinet/mlang dropped it (Push A), lsass dropped it 2026-06-13** (probe: zero oldname refs). Tiny; absorb as c_shim/Rust statics. |
@@ -87,7 +92,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `sdk/lib/{wdmguid,poguid,ioevent}.a` | kernel ×2 | GUID-only (~20/14/9 LOC). Trivial `#[link_section]` Rust statics. |
 | `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
 | ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
-| `sdk/lib/smlib/libsmlib.a` | csrsrv, smss (2) | SM client lib (`_SmConnectToSm@16` et al., ~942 LOC). Untranslated — the lone cmake .a left on csrsrv. |
+| ~~`sdk/lib/smlib/libsmlib.a`~~ | ~~csrsrv, smss~~ | **✅ Resolved 2026-06-13 (`cf7a6caa082`)** — NOT translation debt: smclient.c is already a Rust port (`smss-csrss-rust/src/smlib/smclient.rs`, compiled into the body via `pub mod smlib`); smutils.c is dead (compiled nowhere). The cmake target is a comment-only cohab stub; the body defines all 7 Sm* + SmBaseTag, so it was inert (residue probe ×3). Dropped from both build.rs → csrsrv + smss ZERO cmake .a. C kept on disk. |
 | `sdk/lib/uuid/libuuid.a` | winsrv, mlang (2) | GUID/IID constants. Tiny; data. |
 | `sdk/lib/cportlib/libcport_rust.a` | kdcom, kdgdb, kdcom-serial (3) | **Already Rust** (cmake-built). Swap for `.rust_lib`. |
 | ~~`sdk/lib/dmilib/libdmilib.a`~~ | ~~i8042prt~~ | **✅ Rust 2026-06-13** — `ParseSMBiosTables` ported to `i8042prt-rust::dmi` (also fixed a fabricated SYS_VENDOR/PRODUCT slot-index bug). i8042prt now ZERO cmake .a; the host tool udmihelp keeps the C copy. |
@@ -105,14 +110,14 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `libcmlib` | C | `cmlib-rust` is the translation (kernel links both; `.a` = cohab placeholder). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
 | `librossym` | C (~3K) | unchanged C. |
-| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv dropped 2026-06-13, 6 still reuse `.a`. |
+| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss dropped 2026-06-13, 5 still reuse `.a`. |
 | `libsetjmp` | C | kernel/hal reuse; ntdll amd64 in-cargo asm. |
 | `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). |
 | `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
 | `libcsq` | C (~440) | unchanged C. |
 | `libarbiter` | C (~406) | unchanged C. |
 | `libntlsalib` | C (~345) | unchanged C. |
-| `libchkstk` | C/asm | hybrid: classpnp/basesrv dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
+| `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
 | `libkdcom` | C (~116) | **Rust** (`kdcom-rust`); kernel `.a` reuse. |
 | `libwdmguid`/`libpoguid`/`libioevent` | C (~43 total) | unchanged; trivial GUID-statics flip. |
 | `rtl-rust` (umbrella) | Rust | Rust, via `.rust_lib` (no cmake reuse) in kernel ×2 + ntdll. |
