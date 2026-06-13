@@ -37,8 +37,12 @@ fn main() {
         // 35 csrsrv.spec exports via a spec2def-generated .def.
         .spec2def("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libsmlib (C Sm* client) + pseh, reused from cmake.
-        .static_libs(&["sdk/lib/smlib/libsmlib.a", "sdk/lib/pseh/libpseh.a"])
+        // libsmlib (C Sm* client — _SmConnectToSm@16 et al., referenced by the
+        // Rust body; ~942 LOC of genuine C, translation debt) reused from cmake.
+        // libpseh.a DROPPED: nm -u confirms zero PSEH-runtime refs (DUMMY_PSEH
+        // dead handlers + Rust body never emits PSEH). The lone remaining cmake
+        // .a here is the real Sm-client lib, not a dead floor lib.
+        .static_libs(&["sdk/lib/smlib/libsmlib.a"])
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,

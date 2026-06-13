@@ -52,7 +52,11 @@ fn main() {
         // oldnames.a (_name aliases) still reused from cmake; the CRT startup
         // (libmsvcrtex.a — _wWinMainCRTStartup → wWinMain) is now compiled
         // in-cargo via .msvcrtex_crt() (msvcrtex.cmake sources replayed).
-        .static_libs(&["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"])
+        // oldnames.a (CRT _name aliases) DROPPED: nm -u on liblsass_rust.a ×3
+        // shows zero underscore-oldname refs (the Rust body calls the canonical
+        // CRT names via the msvcrt import lib). lsass.exe is a NON-shared exe
+        // link (--gc-sections, no -shared) so a clean cold link is itself proof
+        // the alias bridge is unreferenced. CRT startup stays in-cargo below.
         .msvcrtex_crt()
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
