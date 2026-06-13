@@ -12,15 +12,16 @@
 use core::ptr::null_mut;
 
 use ntkrnl_sys::ddk::{
-    FILE_FULL_EA_INFORMATION, IoCreateDevice, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP,
-    UNICODE_STRING,
+    FILE_FULL_EA_INFORMATION, IoCreateDevice, IofCompleteRequest, NTSTATUS, PDEVICE_OBJECT,
+    PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, UNICODE_STRING,
 };
-// IoGetCurrentIrpStackLocation is a header FORCEINLINE, NOT an ntoskrnl export —
-// the bindgen extern decl links undefined. Use the inline re-export.
-use ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation;
+// IoGetCurrentIrpStackLocation + IoMarkIrpPending are header FORCEINLINEs/macros,
+// NOT ntoskrnl exports — the bindgen extern decls link undefined. Use the inlines.
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending};
 
 use crate::serial::nsprint;
 use crate::tdi::{self, TdiFileKind};
+use crate::tditrans;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC000_0002u32 as NTSTATUS;
@@ -116,32 +117,43 @@ pub unsafe fn init(driver: PDRIVER_OBJECT) -> u32 {
     owned
 }
 
-unsafe extern "system" fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
-    let stack = IoGetCurrentIrpStackLocation(irp);
-    let major = (*stack).MajorFunction;
+const STATUS_PENDING: NTSTATUS = 0x0000_0103;
 
-    let status = match major {
-        IRP_MJ_CREATE => handle_create(irp),
-        IRP_MJ_CLOSE | IRP_MJ_CLEANUP => STATUS_SUCCESS,
-        IRP_MJ_DEVICE_CONTROL | IRP_MJ_INTERNAL_DEVICE_CONTROL => {
-            let minor = (*stack).MinorFunction;
-            // Observe what AFD drives. NOT_IMPLEMENTED keeps it non-blocking
-            // until the engine data path lands.
-            nsprint!("[NETSTACK] TDI {} (minor {:#04x})\n", tdi::minor_name(minor), minor);
-            STATUS_NOT_IMPLEMENTED
-        }
-        _ => STATUS_NOT_IMPLEMENTED,
-    };
+// FsContext2 file-object kind tags.
+const KIND_CONTROL: usize = 0;
+const KIND_ADDR: usize = 1;
+const KIND_CONN: usize = 2;
 
+unsafe fn complete_now(irp: PIRP, status: NTSTATUS, info: usize) {
     (*irp).IoStatus.__bindgen_anon_1.Status = status;
-    (*irp).IoStatus.Information = 0;
-    complete_request(irp);
-    status
+    (*irp).IoStatus.Information = info as _;
+    IofCompleteRequest(irp, 0);
 }
 
-/// Classify the CREATE by its EA buffer (TransportAddress / ConnectionContext /
-/// none) and accept it so winsock socket()/bind() succeed.
-unsafe fn handle_create(irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
+    let stack = IoGetCurrentIrpStackLocation(irp);
+    match (*stack).MajorFunction {
+        IRP_MJ_CREATE => {
+            let s = handle_create(irp, stack);
+            complete_now(irp, s, 0);
+            s
+        }
+        IRP_MJ_CLOSE | IRP_MJ_CLEANUP => {
+            handle_close(stack);
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        IRP_MJ_DEVICE_CONTROL | IRP_MJ_INTERNAL_DEVICE_CONTROL => handle_tdi(irp, stack),
+        _ => {
+            complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+            STATUS_NOT_IMPLEMENTED
+        }
+    }
+}
+
+/// Classify the CREATE by its EA buffer, stamp the file object's FsContext (id)
+/// + FsContext2 (kind), and register the object with the worker.
+unsafe fn handle_create(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
     let ea = (*irp).AssociatedIrp.SystemBuffer as *const FILE_FULL_EA_INFORMATION;
     let kind = if ea.is_null() {
         TdiFileKind::ControlChannel
@@ -156,12 +168,143 @@ unsafe fn handle_create(irp: PIRP) -> NTSTATUS {
             TdiFileKind::ControlChannel
         }
     };
+
+    let fo = (*stack).FileObject;
+    if !fo.is_null() {
+        let id = tditrans::alloc_id();
+        let (kindtag, _) = match kind {
+            TdiFileKind::Address => {
+                tditrans::post(tditrans::Cmd::CreateAddr { id, port: 0 });
+                (KIND_ADDR, ())
+            }
+            TdiFileKind::Connection => {
+                tditrans::post(tditrans::Cmd::CreateConn { id, conn_ctx: 0 });
+                (KIND_CONN, ())
+            }
+            TdiFileKind::ControlChannel => (KIND_CONTROL, ()),
+        };
+        (*fo).FsContext = id as usize as *mut core::ffi::c_void;
+        (*fo).FsContext2 = kindtag as *mut core::ffi::c_void;
+    }
     nsprint!("[NETSTACK] TDI open: {:?} file object\n", kind);
     STATUS_SUCCESS
 }
 
-/// IoCompleteRequest(irp, IO_NO_INCREMENT) — the C macro aliases IofCompleteRequest.
-unsafe fn complete_request(irp: PIRP) {
-    use ntkrnl_sys::ddk::IofCompleteRequest;
-    IofCompleteRequest(irp, 0);
+unsafe fn handle_close(stack: PIO_STACK_LOCATION) {
+    let fo = (*stack).FileObject;
+    if fo.is_null() {
+        return;
+    }
+    let id = (*fo).FsContext as usize as u64;
+    match (*fo).FsContext2 as usize {
+        KIND_ADDR => tditrans::post(tditrans::Cmd::CloseAddr { id }),
+        KIND_CONN => tditrans::post(tditrans::Cmd::CloseConn { id }),
+        _ => {}
+    }
+}
+
+/// Route a TDI request (IRP_MJ_INTERNAL_DEVICE_CONTROL, MinorFunction) into the
+/// data path. Connect/Send/Receive/Disconnect pend (worker completes); the rest
+/// complete synchronously.
+unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
+    let fo = (*stack).FileObject;
+    let id = if fo.is_null() { 0 } else { (*fo).FsContext as usize as u64 };
+    let minor = (*stack).MinorFunction;
+    let params = &(*stack).Parameters as *const _ as *const u8;
+
+    match minor {
+        tdi::TDI_SET_EVENT_HANDLER => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_SET_EVENT;
+            tditrans::post(tditrans::Cmd::SetEvent {
+                addr_id: id,
+                ev_type: (*p).EventType,
+                handler: (*p).EventHandler as usize,
+                context: (*p).EventContext as usize,
+            });
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        tdi::TDI_ASSOCIATE_ADDRESS => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_ASSOCIATE;
+            let addr_id = resolve_addr_handle((*p).AddressHandle);
+            tditrans::post(tditrans::Cmd::Associate { conn_id: id, addr_id });
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        tdi::TDI_CONNECT => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL;
+            if let Some((ip, port)) = tdi::parse_remote_ip((*p).RequestConnectionInformation) {
+                nsprint!(
+                    "[NETSTACK] TDI CONNECT conn {} -> {}.{}.{}.{}:{}\n",
+                    id, ip[0], ip[1], ip[2], ip[3], port
+                );
+                IoMarkIrpPending(irp);
+                tditrans::post(tditrans::Cmd::Connect { conn_id: id, ip, port, irp: irp as usize });
+                STATUS_PENDING
+            } else {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                STATUS_NOT_IMPLEMENTED
+            }
+        }
+        tdi::TDI_SEND => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_SEND;
+            let len = (*p).SendLength as usize;
+            let va = mdl_va(irp);
+            if va == 0 {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                return STATUS_NOT_IMPLEMENTED;
+            }
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::Send { conn_id: id, irp: irp as usize, data: va, len });
+            STATUS_PENDING
+        }
+        tdi::TDI_RECEIVE => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_RECEIVE;
+            let len = (*p).ReceiveLength as usize;
+            let va = mdl_va(irp);
+            if va == 0 {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                return STATUS_NOT_IMPLEMENTED;
+            }
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::Receive { conn_id: id, irp: irp as usize, buf: va, len });
+            STATUS_PENDING
+        }
+        tdi::TDI_DISCONNECT => {
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::Disconnect { conn_id: id, irp: irp as usize });
+            STATUS_PENDING
+        }
+        _ => {
+            nsprint!("[NETSTACK] TDI {} (minor {:#04x}) unhandled\n", tdi::minor_name(minor), minor);
+            complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+            STATUS_NOT_IMPLEMENTED
+        }
+    }
+}
+
+/// Resolve a TDI address-object HANDLE to the worker's addr id (stored in the
+/// referenced FILE_OBJECT's FsContext).
+unsafe fn resolve_addr_handle(handle: *mut core::ffi::c_void) -> u64 {
+    use ntkrnl_sys::ddk::{ObReferenceObjectByHandle, ObfDereferenceObject};
+    let mut obj: *mut core::ffi::c_void = core::ptr::null_mut();
+    // DesiredAccess 0, ObjectType null (any), KernelMode (0).
+    let status = ObReferenceObjectByHandle(handle, 0, core::ptr::null_mut(), 0, &mut obj, core::ptr::null_mut());
+    if status != 0 || obj.is_null() {
+        return 0;
+    }
+    let fo = obj as *mut ntkrnl_sys::ddk::_FILE_OBJECT;
+    let addr_id = (*fo).FsContext as usize as u64;
+    ObfDereferenceObject(obj);
+    addr_id
+}
+
+/// System VA of the IRP's data MDL (SEND/RECEIVE buffers), or 0.
+unsafe fn mdl_va(irp: PIRP) -> usize {
+    let mdl = (*irp).MdlAddress;
+    if mdl.is_null() {
+        return 0;
+    }
+    // NormalPagePriority = 16.
+    ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe(mdl, 16) as usize
 }

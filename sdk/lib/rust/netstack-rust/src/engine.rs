@@ -111,10 +111,15 @@ unsafe extern "system" fn worker(_context: PVOID) {
     let mut client_sent = false;
     let mut client_done = false;
     let mut client_attempts = 0u32;
+    // TDI transport state (connections/addresses driven by AFD via tdidev).
+    let mut tdi_state = crate::tditrans::TdiState::new();
 
     loop {
         let ts = now();
         iface.poll(ts, &mut phy, &mut sockets);
+
+        // TDI data path: drain AFD's commands + run the completion bridge.
+        crate::tditrans::pump(&mut iface, &mut sockets, &mut tdi_state);
 
         // --- DHCPv4: obtain a lease from slirp, apply it to the interface ---
         if let Some(event) = sockets.get_mut::<dhcpv4::Socket>(dhcp_handle).poll() {

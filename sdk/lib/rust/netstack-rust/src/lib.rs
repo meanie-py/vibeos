@@ -21,6 +21,7 @@ pub mod device;
 pub mod selftest;
 pub mod engine;
 pub mod tdi;
+pub mod tditrans;
 pub mod tdidev;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
