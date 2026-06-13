@@ -549,9 +549,29 @@ extern "C" {
         startinfo: *mut StartupInfo,
     ) -> i32;
 
-    // command-line strings exported by msvcrt.
-    pub static _acmdln: *mut u8;
-    pub static _wcmdln: *mut u16;
+}
+
+// msvcrt dllimport DATA (_acmdln/_wcmdln command lines + __initenv/__winitenv
+// env pointers). The import lib exposes only the `__imp_` IAT slots (no direct
+// symbol), so reference those — each holds the ADDRESS of the real global
+// (i386 carries one extra leading underscore vs amd64/arm64). `*IMP_ACMDLN`
+// yields `_acmdln` (the char*), `*IMP_INITENV = envp` writes `__initenv`.
+// NOTE: i686-windows-gnu PREPENDS a leading `_` to #[link_name] (unlike
+// amd64/arm64, which take it verbatim), so the i386 names carry one fewer
+// underscore than the actual `__imp_*` symbol the import lib provides.
+extern "C" {
+    #[cfg_attr(target_arch = "x86", link_name = "_imp___acmdln")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__acmdln")]
+    pub static IMP_ACMDLN: *mut *mut u8;
+    #[cfg_attr(target_arch = "x86", link_name = "_imp___wcmdln")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__wcmdln")]
+    pub static IMP_WCMDLN: *mut *mut u16;
+    #[cfg_attr(target_arch = "x86", link_name = "_imp____initenv")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___initenv")]
+    pub static IMP_INITENV: *mut *mut *mut u8;
+    #[cfg_attr(target_arch = "x86", link_name = "_imp____winitenv")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___winitenv")]
+    pub static IMP_WINITENV: *mut *mut *mut u16;
 }
 
 /// `_startupinfo` (internal.h).

@@ -13,7 +13,8 @@ use crate::winapi::*;
 use core::ffi::c_void;
 
 extern "C" {
-    #[link_name = "__image_base__"]
+    #[cfg_attr(target_arch = "x86", link_name = "_image_base__")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__image_base__")]
     static __ImageBase: u8;
 }
 

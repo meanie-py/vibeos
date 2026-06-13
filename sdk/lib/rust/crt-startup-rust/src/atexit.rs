@@ -25,7 +25,8 @@ pub static mut __onexitend: *mut Pvfv = core::ptr::null_mut();
 type ImpOnexit = unsafe extern "C" fn(onexit_t) -> onexit_t;
 #[cfg(target_arch = "x86")]
 extern "C" {
-    #[link_name = "__imp___onexit"]
+    // i686-windows-gnu prepends `_` to link_name → final `__imp___onexit`.
+    #[link_name = "_imp___onexit"]
     static IMP_ONEXIT: ImpOnexit;
 }
 #[cfg(not(target_arch = "x86"))]

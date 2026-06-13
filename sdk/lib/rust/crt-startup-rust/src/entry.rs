@@ -24,7 +24,8 @@ const SPACECHAR: u32 = b' ' as u32;
 const DQUOTECHAR: u32 = b'"' as u32;
 
 extern "C" {
-    #[link_name = "__image_base__"]
+    #[cfg_attr(target_arch = "x86", link_name = "_image_base__")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__image_base__")]
     static __ImageBase: IMAGE_DOS_HEADER;
 }
 
@@ -232,14 +233,11 @@ unsafe fn __tmainCRTStartup() -> i32 {
 
 #[cfg(not(target_arch = "aarch64"))]
 unsafe fn set_initenv() {
-    extern "C" {
-        static mut __initenv: *mut *mut u8;
-        static mut __winitenv: *mut *mut u16;
-    }
+    // write the msvcrt __initenv/__winitenv globals through their __imp_ slot.
     if WIDE {
-        __winitenv = ENVP as *mut *mut u16;
+        *IMP_WINITENV = ENVP as *mut *mut u16;
     } else {
-        __initenv = ENVP as *mut *mut u8;
+        *IMP_INITENV = ENVP as *mut *mut u8;
     }
 }
 
@@ -247,7 +245,7 @@ unsafe fn set_initenv() {
 /// leading spaces. Returns a pointer into _acmdln/_wcmdln (stored raw).
 unsafe fn compute_winmain_cmdline() -> *mut u8 {
     if WIDE {
-        let mut p = _wcmdln;
+        let mut p = *IMP_WCMDLN;
         let mut in_dq = false;
         loop {
             let c = *p as u32;
@@ -268,7 +266,7 @@ unsafe fn compute_winmain_cmdline() -> *mut u8 {
         }
         p as *mut u8
     } else {
-        let mut p = _acmdln;
+        let mut p = *IMP_ACMDLN;
         let mut in_dq = false;
         loop {
             let c = *p as u32;

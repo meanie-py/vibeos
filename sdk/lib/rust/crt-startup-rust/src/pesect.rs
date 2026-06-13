@@ -4,8 +4,10 @@
 use crate::winapi::*;
 
 extern "C" {
-    // lld-defined image base (mingw `__ImageBase` == `__image_base__`).
-    #[link_name = "__image_base__"]
+    // lld-defined image base (mingw `__ImageBase` == `__image_base__`). i386
+    // link_name drops one `_` (the gnu target re-adds it) → `__image_base__`.
+    #[cfg_attr(target_arch = "x86", link_name = "_image_base__")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__image_base__")]
     static __ImageBase: IMAGE_DOS_HEADER;
 }
 
