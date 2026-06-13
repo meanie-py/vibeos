@@ -194,3 +194,8 @@ pub struct PCI_COMMON_CONFIG_FIXED {
     pub DeviceSpecific: [u8; 192],
 }
 const _: () = assert!(core::mem::size_of::<PCI_COMMON_CONFIG_FIXED>() == 256);
+
+// dprint_noop — sink for prints the C compiled out (NDEBUG DPRINT). Keeps the call
+// sites (and their argument expressions) intact while matching C's silent behavior;
+// per-IO DbgPrint over the serial port was slowing boot past the smoke timeout.
+pub unsafe extern "C" fn dprint_noop(_format: *const core::ffi::c_char, mut _args: ...) -> i32 { 0 }

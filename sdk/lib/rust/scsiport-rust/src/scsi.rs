@@ -116,7 +116,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     // DPRINT entry
     {
         let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-        if DbgPrint(
+        if crate::glue::dprint_noop(
             b"ScsiPortDispatchScsi(DeviceObject %p  Irp %p)\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
@@ -161,7 +161,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
 
     // DPRINT: "Srb: %p, Srb->Function: %lu"
     let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-    if DbgPrint(
+    if crate::glue::dprint_noop(
         b"Srb: %p, Srb->Function: %lu\n\0".as_ptr() as *const i8,
         Srb,
         (*Srb).Function as u32,
@@ -996,7 +996,6 @@ pub unsafe extern "C" fn SpiGetNextRequestFromLun(
     let mut NextIrp: PIRP = core::ptr::null_mut::<_IRP>();
     let mut Entry: PKDEVICE_QUEUE_ENTRY = core::ptr::null_mut::<_KDEVICE_QUEUE_ENTRY>();
     let mut Srb: PSCSI_REQUEST_BLOCK = core::ptr::null_mut::<_SCSI_REQUEST_BLOCK>();
-
     if (*LunExtension).QueueCount >= (*LunExtension).MaxQueueCount
         || ((*LunExtension).Flags & SCSI_PORT_LU_ACTIVE) == 0
     {
@@ -1344,7 +1343,6 @@ unsafe fn SpiProcessCompletedRequest(
         (*DeviceExtension).Flags &= !SCSI_PORT_REQUEST_PENDING;
         *NeedToCallStartIo = 1u8;
     }
-
     if (*Srb).SrbStatus as i32
         & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as i32
         == (SRB_STATUS_SUCCESS) as i32
