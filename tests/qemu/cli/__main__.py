@@ -60,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
+    s.add_argument("--no-net", action="store_true",
+                   help="skip the folded netstack net-suite stage (amd64 only; default-on)")
     s.set_defaults(fn=smoke_mod.smoke)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")

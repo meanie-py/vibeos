@@ -120,6 +120,13 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         delay_ms(250);
         waited += 1;
     }
+    // No NIC → DHCP never configured: skip cleanly rather than send-datagram into
+    // the void and time out (the UART flood drops adjacent boot markers; see the
+    // TCP self-test for the same gate).
+    if !DHCP_READY.load(Ordering::Acquire) {
+        nsprint!("[NETSTACK] TDI dgram self-test: skipped (no network device)\n");
+        return;
+    }
     delay_ms(3000);
     nsprint!("[NETSTACK] TDI dgram self-test: opening \\Device\\Udp\n");
 

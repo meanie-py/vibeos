@@ -236,6 +236,14 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         delay_ms(250);
         waited += 1;
     }
+    // No NIC (no virtio-net device → DHCP never configured): there is nothing to
+    // test, and proceeding would only connect/send/time-out, flooding the UART at
+    // DISPATCH level during boot — which drops adjacent debug lines (e.g. explorer's
+    // boot marker) and stalls the smoke detector on no-NIC arches. Skip cleanly.
+    if !DHCP_READY.load(Ordering::Acquire) {
+        nsprint!("[NETSTACK] TDI self-test: skipped (no network device)\n");
+        return;
+    }
     delay_ms(750);
     nsprint!("[NETSTACK] TDI self-test: opening \\Device\\Tcp\n");
 
