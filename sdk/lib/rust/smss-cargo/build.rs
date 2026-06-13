@@ -8,7 +8,9 @@
 //!   (amd64/arm64) ; --gc-sections ; image base 0x400000 (i386) /
 //!   0x140000000 (amd64/arm64).
 //!   inputs: libsmss_csrss_rust.a (FULL flip — all 9 smss .c, built
-//!   `smss_exe_only`) + libnt/libpseh/libsmlib/libchkstk + the ntdll import lib.
+//!   `smss_exe_only`) + libpseh/libsmlib/libchkstk + the ntdll import lib.
+//!   (libnt's _NtProcessStartup@4 is now a Rust port in smss-csrss-rust →
+//!   crate::entry_point, so libnt.a is no longer linked.)
 //!
 //! smss is a FULL flip (all 9 .c → Rust; the lone C `smss_rust_stub.c` is an
 //! empty TU, omitted). The body crate smss-csrss-rust builds the STANDARD
@@ -42,11 +44,11 @@ fn main() {
         // kernel json — NativeExe would otherwise build the kernel json.
         .rust_user_target()
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // Native CRT startup (libnt provides _NtProcessStartup@4 → calls the
-        // Rust `_main`), pseh, the Sm* client lib, and chkstk — reused from
-        // cmake. No msvcrtex/oldnames (native exe, minimal CRT).
+        // libnt.a DROPPED — the native CRT startup _NtProcessStartup@4 is now a
+        // Rust port in smss-csrss-rust (crate::entry_point, smss_exe_only). pseh,
+        // the Sm* client lib (libsmlib, real C debt), and chkstk are still reused
+        // from cmake. No msvcrtex/oldnames (native exe, minimal CRT).
         .static_libs(&[
-            "sdk/lib/nt/libnt.a",
             "sdk/lib/pseh/libpseh.a",
             "sdk/lib/smlib/libsmlib.a",
             "sdk/lib/crt/libchkstk.a",
