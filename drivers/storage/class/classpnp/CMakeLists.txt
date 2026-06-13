@@ -18,9 +18,10 @@ spec2def(classpnp.sys classpnp.spec ADD_IMPORTLIB)
 # STAYS (consumers link the libclasspnp import lib, independent of this target).
 # cnt-rust-lib (libcntpr's Rust half) + pseh dummy.c + memcmp + the
 # classpnp-referenced ntoskrnl_vista subset are now cargo-native (rust_lib /
-# c_shims / compiler-builtins-mem / ntoskrnl-vista-rust), so rust_cnt /
-# ${PSEH_LIB} / memcmp / ntoskrnl_vista drop from EXTRA_DEPENDS; libcntpr (C
-# residual) + chkstk stay until step 8.
+# c_shims / compiler-builtins-mem / ntoskrnl-vista-rust). step 8: liblibcntpr.a
+# is also gone — cnt-rust-lib is the sole libcntpr provider (classpnp pulled no
+# C residue from it; links clean ×3). So rust_cnt / ${PSEH_LIB} / memcmp /
+# ntoskrnl_vista / libcntpr all drop from EXTRA_DEPENDS; only chkstk stays.
 add_cargo_module(classpnp classpnp-cargo classpnp.sys KIND kerneldll
     BODY_CRATE classpnp-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS libcntpr chkstk)
+    EXTRA_DEPENDS chkstk)

@@ -39,11 +39,15 @@ fn main() {
     // returns stay C). Mirrors libcntpr.cmake's CNT_RUST_FEATURES + ntdll-cargo.
     let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
-    // Remaining C floor reused from cmake (C-first link order). The libcntpr C
-    // residual (step 8) + chkstk asm stay cmake-built for now; ntoskrnl_vista
-    // (step 5) is now the cargo-native ntoskrnl-vista-rust sibling below, and
-    // pseh/cntpr_rust/memcmp are absorbed below too.
-    let mut static_libs: Vec<&str> = vec!["sdk/lib/crt/liblibcntpr.a"];
+    // Remaining cmake C floor (C-first link order): only chkstk asm now.
+    // liblibcntpr.a is GONE (step 8) — cnt-rust-lib (the Wave MATH-i386 no-SSE
+    // softfloat math + the whole CRT surface) + compiler-builtins-mem cover
+    // every symbol classpnp referenced from it; the cold-link is the oracle
+    // (drops clean ×3, no c_from_compile_db residue / cntpr_asm needed, unlike
+    // ntdll which exports the _CIxxx/printf/scanf residue). ntoskrnl_vista
+    // (step 5) is the ntoskrnl-vista-rust sibling below; pseh/cntpr_rust/memcmp
+    // absorbed below too. (chkstk = a separate lib, its own plumbing swap.)
+    let mut static_libs: Vec<&str> = vec![];
     if chkstk {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
@@ -53,8 +57,8 @@ fn main() {
         .rust_user_target()
         // cnt-rust-lib (libcntpr's Rust half) built as a cargo-native sibling
         // staticlib instead of reusing cmake's libcntpr_rust.a — exactly the
-        // ntdll-cargo pattern. (The C residual liblibcntpr.a above stays until
-        // step 8.)
+        // ntdll-cargo pattern. It is now the SOLE libcntpr provider for classpnp
+        // (liblibcntpr.a dropped, step 8).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // ntoskrnl_vista's classpnp-referenced subset (io/ke/po), translated to
         // Rust — replaces the cmake-built libntoskrnl_vista.a for classpnp (the
