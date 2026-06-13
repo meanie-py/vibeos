@@ -3,11 +3,11 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CcFlushCache, DRIVER_DISPATCH, DirectoryFile, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{CcFlushCache, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_FLUSH, FCB, FatDiskAccountingEnabled, PDIRENT, VCB, VCB_STATE_FLAG_WRITE_PROTECTED};
-use crate::verfysup::{FatMarkFcbCondition};
+// FatMarkFcbCondition called via extern "system" block in FatFlushFile below
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP, _ETHREAD, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_FLUSH};
@@ -39,6 +39,7 @@ extern "C" {
     fn _SEH2_GetExceptionCode() -> NTSTATUS;
     fn FatReservedBytes(bpb: *const core::ffi::c_void) -> u32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, status: i32);
+    fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, condition: u32, recursive: u8);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
@@ -210,7 +211,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
     Status = STATUS_SUCCESS;
 
-    let (Flush) as u8: BOOLEAN = if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 { 1u8 } else { 0u8 };
+    let Flush: BOOLEAN = if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 { 1u8 } else { 0u8 };
 
     // Outer try block simulation
     let mut completed_normally: BOOLEAN = 0u8;
@@ -253,7 +254,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
                 Status = FatFlushFile(IrpContext, Fcb, (Flush) as u32);
 
-                if NT_SUCCESS(Status) != 0 {
+                if NT_SUCCESS(Status) {
                     SetFlag((core::ptr::addr_of_mut!((*FileObject).Flags) as *mut u8).cast(), FO_FILE_SIZE_CHANGED);
                     FatUpdateDirentFromFcb(IrpContext, FileObject, Fcb, Ccb);
 
@@ -274,7 +275,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                         if (*NextFcb).FcbCondition == FcbGood {
                             let LocalStatus: NTSTATUS;
                             LocalStatus = FatFlushFile(IrpContext, NextFcb, (Flush) as u32);
-                            if NT_SUCCESS(LocalStatus) == 0 {
+                            if !NT_SUCCESS(LocalStatus) {
                                 Status = LocalStatus;
                             }
                             if FlagOn(((*NextFcb).FcbState as u8) as u32, FCB_STATE_FLUSH_FAT) != 0 {
@@ -285,11 +286,11 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     }
 
                     if FatFlushRequired != 0u8 {
-                        Status = (FatFlushFat).cast()(IrpContext, Vcb);
+                        Status = FatFlushFat(core::ptr::addr_of_mut!(IrpContext) as *mut PIRP_CONTEXT, core::ptr::addr_of_mut!(Vcb) as *mut PVCB);
                         ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
                     }
 
-                    SetFlag((core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags) as *mut u8).cast(), IRP_CONTEXT_FLAG_WRITE_THROUGH);
+                    SetFlag(core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_WRITE_THROUGH);
                 }
             }
             UserDirectoryOpen => {
@@ -309,8 +310,8 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     FatFlushVolume(IrpContext, Vcb, (Flush as u32) as i32);
 
                     if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
-                        KeCancelTimer(core::ptr::addr_of!((*Vcb).CleanVolumeTimer));
-                        KeRemoveQueueDpc(core::ptr::addr_of!((*Vcb).CleanVolumeDpc));
+                        KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer) as *mut KEVENT);
+                        KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc) as *mut core::ffi::c_void);
 
                         if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                             FatMarkVolume(IrpContext, Vcb, (VolumeClean as u32) as i32);
@@ -337,8 +338,8 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                 FatFlushVolume(IrpContext, Vcb, (Flush as u32) as i32);
 
                 if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
-                    KeCancelTimer(core::ptr::addr_of!((*Vcb).CleanVolumeTimer));
-                    KeRemoveQueueDpc(core::ptr::addr_of!((*Vcb).CleanVolumeDpc));
+                    KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
+                    KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
                     if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                         FatMarkVolume(IrpContext, Vcb, (VolumeClean as u32) as i32);
@@ -363,7 +364,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
     // Outer finally block always runs
     {
-        DebugUnwind(b"FatCommonFlushBuffers\0".as_ptr() as usize);
+        DebugUnwind(b"FatCommonFlushBuffers\0".as_ptr() as *const i8);
         if VcbAcquired != 0u8 {
             FatReleaseVcb(IrpContext, Vcb);
         }
@@ -386,7 +387,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                 );
                 DriverStatus = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
                 if DriverStatus == STATUS_PENDING ||
-                   (NT_SUCCESS(DriverStatus) == 0 && DriverStatus != STATUS_INVALID_DEVICE_REQUEST) {
+                   (!NT_SUCCESS(DriverStatus) && DriverStatus != STATUS_INVALID_DEVICE_REQUEST) {
                     Status = DriverStatus;
                 }
                 Irp = core::ptr::null_mut();
@@ -438,9 +439,9 @@ pub unsafe extern "C" fn FatFlushDirectory(
     ) == 0
     {
         ClearWriteThroughOnExit = 1;
-        (SetFlag).cast()(
-            (&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags) as *mut u8,
-            IRP_CONTEXT_FLAG_WRITE_THROUGH as u8,
+        SetFlag(
+            core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags),
+            IRP_CONTEXT_FLAG_WRITE_THROUGH,
         );
     }
 
@@ -450,9 +451,9 @@ pub unsafe extern "C" fn FatFlushDirectory(
     ) == 0
     {
         ClearWaitOnExit = 1;
-        (SetFlag).cast()(
-            (&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags) as *mut u8,
-            IRP_CONTEXT_FLAG_WAIT as u8,
+        SetFlag(
+            core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags),
+            IRP_CONTEXT_FLAG_WAIT,
         );
     }
 
@@ -513,7 +514,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
 
                     Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
 
-                    if NT_SUCCESS(Status) == 0 {
+                    if !NT_SUCCESS(Status) {
                         ReturnStatus = Status;
                     }
                 }
@@ -585,12 +586,12 @@ pub unsafe extern "C" fn FatFlushFat(
     let mut Bcb: *mut PBCB = core::ptr::null_mut();
     let mut DontCare: *mut PVOID = core::ptr::null_mut();
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Offset: LARGE_INTEGER = LARGE_INTEGER::default();
+    let mut Offset: LARGE_INTEGER = unsafe { core::mem::zeroed() };
     let mut ReturnStatus: NTSTATUS = STATUS_SUCCESS;
 
     // PAGED_CODE();
 
-    if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
+    if FlagOn((**Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
         return STATUS_SUCCESS;
     }
 
@@ -618,7 +619,7 @@ pub unsafe extern "C" fn FatFlushVolume(
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }
-    Status = (FatFlushFat).cast()(IrpContext, Vcb);
+    Status = FatFlushFat(core::ptr::addr_of_mut!(IrpContext) as *mut PIRP_CONTEXT, core::ptr::addr_of_mut!(Vcb) as *mut PVCB);
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }
@@ -631,19 +632,19 @@ pub unsafe extern "C" fn FatFlushVolume(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatFlushFile(
-    IrpContext: *mut IrpContext,
-    Fcb: *mut Fcb,
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
     FlushType: u32,
 ) -> NTSTATUS {
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let Vcb = (*Fcb).Vcb;
     // PAGED_CODE();
 
-    (CcFlushCache).cast()(
-        core::ptr::addr_of_mut!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void,
-        core::ptr::null(),
+    CcFlushCache(
+        core::ptr::addr_of_mut!((*(*Fcb).NonPaged).SectionObjectPointers),
+        core::ptr::null_mut(),
         0,
-        core::ptr::addr_of_mut!(Iosb) as *mut c_void,
+        core::ptr::addr_of_mut!(Iosb),
     );
 
     if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB) == 0 {
@@ -680,7 +681,7 @@ pub unsafe extern "C" fn FatHijackIrpAndFlushDevice(
 
     IoSetCompletionRoutine(
         Irp,
-        FatHijackCompletionRoutine,
+        Some(FatHijackCompletionRoutine),
         &raw mut event as *mut core::ffi::c_void,
         1, /* TRUE */
         1,
@@ -691,11 +692,11 @@ pub unsafe extern "C" fn FatHijackIrpAndFlushDevice(
 
     if status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &raw mut event,
+            &raw mut event as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8, /* KernelMode */
             0, /* FALSE */
-            core::ptr::null(),
+            core::ptr::null_mut(),
         );
         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
@@ -724,7 +725,7 @@ pub unsafe extern "C" fn FatFlushFatEntries(
 
     FileOffset.__bindgen_anon_1.HighPart = 0;
     FileOffset.__bindgen_anon_1.LowPart = FatReservedBytes(
-        core::ptr::addr_of!((*Vcb).Bpb) as *mut BPB,
+        core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void,
     );
 
     if (*Vcb).AllocationSupport.FatIndexBitSize == 12 {
@@ -738,18 +739,18 @@ pub unsafe extern "C" fn FatFlushFatEntries(
         ByteCount = Count * core::mem::size_of::<u16>() as u32;
     }
 
-    (CcFlushCache).cast()(
-        core::ptr::addr_of_mut!((*Vcb).SectionObjectPointers) as *mut core::ffi::c_void,
-        core::ptr::addr_of!(FileOffset),
+    CcFlushCache(
+        core::ptr::addr_of_mut!((*Vcb).SectionObjectPointers),
+        core::ptr::addr_of_mut!(FileOffset),
         ByteCount,
-        core::ptr::addr_of_mut!(Iosb) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(Iosb),
     );
 
     if Iosb.__bindgen_anon_1.Status >= 0 {
-        Iosb.__bindgen_anon_1.Status = (FatHijackIrpAndFlushDevice).cast()(
+        Iosb.__bindgen_anon_1.Status = FatHijackIrpAndFlushDevice(
             IrpContext as *mut _IRP_CONTEXT,
             (*(IrpContext as *mut _IRP_CONTEXT)).OriginatingIrp,
-            (*Vcb).TargetDeviceObject as *mut core::ffi::c_void,
+            (*Vcb).TargetDeviceObject,
         );
     }
 
@@ -779,7 +780,7 @@ pub unsafe extern "C" fn FatFlushDirentForFile(
     if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) {
         Iosb.__bindgen_anon_1.Status = FatHijackIrpAndFlushDevice(
             IrpContext,
-            (*IrpContext).OriginatingIrp,
+            (*(IrpContext as *mut _IRP_CONTEXT)).OriginatingIrp,
             (*(*Fcb).Vcb).TargetDeviceObject,
         );
     }

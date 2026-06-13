@@ -5,6 +5,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSetTopLevelIrp, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+use core::ptr::addr_of_mut;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, IRP_CONTEXT, VCB, VOLUME_DEVICE_OBJECT};
 use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, WORK_QUEUE_ITEM};
@@ -54,7 +55,7 @@ const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
 #[no_mangle]
 pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     // PAGED_CODE();
-    let mut status: NTSTATUS = ntkrnl_sys::constants::STATUS_SUCCESS;
+    let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
     let irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
     let mut irp: *mut IRP = (*irp_context).OriginatingIrp;
     let mut irp_sp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
@@ -99,13 +100,14 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
 
         major_function = (*irp_context).MajorFunction;
 
-        // SEH2 try/except block emulated with catch_unwind
-        let result = std::panic::catch_unwind(|| {
+        // SEH2 try/except block — USE_DUMMY_PSEH means the except handler is dead code;
+        // emulate by running the try body directly (no unwinding in kernel).
+        {
             match major_function {
-                ntkrnl_sys::constants::IRP_MJ_CREATE => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_CREATE => {
                     status = FatCommonCreate(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_CLOSE => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_CLOSE => {
                     let mut vcb: *mut VCB = core::ptr::null_mut();
                     let mut fcb: *mut FCB = core::ptr::null_mut();
                     let mut ccb: *mut CCB = core::ptr::null_mut();
@@ -127,55 +129,55 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                     if vcb_deleted != 0 {
                         vol_do = core::ptr::null_mut();
                     }
-                    NT_ASSERT((status == ntkrnl_sys::constants::STATUS_SUCCESS) as i32);
+                    NT_ASSERT((status == ntkrnl_sys::base::STATUS_SUCCESS) as i32);
                     FatCompleteRequest(irp_context, irp, status);
                 }
-                ntkrnl_sys::constants::IRP_MJ_READ => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_READ => {
                     FatCommonRead(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_WRITE => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_WRITE => {
                     FatCommonWrite(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_QUERY_INFORMATION => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_QUERY_INFORMATION => {
                     FatCommonQueryInformation(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_SET_INFORMATION => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_SET_INFORMATION => {
                     FatCommonSetInformation(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_QUERY_EA => {
+                n if n == crate::glue::IRP_MJ_QUERY_EA as u8 => {
                     FatCommonQueryEa(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_SET_EA => {
+                n if n == crate::glue::IRP_MJ_SET_EA as u8 => {
                     FatCommonSetEa(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_FLUSH_BUFFERS => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_FLUSH_BUFFERS => {
                     FatCommonFlushBuffers(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_QUERY_VOLUME_INFORMATION => {
+                n if n == crate::glue::IRP_MJ_QUERY_VOLUME_INFORMATION as u8 => {
                     FatCommonQueryVolumeInfo(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_SET_VOLUME_INFORMATION => {
+                n if n == crate::glue::IRP_MJ_SET_VOLUME_INFORMATION as u8 => {
                     FatCommonSetVolumeInfo(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_CLEANUP => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_CLEANUP => {
                     FatCommonCleanup(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_DIRECTORY_CONTROL => {
+                n if n == crate::glue::IRP_MJ_DIRECTORY_CONTROL as u8 => {
                     FatCommonDirectoryControl(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_FILE_SYSTEM_CONTROL => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_FILE_SYSTEM_CONTROL => {
                     FatCommonFileSystemControl(irp_context, irp);
                 }
-                ntkrnl_sys::constants::IRP_MJ_LOCK_CONTROL => {
+                n if n == ntkrnl_sys::constants::IRP_MJ_LOCK_CONTROL => {
                     FatCommonLockControl(irp_context, irp);
                 }
-                ntkrnl_sys::driver_ddk::IRP_MJ_DEVICE_CONTROL => {
+                n if n == ntkrnl_sys::driver_ddk::IRP_MJ_DEVICE_CONTROL => {
                     FatCommonDeviceControl(irp_context, irp);
                 }
-                ntkrnl_sys::driver_ddk::IRP_MJ_SHUTDOWN => {
+                n if n == ntkrnl_sys::driver_ddk::IRP_MJ_SHUTDOWN => {
                     FatCommonShutdown(irp_context, irp);
                 }
-                ntkrnl_sys::driver_ddk::IRP_MJ_PNP => {
+                n if n == ntkrnl_sys::driver_ddk::IRP_MJ_PNP => {
                     FatCommonPnp(irp_context, irp);
                 }
                 _ => {
@@ -185,14 +187,6 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                         ntkrnl_sys::constants::STATUS_INVALID_DEVICE_REQUEST,
                     );
                 }
-            }
-        });
-
-        if let Err(_) = result {
-            let exception_info = _SEH2_GetExceptionInformation();
-            if FatExceptionFilter(irp_context, exception_info) != 0 {
-                FatProcessException(irp_context, irp, _SEH2_GetExceptionCode());
-                exception_completed_irp = 1;
             }
         }
 
@@ -229,12 +223,12 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
         }
     }
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn FatRemoveOverflowEntry(
+#[no_mangle]
+pub unsafe extern "C" fn FatRemoveOverflowEntry(
     VolDo: *mut VOLUME_DEVICE_OBJECT,
 ) -> *mut core::ffi::c_void {
     let mut Entry: *mut core::ffi::c_void;
-    let mut SavedIrql: ntkrnl_sys::base::KIRQL;
+    let mut SavedIrql: ntkrnl_sys::base::KIRQL = 0;
 
     ntkrnl_sys::ke::KeAcquireSpinLock(
         (core::ptr::addr_of_mut!((*VolDo).OverflowQueueSpinLock)).cast(),

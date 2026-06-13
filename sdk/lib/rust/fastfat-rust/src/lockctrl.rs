@@ -15,7 +15,7 @@ use crate::types::{CCB, FCB};
 extern "C" {
     fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);
     fn DebugUnwind(ptr: *mut core::ffi::c_void);
-    fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut Vcb, Fcb: *mut *mut Fcb, Ccb: *mut *mut Ccb) -> i32;
+    fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> i32;
     fn FatGetFcbOplock(Fcb: PFCB) -> *mut OPLOCK;
     fn FatIsFastIoPossible(Fcb: PFCB) -> u8;
     fn FsRtlFastLock( FileLock: *mut FILE_LOCK, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: u32, FailImmediately: u8, ExclusiveLock: u8, IoStatus: PIO_STATUS_BLOCK, Context: *mut core::ffi::c_void, AlreadySynchronized: u8, ) -> u8;
@@ -71,23 +71,11 @@ pub unsafe extern "system" fn FatFsdLockControl(
 
     TopLevel = unsafe { FatIsIrpTopLevel(Irp) };
 
-    // SEH2_TRY / _SEH2_EXCEPT / _SEH2_END emulation
-    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    // SEH2_TRY / _SEH2_EXCEPT / _SEH2_END emulation (no real SEH under DUMMY_PSEH)
+    {
         let can_wait = unsafe { CanFsdWait(Irp) };
         IrpContext = unsafe { FatCreateIrpContext(Irp, can_wait) };
-        Status = unsafe { (FatCommonLockControl).cast()(IrpContext, Irp) };
-    }));
-
-    match panic_result {
-        Err(panic_payload) => {
-            let exception_pointers = unsafe { _SEH2_GetExceptionInformation() };
-            if unsafe { FatExceptionFilter(IrpContext, exception_pointers) } != 0 {
-                Status = unsafe { FatProcessException(IrpContext, Irp, _SEH2_GetExceptionCode()) };
-            } else {
-                std::panic::resume_unwind(panic_payload);
-            }
-        }
-        Ok(_) => {}
+        Status = unsafe { FatCommonLockControl(IrpContext as PIRP_CONTEXT, Irp as PIRP) };
     }
 
     if TopLevel != 0 {
@@ -148,7 +136,7 @@ pub unsafe extern "system" fn FatFastLock(
             }
 
             Results = FsRtlFastLock(
-                core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock),
+                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock,
                 FileObject,
                 FileOffset,
                 Length,
@@ -216,7 +204,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
         }
         Results = 1;
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
-            &raw mut (*fcb).Specific.Fcb.FileLock,
+            &raw mut (*fcb).Specific.as_mut().Fcb.FileLock,
             FileObject,
             FileOffset,
             Length,
@@ -228,7 +216,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
         (*fcb).Header.IsFastIoPossible = FatIsFastIoPossible(fcb);
     }
 
-    DebugUnwind(b"FatFastUnlockSingle\0".as_ptr() as usize);
+    DebugUnwind(b"FatFastUnlockSingle\0".as_ptr() as *mut core::ffi::c_void);
     FsRtlExitFileSystem();
     DebugTrace(-1, Dbg, b"FatFastUnlockSingle -> %08lx\n\0".as_ptr() as *const i8, Results);
 
@@ -274,7 +262,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
 
             Results = 1;
             let status = FsRtlFastUnlockAll(
-                core::ptr::addr_of!((*fcb).Specific.Fcb.FileLock) as *mut FILE_LOCK,
+                &raw mut (*fcb).Specific.as_mut().Fcb.FileLock,
                 FileObject,
                 (ProcessId).cast(),
                 core::ptr::null_mut(),
@@ -287,7 +275,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
         }
 
         // Finally block
-        DebugUnwind(b"FatFastUnlockAll\0".as_ptr() as usize);
+        DebugUnwind(b"FatFastUnlockAll\0".as_ptr() as *mut core::ffi::c_void);
         ExReleaseResourceLite((core::ptr::addr_of_mut!((*fcb).Header.Resource)).cast());
         FsRtlExitFileSystem();
         DebugTrace(-1, Dbg, b"FatFastUnlockAll -> %08lx\n\0".as_ptr() as *const i8, Results as u32);
@@ -335,7 +323,7 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
 
         Results = 1;
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
-            core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock),
+            &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock,
             FileObject,
             (ProcessId as PEPROCESS).cast(),
             Key,
@@ -346,7 +334,7 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
     }
 
     // SEH2_FINALLY block
-    DebugUnwind(FatFastUnlockAllByKey as usize);
+    DebugUnwind(FatFastUnlockAllByKey as *mut core::ffi::c_void);
     ExReleaseResourceLite((*Fcb).Header.Resource);
     FsRtlExitFileSystem();
     DebugTrace(-1, (DEBUG_TRACE_LOCKCTRL) as u32, b"FatFastUnlockAllByKey -> %08lx\n\0".as_ptr() as *const i8, Results as u32);
@@ -379,7 +367,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
 
     DebugTrace(1, Dbg, b"FatCommonLockControl\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp);
-    DebugTrace(0, Dbg, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).MinorFunction);
+    DebugTrace(0, Dbg, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).MinorFunction as u32);
 
     let TypeOfOpen: TYPE_OF_OPEN = (FatDecodeFileObject((*IrpSp).FileObject, &mut Vcb, &mut Fcb, &mut Ccb)) as u32;
 
@@ -389,7 +377,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
         return (STATUS_INVALID_PARAMETER) as i32;
     }
 
-    if !FatAcquireSharedFcb(IrpContext, Fcb) {
+    if FatAcquireSharedFcb(IrpContext, Fcb) == 0 {
         Status = FatFsdPostRequest(IrpContext, Irp);
         DebugTrace(-1, Dbg, b"FatCommonLockControl -> %08lx\n\0".as_ptr() as *const i8, Status);
         return Status;
@@ -404,15 +392,15 @@ pub unsafe extern "C" fn FatCommonLockControl(
             let is_lock = (IRP_MN_LOCK == (*IrpSp).MinorFunction as u32);
             let is_lock_within_size = is_lock && (lock_quad_part < alloc_quad_part);
             let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(
-                core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock)
+                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock
             ) != 0;
             if is_lock_within_size || has_waiting_locks {
                 let oplock = FatGetFcbOplock(Fcb);
                 Status = FsRtlCheckOplock(
                     oplock,
                     Irp,
-                    IrpContext,
-                    FatOplockComplete,
+                    IrpContext as *mut core::ffi::c_void,
+                    core::mem::transmute::<unsafe extern "C" fn(PIRP_CONTEXT, PIRP) -> NTSTATUS, _>(FatOplockComplete),
                     core::ptr::null_mut(),
                 );
             }
@@ -424,7 +412,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
             break 'sehtry;
         }
 
-        let file_lock_ptr: *mut FILE_LOCK = core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock);
+        let file_lock_ptr: *mut FILE_LOCK = &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock;
         Status = FsRtlProcessFileLock(file_lock_ptr, Irp, core::ptr::null_mut());
 
         (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
@@ -434,7 +422,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
     }
 
     // _SEH2_FINALLY
-    DebugUnwind(FatCommonLockControl as *const core::ffi::c_void);
+    DebugUnwind(FatCommonLockControl as *mut core::ffi::c_void);
 
     // _SEH2_AbnormalTermination() would be checked, but no real SEH => always 0
     if OplockPostIrp == 0 {

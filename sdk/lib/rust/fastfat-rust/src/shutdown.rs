@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CcPurgeCacheSection, DRIVER_DISPATCH, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
+use ntkrnl_sys::ddk::{CcPurgeCacheSection, DRIVER_DISPATCH, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeClearEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
 use core::ffi::c_void;
 use core::mem::offset_of;
 // resolve_imports.py: explicit kernel/private-type imports
@@ -16,18 +16,30 @@ use crate::glue::{DEBUG_TRACE_SHUTDOWN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem};
 
+type FAT_FLUSH_TYPE = i32;
+type VOLUME_CONDITION = i32;
+const Flush: FAT_FLUSH_TYPE = 1;       // FAT_FLUSH_TYPE::Flush (NoFlush=0, Flush=1)
+const VolumeClean: VOLUME_CONDITION = 0; // FAT_VOLUME_STATE::VolumeClean
+
+extern "C" {
+    fn PAGED_CODE();
+    fn DebugTrace(level: i32, mask: u32, format: *const i8, arg: i32);
+    fn _SEH2_GetExceptionInformation() -> *mut c_void;
+}
+
 extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
-    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: u32);
+    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: VOLUME_CONDITION);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
-    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32);
+    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: FAT_FLUSH_TYPE);
     fn FlagOn(flags: u32, mask: u32) -> BOOLEAN;
     fn NT_ASSERT(condition: BOOLEAN);
     fn FsRtlExitFileSystem();
     fn _SEH2_GetExceptionCode() -> u32;
+    fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -70,8 +82,8 @@ pub unsafe extern "system" fn FatFsdShutdown(
         {
             // This block never executes, but its contents match the C struct.
             let _ = Status; // suppress unused warning
-            let info = _SEH2_GetExceptionInformation();
-            if FatExceptionFilter((IrpContext as *mut core::ffi::c_void).cast(), info) != 0 {
+            let info = _SEH2_GetExceptionInformation() as *mut EXCEPTION_POINTERS;
+            if FatExceptionFilter(IrpContext, info) != 0 {
                 Status =
                     FatProcessException(IrpContext, Irp, (_SEH2_GetExceptionCode()) as i32);
             }
@@ -111,7 +123,7 @@ pub unsafe extern "C" fn FatCommonShutdown(
     KeInitializeEvent(&mut event, _EVENT_TYPE_NotificationEvent, 0); // FALSE
 
     // FatData.ShutdownStarted = TRUE (1)
-    (*(core::ptr::addr_of_mut!(FatData))).ShutdownStarted = 1;
+    (*(core::ptr::addr_of_mut!(FatData))).set_ShutdownStarted(1);
 
     // NT_ASSERT(FlagOn(IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT))
     NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT));
@@ -124,7 +136,7 @@ pub unsafe extern "C" fn FatCommonShutdown(
         links = (*vcb_queue_ptr).Flink;
 
         while links as *const LIST_ENTRY != vcb_queue_ptr {
-            vcb = (links as *mut u8).offset(-core::mem::offset_of!(VCB, VcbLinks)) as *mut VCB;
+            vcb = (links as *mut u8).offset(-(core::mem::offset_of!(VCB, VcbLinks) as isize)) as *mut VCB;
 
             links = (*links).Flink;
 
@@ -137,8 +149,8 @@ pub unsafe extern "C" fn FatCommonShutdown(
 
             FatAcquireExclusiveVolume(IrpContext, vcb);
 
-            // Inner _SEH2_TRY (flush volume)
-            let flush_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Inner _SEH2_TRY (flush volume) — USE_DUMMY_PSEH: no real exception dispatch
+            {
                 FatFlushVolume(IrpContext, vcb, Flush);
 
                 if ((*vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
@@ -151,15 +163,12 @@ pub unsafe extern "C" fn FatCommonShutdown(
 
                     FatMarkVolume(IrpContext, vcb, VolumeClean);
                 }
-            }));
-            if flush_result.is_err() {
-                FatResetExceptionState(IrpContext);
             }
 
-            // Outer _SEH2_TRY (send shutdown IRP)
-            let irp_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Outer _SEH2_TRY (send shutdown IRP) — USE_DUMMY_PSEH: no real exception dispatch
+            {
                 new_irp = IoBuildSynchronousFsdRequest(
-                    (IRP_MJ_SHUTDOWN) as u32,
+                    IRP_MJ_SHUTDOWN as u32,
                     (*vcb).TargetDeviceObject,
                     core::ptr::null_mut(),
                     0,
@@ -169,9 +178,9 @@ pub unsafe extern "C" fn FatCommonShutdown(
                 );
 
                 if !new_irp.is_null() {
-                    if NT_SUCCESS(IoCallDriver((*vcb).TargetDeviceObject, new_irp)) != 0 {
+                    if NT_SUCCESS(IoCallDriver((*vcb).TargetDeviceObject, new_irp)) {
                         KeWaitForSingleObject(
-                            &mut event,
+                            &mut event as *mut KEVENT as *mut c_void,
                             _KWAIT_REASON_Executive,
                             0i32,
                             0, // FALSE
@@ -181,9 +190,6 @@ pub unsafe extern "C" fn FatCommonShutdown(
                         KeClearEvent(&mut event);
                     }
                 }
-            }));
-            if irp_result.is_err() {
-                FatResetExceptionState(IrpContext);
             }
 
             // SetFlag(Vcb->VcbState, VCB_STATE_FLAG_SHUTDOWN)

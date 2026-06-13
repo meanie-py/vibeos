@@ -24,7 +24,7 @@ extern "C" {
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: unsafe extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8) -> NTSTATUS;
+    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8) -> NTSTATUS;
     fn PAGED_CODE();
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
@@ -36,6 +36,82 @@ extern "C" {
     fn _SEH2_TRY();                      // SEH2 prolog placeholder fn _SEH2_END();                      // SEH2 epilog placeholder fn _SEH2_EXCEPT(filter: BOOLEAN) -> BOOLEAN; // SEH2 except guard fn _SEH2_GetExceptionCode() -> NTSTATUS;
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void; // EXCEPTION_POINTERS* fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> BOOLEAN;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: NTSTATUS) -> NTSTATUS;
+}
+
+// ---- local SCSI type stubs (not in ntkrnl_sys::ddk) ----
+#[repr(C)]
+pub struct CDB {
+    pub AsByte: [u8; 16],
+}
+#[repr(C)]
+pub struct SCSI_PASS_THROUGH {
+    pub Length: u16,
+    pub ScsiStatus: u8,
+    pub PathId: u8,
+    pub TargetId: u8,
+    pub Lun: u8,
+    pub CdbLength: u8,
+    pub SenseInfoLength: u8,
+    pub DataIn: u8,
+    pub DataTransferLength: u32,
+    pub TimeOutValue: u32,
+    pub DataBufferOffset: usize,
+    pub SenseInfoOffset: u32,
+    pub Cdb: [u8; 16],
+}
+#[repr(C)]
+pub struct SCSI_PASS_THROUGH32 {
+    pub Length: u16,
+    pub ScsiStatus: u8,
+    pub PathId: u8,
+    pub TargetId: u8,
+    pub Lun: u8,
+    pub CdbLength: u8,
+    pub SenseInfoLength: u8,
+    pub DataIn: u8,
+    pub DataTransferLength: u32,
+    pub TimeOutValue: u32,
+    pub DataBufferOffset: u32,
+    pub SenseInfoOffset: u32,
+    pub Cdb: [u8; 16],
+}
+#[repr(C)]
+pub struct SCSI_PASS_THROUGH_EX {
+    pub Version: u32,
+    pub Length: u32,
+    pub CdbLength: u32,
+    pub StorAddressLength: u32,
+    pub ScsiStatus: u8,
+    pub SenseInfoLength: u8,
+    pub DataDirection: u8,
+    pub Reserved: u8,
+    pub TimeOutValue: u32,
+    pub StorAddressOffset: u32,
+    pub SenseInfoOffset: u32,
+    pub DataOutTransferLength: u32,
+    pub DataInTransferLength: u32,
+    pub DataOutBufferOffset: usize,
+    pub DataInBufferOffset: usize,
+    pub Cdb: [u8; 1],
+}
+#[repr(C)]
+pub struct SCSI_PASS_THROUGH32_EX {
+    pub Version: u32,
+    pub Length: u32,
+    pub CdbLength: u32,
+    pub StorAddressLength: u32,
+    pub ScsiStatus: u8,
+    pub SenseInfoLength: u8,
+    pub DataDirection: u8,
+    pub Reserved: u8,
+    pub TimeOutValue: u32,
+    pub StorAddressOffset: u32,
+    pub SenseInfoOffset: u32,
+    pub DataOutTransferLength: u32,
+    pub DataInTransferLength: u32,
+    pub DataOutBufferOffset: u32,
+    pub DataInBufferOffset: u32,
+    pub Cdb: [u8; 1],
 }
 
 // ---- file-scope preamble (translated) ----
@@ -174,28 +250,32 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
                 }
             }
             IOCTL_SCSI_PASS_THROUGH | IOCTL_SCSI_PASS_THROUGH_DIRECT | IOCTL_SCSI_PASS_THROUGH_EX | IOCTL_SCSI_PASS_THROUGH_DIRECT_EX => {
-                let mut cdb: *mut ntkrnl_sys::ddk::CDB = core::ptr::null_mut();
+                let mut cdb: *mut CDB = core::ptr::null_mut();
                 if (FlagOn((*(*irp_sp).FileObject).Flags, FO_FILE_MODIFIED) == 0 || FlagOn((*ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT) == 0) && !((*Irp).AssociatedIrp.SystemBuffer).is_null() {
                     let io_control_code = ((*irp_sp).Parameters).DeviceIoControl.IoControlCode;
                     let input_buffer_length = ((*irp_sp).Parameters).DeviceIoControl.InputBufferLength;
                     if cfg!(all(target_pointer_width = "64", feature = "BUILD_WOW64_ENABLED")) && ntkrnl_sys::ddk::IoIs32bitProcess(Irp) != 0 {
                         if io_control_code == IOCTL_SCSI_PASS_THROUGH || io_control_code == IOCTL_SCSI_PASS_THROUGH_DIRECT {
-                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH32>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH32).Cdb as *mut ntkrnl_sys::ddk::CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH32>() {
+                                let spt = (*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH32;
+                                cdb = core::ptr::addr_of_mut!((*spt).Cdb) as *mut CDB;
                             }
                         } else {
-                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH32_EX>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH32_EX).Cdb as *mut ntkrnl_sys::ddk::CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH32_EX>() {
+                                let spt = (*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH32_EX;
+                                cdb = core::ptr::addr_of_mut!((*spt).Cdb) as *mut CDB;
                             }
                         }
                     } else {
                         if io_control_code == IOCTL_SCSI_PASS_THROUGH || io_control_code == IOCTL_SCSI_PASS_THROUGH_DIRECT {
-                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH).Cdb as *mut ntkrnl_sys::ddk::CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH>() {
+                                let spt = (*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH;
+                                cdb = core::ptr::addr_of_mut!((*spt).Cdb) as *mut CDB;
                             }
                         } else {
-                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH_EX>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH_EX).Cdb as *mut ntkrnl_sys::ddk::CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH_EX>() {
+                                let spt = (*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH_EX;
+                                cdb = core::ptr::addr_of_mut!((*spt).Cdb) as *mut CDB;
                             }
                         }
                     }

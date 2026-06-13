@@ -3,22 +3,15 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExFreePool, GENERATE_NAME_CONTEXT, OEM_STRING, POEM_STRING, PUNICODE_STRING, RtlDowncaseUnicodeString, RtlGenerate8dot3Name, RtlOemStringToCountedUnicodeString, RtlUnicodeStringToCountedOemString, RtlUpcaseUnicodeStringToCountedOemString};
+use ntkrnl_sys::ddk::{ExFreePool, GENERATE_NAME_CONTEXT, OEM_STRING, POEM_STRING, PUNICODE_STRING, RtlDowncaseUnicodeString, RtlGenerate8dot3Name, RtlOemStringToCountedUnicodeString, RtlUnicodeStringToCountedOemString, RtlUpcaseUnicodeStringToCountedOemString, _UNICODE_STRING};
+use ntkrnl_sys::ddk::_PUBLIC_BCB as BCB;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DIRENT, FCB, FatData, IRP_CONTEXT, PFCB, PIRP_CONTEXT};
-use ntkrnl_sys::ddk::{_PUBLIC_BCB as BCB, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME_BUFFER};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{_UNICODE_STRING};
-// resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
-use ntkrnl_sys::ddk::{_UNICODE_STRING};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{DCB, DIRENT, IRP_CONTEXT};
-use ntkrnl_sys::ddk::{_PUBLIC_BCB as BCB};
-// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
@@ -244,19 +237,19 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
     PAGED_CODE();
 
     NT_ASSERT(
-        ((MAX_LFN_CHARACTERS as u16) * (core::mem::size_of::<u16>() as u16))
-            == (*Lfn).MaximumLength,
+        (((MAX_LFN_CHARACTERS as u16) * (core::mem::size_of::<u16>() as u16))
+            == (*Lfn).MaximumLength) as i32,
     );
 
     // We'll start by locating the dirent for the name.
-    (FatStringTo8dot3).cast()(
-        IrpContext,
+    FatStringTo8dot3(
+        IrpContext as *mut c_void,
         (*Fcb).ShortName.Name.Oem,
-        &raw mut local_ccb.OemQueryTemplate.Constant,
+        core::ptr::addr_of_mut!(local_ccb.__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate) as *mut [u8; 11],
     );
 
     local_ccb.Flags = 0;
-    local_ccb.UnicodeQueryTemplate.Length = 0;
+    local_ccb.__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate.Length = 0;
     local_ccb.ContainsWildCards = 0;
 
     FatLocateDirent(
@@ -273,10 +266,11 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
         core::ptr::null_mut(),
     );
 
-    // _SEH2_TRY / _SEH2_FINALLY emulated with catch_unwind
-    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    // _SEH2_TRY (DUMMY_PSEH: try body runs inline, finally always runs after)
+    {
         // If we didn't find the Dirent, something is terribly wrong.
         if dirent_bcb.is_null() || dirent_byte_offset != (*Fcb).DirentOffsetWithinDirectory {
+            FatUnpinBcb(IrpContext, dirent_bcb);
             FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
         }
 
@@ -288,9 +282,10 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
 
             // If we thought that there was an LFN here and didn't find one,
             // we're as dead.
-            NT_ASSERT((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory);
+            NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory) as i32);
 
             if (*Fcb).LfnOffsetWithinDirectory != (*Fcb).DirentOffsetWithinDirectory {
+                FatUnpinBcb(IrpContext, dirent_bcb);
                 FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
             }
 
@@ -313,17 +308,12 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
                 0, // FALSE
             );
 
-            NT_ASSERT(status == STATUS_SUCCESS);
+            NT_ASSERT((status == STATUS_SUCCESS) as i32);
         }
-    }));
+    }
 
     // _SEH2_FINALLY
     FatUnpinBcb(IrpContext, dirent_bcb);
-
-    // If the try block panicked, resume the panic
-    if let Err(err) = panic_result {
-        std::panic::resume_unwind(err);
-    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatSetFullFileNameInFcb(
@@ -364,8 +354,8 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
                     ) as *mut u16;
 
                     core::ptr::copy_nonoverlapping(
-                        (*Fcb).FullFileName.Buffer as *const u8,
                         (*TmpFcb).FullFileName.Buffer as *const u8,
+                        (*Fcb).FullFileName.Buffer as *mut u8,
                         (*TmpFcb).FullFileName.Length as usize,
                     );
                     break;
@@ -406,8 +396,8 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
                 );
 
                 core::ptr::copy_nonoverlapping(
-                    TmpBuffer as *const u8,
                     Lfn.Buffer as *const u8,
+                    TmpBuffer as *mut u8,
                     Lfn.Length as usize,
                 );
 
@@ -454,10 +444,10 @@ pub unsafe extern "C" fn FatUnicodeToUpcaseOem(IrpContext: *mut IRP_CONTEXT, Oem
 pub unsafe extern "C" fn FatSelectNames(
     IrpContext: *mut core::ffi::c_void,
     Parent: *mut core::ffi::c_void,
-    OemName: *mut ntkrnl_sys::ddk::OEM_STRING,
-    UnicodeName: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
-    ShortName: *mut ntkrnl_sys::ddk::OEM_STRING,
-    SuggestedShortName: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
+    OemName: *mut OEM_STRING,
+    UnicodeName: *mut _UNICODE_STRING,
+    ShortName: *mut OEM_STRING,
+    SuggestedShortName: *mut _UNICODE_STRING,
     AllLowerComponent: *mut u8,
     AllLowerExtension: *mut u8,
     CreateLfn: *mut u8,
@@ -467,23 +457,23 @@ pub unsafe extern "C" fn FatSelectNames(
 
     if (*OemName).Length == 0
         || FatIsNameShortOemValid(
-            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+            IrpContext,
             *OemName,
             0u8,
             0u8,
             0u8,
         ) == 0
         || FatSpaceInName(
-            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
-            UnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+            IrpContext,
+            UnicodeName as *mut _UNICODE_STRING,
         ) != 0
     {
         let mut ShortNameBuffer: [u16; 12] = [0u16; 12];
-        let mut ShortUnicodeName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
-        let mut Context: ntkrnl_sys::ddk::GENERATE_NAME_CONTEXT = core::mem::zeroed();
+        let mut ShortUnicodeName: _UNICODE_STRING = core::mem::zeroed();
+        let mut Context: GENERATE_NAME_CONTEXT = core::mem::zeroed();
         let mut TrySuggestedShortName: u8;
-        let mut Dirent: *mut ntkrnl_sys::ddk::DIRENT = core::ptr::null_mut();
-        let mut Bcb: *mut ntkrnl_sys::ddk::BCB = core::ptr::null_mut();
+        let mut Dirent: *mut DIRENT = core::ptr::null_mut();
+        let mut Bcb: *mut BCB = core::ptr::null_mut();
         let mut ByteOffset: u32 = 0;
         let mut Status: i32;
 
@@ -497,15 +487,15 @@ pub unsafe extern "C" fn FatSelectNames(
 
         ntkrnl_sys::rtl::RtlZeroMemory(
             &mut Context as *mut _ as *mut core::ffi::c_void,
-            core::mem::size_of::<ntkrnl_sys::ddk::GENERATE_NAME_CONTEXT>(),
+            core::mem::size_of::<GENERATE_NAME_CONTEXT>(),
         );
 
         // _SEH2_TRY
         {
             loop {
                 FatUnpinBcb(
-                    IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
-                    Bcb as *mut ntkrnl_sys::ddk::BCB,
+                    IrpContext as *mut IRP_CONTEXT,
+                    Bcb,
                 );
 
                 if TrySuggestedShortName != 0 {
@@ -514,29 +504,29 @@ pub unsafe extern "C" fn FatSelectNames(
                     ShortUnicodeName.Buffer = (*SuggestedShortName).Buffer;
                     TrySuggestedShortName = 0;
                 } else {
-                    ntkrnl_sys::ddk::RtlGenerate8dot3Name(
-                        UnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+                    RtlGenerate8dot3Name(
+                        UnicodeName as *const _UNICODE_STRING,
                         1u8,
                         &mut Context,
                         &mut ShortUnicodeName,
                     );
                 }
 
-                Status = ntkrnl_sys::ddk::RtlUnicodeStringToCountedOemString(
+                Status = RtlUnicodeStringToCountedOemString(
                     ShortName,
-                    &ShortUnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+                    &ShortUnicodeName as *const _UNICODE_STRING,
                     0u8,
                 );
 
                 NT_ASSERT(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
 
                 FatLocateSimpleOemDirent(
-                    IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
-                    Parent as *mut ntkrnl_sys::ddk::DCB,
+                    IrpContext,
+                    Parent,
                     ShortName,
-                    &mut Dirent,
-                    &mut Bcb,
-                    &mut ByteOffset,
+                    &mut Dirent as *mut *mut DIRENT as *mut *mut c_void,
+                    &mut Bcb as *mut *mut BCB as *mut *mut c_void,
+                    &mut ByteOffset as *mut u32 as *mut c_void,
                 );
 
                 if Bcb.is_null() {
@@ -547,8 +537,8 @@ pub unsafe extern "C" fn FatSelectNames(
         }
         // _SEH2_FINALLY
         FatUnpinBcb(
-            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
-            Bcb as *mut ntkrnl_sys::ddk::BCB,
+            IrpContext as *mut IRP_CONTEXT,
+            Bcb,
         );
         // _SEH2_END
     } else {
@@ -573,7 +563,7 @@ pub unsafe extern "C" fn FatSelectNames(
         *AllLowerExtension = 0;
     } else {
         FatEvaluateNameCase(
-            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+            IrpContext as *mut IRP_CONTEXT,
             UnicodeName,
             AllLowerComponent,
             AllLowerExtension,
@@ -610,7 +600,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
             Uppers += 1;
         } else if (c >= 'a' as u16) && (c <= 'z' as u16) {
             Lowers += 1;
-        } else if (c >= 0x0080) && FatData.CodePageInvariant {
+        } else if (c >= 0x0080) && FatData.CodePageInvariant() != 0 {
             break;
         }
 

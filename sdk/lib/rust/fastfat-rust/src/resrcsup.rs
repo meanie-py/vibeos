@@ -1,17 +1,11 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{DirectoryFile, ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FAST_IO_ACQUIRE_FOR_CCFLUSH, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread, SyncTypeCreateSection, Type};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FAST_IO_ACQUIRE_FOR_CCFLUSH, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
-// resolve_imports.py: explicit kernel/private-type imports
-// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn PAGED_CODE();
@@ -67,7 +61,7 @@ type PCCB = *mut core::ffi::c_void;
 type TYPE_OF_OPEN = u32;
 
 
-const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u32 = 0; // FIXME: set actual value
+const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u8 = 0xFF; // (UCHAR)-1
 const SyncTypeCreateSection: u32 = 1; // known value
 const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0126; // FIXME: verify value
 const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x012A; // FIXME: set actual value
@@ -87,19 +81,10 @@ pub unsafe extern "C" fn FatAcquireExclusiveVcb_Real(
     ) != 0
     {
         if NoOpCheck == 0 {
-            // SEH2_TRY / SEH2_FINALLY expansion
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FatVerifyOperationIsLegal(IrpContext);
-            }));
-            match result {
-                Err(panic_payload) => {
-                    // Abnormal termination – FINALLY block body
-                    FatReleaseVcb(IrpContext, Vcb);
-                    std::panic::resume_unwind(panic_payload);
-                }
-                Ok(()) => {
-                    // Normal termination – FINALLY runs but does nothing here
-                }
+            // SEH2_TRY / SEH2_FINALLY expansion (no_std: use _SEH2_AbnormalTermination)
+            FatVerifyOperationIsLegal(IrpContext);
+            if _SEH2_AbnormalTermination() != 0 {
+                FatReleaseVcb(IrpContext, Vcb);
             }
         }
         return 1; // TRUE
@@ -110,16 +95,13 @@ pub unsafe extern "C" fn FatAcquireExclusiveVcb_Real(
 pub unsafe extern "C" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> i32 {
     PAGED_CODE();
     if ExAcquireResourceSharedLite(
-        &(*Vcb).Resource,
-        BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT),
+        core::ptr::addr_of_mut!((*Vcb).Resource) as *mut _,
+        BooleanFlagOn((*( IrpContext as *mut IRP_CONTEXT )).Flags, IRP_CONTEXT_FLAG_WAIT),
     ) != 0
     {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FatVerifyOperationIsLegal((IrpContext).cast());
-        }));
-        if result.is_err() {
-            FatReleaseVcb((IrpContext).cast(), Vcb);
-            std::panic::resume_unwind(result.unwrap_err());
+        FatVerifyOperationIsLegal(IrpContext as *mut IRP_CONTEXT);
+        if _SEH2_AbnormalTermination() != 0 {
+            FatReleaseVcb(IrpContext as *mut IRP_CONTEXT, Vcb);
         }
         return 1;
     }
@@ -143,11 +125,11 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
                     || ExGetSharedWaiterCount((*Fcb).Header.Resource) != 0
                     || ExGetExclusiveWaiterCount((*Fcb).Header.Resource) != 0)
             {
-                (KeWaitForSingleObject).cast()(
-                    (*(*Fcb).NonPaged).OutstandingAsyncEvent,
-                    _KWAIT_REASON_Executive as u32,
-                    0u32,
-                    0u8,
+                KeWaitForSingleObject(
+                    (*(*Fcb).NonPaged).OutstandingAsyncEvent as *mut c_void,
+                    _KWAIT_REASON_Executive,
+                    0i8,
+                    0,
                     core::ptr::null_mut(),
                 );
                 FatReleaseFcb(IrpContext, Fcb);
@@ -175,19 +157,19 @@ pub unsafe extern "C" fn FatAcquireSharedFcbWaitForEx(
 ) -> i32 {
     PAGED_CODE();
 
-    NT_ASSERT(FlagOn(
+    NT_ASSERT((FlagOn(
         (*(*IrpContext).OriginatingIrp).Flags,
         IRP_NOCACHE,
-    ) != 0);
+    ) != 0) as i32);
 
-    NT_ASSERT(!FlagOn(
+    NT_ASSERT((FlagOn(
         (*IrpContext).Flags,
         IRP_CONTEXT_FLAG_WAIT,
-    ) != 0);
+    ) == 0) as i32);
 
     'RetryFcbSharedWaitEx: loop {
         if ExAcquireSharedWaitForExclusive(
-            (core::ptr::addr_of_mut!((*Fcb).Header.Resource)).cast(),
+            (*Fcb).Header.Resource,
             0,
         ) != 0
         {
@@ -205,10 +187,8 @@ pub unsafe extern "C" fn FatAcquireSharedFcbWaitForEx(
                 continue 'RetryFcbSharedWaitEx;
             }
 
-            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FatVerifyOperationIsLegal(IrpContext);
-            }));
-            if panicked.is_err() {
+            FatVerifyOperationIsLegal(IrpContext);
+            if _SEH2_AbnormalTermination() != 0 {
                 FatReleaseFcb(IrpContext, Fcb);
             }
 
@@ -334,7 +314,7 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
 
     let fcb_ptr = Fcb as *mut FCB;
     if ExAcquireResourceSharedLite(
-        &mut (*fcb_ptr).Header.Resource as *mut _,
+        (*fcb_ptr).Header.Resource,
         Wait,
     ) == 0
     {
@@ -405,10 +385,10 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     if Type < DirectoryFile {
         let resource = (*Header).Resource;
         if !resource.is_null() {
-            if !ExIsResourceAcquiredSharedLite(resource) {
+            if ExIsResourceAcquiredSharedLite(resource) == 0 {
                 ExAcquireResourceExclusiveLite(resource, 1);
             } else {
-                ExAcquireResourceSharedLite((resource).cast(), 1);
+                ExAcquireResourceSharedLite(resource as *mut ERESOURCE, 1);
             }
         }
     }
@@ -441,11 +421,11 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
         ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
-    type_ = (FatDecodeFileObject).cast()(
+    type_ = FatDecodeFileObject(
         file_object,
-        core::ptr::addr_of_mut!(vcb),
-        core::ptr::addr_of_mut!(fcb),
-        core::ptr::addr_of_mut!(ccb),
+        core::ptr::addr_of_mut!(vcb) as *mut PVCB,
+        core::ptr::addr_of_mut!(fcb) as *mut PFCB,
+        core::ptr::addr_of_mut!(ccb) as *mut PCCB,
     ) as i32;
     header = (*file_object).FsContext as *mut FSRTL_COMMON_FCB_HEADER;
 
@@ -483,7 +463,7 @@ pub unsafe extern "C" fn FatNoOpAcquire(
 #[no_mangle]
 pub unsafe extern "C" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE();
-    NT_ASSERT(IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast());
+    NT_ASSERT((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
     UNREFERENCED_PARAMETER(Fcb);
 }

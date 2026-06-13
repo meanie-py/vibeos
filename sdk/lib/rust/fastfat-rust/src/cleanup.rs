@@ -7,7 +7,7 @@ use core::ffi::c_void;
 use core::ffi::{CStr};
 use core::ptr;
 use core::slice;
-use std::panic::{catch_unwind, AssertUnwindSafe, resume_unwind};
+use core::panic::{catch_unwind, AssertUnwindSafe, resume_unwind};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::dirsup::{FatUpdateDirentFromFcb};
 use crate::types::{CCB_FLAG_COMPLETE_DISMOUNT, CCB_FLAG_DELETE_ON_CLOSE, CCB_FLAG_DENY_DEFRAG, DELETE_CONTEXT, FAT_BUG_CHECK_CLEANUP, FCB_STATE_DELAY_CLOSE, FCB_STATE_DELETE_ON_CLOSE, FCB_STATE_DENY_DEFRAG, FCB_STATE_FLUSH_FAT, FCB_STATE_PAGING_FILE, FCB_STATE_TRUNCATE_ON_CLOSE, FatLargeZero, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_FLAG_DEFERRED_FLUSH, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_SHUTDOWN, VCB_STATE_FLAG_WRITE_PROTECTED, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _TYPE_OF_OPEN_VirtualVolumeFile as VirtualVolumeFile, _VCB_CONDITION_VcbGood as VcbGood};
@@ -193,12 +193,12 @@ pub unsafe extern "C" fn FatCommonCleanup(
     let mut ShareAccess: *mut c_void = ptr::null_mut();
 
     if TypeOfOpen == UserFileOpen || TypeOfOpen == UserDirectoryOpen {
-        NT_ASSERT(Fcb != ptr::null_mut());
+        NT_ASSERT((Fcb != ptr::null_mut()) as u8);
         FatAcquireExclusiveFcb(IrpContext, Fcb);
         AcquiredFcb = TRUE;
 
         if FlagOn((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE) != 0 {
-            NT_ASSERT(NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB);
+            NT_ASSERT((NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB) as u8);
             SetFlag(&mut (*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
             ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             #[cfg(ntddi_ge_ntddi_win8)]
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
             if TypeOfOpen == UserDirectoryOpen {
                 FsRtlNotifyFullChangeDirectory(
                     (*Vcb).NotifySync as *mut c_void,
-                    &mut (*Vcb).DirNotifyList as *mut c_void,
+                    core::ptr::addr_of_mut!((*Vcb).DirNotifyList) as *mut c_void,
                     (*FileObject).FsContext as *mut c_void,
                     ptr::null(),
                     FALSE,
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                 Ok(()) => {},
                 Err(err) => {
                     // retrieve exception code
-                    let exception_code = if let Some(&status) = err.downcast_ref::<NTSTATUS>() {
+                    let exception_code: NTSTATUS = if let Some(&status) = err.downcast_ref::<NTSTATUS>() {
                         status
                     } else {
                         // can't extract, re-raise
@@ -288,20 +288,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
     // Main SEH_TRY block (from global section)
     // We'll wrap the whole rest of the function in a catch_unwind with finally handling
     let mut main_abnormal = false;
-    let mut main_finally: Option<Box<dyn FnOnce()>> = None;
     let main_result = catch_unwind(AssertUnwindSafe(|| {
-        // Prepare the finally closure early
-        main_finally = Some(Box::new(|| {
-            // DebugUnwind(FatCommonCleanup); -> call DebugTrace
-            DebugTrace(0, Dbg, b"FatCommonCleanup Unwind\n\0".as_ptr() as *const i8, 0);
-
-            if AcquiredFcb != 0 { FatReleaseFcb(IrpContext, Fcb); }
-            if AcquiredVcb != 0 { FatReleaseVcb(IrpContext, Vcb); }
-
-            if SendUnlockNotification != 0 {
-                FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
-            }
-        }));
 
         // The big try code
         #[cfg(ntddi_ge_ntddi_win8)]
@@ -328,9 +315,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                     // We'll rewrite to use a status variable and then break out.
                     // However, we must preserve control flow exactly. We'll use a loop{ break } pattern.
                     'try_exit: loop {
-                        // run finally
-                        if let Some(f) = &main_finally { f(); }
-                        // after finally, return Status.
+                        // finally will run after catch_unwind exits
                         return Status;
                     }
                 } else {
@@ -352,13 +337,13 @@ pub unsafe extern "C" fn FatCommonCleanup(
                     FatCheckForDismount(IrpContext, Vcb, TRUE);
                 } else if (*FileObject).WriteAccess != 0 && FlagOn((*FileObject).Flags, FO_FILE_MODIFIED) != 0 {
                     FatHijackIrpAndFlushDevice(IrpContext, Irp, ((*Vcb).TargetDeviceObject).cast());
-                    SetFlag(&mut (*(*Vcb).Vpb).RealDeviceFlags, DO_VERIFY_VOLUME);
+                    SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                 }
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 && (*Vcb).FileObjectWithVcbLocked == FileObject {
                     FatAutoUnlock(IrpContext, Vcb);
                     SendUnlockNotification = TRUE;
                 }
-                ShareAccess = &(*Vcb).ShareAccess as *const c_void as *mut c_void;
+                ShareAccess = core::ptr::addr_of!((*Vcb).ShareAccess) as *mut c_void;
             }
             EaFile => {
                 DebugTrace(0, Dbg, b"Cleanup EaFileObject\n\0".as_ptr() as *const i8, 0);
@@ -366,11 +351,11 @@ pub unsafe extern "C" fn FatCommonCleanup(
             }
             UserDirectoryOpen => {
                 DebugTrace(0, Dbg, b"Cleanup UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
-                ShareAccess = &(*Fcb).ShareAccess as *const c_void as *mut c_void;
+                ShareAccess = core::ptr::addr_of!((*Fcb).ShareAccess) as *mut c_void;
 
                 if (*Fcb).UncleanCount == 1
                     && (*Fcb).OpenCount == 1
-                    && (*Fcb).Specific.Dcb.DirectoryFileOpenCount == 0
+                    && (*Fcb).Specific.Dcb.as_ref().DirectoryFileOpenCount == 0
                     && FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) == 0
                     && (*Fcb).FcbCondition == FcbGood
                 {
@@ -424,7 +409,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                             match inner_seh_result {
                                 Ok(()) => {},
                                 Err(err) => {
-                                    let exception_code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
+                                    let exception_code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
                                     if FsRtlIsNtstatusExpected(exception_code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                         resume_unwind(err);
                                     }
@@ -449,15 +434,15 @@ pub unsafe extern "C" fn FatCommonCleanup(
                     }
                 }
 
-                NT_ASSERT((*Fcb).UncleanCount != 0);
+                NT_ASSERT(((*Fcb).UncleanCount != 0) as u8);
                 (*Fcb).UncleanCount -= 1;
             }
             UserFileOpen => {
                 DebugTrace(0, Dbg, b"Cleanup UserFileOpen\n\0".as_ptr() as *const i8, 0);
-                ShareAccess = &(*Fcb).ShareAccess as *const c_void as *mut c_void;
+                ShareAccess = core::ptr::addr_of!((*Fcb).ShareAccess) as *mut c_void;
 
-                if (*FileObject).SectionObjectPointer.DataSectionObject == ptr::null()
-                    && (*FileObject).SectionObjectPointer.ImageSectionObject == ptr::null()
+                if (*(*FileObject).SectionObjectPointer).DataSectionObject.is_null()
+                    && (*(*FileObject).SectionObjectPointer).ImageSectionObject.is_null()
                     && (*Fcb).UncleanCount == 1
                     && (*Fcb).OpenCount == 1
                     && FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) == 0
@@ -473,7 +458,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                 }
 
                 FsRtlFastUnlockAll(
-                    &mut (*Fcb).Specific.Fcb.FileLock as *mut c_void,
+                    core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.as_mut().FileLock) as *mut c_void,
                     FileObject,
                     IoGetRequestorProcess(Irp),
                     ptr::null_mut(),
@@ -510,7 +495,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                             match seh1 {
                                 Ok(()) => {},
                                 Err(err) => {
-                                    let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
+                                    let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
                                     if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                         resume_unwind(err);
                                     }
@@ -534,21 +519,22 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                             ValidDataLength as i32,
                                             ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart - ValidDataLength) as i32,
                                         );
-                                        (*Fcb).ValidDataToDisk =
                                         (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart =
+                                        (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
+                                        (*Fcb).ValidDataToDisk =
                                         (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
 
                                         if CcIsFileCached(FileObject) != 0 {
                                             CcSetFileSizes(
                                                 FileObject,
-                                                &(*Fcb).Header.AllocationSize as *const c_void,
+                                                core::ptr::addr_of!((*Fcb).Header.AllocationSize) as *const c_void,
                                             );
                                         }
                                     }));
                                     match seh2 {
                                         Ok(()) => {},
                                         Err(err) => {
-                                            let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
+                                            let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
                                             if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                                 resume_unwind(err);
                                             }
@@ -591,7 +577,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                         match seh3 {
                             Ok(()) => {},
                             Err(err) => {
-                                let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
+                                let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
                                 if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                     resume_unwind(err);
                                 }
@@ -617,20 +603,20 @@ pub unsafe extern "C" fn FatCommonCleanup(
                     }
                 }
 
-                NT_ASSERT((*Fcb).UncleanCount != 0);
+                NT_ASSERT(((*Fcb).UncleanCount != 0) as u8);
                 (*Fcb).UncleanCount -= 1;
                 if FlagOn((*FileObject).Flags, FO_CACHE_SUPPORTED) == 0 {
-                    NT_ASSERT((*Fcb).NonCachedUncleanCount != 0);
+                    NT_ASSERT(((*Fcb).NonCachedUncleanCount != 0) as u8);
                     (*Fcb).NonCachedUncleanCount -= 1;
                 }
 
                 if FlagOn((*FileObject).Flags, FO_CACHE_SUPPORTED) != 0
                     && (*Fcb).NonCachedUncleanCount != 0
                     && (*Fcb).NonCachedUncleanCount == (*Fcb).UncleanCount
-                    && (*Fcb).NonPaged.SectionObjectPointers.DataSectionObject != ptr::null()
+                    && !(*(*Fcb).NonPaged).SectionObjectPointers.DataSectionObject.is_null()
                 {
                     CcFlushCache(
-                        &(*Fcb).NonPaged.SectionObjectPointers as *const c_void as *mut c_void,
+                        core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void,
                         ptr::null(),
                         0,
                         ptr::null_mut(),
@@ -638,7 +624,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                     ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
                     ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
                     CcPurgeCacheSection(
-                        &(*Fcb).NonPaged.SectionObjectPointers as *const c_void as *mut c_void,
+                        core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void,
                         ptr::null(),
                         0,
                         FALSE,
@@ -697,8 +683,13 @@ pub unsafe extern "C" fn FatCommonCleanup(
     })); // end catch_unwind for main try
 
     // FINALLY block execution
-    if let Some(f) = main_finally {
-        f();
+    {
+        DebugTrace(0, Dbg, b"FatCommonCleanup Unwind\n\0".as_ptr() as *const i8, 0);
+        if AcquiredFcb != 0 { FatReleaseFcb(IrpContext, Fcb); }
+        if AcquiredVcb != 0 { FatReleaseVcb(IrpContext, Vcb); }
+        if SendUnlockNotification != 0 {
+            FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
+        }
     }
 
     // After finally, determine control flow
@@ -721,7 +712,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatAutoUnlock(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
-    let mut SavedIrql: KIRQL;
+    let mut SavedIrql: KIRQL = 0;
     let _ = IrpContext;
 
     IoAcquireVpbSpinLock(&raw mut SavedIrql);

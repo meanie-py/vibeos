@@ -6,7 +6,9 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcCanIWrite, CcFlushCache, CriticalWorkQueue, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExFreePool, ExQueueWorkItem, ExReleaseResourceLite, File, _IO_STATUS_BLOCK, IoGetCurrentIrpStackLocation, IoGetTopLevelIrp, IoMarkIrpPending, IoReadAccess, IoSetTopLevelIrp, KeGetCurrentProcessorNumber, KeInitializeEvent, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_POST_DEFERRED_WRITE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PsGetCurrentThread, PsGetThreadProcess, WORKER_THREAD_ROUTINE};
+use ntkrnl_sys::ddk::{CcCanIWrite, CcFlushCache, CriticalWorkQueue, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExFreePool, ExQueueWorkItem, ExReleaseResourceLite, _IO_STATUS_BLOCK, IoGetCurrentIrpStackLocation, IoGetTopLevelIrp, IoMarkIrpPending, IoReadAccess, IoSetTopLevelIrp, KeGetCurrentProcessorNumber, KeInitializeEvent, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_POST_DEFERRED_WRITE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PsGetCurrentThread, PsGetThreadProcess, WORKER_THREAD_ROUTINE, LARGE_MCB, SECTION_OBJECT_POINTERS, EPROCESS, ETHREAD, IRP, IO_STACK_LOCATION, FILE_OBJECT};
+use ntkrnl_sys::ex::ExInitializeWorkItem;
+use crate::types::{VCB, FCB, CCB, IRP_CONTEXT, FAT_IO_CONTEXT, IO_RUN, BIOS_PARAMETER_BLOCK, PVCB, PFCB, PCCB, PIRP_CONTEXT, PFAT_IO_CONTEXT, PIO_RUN};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FAT_BUG_CHECK_WRITE, FatData, PDCB, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _TYPE_OF_OPEN_VirtualVolumeFile as VirtualVolumeFile};
@@ -35,6 +37,7 @@ extern "C" {
     fn CcPurgeCacheSection( SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: PLARGE_INTEGER, Length: u32, FlushType: u8, );
     fn FatPurgeReferencedFileObjects( IrpContext: PIRP_CONTEXT, RootDcb: PDCB, FlushType: u32, );
     fn FatReleaseVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+    fn FatAcquireExclusiveVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatNormalizeAndRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS);
     fn FatRemoveMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, Vbo: VBO, ByteCount: u32, );
     fn FatSingleAsync( IrpContext: PIRP_CONTEXT, Vcb: PVCB, StartingLbo: LBO, ByteCount: u32, Irp: PIRP, );
@@ -76,7 +79,7 @@ pub unsafe extern "system" fn FatDeferredFlushDpc(
 
     ExInitializeWorkItem(
         core::ptr::addr_of_mut!((*FlushContext).Item),
-        FatDeferredFlush,
+        Some(core::mem::transmute(FatDeferredFlush as unsafe extern "system" fn(*mut c_void))),
         FlushContext as *mut core::ffi::c_void,
     );
 
@@ -183,34 +186,15 @@ const PagedPool: POOL_TYPE = 1; // placeholder
 
 type NTSTATUS = i32;
 type PVOID = *mut c_void;
-type PIRP_CONTEXT = *mut IRP_CONTEXT;
-type PVCB = *mut VCB;
-type PFCB = *mut FCB;
-type PCCB = *mut CCB;
 type VBO = u32;
 type LBO = u64;
 type ULONG = u32;
 type ULONGLONG = u64;
 type PLARGE_INTEGER = *mut LARGE_INTEGER;
-type PEPROCESS = *mut _EPROCESS;
+type PEPROCESS = *mut EPROCESS;
 type BOOLEAN = u8;
 type POOL_TYPE = i32;
 type ERESOURCE_THREAD = usize;
-type SECTION_OBJECT_POINTERS = SECTION_OBJECT_POINTERS; // placeholder
-type PIO_RUN = *mut IO_RUN;
-type LARGE_MCB = LARGE_MCB; // placeholder
-type BIOS_PARAMETER_BLOCK = BIOS_PARAMETER_BLOCK; // placeholder
-type IO_RUN = IO_RUN; // placeholder
-type FAT_IO_CONTEXT = FAT_IO_CONTEXT; // placeholder
-type VCB = VCB; // placeholder
-type FCB = FCB; // placeholder
-type CCB = CCB; // placeholder
-type IRP_CONTEXT = IRP_CONTEXT; // placeholder
-type IRP = IRP; // placeholder
-type IO_STACK_LOCATION = IO_STACK_LOCATION; // placeholder
-type FILE_OBJECT = FILE_OBJECT; // placeholder
-type _ETHREAD = _ETHREAD; // placeholder
-type _EPROCESS = _EPROCESS; // placeholder
 
 type TYPE_OF_OPEN = i32; // placeholder enum
 
@@ -241,7 +225,7 @@ pub unsafe extern "system" fn FatFsdWrite(
     let irp_sp = IoGetCurrentIrpStackLocation(irp);
     if FatDeviceIsFatFsdo((*irp_sp).DeviceObject as *mut core::ffi::c_void) == 0 {
         let file_object = (*irp_sp).FileObject;
-        fcb = file_object.FsContext as *mut FCB;
+        fcb = (*file_object).FsContext as *mut FCB;
         if NodeType(fcb) == FAT_NTC_FCB && ((*fcb).FcbState & FCB_STATE_PAGING_FILE) != 0 {
             IoMarkIrpPending(irp);
             FatPagingFileIo(irp, fcb);
@@ -321,9 +305,9 @@ pub unsafe extern "C" fn FatCommonWrite(
     DebugTrace(0, Dbg, b"ByteOffset.__bindgen_anon_1.HighPart = %8lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.Write.ByteOffset.__bindgen_anon_1.HighPart);
 
     Wait = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
-    PagingIo = ((*Irp).Flags & IRP_PAGING_IO) != 0;
-    NonCachedIo = ((*Irp).Flags & IRP_NOCACHE) != 0;
-    SynchronousIo = ((*FileObject).Flags & FO_SYNCHRONOUS_IO) != 0;
+    PagingIo = (((*Irp).Flags & IRP_PAGING_IO) != 0) as u8;
+    NonCachedIo = (((*Irp).Flags & IRP_NOCACHE) != 0) as u8;
+    SynchronousIo = (((*FileObject).Flags & FO_SYNCHRONOUS_IO) != 0) as u8;
 
     ByteCount = (*IrpSp).Parameters.Write.Length;
 
@@ -339,13 +323,13 @@ pub unsafe extern "C" fn FatCommonWrite(
         let Retrying: BOOLEAN = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_DEFERRED_WRITE);
         FatPrePostIrp(IrpContext, Irp);
         (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DEFERRED_WRITE;
-        CcDeferWrite(FileObject, Some(FatAddToWorkque) as *mut _, IrpContext, Irp, ByteCount, Retrying);
+        CcDeferWrite(FileObject, Some(core::mem::transmute(FatAddToWorkque as unsafe extern "C" fn(PIRP_CONTEXT, PIRP))), IrpContext as PVOID, Irp, ByteCount, Retrying);
         return STATUS_PENDING;
     }
 
     StartingByte = (*IrpSp).Parameters.Write.ByteOffset;
     StartingVbo = StartingByte.__bindgen_anon_1.LowPart;
-    WriteToEof = (StartingByte.__bindgen_anon_1.LowPart == (FILE_WRITE_TO_END_OF_FILE) as u32) && (StartingByte.__bindgen_anon_1.HighPart == -1);
+    WriteToEof = ((StartingByte.__bindgen_anon_1.LowPart == (FILE_WRITE_TO_END_OF_FILE) as u32) && (StartingByte.__bindgen_anon_1.HighPart == -1)) as u8;
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut FcbOrDcb, &mut Ccb);
 
@@ -377,7 +361,7 @@ pub unsafe extern "C" fn FatCommonWrite(
         }
     }
 
-    if PagingIo == 0 && !WriteToEof && TypeOfOpen != (UserVolumeOpen) as i32 {
+    if PagingIo == 0 && WriteToEof == 0 && TypeOfOpen != (UserVolumeOpen) as i32 {
         if !FatIsIoRangeValid(Vcb, StartingByte, ByteCount) != 0 {
             (*Irp).IoStatus.Information = 0;
             FatCompleteRequest(IrpContext, Irp, STATUS_DISK_FULL);
@@ -519,20 +503,11 @@ pub unsafe extern "C" fn FatCommonWrite(
 
             (*Vcb).Statistics[KeGetCurrentProcessorNumber() as usize % (FatData.NumberProcessors) as usize].Common.MetaDataDiskWrites += (*Vcb).Bpb.Fats as u32;
 
-            // _SEH2_TRY / _SEH2_FINALLY
-            let mut cleanup_io_runs = false;
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FatMultipleAsync(IrpContext, Vcb, Irp, (*Vcb).Bpb.Fats as u32, IoRuns);
-            }));
+            // _SEH2_TRY / _SEH2_FINALLY (DUMMY_PSEH: run body inline, finally always runs)
+            FatMultipleAsync(IrpContext, Vcb, Irp, (*Vcb).Bpb.Fats as u32, IoRuns);
             // _SEH2_FINALLY
-            {
-                if IoRuns != StackIoRuns.as_mut_ptr() {
-                    ExFreePool(IoRuns as *mut c_void);
-                }
-            }
-            if let Err(_) = result {
-                // propagate panic? In kernel, this is abnormal termination; we can't.
-                // but the original SEH_EXCEPT doesn't exist for this block.
+            if IoRuns != StackIoRuns.as_mut_ptr() {
+                ExFreePool(IoRuns as *mut c_void);
             }
 
             // Disk accounting omitted for now; assume FatDiskAccountingEnabled == false.
@@ -547,7 +522,8 @@ pub unsafe extern "C" fn FatCommonWrite(
 
         (*Irp).IoStatus = RaiseIosb;
 
-        if NT_SUCCESS(Status = (*Irp).IoStatus.__bindgen_anon_1.Status) {
+        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        if NT_SUCCESS(Status) {
             FatRemoveMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, StartingDirtyVbo, WriteLength);
         } else {
             FatNormalizeAndRaiseStatus(IrpContext, Status);
@@ -574,7 +550,7 @@ pub unsafe extern "C" fn FatCommonWrite(
             && ((*IrpSp).Flags & (SL_FORCE_DIRECT_WRITE) as u8) == 0
             && ((*Ccb).Flags & CCB_FLAG_COMPLETE_DISMOUNT) == 0
         {
-            if !WriteToEof && StartingLbo < VolumeSize {
+            if WriteToEof == 0 && StartingLbo < VolumeSize {
                 // Check reserved area
                 let reserved = FatReservedBytes(&(*Vcb).Bpb);
                 if StartingLbo >= reserved
@@ -599,25 +575,23 @@ pub unsafe extern "C" fn FatCommonWrite(
             (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
             FatAcquireExclusiveVolume(IrpContext, Vcb);
 
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                if ((*Vcb).VcbState & VCB_STATE_FLAG_LOCKED) == 0 {
-                    FatFlushFat(IrpContext, Vcb);
-                    CcPurgeCacheSection(&mut (*Vcb).SectionObjectPointers, core::ptr::null_mut(), 0, 0);
-                    FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, FLUSH);
-                }
-            }));
+            // _SEH2_TRY / _SEH2_FINALLY (DUMMY_PSEH: run body inline, finally always runs)
+            if ((*Vcb).VcbState & VCB_STATE_FLAG_LOCKED) == 0 {
+                FatFlushFat(IrpContext, Vcb);
+                CcPurgeCacheSection(&mut (*Vcb).SectionObjectPointers, core::ptr::null_mut(), 0, 0);
+                FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, FLUSH);
+            }
             // _SEH2_FINALLY
             FatReleaseVolume(IrpContext, Vcb);
             if PreviousWait == 0 {
                 (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_WAIT;
             }
-            // if abnormal termination, re-raise? Kernel can't panic unwind; we ignore.
 
             (*Ccb).Flags |= CCB_FLAG_DASD_PURGE_DONE | CCB_FLAG_DASD_FLUSH_DONE;
         }
 
         if ((*Ccb).Flags & CCB_FLAG_ALLOW_EXTENDED_DASD_IO) == 0 {
-            if WriteToEof || StartingLbo >= VolumeSize {
+            if WriteToEof != 0 || StartingLbo >= VolumeSize {
                 FatCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
                 return STATUS_SUCCESS;
             }
@@ -628,12 +602,12 @@ pub unsafe extern "C" fn FatCommonWrite(
                 }
             }
         } else {
-            if WriteToEof {
+            if WriteToEof != 0 {
                 StartingLbo = VolumeSize;
             }
         }
 
-        FatLockUserBuffer(IrpContext, Irp, IoReadAccess, ByteCount);
+        FatLockUserBuffer(IrpContext, Irp, IoReadAccess as u8, ByteCount);
 
         (*FileObject).Flags |= FO_FILE_MODIFIED;
 
@@ -650,7 +624,8 @@ pub unsafe extern "C" fn FatCommonWrite(
 
         FatWaitSync(IrpContext);
 
-        if !NT_SUCCESS(Status = (*Irp).IoStatus.__bindgen_anon_1.Status) {
+        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        if !NT_SUCCESS(Status) {
             FatNormalizeAndRaiseStatus(IrpContext, Status);
         }
 
