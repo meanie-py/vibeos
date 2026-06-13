@@ -6,7 +6,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CC_FILE_SIZES, CLONG, CcCanIWrite, ObReferenceObjectByHandle, CcIsThereDirtyData, CcWaitForCurrentLazyWriterActivity, DEVICE_OBJECT, DISK_GEOMETRY, _KWAIT_REASON_Executive, ERESOURCE, FILESYSTEM_STATISTICS, FILE_LOCK, FILE_OBJECT, GUID, _IO_STATUS_BLOCK, IO_STACK_LOCATION, IoAcquireVpbSpinLock, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, IRP, KEVENT, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, LARGE_INTEGER, LARGE_MCB, LUID, MARK_HANDLE_INFO, MOVE_FILE_DATA, _EVENT_TYPE_NotificationEvent, OEM_STRING, OPLOCK, PARTITION_INFORMATION_EX, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PFSCTL_QUERY_FAT_BPB_BUFFER, PHANDLE, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PLARGE_MCB, PLONGLONG, PMARK_HANDLE_INFO, PMOVE_FILE_DATA, PRETRIEVAL_POINTERS_BUFFER, PSTARTING_LCN_INPUT_BUFFER, PSTARTING_VCN_INPUT_BUFFER, PUINT32, PVOLUME_BITMAP_BUFFER, PVPB, RETRIEVAL_POINTERS_BUFFER, SECTION_OBJECT_POINTERS, STARTING_LCN_INPUT_BUFFER, STARTING_VCN_INPUT_BUFFER, SeSinglePrivilegeCheck, UINT32, _UNICODE_STRING, VOLUME_BITMAP_BUFFER, VPB};
+use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CCHAR, IO_STATUS_BLOCK, CC_FILE_SIZES, CLONG, CcCanIWrite, ObReferenceObjectByHandle, CcIsThereDirtyData, CcWaitForCurrentLazyWriterActivity, DEVICE_OBJECT, DISK_GEOMETRY, _KWAIT_REASON_Executive, ERESOURCE, FILESYSTEM_STATISTICS, FILE_LOCK, FILE_OBJECT, GUID, _IO_STATUS_BLOCK, IO_STACK_LOCATION, IoAcquireVpbSpinLock, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, IRP, KEVENT, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, LARGE_INTEGER, LARGE_MCB, LUID, MARK_HANDLE_INFO, MOVE_FILE_DATA, _EVENT_TYPE_NotificationEvent, OEM_STRING, OPLOCK, PARTITION_INFORMATION_EX, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PFSCTL_QUERY_FAT_BPB_BUFFER, PHANDLE, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PLARGE_MCB, PLONGLONG, PMARK_HANDLE_INFO, PMOVE_FILE_DATA, PRETRIEVAL_POINTERS_BUFFER, PSTARTING_LCN_INPUT_BUFFER, PSTARTING_VCN_INPUT_BUFFER, PUINT32, PVOLUME_BITMAP_BUFFER, PVPB, RETRIEVAL_POINTERS_BUFFER, SECTION_OBJECT_POINTERS, STARTING_LCN_INPUT_BUFFER, STARTING_VCN_INPUT_BUFFER, SeSinglePrivilegeCheck, UINT32, _UNICODE_STRING, VOLUME_BITMAP_BUFFER, VPB};
 use core::ffi::c_void;
 // IoFileObjectType is a kernel DATA export; this local raw-dylib decl shadows the
 // plain `ntkrnl_sys::mm::*` glob import so the reference goes through the __imp_ thunk.
@@ -17,8 +17,13 @@ extern "C" {
 use core::ptr::null_mut;
 use core::ptr;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{IoIs32bitProcess, MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32, FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
+use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32, FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+// Additional imports needed by FatMountVolume (translated from fsctrl.c)
+use crate::types::{PPACKED_BOOT_SECTOR, PPACKED_BOOT_SECTOR_EX, PVBO, PVOLUME_DEVICE_OBJECT, FatMaxLarge,
+    FCB_STATE_SYSTEM_FILE, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE, VCB_STATE_FLAG_REMOVABLE_MEDIA,
+    VCB_STATE_FLAG_VPB_MUST_BE_FREED, VCB_STATE_FLAG_WRITE_PROTECTED, VCB_STATE_VPB_NOT_ON_DEVICE,
+    _VCB_CONDITION_VcbGood as VcbGood, _VCB_CONDITION_VcbBad as VcbBad, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
 
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
@@ -10762,20 +10767,499 @@ extern "system" {
     fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
 }
 
-// FatMountVolume — stub (body needs translation from fsctrl.c:FatMountVolume)
-// NOTE: FatMountVolume body is in commented-out section of this file; needs full translation.
-// For now this BugChecks if called — FAT volumes will not mount at runtime until translated.
+// Cross-module functions referenced by FatMountVolume (resolve at link to sibling #[no_mangle]).
+extern "system" {
+    fn FatDeviceIsFatFsdo(DeviceObject: *mut DEVICE_OBJECT) -> u8;
+    fn FatInitializeVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetDeviceObject: *mut DEVICE_OBJECT, Vpb: *mut VPB, FsDeviceObject: *mut DEVICE_OBJECT);
+    fn FatReadVolumeFile(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, StartingVbo: u32, ByteCount: u32, Bcb: *mut PBCB, Buffer: *mut *mut core::ffi::c_void);
+    fn FatCreateRootDcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn FatLocateVolumeLabel(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Dirent: *mut PDIRENT, Bcb: *mut PBCB, ByteOffset: *mut u32);
+    fn FatInitializeCacheMap(FileObject: PFILE_OBJECT, FileSizes: *const CC_FILE_SIZES, PinAccess: BOOLEAN, Callbacks: *const CACHE_MANAGER_CALLBACKS, LazyWriteContext: *mut core::ffi::c_void);
+    fn FatCreateFcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ParentDcb: *mut DCB, LfnOffsetWithinDirectory: u32, DirentOffsetWithinDirectory: u32, Dirent: *mut DIRENT, Lfn: *mut _UNICODE_STRING, OrigLfn: *mut _UNICODE_STRING, IsPagingFile: i32, SingleResource: i32) -> *mut FCB;
+}
+
+// NT/IOCTL/fastfat constants used by FatMountVolume — header-faithful values
+// (CTL_CODE(IOCTL_DISK_BASE=7,fn,METHOD_BUFFERED=0,access); ntdddisk.h / winioctl.h / nodetype.h).
+const IOCTL_DISK_CHECK_VERIFY: u32 = 0x0007_4800;          // CTL_CODE(7,0x200,0,FILE_READ_ACCESS=1)
+const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 0x0007_0000;    // CTL_CODE(7,0,0,0)
+const IOCTL_DISK_GET_PARTITION_INFO_EX: u32 = 0x0007_0048; // CTL_CODE(7,0x12,0,0)
+const STATUS_UNRECOGNIZED_VOLUME: i32 = 0xC000_014Fu32 as i32;
+const MAXIMUM_VOLUME_LABEL_LENGTH: u16 = 64;               // 32 * sizeof(WCHAR)
+const PARTITION_OS2BOOTMGR: u8 = 0x0A;
+const PARTITION_STYLE_MBR: u32 = 0;                        // _PARTITION_STYLE::PARTITION_STYLE_MBR
+const TAG_STASHED_BPB: u32 = 0x5374_6146;                  // 'StaF'
+const DO_VERIFY_VOLUME: u32 = 2;
+const DO_SYSTEM_BOOT_PARTITION: u32 = 256;
+const FILE_DEVICE_DISK: u32 = 7;
+const FILE_DEVICE_CD_ROM: u32 = 2;
+const FILE_DEVICE_DISK_FILE_SYSTEM: u32 = 8;
+const FSRTL_VOLUME_MOUNT: u32 = 6;
+const SL_ALLOW_RAW_MOUNT: u32 = 1;
+
 #[no_mangle]
 pub unsafe extern "system" fn FatMountVolume(
     IrpContext: PIRP_CONTEXT,
-    DeviceObject: *mut DEVICE_OBJECT,
-    Vpb: PVPB,
-    FsDeviceObject: *mut DEVICE_OBJECT,
+    TargetDeviceObject: PDEVICE_OBJECT,
+    mut Vpb: PVPB,
+    FsDeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    let _ = (IrpContext, DeviceObject, Vpb, FsDeviceObject);
-    FatBugCheck(FAT_BUG_CHECK_FSCTRL, 0, 0);
-    // SAFETY: FatBugCheck does not return (calls KeBugCheckEx)
-    unsafe { core::hint::unreachable_unchecked() }
+    let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
+    let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
+
+    let mut BootBcb: PBCB = core::ptr::null_mut();
+    let mut BootSector: PPACKED_BOOT_SECTOR = core::ptr::null_mut();
+
+    let mut DirentBcb: PBCB = core::ptr::null_mut();
+    let mut Dirent: PDIRENT = core::ptr::null_mut();
+    let mut ByteOffset: ULONG = 0;
+
+    let mut MountNewVolume: BOOLEAN = 0u8;
+    let mut WeClearedVerifyRequiredBit: BOOLEAN = 0u8;
+    let mut DoARemount: BOOLEAN = 0u8;
+
+    let mut OldVcb: PVCB = core::ptr::null_mut();
+    let mut OldVpb: PVPB = core::ptr::null_mut();
+
+    let mut RealDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut VolDo: PVOLUME_DEVICE_OBJECT = core::ptr::null_mut();
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut RootDirectoryFile: PFILE_OBJECT = core::ptr::null_mut();
+
+    let mut Links: PLIST_ENTRY;
+
+    let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ChangeCount: ULONG = 0;
+
+    let mut Geometry: DISK_GEOMETRY = core::mem::zeroed();
+
+    let mut PartitionInformation: PARTITION_INFORMATION_EX = core::mem::zeroed();
+    let StatusPartInfo: NTSTATUS;
+
+    DebugTrace(1, Dbg, b"FatMountVolume\n\0".as_ptr() as _, 0);
+    DebugTrace(0, Dbg, b"TargetDeviceObject = %p\n\0".as_ptr() as _, TargetDeviceObject as ULONG_PTR);
+    DebugTrace(0, Dbg, b"Vpb                = %p\n\0".as_ptr() as _, Vpb as ULONG_PTR);
+
+    NT_ASSERT((FlagOn(((*IrpContext).Flags) as u32, IRP_CONTEXT_FLAG_WAIT) != 0) as u32);
+    NT_ASSERT((FatDeviceIsFatFsdo(FsDeviceObject) != 0) as u32);
+
+    if FlagOn(((*TargetDeviceObject).Characteristics) as u32, FILE_REMOVABLE_MEDIA) != 0 {
+        Status = FatPerformDevIoCtrl(
+            IrpContext,
+            IOCTL_DISK_CHECK_VERIFY,
+            TargetDeviceObject,
+            core::ptr::null_mut(),
+            0,
+            &mut ChangeCount as *mut _ as PVOID,
+            core::mem::size_of::<ULONG>() as ULONG,
+            false,
+            true,
+            &mut Iosb,
+        );
+
+        if !NT_SUCCESS(Status) {
+            if FlagOn(((*IrpSp).Flags) as u32, SL_ALLOW_RAW_MOUNT) == 0
+                && (*(*Vpb).RealDevice).DeviceType == FILE_DEVICE_DISK
+            {
+                FatNormalizeAndRaiseStatus(IrpContext, Status);
+            }
+            return Status;
+        }
+    }
+
+    if Iosb.Information as usize != core::mem::size_of::<ULONG>() {
+        ChangeCount = 0;
+    }
+
+    if (*TargetDeviceObject).DeviceType == FILE_DEVICE_CD_ROM
+        && !FatScanForDataTrack(IrpContext, TargetDeviceObject)
+    {
+        return STATUS_UNRECOGNIZED_VOLUME;
+    }
+
+    StatusPartInfo = FatPerformDevIoCtrl(
+        IrpContext,
+        IOCTL_DISK_GET_PARTITION_INFO_EX,
+        TargetDeviceObject,
+        core::ptr::null_mut(),
+        0,
+        &mut PartitionInformation as *mut _ as PVOID,
+        core::mem::size_of::<PARTITION_INFORMATION_EX>() as ULONG,
+        false,
+        true,
+        &mut Iosb,
+    );
+
+    SetFlag(&mut ((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+
+    FatScanForDismountedVcb(IrpContext);
+
+    BootBcb = core::ptr::null_mut();
+    DirentBcb = core::ptr::null_mut();
+
+    Vcb = core::ptr::null_mut();
+    VolDo = core::ptr::null_mut();
+    MountNewVolume = 0u8;
+
+    'try_block: {
+        FatAcquireExclusiveGlobal(IrpContext);
+
+        Status = IoCreateDevice(
+            FatData.DriverObject,
+            (core::mem::size_of::<VOLUME_DEVICE_OBJECT>() - core::mem::size_of::<DEVICE_OBJECT>()) as ULONG,
+            core::ptr::null_mut(),
+            FILE_DEVICE_DISK_FILE_SYSTEM,
+            0,
+            0u8,
+            &mut VolDo as *mut _ as *mut PDEVICE_OBJECT,
+        );
+
+        if !NT_SUCCESS(Status) {
+            break 'try_block;
+        }
+
+        if (*TargetDeviceObject).AlignmentRequirement > (*VolDo).DeviceObject.AlignmentRequirement {
+            (*VolDo).DeviceObject.AlignmentRequirement = (*TargetDeviceObject).AlignmentRequirement;
+        }
+
+        (*VolDo).OverflowQueueCount = 0;
+        InitializeListHead(&mut (*VolDo).OverflowQueue);
+
+        (*VolDo).PostedRequestCount = 0;
+        KeInitializeSpinLock(&mut (*VolDo).OverflowQueueSpinLock);
+
+        (*VolDo).DeviceObject.StackSize = ((*TargetDeviceObject).StackSize + 1) as CCHAR;
+
+        Status = FatPerformDevIoCtrl(
+            IrpContext,
+            IOCTL_DISK_GET_DRIVE_GEOMETRY,
+            TargetDeviceObject,
+            core::ptr::null_mut(),
+            0,
+            &mut Geometry as *mut _ as PVOID,
+            core::mem::size_of::<DISK_GEOMETRY>() as ULONG,
+            false,
+            true,
+            core::ptr::null_mut(),
+        );
+
+        if !NT_SUCCESS(Status) {
+            break 'try_block;
+        }
+
+        (*VolDo).DeviceObject.SectorSize = Geometry.BytesPerSector as USHORT;
+
+        ClearFlag(&mut ((*VolDo).DeviceObject.Flags), DO_DEVICE_INITIALIZING);
+
+        (*Vpb).DeviceObject = VolDo as PDEVICE_OBJECT;
+
+        RealDevice = (*Vpb).RealDevice;
+
+        if FlagOn(((*RealDevice).Flags) as u32, DO_VERIFY_VOLUME) != 0 {
+            ClearFlag(&mut ((*RealDevice).Flags), DO_VERIFY_VOLUME);
+            WeClearedVerifyRequiredBit = 1u8;
+        }
+
+        FatInitializeVcb(IrpContext, &mut (*VolDo).Vcb, TargetDeviceObject, Vpb, FsDeviceObject);
+
+        Vcb = &mut (*VolDo).Vcb;
+
+        'inner_try: {
+            FatReadVolumeFile(
+                IrpContext,
+                Vcb,
+                0,
+                core::mem::size_of::<PACKED_BOOT_SECTOR>() as ULONG,
+                &mut BootBcb,
+                &mut BootSector as *mut _ as *mut PVOID,
+            );
+        }
+
+        if BootBcb.is_null() || FatIsBootSectorFat(BootSector) == 0 {
+            DebugTrace(0, Dbg, b"Not a Fat Volume\n\0".as_ptr() as _, 0);
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+            break 'try_block;
+        }
+
+        FatUnpackBios(&mut (*Vcb).Bpb, &(*BootSector).PackedBpb as *const _ as *const core::ffi::c_void);
+
+        if NT_SUCCESS(StatusPartInfo)
+            && PartitionInformation.PartitionStyle == PARTITION_STYLE_MBR
+            && PartitionInformation.__bindgen_anon_1.Mbr.PartitionType == PARTITION_OS2BOOTMGR
+            && (*Vcb).Bpb.Sectors != 0
+            && (*Vcb).Bpb.Sectors < 0x80
+        {
+            DebugTrace(0, Dbg, b"OS/2 Boot Manager volume detected, volume not mounted. \n\0".as_ptr() as _, 0);
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+            break 'try_block;
+        }
+
+        if !NT_SUCCESS(Status) || Geometry.BytesPerSector != (*Vcb).Bpb.BytesPerSector as u32 {
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+            break 'try_block;
+        }
+
+        if (*Vcb).Bpb.Sectors != 0 {
+            (*Vcb).Bpb.LargeSectors = 0;
+        }
+
+        if IsBpbFat32(&raw const (*BootSector).PackedBpb) {
+            (*Vpb).SerialNumber = u32::from_ne_bytes((*(BootSector as PPACKED_BOOT_SECTOR_EX)).Id);
+        } else {
+            (*Vpb).SerialNumber = u32::from_ne_bytes((*BootSector).Id);
+
+            (*Vcb).First0x24BytesOfBootSector = FsRtlAllocatePoolWithTag(PagedPool, 0x24, TAG_STASHED_BPB) as PUCHAR;
+
+            core::ptr::copy_nonoverlapping(
+                BootSector as *const u8,
+                (*Vcb).First0x24BytesOfBootSector as *mut u8,
+                0x24,
+            );
+        }
+
+        FatUnpinBcb(IrpContext, &mut BootBcb);
+
+        FatSetupAllocationSupport(IrpContext, Vcb);
+
+        if FatIsFat32(Vcb) != 0 {
+            if (*Vcb).Bpb.FsInfoSector >= (*Vcb).Bpb.ReservedSectors {
+                (*Vcb).Bpb.FsInfoSector = 0;
+            }
+        }
+
+        'corrupt_try: {
+            FatCreateRootDcb(IrpContext, Vcb);
+        }
+
+        FatLocateVolumeLabel(IrpContext, Vcb, &mut Dirent, &mut DirentBcb, &mut ByteOffset as *mut _ as PVBO);
+
+        if !Dirent.is_null() {
+            let mut OemBuffer: [u8; 11] = [0; 11];
+            let mut OemString: OEM_STRING = core::mem::zeroed();
+            let mut UnicodeString: UNICODE_STRING = core::mem::zeroed();
+
+            OemString.Buffer = OemBuffer.as_mut_ptr() as PCHAR;
+            OemString.MaximumLength = 11;
+
+            core::ptr::copy_nonoverlapping(
+                core::ptr::addr_of!((*Dirent).FileName) as *const u8,
+                OemString.Buffer as *mut u8,
+                11,
+            );
+
+            if *OemString.Buffer.offset(0) == FAT_DIRENT_REALLY_0E5 as i8 {
+                *OemString.Buffer.offset(0) = 0xe5u8 as i8;
+            }
+
+            OemString.Length = 11;
+            while OemString.Length > 0 {
+                let idx = (OemString.Length - 1) as isize;
+                if *OemString.Buffer.offset(idx) != 0x00 && *OemString.Buffer.offset(idx) != 0x20 {
+                    break;
+                }
+                OemString.Length -= 1;
+            }
+
+            UnicodeString.MaximumLength = MAXIMUM_VOLUME_LABEL_LENGTH;
+            UnicodeString.Buffer = core::ptr::addr_of_mut!((*Vpb).VolumeLabel).cast();
+
+            Status = RtlOemStringToCountedUnicodeString(&mut UnicodeString as *mut UNICODE_STRING as *mut _, &OemString as *const OEM_STRING as *const _, 0u8);
+
+            if !NT_SUCCESS(Status) {
+                break 'try_block;
+            }
+
+            (*Vpb).VolumeLabelLength = UnicodeString.Length;
+        } else {
+            (*Vpb).VolumeLabelLength = 0;
+        }
+
+        (*Vcb).ChangeCount = ChangeCount;
+
+        Links = FatData.VcbQueue.Flink;
+        while Links != &FatData.VcbQueue as *const _ as PLIST_ENTRY {
+            OldVcb = ((Links as usize) - core::mem::offset_of!(VCB, VcbLinks)) as PVCB;
+            OldVpb = (*OldVcb).Vpb;
+
+            if OldVpb == Vpb {
+                Links = (*Links).Flink;
+                continue;
+            }
+
+            if (*OldVpb).SerialNumber == (*Vpb).SerialNumber
+                && (*OldVcb).VcbCondition == VcbNotMounted
+                && (*OldVpb).RealDevice == RealDevice
+                && (*OldVpb).VolumeLabelLength == (*Vpb).VolumeLabelLength
+                && RtlEqualMemory(
+                    core::ptr::addr_of!((*OldVpb).VolumeLabel).cast(),
+                    core::ptr::addr_of!((*Vpb).VolumeLabel).cast(),
+                    (*Vpb).VolumeLabelLength as u32,
+                ) != 0
+                && RtlEqualMemory(
+                    &(*OldVcb).Bpb as *const _ as PVOID,
+                    &(*Vcb).Bpb as *const _ as PVOID,
+                    if (*Vcb).Bpb.SectorsPerFat == 0 {
+                        core::mem::size_of::<BIOS_PARAMETER_BLOCK>() as u32
+                    } else {
+                        core::mem::offset_of!(BIOS_PARAMETER_BLOCK, LargeSectorsPerFat) as u32
+                    },
+                ) != 0
+            {
+                DoARemount = 1u8;
+                break;
+            }
+
+            Links = (*Links).Flink;
+        }
+
+        if DoARemount != 0 {
+            let IrpVpb: *mut PVPB;
+
+            DebugTrace(0, Dbg, b"Doing a remount\n\0".as_ptr() as _, 0);
+
+            (*Vcb).TargetDeviceObject = (*OldVcb).TargetDeviceObject;
+            (*OldVcb).TargetDeviceObject = TargetDeviceObject;
+
+            NT_ASSERT((FlagOn(((*OldVcb).VcbState) as u32, VCB_STATE_FLAG_VPB_MUST_BE_FREED) == 0) as u32);
+
+            FatSetVcbCondition(OldVcb, VcbGood);
+            (*OldVpb).RealDevice = (*Vpb).RealDevice;
+            ClearFlag(&mut ((*OldVcb).VcbState), VCB_STATE_VPB_NOT_ON_DEVICE);
+
+            (*(*OldVpb).RealDevice).Vpb = OldVpb;
+
+            (*OldVcb).ChangeCount = (*Vcb).ChangeCount;
+
+            IrpVpb = core::ptr::addr_of_mut!((*IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp))
+                .Parameters
+                .MountVolume
+                .Vpb);
+
+            if *IrpVpb == Vpb {
+                *IrpVpb = OldVpb;
+            }
+
+            NT_ASSERT(((*Vcb).Vpb == Vpb) as u32);
+
+            Vpb = core::ptr::null_mut();
+            SetFlag(&mut ((*Vcb).VcbState), VCB_STATE_FLAG_VPB_MUST_BE_FREED);
+            FatSetVcbCondition(Vcb, VcbBad);
+
+            {
+                let mut FileSizes: CC_FILE_SIZES = core::mem::zeroed();
+
+                FileSizes.AllocationSize.QuadPart = 0x40000 + 0x1000;
+                FileSizes.FileSize.QuadPart = 0x40000 + 0x1000;
+                FileSizes.ValidDataLength = FatMaxLarge;
+
+                DebugTrace(0, Dbg, b"Truncate and reinitialize the volume file\n\0".as_ptr() as _, 0);
+
+                FatInitializeCacheMap(
+                    (*OldVcb).VirtualVolumeFile,
+                    &FileSizes,
+                    1u8,
+                    &FatData.CacheManagerNoOpCallbacks,
+                    Vcb as *mut core::ffi::c_void,
+                );
+
+                FatSetupAllocationSupport(IrpContext, OldVcb);
+
+                FatCheckDirtyBit(IrpContext, OldVcb);
+
+                if FatIsMediaWriteProtected(IrpContext, TargetDeviceObject) != 0 {
+                    SetFlag(&mut ((*OldVcb).VcbState), VCB_STATE_FLAG_WRITE_PROTECTED);
+                } else {
+                    ClearFlag(&mut ((*OldVcb).VcbState), VCB_STATE_FLAG_WRITE_PROTECTED);
+                }
+            }
+
+            Status = STATUS_SUCCESS;
+            break 'try_block;
+        }
+
+        DebugTrace(0, Dbg, b"Mount a new volume\n\0".as_ptr() as _, 0);
+
+        if FatIsFat32(Vcb) == 0 {
+            let mut TempDirent: DIRENT = core::mem::zeroed();
+            let EaFcb: PFCB;
+
+            core::ptr::write_bytes(&mut TempDirent as *mut _ as *mut u8, 0, core::mem::size_of::<DIRENT>());
+            core::ptr::copy_nonoverlapping(
+                b"EA DATA  SF".as_ptr(),
+                core::ptr::addr_of_mut!(TempDirent.FileName).cast(),
+                11,
+            );
+
+            EaFcb = FatCreateFcb(
+                IrpContext,
+                Vcb,
+                (*Vcb).RootDcb,
+                0,
+                0,
+                &mut TempDirent,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                0,
+                1,
+            );
+
+            SetFlag(&mut ((*EaFcb).FcbState), FCB_STATE_SYSTEM_FILE);
+
+            (*Vcb).EaFcb = EaFcb;
+        }
+
+        FatCheckDirtyBit(IrpContext, Vcb);
+
+        if FatIsMediaWriteProtected(IrpContext, TargetDeviceObject) != 0 {
+            SetFlag(&mut ((*Vcb).VcbState), VCB_STATE_FLAG_WRITE_PROTECTED);
+        } else {
+            ClearFlag(&mut ((*Vcb).VcbState), VCB_STATE_FLAG_WRITE_PROTECTED);
+        }
+
+        if FlagOn(((*RealDevice).Flags) as u32, DO_SYSTEM_BOOT_PARTITION) != 0 {
+            SetFlag(&mut ((*Vcb).VcbState), VCB_STATE_FLAG_BOOT_OR_PAGING_FILE);
+
+            if FlagOn(((*Vcb).VcbState) as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 {
+                FatToggleMediaEjectDisable(IrpContext, Vcb, 1);
+            }
+        }
+
+        MountNewVolume = 1u8;
+
+        Status = STATUS_SUCCESS;
+
+        RootDirectoryFile = (*(*Vcb).RootDcb).Specific.Dcb.as_ref().DirectoryFile;
+        ObReferenceObject(RootDirectoryFile as *mut core::ffi::c_void);
+
+        ObDereferenceObject(TargetDeviceObject as *mut core::ffi::c_void);
+    }
+
+    DebugUnwind(b"FatMountVolume\0".as_ptr() as *const i8);
+    FatUnpinBcb(IrpContext, &mut BootBcb);
+    FatUnpinBcb(IrpContext, &mut DirentBcb);
+    if MountNewVolume == 0 {
+        if !Vcb.is_null() {
+            FatCheckForDismount(IrpContext, Vcb, 1u8);
+            (*IrpContext).Vcb = core::ptr::null_mut();
+        } else if !VolDo.is_null() {
+            IoDeleteDevice(&mut (*VolDo).DeviceObject);
+        }
+
+        if DoARemount != 0 {
+            FatCheckForDismount(IrpContext, OldVcb, 1u8);
+        }
+    }
+    if WeClearedVerifyRequiredBit == 1u8 {
+        SetFlag(&mut ((*RealDevice).Flags), DO_VERIFY_VOLUME);
+    }
+    FatReleaseGlobal(IrpContext);
+    DebugTrace(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as _, Status as ULONG);
+
+    if !RootDirectoryFile.is_null() {
+        FsRtlNotifyVolumeEvent(RootDirectoryFile, FSRTL_VOLUME_MOUNT);
+        ObDereferenceObject(RootDirectoryFile as *mut core::ffi::c_void);
+    }
+
+    Status
 }
 
 // FatInvalidateVolumes — stub
