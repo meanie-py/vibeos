@@ -19,7 +19,7 @@
 //! generated in-cargo from each .spec. libwine/libpseh/CRT statics + the
 //! load-bearing .res are reused from cmake.
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -61,14 +61,14 @@ fn main() {
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // libwine (3rdparty C) + libpseh + chkstk + oldnames, reused from cmake.
-        // libmsvcrtex.a (CRT startup) → compiled in-cargo via .msvcrtex_crt().
+        // libmsvcrtex.a (CRT startup) → compiled in-cargo via .msvcrtex_crt(MsvcrtexKind::ExeAnsi).
         .static_libs(&[
             "sdk/lib/3rdparty/libwine/libwine.a",
             "sdk/lib/pseh/libpseh.a",
             "sdk/lib/crt/libchkstk.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::ExeAnsi)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

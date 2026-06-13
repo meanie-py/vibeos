@@ -18,7 +18,7 @@
 //! source). Import libs are generated in-cargo from each .spec. CRT statics +
 //! the load-bearing .res (localized STRINGTABLEs) are reused from cmake.
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -58,13 +58,13 @@ fn main() {
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // libpseh + chkstk + oldnames, reused from cmake. libmsvcrtex.a (CRT
-        // startup) → compiled in-cargo via .msvcrtex_crt().
+        // startup) → compiled in-cargo via .msvcrtex_crt(MsvcrtexKind::ExeWide).
         .static_libs(&[
             "sdk/lib/pseh/libpseh.a",
             "sdk/lib/crt/libchkstk.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::ExeWide)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

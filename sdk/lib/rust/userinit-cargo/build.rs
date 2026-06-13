@@ -14,7 +14,7 @@
 //! from cmake (resource-only OBJECT lib userinit_res) — it is load-bearing
 //! (manifest + logo bitmaps + dialogs), so unlike lsass it is NOT omitted.
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -41,12 +41,12 @@ fn main() {
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // libwine.a (3rdparty C) + oldnames, reused from cmake. libmsvcrtex.a
-        // (CRT startup) → compiled in-cargo via .msvcrtex_crt().
+        // (CRT startup) → compiled in-cargo via .msvcrtex_crt(MsvcrtexKind::ExeWide).
         .static_libs(&[
             "sdk/lib/3rdparty/libwine/libwine.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::ExeWide)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),
