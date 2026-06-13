@@ -421,7 +421,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
     let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    DebugTrace(1, Dbg, b"FatFsdSetEa\n\0".as_ptr() as *const i8, 0);
+    DebugTrace(1, 0u32, b"FatFsdSetEa\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
@@ -436,7 +436,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
             let exception_info: *mut EXCEPTION_POINTERS = _SEH2_GetExceptionInformation();
             let exception_code: u32 = _SEH2_GetExceptionCode();
             if FatExceptionFilter(IrpContext, exception_info) != 0 {
-                Status = FatProcessException(IrpContext, Irp, exception_code);
+                Status = FatProcessException(IrpContext, Irp, exception_code as i32);
             } else {
                 Status = STATUS_INVALID_DEVICE_REQUEST;
             }
@@ -447,19 +447,21 @@ pub unsafe extern "system" fn FatFsdSetEa(
         IoSetTopLevelIrp(core::ptr::null_mut());
     }
     FsRtlExitFileSystem();
-    DebugTrace(-1, Dbg, b"FatFsdSetEa -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace(-1, 0u32, b"FatFsdSetEa -> %08lx\n\0".as_ptr() as *const i8, Status);
     let _ = VolumeDeviceObject;
     Status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonQueryEa(
-    IrpContext: *mut IrpContext,
+    IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
     PAGED_CODE();
     FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
     return STATUS_INVALID_DEVICE_REQUEST;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonSetEa(
     IrpContext: *mut PIRP_CONTEXT,

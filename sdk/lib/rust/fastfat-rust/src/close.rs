@@ -106,7 +106,7 @@ pub unsafe extern "system" fn FatFsdClose(
     if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = (FILE_OPENED) as u64;
-        IoCompleteRequest(Irp, (IO_DISK_INCREMENT) as i8);
+        IoCompleteRequest(Irp, (IO_DISK_INCREMENT) as i32);
         return STATUS_SUCCESS;
     }
 
@@ -114,7 +114,7 @@ pub unsafe extern "system" fn FatFsdClose(
 
     FsRtlEnterFileSystem();
 
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = FatIsIrpTopLevel(Irp) as u8;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     FileObject = (*IrpSp).FileObject;
@@ -130,7 +130,7 @@ pub unsafe extern "system" fn FatFsdClose(
     // -------------------------------------------------------------------
     {
         let exception_code: i32;
-        let handled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { 
+        let handled = core::panic::catch_unwind(core::panic::AssertUnwindSafe(|| { 
             let mut CloseContext: *mut CLOSE_CONTEXT = core::ptr::null_mut();
 
             let Wait = if TopLevel != 0
@@ -161,7 +161,7 @@ pub unsafe extern "system" fn FatFsdClose(
                 || TypeOfOpen == (EaFile) as u32
             {
                 CloseContext = FatAllocateCloseContext(Vcb);
-                NT_ASSERT((CloseContext.is_null() as i32 == 0) as u8);
+                NT_ASSERT((CloseContext.is_null() as i32 == 0) as i32);
                 (*CloseContext).Free = 1;
             }
 
@@ -178,16 +178,16 @@ pub unsafe extern "system" fn FatFsdClose(
                 Vcb,
                 Fcb,
                 Ccb,
-                TypeOfOpen,
-                Wait,
-                TopLevel,
+                TypeOfOpen as u32,
+                Wait as u8,
+                TopLevel as u8,
                 &mut VcbDeleted,
             );
 
             if must_delay != 0 || common_result == STATUS_PENDING {
                 if CloseContext.is_null() {
                     FatDeallocateCcbStrings(Ccb);
-                    CloseContext = &mut (*Ccb).CloseContext;
+                    CloseContext = &mut (*Ccb).__bindgen_anon_1.CloseContext;
                     (*CloseContext).Free = 0;
                     SetFlag(&mut (*Ccb).Flags, CCB_FLAG_READ_ONLY);
                 }
@@ -200,7 +200,7 @@ pub unsafe extern "system" fn FatFsdClose(
                         1
                     } else {
                         0
-                    },
+                    } as u8,
                 );
             } else {
                 if TypeOfOpen == (VirtualVolumeFile) as u32
@@ -250,6 +250,7 @@ pub unsafe extern "system" fn FatFsdClose(
 
     Status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCloseWorker(
     DeviceObject: PDEVICE_OBJECT,
@@ -401,7 +402,7 @@ pub unsafe extern "C" fn FatQueueClose(
     if DelayClose != 0 {
         let fat_data_ptr = core::ptr::addr_of_mut!(FatData);
         InsertTailList(
-            core::ptr::addr_of_mut!((*fat_data_ptr).DelayedCloseList),
+            core::ptr::addr_of_mut!((**fat_data_ptr).DelayedCloseList),
             core::ptr::addr_of_mut!((*CloseContext).GlobalLinks),
         );
         let vcb = (*CloseContext).Vcb;
@@ -409,16 +410,18 @@ pub unsafe extern "C" fn FatQueueClose(
             core::ptr::addr_of_mut!((*vcb).DelayedCloseList),
             core::ptr::addr_of_mut!((*CloseContext).VcbLinks),
         );
-        (*fat_data_ptr).DelayedCloseCount += 1;
+        (**fat_data_ptr).DelayedCloseCount += 1;
 
-        if ((*fat_data_ptr).DelayedCloseCount > FatMaxDelayedCloseCount) && ((*fat_data_ptr).AsyncCloseActive == 0) {
-            (*fat_data_ptr).AsyncCloseActive = 1;
+        if ((**fat_data_ptr).DelayedCloseCount > FatMaxDelayedCloseCount)
+            && ((**fat_data_ptr).async_close_active() == 0)
+        {
+            (**fat_data_ptr).set_async_close_active(1);
             StartWorker = 1;
         }
     } else {
         let fat_data_ptr = core::ptr::addr_of_mut!(FatData);
         InsertTailList(
-            core::ptr::addr_of_mut!((*fat_data_ptr).AsyncCloseList),
+            core::ptr::addr_of_mut!((**fat_data_ptr).AsyncCloseList),
             core::ptr::addr_of_mut!((*CloseContext).GlobalLinks),
         );
         let vcb = (*CloseContext).Vcb;
@@ -426,10 +429,10 @@ pub unsafe extern "C" fn FatQueueClose(
             core::ptr::addr_of_mut!((*vcb).AsyncCloseList),
             core::ptr::addr_of_mut!((*CloseContext).VcbLinks),
         );
-        (*fat_data_ptr).AsyncCloseCount += 1;
+        (**fat_data_ptr).AsyncCloseCount += 1;
 
-        if (*fat_data_ptr).AsyncCloseActive == 0 {
-            (*fat_data_ptr).AsyncCloseActive = 1;
+        if (**fat_data_ptr).async_close_active() == 0 {
+            (**fat_data_ptr).set_async_close_active(1);
             StartWorker = 1;
         }
     }
@@ -441,13 +444,14 @@ pub unsafe extern "C" fn FatQueueClose(
     if StartWorker != 0 {
         let fat_data_ptr = core::ptr::addr_of_mut!(FatData);
         IoQueueWorkItem(
-            (*fat_data_ptr).FatCloseItem,
+            (**fat_data_ptr).FatCloseItem,
             FatCloseWorker,
             CriticalWorkQueue,
             core::ptr::null_mut(),
         );
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatRemoveClose(
     Vcb: *mut VCB,
@@ -466,17 +470,17 @@ pub unsafe extern "C" fn FatRemoveClose(
     if Vcb.is_null() && !LastVcbHint.is_null() {
         // aggressive logic
         let max = *core::ptr::addr_of!(FatMaxDelayedCloseCount);
-        if FatData.HighAsync == 0 && FatData.AsyncCloseCount > max * 2 {
-            FatData.HighAsync = 1;
-        } else if FatData.HighAsync != 0 && FatData.AsyncCloseCount < max {
-            FatData.HighAsync = 0;
+        if FatData.__bindgen_anon_1.HighAsync == 0 && FatData.__bindgen_anon_1.AsyncCloseCount > max * 2 {
+            FatData.__bindgen_anon_1.HighAsync = 1;
+        } else if FatData.__bindgen_anon_1.HighAsync != 0 && FatData.__bindgen_anon_1.AsyncCloseCount < max {
+            FatData.__bindgen_anon_1.HighAsync = 0;
         }
-        if FatData.HighDelayed == 0 && FatData.DelayedCloseCount > max * 2 {
-            FatData.HighDelayed = 1;
-        } else if FatData.HighDelayed != 0 && FatData.DelayedCloseCount < max {
-            FatData.HighDelayed = 0;
+        if FatData.__bindgen_anon_1.HighDelayed == 0 && FatData.__bindgen_anon_1.DelayedCloseCount > max * 2 {
+            FatData.__bindgen_anon_1.HighDelayed = 1;
+        } else if FatData.__bindgen_anon_1.HighDelayed != 0 && FatData.__bindgen_anon_1.DelayedCloseCount < max {
+            FatData.__bindgen_anon_1.HighDelayed = 0;
         }
-        if FatData.HighAsync != 0 || FatData.HighDelayed != 0 {
+        if FatData.__bindgen_anon_1.HighAsync != 0 || FatData.__bindgen_anon_1.HighDelayed != 0 {
             Vcb = LastVcbHint;
         }
     }
@@ -487,9 +491,9 @@ pub unsafe extern "C" fn FatRemoveClose(
 
         if cur_vcb.is_null() {
             // AnyClose block
-            if !IsListEmpty(core::ptr::addr_of_mut!(FatData.AsyncCloseList)) {
-                Entry = RemoveHeadList(core::ptr::addr_of_mut!(FatData.AsyncCloseList));
-                FatData.AsyncCloseCount -= 1;
+            if !IsListEmpty(core::ptr::addr_of_mut!(FatData.__bindgen_anon_1.AsyncCloseList)) {
+                Entry = RemoveHeadList(core::ptr::addr_of_mut!(FatData.__bindgen_anon_1.AsyncCloseList));
+                FatData.__bindgen_anon_1.AsyncCloseCount -= 1;
 
                 CloseContext = (Entry as *mut u8)
                     .sub(core::mem::offset_of!(CLOSE_CONTEXT, GlobalLinks))
@@ -497,12 +501,12 @@ pub unsafe extern "C" fn FatRemoveClose(
 
                 RemoveEntryList(core::ptr::addr_of_mut!((*CloseContext).VcbLinks));
                 break 'any_close;
-            } else if !IsListEmpty(core::ptr::addr_of_mut!(FatData.DelayedCloseList))
-                && (FatData.DelayedCloseCount > *core::ptr::addr_of!(FatMaxDelayedCloseCount) / 2
-                    || FatData.ShutdownStarted != 0)
+            } else if !IsListEmpty(core::ptr::addr_of_mut!(FatData.__bindgen_anon_1.DelayedCloseList))
+                && (FatData.__bindgen_anon_1.DelayedCloseCount > *core::ptr::addr_of!(FatMaxDelayedCloseCount) / 2
+                    || FatData.__bindgen_anon_1.ShutdownStarted != 0)
             {
-                Entry = RemoveHeadList(core::ptr::addr_of_mut!(FatData.DelayedCloseList));
-                FatData.DelayedCloseCount -= 1;
+                Entry = RemoveHeadList(core::ptr::addr_of_mut!(FatData.__bindgen_anon_1.DelayedCloseList));
+                FatData.__bindgen_anon_1.DelayedCloseCount -= 1;
 
                 CloseContext = (Entry as *mut u8)
                     .sub(core::mem::offset_of!(CLOSE_CONTEXT, GlobalLinks))
@@ -513,7 +517,7 @@ pub unsafe extern "C" fn FatRemoveClose(
             } else {
                 CloseContext = core::ptr::null_mut();
                 if WorkerThread != 0 {
-                    FatData.AsyncCloseActive = 0;
+                    FatData.__bindgen_anon_1.AsyncCloseActive = 0;
                 }
                 break 'any_close;
             }
@@ -522,7 +526,7 @@ pub unsafe extern "C" fn FatRemoveClose(
             // Volume-specific path
             if !IsListEmpty(core::ptr::addr_of_mut!((*vcb).AsyncCloseList)) {
                 Entry = RemoveHeadList(core::ptr::addr_of_mut!((*vcb).AsyncCloseList));
-                FatData.AsyncCloseCount -= 1;
+                FatData.__bindgen_anon_1.AsyncCloseCount -= 1;
 
                 CloseContext = (Entry as *mut u8)
                     .sub(core::mem::offset_of!(CLOSE_CONTEXT, VcbLinks))
@@ -532,7 +536,7 @@ pub unsafe extern "C" fn FatRemoveClose(
                 break 'any_close;
             } else if !IsListEmpty(core::ptr::addr_of_mut!((*vcb).DelayedCloseList)) {
                 Entry = RemoveHeadList(core::ptr::addr_of_mut!((*vcb).DelayedCloseList));
-                FatData.DelayedCloseCount -= 1;
+                FatData.__bindgen_anon_1.DelayedCloseCount -= 1;
 
                 CloseContext = (Entry as *mut u8)
                     .sub(core::mem::offset_of!(CLOSE_CONTEXT, VcbLinks))
@@ -553,6 +557,7 @@ pub unsafe extern "C" fn FatRemoveClose(
     FatReleaseCloseMutex();
     CloseContext
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonClose(
     Vcb: *mut VCB,
@@ -656,14 +661,14 @@ pub unsafe extern "C" fn FatCommonClose(
             (DirectoryFile) as u32 => {
                 DebugTrace(0, Dbg, b"Close DirectoryFile\n\0".as_ptr() as *const i8, 0);
                 {
-                    let ptr = core::ptr::addr_of_mut!((*Fcb).Specific.Dcb.DirectoryFileOpenCount) as *mut i32;
+                    let ptr = core::ptr::addr_of_mut!((*(*Fcb).Specific.Dcb).DirectoryFileOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
                 }
                 {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).InternalOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
                 }
-                if ((*Fcb).NodeTypeCode) == FAT_NTC_ROOT_DCB {
+                if ((*Fcb).Header.NodeTypeCode) == FAT_NTC_ROOT_DCB {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).ResidualOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
                 }
@@ -674,15 +679,15 @@ pub unsafe extern "C" fn FatCommonClose(
             }
             (UserDirectoryOpen) as u32 | (UserFileOpen) as u32 => {
                 DebugTrace(0, Dbg, b"Close UserFileOpen/UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
-                if ((*Fcb).NodeTypeCode == FAT_NTC_DCB) &&
-                    IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue)) &&
+                if ((*Fcb).Header.NodeTypeCode == FAT_NTC_DCB) &&
+                    IsListEmpty(core::ptr::addr_of!((*(*Fcb).Specific.Dcb).ParentDcbQueue)) &&
                     ((*Fcb).OpenCount == 1) &&
-                    !((*Fcb).Specific.Dcb.DirectoryFile).is_null()
+                    !((*(*Fcb).Specific.Dcb).DirectoryFile).is_null()
                 {
-                    let DirectoryFileObject: PFILE_OBJECT = (*Fcb).Specific.Dcb.DirectoryFile;
+                    let DirectoryFileObject: PFILE_OBJECT = (*(*Fcb).Specific.Dcb).DirectoryFile;
                     DebugTrace(0, Dbg, b"Uninitialize the stream file object\n\0".as_ptr() as *const i8, 0);
                     CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null_mut(), core::ptr::null_mut());
-                    (*Fcb).Specific.Dcb.DirectoryFile = core::ptr::null_mut();
+                    (*(*Fcb).Specific.Dcb).DirectoryFile = core::ptr::null_mut();
                     ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
                 }
                 (*Fcb).OpenCount -= 1;
@@ -696,28 +701,28 @@ pub unsafe extern "C" fn FatCommonClose(
             }
         }
 
-        if ((((*Fcb).NodeTypeCode == FAT_NTC_FCB) && ((*Fcb).OpenCount == 0))
-            || (((*Fcb).NodeTypeCode == FAT_NTC_DCB) &&
-                IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue)) &&
+        if ((((*Fcb).Header.NodeTypeCode == FAT_NTC_FCB) && ((*Fcb).OpenCount == 0))
+            || (((*Fcb).Header.NodeTypeCode == FAT_NTC_DCB) &&
+                IsListEmpty(core::ptr::addr_of!((*(*Fcb).Specific.Dcb).ParentDcbQueue)) &&
                 ((*Fcb).OpenCount == 0) &&
-                ((*Fcb).Specific.Dcb.DirectoryFileOpenCount == 0)))
+                ((*(*Fcb).Specific.Dcb).DirectoryFileOpenCount == 0)))
         {
             ParentDcb = (*Fcb).ParentDcb;
             (*Vcb).VcbState |= VCB_STATE_FLAG_DELETED_FCB;
             FatDeleteFcb(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Fcb));
 
-            while ((*ParentDcb).NodeTypeCode == FAT_NTC_DCB) &&
-                    IsListEmpty(core::ptr::addr_of!((*ParentDcb).Specific.Dcb.ParentDcbQueue)) &&
+            while ((*ParentDcb).Header.NodeTypeCode == FAT_NTC_DCB) &&
+                    IsListEmpty(core::ptr::addr_of!((*(*ParentDcb).Specific.Dcb).ParentDcbQueue)) &&
                     ((*ParentDcb).OpenCount == 0) &&
-                    !((*ParentDcb).Specific.Dcb.DirectoryFile).is_null()
+                    !((*(*ParentDcb).Specific.Dcb).DirectoryFile).is_null()
             {
-                let DirectoryFileObject: PFILE_OBJECT = (*ParentDcb).Specific.Dcb.DirectoryFile;
+                let DirectoryFileObject: PFILE_OBJECT = (*(*ParentDcb).Specific.Dcb).DirectoryFile;
                 DebugTrace(0, Dbg, b"Uninitialize our parent Stream Cache Map\n\0".as_ptr() as *const i8, 0);
                 CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null_mut(), core::ptr::null_mut());
-                (*ParentDcb).Specific.Dcb.DirectoryFile = core::ptr::null_mut();
+                (*(*ParentDcb).Specific.Dcb).DirectoryFile = core::ptr::null_mut();
                 ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
 
-                if (*ParentDcb).Specific.Dcb.DirectoryFileOpenCount == 0 {
+                if (*(*ParentDcb).Specific.Dcb).DirectoryFileOpenCount == 0 {
                     let CurrentDcb: PDCB = ParentDcb;
                     ParentDcb = (*CurrentDcb).ParentDcb;
                     (*Vcb).VcbState |= VCB_STATE_FLAG_DELETED_FCB;
@@ -767,6 +772,7 @@ pub unsafe extern "C" fn FatCommonClose(
     DebugTrace(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
     Status
 }
+
 
 
 // ============================================================================

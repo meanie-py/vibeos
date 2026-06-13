@@ -171,12 +171,13 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
 
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, ctx.__bindgen_anon_1.Status);
+    DebugTrace(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, ctx.Status);
 
     UNREFERENCED_PARAMETER(VolumeDeviceObject);
 
-    ctx.__bindgen_anon_1.Status
+    ctx.Status
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonDirectoryControl(
@@ -198,10 +199,10 @@ pub unsafe extern "C" fn FatCommonDirectoryControl(
 
     match (*IrpSp).MinorFunction {
         IRP_MN_QUERY_DIRECTORY => {
-            Status = FatQueryDirectory(IrpContext, Irp);
+            Status = FatQueryDirectory(IrpContext as PIRP_CONTEXT, Irp);
         }
         IRP_MN_NOTIFY_CHANGE_DIRECTORY => {
-            Status = FatNotifyChangeDirectory(IrpContext, Irp);
+            Status = FatNotifyChangeDirectory(IrpContext as *mut IRP_CONTEXT, Irp);
         }
         _ => {
             DebugTrace(
@@ -210,7 +211,7 @@ pub unsafe extern "C" fn FatCommonDirectoryControl(
                 b"Invalid Directory Control Minor Function %08lx\n\0".as_ptr() as *const i8,
                 (*IrpSp).MinorFunction as u32,
             );
-            FatCompleteRequest(IrpContext, Irp, 0xC0000010_i32); // STATUS_INVALID_DEVICE_REQUEST
+            FatCompleteRequest(IrpContext as PIRP_CONTEXT, Irp, 0xC0000010_i32); // STATUS_INVALID_DEVICE_REQUEST
             Status = 0xC0000010_i32; // STATUS_INVALID_DEVICE_REQUEST
         }
     }
@@ -219,6 +220,7 @@ pub unsafe extern "C" fn FatCommonDirectoryControl(
 
     Status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatQueryDirectory(
     IrpContext: PIRP_CONTEXT,
@@ -800,15 +802,15 @@ pub unsafe extern "C" fn FatGetDirTimes(
     // Start with the Last Write Time.
     //
     (*DirInfo).LastWriteTime = FatFatTimeToNtTime(
-        IrpContext,
+        IrpContext as *mut IRP_CONTEXT,
         (*Dirent).LastWriteTime,
-        0,
+        0u8,
     );
 
     //
     // These fields are only non-zero when in Chicago mode.
     //
-    if FatData.ChicagoMode != 0 {
+    if (FatData.ChicagoMode() as u8) != 0 {
         //
         // Do a quick check here for Creation and LastAccess
         // times that are the same as the LastWriteTime.
@@ -820,21 +822,21 @@ pub unsafe extern "C" fn FatGetDirTimes(
         ) {
             (*DirInfo).CreationTime.QuadPart =
                 (*DirInfo).LastWriteTime.QuadPart
-                    + ((*Dirent).CreationMSec as i64) * 10 * 1000 * 10;
+                    + ((*Dirent).CreationMSec() as i64) * 10 * 1000 * 10;
         } else {
             //
             // Only do the really hard work if this field is non-zero.
             //
             if *((Dirent as *const u16).add(8)) != 0 {
                 (*DirInfo).CreationTime = FatFatTimeToNtTime(
-                    IrpContext,
+                    IrpContext as *mut IRP_CONTEXT,
                     (*Dirent).CreationTime,
-                    (*Dirent).CreationMSec,
+                    (*Dirent).CreationMSec(),
                 );
             } else {
                 ExLocalTimeToSystemTime(
-                    core::ptr::addr_of!(FatJanOne1980),
-                    core::ptr::addr_of!((*DirInfo).CreationTime),
+                    core::ptr::addr_of!(FatJanOne1980) as *mut LARGE_INTEGER,
+                    core::ptr::addr_of!((*DirInfo).CreationTime) as *mut LARGE_INTEGER,
                 );
             }
         }
@@ -842,33 +844,38 @@ pub unsafe extern "C" fn FatGetDirTimes(
         //
         // Do a quick check for LastAccessDate.
         //
-        if (*Dirent).LastAccessDate == (*Dirent).LastWriteTime.Date {
+        if core::mem::transmute::<_, u16>((*Dirent).LastAccessDate)
+            == core::mem::transmute::<_, u16>((*Dirent).LastWriteTime.Date)
+        {
             let write_time = &(*Dirent).LastWriteTime.Time;
 
             (*DirInfo).LastAccessTime.QuadPart =
                 (*DirInfo).LastWriteTime.QuadPart
                     - (UInt32x32To64(
-                        ((write_time.DoubleSeconds as u32) * 2
-                            + (write_time.Minute as u32) * 60
-                            + (write_time.Hour as u32) * 60 * 60),
-                        1000 * 1000 * 10,
+                        ((write_time.DoubleSeconds() as u32) * 2
+                            + (write_time.Minute() as u32) * 60
+                            + (write_time.Hour() as u32) * 60 * 60),
+                        (1000 * 1000 * 10) as u32,
                     )) as i64;
         } else {
             //
             // Only do the really hard work if this field is non-zero.
             //
             if *((Dirent as *const u16).add(9)) != 0 {
-                (*DirInfo).LastAccessTime =
-                    FatFatDateToNtTime(IrpContext, (*Dirent).LastAccessDate);
+                (*DirInfo).LastAccessTime = FatFatDateToNtTime(
+                    IrpContext,
+                    core::mem::transmute((*Dirent).LastAccessDate),
+                );
             } else {
                 ExLocalTimeToSystemTime(
-                    core::ptr::addr_of!(FatJanOne1980),
-                    core::ptr::addr_of!((*DirInfo).LastAccessTime),
+                    core::ptr::addr_of!(FatJanOne1980) as *mut LARGE_INTEGER,
+                    core::ptr::addr_of!((*DirInfo).LastAccessTime) as *mut LARGE_INTEGER,
                 );
             }
         }
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatNotifyChangeDirectory(
     IrpContext: *mut IRP_CONTEXT,

@@ -160,7 +160,7 @@ pub unsafe extern "C" fn Fat8dot3ToString(
                 *(*OutputString).Buffer = 0xe5;
             }
 
-            let chicago = (*core::ptr::addr_of!(FatData)).ChicagoMode;
+            let chicago = (*core::ptr::addr_of!(FatData)).ChicagoMode();
             if chicago != 0 && RestoreCase != 0 && ((*Dirent).NtByte & FAT_DIRENT_NT_BYTE_8_LOWER_CASE) != 0 {
                 StringIndex = 0;
                 while StringIndex < BaseLength {
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn Fat8dot3ToString(
 
             (*OutputString).Length = (BaseLength + ExtensionLength) as u16;
 
-            let chicago = (*core::ptr::addr_of!(FatData)).ChicagoMode;
+            let chicago = (*core::ptr::addr_of!(FatData)).ChicagoMode();
             if chicago != 0 && RestoreCase != 0 && ((*Dirent).NtByte & FAT_DIRENT_NT_BYTE_3_LOWER_CASE) != 0 {
                 StringIndex = BaseLength;
                 while StringIndex < (*OutputString).Length as u32 {
@@ -226,6 +226,7 @@ pub unsafe extern "C" fn Fat8dot3ToString(
     }
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -329,7 +330,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
     // PAGED_CODE();  (no-op)
 
     if (*Fcb).FullFileName.Buffer.is_null() {
-        let mut Lfn: ntkrnl_sys::base::_UNICODE_STRING;
+        let mut Lfn: _UNICODE_STRING;
         let mut TmpFcb = Fcb;
         let mut StopFcb: PFCB;
         let mut TmpBuffer: *mut u16;
@@ -349,7 +350,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
         {
             // ---- try block ----
             // First pass: accumulate PathLength, possibly break
-            while TmpFcb != (*Fcb).Vcb.RootDcb {
+            while TmpFcb != (*(*Fcb).Vcb).RootDcb {
                 if (TmpFcb != Fcb) && !(*TmpFcb).FullFileName.Buffer.is_null() {
                     PathLength += (*TmpFcb).FullFileName.Length as u32;
 
@@ -394,7 +395,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
                 FatGetUnicodeNameFromFcb(
                     IrpContext,
                     TmpFcb,
-                    &mut Lfn as *mut ntkrnl_sys::base::_UNICODE_STRING,
+                    &mut Lfn,
                 );
 
                 TmpBuffer = TmpBuffer.offset(
@@ -427,6 +428,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
         ExFreePool(Lfn.Buffer as *mut c_void);
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatUnicodeToUpcaseOem(IrpContext: *mut IRP_CONTEXT, OemString: *mut OEM_STRING, UnicodeString: *mut _UNICODE_STRING) {
     // PAGED_CODE();
@@ -450,9 +452,9 @@ pub unsafe extern "C" fn FatSelectNames(
     IrpContext: *mut core::ffi::c_void,
     Parent: *mut core::ffi::c_void,
     OemName: *mut ntkrnl_sys::ddk::OEM_STRING,
-    UnicodeName: *mut ntkrnl_sys::base::_UNICODE_STRING,
+    UnicodeName: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
     ShortName: *mut ntkrnl_sys::ddk::OEM_STRING,
-    SuggestedShortName: *mut ntkrnl_sys::base::_UNICODE_STRING,
+    SuggestedShortName: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
     AllLowerComponent: *mut u8,
     AllLowerExtension: *mut u8,
     CreateLfn: *mut u8,
@@ -461,17 +463,24 @@ pub unsafe extern "C" fn FatSelectNames(
     let mut GenerateShortName: u8;
 
     if (*OemName).Length == 0
-        || FatIsNameShortOemValid(IrpContext, *OemName, 0, 0, 0) == 0
-        || FatSpaceInName(IrpContext, UnicodeName) != 0
+        || FatIsNameShortOemValid(
+            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+            *OemName,
+            0u8,
+            0u8,
+            0u8,
+        ) == 0
+        || FatSpaceInName(
+            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+            UnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+        ) != 0
     {
         let mut ShortNameBuffer: [u16; 12] = [0u16; 12];
-        let mut ShortUnicodeName: ntkrnl_sys::base::_UNICODE_STRING =
-            core::mem::zeroed();
-        let mut Context: ntkrnl_sys::ddk::GENERATE_NAME_CONTEXT =
-            core::mem::zeroed();
+        let mut ShortUnicodeName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
+        let mut Context: ntkrnl_sys::ddk::GENERATE_NAME_CONTEXT = core::mem::zeroed();
         let mut TrySuggestedShortName: u8;
-        let mut Dirent: *mut core::ffi::c_void = core::ptr::null_mut();
-        let mut Bcb: *mut core::ffi::c_void = core::ptr::null_mut();
+        let mut Dirent: *mut ntkrnl_sys::ddk::DIRENT = core::ptr::null_mut();
+        let mut Bcb: *mut ntkrnl_sys::ddk::BCB = core::ptr::null_mut();
         let mut ByteOffset: u32 = 0;
         let mut Status: i32;
 
@@ -480,8 +489,7 @@ pub unsafe extern "C" fn FatSelectNames(
         TrySuggestedShortName = if SuggestedShortName.is_null() { 0 } else { 1 };
 
         ShortUnicodeName.Length = 0;
-        ShortUnicodeName.MaximumLength =
-            (12 * core::mem::size_of::<u16>()) as u16;
+        ShortUnicodeName.MaximumLength = (12 * core::mem::size_of::<u16>()) as u16;
         ShortUnicodeName.Buffer = ShortNameBuffer.as_mut_ptr();
 
         ntkrnl_sys::rtl::RtlZeroMemory(
@@ -492,18 +500,20 @@ pub unsafe extern "C" fn FatSelectNames(
         // _SEH2_TRY
         {
             loop {
-                (FatUnpinBcb).cast()(IrpContext, Bcb);
+                FatUnpinBcb(
+                    IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+                    Bcb as *mut ntkrnl_sys::ddk::BCB,
+                );
 
                 if TrySuggestedShortName != 0 {
                     ShortUnicodeName.Length = (*SuggestedShortName).Length;
-                    ShortUnicodeName.MaximumLength =
-                        (*SuggestedShortName).MaximumLength;
+                    ShortUnicodeName.MaximumLength = (*SuggestedShortName).MaximumLength;
                     ShortUnicodeName.Buffer = (*SuggestedShortName).Buffer;
                     TrySuggestedShortName = 0;
                 } else {
                     ntkrnl_sys::ddk::RtlGenerate8dot3Name(
-                        UnicodeName,
-                        1,
+                        UnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+                        1u8,
                         &mut Context,
                         &mut ShortUnicodeName,
                     );
@@ -511,19 +521,19 @@ pub unsafe extern "C" fn FatSelectNames(
 
                 Status = ntkrnl_sys::ddk::RtlUnicodeStringToCountedOemString(
                     ShortName,
-                    &ShortUnicodeName,
-                    0,
+                    &ShortUnicodeName as *const ntkrnl_sys::ddk::_UNICODE_STRING,
+                    0u8,
                 );
 
                 NT_ASSERT(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
 
                 FatLocateSimpleOemDirent(
-                    IrpContext,
-                    Parent,
+                    IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+                    Parent as *mut ntkrnl_sys::ddk::DCB,
                     ShortName,
                     &mut Dirent,
                     &mut Bcb,
-                    &mut ByteOffset as *mut u32 as *mut core::ffi::c_void,
+                    &mut ByteOffset,
                 );
 
                 if Bcb.is_null() {
@@ -533,7 +543,10 @@ pub unsafe extern "C" fn FatSelectNames(
             }
         }
         // _SEH2_FINALLY
-        (FatUnpinBcb).cast()(IrpContext, Bcb);
+        FatUnpinBcb(
+            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+            Bcb as *mut ntkrnl_sys::ddk::BCB,
+        );
         // _SEH2_END
     } else {
         if ShortName != OemName {
@@ -557,7 +570,7 @@ pub unsafe extern "C" fn FatSelectNames(
         *AllLowerExtension = 0;
     } else {
         FatEvaluateNameCase(
-            (IrpContext).cast(),
+            IrpContext as *mut ntkrnl_sys::ddk::IRP_CONTEXT,
             UnicodeName,
             AllLowerComponent,
             AllLowerExtension,
@@ -565,6 +578,7 @@ pub unsafe extern "C" fn FatSelectNames(
         );
     }
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatEvaluateNameCase(

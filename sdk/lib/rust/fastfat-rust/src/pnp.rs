@@ -183,7 +183,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
         if NT_SUCCESS(Status) {
             // With the volume held locked, note that we must finalize as much
             // as possible right now.
-            FatFlushAndCleanVolume(IrpContext, Irp, Vcb, Flush);
+            FatFlushAndCleanVolume(IrpContext, Irp, Vcb, 1i32);
 
             // We need to pass this down before starting the dismount, which
             // could disconnect us immediately from the stack.
@@ -191,14 +191,14 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             IoCopyCurrentIrpStackLocationToNext(Irp);
 
             // Set up the completion routine
-            KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, (0i32) as u8); // FALSE
+            KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent as u32, (0i32) as u8); // FALSE
             IoSetCompletionRoutine(
                 Irp,
-                Some(FatPnpCompletionRoutine),
+                FatPnpCompletionRoutine,
                 &mut Event as *mut KEVENT as *mut core::ffi::c_void,
-                1i32, // TRUE
-                1i32, // TRUE
-                1i32, // TRUE
+                1u8, // TRUE
+                1u8, // TRUE
+                1u8, // TRUE
             );
 
             // Send the request and wait.
@@ -207,9 +207,9 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             if Status == STATUS_PENDING {
                 KeWaitForSingleObject(
                     &mut Event,
-                    _KWAIT_REASON_Executive,
-                    0i32,
-                    0i32, // FALSE
+                    _KWAIT_REASON_Executive as u32,
+                    0u32,
+                    0u8, // FALSE
                     core::ptr::null_mut(),
                 );
                 Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
@@ -218,13 +218,14 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             // Now if no one below us failed already, initiate the dismount
             if NT_SUCCESS(Status) {
                 VcbDeleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
-                NT_ASSERT(VcbDeleted != 0 || (*Vcb).VcbCondition == VcbBad);
+                NT_ASSERT(VcbDeleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32);
             }
         }
     }
 
     return Status;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPnpRemove(
     IrpContext: *mut IRP_CONTEXT,
@@ -310,7 +311,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0); // FALSE = 0
     IoSetCompletionRoutine(
         Irp,
-        Some(FatPnpCompletionRoutine),
+        FatPnpCompletionRoutine,
         &mut Event as *mut KEVENT as *mut c_void,
         1, // InvokeOnSuccess = TRUE
         1, // InvokeOnError = TRUE
@@ -324,7 +325,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
         KeWaitForSingleObject(
             &mut Event,
             _KWAIT_REASON_Executive,
-            0i32,
+            0u32,
             0, // FALSE
             core::ptr::null_mut(),
         );
@@ -338,7 +339,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
     //  Now make our dismount happen.  This may not vaporize the
     //  Vcb, of course, since there could be any number of handles
     //  outstanding since this is an out of band notification.
-    VcbDeleted = FatCheckForDismount(IrpContext, Vcb, 1); // TRUE = 1
+    VcbDeleted = FatCheckForDismount(IrpContext, Vcb, 1 as BOOLEAN); // TRUE = 1
 
     // } _SEH2_FINALLY {
     //  Release the Vcb if it could still remain.
@@ -353,6 +354,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
 
     Status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPnpCancelRemove(
     IrpContext: PIRP_CONTEXT,

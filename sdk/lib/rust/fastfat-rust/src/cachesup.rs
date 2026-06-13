@@ -194,18 +194,18 @@ pub unsafe extern "C" fn FatReadVolumeFile(
 
         let condition = (StartingVbo == 0) ||
             (StartingVbo.wrapping_add(ByteCount) <=
-                (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const BPB) + PAGE_SIZE as u32));
+                (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const _) + PAGE_SIZE as u32));
         NT_ASSERT(condition as i32);
 
-        DebugTrace(1, Dbg, b"FatReadVolumeFile\n\0".as_ptr() as *const i8, (0u32) as usize);
-        DebugTrace(0, Dbg, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as *const core::ffi::c_void);
-        DebugTrace(0, Dbg, b"StartingVbo = %08lx\n\0".as_ptr() as *const i8, (StartingVbo as u64) as usize);
-        DebugTrace(0, Dbg, b"ByteCount   = %08lx\n\0".as_ptr() as *const i8, (ByteCount as u64) as usize);
+        DebugTrace(1, Dbg as u32, b"FatReadVolumeFile\n\0".as_ptr() as *const i8, (0u32) as usize);
+        DebugTrace(0, Dbg as u32, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as *const core::ffi::c_void);
+        DebugTrace(0, Dbg as u32, b"StartingVbo = %08lx\n\0".as_ptr() as *const i8, (StartingVbo as u64) as usize);
+        DebugTrace(0, Dbg as u32, b"ByteCount   = %08lx\n\0".as_ptr() as *const i8, (ByteCount as u64) as usize);
 
         let mut Vbo: LARGE_INTEGER = core::mem::zeroed();
         Vbo.QuadPart = StartingVbo as i64;
 
-        if (CcMapData).cast()(
+        if CcMapData(
             (*Vcb).VirtualVolumeFile,
             &mut Vbo,
             ByteCount,
@@ -214,18 +214,19 @@ pub unsafe extern "C" fn FatReadVolumeFile(
             Buffer,
         ) == 0
         {
-            let flag_on_result = FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
+            let flag_on_result = FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT as u32);
             NT_ASSERT((flag_on_result == 0) as i32);
 
-            FatRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+            FatRaiseStatus(IrpContext, STATUS_CANT_WAIT as i32);
         }
 
         (*IrpContext).PinCount += 1;
         DbgDoit(((*IrpContext).PinCount) as u32);
 
-        DebugTrace(-1, Dbg, b"FatReadVolumeFile -> VOID, *BCB = %p\n\0".as_ptr() as *const i8, *Bcb as *const core::ffi::c_void);
+        DebugTrace(-1, Dbg as u32, b"FatReadVolumeFile -> VOID, *BCB = %p\n\0".as_ptr() as *const i8, *Bcb as *const core::ffi::c_void);
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPrepareWriteVolumeFile(
     IrpContext: *mut IRP_CONTEXT,
@@ -298,7 +299,7 @@ pub unsafe extern "C" fn FatReadDirectoryFile(
     Dcb: *mut DCB,
     StartingVbo: VBO,
     ByteCount: ULONG,
-    Pin: i32, // BOOLEAN
+    Pin: i32,
     Bcb: *mut *mut BCB,
     Buffer: *mut *mut core::ffi::c_void,
     Status: *mut NTSTATUS,
@@ -349,8 +350,8 @@ pub unsafe extern "C" fn FatReadDirectoryFile(
     Vbo.QuadPart = StartingVbo as i64;
 
     if if Pin != 0 {
-        (ntkrnl_sys::ddk::CcPinRead).cast()(
-            (*Dcb).Specific.Dcb.DirectoryFile,
+        ntkrnl_sys::ddk::CcPinRead(
+            (*(*Dcb).Specific.Dcb).DirectoryFile,
             &raw const Vbo,
             ByteCount,
             BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT),
@@ -358,8 +359,8 @@ pub unsafe extern "C" fn FatReadDirectoryFile(
             Buffer,
         )
     } else {
-        (ntkrnl_sys::ddk::CcMapData).cast()(
-            (*Dcb).Specific.Dcb.DirectoryFile,
+        ntkrnl_sys::ddk::CcMapData(
+            (*(*Dcb).Specific.Dcb).DirectoryFile,
             &raw const Vbo,
             ByteCount,
             BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT),
@@ -387,6 +388,7 @@ pub unsafe extern "C" fn FatReadDirectoryFile(
 
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
     IrpContext: *mut PIRP_CONTEXT,
@@ -434,7 +436,7 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
     *Bcb = core::ptr::null_mut();
     *Buffer = core::ptr::null_mut();
 
-    (FatOpenDirectoryFile).cast()(IrpContext, Dcb);
+    FatOpenDirectoryFile(*IrpContext, *Dcb);
 
     let mut vbo: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
     vbo.QuadPart = StartingVbo as i64;
@@ -447,10 +449,10 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
     let mut byte_count: u32 = ByteCount;
     let mut zero_flag: u8 = Zero;
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if (StartingVbo as i64 + byte_count as i64) > (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart as i64 {
-            if NodeType((Dcb).cast()) == FAT_NTC_ROOT_DCB && !FatIsFat32((*Dcb).Vcb) {
-                (FatRaiseStatus).cast()(IrpContext, STATUS_DISK_FULL);
+    let result = core::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+        if (StartingVbo as i64 + byte_count as i64) > (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart as i64 {
+            if NodeType(*Dcb) == FAT_NTC_ROOT_DCB && !FatIsFat32((**Dcb).Vcb) {
+                FatRaiseStatus(*IrpContext, STATUS_DISK_FULL);
             }
 
             DebugTrace(
@@ -460,29 +462,29 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
                 0,
             );
 
-            initial_allocation = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
+            initial_allocation = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
 
             FatAddFileAllocation(
-                IrpContext,
-                Dcb,
-                (*Dcb).Specific.Dcb.DirectoryFile,
+                *IrpContext,
+                *Dcb,
+                (**Dcb).Specific.Dcb.DirectoryFile,
                 (StartingVbo + byte_count),
             );
 
             unwind_we_allocated_disk_space = 1;
 
-            (*Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
+            (**Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
 
             CcSetFileSizes(
-                (*Dcb).Specific.Dcb.DirectoryFile,
-                &(*Dcb).Header.AllocationSize as *const _ as *const PCC_FILE_SIZES,
+                (**Dcb).Specific.Dcb.DirectoryFile,
+                &(**Dcb).Header.AllocationSize as *const _ as *const PCC_FILE_SIZES,
             );
 
-            (FatCheckFreeDirentBitmap).cast()(IrpContext, Dcb);
+            FatCheckFreeDirentBitmap(*IrpContext, *Dcb);
 
             zero_flag = 1;
             vbo.QuadPart = initial_allocation as i64;
-            byte_count = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - initial_allocation;
+            byte_count = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - initial_allocation;
         }
 
         while byte_count > 0 {
@@ -504,14 +506,14 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
             }
 
             if !CcPinRead(
-                (*Dcb).Specific.Dcb.DirectoryFile,
+                (**Dcb).Specific.Dcb.DirectoryFile,
                 &mut vbo,
                 bytes_to_pin,
-                (BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT)) as u32,
+                (BooleanFlagOn((**IrpContext).Flags as u8, IRP_CONTEXT_FLAG_WAIT as u8)) as u32,
                 &mut local_bcb,
                 &mut local_buffer,
             ) {
-                FatRaiseStatus((IrpContext).cast(), STATUS_CANT_WAIT);
+                FatRaiseStatus(*IrpContext, STATUS_CANT_WAIT);
             }
 
             if (*Buffer).is_null() {
@@ -519,8 +521,8 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
                 *Bcb = local_bcb;
             }
 
-            (*IrpContext).PinCount += 1;
-            DbgDoit((*IrpContext).PinCount);
+            (**IrpContext).PinCount += 1;
+            DbgDoit((**IrpContext).PinCount as u32);
 
             if zero_flag != 0 {
                 core::ptr::write_bytes(local_buffer as *mut u8, 0, bytes_to_pin as usize);
@@ -532,30 +534,30 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
 
             if *Bcb != local_bcb {
                 FatRepinBcb(IrpContext, local_bcb);
-                FatUnpinBcb(IrpContext, local_bcb);
+                FatUnpinBcb(*IrpContext, local_bcb);
             }
         }
 
-        (FatSetDirtyBcb).cast()(IrpContext, *Bcb, (*Dcb).Vcb, Reversible);
+        FatSetDirtyBcb(*IrpContext, *Bcb, (**Dcb).Vcb, Reversible);
         *Status = (STATUS_SUCCESS) as i32;
     }));
 
-    DebugUnwind(b"FatPrepareWriteDirectoryFile\0".as_ptr() as *const i8);
+    DebugUnwind(b"FatPrepareWriteDirectoryFile\0".as_ptr() as usize);
 
     let abnormal = result.is_err();
 
     if abnormal {
         if *Bcb != local_bcb {
-            FatUnpinBcb(IrpContext, local_bcb);
+            FatUnpinBcb(*IrpContext, local_bcb);
         }
-        FatUnpinBcb(IrpContext, *Bcb);
+        FatUnpinBcb(*IrpContext, *Bcb);
 
         if unwind_we_allocated_disk_space != 0 {
-            FatTruncateFileAllocation(IrpContext, Dcb, initial_allocation);
-            (*Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
+            FatTruncateFileAllocation(*IrpContext, *Dcb, initial_allocation as i32);
+            (**Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
             CcSetFileSizes(
-                (*Dcb).Specific.Dcb.DirectoryFile,
-                &(*Dcb).Header.AllocationSize as *const _ as *const PCC_FILE_SIZES,
+                (**Dcb).Specific.Dcb.DirectoryFile,
+                &(**Dcb).Header.AllocationSize as *const _ as *const PCC_FILE_SIZES,
             );
         }
     }
@@ -567,12 +569,13 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
         *Bcb as usize,
     );
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
     irp_context: *mut PIRP_CONTEXT,
     dcb: *mut PDCB,
 ) -> i32 {
-    let irp = (*irp_context).OriginatingIrp;
+    let irp = (**irp_context).OriginatingIrp;
     let stack = IoGetCurrentIrpStackLocation(irp);
     let mut vcb: *mut VCB = core::ptr::null_mut();
     let mut fcb: *mut FCB = core::ptr::null_mut();
@@ -592,10 +595,10 @@ pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // With the Vcb held, the close path is blocked out.
     if ExIsResourceAcquiredSharedLite(
-        core::ptr::addr_of!((*(*dcb).Vcb).Resource)
+        core::ptr::addr_of!((*(**dcb).Vcb).Resource)
     ) != 0
         || ExIsResourceAcquiredExclusiveLite(
-            core::ptr::addr_of!((*(*dcb).Vcb).Resource)
+            core::ptr::addr_of!((*(**dcb).Vcb).Resource)
         ) != 0
     {
         return 1;
@@ -603,7 +606,7 @@ pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // Accept this assertion at face value.  It comes from GetDirentForFcbOrDcb,
     // and is reliable.
-    if FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_PARENT_BY_CHILD) != 0 {
+    if FlagOn((**irp_context).Flags as u8, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
         return 1;
     }
 
@@ -630,7 +633,7 @@ pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
         FatDecodeFileObject(to_check[index as usize], &mut vcb, &mut fcb, &mut ccb);
 
         while !fcb.is_null() {
-            if fcb == (dcb).cast() {
+            if fcb == (*dcb).cast() {
                 return 1;
             }
             fcb = (*fcb).ParentDcb;
@@ -642,6 +645,7 @@ pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
     return FatDisableParentCheck;
 }
 
+
 #[no_mangle]
 pub unsafe extern "C" fn FatOpenDirectoryFile(
     IrpContext: *mut IRP_CONTEXT,
@@ -652,7 +656,7 @@ pub unsafe extern "C" fn FatOpenDirectoryFile(
     DebugTrace(1, Dbg, b"FatOpenDirectoryFile\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"Dcb = %p\0".as_ptr() as *const i8, Dcb as usize);
 
-    NT_ASSERT((FatIsCurrentOperationSynchedForDcbTeardown).cast()(IrpContext, Dcb));
+    NT_ASSERT(FatIsCurrentOperationSynchedForDcbTeardown(IrpContext, Dcb) as i32);
 
     if (*Dcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
         FatLookupFileAllocationSize(IrpContext, Dcb);
@@ -661,48 +665,48 @@ pub unsafe extern "C" fn FatOpenDirectoryFile(
 
     FatCheckFreeDirentBitmap(IrpContext, Dcb);
 
-    if (*Dcb).Specific.Dcb.DirectoryFile.is_null() {
+    if (*Dcb).Specific.Dcb.as_ref().DirectoryFile.is_null() {
         let mut DirectoryFileObject: *mut FILE_OBJECT = core::ptr::null_mut();
         FatAcquireDirectoryFileMutex((*Dcb).Vcb);
 
         // _SEH2_TRY expansion: try block with finally using trailing code
         {
-            if (*Dcb).Specific.Dcb.DirectoryFile.is_null() {
-                let RealDevice: *mut DEVICE_OBJECT = (*Dcb).Vcb.CurrentDevice;
+            if (*Dcb).Specific.Dcb.as_ref().DirectoryFile.is_null() {
+                let RealDevice: *mut DEVICE_OBJECT = (*(*Dcb).Vcb).CurrentDevice;
 
                 DirectoryFileObject = IoCreateStreamFileObject(core::ptr::null_mut(), RealDevice);
                 FatPreallocateCloseContext((*Dcb).Vcb);
 
                 FatSetFileObject(
                     DirectoryFileObject,
-                    ntkrnl_sys::ddk::DirectoryFile,
+                    ntkrnl_sys::ddk::DIRECTORY_FILE,
                     Dcb,
                     core::ptr::null_mut(),
                 );
 
                 // InterlockedIncrement on InternalOpenCount
                 InterlockedIncrement(
-                    &raw mut (*Dcb).Vcb.InternalOpenCount as *mut i32,
+                    &raw mut (*(*Dcb).Vcb).InternalOpenCount as *mut i32,
                 );
 
                 if NodeType(Dcb) == FAT_NTC_ROOT_DCB {
                     InterlockedIncrement(
-                        &raw mut (*Dcb).Vcb.ResidualOpenCount as *mut i32,
+                        &raw mut (*(*Dcb).Vcb).ResidualOpenCount as *mut i32,
                     );
                 }
 
                 (*DirectoryFileObject).SectionObjectPointer =
-                    &raw mut (*Dcb).NonPaged.SectionObjectPointers as *mut _;
+                    &raw mut (*(*Dcb).NonPaged).SectionObjectPointers as *mut _;
 
                 (*DirectoryFileObject).ReadAccess = 1;
                 (*DirectoryFileObject).WriteAccess = 1;
                 (*DirectoryFileObject).DeleteAccess = 1;
 
                 InterlockedIncrement(
-                    &raw mut (*Dcb).Specific.Dcb.DirectoryFileOpenCount as *mut i32,
+                    &raw mut (*Dcb).Specific.Dcb.as_mut().DirectoryFileOpenCount as *mut i32,
                 );
 
-                (*Dcb).Specific.Dcb.DirectoryFile = DirectoryFileObject;
+                (*Dcb).Specific.Dcb.as_mut().DirectoryFile = DirectoryFileObject;
                 // Success - clear the pointer so finally doesn't dereference
                 DirectoryFileObject = core::ptr::null_mut();
             }
@@ -714,21 +718,22 @@ pub unsafe extern "C" fn FatOpenDirectoryFile(
         }
     }
 
-    if (*(*Dcb).Specific.Dcb.DirectoryFile).PrivateCacheMap.is_null() {
+    if (*(*Dcb).Specific.Dcb.as_ref().DirectoryFile).PrivateCacheMap.is_null() {
         (*Dcb).Header.ValidDataLength = FatMaxLarge;
         (*Dcb).ValidDataToDisk = ntkrnl_sys::constants::MAXULONG;
 
         FatInitializeCacheMap(
-            (*Dcb).Specific.Dcb.DirectoryFile,
+            (*Dcb).Specific.Dcb.as_ref().DirectoryFile,
             &raw const (*Dcb).Header.AllocationSize as *const CC_FILE_SIZES,
             1,
-            &raw const FatData.CacheManagerNoOpCallbacks as *const CACHE_MANAGER_CALLBACKS,
-            Dcb as *mut core::ffi::c_void,
+            &raw const FatData.CacheManagerNoOpCallbacks as *const core::ffi::c_void,
+            (*Dcb).Vcb,
         );
     }
 
     DebugTrace(-1, Dbg, b"FatOpenDirectoryFile -> VOID\0".as_ptr() as *const i8, 0);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatOpenEaFile(
     IrpContext: *mut IRP_CONTEXT,
@@ -750,7 +755,7 @@ pub unsafe extern "C" fn FatOpenEaFile(
     {
         FatPreallocateCloseContext((*IrpContext).Vcb);
 
-        FatSetFileObject(EaFileObject, EaFile, EaFcb, core::ptr::null_mut());
+        FatSetFileObject(EaFileObject, 0x100u32, EaFcb, core::ptr::null_mut());
 
         InterlockedIncrement(
             core::ptr::addr_of_mut!((*(*EaFcb).Vcb).InternalOpenCount) as *mut i32,
@@ -771,8 +776,8 @@ pub unsafe extern "C" fn FatOpenEaFile(
             EaFileObject,
             core::ptr::addr_of!((*EaFcb).Header.AllocationSize) as *const CC_FILE_SIZES,
             1,
-            core::ptr::addr_of!(FatData.CacheManagerCallbacks),
-            EaFcb as *mut core::ffi::c_void,
+            core::ptr::addr_of!(FatData.CacheManagerNoOpCallbacks) as *const core::ffi::c_void,
+            (*EaFcb).Vcb,
         );
 
         CcSetAdditionalCacheAttributes(EaFileObject, 1, 1);
@@ -789,13 +794,14 @@ pub unsafe extern "C" fn FatOpenEaFile(
         -1,
         0,
         b"FatOpenEaFile -> %p\n\0".as_ptr() as *const i8,
-        EaFileObject,
+        EaFileObject as *mut core::ffi::c_void,
     );
 
     let _ = IrpContext;
 
     EaFileObject
 }
+
 
 pub unsafe extern "system" fn FatCloseEaFile(
     IrpContext: *mut IRP_CONTEXT,
@@ -939,10 +945,9 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
     DebugTrace(1, Dbg, b"FatUnpinRepinnedBcbs\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"IrpContext = %p\n\0".as_ptr() as *const i8, (irp_context as i32) as usize);
 
-    let mut raise_iosb: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        Status: STATUS_SUCCESS,
-        Information: 0,
-    };
+    let mut raise_iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+    raise_iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    raise_iosb.Information = 0;
 
     let repinned: *mut REPINNED_BCBS = core::ptr::addr_of_mut!((*irp_context).Repinned);
 
@@ -992,7 +997,7 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
                     file_object = CcGetFileObjectFromBcb(bcb);
                 }
 
-                CcUnpinRepinnedBcb(bcb, (write_through_to_disk) as u8, &mut iosb);
+                CcUnpinRepinnedBcb(bcb, write_through_to_disk, &mut iosb);
 
                 if !NT_SUCCESS(iosb.__bindgen_anon_1.Status) {
                     if raise_iosb.__bindgen_anon_1.Status == (STATUS_SUCCESS) as i32 {
@@ -1006,7 +1011,7 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
                         && !((*irp_context).MajorFunction == IRP_MJ_CREATE
                             && iosb.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED
                             && !fcb_or_dcb.is_null()
-                            && (NodeType((fcb_or_dcb as *mut core::ffi::c_void).cast()) == FAT_NTC_FCB))
+                            && (NodeType(fcb_or_dcb) == FAT_NTC_FCB))
                     {
                         let mut k: usize = i + 1;
                         let mut repinned_to_purge: *mut REPINNED_BCBS = repinned_ptr;
@@ -1030,8 +1035,8 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
                         CcPurgeCacheSection(
                             (*file_object).SectionObjectPointer,
                             core::ptr::null(),
-                            0,
-                            0,
+                            0u32,
+                            0u8,
                         );
                         force_verify = 1;
                     }
@@ -1074,6 +1079,7 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
 
     DebugTrace(-1, Dbg, b"FatUnpinRepinnedBcbs -> VOID\n\0".as_ptr() as *const i8, 0);
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatZeroData(
@@ -1151,13 +1157,13 @@ pub unsafe extern "C" fn FatCompleteMdl(
         },
         IRP_MJ_WRITE => {
             let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-            NT_ASSERT(FlagOn((*IrpContext).Flags, 0 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
+            NT_ASSERT(FlagOn((*IrpContext).Flags as u8, 0 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
             CcMdlWriteComplete(
                 FileObject,
                 core::ptr::addr_of_mut!((*IrpSp).Parameters.Write.ByteOffset),
                 (*Irp).MdlAddress,
             );
-            (*Irp).IoStatus.__bindgen_anon_1.Status = (STATUS_SUCCESS) as i32;
+            (*Irp).IoStatus.Status = (STATUS_SUCCESS) as i32;
         },
         _ => {
             DebugTrace(0 /* DEBUG_TRACE_ERROR */, 0, b"Illegal Mdl Complete.\n\0".as_ptr() as *const i8, 0);
@@ -1176,10 +1182,11 @@ pub unsafe extern "C" fn FatCompleteMdl(
 
     return (STATUS_SUCCESS) as i32;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatSyncUninitializeCacheMap(
-    IrpContext: *mut IrpContext,
-    FileObject: *mut FileObject,
+    IrpContext: PIRP_CONTEXT,
+    FileObject: PFILE_OBJECT,
 ) {
     // UNREFERENCED_PARAMETER
     _ = IrpContext;
@@ -1193,25 +1200,26 @@ pub unsafe extern "C" fn FatSyncUninitializeCacheMap(
     KeInitializeEvent(
         core::ptr::addr_of_mut!(uninitialize_complete_event.Event),
         _EVENT_TYPE_SynchronizationEvent,
-        0, // FALSE
+        0u8, // FALSE
     );
 
     CcUninitializeCacheMap(
         FileObject,
         &FatLargeZero as *const LARGE_INTEGER,
-        &mut uninitialize_complete_event as *mut CACHE_UNINITIALIZE_EVENT,
+        &mut uninitialize_complete_event as *mut CACHE_UNINITIALIZE_EVENT as *mut core::ffi::c_void,
     );
 
     wait_status = KeWaitForSingleObject(
-        (&mut uninitialize_complete_event.Event as *mut _).cast::<core::ffi::c_void>(),
+        &mut uninitialize_complete_event.Event as *mut KEVENT,
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
-        0, // FALSE
+        0u32,
+        0u8, // FALSE
         core::ptr::null_mut(), // NULL
     );
 
     NT_ASSERT((wait_status == (STATUS_SUCCESS) as i32) as i32);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPinMappedData(
     IrpContext: PIRP_CONTEXT,
@@ -1245,10 +1253,10 @@ pub unsafe extern "C" fn FatPinMappedData(
     );
 
     if CcPinMappedData(
-        (*Dcb).Specific.Dcb.DirectoryFile,
+        *(*Dcb).Specific.Dcb.as_ref().DirectoryFile as *mut c_void,
         &mut Vbo,
         ByteCount,
-        (BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT)) as u32,
+        BooleanFlagOn((*IrpContext).Flags as u8, IRP_CONTEXT_FLAG_WAIT as u8),
         Bcb,
     ) == 0
     {
@@ -1262,6 +1270,7 @@ pub unsafe extern "C" fn FatPinMappedData(
         *Bcb,
     );
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPrefetchPages(
     IrpContext: *mut IRP_CONTEXT,
@@ -1270,7 +1279,7 @@ pub unsafe extern "C" fn FatPrefetchPages(
     PageCount: u32,
 ) -> NTSTATUS {
     let mut read_list: *mut READ_LIST = core::ptr::null_mut();
-    let mut priority_information: IO_PRIORITY_INFO = core::mem::zeroed();
+    let mut priority_information = core::mem::zeroed();
     let mut prefetch_flags: u32;
     let mut page_no: u32;
 
@@ -1298,7 +1307,7 @@ pub unsafe extern "C" fn FatPrefetchPages(
             &mut priority_information,
         );
 
-        if !NT_SUCCESS(status_local) {
+        if NT_SUCCESS(status_local) == 0 {
             break status_local;
         }
 
@@ -1325,16 +1334,16 @@ pub unsafe extern "C" fn FatPrefetchPages(
         // PrefetchFlags.Flags.PriorityProtection = 1;
         prefetch_flags |= 1u32 << 6;
 
-        (*read_list).List[0].Alignment = ((StartingPage * (PAGE_SIZE as u6) as u644) as u32) as u64;
-        (*read_list).List[0].Alignment |= (prefetch_flags) as u64;
+        (*read_list).List[0].Alignment = (StartingPage as u64) * (PAGE_SIZE as u64);
+        (*read_list).List[0].Alignment |= (prefetch_flags as u64);
 
         page_no = 1;
         while page_no < PageCount {
-            (*read_list).List[page_no as usize].Alignment = (*read_list).List[(page_no - 1) as usize].Alignment + (PAGE_SIZE) as u64;
+            (*read_list).List[page_no as usize].Alignment = (*read_list).List[(page_no - 1) as usize].Alignment + (PAGE_SIZE as u64);
             page_no += 1;
         }
 
-        break MmPrefetchPages(1, &read_list);
+        break MmPrefetchPages(1u32, &read_list);
     };
 
     // Cleanup
@@ -1344,6 +1353,7 @@ pub unsafe extern "C" fn FatPrefetchPages(
 
     status
 }
+
 
 
 // ============================================================================

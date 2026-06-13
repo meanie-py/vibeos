@@ -134,7 +134,7 @@ pub unsafe extern "C" fn FatGetEaLength(
     );
 
     // If this is Fat32 volume, or handle is 0 then the Ea length is 0.
-    if FatIsFat32(Vcb) != 0 || (*Dirent).ExtendedAttributes as u16 == 0 {
+    if FatIsFat32(Vcb as *mut VCB) != 0 || (*Dirent).__bindgen_anon_1.ExtendedAttributes as u16 == 0 {
         *EaLength = 0;
         DebugTrace(
             -1,
@@ -161,7 +161,7 @@ pub unsafe extern "C" fn FatGetEaLength(
             IrpContext,
             Vcb,
             &raw mut EaDirent,
-            (&raw mut EaBcb as *mut *mut c_void).cast(),
+            (&raw mut EaBcb).cast::<*mut BCB>(),
             0, // CreateFile
             0, // ExclusiveFcb
         );
@@ -185,8 +185,8 @@ pub unsafe extern "C" fn FatGetEaLength(
         FatReadEaSet(
             IrpContext,
             Vcb,
-            (*Dirent).ExtendedAttributes as u16,
-            &raw const ThisFilename,
+            (*Dirent).__bindgen_anon_1.ExtendedAttributes as u16,
+            &raw mut ThisFilename,
             0,
             &raw mut EaSetRange,
         );
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn FatGetEaLength(
         EaSetHeader = EaSetRange.Data as *mut EA_SET_HEADER;
 
         // We now have the Ea set header for this file. Simply copy the Ea length field.
-        CopyUchar4(EaLength, (*EaSetHeader).cbList);
+        CopyUchar4(EaLength, (*EaSetHeader).cbList as u32);
         DebugTrace(
             0,
             (Dbg) as u32,
@@ -205,12 +205,13 @@ pub unsafe extern "C" fn FatGetEaLength(
 
     // _SEH2_FINALLY
     {
-        DebugUnwind(FatGetEaLength as *const c_void);
+        DebugUnwind(FatGetEaLength as usize);
 
         // Unpin the EaDirent and the EaSetHeader if pinned.
         FatUnpinBcb(IrpContext, EaBcb);
 
-        FatUnpinEaRange(IrpContext, (&raw mut EaSetRange).cast());
+        let mut eap: *mut EA_RANGE = &raw mut EaSetRange;
+        FatUnpinEaRange(IrpContext, &raw mut eap);
 
         // Release the Fcb for the Ea file if locked.
         if LockedEaFcb != 0 {
@@ -227,6 +228,7 @@ pub unsafe extern "C" fn FatGetEaLength(
 
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetNeedEaCount(
     IrpContext: *mut IrpContext,
@@ -236,7 +238,7 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
 ) {
     unsafe {
         // local variables
-        let mut EaBcb: *mut Bcb = core::ptr::null_mut();
+        let mut EaBcb: *mut BCB = core::ptr::null_mut();
         let mut LockedEaFcb: i32 = 0; // FALSE
         let mut EaSetRange: EA_RANGE;
         core::ptr::write_bytes(
@@ -247,14 +249,14 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
 
         // PAGED_CODE();  -- left as comment, expands to nothing in release
         const Dbg: u32 = 0; // DEBUG_TRACE_EA
-        DebugTrace(1, Dbg, (b"FatGetNeedEaCount ...\n\0".as_ptr() as *const u8).cast(), 0u8);
+        DebugTrace(1, Dbg, (b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8), 0i32);
 
         if (*Dirent).ExtendedAttributes == 0 {
             *NeedEaCount = 0;
             DebugTrace(
                 -1,
                 Dbg,
-                (b"FatGetNeedEaCount -> %08lx\n\0".as_ptr() as *const u8).cast(),
+                (b"FatGetNeedEaCount -> %08lx\n\0".as_ptr() as *const i8),
                 1i32, // TRUE
             );
             return;
@@ -262,7 +264,7 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
 
         // try block
         {
-            let mut EaDirent: *mut Dirent = core::ptr::null_mut();
+            let mut EaDirent: *mut DIRENT = core::ptr::null_mut();
             let mut ThisFilename: OEM_STRING = core::mem::zeroed();
             let mut Buffer: [u8; 12] = [0u8; 12];
             let mut EaSetHeader: *mut EA_SET_HEADER;
@@ -272,9 +274,9 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
             LockedEaFcb = 0;
 
             FatGetEaFile(
-                IrpContext,
+                IrpContext as *mut IRP_CONTEXT,
                 // Vcb is passed as IN OUT, cast const to mut
-                Vcb as *mut Vcb,
+                Vcb as *mut VCB,
                 &mut EaDirent,
                 &mut EaBcb,
                 0, // FALSE
@@ -287,51 +289,53 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
                 DebugTrace(
                     0,
                     Dbg,
-                    (b"FatGetNeedEaCount:  Ea file doesn't exist\n\0".as_ptr() as *const u8).cast(),
-                    0u8,
+                    (b"FatGetNeedEaCount:  Ea file doesn't exist\n\0".as_ptr() as *const i8),
+                    0i32,
                 );
-                FatRaiseStatus(IrpContext, STATUS_NO_EAS_ON_FILE);
+                FatRaiseStatus(IrpContext as *mut IRP_CONTEXT, STATUS_NO_EAS_ON_FILE);
                 // FatRaiseStatus doesn't return
             }
 
             // Fat8dot3ToString uses ThisFilename.Buffer as a PCHAR (pointer to Buffer)
             ThisFilename.Buffer = (Buffer.as_mut_ptr() as *mut u8).cast();
             Fat8dot3ToString(
-                IrpContext,
-                Dirent,
-                0, // FALSE
+                IrpContext as *mut IRP_CONTEXT,
+                Dirent as *mut DIRENT,
+                0u8, // FALSE as u8
                 &mut ThisFilename as *mut OEM_STRING,
             );
 
             FatReadEaSet(
-                IrpContext,
-                Vcb,
+                IrpContext as *mut IRP_CONTEXT,
+                Vcb as *mut VCB,
                 (*Dirent).ExtendedAttributes as u16,
-                &ThisFilename as *const OEM_STRING,
-                0, // FALSE
+                &mut ThisFilename as *mut OEM_STRING,
+                0i32, // FALSE
                 &mut EaSetRange as *mut EA_RANGE,
             );
 
-            EaSetHeader = EaSetRange.Data as *mut EA_SET_HEADER;
+            EaSetHeader = EaSetRange.__bindgen_anon_1.Data;
 
             *NeedEaCount = (*EaSetHeader).NeedEaCount;
         }
 
         // finally block
-        DebugUnwind(b"FatGetNeedEaCount\0".as_ptr() as *const u8);
-        FatUnpinBcb(IrpContext, EaBcb);
-        FatUnpinEaRange(IrpContext, (&mut EaSetRange as *mut EA_RANGE).cast());
+        DebugUnwind(b"FatGetNeedEaCount\0".as_ptr() as usize);
+        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, EaBcb);
+        let mut ea_range_ptr: *mut EA_RANGE = &mut EaSetRange as *mut EA_RANGE;
+        FatUnpinEaRange(IrpContext as *mut IRP_CONTEXT, &mut ea_range_ptr as *mut PEA_RANGE);
         if LockedEaFcb != 0 {
-            FatReleaseFcb(IrpContext, (*Vcb).EaFcb);
+            FatReleaseFcb(IrpContext as *mut IRP_CONTEXT, (*Vcb).EaFcb);
         }
         DebugTrace(
             -1,
             Dbg,
-            (b"FatGetNeedEaCount:  NeedEaCount -> %08lx\n\0".as_ptr() as *const u8).cast(),
+            (b"FatGetNeedEaCount:  NeedEaCount -> %08lx\n\0".as_ptr() as *const i8),
             *NeedEaCount,
         );
     }
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCreateEa(
@@ -575,7 +579,7 @@ pub unsafe extern "C" fn FatDeleteEa(
     EaHandle: u16,
     FileName: *mut OEM_STRING,
 ) {
-    let mut EaBcb: *mut Bcb;
+    let mut EaBcb: *mut BCB;
     let mut LockedEaFcb: i32; // BOOLEAN
 
     PAGED_CODE();
@@ -587,11 +591,11 @@ pub unsafe extern "C" fn FatDeleteEa(
 
     // _SEH2_TRY
     {
-        let mut EaDirent: *mut Dirent;
+        let mut EaDirent: *mut DIRENT;
 
         FatGetEaFile(
-            IrpContext,
-            Vcb,
+            IrpContext as *mut IRP_CONTEXT,
+            Vcb as *mut VCB,
             core::ptr::addr_of_mut!(EaDirent),
             core::ptr::addr_of_mut!(EaBcb),
             0, // FALSE
@@ -607,12 +611,12 @@ pub unsafe extern "C" fn FatDeleteEa(
                 b"FatDeleteEa:  No Ea file exists\n\0".as_ptr() as *const i8,
                 0,
             );
-            FatRaiseStatus(IrpContext, STATUS_NO_EAS_ON_FILE);
+            FatRaiseStatus(IrpContext as *mut IRP_CONTEXT, STATUS_NO_EAS_ON_FILE);
         }
 
         FatDeleteEaSet(
-            IrpContext,
-            Vcb,
+            IrpContext as *mut IRP_CONTEXT,
+            Vcb as *mut VCB,
             EaBcb,
             EaDirent,
             EaHandle,
@@ -620,7 +624,7 @@ pub unsafe extern "C" fn FatDeleteEa(
         );
 
         CcFlushCache(
-            (*(*Vcb).VirtualEaFile).SectionObjectPointer,
+            (*(* (Vcb as *mut VCB) ).VirtualEaFile).SectionObjectPointer as *mut c_void,
             core::ptr::null_mut(),
             0,
             core::ptr::null_mut(),
@@ -628,19 +632,23 @@ pub unsafe extern "C" fn FatDeleteEa(
     }
     // _SEH2_FINALLY
     {
-        DebugUnwind(b"FatDeleteEa\0".as_ptr() as *const i8);
+        DebugUnwind(b"FatDeleteEa\0".as_ptr() as usize);
 
         if LockedEaFcb != 0 {
-            FatReleaseFcb(IrpContext, (*Vcb).EaFcb);
+            FatReleaseFcb(
+                IrpContext as *mut IRP_CONTEXT,
+                (* (Vcb as *mut VCB) ).EaFcb,
+            );
         }
 
-        FatUnpinBcb(IrpContext, EaBcb);
+        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, EaBcb);
 
         DebugTrace(-1, Dbg, b"FatDeleteEa -> Exit\n\0".as_ptr() as *const i8, 0);
     }
 
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetEaFile(
     IrpContext: *mut IRP_CONTEXT,
@@ -663,7 +671,7 @@ pub unsafe extern "C" fn FatGetEaFile(
 
     DebugTrace(1, DEBUG_TRACE_EA, b"FatGetEaFile ...\n\0".as_ptr() as *const i8, 0);
 
-    (RtlZeroMemory).cast()(
+    RtlZeroMemory(
         core::ptr::addr_of_mut!(EaFileRange) as *mut u8,
         core::mem::size_of::<EA_RANGE>() as u32,
     );
@@ -818,7 +826,7 @@ pub unsafe extern "C" fn FatGetEaFile(
                     );
 
                     BytesPerCluster =
-                        1u32 << (*(*Vcb).AllocationSupport).LogOfBytesPerCluster;
+                        1u32 << (*Vcb).AllocationSupport.LogOfBytesPerCluster;
 
                     AllocationSize = ((core::mem::size_of::<EA_FILE_HEADER>() as u32) << 1)
                         .wrapping_add(BytesPerCluster)
@@ -826,7 +834,7 @@ pub unsafe extern "C" fn FatGetEaFile(
                         & !(BytesPerCluster.wrapping_sub(1));
 
                     AllocatedClusters = (AllocationSize
-                        >> (*(*Vcb).AllocationSupport).LogOfBytesPerCluster)
+                        >> (*Vcb).AllocationSupport.LogOfBytesPerCluster)
                         as u16;
 
                     OffsetTableSize =
@@ -925,7 +933,7 @@ pub unsafe extern "C" fn FatGetEaFile(
 
                     FileHeader = EaFileRange.Data as *mut EA_FILE_HEADER;
 
-                    (RtlZeroMemory).cast()(
+                    RtlZeroMemory(
                         FileHeader as *mut u8,
                         AllocationSize,
                     );
@@ -1023,6 +1031,7 @@ pub unsafe extern "C" fn FatGetEaFile(
         0,
     );
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatReadEaSet(
     IrpContext: *mut IRP_CONTEXT,
@@ -1724,7 +1733,7 @@ pub unsafe extern "C" fn FatAddEaSet(
                 PurgeCount
             } != 0 {
                 Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                (CcFlushCache).cast()(
+                CcFlushCache(
                     (*VirtualEaFile).SectionObjectPointer,
                     core::ptr::null_mut(),
                     0,
@@ -1886,7 +1895,7 @@ pub unsafe extern "C" fn FatAddEaSet(
         FatMarkEaRangeDirty(IrpContext, VirtualEaFile, EaSetRange);
 
         Count = MAX_EA_BASE_INDEX as u32 - EaHeaderIndex as u32 - 1;
-        NextEaOffset = (&mut (*EaHeader).EaBaseTable[(EaHeaderIndex as usize + 1)] as *mut u32).cast();
+        NextEaOffset = &mut (*EaHeader).EaBaseTable[(EaHeaderIndex as usize + 1)] as *mut u16;
         while Count > 0 {
             Count = Count.wrapping_sub(1);
             *NextEaOffset = (*NextEaOffset).wrapping_add((EaSetClusterCount as u32) as u16);
@@ -1895,7 +1904,7 @@ pub unsafe extern "C" fn FatAddEaSet(
 
         if AddedOffsetTableCluster != 0 {
             Count = MAX_EA_BASE_INDEX as u32;
-            NextEaOffset = (&mut (*EaHeader).EaBaseTable[0] as *mut u32).cast();
+            NextEaOffset = &mut (*EaHeader).EaBaseTable[0] as *mut u16;
             while Count > 0 {
                 Count = Count.wrapping_sub(1);
                 *NextEaOffset = (*NextEaOffset).wrapping_add(1);
@@ -1935,7 +1944,7 @@ pub unsafe extern "C" fn FatAddEaSet(
         *EaHandle = NewEaIndex;
 
         DebugTrace(0, Dbg as u32, b"FatAddEaSet: Return values\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(0, Dbg as u32, b"FatAddEaSet: New Handle -> %x\n\0".as_ptr() as *const i8, *EaHandle);
+        DebugTrace(0, Dbg as u32, b"FatAddEaSet: New Handle -> %x\n\0".as_ptr() as *const i8, *EaHandle as u32);
 
         aborted = false;
     }));
@@ -2065,6 +2074,7 @@ pub unsafe extern "C" fn FatAddEaSet(
         std::panic::resume_unwind(result.unwrap_err());
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatAppendPackedEa(
     IrpContext: *mut IRP_CONTEXT,
@@ -2278,7 +2288,7 @@ pub unsafe extern "C" fn FatLocateEaByName(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatIsEaNameValid(
-    IrpContext: *mut IrpContext,
+    IrpContext: *mut IRP_CONTEXT,
     Name: OEM_STRING,
 ) -> u8 {
     let mut Index: u32;
@@ -2318,6 +2328,7 @@ pub unsafe extern "C" fn FatIsEaNameValid(
 
     1
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatPinEaRange(
     IrpContext: *mut IRP_CONTEXT,
@@ -2344,7 +2355,7 @@ pub unsafe extern "C" fn FatPinEaRange(
         || StartingVbo >= (*EaFcb).Header.AllocationSize.__bindgen_anon_1.LowPart
         || ((*EaFcb).Header.AllocationSize.__bindgen_anon_1.LowPart - StartingVbo) < Length
     {
-        FatRaiseStatus(IrpContext, ErrorStatus);
+        FatRaiseStatus(IrpContext, ErrorStatus as i32);
     }
 
     //
@@ -2359,7 +2370,7 @@ pub unsafe extern "C" fn FatPinEaRange(
         (*EaRange).AuxilaryBuffer = 1; // TRUE
         destination_buffer = (*EaRange).Data as *mut i8;
     } else {
-        NT_ASSERT((*EaRange).AuxilaryBuffer == 0);
+        NT_ASSERT(((*EaRange).AuxilaryBuffer == 0) as i32);
     }
 
     //
@@ -2409,16 +2420,16 @@ pub unsafe extern "C" fn FatPinEaRange(
             byte_count = Length;
         }
 
-        if (CcPinRead).cast()(
+        if CcPinRead(
                VirtualEaFile,
                &large_vbo,
                byte_count,
-               BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT),
+               BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32,
                next_bcb,
                &mut buffer,
            ) == 0
         {
-            FatRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+            FatRaiseStatus(IrpContext, STATUS_CANT_WAIT as i32);
         }
 
         //
@@ -2455,6 +2466,7 @@ pub unsafe extern "C" fn FatPinEaRange(
         }
     }
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatMarkEaRangeDirty(
@@ -2499,14 +2511,14 @@ pub unsafe extern "C" fn FatUnpinEaRange(
 ) {
     let _ = IrpContext;
 
-    if (*EaRange).AuxilaryBuffer == 1 {
-        ExFreePool((*EaRange).Data as *mut core::ffi::c_void);
-        (*EaRange).AuxilaryBuffer = 0;
+    if (**EaRange).AuxilaryBuffer == 1 {
+        ExFreePool((**EaRange).Data as *mut core::ffi::c_void);
+        (**EaRange).AuxilaryBuffer = 0;
     }
 
-    if !(*EaRange).BcbChain.is_null() {
-        let mut BcbCount = (*EaRange).BcbChainLength;
-        let mut NextBcb = (*EaRange).BcbChain;
+    if !(**EaRange).BcbChain.is_null() {
+        let mut BcbCount = (**EaRange).BcbChainLength;
+        let mut NextBcb = (**EaRange).BcbChain;
 
         while {
             let count = BcbCount;
@@ -2520,13 +2532,14 @@ pub unsafe extern "C" fn FatUnpinEaRange(
             NextBcb = NextBcb.add(1);
         }
 
-        if (*EaRange).BcbChain != (*EaRange).BcbArray.as_mut_ptr() as *mut *mut PBCB {
-            ExFreePool((*EaRange).BcbChain as *mut core::ffi::c_void);
+        if (**EaRange).BcbChain != (**EaRange).BcbArray.as_mut_ptr() {
+            ExFreePool((**EaRange).BcbChain as *mut core::ffi::c_void);
         }
 
-        (*EaRange).BcbChain = core::ptr::null_mut();
+        (**EaRange).BcbChain = core::ptr::null_mut();
     }
 }
+
 
 
 // ============================================================================

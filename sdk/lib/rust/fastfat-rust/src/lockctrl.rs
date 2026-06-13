@@ -120,9 +120,9 @@ pub unsafe extern "system" fn FatFastLock(
     DebugTrace(1, Dbg, b"FatFastLock\n\0".as_ptr() as *const i8, 0);
 
     // Decode the type of file object
-    let mut Vcb: *mut Vcb = core::ptr::null_mut();
-    let mut Fcb: *mut Fcb = core::ptr::null_mut();
-    let mut Ccb: *mut Ccb = core::ptr::null_mut();
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
 
     if FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb) as i32 != UserFileOpen {
         (*IoStatus).__bindgen_anon_1.Status = (STATUS_INVALID_PARAMETER) as i32;
@@ -168,11 +168,12 @@ pub unsafe extern "system" fn FatFastLock(
         ExReleaseResourceLite((*Fcb).Header.Resource);
         FsRtlExitFileSystem();
 
-        DebugTrace(-1i32, Dbg, b"FatFastLock -> %08lx\n\0".as_ptr() as *const i8, Results);
+        DebugTrace(-1i32, Dbg, b"FatFastLock -> %08lx\n\0".as_ptr() as *const i8, Results as i32);
     }
 
     Results
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFastUnlockSingle(
@@ -194,12 +195,12 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
     DebugTrace(1, Dbg, b"FatFastUnlockSingle\n\0".as_ptr() as *const i8, 0);
     (*IoStatus).Information = 0;
 
-    let mut vcb: *mut Vcb = core::ptr::null_mut();
-    let mut fcb: *mut Fcb = core::ptr::null_mut();
-    let mut ccb: *mut Ccb = core::ptr::null_mut();
+    let mut vcb: PVCB = core::ptr::null_mut();
+    let mut fcb: PFCB = core::ptr::null_mut();
+    let mut ccb: PCCB = core::ptr::null_mut();
 
     if FatDecodeFileObject(FileObject, &mut vcb, &mut fcb, &mut ccb) != UserFileOpen {
-        (*IoStatus).__bindgen_anon_1.Status = (STATUS_INVALID_PARAMETER) as i32;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER as NTSTATUS;
         DebugTrace(-1, Dbg, b"FatFastUnlockSingle -> TRUE (STATUS_INVALID_PARAMETER)\n\0".as_ptr() as *const i8, 0);
         return 1;
     }
@@ -220,17 +221,18 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
             ProcessId,
             Key,
             core::ptr::null_mut(),
-            0,
+            0 as BOOLEAN,
         );
         (*fcb).Header.IsFastIoPossible = FatIsFastIoPossible(fcb);
     }
 
-    DebugUnwind(b"FatFastUnlockSingle\0".as_ptr() as *const i8);
+    DebugUnwind(b"FatFastUnlockSingle\0".as_ptr() as usize);
     FsRtlExitFileSystem();
     DebugTrace(-1, Dbg, b"FatFastUnlockSingle -> %08lx\n\0".as_ptr() as *const i8, Results);
 
     Results
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFastUnlockAll(
@@ -240,8 +242,8 @@ pub unsafe extern "system" fn FatFastUnlockAll(
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
     let mut vcb: *mut VCB = core::ptr::null_mut();
-    let mut fcb: *mut Fcb = core::ptr::null_mut();
-    let mut ccb: *mut Ccb = core::ptr::null_mut();
+    let mut fcb: *mut FCB = core::ptr::null_mut();
+    let mut ccb: *mut CCB = core::ptr::null_mut();
     let mut Results: BOOLEAN = 0;
 
     // PAGED_CODE();
@@ -258,7 +260,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
     }
 
     FsRtlEnterFileSystem();
-    ExAcquireResourceSharedLite((*fcb).Header.Resource, 1);
+    ExAcquireResourceSharedLite(core::ptr::addr_of_mut!((*fcb).Header.Resource), 1);
 
     // SEH_TRY … _SEH2_FINALLY … _SEH2_END
     {
@@ -283,14 +285,15 @@ pub unsafe extern "system" fn FatFastUnlockAll(
         }
 
         // Finally block
-        DebugUnwind(b"FatFastUnlockAll\0".as_ptr() as *const i8);
-        ExReleaseResourceLite((*fcb).Header.Resource);
+        DebugUnwind(b"FatFastUnlockAll\0".as_ptr() as usize);
+        ExReleaseResourceLite(core::ptr::addr_of_mut!((*fcb).Header.Resource));
         FsRtlExitFileSystem();
         DebugTrace(-1, Dbg, b"FatFastUnlockAll -> %08lx\n\0".as_ptr() as *const i8, Results as u32);
     }
 
     Results
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFastUnlockAllByKey(
@@ -307,8 +310,8 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
     (*IoStatus).Information = 0;
 
     let mut Vcb: *mut VCB = core::ptr::null_mut();
-    let mut Fcb: *mut Fcb = core::ptr::null_mut();
-    let mut Ccb: *mut Ccb = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
 
     if FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb) != UserFileOpen {
         (*IoStatus).__bindgen_anon_1.Status = (STATUS_INVALID_PARAMETER) as i32;
@@ -332,22 +335,23 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
             core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock),
             FileObject,
-            ProcessId,
+            ProcessId as PEPROCESS,
             Key,
             core::ptr::null_mut(),
-        );
+        ) as i32;
 
         (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
     }
 
     // SEH2_FINALLY block
-    DebugUnwind(FatFastUnlockAllByKey as *const core::ffi::c_void);
+    DebugUnwind(FatFastUnlockAllByKey as usize);
     ExReleaseResourceLite((*Fcb).Header.Resource);
     FsRtlExitFileSystem();
     DebugTrace(-1, (DEBUG_TRACE_LOCKCTRL) as u32, b"FatFastUnlockAllByKey -> %08lx\n\0".as_ptr() as *const i8, Results as u32);
 
     Results
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonLockControl(
     IrpContext: PIRP_CONTEXT,

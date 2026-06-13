@@ -224,6 +224,7 @@ pub unsafe extern "C" fn FatFreeFcb(Fcb: *mut FCB) {
 pub unsafe extern "C" fn FatAllocateNonPagedFcb() -> *mut NON_PAGED_FCB {
     ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(FatNonPagedFcbLookasideList)) as *mut NON_PAGED_FCB
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatFreeNonPagedFcb(
     NonPagedFcb: *mut NON_PAGED_FCB,
@@ -240,6 +241,7 @@ pub unsafe extern "C" fn FatAllocateResource() -> PERESOURCE {
     ExInitializeResourceLite(Resource);
     return Resource;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatFreeResource(Resource: *mut ERESOURCE) {
     ExDeleteResourceLite(Resource);
@@ -327,14 +329,14 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Set the removable media and defflush flags
         status = FatPerformDevIoCtrl(
-            irp_context,
+            addr_of_mut!(irp_context),
             IOCTL_STORAGE_GET_HOTPLUG_INFO,
             target_device_object,
             core::ptr::null(),
             0,
             addr_of_mut!(hotplug_info) as *mut core::ffi::c_void,
             core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32,
-            0, 1, core::ptr::null_mut(),
+            false, true, core::ptr::null_mut(),
         );
 
         if status >= 0 {
@@ -373,14 +375,14 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Query the storage device number
         status = FatPerformDevIoCtrl(
-            irp_context,
+            addr_of_mut!(irp_context),
             IOCTL_STORAGE_GET_DEVICE_NUMBER,
             target_device_object,
             core::ptr::null(),
             0,
             addr_of_mut!(stor_device_number) as *mut core::ffi::c_void,
             core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as u32,
-            0, 1, core::ptr::null_mut(),
+            false, true, core::ptr::null_mut(),
         );
 
         if status >= 0 {
@@ -407,13 +409,13 @@ pub unsafe extern "C" fn FatInitializeVcb(
         FatPreallocateCloseContext(vcb);
         close_context_allocated = true;
 
-        unwind_file_object = IoCreateStreamFileObject(0, real_device);
+        unwind_file_object = IoCreateStreamFileObject(core::ptr::null_mut(), real_device);
         (*vcb).VirtualVolumeFile = unwind_file_object;
 
         let _ = FatSetFileObject(
             (*vcb).VirtualVolumeFile,
             VIRTUAL_VOLUME_FILE,
-            vcb,
+            vcb as *mut DCB,
             core::ptr::null_mut(),
         );
 
@@ -440,7 +442,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
             (*vcb).VirtualVolumeFile,
             addr_of!(file_sizes),
             1,
-            (addr_of!(FatData.CacheManagerNoOpCallbacks)).cast(),
+            addr_of!(FatData.CacheManagerNoOpCallbacks) as *const core::ffi::c_void,
             vcb,
         );
         unwind_cache_map = (*vcb).VirtualVolumeFile;
@@ -463,7 +465,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
         KeInitializeTimer(&raw mut (*vcb).CleanVolumeTimer);
         KeInitializeDpc(
             &raw mut (*vcb).CleanVolumeDpc,
-            Some(FatCleanVolumeDpc),
+            FatCleanVolumeDpc,
             vcb as *mut core::ffi::c_void,
         );
 
@@ -508,7 +510,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Initialize the Advanced FCB Header
         ExInitializeFastMutex(&raw mut (*vcb).AdvancedFcbHeaderMutex);
-        (FsRtlSetupAdvancedHeader).cast()(
+        FsRtlSetupAdvancedHeader(
             &raw mut (*vcb).VolumeFileHeader as *mut core::ffi::c_void,
             &raw mut (*vcb).AdvancedFcbHeaderMutex as *mut core::ffi::c_void,
         );
@@ -559,8 +561,9 @@ pub unsafe extern "C" fn FatInitializeVcb(
         }
     }
 
-    DebugTrace(-1, DEBUG_TRACE_STRUCSUP, b"FatInitializeVcb -> VOID\n\0".as_ptr() as *const i8, 0);
+    DebugTrace(-1, DEBUG_TRACE_STRUCSUP, b"FatInitializeVcb -> VOID\n\0".as_ptr() as *const i8, core::ptr::null::<core::ffi::c_void>());
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatTearDownVcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -584,7 +587,7 @@ pub unsafe extern "C" fn FatTearDownVcb(
     FatCloseEaFile(IrpContext, Vcb, 0i32);
 
     if (*Vcb).RootDcb != core::ptr::null_mut() {
-        DirectoryFileObject = (*(*Vcb).RootDcb).Specific.Dcb.DirectoryFile;
+        DirectoryFileObject = (*(*Vcb).RootDcb).Specific.Dcb.as_mut().DirectoryFile;
 
         if DirectoryFileObject != core::ptr::null_mut() {
             CcUninitializeCacheMap(
@@ -592,13 +595,14 @@ pub unsafe extern "C" fn FatTearDownVcb(
                 core::ptr::addr_of_mut!(FatLargeZero) as *mut LARGE_INTEGER,
                 core::ptr::null_mut(),
             );
-            (*(*Vcb).RootDcb).Specific.Dcb.DirectoryFile = core::ptr::null_mut();
+            (*(*Vcb).RootDcb).Specific.Dcb.as_mut().DirectoryFile = core::ptr::null_mut();
             ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
         }
     }
 
     FatSetVcbCondition(Vcb, 4 /* VcbBad */);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatDeleteVcb(
     IrpContext: PIRP_CONTEXT,
@@ -881,7 +885,7 @@ pub unsafe extern "C" fn FatCreateFcb(
     DebugTrace(1, DEBUG_TRACE_STRUCSUP, b"FatCreateFcb\n\0".as_ptr() as *const i8, 0);
 
     // SEH try body
-    let panic_result = core::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // Determine pool type
         if IsPagingFile != 0 {
             pool_type = NonPagedPoolNx;
@@ -915,8 +919,8 @@ pub unsafe extern "C" fn FatCreateFcb(
         // If paging file, set flags
         if IsPagingFile != 0 {
             SetFlag(
-                &mut (*fcb).FcbState,
-                FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE,
+                &mut (*fcb).FcbState as *mut u8,
+                (FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE) as u8,
             );
         }
 
@@ -934,8 +938,8 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // Insert into parent's DCB queue
         InsertTailList(
-            &mut (*ParentDcb).Specific.Dcb.ParentDcbQueue as *mut _ as PLIST_ENTRY,
-            &mut (*fcb).ParentDcbLinks as *mut _ as PLIST_ENTRY,
+            &mut (*ParentDcb).Specific.as_mut().Dcb.ParentDcbQueue as *mut _ as *mut LIST_ENTRY,
+            &mut (*fcb).ParentDcbLinks as *mut _ as *mut LIST_ENTRY,
         );
         unwind_entry_list = &mut (*fcb).ParentDcbLinks as *mut _ as *mut core::ffi::c_void;
 
@@ -957,7 +961,7 @@ pub unsafe extern "C" fn FatCreateFcb(
         );
 
         // Chicago-specific time fields
-        if FatData.ChicagoMode != 0 {
+        if FatData.ChicagoMode() != 0 {
             let mut fat_system_jan_one_1980: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
             let fat_jan_one_1980_ptr: *const LARGE_INTEGER = &FatJanOne1980 as *const LARGE_INTEGER;
 
@@ -990,26 +994,26 @@ pub unsafe extern "C" fn FatCreateFcb(
         }
 
         // Initialize advanced header
-        ExInitializeFastMutex(&mut (*fcb).NonPaged.AdvancedFcbHeaderMutex);
+        ExInitializeFastMutex(&mut (*(*fcb).NonPaged).AdvancedFcbHeaderMutex);
         FsRtlSetupAdvancedHeader(
             &mut (*fcb).Header as *mut FSRTL_ADVANCED_FCB_HEADER,
-            &mut (*fcb).NonPaged.AdvancedFcbHeaderMutex,
+            &mut (*(*fcb).NonPaged).AdvancedFcbHeaderMutex,
         );
 
         // Setup flags for paging file
         if IsPagingFile != 0 {
             SetFlag(
-                &mut (*fcb).Header.Flags2,
-                FSRTL_FLAG2_IS_PAGING_FILE,
+                &mut (*fcb).Header.Flags2 as *mut u8,
+                FSRTL_FLAG2_IS_PAGING_FILE as u8,
             );
             ClearFlag(
-                &mut (*fcb).Header.Flags2,
-                FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS,
+                &mut (*fcb).Header.Flags2 as *mut u32,
+                FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS as u32,
             );
         }
 
         // Initialize MCB
-        FsRtlInitializeLargeMcb(&mut (*fcb).Mcb, pool_type);
+        FsRtlInitializeLargeMcb(&mut (*fcb).Mcb as *mut LARGE_MCB, pool_type);
         unwind_mcb = &mut (*fcb).Mcb;
 
         // Copy file size info from dirent
@@ -1021,7 +1025,7 @@ pub unsafe extern "C" fn FatCreateFcb(
         (*fcb).FirstClusterOfFile = (*Dirent).FirstClusterOfFile as u32;
 
         if FatIsFat32(Vcb) != 0 {
-            (*fcb).FirstClusterOfFile += ((*Dirent).FirstClusterOfFileHi as u32) << 16;
+            (*fcb).FirstClusterOfFile += (((*Dirent).__bindgen_anon_1.FirstClusterOfFileHi as u32) << 16);
         }
 
         if (*fcb).FirstClusterOfFile == 0 {
@@ -1032,11 +1036,11 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // Initialize file lock
         FsRtlInitializeFileLock(
-            &mut (*fcb).Specific.Fcb.FileLock,
+            &mut (*fcb).Specific.as_mut().Fcb.FileLock as *mut FILE_LOCK,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         );
-        unwind_file_lock = &mut (*fcb).Specific.Fcb.FileLock;
+        unwind_file_lock = &mut (*fcb).Specific.as_mut().Fcb.FileLock as *mut FILE_LOCK;
 
         // Initialize oplock
         FsRtlInitializeOplock(FatGetFcbOplock(fcb));
@@ -1058,7 +1062,7 @@ pub unsafe extern "C" fn FatCreateFcb(
     }));
 
     // Finally block
-    DebugUnwind(b"FatCreateFcb\0".as_ptr() as *const i8);
+    DebugUnwind(b"FatCreateFcb\0".as_ptr() as usize);
 
     let is_abnormal = panic_result.is_err();
 
@@ -1074,7 +1078,7 @@ pub unsafe extern "C" fn FatCreateFcb(
             FsRtlUninitializeLargeMcb(unwind_mcb);
         }
         if !unwind_entry_list.is_null() {
-            RemoveEntryList(unwind_entry_list as PLIST_ENTRY);
+            RemoveEntryList(unwind_entry_list as *mut LIST_ENTRY);
         }
         if !unwind_resource.is_null() {
             FatFreeResource(unwind_resource);
@@ -1094,11 +1098,12 @@ pub unsafe extern "C" fn FatCreateFcb(
 
     // Re-raise panic if abnormal, otherwise return fcb
     if let Err(panic) = panic_result {
-        core::panic::resume_unwind(panic);
+        std::panic::resume_unwind(panic);
     }
 
     fcb
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCreateDcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -1109,16 +1114,11 @@ pub unsafe extern "C" fn FatCreateDcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
 ) -> *mut DCB {
-    // forward declarations for symbols not in the global import list
-
-    // constants needed locally
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;      // placeholder
-    const FAT_NTC_DCB: u32 = 0x00000001;             // placeholder
-    const FcbGood: u32 = 0;                          // placeholder
-    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000; // placeholder
-    const Dbg: u32 = 0;                              // DEBUG_TRACE_STRUCSUP placeholder
-
-    // references to extern globals
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;
+    const FAT_NTC_DCB: u32 = 0x00000001;
+    const FcbGood: u32 = 0;
+    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
+    const Dbg: u32 = 0;
 
     let mut Dcb: *mut DCB = core::ptr::null_mut();
     let mut UnwindStorage: [*mut core::ffi::c_void; 2] = [core::ptr::null_mut(), core::ptr::null_mut()];
@@ -1128,44 +1128,37 @@ pub unsafe extern "C" fn FatCreateDcb(
     let mut UnwindMcb: *mut LARGE_MCB = core::ptr::null_mut();
     let mut UnwindOplock: *mut OPLOCK = core::ptr::null_mut();
 
-    // PAGED_CODE();
     DebugTrace(1, Dbg, b"FatCreateDcb\n\0".as_ptr() as *const i8, 0);
 
-    // SEH simulation: a loop that breaks on error; the finally block checks abnormal_termination
     let mut abnormal_termination = false;
 
     'seh: loop {
-        // NT_ASSERT
-        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {
+        if FlagOn((*IrpContext).Flags as u8, IRP_CONTEXT_FLAG_WAIT) == 0 {
             abnormal_termination = true;
             break 'seh;
         }
 
-        // allocate DCB
         Dcb = FatAllocateFcb();
         if Dcb.is_null() {
             abnormal_termination = true;
             break 'seh;
         }
-        UnwindStorage[0] = Dcb as *mut c_void;
+        UnwindStorage[0] = Dcb as *mut core::ffi::c_void;
         core::ptr::write_bytes(Dcb as *mut u8, 0, core::mem::size_of::<DCB>());
 
-        // allocate non‑paged part
         let non_paged = FatAllocateNonPagedFcb();
         if non_paged.is_null() {
             abnormal_termination = true;
             break 'seh;
         }
         (*Dcb).NonPaged = non_paged;
-        UnwindStorage[1] = non_paged as *mut c_void;
+        UnwindStorage[1] = non_paged as *mut core::ffi::c_void;
         core::ptr::write_bytes(non_paged as *mut u8, 0, core::mem::size_of::<NON_PAGED_FCB>());
 
-        // initialise header fields
         (*Dcb).Header.NodeTypeCode = (FAT_NTC_DCB) as i16;
         (*Dcb).Header.NodeByteSize = (core::mem::size_of::<DCB>() as u16) as i16;
         (*Dcb).FcbCondition = FcbGood;
 
-        // allocate and set normal resource
         let res = FatAllocateResource();
         if res.is_null() {
             abnormal_termination = true;
@@ -1174,7 +1167,6 @@ pub unsafe extern "C" fn FatCreateDcb(
         (*Dcb).Header.Resource = res;
         UnwindResource = res;
 
-        // allocate and set paging I/O resource
         let pio_res = FatAllocateResource();
         if pio_res.is_null() {
             abnormal_termination = true;
@@ -1183,45 +1175,37 @@ pub unsafe extern "C" fn FatCreateDcb(
         (*Dcb).Header.PagingIoResource = pio_res;
         UnwindResource2 = pio_res;
 
-        // insert into parent’s child queue
         InsertHeadList(
-            core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.ParentDcbQueue),
+            core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().ParentDcbQueue),
             core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks),
         );
         UnwindEntryList = core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks);
 
-        // link back to parent and VCB
         (*Dcb).ParentDcb = ParentDcb;
         (*Dcb).Vcb = Vcb;
 
-        // dirent offsets
         (*Dcb).LfnOffsetWithinDirectory = LfnOffsetWithinDirectory;
         (*Dcb).DirentOffsetWithinDirectory = DirentOffsetWithinDirectory;
 
-        // dirent attributes and last write time
         (*Dcb).DirentFatFlags = (*Dirent).Attributes;
-        (*Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, (*Dirent).LastWriteTime, 0);
+        (*Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, (*Dirent).LastWriteTime as u16, 0);
 
-        // ChicagoMode handling
         let fat_data = &mut *core::ptr::addr_of_mut!(FatData);
-        if fat_data.ChicagoMode != 0 {
+        if fat_data.ChicagoMode() != 0 {
             let mut fat_system_jan_one_1980 = LARGE_INTEGER { QuadPart: 0 };
             let dirent_as_u16: *const u16 = Dirent as *const u16;
-            // if either low word or high word of the date/time fields are zero, get 1‑Jan‑1980
             if ((*dirent_as_u16.add(9)) & (*dirent_as_u16.add(8))) == 0 {
-                ExLocalTimeToSystemTime(&FatJanOne1980, &mut fat_system_jan_one_1980);
+                ExLocalTimeToSystemTime(core::ptr::addr_of!(FatJanOne1980), core::ptr::addr_of_mut!(fat_system_jan_one_1980));
             }
-            // LastAccessDate (offset 9 in USHORTs)
             if *dirent_as_u16.add(9) != 0 {
-                (*Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, (*Dirent).LastAccessDate);
+                (*Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, (*Dirent).LastAccessDate as u16);
             } else {
                 (*Dcb).LastAccessTime = fat_system_jan_one_1980;
             }
-            // CreationTime / CreationMSec (offset 8 in USHORTs)
             if *dirent_as_u16.add(8) != 0 {
                 (*Dcb).CreationTime = FatFatTimeToNtTime(
                     IrpContext,
-                    (*Dirent).CreationTime,
+                    (*Dirent).CreationTime as u16,
                     (*Dirent).CreationMSec,
                 );
             } else {
@@ -1229,23 +1213,20 @@ pub unsafe extern "C" fn FatCreateDcb(
             }
         }
 
-        // setup advanced FCB header
         ExInitializeFastMutex(core::ptr::addr_of_mut!(
-            (*Dcb).NonPaged.AdvancedFcbHeaderMutex
+            (*(*Dcb).NonPaged).AdvancedFcbHeaderMutex
         ));
         FsRtlSetupAdvancedHeader(
             core::ptr::addr_of_mut!((*Dcb).Header),
-            core::ptr::addr_of_mut!((*Dcb).NonPaged.AdvancedFcbHeaderMutex),
+            core::ptr::addr_of_mut!((*(*Dcb).NonPaged).AdvancedFcbHeaderMutex),
         );
 
-        // initialise Mcb
         FsRtlInitializeLargeMcb(core::ptr::addr_of_mut!((*Dcb).Mcb), PagedPool);
         UnwindMcb = core::ptr::addr_of_mut!((*Dcb).Mcb);
 
-        // first cluster and allocation size
         (*Dcb).FirstClusterOfFile = (*Dirent).FirstClusterOfFile as u32;
         if FatIsFat32((*Dcb).Vcb) != 0 {
-            (*Dcb).FirstClusterOfFile += ((*Dirent).FirstClusterOfFileHi as u32) << 16;
+            (*Dcb).FirstClusterOfFile += ((*Dirent).__bindgen_anon_1.FirstClusterOfFileHi as u32) << 16;
         }
         if (*Dcb).FirstClusterOfFile == 0 {
             (*Dcb).Header.AllocationSize.QuadPart = 0;
@@ -1253,39 +1234,31 @@ pub unsafe extern "C" fn FatCreateDcb(
             (*Dcb).Header.AllocationSize.QuadPart = FCB_LOOKUP_ALLOCATIONSIZE_HINT;
         }
 
-        // parent Dcb queue head
-        InitializeListHead(core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.ParentDcbQueue));
+        InitializeListHead(core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue));
 
-        // free dirent bitmap (zero length for now)
         RtlInitializeBitMap(
-            core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.FreeDirentBitmap),
+            core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap),
             core::ptr::null_mut(),
             0,
         );
 
-        // set hint values that signal “not yet enumerated”
-        (*Dcb).Specific.Dcb.UnusedDirentVbo = 0xffffffff;
-        (*Dcb).Specific.Dcb.DeletedDirentHint = 0xffffffff;
+        (*Dcb).Specific.Dcb.as_mut().UnusedDirentVbo = 0xffffffff;
+        (*Dcb).Specific.Dcb.as_mut().DeletedDirentHint = 0xffffffff;
 
-        // initialise oplock (Win8+)
         {
             let oplock = FatGetFcbOplock(Dcb);
             FsRtlInitializeOplock(oplock);
             UnwindOplock = oplock;
         }
 
-        // construct the names — must be last
         FatConstructNamesInFcb(IrpContext, Dcb, Dirent, Lfn);
-        (*Dcb).ShortName.FileNameDos = 1; // TRUE
+        (*Dcb).ShortName.FileNameDos = 1;
 
-        // normal completion: clear the flag and leave the SEH block
         abnormal_termination = false;
         break 'seh;
     }
 
-    // SEH finally block – only run the cleanup on abnormal termination
     if abnormal_termination {
-        // emulate DebugUnwind(FatCreateDcb)
         if !UnwindOplock.is_null() {
             FsRtlUninitializeOplock(UnwindOplock);
         }
@@ -1301,7 +1274,6 @@ pub unsafe extern "C" fn FatCreateDcb(
         if !UnwindResource2.is_null() {
             FatFreeResource(UnwindResource2);
         }
-        // free the two pool blocks saved in UnwindStorage
         let mut i = 0;
         while i < UnwindStorage.len() {
             if !UnwindStorage[i].is_null() {
@@ -1314,6 +1286,7 @@ pub unsafe extern "C" fn FatCreateDcb(
     DebugTrace(-1, Dbg, b"FatCreateDcb -> %p\n\0".as_ptr() as *const i8, Dcb as usize);
     Dcb
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut *mut FCB) {
     let Fcb: *mut FCB = *FcbPtr;
@@ -1338,21 +1311,21 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     // If this is a DCB then remove every Notify record from the two notify queues
     if ((*Fcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Fcb).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
         // If we allocated a free dirent bitmap buffer, free it.
-        if ((*Fcb).Specific.Dcb.FreeDirentBitmap.Buffer != core::ptr::null_mut()) &&
-           ((*Fcb).Specific.Dcb.FreeDirentBitmap.Buffer !=
-            core::ptr::addr_of!((*Fcb).Specific.Dcb.FreeDirentBitmapBuffer) as *mut _) {
-            ExFreePool((*Fcb).Specific.Dcb.FreeDirentBitmap.Buffer);
+        if ((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer != core::ptr::null_mut()) &&
+           ((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer !=
+            core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmapBuffer) as *mut _) {
+            ExFreePool((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer);
         }
 
         // Uninitialize the oplock.
         FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
 
-        NT_ASSERT(((*Fcb).Specific.Dcb.DirectoryFileOpenCount == 0) as i32);
-        NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY) as i32);
-        NT_ASSERT((core::ptr::null_mut::<*mut FILE_OBJECT>() == (*Fcb).Specific.Dcb.DirectoryFile) as i32);
+        NT_ASSERT(((*Fcb).Specific.as_ref().unwrap().Dcb.DirectoryFileOpenCount == 0) as i32);
+        NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Dcb.ParentDcbQueue) as *mut LIST_ENTRY) as i32);
+        NT_ASSERT((core::ptr::null_mut::<*mut FILE_OBJECT>() == (*Fcb).Specific.as_ref().unwrap().Dcb.DirectoryFile) as i32);
     } else {
         // Uninitialize the byte range file locks and opportunistic locks
-        FsRtlUninitializeFileLock(core::ptr::addr_of!((*Fcb).Specific.Fcb.FileLock) as *mut FILE_LOCK);
+        FsRtlUninitializeFileLock(core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Fcb.FileLock) as *mut FILE_LOCK);
         FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
     }
 
@@ -1375,21 +1348,21 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     // Free the file name pool if allocated.
     if (*Fcb).Header.NodeTypeCode != (FAT_NTC_ROOT_DCB) as i16 {
         // If we blew up at inconvenient times, the shortname could be null...
-        if !(*Fcb).ShortName.Name.Oem.Buffer.is_null() {
-            ExFreePool((*Fcb).ShortName.Name.Oem.Buffer);
+        if !(*Fcb).ShortName.Name.as_ref().unwrap().Oem.as_ref().unwrap().Buffer.is_null() {
+            ExFreePool((*Fcb).ShortName.Name.as_ref().unwrap().Oem.as_ref().unwrap().Buffer);
         }
-        if !(*Fcb).FullFileName.Buffer.is_null() {
-            ExFreePool(((*Fcb).FullFileName.Buffer).cast());
+        if !(*Fcb).FullFileName.as_ref().unwrap().Buffer.is_null() {
+            ExFreePool(((*Fcb).FullFileName.as_ref().unwrap().Buffer).cast());
         }
     }
 
-    if !(*Fcb).ExactCaseLongName.Buffer.is_null() {
-        ExFreePool(((*Fcb).ExactCaseLongName.Buffer).cast());
+    if !(*Fcb).ExactCaseLongName.as_ref().unwrap().Buffer.is_null() {
+        ExFreePool(((*Fcb).ExactCaseLongName.as_ref().unwrap().Buffer).cast());
     }
 
     // SYSCACHE_COMPILE assumed always active – translate block unconditionally
-    if !(*Fcb).WriteMask.is_null() {
-        ExFreePool((*Fcb).WriteMask);
+    if !(*Fcb).NonPaged.as_ref().unwrap().WriteMask.is_null() {
+        ExFreePool((*Fcb).NonPaged.as_ref().unwrap().WriteMask);
     }
 
     // Finally deallocate the Fcb and non-paged fcb records
@@ -1414,6 +1387,7 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     // and return to our caller
     DebugTrace(-1, (Dbg as i32) as u32, b"FatDeleteFcb -> VOID\n\0".as_ptr() as *const _, 0);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCreateCcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -1458,17 +1432,18 @@ pub unsafe extern "C" fn FatCreateCcb(
 pub unsafe extern "C" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
     PAGED_CODE();
     if ((*Ccb).Flags & CCB_FLAG_FREE_UNICODE) != 0 {
-        NT_ASSERT(if (*Ccb).UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
+        NT_ASSERT(if (*Ccb).__bindgen_anon_1.UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
         NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Ccb).UnicodeQueryTemplate));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Ccb).__bindgen_anon_1.UnicodeQueryTemplate));
     }
     if ((*Ccb).Flags & CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
-        NT_ASSERT(if (*Ccb).OemQueryTemplate.Wild.Buffer.is_null() { 0 } else { 1 });
+        NT_ASSERT(if (*Ccb).__bindgen_anon_1.OemQueryTemplate.Wild.Buffer.is_null() { 0 } else { 1 });
         NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
-        RtlFreeOemString(core::ptr::addr_of_mut!((*Ccb).OemQueryTemplate.Wild));
+        RtlFreeOemString(core::ptr::addr_of_mut!((*Ccb).__bindgen_anon_1.OemQueryTemplate.Wild));
     }
     (*Ccb).Flags &= !(CCB_FLAG_FREE_OEM_BEST_FIT | CCB_FLAG_FREE_UNICODE);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatDeleteCcb(
     irp_context: *mut IRP_CONTEXT,
@@ -1618,12 +1593,8 @@ pub unsafe extern "C" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) 
 
     DebugTrace(1, Dbg, b"FatDeleteIrpContext, IrpContext = %p\n\0".as_ptr() as *const i8, IrpContext);
 
-    NT_ASSERT(((*IrpContext).NodeTypeCode == (FAT_NTC_IRP_CONTEXT) as u16) as i32,
-              file!().as_ptr() as *const u8,
-              line!() as u32);
-    NT_ASSERT(((*IrpContext).PinCount == 0) as i32,
-              file!().as_ptr() as *const u8,
-              line!() as u32);
+    NT_ASSERT(((*IrpContext).NodeTypeCode == (FAT_NTC_IRP_CONTEXT) as u16) as i32);
+    NT_ASSERT(((*IrpContext).PinCount == 0) as i32);
 
     if !(*IrpContext).FatIoContext.is_null() {
         if ((*IrpContext).Flags & IRP_CONTEXT_STACK_IO_CONTEXT) == 0 {
@@ -1640,6 +1611,7 @@ pub unsafe extern "C" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) 
     DebugTrace(-1, Dbg, b"FatDeleteIrpContext -> VOID\n\0".as_ptr() as *const i8, 0);
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetNextFcbBottomUp(
     IrpContext: *mut IRP_CONTEXT,
@@ -1652,8 +1624,9 @@ pub unsafe extern "C" fn FatGetNextFcbBottomUp(
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(
-        (FatVcbAcquiredExclusive(IrpContext, (*TerminationFcb).Vcb) != 0)
-            || (FlagOn((*TerminationFcb).Vcb.VcbState, VCB_STATE_FLAG_LOCKED) != 0),
+        ((FatVcbAcquiredExclusive(IrpContext, (*TerminationFcb).Vcb) != 0)
+            || (FlagOn((*(*TerminationFcb).Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0))
+            as i32,
     );
 
     if !Fcb.is_null() {
@@ -1675,6 +1648,7 @@ pub unsafe extern "C" fn FatGetNextFcbBottomUp(
 
     NextFcb
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetNextFcbTopDown(
     IrpContext: *mut IRP_CONTEXT,
@@ -1682,7 +1656,7 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
     TerminationFcb: *mut FCB,
 ) -> *mut FCB {
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(IrpContext as usize);
 
     let valid = if FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) != 0
         || FlagOn((*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_LOCKED) != 0
@@ -1694,7 +1668,9 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
     NT_ASSERT(valid);
 
     if (NodeType(Fcb) == (FAT_NTC_DCB) as u32 || NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32)
-        && IsListEmpty(core::ptr::addr_of_mut!((*Fcb).Specific.Dcb.ParentDcbQueue)) == 0
+        && !IsListEmpty(core::ptr::addr_of!(
+            (*Fcb).Specific.Dcb.as_ref().ParentDcbQueue
+        ))
     {
         return FatGetFirstChild(Fcb);
     }
@@ -1722,6 +1698,7 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
         Sibling = FatGetNextSibling(Fcb);
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatSwapVpb(
     IrpContext: *mut IRP_CONTEXT,
@@ -1826,11 +1803,11 @@ pub unsafe extern "C" fn FatCheckForDismount(
         FatSwapVpb(IrpContext, Vcb);
 
         // Clear the VPB_MOUNTED bit.
-        ClearFlag(&mut (*Vpb).Flags as *mut u32, VPB_MOUNTED);
+        ClearFlag((&mut (*Vpb).Flags as *mut u16) as *mut u32, VPB_MOUNTED);
 
         // Clear VPB_LOCKED and VPB_DIRECT_WRITES_ALLOWED.
         ClearFlag(
-            &mut (*Vpb).Flags as *mut u32,
+            (&mut (*Vpb).Flags as *mut u16) as *mut u32,
             VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED,
         );
 
@@ -1838,12 +1815,12 @@ pub unsafe extern "C" fn FatCheckForDismount(
 
         // Mark dismount in progress.
         NT_ASSERT(((FlagOn(
-            &(*Vcb).VcbState as *const u32,
+            (*Vcb).VcbState as u8,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         ) == 0) as BOOLEAN) as i32);
         SetFlag(
-            &mut (*Vcb).VcbState as *mut u32,
-            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
+            &mut (*Vcb).VcbState as *mut u32 as *mut u8,
+            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS as u8,
         );
 
         // Close down internal opens.
@@ -1871,7 +1848,7 @@ pub unsafe extern "C" fn FatCheckForDismount(
             IoReleaseVpbSpinLock(SavedIrql);
 
             NT_ASSERT((FlagOn(
-                &(*Vcb).VcbState as *const u32,
+                (*Vcb).VcbState as u8,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
             ) as BOOLEAN) as i32);
             ClearFlag(
@@ -1890,6 +1867,7 @@ pub unsafe extern "C" fn FatCheckForDismount(
 
     VcbDeleted
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatConstructNamesInFcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -1897,7 +1875,6 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
     Dirent: *mut DIRENT,
     Lfn: *const _UNICODE_STRING,
 ) {
-
     let mut i: usize;
     let mut Unicode: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
@@ -1931,7 +1908,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             (*ShortName).Buffer = FsRtlAllocatePoolWithTag(PagedPool, 16, TAG_FILENAME_BUFFER)
                 as *mut u8;
 
-            Fat8dot3ToString(IrpContext, Dirent, 0, ShortName);
+            Fat8dot3ToString(IrpContext, Dirent, 0u8, ShortName);
 
             (*Fcb).ShortName.FileNameDos = 1;
 
@@ -1971,7 +1948,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
 
             if i == chars {
                 // No extended characters – use OEM fast path
-                LongOemName = addr_of_mut!((*Fcb).LongName.Oem.Name.Oem);
+                LongOemName = addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.as_mut().Oem);
                 (*LongOemName).Buffer =
                     FsRtlAllocatePoolWithTag(PagedPool, chars as u32, TAG_FILENAME_BUFFER)
                         as *mut u8;
@@ -1995,9 +1972,8 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
                 let equal = FatAreNamesEqual(IrpContext, *ShortName, *LongOemName) != 0;
                 let found = !FatFindFcb(
                     IrpContext,
-                    addr_of_mut!((*Fcb).ParentDcb.Specific.Dcb.RootOemNode)
-                        as *mut core::ffi::c_void,
-                    LongOemName as *const OEM_STRING,
+                    addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut u8,
+                    LongOemName as *mut STRING,
                     null_mut(),
                 )
                 .is_null();
@@ -2028,10 +2004,10 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
                 (*Lfn).Length as usize,
             );
 
-            RtlDowncaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0);
-            RtlUpcaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0);
+            RtlDowncaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
+            RtlUpcaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
 
-            LongUniName = addr_of_mut!((*Fcb).LongName.Unicode.Name.Unicode);
+            LongUniName = addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Name.as_mut().Unicode);
             (*LongUniName).Length = Unicode.Length;
             (*LongUniName).MaximumLength = Unicode.MaximumLength;
             (*LongUniName).Buffer = Unicode.Buffer;
@@ -2051,28 +2027,27 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
     } else {
         FatInsertName(
             IrpContext,
-            addr_of_mut!((*Fcb).ParentDcb.Specific.Dcb.RootOemNode) as *mut core::ffi::c_void,
-            addr_of_mut!((*Fcb).ShortName) as *mut core::ffi::c_void,
+            addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
+            addr_of_mut!((*Fcb).ShortName),
         );
         (*Fcb).ShortName.Fcb = Fcb;
 
         if ((*Fcb).FcbState & FCB_STATE_HAS_OEM_LONG_NAME) != 0 {
             FatInsertName(
                 IrpContext,
-                addr_of_mut!((*Fcb).ParentDcb.Specific.Dcb.RootOemNode) as *mut core::ffi::c_void,
-                addr_of_mut!((*Fcb).LongName.Oem) as *mut core::ffi::c_void,
+                addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
+                addr_of_mut!((*Fcb).LongName.Oem.as_mut()),
             );
-            (*Fcb).LongName.Oem.Fcb = Fcb;
+            (*Fcb).LongName.Oem.as_mut().Fcb = Fcb;
         }
 
         if ((*Fcb).FcbState & FCB_STATE_HAS_UNICODE_LONG_NAME) != 0 {
             FatInsertName(
                 IrpContext,
-                addr_of_mut!((*Fcb).ParentDcb.Specific.Dcb.RootUnicodeNode)
-                    as *mut core::ffi::c_void,
-                addr_of_mut!((*Fcb).LongName.Unicode) as *mut core::ffi::c_void,
+                addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootUnicodeNode) as *mut *mut RTL_SPLAY_LINKS,
+                addr_of_mut!((*Fcb).LongName.Unicode.as_mut()),
             );
-            (*Fcb).LongName.Unicode.Fcb = Fcb;
+            (*Fcb).LongName.Unicode.as_mut().Fcb = Fcb;
         }
 
         (*Fcb).FcbState |= FCB_STATE_NAMES_IN_SPLAY_TREE;
@@ -2082,6 +2057,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
         std::panic::resume_unwind(panic);
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
     IrpContext: *mut IRP_CONTEXT,
@@ -2109,7 +2085,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
     }
 
     let dir_ent_size = core::mem::size_of::<DIRENT>() as u32;
-    let old_number_of_dirents = (*Dcb).Specific.Dcb.FreeDirentBitmap.SizeOfBitMap;
+    let old_number_of_dirents = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.SizeOfBitMap;
     let new_number_of_dirents = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart / dir_ent_size;
 
     if new_number_of_dirents > old_number_of_dirents {
@@ -2123,12 +2099,12 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
             let bytes_in_old_bitmap_buffer: u32;
 
             // Recheck inside the lock
-            let old_number_of_dirents = (*Dcb).Specific.Dcb.FreeDirentBitmap.SizeOfBitMap;
+            let old_number_of_dirents = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.SizeOfBitMap;
             let new_number_of_dirents = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart / dir_ent_size;
 
             if new_number_of_dirents > old_number_of_dirents {
                 // Remember the old bitmap
-                old_bitmap_buffer = (*Dcb).Specific.Dcb.FreeDirentBitmap.Buffer;
+                old_bitmap_buffer = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.Buffer;
 
                 // Compute sizes
                 bytes_in_bitmap_buffer = new_number_of_dirents / 8;
@@ -2136,7 +2112,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
 
                 // Choose the buffer for the new bitmap
                 if DCB_UNION_SLACK_SPACE >= bytes_in_bitmap_buffer {
-                    bitmap_buffer = &mut (*Dcb).Specific.Dcb.FreeDirentBitmapBuffer[0] as *mut u32;
+                    bitmap_buffer = &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32;
                 } else {
                     bitmap_buffer = FsRtlAllocatePoolWithTag(
                         PagedPool,
@@ -2148,7 +2124,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
                 // Copy old data if we had a bitmap and we are not reusing the embedded buffer
                 if (old_number_of_dirents != 0)
                     && (bitmap_buffer
-                        != &mut (*Dcb).Specific.Dcb.FreeDirentBitmapBuffer[0] as *mut u32)
+                        != &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32)
                 {
                     RtlCopyMemory(
                         bitmap_buffer as *mut core::ffi::c_void,
@@ -2158,7 +2134,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
 
                     // Free the old buffer if it was dynamically allocated
                     if old_bitmap_buffer
-                        != &mut (*Dcb).Specific.Dcb.FreeDirentBitmapBuffer[0] as *mut u32
+                        != &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32
                     {
                         ExFreePool(old_bitmap_buffer as *mut core::ffi::c_void);
                     }
@@ -2177,7 +2153,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
 
                 // Initialize the bitmap header
                 RtlInitializeBitMap(
-                    &mut (*Dcb).Specific.Dcb.FreeDirentBitmap as *mut RTL_BITMAP,
+                    &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut RTL_BITMAP,
                     bitmap_buffer,
                     new_number_of_dirents,
                 );
@@ -2188,6 +2164,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
         FatReleaseDirectoryFileMutex((*Dcb).Vcb);
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatIsHandleCountZero(
     IrpContext: *mut IRP_CONTEXT,
@@ -2251,13 +2228,14 @@ pub unsafe extern "C" fn FatPreallocateCloseContext(
     ExInterlockedPushEntrySList(
         &raw mut FatCloseContextSList as *mut core::ffi::c_void,
         CloseContext as *mut core::ffi::c_void,
-        &raw mut FatData.GeneralSpinLock as *mut EX_SPIN_LOCK,
+        &raw mut FatData.GeneralSpinLock as *mut _,
     );
 
     DbgDoit(InterlockedIncrement(
-        &mut (*Vcb).CloseContextCount as *mut i32,
-    ));
+        &raw mut (*Vcb).CloseContextCount as *mut i32,
+    ) as u32);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatEnsureStringBufferEnough(
     String: *mut core::ffi::c_void,
@@ -2294,19 +2272,19 @@ pub unsafe extern "C" fn FatScanForDataTrack(
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut LocalTrackCount: u32;
     let mut LocalTocLength: u32;
-    let CdromToc: *mut CDROM_TOC;
+    let CdromToc: *mut crate::CDROM_TOC;
     let mut Result: i32 = 0;
 
     let pool_ptr = FsRtlAllocatePoolWithTag(
         PagedPool,
-        size_of::<CDROM_TOC>() as u32,
+        size_of::<crate::CDROM_TOC>() as u32,
         TAG_IO_BUFFER,
     );
-    CdromToc = pool_ptr as *mut CDROM_TOC;
+    CdromToc = pool_ptr as *mut crate::CDROM_TOC;
 
     RtlZeroMemory(
         CdromToc as *mut core::ffi::c_void,
-        (size_of::<CDROM_TOC>() as u32) as usize,
+        (size_of::<crate::CDROM_TOC>() as u32) as usize,
     );
 
     loop {
@@ -2317,9 +2295,9 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             core::ptr::null_mut(),
             0,
             CdromToc as *mut core::ffi::c_void,
-            size_of::<CDROM_TOC>() as u32,
-            0,
-            1,
+            size_of::<crate::CDROM_TOC>() as u32,
+            false,
+            true,
             &mut Iosb,
         );
 
@@ -2332,7 +2310,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
 
         LocalTrackCount = ((*CdromToc).LastTrack - (*CdromToc).FirstTrack) + 1;
 
-        let track_data_ptr = ptr::addr_of_mut!((*CdromToc).TrackData) as *mut CDROM_TOC_TRACK_DATA;
+        let track_data_ptr = ptr::addr_of_mut!((*CdromToc).TrackData) as *mut crate::CDROM_TOC_TRACK_DATA;
         let field_addr = track_data_ptr.add((LocalTrackCount + 1) as usize) as *const u8;
         let base_addr = CdromToc as *const u8;
         LocalTocLength = (field_addr as usize - base_addr as usize) as u32;
@@ -2344,7 +2322,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             break;
         }
 
-        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control as u32, 0x04) != 0 { 1 } else { 0 };
+        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control, 0x04u8) != 0 { 1 } else { 0 };
         break;
     }
 
@@ -2352,6 +2330,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
 
     Result
 }
+
 
 
 // ============================================================================

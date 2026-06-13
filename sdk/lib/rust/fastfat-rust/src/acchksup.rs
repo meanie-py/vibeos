@@ -53,7 +53,7 @@ pub unsafe extern "C" fn FatCheckFileAccess(
     // Declare external functions
     unsafe extern "C" {
         fn DebugTrace(level: i32, mask: u32, format: *const i8, arg: usize);
-        fn DebugUnwind(func: unsafe extern "C" fn(*mut IrpContext, u8, *mut u32) -> i32);
+        fn DebugUnwind(fn_name: usize);
         fn PAGED_CODE();
     }
 
@@ -133,8 +133,7 @@ pub unsafe extern "C" fn FatCheckFileAccess(
 
     // _SEH2_FINALLY block
     {
-        let func_ptr: unsafe extern "C" fn(*mut IrpContext, u8, *mut u32) -> i32 = FatCheckFileAccess;
-        DebugUnwind(func_ptr);
+        DebugUnwind(FatCheckFileAccess as usize);
         DebugTrace(-1, Dbg, b"FatCheckFileAccess -> %08lx\n\0".as_ptr() as *const i8, result as usize);
     }
 
@@ -144,9 +143,10 @@ pub unsafe extern "C" fn FatCheckFileAccess(
     return result;
 }
 
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCheckManageVolumeAccess(
-    IrpContext: *mut ntkrnl_sys::ddk::PIRP_CONTEXT,
+    IrpContext: *mut ntkrnl_sys::ddk::IRP_CONTEXT,
     AccessState: *mut ntkrnl_sys::ddk::_ACCESS_STATE,
     ProcessorMode: ntkrnl_sys::ddk::KPROCESSOR_MODE,
 ) -> i32 {
@@ -159,8 +159,8 @@ pub unsafe extern "C" fn FatCheckManageVolumeAccess(
     privilege_set.Privilege[0].Attributes = 0;
 
     if ntkrnl_sys::ddk::SePrivilegeCheck(
-        &privilege_set as *const ntkrnl_sys::ddk::PRIVILEGE_SET,
-        core::ptr::addr_of!((*AccessState).SubjectSecurityContext),
+        &mut privilege_set as *mut ntkrnl_sys::ddk::PRIVILEGE_SET as ntkrnl_sys::ddk::PPRIVILEGE_SET,
+        core::ptr::addr_of_mut!((*AccessState).SubjectSecurityContext) as ntkrnl_sys::ddk::PSECURITY_SUBJECT_CONTEXT,
         ProcessorMode,
     ) != 0 {
         let _ = IrpContext; // UNREFERENCED_PARAMETER(IrpContext)
@@ -170,6 +170,7 @@ pub unsafe extern "C" fn FatCheckManageVolumeAccess(
     let _ = IrpContext;
     0 // FALSE
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
     IrpContext: PIRP_CONTEXT,
@@ -203,7 +204,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
     };
 
     original_access_token = *effective_token;
-    status = (FatCreateRestrictEveryoneToken).cast()(
+    status = FatCreateRestrictEveryoneToken(
         original_access_token,
         core::ptr::addr_of_mut!(restricted_access_token),
     );
@@ -217,11 +218,11 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
 
     SeAccessCheck(
         (*DeviceObject).SecurityDescriptor,
-        core::ptr::addr_of!((*AccessState).SubjectSecurityContext),
-        0,
+        core::ptr::addr_of_mut!((*AccessState).SubjectSecurityContext),
+        0 as BOOLEAN,
         (*AccessState).OriginalDesiredAccess,
-        0,
-        core::ptr::null_mut(),
+        0 as ACCESS_MASK,
+        core::ptr::null_mut() as *mut PPRIVILEGE_SET,
         IoGetFileObjectGenericMapping(),
         ProcessorMode,
         core::ptr::addr_of_mut!(granted_access),
@@ -235,6 +236,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
 
     status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCreateRestrictEveryoneToken(
     Token: *mut ACCESS_TOKEN,

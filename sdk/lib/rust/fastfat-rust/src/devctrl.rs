@@ -73,10 +73,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     let IrpContext: PIRP_CONTEXT;
     let TopLevel: BOOLEAN;
 
-    // Forward-declare external symbols called in this function
-
-    // static const Dbg = DEBUG_TRACE_DEVCTRL – assume defined elsewhere; use number directly
-    const Dbg: u32 = 0; // placeholder – actual value from DEBUG_TRACE_DEVCTRL
+    const Dbg: u32 = 0; // placeholder for DEBUG_TRACE_DEVCTRL
 
     PAGED_CODE();
     DebugTrace(1, Dbg, b"FatFsdDeviceControl\n\0".as_ptr() as *const i8, 0);
@@ -84,22 +81,31 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    // SEH2_TRY block – literal transliteration of the macro structure
-    _SEH2_TRY();
+    // SEH2 helper declarations – they are C functions (or system ABI) expected at link time
+    extern "C" {
+        fn _SEH2_TRY();
+        fn _SEH2_END();
+        fn _SEH2_EXCEPT(filter: BOOLEAN) -> BOOLEAN;
+        fn _SEH2_GetExceptionCode() -> u32;
+        fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
+    }
+
+    unsafe { _SEH2_TRY(); }
     IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
     Status = FatCommonDeviceControl(IrpContext, Irp);
-    _SEH2_END();
+    unsafe { _SEH2_END(); }
 
-    // SEH2_EXCEPT filter and handler
-    if _SEH2_EXCEPT(FatExceptionFilter(
-        IrpContext,
-        (_SEH2_GetExceptionInformation()).cast(),
-    )) != 0
+    if unsafe {
+        _SEH2_EXCEPT(FatExceptionFilter(
+            IrpContext,
+            _SEH2_GetExceptionInformation().cast(),
+        ))
+    } != 0
     {
         Status = FatProcessException(
             IrpContext,
             Irp,
-            _SEH2_GetExceptionCode(),
+            unsafe { _SEH2_GetExceptionCode() as i32 },
         );
     }
 
@@ -118,6 +124,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
 
     Status
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonDeviceControl(
@@ -152,14 +159,14 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
                 SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
                 FatAcquireExclusiveVolume(IrpContext, vcb);
                 FatFlushAndCleanVolume(IrpContext, Irp, vcb, FlushWithoutPurge);
-                KeInitializeEvent(core::ptr::addr_of_mut!(wait_event), _EVENT_TYPE_NotificationEvent, 0);
+                KeInitializeEvent(core::ptr::addr_of_mut!(wait_event), _EVENT_TYPE_NotificationEvent, 0u8);
                 completion_context = core::ptr::addr_of_mut!(wait_event) as *mut core::ffi::c_void;
                 IoCopyCurrentIrpStackLocationToNext(Irp);
                 IoSetCompletionRoutine(Irp, FatDeviceControlCompletionRoutine, completion_context, 1, 1, 1);
             }
             IOCTL_DISK_COPY_DATA => {
                 if FlagOn((*vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 &&
-                   FlagOn(((*irp_sp).Flags) as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
+                   FlagOn((*irp_sp).Flags as u8, SL_FORCE_DIRECT_WRITE) == 0 &&
                    FlagOn((*ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) == 0 {
                     FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
                     DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
@@ -167,35 +174,35 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
                 }
             }
             IOCTL_SCSI_PASS_THROUGH | IOCTL_SCSI_PASS_THROUGH_DIRECT | IOCTL_SCSI_PASS_THROUGH_EX | IOCTL_SCSI_PASS_THROUGH_DIRECT_EX => {
-                let mut cdb: *mut CDB = core::ptr::null_mut();
-                if (FlagOn((*irp_sp).FileObject.Flags, FO_FILE_MODIFIED) == 0 || FlagOn((*ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT) == 0) && !((*Irp).AssociatedIrp.SystemBuffer).is_null() {
+                let mut cdb: *mut ntkrnl_sys::ddk::CDB = core::ptr::null_mut();
+                if (FlagOn((*(*irp_sp).FileObject).Flags, FO_FILE_MODIFIED) == 0 || FlagOn((*ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT) == 0) && !((*Irp).AssociatedIrp.SystemBuffer).is_null() {
                     let io_control_code = ((*irp_sp).Parameters).DeviceIoControl.IoControlCode;
                     let input_buffer_length = ((*irp_sp).Parameters).DeviceIoControl.InputBufferLength;
                     if cfg!(all(target_pointer_width = "64", feature = "BUILD_WOW64_ENABLED")) && ntkrnl_sys::ddk::IoIs32bitProcess(Irp) != 0 {
                         if io_control_code == IOCTL_SCSI_PASS_THROUGH || io_control_code == IOCTL_SCSI_PASS_THROUGH_DIRECT {
-                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH32>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH32).Cdb as *mut CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH32>() {
+                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH32).Cdb as *mut ntkrnl_sys::ddk::CDB;
                             }
                         } else {
-                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH32_EX>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH32_EX).Cdb as *mut CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH32_EX>() {
+                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH32_EX).Cdb as *mut ntkrnl_sys::ddk::CDB;
                             }
                         }
                     } else {
                         if io_control_code == IOCTL_SCSI_PASS_THROUGH || io_control_code == IOCTL_SCSI_PASS_THROUGH_DIRECT {
-                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH).Cdb as *mut CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH>() {
+                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH).Cdb as *mut ntkrnl_sys::ddk::CDB;
                             }
                         } else {
-                            if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH_EX>() {
-                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH_EX).Cdb as *mut CDB;
+                            if input_buffer_length as usize >= core::mem::size_of::<ntkrnl_sys::ddk::SCSI_PASS_THROUGH_EX>() {
+                                cdb = &mut (*(*Irp).AssociatedIrp.SystemBuffer as *mut ntkrnl_sys::ddk::SCSI_PASS_THROUGH_EX).Cdb as *mut ntkrnl_sys::ddk::CDB;
                             }
                         }
                     }
 
                     if !cdb.is_null() && (*cdb).AsByte[0] == SCSIOP_FORMAT_UNIT {
                         SetFlag(core::ptr::addr_of_mut!((*ccb).Flags), CCB_FLAG_SENT_FORMAT_UNIT);
-                        SetFlag(core::ptr::addr_of_mut!((*irp_sp).FileObject.Flags), FO_FILE_MODIFIED);
+                        SetFlag(core::ptr::addr_of_mut!((*(*irp_sp).FileObject).Flags), FO_FILE_MODIFIED);
                     }
                 }
                 // Fall through to default behavior
@@ -209,12 +216,12 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
         status = ntkrnl_sys::driver_ddk::IoCallDriver((*vcb).TargetDeviceObject, Irp);
 
         if status == STATUS_PENDING && !completion_context.is_null() {
-            KeWaitForSingleObject(core::ptr::addr_of_mut!(wait_event), _KWAIT_REASON_Executive, (0i32) as u32, 0, core::ptr::null_mut());
+            KeWaitForSingleObject(core::ptr::addr_of_mut!(wait_event), _KWAIT_REASON_Executive, (0i32) as u32, 0u8, core::ptr::null_mut());
             status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
 
         if !completion_context.is_null() {
-            NT_ASSERT((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as u32);
+            NT_ASSERT((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as i32);
             FatReleaseVolume(IrpContext, vcb);
         } else {
             Irp = core::ptr::null_mut();
@@ -226,6 +233,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
         status
     }
 }
+
 
 
 

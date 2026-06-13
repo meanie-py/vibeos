@@ -182,34 +182,34 @@ pub unsafe extern "C" fn FatCreateNewDirent(
 
     // PAGED_CODE();  // macro, ignored
 
-    DebugTrace(1, (Dbg as i32) as u32, b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg as i32) as u32, b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
+    DebugTrace(1, (Dbg as u32), b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
+    DebugTrace(0, (Dbg as u32), b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
 
-    UnusedVbo = (*ParentDirectory).Specific.Dcb.UnusedDirentVbo;
-    DeletedHint = (*ParentDirectory).Specific.Dcb.DeletedDirentHint;
+    UnusedVbo = (*ParentDirectory).Specific.Dcb.as_ref().UnusedDirentVbo;
+    DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
 
     // Check for first call or forced rescan
     if UnusedVbo == 0xffffffff || RescanDir != 0 {
         FatRescanDirectory(IrpContext, ParentDirectory);
-        UnusedVbo = (*ParentDirectory).Specific.Dcb.UnusedDirentVbo;
-        DeletedHint = (*ParentDirectory).Specific.Dcb.DeletedDirentHint;
+        UnusedVbo = (*ParentDirectory).Specific.Dcb.as_ref().UnusedDirentVbo;
+        DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
     }
 
-    DebugTrace(0, (Dbg as i32) as u32, b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
-    DebugTrace(0, (Dbg as i32) as u32, b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
+    DebugTrace(0, (Dbg as u32), b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
+    DebugTrace(0, (Dbg as u32), b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
 
     if RescanDir == 0
         && (UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32))
             <= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart)
     {
         // Easy case: there is a never-used entry
-        DebugTrace(0, (Dbg as i32) as u32, b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace(0, (Dbg as u32), b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
         ByteOffset = UnusedVbo;
         UnusedVbo = UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32));
     } else {
         // Hard case: search for deleted dirents
         ByteOffset = RtlFindClearBits(
-            core::ptr::addr_of_mut!((*ParentDirectory).Specific.Dcb.FreeDirentBitmap),
+            core::ptr::addr_of_mut!((*ParentDirectory).Specific.Dcb.as_mut().FreeDirentBitmap),
             DirentsNeeded,
             DeletedHint / (core::mem::size_of::<DIRENT>() as u32),
         );
@@ -217,8 +217,8 @@ pub unsafe extern "C" fn FatCreateNewDirent(
         // Defrag attempt for root directory on non-FAT32 under size limit
         if FatIsFat32(((*ParentDirectory).Vcb).cast()) == 0
             && ByteOffset == 0xffffffff
-            && NodeType((ParentDirectory).cast()) == FAT_NTC_ROOT_DCB
-            && (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart <= 0x40000
+            && NodeType((ParentDirectory).cast()) == (FAT_NTC_ROOT_DCB as u32)
+            && (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart <= 0x40000u32
         {
             ByteOffset = FatDefragDirectory(IrpContext, ParentDirectory, DirentsNeeded);
         }
@@ -235,20 +235,20 @@ pub unsafe extern "C" fn FatCreateNewDirent(
             }
         } else {
             // Must allocate another cluster
-            DebugTrace(0, (Dbg as i32) as u32, b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
+            DebugTrace(0, (Dbg as u32), b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
 
             // Check size limits and read-only root
-            if (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart >= (64 * 1024 * core::mem::size_of::<DIRENT>() as u32)
+            if (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart >= (64u32 * 1024u32 * core::mem::size_of::<DIRENT>() as u32)
                 || (FatIsFat32(((*ParentDirectory).Vcb).cast()) == 0
-                    && NodeType((ParentDirectory).cast()) == FAT_NTC_ROOT_DCB)
+                    && NodeType((ParentDirectory).cast()) == (FAT_NTC_ROOT_DCB as u32))
             {
                 DebugTrace(
                     0,
-                    (Dbg as i32) as u32,
+                    (Dbg as u32),
                     b"Full root directory or too big on FAT32.  Raise Status.\n\0".as_ptr() as *const i8,
                     0,
                 );
-                FatRaiseStatus(IrpContext, STATUS_CANNOT_MAKE);
+                FatRaiseStatus(IrpContext, STATUS_CANNOT_MAKE as i32);
             }
 
             // Take the last dirent(s) in this cluster, will allocate more below
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn FatCreateNewDirent(
             // Emulate _SEH2_TRY / _SEH2_FINALLY
             {
                 let mut Buffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                (FatPrepareWriteDirectoryFile).cast()(
+                FatPrepareWriteDirectoryFile(
                     IrpContext,
                     ParentDirectory,
                     UnusedVbo,
@@ -277,7 +277,13 @@ pub unsafe extern "C" fn FatCreateNewDirent(
             FatUnpinBcb((IrpContext).cast(), Bcb);
         }
     }
+
+    (*ParentDirectory).Specific.Dcb.as_mut().UnusedDirentVbo = UnusedVbo;
+    (*ParentDirectory).Specific.Dcb.as_mut().DeletedDirentHint = DeletedHint;
+
+    ByteOffset
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatInitializeDirectoryDirent(
     IrpContext: *mut IRP_CONTEXT,
@@ -296,7 +302,7 @@ pub unsafe extern "C" fn FatInitializeDirectoryDirent(
     NT_ASSERT((NodeType((Dcb).cast()) != FAT_NTC_ROOT_DCB) as i32);
     NT_ASSERT(((*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart == 0) as i32);
 
-    (FatPrepareWriteDirectoryFile).cast()(
+    FatPrepareWriteDirectoryFile(
         IrpContext,
         Dcb,
         0,
@@ -313,11 +319,12 @@ pub unsafe extern "C" fn FatInitializeDirectoryDirent(
     FatConstructDot(IrpContext, Dcb, ParentDirent, (Buffer as *mut DIRENT).add(0));
     FatConstructDotDot(IrpContext, Dcb, ParentDirent, (Buffer as *mut DIRENT).add(1));
 
-    (FatUnpinBcb).cast()(IrpContext, Bcb);
+    FatUnpinBcb(IrpContext, Bcb);
 
     DebugTrace(-1, (Dbg as i32) as u32, b"FatInitializeDirectoryDirent -> (VOID)\n\0".as_ptr() as *const i8, 0i32);
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
     let mut ShortNameWithCase: _UNICODE_STRING = core::mem::zeroed();
@@ -333,7 +340,7 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
     if NodeType(FcbOrDcb as *mut core::ffi::c_void) == FAT_NTC_DCB {
         FsRtlDeleteKeyFromTunnelCache(
             core::ptr::addr_of_mut!((*(*(FcbOrDcb)).Vcb).Tunnel),
-            FatDirectoryKey(FcbOrDcb as *mut core::ffi::c_void),
+            FatDirectoryKey(FcbOrDcb as *mut DCB),
         );
     } else {
         ShortNameWithCase.Length = 0;
@@ -342,8 +349,8 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
 
         Status = (RtlOemStringToCountedUnicodeString(
             &mut ShortNameWithCase as *mut _UNICODE_STRING,
-            &((*(FcbOrDcb)).ShortName.Name.Oem) as *const OEM_STRING,
-            0,
+            ((*(FcbOrDcb)).ShortName.Name.Oem).as_ref() as *const OEM_STRING,
+            0u8,
         )) as u32;
 
         NT_ASSERT((ShortNameWithCase.Length != 0) as i32);
@@ -366,8 +373,8 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
                 DownCaseSeg.MaximumLength = DownCaseSeg.Length;
                 RtlDowncaseUnicodeString(
                     &mut DownCaseSeg as *mut _UNICODE_STRING,
-                    &DownCaseSeg as *const _UNICODE_STRING,
-                    0,
+                    &mut DownCaseSeg as *mut _UNICODE_STRING,
+                    0u8,
                 );
             }
 
@@ -381,8 +388,8 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
                     DownCaseSeg.MaximumLength = DownCaseSeg.Length;
                     RtlDowncaseUnicodeString(
                         &mut DownCaseSeg as *mut _UNICODE_STRING,
-                        &DownCaseSeg as *const _UNICODE_STRING,
-                        0,
+                        &mut DownCaseSeg as *mut _UNICODE_STRING,
+                        0u8,
                     );
                 }
             }
@@ -390,10 +397,10 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
 
         FsRtlAddToTunnelCache(
             core::ptr::addr_of_mut!((*(*(FcbOrDcb)).Vcb).Tunnel),
-            FatDirectoryKey((*(FcbOrDcb)).ParentDcb as *mut core::ffi::c_void),
-            &ShortNameWithCase as *const _UNICODE_STRING,
-            &((*(FcbOrDcb)).ExactCaseLongName) as *const _UNICODE_STRING,
-            BooleanFlagOn((*(Ccb)).Flags, CCB_FLAG_OPENED_BY_SHORTNAME),
+            FatDirectoryKey((*(FcbOrDcb)).ParentDcb as *mut DCB),
+            &ShortNameWithCase as *mut _UNICODE_STRING,
+            &((*(FcbOrDcb)).ExactCaseLongName) as *mut _UNICODE_STRING,
+            BooleanFlagOn((*(Ccb)).Flags, CCB_FLAG_OPENED_BY_SHORTNAME) as u8,
             core::mem::size_of::<LARGE_INTEGER>() as u32,
             &((*(FcbOrDcb)).CreationTime) as *const LARGE_INTEGER as *mut core::ffi::c_void,
         );
@@ -401,6 +408,7 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
 
     DebugTrace(-1, Dbg, b"FatTunnelFcbOrDcb -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
+
 
 const PAGE_SIZE: u32 = 4096; // fallback if not from ntkrnl_sys::base
 #[no_mangle]
@@ -421,14 +429,14 @@ pub unsafe extern "C" fn FatDeleteDirent(
 
     assert!(
         ExIsResourceAcquiredExclusiveLite(
-            &(*(*FcbOrDcb).Vcb).Resource as *const _ as *mut _
+            &mut (*(*FcbOrDcb).Vcb).Resource as *mut _
         ) != 0
     );
-    assert!(NodeType(FcbOrDcb as *mut core::ffi::c_void) != FAT_NTC_ROOT_DCB);
+    assert!(NodeType(FcbOrDcb) != FAT_NTC_ROOT_DCB);
 
     if DeleteEa != 0
         && ((*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart != 0
-            || (NodeType(FcbOrDcb as *mut core::ffi::c_void) == FAT_NTC_FCB
+            || (NodeType(FcbOrDcb) == FAT_NTC_FCB
                 && (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart != 0))
     {
         DebugTrace(0, Dbg, b"Called with non zero allocation/file size.\n\0".as_ptr() as *const i8, 0i32);
@@ -438,8 +446,8 @@ pub unsafe extern "C" fn FatDeleteDirent(
     {
         // _SEH2_TRY block
         ExAcquireResourceExclusiveLite(
-            &(*(*FcbOrDcb).ParentDcb).Header.Resource as *mut _,
-            (1i32) as u8,
+            &mut (*(*FcbOrDcb).ParentDcb).Header.Resource as *mut _,
+            1u8,
         );
 
         Offset = (*FcbOrDcb).LfnOffsetWithinDirectory;
@@ -447,7 +455,7 @@ pub unsafe extern "C" fn FatDeleteDirent(
             if Offset == (*FcbOrDcb).LfnOffsetWithinDirectory
                 || (Offset & (PAGE_SIZE - 1)) == 0
             {
-                FatUnpinBcb(IrpContext, (Bcb).cast());
+                FatUnpinBcb(IrpContext, Bcb);
                 FatPrepareWriteDirectoryFile(
                     IrpContext,
                     (*FcbOrDcb).ParentDcb,
@@ -455,8 +463,8 @@ pub unsafe extern "C" fn FatDeleteDirent(
                     core::mem::size_of::<DIRENT>() as u32,
                     &mut Bcb,
                     &mut Dirent,
-                    0i32,
-                    1i32,
+                    0u8,
+                    1u8,
                     &mut DontCare,
                 );
             }
@@ -470,21 +478,23 @@ pub unsafe extern "C" fn FatDeleteDirent(
 
         Dirent = Dirent.sub(1);
 
-        if !FatIsFat32(((*FcbOrDcb).Vcb).cast()) != 0
+        if !FatIsFat32((*FcbOrDcb).Vcb) != 0
             && DeleteEa != 0
-            && (*Dirent).ExtendedAttributes as u16 != 0
+            && (*Dirent).__bindgen_anon_1.ExtendedAttributes as u16 != 0
         {
             // _SEH2_TRY
             {
                 FatDeleteEa(
                     IrpContext,
-                    ((*FcbOrDcb).Vcb).cast(),
-                    (*Dirent).ExtendedAttributes as u16,
-                    &(*FcbOrDcb).ShortName.Name.Oem as *const OEM_STRING,
+                    (*FcbOrDcb).Vcb,
+                    (*Dirent).__bindgen_anon_1.ExtendedAttributes as u16,
+                    (*(*FcbOrDcb)).ShortName.Name.as_mut() as *mut OEM_STRING,
                 );
             }
             // _SEH2_EXCEPT (empty)
         }
+
+        let dcb = &mut (*(*FcbOrDcb).ParentDcb).Specific.Dcb.as_mut();
 
         DirentsToDelete = ((*FcbOrDcb).DirentOffsetWithinDirectory
             - (*FcbOrDcb).LfnOffsetWithinDirectory)
@@ -492,16 +502,16 @@ pub unsafe extern "C" fn FatDeleteDirent(
             + 1;
 
         assert!(
-            (*(*FcbOrDcb).ParentDcb).Specific.Dcb.UnusedDirentVbo == 0xffffffff
+            dcb.UnusedDirentVbo == 0xffffffff
                 || RtlAreBitsSet(
-                    &(*(*FcbOrDcb).ParentDcb).Specific.Dcb.FreeDirentBitmap as *const _,
+                    &mut dcb.FreeDirentBitmap as *mut _,
                     (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
                     DirentsToDelete,
                 ) != 0
         );
 
         RtlClearBits(
-            &mut (*(*FcbOrDcb).ParentDcb).Specific.Dcb.FreeDirentBitmap as *mut _,
+            &mut dcb.FreeDirentBitmap as *mut _,
             (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
             DirentsToDelete,
         );
@@ -512,18 +522,19 @@ pub unsafe extern "C" fn FatDeleteDirent(
         }
 
         if (*FcbOrDcb).DirentOffsetWithinDirectory
-            < (*(*FcbOrDcb).ParentDcb).Specific.Dcb.DeletedDirentHint
+            < dcb.DeletedDirentHint
         {
-            (*(*FcbOrDcb).ParentDcb).Specific.Dcb.DeletedDirentHint =
+            dcb.DeletedDirentHint =
                 (*FcbOrDcb).LfnOffsetWithinDirectory;
         }
     }
     // _SEH2_FINALLY
-    FatUnpinBcb(IrpContext, (Bcb).cast());
-    ExReleaseResourceLite(&(*(*FcbOrDcb).ParentDcb).Header.Resource as *mut _);
+    FatUnpinBcb(IrpContext, Bcb);
+    ExReleaseResourceLite(&mut (*(*FcbOrDcb).ParentDcb).Header.Resource as *mut _);
 
     DebugTrace(-1, Dbg, b"FatDeleteDirent -> (VOID)\n\0".as_ptr() as *const i8, 0i32);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatLfnDirentExists(
     IrpContext: *mut IRP_CONTEXT,
@@ -540,7 +551,7 @@ pub unsafe extern "C" fn FatLfnDirentExists(
 
     PAGED_CODE();
 
-    ccb.UnicodeQueryTemplate = *Lfn;
+    ccb.__bindgen_anon_1.UnicodeQueryTemplate = *Lfn;
     ccb.ContainsWildCards = 0;
     ccb.Flags = CCB_FLAG_SKIP_SHORT_NAME_COMPARE | CCB_FLAG_QUERY_TEMPLATE_MIXED;
 
@@ -563,10 +574,11 @@ pub unsafe extern "C" fn FatLfnDirentExists(
     if !dirent_bcb.is_null() {
         result = 1;
     }
-    (FatUnpinBcb).cast()(IrpContext, dirent_bcb);
+    FatUnpinBcb(IrpContext, dirent_bcb);
 
     result
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatLocateDirent(
@@ -951,13 +963,13 @@ pub unsafe extern "C" fn FatLocateSimpleOemDirent(
     FatStringTo8dot3(
         IrpContext,
         *FileName,
-        core::ptr::addr_of_mut!(LocalCcb.OemQueryTemplate.Constant),
+        core::ptr::addr_of_mut!(LocalCcb.__bindgen_anon_1.OemQueryTemplate.Constant),
     );
     
     LocalCcb.ContainsWildCards = 0;
     LocalCcb.Flags = 0;
     
-    (FatLocateDirent).cast()(
+    FatLocateDirent(
         IrpContext,
         ParentDirectory,
         &mut LocalCcb,
@@ -971,6 +983,7 @@ pub unsafe extern "C" fn FatLocateSimpleOemDirent(
         core::ptr::null_mut(),
     );
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatLocateVolumeLabel(
     irp_context: *mut IRP_CONTEXT,
@@ -1075,7 +1088,7 @@ pub unsafe extern "C" fn FatGetDirentFromFcbOrDcb(
     );
 
     // Assert that we are not attempting this on the root directory.
-    NT_ASSERT((NodeType((FcbOrDcb).cast()) != (FAT_NTC_ROOT_DCB as u8) as u32) as i32);
+    NT_ASSERT((NodeType(FcbOrDcb) != (FAT_NTC_ROOT_DCB as u8) as u32) as i32);
 
     // We know the offset of the dirent within the directory file,
     // so we just read it (with pinning).
@@ -1092,7 +1105,7 @@ pub unsafe extern "C" fn FatGetDirentFromFcbOrDcb(
 
     // Previous call can fail.  We used to assert success, but we use this
     // as part of volume verification after media has been removed.
-    let vcb_state = (*((*FcbOrDcb).Vcb)).VcbState;
+    let vcb_state = (*((*FcbOrDcb).Vcb)).VcbState as u8;
     let cond1 = FlagOn(vcb_state, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0;
     let cond2 = ntkrnl_sys::base::NT_SUCCESS(DontCare) != 0;
     NT_ASSERT((cond1 || cond2) as i32);
@@ -1119,6 +1132,7 @@ pub unsafe extern "C" fn FatGetDirentFromFcbOrDcb(
         0usize,
     );
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatIsDirectoryEmpty(
     IrpContext: *mut PIRP_CONTEXT,
@@ -1206,7 +1220,7 @@ pub unsafe extern "C" fn FatConstructDirent(
         0,
         Dbg,
         b"  Attributes         = %08lx\n\0" as *const u8 as *const i8,
-        Attributes,
+        Attributes as i32,
     );
 
     if ZeroAndSetTimeFields != 0 {
@@ -1217,7 +1231,7 @@ pub unsafe extern "C" fn FatConstructDirent(
     FatStringTo8dot3(
         IrpContext,
         *FileName,
-        (core::ptr::addr_of_mut!((*Dirent).FileName[0]) as *mut FAT8DOT3).cast(),
+        core::ptr::addr_of_mut!((*Dirent).FileName[0]) as *mut u8,
     );
 
     if ZeroAndSetTimeFields != 0 || !SetCreationTime.is_null() {
@@ -1228,7 +1242,7 @@ pub unsafe extern "C" fn FatConstructDirent(
 
         if FatData.ChicagoMode != 0 {
             if SetCreationTime.is_null()
-                || (FatNtTimeToFatTime).cast()(
+                || FatNtTimeToFatTime(
                     IrpContext,
                     SetCreationTime,
                     0,
@@ -1237,7 +1251,7 @@ pub unsafe extern "C" fn FatConstructDirent(
                 ) == 0
             {
                 SaveTime = Time;
-                if (FatNtTimeToFatTime).cast()(
+                if FatNtTimeToFatTime(
                     IrpContext,
                     &mut SaveTime,
                     0,
@@ -1255,7 +1269,7 @@ pub unsafe extern "C" fn FatConstructDirent(
         }
 
         if ZeroAndSetTimeFields != 0 {
-            if (FatNtTimeToFatTime).cast()(
+            if FatNtTimeToFatTime(
                 IrpContext,
                 &Time,
                 1,
@@ -1280,13 +1294,13 @@ pub unsafe extern "C" fn FatConstructDirent(
 
     if ComponentReallyLowercase != 0 {
         SetFlag(
-            (core::ptr::addr_of_mut!((*Dirent).NtByte)).cast(),
+            core::ptr::addr_of_mut!((*Dirent).NtByte) as *mut u8,
             FAT_DIRENT_NT_BYTE_8_LOWER_CASE,
         );
     }
     if ExtensionReallyLowercase != 0 {
         SetFlag(
-            (core::ptr::addr_of_mut!((*Dirent).NtByte)).cast(),
+            core::ptr::addr_of_mut!((*Dirent).NtByte) as *mut u8,
             FAT_DIRENT_NT_BYTE_3_LOWER_CASE,
         );
     }
@@ -1322,7 +1336,7 @@ pub unsafe extern "C" fn FatConstructDirent(
                 RemainderChars =
                     ((*Lfn).Length as usize / core::mem::size_of::<u16>()) % 13;
 
-                (*LfnDirent).Ordinal = LfnOrdinal | FAT_LAST_LONG_ENTRY;
+                (*LfnDirent).Ordinal = (LfnOrdinal | FAT_LAST_LONG_ENTRY) as u8;
 
                 if RemainderChars != 0 {
                     RtlCopyMemory(
@@ -1380,6 +1394,7 @@ pub unsafe extern "C" fn FatConstructDirent(
 
     DebugTrace(-1, Dbg, b"FatConstructDirent -> (VOID)\n\0" as *const u8 as *const i8, 0);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatConstructLabelDirent(
     IrpContext: *mut IRP_CONTEXT,
@@ -1392,7 +1407,7 @@ pub unsafe extern "C" fn FatConstructLabelDirent(
     DebugTrace(0, Dbg, b"  Dirent             = %p\n\0".as_ptr() as *const i8, Dirent);
     DebugTrace(0, Dbg, b"  Label              = %Z\n\0".as_ptr() as *const i8, Label);
 
-    core::ptr::write_bytes(Dirent as *mut u8, 0, core::mem::size_of::<DIRENT>());
+    core::ptr::write_bytes(Dirent as *mut u8, 0u8, core::mem::size_of::<DIRENT>());
 
     let label_buffer = (*Label).Buffer;
     let label_length = (*Label).Length;
@@ -1404,20 +1419,20 @@ pub unsafe extern "C" fn FatConstructLabelDirent(
 
     (*Dirent).LastWriteTime = FatGetCurrentFatTime(IrpContext);
     (*Dirent).Attributes = FAT_DIRENT_ATTR_VOLUME_ID;
-    (*Dirent).ExtendedAttributes = 0;
+    (*Dirent).__bindgen_anon_1.ExtendedAttributes = 0;
     (*Dirent).FileSize = 0;
 
     DebugTrace(-1, Dbg, b"FatConstructLabelDirent -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatSetFileSizeInDirent(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     AlternativeFileSize: *mut u32,
 ) {
-
     let mut Dirent: *mut DIRENT;
-    let mut DirentBcb: *mut Bcb;
+    let mut DirentBcb: *mut BCB;
 
     PAGED_CODE();
 
@@ -1426,9 +1441,9 @@ pub unsafe extern "C" fn FatSetFileSizeInDirent(
     FatGetDirentFromFcbOrDcb(
         IrpContext,
         Fcb,
-        0,
+        0u8,
         &mut Dirent as *mut *mut DIRENT,
-        &mut DirentBcb as *mut *mut Bcb,
+        &mut DirentBcb as *mut *mut BCB,
     );
 
     (*Dirent).FileSize = if !AlternativeFileSize.is_null() {
@@ -1436,10 +1451,11 @@ pub unsafe extern "C" fn FatSetFileSizeInDirent(
     } else {
         (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart
     };
-    FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, 1);
+    FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, 1u8);
 
     FatUnpinBcb((IrpContext).cast(), DirentBcb);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatSetFileSizeInDirentNoRaise(
     IrpContext: PIRP_CONTEXT,
@@ -1711,7 +1727,7 @@ pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *
                 unused_vbo,
                 core::ptr::addr_of_mut!(bcb),
                 core::ptr::addr_of_mut!(dirent),
-                (core::ptr::addr_of_mut!(status)).cast(),
+                core::ptr::addr_of_mut!(status),
             );
 
             if status == STATUS_END_OF_FILE
@@ -1736,7 +1752,7 @@ pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *
                 if current_run == FREE_DIRENTS && dirent_deleted == 0 {
                     dirents_this_run = dirent_index - start_index_of_this_run;
                     RtlClearBits(
-                        &mut (*(*Dcb)).Specific.Dcb.FreeDirentBitmap,
+                        (&mut (*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut RTL_BITMAP,
                         start_index_of_this_run,
                         dirents_this_run,
                     );
@@ -1748,7 +1764,7 @@ pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *
                 if current_run == ALLOCATED_DIRENTS && dirent_deleted != 0 {
                     dirents_this_run = dirent_index - start_index_of_this_run;
                     RtlSetBits(
-                        &mut (*(*Dcb)).Specific.Dcb.FreeDirentBitmap,
+                        (&mut (*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut RTL_BITMAP,
                         start_index_of_this_run,
                         dirents_this_run,
                     );
@@ -1766,24 +1782,24 @@ pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *
         dirents_this_run = dirent_index - start_index_of_this_run;
         if current_run == FREE_DIRENTS || current_run == INITIAL_RUN {
             RtlClearBits(
-                &mut (*(*Dcb)).Specific.Dcb.FreeDirentBitmap,
+                (&mut (*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut RTL_BITMAP,
                 start_index_of_this_run,
                 dirents_this_run,
             );
         } else {
             RtlSetBits(
-                &mut (*(*Dcb)).Specific.Dcb.FreeDirentBitmap,
+                (&mut (*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut RTL_BITMAP,
                 start_index_of_this_run,
                 dirents_this_run,
             );
         }
 
-        if unused_vbo < (*(*Dcb)).Header.AllocationSize.__bindgen_anon_1.LowPart {
+        if unused_vbo < (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
             start_index_of_this_run = unused_vbo / (core::mem::size_of::<DIRENT>() as ULONG);
-            dirents_this_run = ((*(*Dcb)).Header.AllocationSize.__bindgen_anon_1.LowPart - unused_vbo)
+            dirents_this_run = ((*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - unused_vbo)
                 / (core::mem::size_of::<DIRENT>() as ULONG);
             RtlClearBits(
-                &mut (*(*Dcb)).Specific.Dcb.FreeDirentBitmap,
+                (&mut (*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut RTL_BITMAP,
                 start_index_of_this_run,
                 dirents_this_run,
             );
@@ -1794,15 +1810,16 @@ pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *
     } // end 'seh_try
 
     // _SEH2_FINALLY: unpin the Bcb
-    (FatUnpinBcb).cast()(IrpContext, bcb);
+    FatUnpinBcb(&mut IrpContext, bcb as *mut c_void);
 
     // post‑SEH adjustments
     if deleted_hint == 0xFFFFFFFF {
         deleted_hint = unused_vbo;
     }
-    (*(*Dcb)).Specific.Dcb.UnusedDirentVbo = unused_vbo;
-    (*(*Dcb)).Specific.Dcb.DeletedDirentHint = deleted_hint;
+    (*Dcb).Specific.Dcb.UnusedDirentVbo = unused_vbo;
+    (*Dcb).Specific.Dcb.DeletedDirentHint = deleted_hint;
 }
+
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -1816,7 +1833,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut ReturnValue: u32 = 0;
     let mut Fcb: *mut FCB;
 
-    let mut Bcb: *mut Bcb = core::ptr::null_mut();
+    let mut bcb: *mut BCB = core::ptr::null_mut();
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
     let mut Lfn: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
@@ -1834,7 +1851,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut UsedDirents: *mut u8;
     let mut UsedDirentBuffer: *mut u8 = core::ptr::null_mut();
 
-    let mut Bcbs: *mut *mut Bcb = core::ptr::null_mut();
+    let mut Bcbs: *mut *mut BCB = core::ptr::null_mut();
     let mut Page: u32;
     let mut PagesPinned: u32 = 0;
 
@@ -1867,8 +1884,10 @@ pub unsafe extern "system" fn FatDefragDirectory(
     //     Fcb = CONTAINING_RECORD( Links, FCB, ParentDcbLinks );
     //     (VOID)ExAcquireResourceExclusiveLite( Fcb->Header.Resource, TRUE );
     // }
-    Links = (*Dcb).Specific.Dcb.ParentDcbQueue.Flink;
-    while Links != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY {
+    Links = (*Dcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
+    while Links
+        != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue) as *mut LIST_ENTRY
+    {
         Fcb = (Links as *mut u8)
             .offset(-(core::mem::offset_of!(FCB, ParentDcbLinks) as isize))
             as *mut FCB;
@@ -1922,14 +1941,14 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 // FatLocateDirent( IrpContext, Dcb, &Ccb, QueryOffset, NULL,
                 //                  &Dirent, &Bcb, (PVBO)&FoundOffset, NULL,
                 //                  &Lfn, NULL );
-                (FatLocateDirent).cast()(
+                FatLocateDirent(
                     IrpContext,
                     Dcb,
                     core::ptr::addr_of_mut!(Ccb),
                     QueryOffset,
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(Dirent),
-                    core::ptr::addr_of_mut!(Bcb),
+                    core::ptr::addr_of_mut!(bcb),
                     core::ptr::addr_of_mut!(FoundOffset) as *mut u32,
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(Lfn),
@@ -1945,10 +1964,9 @@ pub unsafe extern "system" fn FatDefragDirectory(
                             * (core::mem::size_of::<LFN_DIRENT>() as u32);
 
                     // BytesUsed = FoundOffset - LfnByteOffset + sizeof(DIRENT);
-                    BytesUsed = (FoundOffset - LfnByteOffset + core::mem::size_of::<DIRENT>() as u32)
-                        as u64;
+                    BytesUsed =
+                        (FoundOffset - LfnByteOffset + core::mem::size_of::<DIRENT>() as u32) as u64;
 
-                    // _MSC_VER pragma prefast suppress — omitted (comment only)
                     // Result = FsRtlAddLargeMcbEntry( &Mcb, LfnByteOffset, LfnByteOffset, BytesUsed );
                     Result = FsRtlAddLargeMcbEntry(
                         core::ptr::addr_of_mut!(Mcb),
@@ -1973,8 +1991,8 @@ pub unsafe extern "system" fn FatDefragDirectory(
             }
 
             // if (Bcb != NULL) { FatUnpinBcb( IrpContext, Bcb ); }
-            if Bcb != core::ptr::null_mut() {
-                FatUnpinBcb((IrpContext).cast(), Bcb);
+            if bcb != core::ptr::null_mut() {
+                FatUnpinBcb(IrpContext, bcb);
             }
 
             // if (DirentsNeeded > (DcbSize - TotalBytesAllocated)/sizeof(DIRENT)) {
@@ -1988,9 +2006,6 @@ pub unsafe extern "system" fn FatDefragDirectory(
             }
 
             // Allocate UnusedDirentBuffer
-            // UnusedDirents = UnusedDirentBuffer = FsRtlAllocatePoolWithTag( PagedPool,
-            //                                                                DcbSize - TotalBytesAllocated,
-            //                                                                TAG_DIRENT );
             UnusedDirentBuffer = FsRtlAllocatePoolWithTag(
                 PagedPool,
                 DcbSize - TotalBytesAllocated,
@@ -1999,9 +2014,6 @@ pub unsafe extern "system" fn FatDefragDirectory(
             UnusedDirents = UnusedDirentBuffer;
 
             // Allocate UsedDirentBuffer
-            // UsedDirents = UsedDirentBuffer = FsRtlAllocatePoolWithTag( PagedPool,
-            //                                                            TotalBytesAllocated,
-            //                                                            TAG_DIRENT );
             UsedDirentBuffer =
                 FsRtlAllocatePoolWithTag(PagedPool, TotalBytesAllocated, TAG_DIRENT) as *mut u8;
             UsedDirents = UsedDirentBuffer;
@@ -2012,14 +2024,14 @@ pub unsafe extern "system" fn FatDefragDirectory(
             // Bcbs = FsRtlAllocatePoolWithTag( PagedPool, PagesPinned * sizeof(PBCB), TAG_BCB );
             Bcbs = FsRtlAllocatePoolWithTag(
                 PagedPool,
-                PagesPinned * (core::mem::size_of::<*mut Bcb>() as u32),
+                PagesPinned * (core::mem::size_of::<*mut BCB>() as u32),
                 TAG_BCB,
-            ) as *mut *mut Bcb;
+            ) as *mut *mut BCB;
 
             // RtlZeroMemory( Bcbs, PagesPinned * sizeof(PBCB) );
             RtlZeroMemory(
                 Bcbs as *mut c_void,
-                (PagesPinned * (core::mem::size_of::<*mut Bcb>() as u32)) as usize,
+                (PagesPinned * (core::mem::size_of::<*mut BCB>() as u32)) as usize,
             );
 
             // for (Page = 0; Page < PagesPinned; Page += 1) { ... }
@@ -2039,13 +2051,13 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 //                               &Bcbs[Page],
                 //                               (PVOID *)&Dirent,
                 //                               FALSE, TRUE, &DontCare );
-                (FatPrepareWriteDirectoryFile).cast()(
+                FatPrepareWriteDirectoryFile(
                     IrpContext,
                     Dcb,
                     Page * PAGE_SIZE,
                     PinSize,
                     Bcbs.offset(Page as isize),
-                    core::ptr::addr_of_mut!(Dirent) as *mut *mut c_void,
+                    core::ptr::addr_of_mut!(Dirent),
                     0,
                     1,
                     core::ptr::addr_of_mut!(DontCare),
@@ -2068,7 +2080,6 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 let mut Vbo: i64;
                 let mut Lbo: i64;
 
-                // _MSC_VER pragma prefast suppress — omitted (comment only)
                 // Result = FsRtlGetNextLargeMcbEntry( &Mcb, Run, &Vbo, &Lbo, (PLONGLONG)&BytesUsed );
                 Result = FsRtlGetNextLargeMcbEntry(
                     core::ptr::addr_of_mut!(Mcb),
@@ -2138,7 +2149,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
             if !Bcbs.is_null() {
                 Page = 0;
                 while Page < PagesPinned {
-                    FatUnpinBcb((IrpContext).cast(), *(Bcbs.offset(Page as isize)));
+                    FatUnpinBcb(IrpContext, *(Bcbs.offset(Page as isize)));
                     Page += 1;
                 }
                 ExFreePool(Bcbs as *mut c_void);
@@ -2148,7 +2159,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
             // RtlSetBits( &Dcb->Specific.Dcb.FreeDirentBitmap, 0,
             //             TotalBytesAllocated / sizeof(DIRENT) );
             RtlSetBits(
-                core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut c_void,
+                &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut RTL_BITMAP,
                 0,
                 TotalBytesAllocated / (core::mem::size_of::<DIRENT>() as u32),
             );
@@ -2157,7 +2168,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
             //               TotalBytesAllocated / sizeof(DIRENT),
             //               (DcbSize - TotalBytesAllocated) / sizeof(DIRENT) );
             RtlClearBits(
-                core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.FreeDirentBitmap) as *mut c_void,
+                &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut RTL_BITMAP,
                 TotalBytesAllocated / (core::mem::size_of::<DIRENT>() as u32),
                 (DcbSize - TotalBytesAllocated) / (core::mem::size_of::<DIRENT>() as u32),
             );
@@ -2181,10 +2192,12 @@ pub unsafe extern "system" fn FatDefragDirectory(
             // for (Links = Dcb->Specific.Dcb.ParentDcbQueue.Flink;
             //      Links != &Dcb->Specific.Dcb.ParentDcbQueue;
             //      Links = Links->Flink) {
-            Links = (*Dcb).Specific.Dcb.ParentDcbQueue.Flink;
-            while Links != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY
+            Links = (*Dcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
+            while Links
+                != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue)
+                    as *mut LIST_ENTRY
             {
-                let mut TmpBcb: *mut Bcb = core::ptr::null_mut();
+                let mut TmpBcb: *mut BCB = core::ptr::null_mut();
                 let mut TmpOffset: u32 = 0;
                 let mut TmpDirent: *mut DIRENT = core::ptr::null_mut();
                 let mut PreviousLfnSpread: u32;
@@ -2195,7 +2208,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
                     as *mut FCB;
 
                 // if (IsFileDeleted( IrpContext, Fcb )) { continue; }
-                if IsFileDeleted(IrpContext, Fcb) != 0 {
+                if IsFileDeleted(IrpContext, Fcb) {
                     Links = (*Links).Flink;
                     continue;
                 }
@@ -2223,12 +2236,12 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 // if (TmpBcb == NULL || InvalidateFcbs) {
                 if TmpBcb == core::ptr::null_mut() || InvalidateFcbs != 0 {
                     // FatUnpinBcb( IrpContext, TmpBcb );
-                    FatUnpinBcb((IrpContext).cast(), TmpBcb);
+                    FatUnpinBcb(IrpContext, TmpBcb);
                     // FatMarkFcbCondition( IrpContext, Fcb, FcbBad, TRUE );
                     FatMarkFcbCondition(IrpContext, Fcb, FcbBad, 1);
                 } else {
                     // FatUnpinBcb( IrpContext, TmpBcb );
-                    FatUnpinBcb((IrpContext).cast(), TmpBcb);
+                    FatUnpinBcb(IrpContext, TmpBcb);
 
                     // PreviousLfnSpread = Fcb->DirentOffsetWithinDirectory - Fcb->LfnOffsetWithinDirectory;
                     PreviousLfnSpread =
@@ -2274,17 +2287,19 @@ pub unsafe extern "system" fn FatDefragDirectory(
         if !Bcbs.is_null() {
             Page = 0;
             while Page < PagesPinned {
-                FatUnpinBcb((IrpContext).cast(), *(Bcbs.offset(Page as isize)));
+                FatUnpinBcb(IrpContext, *(Bcbs.offset(Page as isize)));
                 Page += 1;
             }
             ExFreePool(Bcbs as *mut c_void);
         }
 
-        FatUnpinBcb((IrpContext).cast(), Bcb);
+        FatUnpinBcb(IrpContext, bcb);
 
         // Release Fcb resources
-        Links = (*Dcb).Specific.Dcb.ParentDcbQueue.Flink;
-        while Links != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY
+        Links = (*Dcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
+        while Links
+            != core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue)
+                as *mut LIST_ENTRY
         {
             Fcb = (Links as *mut u8)
                 .offset(-(core::mem::offset_of!(FCB, ParentDcbLinks) as isize))
@@ -2300,6 +2315,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 
     return _seh2_result_return_value;
 }
+
 
 
 // ============================================================================

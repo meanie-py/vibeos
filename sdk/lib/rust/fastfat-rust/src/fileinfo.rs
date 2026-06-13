@@ -182,7 +182,7 @@ pub unsafe extern "C" fn FatQueryBasicInfo(
 
     if (*Fcb).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16 {
         ExLocalTimeToSystemTime(
-            core::ptr::addr_of!(FatJanOne1980),
+            core::ptr::addr_of!(FatJanOne1980) as *mut LARGE_INTEGER,
             core::ptr::addr_of_mut!((*Buffer).LastWriteTime),
         );
         (*Buffer).CreationTime = (*Buffer).LastWriteTime;
@@ -195,8 +195,8 @@ pub unsafe extern "C" fn FatQueryBasicInfo(
 
     (*Buffer).FileAttributes = (*Fcb).DirentFatFlags as u32;
 
-    if FlagOn((*Fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes), FILE_ATTRIBUTE_TEMPORARY);
+    if FlagOn((*Fcb).FcbState as u8, FCB_STATE_TEMPORARY) != 0 {
+        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes) as *mut u8, FILE_ATTRIBUTE_TEMPORARY as u8);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -209,6 +209,7 @@ pub unsafe extern "C" fn FatQueryBasicInfo(
 
     DebugTrace(-1, Dbg, b"FatQueryBasicInfo -> VOID\n\0".as_ptr() as *const i8, 0);
 }
+
 
 // ==== recovered from stitcher-drop: 02_FatQueryStandardInfo.rs ====
 const FCB_STATE_DELETE_ON_CLOSE: u32 = 1; // placeholder
@@ -392,7 +393,7 @@ pub unsafe extern "system" fn FatQueryNameInfo(
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*Buffer).FileName) as *mut core::ffi::c_void,
-        (*Fcb).FullFileName.Buffer as *const core::ffi::c_void,
+        (*Fcb).FullFileName.Buffer as *mut core::ffi::c_void,
         BytesToCopy as usize,
     );
 
@@ -406,9 +407,10 @@ pub unsafe extern "system" fn FatQueryNameInfo(
             Buffer: ShortNameBuffer.as_mut_ptr(),
         };
 
+        let short_name_ref = (*Fcb).ShortName.as_ref();
         let Status: i32 = RtlOemStringToCountedUnicodeString(
             &mut ShortName,
-            core::ptr::addr_of!((*Fcb).ShortName.Name.Oem) as *const OEM_STRING,
+            core::ptr::addr_of!(short_name_ref.Name.Oem) as *const OEM_STRING,
             0,
         );
 
@@ -427,7 +429,7 @@ pub unsafe extern "system" fn FatQueryNameInfo(
                 .add((*Buffer).FileNameLength as usize);
             RtlCopyMemory(
                 dst as *mut core::ffi::c_void,
-                ShortName.Buffer as *const core::ffi::c_void,
+                ShortName.Buffer as *mut core::ffi::c_void,
                 BytesToCopy as usize,
             );
         }
@@ -450,6 +452,7 @@ pub unsafe extern "system" fn FatQueryNameInfo(
 
     let _ = IrpContext; // UNREFERENCED_PARAMETER
 }
+
 
 // ==== recovered from stitcher-drop: 07_FatQueryShortNameInfo.rs ====
 extern "system" {
@@ -493,7 +496,7 @@ unsafe extern "C" fn FatQueryShortNameInfo(
     }
 
     core::ptr::copy_nonoverlapping(
-        (*Buffer).FileName.as_mut_ptr() as *mut u8,
+        (&mut (*Buffer).FileName).as_mut_ptr() as *mut u8,
         short_name.Buffer as *const u8,
         bytes_to_copy as usize,
     );
@@ -503,8 +506,10 @@ unsafe extern "C" fn FatQueryShortNameInfo(
     DebugTrace(0, Dbg, b"*Length = %08lx\n\0".as_ptr() as *const i8, *Length);
     DebugTrace(-1, Dbg, b"FatQueryNameInfo -> VOID\n\0".as_ptr() as *const i8, 0);
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut ());
+    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER(Fcb as usize);
 }
+
 
 // ==== recovered from stitcher-drop: 08_FatQueryNetworkInfo.rs ====
 // Forward declarations for functions/globals/constants not in the import list
@@ -535,7 +540,7 @@ pub unsafe extern "C" fn FatQueryNetworkInfo(
 
     if (*Fcb).Header.NodeTypeCode == FAT_NTC_ROOT_DCB {
         ExLocalTimeToSystemTime(
-            core::ptr::addr_of!(FatJanOne1980),
+            core::ptr::addr_of!(FatJanOne1980) as *mut _,
             core::ptr::addr_of_mut!((*Buffer).LastWriteTime),
         );
         (*Buffer).CreationTime = (*Buffer).LastWriteTime;
@@ -548,9 +553,9 @@ pub unsafe extern "C" fn FatQueryNetworkInfo(
 
     (*Buffer).FileAttributes = (*Fcb).DirentFatFlags;
 
-    if FlagOn((*Fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
+    if FlagOn((*Fcb).FcbState as u8, FCB_STATE_TEMPORARY) != 0 {
         let attr_ptr = core::ptr::addr_of_mut!((*Buffer).FileAttributes);
-        SetFlag(attr_ptr, FILE_ATTRIBUTE_TEMPORARY);
+        SetFlag(attr_ptr as *mut u8, 0x100u32 as u8);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -570,6 +575,7 @@ pub unsafe extern "C" fn FatQueryNetworkInfo(
     DebugTrace(0, Dbg, b"*Length = %08lx\n\0".as_ptr() as *const i8, *Length);
     DebugTrace(-1, Dbg, b"FatQueryNetworkInfo -> VOID\n\0".as_ptr() as *const i8, 0);
 }
+
 
 // ==== recovered from stitcher-drop: 09_FatSetBasicInfo.rs ====
 // Forward declarations for unknown extern functions
@@ -1578,9 +1584,9 @@ pub unsafe extern "C" fn FatRenameEAs(
         );
 
         core::ptr::copy_nonoverlapping(
-            (*Fcb).ShortName.Name.Oem.Buffer as *const u8,
+            (*Fcb).ShortName.Name.Oem.as_ref().unwrap().Buffer as *const u8,
             (*ea_set_header).OwnerFileName.as_mut_ptr(),
-            (*Fcb).ShortName.Name.Oem.Length as usize,
+            (*Fcb).ShortName.Name.Oem.as_ref().unwrap().Length as usize,
         );
 
         FatMarkEaRangeDirty(
@@ -1606,6 +1612,7 @@ pub unsafe extern "C" fn FatRenameEAs(
         FatReleaseFcb(IrpContext, (*vcb).EaFcb);
     }
 }
+
 
 // ==== recovered from stitcher-drop: 17_FatSetRenameInfo.rs ====
 // Forward declarations for external symbols not in imports
@@ -2533,7 +2540,7 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
     FileInformationClass = (*IrpSp).Parameters.QueryFile.FileInformationClass;
     Buffer = (*Irp).AssociatedIrp.SystemBuffer;
 
-    TypeOfOpen = (FatDecodeFileObject).cast()(
+    TypeOfOpen = FatDecodeFileObject(
         FileObject,
         core::ptr::addr_of_mut!(Vcb),
         core::ptr::addr_of_mut!(Fcb),
@@ -2546,197 +2553,186 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
     let mut Irp = Irp;
 
     'sehtry: loop {
-        match TypeOfOpen {
-            UserVolumeOpen => {
-                Status = STATUS_INVALID_PARAMETER;
-                // break from outer switch is implicit in Rust match
-            }
-            UserFileOpen | UserDirectoryOpen | DirectoryFile => {
-                if FileInformationClass == FileNameInformation ||
-                    FileInformationClass == FileNormalizedNameInformation ||
-                    FileInformationClass == FileAllInformation
-                {
-                    if FatAcquireExclusiveVcb(IrpContext, Vcb) == 0 {
-                        DebugTrace(0, Dbg, b"Cannot acquire Vcb\n\0".as_ptr() as *const i8);
-                        Status = FatFsdPostRequest(IrpContext, Irp);
-                        IrpContext = core::ptr::null_mut();
-                        Irp = core::ptr::null_mut();
-                        // try_return(Status)
-                        break 'sehtry;
-                    }
-                    VcbAcquired = 1;
+        if TypeOfOpen == UserVolumeOpen {
+            Status = STATUS_INVALID_PARAMETER;
+        } else if TypeOfOpen == UserFileOpen || TypeOfOpen == UserDirectoryOpen || TypeOfOpen == DirectoryFile {
+            if FileInformationClass == FileNameInformation ||
+                FileInformationClass == FileNormalizedNameInformation ||
+                FileInformationClass == FileAllInformation
+            {
+                if FatAcquireExclusiveVcb(IrpContext, Vcb) == 0 {
+                    DebugTrace(0, Dbg, b"Cannot acquire Vcb\n\0".as_ptr() as *const i8);
+                    Status = FatFsdPostRequest(IrpContext, Irp);
+                    IrpContext = core::ptr::null_mut();
+                    Irp = core::ptr::null_mut();
+                    break 'sehtry;
                 }
-
-                if !FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) != 0
-                    || FlagOn((*(*Fcb).Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
-                {
-                    if FatAcquireSharedFcb(IrpContext, Fcb) == 0 {
-                        DebugTrace(0, Dbg, b"Cannot acquire Fcb\n\0".as_ptr() as *const i8);
-                        Status = FatFsdPostRequest(IrpContext, Irp);
-                        IrpContext = core::ptr::null_mut();
-                        Irp = core::ptr::null_mut();
-                        // try_return(Status)
-                        break 'sehtry;
-                    }
-                    FcbAcquired = 1;
-                }
-
-                FatVerifyFcb(IrpContext, Fcb);
-
-                match FileInformationClass {
-                    FileAllInformation => {
-                        AllInfo = Buffer as *mut FILE_ALL_INFORMATION;
-                        Length -= (core::mem::size_of::<FILE_ACCESS_INFORMATION>()
-                            + core::mem::size_of::<FILE_MODE_INFORMATION>()
-                            + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>()) as LONG;
-
-                        FatQueryBasicInfo(
-                            IrpContext,
-                            Fcb,
-                            FileObject,
-                            core::ptr::addr_of_mut!((*AllInfo).BasicInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        FatQueryStandardInfo(
-                            IrpContext,
-                            Fcb,
-                            core::ptr::addr_of_mut!((*AllInfo).StandardInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        FatQueryInternalInfo(
-                            IrpContext,
-                            Fcb,
-                            core::ptr::addr_of_mut!((*AllInfo).InternalInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        FatQueryEaInfo(
-                            IrpContext,
-                            Fcb,
-                            core::ptr::addr_of_mut!((*AllInfo).EaInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        FatQueryPositionInfo(
-                            IrpContext,
-                            FileObject,
-                            core::ptr::addr_of_mut!((*AllInfo).PositionInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        FatQueryNameInfo(
-                            IrpContext,
-                            Fcb,
-                            Ccb,
-                            0,
-                            core::ptr::addr_of_mut!((*AllInfo).NameInformation),
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                        // break from this match arm is implicit
-                    }
-                    FileBasicInformation => {
-                        FatQueryBasicInfo(
-                            IrpContext,
-                            Fcb,
-                            FileObject,
-                            Buffer as *mut FILE_BASIC_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileStandardInformation => {
-                        FatQueryStandardInfo(
-                            IrpContext,
-                            Fcb,
-                            Buffer as *mut FILE_STANDARD_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileInternalInformation => {
-                        FatQueryInternalInfo(
-                            IrpContext,
-                            Fcb,
-                            Buffer as *mut FILE_INTERNAL_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileEaInformation => {
-                        FatQueryEaInfo(
-                            IrpContext,
-                            Fcb,
-                            Buffer as *mut FILE_EA_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FilePositionInformation => {
-                        FatQueryPositionInfo(
-                            IrpContext,
-                            FileObject,
-                            Buffer as *mut FILE_POSITION_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileNameInformation => {
-                        FatQueryNameInfo(
-                            IrpContext,
-                            Fcb,
-                            Ccb,
-                            0,
-                            Buffer as *mut FILE_NAME_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileNormalizedNameInformation => {
-                        FatQueryNameInfo(
-                            IrpContext,
-                            Fcb,
-                            Ccb,
-                            1,
-                            Buffer as *mut FILE_NAME_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileAlternateNameInformation => {
-                        FatQueryShortNameInfo(
-                            IrpContext,
-                            Fcb,
-                            Buffer as *mut FILE_NAME_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    FileNetworkOpenInformation => {
-                        FatQueryNetworkInfo(
-                            IrpContext,
-                            Fcb,
-                            FileObject,
-                            Buffer as *mut FILE_NETWORK_OPEN_INFORMATION,
-                            core::ptr::addr_of_mut!(Length),
-                        );
-                    }
-                    _ => {
-                        Status = STATUS_INVALID_PARAMETER;
-                    }
-                } // end inner switch
-            } // end UserFileOpen|UserDirectoryOpen|DirectoryFile
-            _ => {
-                KdPrintEx(
-                    DPFLTR_FASTFAT_ID,
-                    DPFLTR_INFO_LEVEL,
-                    b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8,
-                    TypeOfOpen as u32,
-                );
-                Status = STATUS_INVALID_PARAMETER;
+                VcbAcquired = 1;
             }
-        } // end outer switch
 
-        // If we reached here without try_return, execute the overflow check and information set.
+            if FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0
+                || FlagOn((*(*Fcb).Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
+            {
+                if FatAcquireSharedFcb(IrpContext, Fcb) == 0 {
+                    DebugTrace(0, Dbg, b"Cannot acquire Fcb\n\0".as_ptr() as *const i8);
+                    Status = FatFsdPostRequest(IrpContext, Irp);
+                    IrpContext = core::ptr::null_mut();
+                    Irp = core::ptr::null_mut();
+                    break 'sehtry;
+                }
+                FcbAcquired = 1;
+            }
+
+            FatVerifyFcb(IrpContext, Fcb);
+
+            match FileInformationClass {
+                FileAllInformation => {
+                    AllInfo = Buffer as *mut FILE_ALL_INFORMATION;
+                    Length -= (core::mem::size_of::<FILE_ACCESS_INFORMATION>()
+                        + core::mem::size_of::<FILE_MODE_INFORMATION>()
+                        + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>()) as LONG;
+
+                    FatQueryBasicInfo(
+                        IrpContext,
+                        Fcb,
+                        FileObject,
+                        core::ptr::addr_of_mut!((*AllInfo).BasicInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                    FatQueryStandardInfo(
+                        IrpContext,
+                        Fcb,
+                        core::ptr::addr_of_mut!((*AllInfo).StandardInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                    FatQueryInternalInfo(
+                        IrpContext,
+                        Fcb,
+                        core::ptr::addr_of_mut!((*AllInfo).InternalInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                    FatQueryEaInfo(
+                        IrpContext,
+                        Fcb,
+                        core::ptr::addr_of_mut!((*AllInfo).EaInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                    FatQueryPositionInfo(
+                        IrpContext,
+                        FileObject,
+                        core::ptr::addr_of_mut!((*AllInfo).PositionInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                    FatQueryNameInfo(
+                        IrpContext,
+                        Fcb,
+                        Ccb,
+                        0u8,
+                        core::ptr::addr_of_mut!((*AllInfo).NameInformation),
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileBasicInformation => {
+                    FatQueryBasicInfo(
+                        IrpContext,
+                        Fcb,
+                        FileObject,
+                        Buffer as *mut FILE_BASIC_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileStandardInformation => {
+                    FatQueryStandardInfo(
+                        IrpContext,
+                        Fcb,
+                        Buffer as *mut FILE_STANDARD_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileInternalInformation => {
+                    FatQueryInternalInfo(
+                        IrpContext,
+                        Fcb,
+                        Buffer as *mut FILE_INTERNAL_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileEaInformation => {
+                    FatQueryEaInfo(
+                        IrpContext,
+                        Fcb,
+                        Buffer as *mut FILE_EA_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FilePositionInformation => {
+                    FatQueryPositionInfo(
+                        IrpContext,
+                        FileObject,
+                        Buffer as *mut FILE_POSITION_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileNameInformation => {
+                    FatQueryNameInfo(
+                        IrpContext,
+                        Fcb,
+                        Ccb,
+                        0u8,
+                        Buffer as *mut FILE_NAME_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileNormalizedNameInformation => {
+                    FatQueryNameInfo(
+                        IrpContext,
+                        Fcb,
+                        Ccb,
+                        1u8,
+                        Buffer as *mut FILE_NAME_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileAlternateNameInformation => {
+                    FatQueryShortNameInfo(
+                        IrpContext,
+                        Fcb,
+                        Buffer as *mut FILE_NAME_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                FileNetworkOpenInformation => {
+                    FatQueryNetworkInfo(
+                        IrpContext,
+                        Fcb,
+                        FileObject,
+                        Buffer as *mut FILE_NETWORK_OPEN_INFORMATION,
+                        core::ptr::addr_of_mut!(Length),
+                    );
+                }
+                _ => {
+                    Status = STATUS_INVALID_PARAMETER;
+                }
+            }
+        } else {
+            KdPrintEx(
+                DPFLTR_FASTFAT_ID,
+                DPFLTR_INFO_LEVEL,
+                b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8,
+                TypeOfOpen as u32,
+            );
+            Status = STATUS_INVALID_PARAMETER;
+        }
+
         if Length < 0 {
             Status = STATUS_BUFFER_OVERFLOW;
             Length = 0;
         }
         (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryFile.Length as i64 - Length as i64) as u64;
 
-        // try_exit: break out of the loop normally.
         break 'sehtry;
     }
 
-    // finally block
     DebugUnwind(b"FatCommonQueryInformation\0".as_ptr() as *const i8);
 
     if FcbAcquired != 0 {
@@ -2759,6 +2755,7 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
 
     Status
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonSetInformation(
     IrpContext: *mut IRP_CONTEXT,
@@ -2777,7 +2774,7 @@ pub unsafe extern "C" fn FatCommonSetInformation(
     DebugTrace(0, Dbg, b"->Length               = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.SetFile.Length as usize);
     DebugTrace(0, Dbg, b"->FileInformationClass = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.SetFile.FileInformationClass as usize);
     DebugTrace(0, Dbg, b"->FileObject           = %p\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.SetFile.FileObject as usize);
-    DebugTrace(0, Dbg, b"->ReplaceIfExists      = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.SetFile.ReplaceIfExists as usize);
+    DebugTrace(0, Dbg, b"->ReplaceIfExists      = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.SetFile.__bindgen_anon_1.ReplaceIfExists as usize);
     DebugTrace(0, Dbg, b"->Buffer               = %p\n\0".as_ptr() as *const i8, (*Irp).AssociatedIrp.SystemBuffer as usize);
 
     let FileInformationClass: FILE_INFORMATION_CLASS = (*IrpSp).Parameters.SetFile.FileInformationClass;
@@ -2792,7 +2789,7 @@ pub unsafe extern "C" fn FatCommonSetInformation(
     let mut VcbAcquired: BOOLEAN = 0;
     let mut FcbAcquired: BOOLEAN = 0;
 
-    let Status = 'try_exit: loop {
+    'try_exit: loop {
         match TypeOfOpen {
             UserVolumeOpen => {
                 Status = STATUS_INVALID_PARAMETER;
@@ -2808,8 +2805,8 @@ pub unsafe extern "C" fn FatCommonSetInformation(
                         FatGetFcbOplock(Fcb),
                         Irp,
                         IrpContext as *mut core::ffi::c_void,
-                        None,
-                        None,
+                        core::ptr::null(),
+                        core::ptr::null(),
                     );
                     if Status != STATUS_SUCCESS {
                         break 'try_exit;
@@ -2869,15 +2866,15 @@ pub unsafe extern "C" fn FatCommonSetInformation(
             && (FileInformationClass == FileRenameInformation
                 || (FileInformationClass == FileDispositionInformation
                     && (*(*(Irp as *mut IRP)).AssociatedIrp.SystemBuffer as *mut FILE_DISPOSITION_INFORMATION)
-                        .DeleteFile
+                        .__bindgen_anon_1.DeleteFile
                         != 0))
         {
             Status = FsRtlCheckOplock(
                 FatGetFcbOplock(Fcb),
                 Irp,
                 IrpContext as *mut core::ffi::c_void,
-                Some(FatOplockComplete as unsafe extern "system" fn(PVOID, *mut IRP)),
-                None,
+                FatOplockComplete as *const core::ffi::c_void,
+                core::ptr::null(),
             );
             (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
             if Status == STATUS_PENDING {
@@ -2927,10 +2924,10 @@ pub unsafe extern "C" fn FatCommonSetInformation(
                 Status = FatSetAllocationInfo(IrpContext, Irp, Fcb, FileObject);
             }
             FileEndOfFileInformation => {
-                Status = (FatSetEndOfFileInfo).cast()(IrpContext, Irp, FileObject, Vcb, Fcb);
+                Status = (FatSetEndOfFileInfo as unsafe extern "C" fn(*mut IRP_CONTEXT, *mut IRP, *mut FILE_OBJECT, *mut VCB, *mut FCB) -> NTSTATUS)(IrpContext, Irp, FileObject, Vcb, Fcb);
             }
             FileValidDataLengthInformation => {
-                Status = (FatSetValidDataLengthInfo).cast()(IrpContext, Irp, FileObject, Fcb, Ccb);
+                Status = (FatSetValidDataLengthInfo as unsafe extern "system" fn(*mut IRP_CONTEXT, *mut IRP, *mut FILE_OBJECT, *mut FCB, *mut CCB) -> NTSTATUS)(IrpContext, Irp, FileObject, Fcb, Ccb);
             }
             _ => {
                 Status = STATUS_INVALID_PARAMETER;
@@ -2943,7 +2940,7 @@ pub unsafe extern "C" fn FatCommonSetInformation(
         break 'try_exit;
     };
 
-    DebugUnwind(b"FatCommonSetInformation\0".as_ptr() as *const i8);
+    DebugUnwind(b"FatCommonSetInformation\0".as_ptr() as usize);
     if FcbAcquired != 0 {
         FatReleaseFcb(IrpContext, Fcb);
     }
@@ -2957,6 +2954,7 @@ pub unsafe extern "C" fn FatCommonSetInformation(
 
     return Status;
 }
+
 
 
 // Forward declarations for unknown extern functions

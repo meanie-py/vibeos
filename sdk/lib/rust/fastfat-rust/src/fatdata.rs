@@ -302,7 +302,6 @@ pub unsafe extern "C" fn FatProcessException(
 ) -> NTSTATUS {
     let mut Vcb: *mut VCB = core::ptr::null_mut();
     let mut IrpSp: *mut IO_STACK_LOCATION;
-    let mut TransitionState: FAT_VOLUME_STATE = VolumeDirty;
     let mut SavedFlags: u32 = 0;
 
     // PAGED_CODE();
@@ -353,6 +352,7 @@ pub unsafe extern "C" fn FatProcessException(
     // For compilation we return ExceptionCode.
     return ExceptionCode;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatCompleteRequest_Real(
     IrpContext: PIRP_CONTEXT,
@@ -431,7 +431,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
 
     if CheckForReadOperation != 0 {
         if FsRtlFastCheckLockForRead(
-            &raw mut (*Fcb).Specific.Fcb.FileLock as *mut _,
+            &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock as *mut _,
             FileOffset,
             core::ptr::addr_of_mut!(LargeLength),
             LockKey,
@@ -443,7 +443,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
     } else {
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) == 0
             && FsRtlFastCheckLockForWrite(
-                &raw mut (*Fcb).Specific.Fcb.FileLock as *mut _,
+                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock as *mut _,
                 FileOffset,
                 core::ptr::addr_of_mut!(LargeLength),
                 LockKey,
@@ -457,6 +457,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
 
     0u8
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFastQueryBasicInfo(
@@ -610,7 +611,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
         (*Buffer).DeletePending = BooleanFlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
 
         if NodeType(Fcb as *mut core::ffi::c_void) == FAT_NTC_FCB {
-            if (*Fcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
+            if (*Fcb).Header.AllocationSize.QuadPart == 0x7fffffffffffffff_i64 {
                 // try_return(Results)
                 break;
             }
@@ -636,6 +637,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
 
     Results
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
@@ -769,12 +771,12 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     PAGED_CODE();
 
     // Check if this is the root directory; if so, skip popup
-    if NodeType(Fcb as *const core::ffi::c_void) == (FAT_NTC_ROOT_DCB) as u32 {
+    if NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32 {
         return;
     }
 
     // Ensure the full file name is cached
-    if (*(*Fcb).FullFileName.Buffer).is_null() {
+    if (*Fcb).FullFileName.Buffer.is_null() {
         FatSetFullFileNameInFcb(IrpContext, Fcb);
     }
 
@@ -783,7 +785,7 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     let Thread: *mut KTHREAD;
     if IoIsSystemThread(
         (*(*IrpContext).OriginatingIrp).Tail.Overlay.Thread
-    ) {
+    ) != 0 {
         Thread = core::ptr::null_mut();
     } else {
         #[cfg(not(reactos))]
@@ -799,10 +801,11 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     // Raise the informational hard error with STATUS_FILE_CORRUPT_ERROR
     IoRaiseInformationalHardError(
         STATUS_FILE_CORRUPT_ERROR,
-        &mut (*Fcb).FullFileName as *mut _UNICODE_STRING,
+        &mut (*Fcb).FullFileName as *mut UNICODE_STRING,
         Thread,
     );
 }
+
 
 
 // ============================================================================

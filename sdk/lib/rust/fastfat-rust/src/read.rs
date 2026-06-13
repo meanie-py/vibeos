@@ -149,7 +149,7 @@ pub unsafe extern "system" fn FatFsdRead(
                     FatOverflowPagingFileRead,
                 );
                 KeWaitForSingleObject(
-                    &mut Event as *mut _ as *mut core::ffi::c_void,
+                    &mut Event as *mut KEVENT,
                     (Executive) as u32,
                     0, // KernelMode
                     0,
@@ -169,8 +169,8 @@ pub unsafe extern "system" fn FatFsdRead(
         IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp)) as *mut IRP_CONTEXT;
 
         //  An Mdl complete request must not go through common read.
-        if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
-            Status = FatCompleteMdl((IrpContext as *mut core::ffi::c_void).cast(), Irp);
+        if FlagOn((*IrpContext).MinorFunction as u8, IRP_MN_COMPLETE) != 0 {
+            Status = FatCompleteMdl(IrpContext, Irp);
             break 'try_exit; // try_return
         }
 
@@ -193,6 +193,7 @@ pub unsafe extern "system" fn FatFsdRead(
 
     Status
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatStackOverflowRead(

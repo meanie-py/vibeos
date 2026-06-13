@@ -74,12 +74,12 @@ pub unsafe extern "C" fn FatNtTimeToFatTime(
         return 0; // FALSE
     }
 
-    (*FatTime).Time.DoubleSeconds = (TimeFields.Second as i32 / 2) as USHORT;
-    (*FatTime).Time.Minute = TimeFields.Minute as USHORT;
-    (*FatTime).Time.Hour = TimeFields.Hour as USHORT;
-    (*FatTime).Date.Year = (TimeFields.Year as i32 - 1980) as USHORT;
-    (*FatTime).Date.Month = TimeFields.Month as USHORT;
-    (*FatTime).Date.Day = TimeFields.Day as USHORT;
+    (*FatTime).Time.set_DoubleSeconds((TimeFields.Second as i32 / 2) as USHORT);
+    (*FatTime).Time.set_Minute(TimeFields.Minute as USHORT);
+    (*FatTime).Time.set_Hour(TimeFields.Hour as USHORT);
+    (*FatTime).Date.set_Year((TimeFields.Year as i32 - 1980) as USHORT);
+    (*FatTime).Date.set_Month(TimeFields.Month as USHORT);
+    (*FatTime).Date.set_Day(TimeFields.Day as USHORT);
 
     if !TenMsecs.is_null() {
         if Rounding == 0 {
@@ -106,6 +106,7 @@ pub unsafe extern "C" fn FatNtTimeToFatTime(
 
     1 // TRUE
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatFatDateToNtTime(
     IrpContext: PIRP_CONTEXT,
@@ -176,7 +177,7 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
 
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
-            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8).cast(),
+            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8),
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -185,7 +186,7 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 262u32,
-                core::ptr::null_mut::<u8>() as *const core::ffi::c_void,
+                core::ptr::null_mut::<u8>(),
             );
         }
     }
@@ -213,8 +214,8 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
         core::ptr::addr_of_mut!(Time),
     ) == 0
     {
-        Time.u.__bindgen_anon_1.LowPart = 0;
-        Time.u.__bindgen_anon_1.HighPart = 0;
+        Time.u.LowPart = 0;
+        Time.u.HighPart = 0;
     } else {
         ExLocalTimeToSystemTime(
             core::ptr::addr_of_mut!(Time),
@@ -222,10 +223,11 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
         );
     }
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER(IrpContext as usize);
 
     return Time;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> FAT_TIME_STAMP {
     // Zero-initialize locals as C would (all fields set to 0)

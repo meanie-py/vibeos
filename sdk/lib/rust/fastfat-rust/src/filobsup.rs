@@ -298,7 +298,7 @@ pub unsafe extern "C" fn FatDecodeFileObject(
 pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
-    FlushType: FAT_FLUSH_TYPE,
+    Flags: u32,
 ) {
     let OriginalFcb = Fcb;
     let NextFcb: *mut FCB;
@@ -324,14 +324,14 @@ pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
     // Note that it very important to get the next node to visit before
     // acting on the current node.
     while Fcb != core::ptr::null_mut() {
-        NextFcb = FatGetNextFcbTopDown(IrpContext, Fcb, OriginalFcb);
+        NextFcb = FatGetNextFcbTopDown(IrpContext, Fcb, OriginalFcb as *mut DCB);
 
         // Check for the EA file fcb
         if FlagOn(
-            ((*Fcb).DirentFatFlags) as u32,
+            ((*Fcb).DirentFatFlags) as u8,
             FAT_DIRENT_ATTR_VOLUME_ID,
         ) == 0 {
-            FatForceCacheMiss(IrpContext, Fcb, FlushType);
+            FatForceCacheMiss(IrpContext, Fcb, Flags);
         }
 
         Fcb = NextFcb;
@@ -346,6 +346,7 @@ pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
 
     return;
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatForceCacheMiss(
     IrpContext: *mut IRP_CONTEXT,
@@ -362,8 +363,8 @@ pub unsafe extern "C" fn FatForceCacheMiss(
     //
 
     let vcb_assert = (*Fcb).Vcb;
-    NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
-        || FlagOn((*vcb_assert).VcbState, VCB_STATE_FLAG_LOCKED) != 0);
+    NT_ASSERT((FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
+        || FlagOn((*vcb_assert).VcbState, VCB_STATE_FLAG_LOCKED) != 0) as i32);
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {
         FatRaiseStatus(IrpContext, STATUS_CANT_WAIT);
@@ -382,10 +383,10 @@ pub unsafe extern "C" fn FatForceCacheMiss(
 
     if NodeType((Fcb).cast()) != FAT_NTC_FCB
         && IsListEmpty(
-            core::ptr::addr_of!((*(*(*Fcb).Specific).Dcb).ParentDcbQueue) as *mut LIST_ENTRY,
+            core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY,
         ) == 0
     {
-        queue_ptr = core::ptr::addr_of!((*(*(*Fcb).Specific).Dcb).ParentDcbQueue)
+        queue_ptr = core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue)
             as *mut LIST_ENTRY;
 
         ChildrenAcquired = 1;
@@ -416,8 +417,8 @@ pub unsafe extern "C" fn FatForceCacheMiss(
 
     // SEH try block
     {
-        if FlushType != 0 {
-            let _ = FatFlushFile(IrpContext, Fcb, FlushType);
+        if (FlushType as u32) != 0 {
+            let _ = FatFlushFile(IrpContext, Fcb, FlushType as u32);
         }
 
         //
@@ -425,9 +426,7 @@ pub unsafe extern "C" fn FatForceCacheMiss(
         //
 
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB) == 0 {
-            let Section = core::ptr::addr_of_mut!(
-                (*(*(*Fcb).NonPaged)).SectionObjectPointers
-            );
+            let Section = core::ptr::addr_of_mut!((*(*Fcb).NonPaged).SectionObjectPointers);
 
             let DataSectionExists: i32 = if (*Section).DataSectionObject
                 != core::ptr::null_mut()
@@ -504,6 +503,7 @@ pub unsafe extern "C" fn FatForceCacheMiss(
         }
     }
 }
+
 
 
 // ============================================================================

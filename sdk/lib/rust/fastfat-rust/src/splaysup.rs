@@ -82,8 +82,8 @@ pub unsafe extern "C" fn FatInsertName(
         loop {
             // Inlined CompareNames logic
             Comparison = {
-                let node_first = *((*Node).Name.Oem.Buffer as *const u8) as core::ffi::c_int;
-                let name_first = *((*Name).Name.Oem.Buffer as *const u8) as core::ffi::c_int;
+                let node_first = *(((*Node).Name.Oem.as_ref().Buffer) as *const u8) as core::ffi::c_int;
+                let name_first = *(((*Name).Name.Oem.as_ref().Buffer) as *const u8) as core::ffi::c_int;
                 if node_first != name_first {
                     if node_first < name_first {
                         (IsLessThan) as i32
@@ -152,6 +152,7 @@ pub unsafe extern "C" fn FatInsertName(
         }
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
     let _ = IrpContext;
@@ -175,23 +176,24 @@ pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
     let mut NewRoot: PRTL_SPLAY_LINKS = core::ptr::null_mut();
 
     if (*Fcb).FcbState & 0x100u32 != 0 {
-        NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).ShortName.Links));
-        (*Parent).Specific.Dcb.RootOemNode = NewRoot;
+        NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).ShortName.as_mut().Links));
+        (*Parent).Specific.Dcb.as_mut().RootOemNode = NewRoot;
         if (*Fcb).FcbState & 0x200u32 != 0 {
-            NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.Links));
-            (*Parent).Specific.Dcb.RootOemNode = NewRoot;
-            RtlFreeOemString(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.Name.Oem));
+            NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Links));
+            (*Parent).Specific.Dcb.as_mut().RootOemNode = NewRoot;
+            RtlFreeOemString(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.Oem));
             (*Fcb).FcbState &= !0x200u32;
         }
         if (*Fcb).FcbState & 0x400u32 != 0 {
-            NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.Links));
-            (*Parent).Specific.Dcb.RootUnicodeNode = NewRoot;
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.Name.Unicode));
+            NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Links));
+            (*Parent).Specific.Dcb.as_mut().RootUnicodeNode = NewRoot;
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Name.Unicode));
             (*Fcb).FcbState &= !0x400u32;
         }
         (*Fcb).FcbState &= !0x100u32;
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatFindFcb(
     mut IrpContext: PIRP_CONTEXT,

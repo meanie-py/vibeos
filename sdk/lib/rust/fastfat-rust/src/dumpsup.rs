@@ -688,7 +688,7 @@ pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
         _str[18] = 0;
         DbgPrint(b"%s\0".as_ptr() as *const i8, _str.as_ptr());
     }
-    DbgPrint(b":%p\0".as_ptr() as *const i8, &(*Ptr).AllocationSupport as *const core::ffi::c_void); // address of struct
+    DbgPrint(b":%p\0".as_ptr() as *const i8, &(*Ptr).AllocationSupport as *const _VCB__bindgen_ty_1 as *const core::ffi::c_void); // address of struct
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
     // DumpField AllocationSupport.RootDirectoryLbo
@@ -1013,7 +1013,7 @@ pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
         _str[18] = 0;
         DbgPrint(b"%s\0".as_ptr() as *const i8, _str.as_ptr());
     }
-    DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).DirtyFatMcb as *const core::ffi::c_void);
+    DbgPrint(b":%p\0".as_ptr() as *const i8, &(*Ptr).DirtyFatMcb as *const _LARGE_MCB as *const core::ffi::c_void);
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
     // DumpField FreeClusterBitMap
@@ -1042,7 +1042,7 @@ pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
         _str[18] = 0;
         DbgPrint(b"%s\0".as_ptr() as *const i8, _str.as_ptr());
     }
-    DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).FreeClusterBitMap as *const core::ffi::c_void);
+    DbgPrint(b":%p\0".as_ptr() as *const i8, &(*Ptr).FreeClusterBitMap as *const _RTL_BITMAP_DBG as *const core::ffi::c_void);
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
     // DumpField VirtualVolumeFile
@@ -1221,6 +1221,7 @@ pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
     // FatDumpFcb(Ptr->RootDcb)
     FatDumpFcb((*Ptr).RootDcb);
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
     // Forward-declare external functions we depend on
@@ -1635,7 +1636,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).FullFileName.Length) as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).FullFileName.as_ref().Length) as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -1665,7 +1666,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).FullFileName.Buffer as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).FullFileName.as_ref().Buffer as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -1699,7 +1700,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
         // dump the string: for i < 32, copy from Ptr->FullFileName.Buffer[i] to _String, then print
         {
             let mut string_buf: [u8; 256] = [0u8; 256];
-            let buffer_ptr = (*Ptr).FullFileName.Buffer;
+            let buffer_ptr = (*Ptr).FullFileName.as_ref().Buffer;
             let limit = 32;
             for i in 0..limit {
                 string_buf[i] = *buffer_ptr.add(i) as u8; // assumes CHAR is i8, but we want u8
@@ -1950,7 +1951,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
                 buf[18] = b'\0';
                 DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
             }
-            let dcb_queue = core::ptr::addr_of!((*Ptr).Specific.Dcb.ParentDcbQueue);
+            let dcb_queue = core::ptr::addr_of!((*Ptr).Specific.Dcb.as_ref().ParentDcbQueue);
             DbgPrint(b":%p\0".as_ptr() as *const i8, (*dcb_queue).Flink as *const core::ffi::c_void);
             DbgPrint(b":%p\0".as_ptr() as *const i8, (*dcb_queue).Blink as *const core::ffi::c_void);
         }
@@ -1981,7 +1982,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
                 buf[18] = b'\0';
                 DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
             }
-            DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).Specific.Dcb.DirectoryFileOpenCount) as *const core::ffi::c_void);
+            DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).Specific.Dcb.as_ref().DirectoryFileOpenCount) as *const core::ffi::c_void);
             DbgPrint(b"         \0".as_ptr() as *const i8);
         }
 
@@ -2011,7 +2012,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
                 buf[18] = b'\0';
                 DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
             }
-            DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).Specific.Dcb.DirectoryFile) as *const core::ffi::c_void);
+            DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).Specific.Dcb.as_ref().DirectoryFile) as *const core::ffi::c_void);
             DbgPrint(b"         \0".as_ptr() as *const i8);
         }
 
@@ -2060,7 +2061,10 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
 
     // for loop over ParentDcbQueue if node type DCB or ROOT_DCB
     if ((*Ptr).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Ptr).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
-        let queue_head = core::ptr::addr_of_mut!((*(Ptr as *mut FCB)).Specific.Dcb.ParentDcbQueue);
+        let queue_head: *mut LIST_ENTRY = {
+            let dcb_ref = &mut (*(Ptr as *mut FCB)).Specific.Dcb.as_mut();
+            &mut dcb_ref.ParentDcbQueue as *mut LIST_ENTRY
+        };
         Links = (*queue_head).Flink;
         while Links != queue_head {
             // CONTAINING_RECORD(Links, FCB, ParentDcbLinks)
@@ -2073,6 +2077,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
 
     // return; (implicit)
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     // TestForNull expansion
@@ -2190,7 +2195,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        core::ptr::addr_of!((*Ptr).UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
+        core::ptr::addr_of!((*Ptr).__bindgen_anon_1.UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
@@ -2228,7 +2233,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     // print the first 32 bytes of the buffer
     {
         let mut _string = [0u8; 257]; // CHAR _String[256] with extra null
-        let buf_ptr = (*Ptr).UnicodeQueryTemplate.Buffer as *const u8;
+        let buf_ptr = (*Ptr).__bindgen_anon_1.UnicodeQueryTemplate.Buffer as *const u8;
         let width = 32;
         for i in 0..width {
             _string[i] = *buf_ptr.add(i);
@@ -2262,7 +2267,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        (*Ptr).OffsetToStartSearchFrom as *const core::ffi::c_void,
+        (*Ptr).__bindgen_anon_1.OffsetToStartSearchFrom as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
@@ -2272,6 +2277,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
 
     return;
 }
+
 
 
 // ============================================================================

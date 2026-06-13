@@ -134,20 +134,20 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
     loop {
         if ExAcquireResourceSharedLite(
             ((*Fcb).Header.Resource).cast(),
-            BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT),
+            BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u8,
         ) != 0
         {
-            if ((*Fcb).NonPaged.OutstandingAsyncWrites != 0)
+            if (*(*Fcb).NonPaged).OutstandingAsyncWrites != 0
                 && ((*IrpContext).MajorFunction != IRP_MJ_WRITE
-                    || !FlagOn((*(*IrpContext).OriginatingIrp).Flags, IRP_NOCACHE)
+                    || FlagOn((*(*IrpContext).OriginatingIrp).Flags, IRP_NOCACHE) == 0
                     || ExGetSharedWaiterCount((*Fcb).Header.Resource) != 0
                     || ExGetExclusiveWaiterCount((*Fcb).Header.Resource) != 0)
             {
                 KeWaitForSingleObject(
-                    (*Fcb).NonPaged.OutstandingAsyncEvent,
-                    _KWAIT_REASON_Executive,
-                    (0i32) as i8,
-                    0,
+                    (*(*Fcb).NonPaged).OutstandingAsyncEvent,
+                    _KWAIT_REASON_Executive as u32,
+                    0u32,
+                    0u8,
                     core::ptr::null_mut(),
                 );
                 FatReleaseFcb(IrpContext, Fcb);
@@ -167,6 +167,7 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
         }
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatAcquireSharedFcbWaitForEx(
     IrpContext: *mut IRP_CONTEXT,
@@ -238,9 +239,9 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
 
     // Choose resource based on condition
     let resource = if is_eafcb {
-        (*(*fcb_ptr).Header).Resource
+        (*fcb_ptr).Header.Resource
     } else {
-        (*(*fcb_ptr).Header).PagingIoResource
+        (*fcb_ptr).Header.PagingIoResource
     };
 
     // Try to acquire the resource shared
@@ -249,14 +250,14 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
     }
 
     // Assert node type
-    let node_type = (*(*fcb_ptr).Header).NodeTypeCode;
+    let node_type = (*fcb_ptr).Header.NodeTypeCode;
     debug_assert_eq!(node_type, FAT_NTC_FCB);
 
     // Assert that LazyWriteThread is currently NULL
-    debug_assert!((*fcb_ptr).Specific.Fcb.LazyWriteThread.is_null());
+    debug_assert!((*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread.is_null());
 
     // Set this thread as the LazyWriteThread
-    (*fcb_ptr).Specific.Fcb.LazyWriteThread = PsGetCurrentThread();
+    (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = PsGetCurrentThread();
 
     // Assert that the current thread is not NULL
     debug_assert!(!PsGetCurrentThread().is_null());
@@ -274,6 +275,7 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
     1 // TRUE
 }
 
+
 #[no_mangle]
 pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_void) {
     // PAGED_CODE();
@@ -288,11 +290,11 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
     let cur_thread = PsGetCurrentThread();
     NT_ASSERT((!cur_thread.is_null()) as i32);
 
-    let lazy_write_thread = (*fcb_ptr).Specific.Fcb.LazyWriteThread;
+    let lazy_write_thread = (*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread;
     NT_ASSERT((lazy_write_thread == cur_thread) as i32);
 
     // Release the lazy writer mark.
-    (*fcb_ptr).Specific.Fcb.LazyWriteThread = core::ptr::null_mut();
+    (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = core::ptr::null_mut();
 
     // Check here for the EA File.  It turns out we needed the normal
     // resource shared in this case.  Otherwise it was the PagingIoResource.
@@ -311,6 +313,7 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
@@ -353,19 +356,20 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
 #[no_mangle]
 pub unsafe extern "system" fn FatReleaseFcbFromReadAhead(Fcb: *mut core::ffi::c_void) {
     // FSRTL_CACHE_TOP_LEVEL_IRP is ((PIRP)LONG_PTR_MAX)
-    const FSRTL_CACHE_TOP_LEVEL_IRP: *mut core::ffi::c_void = (-1_isize) as *mut _;
+    const FSRTL_CACHE_TOP_LEVEL_IRP: PIRP = (-1_isize) as PIRP;
 
     // PAGED_CODE() – normally a no-op in non‑checked builds; left as-is.
     let top_irp = IoGetTopLevelIrp();
-    NT_ASSERT(top_irp == (FSRTL_CACHE_TOP_LEVEL_IRP).cast());
+    NT_ASSERT((top_irp == FSRTL_CACHE_TOP_LEVEL_IRP) as i32);
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 
     // Cast the context pointer to the Fcb (the caller provides the Fcb type)
-    let fcb = Fcb as *mut Fcb;
+    let fcb = Fcb as *mut FCB;
     // Header.Resource is a PERESOURCE, matching the ExReleaseResourceLite signature.
     ExReleaseResourceLite((*fcb).Header.Resource);
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn FatAcquireForCcFlush(
@@ -421,29 +425,31 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     file_object: *mut FILE_OBJECT,
     device_object: *mut DEVICE_OBJECT,
 ) -> i32 {
-    // Forward declarations for unknown functions / constants
     const FSRTL_CACHE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 1 as *mut core::ffi::c_void;
 
-    // Local variables
     let mut vcb: *mut VCB = core::ptr::null_mut();
     let mut fcb: *mut FCB = core::ptr::null_mut();
     let mut ccb: *mut CCB = core::ptr::null_mut();
-    let mut type_: i32; // renamed from 'Type' to avoid keyword conflict
+    let mut type_: i32;
     let header: *mut FSRTL_COMMON_FCB_HEADER;
 
     PAGED_CODE();
 
-    // Suppress unused parameter warning
     let _ = device_object;
 
     if (ntkrnl_sys::ddk::IoGetTopLevelIrp() as *mut core::ffi::c_void) == FSRTL_CACHE_TOP_LEVEL_IRP {
         ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
-    type_ = ((FatDecodeFileObject).cast()(file_object, core::ptr::addr_of_mut!(vcb), core::ptr::addr_of_mut!(fcb), core::ptr::addr_of_mut!(ccb))) as i32;
+    type_ = FatDecodeFileObject(
+        file_object,
+        core::ptr::addr_of_mut!(vcb),
+        core::ptr::addr_of_mut!(fcb),
+        core::ptr::addr_of_mut!(ccb),
+    ) as i32;
     header = (*file_object).FsContext as *mut FSRTL_COMMON_FCB_HEADER;
 
-    if type_ < ntkrnl_sys::ddk::DirectoryFile {
+    if type_ < DirectoryFile {
         if !(*header).Resource.is_null() {
             ntkrnl_sys::ddk::ExReleaseResourceLite((*header).Resource);
         }
@@ -453,9 +459,9 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
         ntkrnl_sys::ddk::ExReleaseResourceLite((*header).PagingIoResource);
     }
 
-    // return STATUS_SUCCESS;
     0
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn FatNoOpAcquire(
     Fcb: *mut core::ffi::c_void,
