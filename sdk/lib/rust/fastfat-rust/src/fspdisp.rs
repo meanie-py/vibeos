@@ -48,7 +48,7 @@ extern "C" {
 pub const Dbg: u32 = DEBUG_TRACE_FSP_DISPATCHER;
 
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;
-const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x0200;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x00000010;
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
 #[no_mangle]

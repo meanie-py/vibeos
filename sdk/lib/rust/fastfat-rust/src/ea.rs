@@ -436,7 +436,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
             let exception_info: *mut EXCEPTION_POINTERS = _SEH2_GetExceptionInformation();
             let exception_code: u32 = _SEH2_GetExceptionCode();
             if FatExceptionFilter(IrpContext, exception_info) != 0 {
-                Status = FatProcessException(IrpContext, Irp, exception_code as i32);
+                Status = FatProcessException(IrpContext, Irp, (exception_code as i32) as u32);
             } else {
                 Status = STATUS_INVALID_DEVICE_REQUEST;
             }

@@ -65,12 +65,12 @@ extern "system" {
 pub const Dbg: u32 = DEBUG_TRACE_EA;
 pub const EA_SECTION_SIZE: u32 = 0x00040000;
 
-const EA_NEED_EA_FLAG: u32 = 0x0002; // placeholder, actual value unknown
+const EA_NEED_EA_FLAG: u32 = 0x80; // placeholder, actual value unknown
 
 // Constants used by this function
-const DEBUG_TRACE_EA: u32 = 0; // Dbg
-const EA_FILE_SIGNATURE: u32 = 0x45414653; // 'EFAS' or similar; placeholder value
-const MAX_EA_BASE_INDEX: u32 = 8; // placeholder
+const DEBUG_TRACE_EA: u32 = 0x0100; // Dbg
+const EA_FILE_SIGNATURE: u32 = 0x4445; // 'EFAS' or similar; placeholder value
+const MAX_EA_BASE_INDEX: u32 = 0xF0; // placeholder
 const UNUSED_EA_HANDLE: u16 = 0xFFFF;
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1; // placeholder sentinel
 const FcbGood: u32 = 0; // enum variant placeholder
@@ -78,27 +78,27 @@ const FAT_DIRENT_ATTR_READ_ONLY: u32 = 0x01;
 const FAT_DIRENT_ATTR_HIDDEN: u32 = 0x02;
 const FAT_DIRENT_ATTR_SYSTEM: u32 = 0x04;
 const FAT_DIRENT_ATTR_ARCHIVE: u32 = 0x20;
-const STATUS_CANT_WAIT: i32 = 0xC0000058u32 as i32;
+const STATUS_CANT_WAIT: i32 = 0xC00000D8_u32 as i32;
 const STATUS_DATA_ERROR: i32 = 0xC000003Eu32 as i32;
 
 // Extern declarations for unknown functions
 
 
 const MIN_EA_HANDLE: u16 = 1;
-const MAX_EA_HANDLE: u16 = 32767;
+const MAX_EA_HANDLE: u16 = 0x77FF;
 const MAX_EA_OFFSET_INDEX: u32 = 128;
-const EA_CBLIST_OFFSET: u32 = 8;
-const EA_SET_SIGNATURE: u32 = 0x45415346;
-const STATUS_NONEXISTENT_EA_ENTRY: i32 = 0xC0000058;
-const STATUS_UNABLE_TO_DELETE_SECTION: i32 = 0xC00000A1;
+const EA_CBLIST_OFFSET: u32 = 0x1A;
+const EA_SET_SIGNATURE: u32 = 0x4145;
+const STATUS_NONEXISTENT_EA_ENTRY: i32 = 0xC0000051_u32 as i32;
+const STATUS_UNABLE_TO_DELETE_SECTION: i32 = 0xC000001B_u32 as i32;
 const PAGE_SIZE: u32 = 0x1000;
 
 
-const STATUS_NO_EAS_ON_FILE: i32 = 0xC000004F; // NTSTATUS placeholder
+const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052_u32 as i32; // NTSTATUS placeholder
 
 // Unknown constants
-const STATUS_INVALID_EA_NAME: NTSTATUS = 0xC0000434;
-const STATUS_EA_TOO_LARGE: NTSTATUS = 0xC0000435;
+const STATUS_INVALID_EA_NAME: NTSTATUS = 0x80000013_u32 as i32;
+const STATUS_EA_TOO_LARGE: NTSTATUS = 0xC0000050_u32 as i32;
 const FILE_NEED_EA: u8 = 0x80;
 const MAXIMUM_EA_SIZE: u32 = 0xFFFF;
 
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn FatGetEaLength(
     EaLength: *mut u32,
 ) {
     const Dbg: i32 = 0; // DEBUG_TRACE_EA
-    const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000046u32 as i32;
+    const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052_u32 as i32;
 
     let mut EaBcb: *mut c_void = core::ptr::null_mut();
     let mut LockedEaFcb: i32 = 0;
@@ -301,7 +301,7 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
             Fat8dot3ToString(
                 IrpContext as *mut IRP_CONTEXT,
                 Dirent as *mut DIRENT,
-                0u8, // FALSE as u8
+                (0u8) as i32, // FALSE as u8
                 &mut ThisFilename as *mut OEM_STRING,
             );
 
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
                 Vcb as *mut VCB,
                 (*Dirent).ExtendedAttributes as u16,
                 &mut ThisFilename as *mut OEM_STRING,
-                0i32, // FALSE
+                (0i32) as u8, // FALSE
                 &mut EaSetRange as *mut EA_RANGE,
             );
 
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn FatGetEaFile(
 
     DebugTrace(1, DEBUG_TRACE_EA, b"FatGetEaFile ...\n\0".as_ptr() as *const i8, 0);
 
-    RtlZeroMemory(
+    (RtlZeroMemory).cast()(
         core::ptr::addr_of_mut!(EaFileRange) as *mut u8,
         core::mem::size_of::<EA_RANGE>() as u32,
     );
@@ -933,7 +933,7 @@ pub unsafe extern "C" fn FatGetEaFile(
 
                     FileHeader = EaFileRange.Data as *mut EA_FILE_HEADER;
 
-                    RtlZeroMemory(
+                    (RtlZeroMemory).cast()(
                         FileHeader as *mut u8,
                         AllocationSize,
                     );
@@ -1733,7 +1733,7 @@ pub unsafe extern "C" fn FatAddEaSet(
                 PurgeCount
             } != 0 {
                 Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                CcFlushCache(
+                (CcFlushCache).cast()(
                     (*VirtualEaFile).SectionObjectPointer,
                     core::ptr::null_mut(),
                     0,
@@ -2362,11 +2362,11 @@ pub unsafe extern "C" fn FatPinEaRange(
     // If the read will span a section, allocate a separate buffer.
     //
     if ((StartingVbo & (EA_SECTION_SIZE - 1)) + Length) > EA_SECTION_SIZE {
-        (*EaRange).Data = FsRtlAllocatePoolWithTag(
+        (*EaRange).Data = (FsRtlAllocatePoolWithTag(
             PagedPool,
             Length,
             TAG_EA_DATA,
-        );
+        )).cast();
         (*EaRange).AuxilaryBuffer = 1; // TRUE
         destination_buffer = (*EaRange).Data as *mut i8;
     } else {
@@ -2379,11 +2379,11 @@ pub unsafe extern "C" fn FatPinEaRange(
     (*EaRange).BcbChainLength = (((StartingVbo & (PAGE_SIZE - 1)) + Length + PAGE_SIZE - 1) / PAGE_SIZE) as u16;
 
     if (*EaRange).BcbChainLength as u32 > EA_BCB_ARRAY_SIZE {
-        (*EaRange).BcbChain = FsRtlAllocatePoolWithTag(
+        (*EaRange).BcbChain = (FsRtlAllocatePoolWithTag(
             PagedPool,
             (core::mem::size_of::<*mut BCB>() as u32) * (*EaRange).BcbChainLength as u32,
             TAG_BCB,
-        );
+        )).cast();
         core::ptr::write_bytes(
             (*EaRange).BcbChain,
             0,
@@ -2420,7 +2420,7 @@ pub unsafe extern "C" fn FatPinEaRange(
             byte_count = Length;
         }
 
-        if CcPinRead(
+        if (CcPinRead).cast()(
                VirtualEaFile,
                &large_vbo,
                byte_count,

@@ -181,13 +181,13 @@ pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
         if (*Fcb).FcbState & 0x200u32 != 0 {
             NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Links));
             (*Parent).Specific.Dcb.as_mut().RootOemNode = NewRoot;
-            RtlFreeOemString(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.Oem));
+            RtlFreeOemString((core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.Oem)).cast());
             (*Fcb).FcbState &= !0x200u32;
         }
         if (*Fcb).FcbState & 0x400u32 != 0 {
             NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Links));
             (*Parent).Specific.Dcb.as_mut().RootUnicodeNode = NewRoot;
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Name.Unicode));
+            RtlFreeUnicodeString((core::ptr::addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Name.Unicode)).cast());
             (*Fcb).FcbState &= !0x400u32;
         }
         (*Fcb).FcbState &= !0x100u32;

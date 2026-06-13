@@ -53,13 +53,13 @@ const FlushWithoutPurge: u32 = 0;
 const STATUS_PENDING: i32 = 0x103;
 const STATUS_INVALID_PARAMETER: i32 = 0xC000000D;
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022;
-const DEBUG_TRACE_DEVCTRL: u32 = 0;
-const FO_FILE_MODIFIED: u32 = 0x00000008;
-const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x00000004;
-const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00000002;
-const SL_FORCE_DIRECT_WRITE: u32 = 0x00000001;
+const DEBUG_TRACE_DEVCTRL: u32 = 0x00010000;
+const FO_FILE_MODIFIED: u32 = 0x1000;
+const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x00040000;
+const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00010000;
+const SL_FORCE_DIRECT_WRITE: u32 = 0x10;
 const VCB_STATE_FLAG_LOCKED: u32 = 0x00000001;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
 const SCSIOP_FORMAT_UNIT: u8 = 0x04;
 const NotificationEvent: u32 = 0;
 const Executive: u32 = 0;
@@ -96,10 +96,10 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     unsafe { _SEH2_END(); }
 
     if unsafe {
-        _SEH2_EXCEPT(FatExceptionFilter(
+        _SEH2_EXCEPT((FatExceptionFilter(
             IrpContext,
             _SEH2_GetExceptionInformation().cast(),
-        ))
+        )) as u8)
     } != 0
     {
         Status = FatProcessException(
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
             }
             IOCTL_DISK_COPY_DATA => {
                 if FlagOn((*vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 &&
-                   FlagOn((*irp_sp).Flags as u8, SL_FORCE_DIRECT_WRITE) == 0 &&
+                   FlagOn(((*irp_sp).Flags as u8) as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
                    FlagOn((*ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) == 0 {
                     FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
                     DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
         }
 
         if !completion_context.is_null() {
-            NT_ASSERT((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as i32);
+            NT_ASSERT(((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as i32) as u32);
             FatReleaseVolume(IrpContext, vcb);
         } else {
             Irp = core::ptr::null_mut();

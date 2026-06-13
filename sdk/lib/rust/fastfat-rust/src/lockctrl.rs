@@ -9,6 +9,8 @@ use crate::types::{PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, OPLOCK, PFILE_LOCK, _IO_STATUS_BLOCK};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible, FsRtlProcessFileLock};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FCB};
 
 extern "C" {
     fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);
@@ -45,7 +47,7 @@ const UserFileOpen: i32 = 0; // unknown enum value
 // Forward declarations for unknown externals
 
 // Constants not directly available
-const DEBUG_TRACE_LOCKCTRL: i32 = 0; // placeholder for Dbg macro
+const DEBUG_TRACE_LOCKCTRL: i32 = 0x0800; // placeholder for Dbg macro
 const STATUS_INVALID_PARAMETER: u32 = 0xC000000D; // from ntkrnl_sys::constants
 
 const DBG: i32 = 0x00002000; // DEBUG_TRACE_LOCKCTRL
@@ -218,7 +220,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
             FileObject,
             FileOffset,
             Length,
-            ProcessId,
+            (ProcessId).cast(),
             Key,
             core::ptr::null_mut(),
             0 as BOOLEAN,
@@ -260,7 +262,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
     }
 
     FsRtlEnterFileSystem();
-    ExAcquireResourceSharedLite(core::ptr::addr_of_mut!((*fcb).Header.Resource), 1);
+    ExAcquireResourceSharedLite((core::ptr::addr_of_mut!((*fcb).Header.Resource)).cast(), 1);
 
     // SEH_TRY … _SEH2_FINALLY … _SEH2_END
     {
@@ -274,7 +276,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
             let status = FsRtlFastUnlockAll(
                 core::ptr::addr_of!((*fcb).Specific.Fcb.FileLock) as *mut FILE_LOCK,
                 FileObject,
-                ProcessId,
+                (ProcessId).cast(),
                 core::ptr::null_mut(),
             );
             (*IoStatus).__bindgen_anon_1.Status = status;
@@ -286,7 +288,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
 
         // Finally block
         DebugUnwind(b"FatFastUnlockAll\0".as_ptr() as usize);
-        ExReleaseResourceLite(core::ptr::addr_of_mut!((*fcb).Header.Resource));
+        ExReleaseResourceLite((core::ptr::addr_of_mut!((*fcb).Header.Resource)).cast());
         FsRtlExitFileSystem();
         DebugTrace(-1, Dbg, b"FatFastUnlockAll -> %08lx\n\0".as_ptr() as *const i8, Results as u32);
     }
@@ -335,7 +337,7 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
             core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.FileLock),
             FileObject,
-            ProcessId as PEPROCESS,
+            (ProcessId as PEPROCESS).cast(),
             Key,
             core::ptr::null_mut(),
         ) as i32;

@@ -16,6 +16,9 @@ use ntkrnl_sys::ddk::{_UNICODE_STRING};
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DCB, DIRENT, IRP_CONTEXT};
+use ntkrnl_sys::ddk::{_PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
@@ -40,7 +43,7 @@ pub const Dbg: u32 = DEBUG_TRACE_NAMESUP;
 // Forward declarations for unknown externs
 
 // Constants
-const MAX_LFN_CHARACTERS: usize = 255;
+const MAX_LFN_CHARACTERS: usize = 0x0104;
 const STATUS_FILE_INVALID: i32 = 0xC0000098i32; // NTSTATUS
 #[no_mangle]
 pub unsafe extern "C" fn FatIsNameInExpression(

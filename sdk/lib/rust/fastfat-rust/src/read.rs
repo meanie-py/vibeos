@@ -77,28 +77,28 @@ pub const OVERFLOW_READ_THRESHHOLD: u32 = 0x1000;
 // Constants (placeholders/typical values)
 const NotificationEvent: u32 = 0;            // EVENT_TYPE::NotificationEvent
 const Executive: i32 = 0;                    // KWAIT_REASON::Executive
-const IRP_PAGING_IO: u32 = 0x00000001;      // typical value
-const FAT_NTC_VCB: u16 = 0x0500;            // FAT_NTC_VCB
-const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x00001000; // placeholder
+const IRP_PAGING_IO: u32 = 0x02;      // typical value
+const FAT_NTC_VCB: u16 = 0x0501;            // FAT_NTC_VCB
+const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x80; // placeholder
 
 // Forward declarations for unknown functions/macros
 
 // Constants with placeholder values (exact definitions expected to be provided elsewhere)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;
-const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0002;
-const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0004;
-const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x0010;
-const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x0020;
-const CCB_FLAG_DASD_FLUSH_DONE: u32 = 0x0040;
-const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x0080;
-const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x0100;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0400;
+const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0100;
+const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00010000;
+const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x00040000;
+const CCB_FLAG_DASD_FLUSH_DONE: u32 = 0x0100;
+const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x2000;
+const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
 const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
 const READ_AHEAD_GRANULARITY: u32 = 0x10000; // typical
-const TAG_FAT_IO_CONTEXT: u32 = 0x74614644; // 'DFAT'
+const TAG_FAT_IO_CONTEXT: u32 = 0x58746146; // 'DFAT'
 
 const FAT_NTC_FCB: u16 = 0x0502; // FAT NTC FCB node type
-const FCB_STATE_PAGING_FILE: u32 = 0x00000020; // bit 5
-const IRP_MN_COMPLETE: u32 = 0x41;
+const FCB_STATE_PAGING_FILE: u32 = 0x04; // bit 5
+const IRP_MN_COMPLETE: u32 = 0x04;
 const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8i32; // NTSTATUS
 
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn FatFsdRead(
                     FatOverflowPagingFileRead,
                 );
                 KeWaitForSingleObject(
-                    &mut Event as *mut KEVENT,
+                    (&mut Event as *mut KEVENT).cast(),
                     (Executive) as u32,
                     0, // KernelMode
                     0,
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn FatFsdRead(
         IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp)) as *mut IRP_CONTEXT;
 
         //  An Mdl complete request must not go through common read.
-        if FlagOn((*IrpContext).MinorFunction as u8, IRP_MN_COMPLETE) != 0 {
+        if FlagOn(((*IrpContext).MinorFunction as u8) as u32, IRP_MN_COMPLETE) != 0 {
             Status = FatCompleteMdl(IrpContext, Irp);
             break 'try_exit; // try_return
         }
@@ -204,10 +204,10 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     let mut SavedVerifyThread: PKTHREAD = core::ptr::null_mut();
     let mut Vcb: PVCB = core::ptr::null_mut();
 
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x1000; // placeholder
-    const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x2000; // placeholder
-    const FAT_NTC_VCB: u32 = 0x123; // placeholder
-    const STATUS_FILE_DELETED: i32 = 0xC0000056u32 as i32;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
+    const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x80; // placeholder
+    const FAT_NTC_VCB: u32 = 0x0501; // placeholder
+    const STATUS_FILE_DELETED: i32 = 0xC0000123_u32 as i32;
 
     PAGED_CODE();
 

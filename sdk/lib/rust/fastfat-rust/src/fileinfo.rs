@@ -165,8 +165,8 @@ pub unsafe extern "C" fn FatQueryBasicInfo(
     Length: *mut i32,
 ) {
     const Dbg: u32 = 0; // DEBUG_TRACE_FILEINFO
-    const FAT_NTC_ROOT_DCB: u16 = 0x0503; // placeholder – match actual node type
-    const FCB_STATE_TEMPORARY: u32 = 0x200; // placeholder – actual value as defined
+    const FAT_NTC_ROOT_DCB: u16 = 0x0504; // placeholder – match actual node type
+    const FCB_STATE_TEMPORARY: u32 = 0x20; // placeholder – actual value as defined
     const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
 
     PAGED_CODE();
@@ -195,8 +195,8 @@ pub unsafe extern "C" fn FatQueryBasicInfo(
 
     (*Buffer).FileAttributes = (*Fcb).DirentFatFlags as u32;
 
-    if FlagOn((*Fcb).FcbState as u8, FCB_STATE_TEMPORARY) != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes) as *mut u8, FILE_ATTRIBUTE_TEMPORARY as u8);
+    if FlagOn(((*Fcb).FcbState as u8) as u32, FCB_STATE_TEMPORARY) != 0 {
+        (SetFlag).cast()(core::ptr::addr_of_mut!((*Buffer).FileAttributes) as *mut u8, FILE_ATTRIBUTE_TEMPORARY as u8);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -344,7 +344,7 @@ pub unsafe extern "system" fn FatQueryPositionInfo(
 }
 
 // ==== recovered from stitcher-drop: 06_FatQueryNameInfo.rs ====
-const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x1; // placeholder for the actual flag value
+const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x0800; // placeholder for the actual flag value
 
 extern "C" {
 }
@@ -516,7 +516,7 @@ unsafe extern "C" fn FatQueryShortNameInfo(
 extern "C" {
 }
 
-const FCB_STATE_TEMPORARY: u32 = 0x00000080;
+const FCB_STATE_TEMPORARY: u32 = 0x20;
 
 pub unsafe extern "C" fn FatQueryNetworkInfo(
     IrpContext: *mut IrpContext,
@@ -555,7 +555,7 @@ pub unsafe extern "C" fn FatQueryNetworkInfo(
 
     if FlagOn((*Fcb).FcbState as u8, FCB_STATE_TEMPORARY) != 0 {
         let attr_ptr = core::ptr::addr_of_mut!((*Buffer).FileAttributes);
-        SetFlag(attr_ptr as *mut u8, 0x100u32 as u8);
+        (SetFlag).cast()(attr_ptr as *mut u8, 0x100u32 as u8);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -583,9 +583,9 @@ extern "system" {
 }
 
 // Constants for flags and attributes (guessed standard values)
-const CCB_FLAG_USER_SET_CREATION: u32 = 0x01;
-const CCB_FLAG_USER_SET_LAST_ACCESS: u32 = 0x04;
-const FO_TEMPORARY_FILE: u32 = 0x200;
+const CCB_FLAG_USER_SET_CREATION: u32 = 0x40;
+const CCB_FLAG_USER_SET_LAST_ACCESS: u32 = 0x20;
+const FO_TEMPORARY_FILE: u32 = 0x8000;
 const FILE_NOTIFY_CHANGE_ATTRIBUTES: u32 = 0x4;
 const FILE_NOTIFY_CHANGE_CREATION: u32 = 0x40;
 const FILE_NOTIFY_CHANGE_LAST_ACCESS: u32 = 0x20;
@@ -930,7 +930,7 @@ unsafe extern "C" fn FatSetBasicInfo(
 extern "system" {
 }
 
-const FILE_FLOPPY_DISKETTE: u32 = 0x10;
+const FILE_FLOPPY_DISKETTE: u32 = 0x04;
 const FAT_LARGE_ZERO: LARGE_INTEGER = LARGE_INTEGER { LowPart: 0, HighPart: 0 };
 const PAGE_SIZE: u32 = 0x1000; // assume 4KB, adjust if needed
 const TRUE: i32 = 1;
@@ -1173,12 +1173,12 @@ pub unsafe extern "system" fn FatSetPositionInfo(
 extern "system" {
 }
 
-const STATUS_PURGE_FAILED: i32 = 0xC0000205; // placeholder
+const STATUS_PURGE_FAILED: i32 = 0xC0000435_u32 as i32; // placeholder
 const STATUS_USER_MAPPED_FILE: i32 = 0xC0000243; // placeholder
 const FILE_NOTIFY_CHANGE_SIZE: u32 = 0x00000008; // placeholder
 const FCB_STATE_TRUNCATE_ON_CLOSE: u32 = 0x00000002; // placeholder
-const IRP_PAGING_IO: u32 = 0x00000040; // placeholder
-const FO_CLEANUP_COMPLETE: u32 = 0x00000020; // placeholder
+const IRP_PAGING_IO: u32 = 0x02; // placeholder
+const FO_CLEANUP_COMPLETE: u32 = 0x4000; // placeholder
 
 #[no_mangle]
 pub unsafe extern "system" fn FatSetAllocationInfo(
@@ -1401,9 +1401,9 @@ pub unsafe extern "system" fn FatSetValidDataLengthInfo(
     Ccb: *mut CCB,
 ) -> NTSTATUS {
     const FAT_NTC_FCB: u16 = 0x0502; // typical FastFat node type
-    const CCB_FLAG_MANAGE_VOLUME_ACCESS: u32 = 0x00000010; // typical value
+    const CCB_FLAG_MANAGE_VOLUME_ACCESS: u32 = 0x00020000; // typical value
     const STATUS_DISK_FULL: i32 = 0xC000007F;
-    const FO_FILE_MODIFIED: u32 = 0x00000002;
+    const FO_FILE_MODIFIED: u32 = 0x1000;
 
     // Forward declarations for unknown external symbols
     extern "system" {
@@ -1923,7 +1923,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
 
         // Tunnel cache lookup
         TunneledDataSize = core::mem::size_of::<LARGE_INTEGER>() as u32;
-        HaveTunneledInformation = FsRtlFindInTunnelCache(
+        HaveTunneledInformation = (FsRtlFindInTunnelCache).cast()(
             &(*Vcb).Tunnel,
             FatDirectoryKey(TargetDcb),
             &NewName,
@@ -2540,7 +2540,7 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
     FileInformationClass = (*IrpSp).Parameters.QueryFile.FileInformationClass;
     Buffer = (*Irp).AssociatedIrp.SystemBuffer;
 
-    TypeOfOpen = FatDecodeFileObject(
+    TypeOfOpen = (FatDecodeFileObject).cast()(
         FileObject,
         core::ptr::addr_of_mut!(Vcb),
         core::ptr::addr_of_mut!(Fcb),

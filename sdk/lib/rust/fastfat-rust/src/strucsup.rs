@@ -20,6 +20,9 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_LOCK, FILE_OBJECT, FSRTL_A
 use crate::glue::{FSRTL_FLAG2_IS_PAGING_FILE, FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS, TAG_CCB, TAG_FILENAME_BUFFER};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDeleteTunnelCache, FsRtlInitializeFileLock, FsRtlInitializeLargeMcb, FsRtlInitializeOplock, FsRtlInitializeTunnelCache, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts, FsRtlUninitializeFileLock, FsRtlUninitializeLargeMcb};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
+use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
 extern "C" {
     fn PAGED_CODE();
@@ -93,18 +96,18 @@ pub const FAT_FILL_FREE: u32 = 0;
 
 #[inline]
 
-const CCB_FLAG_CLOSE_CONTEXT: u32 = 0x08;
-const CCB_FLAG_FREE_UNICODE: u32 = 0x10;
-const CCB_FLAG_FREE_OEM_BEST_FIT: u32 = 0x20;
+const CCB_FLAG_CLOSE_CONTEXT: u32 = 0x8000;
+const CCB_FLAG_FREE_UNICODE: u32 = 0x08;
+const CCB_FLAG_FREE_OEM_BEST_FIT: u32 = 0x04;
 
-const VCB_STATE_FLAG_VPB_MUST_BE_FREED: u32 = 0x0008;
+const VCB_STATE_FLAG_VPB_MUST_BE_FREED: u32 = 0x00040000;
 const VcbBad: u32 = 2;
-const VPB_REMOVE_PENDING: u32 = 0x0001;
-const IO_TYPE_VPB: u16 = 6;
+const VPB_REMOVE_PENDING: u32 = 0x08;
+const IO_TYPE_VPB: u16 = 0x0A;
 const IRP_MJ_FILE_SYSTEM_CONTROL: u32 = 13;
 const IRP_MN_MOUNT_VOLUME: u32 = 1;
 
-const TAG_IO_BUFFER: u32 = 0x00000000; // placeholder
+const TAG_IO_BUFFER: u32 = 0x4F746146; // placeholder
 const IOCTL_CDROM_READ_TOC: u32 = 0x0024000; // placeholder
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185; // placeholder
 const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010; // placeholder
@@ -112,45 +115,45 @@ const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010; // placeholder
 // Forward declarations for unknown extern functions
 
 // Constants (placeholder values – adjust to actual definitions)
-const FAT_NTC_DCB: u16 = 0x0401;
-const FAT_NTC_ROOT_DCB: u16 = 0x0402;
-const FAT_NTC_FCB: u16 = 0x0403;
+const FAT_NTC_DCB: u16 = 0x0503;
+const FAT_NTC_ROOT_DCB: u16 = 0x0504;
+const FAT_NTC_FCB: u16 = 0x0502;
 const NTC_UNDEFINED: u16 = 0x0000;
-const FCB_STATE_NAMES_IN_SPLAY_TREE: u32 = 0x00000001; // Example mask
+const FCB_STATE_NAMES_IN_SPLAY_TREE: u32 = 0x0100; // Example mask
 
-const FAT_NTC_IRP_CONTEXT: u32 = 0x0505;
+const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const IRP_NOCACHE: u32 = 0x00000001;
-const SL_WRITE_THROUGH: u32 = 0x0002;
-const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x0001;
+const SL_WRITE_THROUGH: u32 = 0x04;
+const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
-const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x0004;
-const IRP_MN_USER_FS_REQUEST: u8 = 0x200;
+const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;
+const IRP_MN_USER_FS_REQUEST: u8 = 0x00;
 const FSCTL_INVALIDATE_VOLUMES: u32 = 0x0009000C;
-const DEBUG_TRACE_STRUCSUP: u32 = 0x00200000;
+const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
 
 // Constant definitions needed (these would be provided by the assembly step)
 const FcbGood: u32 = 0;          // Placeholder
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-const TAG_FCB: u32 = 0x20464354; // 'T' 'A' 'C' 'F'? placeholder
+const TAG_FCB: u32 = 0x46746146; // 'T' 'A' 'C' 'F'? placeholder
 const NonPagedPoolNx: ntkrnl_sys::mm::POOL_TYPE = 0x200;
 const NTDDI_VERSION: u32 = 0x0A000000; // assume Windows 10 for compilation
 
 // Forward declarations for external functions not already available
 
-const FAT_NTC_VCB: u16 = 0x7FCB; // placeholder
+const FAT_NTC_VCB: u16 = 0x0501; // placeholder
 const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x2D4800;
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x2D1080;
-const FILE_FLOPPY_DISKETTE: u32 = 0x10; // placeholder
-const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x00000001;
-const VCB_STATE_FLAG_HOTPLUGGABLE: u32 = 0x00000002;
-const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x00000004;
-const FILESYSTEM_STATISTICS_TYPE_FAT: u16 = 3;
+const FILE_FLOPPY_DISKETTE: u32 = 0x04; // placeholder
+const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
+const VCB_STATE_FLAG_HOTPLUGGABLE: u32 = 0x00200000;
+const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1000;
+const FILESYSTEM_STATISTICS_TYPE_FAT: u16 = 0x02;
 const PACKED_BOOT_SECTOR_SIZE: usize = core::mem::size_of::<PACKED_BOOT_SECTOR>();
 const FAT_MAX_LARGE_QUADPART: u64 = 0x7FFFFFFF_FFFFFFFF; // placeholder for FatMaxLarge
 const VCB_GOOD: VCB_CONDITION = 0; // placeholder for VcbGood
 const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
 const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
-const TAG_VCB_STATS: u32 = 0x74756E6B; // placeholder
+const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
 const TAG_VPB: u32 = 0x70627661; // placeholder
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====
@@ -178,7 +181,7 @@ pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
     (*LocalString).Length = 0;
 }
 
-const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x42796e44; // TAG('D','n','y','B')
+const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x63746146; // TAG('D','n','y','B')
 
 // (inner attr removed — covered by lib.rs crate-level allow)
 
@@ -189,10 +192,10 @@ const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x42796e44; // TAG('D','n','y','B')
 
 // Constants (guessed values)
 const VcbGood: u32 = 0;
-const VPB_MOUNTED: u32 = 0x0008;
-const VPB_LOCKED: u32 = 0x0010;
+const VPB_MOUNTED: u32 = 0x01;
+const VPB_LOCKED: u32 = 0x02;
 const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
-const VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS: u32 = 0x00000001;
+const VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS: u32 = 0x00080000;
 const DPFLTR_FASTFAT_ID: u32 = 0x6000;
 const DPFLTR_INFO_LEVEL: u32 = 0x00000020;
 const MAXIMUM_VOLUME_LABEL_LENGTH: u16 = 64; // in bytes, assuming 32 WCHARs
@@ -415,7 +418,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
         let _ = FatSetFileObject(
             (*vcb).VirtualVolumeFile,
             VIRTUAL_VOLUME_FILE,
-            vcb as *mut DCB,
+            (vcb as *mut DCB).cast(),
             core::ptr::null_mut(),
         );
 
@@ -510,7 +513,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Initialize the Advanced FCB Header
         ExInitializeFastMutex(&raw mut (*vcb).AdvancedFcbHeaderMutex);
-        FsRtlSetupAdvancedHeader(
+        (FsRtlSetupAdvancedHeader).cast()(
             &raw mut (*vcb).VolumeFileHeader as *mut core::ffi::c_void,
             &raw mut (*vcb).AdvancedFcbHeaderMutex as *mut core::ffi::c_void,
         );
@@ -918,7 +921,7 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // If paging file, set flags
         if IsPagingFile != 0 {
-            SetFlag(
+            (SetFlag).cast()(
                 &mut (*fcb).FcbState as *mut u8,
                 (FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE) as u8,
             );
@@ -1002,7 +1005,7 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // Setup flags for paging file
         if IsPagingFile != 0 {
-            SetFlag(
+            (SetFlag).cast()(
                 &mut (*fcb).Header.Flags2 as *mut u8,
                 FSRTL_FLAG2_IS_PAGING_FILE as u8,
             );
@@ -1114,8 +1117,8 @@ pub unsafe extern "C" fn FatCreateDcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
 ) -> *mut DCB {
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;
-    const FAT_NTC_DCB: u32 = 0x00000001;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const FAT_NTC_DCB: u32 = 0x0503;
     const FcbGood: u32 = 0;
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
     const Dbg: u32 = 0;
@@ -1133,7 +1136,7 @@ pub unsafe extern "C" fn FatCreateDcb(
     let mut abnormal_termination = false;
 
     'seh: loop {
-        if FlagOn((*IrpContext).Flags as u8, IRP_CONTEXT_FLAG_WAIT) == 0 {
+        if FlagOn(((*IrpContext).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT) == 0 {
             abnormal_termination = true;
             break 'seh;
         }
@@ -1237,7 +1240,7 @@ pub unsafe extern "C" fn FatCreateDcb(
         InitializeListHead(core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue));
 
         RtlInitializeBitMap(
-            core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap),
+            (core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap)).cast(),
             core::ptr::null_mut(),
             0,
         );
@@ -1395,9 +1398,9 @@ pub unsafe extern "C" fn FatCreateCcb(
     // External declarations for unknown symbols
 
     // Unknown constants; values taken from typical NT definitions
-    const DEBUG_TRACE_STRUCSUP: u32 = 0x00000080;
+    const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
     const Dbg: u32 = DEBUG_TRACE_STRUCSUP;
-    const FAT_NTC_CCB: u16 = 0x0503;
+    const FAT_NTC_CCB: u16 = 0x0507;
 
     let Ccb: *mut CCB;
 
@@ -1815,10 +1818,10 @@ pub unsafe extern "C" fn FatCheckForDismount(
 
         // Mark dismount in progress.
         NT_ASSERT(((FlagOn(
-            (*Vcb).VcbState as u8,
+            ((*Vcb).VcbState as u8) as u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         ) == 0) as BOOLEAN) as i32);
-        SetFlag(
+        (SetFlag).cast()(
             &mut (*Vcb).VcbState as *mut u32 as *mut u8,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS as u8,
         );
@@ -1848,7 +1851,7 @@ pub unsafe extern "C" fn FatCheckForDismount(
             IoReleaseVpbSpinLock(SavedIrql);
 
             NT_ASSERT((FlagOn(
-                (*Vcb).VcbState as u8,
+                ((*Vcb).VcbState as u8) as u32,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
             ) as BOOLEAN) as i32);
             ClearFlag(
@@ -1905,8 +1908,8 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             }
 
             (*ShortName).MaximumLength = 16;
-            (*ShortName).Buffer = FsRtlAllocatePoolWithTag(PagedPool, 16, TAG_FILENAME_BUFFER)
-                as *mut u8;
+            (*ShortName).Buffer = (FsRtlAllocatePoolWithTag(PagedPool, 16, TAG_FILENAME_BUFFER)
+                as *mut u8).cast();
 
             Fat8dot3ToString(IrpContext, Dirent, 0u8, ShortName);
 
@@ -1928,8 +1931,8 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             (*Fcb).ExactCaseLongName.Length = (*Lfn).Length;
             (*Fcb).ExactCaseLongName.MaximumLength = (*Lfn).Length;
             (*Fcb).ExactCaseLongName.Buffer =
-                FsRtlAllocatePoolWithTag(PagedPool, (*Lfn).Length as u32, TAG_FILENAME_BUFFER)
-                    as *mut u8;
+                (FsRtlAllocatePoolWithTag(PagedPool, (*Lfn).Length as u32, TAG_FILENAME_BUFFER)
+                    as *mut u8).cast();
             copy_nonoverlapping(
                 (*Fcb).ExactCaseLongName.Buffer,
                 (*Lfn).Buffer as *const u8,
@@ -1950,8 +1953,8 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
                 // No extended characters – use OEM fast path
                 LongOemName = addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.as_mut().Oem);
                 (*LongOemName).Buffer =
-                    FsRtlAllocatePoolWithTag(PagedPool, chars as u32, TAG_FILENAME_BUFFER)
-                        as *mut u8;
+                    (FsRtlAllocatePoolWithTag(PagedPool, chars as u32, TAG_FILENAME_BUFFER)
+                        as *mut u8).cast();
                 (*LongOemName).Length = chars as u16;
                 (*LongOemName).MaximumLength = chars as u16;
 
@@ -2028,7 +2031,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
         FatInsertName(
             IrpContext,
             addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
-            addr_of_mut!((*Fcb).ShortName),
+            (addr_of_mut!((*Fcb).ShortName)).cast(),
         );
         (*Fcb).ShortName.Fcb = Fcb;
 
@@ -2036,7 +2039,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             FatInsertName(
                 IrpContext,
                 addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
-                addr_of_mut!((*Fcb).LongName.Oem.as_mut()),
+                (addr_of_mut!((*Fcb).LongName.Oem.as_mut())).cast(),
             );
             (*Fcb).LongName.Oem.as_mut().Fcb = Fcb;
         }
@@ -2045,7 +2048,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             FatInsertName(
                 IrpContext,
                 addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootUnicodeNode) as *mut *mut RTL_SPLAY_LINKS,
-                addr_of_mut!((*Fcb).LongName.Unicode.as_mut()),
+                (addr_of_mut!((*Fcb).LongName.Unicode.as_mut())).cast(),
             );
             (*Fcb).LongName.Unicode.as_mut().Fcb = Fcb;
         }
@@ -2231,9 +2234,9 @@ pub unsafe extern "C" fn FatPreallocateCloseContext(
         &raw mut FatData.GeneralSpinLock as *mut _,
     );
 
-    DbgDoit(InterlockedIncrement(
+    DbgDoit((InterlockedIncrement(
         &raw mut (*Vcb).CloseContextCount as *mut i32,
-    ) as u32);
+    ) as u32) as i32);
 }
 
 #[no_mangle]
@@ -2248,11 +2251,11 @@ pub unsafe extern "C" fn FatEnsureStringBufferEnough(
     if (*LocalString).MaximumLength < DesiredBufferSize {
         FatFreeStringBuffer(LocalString as *mut core::ffi::c_void);
 
-        (*LocalString).Buffer = FsRtlAllocatePoolWithTag(
+        (*LocalString).Buffer = (FsRtlAllocatePoolWithTag(
             ntkrnl_sys::mm::PagedPool,
             DesiredBufferSize as u32,
             TAG_DYNAMIC_NAME_BUFFER,
-        ) as *mut u8;
+        ) as *mut u8).cast();
 
         // NT_ASSERT((*LocalString).Buffer != NULL);
         if (*LocalString).Buffer.is_null() {
@@ -2322,7 +2325,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             break;
         }
 
-        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control, 0x04u8) != 0 { 1 } else { 0 };
+        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control, (0x04u8) as u32) != 0 { 1 } else { 0 };
         break;
     }
 

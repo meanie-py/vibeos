@@ -102,7 +102,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
     Irp: *mut IRP,
 ) -> NTSTATUS
 {
-    const FILE_OPENED: u32 = 0x00000002;
+    const FILE_OPENED: u32 = 0x01;
 
     let mut Status: NTSTATUS = 0;
     let mut IrpContext: *mut core::ffi::c_void = core::ptr::null_mut();

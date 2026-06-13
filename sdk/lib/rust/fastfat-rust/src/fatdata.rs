@@ -128,13 +128,13 @@ pub static mut FatBreakOnInterestingIrpCompletion: NTSTATUS = 0;
 // Constants – values from Windows headers
 const IRP_MJ_WRITE: u32 = 4;
 const IRP_MN_COMPLETE_MDL: u32 = 0x3;
-const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000225;
+const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016_u32 as i32;
 const APC_LEVEL: u32 = 1;
-const STATUS_CANT_WAIT: NTSTATUS = 0xC000010A;
-const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x1000;  // dummy value
-const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x2000;          // dummy
+const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8_u32 as i32;
+const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x08;  // dummy value
+const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;          // dummy
 
-const IRP_INPUT_OPERATION: u32 = 0x1;
+const IRP_INPUT_OPERATION: u32 = 0x40;
 
 /*++
 Routine Description:
@@ -156,12 +156,12 @@ Return Value:
 --*/
 
 const UserFileOpen: i32 = 0;
-const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x00000001; // placeholder value
+const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000; // placeholder value
 
 // Constants (typical values, caller may override)
-const FAT_NTC_IRP_CONTEXT: u32 = 0x680;
+const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const FCB_STATE_PAGING_FILE: u32 = 0x00000004;
-const FCB_STATE_TEMPORARY: u32 = 0x00000800;
+const FCB_STATE_TEMPORARY: u32 = 0x20;
 const FcbGood: u32 = 0;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
 const UserDirectoryOpen: u32 = 1;
@@ -203,12 +203,12 @@ pub unsafe extern "C" fn FatExceptionFilter(
 
     // Constants needed for the function
     const STATUS_IN_PAGE_ERROR: u32 = 0xC0000006;
-    const STATUS_CANT_WAIT: u32 = 0xC00000A0;
-    const STATUS_VERIFY_REQUIRED: u32 = 0xC000018B;
+    const STATUS_CANT_WAIT: u32 = 0xC00000D8;
+    const STATUS_VERIFY_REQUIRED: u32 = 0x80000016;
     const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001; // TODO: verify value
-    const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x00000002; // TODO: verify value
-    const DEBUG_TRACE_UNWIND: u32 = 0x00000001; // TODO: verify value
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO: verify value
+    const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x08; // TODO: verify value
+    const DEBUG_TRACE_UNWIND: u32 = 0x08; // TODO: verify value
     const Dbg: u32 = 0x00000002; // DEBUG_TRACE_CATCH_EXCEPTIONS; TODO: verify value
 
     let mut ExceptionCode: u32;
@@ -436,7 +436,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
             core::ptr::addr_of_mut!(LargeLength),
             LockKey,
             FileObject,
-            PsGetCurrentProcess(),
+            (PsGetCurrentProcess()).cast(),
         ) != 0 {
             return 1u8;
         }
@@ -448,7 +448,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
                 core::ptr::addr_of_mut!(LargeLength),
                 LockKey,
                 FileObject,
-                PsGetCurrentProcess(),
+                (PsGetCurrentProcess()).cast(),
             ) != 0
         {
             return 1u8;
@@ -648,15 +648,15 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     DeviceObject: *mut DEVICE_OBJECT,
 ) -> i32 {
     // Local constants for missing FAT driver definitions
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 1;
-    const FAT_NTC_IRP_CONTEXT: u32 = 0x666;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
     const FCB_STATE_PAGING_FILE: u32 = 0x04;
-    const FCB_STATE_TEMPORARY: u32 = 0x10;
+    const FCB_STATE_TEMPORARY: u32 = 0x20;
     const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
     const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x7FFFFFFFFFFFFFFF;
-    const FAT_NTC_FCB: u32 = 0x334;
-    const FAT_NTC_ROOT_DCB: u32 = 0x335;
+    const FAT_NTC_FCB: u32 = 0x0502;
+    const FAT_NTC_ROOT_DCB: u32 = 0x0504;
     const FcbGood: u32 = 0;
 
     let mut Results: i32 = 0; // FALSE
@@ -771,7 +771,7 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     PAGED_CODE();
 
     // Check if this is the root directory; if so, skip popup
-    if NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32 {
+    if NodeType((Fcb).cast()) == (FAT_NTC_ROOT_DCB) as u32 {
         return;
     }
 
@@ -801,7 +801,7 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     // Raise the informational hard error with STATUS_FILE_CORRUPT_ERROR
     IoRaiseInformationalHardError(
         STATUS_FILE_CORRUPT_ERROR,
-        &mut (*Fcb).FullFileName as *mut UNICODE_STRING,
+        (&mut (*Fcb).FullFileName as *mut UNICODE_STRING).cast(),
         Thread,
     );
 }

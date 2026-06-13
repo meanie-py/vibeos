@@ -14,6 +14,9 @@ use crate::types::{PIRP_CONTEXT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PIRP_CONTEXT};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT};
+use ntkrnl_sys::ddk::{PPRIVILEGE_SET};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     static SeExports: *mut SE_EXPORTS;
@@ -41,13 +44,13 @@ pub unsafe extern "C" fn FatCheckFileAccess(
     const FAT_DIRENT_ATTR_DEVICE: u8 = 0x40;
 
     // Access mask constants (not present in the global scope)
-    const FILE_LIST_DIRECTORY: u32 = 0x00000004;
+    const FILE_LIST_DIRECTORY: u32 = 0x01;
     const FILE_TRAVERSE: u32 = 0x00000020;
     const FILE_ADD_SUBDIRECTORY: u32 = 0x00000004; // note: shares value with FILE_LIST_DIRECTORY in FAT, adjust if needed
     const FILE_ADD_FILE: u32 = 0x00000002;
 
     // Dbg expands from #define Dbg (DEBUG_TRACE_ACCHKSUP)
-    const DEBUG_TRACE_ACCHKSUP: u32 = 0x8000;
+    const DEBUG_TRACE_ACCHKSUP: u32 = 0x00100000;
     const Dbg: u32 = DEBUG_TRACE_ACCHKSUP;
 
     // Declare external functions
@@ -204,7 +207,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
     };
 
     original_access_token = *effective_token;
-    status = FatCreateRestrictEveryoneToken(
+    status = (FatCreateRestrictEveryoneToken).cast()(
         original_access_token,
         core::ptr::addr_of_mut!(restricted_access_token),
     );

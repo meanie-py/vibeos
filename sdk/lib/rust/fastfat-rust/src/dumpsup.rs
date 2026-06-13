@@ -3,6 +3,9 @@ use ntkrnl_sys::driver_ddk::*;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FAT_DATA, FCB, FatData, VCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_RTL_BITMAP_DBG, _VCB__bindgen_ty_1};
+use ntkrnl_sys::ddk::{_LARGE_MCB};
 
 extern "C" {
     fn NodeType(p: *const core::ffi::c_void) -> u32;
@@ -1227,9 +1230,9 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
     // Forward-declare external functions we depend on
 
     // FAT_NTC_* constants from fastfat.h
-    const FAT_NTC_FCB: u32      = 0x0503;
-    const FAT_NTC_DCB: u32      = 0x0505;
-    const FAT_NTC_ROOT_DCB: u32 = 0x0507;
+    const FAT_NTC_FCB: u32      = 0x0502;
+    const FAT_NTC_DCB: u32      = 0x0503;
+    const FAT_NTC_ROOT_DCB: u32 = 0x0504;
 
     let mut Links: *mut LIST_ENTRY;
 

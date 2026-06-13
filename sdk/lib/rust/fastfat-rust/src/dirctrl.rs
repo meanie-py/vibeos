@@ -69,24 +69,24 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_DIRCTRL;
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001; // placeholder
-const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x00001000; // placeholder
-const SL_WATCH_TREE: u32 = 0x00000002; // placeholder
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
+const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x01; // placeholder
+const SL_WATCH_TREE: u32 = 0x01; // placeholder
 const UserDirectoryOpen: u32 = 1; // placeholder
 
 // External declarations for unknown functions
 
 // Required constants
 const CCB_FLAG_MATCH_ALL: u32 = 0x00000001;
-const CCB_FLAG_FREE_UNICODE: u32 = 0x00000002;
+const CCB_FLAG_FREE_UNICODE: u32 = 0x08;
 const CCB_FLAG_FREE_OEM_BEST_FIT: u32 = 0x00000004;
-const CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32 = 0x00000008;
-const CCB_FLAG_QUERY_TEMPLATE_MIXED: u32 = 0x00000010;
-const TAG_FILENAME_BUFFER: u32 = 0x626D614E; // 'NamB'
-const FAT_CREATE_INITIAL_NAME_BUF_SIZE: u32 = 256; // example
+const CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32 = 0x02;
+const CCB_FLAG_QUERY_TEMPLATE_MIXED: u32 = 0x1000;
+const TAG_FILENAME_BUFFER: u32 = 0x6E746146; // 'NamB'
+const FAT_CREATE_INITIAL_NAME_BUF_SIZE: u32 = 0x20; // example
 const DOS_QM: u16 = b'?' as u16;
-const FAT_BUG_CHECK_DIRCTRL: u32 = 0x00000000;
-const DEBUG_TRACE_DIRCTRL: u32 = 0x00000000;
+const FAT_BUG_CHECK_DIRCTRL: u32 = 0x00090000;
+const DEBUG_TRACE_DIRCTRL: u32 = 0x80;
 const SL_RESTART_SCAN: u32 = 0x00000001;
 const SL_RETURN_SINGLE_ENTRY: u32 = 0x00000002;
 const SL_INDEX_SPECIFIED: u32 = 0x00000004;
@@ -97,7 +97,7 @@ const STATUS_NO_SUCH_FILE: NTSTATUS = 0xC000000Fu32 as i32;
 const STATUS_NO_MORE_FILES: NTSTATUS = 0x80000006u32 as i32;
 const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005u32 as i32;
 const STATUS_INVALID_INFO_CLASS: NTSTATUS = 0xC0000003u32 as i32;
-const STATUS_UNMAPPABLE_CHARACTER: NTSTATUS = 0xC000000Bu32 as i32;
+const STATUS_UNMAPPABLE_CHARACTER: NTSTATUS = 0xC0000162_u32 as i32;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const NOTHING: NTSTATUS = 0;
 
@@ -834,7 +834,7 @@ pub unsafe extern "C" fn FatGetDirTimes(
                     (*Dirent).CreationMSec(),
                 );
             } else {
-                ExLocalTimeToSystemTime(
+                (ExLocalTimeToSystemTime).cast()(
                     core::ptr::addr_of!(FatJanOne1980) as *mut LARGE_INTEGER,
                     core::ptr::addr_of!((*DirInfo).CreationTime) as *mut LARGE_INTEGER,
                 );
@@ -867,7 +867,7 @@ pub unsafe extern "C" fn FatGetDirTimes(
                     core::mem::transmute((*Dirent).LastAccessDate),
                 );
             } else {
-                ExLocalTimeToSystemTime(
+                (ExLocalTimeToSystemTime).cast()(
                     core::ptr::addr_of!(FatJanOne1980) as *mut LARGE_INTEGER,
                     core::ptr::addr_of!((*DirInfo).LastAccessTime) as *mut LARGE_INTEGER,
                 );

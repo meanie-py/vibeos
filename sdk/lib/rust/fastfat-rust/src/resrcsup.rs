@@ -35,7 +35,7 @@ extern "system" {
 // Forward declarations for symbols not imported
 
 // Placeholder constant (value not provided by imports)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x1;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
 
 
 unsafe extern "system" {
@@ -55,9 +55,9 @@ struct ERESOURCE {
     // opaque
 }
 
-const IRP_NOCACHE: u32 = 0x00010000;
+const IRP_NOCACHE: u32 = 0x01;
 
-const FAT_NTC_FCB: u32 = 0; // TODO: correct value
+const FAT_NTC_FCB: u32 = 0x0502; // TODO: correct value
 const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = 0xFFFF_FFFF_FFFF_FFFF as *mut IRP;
 
 
@@ -69,9 +69,9 @@ type TYPE_OF_OPEN = u32;
 
 const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: u32 = 0; // FIXME: set actual value
 const SyncTypeCreateSection: u32 = 1; // known value
-const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x00000100; // FIXME: verify value
-const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0; // FIXME: set actual value
-const STATUS_FILE_LOCKED_WITH_WRITERS: i32 = 0; // FIXME: set actual value
+const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0126; // FIXME: verify value
+const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x012A; // FIXME: set actual value
+const STATUS_FILE_LOCKED_WITH_WRITERS: i32 = 0x012B; // FIXME: set actual value
 #[no_mangle]
 pub unsafe extern "C" fn FatAcquireExclusiveVcb_Real(
     IrpContext: *mut IRP_CONTEXT,
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
                     || ExGetSharedWaiterCount((*Fcb).Header.Resource) != 0
                     || ExGetExclusiveWaiterCount((*Fcb).Header.Resource) != 0)
             {
-                KeWaitForSingleObject(
+                (KeWaitForSingleObject).cast()(
                     (*(*Fcb).NonPaged).OutstandingAsyncEvent,
                     _KWAIT_REASON_Executive as u32,
                     0u32,
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
     // PAGED_CODE(); // no‑op in Rust
 
     // Local constants that would normally come from headers
-    const FAT_NTC_FCB: u32 = 0; // TODO: actual value unknown
+    const FAT_NTC_FCB: u32 = 0x0502; // TODO: actual value unknown
     const FSRTL_CACHE_TOP_LEVEL_IRP: isize = 1;
 
     let fcb_ptr = Fcb as *mut FCB;
@@ -245,19 +245,19 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
     };
 
     // Try to acquire the resource shared
-    if ExAcquireResourceSharedLite(resource, Wait) == 0 {
+    if ExAcquireResourceSharedLite((resource).cast(), Wait) == 0 {
         return 0; // FALSE
     }
 
     // Assert node type
     let node_type = (*fcb_ptr).Header.NodeTypeCode;
-    debug_assert_eq!(node_type, FAT_NTC_FCB);
+    debug_assert_eq!(node_type, (FAT_NTC_FCB) as i16);
 
     // Assert that LazyWriteThread is currently NULL
     debug_assert!((*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread.is_null());
 
     // Set this thread as the LazyWriteThread
-    (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = PsGetCurrentThread();
+    (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = (PsGetCurrentThread()).cast();
 
     // Assert that the current thread is not NULL
     debug_assert!(!PsGetCurrentThread().is_null());
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
     NT_ASSERT((!cur_thread.is_null()) as i32);
 
     let lazy_write_thread = (*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread;
-    NT_ASSERT((lazy_write_thread == cur_thread) as i32);
+    NT_ASSERT((lazy_write_thread == (cur_thread).cast()) as i32);
 
     // Release the lazy writer mark.
     (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = core::ptr::null_mut();
@@ -441,7 +441,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
         ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
-    type_ = FatDecodeFileObject(
+    type_ = (FatDecodeFileObject).cast()(
         file_object,
         core::ptr::addr_of_mut!(vcb),
         core::ptr::addr_of_mut!(fcb),
@@ -449,7 +449,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     ) as i32;
     header = (*file_object).FsContext as *mut FSRTL_COMMON_FCB_HEADER;
 
-    if type_ < DirectoryFile {
+    if type_ < (DirectoryFile) as i32 {
         if !(*header).Resource.is_null() {
             ntkrnl_sys::ddk::ExReleaseResourceLite((*header).Resource);
         }

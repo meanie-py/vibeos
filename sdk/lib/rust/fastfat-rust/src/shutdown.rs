@@ -71,7 +71,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
             // This block never executes, but its contents match the C struct.
             let _ = Status; // suppress unused warning
             let info = _SEH2_GetExceptionInformation();
-            if FatExceptionFilter(IrpContext as *mut core::ffi::c_void, info) != 0 {
+            if FatExceptionFilter((IrpContext as *mut core::ffi::c_void).cast(), info) != 0 {
                 Status =
                     FatProcessException(IrpContext, Irp, (_SEH2_GetExceptionCode()) as i32);
             }

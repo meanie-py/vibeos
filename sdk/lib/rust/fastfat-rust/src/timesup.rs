@@ -181,7 +181,7 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
-            RtlAssert(
+            (RtlAssert).cast()(
                 b"0\0" as *const u8 as *const core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
                     as *const u8 as *const core::ffi::c_void,

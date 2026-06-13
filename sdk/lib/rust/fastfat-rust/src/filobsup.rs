@@ -8,6 +8,8 @@ use crate::types::{CCB, FAT_BUG_CHECK_FILOBSUP, FAT_DIRENT_ATTR_VOLUME_ID, FCB, 
 use ntkrnl_sys::ddk::{FILE_OBJECT, SECTION_OBJECT_POINTERS};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_FILOBSUP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DCB};
 
 extern "C" {
     fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...);
@@ -45,19 +47,19 @@ const VirtualVolumeFile: i32 = 5;
 const DirectoryFile: i32 = 6;
 
 const FAT_NTC_VCB: u32 = 0x0501;
-const FAT_NTC_FCB: u32 = 0x0504;
-const FAT_NTC_DCB: u32 = 0x0502;
-const FAT_NTC_ROOT_DCB: u32 = 0x0503;
+const FAT_NTC_FCB: u32 = 0x0502;
+const FAT_NTC_DCB: u32 = 0x0503;
+const FAT_NTC_ROOT_DCB: u32 = 0x0504;
 const FAT_NTC_CCB: u32 = 0x0507;
 
-const FO_TEMPORARY_FILE: u32 = 0x00000040;
-const FCB_STATE_TEMPORARY: u32 = 0x00000001; // placeholder, real value unknown
+const FO_TEMPORARY_FILE: u32 = 0x8000;
+const FCB_STATE_TEMPORARY: u32 = 0x20; // placeholder, real value unknown
 
 const STATUS_CANT_WAIT: i32 = -1073740519i32; // 0xC0000258
-const VCB_STATE_FLAG_LOCKED: u32 = 0; // FIXME: unknown value
-const VCB_STATE_FLAG_DELETED_FCB: u32 = 0; // FIXME: unknown value
-const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0; // FIXME: unknown value
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0; // FIXME: unknown value
+const VCB_STATE_FLAG_LOCKED: u32 = 0x01; // FIXME: unknown value
+const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // FIXME: unknown value
+const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0x08; // FIXME: unknown value
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // FIXME: unknown value
 const MmFlushForWrite: u32 = 0x00000002;
 #[no_mangle]
 pub unsafe extern "C" fn FatSetFileObject(
@@ -328,7 +330,7 @@ pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
 
         // Check for the EA file fcb
         if FlagOn(
-            ((*Fcb).DirentFatFlags) as u8,
+            (((*Fcb).DirentFatFlags) as u8) as u32,
             FAT_DIRENT_ATTR_VOLUME_ID,
         ) == 0 {
             FatForceCacheMiss(IrpContext, Fcb, Flags);

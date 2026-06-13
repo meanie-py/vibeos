@@ -39,8 +39,8 @@ pub const Dbg: u32 = DEBUG_TRACE_PNP;
 
 const STATUS_PENDING: i32 = 0x103;
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0; // placeholder value
-const FAT_NTC_VCB: u32 = 0;          // placeholder value
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder value
+const FAT_NTC_VCB: u32 = 0x0501;          // placeholder value
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdPnp(
