@@ -40,12 +40,12 @@ fn main() {
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libwine.a (3rdparty C) + oldnames, reused from cmake. libmsvcrtex.a
-        // (CRT startup) → compiled in-cargo via .msvcrtex_crt().
-        .static_libs(&[
-            "sdk/lib/3rdparty/libwine/libwine.a",
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-        ])
+        // ZERO cmake .a: libwine.a + oldnames.a dropped — both proved INERT via
+        // the residue probe (nm -u <body> ∩ nm <.a> ' T ' = empty ×3). The body's
+        // undefined symbols are all satisfied by the import libs + compiler-builtins;
+        // it referenced nothing from wine's debug-channel stubs or the oldnames
+        // CRT aliases. libmsvcrtex.a (CRT startup) is still compiled in-cargo via
+        // .msvcrtex_crt() (a separate-agent cross-cutting project, not a .a reuse).
         .msvcrtex_crt()
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
