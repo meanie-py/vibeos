@@ -23,6 +23,7 @@ pub mod engine;
 pub mod tdi;
 pub mod tditrans;
 pub mod tdidev;
+pub mod tditest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -43,8 +44,16 @@ pub unsafe extern "system" fn DriverEntry(
     // M2/M3: spawn the persistent smoltcp poll-loop engine (DHCP/ping/echo/DNS).
     engine::start();
     // M4: create the TDI transport devices + dispatch so AFD (winsock) can drive
-    // the stack. (Owns \Device\Tcp etc. only once tcpip.sys is disabled.)
+    // the stack. netstack owns \Device\Tcp etc.
     tdidev::init(DriverObject);
+    // M4 verification: a kernel TDI client (tditest::spawn) that drives our own
+    // \Device\Tcp is DISABLED pending a blocker — opening a transport device
+    // WITH an EA buffer (TransportAddress / ConnectionContext, which AFD uses)
+    // hangs in the ReactOS IO manager create path BEFORE reaching our CREATE
+    // dispatch; a no-EA control-channel open works. Needs a kernel-debugger
+    // backtrace of the wedged ZwCreateFile to root-cause. The data path
+    // (tditrans/tdidev) is implemented + integrated; re-enable once unblocked.
+    let _ = tditest::spawn;
     0 // STATUS_SUCCESS
 }
 

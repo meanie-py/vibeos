@@ -11,14 +11,15 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::hint::spin_loop;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp;
 use smoltcp::wire::IpAddress;
 
-use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
+use ntkrnl_sys::ddk::{
+    IofCompleteRequest, KeAcquireSpinLockForDpc, KeReleaseSpinLockForDpc, NTSTATUS, PIRP,
+};
 
 use crate::serial::nsprint;
 
@@ -53,14 +54,19 @@ pub enum Cmd {
     CloseAddr { id: u64 },
 }
 
+/// The inbox is guarded by a real KSPIN_LOCK (KeAcquireSpinLockForDpc raises to
+/// DISPATCH_LEVEL while held). A plain atomic spinlock deadlocks here: QEMU runs
+/// a single vCPU, so if the worker is preempted mid-critical-section a producer
+/// would spin at PASSIVE without ever yielding the CPU back. Raising IRQL
+/// prevents that preemption.
 struct Inbox {
-    lock: AtomicBool,
+    lock: UnsafeCell<usize>, // KSPIN_LOCK (ULONG_PTR)
     queue: UnsafeCell<Vec<Cmd>>,
 }
 unsafe impl Sync for Inbox {}
 
 static INBOX: Inbox = Inbox {
-    lock: AtomicBool::new(false),
+    lock: UnsafeCell::new(0),
     queue: UnsafeCell::new(Vec::new()),
 };
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -70,26 +76,21 @@ pub fn alloc_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-fn lock() {
-    while INBOX.lock.swap(true, Ordering::Acquire) {
-        spin_loop();
-    }
-}
-fn unlock() {
-    INBOX.lock.store(false, Ordering::Release);
-}
-
 /// Post a command from the TDI dispatch (any thread).
 pub fn post(cmd: Cmd) {
-    lock();
-    unsafe { (*INBOX.queue.get()).push(cmd) };
-    unlock();
+    unsafe {
+        let irql = KeAcquireSpinLockForDpc(INBOX.lock.get() as *mut _);
+        (*INBOX.queue.get()).push(cmd);
+        KeReleaseSpinLockForDpc(INBOX.lock.get() as *mut _, irql);
+    }
 }
 
 fn drain_into(out: &mut Vec<Cmd>) {
-    lock();
-    unsafe { core::mem::swap(out, &mut *INBOX.queue.get()) };
-    unlock();
+    unsafe {
+        let irql = KeAcquireSpinLockForDpc(INBOX.lock.get() as *mut _);
+        core::mem::swap(out, &mut *INBOX.queue.get());
+        KeReleaseSpinLockForDpc(INBOX.lock.get() as *mut _, irql);
+    }
 }
 
 // --------------------------------------------------------------------------- #

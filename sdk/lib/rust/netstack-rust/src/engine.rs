@@ -23,6 +23,10 @@ use crate::device::{self, VirtioPhy};
 use crate::serial::nsprint;
 use crate::time::{delay_ms, now};
 
+/// Set once DHCP has configured the interface — the TDI self-test waits on this
+/// before opening sockets (it needs a usable source address).
+pub static DHCP_READY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
 const ECHO_PORT: u16 = 7777;
 const GW_IP: [u8; 4] = [10, 0, 2, 2];
 /// slirp's built-in DNS forwarder.
@@ -135,6 +139,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     let o = cfg.address.address().octets();
                     nsprint!("[NETSTACK] dhcp lease {}.{}.{}.{}\n", o[0], o[1], o[2], o[3]);
                     dhcp_configured = true;
+                    DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
                 }
                 dhcpv4::Event::Deconfigured => {
                     iface.update_ip_addrs(|addrs| addrs.clear());

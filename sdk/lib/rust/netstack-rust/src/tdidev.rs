@@ -74,6 +74,9 @@ unsafe fn create_one(driver: PDRIVER_OBJECT, name: &'static [u16], label: &str) 
         &mut dev,
     );
     if status == STATUS_SUCCESS {
+        // Clear DO_DEVICE_INITIALIZING (0x80) — IoCreateDevice sets it, and a
+        // device left "initializing" cannot be opened (ZwCreateFile wedges).
+        (*dev).Flags &= !0x0000_0080u32;
         nsprint!("[NETSTACK] TDI device \\Device\\{} created\n", label);
         dev
     } else if status == STATUS_OBJECT_NAME_COLLISION {
