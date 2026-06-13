@@ -56,14 +56,14 @@ Sorted roughly by how entrenched (consumer count / centrality):
 
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
-| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, classpnp, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (12) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves → **step 8**. |
+| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (11; classpnp dropped it 2026-06-13) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves. classpnp needed NO residue (cnt-rust-lib + compiler-builtins sufficed); the rest may follow. |
 | `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, csrsrv, smss, basesrv, winsrv, win32k (8) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); remaining consumers can follow — trivial. |
 | `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), smss, basesrv, classpnp (i386+arm64), winlogon, services, winsrv, win32k (i386+arm64), uefildr (11) | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). → `global_asm!` crate or asm_archive everywhere. |
 | `sdk/lib/crt/libcntpr_rust.a` | hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial (7) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel already do). |
 | `sdk/lib/crt/libmemcmp.a` | hal, win32k, bootvid, kdcom, kdgdb, kdvm (6) | One C fn. The 8 driver/DLL modules already dropped it (compiler-builtins-mem). Remaining = same one-line drop. |
 | `sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a` | lsass, userinit, winlogon, services, cabinet, mlang (6) | `_name`→`name` MSVC alias archive. Tiny; absorb as c_shim/Rust statics. |
 | `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. `cport-rust` exists (uefildr uses it via `.rust_lib`). |
-| `sdk/lib/3rdparty/libwine/libwine.a` | userinit, winlogon, cabinet (3) | 3rd-party wine glue (~1.1K LOC). cabinet/mlang dropped it (cohab c_shim covers their surface); winlogon/userinit still pull it. |
+| `sdk/lib/3rdparty/libwine/libwine.a` | userinit, winlogon (2) | 3rd-party wine glue (~1.1K LOC). cabinet/mlang already dropped it (cohab c_shim covers their surface); winlogon/userinit still pull it. |
 | `sdk/lib/vcruntime/libsetjmp.a` | kernel ×2, hal (3) | setjmp/longjmp. ntdll amd64 assembles it from source asm + Rust glue (no `.a`). |
 | `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter (~406 LOC C). Untranslated. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
@@ -89,7 +89,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | Lib | Then | Now |
 |---|---|---|
 | `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
-| `liblibcntpr` | C (~59K) | C residual `.a` (12 consumers) + `cnt-rust-lib` Rust half. **step 8** for the i386 float tail. |
+| `liblibcntpr` | C (~59K) | C residual `.a` (11 consumers; classpnp dropped it 2026-06-13) + `cnt-rust-lib` Rust half. i386 float tail remains for the rest. |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
 | `libcmlib` | C | `cmlib-rust` is the translation (kernel links both; `.a` = cohab placeholder). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
@@ -134,8 +134,12 @@ translation for the "all-Rust, no-headers" endpoint:
    `.rust_lib("cport-rust")`; `libmemcmp.a` drop (compiler-builtins-mem);
    GUID-only libs → `#[link_section]` statics. Mechanical, fleet-wide.
 2. **pseh `dummy.c` c_shim** for the remaining 8 `libpseh.a` consumers.
-3. **step 7 — zlib** (cabinet): adopt a pure-Rust zlib (`zlib-rs`/miniz_oxide).
-4. **step 8 — libcntpr i386 float tail.**
+3. ✅ **step 7 — zlib** (cabinet): DONE 2026-06-13 — cabinet-rust depends on the
+   pure-Rust `libz-rs-sys` (zlib-rs), `libzlib.a` dropped; also fixed the dead
+   `deflateInit2` macro → `deflateInit2_` (compress path was unresolved/-shared).
+4. ✅ **step 8 — libcntpr i386 float tail**: DONE 2026-06-13 for **classpnp** —
+   it dropped `liblibcntpr.a` entirely (no C residue needed; cnt-rust-lib +
+   compiler-builtins cover it). The other 11 `liblibcntpr.a` consumers remain.
 5. **Kernel deep-C** (arbiter/csq/ntlsalib/rossym/…): per-lib translation arcs.
 6. **msvcrtex CRT-startup → Rust** (lower priority; the hard CRT-init port).
 
