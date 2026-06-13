@@ -15,6 +15,7 @@ Serial marker contract — emitted by the netstack-rust kernel self-test as the
 milestones land. These strings are the API between the kernel self-test and
 this harness; change them in both places or not at all.
 
+    [NETSTACK] M1 raw frame RX/TX OK      M1: ARP round-trip with slirp gateway
     [NETSTACK] ping gateway OK            M2: ICMP echo to 10.0.2.2 answered
     [NETSTACK] tcp echo ready             M2: TCP echo listener up on :7777
     [NETSTACK] dhcp lease 10.0.2.x        M3: DHCPv4 lease obtained from slirp
@@ -34,6 +35,7 @@ import pytest
 from tests.qemu.vm import QemuVM
 
 # Markers — keep in sync with the netstack-rust self-test (see module docstring).
+MARK_M1_OK = "[NETSTACK] M1 raw frame RX/TX OK"
 MARK_PING = "[NETSTACK] ping gateway OK"
 MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
 MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
@@ -67,6 +69,20 @@ def test_boot_with_nic(vm: QemuVM) -> None:
         assert milestone in vm._boot_output, (
             f"milestone {milestone!r} missing from boot output with NIC attached"
         )
+
+
+# --------------------------------------------------------------------------- #
+# M1 gate — GREEN: raw virtio-net frame RX/TX, proven by an ARP round-trip with
+# the slirp gateway (no smoltcp, no TDI). The reply crossing the RX virtqueue
+# proves both directions of the device path work.
+# --------------------------------------------------------------------------- #
+
+def test_m1_raw_frame_roundtrip(vm: QemuVM) -> None:
+    """netstack.sys DriverEntry self-test ARP'd 10.0.2.2 and got slirp's reply."""
+    _require_net_config(vm)
+    assert MARK_M1_OK in vm._boot_output, (
+        "M1 self-test marker missing — virtio-net raw RX/TX did not complete"
+    )
 
 
 # --------------------------------------------------------------------------- #

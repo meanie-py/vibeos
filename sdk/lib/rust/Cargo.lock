@@ -699,6 +699,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "netstack-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "netstack-rust"
 version = "0.1.0"
 dependencies = [

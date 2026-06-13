@@ -4,6 +4,7 @@ members = [
     "disk-rust",
     "mountmgr-rust",
     "netstack-rust",
+    "netstack-cargo",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",
