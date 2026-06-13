@@ -8,17 +8,18 @@
 # add_library(MODULE) + rust_cohab_stub.c + the per-arch custom_command — it is
 # driven by cargo (i8042prt-cargo's build.rs → reactos-link,
 # ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
-# i8042prt-rust, links it with dmilib (ParseSMBiosTables) + the ntoskrnl/hal
-# import libs (strcmp is an ntoskrnl export) into the shipping PE, applies the
-# kernel-dll post-link and registers it on the boot media.
+# i8042prt-rust and links it with the ntoskrnl/hal import libs (strcmp is an
+# ntoskrnl export) into the shipping PE, applies the kernel-dll post-link and
+# registers it on the boot media. ZERO cmake .a: libdmilib.a is gone —
+# ParseSMBiosTables is now a Rust port in i8042prt-rust (crate::dmi); the host
+# tool udmihelp keeps the C copy.
 #
 # guid.c is NOT linked: i8042prt-rust defines its sole poclass GUID
 # (GUID_DEVICE_SYS_BUTTON) as a Rust-internal static used via addr_of!, so the
 # C guid.c symbol is unreferenced dead residue (kept on disk). The version
 # resource (i8042prt.rc) is dropped, as in the other cargo cuts.
 add_cargo_module(i8042prt i8042prt-cargo i8042prt.sys KIND kerneldll
-    BODY_CRATE i8042prt-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS dmilib)
+    BODY_CRATE i8042prt-rust DESTINATION reactos/system32/drivers)
 
 # Registry setup is independent of the link and stays in cmake.
 add_registry_inf(i8042prt_reg.inf)

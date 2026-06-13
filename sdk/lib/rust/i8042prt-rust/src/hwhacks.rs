@@ -54,10 +54,11 @@ const REG_BINARY: ULONG = 3;
 const OBJ_KERNEL_HANDLE: ULONG = 0x00000200;
 const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
 
-// dmilib.h: VOID NTAPI ParseSMBiosTables(PVOID, ULONG, PCHAR Strings[]).
-// Provided by the dmilib static lib linked into the driver. strcmp from CRT.
+// ParseSMBiosTables is now a Rust port in crate::dmi (was cmake's libdmilib.a —
+// dropping the extern lets the i8042prt cargo link shed that last .a). strcmp
+// from CRT is still external.
+use crate::dmi::parse_smbios_tables;
 extern "C" {
-    fn ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG, Strings: *mut PCHAR);
     fn strcmp(s1: PCSTR, s2: PCSTR) -> i32;
 }
 
@@ -103,8 +104,13 @@ pub const SMBIOS_DATA_GUID: GUID = GUID {
     Data4: [0xBF, 0x38, 0x00, 0xA0, 0xC9, 0x06, 0x29, 0x10],
 };
 
-pub const SYS_VENDOR: ULONG = 0x01;
-pub const SYS_PRODUCT: ULONG = 0x02;
+// _ID_STRINGS slot indices (dmilib.h) — these MUST match crate::dmi's slots:
+// ParseSMBiosTables writes the system vendor/product into slots 4/5, and this
+// matcher reads them back. The original translation fabricated 0x01/0x02 here,
+// so quirk matching read the BIOS_VERSION/BIOS_DATE slots instead and never
+// fired (inert under QEMU's non-Dell SMBIOS, hence undetected). Fixed to 4/5.
+pub const SYS_VENDOR: ULONG = 0x04;
+pub const SYS_PRODUCT: ULONG = 0x05;
 
 #[no_mangle]
 pub static MSSmBios_RawSMBiosTables_GUID: GUID = SMBIOS_DATA_GUID;
@@ -263,7 +269,7 @@ pub static i8042HardwareTable: [HARDWARE_TABLE; 15] = [
 unsafe fn i8042ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG) {
     let mut Strings: [PCHAR; ID_STRINGS_MAX] = [core::ptr::null_mut(); ID_STRINGS_MAX];
 
-    ParseSMBiosTables(SMBiosTables, TableSize, Strings.as_mut_ptr());
+    parse_smbios_tables(SMBiosTables, TableSize, Strings.as_mut_ptr());
 
     let table_size = i8042HardwareTable.len();
 
