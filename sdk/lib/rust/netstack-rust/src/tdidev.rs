@@ -181,7 +181,21 @@ unsafe fn handle_create(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 (KIND_ADDR, ())
             }
             TdiFileKind::Connection => {
-                tditrans::post(tditrans::Cmd::CreateConn { id, conn_ctx: 0 });
+                // The ConnectionContext EA value is AFD's per-connection cookie. We
+                // echo it back as ConnectionContext in the TDI_EVENT_RECEIVE upcall,
+                // and AFD maps it to its FCB — 0 would break AFD's receive path.
+                // The value sits right after the name + its NUL terminator.
+                let conn_ctx = {
+                    let name_len = (*ea).EaNameLength as usize;
+                    let val_len = (*ea).EaValueLength as usize;
+                    let val = (*ea).EaName.as_ptr().add(name_len + 1) as *const u8;
+                    if val_len >= core::mem::size_of::<usize>() {
+                        (val as *const usize).read_unaligned()
+                    } else {
+                        0
+                    }
+                };
+                tditrans::post(tditrans::Cmd::CreateConn { id, conn_ctx });
                 (KIND_CONN, ())
             }
             TdiFileKind::ControlChannel => (KIND_CONTROL, ()),

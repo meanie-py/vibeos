@@ -245,40 +245,126 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
 }
 
 /// Completion bridge: for each connection, complete a pended connect IRP once
-/// ESTABLISHED, and deliver to pended receive IRPs once data is available.
+/// ESTABLISHED, and deliver received data — via the AFD event-indication upcall
+/// when a TDI_EVENT_RECEIVE handler is registered, else to pended receive IRPs.
 fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
-    for c in state.conns.iter_mut() {
-        let Some(h) = c.handle else { continue };
+    for ci in 0..state.conns.len() {
+        let Some(h) = state.conns[ci].handle else { continue };
+        // Snapshot what we need from immutable lookups BEFORE the mutable socket /
+        // conn[ci] borrows (the address object holds the receive event handler).
+        let addr_id = state.conns[ci].addr_id;
+        let conn_ctx = state.conns[ci].conn_ctx;
+        let ev_recv = state
+            .addrs
+            .iter()
+            .find(|a| a.id == addr_id)
+            .and_then(|a| a.ev_recv);
+
         let s = sockets.get_mut::<tcp::Socket>(h);
 
         // Connect completion.
-        if c.connect_irp != 0 {
+        if state.conns[ci].connect_irp != 0 {
             use tcp::State;
             match s.state() {
                 State::Established => {
-                    let irp = c.connect_irp;
-                    c.connect_irp = 0;
-                    c.connected = true;
-                    nsprint!("[NETSTACK] TDI connect ESTABLISHED (conn {})\n", c.id);
+                    let irp = state.conns[ci].connect_irp;
+                    state.conns[ci].connect_irp = 0;
+                    state.conns[ci].connected = true;
+                    nsprint!("[NETSTACK] TDI connect ESTABLISHED (conn {})\n", state.conns[ci].id);
                     unsafe { complete(irp, STATUS_SUCCESS, 0) };
                 }
                 State::Closed | State::TimeWait | State::Closing => {
-                    let irp = c.connect_irp;
-                    c.connect_irp = 0;
+                    let irp = state.conns[ci].connect_irp;
+                    state.conns[ci].connect_irp = 0;
                     unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
                 }
                 _ => {}
             }
         }
 
-        // Receive delivery (IRP path; AFD event indication is layered later).
-        while !c.recv.is_empty() && s.can_recv() {
-            let (irp, buf, len) = c.recv.remove(0);
-            let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, len) };
-            match s.recv_slice(dst) {
-                Ok(n) => unsafe { complete(irp, STATUS_SUCCESS, n) },
-                Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+        // Receive delivery.
+        if let Some((handler, context)) = ev_recv {
+            // AFD model: upcall the registered TDI_EVENT_RECEIVE handler.
+            indicate_receive(s, handler, context, conn_ctx);
+        } else {
+            // Legacy IRP-receive model (kernel self-test before the event path).
+            while !state.conns[ci].recv.is_empty() && s.can_recv() {
+                let (irp, buf, len) = state.conns[ci].recv.remove(0);
+                let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, len) };
+                match s.recv_slice(dst) {
+                    Ok(n) => unsafe { complete(irp, STATUS_SUCCESS, n) },
+                    Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+                }
             }
         }
     }
+}
+
+/// Upcall AFD's TDI_EVENT_RECEIVE handler for all currently-available stream data
+/// on `s`. The handler returns how many bytes it took (BytesTaken); we consume
+/// exactly that from the socket. If it takes nothing (STATUS_DATA_NOT_ACCEPTED)
+/// we stop and re-indicate next poll. A returned receive IRP is completed with
+/// whatever the handler didn't take inline.
+fn indicate_receive(s: &mut tcp::Socket, handler: usize, context: usize, conn_ctx: usize) {
+    use crate::tdi::{PtdiIndReceive, TDI_RECEIVE_ENTIRE_MESSAGE, TDI_RECEIVE_NORMAL};
+    loop {
+        if !s.can_recv() {
+            break;
+        }
+        // recv() hands us a contiguous slice of the receive ring; we return how many
+        // bytes to consume (and surface that count as the call's result).
+        let consumed = s
+            .recv(|buf: &mut [u8]| {
+                if buf.is_empty() {
+                    return (0usize, 0usize);
+                }
+                let len = buf.len() as u32;
+                let mut taken: u32 = 0;
+                let mut irp_out: PIRP = core::ptr::null_mut();
+                let f: PtdiIndReceive = unsafe { core::mem::transmute(handler) };
+                let st = unsafe {
+                    // AFD receive indications run at DISPATCH_LEVEL.
+                    let _irql = IrqlGuard::raise_to_dpc();
+                    f(
+                        context as *mut _,
+                        conn_ctx as *mut _,
+                        TDI_RECEIVE_NORMAL | TDI_RECEIVE_ENTIRE_MESSAGE,
+                        len,
+                        len,
+                        &mut taken,
+                        buf.as_ptr() as *mut _,
+                        &mut irp_out,
+                    )
+                };
+                let mut consumed = (taken as usize).min(buf.len());
+                if !irp_out.is_null() {
+                    // AFD posted an IRP for the remainder — fill its MDL.
+                    let extra = unsafe { complete_indication_irp(irp_out, &buf[consumed..]) };
+                    consumed += extra;
+                }
+                let _ = st;
+                (consumed, consumed)
+            })
+            .unwrap_or(0);
+        if consumed == 0 {
+            break;
+        }
+    }
+}
+
+/// Complete a TDI receive IRP returned from an event indication by copying the
+/// remaining indicated data into its MDL. Returns the number of bytes delivered.
+unsafe fn complete_indication_irp(irp: PIRP, data: &[u8]) -> usize {
+    let mdl = (*irp).MdlAddress;
+    let mut n = 0usize;
+    if !mdl.is_null() {
+        let va = ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe(mdl, 16);
+        if !va.is_null() {
+            let cap = (*(mdl as *const ntkrnl_sys::ddk::_MDL)).ByteCount as usize;
+            n = data.len().min(cap);
+            core::ptr::copy_nonoverlapping(data.as_ptr(), va as *mut u8, n);
+        }
+    }
+    complete(irp as usize, STATUS_SUCCESS, n);
+    n
 }

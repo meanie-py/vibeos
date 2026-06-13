@@ -35,6 +35,25 @@ pub const TDI_EVENT_SEND_POSSIBLE: i32 = 6;
 pub const EA_TRANSPORT_ADDRESS: &[u8] = b"TransportAddress";
 pub const EA_CONNECTION_CONTEXT: &[u8] = b"ConnectionContext";
 
+// ReceiveFlags passed to a TDI_EVENT_RECEIVE indication (ndis/tdi.h).
+pub const TDI_RECEIVE_NORMAL: u32 = 0x0020;
+pub const TDI_RECEIVE_ENTIRE_MESSAGE: u32 = 0x0100;
+
+/// PTDI_IND_RECEIVE (sdk/include/ddk/tdikrnl.h) — the upcall the transport makes
+/// into AFD when stream data arrives on a connection. NTAPI = `extern "system"`
+/// (cdecl amd64/arm64, stdcall i386). Returns STATUS_SUCCESS (took the data) or
+/// STATUS_DATA_NOT_ACCEPTED (couldn't take it now — transport keeps it).
+pub type PtdiIndReceive = unsafe extern "system" fn(
+    TdiEventContext: *mut core::ffi::c_void,
+    ConnectionContext: *mut core::ffi::c_void,
+    ReceiveFlags: u32,
+    BytesIndicated: u32,
+    BytesAvailable: u32,
+    BytesTaken: *mut u32,
+    Tsdu: *mut core::ffi::c_void,
+    IoRequestPacket: *mut ntkrnl_sys::ddk::PIRP,
+) -> i32;
+
 /// TDI address family for IPv4 (TDI_ADDRESS_TYPE_IP).
 pub const TDI_ADDRESS_TYPE_IP: u16 = 2;
 
