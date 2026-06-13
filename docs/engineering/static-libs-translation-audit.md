@@ -82,7 +82,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
-| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (11; classpnp dropped it 2026-06-13) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves. classpnp needed NO residue (cnt-rust-lib + compiler-builtins sufficed); the rest may follow. |
+| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, rosload, uefildr (classpnp + all 4 KD transports dropped it) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). NOT a softfloat gap — the float/printf/scanf CORE is already Rust (streamout engine incl. format_float, floatcvt, math, strtod, scanf). What stays C = the **irreducible variadic plumbing** (thin `va_start; streamout(...)` shells sprintf/_snprintf/… + scanf's `cnt_va_next_ptr`); Rust can't DEFINE C-variadics on stable. ELIMINATION (done for ntdll + all 4 KD transports): `.c_from_compile_db("libcntpr", &[shells + cnt-rust scanf_trampoline.c])` then drop the `.a`. |
 | `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, winsrv, win32k (5) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: zero PSEH-runtime refs in the Rust body). Remaining consumers can follow — trivial. |
 | `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: no >4KB-frame refs; uefildr i386 also probes inert but kept — bootloader risk). → `global_asm!` crate or asm_archive everywhere. |
 | `sdk/lib/crt/libcntpr_rust.a` | hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial (7) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel already do). |
@@ -91,15 +91,15 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. `cport-rust` exists (uefildr uses it via `.rust_lib`). |
 | ~~`sdk/lib/3rdparty/libwine/libwine.a`~~ | ~~userinit, winlogon~~ | 3rd-party wine glue (~1.1K LOC). **All cargo consumers dropped it: cabinet/mlang (cohab c_shim), userinit + winlogon 2026-06-13** (probe: inert ×3 — bodies reference none of wine's debug-channel stubs). No cargo module reuses it now. |
 | `sdk/lib/vcruntime/libsetjmp.a` | kernel ×2, hal (3) | setjmp/longjmp. ntdll amd64 assembles it from source asm + Rust glue (no `.a`). |
-| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter (~406 LOC C). Untranslated. |
+| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — cohab-wired (kernel keeps the `.a` name as a cohab stub). hal still links the C. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
 | `sdk/lib/cmlib/libcmlib.a` | kernel ×2 | Config-Manager hive lib. **`cmlib-rust` is the translation** (linked alongside via mechanism 5); the cmake `.a` lingers as cohab placeholder. |
 | `drivers/base/…/libkdcom.a` | kernel ×2 | KD COM transport. `kdcom-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `drivers/base/…/libbootvid.a` | kernel ×2 | Boot video. `bootvid-rust` is the standalone Rust flip; kernel keeps the `.a`. |
-| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue (~440 LOC C). Untranslated. |
-| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers (~345 LOC C). Untranslated. |
-| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC C). Untranslated. |
-| `sdk/lib/{wdmguid,poguid,ioevent}.a` | kernel ×2 | GUID-only (~20/14/9 LOC). Trivial `#[link_section]` Rust statics. |
+| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — cohab-wired (kernel keeps the `.a` name). |
+| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers. **✅ Rust (`lsalib-rust`)** — cohab-wired. |
+| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)** — cohab-wired. |
+| ~~`sdk/lib/{wdmguid,poguid,ioevent}.a`~~ | ~~kernel ×2~~ | GUID data libs. **✅ Rust (`guids-rust`, commit `8e61fee3e68`)** — 217 deduped GUID statics, `.rust_lib()`'d into both kernels, the 3 cmake `.a` DROPPED from static_libs. cold smoke ×3. C kept on disk for non-kernel cmake consumers. |
 | `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
 | ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
 | ~~`sdk/lib/smlib/libsmlib.a`~~ | ~~csrsrv, smss~~ | **✅ Resolved 2026-06-13 (`cf7a6caa082`)** — NOT translation debt: smclient.c is already a Rust port (`smss-csrss-rust/src/smlib/smclient.rs`, compiled into the body via `pub mod smlib`); smutils.c is dead (compiled nowhere). The cmake target is a comment-only cohab stub; the body defines all 7 Sm* + SmBaseTag, so it was inert (residue probe ×3). Dropped from both build.rs → csrsrv + smss ZERO cmake .a. C kept on disk. |
@@ -115,21 +115,21 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | Lib | Then | Now |
 |---|---|---|
 | `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
-| `liblibcntpr` | C (~59K) | C residual `.a` (11 consumers; classpnp dropped it 2026-06-13) + `cnt-rust-lib` Rust half. i386 float tail remains for the rest. |
+| `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD dropped it) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
 | `libcmlib` | C | `cmlib-rust` is the translation (kernel links both; `.a` = cohab placeholder). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
-| `librossym` | C (~3K) | unchanged C. |
+| `librossym` | C (~3K) | **Rust** (`rossym-rust`); kernel `.a` cohab. |
 | `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13, 5 still reuse `.a` (kernel ×2, hal, winsrv, win32k). |
 | `libsetjmp` | C | kernel/hal reuse; ntdll amd64 in-cargo asm. |
 | `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). |
 | `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
-| `libcsq` | C (~440) | unchanged C. |
-| `libarbiter` | C (~406) | unchanged C. |
-| `libntlsalib` | C (~345) | unchanged C. |
+| `libcsq` | C (~440) | **Rust** (`csq-rust`); kernel `.a` cohab. |
+| `libarbiter` | C (~406) | **Rust** (`arbiter-rust`); kernel `.a` cohab, hal still C. |
+| `libntlsalib` | C (~345) | **Rust** (`lsalib-rust`); kernel `.a` cohab. |
 | `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss/winlogon/services dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
 | `libkdcom` | C (~116) | **Rust** (`kdcom-rust`); kernel `.a` reuse. |
-| `libwdmguid`/`libpoguid`/`libioevent` | C (~43 total) | unchanged; trivial GUID-statics flip. |
+| `libwdmguid`/`libpoguid`/`libioevent` | C | **Rust** (`guids-rust`, 217 GUID statics); DROPPED from both kernels' static_libs (commit `8e61fee3e68`). C on disk for non-kernel cmake consumers. |
 | `rtl-rust` (umbrella) | Rust | Rust, via `.rust_lib` (no cmake reuse) in kernel ×2 + ntdll. |
 
 ## Translation debt (C that's compiled in-cargo but NOT yet Rust)
