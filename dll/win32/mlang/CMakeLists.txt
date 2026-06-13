@@ -16,4 +16,4 @@ spec2def(mlang.dll mlang.spec ADD_IMPORTLIB)
 # ADD_IMPORTLIB) above STAYS (consumers link the libmlang import lib).
 add_cargo_module(mlang mlang-cargo mlang.dll KIND win32dll
     BODY_CRATE mlang-rust
-    EXTRA_DEPENDS uuid wine msvcrtex)
+    EXTRA_DEPENDS uuid msvcrtex)

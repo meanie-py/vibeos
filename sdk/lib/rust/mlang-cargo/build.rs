@@ -45,7 +45,9 @@ fn main() {
         .spec_stubs()
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
-            "sdk/lib/3rdparty/libwine/libwine.a",
+            // libwine.a dropped — mlang-rust's wine surface (TRACE/WARN/FIXME +
+            // IsEqualGUID/min/list_*/vtbl helpers) is already provided
+            // header-free by rust_cohab_stub.c (c_shims above).
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
             "sdk/lib/crt/libmsvcrtex.a",
         ])
