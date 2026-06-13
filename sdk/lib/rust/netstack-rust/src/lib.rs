@@ -24,6 +24,7 @@ pub mod tdi;
 pub mod tditrans;
 pub mod tdidev;
 pub mod tditest;
+pub mod tdidgtest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -53,6 +54,12 @@ pub unsafe extern "system" fn DriverEntry(
     // prior KeAcquireSpinLockForDpc is a no-op in this tree → unsynchronized
     // Vec race; now uses IrqlGuard/DISPATCH_LEVEL = real UP mutual exclusion).
     tditest::spawn();
+    // M5 verification: the UDP/datagram analogue — a kernel TDI client that drives
+    // our own \Device\Udp via real IRPs (the path AFD uses for sendto/recvfrom and
+    // the usermode DHCP/DNS services): open an address object, register a
+    // TDI_EVENT_RECEIVE_DATAGRAM handler, send a DNS query datagram to slirp's DNS
+    // forwarder, receive the reply via the datagram upcall.
+    tdidgtest::spawn();
     0 // STATUS_SUCCESS
 }
 

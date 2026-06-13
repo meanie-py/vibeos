@@ -54,8 +54,30 @@ pub type PtdiIndReceive = unsafe extern "system" fn(
     IoRequestPacket: *mut ntkrnl_sys::ddk::PIRP,
 ) -> i32;
 
+/// PTDI_IND_RECEIVE_DATAGRAM (sdk/include/ddk/tdikrnl.h) — the upcall the transport
+/// makes into AFD when a connectionless datagram (UDP) arrives on an ADDRESS object.
+/// Unlike the stream receive indication this carries the SOURCE address (a
+/// TRANSPORT_ADDRESS / TA_IP_ADDRESS) so AFD/recvfrom can report the sender.
+pub type PtdiIndReceiveDatagram = unsafe extern "system" fn(
+    TdiEventContext: *mut core::ffi::c_void,
+    SourceAddressLength: i32,
+    SourceAddress: *mut core::ffi::c_void,
+    OptionsLength: i32,
+    Options: *mut core::ffi::c_void,
+    ReceiveDatagramFlags: u32,
+    BytesIndicated: u32,
+    BytesAvailable: u32,
+    BytesTaken: *mut u32,
+    Tsdu: *mut core::ffi::c_void,
+    IoRequestPacket: *mut ntkrnl_sys::ddk::PIRP,
+) -> i32;
+
 /// TDI address family for IPv4 (TDI_ADDRESS_TYPE_IP).
 pub const TDI_ADDRESS_TYPE_IP: u16 = 2;
+
+/// TDI_ADDRESS_LENGTH_IP — sizeof(TDI_ADDRESS_IP) = sin_port(2) + in_addr(4) +
+/// sin_zero(8), per tdi.h (the alignment padding is NOT counted in this field).
+pub const TDI_ADDRESS_LENGTH_IP: u16 = 14;
 
 /// The three TDI file-object flavors AFD opens on a transport device.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -117,6 +139,24 @@ pub struct TDI_REQUEST_KERNEL_ASSOCIATE {
     pub AddressHandle: *mut c_void, // HANDLE
 }
 
+/// TDI_REQUEST_KERNEL_SENDDG — TDI_SEND_DATAGRAM parameter overlay. The
+/// destination endpoint is carried in SendDatagramInformation->RemoteAddress
+/// (a TRANSPORT_ADDRESS / TA_IP_ADDRESS), exactly like CONNECT's remote.
+#[repr(C)]
+pub struct TDI_REQUEST_KERNEL_SENDDG {
+    pub SendLength: u32,
+    pub SendDatagramInformation: *mut TDI_CONNECTION_INFORMATION,
+}
+
+/// TDI_REQUEST_KERNEL_RECEIVEDG — TDI_RECEIVE_DATAGRAM parameter overlay.
+#[repr(C)]
+pub struct TDI_REQUEST_KERNEL_RECEIVEDG {
+    pub ReceiveLength: u32,
+    pub ReceiveDatagramInformation: *mut TDI_CONNECTION_INFORMATION,
+    pub ReturnDatagramInformation: *mut TDI_CONNECTION_INFORMATION,
+    pub ReceiveFlags: u32,
+}
+
 #[repr(C)]
 pub struct TDI_ADDRESS_IP {
     pub sin_port: u16, // network byte order
@@ -137,15 +177,38 @@ pub struct TRANSPORT_ADDRESS {
     // followed by TA_ADDRESS[TAAddressCount]
 }
 
-/// Parse the first IPv4 endpoint out of a TDI_CONNECTION_INFORMATION's
-/// RemoteAddress (a TRANSPORT_ADDRESS / TA_IP_ADDRESS). Returns (octets, port).
-pub unsafe fn parse_remote_ip(
-    conn_info: *const TDI_CONNECTION_INFORMATION,
-) -> Option<([u8; 4], u16)> {
-    if conn_info.is_null() {
-        return None;
+/// A complete, NATURALLY-ALIGNED TA_IP_ADDRESS on the wire: TRANSPORT_ADDRESS
+/// (count) + one TA_ADDRESS (len/type) + TDI_ADDRESS_IP. `#[repr(C)]` (NOT
+/// packed) reproduces the kernel's layout — the ULONG in_addr inside
+/// TDI_ADDRESS_IP forces 4-byte alignment, so in_addr lands at offset 12, not
+/// 10. This is what we hand to AFD as the SourceAddress of a datagram
+/// indication; AFD parses it with the same alignment.
+#[repr(C)]
+pub struct TaIpFull {
+    pub count: i32,
+    pub addr_len: u16,
+    pub addr_type: u16,
+    pub addr: TDI_ADDRESS_IP,
+}
+
+impl TaIpFull {
+    pub fn new(ip: [u8; 4], port: u16) -> Self {
+        TaIpFull {
+            count: 1,
+            addr_len: TDI_ADDRESS_LENGTH_IP,
+            addr_type: TDI_ADDRESS_TYPE_IP,
+            addr: TDI_ADDRESS_IP {
+                sin_port: port.to_be(),
+                in_addr: u32::from_ne_bytes(ip), // memory bytes == network octets
+                sin_zero: [0; 8],
+            },
+        }
     }
-    let ta = (*conn_info).RemoteAddress as *const u8;
+}
+
+/// Parse the first IPv4 endpoint out of a raw TRANSPORT_ADDRESS / TA_IP_ADDRESS
+/// (count + TA_ADDRESS + TDI_ADDRESS_IP). Returns (octets, port).
+pub unsafe fn parse_ta(ta: *const u8) -> Option<([u8; 4], u16)> {
     if ta.is_null() {
         return None;
     }
@@ -163,6 +226,17 @@ pub unsafe fn parse_remote_ip(
     let raw = &(*ip).in_addr as *const u32 as *const u8;
     let octets = [*raw, *raw.add(1), *raw.add(2), *raw.add(3)];
     Some((octets, port))
+}
+
+/// Parse the first IPv4 endpoint out of a TDI_CONNECTION_INFORMATION's
+/// RemoteAddress (used by CONNECT and SEND_DATAGRAM). Returns (octets, port).
+pub unsafe fn parse_remote_ip(
+    conn_info: *const TDI_CONNECTION_INFORMATION,
+) -> Option<([u8; 4], u16)> {
+    if conn_info.is_null() {
+        return None;
+    }
+    parse_ta((*conn_info).RemoteAddress as *const u8)
 }
 
 /// Human-readable name for a TDI minor function (logging).

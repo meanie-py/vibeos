@@ -177,7 +177,20 @@ unsafe fn handle_create(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         let id = tditrans::alloc_id();
         let (kindtag, _) = match kind {
             TdiFileKind::Address => {
-                tditrans::post(tditrans::Cmd::CreateAddr { id, port: 0 });
+                // The TransportAddress EA value is a TRANSPORT_ADDRESS / TA_IP_ADDRESS
+                // giving the local bind. Extract the port for the UDP datagram path
+                // (0 = ephemeral, chosen by the worker on first use).
+                let port = {
+                    let name_len = (*ea).EaNameLength as usize;
+                    let val_len = (*ea).EaValueLength as usize;
+                    if val_len >= core::mem::size_of::<i32>() {
+                        let val = (*ea).EaName.as_ptr().add(name_len + 1) as *const u8;
+                        tdi::parse_ta(val).map(|(_, p)| p).unwrap_or(0)
+                    } else {
+                        0
+                    }
+                };
+                tditrans::post(tditrans::Cmd::CreateAddr { id, port });
                 (KIND_ADDR, ())
             }
             TdiFileKind::Connection => {
@@ -290,6 +303,45 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         tdi::TDI_DISCONNECT => {
             IoMarkIrpPending(irp);
             tditrans::post(tditrans::Cmd::Disconnect { conn_id: id, irp: irp as usize });
+            STATUS_PENDING
+        }
+        tdi::TDI_SEND_DATAGRAM => {
+            // Connectionless send — rides on the ADDRESS object (id = addr id). The
+            // destination is in SendDatagramInformation->RemoteAddress.
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_SENDDG;
+            let len = (*p).SendLength as usize;
+            let va = mdl_va(irp);
+            if va == 0 {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                return STATUS_NOT_IMPLEMENTED;
+            }
+            if let Some((ip, port)) = tdi::parse_remote_ip((*p).SendDatagramInformation) {
+                nsprint!(
+                    "[NETSTACK] TDI SEND_DATAGRAM addr {} -> {}.{}.{}.{}:{} ({} bytes)\n",
+                    id, ip[0], ip[1], ip[2], ip[3], port, len
+                );
+                IoMarkIrpPending(irp);
+                tditrans::post(tditrans::Cmd::SendDatagram {
+                    addr_id: id, irp: irp as usize, data: va, len, ip, port,
+                });
+                STATUS_PENDING
+            } else {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                STATUS_NOT_IMPLEMENTED
+            }
+        }
+        tdi::TDI_RECEIVE_DATAGRAM => {
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_RECEIVEDG;
+            let len = (*p).ReceiveLength as usize;
+            let va = mdl_va(irp);
+            if va == 0 {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                return STATUS_NOT_IMPLEMENTED;
+            }
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::ReceiveDatagram {
+                addr_id: id, irp: irp as usize, buf: va, len,
+            });
             STATUS_PENDING
         }
         _ => {

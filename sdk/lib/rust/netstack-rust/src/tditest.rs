@@ -142,10 +142,20 @@ pub fn spawn() {
 }
 
 unsafe fn open_tcp(ea: PVOID, ea_len: u32) -> *mut core::ffi::c_void {
+    open_dev(&TCP_NAME, ea, ea_len)
+}
+
+/// Open a transport device file object (control/address/connection per the EA).
+/// Shared by the TCP and UDP self-tests.
+pub(crate) unsafe fn open_dev(
+    dev_name: &[u16],
+    ea: PVOID,
+    ea_len: u32,
+) -> *mut core::ffi::c_void {
     let mut name = UNICODE_STRING {
-        Length: (TCP_NAME.len() * 2) as u16,
-        MaximumLength: (TCP_NAME.len() * 2) as u16,
-        Buffer: TCP_NAME.as_ptr() as *mut u16,
+        Length: (dev_name.len() * 2) as u16,
+        MaximumLength: (dev_name.len() * 2) as u16,
+        Buffer: dev_name.as_ptr() as *mut u16,
     };
     let mut oa: OBJECT_ATTRIBUTES = zeroed();
     oa.Length = size_of::<OBJECT_ATTRIBUTES>() as u32;
@@ -176,7 +186,7 @@ unsafe fn open_tcp(ea: PVOID, ea_len: u32) -> *mut core::ffi::c_void {
 }
 
 /// Run one synchronous internal-device-control IRP against the connection.
-unsafe fn run_tdi(
+pub(crate) unsafe fn run_tdi(
     dev: PDEVICE_OBJECT,
     fo: *mut _FILE_OBJECT,
     minor: u8,

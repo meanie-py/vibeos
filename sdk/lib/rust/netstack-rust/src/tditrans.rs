@@ -14,7 +14,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
-use smoltcp::socket::tcp;
+use smoltcp::socket::{tcp, udp};
 use smoltcp::wire::IpAddress;
 
 use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
@@ -49,6 +49,9 @@ pub enum Cmd {
     Send { conn_id: u64, irp: usize, data: usize, len: usize },
     Receive { conn_id: u64, irp: usize, buf: usize, len: usize },
     Disconnect { conn_id: u64, irp: usize },
+    // Connectionless (UDP) datagram path — rides on the ADDRESS object.
+    SendDatagram { addr_id: u64, irp: usize, data: usize, len: usize, ip: [u8; 4], port: u16 },
+    ReceiveDatagram { addr_id: u64, irp: usize, buf: usize, len: usize },
     CloseConn { id: u64 },
     CloseAddr { id: u64 },
 }
@@ -99,8 +102,17 @@ fn drain_into(out: &mut Vec<Cmd>) {
 
 struct Addr {
     id: u64,
+    /// Local UDP port (0 = let the stack pick an ephemeral on first use).
+    local_port: u16,
+    /// Lazily-created bound UDP socket for the connectionless datagram path.
+    udp: Option<SocketHandle>,
     ev_recv: Option<(usize, usize)>,
     ev_disc: Option<(usize, usize)>,
+    /// Registered TDI_EVENT_RECEIVE_DATAGRAM handler (handler, context).
+    ev_recv_dg: Option<(usize, usize)>,
+    /// Pended RECEIVE_DATAGRAM IRPs (irp, buf_va, buf_len) — used when no
+    /// datagram event handler is registered.
+    recv_dg: Vec<(usize, usize, usize)>,
 }
 
 struct Conn {
@@ -145,8 +157,16 @@ pub fn pump(iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut
 
 fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut TdiState) {
     match cmd {
-        Cmd::CreateAddr { id, port: _ } => {
-            state.addrs.push(Addr { id, ev_recv: None, ev_disc: None });
+        Cmd::CreateAddr { id, port } => {
+            state.addrs.push(Addr {
+                id,
+                local_port: port,
+                udp: None,
+                ev_recv: None,
+                ev_disc: None,
+                ev_recv_dg: None,
+                recv_dg: Vec::new(),
+            });
         }
         Cmd::CreateConn { id, conn_ctx } => {
             state.conns.push(Conn {
@@ -164,6 +184,9 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 match ev_type as i32 {
                     crate::tdi::TDI_EVENT_RECEIVE => a.ev_recv = Some((handler, context)),
                     crate::tdi::TDI_EVENT_DISCONNECT => a.ev_disc = Some((handler, context)),
+                    crate::tdi::TDI_EVENT_RECEIVE_DATAGRAM => {
+                        a.ev_recv_dg = Some((handler, context))
+                    }
                     _ => {}
                 }
             }
@@ -228,6 +251,32 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             }
             unsafe { complete(irp, STATUS_SUCCESS, 0) };
         }
+        Cmd::SendDatagram { addr_id, irp, data, len, ip, port } => {
+            let mut done = STATUS_CONNECTION_REFUSED;
+            let mut sent = 0usize;
+            if let Some(a) = state.addr(addr_id) {
+                if let Some(h) = ensure_udp(a, sockets) {
+                    let s = sockets.get_mut::<udp::Socket>(h);
+                    if s.can_send() {
+                        let slice = unsafe { core::slice::from_raw_parts(data as *const u8, len) };
+                        let ep = (IpAddress::v4(ip[0], ip[1], ip[2], ip[3]), port);
+                        if s.send_slice(slice, ep).is_ok() {
+                            sent = len;
+                            done = STATUS_SUCCESS;
+                        }
+                    }
+                }
+            }
+            unsafe { complete(irp, done, sent) };
+        }
+        Cmd::ReceiveDatagram { addr_id, irp, buf, len } => {
+            if let Some(a) = state.addr(addr_id) {
+                ensure_udp(a, sockets);
+                a.recv_dg.push((irp, buf, len));
+            } else {
+                unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+            }
+        }
         Cmd::CloseConn { id } => {
             if let Some(pos) = state.conns.iter().position(|c| c.id == id) {
                 if let Some(h) = state.conns[pos].handle {
@@ -238,8 +287,100 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
         }
         Cmd::CloseAddr { id } => {
             if let Some(pos) = state.addrs.iter().position(|a| a.id == id) {
+                if let Some(h) = state.addrs[pos].udp {
+                    sockets.remove(h);
+                }
                 state.addrs.swap_remove(pos);
             }
+        }
+    }
+}
+
+/// Lazily create + bind the UDP socket backing an address object (connectionless
+/// datagram path). Bind to the requested local port, or an ephemeral derived from
+/// the address id when AFD passed port 0 ("let the stack choose").
+fn ensure_udp(addr: &mut Addr, sockets: &mut SocketSet<'static>) -> Option<SocketHandle> {
+    if let Some(h) = addr.udp {
+        return Some(h);
+    }
+    let sock = udp::Socket::new(
+        udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 8], vec![0u8; 8192]),
+        udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 8], vec![0u8; 8192]),
+    );
+    let h = sockets.add(sock);
+    let port = if addr.local_port != 0 {
+        addr.local_port
+    } else {
+        49152u16.wrapping_add((addr.id & 0x3fff) as u16)
+    };
+    if sockets.get_mut::<udp::Socket>(h).bind(port).is_err() {
+        sockets.remove(h);
+        return None;
+    }
+    addr.udp = Some(h);
+    Some(h)
+}
+
+/// IpEndpoint -> (IPv4 octets, port). proto-ipv4 only, so the match is exhaustive.
+fn ep_to_v4(ep: smoltcp::wire::IpEndpoint) -> ([u8; 4], u16) {
+    let octets = match ep.addr {
+        IpAddress::Ipv4(a) => a.octets(),
+    };
+    (octets, ep.port)
+}
+
+/// Deliver all queued datagrams on `s` via the AFD datagram event-indication
+/// upcall (TDI_EVENT_RECEIVE_DATAGRAM). Each datagram is a whole message: smoltcp
+/// dequeues it on recv() regardless of how many bytes AFD takes; if AFD returns a
+/// receive IRP for the remainder we fill it with the untaken tail.
+fn deliver_datagrams_event(s: &mut udp::Socket, handler: usize, context: usize) {
+    use crate::tdi::{
+        PtdiIndReceiveDatagram, TaIpFull, TDI_RECEIVE_ENTIRE_MESSAGE, TDI_RECEIVE_NORMAL,
+    };
+    while s.can_recv() {
+        let Ok((payload, meta)) = s.recv() else { break };
+        let (octets, port) = ep_to_v4(meta.endpoint);
+        let mut src = TaIpFull::new(octets, port);
+        let len = payload.len() as u32;
+        let mut taken: u32 = 0;
+        let mut irp_out: PIRP = core::ptr::null_mut();
+        let f: PtdiIndReceiveDatagram = unsafe { core::mem::transmute(handler) };
+        unsafe {
+            // AFD datagram indications run at DISPATCH_LEVEL.
+            let _irql = IrqlGuard::raise_to_dpc();
+            f(
+                context as *mut _,
+                core::mem::size_of::<TaIpFull>() as i32,
+                &mut src as *mut _ as *mut _,
+                0,
+                core::ptr::null_mut(),
+                TDI_RECEIVE_NORMAL | TDI_RECEIVE_ENTIRE_MESSAGE,
+                len,
+                len,
+                &mut taken,
+                payload.as_ptr() as *mut _,
+                &mut irp_out,
+            );
+        }
+        let taken = (taken as usize).min(payload.len());
+        if !irp_out.is_null() {
+            unsafe { complete_indication_irp(irp_out, &payload[taken..]) };
+        }
+    }
+}
+
+/// Deliver queued datagrams to pended RECEIVE_DATAGRAM IRPs (no event handler).
+fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, usize)>) {
+    while !recv_dg.is_empty() && s.can_recv() {
+        let (irp, buf, len) = recv_dg.remove(0);
+        match s.recv() {
+            Ok((payload, _meta)) => {
+                let n = payload.len().min(len);
+                let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, n) };
+                dst.copy_from_slice(&payload[..n]);
+                unsafe { complete(irp, STATUS_SUCCESS, n) };
+            }
+            Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
         }
     }
 }
@@ -296,6 +437,18 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
                     Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
                 }
             }
+        }
+    }
+
+    // Connectionless (UDP) datagram delivery on address objects.
+    for ai in 0..state.addrs.len() {
+        let Some(h) = state.addrs[ai].udp else { continue };
+        let ev = state.addrs[ai].ev_recv_dg;
+        let s = sockets.get_mut::<udp::Socket>(h);
+        if let Some((handler, context)) = ev {
+            deliver_datagrams_event(s, handler, context);
+        } else {
+            deliver_datagrams_irp(s, &mut state.addrs[ai].recv_dg);
         }
     }
 }

@@ -69,6 +69,7 @@ MARK_OUT_SENT = "[NETSTACK] outbound TCP connected"
 MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
+MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -201,4 +202,22 @@ def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
     )
     assert _wait_for_marker(vm, MARK_TDI_RT), (
         "TDI SEND/RECEIVE round-trip did not complete (MDL data path)"
+    )
+
+
+def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
+    r"""M5: the UDP/connectionless analogue of the TDI round-trip — a kernel TDI
+    client drives netstack's own \Device\Udp through the EXACT path AFD uses for
+    sendto/recvfrom (and the usermode DHCP/DNS services): open an ADDRESS object
+    (TransportAddress EA), register a TDI_EVENT_RECEIVE_DATAGRAM handler, then
+    TDI_SEND_DATAGRAM a real DNS query to slirp's DNS forwarder (10.0.2.3:53) and
+    receive the reply via the datagram event-indication upcall.
+
+    Proves the UDP send path + the connectionless completion bridge (smoltcp
+    udp::Socket bind/send/recv) + the datagram upcall AFD relies on for recvfrom.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_TDI_DGRAM), (
+        "TDI SEND_DATAGRAM/RECEIVE_DATAGRAM round-trip did not complete "
+        "(UDP datagram path + datagram event-indication upcall)"
     )
