@@ -7,6 +7,20 @@
 
 pub mod types;
 
+// Foundation: the boot-critical hardware register access layer (hand-translated from
+// id_ata.cpp's AtapiReadPortN/WritePortN macro families). Every fan-out module reaches
+// the drive through these — import explicitly: `use crate::io_port::{AtapiReadPort2, ...}`.
+pub mod io_port;
+
+// Foundation: the IDX_* register-index map (FIELD_OFFSET #defines bindgen drops),
+// reconstructed via offset_of!. Every IO call's first arg comes from here.
+pub mod regidx;
+
+// Foundation: kernel imports the bindgen substrate couldn't bind correctly
+// (ScsiPortGetBusDataByOffset — C++-mangled in uniata headers, re-bound with C linkage).
+pub mod kernel_ext;
+pub use kernel_ext::*;
+
 // Translated modules land here (10 .cpp → modules, via parallel subagents).
 
 #[panic_handler]

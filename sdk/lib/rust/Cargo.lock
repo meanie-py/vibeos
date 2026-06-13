@@ -1286,6 +1286,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "uniata-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "uniprefix"
 version = "0.1.0"
 dependencies = [

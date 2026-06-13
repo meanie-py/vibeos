@@ -381,6 +381,14 @@ out = [ln for ln in s.splitlines(keepends=True)
                and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]
 open(final, "w").write("".join(out))
 ' "$RAW" "$FINAL"
+  # C++ drivers (LANG_ARGS has `-x c++`): the driver's OWN functions are declared without
+  # `extern "C"`, so bindgen emits them as `_Z`-mangled extern decls. In an all-Rust cohab
+  # those are dead AND collide name-for-name with the translated modules under a flat
+  # re-export. Strip every `_Z`-mangled extern block (a rare genuinely-mangled kernel import
+  # is re-bound with C linkage in the crate foundation). See strip_cpp_mangled_externs.py.
+  if printf '%s\n' "${LANG_ARGS[@]}" | grep -q 'c++'; then
+    python3 "$(dirname "$0")/strip_cpp_mangled_externs.py" "$FINAL" >/dev/null
+  fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }
 
