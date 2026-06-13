@@ -110,6 +110,13 @@ name = "byteswap"
 version = "0.1.0"
 
 [[package]]
+name = "cabinet-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "cabinet-rust"
 version = "0.1.0"
 dependencies = [
@@ -131,6 +138,13 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "classpnp-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "classpnp-rust"
@@ -330,6 +344,13 @@ version = "0.1.0"
 [[package]]
 name = "hid-sys"
 version = "0.1.0"
+
+[[package]]
+name = "hidparse-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "hidparse-rust"
@@ -562,6 +583,13 @@ name = "midl-rt"
 version = "0.1.0"
 
 [[package]]
+name = "mlang-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "mlang-rust"
 version = "0.1.0"
 dependencies = [
@@ -697,6 +725,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "pci-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "pci-rust"
 version = "0.1.0"
 dependencies = [
@@ -740,6 +775,13 @@ dependencies = [
 [[package]]
 name = "prefix"
 version = "0.1.0"
+
+[[package]]
+name = "processr-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "processr-rust"
@@ -1065,6 +1107,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "swenum-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "swenum-rust"
 version = "0.1.0"
 dependencies = [
@@ -1150,6 +1199,13 @@ dependencies = [
 [[package]]
 name = "usb-sys"
 version = "0.1.0"
+
+[[package]]
+name = "usbd-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "usbd-rust"
