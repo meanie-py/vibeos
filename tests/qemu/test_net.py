@@ -41,6 +41,7 @@ MARK_PING = "[NETSTACK] ping gateway OK"
 MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
 MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
 MARK_DNS = "[NETSTACK] dns OK"
+MARK_TDI_OWNED = "[NETSTACK] TDI dispatch ready (4 of 4 devices owned)"
 
 def _require_net_config(vm: QemuVM) -> None:
     if vm.config.arch != "amd64-uefi-net":
@@ -127,3 +128,17 @@ def test_dns_resolve(vm: QemuVM) -> None:
     """Kernel self-test resolved an A record via the slirp DNS forwarder."""
     _require_net_config(vm)
     assert MARK_DNS in vm._boot_output
+
+
+# --------------------------------------------------------------------------- #
+# M4 foundation — netstack owns the TDI transport surface (\Device\Tcp etc.) that
+# AFD/winsock open. The data path + completion bridge + a usermode winsock
+# round-trip are the remaining M4 work.
+# --------------------------------------------------------------------------- #
+
+def test_tdi_devices_owned(vm: QemuVM) -> None:
+    r"""netstack created + owns all four TDI devices (\Device\Tcp/Udp/Ip/RawIp)."""
+    _require_net_config(vm)
+    assert MARK_TDI_OWNED in vm._boot_output, (
+        "netstack did not own the 4 TDI transport devices (tcpip collision?)"
+    )

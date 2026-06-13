@@ -20,6 +20,8 @@ pub mod pci;
 pub mod device;
 pub mod selftest;
 pub mod engine;
+pub mod tdi;
+pub mod tdidev;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -29,7 +31,7 @@ use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 /// idle until the TDI surface lands at M4).
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
-    _DriverObject: *mut DRIVER_OBJECT,
+    DriverObject: *mut DRIVER_OBJECT,
     _RegistryPath: *mut UNICODE_STRING,
 ) -> NTSTATUS {
     serial::emit(core::format_args!(
@@ -37,8 +39,11 @@ pub unsafe extern "system" fn DriverEntry(
     ));
     // M1: blocking ARP round-trip self-test (creates + drops its own device).
     selftest::run();
-    // M2: spawn the persistent smoltcp poll-loop engine (ping + TCP echo).
+    // M2/M3: spawn the persistent smoltcp poll-loop engine (DHCP/ping/echo/DNS).
     engine::start();
+    // M4: create the TDI transport devices + dispatch so AFD (winsock) can drive
+    // the stack. (Owns \Device\Tcp etc. only once tcpip.sys is disabled.)
+    tdidev::init(DriverObject);
     0 // STATUS_SUCCESS
 }
 
