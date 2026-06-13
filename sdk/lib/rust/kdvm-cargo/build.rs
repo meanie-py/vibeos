@@ -22,11 +22,14 @@ fn main() {
         .rust_staticlib("kdvm-rust")
         .spec2def("drivers/base/kdvm/kdvm.spec", "kdvbox.dll")
         // cntpr_rust → `cnt-rust-lib` cargo sibling; memcmp →
-        // compiler-builtins-mem. liblibcntpr.a (C printf/float tail) KEPT — the
-        // same shared C residual hal/uefildr/kernel link. kdvm has no cportlib
-        // (it talks to the VBox backdoor via in-crate KdVmExchange port I/O).
+        // compiler-builtins-mem. kdvm has no cportlib (it talks to the VBox
+        // backdoor via in-crate KdVmExchange port I/O).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
-        .static_libs(&["sdk/lib/crt/liblibcntpr.a"])
+        // ZERO cmake .a: liblibcntpr.a DROPPED. The ONLY symbol kdvm pulled from
+        // it is `cnt_va_next_ptr` (cnt-rust-lib's scanf-engine va_arg helper from
+        // cnt-rust's own cabi/scanf_trampoline.c — Rust can't DEFINE variadics on
+        // stable). Compiled in-cargo via c_from_compile_db (ntdll-cargo pattern).
+        .c_from_compile_db("libcntpr", &["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

@@ -33,12 +33,26 @@ fn main() {
         .spec2def("drivers/base/kdgdb/kdgdb.spec", "kdcom.dll")
         // Cp* serial → `cport-rust` cargo sibling (subsumes libcportlib.a stub +
         // libcport_rust.a); cntpr_rust → `cnt-rust-lib`; memcmp →
-        // compiler-builtins-mem. kdgdb formats GDB packets with sprintf/_snprintf
-        // — those live ONLY in the C printf tail, so liblibcntpr.a is KEPT
-        // (cnt-rust-lib supplies strcmp/strstr/_strupr/atol/strlen, not sprintf).
+        // compiler-builtins-mem.
         .rust_lib("cport-rust", &[], true)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
-        .static_libs(&["sdk/lib/crt/liblibcntpr.a"])
+        // ZERO cmake .a: liblibcntpr.a DROPPED. kdgdb formats GDB packets with
+        // sprintf/_snprintf, and its scanf path needs cnt_va_next_ptr — the three
+        // symbols it pulled from liblibcntpr. The printf FORMAT ENGINE
+        // (streamout) is already Rust in cnt-rust-lib; only the thin variadic
+        // `va_start; streamout(...)` shells (sprintf.c/_snprintf.c, each #include
+        // _sxprintf.c) + the scanf va_arg helper stay C — Rust can't DEFINE
+        // variadics on stable. Compile those genuine C shells in-cargo via
+        // c_from_compile_db (the ntdll-cargo pattern — replays cmake's libcntpr
+        // flags so _sxprintf.c's <stdio.h>/<tchar.h> resolve).
+        .c_from_compile_db(
+            "libcntpr",
+            &[
+                "sdk/lib/crt/printf/sprintf.c",
+                "sdk/lib/crt/printf/_snprintf.c",
+                "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
+            ],
+        )
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {
