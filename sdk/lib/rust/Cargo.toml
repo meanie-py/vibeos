@@ -136,6 +136,7 @@ members = [
     "scsiport-rust",
     "atapi-rust",
     "mup-rust",
+    "kernel32-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
