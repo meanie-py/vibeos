@@ -15,14 +15,18 @@ fn main() {
         other => panic!("kdvm-cargo: unsupported arch {other} (i386/amd64 only)"),
     };
 
+    // cnt-rust-lib float feature: i386 softfloat omits it, amd64 enables it.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         .rust_staticlib("kdvm-rust")
         .spec2def("drivers/base/kdvm/kdvm.spec", "kdvbox.dll")
-        .static_libs(&[
-            "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-            "sdk/lib/crt/libmemcmp.a",
-        ])
+        // cntpr_rust → `cnt-rust-lib` cargo sibling; memcmp →
+        // compiler-builtins-mem. liblibcntpr.a (C printf/float tail) KEPT — the
+        // same shared C residual hal/uefildr/kernel link. kdvm has no cportlib
+        // (it talks to the VBox backdoor via in-crate KdVmExchange port I/O).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        .static_libs(&["sdk/lib/crt/liblibcntpr.a"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {
