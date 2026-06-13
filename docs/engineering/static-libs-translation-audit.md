@@ -61,9 +61,18 @@ NOT translation debt — smclient.c is already a Rust port (`smclient.rs`, compi
 into the body via `pub mod smlib`), smutils.c is dead (compiled nowhere), so the
 cmake target is a comment-only cohab stub. The body defines all 7 Sm* + SmBaseTag
 itself → libsmlib inert; smss's pseh/chkstk likewise inert (residue probe ×3).
-All booted ×3. Modules now fully cargo-native (ZERO cmake .a): pci, usbd,
+All booted ×3. **userinit + winlogon + services reached ZERO `.static_libs()` .a
+(commit `36af6b0eebb`)**: their reused libwine/libpseh/libchkstk/oldnames all
+proved inert (residue probe ×3 — no PSEH, no undefined stack-probe, nothing from
+wine debug stubs or oldnames CRT aliases). libmsvcrtex stays in-cargo via
+`.msvcrtex_crt()` (separate cross-cutting CRT project, not a `.a` reuse).
+Modules now fully cargo-native (ZERO cmake `.static_libs()` .a): pci, usbd,
 processr, swenum, hidparse, classpnp, cabinet, mlang, bootvid, framebuf,
-i8042prt, basesrv, csrss, **csrsrv, smss** (15).
+i8042prt, basesrv, csrss, csrsrv, smss, **userinit, winlogon, services** (18).
+The entire user-mode spine is now `.a`-free; what remains is boot-critical
+(hal — cgu-fragile guardrail; uefildr/rosload bootloaders keep genuine
+mini_hal+libcntpr), unvalidatable (KD transports — not smoke-covered), or active
+other-agent lanes (kernel ntoskrnl/ntkrnlmp 16-.a floor, win32k/winsrv, ntdll librtl).
 
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
 
@@ -73,13 +82,13 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
 | `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (11; classpnp dropped it 2026-06-13) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves. classpnp needed NO residue (cnt-rust-lib + compiler-builtins sufficed); the rest may follow. |
-| `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, winsrv, win32k (5) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss dropped it 2026-06-13** (probe: zero PSEH-runtime refs in the Rust body). Remaining consumers can follow — trivial. |
-| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winlogon, services, winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss dropped it 2026-06-13** (probe: no >4KB-frame refs). → `global_asm!` crate or asm_archive everywhere. |
+| `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, winsrv, win32k (5) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: zero PSEH-runtime refs in the Rust body). Remaining consumers can follow — trivial. |
+| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: no >4KB-frame refs; uefildr i386 also probes inert but kept — bootloader risk). → `global_asm!` crate or asm_archive everywhere. |
 | `sdk/lib/crt/libcntpr_rust.a` | hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial (7) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel already do). |
 | `sdk/lib/crt/libmemcmp.a` | hal, win32k, bootvid, kdcom, kdgdb, kdvm (6) | One C fn. The 8 driver/DLL modules already dropped it (compiler-builtins-mem). Remaining = same one-line drop. |
-| `sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a` | userinit, winlogon, services (3) | `_name`→`name` MSVC alias archive. **cabinet/mlang dropped it (Push A), lsass dropped it 2026-06-13** (probe: zero oldname refs). Tiny; absorb as c_shim/Rust statics. |
+| ~~`sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a`~~ | ~~userinit, winlogon, services~~ | `_name`→`name` MSVC alias archive. **All cargo consumers dropped it: cabinet/mlang (Push A), lsass + userinit + winlogon + services 2026-06-13** (probe: zero oldname refs ×3). No cargo module reuses it now. |
 | `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. `cport-rust` exists (uefildr uses it via `.rust_lib`). |
-| `sdk/lib/3rdparty/libwine/libwine.a` | userinit, winlogon (2) | 3rd-party wine glue (~1.1K LOC). cabinet/mlang already dropped it (cohab c_shim covers their surface); winlogon/userinit still pull it. |
+| ~~`sdk/lib/3rdparty/libwine/libwine.a`~~ | ~~userinit, winlogon~~ | 3rd-party wine glue (~1.1K LOC). **All cargo consumers dropped it: cabinet/mlang (cohab c_shim), userinit + winlogon 2026-06-13** (probe: inert ×3 — bodies reference none of wine's debug-channel stubs). No cargo module reuses it now. |
 | `sdk/lib/vcruntime/libsetjmp.a` | kernel ×2, hal (3) | setjmp/longjmp. ntdll amd64 assembles it from source asm + Rust glue (no `.a`). |
 | `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter (~406 LOC C). Untranslated. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
@@ -110,14 +119,14 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `libcmlib` | C | `cmlib-rust` is the translation (kernel links both; `.a` = cohab placeholder). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
 | `librossym` | C (~3K) | unchanged C. |
-| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss dropped 2026-06-13, 5 still reuse `.a`. |
+| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13, 5 still reuse `.a` (kernel ×2, hal, winsrv, win32k). |
 | `libsetjmp` | C | kernel/hal reuse; ntdll amd64 in-cargo asm. |
 | `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). |
 | `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
 | `libcsq` | C (~440) | unchanged C. |
 | `libarbiter` | C (~406) | unchanged C. |
 | `libntlsalib` | C (~345) | unchanged C. |
-| `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
+| `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss/winlogon/services dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
 | `libkdcom` | C (~116) | **Rust** (`kdcom-rust`); kernel `.a` reuse. |
 | `libwdmguid`/`libpoguid`/`libioevent` | C (~43 total) | unchanged; trivial GUID-statics flip. |
 | `rtl-rust` (umbrella) | Rust | Rust, via `.rust_lib` (no cmake reuse) in kernel ×2 + ntdll. |
