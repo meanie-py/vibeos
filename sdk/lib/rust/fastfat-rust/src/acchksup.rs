@@ -5,16 +5,10 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, IoGetFileObjectGenericMapping, KPROCESSOR_MODE, PACCESS_MASK, PACCESS_STATE, PACCESS_TOKEN, PDEVICE_OBJECT, PRIVILEGE_SET, RtlConvertLongToLuid, SeAccessCheck, SeFilterToken, SeLockSubjectContext, SePrivilegeCheck, SeUnlockSubjectContext, TOKEN_GROUPS};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PIRP_CONTEXT};
+use crate::types::{PIRP_CONTEXT, IRP_CONTEXT};
 use ntkrnl_sys::ddk::{SECURITY_SUBJECT_CONTEXT, SE_EXPORTS, _PROCESS_ACCESS_TOKEN as ACCESS_TOKEN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PIRP_CONTEXT};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PIRP_CONTEXT};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{IRP_CONTEXT};
 use ntkrnl_sys::ddk::{PPRIVILEGE_SET};
 // resolve_imports.py: explicit kernel/private-type imports
 
@@ -33,7 +27,7 @@ const SPECIFIC_RIGHTS_ALL: u32 = 0x0000FFFF;
 const FILE_TRAVERSE: u32 = 0x00000020;
 #[no_mangle]
 pub unsafe extern "C" fn FatCheckFileAccess(
-    IrpContext: *mut IrpContext,
+    IrpContext: PIRP_CONTEXT,
     DirentAttributes: u8,
     DesiredAccess: *mut u32,
 ) -> i32 {
@@ -149,7 +143,7 @@ pub unsafe extern "C" fn FatCheckFileAccess(
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCheckManageVolumeAccess(
-    IrpContext: *mut ntkrnl_sys::ddk::IRP_CONTEXT,
+    IrpContext: PIRP_CONTEXT,
     AccessState: *mut ntkrnl_sys::ddk::_ACCESS_STATE,
     ProcessorMode: ntkrnl_sys::ddk::KPROCESSOR_MODE,
 ) -> i32 {
@@ -207,7 +201,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
     };
 
     original_access_token = *effective_token;
-    status = (FatCreateRestrictEveryoneToken).cast()(
+    status = FatCreateRestrictEveryoneToken(
         original_access_token,
         core::ptr::addr_of_mut!(restricted_access_token),
     );
@@ -256,7 +250,7 @@ pub unsafe extern "C" fn FatCreateRestrictEveryoneToken(
     SidsToDisable.GroupCount = 1;
     SidsToDisable.Groups[0].Attributes = 0;
     SidsToDisable.Groups[0].Sid = (*SeExports).SeWorldSid;
-    Status = (SeFilterToken).cast()(
+    Status = SeFilterToken(
         Token,
         0,
         core::ptr::addr_of_mut!(SidsToDisable),

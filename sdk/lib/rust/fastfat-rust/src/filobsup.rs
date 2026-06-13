@@ -1,7 +1,7 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{DirectoryFile, MmFlushForWrite, PFILE_OBJECT, PSECTION_OBJECT_POINTERS};
+use ntkrnl_sys::ddk::{PFILE_OBJECT, PSECTION_OBJECT_POINTERS};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FAT_BUG_CHECK_FILOBSUP, FAT_DIRENT_ATTR_VOLUME_ID, FCB, IRP_CONTEXT, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
@@ -61,6 +61,9 @@ const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // FIXME: unknown value
 const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0x08; // FIXME: unknown value
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // FIXME: unknown value
 const MmFlushForWrite: u32 = 0x00000002;
+
+// FAT_FLUSH_TYPE enum from fatprocs.h
+type FAT_FLUSH_TYPE = u32;
 #[no_mangle]
 pub unsafe extern "C" fn FatSetFileObject(
     FileObject: *mut FILE_OBJECT,
@@ -139,7 +142,7 @@ pub unsafe extern "C" fn FatSetFileObject(
             if NodeType(VcbOrFcbOrDcb) == FAT_NTC_VCB {
                 (*(FileObject)).Vpb = (*(VcbOrFcbOrDcb as *mut VCB)).Vpb;
             } else {
-                (*(FileObject)).Vpb = (*(VcbOrFcbOrDcb as *mut FCB)).Vcb.Vpb;
+                (*(FileObject)).Vpb = (*((*(VcbOrFcbOrDcb as *mut FCB)).Vcb)).Vpb;
 
                 // Check temporary file flag
                 let fcb_state = (*(VcbOrFcbOrDcb as *mut FCB)).FcbState;
@@ -384,11 +387,11 @@ pub unsafe extern "C" fn FatForceCacheMiss(
     let queue_ptr: *mut LIST_ENTRY;
 
     if NodeType((Fcb).cast()) != FAT_NTC_FCB
-        && IsListEmpty(
-            core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue) as *mut LIST_ENTRY,
-        ) == 0
+        && !IsListEmpty(
+            core::ptr::addr_of!((*Fcb).Specific.Dcb.as_ref().ParentDcbQueue) as *mut LIST_ENTRY,
+        )
     {
-        queue_ptr = core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue)
+        queue_ptr = core::ptr::addr_of!((*Fcb).Specific.Dcb.as_ref().ParentDcbQueue)
             as *mut LIST_ENTRY;
 
         ChildrenAcquired = 1;

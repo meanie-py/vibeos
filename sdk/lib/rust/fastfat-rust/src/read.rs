@@ -4,12 +4,13 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcCopyRead, CcFlushCache, CcMdlRead, CcSetReadAheadGranularity, DRIVER_DISPATCH, DirectoryFile, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetRemainingStackSize, IoMarkIrpPending, IoWriteAccess, KEVENT, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PERESOURCE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PKTHREAD, PsGetCurrentThread, PsGetThreadProcess};
+use ntkrnl_sys::ddk::{CcCopyRead, CcFlushCache, CcMdlRead, CcSetReadAheadGranularity, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetRemainingStackSize, IoMarkIrpPending, KEVENT, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PERESOURCE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PKTHREAD, PsGetCurrentThread, PsGetThreadProcess};
+use ntkrnl_sys::ddk::_LOCK_OPERATION_IoWriteAccess as IoWriteAccess;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cachesup::{FatCompleteMdl};
 use crate::strucsup::{FatCreateIrpContext};
-use crate::types::{CCB, FAT_BUG_CHECK_READ, FCB, IRP_CONTEXT, LBO, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN};
+use crate::types::{CCB, FAT_BUG_CHECK_READ, FCB, IRP_CONTEXT, LBO, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, ERESOURCE_THREAD, FILE_OBJECT, IRP, OPLOCK, _EPROCESS, _ETHREAD};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_READ};
@@ -17,7 +18,7 @@ use crate::glue::{DEBUG_TRACE_READ};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlPostPagingFileStackOverflow};
 
 extern "system" {
-    fn DebugTrace(level: i32, flags: u32, message: *const i8);
+    fn DebugTrace(level: i32, flags: u32, message: *const i8, ...);
     fn PAGED_CODE();
     fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
     fn BooleanFlagOn(flags: u32, flag: u32) -> BOOLEAN;
@@ -62,6 +63,12 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32);
     fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
+}
+
+extern "C" {
+    fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
+    fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut ntkrnl_sys::ddk::IRP) -> NTSTATUS;
+    fn FatPostStackOverflowRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut ntkrnl_sys::ddk::IRP, Fcb: *mut FCB) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -146,7 +153,7 @@ pub unsafe extern "system" fn FatFsdRead(
                 FsRtlPostPagingFileStackOverflow(
                     &mut Packet as *mut _ as *mut core::ffi::c_void,
                     &mut Event,
-                    FatOverflowPagingFileRead,
+                    Some(FatOverflowPagingFileRead),
                 );
                 KeWaitForSingleObject(
                     (&mut Event as *mut KEVENT).cast(),
@@ -166,7 +173,7 @@ pub unsafe extern "system" fn FatFsdRead(
 
     'try_exit: {
         TopLevel = FatIsIrpTopLevel(Irp) as BOOLEAN;
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp)) as *mut IRP_CONTEXT;
+        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32) as *mut IRP_CONTEXT;
 
         //  An Mdl complete request must not go through common read.
         if FlagOn(((*IrpContext).MinorFunction as u8) as u32, IRP_MN_COMPLETE) != 0 {
@@ -176,11 +183,11 @@ pub unsafe extern "system" fn FatFsdRead(
 
         //  Not enough stack → hand off to the stack-overflow thread.
         if IoGetRemainingStackSize() < (OVERFLOW_READ_THRESHHOLD as usize) as u64 {
-            Status = FatPostStackOverflowRead(IrpContext as *mut core::ffi::c_void, Irp, Fcb as *mut core::ffi::c_void);
+            Status = FatPostStackOverflowRead(IrpContext, Irp, Fcb);
             break 'try_exit; // try_return
         }
 
-        Status = FatCommonRead(IrpContext as *mut core::ffi::c_void, Irp);
+        Status = FatCommonRead(IrpContext, Irp);
         // try_exit: NOTHING;
     }
 
@@ -229,33 +236,8 @@ pub unsafe extern "system" fn FatStackOverflowRead(
         (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
     }
 
-    // SEH try block emulation
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        FatCommonRead(IrpContext, (*IrpContext).OriginatingIrp);
-    }));
-
-    match result {
-        Err(panic) => {
-            // Filter expression: FatExceptionFilter(IrpContext, exception_info)
-            // ExceptionInfo not available, pass null
-            if FatExceptionFilter(IrpContext, core::ptr::null_mut()) != 0 {
-                let mut ExceptionCode: i32 = 0;
-                // Attempt to extract NTSTATUS from panic payload
-                if let Some(code) = panic.downcast_ref::<i32>() {
-                    ExceptionCode = *code;
-                } else if let Some(code) = panic.downcast_ref::<NTSTATUS>() {
-                    ExceptionCode = *code;
-                }
-                if ExceptionCode == STATUS_FILE_DELETED {
-                    (*IrpContext).ExceptionStatus = STATUS_END_OF_FILE;
-                    ExceptionCode = STATUS_END_OF_FILE;
-                    (*IrpContext).OriginatingIrp.IoStatus.Information = 0;
-                }
-                FatProcessException(IrpContext, (*IrpContext).OriginatingIrp, ExceptionCode);
-            }
-        }
-        Ok(()) => {}
-    }
+    // SEH try block — DUMMY_PSEH: except handler is dead code; call body directly.
+    FatCommonRead(IrpContext, (*IrpContext).OriginatingIrp);
 
     if !SavedVerifyThread.is_null() {
         NT_ASSERT(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as i32);
@@ -271,7 +253,7 @@ pub unsafe extern "C" fn FatOverflowPagingFileRead(
 ) {
     let Packet: *mut PAGING_FILE_OVERFLOW_PACKET = Context as *mut PAGING_FILE_OVERFLOW_PACKET;
     FatPagingFileIo((*Packet).Irp, ((*Packet).Fcb).cast());
-    let _ = (KeSetEvent).cast()(Event, 0i32, 0i32);
+    KeSetEvent(Event, 0, 0);
     return;
 }
 

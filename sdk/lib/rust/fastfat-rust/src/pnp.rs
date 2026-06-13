@@ -64,7 +64,7 @@ pub unsafe extern "system" fn FatFsdPnp(
     {
         // Determine whether to wait
         let stack_loc = IoGetCurrentIrpStackLocation(Irp);
-        if (*(*stack_loc).FileObject).is_null() {
+        if (*stack_loc).FileObject.is_null() {
             Wait = 1;
         } else {
             Wait = CanFsdWait(Irp);
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent as u32, (0i32) as u8); // FALSE
             IoSetCompletionRoutine(
                 Irp,
-                FatPnpCompletionRoutine,
+                Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
                 &mut Event as *mut KEVENT as *mut core::ffi::c_void,
                 1u8, // TRUE
                 1u8, // TRUE
@@ -206,9 +206,9 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
 
             if Status == STATUS_PENDING {
                 KeWaitForSingleObject(
-                    &mut Event,
+                    &mut Event as *mut KEVENT as PVOID,
                     _KWAIT_REASON_Executive as u32,
-                    0u32,
+                    0i8,
                     0u8, // FALSE
                     core::ptr::null_mut(),
                 );
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             // Now if no one below us failed already, initiate the dismount
             if NT_SUCCESS(Status) {
                 VcbDeleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
-                NT_ASSERT(VcbDeleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32);
+                NT_ASSERT((VcbDeleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32) as i32);
             }
         }
     }
@@ -246,7 +246,7 @@ pub unsafe extern "C" fn FatPnpRemove(
     KeInitializeEvent(event_ptr, 0, 0);
     IoSetCompletionRoutine(
         Irp,
-        Some(FatPnpCompletionRoutine),
+        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
         event_ptr as *mut core::ffi::c_void,
         1,
         1,
@@ -258,9 +258,9 @@ pub unsafe extern "C" fn FatPnpRemove(
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
             event_ptr as *mut core::ffi::c_void,
-            0,
-            0,
-            0,
+            0u32,
+            0i8,
+            0u8,
             core::ptr::null_mut(),
         );
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
@@ -311,7 +311,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0); // FALSE = 0
     IoSetCompletionRoutine(
         Irp,
-        FatPnpCompletionRoutine,
+        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
         &mut Event as *mut KEVENT as *mut c_void,
         1, // InvokeOnSuccess = TRUE
         1, // InvokeOnError = TRUE
@@ -323,10 +323,10 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
 
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event,
+            &mut Event as *mut KEVENT as PVOID,
             _KWAIT_REASON_Executive,
-            0u32,
-            0, // FALSE
+            0i8,
+            0u8, // FALSE
             core::ptr::null_mut(),
         );
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
@@ -384,10 +384,10 @@ pub unsafe extern "system" fn FatPnpCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> i32 {
+) -> NTSTATUS {
     let Event = Contxt as PKEVENT;
     KeSetEvent((Event).cast(), 0, 0);
-    return 0x0000_0103u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
+    return 0x0000_0103u32 as NTSTATUS; // STATUS_MORE_PROCESSING_REQUIRED
 
     let _ = DeviceObject;
     let _ = Contxt;

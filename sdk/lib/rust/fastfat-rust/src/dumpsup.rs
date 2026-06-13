@@ -36,7 +36,7 @@ pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {
         }
         // case FAT_NTC_FCB: case FAT_NTC_DCB: case FAT_NTC_ROOT_DCB:
         0x0502 | 0x0503 | 0x0504 => { // FAT_NTC_FCB, FAT_NTC_DCB, FAT_NTC_ROOT_DCB
-            FatDumpFcb(Ptr);
+            FatDumpFcb(Ptr as *const FCB);
         }
         // case FAT_NTC_CCB:
         0x0505 => { // FAT_NTC_CCB
@@ -1639,7 +1639,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).FullFileName.as_ref().Length) as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).FullFileName.Length) as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -1669,7 +1669,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).FullFileName.as_ref().Buffer as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).FullFileName.Buffer as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -1703,7 +1703,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
         // dump the string: for i < 32, copy from Ptr->FullFileName.Buffer[i] to _String, then print
         {
             let mut string_buf: [u8; 256] = [0u8; 256];
-            let buffer_ptr = (*Ptr).FullFileName.as_ref().Buffer;
+            let buffer_ptr = (*Ptr).FullFileName.Buffer;
             let limit = 32;
             for i in 0..limit {
                 string_buf[i] = *buffer_ptr.add(i) as u8; // assumes CHAR is i8, but we want u8
@@ -1739,7 +1739,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).ShortName.Name.Oem.Length) as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, core::ptr::addr_of!((*Ptr).ShortName.Name.Oem.as_ref().Length) as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -1769,7 +1769,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             buf[18] = b'\0';
             DbgPrint(b"%s\0".as_ptr() as *const i8, buf.as_ptr());
         }
-        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).ShortName.Name.Oem.Buffer as *const core::ffi::c_void);
+        DbgPrint(b":%p\0".as_ptr() as *const i8, (*Ptr).ShortName.Name.Oem.as_ref().Buffer as *const core::ffi::c_void);
         DbgPrint(b"         \0".as_ptr() as *const i8);
     }
 
@@ -2198,7 +2198,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        core::ptr::addr_of!((*Ptr).__bindgen_anon_1.UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
+        core::ptr::addr_of!((*Ptr).__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
@@ -2236,7 +2236,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     // print the first 32 bytes of the buffer
     {
         let mut _string = [0u8; 257]; // CHAR _String[256] with extra null
-        let buf_ptr = (*Ptr).__bindgen_anon_1.UnicodeQueryTemplate.Buffer as *const u8;
+        let buf_ptr = (*Ptr).__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer as *const u8;
         let width = 32;
         for i in 0..width {
             _string[i] = *buf_ptr.add(i);
@@ -2270,7 +2270,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        (*Ptr).__bindgen_anon_1.OffsetToStartSearchFrom as *const core::ffi::c_void,
+        (*Ptr).__bindgen_anon_1.as_ref().OffsetToStartSearchFrom as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 

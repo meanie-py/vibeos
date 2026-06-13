@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReadAccess, IoWriteAccess, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, PIO_STACK_LOCATION, PIRP, _WORK_QUEUE_TYPE_CriticalWorkQueue};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{IRP_CONTEXT, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT, _FAT_IO_CONTEXT};
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn FatAddToWorkque(
 
     ExQueueWorkItem(
         &raw mut (*IrpContext).WorkQueueItem,
-        CriticalWorkQueue,
+        _WORK_QUEUE_TYPE_CriticalWorkQueue,
     );
 }
 

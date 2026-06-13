@@ -12,7 +12,7 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn PAGED_CODE();
-    fn FatCompleteRequest(IrpContext: *mut IrpContext, Irp: *mut IRP, Status: NTSTATUS);
+    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...);
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
     fn CanFsdWait(Irp: *mut IRP) -> BOOLEAN;
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn FatQueryEaUserEaList(
 
             //  Remember the offset of the next ea in case we're asked to
             //  resume the iteration
-            (*Ccb).OffsetOfNextEaToReturn =
+            (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OffsetOfNextEaToReturn =
                 FatLocateNextEa(IrpContext, FirstPackedEa, PackedEasLength, Offset);
 
             if ReturnSingleEntry != 0 {
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn FatQueryEaSimpleScan(
 
         //  Remember the offset of the next ea in case we're asked to resume.
         StartOffset = FatLocateNextEa(IrpContext, FirstPackedEa, PackedEasLength, StartOffset);
-        (*Ccb).OffsetOfNextEaToReturn = StartOffset;
+        (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OffsetOfNextEaToReturn = StartOffset;
 
         if ReturnSingleEntry != 0 {
             break;

@@ -176,7 +176,7 @@ pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
     let mut NewRoot: PRTL_SPLAY_LINKS = core::ptr::null_mut();
 
     if (*Fcb).FcbState & 0x100u32 != 0 {
-        NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).ShortName.as_mut().Links));
+        NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).ShortName.Links));
         (*Parent).Specific.Dcb.as_mut().RootOemNode = NewRoot;
         if (*Fcb).FcbState & 0x200u32 != 0 {
             NewRoot = RtlDelete(core::ptr::addr_of_mut!((*Fcb).LongName.Oem.as_mut().Links));
@@ -215,9 +215,9 @@ pub unsafe extern "C" fn FatFindFcb(
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0"
-                    as *const u8 as *const core::ffi::c_char,
+                    as *const u8 as *const core::ffi::c_void,
                 340,
-                core::ptr::null_mut::<core::ffi::c_char>(),
+                core::ptr::null_mut::<core::ffi::c_void>(),
             );
         }
     }
@@ -230,7 +230,7 @@ pub unsafe extern "C" fn FatFindFcb(
             as PFILE_NAME_NODE;
 
         // Inline character comparison as per the mechanical anchor
-        let node_first_char = *((*Node).Name.Oem.Buffer as *const u8) as i32;
+        let node_first_char = *((*Node).Name.Oem.as_ref().Buffer as *const u8) as i32;
         let name_first_char = *((*Name).Buffer as *const u8) as i32;
         Comparison = if node_first_char != name_first_char {
             if node_first_char < name_first_char {
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn FatCompareNames(
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 453 as u32,
-                core::ptr::null_mut::<i8>(),
+                core::ptr::null_mut::<core::ffi::c_void>(),
             );
         }
     }
