@@ -5,7 +5,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcMdlWriteAbort, ExLocalTimeToSystemTime, FAST_IO_CHECK_IF_POSSIBLE, FAST_IO_DISPATCH, FAST_IO_QUERY_BASIC_INFO, FAST_IO_QUERY_NETWORK_OPEN_INFO, FAST_IO_QUERY_STANDARD_INFO, FAST_MUTEX, FILE_BASIC_INFORMATION, FILE_NETWORK_OPEN_INFORMATION, FILE_STANDARD_INFORMATION, IoGetCurrentIrpStackLocation, IoGetTopLevelIrp, IoIsSystemThread, IoRaiseInformationalHardError, IoSetTopLevelIrp, KEVENT, KeAreAllApcsDisabled, LARGE_INTEGER, LOGICAL, NPAGED_LOOKASIDE_LIST, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKTHREAD, PLARGE_INTEGER, PMDL, PVPB};
+use ntkrnl_sys::ddk::{CcMdlWriteAbort, ExLocalTimeToSystemTime, PFAST_IO_CHECK_IF_POSSIBLE, FAST_IO_DISPATCH, PFAST_IO_QUERY_BASIC_INFO, PFAST_IO_QUERY_NETWORK_OPEN_INFO, PFAST_IO_QUERY_STANDARD_INFO, FAST_MUTEX, FILE_BASIC_INFORMATION, FILE_NETWORK_OPEN_INFORMATION, FILE_STANDARD_INFORMATION, IoGetCurrentIrpStackLocation, IoGetTopLevelIrp, IoIsSystemThread, IoRaiseInformationalHardError, IoSetTopLevelIrp, KEVENT, KeAreAllApcsDisabled, LARGE_INTEGER, LOGICAL, NPAGED_LOOKASIDE_LIST, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKTHREAD, PLARGE_INTEGER, PMDL, PVPB};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FAT_BUG_CHECK_FATDATA, FAT_DATA, FAT_TIME_STAMP, FCB, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
@@ -45,57 +45,48 @@ extern "system" {
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_FATDATA;
 pub const Dbg: u32 = DEBUG_TRACE_CATCH_EXCEPTIONS;
 
-pub static mut FatData: FAT_DATA = unsafe { core::mem::zeroed() };
-pub static mut FatDiskFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-pub static mut FatCdromFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-pub static mut FatLargeZero: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0,
-    HighPart: 0,
+#[no_mangle] pub static mut FatData: FAT_DATA = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatDiskFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+#[no_mangle] pub static mut FatCdromFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+#[no_mangle] pub static mut FatLargeZero: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
+#[no_mangle] pub static mut FatMaxLarge: LARGE_INTEGER = LARGE_INTEGER {
+    // MAXULONG | (MAXLONG as i64 << 32) = 0x7FFFFFFF_FFFFFFFF
+    QuadPart: 0x7FFF_FFFF_FFFF_FFFFi64,
 };
-pub static mut FatMaxLarge: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: MAXULONG,
-    HighPart: MAXLONG,
+#[no_mangle] pub static mut Fat30Milliseconds: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: -300_000i64,
 };
-pub static mut Fat30Milliseconds: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: (-300_000i32) as u32,
-    HighPart: -1i32,
+#[no_mangle] pub static mut Fat100Milliseconds: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: -300_000i64,
 };
-pub static mut Fat100Milliseconds: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: (-300_000i32) as u32,
-    HighPart: -1i32,
+#[no_mangle] pub static mut FatOneDay: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: 0x0000_00c9_2a69_c000u64 as i64,
 };
-pub static mut FatOneDay: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0x2a69c000,
-    HighPart: 0xc9,
+#[no_mangle] pub static mut FatJanOne1980: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: 0x01a8e79f_e1d58000u64 as i64,
 };
-pub static mut FatJanOne1980: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0xe1d58000,
-    HighPart: 0x01a8e79f,
+#[no_mangle] pub static mut FatDecThirtyOne1979: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: 0x01a8e6d6_b76bc000u64 as i64,
 };
-pub static mut FatDecThirtyOne1979: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0xb76bc000,
-    HighPart: 0x01a8e6d6,
+// FatTimeJanOne1980 — changed from const to static for extern-C linkage
+#[no_mangle] pub static FatTimeJanOne1980: FAT_TIME_STAMP = unsafe {
+    core::mem::transmute::<[u16; 2], FAT_TIME_STAMP>([0x0000, 0x0021])
 };
-pub const FatTimeJanOne1980: FAT_TIME_STAMP = unsafe {
-    core::mem::transmute::<[u16; 6], FAT_TIME_STAMP>([0, 0, 0, 1, 1, 0])
+#[no_mangle] pub static mut FatMagic10000: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: 0xd1b71758_e219652cu64 as i64,
 };
-pub static mut FatMagic10000: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0xe219652c,
-    HighPart: 0xd1b71758,
+#[no_mangle] pub static mut FatMagic86400000: LARGE_INTEGER = LARGE_INTEGER {
+    QuadPart: 0xc6d750eb_fa67b90eu64 as i64,
 };
-pub static mut FatMagic86400000: LARGE_INTEGER = LARGE_INTEGER {
-    LowPart: 0xfa67b90e,
-    HighPart: 0xc6d750eb,
-};
-pub static mut FatFastIoDispatch: FAST_IO_DISPATCH = unsafe { core::mem::zeroed() };
-pub static mut FatIrpContextLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
-pub static mut FatNonPagedFcbLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
-pub static mut FatEResourceLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
-pub static mut FatCloseContextSList: SLIST_HEADER = unsafe { core::mem::zeroed() };
-pub static mut FatCloseQueueMutex: FAST_MUTEX = unsafe { core::mem::zeroed() };
-pub static mut FatReserveMdl: PMDL = core::ptr::null_mut();
-pub static mut FatReserveEvent: KEVENT = unsafe { core::mem::zeroed() };
-pub static mut FatDiskAccountingEnabled: LOGICAL = 0;
+#[no_mangle] pub static mut FatFastIoDispatch: FAST_IO_DISPATCH = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatIrpContextLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatNonPagedFcbLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatEResourceLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatCloseContextSList: SLIST_HEADER = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatCloseQueueMutex: FAST_MUTEX = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatReserveMdl: PMDL = core::ptr::null_mut();
+#[no_mangle] pub static mut FatReserveEvent: KEVENT = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut FatDiskAccountingEnabled: LOGICAL = 0;
 
 #[cfg(feature = "FASTFATDBG")]
 pub static mut FatDebugTraceLevel: i32 = 0x09;
@@ -241,7 +232,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
     // if (ExceptionCode == STATUS_IN_PAGE_ERROR)
     if ExceptionCode == STATUS_IN_PAGE_ERROR {
         if (*ExceptionRecord).NumberParameters >= 3 {
-            ExceptionCode = *((*ExceptionRecord).ExceptionInformation.add(2)) as u32;
+            ExceptionCode = (*ExceptionRecord).ExceptionInformation[2] as u32;
         }
     }
 
@@ -413,10 +404,10 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
     let _ = IoStatus;
     let _ = Wait;
 
-    let mut Vcb: PVCB;
-    let mut Fcb: PFCB;
-    let mut Ccb: PCCB;
-    let mut LargeLength: LARGE_INTEGER;
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
+    let mut LargeLength: LARGE_INTEGER = core::mem::zeroed();
 
     if FatDecodeFileObject(
         FileObject,
@@ -431,7 +422,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
 
     if CheckForReadOperation != 0 {
         if FsRtlFastCheckLockForRead(
-            &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock as *mut _,
+            &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock as *mut _,
             FileOffset,
             core::ptr::addr_of_mut!(LargeLength),
             LockKey,
@@ -443,7 +434,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
     } else {
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) == 0
             && FsRtlFastCheckLockForWrite(
-                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock as *mut _,
+                &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock as *mut _,
                 FileOffset,
                 core::ptr::addr_of_mut!(LargeLength),
                 LockKey,
@@ -541,7 +532,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         }
 
         (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*io_status).Information = (core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32) as u64;
+        (*io_status).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as _;
 
         results = 1;
         break;
@@ -625,7 +616,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
         }
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = (core::mem::size_of::<FILE_STANDARD_INFORMATION>()) as u64;
+        (*IoStatus).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as _;
         Results = 1;
         break;
     }
@@ -661,10 +652,10 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
     let mut Results: i32 = 0; // FALSE
     let mut IrpContext: IRP_CONTEXT = core::mem::zeroed();
-    let mut Vcb: PVCB;
-    let mut Fcb: PFCB;
-    let mut Ccb: PCCB;
-    let mut TypeOfOpen: TYPE_OF_OPEN;
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
+    let mut TypeOfOpen: TYPE_OF_OPEN = 0;
     let mut FcbAcquired: i32 = 0;
 
     // PAGED_CODE()
@@ -712,7 +703,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
         // ChangeTime default
         ExLocalTimeToSystemTime(
-            &FatJanOne1980 as *const LARGE_INTEGER,
+            core::ptr::addr_of_mut!(FatJanOne1980),
             &mut (*Buffer).ChangeTime as *mut LARGE_INTEGER,
         );
 
@@ -749,7 +740,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
         }
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = (core::mem::size_of::<FILE_NETWORK_OPEN_INFORMATION>()) as u64;
+        (*IoStatus).Information = core::mem::size_of::<FILE_NETWORK_OPEN_INFORMATION>() as _;
         Results = 1; // TRUE
     }
     // try_exit: (label before finally – no extra code needed)
@@ -801,7 +792,7 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     // Raise the informational hard error with STATUS_FILE_CORRUPT_ERROR
     IoRaiseInformationalHardError(
         STATUS_FILE_CORRUPT_ERROR,
-        (&mut (*Fcb).FullFileName as *mut UNICODE_STRING).cast(),
+        core::ptr::addr_of_mut!((*Fcb).FullFileName).cast(),
         Thread,
     );
 }

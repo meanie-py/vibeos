@@ -2198,7 +2198,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        core::ptr::addr_of!((*Ptr).__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
+        core::ptr::addr_of!((*Ptr).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Length) as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 
@@ -2236,7 +2236,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     // print the first 32 bytes of the buffer
     {
         let mut _string = [0u8; 257]; // CHAR _String[256] with extra null
-        let buf_ptr = (*Ptr).__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer as *const u8;
+        let buf_ptr = (*Ptr).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer as *const u8;
         let width = 32;
         for i in 0..width {
             _string[i] = *buf_ptr.add(i);
@@ -2270,7 +2270,7 @@ pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
     }
     DbgPrint(
         b":%p\0".as_ptr() as *const i8,
-        (*Ptr).__bindgen_anon_1.as_ref().OffsetToStartSearchFrom as *const core::ffi::c_void,
+        (*Ptr).__bindgen_anon_1.__bindgen_anon_1.as_ref().OffsetToStartSearchFrom as *const core::ffi::c_void,
     );
     DbgPrint(b"         \0".as_ptr() as *const i8);
 

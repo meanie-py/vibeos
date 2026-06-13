@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ps::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, ExAcquireResourceSharedLite, ExReleaseResourceLite, FAST_IO_LOCK, FAST_IO_UNLOCK_ALL, FAST_IO_UNLOCK_ALL_BY_KEY, FAST_IO_UNLOCK_SINGLE, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER};
+use ntkrnl_sys::ddk::{ExAcquireResourceSharedLite, ExReleaseResourceLite, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
@@ -137,7 +137,7 @@ pub unsafe extern "system" fn FatFastLock(
             }
 
             Results = FsRtlFastLock(
-                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock,
+                &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock,
                 FileObject,
                 FileOffset,
                 Length,
@@ -205,7 +205,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
         }
         Results = 1;
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
-            &raw mut (*fcb).Specific.as_mut().Fcb.FileLock,
+            &raw mut (*fcb).Specific.Fcb.as_mut().FileLock,
             FileObject,
             FileOffset,
             Length,
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn FatFastUnlockAll(
 
             Results = 1;
             let status = FsRtlFastUnlockAll(
-                &raw mut (*fcb).Specific.as_mut().Fcb.FileLock,
+                &raw mut (*fcb).Specific.Fcb.as_mut().FileLock,
                 FileObject,
                 (ProcessId).cast(),
                 core::ptr::null_mut(),
@@ -324,7 +324,7 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
 
         Results = 1;
         (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
-            &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock,
+            &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock,
             FileObject,
             (ProcessId as PEPROCESS).cast(),
             Key,
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
             let is_lock = (IRP_MN_LOCK == (*IrpSp).MinorFunction as u32);
             let is_lock_within_size = is_lock && (lock_quad_part < alloc_quad_part);
             let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(
-                &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock
+                &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock
             ) != 0;
             if is_lock_within_size || has_waiting_locks {
                 let oplock = FatGetFcbOplock(Fcb);
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
                     Irp,
                     IrpContext as *mut core::ffi::c_void,
                     core::mem::transmute::<unsafe extern "C" fn(PIRP_CONTEXT, PIRP) -> NTSTATUS, _>(FatOplockComplete),
-                    core::ptr::null_mut(),
+                    None,
                 );
             }
         }
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
             break 'sehtry;
         }
 
-        let file_lock_ptr: *mut FILE_LOCK = &raw mut (*Fcb).Specific.as_mut().Fcb.FileLock;
+        let file_lock_ptr: *mut FILE_LOCK = &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock;
         Status = FsRtlProcessFileLock(file_lock_ptr, Irp, core::ptr::null_mut());
 
         (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);

@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CcFlushCache, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{CcFlushCache, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_FLUSH, FCB, FatDiskAccountingEnabled, PDIRENT, VCB, VCB_STATE_FLAG_WRITE_PROTECTED};
@@ -58,8 +58,8 @@ extern "C" {
     fn PsGetCurrentThread() -> PETHREAD;
     fn PsGetThreadProcess(Thread: PETHREAD) -> *mut core::ffi::c_void;
     fn PsUpdateDiskCounters(Process: *mut core::ffi::c_void, a: u32, b: u32, c: u32, d: u32, e: u32);
-    fn KeCancelTimer(Timer: *mut KEVENT) -> BOOLEAN;
-    fn KeRemoveQueueDpc(Dpc: *mut core::ffi::c_void) -> BOOLEAN;
+    fn KeCancelTimer(Timer: *mut ntkrnl_sys::ddk::KTIMER) -> BOOLEAN;
+    fn KeRemoveQueueDpc(Dpc: *mut ntkrnl_sys::ddk::KDPC) -> BOOLEAN;
     fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOOLEAN;
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
     fn FatCreateIrpContext( Irp: ntkrnl_sys::ddk::PIRP, CanBlock: u8, ) -> *mut IRP_CONTEXT;
@@ -115,7 +115,7 @@ const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
 const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: u32 = 0x0800;
 const FO_FILE_SIZE_CHANGED: u32 = 0x2000;
-const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010;
+const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32;
 const STATUS_PENDING: i32 = 0x00000103;
 const Flush: FAT_FLUSH_TYPE = 1;
 const VolumeClean: VOLUME_CONDITION = 2;
@@ -183,6 +183,8 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let mut IrpContext = IrpContext;
+    let mut Irp = Irp;
     let mut Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION;
     let FileObject: PFILE_OBJECT;
@@ -211,7 +213,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
     Status = STATUS_SUCCESS;
 
-    let Flush: BOOLEAN = if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 { 1u8 } else { 0u8 };
+    let DoFlush: BOOLEAN = if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 { 1u8 } else { 0u8 };
 
     // Outer try block simulation
     let mut completed_normally: BOOLEAN = 0u8;
@@ -252,7 +254,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     }
                 }
 
-                Status = FatFlushFile(IrpContext, Fcb, (Flush) as u32);
+                Status = FatFlushFile(IrpContext, Fcb, (DoFlush) as u32);
 
                 if NT_SUCCESS(Status) {
                     SetFlag((core::ptr::addr_of_mut!((*FileObject).Flags) as *mut u8).cast(), FO_FILE_SIZE_CHANGED);
@@ -274,7 +276,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
                         if (*NextFcb).FcbCondition == FcbGood {
                             let LocalStatus: NTSTATUS;
-                            LocalStatus = FatFlushFile(IrpContext, NextFcb, (Flush) as u32);
+                            LocalStatus = FatFlushFile(IrpContext, NextFcb, (DoFlush) as u32);
                             if !NT_SUCCESS(LocalStatus) {
                                 Status = LocalStatus;
                             }
@@ -310,8 +312,8 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     FatFlushVolume(IrpContext, Vcb, (Flush as u32) as i32);
 
                     if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
-                        KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer) as *mut KEVENT);
-                        KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc) as *mut core::ffi::c_void);
+                        KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
+                        KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
                         if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                             FatMarkVolume(IrpContext, Vcb, (VolumeClean as u32) as i32);
@@ -411,7 +413,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
     let mut Vcb: *mut VCB;
     let mut NextFcb: *mut FCB;
 
-    let mut Dirent: *mut DIRENT;
+    let mut Dirent: *mut DIRENT = core::ptr::null_mut();
     let mut DirentBcb: *mut BCB = core::ptr::null_mut();
 
     let mut Status: NTSTATUS;
@@ -540,7 +542,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
             if (*Fcb).FcbCondition == FcbGood {
                 Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
 
-                if NT_SUCCESS(Status) == 0 {
+                if !NT_SUCCESS(Status) {
                     ReturnStatus = Status;
                 }
             }
@@ -610,6 +612,8 @@ pub unsafe extern "C" fn FatFlushVolume(
     FlushType: FAT_FLUSH_TYPE,
 ) -> NTSTATUS {
     // PAGED_CODE();
+    let mut IrpContext = IrpContext;
+    let mut Vcb = Vcb;
     let mut Status: NTSTATUS;
     let mut ReturnStatus: NTSTATUS = STATUS_SUCCESS;
     if ((*Vcb).VcbState & VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
@@ -748,7 +752,7 @@ pub unsafe extern "C" fn FatFlushFatEntries(
 
     if Iosb.__bindgen_anon_1.Status >= 0 {
         Iosb.__bindgen_anon_1.Status = FatHijackIrpAndFlushDevice(
-            IrpContext as *mut _IRP_CONTEXT,
+            IrpContext as *mut IRP_CONTEXT,
             (*(IrpContext as *mut _IRP_CONTEXT)).OriginatingIrp,
             (*Vcb).TargetDeviceObject,
         );

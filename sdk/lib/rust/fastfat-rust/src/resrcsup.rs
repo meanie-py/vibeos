@@ -1,7 +1,7 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FAST_IO_ACQUIRE_FOR_CCFLUSH, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
@@ -52,7 +52,7 @@ struct ERESOURCE {
 const IRP_NOCACHE: u32 = 0x01;
 
 const FAT_NTC_FCB: u32 = 0x0502; // TODO: correct value
-const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = 0xFFFF_FFFF_FFFF_FFFF as *mut IRP;
+const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = (-2isize) as *mut IRP;
 
 
 
@@ -314,7 +314,7 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
 
     let fcb_ptr = Fcb as *mut FCB;
     if ExAcquireResourceSharedLite(
-        (*fcb_ptr).Header.Resource,
+        (*fcb_ptr).Header.Resource as *mut _,
         Wait,
     ) == 0
     {

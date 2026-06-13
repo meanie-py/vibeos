@@ -178,3 +178,53 @@ pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
 pub fn ARGUMENT_PRESENT<T>(p: *const T) -> bool {
     !p.is_null()
 }
+
+// ---------------------------------------------------------------------------
+// i386 compatibility shims — types/functions that exist on amd64/arm64 bindgen
+// but are absent from the i386 bindgen surface.  Provide them here so callers
+// can import from crate::ddk_shims on all arches.
+// ---------------------------------------------------------------------------
+
+// IO_COMPLETION_ROUTINE: Option<unsafe fn(DevObj, Irp, Context) -> NTSTATUS>
+// On amd64/arm64 bindgen: IO_COMPLETION_ROUTINE (extern "C")
+// On i386 bindgen: PIO_COMPLETION_ROUTINE (extern "stdcall")
+// Both are the same Option<fn> type; alias the i386 name to the non-P name.
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::ddk::IO_COMPLETION_ROUTINE;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE;
+
+// ExInterlockedAddUlong: real export on i386 ntoskrnl (absent from i386 bindgen).
+// Verified: ntoskrnl.spec / windows DDK i386 header.
+#[cfg(target_arch = "x86")]
+extern "system" {
+    pub fn ExInterlockedAddUlong(Addend: *mut u32, Increment: u32, Lock: *mut u32) -> u32;
+}
+// On amd64/arm64 it's in the bindgen; re-export from there.
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::ddk::ExInterlockedAddUlong;
+
+// IoIs32bitProcess: only meaningful on 64-bit OS (WOW64).
+// On amd64 it's in the bindgen. On i386 all processes are native 32-bit,
+// so this path is unreachable — return 0 (= not a 32-bit-on-64-bit process).
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::ddk::IoIs32bitProcess;
+#[cfg(target_arch = "x86")]
+#[inline]
+pub unsafe fn IoIs32bitProcess(_Irp: *mut ntkrnl_sys::ddk::_IRP) -> ntkrnl_sys::ddk::BOOLEAN {
+    0  // i386 is always native 32-bit; WOW64 path is dead
+}
+
+// MOVE_FILE_DATA32 / PMOVE_FILE_DATA32 / PMARK_HANDLE_INFO32:
+// WOW64 thunk structures — only exist on 64-bit kernels in the amd64 bindgen.
+// On i386 the WOW64 ioctl paths are unreachable (no 32-bit-on-32-bit thunking).
+// Provide zero-sized placeholder types so code compiles; the paths are dead.
+#[cfg(target_arch = "x86")]
+#[repr(C)]
+pub struct MOVE_FILE_DATA32 { _opaque: [u8; 0] }
+#[cfg(target_arch = "x86")]
+pub type PMOVE_FILE_DATA32 = *mut MOVE_FILE_DATA32;
+#[cfg(target_arch = "x86")]
+pub type PMARK_HANDLE_INFO32 = *mut u8;  // placeholder, dead path
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::ddk::{MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32};

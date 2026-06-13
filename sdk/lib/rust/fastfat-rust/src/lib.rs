@@ -21,6 +21,24 @@ pub mod types;
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims
 
+// CD-ROM TOC structures (from ntddcdrm.h), used by FatScanForDataTrack.
+#[repr(C)]
+pub struct CDROM_TOC_TRACK_DATA {
+    pub Reserved: u8,
+    /// Packed byte: bits 3:0 = Control, bits 7:4 = Adr
+    pub Control: u8,
+    pub TrackNumber: u8,
+    pub Reserved1: u8,
+    pub Address: [u8; 4],
+}
+#[repr(C)]
+pub struct CDROM_TOC {
+    pub Length: [u8; 2],
+    pub FirstTrack: u8,
+    pub LastTrack: u8,
+    pub TrackData: [CDROM_TOC_TRACK_DATA; 100],
+}
+
 // Translated modules (one per C source).
 pub mod acchksup;
 pub mod allocsup;

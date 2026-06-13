@@ -293,7 +293,7 @@ pub unsafe extern "C" fn FatCompareNames(
     i = ntkrnl_sys::ddk::RtlCompareMemory(
         (*NameA).Buffer as *const core::ffi::c_void,
         (*NameB).Buffer as *const core::ffi::c_void,
-        (min_length as usize) as u64,
+        min_length as _,
     ) as u32;
 
     if i < min_length {

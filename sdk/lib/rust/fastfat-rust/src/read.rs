@@ -4,7 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcCopyRead, CcFlushCache, CcMdlRead, CcSetReadAheadGranularity, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetRemainingStackSize, IoMarkIrpPending, KEVENT, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PERESOURCE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PKTHREAD, PsGetCurrentThread, PsGetThreadProcess};
+use ntkrnl_sys::ddk::{CcCopyRead, CcFlushCache, CcMdlRead, CcSetReadAheadGranularity, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetRemainingStackSize, IoMarkIrpPending, KEVENT, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PERESOURCE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PKTHREAD, PsGetCurrentThread, PsGetThreadProcess};
 use ntkrnl_sys::ddk::_LOCK_OPERATION_IoWriteAccess as IoWriteAccess;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
@@ -17,7 +17,7 @@ use crate::glue::{DEBUG_TRACE_READ};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlPostPagingFileStackOverflow};
 
-extern "system" {
+extern "C" {
     fn DebugTrace(level: i32, flags: u32, message: *const i8, ...);
     fn PAGED_CODE();
     fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
@@ -107,10 +107,7 @@ const FAT_NTC_FCB: u16 = 0x0502; // FAT NTC FCB node type
 const FCB_STATE_PAGING_FILE: u32 = 0x04; // bit 5
 const IRP_MN_COMPLETE: u32 = 0x04;
 const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
-const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8i32; // NTSTATUS
-
-#[cfg(target_arch = "x86")]
-const OVERFLOW_READ_THRESHHOLD: u32 = 0xE00;
+const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8_u32 as i32; // NTSTATUS
 
 #[repr(C)]
 struct PAGING_FILE_OVERFLOW_PACKET {
@@ -144,7 +141,7 @@ pub unsafe extern "system" fn FatFsdRead(
         {
             IoMarkIrpPending(Irp);
 
-            if IoGetRemainingStackSize() < (OVERFLOW_READ_THRESHHOLD as usize) as u64 {
+            if (IoGetRemainingStackSize() as usize) < (OVERFLOW_READ_THRESHHOLD as usize) {
                 let mut Event: KEVENT = core::mem::zeroed();
                 let mut Packet: PAGING_FILE_OVERFLOW_PACKET = core::mem::zeroed();
                 Packet.Irp = Irp;
@@ -153,7 +150,7 @@ pub unsafe extern "system" fn FatFsdRead(
                 FsRtlPostPagingFileStackOverflow(
                     &mut Packet as *mut _ as *mut core::ffi::c_void,
                     &mut Event,
-                    Some(FatOverflowPagingFileRead),
+                    Some(unsafe { core::mem::transmute::<*const (), _>(FatOverflowPagingFileRead as *const ()) }),
                 );
                 KeWaitForSingleObject(
                     (&mut Event as *mut KEVENT).cast(),
@@ -182,7 +179,7 @@ pub unsafe extern "system" fn FatFsdRead(
         }
 
         //  Not enough stack → hand off to the stack-overflow thread.
-        if IoGetRemainingStackSize() < (OVERFLOW_READ_THRESHHOLD as usize) as u64 {
+        if (IoGetRemainingStackSize() as usize) < (OVERFLOW_READ_THRESHHOLD as usize) {
             Status = FatPostStackOverflowRead(IrpContext, Irp, Fcb);
             break 'try_exit; // try_return
         }
@@ -253,7 +250,7 @@ pub unsafe extern "C" fn FatOverflowPagingFileRead(
 ) {
     let Packet: *mut PAGING_FILE_OVERFLOW_PACKET = Context as *mut PAGING_FILE_OVERFLOW_PACKET;
     FatPagingFileIo((*Packet).Irp, ((*Packet).Fcb).cast());
-    KeSetEvent(Event, 0, 0);
+    KeSetEvent(Event as *mut core::ffi::c_void, 0, 0);
     return;
 }
 

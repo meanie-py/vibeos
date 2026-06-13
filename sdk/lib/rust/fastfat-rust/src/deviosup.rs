@@ -8,25 +8,27 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, ExFreePool, ExInterlockedAddUlong, ExQueueWorkItem, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoGetTopLevelIrp, IoIsSystemThread, IoMakeAssociatedIrp, IoMarkIrpPending, IoReadAccess, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteAccess, KEVENT, KeDelayExecutionThread, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, NormalPagePriority, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PPFN_NUMBER, PREVENT_MEDIA_REMOVAL, PsGetCurrentThread, PsGetThreadProcess, _EVENT_TYPE_SynchronizationEvent};
-use ntkrnl_sys::ddk::{PVCB, PIRP_CONTEXT, PIO_RUN, PFAT_IO_CONTEXT};
+use ntkrnl_sys::ddk::{ExFreePool, ExQueueWorkItem, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoGetTopLevelIrp, IoIsSystemThread, IoMakeAssociatedIrp, IoMarkIrpPending, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KEVENT, KeDelayExecutionThread, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PPFN_NUMBER, PREVENT_MEDIA_REMOVAL, PsGetCurrentThread, PsGetThreadProcess, _EVENT_TYPE_SynchronizationEvent};
 use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, FAT_BUG_CHECK_DEVIOSUP, FAT_DATA, FAT_RESERVE_MDL_SIZE, FCB, FCB_STATE_PAGING_FILE, FatReserveEvent, FatReserveMdl, IRP_CONTEXT_FLAG_USER_IO, LBO, PFCB, VCB_STATE_FLAG_REMOVAL_PREVENTED, VOLUME_DEVICE_OBJECT};
+use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, FAT_BUG_CHECK_DEVIOSUP, FAT_DATA, FAT_RESERVE_MDL_SIZE, FCB, FCB_STATE_PAGING_FILE, FatReserveEvent, FatReserveMdl, IRP_CONTEXT_FLAG_USER_IO, LBO, PFAT_IO_CONTEXT, PFCB, VCB_STATE_FLAG_REMOVAL_PREVENTED, VOLUME_DEVICE_OBJECT};
 use ntkrnl_sys::ddk::{KPROCESSOR_MODE, LOCK_OPERATION};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::glue::{DEBUG_TRACE_DEVIOSUP, STATUS_FILE_CORRUPT_ERROR, STATUS_MORE_PROCESSING_REQUIRED};
+use crate::glue::{DEBUG_TRACE_DEVIOSUP, FO_FILE_FAST_IO_READ, FO_FILE_MODIFIED, MDL_MAPPED_TO_SYSTEM_VA, STATUS_FILE_CORRUPT_ERROR, STATUS_MORE_PROCESSING_REQUIRED, STATUS_VERIFY_REQUIRED};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlAllocatePoolWithQuotaTag, FsRtlIsNtstatusExpected, IoCallDriver};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{IoCallDriver};
+use crate::ddk_shims::{ExInterlockedAddUlong, IO_COMPLETION_ROUTINE, FsRtlAllocatePoolWithQuotaTag, FsRtlIsNtstatusExpected, IoCallDriver};
 use crate::types::{_FAT_IO_CONTEXT, _IRP_CONTEXT, _VCB};
 use ntkrnl_sys::ddk::{PIO_COMPLETION_ROUTINE, WORK_QUEUE_TYPE, _DEVICE_OBJECT, _IO_STACK_LOCATION, _IRP};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{IoCallDriver};
 use crate::types::{IO_RUN, IRP_CONTEXT, VCB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, MDL};
+// Local KeGetCurrentThread via ntkrnl_sys inline (x86_64 FORCEINLINE; arm64/i386 use mm::KeGetCurrentThread from glob above)
+#[cfg(target_arch = "x86_64")]
+use ntkrnl_sys::inline::tier1::KeGetCurrentThread;
+// Local ExInitializeWorkItem via ntkrnl_sys inline
+use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
+// Local MmGetMdlPfnArray via ntkrnl_sys inline
+use ntkrnl_sys::inline::mm::MmGetMdlPfnArray;
 
 extern "C" {
     static mut FatIoCallDriverCount: u32;
@@ -61,7 +63,6 @@ extern "C" {
     fn MmUnlockPages(mdl: PMDL);
     fn FsRtlUpdateDiskCounters(read: u64, write: u64);
     fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN;
-    fn FatFspMarkVolumeDirtyWithRecover(Parameter: PVOID);
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
@@ -75,9 +76,49 @@ extern "C" {
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn FatFspMarkVolumeDirtyWithRecover(Parameter: PVOID);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn FatFspMarkVolumeDirtyWithRecover(Parameter: PVOID);
+}
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_DEVIOSUP;
+
+// Constants from wdm.h / ntddk.h not in bindgen surface
+const NormalPagePriority: u32 = 16;
+const IoReadAccess: u32 = 0;   // _LOCK_OPERATION_IoReadAccess
+const CriticalWorkQueue: u32 = 0; // _WORK_QUEUE_TYPE_CriticalWorkQueue
+// IOCTL_DISK_MEDIA_REMOVAL = CTL_CODE(IOCTL_DISK_BASE=7, 0x201, METHOD_BUFFERED=0, FILE_READ_ACCESS=1)
+//   = (7 << 16) | (1 << 14) | (0x201 << 2) | 0 = 0x70048
+const IOCTL_DISK_MEDIA_REMOVAL: u32 = 0x00074804;
+// SL_INVOKE_ON_* flags (from wdm.h Control field)
+const SL_INVOKE_ON_SUCCESS: u8 = 0x40;
+const SL_INVOKE_ON_ERROR: u8 = 0x80;
+const SL_INVOKE_ON_CANCEL: u8 = 0x20;
+
+/// MmGetMdlVirtualAddress — C macro: (Mdl)->StartVa + (Mdl)->ByteOffset
+#[inline(always)]
+unsafe fn MmGetMdlVirtualAddress(mdl: *mut MDL) -> *mut c_void {
+    ((*mdl).StartVa as *mut u8).add((*mdl).ByteOffset as usize) as *mut c_void
+}
+
+/// Helper: transmute an `extern "system"` completion routine to the `extern "C"`
+/// type that PIO_COMPLETION_ROUTINE requires.  On amd64 the calling conventions
+/// are identical so this is a zero-cost cast.
+#[inline(always)]
+unsafe fn as_completion_routine(
+    f: unsafe extern "system" fn(
+        *mut ntkrnl_sys::ddk::_DEVICE_OBJECT,
+        *mut ntkrnl_sys::ddk::_IRP,
+        *mut c_void,
+    ) -> i32,
+) -> ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE {
+    Some(core::mem::transmute(f))
+}
 
 #[repr(C)]
 pub struct FAT_SYNC_CONTEXT {
@@ -127,7 +168,7 @@ pub unsafe extern "system" fn FatMultiSyncCompletionRoutine(
 
     if InterlockedDecrement(addr_of_mut!((*Context).IrpCount)) == 0 {
         FatDoCompletionZeroHelper(MasterIrp, Context);
-        KeSetEvent((*Context).Wait.SyncEvent.as_mut(), 0, 0);
+        KeSetEvent((*Context).Wait.SyncEvent.as_mut() as *mut _ as *mut c_void, 0, 0);
     }
 
     let _ = DeviceObject;
@@ -158,7 +199,7 @@ pub unsafe extern "system" fn FatMultiAsyncCompletionRoutine(
 
         if ntkrnl_sys::base::NT_SUCCESS((*MasterIrp).IoStatus.__bindgen_anon_1.Status) {
             (*MasterIrp).IoStatus.Information =
-                ((*Context).Wait.Async.as_ref().RequestedByteCount as ULONG_PTR) as u64;
+                ((*Context).Wait.Async.as_ref().RequestedByteCount as ULONG_PTR) as _;
 
             //  Now if this wasn't PagingIo, set either the read or write bit.
             if (*MasterIrp).Flags & crate::glue::IRP_PAGING_IO == 0 {
@@ -259,7 +300,7 @@ pub unsafe extern "system" fn FatSingleSyncCompletionRoutine(
 
     FatDoCompletionZeroHelper(Irp, Context);
 
-    KeSetEvent((*Context).Wait.SyncEvent.as_mut(), 0, 0);
+    KeSetEvent((*Context).Wait.SyncEvent.as_mut() as *mut _ as *mut c_void, 0, 0);
 
     let _ = DeviceObject;
     crate::glue::STATUS_MORE_PROCESSING_REQUIRED
@@ -328,7 +369,7 @@ pub unsafe extern "C" fn FatSingleNonAlignedSync(
         0,
         (Dbg) as i32,
         b"MajorFunction = %08lx\n\0".as_ptr() as *const i8,
-        (*irp_context).MajorFunction,
+        (*irp_context).MajorFunction as u32,
     );
     DebugTrace(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, vcb);
     DebugTrace(
@@ -367,7 +408,7 @@ pub unsafe extern "C" fn FatSingleNonAlignedSync(
 
     IoSetCompletionRoutine(
         (irp).cast(),
-        Some(FatSingleSyncCompletionRoutine as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS),
+        as_completion_routine(FatSingleSyncCompletionRoutine),
         &raw const (*irp_context).FatIoContext as *mut c_void,
         1u8,
         1u8,
@@ -384,7 +425,7 @@ pub unsafe extern "C" fn FatSingleNonAlignedSync(
         is_a_write = (*irp_sp).MajorFunction == (IRP_MJ_WRITE) as u8;
     }
 
-    if (*vcb).VerifyThread == KeGetCurrentThread() {
+    if (*vcb).VerifyThread == KeGetCurrentThread() as *mut _ {
         SetFlag(&raw mut (*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
     if FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
@@ -446,7 +487,7 @@ const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000002;
 const IRP_MJ_WRITE: u32 = 4;
 
 
-const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8;
+const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8_u32 as i32;
 
 const MdlMappingNoExecute: u32 = 0x40000000;
 
@@ -479,7 +520,7 @@ const TAG_IO_USER_BUFFER: u32 = 0x51746146; // 'bUu' tag placeholder
 // Declarations for unknown external functions used by this function
 
 // Constants from file level or needed locally
-const IoWriteAccess: i32 = 2; // LOCK_OPERATION value (standard)
+const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
 const NonPagedPoolNxCacheAligned: u32 = 0x20000000; /* placeholder */
 const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
 #[no_mangle]
@@ -493,16 +534,16 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     let mut Vbo: u32;
     let mut ByteCount: u32;
     let mut Mdl: PMDL;
-    let mut NextLbo: u64;
+    let mut NextLbo: u64 = 0;
     let mut NextVbo: u32 = 0;
-    let mut NextByteCount: u32;
+    let mut NextByteCount: u32 = 0;
     let mut RemainingByteCount: u32;
     let mut MustSucceed: u32;
-    let mut FirstIndex: u32;
+    let mut FirstIndex: u32 = 0;
     let mut CurrentIndex: u32;
-    let mut LastIndex: u32;
-    let mut LastLbo: u64;
-    let mut LastByteCount: u32;
+    let mut LastIndex: u32 = 0;
+    let mut LastLbo: u64 = 0;
+    let mut LastByteCount: u32 = 0;
     let mut MdlIsReserve: u32 = 0;
     let mut IrpIsMaster: u32 = 0;
     let mut Context: FAT_PAGING_FILE_CONTEXT = core::mem::zeroed();
@@ -530,11 +571,11 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     ByteCount = (*IrpSp).Parameters.Read.Length;
     IsAWrite = ((*IrpSp).MajorFunction == ntkrnl_sys::constants::IRP_MJ_WRITE) as u32;
 
-    MustSucceed = (FatLookupMcbEntry).cast()(
-        (*Fcb).Vcb,
-        addr_of_mut!((*Fcb).Mcb),
+    MustSucceed = FatLookupMcbEntry(
+        (*Fcb).Vcb as *mut c_void,
+        addr_of_mut!((*Fcb).Mcb) as *mut c_void,
         Vbo,
-        addr_of_mut!(NextLbo) as *mut i64,
+        addr_of_mut!(NextLbo) as *mut u64,
         addr_of_mut!(NextByteCount),
         addr_of_mut!(FirstIndex),
     );
@@ -544,7 +585,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     }
 
     if FatDiskAccountingEnabled != 0 {
-        let ThreadIssuingIo: *mut ntkrnl_sys::ddk::PETHREAD = ntkrnl_sys::ke::KeGetCurrentThread();
+        let ThreadIssuingIo: ntkrnl_sys::ddk::PETHREAD = PsGetCurrentThread();
         let IsWriteOperation = ((*IrpSp).MajorFunction == ntkrnl_sys::constants::IRP_MJ_WRITE) as u32;
         PsUpdateDiskCounters(
             ntkrnl_sys::ddk::PsGetThreadProcess(ThreadIssuingIo) as *mut core::ffi::c_void,
@@ -569,14 +610,14 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 
         ntkrnl_sys::ddk::IoSetCompletionRoutine(
             Irp,
-            Some(FatPagingFileCompletionRoutine),
+            as_completion_routine(FatPagingFileCompletionRoutine),
             Irp as *mut core::ffi::c_void,
             0,
             1,
             1,
         );
 
-        ntkrnl_sys::ddk::IoCallDriver(DeviceObject, Irp);
+        IoCallDriver(DeviceObject, Irp);
 
         if FatDiskAccountingEnabled != 0 {
             FatUpdateIOCountersPCW(IsAWrite, ByteCount as u64);
@@ -586,11 +627,11 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         return;
     }
 
-    MustSucceed = (FatLookupMcbEntry).cast()(
-        (*Fcb).Vcb,
-        addr_of_mut!((*Fcb).Mcb),
+    MustSucceed = FatLookupMcbEntry(
+        (*Fcb).Vcb as *mut c_void,
+        addr_of_mut!((*Fcb).Mcb) as *mut c_void,
         Vbo.wrapping_add(ByteCount).wrapping_sub(1),
-        addr_of_mut!(LastLbo) as *mut i64,
+        addr_of_mut!(LastLbo) as *mut u64,
         addr_of_mut!(LastByteCount),
         addr_of_mut!(LastIndex),
     );
@@ -602,7 +643,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     CurrentIndex = FirstIndex;
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = ntkrnl_sys::base::STATUS_SUCCESS as i32;
-    (*Irp).IoStatus.Information = (ByteCount as usize) as u64;
+    (*Irp).IoStatus.Information = (ByteCount as usize) as _;
 
     let count: i32 = (LastIndex.wrapping_sub(FirstIndex).wrapping_add(1)) as i32;
     (*Irp).AssociatedIrp.IrpCount = count;
@@ -628,7 +669,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 (addr_of_mut!(FatReserveEvent)).cast(),
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                0 /*KernelMode*/,
+                0i8 /*KernelMode*/,
                 0,
                 null_mut(),
             );
@@ -665,7 +706,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             while (*Irp).AssociatedIrp.IrpCount != IrpCount {
                 let timeout = LARGE_INTEGER { QuadPart: -300000 };
                 ntkrnl_sys::ddk::KeDelayExecutionThread(
-                    0 /*KernelMode*/,
+                    0i8 /*KernelMode*/,
                     0,
                     addr_of!(timeout) as *const _ as *mut _,
                 );
@@ -691,7 +732,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             (*NextIrpSp).DeviceObject = (*IrpSp).DeviceObject;
         } else {
             ntkrnl_sys::ddk::KeInitializeEvent(
-                &mut Context.Event,
+                core::ptr::addr_of_mut!(Context.Event),
                 ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent,
                 0,
             );
@@ -703,7 +744,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         if IrpIsMaster != 0 {
             ntkrnl_sys::ddk::IoSetCompletionRoutine(
                 AssocIrp,
-                Some(FatPagingFileCompletionRoutineCatch),
+                as_completion_routine(FatPagingFileCompletionRoutineCatch),
                 addr_of!(Context) as *const _ as *mut core::ffi::c_void,
                 1,
                 1,
@@ -712,7 +753,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         } else {
             ntkrnl_sys::ddk::IoSetCompletionRoutine(
                 AssocIrp,
-                Some(FatPagingFileCompletionRoutine),
+                as_completion_routine(FatPagingFileCompletionRoutine),
                 Irp as *mut core::ffi::c_void,
                 0,
                 1,
@@ -728,7 +769,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         (*NextIrpSp).Parameters.Read.Length = NextByteCount;
         (*NextIrpSp).Parameters.Read.ByteOffset.QuadPart = NextLbo as i64;
 
-        ntkrnl_sys::ddk::IoCallDriver(DeviceObject, AssocIrp);
+        IoCallDriver(DeviceObject, AssocIrp);
 
         if FatDiskAccountingEnabled != 0 {
             FatUpdateIOCountersPCW(IsAWrite, NextByteCount as u64);
@@ -738,7 +779,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 (addr_of_mut!(Context.Event)).cast(),
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                0 /*KernelMode*/,
+                0i8 /*KernelMode*/,
                 0,
                 null_mut(),
             );
@@ -769,9 +810,9 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
                     ntkrnl_sys::ke::DbgBreakPoint();
                 }
 
-                (FatGetNextMcbEntry).cast()(
-                    (*Fcb).Vcb,
-                    addr_of_mut!((*Fcb).Mcb),
+                FatGetNextMcbEntry(
+                    (*Fcb).Vcb as *mut c_void,
+                    addr_of_mut!((*Fcb).Mcb) as *mut c_void,
                     CurrentIndex,
                     addr_of_mut!(NextVbo),
                     addr_of_mut!(NextLbo),
@@ -789,13 +830,13 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         while (*Irp).AssociatedIrp.IrpCount != IrpCount {
             let timeout = LARGE_INTEGER { QuadPart: -300000 };
             ntkrnl_sys::ddk::KeDelayExecutionThread(
-                0 /*KernelMode*/,
+                0i8 /*KernelMode*/,
                 0,
                 addr_of!(timeout) as *const _ as *mut _,
             );
         }
 
-        ntkrnl_sys::ddk::IoCompleteRequest(Irp, ntkrnl_sys::constants::IO_DISK_INCREMENT);
+        ntkrnl_sys::driver_ddk::IoCompleteRequest(Irp, ntkrnl_sys::constants::IO_DISK_INCREMENT);
     }
 
     DebugTrace(-1, (Dbg as u32) as i32, c"FatPagingFileIo -> VOID\n".as_ptr() as *const i8, 0);
@@ -849,8 +890,8 @@ pub unsafe extern "C" fn FatUpdateDiskStats(
     if !originating_thread.is_null() {
         PsUpdateDiskCounters(
             PsGetThreadProcess(originating_thread as PETHREAD) as *mut core::ffi::c_void,
-            bytes_to_read as u32,
-            bytes_to_write as u32,
+            bytes_to_read,
+            bytes_to_write,
             num_reads,
             num_writes,
             0u32,
@@ -868,6 +909,8 @@ pub unsafe extern "C" fn FatNonCachedIo(
     UserByteCount: u32,
     StreamFlags: u32,
 ) -> i32 {
+    let mut StartingVbo = StartingVbo;
+    let mut ByteCount = ByteCount;
     PAGED_CODE();
 
     // UNREFERENCED_PARAMETER(StreamFlags)
@@ -905,21 +948,21 @@ pub unsafe extern "C" fn FatNonCachedIo(
 
     FatLockUserBuffer(
         IrpContext,
-        (Irp).cast(),
+        Irp,
         if (*IrpContext).MajorFunction == IRP_MJ_READ {
-            (IoWriteAccess as u8) as u32
+            IoWriteAccess as LOCK_OPERATION
         } else {
-            IoReadAccess as u8
+            IoReadAccess as LOCK_OPERATION
         },
         ByteCount,
     );
 
     if UserByteCount != ByteCount {
         NT_ASSERT((ByteCount > UserByteCount) as i32);
-        _Analysis_assume_((ByteCount > UserByteCount) as i32);
+        _Analysis_assume_(ByteCount > UserByteCount);
 
         let Mdl = IoAllocateMdl(
-            ((*Irp).UserBuffer as *mut u8).add(UserByteCount as usize),
+            ((*Irp).UserBuffer as *mut u8).add(UserByteCount as usize) as *mut c_void,
             ByteCount - UserByteCount,
             0,
             0,
@@ -931,10 +974,10 @@ pub unsafe extern "C" fn FatNonCachedIo(
         IoBuildPartialMdl(
             (*Irp).MdlAddress,
             Mdl,
-            ((*Irp).UserBuffer as *mut u8).add(UserByteCount as usize),
+            ((*Irp).UserBuffer as *mut u8).add(UserByteCount as usize) as *mut c_void,
             ByteCount - UserByteCount,
         );
-        (*IrpContext).FatIoContext.ZeroMdl = Mdl;
+        (*(*IrpContext).FatIoContext).ZeroMdl = Mdl;
 
         if MmGetSystemAddressForMdlSafe(
             Mdl,
@@ -949,15 +992,15 @@ pub unsafe extern "C" fn FatNonCachedIo(
     let mut NextIsAllocated: u8 = 0;
     let mut EndOnMax: u8 = 0;
     let mut FirstIndex: u32 = 0;
-    (FatLookupFileAllocation).cast()(
+    FatLookupFileAllocation(
         IrpContext,
         FcbOrDcb,
-        StartingVbo as u64,
-        &mut NextLbo as *mut u64,
+        StartingVbo,
+        &mut NextLbo as *mut u64 as *mut i64,
         &mut NextByteCount as *mut u32,
         &mut NextIsAllocated as *mut u8,
         &mut EndOnMax as *mut u8,
-        &mut FirstIndex as *mut u32,
+        &mut FirstIndex as *mut u32 as *mut c_void,
     );
 
     if NextIsAllocated == 0 {
@@ -969,10 +1012,10 @@ pub unsafe extern "C" fn FatNonCachedIo(
     // Single run case
     if NextByteCount >= ByteCount - (if EndOnMax != 0 { 1 } else { 0 }) {
         if FlagOn((*Irp).Flags, IRP_PAGING_IO) != 0 {
-            (CollectDiskIoStats).cast()(
+            CollectDiskIoStats(
                 (*FcbOrDcb).Vcb,
-                (*IrpContext).MajorFunction,
-                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO),
+                (*IrpContext).MajorFunction as u32,
+                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) as u8,
                 1,
             );
         } else {
@@ -989,11 +1032,11 @@ pub unsafe extern "C" fn FatNonCachedIo(
         DebugTrace(0, (Dbg) as i32, b"Passing 1 Irp on to Disk Driver\n\0".as_ptr() as *const i8, 0);
 
         // try-finally block (inlined)
-        (FatSingleAsync).cast()(IrpContext, (*FcbOrDcb).Vcb, NextLbo, ByteCount, Irp);
+        FatSingleAsync(IrpContext, (*FcbOrDcb).Vcb, NextLbo as i64, ByteCount, Irp);
         // The finally block does nothing because io_runs_ptr is not heap-allocated here.
         // We still need the structure, so we keep it as a dummy.
         {
-            let stack_io_runs: [IO_RUN; FAT_MAX_IO_RUNS_ON_STACK] = core::mem::zeroed();
+            let mut stack_io_runs: [IO_RUN; FAT_MAX_IO_RUNS_ON_STACK] = core::mem::zeroed();
             let io_runs_ptr = stack_io_runs.as_mut_ptr();
             if io_runs_ptr != stack_io_runs.as_mut_ptr() {
                 ExFreePool(io_runs_ptr as *mut core::ffi::c_void);
@@ -1004,15 +1047,15 @@ pub unsafe extern "C" fn FatNonCachedIo(
         let mut LastByteCount: u32 = 0;
         let mut LastIsAllocated: u8 = 0;
         let mut LastIndex: u32 = 0;
-        (FatLookupFileAllocation).cast()(
+        FatLookupFileAllocation(
             IrpContext,
             FcbOrDcb,
-            StartingVbo as u64 + ByteCount as u64 - 1,
-            &mut LastLbo as *mut u64,
+            StartingVbo + ByteCount - 1,
+            &mut LastLbo as *mut u64 as *mut i64,
             &mut LastByteCount as *mut u32,
             &mut LastIsAllocated as *mut u8,
             &mut EndOnMax as *mut u8,
-            &mut LastIndex as *mut u32,
+            &mut LastIndex as *mut u32 as *mut c_void,
         );
 
         if LastIsAllocated == 0 {
@@ -1046,7 +1089,7 @@ pub unsafe extern "C" fn FatNonCachedIo(
 
             let run_ptr = io_runs_ptr.add(NextRun as usize);
             (*run_ptr).Vbo = StartingVbo;
-            (*run_ptr).Lbo = NextLbo;
+            (*run_ptr).Lbo = NextLbo as i64;
             (*run_ptr).Offset = BufferOffset;
             (*run_ptr).ByteCount = NextByteCount;
             NextRun += 1;
@@ -1059,12 +1102,12 @@ pub unsafe extern "C" fn FatNonCachedIo(
             if CurrentIndex <= LastIndex {
                 NT_ASSERT((ByteCount != 0) as i32);
 
-                let mut NextVbo: u64 = 0; // placeholder, value unused
-                (FatGetNextMcbEntry).cast()(
-                    (*FcbOrDcb).Vcb,
-                    &mut (*FcbOrDcb).Mcb,
+                let mut NextVbo: u32 = 0; // placeholder, value unused
+                FatGetNextMcbEntry(
+                    (*FcbOrDcb).Vcb as *mut c_void,
+                    &mut (*FcbOrDcb).Mcb as *mut _ as *mut c_void,
                     CurrentIndex,
-                    &mut NextVbo as *mut u64,
+                    &mut NextVbo as *mut u32,
                     &mut NextLbo as *mut u64,
                     &mut NextByteCount as *mut u32,
                 );
@@ -1076,13 +1119,13 @@ pub unsafe extern "C" fn FatNonCachedIo(
         }
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = OriginalByteCount;
+        (*Irp).IoStatus.Information = OriginalByteCount as _;
 
         if FlagOn((*Irp).Flags, IRP_PAGING_IO) != 0 {
-            (CollectDiskIoStats).cast()(
+            CollectDiskIoStats(
                 (*FcbOrDcb).Vcb,
-                (*IrpContext).MajorFunction,
-                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO),
+                (*IrpContext).MajorFunction as u32,
+                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) as u8,
                 NextRun,
             );
         }
@@ -1120,6 +1163,8 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
     StartingVbo: u32,
     ByteCount: u32,
 ) {
+    let mut StartingVbo = StartingVbo;
+    let mut ByteCount = ByteCount;
     let mut NextLbo: i64 = 0;
     let mut NextByteCount: u32 = 0;
     let mut NextIsAllocated: u8 = 0;
@@ -1148,9 +1193,9 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
     OriginalStartingVbo = StartingVbo;
     SectorSize = ((*(*FcbOrDcb).Vcb).Bpb.BytesPerSector) as u32;
 
-    NT_ASSERT(FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) != 0);
+    NT_ASSERT((FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) != 0) as i32);
 
-    (FatLockUserBuffer).cast()(IrpContext, Irp, IoWriteAccess, ByteCount);
+    FatLockUserBuffer(IrpContext, Irp, IoWriteAccess as LOCK_OPERATION, ByteCount);
     UserBuffer = FatMapUserBuffer(IrpContext, Irp) as *mut u8;
 
     DiskBuffer = FsRtlAllocatePoolWithTag(
@@ -1169,10 +1214,10 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
                     IrpContext,
                     FcbOrDcb,
                     StartingVbo,
-                    &mut NextLbo,
-                    &mut NextByteCount,
-                    &mut NextIsAllocated,
-                    &mut EndOnMax,
+                    core::ptr::addr_of_mut!(NextLbo),
+                    core::ptr::addr_of_mut!(NextByteCount),
+                    core::ptr::addr_of_mut!(NextIsAllocated),
+                    core::ptr::addr_of_mut!(EndOnMax),
                     core::ptr::null_mut(),
                 );
 
@@ -1226,10 +1271,10 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
                     IrpContext,
                     FcbOrDcb,
                     LastSectorVbo,
-                    &mut NextLbo,
-                    &mut NextByteCount,
-                    &mut NextIsAllocated,
-                    &mut EndOnMax,
+                    core::ptr::addr_of_mut!(NextLbo),
+                    core::ptr::addr_of_mut!(NextByteCount),
+                    core::ptr::addr_of_mut!(NextIsAllocated),
+                    core::ptr::addr_of_mut!(EndOnMax),
                     core::ptr::null_mut(),
                 );
 
@@ -1281,7 +1326,7 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
                 FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES as i32);
             }
 
-            (IoBuildPartialMdl).cast()(SavedMdl, Mdl, (*(Irp as *mut _IRP)).UserBuffer, ByteCount);
+            IoBuildPartialMdl(SavedMdl, Mdl, (*(Irp as *mut _IRP)).UserBuffer, ByteCount);
 
             // Inner SEH block (try / finally)
             // _SEH2_TRY
@@ -1305,7 +1350,7 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
             ExFreePool(DiskBuffer as *mut c_void);
 
             if _SEH2_AbnormalTermination() == 0 && NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
-                (*(Irp as *mut _IRP)).IoStatus.Information = (OriginalByteCount as u32) as u64;
+                (*(Irp as *mut _IRP)).IoStatus.Information = (OriginalByteCount as u32) as _;
                 KeFlushIoBuffers(((*(Irp as *mut _IRP)).MdlAddress).cast(), 1, 0);
             }
         }
@@ -1339,15 +1384,15 @@ pub unsafe extern "C" fn FatMultipleAsync(
     // PAGED_CODE(); // not needed in translation
 
     DebugTrace(1, 0, b"FatMultipleAsync\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, 0, b"MajorFunction    = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction);
+    DebugTrace(0, 0, b"MajorFunction    = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
     DebugTrace(0, 0, b"Vcb              = %p\n\0".as_ptr() as *const i8, Vcb);
     DebugTrace(0, 0, b"MasterIrp        = %p\n\0".as_ptr() as *const i8, MasterIrp);
     DebugTrace(0, 0, b"MultipleIrpCount = %08lx\n\0".as_ptr() as *const i8, MultipleIrpCount);
     DebugTrace(0, 0, b"IoRuns           = %08lx\n\0".as_ptr() as *const i8, IoRuns);
 
     // If this I/O originating during FatVerifyVolume, bypass the verify logic.
-    if (*(Vcb as *mut _VCB)).VerifyThread == (KeGetCurrentThread()).cast() {
-        SetFlag((&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags as *mut u8).cast(), IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+    if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
+        SetFlag(addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
 
     // Set up things according to whether this is truly async.
@@ -1370,22 +1415,22 @@ pub unsafe extern "C" fn FatMultipleAsync(
             UnwindRunCount = 0;
             while UnwindRunCount < MultipleIrpCount {
                 // Create an associated IRP, making sure there is one stack entry for us, as well.
-                (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = core::ptr::null_mut::<IRP>();
+                (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = core::ptr::null_mut::<IRP>();
                 Irp = IoMakeAssociatedIrp(
                     MasterIrp as *mut _IRP,
-                    ((*(*(Vcb as *mut _VCB)).TargetDeviceObject as *mut _DEVICE_OBJECT).StackSize + 1) as i8,
+                    ((*(*((Vcb as *mut _VCB))).TargetDeviceObject).StackSize + 1) as i8,
                 );
                 if Irp.is_null() {
                     // FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
                     abnormal_termination = 1;
                     break 'try_scope;
                 }
-                (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = Irp;
+                (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = Irp;
 
                 // Allocate and build a partial Mdl for the request.
                 Mdl = IoAllocateMdl(
-                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
-                    (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
+                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
+                    (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
                     0,   // FALSE
                     0,   // FALSE
                     Irp,
@@ -1402,8 +1447,8 @@ pub unsafe extern "C" fn FatMultipleAsync(
                 IoBuildPartialMdl(
                     (*(MasterIrp as *mut _IRP)).MdlAddress,
                     Mdl,
-                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
-                    (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
+                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
+                    (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
                 );
 
                 // Get the first IRP stack location in the associated Irp
@@ -1412,16 +1457,16 @@ pub unsafe extern "C" fn FatMultipleAsync(
 
                 // Setup the Stack location to describe our read.
                 (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).Vbo;
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Vbo as i64;
 
                 // Set up the completion routine
                 IoSetCompletionRoutine(
                     Irp,
                     if Wait != 0 {
-                        FatMultiSyncCompletionRoutine as PIO_COMPLETION_ROUTINE
+                        as_completion_routine(FatMultiSyncCompletionRoutine)
                     } else {
-                        FatMultiAsyncCompletionRoutine as PIO_COMPLETION_ROUTINE
+                        as_completion_routine(FatMultiAsyncCompletionRoutine)
                     },
                     Context as *mut core::ffi::c_void,
                     1, // TRUE
@@ -1434,17 +1479,17 @@ pub unsafe extern "C" fn FatMultipleAsync(
 
                 // Setup the Stack location to do a read from the disk driver.
                 (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).Lbo;
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Lbo;
 
                 // If this Irp is the result of a WriteThrough operation, tell the device to write it through.
                 if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0 {
-                    SetFlag(((&mut (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags) as *mut u8).cast(), SL_WRITE_THROUGH);
+                    (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_WRITE_THROUGH as u8;
                 }
 
                 // If this I/O requires override verify, bypass the verify logic.
                 if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
-                    SetFlag(((&mut (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags) as *mut u8).cast(), SL_OVERRIDE_VERIFY_VOLUME);
+                    (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
                 }
 
                 UnwindRunCount += 1;
@@ -1456,25 +1501,25 @@ pub unsafe extern "C" fn FatMultipleAsync(
             // We only need to set the associated IRP count in the master irp to make it a master IRP.
             // But we set the count to one more than our caller requested, because we do not want the I/O system
             // to complete the I/O. We also set our own count.
-            (*(Context as *mut _FAT_IO_CONTEXT)).IrpCount = MultipleIrpCount;
+            (*(Context as *mut _FAT_IO_CONTEXT)).IrpCount = MultipleIrpCount as i32;
             (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount = (MultipleIrpCount) as i32;
 
             if Wait != 0 {
                 (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount += 1;
-            } else if FlagOn((*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.ResourceThreadId as u8, 3) != 0 {
+            } else if FlagOn((*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as u32, 3) != 0 {
                 // For async requests if we acquired locks, transition the lock owners to an object,
                 // since when we return this thread could go away before request completion, and the
                 // resource package may try to boost priority.
-                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.Resource.is_null() {
+                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource.is_null() {
                     ExSetResourceOwnerPointer(
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.Resource,
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.ResourceThreadId as *mut core::ffi::c_void,
+                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource,
+                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
                     );
                 }
-                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.Resource2.is_null() {
+                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2.is_null() {
                     ExSetResourceOwnerPointer(
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.Resource2,
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.ResourceThreadId as *mut core::ffi::c_void,
+                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2,
+                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
                     );
                 }
             }
@@ -1485,16 +1530,16 @@ pub unsafe extern "C" fn FatMultipleAsync(
             // Now that all the dangerous work is done, issue the read requests
             UnwindRunCount = 0;
             while UnwindRunCount < MultipleIrpCount {
-                Irp = (*(IoRuns as *mut _IO_RUN).offset(UnwindRunCount as isize)).SavedIrp;
+                Irp = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp;
                 DebugDoit({ FatIoCallDriverCount += 1; });
 
                 // If IoCallDriver returns an error, it has completed the Irp and the error will be
                 // caught by our completion routines and dealt with as a normal IO error.
-                (FatLowLevelReadWrite).cast()(
+                FatLowLevelReadWrite(
                     IrpContext,
                     (*(Vcb as *mut _VCB)).TargetDeviceObject,
-                    Irp as *mut _IRP,
-                    Vcb as *mut _VCB,
+                    Irp,
+                    Vcb,
                 );
 
                 UnwindRunCount += 1;
@@ -1511,7 +1556,7 @@ pub unsafe extern "C" fn FatMultipleAsync(
 
     // _SEH2_FINALLY block
     {
-        DebugUnwind(FatMultipleAsync as usize);
+        DebugUnwind(FatMultipleAsync as *const core::ffi::c_void);
 
         if abnormal_termination != 0 {
             // If the driver raised, we are hosed. He is not supposed to raise, and it is impossible
@@ -1524,7 +1569,7 @@ pub unsafe extern "C" fn FatMultipleAsync(
             // Unwind: free resources of runs up to and including the failed one
             i = 0;
             while i <= UnwindRunCount {
-                Irp = (*(IoRuns as *mut _IO_RUN).offset(i as isize)).SavedIrp;
+                Irp = (*(IoRuns as *mut IO_RUN).offset(i as isize)).SavedIrp;
                 if !Irp.is_null() {
                     if !(*Irp).MdlAddress.is_null() {
                         IoFreeMdl((*Irp).MdlAddress);
@@ -1556,14 +1601,14 @@ pub unsafe extern "C" fn FatSingleAsync(
     let mut IsAWrite: i32 = 0;
 
     DebugTrace(1, (Dbg) as i32, b"FatSingleAsync\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction);
+    DebugTrace(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
     DebugTrace(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, Vcb as *const core::ffi::c_void);
     DebugTrace(0, (Dbg) as i32, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, Lbo);
     DebugTrace(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount);
     DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
 
-    if (*(Vcb as *mut _VCB)).VerifyThread == (KeGetCurrentThread()).cast() {
-        SetFlag(&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+    if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
+        SetFlag(addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
 
     let completion_routine: Option<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, *mut core::ffi::c_void) -> NTSTATUS> =
@@ -1576,44 +1621,44 @@ pub unsafe extern "C" fn FatSingleAsync(
     IrpSp = IoGetNextIrpStackLocation((Irp).cast()) as *mut _IO_STACK_LOCATION;
 
     // Expand IoSetCompletionRoutine macro
-    (*(IrpSp as *mut _IO_STACK_LOCATION)).__bindgen_anon_2.CompletionRoutine = completion_routine;
+    (*(IrpSp as *mut _IO_STACK_LOCATION)).CompletionRoutine = core::mem::transmute(completion_routine);
     (*(IrpSp as *mut _IO_STACK_LOCATION)).Context = (*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext as *mut core::ffi::c_void;
     (*(IrpSp as *mut _IO_STACK_LOCATION)).Control = SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR | SL_INVOKE_ON_CANCEL;
 
     (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
-    (*(IrpSp as *mut _IO_STACK_LOCATION)).__bindgen_anon_1.Read.Length = ByteCount;
-    (*(IrpSp as *mut _IO_STACK_LOCATION)).__bindgen_anon_1.Read.ByteOffset.QuadPart = Lbo;
+    (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = ByteCount;
+    (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = Lbo;
 
     IsAWrite = (((*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction as u32) == IRP_MJ_WRITE) as i32;
 
     if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0 {
-        SetFlag(&mut (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags, SL_WRITE_THROUGH);
+        (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_WRITE_THROUGH as u8;
     }
 
     if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
-        SetFlag(&mut (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags, SL_OVERRIDE_VERIFY_VOLUME);
+        (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
     }
 
     if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) == 0
-        && FlagOn((*(*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext as *mut _FAT_IO_CONTEXT).__bindgen_anon_1.Async.ResourceThreadId, 3) != 0
+        && FlagOn((*(*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext).Wait.Async.as_ref().ResourceThreadId as u32, 3) != 0
     {
         Context = (*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext as *mut _FAT_IO_CONTEXT;
 
-        if !(*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.Resource.is_null() {
+        if !(*Context).Wait.Async.as_ref().Resource.is_null() {
             ExSetResourceOwnerPointer(
-                (*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.Resource,
-                ((*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.ResourceThreadId as usize) as *mut core::ffi::c_void,
+                (*Context).Wait.Async.as_ref().Resource,
+                (*Context).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
             );
         }
-        if !(*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.Resource2.is_null() {
+        if !(*Context).Wait.Async.as_ref().Resource2.is_null() {
             ExSetResourceOwnerPointer(
-                (*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.Resource2,
-                ((*(Context as *mut _FAT_IO_CONTEXT)).__bindgen_anon_1.Async.ResourceThreadId as usize) as *mut core::ffi::c_void,
+                (*Context).Wait.Async.as_ref().Resource2,
+                (*Context).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
             );
         }
     }
 
-    (*(*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext as *mut _FAT_IO_CONTEXT).IrpContextFlags = (*(IrpContext as *mut _IRP_CONTEXT)).Flags;
+    (*(*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext).IrpContextFlags = (*(IrpContext as *mut _IRP_CONTEXT)).Flags;
 
     let tmp = {
         FatIoCallDriverCount = FatIoCallDriverCount.wrapping_add(1);
@@ -1655,7 +1700,7 @@ pub unsafe extern "C" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) ->
             (*packet).Event = Event;
             ExInitializeWorkItem(
                 core::ptr::addr_of_mut!((*packet).Item),
-                FatFspMarkVolumeDirtyWithRecover,
+                Some(FatFspMarkVolumeDirtyWithRecover),
                 packet as PVOID,
             );
             ExQueueWorkItem(core::ptr::addr_of_mut!((*packet).Item), CriticalWorkQueue as WORK_QUEUE_TYPE);
@@ -1710,75 +1755,19 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     Irp: PIRP,
     Contxt: PVOID,
 ) -> NTSTATUS {
-    // Constants and externs local to this function
-    const STATUS_SUCCESS: i32 = 0;
-    const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
-    const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
-    const IRP_PAGING_IO: u32 = 0x02;
-    const FO_FILE_FAST_IO_READ: u32 = 0x00080000;
-    const FO_FILE_MODIFIED: u32 = 0x1000;
-    const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;
-    const MDL_MAPPED_TO_SYSTEM_VA: u32 = 0x0001;
-    const MDL_SOURCE_IS_NONPAGED_POOL: u32 = 0x0002;
-    const Dbg: i32 = 0; // DEBUG_TRACE_DEVIOSUP placeholder
+    const STATUS_SUCCESS_CONST: i32 = 0;
+    const Dbg: u32 = DEBUG_TRACE_DEVIOSUP;
 
-    #[repr(C)]
-    struct FAT_DATA {
-        GeneralSpinLock: KSPIN_LOCK,
-        // other fields not needed
-    }
-    #[repr(C)]
-    struct KSPIN_LOCK(u64); // dummy
-    #[repr(C)]
-    struct IRP_CONTEXT {
-        Flags: u32,
-        // other fields
-    }
-    #[repr(C)]
-    struct FAT_IO_CONTEXT {
-        ZeroMdl: PMDL,
-        Wait: _WAIT_UNION,
-        IrpContextFlags: u32,
-    }
-    #[repr(C)]
-    union _WAIT_UNION {
-        Async: _ASYNC_WAIT,
-    }
-    #[repr(C)]
-    struct _ASYNC_WAIT {
-        RequestedByteCount: ULONG,
-        FileObject: *mut FILE_OBJECT,
-        NonPagedFcb: *mut c_void, /* placeholder */
-        OutstandingAsyncWrites: ULONG,
-        OutstandingAsyncEvent: PKEVENT,
-        Resource: *mut c_void,
-        Resource2: *mut c_void,
-        ResourceThreadId: ULONG,
-    }
-    #[repr(C)]
-    struct FILE_OBJECT {
-        Flags: u32,
-        // other fields
-    }
-    #[repr(C)]
-    struct MDL {
-        MdlFlags: u32,
-        ByteCount: u32,
-        MappedSystemVa: *mut c_void,
-        // other fields
-    }
-    type ULONG = u32;
-
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let Context: *mut FAT_IO_CONTEXT = Contxt as *mut FAT_IO_CONTEXT;
+    let mut Status: NTSTATUS = STATUS_SUCCESS_CONST;
+    let Context: *mut _FAT_IO_CONTEXT = Contxt as *mut _FAT_IO_CONTEXT;
     let mut PostRequest: i32 = 0;
 
-    DebugTrace(1, Dbg, b"FatSingleAsyncCompletionRoutine, Context = %p\n\0".as_ptr() as *const i8, Context);
+    DebugTrace(1, Dbg as i32, b"FatSingleAsyncCompletionRoutine, Context = %p\n\0".as_ptr() as *const i8, Context);
 
     // FatDoCompletionZero expansion
     if !(*Context).ZeroMdl.is_null() {
         NT_ASSERT(
-            ((*(*Context).ZeroMdl).MdlFlags & ((MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL)) as i16) != 0
+            (((*(*Context).ZeroMdl).MdlFlags & ((MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) as u32 as i16)) != 0) as i32
         );
         if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             core::ptr::write_bytes(
@@ -1792,15 +1781,15 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     }
 
     if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
-        NT_ASSERT((*Irp).IoStatus.Information != 0);
-        (*Irp).IoStatus.Information = ((*Context).Wait.Async.RequestedByteCount as ULONG_PTR) as u64;
-        NT_ASSERT((*Irp).IoStatus.Information != 0);
+        NT_ASSERT(((*Irp).IoStatus.Information != 0) as i32);
+        (*Irp).IoStatus.Information = (*Context).Wait.Async.as_ref().RequestedByteCount as _;
+        NT_ASSERT(((*Irp).IoStatus.Information != 0) as i32);
 
         if FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0 {
             let major_function = (*IoGetCurrentIrpStackLocation(Irp)).MajorFunction;
             SetFlag(
-                &mut (*(*Context).Wait.Async.FileObject).Flags,
-                if major_function == IRP_MJ_READ {
+                addr_of_mut!((*(*Context).Wait.Async.as_ref().FileObject).Flags),
+                if major_function == IRP_MJ_READ as u8 {
                     FO_FILE_FAST_IO_READ
                 } else {
                     FO_FILE_MODIFIED
@@ -1817,51 +1806,44 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
             }
         }
 
-        if false {
-            DbgPrint(
-                b"FAT SYSCACHE: SingleAsync (IRP %08x) -> %08x\n\0".as_ptr() as *const i8,
-                Irp,
-                (*Irp).IoStatus,
-            );
-        }
-
-        if FlagOn((*Context).IrpContextFlags, IRP_CONTEXT_FLAG_RECURSIVE_CALL) == 0
+        if FlagOn((*Context).IrpContextFlags, crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL) == 0
             && (*Irp).IoStatus.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED
         {
             PostRequest = 1;
         }
     }
 
+    // _Analysis_assume_: assert non-null path is analysed statically (no-op at runtime)
     _Analysis_assume_(
-        (*Context).Wait.Async.NonPagedFcb.is_null()
+        (*Context).Wait.Async.as_ref().NonPagedFcb.is_null()
             && (ExInterlockedAddUlong(
-                &mut (*Context).Wait.Async.OutstandingAsyncWrites,
+                addr_of_mut!((*(*Context).Wait.Async.as_ref().NonPagedFcb).OutstandingAsyncWrites),
                 0xffffffff,
-                (&FatData.GeneralSpinLock as *const _ as *mut KSPIN_LOCK).cast(),
+                addr_of_mut!(FatData.GeneralSpinLock),
             ) != 1),
     );
 
-    if !(*Context).Wait.Async.NonPagedFcb.is_null()
-        && (ExInterlockedAddUlong).cast()(
-            &mut (*(*Context).Wait.Async.NonPagedFcb as *mut u32 as *mut u32), // dummy: assuming OutstandingAsyncWrites offset 0
+    if !(*Context).Wait.Async.as_ref().NonPagedFcb.is_null()
+        && ExInterlockedAddUlong(
+            addr_of_mut!((*(*Context).Wait.Async.as_ref().NonPagedFcb).OutstandingAsyncWrites),
             0xffffffff,
-            &FatData.GeneralSpinLock as *const _ as *mut KSPIN_LOCK,
+            addr_of_mut!(FatData.GeneralSpinLock),
         ) == 1
     {
-        KeSetEvent(((*Context).Wait.Async.OutstandingAsyncEvent).cast(), 0, 0);
+        KeSetEvent((*(*Context).Wait.Async.as_ref().NonPagedFcb).OutstandingAsyncEvent as PVOID, 0, 0);
     }
 
-    if !(*Context).Wait.Async.Resource.is_null() {
-        (ExReleaseResourceForThreadLite).cast()(
-            (*Context).Wait.Async.Resource,
-            (*Context).Wait.Async.ResourceThreadId,
+    if !(*Context).Wait.Async.as_ref().Resource.is_null() {
+        ExReleaseResourceForThreadLite(
+            (*Context).Wait.Async.as_ref().Resource,
+            (*Context).Wait.Async.as_ref().ResourceThreadId,
         );
     }
 
-    if !(*Context).Wait.Async.Resource2.is_null() {
-        (ExReleaseResourceForThreadLite).cast()(
-            (*Context).Wait.Async.Resource2,
-            (*Context).Wait.Async.ResourceThreadId,
+    if !(*Context).Wait.Async.as_ref().Resource2.is_null() {
+        ExReleaseResourceForThreadLite(
+            (*Context).Wait.Async.as_ref().Resource2,
+            (*Context).Wait.Async.as_ref().ResourceThreadId,
         );
     }
 
@@ -1870,63 +1852,61 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     ExFreePool(Context as *mut c_void);
 
     if PostRequest != 0 {
-        let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
+        let mut IrpContext: *mut crate::types::_IRP_CONTEXT = core::ptr::null_mut();
 
-        {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                IrpContext = (FatCreateIrpContext(Irp, 1)).cast();
-                ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL);
-                FatFsdPostRequest((IrpContext).cast(), Irp);
-                Status = STATUS_MORE_PROCESSING_REQUIRED;
-            }));
-            if result.is_err() {
-                // NOTHING
-            }
-        }
+        // _SEH2_TRY: use a block expression to emulate exception handling;
+        // on exception the NOTHING handler does nothing (same as C code).
+        let _try_result = (|| {
+            IrpContext = FatCreateIrpContext(Irp, 1);
+            ClearFlag(addr_of_mut!((*IrpContext).Flags), crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL);
+            FatFsdPostRequest(IrpContext, Irp);
+            Status = STATUS_MORE_PROCESSING_REQUIRED;
+        })();
+        // EXCEPT NOTHING: any exception is swallowed (DUMMY_PSEH)
     }
 
     DebugTrace(
         -1,
-        Dbg,
+        Dbg as i32,
         b"FatSingleAsyncCompletionRoutine -> STATUS_MORE_PROCESSING_REQUIRED\n\0".as_ptr() as *const i8,
         0,
     );
 
-    let _ = &DeviceObject; // UNREFERENCED_PARAMETER
+    let _ = DeviceObject; // UNREFERENCED_PARAMETER
 
     Status
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatLockUserBuffer(
-    IrpContext: *mut PIRP_CONTEXT,
-    Irp: *mut PIRP,
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: *mut IRP,
     Operation: LOCK_OPERATION,
     BufferLength: u32,
 ) {
-    let Mdl: *mut MDL;
+    let mut Mdl: *mut MDL;
     unsafe {
         Mdl = core::ptr::null_mut();
 
-        if (*Irp).__bindgen_anon_1.__bindgen_anon_1.MdlAddress.is_null() {
-            Mdl = (IoAllocateMdl(
-                (*Irp).__bindgen_anon_1.__bindgen_anon_1.AssociatedIrp.SystemBuffer,
+        if (*Irp).MdlAddress.is_null() {
+            Mdl = IoAllocateMdl(
+                (*Irp).UserBuffer,
                 BufferLength,
                 0,
                 0,
-                (Irp).cast(),
-            ).cast());
+                Irp,
+            );
             if Mdl.is_null() {
                 FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
             }
 
             let status = SafeMmProbeAndLockPages(
                 Mdl,
-                (*Irp).__bindgen_anon_4.__bindgen_anon_1.RequestorMode,
+                (*Irp).RequestorMode,
                 Operation,
             );
             if status != 0 {
-                IoFreeMdl((Mdl).cast());
-                (*Irp).__bindgen_anon_1.__bindgen_anon_1.MdlAddress = core::ptr::null_mut();
+                IoFreeMdl(Mdl);
+                (*Irp).MdlAddress = core::ptr::null_mut();
                 FatRaiseStatus(
                     IrpContext,
                     if FsRtlIsNtstatusExpected(status) != 0 {
@@ -1963,7 +1943,7 @@ pub unsafe extern "C" fn FatMapUserBuffer(
 #[no_mangle]
 pub unsafe extern "C" fn FatBufferUserBuffer(
     IrpContext: *mut IRP_CONTEXT,
-    Irp: *mut PIRP,
+    Irp: *mut IRP,
     BufferLength: u32,
 ) -> *mut u8 {
     let mut UserBuffer: *mut u8;
@@ -1974,19 +1954,19 @@ pub unsafe extern "C" fn FatBufferUserBuffer(
         return core::ptr::null_mut();
     }
 
-    if (*(*Irp)).AssociatedIrp.SystemBuffer == core::ptr::null_mut() {
-        UserBuffer = FatMapUserBuffer(IrpContext, (*Irp).cast()).cast();
+    if (*Irp).AssociatedIrp.SystemBuffer == core::ptr::null_mut() {
+        UserBuffer = FatMapUserBuffer(IrpContext, Irp).cast();
 
-        (*(*Irp)).AssociatedIrp.SystemBuffer = FsRtlAllocatePoolWithQuotaTag(
+        (*Irp).AssociatedIrp.SystemBuffer = FsRtlAllocatePoolWithQuotaTag(
             NonPagedPoolNx,
             BufferLength,
             TAG_IO_USER_BUFFER,
         );
 
-        (*(*Irp)).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
+        (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
 
         core::ptr::copy_nonoverlapping(
-            (*(*Irp)).AssociatedIrp.SystemBuffer as *mut u8,
+            (*Irp).AssociatedIrp.SystemBuffer as *const u8,
             UserBuffer,
             BufferLength as usize,
         );
@@ -2005,20 +1985,20 @@ pub unsafe extern "C" fn FatBufferUserBuffer(
         }
     }
 
-    return (*(*Irp)).AssociatedIrp.SystemBuffer as *mut u8;
+    return (*Irp).AssociatedIrp.SystemBuffer as *mut u8;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn FatToggleMediaEjectDisable(
-    IrpContext: *mut PIRP_CONTEXT,
+    IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     PreventRemoval: u8,
 ) -> i32 {
     let Irp: *mut IRP;
-    let mut SavedIrql: KIRQL;
+    let mut SavedIrql: KIRQL = 0;
     let mut Status: i32;
-    let mut SyncContext: FAT_SYNC_CONTEXT;
-    let mut Prevent: PREVENT_MEDIA_REMOVAL;
+    let mut SyncContext: FAT_SYNC_CONTEXT = core::mem::zeroed();
+    let mut Prevent: PREVENT_MEDIA_REMOVAL = core::mem::zeroed();
 
     let _ = &IrpContext;
 
@@ -2043,7 +2023,7 @@ pub unsafe extern "C" fn FatToggleMediaEjectDisable(
 
     Prevent.PreventMediaRemoval = PreventRemoval;
 
-    KeInitializeEvent(&mut SyncContext.Event, 0, 0);
+    KeInitializeEvent(core::ptr::addr_of_mut!(SyncContext.Event), 0, 0);
 
     Irp = (IoBuildDeviceIoControlRequest(
         IOCTL_DISK_MEDIA_REMOVAL,
@@ -2060,9 +2040,9 @@ pub unsafe extern "C" fn FatToggleMediaEjectDisable(
     if !Irp.is_null() {
         (*(Irp as *mut _IRP)).UserIosb = &mut (*(Irp as *mut _IRP)).IoStatus;
 
-        (IoSetCompletionRoutine).cast()(
+        IoSetCompletionRoutine(
             Irp,
-            FatSpecialSyncCompletionRoutine,
+            as_completion_routine(FatSpecialSyncCompletionRoutine),
             &mut SyncContext as *mut FAT_SYNC_CONTEXT as *mut c_void,
             1,
             1,
@@ -2073,9 +2053,9 @@ pub unsafe extern "C" fn FatToggleMediaEjectDisable(
 
         if Status == STATUS_PENDING {
             let _ = KeWaitForSingleObject(
-                &mut SyncContext.Event,
-                0,
-                1,
+                addr_of_mut!(SyncContext.Event) as *mut c_void,
+                0u32 /*Executive*/,
+                1i8 /*UserMode*/,
                 0,
                 core::ptr::null_mut(),
             );
@@ -2122,7 +2102,7 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
     (*IosbToUse).__bindgen_anon_1.Status = 0;
     (*IosbToUse).Information = 0;
 
-    KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0);
+    KeInitializeEvent(core::ptr::addr_of_mut!(Event), _EVENT_TYPE_NotificationEvent, 0);
 
     Irp = IoBuildDeviceIoControlRequest(
         IoControlCode,
@@ -2132,7 +2112,7 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
         OutputBuffer,
         OutputBufferLength,
         InternalDeviceIoControl,
-        &mut Event,
+        core::ptr::addr_of_mut!(Event),
         IosbToUse,
     );
 
@@ -2149,9 +2129,9 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
 
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event,
+            addr_of_mut!(Event) as *mut c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             0,
             core::ptr::null_mut(),
         );
@@ -2162,12 +2142,13 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatBuildZeroMdl(
-    IrpContext: *mut PIRP_CONTEXT,
+    IrpContext: *mut IRP_CONTEXT,
     Length: u32,
 ) -> PMDL {
+    let mut Length = Length;
     let mut zero_mdl: PMDL;
     let mut saved_byte_count: u32;
-    let mut page: *mut u32; // PFN_NUMBER is ULong
+    let mut page: *mut ULONG_PTR; // PFN_NUMBER = ULONG_PTR
     let mut i: u32;
 
     // UNREFERENCED_PARAMETER(IrpContext);
@@ -2190,7 +2171,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 
         // Fallback by half and round down to a page multiple.
         debug_assert!(
-            (*IrpContext).Vcb.Bpb.BytesPerSector <= PAGE_SIZE as u16
+            (*(*IrpContext).Vcb).Bpb.BytesPerSector <= PAGE_SIZE as u16
         );
         Length = BlockAlignTruncate(Length / 2, (PAGE_SIZE) as u32);
         if Length < (PAGE_SIZE) as u32 {
@@ -2222,9 +2203,9 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
     (*zero_mdl).StartVa = core::ptr::null_mut();
     (*zero_mdl).ByteCount = saved_byte_count;
 
-    page = MmGetMdlPfnArray(zero_mdl) as *mut u32;
+    page = MmGetMdlPfnArray(zero_mdl);
     i = 1;
-    let span = ADDRESS_AND_SIZE_TO_SPAN_PAGES(0, saved_byte_count);
+    let span = ADDRESS_AND_SIZE_TO_SPAN_PAGES(core::ptr::null_mut(), saved_byte_count as usize);
     while i < (span) as u32 {
         *page.add(i as usize) = *page;
         i += 1;
@@ -3946,7 +3927,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //     //  verify logic.
 //     //
 //
-//     if (Vcb->VerifyThread == KeGetCurrentThread()) {
+//     if (Vcb->VerifyThread == KeGetCurrentThread() as *mut _) {
 //
 //         SetFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY );
 //     }
@@ -4285,7 +4266,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //     //  verify logic.
 //     //
 //
-//     if (Vcb->VerifyThread == KeGetCurrentThread()) {
+//     if (Vcb->VerifyThread == KeGetCurrentThread() as *mut _) {
 //
 //         SetFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY );
 //     }
@@ -4542,7 +4523,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //     //  verify logic.
 //     //
 //
-//     if (Vcb->VerifyThread == KeGetCurrentThread()) {
+//     if (Vcb->VerifyThread == KeGetCurrentThread() as *mut _) {
 //
 //         SetFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY );
 //     }

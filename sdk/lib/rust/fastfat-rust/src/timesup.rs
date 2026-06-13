@@ -182,9 +182,9 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
         );
         if 0 == 0 {
             RtlAssert(
-                b"0\0" as *const u8 as *const core::ffi::c_void,
+                b"0\0" as *const u8 as *mut core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
-                    as *const u8 as *const core::ffi::c_void,
+                    as *const u8 as *mut core::ffi::c_void,
                 262u32,
                 core::ptr::null_mut::<u8>() as *mut core::ffi::c_void,
             );
@@ -243,9 +243,9 @@ pub unsafe extern "C" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> FAT_T
         );
         if 0 == 0 {
             RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *const core::ffi::c_void,
+                b"0\0".as_ptr() as *mut core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
-                    .as_ptr() as *const i8 as *const core::ffi::c_void,
+                    .as_ptr() as *mut core::ffi::c_void,
                 340,
                 core::ptr::null_mut::<i8>() as *mut core::ffi::c_void,
             );

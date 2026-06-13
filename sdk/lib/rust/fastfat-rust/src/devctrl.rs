@@ -3,12 +3,13 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoIs32bitProcess, IoSkipCurrentIrpStackLocation, KEVENT, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, KEVENT, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::fatdata::{FatExceptionFilter};
 use crate::types::{CCB, FCB, IRP_CONTEXT, PIRP_CONTEXT, PVOLUME_DEVICE_OBJECT, VCB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
+use crate::ddk_shims::{IO_COMPLETION_ROUTINE, IoIs32bitProcess};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{STATUS_MORE_PROCESSING_REQUIRED};
 
@@ -127,8 +128,8 @@ const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 6;
 const UserVolumeOpen: u32 = 0;
 const FlushWithoutPurge: u32 = 0;
 const STATUS_PENDING: i32 = 0x103;
-const STATUS_INVALID_PARAMETER: i32 = 0xC000000D;
-const STATUS_ACCESS_DENIED: i32 = 0xC0000022;
+const STATUS_INVALID_PARAMETER: i32 = 0xC000000D_u32 as i32;
+const STATUS_ACCESS_DENIED: i32 = 0xC0000022_u32 as i32;
 const DEBUG_TRACE_DEVCTRL: u32 = 0x00010000;
 const FO_FILE_MODIFIED: u32 = 0x1000;
 const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x00040000;
@@ -207,11 +208,12 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
+    let mut Irp = Irp;
     unsafe {
         // PAGED_CODE();
 
         let mut status: NTSTATUS = 0;
-        let irp_sp: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+        let mut irp_sp: *mut IO_STACK_LOCATION = core::ptr::null_mut();
         let mut wait_event: KEVENT = core::mem::zeroed();
         let mut completion_context: *mut core::ffi::c_void = core::ptr::null_mut();
         let mut vcb: *mut VCB = core::ptr::null_mut();
@@ -254,7 +256,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
                 if (FlagOn((*(*irp_sp).FileObject).Flags, FO_FILE_MODIFIED) == 0 || FlagOn((*ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT) == 0) && !((*Irp).AssociatedIrp.SystemBuffer).is_null() {
                     let io_control_code = ((*irp_sp).Parameters).DeviceIoControl.IoControlCode;
                     let input_buffer_length = ((*irp_sp).Parameters).DeviceIoControl.InputBufferLength;
-                    if cfg!(all(target_pointer_width = "64", feature = "BUILD_WOW64_ENABLED")) && ntkrnl_sys::ddk::IoIs32bitProcess(Irp) != 0 {
+                    if cfg!(all(target_pointer_width = "64", feature = "BUILD_WOW64_ENABLED")) && IoIs32bitProcess(Irp) != 0 {
                         if io_control_code == IOCTL_SCSI_PASS_THROUGH || io_control_code == IOCTL_SCSI_PASS_THROUGH_DIRECT {
                             if input_buffer_length as usize >= core::mem::size_of::<SCSI_PASS_THROUGH32>() {
                                 let spt = (*Irp).AssociatedIrp.SystemBuffer as *mut SCSI_PASS_THROUGH32;

@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CcPurgeCacheSection, DRIVER_DISPATCH, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeClearEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
+use ntkrnl_sys::ddk::{CcPurgeCacheSection, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeClearEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
 use core::ffi::c_void;
 use core::mem::offset_of;
 // resolve_imports.py: explicit kernel/private-type imports
@@ -58,7 +58,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
     // Use `const Dbg: u32 = 0;` for the trace flag; the original was DEBUG_TRACE_SHUTDOWN.
     const Dbg: u32 = 0;
 
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn FatCommonShutdown(
                         KeWaitForSingleObject(
                             &mut event as *mut KEVENT as *mut c_void,
                             _KWAIT_REASON_Executive,
-                            0i32,
+                            0i8,
                             0, // FALSE
                             core::ptr::null_mut(),
                         );

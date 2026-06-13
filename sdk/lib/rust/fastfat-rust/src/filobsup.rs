@@ -305,8 +305,9 @@ pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
     Fcb: *mut FCB,
     Flags: u32,
 ) {
+    let mut Fcb = Fcb;
     let OriginalFcb = Fcb;
-    let NextFcb: *mut FCB;
+    let mut NextFcb: *mut FCB = core::ptr::null_mut();
 
     PAGED_CODE();
 
@@ -384,7 +385,7 @@ pub unsafe extern "C" fn FatForceCacheMiss(
     //  going up the tree, not down.
     //
 
-    let queue_ptr: *mut LIST_ENTRY;
+    let mut queue_ptr: *mut LIST_ENTRY = core::ptr::null_mut();
 
     if NodeType((Fcb).cast()) != FAT_NTC_FCB
         && !IsListEmpty(

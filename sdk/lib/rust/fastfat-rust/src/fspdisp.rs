@@ -56,7 +56,7 @@ const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
 pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     // PAGED_CODE();
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
-    let irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
+    let mut irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
     let mut irp: *mut IRP = (*irp_context).OriginatingIrp;
     let mut irp_sp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
     let mut vcb_deleted: u8 = 0;

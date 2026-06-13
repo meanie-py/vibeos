@@ -7,7 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DRIVER_INITIALIZE, DRIVER_UNLOAD, ERESOURCE, ExDeleteNPagedLookasideList, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeNPagedLookasideList, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, KeInitializeEvent, KeInitializeSpinLock, KeyValueFullInformation, MmQuerySystemSize, _OBJECT_ATTRIBUTES, PDRIVER_DISPATCH, PDRIVER_OBJECT, PKEY_VALUE_FULL_INFORMATION, PUNICODE_STRING, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent};
+use ntkrnl_sys::ddk::{ERESOURCE, ExDeleteNPagedLookasideList, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeNPagedLookasideList, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, KeInitializeEvent, KeInitializeSpinLock, MmQuerySystemSize, _OBJECT_ATTRIBUTES, PDRIVER_DISPATCH, PDRIVER_OBJECT, PKEY_VALUE_FULL_INFORMATION, PUNICODE_STRING, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cleanup::{FatFsdCleanup};
@@ -15,9 +15,9 @@ use crate::close::{FatFsdClose};
 use crate::create::{FatFsdCreate};
 use crate::devctrl::{FatFsdDeviceControl};
 use crate::dirctrl::{FatFsdDirectoryControl};
-use crate::ea::{FatFsdSetEa};
+use crate::ea::{FatFsdSetEa, FatFsdQueryEa};
 use crate::fatdata::{FatFastIoCheckIfPossible, FatFastQueryBasicInfo, FatFastQueryNetworkOpenInfo, FatFastQueryStdInfo};
-use crate::fileinfo::{FatFsdSetInformation};
+use crate::fileinfo::{FatFsdSetInformation, FatFsdQueryInformation};
 use crate::flush::{FatFsdFlushBuffers};
 use crate::lockctrl::{FatFastLock, FatFastUnlockAll, FatFastUnlockAllByKey, FatFastUnlockSingle, FatFsdLockControl};
 use crate::pnp::{FatFsdPnp};
@@ -25,8 +25,9 @@ use crate::read::{FatFsdRead};
 use crate::resrcsup::{FatAcquireFcbForLazyWrite, FatAcquireFcbForReadAhead, FatAcquireForCcFlush, FatFilterCallbackAcquireForCreateSection, FatNoOpAcquire, FatNoOpRelease, FatReleaseFcbFromLazyWrite, FatReleaseFcbFromReadAhead, FatReleaseForCcFlush};
 use crate::shutdown::{FatFsdShutdown};
 use crate::types::{FAT_DATA, FatCdromFileSystemDeviceObject, FatCloseContextSList, FatCloseQueueMutex, FatData, FatDiskFileSystemDeviceObject, FatEResourceLookasideList, FatFastIoDispatch, FatIrpContextLookasideList, FatMaxDelayedCloseCount, FatNonPagedFcbLookasideList, FatReserveEvent, IRP_CONTEXT, NODE_BYTE_SIZE, NON_PAGED_FCB, PVOLUME_DEVICE_OBJECT};
-use crate::volinfo::{FatFsdSetVolumeInformation};
+use crate::volinfo::{FatFsdSetVolumeInformation, FatFsdQueryVolumeInformation};
 use crate::write::{FatFsdWrite};
+use crate::fsctrl::{FatFsdFileSystemControl};
 use ntkrnl_sys::ddk::{KEY_VALUE_FULL_INFORMATION, PACQUIRE_FOR_LAZY_WRITE, PACQUIRE_FOR_READ_AHEAD, PDEVICE_OBJECT, PFAST_IO_ACQUIRE_FOR_CCFLUSH, PFAST_IO_CHECK_IF_POSSIBLE, PFAST_IO_LOCK, PFAST_IO_MDL_READ, PFAST_IO_MDL_READ_COMPLETE, PFAST_IO_MDL_WRITE_COMPLETE, PFAST_IO_PREPARE_MDL_WRITE, PFAST_IO_QUERY_BASIC_INFO, PFAST_IO_QUERY_NETWORK_OPEN_INFO, PFAST_IO_QUERY_STANDARD_INFO, PFAST_IO_READ, PFAST_IO_RELEASE_FOR_CCFLUSH, PFAST_IO_UNLOCK_ALL, PFAST_IO_UNLOCK_ALL_BY_KEY, PFAST_IO_UNLOCK_SINGLE, PFAST_IO_WRITE, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PFS_FILTER_CALLBACK, PFS_FILTER_CALLBACK_DATA, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PMDL, PRELEASE_FROM_LAZY_WRITE, PRELEASE_FROM_READ_AHEAD, _DRIVER_OBJECT, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FAT_MAX_DELAYED_CLOSES, FAT_NTC_DATA_HEADER, IRP_MJ_DIRECTORY_CONTROL, IRP_MJ_QUERY_EA, IRP_MJ_QUERY_VOLUME_INFORMATION, IRP_MJ_SET_EA, IRP_MJ_SET_VOLUME_INFORMATION, TAG_ERESOURCE, TAG_FCB_NONPAGED, TAG_IRP_CONTEXT};
@@ -34,19 +35,38 @@ use crate::glue::{FAT_MAX_DELAYED_CLOSES, FAT_NTC_DATA_HEADER, IRP_MJ_DIRECTORY_
 use crate::ddk_shims::{FsRtlCopyRead, FsRtlCopyWrite, FsRtlMdlReadCompleteDev, FsRtlMdlReadDev, FsRtlMdlWriteCompleteDev, FsRtlPrepareMdlWriteDev, FsRtlRegisterFileSystemFilterCallbacks};
 
 extern "C" {
-    fn ExInitializeSListHead(SListHead: *mut SLIST_HEADER);
     static mut KeNumberProcessors: ULONG;
-}
-extern "C" {
-    fn ObfDereferenceObject(p: *mut core::ffi::c_void);
     fn DbgPrint(format: *const u8, ...) -> i32;
-    fn __int2c();
+}
+extern "system" {
     fn ZwOpenKey( KeyHandle: *mut *mut core::ffi::c_void, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> i32;
     fn ZwQueryValueKey( KeyHandle: *mut core::ffi::c_void, ValueName: *mut _UNICODE_STRING, KeyValueInformationClass: u32, KeyValueInformation: *mut core::ffi::c_void, Length: u32, ResultLength: *mut u32, ) -> i32;
     fn ExAllocatePoolWithTag( PoolType: u32, NumberOfBytes: usize, Tag: u32, ) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
     fn ZwClose(Handle: *mut core::ffi::c_void);
     fn RtlCompareMemory( Buffer1: *const core::ffi::c_void, Buffer2: *const core::ffi::c_void, Length: usize, ) -> usize;
+}
+// ObfDereferenceObject is fastcall on i386, C on amd64/arm64
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ObfDereferenceObject(p: *mut core::ffi::c_void) -> isize;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ObfDereferenceObject(p: *mut core::ffi::c_void) -> isize;
+}
+// ExInitializeSListHead is FORCEINLINE — implement inline
+#[inline]
+unsafe fn ExInitializeSListHead(slist_head: *mut SLIST_HEADER) {
+    core::ptr::write_bytes(slist_head as *mut u8, 0, core::mem::size_of::<SLIST_HEADER>());
+}
+// __int2c is a compiler intrinsic (INT 0x2C) — implement inline
+#[inline(never)]
+unsafe fn __int2c() {
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("int 0x2c", options(nostack, nomem));
+    #[cfg(not(target_arch = "x86"))]
+    core::hint::unreachable_unchecked();
 }
 
 // ---- file-scope preamble (translated) ----
@@ -107,12 +127,14 @@ const KEY_VALUE_FULL_INFORMATION_CLASS_FULL: u32 = 1;
 
 const FILE_DEVICE_DISK_FILE_SYSTEM: ULONG = 0x0008;
 const FILE_DEVICE_CD_ROM_FILE_SYSTEM: ULONG = 0x0003;
+static FAT_DISK_DEVICE_NAME: [u16; 5] = [0x5C, 0x46, 0x61, 0x74, 0x00]; // L"\\Fat"
+static FAT_CDROM_DEVICE_NAME: [u16; 10] = [0x5C, 0x46, 0x61, 0x74, 0x43, 0x64, 0x72, 0x6F, 0x6D, 0x00]; // L"\\FatCdrom"
 const NonPagedPoolNx: ULONG = 512;
 const POOL_NX_ALLOCATION: ULONG = 512;
 const POOL_RAISE_IF_ALLOCATION_FAILURE: ULONG = 0x10;
 const PAGE_SIZE: SIZE_T = 0x1000;
 #[no_mangle]
-pub unsafe extern "C" fn DriverEntry(
+pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
@@ -144,7 +166,7 @@ pub unsafe extern "C" fn DriverEntry(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut Value: ULONG;
+    let mut Value: ULONG = 0;
 
     // UNREFERENCED_PARAMETER(RegistryPath)
     let _ = RegistryPath;
@@ -152,7 +174,7 @@ pub unsafe extern "C" fn DriverEntry(
     // Create device object for disks
     RtlInitUnicodeString(
         &mut UnicodeString,
-        &raw const core::mem::transmute::<[u8; 10], [u16; 5]>(*b"\\\0F\0a\0t\0\0\0") as *const WCHAR,
+        FAT_DISK_DEVICE_NAME.as_ptr(),
     );
     Status = IoCreateDevice(
         DriverObject,
@@ -170,7 +192,7 @@ pub unsafe extern "C" fn DriverEntry(
     // Create device object for cdroms
     RtlInitUnicodeString(
         &mut UnicodeString,
-        &raw const core::mem::transmute::<[u8; 20], [u16; 10]>(*b"\\\0F\0a\0t\0C\0d\0r\0o\0m\0\0\0") as *const WCHAR,
+        FAT_CDROM_DEVICE_NAME.as_ptr(),
     );
     Status = IoCreateDevice(
         DriverObject,
@@ -187,80 +209,45 @@ pub unsafe extern "C" fn DriverEntry(
     }
 
     // Driver unload and dispatch setup
-    (*DriverObject).DriverUnload = Some(FatUnload as unsafe extern "C" fn(PDRIVER_OBJECT) -> ());
+    (*DriverObject).DriverUnload =
+        core::mem::transmute::<*const (), ntkrnl_sys::ddk::PDRIVER_UNLOAD>(FatUnload as *const ());
 
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdCreate as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdClose as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdRead as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdWrite as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_INFORMATION as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdQueryInformation as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_SET_INFORMATION as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdSetInformation as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_EA as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdQueryEa as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_SET_EA as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdSetEa as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_FLUSH_BUFFERS as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdFlushBuffers as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdQueryVolumeInformation as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdSetVolumeInformation as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdCleanup as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_DIRECTORY_CONTROL as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdDirectoryControl as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdFileSystemControl as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_LOCK_CONTROL as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdLockControl as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdDeviceControl as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdShutdown as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
-    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = core::mem::transmute::<
-        Option<unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS>,
-        PDRIVER_DISPATCH,
-    >(Some(FatFsdPnp as unsafe extern "C" fn(PVOLUME_DEVICE_OBJECT, PIRP) -> NTSTATUS));
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdCreate as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdClose as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdRead as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdWrite as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_INFORMATION as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdQueryInformation as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_SET_INFORMATION as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdSetInformation as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_EA as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdQueryEa as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_SET_EA as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdSetEa as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_FLUSH_BUFFERS as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdFlushBuffers as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdQueryVolumeInformation as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdSetVolumeInformation as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdCleanup as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_DIRECTORY_CONTROL as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdDirectoryControl as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdFileSystemControl as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_LOCK_CONTROL as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdLockControl as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdDeviceControl as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdShutdown as *const ());
+    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] =
+        core::mem::transmute::<*const (), PDRIVER_DISPATCH>(FatFsdPnp as *const ());
 
     // Fast I/O dispatch
     (*DriverObject).FastIoDispatch = core::ptr::addr_of_mut!(FatFastIoDispatch);
@@ -271,158 +258,38 @@ pub unsafe extern "C" fn DriverEntry(
     );
     FatFastIoDispatch.SizeOfFastIoDispatch = core::mem::size_of::<FAST_IO_DISPATCH>() as ULONG;
 
-    FatFastIoDispatch.FastIoCheckIfPossible = Some(
-        FatFastIoCheckIfPossible
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                ULONG,
-                BOOLEAN,
-                ULONG,
-                BOOLEAN,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_CHECK_IF_POSSIBLE;
-    FatFastIoDispatch.FastIoRead = Some(
-        FsRtlCopyRead
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                ULONG,
-                BOOLEAN,
-                ULONG,
-                PVOID,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_READ;
-    FatFastIoDispatch.FastIoWrite = Some(
-        FsRtlCopyWrite
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                ULONG,
-                BOOLEAN,
-                ULONG,
-                PVOID,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_WRITE;
-    FatFastIoDispatch.FastIoQueryBasicInfo = Some(
-        FatFastQueryBasicInfo
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                BOOLEAN,
-                PFILE_BASIC_INFORMATION,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_QUERY_BASIC_INFO;
-    FatFastIoDispatch.FastIoQueryStandardInfo = Some(
-        FatFastQueryStdInfo
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                BOOLEAN,
-                PFILE_STANDARD_INFORMATION,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_QUERY_STANDARD_INFO;
-    FatFastIoDispatch.FastIoLock = Some(
-        FatFastLock
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                PLARGE_INTEGER,
-                PEPROCESS,
-                ULONG,
-                BOOLEAN,
-                BOOLEAN,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_LOCK;
-    FatFastIoDispatch.FastIoUnlockSingle = Some(
-        FatFastUnlockSingle
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                PLARGE_INTEGER,
-                PEPROCESS,
-                ULONG,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_UNLOCK_SINGLE;
-    FatFastIoDispatch.FastIoUnlockAll = Some(
-        FatFastUnlockAll
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PEPROCESS,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_UNLOCK_ALL;
-    FatFastIoDispatch.FastIoUnlockAllByKey = Some(
-        FatFastUnlockAllByKey
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PVOID,
-                ULONG,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_UNLOCK_ALL_BY_KEY;
-    FatFastIoDispatch.FastIoQueryNetworkOpenInfo = Some(
-        FatFastQueryNetworkOpenInfo
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                BOOLEAN,
-                PFILE_NETWORK_OPEN_INFORMATION,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_QUERY_NETWORK_OPEN_INFO;
-    FatFastIoDispatch.AcquireForCcFlush = Some(
-        FatAcquireForCcFlush as unsafe extern "C" fn(PFILE_OBJECT, PDEVICE_OBJECT) -> NTSTATUS,
-    ) as PFAST_IO_ACQUIRE_FOR_CCFLUSH;
-    FatFastIoDispatch.ReleaseForCcFlush = Some(
-        FatReleaseForCcFlush as unsafe extern "C" fn(PFILE_OBJECT, PDEVICE_OBJECT) -> NTSTATUS,
-    ) as PFAST_IO_RELEASE_FOR_CCFLUSH;
-    FatFastIoDispatch.MdlRead = Some(
-        FsRtlMdlReadDev
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                ULONG,
-                ULONG,
-                *mut PMDL,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_MDL_READ;
-    FatFastIoDispatch.MdlReadComplete = Some(
-        FsRtlMdlReadCompleteDev
-            as unsafe extern "C" fn(PFILE_OBJECT, PMDL, PDEVICE_OBJECT) -> BOOLEAN,
-    ) as PFAST_IO_MDL_READ_COMPLETE;
-    FatFastIoDispatch.PrepareMdlWrite = Some(
-        FsRtlPrepareMdlWriteDev
-            as unsafe extern "C" fn(
-                PFILE_OBJECT,
-                PLARGE_INTEGER,
-                ULONG,
-                ULONG,
-                *mut PMDL,
-                PIO_STATUS_BLOCK,
-                PDEVICE_OBJECT,
-            ) -> BOOLEAN,
-    ) as PFAST_IO_PREPARE_MDL_WRITE;
-    FatFastIoDispatch.MdlWriteComplete = Some(
-        FsRtlMdlWriteCompleteDev
-            as unsafe extern "C" fn(PFILE_OBJECT, PLARGE_INTEGER, PMDL, PDEVICE_OBJECT) -> BOOLEAN,
-    ) as PFAST_IO_MDL_WRITE_COMPLETE;
+    FatFastIoDispatch.FastIoCheckIfPossible =
+        core::mem::transmute::<*const (), PFAST_IO_CHECK_IF_POSSIBLE>(FatFastIoCheckIfPossible as *const ());
+    FatFastIoDispatch.FastIoRead =
+        core::mem::transmute::<*const (), PFAST_IO_READ>(FsRtlCopyRead as *const ());
+    FatFastIoDispatch.FastIoWrite =
+        core::mem::transmute::<*const (), PFAST_IO_WRITE>(FsRtlCopyWrite as *const ());
+    FatFastIoDispatch.FastIoQueryBasicInfo =
+        core::mem::transmute::<*const (), PFAST_IO_QUERY_BASIC_INFO>(FatFastQueryBasicInfo as *const ());
+    FatFastIoDispatch.FastIoQueryStandardInfo =
+        core::mem::transmute::<*const (), PFAST_IO_QUERY_STANDARD_INFO>(FatFastQueryStdInfo as *const ());
+    FatFastIoDispatch.FastIoLock =
+        core::mem::transmute::<*const (), PFAST_IO_LOCK>(FatFastLock as *const ());
+    FatFastIoDispatch.FastIoUnlockSingle =
+        core::mem::transmute::<*const (), PFAST_IO_UNLOCK_SINGLE>(FatFastUnlockSingle as *const ());
+    FatFastIoDispatch.FastIoUnlockAll =
+        core::mem::transmute::<*const (), PFAST_IO_UNLOCK_ALL>(FatFastUnlockAll as *const ());
+    FatFastIoDispatch.FastIoUnlockAllByKey =
+        core::mem::transmute::<*const (), PFAST_IO_UNLOCK_ALL_BY_KEY>(FatFastUnlockAllByKey as *const ());
+    FatFastIoDispatch.FastIoQueryNetworkOpenInfo =
+        core::mem::transmute::<*const (), PFAST_IO_QUERY_NETWORK_OPEN_INFO>(FatFastQueryNetworkOpenInfo as *const ());
+    FatFastIoDispatch.AcquireForCcFlush =
+        core::mem::transmute::<*const (), PFAST_IO_ACQUIRE_FOR_CCFLUSH>(FatAcquireForCcFlush as *const ());
+    FatFastIoDispatch.ReleaseForCcFlush =
+        core::mem::transmute::<*const (), PFAST_IO_RELEASE_FOR_CCFLUSH>(FatReleaseForCcFlush as *const ());
+    FatFastIoDispatch.MdlRead =
+        core::mem::transmute::<*const (), PFAST_IO_MDL_READ>(FsRtlMdlReadDev as *const ());
+    FatFastIoDispatch.MdlReadComplete =
+        core::mem::transmute::<*const (), PFAST_IO_MDL_READ_COMPLETE>(FsRtlMdlReadCompleteDev as *const ());
+    FatFastIoDispatch.PrepareMdlWrite =
+        core::mem::transmute::<*const (), PFAST_IO_PREPARE_MDL_WRITE>(FsRtlPrepareMdlWriteDev as *const ());
+    FatFastIoDispatch.MdlWriteComplete =
+        core::mem::transmute::<*const (), PFAST_IO_MDL_WRITE_COMPLETE>(FsRtlMdlWriteCompleteDev as *const ());
 
     // Initialize filter callbacks
     core::ptr::write_bytes(
@@ -431,10 +298,8 @@ pub unsafe extern "C" fn DriverEntry(
         core::mem::size_of::<FS_FILTER_CALLBACKS>(),
     );
     FilterCallbacks.SizeOfFsFilterCallbacks = core::mem::size_of::<FS_FILTER_CALLBACKS>() as ULONG;
-    FilterCallbacks.PreAcquireForSectionSynchronization = Some(
-        FatFilterCallbackAcquireForCreateSection
-            as unsafe extern "C" fn(PFS_FILTER_CALLBACK_DATA, *mut PVOID) -> NTSTATUS,
-    ) as PFS_FILTER_CALLBACK;
+    FilterCallbacks.PreAcquireForSectionSynchronization =
+        core::mem::transmute::<*const (), PFS_FILTER_CALLBACK>(FatFilterCallbackAcquireForCreateSection as *const ());
 
     Status = FsRtlRegisterFileSystemFilterCallbacks(DriverObject as *mut _DRIVER_OBJECT, &mut FilterCallbacks);
     if !NT_SUCCESS(Status) {
@@ -491,90 +356,82 @@ pub unsafe extern "C" fn DriverEntry(
         }
     }
 
-    FatData.CacheManagerCallbacks.AcquireForLazyWrite = Some(
-        FatAcquireFcbForLazyWrite as unsafe extern "C" fn(PVOID, BOOLEAN) -> BOOLEAN,
-    ) as PACQUIRE_FOR_LAZY_WRITE;
-    FatData.CacheManagerCallbacks.ReleaseFromLazyWrite = Some(
-        FatReleaseFcbFromLazyWrite as unsafe extern "C" fn(PVOID) -> (),
-    ) as PRELEASE_FROM_LAZY_WRITE;
-    FatData.CacheManagerCallbacks.AcquireForReadAhead = Some(
-        FatAcquireFcbForReadAhead as unsafe extern "C" fn(PVOID, BOOLEAN) -> BOOLEAN,
-    ) as PACQUIRE_FOR_READ_AHEAD;
-    FatData.CacheManagerCallbacks.ReleaseFromReadAhead = Some(
-        FatReleaseFcbFromReadAhead as unsafe extern "C" fn(PVOID) -> (),
-    ) as PRELEASE_FROM_READ_AHEAD;
+    FatData.CacheManagerCallbacks.AcquireForLazyWrite =
+        core::mem::transmute::<*const (), PACQUIRE_FOR_LAZY_WRITE>(FatAcquireFcbForLazyWrite as *const ());
+    FatData.CacheManagerCallbacks.ReleaseFromLazyWrite =
+        core::mem::transmute::<*const (), PRELEASE_FROM_LAZY_WRITE>(FatReleaseFcbFromLazyWrite as *const ());
+    FatData.CacheManagerCallbacks.AcquireForReadAhead =
+        core::mem::transmute::<*const (), PACQUIRE_FOR_READ_AHEAD>(FatAcquireFcbForReadAhead as *const ());
+    FatData.CacheManagerCallbacks.ReleaseFromReadAhead =
+        core::mem::transmute::<*const (), PRELEASE_FROM_READ_AHEAD>(FatReleaseFcbFromReadAhead as *const ());
 
-    FatData.CacheManagerNoOpCallbacks.AcquireForLazyWrite = Some(
-        FatNoOpAcquire as unsafe extern "C" fn(PVOID, BOOLEAN) -> BOOLEAN,
-    ) as PACQUIRE_FOR_LAZY_WRITE;
-    FatData.CacheManagerNoOpCallbacks.ReleaseFromLazyWrite = Some(
-        FatNoOpRelease as unsafe extern "C" fn(PVOID) -> (),
-    ) as PRELEASE_FROM_LAZY_WRITE;
-    FatData.CacheManagerNoOpCallbacks.AcquireForReadAhead = Some(
-        FatNoOpAcquire as unsafe extern "C" fn(PVOID, BOOLEAN) -> BOOLEAN,
-    ) as PACQUIRE_FOR_READ_AHEAD;
-    FatData.CacheManagerNoOpCallbacks.ReleaseFromReadAhead = Some(
-        FatNoOpRelease as unsafe extern "C" fn(PVOID) -> (),
-    ) as PRELEASE_FROM_READ_AHEAD;
+    FatData.CacheManagerNoOpCallbacks.AcquireForLazyWrite =
+        core::mem::transmute::<*const (), PACQUIRE_FOR_LAZY_WRITE>(FatNoOpAcquire as *const ());
+    FatData.CacheManagerNoOpCallbacks.ReleaseFromLazyWrite =
+        core::mem::transmute::<*const (), PRELEASE_FROM_LAZY_WRITE>(FatNoOpRelease as *const ());
+    FatData.CacheManagerNoOpCallbacks.AcquireForReadAhead =
+        core::mem::transmute::<*const (), PACQUIRE_FOR_READ_AHEAD>(FatNoOpAcquire as *const ());
+    FatData.CacheManagerNoOpCallbacks.ReleaseFromReadAhead =
+        core::mem::transmute::<*const (), PRELEASE_FROM_READ_AHEAD>(FatNoOpRelease as *const ());
 
     FatData.OurProcess = (PsGetCurrentProcess()).cast();
     FatData.NumberProcessors = KeNumberProcessors as ULONG;
 
     // Registry: ChicagoMode
-    ValueName.Buffer = core::ptr::addr_of!(COMPATIBILITY_MODE_VALUE_NAME) as PWCH;
+    ValueName.Buffer = COMPATIBILITY_MODE_VALUE_NAME.as_ptr() as PWCH;
     ValueName.Length = (core::mem::size_of::<[u16; 16]>().wrapping_sub(core::mem::size_of::<WCHAR>())) as USHORT;
     ValueName.MaximumLength = core::mem::size_of::<[u16; 16]>() as USHORT;
 
     Status = FatGetCompatibilityModeValue(&mut ValueName, &mut Value);
     if NT_SUCCESS(Status) && (Value & 1) != 0 {
-        FatData.ChicagoMode = 0; // FALSE
+        FatData.set_ChicagoMode(0); // FALSE
     } else {
-        FatData.ChicagoMode = 1; // TRUE
+        FatData.set_ChicagoMode(1); // TRUE
     }
 
     // Registry: CodePageInvariance
-    ValueName.Buffer = core::ptr::addr_of!(CODE_PAGE_INVARIANCE_VALUE_NAME) as PWCH;
+    ValueName.Buffer = CODE_PAGE_INVARIANCE_VALUE_NAME.as_ptr() as PWCH;
     ValueName.Length = (core::mem::size_of::<[u16; 29]>().wrapping_sub(core::mem::size_of::<WCHAR>())) as USHORT;
     ValueName.MaximumLength = core::mem::size_of::<[u16; 29]>() as USHORT;
 
     Status = FatGetCompatibilityModeValue(&mut ValueName, &mut Value);
     if NT_SUCCESS(Status) && (Value & 1) != 0 {
-        FatData.CodePageInvariant = 0; // FALSE
+        FatData.set_CodePageInvariant(0); // FALSE
     } else {
-        FatData.CodePageInvariant = 1; // TRUE
+        FatData.set_CodePageInvariant(1); // TRUE
     }
 
     ExInitializeResourceLite(&mut FatData.Resource);
 
     ExInitializeNPagedLookasideList(
         &mut FatIrpContextLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        None,
+        None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<IRP_CONTEXT>() as SIZE_T,
+        core::mem::size_of::<IRP_CONTEXT>() as _,
         TAG_IRP_CONTEXT as ULONG,
         MaxDepth,
     );
     ExInitializeNPagedLookasideList(
         &mut FatNonPagedFcbLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        None,
+        None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<NON_PAGED_FCB>() as SIZE_T,
+        core::mem::size_of::<NON_PAGED_FCB>() as _,
         TAG_FCB_NONPAGED as ULONG,
         MaxDepth,
     );
     ExInitializeNPagedLookasideList(
         &mut FatEResourceLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        None,
+        None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<ERESOURCE>() as SIZE_T,
+        core::mem::size_of::<ERESOURCE>() as _,
         TAG_ERESOURCE as ULONG,
         MaxDepth,
     );
 
-    ExInitializeSListHead(&mut FatCloseContextSList);
+    ExInitializeSListHead(core::ptr::addr_of_mut!(FatCloseContextSList) as *mut SLIST_HEADER);
     ExInitializeFastMutex(&mut FatCloseQueueMutex);
     KeInitializeEvent(&mut FatReserveEvent, _EVENT_TYPE_SynchronizationEvent, 1); // TRUE
 
@@ -583,7 +440,7 @@ pub unsafe extern "C" fn DriverEntry(
     IoRegisterFileSystem(FatCdromFileSystemDeviceObject);
     ObReferenceObject(FatCdromFileSystemDeviceObject as PVOID);
 
-    FatData.FujitsuFMR = FatIsFujitsuFMR() as BOOLEAN;
+    FatData.set_FujitsuFMR(FatIsFujitsuFMR() as BOOLEAN);
 
     STATUS_SUCCESS
 }
@@ -653,7 +510,7 @@ pub unsafe extern "C" fn FatGetCompatibilityModeValue(
         Status = ZwQueryValueKey(
             Handle,
             ValueName,
-            KeyValueFullInformation,
+            KEY_VALUE_FULL_INFORMATION_CLASS_FULL,
             KeyValueInformation as *mut core::ffi::c_void,
             RequestLength,
             &raw mut ResultLength,
@@ -734,7 +591,7 @@ pub unsafe extern "C" fn FatIsFujitsuFMR() -> i32 {
     let mut KeyValueInformation: *mut KEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
 
     // L"\\Registry\\Machine\\Hardware\\DESCRIPTION\\System"
-    let reg_hw_desc: [u16; 47] = [
+    let reg_hw_desc: [u16; 46] = [
         0x5C, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x79,
         0x5C, 0x4D, 0x61, 0x63, 0x68, 0x69, 0x6E, 0x65,
         0x5C, 0x48, 0x61, 0x72, 0x64, 0x77, 0x61, 0x72, 0x65,

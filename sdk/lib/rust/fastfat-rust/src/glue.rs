@@ -57,17 +57,17 @@ pub const SL_RESTART_SCAN: u32 = 0x01;
 pub const SL_RETURN_SINGLE_ENTRY: u32 = 0x02;
 pub const SL_WATCH_TREE: u32 = 0x01;
 pub const SL_WRITE_THROUGH: u32 = 0x04;
-pub const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005u32 as i32;
-pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023u32 as i32;
-pub const STATUS_CANNOT_MAKE: i32 = 0xC00002EAu32 as i32;
-pub const STATUS_INVALID_EA_NAME: i32 = 0x80000013u32 as i32;
-pub const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052u32 as i32;
-pub const STATUS_NO_MORE_EAS: i32 = 0x80000012u32 as i32;
-pub const STATUS_NONEXISTENT_EA_ENTRY: i32 = 0xC0000051u32 as i32;
-pub const STATUS_DISK_FULL: i32 = 0xC000007Fu32 as i32;
-pub const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102u32 as i32;
-pub const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
-pub const STATUS_UNMAPPABLE_CHARACTER: i32 = 0xC0000162u32 as i32;
+pub const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005_u32 as i32;
+pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023_u32 as i32;
+pub const STATUS_CANNOT_MAKE: i32 = 0xC00002EA_u32 as i32;
+pub const STATUS_INVALID_EA_NAME: i32 = 0x80000013_u32 as i32;
+pub const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052_u32 as i32;
+pub const STATUS_NO_MORE_EAS: i32 = 0x80000012_u32 as i32;
+pub const STATUS_NONEXISTENT_EA_ENTRY: i32 = 0xC0000051_u32 as i32;
+pub const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
+pub const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102_u32 as i32;
+pub const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
+pub const STATUS_UNMAPPABLE_CHARACTER: i32 = 0xC0000162_u32 as i32;
 pub const TAG_CCB: u32 = 0x43746146;  // 'CtaF'
 pub const TAG_EA_DATA: u32 = 0x64746146;  // 'dtaF'
 pub const TAG_ERESOURCE: u32 = 0x45746146;  // 'EtaF'
@@ -76,3 +76,11 @@ pub const TAG_FILENAME_BUFFER: u32 = 0x6e746146;  // 'ntaF'
 pub const TAG_IRP_CONTEXT: u32 = 0x49746146;  // 'ItaF'
 pub const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
 pub const VPB_LOCKED: u32 = 0x0002;
+
+/// Crate-local NT_SUCCESS returning i32 (1=success, 0=failure) to match C macro semantics.
+/// Shadows ntkrnl_sys::base::NT_SUCCESS which returns bool.
+#[allow(non_snake_case)]
+#[inline(always)]
+pub fn NT_SUCCESS(status: i32) -> i32 {
+    if status >= 0 { 1 } else { 0 }
+}

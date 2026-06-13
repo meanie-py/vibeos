@@ -7,24 +7,34 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CC_FILE_SIZES, CcUninitializeCacheMap, DPFLTR_FASTFAT_ID, ERESOURCE, ExDeleteResourceLite, ExFreePool, ExInitializeFastMutex, ExInitializeResourceLite, _IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoCreateStreamFileObject, IoDeleteDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetStackLimits, IoGetTopLevelIrp, IoReleaseVpbSpinLock, KeCancelTimer, KeInitializeDpc, KeInitializeTimer, KeRemoveQueueDpc, LARGE_INTEGER, OEM_STRING, PDEVICE_OBJECT, PERESOURCE, PFILE_LOCK, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_MCB, POEM_STRING, POPLOCK, PSTRING, PUNICODE_STRING, PVPB, RtlDowncaseUnicodeString, RtlFillMemoryUlong, RtlFreeOemString, RtlFreeUnicodeString, RtlUpcaseUnicodeString, RtlUpcaseUnicodeStringToCountedOemString, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, VPB};
+use ntkrnl_sys::ddk::{CC_FILE_SIZES, CcUninitializeCacheMap, ERESOURCE, ExDeleteResourceLite, ExFreePool, ExInitializeFastMutex, ExInitializeResourceLite, _IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoCreateStreamFileObject, IoDeleteDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetStackLimits, IoGetTopLevelIrp, IoReleaseVpbSpinLock, KeCancelTimer, KeInitializeDpc, KeInitializeTimer, KeRemoveQueueDpc, LARGE_INTEGER, OEM_STRING, PDEVICE_OBJECT, PERESOURCE, PFILE_LOCK, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_MCB, POEM_STRING, POPLOCK, PSTRING, PUNICODE_STRING, PVPB, RtlDowncaseUnicodeString, RtlFreeOemString, RtlFreeUnicodeString, RtlUpcaseUnicodeString, RtlUpcaseUnicodeStringToCountedOemString, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, VPB};
+#[cfg(target_arch = "x86_64")]
+#[allow(unused_imports)]
+use ntkrnl_sys::inline::ke_amd64::RtlFillMemoryUlong;
+#[cfg(target_arch = "x86")]
+#[allow(unused_imports)]
+use ntkrnl_sys::inline::ke_i386::RtlFillMemoryUlong;
+#[cfg(target_arch = "aarch64")]
+#[allow(dead_code)]
+unsafe fn RtlFillMemoryUlong(dest: *mut core::ffi::c_void, length: usize, pattern: u32) {
+    core::ptr::write_bytes(dest as *mut u32, 0, length / 4);
+    let _ = pattern;
+}
+use ntkrnl_sys::inline::ex::ExAllocateFromNPagedLookasideList;
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{addr_of, addr_of_mut, copy_nonoverlapping, null_mut};
 use core::ptr::{write_bytes};
 use core::ptr;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, CLOSE_CONTEXT, DCB, DIRENT, FAT_BUG_CHECK_STRUCSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, FCB_STATE_HAS_OEM_LONG_NAME, FCB_STATE_HAS_UNICODE_LONG_NAME, FCB_STATE_PAGING_FILE, FCB_STATE_SYSTEM_FILE, FILE_SYSTEM_STATISTICS, FatCloseContextSList, FatEResourceLookasideList, FatIrpContextLookasideList, FatNonPagedFcbLookasideList, IRP_CONTEXT, IRP_CONTEXT_STACK_IO_CONTEXT, NON_PAGED_FCB, PACKED_BOOT_SECTOR, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_CONDITION, VCB_STATE_FLAG_LOCKED, VOLUME_DEVICE_OBJECT};
+use crate::types::{BIOS_PARAMETER_BLOCK, CCB, CLOSE_CONTEXT, DCB, DIRENT, FAT_BUG_CHECK_STRUCSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, FCB_STATE_HAS_OEM_LONG_NAME, FCB_STATE_HAS_UNICODE_LONG_NAME, FCB_STATE_PAGING_FILE, FCB_STATE_SYSTEM_FILE, FILE_SYSTEM_STATISTICS, FatCloseContextSList, FatEResourceLookasideList, FatIrpContextLookasideList, FatNonPagedFcbLookasideList, IRP_CONTEXT, IRP_CONTEXT_STACK_IO_CONTEXT, NON_PAGED_FCB, PACKED_BOOT_SECTOR, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_CONDITION, VCB_STATE_FLAG_LOCKED, VOLUME_DEVICE_OBJECT};
+use crate::types::{_FCB__bindgen_ty_1__bindgen_ty_1, _FCB__bindgen_ty_1__bindgen_ty_2, _CCB__bindgen_ty_1__bindgen_ty_1, FILE_NAME_NODE};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_LOCK, FILE_OBJECT, FSRTL_ADVANCED_FCB_HEADER, IO_STACK_LOCATION, IRP, KDPC, LARGE_MCB, NPAGED_LOOKASIDE_LIST, OPLOCK, STRING, _CREATE_FILE_TYPE as FILE_TYPE, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FSRTL_FLAG2_IS_PAGING_FILE, FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS, TAG_CCB, TAG_FILENAME_BUFFER};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDeleteTunnelCache, FsRtlInitializeFileLock, FsRtlInitializeLargeMcb, FsRtlInitializeOplock, FsRtlInitializeTunnelCache, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts, FsRtlUninitializeFileLock, FsRtlUninitializeLargeMcb};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
 use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
 
 extern "C" {
     fn PAGED_CODE();
@@ -41,7 +51,7 @@ extern "C" {
     fn SetFlag(flags: *mut u32, bits: u32);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatIsFat32(Vcb: *mut VCB) -> i32;
-    fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, Time: u16, MSec: u8, ) -> LARGE_INTEGER;
+    fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, Time: u32, MSec: u8, ) -> LARGE_INTEGER;
     fn FatFatDateToNtTime( IrpContext: *mut IRP_CONTEXT, Date: u16, ) -> LARGE_INTEGER;
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
     static mut FatData: FAT_DATA;
@@ -60,7 +70,7 @@ extern "C" {
     fn FatInsertName( IrpContext: *mut IRP_CONTEXT, root: *mut core::ffi::c_void, name: *mut core::ffi::c_void, );
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn ExInterlockedPopEntrySList( ListHead: *mut core::ffi::c_void, Lock: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
-    fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut EX_SPIN_LOCK, ) -> *mut core::ffi::c_void;
+    fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
     fn DbgDoit(val: i32);
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoctlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, InternalDeviceIoControl: i32, RemapStatus: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
     fn BooleanFlagOn(Flags: u32, Bit: u32) -> i32;
@@ -73,9 +83,9 @@ extern "C" {
     static mut FatFsdEntryCount: u32;
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FsRtlUninitializeOplock(Oplock: *mut OPLOCK);
-    fn FsRtlUninitializeLargeMcb(Mcb: *mut LARGE_MCB);
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Index: u32, Lbo: u32, Size: u32, );
-    fn FatRootDirectorySize(Bpb: *const BPB) -> u32;
+    fn FatRootDirectorySize(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
+    fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatLookupFileAllocationSize( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, );
     fn FatAcquireExclusiveGlobal(irp_context: *mut IRP_CONTEXT) -> NTSTATUS;
     fn FatDeleteResource(resource: *mut ERESOURCE) -> NTSTATUS;
@@ -96,8 +106,6 @@ pub const Dbg: u32 = DEBUG_TRACE_STRUCSUP;
 pub const IRP_CONTEXT_HEADER: usize = core::mem::size_of::<IRP_CONTEXT>().wrapping_mul(0x10000).wrapping_add((FAT_NTC_IRP_CONTEXT) as usize);
 pub const FAT_FILL_FREE: u32 = 0;
 
-#[inline]
-
 const CCB_FLAG_CLOSE_CONTEXT: u32 = 0x8000;
 const CCB_FLAG_FREE_UNICODE: u32 = 0x08;
 const CCB_FLAG_FREE_OEM_BEST_FIT: u32 = 0x04;
@@ -111,8 +119,8 @@ const IRP_MN_MOUNT_VOLUME: u32 = 1;
 
 const TAG_IO_BUFFER: u32 = 0x4F746146; // placeholder
 const IOCTL_CDROM_READ_TOC: u32 = 0x0024000; // placeholder
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185; // placeholder
-const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010; // placeholder
+const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32; // placeholder
+const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32; // placeholder
 
 // Forward declarations for unknown extern functions
 
@@ -157,6 +165,7 @@ const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
 const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
 const TAG_VPB: u32 = 0x70627661; // placeholder
+const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====
 #[no_mangle]
@@ -171,7 +180,7 @@ pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
     PAGED_CODE();
 
     if !(*LocalString).Buffer.is_null() {
-        (IoGetStackLimits).cast()(core::ptr::addr_of_mut!(Low), core::ptr::addr_of_mut!(High));
+        IoGetStackLimits(&mut Low as *mut usize as *mut _, &mut High as *mut usize as *mut _);
         let buffer_addr: usize = (*LocalString).Buffer as usize;
         if buffer_addr < Low || buffer_addr > High {
             ExFreePool((*LocalString).Buffer as *mut core::ffi::c_void);
@@ -334,14 +343,14 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Set the removable media and defflush flags
         status = FatPerformDevIoCtrl(
-            addr_of_mut!(irp_context),
+            irp_context,
             IOCTL_STORAGE_GET_HOTPLUG_INFO,
             target_device_object,
-            core::ptr::null(),
+            core::ptr::null_mut(),
             0,
             addr_of_mut!(hotplug_info) as *mut core::ffi::c_void,
             core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32,
-            false, true, core::ptr::null_mut(),
+            0, 1, core::ptr::null_mut(),
         );
 
         if status >= 0 {
@@ -380,14 +389,14 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Query the storage device number
         status = FatPerformDevIoCtrl(
-            addr_of_mut!(irp_context),
+            irp_context,
             IOCTL_STORAGE_GET_DEVICE_NUMBER,
             target_device_object,
-            core::ptr::null(),
+            core::ptr::null_mut(),
             0,
             addr_of_mut!(stor_device_number) as *mut core::ffi::c_void,
             core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as u32,
-            false, true, core::ptr::null_mut(),
+            0, 1, core::ptr::null_mut(),
         );
 
         if status >= 0 {
@@ -470,7 +479,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
         KeInitializeTimer(&raw mut (*vcb).CleanVolumeTimer);
         KeInitializeDpc(
             &raw mut (*vcb).CleanVolumeDpc,
-            FatCleanVolumeDpc,
+            Some(core::mem::transmute(FatCleanVolumeDpc as unsafe extern "C" fn(*mut KDPC, *mut c_void, *mut c_void, *mut c_void))),
             vcb as *mut core::ffi::c_void,
         );
 
@@ -515,9 +524,9 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Initialize the Advanced FCB Header
         ExInitializeFastMutex(&raw mut (*vcb).AdvancedFcbHeaderMutex);
-        (FsRtlSetupAdvancedHeader).cast()(
-            &raw mut (*vcb).VolumeFileHeader as *mut core::ffi::c_void,
-            &raw mut (*vcb).AdvancedFcbHeaderMutex as *mut core::ffi::c_void,
+        FsRtlSetupAdvancedHeader(
+            &raw mut (*vcb).VolumeFileHeader,
+            &raw mut (*vcb).AdvancedFcbHeaderMutex,
         );
 
         // With the Vcb now set up, set the IrpContext Vcb field
@@ -528,7 +537,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
     }
 
     // Finally block
-    DebugUnwind(0); // DebugUnwind( FatInitializeVcb ) approximated
+    DebugUnwind(core::ptr::null()); // DebugUnwind( FatInitializeVcb ) approximated
 
     if abnormal_termination {
         if !unwind_cache_map.is_null() {
@@ -592,7 +601,8 @@ pub unsafe extern "C" fn FatTearDownVcb(
     FatCloseEaFile(IrpContext, Vcb, 0i32);
 
     if (*Vcb).RootDcb != core::ptr::null_mut() {
-        DirectoryFileObject = (*(*Vcb).RootDcb).Specific.Dcb.as_mut().DirectoryFile;
+        let root_dcb_inner = (*(*Vcb).RootDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+        DirectoryFileObject = (*root_dcb_inner).DirectoryFile;
 
         if DirectoryFileObject != core::ptr::null_mut() {
             CcUninitializeCacheMap(
@@ -600,7 +610,7 @@ pub unsafe extern "C" fn FatTearDownVcb(
                 core::ptr::addr_of_mut!(FatLargeZero) as *mut LARGE_INTEGER,
                 core::ptr::null_mut(),
             );
-            (*(*Vcb).RootDcb).Specific.Dcb.as_mut().DirectoryFile = core::ptr::null_mut();
+            (*root_dcb_inner).DirectoryFile = core::ptr::null_mut();
             ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
         }
     }
@@ -663,7 +673,7 @@ pub unsafe extern "C" fn FatDeleteVcb(
     FatDeleteResource(core::ptr::addr_of_mut!((*Vcb).Resource));
     FatDeleteResource(core::ptr::addr_of_mut!((*Vcb).ChangeBitMapResource));
 
-    if !(*Vcb).FreeClusterBitMap.Buffer.is_null() {
+    if !(*Vcb).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() {
         FatTearDownAllocationSupport(IrpContext, Vcb);
     }
 
@@ -706,16 +716,17 @@ pub unsafe extern "C" fn FatCreateRootDcb(
 
     DebugTrace(1, 0, b"FatCreateRootDcb, Vcb = %p\n\0".as_ptr() as *const i8, Vcb);
 
-    let panic_occurred = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let mut panic_occurred = false;
+    'try_seh: loop {
         // --- _SEH2_TRY block ---
 
         if !(*Vcb).RootDcb.is_null() {
-            (DebugDump).cast()(b"Error trying to create multiple root dcbs\n\0".as_ptr() as *const i8, 0, Vcb);
+            DebugDump(b"Error trying to create multiple root dcbs\n\0".as_ptr(), 0, Vcb as *mut FCB);
             FatBugCheck(0, 0, 0);
         }
 
         // Allocate and zero DCB
-        let alloc = ntkrnl_sys::ddk::FsRtlAllocatePoolWithTag(
+        let alloc = FsRtlAllocatePoolWithTag(
             NonPagedPoolNx,
             core::mem::size_of::<DCB>() as u32,
             TAG_FCB,
@@ -724,14 +735,14 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         (*Vcb).RootDcb = Dcb;
         UnwindStorage[0] = alloc;
 
-        ntkrnl_sys::rtl::RtlZeroMemory(Dcb as *mut core::ffi::c_void, core::mem::size_of::<DCB>());
+        RtlZeroMemory(Dcb as *mut core::ffi::c_void, core::mem::size_of::<DCB>());
 
         // Allocate NonPagedFcb
         let non_paged = FatAllocateNonPagedFcb();
         (*Dcb).NonPaged = non_paged;
         UnwindStorage[1] = non_paged as *mut core::ffi::c_void;
 
-        ntkrnl_sys::rtl::RtlZeroMemory(
+        RtlZeroMemory(
             non_paged as *mut core::ffi::c_void,
             core::mem::size_of::<NON_PAGED_FCB>(),
         );
@@ -751,11 +762,14 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         UnwindResource2 = paging_io_resource;
 
         // Initialize parent Dcb links
-        ntkrnl_sys::base::InitializeListHead(core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks));
+        InitializeListHead(core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks));
 
         (*Dcb).Vcb = Vcb;
 
-        ntkrnl_sys::base::InitializeListHead(core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.ParentDcbQueue));
+        {
+            let dcb_inner = (*Dcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            InitializeListHead(core::ptr::addr_of_mut!((*dcb_inner).ParentDcbQueue));
+        }
 
         // Set full file name (wide "\\")
         static WIDE_BACKSLASH: [u16; 2] = [0x5C, 0x0000];
@@ -765,14 +779,14 @@ pub unsafe extern "C" fn FatCreateRootDcb(
 
         // Set short OEM name (ASCII "\\")
         static OEM_BACKSLASH: [u8; 2] = [0x5C, 0];
-        (*Dcb).ShortName.Name.Oem.Buffer = OEM_BACKSLASH.as_ptr() as *const i8 as *mut i8;
-        (*Dcb).ShortName.Name.Oem.Length = 1u16;
-        (*Dcb).ShortName.Name.Oem.MaximumLength = 2u16;
+        (*Dcb).ShortName.Name.Oem.as_mut().Buffer = OEM_BACKSLASH.as_ptr() as *const i8 as *mut i8;
+        (*Dcb).ShortName.Name.Oem.as_mut().Length = 1u16;
+        (*Dcb).ShortName.Name.Oem.as_mut().MaximumLength = 2u16;
 
         (*Dcb).DirentFatFlags = (FILE_ATTRIBUTE_DIRECTORY) as u8;
 
         // Initialize advanced FCB header
-        ntkrnl_sys::ddk::ExInitializeFastMutex(
+        ExInitializeFastMutex(
             core::ptr::addr_of_mut!((*(*Dcb).NonPaged).AdvancedFcbHeaderMutex),
         );
         FsRtlSetupAdvancedHeader(
@@ -781,7 +795,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         );
 
         // Initialize MCB
-        ntkrnl_sys::ddk::FsRtlInitializeLargeMcb(core::ptr::addr_of_mut!((*Dcb).Mcb), NonPagedPoolNx);
+        FsRtlInitializeLargeMcb(core::ptr::addr_of_mut!((*Dcb).Mcb), NonPagedPoolNx);
         UnwindMcb = core::ptr::addr_of_mut!((*Dcb).Mcb);
 
         if FatIsFat32(Vcb) != 0 {
@@ -806,14 +820,20 @@ pub unsafe extern "C" fn FatCreateRootDcb(
             (*Dcb).Header.FileSize.QuadPart = (dir_size) as i64;
         }
 
-        (*Dcb).Specific.Dcb.UnusedDirentVbo = 0xFFFFFFFFu32;
-        (*Dcb).Specific.Dcb.DeletedDirentHint = 0xFFFFFFFFu32;
+        {
+            let dcb_u = (*Dcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            (*dcb_u).UnusedDirentVbo = 0xFFFFFFFFu32;
+            (*dcb_u).DeletedDirentHint = 0xFFFFFFFFu32;
+        }
 
-        ntkrnl_sys::rtl::RtlInitializeBitMap(
-            core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.FreeDirentBitmap),
-            core::ptr::null_mut(),
-            0,
-        );
+        {
+            let dcb_inner = (*Dcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            RtlInitializeBitMap(
+                addr_of_mut!((*dcb_inner).FreeDirentBitmap) as *mut RTL_BITMAP,
+                core::ptr::null_mut(),
+                0,
+            );
+        }
         FatCheckFreeDirentBitmap(IrpContext, Dcb);
 
         // #if (NTDDI_VERSION >= NTDDI_WIN8)
@@ -822,7 +842,8 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         }
         // #endif
 
-    })).is_err();
+        break 'try_seh;
+    } // end 'try_seh
 
     // --- _SEH2_FINALLY block ---
     DebugUnwind(b"FatCreateRootDcb\0".as_ptr() as *const i8);
@@ -833,7 +854,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
             ntkrnl_sys::ob::ObDereferenceObject(UnwindFileObject as *mut core::ffi::c_void);
         }
         if !UnwindMcb.is_null() {
-            ntkrnl_sys::ddk::FsRtlUninitializeLargeMcb(UnwindMcb);
+            FsRtlUninitializeLargeMcb(UnwindMcb);
         }
         if !UnwindResource.is_null() {
             FatFreeResource(UnwindResource);
@@ -843,7 +864,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         }
         for i in 0..UnwindStorage.len() {
             if !UnwindStorage[i].is_null() {
-                ntkrnl_sys::ddk::ExFreePool(UnwindStorage[i]);
+                ExFreePool(UnwindStorage[i]);
             }
         }
         (*Vcb).RootDcb = core::ptr::null_mut();
@@ -890,7 +911,8 @@ pub unsafe extern "C" fn FatCreateFcb(
     DebugTrace(1, DEBUG_TRACE_STRUCSUP, b"FatCreateFcb\n\0".as_ptr() as *const i8, 0);
 
     // SEH try body
-    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let panic_result: Result<(), ()> = Ok(());
+    'seh_fcb: {
         // Determine pool type
         if IsPagingFile != 0 {
             pool_type = NonPagedPoolNx;
@@ -923,9 +945,9 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // If paging file, set flags
         if IsPagingFile != 0 {
-            (SetFlag).cast()(
-                &mut (*fcb).FcbState as *mut u8,
-                (FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE) as u8,
+            SetFlag(
+                core::ptr::addr_of_mut!((*fcb).FcbState),
+                FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE,
             );
         }
 
@@ -942,11 +964,14 @@ pub unsafe extern "C" fn FatCreateFcb(
         }
 
         // Insert into parent's DCB queue
-        InsertTailList(
-            &mut (*ParentDcb).Specific.as_mut().Dcb.ParentDcbQueue as *mut _ as *mut LIST_ENTRY,
-            &mut (*fcb).ParentDcbLinks as *mut _ as *mut LIST_ENTRY,
-        );
-        unwind_entry_list = &mut (*fcb).ParentDcbLinks as *mut _ as *mut core::ffi::c_void;
+        {
+            let pdcb_inner = (*ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            InsertTailList(
+                core::ptr::addr_of_mut!((*pdcb_inner).ParentDcbQueue) as *mut LIST_ENTRY,
+                core::ptr::addr_of_mut!((*fcb).ParentDcbLinks) as *mut LIST_ENTRY,
+            );
+        }
+        unwind_entry_list = core::ptr::addr_of_mut!((*fcb).ParentDcbLinks) as *mut core::ffi::c_void;
 
         // Set parent DCB, VCB
         (*fcb).ParentDcb = ParentDcb;
@@ -961,7 +986,7 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         (*fcb).LastWriteTime = FatFatTimeToNtTime(
             IrpContext,
-            (*Dirent).LastWriteTime,
+            core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime))),
             0u8,
         );
 
@@ -981,7 +1006,7 @@ pub unsafe extern "C" fn FatCreateFcb(
             if (Dirent as *const u16).offset(9).read() != 0 {
                 (*fcb).LastAccessTime = FatFatDateToNtTime(
                     IrpContext,
-                    (*Dirent).LastAccessDate,
+                    core::mem::transmute::<_, u16>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate))),
                 );
             } else {
                 (*fcb).LastAccessTime = fat_system_jan_one_1980;
@@ -990,7 +1015,7 @@ pub unsafe extern "C" fn FatCreateFcb(
             if (Dirent as *const u16).offset(8).read() != 0 {
                 (*fcb).CreationTime = FatFatTimeToNtTime(
                     IrpContext,
-                    (*Dirent).CreationTime,
+                    core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime))),
                     (*Dirent).CreationMSec,
                 );
             } else {
@@ -1007,14 +1032,8 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // Setup flags for paging file
         if IsPagingFile != 0 {
-            (SetFlag).cast()(
-                &mut (*fcb).Header.Flags2 as *mut u8,
-                FSRTL_FLAG2_IS_PAGING_FILE as u8,
-            );
-            ClearFlag(
-                &mut (*fcb).Header.Flags2 as *mut u32,
-                FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS as u32,
-            );
+            (*fcb).Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE as u8;
+            (*fcb).Header.Flags2 &= !(FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS as u8);
         }
 
         // Initialize MCB
@@ -1030,7 +1049,7 @@ pub unsafe extern "C" fn FatCreateFcb(
         (*fcb).FirstClusterOfFile = (*Dirent).FirstClusterOfFile as u32;
 
         if FatIsFat32(Vcb) != 0 {
-            (*fcb).FirstClusterOfFile += (((*Dirent).__bindgen_anon_1.FirstClusterOfFileHi as u32) << 16);
+            (*fcb).FirstClusterOfFile += ((*(*Dirent).__bindgen_anon_1.FirstClusterOfFileHi.as_ref()) as u32) << 16;
         }
 
         if (*fcb).FirstClusterOfFile == 0 {
@@ -1040,12 +1059,15 @@ pub unsafe extern "C" fn FatCreateFcb(
         }
 
         // Initialize file lock
-        FsRtlInitializeFileLock(
-            &mut (*fcb).Specific.as_mut().Fcb.FileLock as *mut FILE_LOCK,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-        );
-        unwind_file_lock = &mut (*fcb).Specific.as_mut().Fcb.FileLock as *mut FILE_LOCK;
+        {
+            let fcb_inner = (*fcb).Specific.Fcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_2;
+            FsRtlInitializeFileLock(
+                core::ptr::addr_of_mut!((*fcb_inner).FileLock),
+                None,
+                None,
+            );
+            unwind_file_lock = core::ptr::addr_of_mut!((*fcb_inner).FileLock);
+        }
 
         // Initialize oplock
         FsRtlInitializeOplock(FatGetFcbOplock(fcb));
@@ -1064,10 +1086,10 @@ pub unsafe extern "C" fn FatCreateFcb(
 
         // Drop shortname hint
         (*fcb).ShortName.FileNameDos = 1; // TRUE
-    }));
+    } // end 'seh_fcb
 
     // Finally block
-    DebugUnwind(b"FatCreateFcb\0".as_ptr() as usize);
+    DebugUnwind(b"FatCreateFcb\0".as_ptr() as *const i8);
 
     let is_abnormal = panic_result.is_err();
 
@@ -1100,11 +1122,6 @@ pub unsafe extern "C" fn FatCreateFcb(
     }
 
     DebugTrace(-1, DEBUG_TRACE_STRUCSUP, b"FatCreateFcb -> %p\n\0".as_ptr() as *const i8, fcb);
-
-    // Re-raise panic if abnormal, otherwise return fcb
-    if let Err(panic) = panic_result {
-        std::panic::resume_unwind(panic);
-    }
 
     fcb
 }
@@ -1180,10 +1197,13 @@ pub unsafe extern "C" fn FatCreateDcb(
         (*Dcb).Header.PagingIoResource = pio_res;
         UnwindResource2 = pio_res;
 
-        InsertHeadList(
-            core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().ParentDcbQueue),
-            core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks),
-        );
+        {
+            let parent_dcb_inner = (*ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            InsertHeadList(
+                core::ptr::addr_of_mut!((*parent_dcb_inner).ParentDcbQueue),
+                core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks),
+            );
+        }
         UnwindEntryList = core::ptr::addr_of_mut!((*Dcb).ParentDcbLinks);
 
         (*Dcb).ParentDcb = ParentDcb;
@@ -1193,7 +1213,7 @@ pub unsafe extern "C" fn FatCreateDcb(
         (*Dcb).DirentOffsetWithinDirectory = DirentOffsetWithinDirectory;
 
         (*Dcb).DirentFatFlags = (*Dirent).Attributes;
-        (*Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, (*Dirent).LastWriteTime as u16, 0);
+        (*Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime))), 0);
 
         let fat_data = &mut *core::ptr::addr_of_mut!(FatData);
         if fat_data.ChicagoMode() != 0 {
@@ -1203,14 +1223,14 @@ pub unsafe extern "C" fn FatCreateDcb(
                 ExLocalTimeToSystemTime(core::ptr::addr_of!(FatJanOne1980), core::ptr::addr_of_mut!(fat_system_jan_one_1980));
             }
             if *dirent_as_u16.add(9) != 0 {
-                (*Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, (*Dirent).LastAccessDate as u16);
+                (*Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, core::mem::transmute::<_, u16>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate))));
             } else {
                 (*Dcb).LastAccessTime = fat_system_jan_one_1980;
             }
             if *dirent_as_u16.add(8) != 0 {
                 (*Dcb).CreationTime = FatFatTimeToNtTime(
                     IrpContext,
-                    (*Dirent).CreationTime as u16,
+                    core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime))),
                     (*Dirent).CreationMSec,
                 );
             } else {
@@ -1231,7 +1251,7 @@ pub unsafe extern "C" fn FatCreateDcb(
 
         (*Dcb).FirstClusterOfFile = (*Dirent).FirstClusterOfFile as u32;
         if FatIsFat32((*Dcb).Vcb) != 0 {
-            (*Dcb).FirstClusterOfFile += ((*Dirent).__bindgen_anon_1.FirstClusterOfFileHi as u32) << 16;
+            (*Dcb).FirstClusterOfFile += (*(*Dirent).__bindgen_anon_1.FirstClusterOfFileHi.as_ref() as u32) << 16;
         }
         if (*Dcb).FirstClusterOfFile == 0 {
             (*Dcb).Header.AllocationSize.QuadPart = 0;
@@ -1239,16 +1259,17 @@ pub unsafe extern "C" fn FatCreateDcb(
             (*Dcb).Header.AllocationSize.QuadPart = FCB_LOOKUP_ALLOCATIONSIZE_HINT;
         }
 
-        InitializeListHead(core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().ParentDcbQueue));
-
-        RtlInitializeBitMap(
-            (core::ptr::addr_of_mut!((*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap)).cast(),
-            core::ptr::null_mut(),
-            0,
-        );
-
-        (*Dcb).Specific.Dcb.as_mut().UnusedDirentVbo = 0xffffffff;
-        (*Dcb).Specific.Dcb.as_mut().DeletedDirentHint = 0xffffffff;
+        {
+            let dcb_inner = (*Dcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            InitializeListHead(core::ptr::addr_of_mut!((*dcb_inner).ParentDcbQueue));
+            RtlInitializeBitMap(
+                core::ptr::addr_of_mut!((*dcb_inner).FreeDirentBitmap) as *mut RTL_BITMAP,
+                core::ptr::null_mut(),
+                0,
+            );
+            (*dcb_inner).UnusedDirentVbo = 0xffffffff;
+            (*dcb_inner).DeletedDirentHint = 0xffffffff;
+        }
 
         {
             let oplock = FatGetFcbOplock(Dcb);
@@ -1315,22 +1336,26 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
 
     // If this is a DCB then remove every Notify record from the two notify queues
     if ((*Fcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Fcb).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
+        let dcb_inner = (*Fcb).Specific.Dcb.as_ref() as *const _FCB__bindgen_ty_1__bindgen_ty_1;
         // If we allocated a free dirent bitmap buffer, free it.
-        if ((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer != core::ptr::null_mut()) &&
-           ((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer !=
-            core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmapBuffer) as *mut _) {
-            ExFreePool((*Fcb).Specific.as_ref().unwrap().Dcb.FreeDirentBitmap.Buffer);
+        {
+            let bitmap_buf = (*dcb_inner).FreeDirentBitmap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer;
+            if (!bitmap_buf.is_null()) &&
+               (bitmap_buf != core::ptr::addr_of!((*dcb_inner).FreeDirentBitmapBuffer) as *const u32 as *mut u32) {
+                ExFreePool(bitmap_buf as *mut core::ffi::c_void);
+            }
         }
 
         // Uninitialize the oplock.
         FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
 
-        NT_ASSERT(((*Fcb).Specific.as_ref().unwrap().Dcb.DirectoryFileOpenCount == 0) as i32);
-        NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Dcb.ParentDcbQueue) as *mut LIST_ENTRY) as i32);
-        NT_ASSERT((core::ptr::null_mut::<*mut FILE_OBJECT>() == (*Fcb).Specific.as_ref().unwrap().Dcb.DirectoryFile) as i32);
+        NT_ASSERT(((*dcb_inner).DirectoryFileOpenCount == 0) as i32);
+        NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*dcb_inner).ParentDcbQueue) as *mut LIST_ENTRY) as i32);
+        NT_ASSERT((core::ptr::null_mut::<FILE_OBJECT>() == (*dcb_inner).DirectoryFile) as i32);
     } else {
         // Uninitialize the byte range file locks and opportunistic locks
-        FsRtlUninitializeFileLock(core::ptr::addr_of!((*Fcb).Specific.as_ref().unwrap().Fcb.FileLock) as *mut FILE_LOCK);
+        let fcb_inner = (*Fcb).Specific.Fcb.as_ref() as *const _FCB__bindgen_ty_1__bindgen_ty_2;
+        FsRtlUninitializeFileLock(core::ptr::addr_of!((*fcb_inner).FileLock) as *mut FILE_LOCK);
         FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
     }
 
@@ -1353,22 +1378,19 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     // Free the file name pool if allocated.
     if (*Fcb).Header.NodeTypeCode != (FAT_NTC_ROOT_DCB) as i16 {
         // If we blew up at inconvenient times, the shortname could be null...
-        if !(*Fcb).ShortName.Name.as_ref().unwrap().Oem.as_ref().unwrap().Buffer.is_null() {
-            ExFreePool((*Fcb).ShortName.Name.as_ref().unwrap().Oem.as_ref().unwrap().Buffer);
+        if !(*(*Fcb).ShortName.Name.Oem.as_ref()).Buffer.is_null() {
+            ExFreePool((*(*Fcb).ShortName.Name.Oem.as_ref()).Buffer as *mut core::ffi::c_void);
         }
-        if !(*Fcb).FullFileName.as_ref().unwrap().Buffer.is_null() {
-            ExFreePool(((*Fcb).FullFileName.as_ref().unwrap().Buffer).cast());
+        if !(*Fcb).FullFileName.Buffer.is_null() {
+            ExFreePool((*Fcb).FullFileName.Buffer as *mut core::ffi::c_void);
         }
     }
 
-    if !(*Fcb).ExactCaseLongName.as_ref().unwrap().Buffer.is_null() {
-        ExFreePool(((*Fcb).ExactCaseLongName.as_ref().unwrap().Buffer).cast());
+    if !(*Fcb).ExactCaseLongName.Buffer.is_null() {
+        ExFreePool((*Fcb).ExactCaseLongName.Buffer as *mut core::ffi::c_void);
     }
 
-    // SYSCACHE_COMPILE assumed always active – translate block unconditionally
-    if !(*Fcb).NonPaged.as_ref().unwrap().WriteMask.is_null() {
-        ExFreePool((*Fcb).NonPaged.as_ref().unwrap().WriteMask);
-    }
+    // SYSCACHE_COMPILE: WriteMask is conditionally compiled; skip if absent
 
     // Finally deallocate the Fcb and non-paged fcb records
     FatFreeResource((*Fcb).Header.Resource);
@@ -1378,8 +1400,8 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     }
 
     // If an Event was allocated, get rid of it.
-    if !(*Fcb).NonPaged.as_ref().unwrap().OutstandingAsyncEvent.is_null() {
-        ExFreePool(((*Fcb).NonPaged.as_ref().unwrap().OutstandingAsyncEvent).cast());
+    if !(*(*Fcb).NonPaged).OutstandingAsyncEvent.is_null() {
+        ExFreePool((*(*Fcb).NonPaged).OutstandingAsyncEvent as *mut core::ffi::c_void);
     }
 
     FatFreeNonPagedFcb((*Fcb).NonPaged);
@@ -1437,14 +1459,16 @@ pub unsafe extern "C" fn FatCreateCcb(
 pub unsafe extern "C" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
     PAGED_CODE();
     if ((*Ccb).Flags & CCB_FLAG_FREE_UNICODE) != 0 {
-        NT_ASSERT(if (*Ccb).__bindgen_anon_1.UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
+        let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
+        NT_ASSERT(if (*ccb_inner).UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
         NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Ccb).__bindgen_anon_1.UnicodeQueryTemplate));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!((*ccb_inner).UnicodeQueryTemplate));
     }
     if ((*Ccb).Flags & CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
-        NT_ASSERT(if (*Ccb).__bindgen_anon_1.OemQueryTemplate.Wild.Buffer.is_null() { 0 } else { 1 });
+        let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
+        NT_ASSERT(if (*ccb_inner).OemQueryTemplate.Wild.as_ref().Buffer.is_null() { 0 } else { 1 });
         NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
-        RtlFreeOemString(core::ptr::addr_of_mut!((*Ccb).__bindgen_anon_1.OemQueryTemplate.Wild));
+        RtlFreeOemString((*ccb_inner).OemQueryTemplate.Wild.as_mut() as *mut OEM_STRING);
     }
     (*Ccb).Flags &= !(CCB_FLAG_FREE_OEM_BEST_FIT | CCB_FLAG_FREE_UNICODE);
 }
@@ -1502,14 +1526,14 @@ pub unsafe extern "C" fn FatCreateIrpContext(
         }
 
         NT_ASSERT(
-            ((*irp_sp).FileObject.is_null() == false)
+            (((*irp_sp).FileObject.is_null() == false)
                 || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
-                    && (*irp_sp).MinorFunction == IRP_MN_USER_FS_REQUEST
+                    && (*irp_sp).MinorFunction == IRP_MN_USER_FS_REQUEST as u8
                     && (*irp_sp).Parameters.FileSystemControl.FsControlCode == FSCTL_INVALIDATE_VOLUMES)
                 || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
                     && (*irp_sp).MinorFunction == (IRP_MN_MOUNT_VOLUME) as u8)
                 || (*irp_sp).MajorFunction == (IRP_MJ_SHUTDOWN
-                as i32) as u8,
+                as i32) as u8) as i32,
         );
     }
 
@@ -1661,7 +1685,7 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
     TerminationFcb: *mut FCB,
 ) -> *mut FCB {
     PAGED_CODE();
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
 
     let valid = if FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) != 0
         || FlagOn((*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_LOCKED) != 0
@@ -1673,9 +1697,10 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
     NT_ASSERT(valid);
 
     if (NodeType(Fcb) == (FAT_NTC_DCB) as u32 || NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32)
-        && !IsListEmpty(core::ptr::addr_of!(
-            (*Fcb).Specific.Dcb.as_ref().ParentDcbQueue
-        ))
+        && !IsListEmpty({
+            let dcb_i = (*Fcb).Specific.Dcb.as_ref() as *const _FCB__bindgen_ty_1__bindgen_ty_1;
+            core::ptr::addr_of!((*dcb_i).ParentDcbQueue)
+        })
     {
         return FatGetFirstChild(Fcb);
     }
@@ -1775,8 +1800,8 @@ pub unsafe extern "C" fn FatCheckForDismount(
     Vcb: *mut VCB,
     Force: BOOLEAN,
 ) -> BOOLEAN {
-    let SavedIrql: KIRQL;
-    let VcbDeleted: BOOLEAN = 0;
+    let mut SavedIrql: KIRQL = 0;
+    let mut VcbDeleted: BOOLEAN = 0;
 
     // If the VCB condition is good and we are not forcing, just return.
     if (*Vcb).VcbCondition == VcbGood && Force == 0 {
@@ -1791,7 +1816,7 @@ pub unsafe extern "C" fn FatCheckForDismount(
 
         #[cfg(debug_assertions)]
         {
-            let mut VolumeLabel: _UNICODE_STRING;
+            let mut VolumeLabel: _UNICODE_STRING = core::mem::zeroed();
             VolumeLabel.Length = (*Vpb).VolumeLabelLength;
             VolumeLabel.MaximumLength = MAXIMUM_VOLUME_LABEL_LENGTH;
             VolumeLabel.Buffer = &mut (*Vpb).VolumeLabel[0] as *mut u16;
@@ -1823,9 +1848,9 @@ pub unsafe extern "C" fn FatCheckForDismount(
             ((*Vcb).VcbState as u8) as u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         ) == 0) as BOOLEAN) as i32);
-        (SetFlag).cast()(
-            &mut (*Vcb).VcbState as *mut u32 as *mut u8,
-            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS as u8,
+        SetFlag(
+            core::ptr::addr_of_mut!((*Vcb).VcbState),
+            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         );
 
         // Close down internal opens.
@@ -1886,7 +1911,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
         MaximumLength: 0,
         Buffer: null_mut(),
     };
-    let ShortName: *mut OEM_STRING = addr_of_mut!((*Fcb).ShortName.Name.Oem);
+    let ShortName: *mut OEM_STRING = (*Fcb).ShortName.Name.Oem.as_mut() as *mut OEM_STRING;
     let LongOemName: *mut OEM_STRING;
     let LongUniName: *mut _UNICODE_STRING;
 
@@ -1895,134 +1920,141 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
     NT_ASSERT((((*ShortName).Buffer).is_null() as u8) as i32);
 
     let mut abnormal_termination: bool = true;
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        'try_finally: loop {
-            // Short name case flags
-            if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_8_LOWER_CASE) as u8) != 0 {
-                (*Fcb).FcbState |= FCB_STATE_8_LOWER_CASE;
-            } else {
-                (*Fcb).FcbState &= !FCB_STATE_8_LOWER_CASE;
-            }
-            if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_3_LOWER_CASE) as u8) != 0 {
-                (*Fcb).FcbState |= FCB_STATE_3_LOWER_CASE;
-            } else {
-                (*Fcb).FcbState &= !FCB_STATE_3_LOWER_CASE;
-            }
+    'try_finally: loop {
+        // Short name case flags
+        if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_8_LOWER_CASE) as u8) != 0 {
+            (*Fcb).FcbState |= FCB_STATE_8_LOWER_CASE;
+        } else {
+            (*Fcb).FcbState &= !FCB_STATE_8_LOWER_CASE;
+        }
+        if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_3_LOWER_CASE) as u8) != 0 {
+            (*Fcb).FcbState |= FCB_STATE_3_LOWER_CASE;
+        } else {
+            (*Fcb).FcbState &= !FCB_STATE_3_LOWER_CASE;
+        }
 
-            (*ShortName).MaximumLength = 16;
-            (*ShortName).Buffer = (FsRtlAllocatePoolWithTag(PagedPool, 16, TAG_FILENAME_BUFFER)
+        (*ShortName).MaximumLength = 16;
+        (*ShortName).Buffer = (FsRtlAllocatePoolWithTag(PagedPool, 16, TAG_FILENAME_BUFFER)
+            as *mut u8).cast();
+
+        Fat8dot3ToString(IrpContext, Dirent, 0u8, ShortName);
+
+        (*Fcb).ShortName.FileNameDos = 1;
+
+        NT_ASSERT((((*Fcb).ExactCaseLongName.Buffer).is_null() as u8) as i32);
+
+        if Lfn.is_null() || (*Lfn).Length == 0 {
+            let size = RtlOemStringToCountedUnicodeSize(ShortName) as usize;
+            (*Fcb).FinalNameLength = size as u16;
+            (*Fcb).ExactCaseLongName.Length = 0;
+            (*Fcb).ExactCaseLongName.MaximumLength = 0;
+            abnormal_termination = false;
+            break 'try_finally;
+        }
+
+        NT_ASSERT((((*Fcb).FullFileName.Buffer).is_null() as u8) as i32);
+
+        (*Fcb).FinalNameLength = (*Lfn).Length;
+        (*Fcb).ExactCaseLongName.Length = (*Lfn).Length;
+        (*Fcb).ExactCaseLongName.MaximumLength = (*Lfn).Length;
+        (*Fcb).ExactCaseLongName.Buffer =
+            (FsRtlAllocatePoolWithTag(PagedPool, (*Lfn).Length as u32, TAG_FILENAME_BUFFER)
                 as *mut u8).cast();
+        copy_nonoverlapping(
+            (*Lfn).Buffer as *const u8,
+            (*Fcb).ExactCaseLongName.Buffer as *mut u8,
+            (*Lfn).Length as usize,
+        );
 
-            Fat8dot3ToString(IrpContext, Dirent, 0u8, ShortName);
-
-            (*Fcb).ShortName.FileNameDos = 1;
-
-            NT_ASSERT((((*Fcb).ExactCaseLongName.Buffer).is_null() as u8) as i32);
-
-            if Lfn.is_null() || (*Lfn).Length == 0 {
-                let size = RtlOemStringToCountedUnicodeSize(ShortName) as usize;
-                (*Fcb).FinalNameLength = size as u16;
-                (*Fcb).ExactCaseLongName.Length = 0;
-                (*Fcb).ExactCaseLongName.MaximumLength = 0;
-                break 'try_finally;
+        let chars = ((*Lfn).Length as usize) / core::mem::size_of::<u16>();
+        i = 0;
+        while i < chars {
+            let c = *(*Lfn).Buffer.add(i);
+            if c >= 0x80 {
+                break;
             }
+            i += 1;
+        }
 
-            NT_ASSERT((((*Fcb).FullFileName.Buffer).is_null() as u8) as i32);
-
-            (*Fcb).FinalNameLength = (*Lfn).Length;
-            (*Fcb).ExactCaseLongName.Length = (*Lfn).Length;
-            (*Fcb).ExactCaseLongName.MaximumLength = (*Lfn).Length;
-            (*Fcb).ExactCaseLongName.Buffer =
-                (FsRtlAllocatePoolWithTag(PagedPool, (*Lfn).Length as u32, TAG_FILENAME_BUFFER)
+        if i == chars {
+            // No extended characters – use OEM fast path
+            {
+                let oem_node = (*Fcb).LongName.Oem.as_mut() as *mut FILE_NAME_NODE;
+                LongOemName = (*oem_node).Name.Oem.as_mut() as *mut OEM_STRING;
+            }
+            (*LongOemName).Buffer =
+                (FsRtlAllocatePoolWithTag(PagedPool, chars as u32, TAG_FILENAME_BUFFER)
                     as *mut u8).cast();
-            copy_nonoverlapping(
-                (*Fcb).ExactCaseLongName.Buffer,
-                (*Lfn).Buffer as *const u8,
-                (*Lfn).Length as usize,
-            );
+            (*LongOemName).Length = chars as u16;
+            (*LongOemName).MaximumLength = chars as u16;
 
-            let chars = ((*Lfn).Length as usize) / core::mem::size_of::<u16>();
             i = 0;
             while i < chars {
                 let c = *(*Lfn).Buffer.add(i);
-                if c >= 0x80 {
-                    break;
-                }
+                let byte = if (c as u32) < ('a' as u32) {
+                    c as u8
+                } else if (c as u32) <= ('z' as u32) {
+                    (c as u32 - ('a' as u32 - 'A' as u32)) as u8
+                } else {
+                    c as u8
+                };
+                *(*LongOemName).Buffer.add(i) = (byte) as i8;
                 i += 1;
             }
 
-            if i == chars {
-                // No extended characters – use OEM fast path
-                LongOemName = addr_of_mut!((*Fcb).LongName.Oem.as_mut().Name.as_mut().Oem);
-                (*LongOemName).Buffer =
-                    (FsRtlAllocatePoolWithTag(PagedPool, chars as u32, TAG_FILENAME_BUFFER)
-                        as *mut u8).cast();
-                (*LongOemName).Length = chars as u16;
-                (*LongOemName).MaximumLength = chars as u16;
+            let equal = FatAreNamesEqual(IrpContext, *ShortName, *LongOemName) != 0;
+            let parent_dcb_inner = (*(*Fcb).ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            let found = !FatFindFcb(
+                IrpContext,
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
+                LongOemName as *const OEM_STRING,
+                null_mut(),
+            )
+            .is_null();
 
-                i = 0;
-                while i < chars {
-                    let c = *(*Lfn).Buffer.add(i);
-                    let byte = if (c as u32) < ('a' as u32) {
-                        c as u8
-                    } else if (c as u32) <= ('z' as u32) {
-                        (c as u32 - ('a' as u32 - 'A' as u32)) as u8
-                    } else {
-                        c as u8
-                    };
-                    *(*LongOemName).Buffer.add(i) = (byte) as i8;
-                    i += 1;
-                }
-
-                let equal = FatAreNamesEqual(IrpContext, *ShortName, *LongOemName) != 0;
-                let found = !FatFindFcb(
-                    IrpContext,
-                    addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut u8,
-                    LongOemName as *mut STRING,
-                    null_mut(),
-                )
-                .is_null();
-
-                if equal || found {
-                    ExFreePool((*LongOemName).Buffer as *mut core::ffi::c_void);
-                    (*LongOemName).Buffer = null_mut();
-                    (*LongOemName).Length = 0;
-                    (*LongOemName).MaximumLength = 0;
-                } else {
-                    (*Fcb).FcbState |= FCB_STATE_HAS_OEM_LONG_NAME;
-                }
-
-                break 'try_finally;
+            if equal || found {
+                ExFreePool((*LongOemName).Buffer as *mut core::ffi::c_void);
+                (*LongOemName).Buffer = null_mut();
+                (*LongOemName).Length = 0;
+                (*LongOemName).MaximumLength = 0;
+            } else {
+                (*Fcb).FcbState |= FCB_STATE_HAS_OEM_LONG_NAME;
             }
 
-            // Unicode path – extended characters present
-            Unicode.Length = (*Lfn).Length;
-            Unicode.MaximumLength = (*Lfn).Length;
-            Unicode.Buffer = FsRtlAllocatePoolWithTag(
-                PagedPool,
-                (*Lfn).Length as u32,
-                TAG_FILENAME_BUFFER,
-            ) as *mut u16;
-            copy_nonoverlapping(
-                Unicode.Buffer as *mut u8,
-                (*Lfn).Buffer as *const u8,
-                (*Lfn).Length as usize,
-            );
-
-            RtlDowncaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
-            RtlUpcaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
-
-            LongUniName = addr_of_mut!((*Fcb).LongName.Unicode.as_mut().Name.as_mut().Unicode);
-            (*LongUniName).Length = Unicode.Length;
-            (*LongUniName).MaximumLength = Unicode.MaximumLength;
-            (*LongUniName).Buffer = Unicode.Buffer;
-
-            (*Fcb).FcbState |= FCB_STATE_HAS_UNICODE_LONG_NAME;
-
+            abnormal_termination = false;
             break 'try_finally;
         }
+
+        // Unicode path – extended characters present
+        Unicode.Length = (*Lfn).Length;
+        Unicode.MaximumLength = (*Lfn).Length;
+        Unicode.Buffer = FsRtlAllocatePoolWithTag(
+            PagedPool,
+            (*Lfn).Length as u32,
+            TAG_FILENAME_BUFFER,
+        ) as *mut u16;
+        copy_nonoverlapping(
+            (*Lfn).Buffer as *const u8,
+            Unicode.Buffer as *mut u8,
+            (*Lfn).Length as usize,
+        );
+
+        RtlDowncaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
+        RtlUpcaseUnicodeString(&mut Unicode as *mut _UNICODE_STRING, &Unicode as *const _UNICODE_STRING, 0u8);
+
+        {
+            let uni_node = (*Fcb).LongName.Unicode.as_mut() as *mut FILE_NAME_NODE;
+            LongUniName = (*uni_node).Name.Unicode.as_mut() as *mut _UNICODE_STRING;
+        }
+        (*LongUniName).Length = Unicode.Length;
+        (*LongUniName).MaximumLength = Unicode.MaximumLength;
+        (*LongUniName).Buffer = Unicode.Buffer;
+
+        (*Fcb).FcbState |= FCB_STATE_HAS_UNICODE_LONG_NAME;
+
         abnormal_termination = false;
-    }));
+        break 'try_finally;
+    }
 
     if abnormal_termination {
         if !(*ShortName).Buffer.is_null() {
@@ -2030,36 +2062,35 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
             (*ShortName).Buffer = null_mut();
         }
     } else {
+        let parent_dcb_inner = (*(*Fcb).ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
         FatInsertName(
             IrpContext,
-            addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
-            (addr_of_mut!((*Fcb).ShortName)).cast(),
+            core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*Fcb).ShortName) as *mut core::ffi::c_void,
         );
         (*Fcb).ShortName.Fcb = Fcb;
 
         if ((*Fcb).FcbState & FCB_STATE_HAS_OEM_LONG_NAME) != 0 {
+            let long_oem_node = (*Fcb).LongName.Oem.as_mut() as *mut FILE_NAME_NODE;
             FatInsertName(
                 IrpContext,
-                addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootOemNode) as *mut *mut RTL_SPLAY_LINKS,
-                (addr_of_mut!((*Fcb).LongName.Oem.as_mut())).cast(),
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
+                long_oem_node as *mut core::ffi::c_void,
             );
-            (*Fcb).LongName.Oem.as_mut().Fcb = Fcb;
+            (*long_oem_node).Fcb = Fcb;
         }
 
         if ((*Fcb).FcbState & FCB_STATE_HAS_UNICODE_LONG_NAME) != 0 {
+            let long_uni_node = (*Fcb).LongName.Unicode.as_mut() as *mut FILE_NAME_NODE;
             FatInsertName(
                 IrpContext,
-                addr_of_mut!((*(*Fcb).ParentDcb).Specific.Dcb.RootUnicodeNode) as *mut *mut RTL_SPLAY_LINKS,
-                (addr_of_mut!((*Fcb).LongName.Unicode.as_mut())).cast(),
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootUnicodeNode) as *mut core::ffi::c_void,
+                long_uni_node as *mut core::ffi::c_void,
             );
-            (*Fcb).LongName.Unicode.as_mut().Fcb = Fcb;
+            (*long_uni_node).Fcb = Fcb;
         }
 
         (*Fcb).FcbState |= FCB_STATE_NAMES_IN_SPLAY_TREE;
-    }
-
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
     }
 }
 
@@ -2090,7 +2121,8 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
     }
 
     let dir_ent_size = core::mem::size_of::<DIRENT>() as u32;
-    let old_number_of_dirents = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.SizeOfBitMap;
+    let dcb_inner0 = (*Dcb).Specific.Dcb.as_ref() as *const _FCB__bindgen_ty_1__bindgen_ty_1;
+    let old_number_of_dirents = (*dcb_inner0).FreeDirentBitmap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap;
     let new_number_of_dirents = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart / dir_ent_size;
 
     if new_number_of_dirents > old_number_of_dirents {
@@ -2104,20 +2136,22 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
             let bytes_in_old_bitmap_buffer: u32;
 
             // Recheck inside the lock
-            let old_number_of_dirents = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.SizeOfBitMap;
+            let dcb_inner = (*Dcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
+            let old_number_of_dirents = (*dcb_inner).FreeDirentBitmap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap;
             let new_number_of_dirents = (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart / dir_ent_size;
 
             if new_number_of_dirents > old_number_of_dirents {
                 // Remember the old bitmap
-                old_bitmap_buffer = (*Dcb).Specific.Dcb.as_ref().FreeDirentBitmap.Buffer;
+                old_bitmap_buffer = (*dcb_inner).FreeDirentBitmap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer;
 
                 // Compute sizes
                 bytes_in_bitmap_buffer = new_number_of_dirents / 8;
                 bytes_in_old_bitmap_buffer = old_number_of_dirents / 8;
 
                 // Choose the buffer for the new bitmap
+                let embedded_buf = core::ptr::addr_of_mut!((*dcb_inner).FreeDirentBitmapBuffer[0]);
                 if DCB_UNION_SLACK_SPACE >= bytes_in_bitmap_buffer {
-                    bitmap_buffer = &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32;
+                    bitmap_buffer = embedded_buf;
                 } else {
                     bitmap_buffer = FsRtlAllocatePoolWithTag(
                         PagedPool,
@@ -2127,9 +2161,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
                 }
 
                 // Copy old data if we had a bitmap and we are not reusing the embedded buffer
-                if (old_number_of_dirents != 0)
-                    && (bitmap_buffer
-                        != &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32)
+                if (old_number_of_dirents != 0) && (bitmap_buffer != embedded_buf)
                 {
                     RtlCopyMemory(
                         bitmap_buffer as *mut core::ffi::c_void,
@@ -2138,9 +2170,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
                     );
 
                     // Free the old buffer if it was dynamically allocated
-                    if old_bitmap_buffer
-                        != &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmapBuffer[0] as *mut u32
-                    {
+                    if old_bitmap_buffer != embedded_buf {
                         ExFreePool(old_bitmap_buffer as *mut core::ffi::c_void);
                     }
                 }
@@ -2158,7 +2188,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
 
                 // Initialize the bitmap header
                 RtlInitializeBitMap(
-                    &mut (*Dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut RTL_BITMAP,
+                    core::ptr::addr_of_mut!((*dcb_inner).FreeDirentBitmap) as *mut RTL_BITMAP,
                     bitmap_buffer,
                     new_number_of_dirents,
                 );
@@ -2301,8 +2331,8 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             0,
             CdromToc as *mut core::ffi::c_void,
             size_of::<crate::CDROM_TOC>() as u32,
-            false,
-            true,
+            0,
+            1,
             &mut Iosb,
         );
 
@@ -2313,7 +2343,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             break;
         }
 
-        LocalTrackCount = ((*CdromToc).LastTrack - (*CdromToc).FirstTrack) + 1;
+        LocalTrackCount = (((*CdromToc).LastTrack - (*CdromToc).FirstTrack) + 1) as u32;
 
         let track_data_ptr = ptr::addr_of_mut!((*CdromToc).TrackData) as *mut crate::CDROM_TOC_TRACK_DATA;
         let field_addr = track_data_ptr.add((LocalTrackCount + 1) as usize) as *const u8;
@@ -2327,7 +2357,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
             break;
         }
 
-        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control, (0x04u8) as u32) != 0 { 1 } else { 0 };
+        Result = if BooleanFlagOn((*CdromToc).TrackData[0].Control as u32, 0x04u32) != 0 { 1 } else { 0 };
         break;
     }
 

@@ -37,7 +37,7 @@ pub const Dbg: u32 = DEBUG_TRACE_NAMESUP;
 
 // Constants
 const MAX_LFN_CHARACTERS: usize = 0x0104;
-const STATUS_FILE_INVALID: i32 = 0xC0000098i32; // NTSTATUS
+const STATUS_FILE_INVALID: i32 = 0xC0000098_u32 as i32; // NTSTATUS
 #[no_mangle]
 pub unsafe extern "C" fn FatIsNameInExpression(
     IrpContext: PIRP_CONTEXT,
@@ -153,7 +153,7 @@ pub unsafe extern "C" fn Fat8dot3ToString(
             );
 
             if *(*OutputString).Buffer == (FAT_DIRENT_REALLY_0E5) as i8 {
-                *(*OutputString).Buffer = 0xe5;
+                *(*OutputString).Buffer = 0xe5_u8 as i8;
             }
 
             let chicago = (*core::ptr::addr_of!(FatData)).ChicagoMode();
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
     // We'll start by locating the dirent for the name.
     FatStringTo8dot3(
         IrpContext as *mut c_void,
-        (*Fcb).ShortName.Name.Oem,
+        *(*Fcb).ShortName.Name.Oem.as_ref(),
         core::ptr::addr_of_mut!(local_ccb.__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate) as *mut [u8; 11],
     );
 
@@ -323,10 +323,10 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
     // PAGED_CODE();  (no-op)
 
     if (*Fcb).FullFileName.Buffer.is_null() {
-        let mut Lfn: _UNICODE_STRING;
+        let mut Lfn: _UNICODE_STRING = core::mem::zeroed();
         let mut TmpFcb = Fcb;
-        let mut StopFcb: PFCB;
-        let mut TmpBuffer: *mut u16;
+        let mut StopFcb: PFCB = core::ptr::null_mut();
+        let mut TmpBuffer: *mut u16 = core::ptr::null_mut();
         let mut PathLength: u32 = 0;
 
         // Initialize Lfn

@@ -2,12 +2,23 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, LARGE_INTEGER, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PSHARE_ACCESS};
+use ntkrnl_sys::ddk::{IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, LARGE_INTEGER, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PSHARE_ACCESS};
 use core::ffi::c_void;
 use core::ffi::{CStr};
 use core::ptr;
 use core::slice;
-use core::panic::{catch_unwind, AssertUnwindSafe, resume_unwind};
+// DUMMY_PSEH: SEH try/except is dead code in no_std; provide no-op stubs.
+#[allow(non_camel_case_types)]
+struct AssertUnwindSafe<F>(F);
+type UnwindErr = core::convert::Infallible;
+#[inline(always)]
+fn catch_unwind<F: FnOnce() -> R, R>(f: AssertUnwindSafe<F>) -> Result<R, UnwindErr> {
+    Ok((f.0)())
+}
+#[inline(always)]
+fn resume_unwind(_payload: UnwindErr) -> ! {
+    unreachable!()
+}
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::dirsup::{FatUpdateDirentFromFcb};
 use crate::types::{CCB_FLAG_COMPLETE_DISMOUNT, CCB_FLAG_DELETE_ON_CLOSE, CCB_FLAG_DENY_DEFRAG, DELETE_CONTEXT, FAT_BUG_CHECK_CLEANUP, FCB_STATE_DELAY_CLOSE, FCB_STATE_DELETE_ON_CLOSE, FCB_STATE_DENY_DEFRAG, FCB_STATE_FLUSH_FAT, FCB_STATE_PAGING_FILE, FCB_STATE_TRUNCATE_ON_CLOSE, FatLargeZero, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_FLAG_DEFERRED_FLUSH, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_SHUTDOWN, VCB_STATE_FLAG_WRITE_PROTECTED, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _TYPE_OF_OPEN_VirtualVolumeFile as VirtualVolumeFile, _VCB_CONDITION_VcbGood as VcbGood};
@@ -112,7 +123,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
 
     if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = (FILE_OPENED) as u64;
+        (*Irp).IoStatus.Information = (FILE_OPENED) as _;
         IoCompleteRequest(Irp, IO_DISK_INCREMENT);
         return STATUS_SUCCESS;
     }
@@ -243,7 +254,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
     if TypeOfOpen == UserDirectoryOpen {
         FsRtlNotifyCleanup(
             (*Vcb).NotifySync as *mut c_void,
-            &mut (*Vcb).DirNotifyList as *mut c_void,
+            core::ptr::addr_of_mut!((*Vcb).DirNotifyList) as *mut c_void,
             Ccb as *mut c_void,
         );
     }
@@ -257,21 +268,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
             }));
             match inner_result {
                 Ok(()) => {},
-                Err(err) => {
-                    // retrieve exception code
-                    let exception_code: NTSTATUS = if let Some(&status) = err.downcast_ref::<NTSTATUS>() {
-                        status
-                    } else {
-                        // can't extract, re-raise
-                        resume_unwind(err);
-                    };
-                    if FsRtlIsNtstatusExpected(exception_code) == (EXCEPTION_EXECUTE_HANDLER) as u8 {
-                        FatResetExceptionState(IrpContext);
-                    } else {
-                        abnormal_termination = true;
-                        resume_unwind(err);
-                    }
-                }
+                Err(err) => { let _ = err; unreachable!() }
             }
         }));
         // FINALLY
@@ -408,13 +405,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                             }));
                             match inner_seh_result {
                                 Ok(()) => {},
-                                Err(err) => {
-                                    let exception_code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                    if FsRtlIsNtstatusExpected(exception_code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
-                                        resume_unwind(err);
-                                    }
-                                    FatResetExceptionState(IrpContext);
-                                }
+                                Err(err) => { let _ = err; unreachable!() }
                             }
 
                             FatRemoveNames(IrpContext, Fcb);
@@ -494,13 +485,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                             }));
                             match seh1 {
                                 Ok(()) => {},
-                                Err(err) => {
-                                    let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                    if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
-                                        resume_unwind(err);
-                                    }
-                                    FatResetExceptionState(IrpContext);
-                                }
+                                Err(err) => { let _ = err; unreachable!() }
                             }
 
                             (*Fcb).FcbState |= FCB_STATE_TRUNCATE_ON_CLOSE;
@@ -533,13 +518,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                     }));
                                     match seh2 {
                                         Ok(()) => {},
-                                        Err(err) => {
-                                            let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                            if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
-                                                resume_unwind(err);
-                                            }
-                                            FatResetExceptionState(IrpContext);
-                                        }
+                                        Err(err) => { let _ = err; unreachable!() }
                                     }
                                 }
                             }
@@ -576,13 +555,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                         }));
                         match seh3 {
                             Ok(()) => {},
-                            Err(err) => {
-                                let code: NTSTATUS = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
-                                    resume_unwind(err);
-                                }
-                                FatResetExceptionState(IrpContext);
-                            }
+                            Err(err) => { let _ = err; unreachable!() }
                         }
 
                         if FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0 {

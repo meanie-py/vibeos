@@ -202,8 +202,8 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
 
     original_access_token = *effective_token;
     status = FatCreateRestrictEveryoneToken(
-        original_access_token,
-        core::ptr::addr_of_mut!(restricted_access_token),
+        original_access_token as *mut _,
+        core::ptr::addr_of_mut!(restricted_access_token) as *mut *mut _,
     );
 
     if !NT_SUCCESS(status) {
@@ -251,12 +251,12 @@ pub unsafe extern "C" fn FatCreateRestrictEveryoneToken(
     SidsToDisable.Groups[0].Attributes = 0;
     SidsToDisable.Groups[0].Sid = (*SeExports).SeWorldSid;
     Status = SeFilterToken(
-        Token,
+        Token as *mut core::ffi::c_void,
         0,
         core::ptr::addr_of_mut!(SidsToDisable),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        RestrictedToken,
+        RestrictedToken as *mut *mut core::ffi::c_void,
     );
     Status
 }

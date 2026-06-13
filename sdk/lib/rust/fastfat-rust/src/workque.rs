@@ -252,7 +252,7 @@ pub unsafe extern "system" fn FatAddToWorkque(
     }
 
     (*IrpContext).WorkQueueItem.WorkerRoutine =
-        Some(FatFspDispatch as unsafe extern "C" fn(PVOID) -> ()) as PWORKER_THREAD_ROUTINE;
+        core::mem::transmute::<*const (), PWORKER_THREAD_ROUTINE>(FatFspDispatch as *const ());
 
     core::ptr::write_volatile(
         &raw mut (*IrpContext).WorkQueueItem.Parameter as *mut PVOID,

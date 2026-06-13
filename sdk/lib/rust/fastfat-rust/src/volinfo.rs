@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_FULL_SIZE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, IoGetCurrentIrpStackLocation, IoSetTopLevelIrp, OEM_STRING, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_FULL_SIZE_INFORMATION, PFILE_FS_LABEL_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, RtlAreBitsSet, RtlOemStringToCountedUnicodeString, RtlUpcaseUnicodeStringToCountedOemString};
+use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_FULL_SIZE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, IoGetCurrentIrpStackLocation, IoSetTopLevelIrp, OEM_STRING, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_FULL_SIZE_INFORMATION, PFILE_FS_LABEL_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, RtlAreBitsSet, RtlOemStringToCountedUnicodeString, RtlUpcaseUnicodeStringToCountedOemString};
 // FS information class enum values (from _FSINFOCLASS_* bindgen consts)
 use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsLabelInformation as FileFsLabelInformation};
 use core::ffi::c_void;
@@ -401,14 +401,14 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
     // Local variables
     let mut Status: NTSTATUS;
-    let mut Dirent: *mut DIRENT;
+    let mut Dirent: *mut DIRENT = core::ptr::null_mut();
     let mut DirentBcb: *mut BCB = core::ptr::null_mut();
-    let mut ByteOffset: ULONG;
+    let mut ByteOffset: ULONG = 0;
     let mut TmpBuffer: [WCHAR; 11] = [0; 11];
     let mut OemBuffer: [UCHAR; 11] = [0; 11];
-    let mut OemLabel: OEM_STRING;
-    let mut UnicodeString: UNICODE_STRING;
-    let mut UpcasedLabel: UNICODE_STRING;
+    let mut OemLabel: OEM_STRING = unsafe { core::mem::zeroed() };
+    let mut UnicodeString: UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut UpcasedLabel: UNICODE_STRING = unsafe { core::mem::zeroed() };
 
     // PAGED_CODE(); omitted
 
@@ -432,7 +432,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
     Status = RtlUpcaseUnicodeStringToCountedOemString(
         &mut OemLabel as *mut OEM_STRING,
-        &UnicodeString as *const UNICODE_STRING,
+        &UnicodeString as *const UNICODE_STRING as *const _,
         FALSE,
     );
 
@@ -487,7 +487,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
     UpcasedLabel.Buffer = TmpBuffer.as_mut_ptr();
 
     Status = RtlOemStringToCountedUnicodeString(
-        &mut UpcasedLabel as *mut UNICODE_STRING,
+        &mut UpcasedLabel as *mut UNICODE_STRING as *mut _,
         &OemLabel as *const OEM_STRING,
         FALSE,
     );
@@ -592,7 +592,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
                 // Assert free dirent bitmap state
                 let root_dcb = (**Vcb).RootDcb;
-                let condition = (*root_dcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff
+                let condition = (*root_dcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32
                     || RtlAreBitsSet(
                         &mut (*root_dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut _ as *mut RTL_BITMAP,
                         (ByteOffset / core::mem::size_of::<DIRENT>() as ULONG) as u32,
@@ -603,7 +603,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
                 // Clear bit in free dirent bitmap
                 RtlClearBits(
-                    &mut (*root_dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut _ as *mut RTL_BITMAP,
+                    &mut (*root_dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut _ as *mut _,
                     (ByteOffset / core::mem::size_of::<DIRENT>() as ULONG) as u32,
                     1u32,
                 );
@@ -724,12 +724,14 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP) -> NTSTATUS {
+    let mut IrpContext = IrpContext;
+    let mut Irp = Irp;
     let mut Status: NTSTATUS = 0; // STATUS_SUCCESS
     let IrpSp: *mut IO_STACK_LOCATION;
-    let mut Vcb: *mut VCB;
-    let mut Fcb: *mut FCB;
-    let mut Ccb: *mut CCB;
-    let mut Length: u32;
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+    let mut Length: u32 = 0;
     let FsInformationClass: u32;
     let Buffer: *mut core::ffi::c_void;
     let mut WeAcquiredVcb: i32 = 0;
@@ -787,7 +789,7 @@ pub unsafe extern "C" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT,
     }
 
     if !Irp.is_null() {
-        (**Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as u64;
+        (**Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
     }
 
     // _SEH2_FINALLY
@@ -798,7 +800,7 @@ pub unsafe extern "C" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT,
     }
 
     if _SEH2_AbnormalTermination() == 0 {
-        FatCompleteRequest(IrpContext, *Irp, Status);
+        FatCompleteRequest(IrpContext, Irp, Status);
     }
 
     DebugTrace((-1i32) as u32, 0, b"FatCommonQueryVolumeInfo -> %08lx\n\0".as_ptr() as *const i8, (Status as isize) as u32);
@@ -811,12 +813,14 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let mut Irp = Irp;
+    let mut IrpContext = IrpContext;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: PIO_STACK_LOCATION;
 
-    let mut Vcb: PVCB;
-    let mut Fcb: PFCB;
-    let mut Ccb: PCCB;
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut Fcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
     let TypeOfOpen: TYPE_OF_OPEN;
 
     let FsInformationClass: FS_INFORMATION_CLASS;
@@ -862,7 +866,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 
     if TypeOfOpen != UserVolumeOpen {
         let mut irp_ctx_tmp: PIRP_CONTEXT = IrpContext;
-        FatCompleteRequest(&mut irp_ctx_tmp, Irp, STATUS_ACCESS_DENIED);
+        FatCompleteRequest(&mut irp_ctx_tmp, &mut Irp, STATUS_ACCESS_DENIED);
         DebugTrace((-1i32) as u32, Dbg as u32, b"FatCommonSetVolumeInfo -> STATUS_ACCESS_DENIED\n\0".as_ptr() as *const i8, 0u32);
         return STATUS_ACCESS_DENIED;
     }
@@ -905,7 +909,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
     FatReleaseVcb(IrpContext, Vcb);
     if _SEH2_AbnormalTermination() == 0 {
         let mut irp_ctx_fin: PIRP_CONTEXT = IrpContext;
-        FatCompleteRequest(&mut irp_ctx_fin, Irp, Status);
+        FatCompleteRequest(&mut irp_ctx_fin, &mut Irp, Status);
     }
     DebugTrace(
         (-1i32) as u32,
@@ -2195,7 +2199,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 //             Dirent->FileName[0] = FAT_DIRENT_DELETED;
 //
-//             NT_ASSERT( (Vcb->RootDcb->Specific.Dcb.UnusedDirentVbo == 0xffffffff) ||
+//             NT_ASSERT( (Vcb->RootDcb->Specific.Dcb.UnusedDirentVbo == 0xffffffff_u32) ||
 //                     RtlAreBitsSet( &Vcb->RootDcb->Specific.Dcb.FreeDirentBitmap,
 //                                    ByteOffset / sizeof(DIRENT),
 //                                    1 ) );
@@ -2308,3 +2312,25 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// FatFsdQueryVolumeInformation — FSD dispatch entry (translated from commented-out C)
+#[no_mangle]
+pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
+    VolumeDeviceObject: PVOLUME_DEVICE_OBJECT,
+    Irp: PIRP,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = 0;
+    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    let mut Irp = Irp;
+    let TopLevel: BOOLEAN;
+    FsRtlEnterFileSystem();
+    TopLevel = FatIsIrpTopLevel(Irp);
+    {
+        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        Status = FatCommonQueryVolumeInfo(IrpContext, &mut Irp);
+    }
+    if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }
+    FsRtlExitFileSystem();
+    let _ = VolumeDeviceObject;
+    Status
+}

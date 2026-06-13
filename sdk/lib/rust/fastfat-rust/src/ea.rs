@@ -1,7 +1,7 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _IO_STATUS_BLOCK, IoSetTopLevelIrp, PFILE_GET_EA_INFORMATION, PIRP};
+use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoSetTopLevelIrp, PFILE_GET_EA_INFORMATION, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, IRP_CONTEXT, PACKED_EA, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT};
@@ -16,9 +16,9 @@ extern "C" {
     fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...);
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
     fn CanFsdWait(Irp: *mut IRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: *mut IRP, CanWait: BOOLEAN) -> *mut PIRP_CONTEXT;
-    fn FatExceptionFilter(IrpContext: *mut PIRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS) -> BOOLEAN;
-    fn FatProcessException(IrpContext: *mut PIRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32) -> NTSTATUS;
+    fn FatCreateIrpContext(Irp: *mut IRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
+    fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS) -> BOOLEAN;
+    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32) -> NTSTATUS;
     fn _SEH2_TRY() -> i32;
     fn _SEH2_END();
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
@@ -418,7 +418,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
     DebugTrace(1, 0u32, b"FatFsdSetEa\n\0".as_ptr() as *const i8, 0);
@@ -464,12 +464,12 @@ pub unsafe extern "C" fn FatCommonQueryEa(
 
 #[no_mangle]
 pub unsafe extern "C" fn FatCommonSetEa(
-    IrpContext: *mut PIRP_CONTEXT,
-    Irp: *mut PIRP,
+    IrpContext: PIRP_CONTEXT,
+    Irp: PIRP,
 ) -> NTSTATUS {
     PAGED_CODE();
     let status = ntkrnl_sys::constants::STATUS_INVALID_DEVICE_REQUEST;
-    FatCompleteRequest(IrpContext, (Irp).cast(), status);
+    FatCompleteRequest(IrpContext, Irp, status);
     status
 }
 
@@ -792,3 +792,23 @@ pub unsafe extern "C" fn FatCommonSetEa(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// FatFsdQueryEa — FSD dispatch entry (translated from commented-out C)
+#[no_mangle]
+pub unsafe extern "system" fn FatFsdQueryEa(
+    _VolumeDeviceObject: *mut VOLUME_DEVICE_OBJECT,
+    Irp: *mut IRP,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = 0;
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
+    let TopLevel: BOOLEAN;
+    FsRtlEnterFileSystem();
+    TopLevel = FatIsIrpTopLevel(Irp);
+    {
+        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        Status = FatCommonQueryEa(IrpContext, Irp);
+    }
+    if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }
+    FsRtlExitFileSystem();
+    Status
+}

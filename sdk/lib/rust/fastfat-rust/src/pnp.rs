@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoAcquireVpbSpinLock, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive,  IoAcquireVpbSpinLock, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FAT_BUG_CHECK_PNP, IRP_CONTEXT, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbBad as VcbBad};
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent as u32, (0i32) as u8); // FALSE
             IoSetCompletionRoutine(
                 Irp,
-                Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
+                Some(unsafe { core::mem::transmute::<*const (), _>(FatPnpCompletionRoutine as *const ()) }),
                 &mut Event as *mut KEVENT as *mut core::ffi::c_void,
                 1u8, // TRUE
                 1u8, // TRUE
@@ -246,7 +246,7 @@ pub unsafe extern "C" fn FatPnpRemove(
     KeInitializeEvent(event_ptr, 0, 0);
     IoSetCompletionRoutine(
         Irp,
-        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
+        Some(unsafe { core::mem::transmute::<*const (), _>(FatPnpCompletionRoutine as *const ()) }),
         event_ptr as *mut core::ffi::c_void,
         1,
         1,
@@ -311,7 +311,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0); // FALSE = 0
     IoSetCompletionRoutine(
         Irp,
-        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(FatPnpCompletionRoutine)),
+        Some(unsafe { core::mem::transmute::<*const (), _>(FatPnpCompletionRoutine as *const ()) }),
         &mut Event as *mut KEVENT as *mut c_void,
         1, // InvokeOnSuccess = TRUE
         1, // InvokeOnError = TRUE
