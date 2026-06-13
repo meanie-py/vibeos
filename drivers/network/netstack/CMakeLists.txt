@@ -17,10 +17,17 @@ add_registry_inf(netstack_reg.inf)
 # socket() to find a provider and reach AFD/netstack (without it socket() returns
 # WSAEINVAL). It is normally written by network setup (media/inf/nettcpip.inf),
 # which the LiveCD never runs. HOWEVER: baking it into the shared system hive
-# deterministically trips a BUGCHECK 0x50 in an early kernel driver during boot
-# (PC in the 0xfffff880 driver region, read-fault on a 0xfffff8a0 paged-pool VA),
-# BEFORE shell ready — the same amd64 layout-sensitive 0x50 family as the known
-# taskbar flake, made DETERMINISTIC by the hive-size/pool-layout shift this adds.
-# So enabling it breaks boot on ALL arches. Re-enable (add it back to the
-# add_registry_inf call above) once that latent 0x50 is root-caused — this gives
-# a deterministic repro of it. See docs/engineering/translation-debugging-field-manual.md.
+# deterministically trips a BUGCHECK 0x50 during boot — but the bug is NOT in
+# netstack. ROOT-CAUSED 2026-06-13 (still survives the crp merge): the hive-size
+# shift moves a LATENT STORAGE-DRIVER bug onto an unmapped page. It is an async
+# read-fault of paged pool (0xfffff8a0...) at a STABLE PC (0xfffff880055cd0x0)
+# that fires right AFTER the uniata/scsiport IDE adapter-init completes (the
+# adapter-init's IoConnectInterrupt fails ~33×, then an async callback faults).
+# The PC does NOT move when scsiport-rust is rebuilt → the faulting code is in
+# uniata.sys (C miniport) or a scsiport function linked before the init path,
+# reached via the failed-interrupt adapter; ScsiPortIoTimer was RULED OUT (its
+# entry instrumentation never fired). To finish: GDB-break at the faulting PC,
+# read the register holding 0xfffff8a0..., confirm module (uniata vs scsiport),
+# fix the bad pointer / pool-type / NULL-Interrupt[0] deref; THEN re-enable the
+# catalog (add netstack_winsock.inf back above) + flip the usermode winsock test.
+# See docs/engineering/translation-debugging-field-manual.md §9.9 and task 79.

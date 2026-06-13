@@ -1044,6 +1044,32 @@ non-deterministic and post-`shell ready`.
    flake; determinism + a *pre*-`shell ready` PC that the flake never reaches is the
    tell.
 
+**Worked instance (2026-06-13, netstack Winsock2 catalog → 0x50, survives the crp merge):**
+The faulting driver is the **uniata/scsiport IDE storage stack**, *not* netstack — the
+catalog hive is innocent. Diagnosis chain that worked when the usual symbolication failed:
+- **build-index/addr2sym is ntoskrnl-only.** The faulting PC `0xfffff880055cd0x0` is in a
+  *driver* (`0xfffff880` region), which addr2sym can't resolve, and the Rust-cohab modules
+  ship **no Rust DWARF** (cargo-drive strips it) so `qemu/start.sh --gdb` *preflight fails*
+  — use `--skip-preflight`. Adding debug info is NOT an option: the bug is layout-sensitive,
+  so the size change would move it (Heisenbug).
+- **Caller-level bisect markers** (cheap `DbgPrint` at each call site, *not* in the hot path)
+  localised it: the crash fires *after* the IDE `adapter-init complete` marker with no
+  subsequent init call → it's an **async callback** (timer/DPC/ISR), reached because
+  `FdoCallHWInitialize`'s `IoConnectInterrupt` fails (~33× "Could not connect interrupt") and
+  the caller ignores the failure, starting the IoTimer on a half-set-up adapter.
+- **The crash PC is STABLE across `scsiport-rust` rebuilds** (it does *not* shift when you add
+  code to scsiport and recompile). That is the key tell: the faulting code is **not in the
+  module you're editing** — here it points at `uniata.sys` (C miniport, never rebuilt) or a
+  scsiport function linked before the edited init path. Instrumenting `ScsiPortIoTimer`
+  *ruled it out* (its entry `DbgPrint` never fired before the fault). Lesson: when a PC
+  refuses to move under your edits, you're editing the wrong module — bisect by *which
+  module* moves the PC, not just which function.
+- **Next step to finish:** GDB-break at the exact faulting PC (`--skip-preflight`), read the
+  register holding the bad `0xfffff8a0...` paged-pool pointer + confirm the owning module
+  (uniata vs scsiport), then fix the bad deref (candidates: `Interrupt[0]` is NULL after the
+  failed connect and is passed to `KeSynchronizeExecution`; or a wrong-pool-type / stale
+  list pointer in the IDE timeout path).
+
 ---
 
 *Maintenance: this manual is the fast-lookup index distilled from the project's debug
