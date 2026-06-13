@@ -226,12 +226,12 @@ const STATUS_NOT_SAME_DEVICE: NTSTATUS = 0xC00000D4_u32 as i32;
 const FSCTL_DISMOUNT_VOLUME: ULONG = 0x00090020;
 
 // Lock queue
-const LockQueueIoDatabaseLock: u32 = 3;
+const LockQueueIoDatabaseLock: u32 = 0x0000000A;
 
 // IO Operation Transfer types
-const IopOtherTransfer: ULONG = 0;
-const IopReadTransfer: ULONG = 1;
-const IopWriteTransfer: ULONG = 2;
+const IopOtherTransfer: ULONG = 0x00000002;
+const IopReadTransfer: ULONG = 0x00000000;
+const IopWriteTransfer: ULONG = 0x00000001;
 
 // IO access/length arrays — declared as single-element to get correct base address;
 // actual sizes are in C data segment. Access via raw pointer arithmetic.
@@ -282,7 +282,7 @@ const FileMoveClusterInformation: u32 = 31;
 
 // FS information class enum values
 const FileFsDeviceInformation: u32 = 4;
-const FileFsDriverPathInformation: u32 = 6;
+const FileFsDriverPathInformation: u32 = 0x00000009;
 const FileFsMaximumInformation: u32 = 9;
 
 // Additional IRP constants

@@ -1,0 +1,17 @@
+# Cargo-driven `mlang.dll` link (i386 + amd64 + arm64). User-mode win32 DLL.
+# Replaces the cmake `add_library(mlang MODULE rust_cohab_stub.c …)` cohab — the
+# Rust body (mlang-rust) IS the DLL; reactos-link drives the final PE link.
+
+[package]
+name = "mlang-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mlang"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

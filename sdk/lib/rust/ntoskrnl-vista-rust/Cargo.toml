@@ -1,0 +1,22 @@
+# ntoskrnl-vista-rust — Rust translation of the subset of
+# sdk/lib/drivers/ntoskrnl_vista (the Vista+ kernel-API support lib) that
+# classpnp.sys statically links. crate-type=staticlib → libntoskrnl_vista_rust.a,
+# linked into classpnp.sys via .rust_lib() in place of the cmake-built
+# libntoskrnl_vista.a (Tier-B step 5). The C lib stays for the kernels
+# (ntoskrnl-cargo / ntkrnlmp-cargo still link it). C kept on disk per never-delete.
+#
+# Scope: only the 6 symbols classpnp imports that aren't self-provided by
+# classpnp-rust's ddk_shims.rs — io.c (IoQueueWorkItemEx, IoSetMasterIrpStatus),
+# ke.c (KeQueryHighestNodeNumber, KeGetCurrentNodeNumber, KeSetCoalescableTimer),
+# po.c (PoQueryWatchdogTime). fsrtl.c / etw.c / pofx.c are NOT referenced by
+# classpnp, so they are intentionally omitted.
+[package]
+name = "ntoskrnl-vista-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

@@ -1,0 +1,26 @@
+# mup-rust — Rust translation of the Multiple UNC Provider driver
+# (drivers/filesystems/mup, ~2.6K LOC: mup.c + dfs.c). MUP muxes UNC path opens
+# (\\server\share) across registered network redirectors (FsRtl registers them via
+# FSCTL_MUP_REGISTER_PROVIDER), keeps a prefix table of accepted prefixes, and reroutes
+# IRP_MJ_CREATE via STATUS_REPARSE. dfs.c is all UNIMPLEMENTED stubs (DFS disabled).
+#
+# NOT boot-loaded (no txtsetup.sif entry → not on the LiveCD load path), so the bar is
+# link-clean ×3 + no smoke regression — same tier as pcix. WDM kernelmodedriver,
+# imports ntoskrnl + hal only. Hand-translated (not LLM): every const value harvested
+# from the SDK headers, every union field path from the ntkrnl-sys bindgen substrate.
+#
+# crate-type = staticlib -> libmup_rust.a, cohab-linked into the cmake-built mup.sys
+# with mup.c/dfs.c commented out. Built for all 3 arches. SEH (PSEH2) is dead code under
+# USE_DUMMY_PSEH: _SEH2_TRY bodies inline straight-line, _SEH2_FINALLY bodies always run,
+# _SEH2_EXCEPT handlers are dropped (faithful — the C compiles them to dead code too).
+
+[package]
+name = "mup-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

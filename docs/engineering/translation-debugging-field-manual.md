@@ -111,6 +111,15 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Fix:** Import the per-arch inline explicitly: `use ntkrnl_sys::ke::KeGetCurrentIrql;` (a glob re-export through `crate::inlines` does NOT win over a local extern decl — must be explicit, pcix pattern), and **delete any LLM-emitted local `extern` decl of a DDK FORCEINLINE**. Same class as `IoGetCurrentIrpStackLocation`/`IoSkipCurrentIrpStackLocation` (→ `ntkrnl_sys::inline::tier1`) and `ExAllocatePoolZero`/`ExAllocatePoolUninitialized` (exfuncs.h FORCEINLINE wrapping `ExAllocatePoolWithTag` — define inline, use `core::ptr::write_bytes` for the zero). Caught landing partmgr-rust, 2026-06-12.
 **Source:** `project_partmgr_rust_track.md`
 
+### Three cross-arch link traps for kernel-time / IRQL / raise helpers (mup-rust, 2026-06-13)
+A standalone `.sys` cohab that reads system time, raises status, or checks IRQL hits a per-arch trio. All cargo-check clean on every arch; only the link breaks, and on a *different* arch each.
+1. **`ExRaiseStatus` → `undefined symbol: _RtlRaiseStatus@4` (i386).** `ntkrnl_sys::ex::ExRaiseStatus` is `#[link_name = "RtlRaiseStatus"]`, but ntoskrnl's spec exports **only `ExRaiseStatus`** (i386 `@4`), not `RtlRaiseStatus`. **Fix:** use the bindgen decl `use ntkrnl_sys::ddk::ExRaiseStatus;` (real `ExRaiseStatus` symbol). Both are `-> !`, so the diverging-call codegen is identical. (The `ex::` link-name aliasing only resolves inside the kernel image itself, where `RtlRaiseStatus` *is* present; a driver linking against the import lib has only the exported name.)
+2. **amd64: `undefined symbol: SharedUserData`.** `KeQuerySystemTime` is a real export on i386/arm but a SharedUserData-reading inline on amd64; the ntkrnl-sys inline references `extern { static SharedUserData }`, a C macro for the fixed KI_USER_SHARED_DATA VA, not a real symbol. **Fix:** `#[cfg(not(target_arch="x86"))] #[no_mangle] pub static mut SharedUserData: *mut _KUSER_SHARED_DATA = 0xFFFFF78000000000usize as *mut _;` (classpnp-rust's shim), and cfg-split the import: i386 → `ddk::KeQuerySystemTime` (export), non-x86 → `inline::ke::KeQuerySystemTime`.
+3. **arm64: `undefined symbol: KeGetCurrentPrcb`.** `KeGetCurrentIrql` resolves via the ntkrnl_sys inline, which references `KeGetCurrentPrcb` — not exported on arm64. **Fix:** `#[cfg(target_arch="aarch64")] #[no_mangle] pub unsafe extern "C" fn KeGetCurrentPrcb() -> PKPRCB { ntkrnl_sys::inline::ke::KeGetCurrentPrcb() }` — forward the export to the register-reading inline (distinct IR name), classpnp-rust pattern.
+
+Also (worktree-build, not translation): when giving a worktree its own `build-<arch>` via the warm-dir copy+repoint recipe, the repoint sed must **NOT** rewrite `.build-tools/` paths — `.build-tools` is gitignored and lives only in main. Over-rewriting makes the `cc` crate's build.rs look for `…/vibeos-wt-X/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang` (ENOENT) → **every `*-cargo` Phase-2 crate fails its custom build command** ("failed to run custom build command", ToolNotFound), masquerading as a systemic cargo regression. Fix: `ln -sfn <main>/.build-tools <worktree>/.build-tools` (toolchain is read-only/shared). The C/link compiler path in the cache should also stay pointed at main's `.build-tools` (the recipe's "harmless" note assumed it was left alone).
+**Source:** `project_mup_rust_track.md`
+
 ### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
 **Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
 **Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
@@ -471,6 +480,30 @@ the recipe (3 blocks: 1 dispatch-EXCEPT, 1 triple-nested TRY/FINALLY+try_leave, 
 **Root cause:** stable Rust can't *define* a variadic C fn (`c_variadic` unstable on the def side); when the C is a `static __inline` with no out-of-line symbol, rustconv emits a degraded copy stub.
 **Fix / oracle:** grep `pub unsafe extern "C" fn (Rtl|Cm|Db|Hal)\w*Printf[AW]\b` and any one-liner forwarding to a non-variadic helper with no format substitution. Fix with a tiny C shim TU delegating to libcntpr `_vsnprintf` (calling variadics FROM Rust is stable), then remove the Rust stub leaving only a comment so a re-run doesn't re-emit it.
 **Source:** `feedback_degraded_variadic_stubs.md`
+
+### ZST-array pointer `.add()` — bindgen flexible member steps 0 bytes
+**Symptom:** loop over `cfg.AccessRanges.add(i)` always reads element 0; downstream a counted allocation overruns (BUGCHECK 0x19 BAD_POOL_HEADER) or per-element logic misbehaves with no crash at the access itself.
+**Root cause:** bindgen renders C flexible/pointer-to-array members as `*mut [T; 0usize]`; `.add(i)` advances `i * size_of::<[T; 0]>() = 0` bytes. The LLM writes `field.add(i)).cast()` which compiles clean.
+**Fix / oracle:** cast FIRST: `(x.field as *mut T).add(i)`. Sweep: `grep -P 'pub (\w+): \*mut \[\w+; 0usize\]' types_*.rs` for the field names, then grep `.FIELD.add(`/`.FIELD.offset(` in modules. Caught in scsiport SpiConfigToResource (descriptor-per-range overrun of an exactly-sized CM_RESOURCE_LIST), 2026-06-12.
+**Source:** `project_scsiport_rust_track.md`
+
+### Plain Rust-ABI `unsafe fn` address handed to the kernel (timer/dispatch)
+**Symptom:** i386 BUGCHECK 0x1E with PC INSIDE pool data (PC ≈ a DeviceExtension address) shortly after a timer starts or a device opens; works until the kernel first CALLS the pointer.
+**Root cause:** fn defined `unsafe fn Foo(...)` (Rust ABI) but its ADDRESS escapes via `Foo as *mut c_void`/transmute into IoInitializeTimer/MajorFunction/etc. The kernel calls it as NTAPI (stdcall on i386) → callee-pop mismatch → caller's stack walks into its own args/locals and `ret`s into data.
+**Fix / oracle:** every fn whose address escapes must be `extern "system"` (or the exact per-arch ABI). Sweep: list plain `unsafe fn` names, flag any appearing in `as *mut`/`as *const`/`transmute(`. Caught in scsiport (ScsiPortIoTimer = IO_TIMER_ROUTINE, ScsiPortCreateClose = DRIVER_DISPATCH), 2026-06-12.
+**Source:** `project_scsiport_rust_track.md`
+
+### Hand-rolled va_arg (`&last_fixed_param` walk) — amd64-only garbage
+**Symptom:** variadic export works on i386 but reads garbage args on amd64/arm64 (scsiport: "Invalid PathId: 160" then hang — RequestComplete read a junk Srb pointer).
+**Root cause:** the LLM "simulates va_start" by taking the address of the last fixed parameter and walking upward — valid only where all params live contiguously on the stack (i386 cdecl). On win64 fixed params are in registers; `&param` is a local spill slot.
+**Fix / oracle:** real c_variadic: declare `mut args: ...` and read with `args.arg::<T>()` (pointers/i32/u32 are VaArgSafe). Sweep: grep `Simulate va_start|last_param_ptr|& *\w+ as \*const \*mut` inside variadic fns.
+**Source:** `project_scsiport_rust_track.md`
+
+### C `DPRINT` (NDEBUG-dead) translated as live `DbgPrint` — boot slowdown masquerading as a hang
+**Symptom:** smoke HANG_TIMEOUT but the system is alive; EIP sampling lands in DbgPrint plumbing (`so_wstring`, `__DbgPortRead`, memcpy). Per-IO prints throttle boot below the smoke timeout.
+**Root cause:** C's `#define NDEBUG` compiles DPRINT out entirely; the translation renders them as unconditional DbgPrint.
+**Fix / oracle:** route prints whose format string matches a C `DPRINT(` (NOT `DPRINT1`) to a c_variadic no-op sink (`pub unsafe extern "C" fn dprint_noop(_f: *const c_char, mut _a: ...) -> i32 { 0 }`); keep DPRINT1-derived ones (they carry the `(%s:%d)` file/line prefix). Script it: harvest C DPRINT format strings, match Rust byte-literals, rename the callee.
+**Source:** `project_scsiport_rust_track.md`
 
 ### #ifdef MACRO mapped to #[cfg(MACRO)] — always the wrong branch
 **Symptom:** compiles and links clean; pure-runtime bug, often arch-asymmetric. winsta.c: `#if !defined(_USE_DUMMY_PSEH)` → `#[cfg(not(_USE_DUMMY_PSEH))]` (always TRUE) ran KeUserModeCallbacks on the SYSTEM desktop thread → i386-only hang at comctl32 InitializeClasses, flooding "Sending to Suspended Thread Msg 121". amd64/amd64-green did NOT exonerate it.

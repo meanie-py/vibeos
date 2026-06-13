@@ -49,14 +49,11 @@ fn main() {
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // CRT statics still reused from cmake (compiled C/asm): libmsvcrtex.a is
-        // the "hidden" CRT startup providing _wWinMainCRTStartup → wWinMain;
-        // oldnames.a the _name aliases. Compiling these in-cargo (c_from_compile_db)
-        // is the remaining step to a fully ninja-free lsass.
-        .static_libs(&[
-            "sdk/lib/crt/libmsvcrtex.a",
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-        ])
+        // oldnames.a (_name aliases) still reused from cmake; the CRT startup
+        // (libmsvcrtex.a — _wWinMainCRTStartup → wWinMain) is now compiled
+        // in-cargo via .msvcrtex_crt() (msvcrtex.cmake sources replayed).
+        .static_libs(&["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"])
+        .msvcrtex_crt()
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

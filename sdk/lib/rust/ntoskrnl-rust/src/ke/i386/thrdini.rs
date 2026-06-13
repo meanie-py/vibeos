@@ -139,7 +139,7 @@ const CR0_TS: ULONG_PTR = 0x00000008;
 const NO_USER_MODE_CONTEXT: u32 = 0x0000000E;
 const ATTEMPTED_SWITCH_FROM_DPC: u32 = 0x000000B8;
 const Running: u8 = 2;
-const WrDispatchInt: u8 = 3;
+const WrDispatchInt: u8 = 0x0000001F;
 const EFLAGS_V86_MASK: u32 = 0x00020000;
 
 #[no_mangle]

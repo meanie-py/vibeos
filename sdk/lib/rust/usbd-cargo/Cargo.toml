@@ -1,0 +1,17 @@
+# Cargo-driven `usbd.sys` link (i386 + amd64 + arm64). Replaces the cmake
+# `add_library(usbd MODULE rust_cohab_stub.c …)` cohab — the Rust body
+# (usbd-rust) IS the driver; reactos-link drives the final PE link.
+
+[package]
+name = "usbd-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "usbd"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

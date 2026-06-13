@@ -36,12 +36,16 @@ fn main() {
         other => panic!("framebuf-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
     };
 
+    // cnt-rust-lib `float` feature: i386 omits it (no-SSE softfloat kernel),
+    // amd64/arm64 enable it — same gating as ntoskrnl-cargo/classpnp.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         .rust_staticlib("framebuf-rust")
-        .static_libs(&[
-            "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-        ])
+        // ZERO cmake .a: both cmake cntpr .a dropped — cnt-rust-lib (cargo-native
+        // sibling) is the sole libcntpr provider, like classpnp/ntoskrnl-cargo.
+        // cold-link confirms framebuf needs no C residue (no c_from_compile_db).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         .import_lib("win32ss/win32k.spec", "win32k.sys", "win32k")
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
