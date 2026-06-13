@@ -101,7 +101,7 @@ use super::timerobj::KiTimerTableListHead;
 const TIMER_TABLE_SIZE: ULONG = 512;
 const MAX_TIMER_DPCS: usize = 16;
 const IO_NO_INCREMENT: LONG = 0;
-const MAX_QUANTUM: LONG = 120;
+const MAX_QUANTUM: LONG = 0x7f;
 const LOW_REALTIME_PRIORITY: LONG = 16;
 const DPC_NORMAL: usize = 0;
 const DPC_THREADED: usize = 1;

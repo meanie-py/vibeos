@@ -21,7 +21,7 @@ extern "C" {
 }
 
 const FSRTLP_MAX_QUEUES: usize = 2;
-const FSRTL_FSP_TOP_LEVEL_IRP: ULONG_PTR = 0x80000000usize;
+const FSRTL_FSP_TOP_LEVEL_IRP: ULONG_PTR = 0x1;
 const LOW_REALTIME_PRIORITY: i32 = 16;
 
 #[repr(C)]
