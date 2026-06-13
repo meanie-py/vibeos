@@ -1,0 +1,18 @@
+# setjmp-rust — Rust translation of the amd64 vcruntime setjmp/longjmp
+# (sdk/lib/vcruntime/amd64/{_setjmp.s,__longjmp_noframe.s,longjmp.c}). The kernel
+# (amd64) links these for the SEH unwind path (_setjmp/_setjmpex/longjmp); i386
+# (DUMMY_PSEH) and arm64 don't reference them. The register save/restore is
+# irreducible asm → `global_asm!` (offsets derived from a repr(C) _JUMP_BUFFER
+# via offset_of! so they can't drift); `longjmp` (the RtlUnwind glue) is Rust.
+# crate-type staticlib+rlib → .rust_lib("setjmp-rust") into ntkrnlmp/ntoskrnl on
+# amd64. C kept on disk (never-delete) for hal/ftfd cmake consumers.
+[package]
+name = "setjmp-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
