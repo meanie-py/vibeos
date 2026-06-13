@@ -88,7 +88,7 @@ use super::krnlinit::KiProcessorBlock;
 // Use actual definition from clock.rs, not extern (lto=false splits them)
 use super::clock::KeTickCount;
 
-const MEMORY_PRIORITY_FOREGROUND: ULONG = 1;
+const MEMORY_PRIORITY_FOREGROUND: ULONG = 0x2;
 const LOW_REALTIME_PRIORITY: KPRIORITY = 16;
 const HIGH_PRIORITY: KPRIORITY = 31;
 const MAXULONG_PTR: usize = usize::MAX;
@@ -105,7 +105,7 @@ const Transition: UCHAR = 6;
 
 const ProcessInMemory: UCHAR = 0;
 
-const WrYieldExecution: UCHAR = 27;
+const WrYieldExecution: UCHAR = 0x00000021;
 
 const MUTANT_INCREMENT: LONG = 1;
 const IPI_DPC: ULONG = 2;

@@ -222,9 +222,9 @@ pub const DPC_NORMAL: u32 = 0;
 
 // IPI freeze states
 pub const IPI_FREEZE: u32 = 4;
-pub const IPI_FROZEN_FLAG_ACTIVE: u32 = 1;
+pub const IPI_FROZEN_FLAG_ACTIVE: u32 = 0x20;
 pub const IPI_FROZEN_STATE_RUNNING: u32 = 0;
-pub const IPI_FROZEN_STATE_TARGET_FREEZE: u32 = 1;
+pub const IPI_FROZEN_STATE_TARGET_FREEZE: u32 = 0x5;
 pub const IPI_FROZEN_STATE_FROZEN: u32 = 2;
 pub const IPI_FROZEN_STATE_THAW: u32 = 3;
 pub const IPI_FROZEN_STATE_OWNER: u32 = 4;

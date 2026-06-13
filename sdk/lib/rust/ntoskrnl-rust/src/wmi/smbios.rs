@@ -98,7 +98,7 @@ struct GUID {
     Data4: [UCHAR; 8],
 }
 
-const WNODE_FLAG_FIXED_INSTANCE_SIZE: ULONG = 0x00000040;
+const WNODE_FLAG_FIXED_INSTANCE_SIZE: ULONG = 0x10;
 
 #[no_mangle]
 pub static MSSmBios_RawSMBiosTables_GUID: GUID = GUID {
