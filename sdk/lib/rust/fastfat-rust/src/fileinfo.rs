@@ -255,7 +255,10 @@ unsafe extern "C" fn FatQueryStandardInfo(
     // PAGED_CODE expansion
     {
         if KeGetCurrentIrql() > 0 {
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             core::arch::asm!("ud2", options(nostack, nomem));
+            #[cfg(target_arch = "aarch64")]
+            core::arch::asm!("udf #0", options(nostack, nomem));
         }
     }
 
