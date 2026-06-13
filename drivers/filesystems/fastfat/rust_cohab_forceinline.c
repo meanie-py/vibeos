@@ -87,11 +87,11 @@ typedef union {
 #endif
 
 /* Declare the real kernel exports we delegate to */
-extern PMY_SLIST_ENTRY __cdecl InterlockedPopEntrySList(PMY_SLIST_HEADER Head);
-extern PMY_SLIST_ENTRY __cdecl InterlockedPushEntrySList(PMY_SLIST_HEADER Head, PMY_SLIST_ENTRY Entry);
-extern void __cdecl ExFreePool(PVOID Ptr);
-extern void __cdecl KeEnterCriticalRegion(void);
-extern void __cdecl KeLeaveCriticalRegion(void);
+extern PMY_SLIST_ENTRY __fastcall InterlockedPopEntrySList(PMY_SLIST_HEADER Head);
+extern PMY_SLIST_ENTRY __fastcall InterlockedPushEntrySList(PMY_SLIST_HEADER Head, PMY_SLIST_ENTRY Entry);
+extern void ExFreePool(PVOID Ptr);
+extern void KeEnterCriticalRegion(void);
+extern void KeLeaveCriticalRegion(void);
 
 /* KEVENT (minimal for ExInitializeFastMutex) */
 typedef struct {
@@ -101,7 +101,7 @@ typedef struct {
     struct { PVOID Flink, Blink; } WaitListHead;
 } MY_KEVENT;
 
-extern void __cdecl KeInitializeEvent(MY_KEVENT *Event, int Type, BOOLEAN InitialState);
+extern void KeInitializeEvent(MY_KEVENT *Event, int Type, BOOLEAN InitialState);
 #define SynchronizationEvent 1
 
 /* ====================================================================
@@ -287,7 +287,7 @@ VOID FsRtlExitFileSystem(VOID)  { KeLeaveCriticalRegion(); }
 /* ====================================================================
  * ObReferenceObject — maps to ObReferenceObjectWithTag in ntoskrnl
  * ==================================================================== */
-extern void __cdecl ObReferenceObjectWithTag(PVOID Object, ULONG Tag);
+extern void ObReferenceObjectWithTag(PVOID Object, ULONG Tag);
 
 VOID ObReferenceObject(PVOID Object)
 {
@@ -309,6 +309,25 @@ __asm__(".globl __int2c\n"
         "__int2c:\n"
         "    brk #0\n"
         "    ret\n");
+#endif
+
+/* i386 dual-decoration bridge: the bindgen ddk substrate models these FORCEINLINE
+ * helpers as `extern "C"` (bare), but other fastfat modules hand-declare them
+ * `extern "system"` (@N). -mrtd makes our definitions @N; add a bare alias so the
+ * `ddk`-imported references resolve to the same impl. (__int2c: bridge the
+ * underscore/stdcall-arity gap between the asm symbol and the Rust @0 reference.) */
+#if defined(__i386__)
+__asm__(
+    ".globl _ExInitializeFastMutex\n        .set _ExInitializeFastMutex, _ExInitializeFastMutex@4\n"
+    ".globl _IoGetCurrentIrpStackLocation\n .set _IoGetCurrentIrpStackLocation, _IoGetCurrentIrpStackLocation@4\n"
+    ".globl _IoGetNextIrpStackLocation\n    .set _IoGetNextIrpStackLocation, _IoGetNextIrpStackLocation@4\n"
+    ".globl _IoMarkIrpPending\n             .set _IoMarkIrpPending, _IoMarkIrpPending@4\n"
+    ".globl _IoSetCompletionRoutine\n       .set _IoSetCompletionRoutine, _IoSetCompletionRoutine@24\n"
+    ".globl _IoSetNextIrpStackLocation\n    .set _IoSetNextIrpStackLocation, _IoSetNextIrpStackLocation@4\n"
+    ".globl _IoCopyCurrentIrpStackLocationToNext\n .set _IoCopyCurrentIrpStackLocationToNext, _IoCopyCurrentIrpStackLocationToNext@4\n"
+    ".globl _IoSkipCurrentIrpStackLocation\n       .set _IoSkipCurrentIrpStackLocation, _IoSkipCurrentIrpStackLocation@4\n"
+    ".globl _KeInitializeSpinLock\n               .set _KeInitializeSpinLock, _KeInitializeSpinLock@4\n"
+    ".globl ___int2c@0\n                    .set ___int2c@0, __int2c\n");
 #endif
 
 #pragma clang diagnostic pop

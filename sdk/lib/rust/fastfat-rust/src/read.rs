@@ -22,7 +22,7 @@ use crate::types::{FAT_IO_CONTEXT, FatData, _TYPE_OF_OPEN_UserVolumeOpen as User
 use crate::workque::FatOplockComplete;
 
 // Real NT exports not present in ddk_shims; declared here per the C headers.
-extern "C" {
+extern "system" {
     fn FsRtlPostStackOverflow(Context: *mut core::ffi::c_void, Event: PKEVENT, StackOverflowRoutine: *const core::ffi::c_void);
     fn FsRtlCheckLockForReadAccess(FileLock: *const core::ffi::c_void, Irp: PIRP) -> BOOLEAN;
     fn FatBugCheck(arg1: ULONG_PTR, arg2: ULONG_PTR, arg3: ULONG_PTR) -> !;
@@ -42,8 +42,8 @@ unsafe fn NT_ERROR(status: NTSTATUS) -> i32 {
     (((status as u32) >> 30) == 3) as i32
 }
 
-extern "C" {
-    fn DebugTrace(level: i32, flags: u32, message: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, flags: u32, message: *const i8, ...); } extern "system" {
     fn PAGED_CODE();
     fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
     fn BooleanFlagOn(flags: u32, flag: u32) -> BOOLEAN;
@@ -82,7 +82,7 @@ extern "C" {
     fn CcCopyReadEx(FileObject: *mut FILE_OBJECT, FileOffset: *mut LARGE_INTEGER, Length: ULONG, Wait: BOOLEAN, Buffer: *mut core::ffi::c_void, IoStatus: *mut _IO_STATUS_BLOCK, Thread: *mut _ETHREAD) -> BOOLEAN;
     fn FatPagingFileIo(Irp: PIRP, Fcb: *mut FCB);
     fn FatDeviceIsFatFsdo(device_object: *mut core::ffi::c_void) -> i32; // BOOLEAN fn NodeType(ptr: *mut core::ffi::c_void) -> u16;
-    fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "C" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "C" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "C" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "C" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS pub unsafe extern "C" fn FatCommonRead(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS fn FatRaiseStatus(irp_context: *mut core::ffi::c_void, status: i32);
+    fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> i32; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> i32; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> i32; // NTSTATUS pub unsafe extern "system" fn FatCommonRead(irp_context: *mut core::ffi::c_void, irp: PIRP) -> i32; // NTSTATUS fn FatRaiseStatus(irp_context: *mut core::ffi::c_void, status: i32);
     fn IoSetTopLevelIrp(irp: PIRP);
     fn NodeType(Fcb: PFCB) -> u32;
     fn NT_ASSERT(condition: i32);
@@ -90,7 +90,7 @@ extern "C" {
     fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
 }
 
-extern "C" {
+extern "system" {
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
 }
 
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     KeSetEvent((Event).cast(), 0, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatOverflowPagingFileRead(
+pub unsafe extern "system" fn FatOverflowPagingFileRead(
     Context: *mut core::ffi::c_void,
     Event: *mut KEVENT,
 ) {
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
 
 // ==== re-stitched from bank (dropped by _merge_extern_blocks) ====
 #[no_mangle]
-unsafe fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS {
     const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;
     const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0002;
     const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0004;

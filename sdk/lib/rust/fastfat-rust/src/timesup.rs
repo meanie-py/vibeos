@@ -7,9 +7,9 @@ use core::ffi::c_void;
 use crate::types::{FAT_DATE, FAT_TIME_STAMP, PFAT_TIME_STAMP, PIRP_CONTEXT};
 use ntkrnl_sys::ddk::{CSHORT, PCSTR};
 
-extern "C" {
+extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
-    fn DbgPrint(format: PCSTR, ...);
+    } extern "C" { fn DbgPrint(format: PCSTR, ...); } extern "system" {
     fn RtlAssert( assert_expression: PVOID, source_file: PVOID, line_number: ULONG, message: PVOID, );
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
     static mut SharedSystemTime: u64;
@@ -27,7 +27,7 @@ const APC_LEVEL: KIRQL = 1;
 // Forward declarations for missing externs
 
 #[no_mangle]
-pub unsafe extern "C" fn FatNtTimeToFatTime(
+pub unsafe extern "system" fn FatNtTimeToFatTime(
     IrpContext: PIRP_CONTEXT,
     NtTime: PLARGE_INTEGER,
     Rounding: BOOLEAN,
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn FatNtTimeToFatTime(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFatDateToNtTime(
+pub unsafe extern "system" fn FatFatDateToNtTime(
     IrpContext: PIRP_CONTEXT,
     FatDate: FAT_DATE,
 ) -> LARGE_INTEGER {
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn FatFatDateToNtTime(
     return Time;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFatTimeToNtTime(
+pub unsafe extern "system" fn FatFatTimeToNtTime(
     IrpContext: PIRP_CONTEXT,
     FatTime: FAT_TIME_STAMP,
     TenMilliSeconds: u8,
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> FAT_TIME_STAMP {
+pub unsafe extern "system" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> FAT_TIME_STAMP {
     // Zero-initialize locals as C would (all fields set to 0)
     let mut Time: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();

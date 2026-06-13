@@ -14,7 +14,7 @@ use crate::glue::{DEBUG_TRACE_FSP_DISPATCHER};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
-extern "C" {
+extern "system" {
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
     fn _SEH2_GetExceptionCode() -> u32;
     fn FatExceptionFilter(IrpContext: *mut IRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS) -> i32;
@@ -23,7 +23,7 @@ extern "C" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
-    fn DebugTrace(level: u32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FatCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatCommonClose(Vcb: *mut VCB, Fcb: *mut FCB, Ccb: *mut CCB, TypeOfOpen: u32, arg1: u8, arg2: u8, VcbDeleted: *mut u8) -> NTSTATUS;
@@ -53,7 +53,7 @@ const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x0200;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x00000010;
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
 #[no_mangle]
-pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     // PAGED_CODE();
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
     let mut irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatRemoveOverflowEntry(
+pub unsafe extern "system" fn FatRemoveOverflowEntry(
     VolDo: *mut VOLUME_DEVICE_OBJECT,
 ) -> *mut core::ffi::c_void {
     let mut Entry: *mut core::ffi::c_void;

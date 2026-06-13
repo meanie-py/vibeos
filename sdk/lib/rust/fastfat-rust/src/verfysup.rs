@@ -32,13 +32,13 @@ fn resume_unwind(_payload: core::convert::Infallible) -> ! {
     loop {}
 }
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> i32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
 }
-extern "C" {
+extern "system" {
     fn ClearFlag(state: *mut u32, flag: u32);
     fn DbgDoit(condition: i32);
     fn SetFlag(value: *mut u8, flag: u8);
@@ -63,7 +63,7 @@ extern "C" {
     fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: i64, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, );
     fn IsBpbFat32(packed_bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> i32;
-    fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...);
+    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...); } extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn NodeType(Fcb: PFCB) -> u32;
@@ -428,7 +428,7 @@ const FcbGood: i32 = 2; // placeholder
 
 // Note: VCB_STATE_VPB_NOT_ON_DEVICE is assumed to be in scope (defined elsewhere).
 #[no_mangle]
-pub unsafe extern "C" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
+pub unsafe extern "system" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
     let mut Marked: i32 = 0; // FALSE
     let mut SavedIrql: KIRQL = 0;
 
@@ -450,7 +450,7 @@ pub unsafe extern "C" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatVerifyVcb(
+pub unsafe extern "system" fn FatVerifyVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -494,7 +494,7 @@ pub unsafe extern "C" fn FatVerifyVcb(
     DebugTrace(-1, Dbg, c"FatVerifyVcb -> VOID\n".as_ptr() as *const i8, 0i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatVerifyFcb(
+pub unsafe extern "system" fn FatVerifyFcb(
     IrpContext: *mut c_void,
     Fcb: *mut FCB,
 ) {
@@ -557,7 +557,7 @@ pub unsafe extern "C" fn FatVerifyFcb(
     // return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCleanVolumeDpc(
+pub unsafe extern "system" fn FatCleanVolumeDpc(
     Dpc: *mut KDPC,
     DeferredContext: *mut core::ffi::c_void,
     SystemArgument1: *mut core::ffi::c_void,
@@ -613,7 +613,7 @@ pub unsafe extern "C" fn FatCleanVolumeDpc(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::ffi::c_void) {
     let mut Packet: *mut CLEAN_AND_DIRTY_VOLUME_PACKET = Parameter as *mut CLEAN_AND_DIRTY_VOLUME_PACKET;
     let Vcb: PVCB = (*Packet).Vcb;
     let Irp: PIRP = (*Packet).Irp;
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckDirtyBit(
+pub unsafe extern "system" fn FatCheckDirtyBit(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -740,7 +740,7 @@ pub unsafe extern "C" fn FatCheckDirtyBit(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatVerifyOperationIsLegal(
+pub unsafe extern "system" fn FatVerifyOperationIsLegal(
     IrpContext: *mut IRP_CONTEXT,
 ) {
     PAGED_CODE();
@@ -776,7 +776,7 @@ pub unsafe extern "C" fn FatVerifyOperationIsLegal(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatQuickVerifyVcb(
+pub unsafe extern "system" fn FatQuickVerifyVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -847,7 +847,7 @@ pub unsafe extern "C" fn FatQuickVerifyVcb(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPerformVerify(
+pub unsafe extern "system" fn FatPerformVerify(
     IrpContext: *mut PIRP_CONTEXT,
     mut Irp: *mut PIRP,
     Device: *mut PDEVICE_OBJECT,

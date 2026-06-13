@@ -10,10 +10,10 @@ use ntkrnl_sys::ddk::{FILE_FULL_EA_INFORMATION, OEM_STRING, ULONG_PTR};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...);
+    } extern "C" { fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...); } extern "system" {
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
     fn CanFsdWait(Irp: *mut IRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: *mut IRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
@@ -29,7 +29,7 @@ extern "C" {
 // ---- hand-translated (translate-time parser missed these local support routines;
 // ---- see ea.c:1322+) ----
 
-extern "C" {
+extern "system" {
     fn FatIsEaNameValid(IrpContext: *mut IRP_CONTEXT, Name: OEM_STRING) -> u8;
     fn FatLocateEaByName(
         IrpContext: *mut IRP_CONTEXT,
@@ -453,7 +453,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonQueryEa(
+pub unsafe extern "system" fn FatCommonQueryEa(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -463,7 +463,7 @@ pub unsafe extern "C" fn FatCommonQueryEa(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonSetEa(
+pub unsafe extern "system" fn FatCommonSetEa(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {

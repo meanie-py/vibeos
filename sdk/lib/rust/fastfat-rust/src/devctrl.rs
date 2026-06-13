@@ -13,8 +13,8 @@ use crate::ddk_shims::{IO_COMPLETION_ROUTINE, IoIs32bitProcess};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{STATUS_MORE_PROCESSING_REQUIRED};
 
-extern "C" {
-    fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...); } extern "system" {
     fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     TopLevel = FatIsIrpTopLevel(Irp);
 
     // SEH2 helper declarations – they are C functions (or system ABI) expected at link time
-    extern "C" {
+    extern "system" {
         fn _SEH2_TRY();
         fn _SEH2_END();
         fn _SEH2_EXCEPT(filter: BOOLEAN) -> BOOLEAN;
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonDeviceControl(
+pub unsafe extern "system" fn FatCommonDeviceControl(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {

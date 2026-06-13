@@ -14,8 +14,8 @@ use crate::glue::{TAG_EA_DATA};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
 
-extern "C" {
-    fn DebugTrace(severity: i32, component: u32, format: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(severity: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn SizeOfPackedEa(ea: *const PACKED_EA, out_size: *mut u32);
     fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
     fn PAGED_CODE();
@@ -119,7 +119,7 @@ const MAXIMUM_EA_SIZE: u32 = 0xFFFF;
 
 // Unknown forward declarations
 #[no_mangle]
-pub unsafe extern "C" fn FatGetEaLength(
+pub unsafe extern "system" fn FatGetEaLength(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     Dirent: *mut DIRENT,
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn FatGetEaLength(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetNeedEaCount(
+pub unsafe extern "system" fn FatGetNeedEaCount(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *const VCB,
     Dirent: *const DIRENT,
@@ -353,7 +353,7 @@ pub unsafe extern "C" fn FatGetNeedEaCount(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateEa(
+pub unsafe extern "system" fn FatCreateEa(
     irp_context: PIRP_CONTEXT,
     vcb: PVCB,
     buffer: PUCHAR,
@@ -589,7 +589,7 @@ pub unsafe extern "C" fn FatCreateEa(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteEa(
+pub unsafe extern "system" fn FatDeleteEa(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     EaHandle: u16,
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn FatDeleteEa(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetEaFile(
+pub unsafe extern "system" fn FatGetEaFile(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     EaDirent: *mut *mut DIRENT,
@@ -1049,7 +1049,7 @@ pub unsafe extern "C" fn FatGetEaFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatReadEaSet(
+pub unsafe extern "system" fn FatReadEaSet(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     EaHandle: u16,
@@ -1164,7 +1164,7 @@ pub unsafe extern "C" fn FatReadEaSet(
     DebugTrace(-1, Dbg, (b"FatReadEaSet:  Exit\n\0").as_ptr() as *const core::ffi::c_char, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteEaSet(
+pub unsafe extern "system" fn FatDeleteEaSet(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     EaBcb: *mut BCB,
@@ -1544,7 +1544,7 @@ pub unsafe extern "C" fn FatDeleteEaSet(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAddEaSet(
+pub unsafe extern "system" fn FatAddEaSet(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
     mut EaSetLength: u32,
@@ -2092,7 +2092,7 @@ pub unsafe extern "C" fn FatAddEaSet(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatAppendPackedEa(
+pub unsafe extern "system" fn FatAppendPackedEa(
     IrpContext: *mut IRP_CONTEXT,
     EaSetHeader: *mut *mut EA_SET_HEADER,
     PackedEasLength: *mut u32,
@@ -2195,7 +2195,7 @@ pub unsafe extern "C" fn FatAppendPackedEa(
     let _ = IrpContext;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDeletePackedEa(
+pub unsafe extern "system" fn FatDeletePackedEa(
     IrpContext: *const IRP_CONTEXT,
     EaSetHeader: *mut EA_SET_HEADER,
     PackedEasLength: *mut u32,
@@ -2229,7 +2229,7 @@ pub unsafe extern "C" fn FatDeletePackedEa(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLocateNextEa(
+pub unsafe extern "system" fn FatLocateNextEa(
     IrpContext: *mut IRP_CONTEXT,
     FirstPackedEa: *mut PACKED_EA,
     PackedEasLength: u32,
@@ -2261,7 +2261,7 @@ pub unsafe extern "C" fn FatLocateNextEa(
     offset
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLocateEaByName(
+pub unsafe extern "system" fn FatLocateEaByName(
     IrpContext: *mut PIRP_CONTEXT,
     FirstPackedEa: *mut PACKED_EA,
     PackedEasLength: u32,
@@ -2303,7 +2303,7 @@ pub unsafe extern "C" fn FatLocateEaByName(
     return 0;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatIsEaNameValid(
+pub unsafe extern "system" fn FatIsEaNameValid(
     IrpContext: *mut IRP_CONTEXT,
     Name: OEM_STRING,
 ) -> u8 {
@@ -2346,7 +2346,7 @@ pub unsafe extern "C" fn FatIsEaNameValid(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPinEaRange(
+pub unsafe extern "system" fn FatPinEaRange(
     IrpContext: *mut IRP_CONTEXT,
     VirtualEaFile: *mut FILE_OBJECT,
     EaFcb: *mut FCB,
@@ -2485,7 +2485,7 @@ pub unsafe extern "C" fn FatPinEaRange(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatMarkEaRangeDirty(
+pub unsafe extern "system" fn FatMarkEaRangeDirty(
     IrpContext: *mut IRP_CONTEXT,
     EaFileObject: *mut FILE_OBJECT,
     EaRange: *mut EA_RANGE,
@@ -2521,7 +2521,7 @@ pub unsafe extern "C" fn FatMarkEaRangeDirty(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatUnpinEaRange(
+pub unsafe extern "system" fn FatUnpinEaRange(
     IrpContext: *mut IRP_CONTEXT,
     EaRange: *mut PEA_RANGE,
 ) {

@@ -15,7 +15,7 @@ use crate::glue::{DEBUG_TRACE_CATCH_EXCEPTIONS, FAT_NTC_FCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlFastCheckLockForWrite, FsRtlIsNtstatusExpected};
 
-extern "C" {
+extern "system" {
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
     fn PAGED_CODE();
     fn SetFlag(flags: *mut u32, mask: u32);
@@ -28,7 +28,7 @@ extern "C" {
     static STATUS_FILE_CORRUPT_ERROR: i32;
 }
 extern "system" {
-    fn DebugTrace(level: u32, component: u32, format: *const i8, arg: u32);
+    } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
     fn DebugDump(str: *const i8, level: u32, p: *mut core::ffi::c_void);
     fn NT_ASSERT(condition: i32);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, ExceptionCode: NTSTATUS);
@@ -167,7 +167,7 @@ const STATUS_SUCCESS: i32 = 0;
 
 // Unknown external functions (the caller will deduplicate)
 #[no_mangle]
-pub unsafe extern "C" fn FatBugCheckExceptionFilter(
+pub unsafe extern "system" fn FatBugCheckExceptionFilter(
     ExceptionPointer: PEXCEPTION_POINTERS,
 ) -> u32 {
     // PAGED_CODE();
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn FatBugCheckExceptionFilter(
     1
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatExceptionFilter(
+pub unsafe extern "system" fn FatExceptionFilter(
     IrpContext: *mut IRP_CONTEXT,
     ExceptionPointer: *mut EXCEPTION_POINTERS,
 ) -> u32 {
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
     EXCEPTION_EXECUTE_HANDLER
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatProcessException(
+pub unsafe extern "system" fn FatProcessException(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     ExceptionCode: NTSTATUS,
@@ -345,7 +345,7 @@ pub unsafe extern "C" fn FatProcessException(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCompleteRequest_Real(
+pub unsafe extern "system" fn FatCompleteRequest_Real(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
     Status: NTSTATUS
@@ -378,7 +378,7 @@ pub unsafe extern "C" fn FatCompleteRequest_Real(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatIsIrpTopLevel(Irp: PIRP) -> i32 {
+pub unsafe extern "system" fn FatIsIrpTopLevel(Irp: PIRP) -> i32 {
     // PAGED_CODE();
     if IoGetTopLevelIrp().is_null() {
         IoSetTopLevelIrp(Irp);
@@ -755,7 +755,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPopUpFileCorrupt(
+pub unsafe extern "system" fn FatPopUpFileCorrupt(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {

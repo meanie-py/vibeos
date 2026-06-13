@@ -34,10 +34,13 @@ use crate::glue::{FAT_MAX_DELAYED_CLOSES, FAT_NTC_DATA_HEADER, IRP_MJ_DIRECTORY_
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCopyRead, FsRtlCopyWrite, FsRtlMdlReadCompleteDev, FsRtlMdlReadDev, FsRtlMdlWriteCompleteDev, FsRtlPrepareMdlWriteDev, FsRtlRegisterFileSystemFilterCallbacks};
 
+// KeNumberProcessors is a kernel DATA export — raw-dylib routes the reference
+// through the __imp_ thunk instead of expecting a local definition.
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static mut KeNumberProcessors: ULONG;
-    fn DbgPrint(format: *const u8, ...) -> i32;
 }
+extern "C" { fn DbgPrint(format: *const u8, ...) -> i32; }
 extern "system" {
     fn ZwOpenKey( KeyHandle: *mut *mut core::ffi::c_void, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> i32;
     fn ZwQueryValueKey( KeyHandle: *mut core::ffi::c_void, ValueName: *mut _UNICODE_STRING, KeyValueInformationClass: u32, KeyValueInformation: *mut core::ffi::c_void, Length: u32, ResultLength: *mut u32, ) -> i32;
@@ -52,7 +55,7 @@ extern "fastcall" {
     fn ObfDereferenceObject(p: *mut core::ffi::c_void) -> isize;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn ObfDereferenceObject(p: *mut core::ffi::c_void) -> isize;
 }
 // ExInitializeSListHead is FORCEINLINE — implement inline
@@ -458,7 +461,7 @@ pub unsafe extern "system" fn FatUnload(DriverObject: PDRIVER_OBJECT) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetCompatibilityModeValue(
+pub unsafe extern "system" fn FatGetCompatibilityModeValue(
     ValueName: PUNICODE_STRING,
     Value: PULONG,
 ) -> NTSTATUS {
@@ -563,7 +566,7 @@ pub unsafe extern "C" fn FatGetCompatibilityModeValue(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatIsFujitsuFMR() -> i32 {
+pub unsafe extern "system" fn FatIsFujitsuFMR() -> i32 {
     let mut Result: i32 = 0;
     let mut Handle: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut Status: i32 = 0;

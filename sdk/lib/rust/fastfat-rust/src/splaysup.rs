@@ -9,9 +9,9 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _RTL_SPLAY_LINKS};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_SPLAYSUP};
 
-extern "C" {
+extern "system" {
     fn KeGetCurrentIrql() -> u32;
-    fn DbgPrint(format: *const u8, ...);
+    } extern "C" { fn DbgPrint(format: *const u8, ...); } extern "system" {
     fn RtlAssert(cond: *const core::ffi::c_void, file: *const core::ffi::c_void, line: u32, msg: *const core::ffi::c_void);
     fn CompareNames(name1: PSTRING, name2: PSTRING) -> COMPARISON;
     fn KeBugCheckEx( bugcheck_code: u32, param1: usize, param2: usize, param3: usize, param4: usize, ) -> !;
@@ -35,7 +35,7 @@ const FAT_FILE_SYSTEM: u32 = 0x23;
 const FcbGood: u32 = 0; // placeholder
 const FcbBad: u32 = 1;  // placeholder
 #[no_mangle]
-pub unsafe extern "C" fn FatInsertName(
+pub unsafe extern "system" fn FatInsertName(
     IrpContext: PIRP_CONTEXT,
     RootNode: *mut PRTL_SPLAY_LINKS,
     Name: PFILE_NAME_NODE,
@@ -154,7 +154,7 @@ pub unsafe extern "C" fn FatInsertName(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
+pub unsafe extern "system" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
     let _ = IrpContext;
 
     if KeGetCurrentIrql() > APC_LEVEL {
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFindFcb(
+pub unsafe extern "system" fn FatFindFcb(
     mut IrpContext: PIRP_CONTEXT,
     mut RootNode: *mut PRTL_SPLAY_LINKS,
     mut Name: PSTRING,
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn FatFindFcb(
     return core::ptr::null_mut::<FCB>();
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCompareNames(
+pub unsafe extern "system" fn FatCompareNames(
     NameA: ntkrnl_sys::ddk::PSTRING,
     NameB: ntkrnl_sys::ddk::PSTRING,
 ) -> COMPARISON {

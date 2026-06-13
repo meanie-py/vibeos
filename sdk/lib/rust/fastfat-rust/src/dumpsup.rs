@@ -7,15 +7,15 @@ use crate::types::{CCB, FAT_DATA, FCB, FatData, VCB};
 use crate::types::{_RTL_BITMAP_DBG, _VCB__bindgen_ty_1};
 use ntkrnl_sys::ddk::{_LARGE_MCB};
 
-extern "C" {
+extern "system" {
     fn NodeType(p: *const core::ffi::c_void) -> u32;
-    fn DbgPrint(format: *const i8, ...);
+    } extern "C" { fn DbgPrint(format: *const i8, ...); } extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
 pub static mut FatDumpCurrentColumn: u32 = 0;
 #[no_mangle]
-pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn FatDump(Ptr: *mut core::ffi::c_void) {
     // TestForNull("FatDump")
     if Ptr.is_null() {
         DbgPrint(
@@ -53,7 +53,7 @@ pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDumpDataHeader() {
+pub unsafe extern "system" fn FatDumpDataHeader() {
     let Ptr: *mut FAT_DATA = core::ptr::addr_of_mut!(FatData);
     let mut Links: *mut LIST_ENTRY;
 
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn FatDumpDataHeader() {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
+pub unsafe extern "system" fn FatDumpVcb(Ptr: *mut VCB) {
     // TestForNull("FatDumpVcb")
     if Ptr.is_null() {
         DbgPrint(
@@ -1226,7 +1226,7 @@ pub unsafe extern "C" fn FatDumpVcb(Ptr: *mut VCB) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
+pub unsafe extern "system" fn FatDumpFcb(Ptr: *const FCB) {
     // Forward-declare external functions we depend on
 
     // FAT_NTC_* constants from fastfat.h
@@ -2082,7 +2082,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDumpCcb(Ptr: *mut CCB) {
+pub unsafe extern "system" fn FatDumpCcb(Ptr: *mut CCB) {
     // TestForNull expansion
     if Ptr.is_null() {
         DbgPrint(

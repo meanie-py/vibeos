@@ -247,4 +247,84 @@ VOID FatUpcaseEaName(PIRP_CONTEXT IrpContext, POEM_STRING Name, POEM_STRING Upca
  * debug path (pulled in by FatVerifyIndexIsValid). Defaults to 0 (disabled). */
 BOOLEAN FatTestRaisedStatus = 0;
 
+/* ---- header-defined macro constants the Rust translation references as DATA ----
+ * These C macros (DCB_UNION_SLACK_SPACE / FCB_LOOKUP_ALLOCATIONSIZE_HINT / etc.)
+ * were translated as `extern static` data refs. Provide them as real DATA symbols
+ * (bare, -mrtd-immune) with HEADER-CORRECT values computed here where fatprocs.h /
+ * nodetype.h / ntstatus.h are in scope. (The earlier hand-stub fabricated several
+ * of these — e.g. FCB_LOOKUP_ALLOCATIONSIZE_HINT was 0x40000000, really -1.) */
+#if defined(_M_IX86)
+#define FF_SYM(s) "_" s          /* i386 mingw prepends a leading underscore */
+#else
+#define FF_SYM(s) s              /* amd64 / arm64: undecorated */
+#endif
+const ULONG    __c_DCB_UNION_SLACK_SPACE __asm__(FF_SYM("DCB_UNION_SLACK_SPACE"))          = DCB_UNION_SLACK_SPACE;
+const LONGLONG __c_FCB_LOOKUP_AS_HINT    __asm__(FF_SYM("FCB_LOOKUP_ALLOCATIONSIZE_HINT")) = FCB_LOOKUP_ALLOCATIONSIZE_HINT;
+const ULONG    __c_TAG_DIRENT_BITMAP     __asm__(FF_SYM("TAG_DIRENT_BITMAP"))              = TAG_DIRENT_BITMAP;
+const ULONG    __c_FAT_NTC_ROOT_DCB      __asm__(FF_SYM("FAT_NTC_ROOT_DCB"))               = (ULONG)FAT_NTC_ROOT_DCB;
+const LONG     __c_STATUS_FILE_CORRUPT   __asm__(FF_SYM("STATUS_FILE_CORRUPT_ERROR"))      = (LONG)STATUS_FILE_CORRUPT_ERROR;
+
+/* ---- const-class symbols the Rust translation references as DATA (header-correct) ----
+ * These are #define / enum constants in fatprocs.h / nodetype.h / ntifs.h. Provide them
+ * as real DATA symbols with header values (replaces fabricated stub accessors). */
+const ULONG __c_CCB_FLAG_SKIP_SHORT_NAME_COMPARE __asm__(FF_SYM("CCB_FLAG_SKIP_SHORT_NAME_COMPARE")) = (ULONG)(CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
+const ULONG __c_CCB_FLAG_USER_SET_LAST_WRITE __asm__(FF_SYM("CCB_FLAG_USER_SET_LAST_WRITE")) = (ULONG)(CCB_FLAG_USER_SET_LAST_WRITE);
+const ULONG __c_VCB_STATE_FLAG_DEFERRED_FLUSH __asm__(FF_SYM("VCB_STATE_FLAG_DEFERRED_FLUSH")) = (ULONG)(VCB_STATE_FLAG_DEFERRED_FLUSH);
+const ULONG __c_VCB_STATE_FLAG_REMOVABLE_MEDIA __asm__(FF_SYM("VCB_STATE_FLAG_REMOVABLE_MEDIA")) = (ULONG)(VCB_STATE_FLAG_REMOVABLE_MEDIA);
+const ULONG __c_VCB_STATE_FLAG_CREATE_IN_PROGRESS __asm__(FF_SYM("VCB_STATE_FLAG_CREATE_IN_PROGRESS")) = (ULONG)(VCB_STATE_FLAG_CREATE_IN_PROGRESS);
+const ULONG __c_FCB_STATE_PAGING_FILE __asm__(FF_SYM("FCB_STATE_PAGING_FILE")) = (ULONG)(FCB_STATE_PAGING_FILE);
+const ULONG __c_FILE_ACTION_ADDED __asm__(FF_SYM("FILE_ACTION_ADDED")) = (ULONG)(FILE_ACTION_ADDED);
+const ULONG __c_FILE_ACTION_REMOVED __asm__(FF_SYM("FILE_ACTION_REMOVED")) = (ULONG)(FILE_ACTION_REMOVED);
+const ULONG __c_FILE_ACTION_MODIFIED __asm__(FF_SYM("FILE_ACTION_MODIFIED")) = (ULONG)(FILE_ACTION_MODIFIED);
+const ULONG __c_FILE_ACTION_RENAMED_OLD_NAME __asm__(FF_SYM("FILE_ACTION_RENAMED_OLD_NAME")) = (ULONG)(FILE_ACTION_RENAMED_OLD_NAME);
+const ULONG __c_FILE_ACTION_RENAMED_NEW_NAME __asm__(FF_SYM("FILE_ACTION_RENAMED_NEW_NAME")) = (ULONG)(FILE_ACTION_RENAMED_NEW_NAME);
+const ULONG __c_IRP_CONTEXT_FLAG_WAIT __asm__(FF_SYM("IRP_CONTEXT_FLAG_WAIT")) = (ULONG)(IRP_CONTEXT_FLAG_WAIT);
+const ULONG __c_FAT_DIRENT_ATTR_READ_ONLY __asm__(FF_SYM("FAT_DIRENT_ATTR_READ_ONLY")) = (ULONG)(FAT_DIRENT_ATTR_READ_ONLY);
+const ULONG __c_FAT_DIRENT_ATTR_DIRECTORY __asm__(FF_SYM("FAT_DIRENT_ATTR_DIRECTORY")) = (ULONG)(FAT_DIRENT_ATTR_DIRECTORY);
+const ULONG __c_OPLOCK_FLAG_PARENT_OBJECT __asm__(FF_SYM("OPLOCK_FLAG_PARENT_OBJECT")) = 0x00000002UL; /* not in this header set; Windows-documented value */
+const ULONG __c_FO_FILE_MODIFIED __asm__(FF_SYM("FO_FILE_MODIFIED")) = (ULONG)(FO_FILE_MODIFIED);
+const ULONG __c_MAX_LFN_CHARACTERS __asm__(FF_SYM("MAX_LFN_CHARACTERS")) = (ULONG)(MAX_LFN_CHARACTERS);
+const ULONG __c_TAG_DIRENT __asm__(FF_SYM("TAG_DIRENT")) = (ULONG)(TAG_DIRENT);
+const ULONG __c_TAG_FILENAME_BUFFER __asm__(FF_SYM("TAG_FILENAME_BUFFER")) = (ULONG)(TAG_FILENAME_BUFFER);
+const ULONG __c_FAT_NTC_FCB __asm__(FF_SYM("FAT_NTC_FCB")) = (ULONG)(FAT_NTC_FCB);
+const ULONG __c_FAT_NTC_DCB __asm__(FF_SYM("FAT_NTC_DCB")) = (ULONG)(FAT_NTC_DCB);
+const LONG  __c_USER_DIRECTORY_OPEN __asm__(FF_SYM("USER_DIRECTORY_OPEN")) = (LONG)(UserDirectoryOpen);
+const LONG  __c_UserVolumeOpen __asm__(FF_SYM("UserVolumeOpen")) = (LONG)(UserVolumeOpen);
+
+
+/* KeAcquireSpinLockRaiseToDpc: not a real i386 export (macro/forceinline). Provide
+ * it directly — acquire raising to DISPATCH_LEVEL, returning the old IRQL. Under
+ * -mrtd this emits the stdcall _KeAcquireSpinLockRaiseToDpc@4 the Rust crate wants. */
+#undef KeAcquireSpinLockRaiseToDpc
+KIRQL KeAcquireSpinLockRaiseToDpc(PKSPIN_LOCK SpinLock)
+{
+    KIRQL OldIrql;
+    KeAcquireSpinLock(SpinLock, &OldIrql);
+    return OldIrql;
+}
+
+/* RtlCopyMemory is a #define for memcpy; the Rust translation referenced it as a
+ * stdcall import (@12 on i386). Provide it (-mrtd decorates on i386; bare elsewhere). */
+#undef RtlCopyMemory
+VOID RtlCopyMemory(PVOID Dest, const void *Src, SIZE_T Length) { __builtin_memcpy(Dest, Src, Length); }
+
+#if defined(_M_IX86)
+/* i386: KeGetCurrentProcessorNumber is referenced bare via the ddk substrate but
+ * we provide it @0 (-mrtd). Add a bare alias to the same impl. */
+__asm__(".globl _KeGetCurrentProcessorNumber\n .set _KeGetCurrentProcessorNumber, _KeGetCurrentProcessorNumber@0");
+__asm__(".globl _IoGetRemainingStackSize\n      .set _IoGetRemainingStackSize, _IoGetRemainingStackSize@0");
+
+/* ExReleaseResourceLite / Ex{Acquire,Release}FastMutexUnsafe are real i386 exports
+ * but FASTCALL (@Name@4); the Rust translation references them stdcall (_Name@4).
+ * Provide stdcall trampolines that tail into the real fastcall exports (the bodies
+ * call the FASTCALL-declared header prototypes). */
+__attribute__((used)) VOID ff_relres(PERESOURCE r)  { ExReleaseResourceLite(r); }
+__attribute__((used)) VOID ff_acqfmu(PFAST_MUTEX m) { ExAcquireFastMutexUnsafe(m); }
+__attribute__((used)) VOID ff_relfmu(PFAST_MUTEX m) { ExReleaseFastMutexUnsafe(m); }
+__asm__(
+    ".globl _ExReleaseResourceLite@4\n     .set _ExReleaseResourceLite@4, _ff_relres@4\n"
+    ".globl _ExAcquireFastMutexUnsafe@4\n  .set _ExAcquireFastMutexUnsafe@4, _ff_acqfmu@4\n"
+    ".globl _ExReleaseFastMutexUnsafe@4\n  .set _ExReleaseFastMutexUnsafe@4, _ff_relfmu@4\n");
+#endif
+
 #pragma clang diagnostic pop

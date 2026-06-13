@@ -11,15 +11,15 @@ use crate::glue::{DEBUG_TRACE_FILOBSUP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DCB};
 
-extern "C" {
-    fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...); } extern "system" {
     fn NT_ASSERT(condition: i32);
     fn PAGED_CODE();
     fn FatFspClose(vcb: *mut VCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
     fn FlagOn(flags: u32, flag: u32) -> i32;
 }
-extern "C" {
+extern "system" {
     fn NodeType(ptr: *mut core::ffi::c_void) -> u32;
     fn SetFlag(flags: *mut u32, flag: u32);
     fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> i32;
@@ -65,7 +65,7 @@ const MmFlushForWrite: u32 = 0x00000002;
 // FAT_FLUSH_TYPE enum from fatprocs.h
 type FAT_FLUSH_TYPE = u32;
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFileObject(
+pub unsafe extern "system" fn FatSetFileObject(
     FileObject: *mut FILE_OBJECT,
     TypeOfOpen: TYPE_OF_OPEN,
     VcbOrFcbOrDcb: *mut core::ffi::c_void,
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn FatSetFileObject(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDecodeFileObject(
+pub unsafe extern "system" fn FatDecodeFileObject(
     FileObject: *mut FILE_OBJECT,
     Vcb: *mut *mut VCB,
     FcbOrDcb: *mut *mut FCB,
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn FatDecodeFileObject(
     TypeOfOpen
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
+pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     Flags: u32,
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn FatPurgeReferencedFileObjects(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatForceCacheMiss(
+pub unsafe extern "system" fn FatForceCacheMiss(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     FlushType: FAT_FLUSH_TYPE,

@@ -11,7 +11,7 @@ use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_PNP};
 
-extern "C" {
+extern "system" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Something: *mut core::ffi::c_void) -> i32;
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, Flags: i32);
@@ -26,7 +26,7 @@ extern "C" {
     fn NT_ASSERT(cond: i32);
     fn NodeType(Ptr: *const core::ffi::c_void) -> u32;
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FsRtlEnterFileSystem();
     fn FatIsIrpTopLevel(Irp: PIRP) -> i32;
     fn CanFsdWait(Irp: PIRP) -> i32;
@@ -81,7 +81,7 @@ pub unsafe extern "system" fn FatFsdPnp(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonPnp(
+pub unsafe extern "system" fn FatCommonPnp(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -136,14 +136,14 @@ pub unsafe extern "C" fn FatCommonPnp(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPnpAdjustVpbRefCount(Vcb: *mut VCB, Delta: u32) {
+pub unsafe extern "system" fn FatPnpAdjustVpbRefCount(Vcb: *mut VCB, Delta: u32) {
     let mut OldIrql: KIRQL = 0;
     IoAcquireVpbSpinLock(&mut OldIrql);
     (*(*Vcb).Vpb).ReferenceCount += Delta;
     IoReleaseVpbSpinLock(OldIrql);
 }
 
-pub unsafe extern "C" fn FatPnpQueryRemove(
+pub unsafe extern "system" fn FatPnpQueryRemove(
     IrpContext: *mut IRP_CONTEXT,
     Irp: PIRP,
     Vcb: PVCB,
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPnpRemove(
+pub unsafe extern "system" fn FatPnpRemove(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     Vcb: *mut VCB,
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn FatPnpRemove(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPnpSurpriseRemove(
+pub unsafe extern "system" fn FatPnpSurpriseRemove(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     Vcb: *mut VCB,
@@ -356,7 +356,7 @@ pub unsafe extern "C" fn FatPnpSurpriseRemove(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPnpCancelRemove(
+pub unsafe extern "system" fn FatPnpCancelRemove(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
     Vcb: PVCB

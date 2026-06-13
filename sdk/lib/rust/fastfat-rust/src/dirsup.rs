@@ -13,20 +13,20 @@ use crate::glue::{FAT_NTC_DCB, STATUS_CANNOT_MAKE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{ARGUMENT_PRESENT, FsRtlAddLargeMcbEntry, FsRtlAddToTunnelCache, FsRtlAllocatePoolWithTag, FsRtlAreNamesEqual, FsRtlDeleteKeyFromTunnelCache, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlIsNameInExpression, FsRtlNumberOfRunsInLargeMcb, FsRtlUninitializeLargeMcb};
 
-extern "C" {
+extern "system" {
     fn FatDeleteEa( IrpContext: *mut IRP_CONTEXT, Vcb: *mut core::ffi::c_void, ExtendedAttributes: u16, OemName: *const OEM_STRING, );
     fn FatBugCheck(a: u32, b: u32, c: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut core::ffi::c_void);
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, LowPriority: i32, ReturnMapped: i32, Status: *mut NTSTATUS, );
     fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> i32;
     fn NodeType(obj: *mut core::ffi::c_void) -> u32;
-    fn DebugTrace(level: i32, flag: u32, fmt: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, flag: u32, fmt: *const i8, ...); } extern "system" {
     fn FatStringTo8dot3( IrpContext: PIRP_CONTEXT, FileName: OEM_STRING, OutputString: *mut OEM_STRING, );
     static Dbg: u32;
     static FatData: FatGlobalData;
     static FatOneDay: LARGE_INTEGER;
 }
-extern "C" {
+extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FatConstructDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
     fn FatConstructDotDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
@@ -165,7 +165,7 @@ type PURCH = *mut WCHAR;
 type PCWCH = *const WCHAR;
 type PBOOLEAN = *mut BOOLEAN;
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateNewDirent(
+pub unsafe extern "system" fn FatCreateNewDirent(
     IrpContext: PIRP_CONTEXT,
     ParentDirectory: PDCB,
     DirentsNeeded: u32,
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn FatCreateNewDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatInitializeDirectoryDirent(
+pub unsafe extern "system" fn FatInitializeDirectoryDirent(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
     ParentDirent: *mut DIRENT,
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn FatInitializeDirectoryDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
+pub unsafe extern "system" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
     let mut ShortNameWithCase: _UNICODE_STRING = core::mem::zeroed();
     let mut DownCaseSeg: _UNICODE_STRING = core::mem::zeroed();
     let mut ShortNameBuffer: [u16; 12] = [0u16; 12];
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
 
 const PAGE_SIZE: u32 = 4096; // fallback if not from ntkrnl_sys::base
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteDirent(
+pub unsafe extern "system" fn FatDeleteDirent(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     DeleteContext: *mut DELETE_CONTEXT,
@@ -537,7 +537,7 @@ pub unsafe extern "C" fn FatDeleteDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatLfnDirentExists(
+pub unsafe extern "system" fn FatLfnDirentExists(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
     Lfn: *mut _UNICODE_STRING,
@@ -562,7 +562,7 @@ pub unsafe extern "C" fn FatLfnDirentExists(
             IrpContext,
             Dcb,
             &mut ccb,
-            VBO { QuadPart: 0 },
+            0u32,
             &mut flags,
             &mut dirent,
             &mut dirent_bcb as *mut *mut BCB,
@@ -588,7 +588,7 @@ pub unsafe extern "system" fn FatLocateDirent(
     IrpContext: PIRP_CONTEXT,
     ParentDirectory: PDCB,
     Ccb: PCCB,
-    OffsetToStartSearchFrom: VBO,
+    OffsetToStartSearchFrom: u32, // C: VBO=ULONG32 (4 bytes) → @44 matches callers
     Flags: PULONG,
     Dirent: *mut PDIRENT,
     Bcb: PBCB,
@@ -625,7 +625,7 @@ pub unsafe extern "system" fn FatLocateDirent(
 
     DebugTrace(1i32, 0u32, b"FatLocateDirent\n\0".as_ptr() as *const i8, 0usize);
     DebugTrace(0i32, 0u32, b"  ParentDirectory         = %p\n\0".as_ptr() as *const i8, ParentDirectory as usize);
-    DebugTrace(0i32, 0u32, b"  OffsetToStartSearchFrom = %08lx\n\0".as_ptr() as *const i8, OffsetToStartSearchFrom.QuadPart as u32 as usize);
+    DebugTrace(0i32, 0u32, b"  OffsetToStartSearchFrom = %08lx\n\0".as_ptr() as *const i8, (OffsetToStartSearchFrom as i64) as u32 as usize);
     DebugTrace(0i32, 0u32, b"  Dirent                  = %p\n\0".as_ptr() as *const i8, Dirent as usize);
     DebugTrace(0i32, 0u32, b"  Bcb                     = %p\n\0".as_ptr() as *const i8, Bcb as usize);
     DebugTrace(0i32, 0u32, b"  ByteOffset              = %08lx\n\0".as_ptr() as *const i8, (*ByteOffset).QuadPart as u32 as usize);
@@ -648,8 +648,8 @@ pub unsafe extern "system" fn FatLocateDirent(
     UpcasedLfn.Buffer = LocalLfnBuffer.as_mut_ptr();
 
     if !(*Bcb).is_null() {
-        if (OffsetToStartSearchFrom.QuadPart / PAGE_SIZE as i64) == ((*ByteOffset).QuadPart / PAGE_SIZE as i64) {
-            *Dirent = (*Dirent).add(((OffsetToStartSearchFrom.QuadPart - (*ByteOffset).QuadPart) / core::mem::size_of::<DIRENT>() as i64) as usize);
+        if ((OffsetToStartSearchFrom as i64) / PAGE_SIZE as i64) == ((*ByteOffset).QuadPart / PAGE_SIZE as i64) {
+            *Dirent = (*Dirent).add((((OffsetToStartSearchFrom as i64) - (*ByteOffset).QuadPart) / core::mem::size_of::<DIRENT>() as i64) as usize);
         } else {
             FatUnpinBcb(IrpContext, *Bcb as *mut core::ffi::c_void);
         }
@@ -666,7 +666,7 @@ pub unsafe extern "system" fn FatLocateDirent(
         *FileNameDos = 0;
     }
 
-    (*ByteOffset).QuadPart = (OffsetToStartSearchFrom.QuadPart + (core::mem::size_of::<DIRENT>() as i64 - 1)) & !(core::mem::size_of::<DIRENT>() as i64 - 1);
+    (*ByteOffset).QuadPart = ((OffsetToStartSearchFrom as i64) + (core::mem::size_of::<DIRENT>() as i64 - 1)) & !(core::mem::size_of::<DIRENT>() as i64 - 1);
 
     // _SEH2_TRY block (simulated)
     'seh2_try: {
@@ -951,7 +951,7 @@ pub unsafe extern "system" fn FatLocateDirent(
     TimerStop(0u32, b"FatLocateDirent\0".as_ptr() as *const i8);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLocateSimpleOemDirent(
+pub unsafe extern "system" fn FatLocateSimpleOemDirent(
     IrpContext: PIRP_CONTEXT,
     ParentDirectory: PDCB,
     FileName: *const OEM_STRING,
@@ -977,7 +977,7 @@ pub unsafe extern "C" fn FatLocateSimpleOemDirent(
         IrpContext,
         ParentDirectory,
         &mut LocalCcb,
-        VBO { QuadPart: 0 },
+        0u32,
         core::ptr::null_mut(),
         Dirent,
         Bcb,
@@ -990,7 +990,7 @@ pub unsafe extern "C" fn FatLocateSimpleOemDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatLocateVolumeLabel(
+pub unsafe extern "system" fn FatLocateVolumeLabel(
     irp_context: *mut IRP_CONTEXT,
     vcb: *mut VCB,
     dirent: *mut *mut DIRENT,
@@ -1055,7 +1055,7 @@ pub unsafe extern "C" fn FatLocateVolumeLabel(
     DebugTrace(-1, Dbg, b"FatLocateVolumeLabel -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetDirentFromFcbOrDcb(
+pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     ReturnOnFailure: i32,
@@ -1139,7 +1139,7 @@ pub unsafe extern "C" fn FatGetDirentFromFcbOrDcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatIsDirectoryEmpty(
+pub unsafe extern "system" fn FatIsDirectoryEmpty(
     IrpContext: PIRP_CONTEXT,
     Dcb: *mut DCB,
 ) -> i32 {
@@ -1195,7 +1195,7 @@ pub unsafe extern "C" fn FatIsDirectoryEmpty(
     return IsDirectoryEmpty;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatConstructDirent(
+pub unsafe extern "system" fn FatConstructDirent(
     IrpContext: *mut IRP_CONTEXT,
     Dirent: *mut DIRENT,
     FileName: *const OEM_STRING,
@@ -1401,7 +1401,7 @@ pub unsafe extern "C" fn FatConstructDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatConstructLabelDirent(
+pub unsafe extern "system" fn FatConstructLabelDirent(
     IrpContext: *mut IRP_CONTEXT,
     Dirent: *mut DIRENT,
     Label: *mut OEM_STRING,
@@ -1431,7 +1431,7 @@ pub unsafe extern "C" fn FatConstructLabelDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFileSizeInDirent(
+pub unsafe extern "system" fn FatSetFileSizeInDirent(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     AlternativeFileSize: *mut u32,
@@ -1462,7 +1462,7 @@ pub unsafe extern "C" fn FatSetFileSizeInDirent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFileSizeInDirentNoRaise(
+pub unsafe extern "system" fn FatSetFileSizeInDirentNoRaise(
     IrpContext: PIRP_CONTEXT,
     Fcb: PFCB,
     AlternativeFileSize: *mut ULONG,
@@ -1473,7 +1473,7 @@ pub unsafe extern "C" fn FatSetFileSizeInDirentNoRaise(
     FatSetFileSizeInDirent(IrpContext, Fcb, AlternativeFileSize);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatUpdateDirentFromFcb(
+pub unsafe extern "system" fn FatUpdateDirentFromFcb(
     IrpContext: *mut IRP_CONTEXT,
     FileObject: *mut FILE_OBJECT,
     FcbOrDcb: *mut FCB,
@@ -1651,7 +1651,7 @@ pub unsafe extern "C" fn FatUpdateDirentFromFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatComputeLfnChecksum(Dirent: *mut DIRENT) -> u8 {
+pub unsafe extern "system" fn FatComputeLfnChecksum(Dirent: *mut DIRENT) -> u8 {
     let mut i: u32;
     let mut Checksum: u8;
 
@@ -1672,7 +1672,7 @@ pub unsafe extern "C" fn FatComputeLfnChecksum(Dirent: *mut DIRENT) -> u8 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) {
+pub unsafe extern "system" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) {
     let mut bcb: *mut BCB = core::ptr::null_mut();
     let mut dirent: *mut DIRENT = core::ptr::null_mut();
     let mut status: NTSTATUS = (STATUS_SUCCESS) as u32;
@@ -1929,7 +1929,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
                         IrpContext,
                         Dcb,
                         core::ptr::addr_of_mut!(Ccb),
-                        VBO { QuadPart: QueryOffset as i64 },
+                        QueryOffset as u32,
                         core::ptr::null_mut(),
                         core::ptr::addr_of_mut!(Dirent),
                         core::ptr::addr_of_mut!(bcb) as *mut *mut BCB,

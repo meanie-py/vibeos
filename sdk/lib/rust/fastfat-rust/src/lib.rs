@@ -17,6 +17,15 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
+// arm64: KeGetCurrentPrcb is not exported (it's a register-reading FORCEINLINE).
+// fastfat reaches it via the ntkrnl_sys inline KeGetCurrentThread path; forward the
+// symbol to the register-reading inline, as mup-rust / classpnp-rust do.
+#[cfg(all(not(test), target_arch = "aarch64"))]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
+    ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
+}
+
 pub mod types;
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims

@@ -8,9 +8,9 @@ use core::ffi::c_void;
 use crate::types::{IRP_CONTEXT, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT, _FAT_IO_CONTEXT};
 use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PWORKER_THREAD_ROUTINE};
 
-extern "C" {
+extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn DbgPrint(format: *const i8, ...);
+    } extern "C" { fn DbgPrint(format: *const i8, ...); } extern "system" {
     fn RtlAssert( failed_assertion: *const core::ffi::c_void, file_name: *const core::ffi::c_void, line_number: u32, message: *const i8, );
     fn FatLockUserBuffer( IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, lock_operation: u32, length: u32, );
     fn KeAcquireSpinLockRaiseToDpc(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
@@ -45,7 +45,7 @@ const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x100;
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatOplockComplete(Context: *mut core::ffi::c_void, Irp: PIRP) {
+pub unsafe extern "system" fn FatOplockComplete(Context: *mut core::ffi::c_void, Irp: PIRP) {
     // --- Extern declarations for calls not in the provided imports ---
 
     const APC_LEVEL: KIRQL = 1;
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn FatOplockComplete(Context: *mut core::ffi::c_void, Irp:
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPrePostIrp(Context: *mut core::ffi::c_void, Irp: *mut IRP) {
+pub unsafe extern "system" fn FatPrePostIrp(Context: *mut core::ffi::c_void, Irp: *mut IRP) {
     let mut IrpSp: *mut IO_STACK_LOCATION = core::ptr::null_mut::<IO_STACK_LOCATION>();
     let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut::<IRP_CONTEXT>();
 
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn FatPrePostIrp(Context: *mut core::ffi::c_void, Irp: *mu
     IoMarkIrpPending(Irp);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFsdPostRequest(
+pub unsafe extern "system" fn FatFsdPostRequest(
     mut IrpContext: PIRP_CONTEXT,
     mut Irp: PIRP,
 ) -> NTSTATUS {

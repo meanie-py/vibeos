@@ -7,7 +7,7 @@ use core::ffi::c_void;
 use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
 }
 extern "system" {
@@ -67,7 +67,7 @@ const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0126; // FIXME: verify 
 const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x012A; // FIXME: set actual value
 const STATUS_FILE_LOCKED_WITH_WRITERS: i32 = 0x012B; // FIXME: set actual value
 #[no_mangle]
-pub unsafe extern "C" fn FatAcquireExclusiveVcb_Real(
+pub unsafe extern "system" fn FatAcquireExclusiveVcb_Real(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     NoOpCheck: u8,
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn FatAcquireExclusiveVcb_Real(
     0 // FALSE
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> i32 {
+pub unsafe extern "system" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> i32 {
     PAGED_CODE();
     if ExAcquireResourceSharedLite(
         core::ptr::addr_of_mut!((*Vcb).Resource) as *mut _,
@@ -151,7 +151,7 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatAcquireSharedFcbWaitForEx(
+pub unsafe extern "system" fn FatAcquireSharedFcbWaitForEx(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) -> i32 {
@@ -443,7 +443,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatNoOpAcquire(
+pub unsafe extern "system" fn FatNoOpAcquire(
     Fcb: *mut core::ffi::c_void,
     Wait: u8,
 ) -> u8 {
@@ -461,7 +461,7 @@ pub unsafe extern "C" fn FatNoOpAcquire(
     1u8
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE();
     NT_ASSERT((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());

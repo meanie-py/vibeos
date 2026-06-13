@@ -14,8 +14,8 @@ use crate::types::{CCB, FCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{EXCEPTION_POINTERS};
 
-extern "C" {
-    fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, flags: u32, format: *const i8, ...); } extern "system" {
     fn DebugUnwind(ptr: *mut core::ffi::c_void);
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> i32;
     fn FatGetFcbOplock(Fcb: PFCB) -> *mut OPLOCK;
@@ -344,7 +344,7 @@ pub unsafe extern "system" fn FatFastUnlockAllByKey(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonLockControl(
+pub unsafe extern "system" fn FatCommonLockControl(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -401,7 +401,7 @@ pub unsafe extern "C" fn FatCommonLockControl(
                     oplock,
                     Irp,
                     IrpContext as *mut core::ffi::c_void,
-                    core::mem::transmute::<unsafe extern "C" fn(PIRP_CONTEXT, PIRP) -> NTSTATUS, _>(FatOplockComplete),
+                    core::mem::transmute::<unsafe extern "system" fn(PIRP_CONTEXT, PIRP) -> NTSTATUS, _>(FatOplockComplete),
                     None,
                 );
             }

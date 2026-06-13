@@ -342,7 +342,7 @@ VOID FatRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
 }
 
 VOID FatResetExceptionState(PIRP_CONTEXT IrpContext) { (void)IrpContext; }
-VOID FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext; }
+VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext; }
 
 /* NOTE: IO/EX/KE/Ob/FsRtl FORCEINLINE wrappers are in rust_cohab_forceinline.c */
 
@@ -402,38 +402,37 @@ ULONG RtlOemStringToCountedUnicodeSize(POEM_STRING s) { return s->Length * sizeo
  * 4. Constants that Rust calls as functions
  * ====================================================================== */
 
-CSHORT FAT_NTC_FCB(VOID)       { return (CSHORT)0x0502; } /* from nodetype.h */
-CSHORT FAT_NTC_DCB(VOID)       { return (CSHORT)0x0503; }
-CSHORT FAT_NTC_ROOT_DCB(VOID)  { return (CSHORT)0x0504; }
+/* FAT_NTC_FCB -> rust_cohab_fat.c DATA */
+/* FAT_NTC_DCB -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
 
-ULONG CCB_FLAG_SKIP_SHORT_NAME_COMPARE(VOID)  { return 0x00000040; }
-ULONG CCB_FLAG_USER_SET_LAST_WRITE(VOID)      { return 0x00000020; }
-ULONG VCB_STATE_FLAG_DEFERRED_FLUSH(VOID)     { return 0x00000002; }
-ULONG VCB_STATE_FLAG_REMOVABLE_MEDIA(VOID)    { return 0x00000004; }
-ULONG VCB_STATE_FLAG_CREATE_IN_PROGRESS(VOID) { return 0x00000040; }
-ULONG FCB_STATE_PAGING_FILE(VOID)             { return 0x00000002; }
-ULONG FCB_LOOKUP_ALLOCATIONSIZE_HINT(VOID)    { return 0x40000000; }
-ULONG DCB_UNION_SLACK_SPACE(VOID)             { return 0x00000001; }
-ULONG FILE_ACTION_ADDED(VOID)                 { return 0x00000001; }
-ULONG FILE_ACTION_REMOVED(VOID)               { return 0x00000002; }
-ULONG FILE_ACTION_MODIFIED(VOID)              { return 0x00000003; }
-ULONG FILE_ACTION_RENAMED_OLD_NAME(VOID)      { return 0x00000004; }
-ULONG FILE_ACTION_RENAMED_NEW_NAME(VOID)      { return 0x00000005; }
-ULONG IRP_CONTEXT_FLAG_WAIT(VOID)             { return FAT_IRP_CTX_FLAG_WAIT; }
-ULONG IRP_PAGING_IO(VOID)                     { return 0x8; }      /* IRP_PAGING_IO */
-ULONG FAT_DIRENT_ATTR_READ_ONLY(VOID)         { return 0x01; }
-ULONG FAT_DIRENT_ATTR_DIRECTORY(VOID)         { return 0x10; }
-ULONG OPLOCK_FLAG_PARENT_OBJECT(VOID)         { return 0x00000002; }
-ULONG FO_FILE_MODIFIED(VOID)                  { return FO_FILE_MODIFIED; }
-ULONG MAX_LFN_CHARACTERS(VOID)               { return 255; }
-ULONG USER_DIRECTORY_OPEN(VOID)               { return 0; }
-ULONG UserVolumeOpen(VOID)                    { return 0; }
-ULONG STATUS_FILE_CORRUPT_ERROR(VOID)         { return (ULONG)STATUS_FILE_CORRUPT_ERROR; }
+/* CCB_FLAG_SKIP_SHORT_NAME_COMPARE -> rust_cohab_fat.c DATA */
+/* CCB_FLAG_USER_SET_LAST_WRITE -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_DEFERRED_FLUSH -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_REMOVABLE_MEDIA -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_CREATE_IN_PROGRESS -> rust_cohab_fat.c DATA */
+/* FCB_STATE_PAGING_FILE -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* FILE_ACTION_ADDED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_REMOVED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_MODIFIED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_RENAMED_OLD_NAME -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_RENAMED_NEW_NAME -> rust_cohab_fat.c DATA */
+/* IRP_CONTEXT_FLAG_WAIT -> rust_cohab_fat.c DATA */
+const ULONG IRP_PAGING_IO = 0x00000002;  /* xdk/iotypes.h (stub had fabricated 0x8) */
+/* FAT_DIRENT_ATTR_READ_ONLY -> rust_cohab_fat.c DATA */
+/* FAT_DIRENT_ATTR_DIRECTORY -> rust_cohab_fat.c DATA */
+/* OPLOCK_FLAG_PARENT_OBJECT -> rust_cohab_fat.c DATA */
+/* FO_FILE_MODIFIED -> rust_cohab_fat.c DATA */
+/* MAX_LFN_CHARACTERS -> rust_cohab_fat.c DATA */
+/* USER_DIRECTORY_OPEN -> rust_cohab_fat.c DATA */
+/* UserVolumeOpen -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
 
-ULONG TAG_DIRENT(VOID)          { return 'irtF'; }
-ULONG TAG_DIRENT_BITMAP(VOID)   { return 'brtF'; }
-ULONG TAG_FILENAME_BUFFER(VOID) { return 'nrtF'; }
-
+/* TAG_DIRENT -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* TAG_FILENAME_BUFFER -> rust_cohab_fat.c DATA */
 ULONG FAT_LFN_DIRENTS_NEEDED(PUNICODE_STRING Name)
 {
     return (Name->Length / sizeof(WCHAR) + 12) / 13;
@@ -443,11 +442,12 @@ ULONG FAT_LFN_DIRENTS_NEEDED(PUNICODE_STRING Name)
  * 5. Utility helpers
  * ====================================================================== */
 
-VOID SharedSystemTime(PLARGE_INTEGER CurrentTime)
-{
-    /* Read the shared system time directly */
-    KeQuerySystemTime(CurrentTime);
-}
+/* SharedSystemTime: fastfat reads this as a 64-bit DATA value (the shared system
+ * time snapshot), not a function. Provide a real data symbol so the Rust
+ * `extern static mut SharedSystemTime: u64` reference resolves to data, not code.
+ * NOTE (owed translation fix): the C macro aliases SharedUserData->SystemTime; a
+ * static-zero here yields epoch file timestamps. Tracked for a timesup.rs fix. */
+LARGE_INTEGER SharedSystemTime = { 0 };
 
 LONGLONG ExGetCurrentResourceThread(VOID)
 {
@@ -492,10 +492,7 @@ ULONG SizeOfFullEa(PFILE_FULL_EA_INFORMATION Ea)
                    Ea->EaNameLength + 1 + Ea->EaValueLength);
 }
 
-ULONG SizeOfPackedEa(PFILE_GET_EA_INFORMATION Ea)
-{
-    return (ULONG)(sizeof(FILE_GET_EA_INFORMATION) - 1 + Ea->EaNameLength + 1);
-}
+ULONG SizeOfPackedEa(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return 0; }
 
 BOOLEAN GetcbList(PVOID x) { (void)x; return FALSE; }
 
@@ -514,11 +511,10 @@ BOOLEAN IsFileWriteThrough(PFILE_OBJECT f, PDEVICE_OBJECT d)
 
 /* IsFileDeleted accesses FCB_STATE_DELETE_ON_CLOSE.
  * FCB state is at a known offset; use value 0x00000004 from fatstruc.h */
-BOOLEAN IsFileDeleted(PFCB Fcb)
+BOOLEAN IsFileDeleted(PIRP_CONTEXT IrpContext, PFCB Fcb)
 {
-    /* FcbState is at offset ~36 in FCB (after Header=40 bytes + other).
-     * Use a conservative stub: always FALSE (called in cleanup paths only) */
-    (void)Fcb;
+    /* (IrpContext, Fcb) per fatprocs.h macro. Conservative stub: FALSE. */
+    (void)IrpContext; (void)Fcb;
     return FALSE;
 }
 
@@ -540,12 +536,12 @@ VOID CanFsdWait(PIRP_CONTEXT IrpContext)
  * 6. Debug / trace stubs
  * ====================================================================== */
 
-VOID DebugTrace(LONG a, ULONG b, PCHAR c, ULONG_PTR d) { (void)a;(void)b;(void)c;(void)d; }
+VOID DebugTrace(LONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
 VOID DebugDump(PCHAR a, ULONG b, PVOID c)               { (void)a;(void)b;(void)c; }
 VOID DebugUnwind(PCHAR a)                               { (void)a; }
 VOID DebugDoit(PVOID a)                                 { (void)a; }
 VOID DbgDoit(PVOID a)                                   { (void)a; }
-VOID Dbg(VOID)                                          { }
+ULONG Dbg = 0;  /* DebugTrace component id; read as data, no-op when not tracing */
 VOID TimerStart(ULONG a)                                { (void)a; }
 VOID TimerStop(ULONG a, PCHAR b)                        { (void)a;(void)b; }
 
@@ -560,7 +556,7 @@ VOID _SEH2_END(VOID)                   { }
 NTSTATUS _SEH2_GetExceptionCode(VOID)  { return STATUS_SUCCESS; }
 PVOID _SEH2_GetExceptionInformation(VOID) { return NULL; }
 BOOLEAN _SEH2_AbnormalTermination(VOID){ return FALSE; }
-VOID SEH_TRY_EXCEPT(PVOID x)           { (void)x; }
+VOID SEH_TRY_EXCEPT(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; }
 VOID try_return(PVOID x)               { (void)x; }
 
 /* ======================================================================
@@ -632,49 +628,43 @@ NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryBpb(PIRP_CONTEXT a, PIRP b)           { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatSetEndOfFileInfo(PIRP_CONTEXT a, PIRP b, PFCB c, PVCB d)
+NTSTATUS FatSetEndOfFileInfo(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatOpenExistingDirectory(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8, PVOID a9, PVOID a10, PVOID a11, PVOID a12, PVOID a13, PVOID a14, PVOID a15, PVOID a16) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8;(void)a9;(void)a10;(void)a11;(void)a12;(void)a13;(void)a14;(void)a15;(void)a16; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatLowLevelReadWrite(PIRP_CONTEXT a, PDEVICE_OBJECT b, PIRP c, PVCB d)
     { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatOpenVolume(PIRP_CONTEXT a, PIRP b, PVCB c, PCCB d, PACCESS_MASK e, ULONG f, ULONG g)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatOpenExistingDirectory(PIRP_CONTEXT a, PIRP b, PDCB c, PCCB d,
-    PACCESS_MASK e, ULONG f, ULONG g, BOOLEAN h, BOOLEAN i, BOOLEAN j, PULONG k)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;(void)j;(void)k; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatLowLevelReadWrite(PIRP_CONTEXT a, PIRP b, PVCB c)
-    { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatPerformVerifyDiskRead(PIRP_CONTEXT a, PVCB b, PVOID c, LBO d, ULONG e, BOOLEAN f)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatGenerateFileIdFromFcb(PFCB a, PULONGLONG b)
-    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGenerateFileIdFromFcb(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)
     { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatReadDirent(PIRP_CONTEXT a, PDCB b, PULONG c, PDIRENT *d, PBCB *e, PLARGE_INTEGER f)
     { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS fat_check_system_security_access(PIRP_CONTEXT a, PIRP b)
-    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS fat_supersede_or_overwrite_file(PIRP_CONTEXT a, PIRP b, PFCB c, PVCB d, BOOLEAN e)
-    { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS fat_check_system_security_access(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS fat_supersede_or_overwrite_file(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 
-VOID FatConstructDot(PIRP_CONTEXT a, PVCB b, PDCB c, PDIRENT d, PBCB e, PLARGE_INTEGER f)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); }
-VOID FatConstructDotDot(PIRP_CONTEXT a, PVCB b, PDCB c, PDIRENT d, PBCB e, PLARGE_INTEGER f)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); }
+VOID FatConstructDot(PIRP_CONTEXT a, PDCB b, PDIRENT c, PDIRENT d)
+    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
+VOID FatConstructDotDot(PIRP_CONTEXT a, PDCB b, PDIRENT c, PDIRENT d)
+    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
 VOID FatNotifyReportChange(PIRP_CONTEXT a, PVCB b, PFCB c, ULONG d, ULONG e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); }
-VOID Fat8QMdot3QM(PIRP_CONTEXT a, POEM_STRING b)       { (void)a;(void)b; STUB_BUGCHECK(); }
+__cdecl VOID Fat8QMdot3QM(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); }
 
-ULONG FatFsdEntryCount(VOID)      { STUB_BUGCHECK(); return 0; }
-ULONG FatIoCallDriverCount(VOID)  { STUB_BUGCHECK(); return 0; }
+/* FatFsdEntryCount: a FASTFATDBG-only debug counter. The Rust definition is
+ * cfg'd out (feature off) but strucsup references it unconditionally. Provide as
+ * real DATA (bare symbol) so the `extern static mut` reference resolves to a
+ * zero counter rather than function-prologue bytes. */
+ULONG FatFsdEntryCount = 0;
+ULONG FatIoCallDriverCount = 0;  /* FASTFATDBG counter; real DATA, incremented by Rust */
 
 
 BOOLEAN FatAreNamesEqual(PIRP_CONTEXT a, PUNICODE_STRING b, PUNICODE_STRING c, BOOLEAN d, PWCHAR e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT a, OEM_STRING b, BOOLEAN c, BOOLEAN d, BOOLEAN e)
     { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsNameLongUnicodeValid(PIRP_CONTEXT a, PUNICODE_STRING b, BOOLEAN c, BOOLEAN d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsPathnameValid(PIRP_CONTEXT a, PUNICODE_STRING b, BOOLEAN c)
-    { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsIoRangeValid(PVCB a, LBO b, ULONG c) { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return FALSE; }
+BOOLEAN FatIsNameLongUnicodeValid(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return FALSE; }
+BOOLEAN FatIsPathnameValid(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return FALSE; }
+BOOLEAN FatIsIoRangeValid(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; STUB_BUGCHECK(); return FALSE; }
 
 
 #pragma clang diagnostic pop

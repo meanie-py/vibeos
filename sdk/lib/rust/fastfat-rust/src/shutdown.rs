@@ -23,9 +23,9 @@ type VOLUME_CONDITION = i32;
 const Flush: FAT_FLUSH_TYPE = 1;       // FAT_FLUSH_TYPE::Flush (NoFlush=0, Flush=1)
 const VolumeClean: VOLUME_CONDITION = 0; // FAT_VOLUME_STATE::VolumeClean
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
-    fn DebugTrace(level: i32, mask: u32, format: *const i8, arg: i32);
+    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
     fn _SEH2_GetExceptionInformation() -> *mut c_void;
 }
 
@@ -107,7 +107,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonShutdown(
+pub unsafe extern "system" fn FatCommonShutdown(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {

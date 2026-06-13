@@ -37,7 +37,7 @@ pub struct FAT_CALLOUT_PARAMETERS {
 // BCB alias for external functions that use Bcb name
 type Bcb = BCB;
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
     fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
@@ -72,7 +72,7 @@ extern "C" {
     fn ExFreePool(P: *mut c_void);
     fn RtlAreBitsSet( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, ) -> i32;
     fn RtlClearBits( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, );
-    fn DebugTrace( Level: i32, Component: i32, Format: *const i8, ... );
+    } extern "C" { fn DebugTrace( Level: i32, Component: i32, Format: *const i8, ... ); } extern "system" {
 }
 #[cfg(target_arch = "x86")]
 extern "stdcall" {
@@ -80,13 +80,13 @@ extern "stdcall" {
     fn FatPrePostIrp(Context: *mut c_void, Irp: *mut IRP);
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn FatOplockComplete(Context: *mut c_void, Irp: *mut IRP);
     fn FatPrePostIrp(Context: *mut c_void, Irp: *mut IRP);
 }
 extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
-    fn KeExpandKernelStackAndCalloutEx( Callout: extern "C" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
+    fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> NTSTATUS;
     fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u16, DesiredAccess: *mut ACCESS_MASK) -> BOOLEAN;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
@@ -205,7 +205,7 @@ const OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY: u32 = 0x00000008;
 const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x00000010;
 
 // FatData is defined externally in fatdata.rs; extern reference here.
-extern "C" { static mut FatData: FAT_DATA; }
+extern "system" { static mut FatData: FAT_DATA; }
 
 const FILE_CREATE: u32 = 2;
 const FILE_SUPERSEDE: u32 = 0;
@@ -282,13 +282,13 @@ pub unsafe extern "system" fn FatFsdCreate(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonCreateCallout(CalloutParameters: *mut FAT_CALLOUT_PARAMETERS) {
+pub unsafe extern "system" fn FatCommonCreateCallout(CalloutParameters: *mut FAT_CALLOUT_PARAMETERS) {
     PAGED_CODE();
     (*CalloutParameters).IrpStatus = FatCommonCreate((*CalloutParameters).__bindgen_anon_1.Create.IrpContext, (*CalloutParameters).__bindgen_anon_1.Create.Irp);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonCreateOnNewStack(
+pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn FatCommonCreateOnNewStack(
     );
 
     status = KeExpandKernelStackAndCalloutEx(
-        core::mem::transmute::<unsafe extern "C" fn(*mut FAT_CALLOUT_PARAMETERS), extern "C" fn(*mut FAT_CALLOUT_PARAMETERS)>(FatCommonCreateCallout),
+        core::mem::transmute::<unsafe extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), extern "system" fn(*mut FAT_CALLOUT_PARAMETERS)>(FatCommonCreateCallout),
         &mut CalloutParameters as *mut FAT_CALLOUT_PARAMETERS,
         KERNEL_STACK_SIZE,
         0i32,
@@ -337,7 +337,7 @@ pub unsafe extern "C" fn FatCommonCreateOnNewStack(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonCreate(
+pub unsafe extern "system" fn FatCommonCreate(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -1093,7 +1093,7 @@ pub unsafe extern "C" fn FatCommonCreate(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenRootDcb(
+pub unsafe extern "system" fn FatOpenRootDcb(
     IrpContext: *mut IRP_CONTEXT,
     FileObject: *mut FILE_OBJECT,
     Vcb: *mut VCB,
@@ -1199,7 +1199,7 @@ pub unsafe extern "C" fn FatOpenRootDcb(
     Iosb
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenExistingDcb(
+pub unsafe extern "system" fn FatOpenExistingDcb(
     IrpContext: *mut IRP_CONTEXT,
     IrpSp: *mut IO_STACK_LOCATION,
     FileObject: *mut FILE_OBJECT,
@@ -1329,8 +1329,8 @@ pub unsafe extern "C" fn FatOpenExistingDcb(
                 FatGetFcbOplock(Dcb),
                 (*IrpContext).OriginatingIrp,
                 IrpContext as *mut core::ffi::c_void,
-                Some(FatOplockComplete),
-                Some(FatPrePostIrp),
+                Some(core::mem::transmute::<*const (), _>(FatOplockComplete as *const ())),
+                Some(core::mem::transmute::<*const (), _>(FatPrePostIrp as *const ())),
             );
         }
         if Iosb.__bindgen_anon_1.Status == STATUS_PENDING {
@@ -1406,7 +1406,7 @@ pub unsafe extern "C" fn FatOpenExistingDcb(
     Iosb
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenExistingFcb(
+pub unsafe extern "system" fn FatOpenExistingFcb(
     IrpContext: *mut IRP_CONTEXT,
     IrpSp: *mut IO_STACK_LOCATION,
     FileObject: *mut FILE_OBJECT,
@@ -1466,8 +1466,8 @@ pub unsafe extern "C" fn FatOpenExistingFcb(
                     FatGetFcbOplock(Fcb),
                     (*IrpContext).OriginatingIrp,
                     IrpContext as *mut c_void,
-                    Some(FatOplockComplete),
-                    Some(FatPrePostIrp),
+                    Some(core::mem::transmute::<*const (), _>(FatOplockComplete as *const ())),
+                    Some(core::mem::transmute::<*const (), _>(FatPrePostIrp as *const ())),
                 );
                 if Iosb.__bindgen_anon_1.Status == 0x103 /* STATUS_PENDING */ {
                     *OplockPostIrp = 1;
@@ -1563,8 +1563,8 @@ pub unsafe extern "C" fn FatOpenExistingFcb(
                     FatGetFcbOplock(Fcb),
                     (*IrpContext).OriginatingIrp,
                     IrpContext as *mut c_void,
-                    Some(FatOplockComplete),
-                    Some(FatPrePostIrp),
+                    Some(core::mem::transmute::<*const (), _>(FatOplockComplete as *const ())),
+                    Some(core::mem::transmute::<*const (), _>(FatPrePostIrp as *const ())),
                 );
             }
             if Iosb.__bindgen_anon_1.Status == 0x103 {
@@ -1776,7 +1776,7 @@ pub unsafe extern "C" fn FatOpenExistingFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenTargetDirectory(
+pub unsafe extern "system" fn FatOpenTargetDirectory(
     IrpContext: *mut IRP_CONTEXT,
     FileObject: *mut FILE_OBJECT,
     Dcb: *mut DCB,
@@ -1923,7 +1923,7 @@ pub unsafe extern "C" fn FatOpenTargetDirectory(
     Iosb
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenExistingFile(
+pub unsafe extern "system" fn FatOpenExistingFile(
     IrpContext: PIRP_CONTEXT,
     FileObject: PFILE_OBJECT,
     Vcb: PVCB,
@@ -2180,7 +2180,7 @@ pub unsafe extern "C" fn FatOpenExistingFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateNewDirectory(
+pub unsafe extern "system" fn FatCreateNewDirectory(
     IrpContext: PIRP_CONTEXT,
     IrpSp: PIO_STACK_LOCATION,
     FileObject: PFILE_OBJECT,
@@ -2594,7 +2594,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
     Iosb
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateNewFile(
+pub unsafe extern "system" fn FatCreateNewFile(
     IrpContext: *mut IRP_CONTEXT,
     IrpSp: *mut IO_STACK_LOCATION,
     FileObject: *mut FILE_OBJECT,
@@ -3003,7 +3003,7 @@ const FILE_ACTION_MODIFIED: u32 = 0x03;
 
 // Helper struct for LARGE_INTEGER (if not already available)
 #[no_mangle]
-pub unsafe extern "C" fn FatSupersedeOrOverwriteFile(
+pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
     irp_context: *mut IRP_CONTEXT,
     file_object: *mut FILE_OBJECT,
     fcb: *mut FCB,
@@ -3275,7 +3275,7 @@ pub unsafe extern "C" fn FatSupersedeOrOverwriteFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFullNameInFcb(
+pub unsafe extern "system" fn FatSetFullNameInFcb(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     mut FinalName: *mut _UNICODE_STRING,
@@ -3359,7 +3359,7 @@ pub unsafe extern "C" fn FatSetFullNameInFcb(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckSystemSecurityAccess(IrpContext: *mut IRP_CONTEXT) -> i32 {
+pub unsafe extern "system" fn FatCheckSystemSecurityAccess(IrpContext: *mut IRP_CONTEXT) -> i32 {
     // PAGED_CODE();
     let irp_sp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
     let security_context: *mut IO_SECURITY_CONTEXT = ((*irp_sp).Parameters.Create.SecurityContext).cast();
@@ -3376,7 +3376,7 @@ pub unsafe extern "C" fn FatCheckSystemSecurityAccess(IrpContext: *mut IRP_CONTE
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckShareAccess(
+pub unsafe extern "system" fn FatCheckShareAccess(
     IrpContext: PIRP_CONTEXT,
     FileObject: PFILE_OBJECT,
     FcbOrDcb: PFCB,
@@ -3413,7 +3413,7 @@ pub unsafe extern "C" fn FatCheckShareAccess(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCallSelfCompletionRoutine(
+pub unsafe extern "system" fn FatCallSelfCompletionRoutine(
     DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
     Contxt: *mut core::ffi::c_void,

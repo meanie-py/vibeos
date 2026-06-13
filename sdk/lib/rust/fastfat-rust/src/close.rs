@@ -18,7 +18,7 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen};
 
-extern "C" {
+extern "system" {
     fn FatAcquireCloseMutex();
     fn FatReleaseCloseMutex();
     static mut FatData: FAT_DATA;
@@ -27,7 +27,7 @@ extern "system" {
     fn ExAcquireFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
     fn ExReleaseFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
     fn KeAreApcsDisabled() -> BOOLEAN;
-    fn DebugTrace(level: i32, component: u32, format: *const i8, arg: i32);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatBugCheck(type_of_open: TYPE_OF_OPEN, arg1: u32, arg2: u32) -> !;
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -234,7 +234,7 @@ pub unsafe extern "system" fn FatCloseWorker(
     FsRtlExitFileSystem();
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFspClose(
+pub unsafe extern "system" fn FatFspClose(
     Vcb: *mut VCB,
 ) {
     // Use raw pointers as the C code does
@@ -361,7 +361,7 @@ pub unsafe extern "C" fn FatFspClose(
     DebugTrace(-1, DEBUG_TRACE_CLOSE, b"FatFspClose -> NULL\n\0".as_ptr() as *const i8, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatQueueClose(
+pub unsafe extern "system" fn FatQueueClose(
     CloseContext: *mut CLOSE_CONTEXT,
     DelayClose: BOOLEAN,
 ) {
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn FatQueueClose(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatRemoveClose(
+pub unsafe extern "system" fn FatRemoveClose(
     mut Vcb: *mut VCB,
     LastVcbHint: *mut VCB,
 ) -> *mut CLOSE_CONTEXT {
@@ -531,7 +531,7 @@ pub unsafe extern "C" fn FatRemoveClose(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonClose(
+pub unsafe extern "system" fn FatCommonClose(
     Vcb: *mut VCB,
     mut Fcb: *mut FCB,
     mut Ccb: *mut CCB,

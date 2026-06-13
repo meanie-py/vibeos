@@ -28,9 +28,9 @@ use crate::glue::{DEBUG_TRACE_CLEANUP, DO_VERIFY_VOLUME, FAT_NTC_DCB, FAT_NTC_RO
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlIsNtstatusExpected};
 
-extern "C" {
+extern "system" {
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: *mut core::ffi::c_void) -> u8;
-    fn DebugTrace(level: i32, flag: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, flag: u32, format: *const i8, ...); } extern "system" {
     fn FatCreateIrpContext(Irp: *mut IRP, arg2: i32) -> *mut core::ffi::c_void;
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> u8;
     fn FatExceptionFilter(IrpContext: *mut core::ffi::c_void, ExceptionInformation: *mut core::ffi::c_void) -> i32;
@@ -151,7 +151,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonCleanup(
+pub unsafe extern "system" fn FatCommonCleanup(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -684,7 +684,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAutoUnlock(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
+pub unsafe extern "system" fn FatAutoUnlock(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
     let mut SavedIrql: KIRQL = 0;
     let _ = IrpContext;
 

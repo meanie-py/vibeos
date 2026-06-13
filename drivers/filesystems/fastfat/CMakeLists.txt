@@ -61,6 +61,17 @@ if(ARCH STREQUAL "arm64")
     add_definitions(-DARM64_UART_TRACE_ENABLE)
 endif()
 add_library(fastfat MODULE rust_cohab_stub.c rust_cohab_forceinline.c rust_cohab_fat.c fastfat.rc)
+# i386 NTAPI = stdcall. The Rust crate is uniformly `extern "system"` (stdcall on
+# i386), so every cohab-provided helper must emit the `@N` stdcall decoration to
+# match. -mrtd makes clang default all non-variadic C functions to stdcall while
+# leaving variadics (DebugTrace/DbgPrint/KdPrintEx) cdecl — exactly mirroring
+# Rust's `extern "system"` variadic→cdecl fallback. No-op on amd64/arm64 (no
+# decoration), so the working amd64 link is unaffected.
+if(ARCH STREQUAL "i386")
+    set_source_files_properties(
+        rust_cohab_stub.c rust_cohab_forceinline.c rust_cohab_fat.c
+        PROPERTIES COMPILE_OPTIONS "-mrtd")
+endif()
 set_module_type(fastfat kernelmodedriver)
 add_importlibs(fastfat ntoskrnl hal)
 add_dependencies(fastfat rust_fastfat)

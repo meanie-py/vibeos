@@ -25,8 +25,8 @@ use crate::types::{FAT12_DIRTY_ENTRY, FAT16_DIRTY_ENTRY, FAT32_DIRTY_ENTRY, FAT3
 use crate::types::{VCB, RTL_BITMAP_DBG};
 use ntkrnl_sys::ddk::{MDL};
 
-extern "C" {
-    fn DebugTrace(level: i32, component: u32, format: *const i8, arg: usize);
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatRemoveMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Bytes: u32, );
     fn UNREFERENCED_PARAMETER(_: usize);
     fn PAGED_CODE();
@@ -40,7 +40,7 @@ extern "C" {
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
 }
-extern "C" {
+extern "system" {
     fn NT_ASSERT(condition: i32);
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn DbgDoit(value: *mut c_void);
@@ -143,7 +143,7 @@ unsafe fn FatAllocateClusters(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSelectBestWindow(Vcb: *mut VCB) -> u32 {
+pub unsafe extern "system" fn FatSelectBestWindow(Vcb: *mut VCB) -> u32 {
     let mut i: u32;
     let mut Fave: u32 = 0;
     let mut MaxFree: u32 = 0;
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn FatSelectBestWindow(Vcb: *mut VCB) -> u32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSetupAllocationSupport(
+pub unsafe extern "system" fn FatSetupAllocationSupport(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -297,7 +297,7 @@ pub unsafe extern "C" fn FatSetupAllocationSupport(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatTearDownAllocationSupport(
+pub unsafe extern "system" fn FatTearDownAllocationSupport(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -346,7 +346,7 @@ pub unsafe extern "C" fn FatTearDownAllocationSupport(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatLookupFileAllocation(
+pub unsafe extern "system" fn FatLookupFileAllocation(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: PFCB,
     Vbo: u32,
@@ -867,7 +867,7 @@ pub unsafe extern "C" fn FatLookupFileAllocation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatAddFileAllocation(
+pub unsafe extern "system" fn FatAddFileAllocation(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     FileObject: *mut FILE_OBJECT,
@@ -1116,7 +1116,7 @@ pub unsafe extern "C" fn FatAddFileAllocation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatTruncateFileAllocation(
+pub unsafe extern "system" fn FatTruncateFileAllocation(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: PFCB,
     mut DesiredAllocationSize: ULONG,
@@ -1266,7 +1266,7 @@ pub unsafe extern "C" fn FatTruncateFileAllocation(
     DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLookupFileAllocationSize(
+pub unsafe extern "system" fn FatLookupFileAllocationSize(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
 ) {
@@ -1299,7 +1299,7 @@ pub unsafe extern "C" fn FatLookupFileAllocationSize(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateDiskSpace(
+pub unsafe extern "system" fn FatAllocateDiskSpace(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
     AbsoluteClusterHint: ULONG,
@@ -1749,7 +1749,7 @@ pub unsafe extern "C" fn FatAllocateDiskSpace(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDeallocateDiskSpace(
+pub unsafe extern "system" fn FatDeallocateDiskSpace(
     IrpContext: PIRP_CONTEXT,
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
@@ -2117,7 +2117,7 @@ pub unsafe extern "C" fn FatDeallocateDiskSpace(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSplitAllocation(
+pub unsafe extern "system" fn FatSplitAllocation(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
     Mcb: PLARGE_MCB,
@@ -2236,7 +2236,7 @@ pub unsafe extern "C" fn FatSplitAllocation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatMergeAllocation(
+pub unsafe extern "system" fn FatMergeAllocation(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
     Mcb: PLARGE_MCB,
@@ -2309,7 +2309,7 @@ pub unsafe extern "C" fn FatMergeAllocation(
     DebugTrace(-1, 0, b"FatMergeAllocation -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatInterpretClusterType(
+pub unsafe extern "system" fn FatInterpretClusterType(
     Vcb: *mut VCB,
     mut Entry: FAT_ENTRY,
 ) -> CLUSTER_TYPE {
@@ -2364,7 +2364,7 @@ pub unsafe extern "C" fn FatInterpretClusterType(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatLookupFatEntry(
+pub unsafe extern "system" fn FatLookupFatEntry(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     FatIndex: u32,
@@ -2460,7 +2460,7 @@ pub unsafe extern "C" fn FatLookupFatEntry(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFatEntry(
+pub unsafe extern "system" fn FatSetFatEntry(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     FatIndex: u32,
@@ -2666,7 +2666,7 @@ pub unsafe extern "C" fn FatSetFatEntry(
     // DebugTrace(-1, Dbg, "FatSetFatEntry -> (VOID)\n", 0);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFatRun(
+pub unsafe extern "system" fn FatSetFatRun(
     IrpContext: PIRP_CONTEXT,
     Vcb: *mut VCB,
     mut StartingFatIndex: u32,
@@ -2975,7 +2975,7 @@ pub unsafe extern "C" fn FatSetFatRun(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatLogOf(mut value: u32) -> u8 {
+pub unsafe extern "system" fn FatLogOf(mut value: u32) -> u8 {
     let mut log: u8 = 0;
     let orig_value: u32 = value;
 
@@ -2995,7 +2995,7 @@ pub unsafe extern "C" fn FatLogOf(mut value: u32) -> u8 {
     log
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatExamineFatEntries(
+pub unsafe extern "system" fn FatExamineFatEntries(
     irp_context: *mut IRP_CONTEXT,
     vcb: *mut VCB,
     mut start_index: u32,

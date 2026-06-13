@@ -16,11 +16,11 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_IRP_CONTEXT};
 
-extern "C" {
+extern "system" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn FatVerifyVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB);
     fn PAGED_CODE();
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn SetFlag(flags: *mut u32, flag: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -57,7 +57,7 @@ extern "C" {
     fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN;
     fn PsGetCurrentThread() -> PETHREAD;
     fn PsGetThreadProcess(Thread: PETHREAD) -> *mut core::ffi::c_void;
-    fn PsUpdateDiskCounters(Process: *mut core::ffi::c_void, a: u32, b: u32, c: u32, d: u32, e: u32);
+    fn PsUpdateDiskCounters(Process: *mut core::ffi::c_void, ReadBytes: u64, WriteBytes: u64, c: u32, d: u32, e: u32);
     fn KeCancelTimer(Timer: *mut ntkrnl_sys::ddk::KTIMER) -> BOOLEAN;
     fn KeRemoveQueueDpc(Dpc: *mut ntkrnl_sys::ddk::KDPC) -> BOOLEAN;
     fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOOLEAN;
@@ -179,7 +179,7 @@ pub unsafe extern "system" fn FatFsdFlushBuffers(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonFlushBuffers(
+pub unsafe extern "system" fn FatCommonFlushBuffers(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -404,7 +404,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushDirectory(
+pub unsafe extern "system" fn FatFlushDirectory(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
     FlushType: FAT_FLUSH_TYPE,
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushFat(
+pub unsafe extern "system" fn FatFlushFat(
     IrpContext: *mut PIRP_CONTEXT,
     Vcb: *mut PVCB,
 ) -> NTSTATUS {
@@ -606,7 +606,7 @@ pub unsafe extern "C" fn FatFlushFat(
     ReturnStatus
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushVolume(
+pub unsafe extern "system" fn FatFlushVolume(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
     FlushType: FAT_FLUSH_TYPE,
@@ -635,7 +635,7 @@ pub unsafe extern "C" fn FatFlushVolume(
     return ReturnStatus;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushFile(
+pub unsafe extern "system" fn FatFlushFile(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     FlushType: u32,
@@ -663,7 +663,7 @@ pub unsafe extern "C" fn FatFlushFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatHijackIrpAndFlushDevice(
+pub unsafe extern "system" fn FatHijackIrpAndFlushDevice(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     TargetDeviceObject: *mut DEVICE_OBJECT,
@@ -715,7 +715,7 @@ pub unsafe extern "C" fn FatHijackIrpAndFlushDevice(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushFatEntries(
+pub unsafe extern "system" fn FatFlushFatEntries(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     Cluster: u32,
@@ -764,7 +764,7 @@ pub unsafe extern "C" fn FatFlushFatEntries(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushDirentForFile(
+pub unsafe extern "system" fn FatFlushDirentForFile(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {

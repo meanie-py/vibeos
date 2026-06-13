@@ -36,7 +36,7 @@ use crate::glue::{FSRTL_FLAG2_IS_PAGING_FILE, FSRTL_FLAG2_SUPPORTS_FILTER_CONTEX
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDeleteTunnelCache, FsRtlInitializeFileLock, FsRtlInitializeLargeMcb, FsRtlInitializeOplock, FsRtlInitializeTunnelCache, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts, FsRtlUninitializeFileLock, FsRtlUninitializeLargeMcb};
 use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
-extern "C" {
+extern "system" {
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(_: *const core::ffi::c_void);
     fn NT_ASSERT(cond: i32);
@@ -45,7 +45,7 @@ extern "C" {
     fn NodeType(Fcb: *mut FCB) -> u32;
     fn FatGetFirstChild(Fcb: *mut FCB) -> *mut FCB;
     fn FatGetNextSibling(Fcb: *mut FCB) -> *mut FCB;
-    fn DebugTrace(level: i32, component: u32, message: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, message: *const i8, ...); } extern "system" {
     fn DebugUnwind(name: *const i8);
     fn ClearFlag(flags: *mut u32, bits: u32);
     fn SetFlag(flags: *mut u32, bits: u32);
@@ -57,9 +57,9 @@ extern "C" {
     static mut FatData: FAT_DATA;
     static FatJanOne1980: LARGE_INTEGER;
     fn FatFspClose(Vcb: *mut VCB);
-    fn KdPrintEx(Filter: u32, Level: u32, Format: *const i8, ...);
+    } extern "C" { fn KdPrintEx(Filter: u32, Level: u32, Format: *const i8, ...); } extern "system" {
 }
-extern "C" {
+extern "system" {
     fn ExFreeToNPagedLookasideList( lookaside: *mut NPAGED_LOOKASIDE_LIST, entry: *mut core::ffi::c_void, );
     fn FatCloseEaFile(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Flag: i32);
     fn FatSetVcbCondition(Vcb: *mut VCB, Condition: u32);
@@ -169,7 +169,7 @@ const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
     extern "system" {
         fn PAGED_CODE();
     }
@@ -211,11 +211,11 @@ const DPFLTR_FASTFAT_ID: u32 = 0x6000;
 const DPFLTR_INFO_LEVEL: u32 = 0x00000020;
 const MAXIMUM_VOLUME_LABEL_LENGTH: u16 = 64; // in bytes, assuming 32 WCHARs
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateCcb() -> *mut CCB {
+pub unsafe extern "system" fn FatAllocateCcb() -> *mut CCB {
     return FsRtlAllocatePoolWithTag(PagedPool, core::mem::size_of::<CCB>() as u32, TAG_CCB) as *mut CCB;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeCcb(Ccb: *mut CCB) {
+pub unsafe extern "system" fn FatFreeCcb(Ccb: *mut CCB) {
     // #if FAT_FILL_FREE
     // (FAT_FILL_FREE is 0, so this block is omitted by the preprocessor)
     // #endif
@@ -223,7 +223,7 @@ pub unsafe extern "C" fn FatFreeCcb(Ccb: *mut CCB) {
     ExFreePool(Ccb as *mut core::ffi::c_void);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateFcb() -> *mut FCB {
+pub unsafe extern "system" fn FatAllocateFcb() -> *mut FCB {
     FsRtlAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<FCB>() as u32,
@@ -231,16 +231,16 @@ pub unsafe extern "C" fn FatAllocateFcb() -> *mut FCB {
     ) as *mut FCB
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeFcb(Fcb: *mut FCB) {
+pub unsafe extern "system" fn FatFreeFcb(Fcb: *mut FCB) {
     ExFreePool(Fcb as *mut _);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateNonPagedFcb() -> *mut NON_PAGED_FCB {
+pub unsafe extern "system" fn FatAllocateNonPagedFcb() -> *mut NON_PAGED_FCB {
     ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(FatNonPagedFcbLookasideList)) as *mut NON_PAGED_FCB
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeNonPagedFcb(
+pub unsafe extern "system" fn FatFreeNonPagedFcb(
     NonPagedFcb: *mut NON_PAGED_FCB,
 ) {
     ExFreeToNPagedLookasideList(
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn FatFreeNonPagedFcb(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateResource() -> PERESOURCE {
+pub unsafe extern "system" fn FatAllocateResource() -> PERESOURCE {
     let Resource: PERESOURCE;
     Resource = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(FatEResourceLookasideList)) as PERESOURCE;
     ExInitializeResourceLite(Resource);
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn FatAllocateResource() -> PERESOURCE {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeResource(Resource: *mut ERESOURCE) {
+pub unsafe extern "system" fn FatFreeResource(Resource: *mut ERESOURCE) {
     ExDeleteResourceLite(Resource);
     if FAT_FILL_FREE != 0 {
         RtlFillMemoryUlong(
@@ -272,19 +272,19 @@ pub unsafe extern "C" fn FatFreeResource(Resource: *mut ERESOURCE) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateIrpContext() -> PIRP_CONTEXT {
+pub unsafe extern "system" fn FatAllocateIrpContext() -> PIRP_CONTEXT {
     return ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(FatIrpContextLookasideList))
         as PIRP_CONTEXT;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatFreeIrpContext(IrpContext: *mut IRP_CONTEXT) {
+pub unsafe extern "system" fn FatFreeIrpContext(IrpContext: *mut IRP_CONTEXT) {
     ExFreeToNPagedLookasideList(
         core::ptr::addr_of_mut!(FatIrpContextLookasideList),
         IrpContext as *mut core::ffi::c_void,
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatInitializeVcb(
+pub unsafe extern "system" fn FatInitializeVcb(
     irp_context: *mut IRP_CONTEXT,
     vcb: *mut VCB,
     target_device_object: *mut DEVICE_OBJECT,
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
         KeInitializeTimer(&raw mut (*vcb).CleanVolumeTimer);
         KeInitializeDpc(
             &raw mut (*vcb).CleanVolumeDpc,
-            Some(core::mem::transmute(FatCleanVolumeDpc as unsafe extern "C" fn(*mut KDPC, *mut c_void, *mut c_void, *mut c_void))),
+            Some(core::mem::transmute(FatCleanVolumeDpc as unsafe extern "system" fn(*mut KDPC, *mut c_void, *mut c_void, *mut c_void))),
             vcb as *mut core::ffi::c_void,
         );
 
@@ -579,7 +579,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatTearDownVcb(
+pub unsafe extern "system" fn FatTearDownVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn FatTearDownVcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteVcb(
+pub unsafe extern "system" fn FatDeleteVcb(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
 ) {
@@ -701,7 +701,7 @@ pub unsafe extern "C" fn FatDeleteVcb(
     DebugTrace(-1i32, Dbg, b"FatDeleteVcb -> VOID\n\0".as_ptr() as *const i8, 0i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateRootDcb(
+pub unsafe extern "system" fn FatCreateRootDcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
@@ -873,7 +873,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
     DebugTrace(-1, 0, b"FatCreateRootDcb -> %p\n\0".as_ptr() as *const i8, Dcb);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateFcb(
+pub unsafe extern "system" fn FatCreateFcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     ParentDcb: *mut DCB,
@@ -1127,7 +1127,7 @@ pub unsafe extern "C" fn FatCreateFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateDcb(
+pub unsafe extern "system" fn FatCreateDcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     ParentDcb: *mut DCB,
@@ -1314,7 +1314,7 @@ pub unsafe extern "C" fn FatCreateDcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut *mut FCB) {
+pub unsafe extern "system" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut *mut FCB) {
     let Fcb: *mut FCB = *FcbPtr;
 
     // PAGED_CODE(); - ignored
@@ -1416,7 +1416,7 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateCcb(
+pub unsafe extern "system" fn FatCreateCcb(
     IrpContext: *mut IRP_CONTEXT,
 ) -> *mut CCB {
     // External declarations for unknown symbols
@@ -1456,7 +1456,7 @@ pub unsafe extern "C" fn FatCreateCcb(
     Ccb
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
+pub unsafe extern "system" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
     PAGED_CODE();
     if ((*Ccb).Flags & CCB_FLAG_FREE_UNICODE) != 0 {
         let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
@@ -1474,7 +1474,7 @@ pub unsafe extern "C" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteCcb(
+pub unsafe extern "system" fn FatDeleteCcb(
     irp_context: *mut IRP_CONTEXT,
     ccb: *mut *mut CCB,
 ) {
@@ -1502,7 +1502,7 @@ pub unsafe extern "C" fn FatDeleteCcb(
     _ = irp_context;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateIrpContext(
+pub unsafe extern "system" fn FatCreateIrpContext(
     irp: *mut IRP,
     wait: i32, // BOOLEAN
 ) -> *mut IRP_CONTEXT {
@@ -1617,7 +1617,7 @@ pub unsafe extern "C" fn FatCreateIrpContext(
     irp_context
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) {
+pub unsafe extern "system" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) {
     PAGED_CODE();
 
     DebugTrace(1, Dbg, b"FatDeleteIrpContext, IrpContext = %p\n\0".as_ptr() as *const i8, IrpContext);
@@ -1642,7 +1642,7 @@ pub unsafe extern "C" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetNextFcbBottomUp(
+pub unsafe extern "system" fn FatGetNextFcbBottomUp(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     TerminationFcb: *mut FCB,
@@ -1679,7 +1679,7 @@ pub unsafe extern "C" fn FatGetNextFcbBottomUp(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetNextFcbTopDown(
+pub unsafe extern "system" fn FatGetNextFcbTopDown(
     IrpContext: *mut IRP_CONTEXT,
     mut Fcb: *mut FCB,
     TerminationFcb: *mut FCB,
@@ -1730,7 +1730,7 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSwapVpb(
+pub unsafe extern "system" fn FatSwapVpb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) -> i32 {
@@ -1795,7 +1795,7 @@ pub unsafe extern "C" fn FatSwapVpb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckForDismount(
+pub unsafe extern "system" fn FatCheckForDismount(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     Force: BOOLEAN,
@@ -1899,7 +1899,7 @@ pub unsafe extern "C" fn FatCheckForDismount(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatConstructNamesInFcb(
+pub unsafe extern "system" fn FatConstructNamesInFcb(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     Dirent: *mut DIRENT,
@@ -2095,7 +2095,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
+pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
 ) {
@@ -2201,7 +2201,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatIsHandleCountZero(
+pub unsafe extern "system" fn FatIsHandleCountZero(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) -> u8 {
@@ -2220,7 +2220,7 @@ pub unsafe extern "C" fn FatIsHandleCountZero(
     return 1u8;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllocateCloseContext(
+pub unsafe extern "system" fn FatAllocateCloseContext(
     Vcb: *mut VCB,
 ) -> *mut core::ffi::c_void {
     // PAGED_CODE();
@@ -2246,7 +2246,7 @@ pub unsafe extern "C" fn FatAllocateCloseContext(
     result as *mut core::ffi::c_void
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatPreallocateCloseContext(
+pub unsafe extern "system" fn FatPreallocateCloseContext(
     Vcb: *mut VCB,
 ) {
     // PAGED_CODE();
@@ -2272,7 +2272,7 @@ pub unsafe extern "C" fn FatPreallocateCloseContext(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatEnsureStringBufferEnough(
+pub unsafe extern "system" fn FatEnsureStringBufferEnough(
     String: *mut core::ffi::c_void,
     DesiredBufferSize: u16,
 ) {
@@ -2298,7 +2298,7 @@ pub unsafe extern "C" fn FatEnsureStringBufferEnough(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatScanForDataTrack(
+pub unsafe extern "system" fn FatScanForDataTrack(
     IrpContext: *mut IRP_CONTEXT,
     TargetDeviceObject: *mut DEVICE_OBJECT,
 ) -> i32 {

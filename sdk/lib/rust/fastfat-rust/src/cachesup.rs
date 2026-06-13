@@ -14,9 +14,9 @@ use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, FAT_BUG_CHECK_CACHESUP, FAT_D
 use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_OBJECT, IO_STACK_LOCATION, IRP, _PUBLIC_BCB as BCB, KDPC, KEVENT, KSPIN_LOCK, KTIMER};
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 
-extern "C" {
+extern "system" {
     static mut FatDisableParentCheck: i32;
-    fn DebugTrace(level: i32, flag: u32, msg: *const i8, arg: usize);
+    } extern "C" { fn DebugTrace(level: i32, flag: u32, msg: *const i8, ...); } extern "system" {
     fn BooleanFlagOn(flags: u32, flag: u32) -> i32;
     fn PAGED_CODE();
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
@@ -40,7 +40,7 @@ extern "C" {
     fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
     fn KeSetTimer(Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Dpc: *mut KDPC) -> u8;
 }
-extern "C" {
+extern "system" {
     static FatDiskAccountingEnabled: BOOLEAN;
     fn CcSetAdditionalCacheAttributesEx(FileObject: PFILE_OBJECT, Flags: u32);
     fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -120,12 +120,12 @@ const VolumeDirty: u32 = 1;
 const STATUS_END_OF_FILE: i32 = 0xC0000011_u32 as i32;
 
 
-extern "C" {
+extern "system" {
 }
 
 const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
 #[no_mangle]
-pub unsafe extern "C" fn FatInitializeCacheMap(
+pub unsafe extern "system" fn FatInitializeCacheMap(
     FileObject: PFILE_OBJECT,
     FileSizes: PCC_FILE_SIZES,
     PinAccess: BOOLEAN,
@@ -146,7 +146,7 @@ pub unsafe extern "C" fn FatInitializeCacheMap(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatReadVolumeFile(
+pub unsafe extern "system" fn FatReadVolumeFile(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     StartingVbo: u32,
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn FatReadVolumeFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPrepareWriteVolumeFile(
+pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     StartingVbo: i64,
@@ -254,7 +254,7 @@ pub unsafe extern "C" fn FatPrepareWriteVolumeFile(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatReadDirectoryFile(
+pub unsafe extern "system" fn FatReadDirectoryFile(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
     StartingVbo: VBO,
@@ -350,7 +350,7 @@ pub unsafe extern "C" fn FatReadDirectoryFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
+pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
     IrpContext: *mut PIRP_CONTEXT,
     Dcb: *mut PDCB,
     StartingVbo: u32,      // VBO
@@ -533,7 +533,7 @@ pub unsafe extern "C" fn FatPrepareWriteDirectoryFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
+pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
     irp_context: *mut PIRP_CONTEXT,
     dcb: *mut PDCB,
 ) -> i32 {
@@ -609,7 +609,7 @@ pub unsafe extern "C" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenDirectoryFile(
+pub unsafe extern "system" fn FatOpenDirectoryFile(
     IrpContext: *mut IRP_CONTEXT,
     Dcb: *mut DCB,
 ) {
@@ -699,7 +699,7 @@ pub unsafe extern "C" fn FatOpenDirectoryFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatOpenEaFile(
+pub unsafe extern "system" fn FatOpenEaFile(
     IrpContext: *mut IRP_CONTEXT,
     EaFcb: *mut FCB,
 ) -> *mut FILE_OBJECT {
@@ -767,7 +767,7 @@ pub unsafe extern "C" fn FatOpenEaFile(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCloseEaFile(
+pub unsafe extern "system" fn FatCloseEaFile(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     FlushFirst: u8,
@@ -844,7 +844,7 @@ pub unsafe extern "C" fn FatCloseEaFile(
 const REPINNED_BCBS_ARRAY_SIZE: usize = 4; // REPINNED_BCBS_ARRAY_SIZE
 const TAG_REPINNED_BCB: u32 = 0x52746146; // TAG_REPINNED_BCB
 #[no_mangle]
-pub unsafe extern "C" fn FatRepinBcb(
+pub unsafe extern "system" fn FatRepinBcb(
     IrpContext: *mut IRP_CONTEXT,
     Bcb: *mut core::ffi::c_void,
 ) {
@@ -893,14 +893,14 @@ const DO_VERIFY_VOLUME: u32 = 0x2; // placeholder
 const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
 const FAT_NTC_FCB: u32 = 0x0502; // placeholder, must be correct value
 
-unsafe extern "C" {
+unsafe extern "system" {
     fn SetFlag(flags: *mut u32, flag: u32);
     fn FatNormalizeAndRaiseStatus(irp_context: *mut IRP_CONTEXT, status: i32);
 }
 
 // REPINNED_BCBS comes from crate::types (types_amd64.rs): _REPINNED_BCBS { Next, Bcb[4] }
 #[no_mangle]
-pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
+pub unsafe extern "system" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
     // PAGED_CODE();
     DebugTrace(1, Dbg, b"FatUnpinRepinnedBcbs\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"IrpContext = %p\n\0".as_ptr() as *const i8, (irp_context as i32) as usize);
@@ -1042,7 +1042,7 @@ pub unsafe extern "C" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT) {
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatZeroData(
+pub unsafe extern "system" fn FatZeroData(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     FileObject: *mut FILE_OBJECT,
@@ -1098,7 +1098,7 @@ pub unsafe extern "C" fn FatZeroData(
     finished
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCompleteMdl(
+pub unsafe extern "system" fn FatCompleteMdl(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -1144,7 +1144,7 @@ pub unsafe extern "C" fn FatCompleteMdl(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSyncUninitializeCacheMap(
+pub unsafe extern "system" fn FatSyncUninitializeCacheMap(
     IrpContext: PIRP_CONTEXT,
     FileObject: PFILE_OBJECT,
 ) {
@@ -1181,7 +1181,7 @@ pub unsafe extern "C" fn FatSyncUninitializeCacheMap(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPinMappedData(
+pub unsafe extern "system" fn FatPinMappedData(
     IrpContext: PIRP_CONTEXT,
     Dcb: PDCB,
     StartingVbo: VBO,
@@ -1232,7 +1232,7 @@ pub unsafe extern "C" fn FatPinMappedData(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPrefetchPages(
+pub unsafe extern "system" fn FatPrefetchPages(
     IrpContext: *mut IRP_CONTEXT,
     FileObject: *mut FILE_OBJECT,
     StartingPage: u32,

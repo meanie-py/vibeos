@@ -8,14 +8,20 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CC_FILE_SIZES, CLONG, CcCanIWrite, ObReferenceObjectByHandle, CcIsThereDirtyData, CcWaitForCurrentLazyWriterActivity, DEVICE_OBJECT, DISK_GEOMETRY, _KWAIT_REASON_Executive, ERESOURCE, FILESYSTEM_STATISTICS, FILE_LOCK, FILE_OBJECT, GUID, _IO_STATUS_BLOCK, IO_STACK_LOCATION, IoAcquireVpbSpinLock, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, IRP, KEVENT, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, LARGE_INTEGER, LARGE_MCB, LUID, MARK_HANDLE_INFO, MOVE_FILE_DATA, _EVENT_TYPE_NotificationEvent, OEM_STRING, OPLOCK, PARTITION_INFORMATION_EX, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PFSCTL_QUERY_FAT_BPB_BUFFER, PHANDLE, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PLARGE_MCB, PLONGLONG, PMARK_HANDLE_INFO, PMOVE_FILE_DATA, PRETRIEVAL_POINTERS_BUFFER, PSTARTING_LCN_INPUT_BUFFER, PSTARTING_VCN_INPUT_BUFFER, PUINT32, PVOLUME_BITMAP_BUFFER, PVPB, RETRIEVAL_POINTERS_BUFFER, SECTION_OBJECT_POINTERS, STARTING_LCN_INPUT_BUFFER, STARTING_VCN_INPUT_BUFFER, SeSinglePrivilegeCheck, UINT32, _UNICODE_STRING, VOLUME_BITMAP_BUFFER, VPB};
 use core::ffi::c_void;
+// IoFileObjectType is a kernel DATA export; this local raw-dylib decl shadows the
+// plain `ntkrnl_sys::mm::*` glob import so the reference goes through the __imp_ thunk.
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    static IoFileObjectType: *mut c_void;
+}
 use core::ptr::null_mut;
 use core::ptr;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{IoIs32bitProcess, MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32, FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 
-extern "C" {
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatUnpackBios(bpb: *mut BIOS_PARAMETER_BLOCK, packed_bpb: *const core::ffi::c_void);
     static mut FatData: FAT_DATA;
     fn FatCloseEaFile(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, f: i32);
@@ -59,10 +65,10 @@ extern "C" {
     fn ClearFlag(Flags: *mut u32, Mask: u32);
     fn LongToHandle(Value: LONG) -> HANDLE;
     fn PsGetCurrentThread() -> *mut PETHREAD;
-    fn DbgPrint(Format: *const i8, ...);
+    } extern "C" { fn DbgPrint(Format: *const i8, ...); } extern "system" {
     fn NodeType(Ptr: *mut core::ffi::c_void) -> u32;
 }
-extern "C" {
+extern "system" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, FcbOrDcb: PFCB);
     fn FatIsFat32(Vcb: PVCB) -> u8;
@@ -228,7 +234,7 @@ const FSCTL_SET_PURGE_FAILURE_MODE: u32 = 0x00090068;
 const FSCTL_SET_ZERO_ON_DEALLOCATION: u32 = 0x0009006C;
 const FSCTL_REQUEST_OPLOCK: u32 = 0x00090070;
 #[no_mangle]
-pub unsafe extern "C" fn FatNonSparseMcb(
+pub unsafe extern "system" fn FatNonSparseMcb(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     Vbo: *mut VBO,
@@ -252,7 +258,7 @@ pub unsafe extern "C" fn FatNonSparseMcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatAddMcbEntry(
+pub unsafe extern "system" fn FatAddMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     mut Vbo: u32,
@@ -318,7 +324,7 @@ pub unsafe extern "C" fn FatAddMcbEntry(
     (result) as i32
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLookupMcbEntry(
+pub unsafe extern "system" fn FatLookupMcbEntry(
     Vcb: *mut VCB,
     Mcb: PLARGE_MCB,
     Vbo: u32,
@@ -375,7 +381,7 @@ pub unsafe extern "C" fn FatLookupMcbEntry(
     results
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLookupLastMcbEntry(
+pub unsafe extern "system" fn FatLookupLastMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     Vbo: *mut VBO,
@@ -414,7 +420,7 @@ pub unsafe extern "C" fn FatLookupLastMcbEntry(
     Results
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetNextMcbEntry(
+pub unsafe extern "system" fn FatGetNextMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     RunIndex: u32,
@@ -447,7 +453,7 @@ pub unsafe extern "C" fn FatGetNextMcbEntry(
     Results
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatRemoveMcbEntry(
+pub unsafe extern "system" fn FatRemoveMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     Vbo: u32,
@@ -471,7 +477,7 @@ pub unsafe extern "C" fn FatRemoveMcbEntry(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatVerifyVolume(
+pub unsafe extern "system" fn FatVerifyVolume(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -784,7 +790,7 @@ pub unsafe extern "C" fn FatVerifyVolume(
 // Forward declarations for unknown external functions/statics/constants
 const DEBUG_TRACE_FSCTRL: u32 = 0x0400; // unknown value, adjust as needed
 #[no_mangle]
-pub unsafe extern "C" fn FatIsBootSectorFat(BootSector: *const PACKED_BOOT_SECTOR) -> i32 {
+pub unsafe extern "system" fn FatIsBootSectorFat(BootSector: *const PACKED_BOOT_SECTOR) -> i32 {
     let mut Result: i32 = 1; // TRUE
     let mut Bpb: BIOS_PARAMETER_BLOCK = core::mem::zeroed();
 
@@ -845,7 +851,7 @@ pub unsafe extern "C" fn FatIsBootSectorFat(BootSector: *const PACKED_BOOT_SECTO
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatIsMediaWriteProtected(
+pub unsafe extern "system" fn FatIsMediaWriteProtected(
     IrpContext: *mut IRP_CONTEXT,
     TargetDeviceObject: *mut DEVICE_OBJECT,
 ) -> u8 {
@@ -894,7 +900,7 @@ pub unsafe extern "C" fn FatIsMediaWriteProtected(
     (status == STATUS_MEDIA_WRITE_PROTECTED) as u8
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
     let Status: NTSTATUS;
     let FsControlCode: u32;
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -954,7 +960,7 @@ pub unsafe extern "C" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> N
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatOplockRequest(
+pub unsafe extern "system" fn FatOplockRequest(
     IrpContext: *mut IRP_CONTEXT,
     mut Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -1125,7 +1131,7 @@ pub unsafe extern "C" fn FatOplockRequest(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatMoveFileNeedsWriteThrough(
+pub unsafe extern "system" fn FatMoveFileNeedsWriteThrough(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     OldWriteThroughFlags: u32,
@@ -1145,7 +1151,7 @@ pub unsafe extern "C" fn FatMoveFileNeedsWriteThrough(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatMoveFile(
+pub unsafe extern "system" fn FatMoveFile(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -1734,7 +1740,7 @@ pub unsafe extern "C" fn FatMoveFile(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatComputeMoveFileParameter(
+pub unsafe extern "system" fn FatComputeMoveFileParameter(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: PFCB,
     BufferSize: u32,
@@ -1825,7 +1831,7 @@ pub unsafe extern "C" fn FatComputeMoveFileParameter(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatComputeMoveFileSplicePoints(
+pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     FileOffset: ULONG,
@@ -1960,7 +1966,7 @@ pub unsafe extern "C" fn FatComputeMoveFileSplicePoints(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatAllowExtendedDasdIo(
+pub unsafe extern "system" fn FatAllowExtendedDasdIo(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> i32 {
@@ -1995,7 +2001,7 @@ pub unsafe extern "C" fn FatAllowExtendedDasdIo(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetRetrievalPointerBase(
+pub unsafe extern "system" fn FatGetRetrievalPointerBase(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -2050,7 +2056,7 @@ pub unsafe extern "C" fn FatGetRetrievalPointerBase(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetBootAreaInfo(
+pub unsafe extern "system" fn FatGetBootAreaInfo(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> i32 {
@@ -2123,7 +2129,7 @@ pub unsafe extern "C" fn FatGetBootAreaInfo(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatFlushAndCleanVolume(
+pub unsafe extern "system" fn FatFlushAndCleanVolume(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     Vcb: *mut VCB,
@@ -2196,7 +2202,7 @@ pub unsafe extern "C" fn FatFlushAndCleanVolume(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSetPurgeFailureMode(
+pub unsafe extern "system" fn FatSetPurgeFailureMode(
     mut IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -2300,7 +2306,7 @@ pub unsafe extern "C" fn FatSetPurgeFailureMode(
     return result_status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSearchBufferForLabel(
+pub unsafe extern "system" fn FatSearchBufferForLabel(
     IrpContext: *mut IRP_CONTEXT,
     Vpb: *mut VPB,
     Buffer: *mut core::ffi::c_void,
@@ -2396,7 +2402,7 @@ pub unsafe extern "C" fn FatSearchBufferForLabel(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatVerifyLookupFatEntry(
+pub unsafe extern "system" fn FatVerifyLookupFatEntry(
     IrpContext: PIRP_CONTEXT,
     Vcb: *mut VCB,
     FatIndex: u32,
@@ -2441,7 +2447,7 @@ pub unsafe extern "C" fn FatVerifyLookupFatEntry(
     // } _SEH2_END;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
+pub unsafe extern "system" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
     PAGED_CODE();
 
     NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
@@ -2481,7 +2487,7 @@ pub unsafe extern "C" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSetZeroOnDeallocate(
+pub unsafe extern "system" fn FatSetZeroOnDeallocate(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
@@ -10750,7 +10756,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
-extern "C" {
+extern "system" {
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
@@ -10760,7 +10766,7 @@ extern "C" {
 // NOTE: FatMountVolume body is in commented-out section of this file; needs full translation.
 // For now this BugChecks if called — FAT volumes will not mount at runtime until translated.
 #[no_mangle]
-pub unsafe extern "C" fn FatMountVolume(
+pub unsafe extern "system" fn FatMountVolume(
     IrpContext: PIRP_CONTEXT,
     DeviceObject: *mut DEVICE_OBJECT,
     Vpb: PVPB,
@@ -10774,7 +10780,7 @@ pub unsafe extern "C" fn FatMountVolume(
 
 // FatInvalidateVolumes — stub
 #[no_mangle]
-pub unsafe extern "C" fn FatInvalidateVolumes(Irp: PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatInvalidateVolumes(Irp: PIRP) -> NTSTATUS {
     let _ = Irp;
     FatBugCheck(FAT_BUG_CHECK_FSCTRL, 1, 0);
     unsafe { core::hint::unreachable_unchecked() }
@@ -10782,7 +10788,7 @@ pub unsafe extern "C" fn FatInvalidateVolumes(Irp: PIRP) -> NTSTATUS {
 
 // FatCommonFileSystemControl — dispatch by minor function
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonFileSystemControl(
+pub unsafe extern "system" fn FatCommonFileSystemControl(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {

@@ -14,7 +14,7 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDoesNameContainWildCards, 
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
 
-extern "C" {
+extern "system" {
     static mut FatData: FAT_DATA;
     static FatJanOne1980: ntkrnl_sys::ddk::LARGE_INTEGER;
     fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, time: FAT_TIME, centi: u8, ) -> ntkrnl_sys::ddk::LARGE_INTEGER;
@@ -22,7 +22,7 @@ extern "C" {
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     static Fat8QMdot3QM: [u16; 12];
     static Dbg: u32;
-    fn DebugTrace(level: i32, mask: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
 }
 extern "system" {
@@ -47,7 +47,7 @@ extern "system" {
     fn FatGenerateFileIdFromDirentAndOffset( Dcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Offset: VBO, ) -> i64;
     fn FatGetEaLength( IrpContext: *mut core::ffi::c_void, Vcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, EaSize: *mut u32, );
     fn FatIsNameShortOemValid( IrpContext: *mut core::ffi::c_void, OemString: OEM_STRING, ContainsWildCards: u8, AllowWildCards: u8, IsConstant: u8, ) -> u8;
-    fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: VBO, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut VBO, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
+    fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: u32, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut VBO, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
     fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
     fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
     fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
@@ -194,7 +194,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonDirectoryControl(
+pub unsafe extern "system" fn FatCommonDirectoryControl(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> i32 {
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn FatCommonDirectoryControl(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryDirectory(
+pub unsafe extern "system" fn FatQueryDirectory(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -547,7 +547,7 @@ pub unsafe extern "C" fn FatQueryDirectory(
                 IrpContext,
                 Dcb as *mut c_void,
                 Ccb as *mut c_void,
-                CurrentVbo,
+                CurrentVbo as u32,
                 &mut MatchFlags,
                 &mut Dirent as *mut *mut DIRENT as *mut *mut c_void,
                 &mut Bcb,
@@ -805,7 +805,7 @@ pub unsafe extern "C" fn FatQueryDirectory(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatGetDirTimes(
+pub unsafe extern "system" fn FatGetDirTimes(
     IrpContext: *mut IRP_CONTEXT,
     Dirent: *mut DIRENT,
     DirInfo: *mut FILE_DIRECTORY_INFORMATION,
@@ -891,7 +891,7 @@ pub unsafe extern "C" fn FatGetDirTimes(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatNotifyChangeDirectory(
+pub unsafe extern "system" fn FatNotifyChangeDirectory(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {

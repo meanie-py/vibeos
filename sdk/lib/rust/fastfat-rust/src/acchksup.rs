@@ -12,6 +12,8 @@ use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
 use ntkrnl_sys::ddk::{PPRIVILEGE_SET};
 // resolve_imports.py: explicit kernel/private-type imports
 
+// SeExports is a kernel DATA export — raw-dylib routes through the __imp_ thunk.
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static SeExports: *mut SE_EXPORTS;
 }
@@ -26,7 +28,7 @@ pub const Dbg: u32 = DEBUG_TRACE_ACCHKSUP;
 const SPECIFIC_RIGHTS_ALL: u32 = 0x0000FFFF;
 const FILE_TRAVERSE: u32 = 0x00000020;
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckFileAccess(
+pub unsafe extern "system" fn FatCheckFileAccess(
     IrpContext: PIRP_CONTEXT,
     DirentAttributes: u8,
     DesiredAccess: *mut u32,
@@ -48,8 +50,8 @@ pub unsafe extern "C" fn FatCheckFileAccess(
     const Dbg: u32 = DEBUG_TRACE_ACCHKSUP;
 
     // Declare external functions
-    unsafe extern "C" {
-        fn DebugTrace(level: i32, mask: u32, format: *const i8, arg: usize);
+    unsafe extern "system" {
+        } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
         fn DebugUnwind(fn_name: usize);
         fn PAGED_CODE();
     }
@@ -142,7 +144,7 @@ pub unsafe extern "C" fn FatCheckFileAccess(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCheckManageVolumeAccess(
+pub unsafe extern "system" fn FatCheckManageVolumeAccess(
     IrpContext: PIRP_CONTEXT,
     AccessState: *mut ntkrnl_sys::ddk::_ACCESS_STATE,
     ProcessorMode: ntkrnl_sys::ddk::KPROCESSOR_MODE,
@@ -169,7 +171,7 @@ pub unsafe extern "C" fn FatCheckManageVolumeAccess(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
+pub unsafe extern "system" fn FatExplicitDeviceAccessGranted(
     IrpContext: PIRP_CONTEXT,
     DeviceObject: PDEVICE_OBJECT,
     AccessState: PACCESS_STATE,
@@ -235,7 +237,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCreateRestrictEveryoneToken(
+pub unsafe extern "system" fn FatCreateRestrictEveryoneToken(
     Token: *mut ACCESS_TOKEN,
     RestrictedToken: *mut *mut ACCESS_TOKEN,
 ) -> i32 {

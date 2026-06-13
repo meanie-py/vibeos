@@ -22,8 +22,8 @@ use crate::types::{DEFERRED_FLUSH_CONTEXT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
-extern "C" {
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32;
+extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32; } extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, FcbOrDcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn FatIsIoRangeValid(Vcb: PVCB, StartingByte: LARGE_INTEGER, ByteCount: u32) -> u8;
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn FatFsdWrite(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonWrite(
+pub unsafe extern "system" fn FatCommonWrite(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn FatCommonWrite(
         let Retrying: BOOLEAN = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_DEFERRED_WRITE);
         FatPrePostIrp(IrpContext, Irp);
         (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DEFERRED_WRITE;
-        CcDeferWrite(FileObject, Some(core::mem::transmute(FatAddToWorkque as unsafe extern "C" fn(PIRP_CONTEXT, PIRP))), IrpContext as PVOID, Irp, ByteCount, Retrying);
+        CcDeferWrite(FileObject, Some(core::mem::transmute(FatAddToWorkque as unsafe extern "system" fn(PIRP_CONTEXT, PIRP))), IrpContext as PVOID, Irp, ByteCount, Retrying);
         return STATUS_PENDING;
     }
 

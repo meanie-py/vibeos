@@ -30,7 +30,7 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 // Local MmGetMdlPfnArray via ntkrnl_sys inline
 use ntkrnl_sys::inline::mm::MmGetMdlPfnArray;
 
-extern "C" {
+extern "system" {
     static mut FatIoCallDriverCount: u32;
     static mut FatDiskAccountingEnabled: u8;
     static Dbg: u32;
@@ -38,7 +38,7 @@ extern "C" {
     static IRP_PAGING_IO: u32;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn PAGED_CODE();
-    fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
     fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
@@ -46,7 +46,7 @@ extern "C" {
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
     fn _SEH2_AbnormalTermination() -> i32;
 }
-extern "C" {
+extern "system" {
     fn FatBugCheck(a: u32, b: u32, c: u32) -> !;
     fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u32;
     fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32);
@@ -54,7 +54,6 @@ extern "C" {
     fn SetFlag(flags: *mut u32, bit: u32);
     fn PsUpdateDiskCounters(process: *mut core::ffi::c_void, bytes_read: u64, bytes_written: u64, read_ops: u32, write_ops: u32, flags: u32);
     fn BooleanFlagOn(flags: u32, flag: u32) -> i32;
-    fn DebugDoit(expr: ());
     fn DebugUnwind(function: *const core::ffi::c_void);
     fn FatLowLevelReadWrite( IrpContext: *mut IRP_CONTEXT, DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, Vcb: *mut VCB, ) -> i32; // returns NTSTATUS but (VOID) cast fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn _SEH2_TRY();
@@ -69,7 +68,7 @@ extern "C" {
     fn FatExceptionFilter(p1: *mut core::ffi::c_void, p2: *mut core::ffi::c_void) -> i32;
     fn _Analysis_assume_(expr: bool);
     fn DbgBreakPoint();
-    fn DbgPrint(fmt: *const i8, ...);
+    } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
     fn SafeMmProbeAndLockPages( Mdl: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION, ) -> i32;
     fn MmPrepareMdlForReuse(Mdl: PMDL);
@@ -81,7 +80,7 @@ extern "stdcall" {
     fn FatFspMarkVolumeDirtyWithRecover(Parameter: PVOID);
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn FatFspMarkVolumeDirtyWithRecover(Parameter: PVOID);
 }
 
@@ -105,6 +104,12 @@ const SL_INVOKE_ON_CANCEL: u8 = 0x20;
 unsafe fn MmGetMdlVirtualAddress(mdl: *mut MDL) -> *mut c_void {
     ((*mdl).StartVa as *mut u8).add((*mdl).ByteOffset as usize) as *mut c_void
 }
+
+/// DebugDoit(X) is a retail no-op debug macro (the argument expression still
+/// evaluates for its side effects). Model it as an inline generic so it emits no
+/// linker symbol — avoids an i386 stdcall-arity (@0 vs @4) cohab mismatch.
+#[inline(always)]
+unsafe fn DebugDoit<T>(_expr: T) {}
 
 /// Helper: transmute an `extern "system"` completion routine to the `extern "C"`
 /// type that PIO_COMPLETION_ROUTINE requires.  On amd64 the calling conventions
@@ -342,7 +347,7 @@ extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSingleNonAlignedSync(
+pub unsafe extern "system" fn FatSingleNonAlignedSync(
     irp_context: *mut IRP_CONTEXT,
     vcb: *mut VCB,
     buffer: *mut u8,
@@ -490,7 +495,7 @@ const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8_u32 as i32;
 
 const MdlMappingNoExecute: u32 = 0x40000000;
 
-unsafe extern "C" {
+unsafe extern "system" {
     fn BlockAlignTruncate(length: u32, alignment: u32) -> u32;
 }
 
@@ -523,7 +528,7 @@ const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
 const NonPagedPoolNxCacheAligned: u32 = 0x20000000; /* placeholder */
 const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
 #[no_mangle]
-pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
+pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 
     #[repr(C)]
     struct LARGE_INTEGER {
@@ -845,7 +850,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 const IRP_MJ_READ: u8 = 3;
 const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 1 as *mut core::ffi::c_void;
 #[no_mangle]
-pub unsafe extern "C" fn FatUpdateDiskStats(
+pub unsafe extern "system" fn FatUpdateDiskStats(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     ByteCount: u32,
@@ -899,7 +904,7 @@ pub unsafe extern "C" fn FatUpdateDiskStats(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatNonCachedIo(
+pub unsafe extern "system" fn FatNonCachedIo(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     FcbOrDcb: *mut FCB,
@@ -1155,7 +1160,7 @@ pub unsafe extern "C" fn FatNonCachedIo(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
+pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     FcbOrDcb: *mut FCB,
@@ -1361,7 +1366,7 @@ pub unsafe extern "C" fn FatNonCachedNonAlignedRead(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatMultipleAsync(
+pub unsafe extern "system" fn FatMultipleAsync(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     MasterIrp: *mut IRP,
@@ -1587,7 +1592,7 @@ pub unsafe extern "C" fn FatMultipleAsync(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatSingleAsync(
+pub unsafe extern "system" fn FatSingleAsync(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     Lbo: LBO,
@@ -1675,7 +1680,7 @@ pub unsafe extern "C" fn FatSingleAsync(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) -> NTSTATUS {
+pub unsafe extern "system" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) -> NTSTATUS {
     const NonPagedPoolNx: u32 = 0x200;
     const FAT_TAG: u32 = 0x46617420; // ' taF' (LE bytes)
 
@@ -1699,7 +1704,7 @@ pub unsafe extern "C" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) ->
             (*packet).Event = Event;
             ExInitializeWorkItem(
                 core::ptr::addr_of_mut!((*packet).Item),
-                Some(FatFspMarkVolumeDirtyWithRecover),
+                Some(core::mem::transmute::<*const (), _>(FatFspMarkVolumeDirtyWithRecover as *const ())),
                 packet as PVOID,
             );
             ExQueueWorkItem(core::ptr::addr_of_mut!((*packet).Item), CriticalWorkQueue as WORK_QUEUE_TYPE);
@@ -1876,7 +1881,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatLockUserBuffer(
+pub unsafe extern "system" fn FatLockUserBuffer(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     Operation: LOCK_OPERATION,
@@ -1922,7 +1927,7 @@ pub unsafe extern "C" fn FatLockUserBuffer(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatMapUserBuffer(
+pub unsafe extern "system" fn FatMapUserBuffer(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> *mut core::ffi::c_void {
@@ -1940,7 +1945,7 @@ pub unsafe extern "C" fn FatMapUserBuffer(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatBufferUserBuffer(
+pub unsafe extern "system" fn FatBufferUserBuffer(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     BufferLength: u32,
@@ -1988,7 +1993,7 @@ pub unsafe extern "C" fn FatBufferUserBuffer(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatToggleMediaEjectDisable(
+pub unsafe extern "system" fn FatToggleMediaEjectDisable(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     PreventRemoval: u8,
@@ -2068,7 +2073,7 @@ pub unsafe extern "C" fn FatToggleMediaEjectDisable(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatPerformDevIoCtrl(
+pub unsafe extern "system" fn FatPerformDevIoCtrl(
     IrpContext: *mut core::ffi::c_void,
     IoControlCode: u32,
     Device: PDEVICE_OBJECT,
@@ -2140,7 +2145,7 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatBuildZeroMdl(
+pub unsafe extern "system" fn FatBuildZeroMdl(
     IrpContext: *mut IRP_CONTEXT,
     Length: u32,
 ) -> PMDL {

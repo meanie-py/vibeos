@@ -13,14 +13,14 @@ use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 
-extern "C" {
+extern "system" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB);
 }
-extern "C" {
+extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(cond: i32);
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
@@ -39,7 +39,7 @@ pub const Dbg: u32 = DEBUG_TRACE_NAMESUP;
 const MAX_LFN_CHARACTERS: usize = 0x0104;
 const STATUS_FILE_INVALID: i32 = 0xC0000098_u32 as i32; // NTSTATUS
 #[no_mangle]
-pub unsafe extern "C" fn FatIsNameInExpression(
+pub unsafe extern "system" fn FatIsNameInExpression(
     IrpContext: PIRP_CONTEXT,
     Expression: OEM_STRING,
     Name: OEM_STRING,
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn FatIsNameInExpression(
 const UCHAR_SP: u8 = 0x20;
 const FAT_DIRENT_REALLY_0E5: u8 = 0x05;
 #[no_mangle]
-pub unsafe extern "C" fn FatStringTo8dot3(
+pub unsafe extern "system" fn FatStringTo8dot3(
     IrpContext: *mut core::ffi::c_void,
     InputString: OEM_STRING,
     Output8dot3: *mut [u8; 11],
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn FatStringTo8dot3(
     let _ = IrpContext; // UNREFERENCED_PARAMETER
 }
 #[no_mangle]
-pub unsafe extern "C" fn Fat8dot3ToString(
+pub unsafe extern "system" fn Fat8dot3ToString(
     IrpContext: *mut IRP_CONTEXT,
     Dirent: *mut DIRENT,
     RestoreCase: i32,
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn Fat8dot3ToString(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
+pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     Lfn: *mut _UNICODE_STRING,
@@ -316,7 +316,7 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
     FatUnpinBcb(IrpContext, dirent_bcb);
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSetFullFileNameInFcb(
+pub unsafe extern "system" fn FatSetFullFileNameInFcb(
     IrpContext: PIRP_CONTEXT,
     Fcb: PFCB,
 ) {
@@ -423,7 +423,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatUnicodeToUpcaseOem(IrpContext: *mut IRP_CONTEXT, OemString: *mut OEM_STRING, UnicodeString: *mut _UNICODE_STRING) {
+pub unsafe extern "system" fn FatUnicodeToUpcaseOem(IrpContext: *mut IRP_CONTEXT, OemString: *mut OEM_STRING, UnicodeString: *mut _UNICODE_STRING) {
     // PAGED_CODE();
     let mut Status: NTSTATUS = RtlUpcaseUnicodeStringToCountedOemString(OemString, UnicodeString, 0);
     if Status == STATUS_BUFFER_OVERFLOW {
@@ -441,7 +441,7 @@ pub unsafe extern "C" fn FatUnicodeToUpcaseOem(IrpContext: *mut IRP_CONTEXT, Oem
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSelectNames(
+pub unsafe extern "system" fn FatSelectNames(
     IrpContext: *mut core::ffi::c_void,
     Parent: *mut core::ffi::c_void,
     OemName: *mut OEM_STRING,
@@ -574,7 +574,7 @@ pub unsafe extern "C" fn FatSelectNames(
 
 
 #[no_mangle]
-pub unsafe extern "C" fn FatEvaluateNameCase(
+pub unsafe extern "system" fn FatEvaluateNameCase(
     IrpContext: PIRP_CONTEXT,
     UnicodeName: PUNICODE_STRING,
     AllLowerComponent: *mut u8,
@@ -629,7 +629,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatSpaceInName(
+pub unsafe extern "system" fn FatSpaceInName(
     IrpContext: *mut core::ffi::c_void,
     UnicodeName: *mut _UNICODE_STRING,
 ) -> i32 {
@@ -647,7 +647,7 @@ pub unsafe extern "C" fn FatSpaceInName(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatUnicodeRestoreShortNameCase(
+pub unsafe extern "system" fn FatUnicodeRestoreShortNameCase(
     ShortNameWithCase: *mut _UNICODE_STRING,
     LowerCase8: u8,
     LowerCase3: u8,

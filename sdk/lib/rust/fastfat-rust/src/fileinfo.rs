@@ -47,9 +47,9 @@ use ntkrnl_sys::ddk::{FILE_ALLOCATION_INFORMATION, FILE_RENAME_INFORMATION, FILE
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlAreNamesEqual, FsRtlCheckOplock, FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFindInTunnelCache, FsRtlNotifyFullChangeDirectory};
 
-extern "C" {
+extern "system" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn DebugTrace(level: i32, component: u32, format: *const i8, ...);
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     static mut FatJanOne1980: LARGE_INTEGER;
     fn FlagOn(flags: u32, flag: u32) -> i32;
     fn SetFlag(flags: *mut u32, flag: u32);
@@ -88,7 +88,7 @@ extern "C" {
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn FatGetUnicodeNameFromFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *mut _UNICODE_STRING, );
-    fn FatOplockComplete( Oplock: *mut OPLOCK, Irp: *mut IRP, Context: *mut IRP_CONTEXT, );
+    fn FatOplockComplete(Context: *mut OPLOCK, Irp: *mut IRP);
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, CompletionRoutine: *mut c_void, PostIrpRoutine: *mut c_void, Context: *mut c_void, ) -> NTSTATUS;
     fn FatIsFileOplockable(Fcb: *mut FCB) -> BOOLEAN;
     fn FsRtlCurrentBatchOplock(Oplock: *mut OPLOCK) -> BOOLEAN;
@@ -133,7 +133,7 @@ extern "C" {
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: u32) -> i32;
 }
-extern "C" {
+extern "system" {
     fn KeGetCurrentIrql() -> u8;
     fn FatGenerateFileIdFromFcb(fcb: PFCB) -> LARGE_INTEGER;
     fn UNREFERENCED_PARAMETER(param: *mut ());
@@ -171,7 +171,7 @@ extern "C" {
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...);
+    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...); } extern "system" {
     fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> BOOLEAN;
 }
@@ -185,7 +185,7 @@ extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryBasicInfo(
+pub unsafe extern "system" fn FatQueryBasicInfo(
     IrpContext: PIRP_CONTEXT,
     Fcb: PFCB,
     FileObject: PFILE_OBJECT,
@@ -246,7 +246,7 @@ const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 extern "system" {
 }
 
-unsafe extern "C" fn FatQueryStandardInfo(
+unsafe extern "system" fn FatQueryStandardInfo(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     Buffer: *mut FILE_STANDARD_INFORMATION,
@@ -377,7 +377,7 @@ pub unsafe extern "system" fn FatQueryPositionInfo(
 // ==== recovered from stitcher-drop: 06_FatQueryNameInfo.rs ====
 const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x0800; // placeholder for the actual flag value
 
-extern "C" {
+extern "system" {
 }
 
 #[no_mangle]
@@ -492,7 +492,7 @@ pub unsafe extern "system" fn FatQueryNameInfo(
 extern "system" {
 }
 
-unsafe extern "C" fn FatQueryShortNameInfo(
+unsafe extern "system" fn FatQueryShortNameInfo(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     Buffer: *mut FILE_NAME_INFORMATION,
@@ -546,12 +546,12 @@ unsafe extern "C" fn FatQueryShortNameInfo(
 
 // ==== recovered from stitcher-drop: 08_FatQueryNetworkInfo.rs ====
 // Forward declarations for functions/globals/constants not in the import list
-extern "C" {
+extern "system" {
 }
 
 const FCB_STATE_TEMPORARY: u32 = 0x20;
 
-pub unsafe extern "C" fn FatQueryNetworkInfo(
+pub unsafe extern "system" fn FatQueryNetworkInfo(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     FileObject: *mut FILE_OBJECT,
@@ -631,10 +631,10 @@ const TWO_SECONDS: i64 = 20000000;
 const ALMOST_TWO_SECONDS: i64 = TWO_SECONDS - 1;
 
 // Global references (assumed extern)
-extern "C" {
+extern "system" {
 }
 
-unsafe extern "C" fn FatSetBasicInfo(
+unsafe extern "system" fn FatSetBasicInfo(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
     Fcb: *mut FCB,
@@ -1418,7 +1418,7 @@ pub unsafe extern "system" fn FatSetValidDataLengthInfo(
     const FO_FILE_MODIFIED: u32 = 0x1000;
 
     // Forward declarations for unknown external symbols
-    extern "C" {
+    extern "system" {
         fn FatIsIoRangeValid(Vcb: *mut VCB, length: LARGE_INTEGER, is_set: i32) -> i32;
     }
 
@@ -1537,11 +1537,11 @@ pub unsafe extern "system" fn FatSetValidDataLengthInfo(
 }
 
 // ==== recovered from stitcher-drop: 14_FatRenameEAs.rs ====
-extern "C" {
+extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatRenameEAs(
+pub unsafe extern "system" fn FatRenameEAs(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     ExtendedAttributes: u16,
@@ -1629,7 +1629,7 @@ pub unsafe extern "C" fn FatRenameEAs(
 
 // ==== recovered from stitcher-drop: 17_FatSetRenameInfo.rs ====
 // Forward declarations for external symbols not in imports
-extern "C" {
+extern "system" {
     // FatDeleteFile forward-decl removed: real definition lives in this module
     // (re-stitched body below). Keeping both was an E0428 duplicate.
     static MAX_LFN_CHARACTERS: usize;
@@ -2438,7 +2438,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
     Status
 }
 
-extern "C" {
+extern "system" {
     // FatSetEndOfFileInfo: no bank body (dropped at translate) — link-recover later.
     fn FatSetEndOfFileInfo(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Vcb: *mut VCB, Fcb: *mut FCB) -> NTSTATUS;
 }
@@ -2501,7 +2501,7 @@ pub unsafe extern "system" fn FatFsdSetInformation(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonQueryInformation(
+pub unsafe extern "system" fn FatCommonQueryInformation(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
@@ -2765,7 +2765,7 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonSetInformation(
+pub unsafe extern "system" fn FatCommonSetInformation(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {

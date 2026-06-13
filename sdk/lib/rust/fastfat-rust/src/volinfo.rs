@@ -33,11 +33,11 @@ pub struct FatFileFsSectorSizeInformation {
     pub ByteOffsetForPartitionAlignment: u32,
 }
 
-extern "C" {
+extern "system" {
     static mut FatData: FatDataStruct;
 }
 extern "system" {
-    fn DebugTrace(level: u32, component: u32, fmt: *const i8, param: u32);
+    } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
     fn PAGED_CODE();
     fn FlagOn(flags: u32, flag: u32) -> u32;
@@ -88,7 +88,7 @@ pub unsafe extern "system" fn FatQueryFsVolumeInfo(
 
     // DebugTrace forward declaration (caller deduplicates)
     extern "system" {
-        fn DebugTrace(level: u32, component: u32, fmt: *const i8, param: u32);
+        } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
     }
 
     DebugTrace(
@@ -148,7 +148,7 @@ pub unsafe extern "system" fn FatQueryFsVolumeInfo(
 extern "system" {
 }
 
-unsafe extern "C" fn FatQueryFsSizeInfo(
+unsafe extern "system" fn FatQueryFsSizeInfo(
     IrpContext: *mut PIRP_CONTEXT,
     Vcb: *mut PVCB,
     Buffer: *mut FILE_FS_SIZE_INFORMATION,
@@ -210,7 +210,7 @@ pub unsafe extern "system" fn FatQueryFsDeviceInfo(
 extern "system" {
 }
 
-extern "C" {
+extern "system" {
 }
 
 #[repr(C)]
@@ -300,7 +300,7 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
 extern "system" {
 }
 
-unsafe extern "C" fn FatQueryFsFullSizeInfo(
+unsafe extern "system" fn FatQueryFsFullSizeInfo(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     Buffer: *mut FILE_FS_FULL_SIZE_INFORMATION,
@@ -339,8 +339,8 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
     Buffer: *mut PFILE_FS_LABEL_INFORMATION,
 ) -> NTSTATUS {
     // Unknown externs
-    extern "C" {
-        fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...);
+    extern "system" {
+        } extern "C" { fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...); } extern "system" {
         fn DebugUnwind(name: usize);
         fn FatConstructLabelDirent(
             IrpContext: *mut IRP_CONTEXT,
@@ -723,7 +723,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP) -> NTSTATUS {
     let mut IrpContext = IrpContext;
     let mut Irp = Irp;
     let mut Status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -809,7 +809,7 @@ pub unsafe extern "C" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FatCommonSetVolumeInfo(
+pub unsafe extern "system" fn FatCommonSetVolumeInfo(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
