@@ -1,18 +1,23 @@
 # Win32k C→Rust Translation Audit
 
-> **2026-06-13 — DirectDraw flip: 8/9 `reactx/ntddraw` files flipped C→Rust**
-> (commit `5825b175fba`). The 9 `ntddraw_*.rs` banked Opus translations were
-> wired INERT (compiled but C-first cohab kept them dead). Retired the 8
-> fully-translated C files (ddraw, dd, ddsurf, d3d, d3dkmt, dvp, mocomp, eng)
-> from `win32k_residue`'s SOURCE — their Rust `#[no_mangle]` symbols now win.
-> Verified link-clean (Rust covers 100% of those 8 files' C T-symbol surface)
-> and **boots green ×3 (i386/amd64/arm64, warm; cold ×3 owed)**.
-> **`dxeng.c` KEPT as C**: `ntddraw_dxeng.rs` is table-only — it ports the
-> `gaEngFuncs` DRVFN[43] dispatch table but 41/43 `DxEng*` bodies are still
-> `extern "C"` into `dxeng.c`. Completing dxeng (translate the 41 `DxEng*`
-> bodies) is the remaining DirectDraw work. After this flip, win32k.sys has
-> **5 live C files**: `dxeng.c`, `safe_user_io.c`, `user/rtl/{image,text}.c`,
-> `gdi/dib/dib_new.c`.
+> **2026-06-13 — DirectDraw fully flipped: `reactx/ntddraw` is 100% Rust**
+> (commits `5825b175fba` + `438a847c168`).
+> *Phase 1* (`5825b175fba`): retired 8/9 banked-Opus `ntddraw_*.rs` (ddraw, dd,
+> ddsurf, d3d, d3dkmt, dvp, mocomp, eng) from `win32k_residue` — Rust symbols win.
+> *Phase 2* (`438a847c168`): translated `dxeng.c`'s 42 `DxEng*` bodies via
+> rustconv (sonnet, $0.12) — the table-only `ntddraw_dxeng.rs` became the full
+> translation, and `dxeng.c` was retired too.
+> **Lesson — silent drop the c2rust anchor would have caught**: c2rust panics on
+> win32k's header AST (`CDeclId`-not-found, c2rust 0.22.1), so this ran plain
+> sonnet; the per-function scanner skips **pointer-return-type** fns, dropping
+> `DxEngEnumerateHdev` (HDEV*) + `DxEngAltLockSurface` (SURFOBJ*) — hand-completed.
+> Integration fixups (raw sonnet → compiles ×3): gaEngFuncs table → `transmute`
+> to PFN; `InterlockedIncrement` import; bindgen anon-union
+> (`.__bindgen_anon_1.DriverFunctions`); FLONG i32-vs-u32 mask casts; cross-crate
+> `_ERESOURCE`/HGDIOBJ→HDC `.cast()`; BOOL→BOOLEAN `as u8`; amd64 DWORD_PTR(u64)
+> match-scrutinee + ULONG field casts.
+> **Boots green ×3 (i386/amd64/arm64, warm; cold ×3 owed).** win32k.sys now has
+> **4 live C files**: `safe_user_io.c`, `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
 
 > **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
 
