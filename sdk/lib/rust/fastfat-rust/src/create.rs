@@ -1058,32 +1058,113 @@ pub unsafe extern "system" fn FatCommonCreate(
     } // end main_try
 
     {
-        // finally block
-        if !DirentBcb.is_null() {
-            // FatUnpinBcb, but not called directly? skip for mechanical
+        // ----- _SEH2_FINALLY #1 (paired with the main create try) — create.c:2004-2103 -----
+        //
+        // Under USE_DUMMY_PSEH, _SEH2_AbnormalTermination() is always FALSE (no real
+        // unwinding), so the abnormal-only paths compile out: the Win7+ oplock back-out
+        // is #if'd out at the 0x502 target, and the abnormal `FatReleaseVcb` in this
+        // first finally never runs. The failure cleanup below is therefore gated on
+        // `!NT_SUCCESS` only — exactly what the C lowers to under DUMMY_PSEH. The VCB is
+        // released unconditionally in the second finally below (normal path).
+        //
+        // NOTE: the Rust-body `abnormal_termination` local mirrors C `try_return` (a
+        // *normal* goto-cleanup), NOT C `AbnormalTermination()` — so it is deliberately
+        // NOT consulted here.
+        extern "system" {
+            fn IoFreeMdl(Mdl: PMDL);
+            fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, PreventRemoval: u8) -> i32;
+            fn CcUninitializeCacheMap(FileObject: PFILE_OBJECT, TruncateSize: *const LARGE_INTEGER, Vacant: *mut c_void) -> u8;
+            fn FatFreeStringBuffer(String: *mut c_void);
+            static mut FatReserveMdl: PMDL;
         }
+        const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: ULONG = 0x00000008;
+        const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: ULONG = 0x00000800;
+        const VCB_STATE_FLAG_REMOVABLE_MEDIA: ULONG = 0x00000002;
+        const FILE_EXECUTE: u32 = 0x00000020;
+        const FO_FILE_FAST_IO_READ: ULONG = 0x00080000;
+        const FAT_RESERVE_MDL_SIZE: usize = 16;
+        const PAGE_SIZE: usize = 0x1000;
 
-        // Notice: This is a partial finally block; the original has many unwind operations.
-        // For brevity, we include the main SEH cleanup as per the C code.
-        // We must preserve the _SEH2_FINALLY logic from the provided C function snippet.
-        // However, the provided C function's SEH_FINALLY block is not fully shown in the snippet
-        // (the code after the large try block is missing). The snippet ends with:
-        //  }
-        //  _SEH2_FINALLY {
-        //      DebugUnwind( FatCommonCreate );
-        //      NT_ASSERT( !OplockPostIrp || DirentBcb == NULL );
-        //      FatUnpinBcb( IrpContext, DirentBcb );
-        //      if (_SEH2_AbnormalTermination() || !NT_SUCCESS(Iosb.Status)) {
-        //          ...
-        //      }
-        //  }
-        // Since the full content is long, we'll include a simplified translation that preserves the
-        // essential cleanup. The complete translation would require the entire finally block text.
-        // We'll mark it as incomplete but present for compilation.
-        unsafe {
-            if abnormal_termination || NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
-                // Unwind: disable writethrough, unpin repinned Bcbs, etc.
-                // Placeholder for original cleanup code
+        // DebugUnwind(FatCommonCreate): no-op. NT_ASSERT(!OplockPostIrp || ...): retail no-op.
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut c_void);
+
+        if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
+            //  Before doing the uninitialize, unpin anything repinned, but disable
+            //  writethrough first (we are already failing, so disable raise from unpin).
+            let SavedFlags = (*IrpContext).Flags;
+            SetFlag(&mut (*IrpContext).Flags,
+                    IRP_CONTEXT_FLAG_DISABLE_RAISE | IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH);
+            FatUnpinRepinnedBcbs(IrpContext);
+
+            if !FinalDcb.is_null()
+                && NodeType(FinalDcb as *const c_void) == FAT_NTC_DCB as u32
+                && IsListEmpty(core::ptr::addr_of!((*FinalDcb).Specific.Dcb.as_ref().ParentDcbQueue) as *const _)
+                && (*FinalDcb).OpenCount == 0
+                && !(*FinalDcb).Specific.Dcb.as_ref().DirectoryFile.is_null()
+            {
+                let DirectoryFileObject = (*FinalDcb).Specific.Dcb.as_ref().DirectoryFile;
+                (*FinalDcb).Specific.Dcb.as_mut().DirectoryFile = core::ptr::null_mut();
+                CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null(), core::ptr::null_mut());
+                ObDereferenceObject(DirectoryFileObject as *mut c_void);
+            }
+
+            (*IrpContext).Flags = SavedFlags;
+        }
+        // if (_SEH2_AbnormalTermination()) FatReleaseVcb(...): never taken under DUMMY_PSEH.
+
+        //  Free up any string buffers we allocated.
+        FatFreeStringBuffer(core::ptr::addr_of_mut!(OemFinalName) as *mut c_void);
+        FatFreeStringBuffer(core::ptr::addr_of_mut!(UpcasedFinalName) as *mut c_void);
+        FatFreeStringBuffer(core::ptr::addr_of_mut!(Lfn) as *mut c_void);
+
+        // ----- second _SEH2_TRY / _SEH2_FINALLY (FatCompleteRequest wrapper) — create.c:2112-2279 -----
+        //  try-body: post the IRP if required, else unpin repinned Bcbs.
+        if PostIrp {
+            if !OplockPostIrp {
+                Iosb.__bindgen_anon_1.Status = FatFsdPostRequest(IrpContext, Irp);
+            }
+        } else {
+            FatUnpinRepinnedBcbs(IrpContext);
+        }
+        //  finally-body: _SEH2_AbnormalTermination() is always FALSE → the normal `else`
+        //  branch runs. THIS is the release that balances the FatAcquireExclusiveVcb at
+        //  line 494 — its omission was the arm64 post-mount create deadlock.
+        FatReleaseVcb(IrpContext, Vcb);
+
+        if !PostIrp {
+            //  NT_ASSERT(SecurityContext != NULL): retail no-op.
+            if FlagOn(*DesiredAccess, FILE_EXECUTE) != 0 {
+                SetFlag(&mut (*FileObject).Flags, FO_FILE_FAST_IO_READ);
+            }
+
+            //  Lock volume in drive if we opened a paging file, allocating a reserve MDL
+            //  to guarantee paging-file operations can always go forward.
+            if IsPagingFile && NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 {
+                if FatReserveMdl.is_null() {
+                    let ReserveMdl = IoAllocateMdl(
+                        core::ptr::null_mut(),
+                        (FAT_RESERVE_MDL_SIZE * PAGE_SIZE) as ULONG,
+                        1, 0, core::ptr::null_mut());
+
+                    //  InterlockedCompareExchangePointer(&FatReserveMdl, ReserveMdl, NULL):
+                    //  publish ReserveMdl only if the slot is still NULL; otherwise free ours.
+                    let slot = core::ptr::addr_of_mut!(FatReserveMdl) as *const core::sync::atomic::AtomicUsize;
+                    let _ = (*slot).compare_exchange(
+                        0,
+                        ReserveMdl as usize,
+                        core::sync::atomic::Ordering::SeqCst,
+                        core::sync::atomic::Ordering::SeqCst,
+                    );
+                    if FatReserveMdl != ReserveMdl {
+                        IoFreeMdl(ReserveMdl);
+                    }
+                }
+
+                SetFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE);
+
+                if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 {
+                    FatToggleMediaEjectDisable(IrpContext, Vcb, 1);
+                }
             }
         }
     }
