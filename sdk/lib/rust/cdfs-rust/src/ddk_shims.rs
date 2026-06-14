@@ -515,3 +515,14 @@ extern "C" {
     fn CdAcquireResource(IrpContext: PIRP_CONTEXT, Resource: PERESOURCE,
         IgnoreWait: DdkBOOLEAN, Type: TYPE_OF_ACQUIRE) -> DdkBOOLEAN;
 }
+
+// KeInitializeSpinLock is a real exported ntoskrnl function on i386 but a DDK
+// FORCEINLINE on amd64/arm64 (no out-of-line symbol), so cdfs.sys fails to link
+// there with `undefined symbol: KeInitializeSpinLock`. Provide the inline body
+// (the spinlock is a single ULONG_PTR; init == zero it) on non-i386, matching the
+// disk-rust / classpnp-rust / mountmgr-rust cohabs. i386 keeps the real export.
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+    *SpinLock = 0;
+}
