@@ -198,6 +198,18 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 **Fix:** Cast the VALUE, keep volatile: `write_volatile(cfg.add(0), WIDE_CONST as u8)`. After any MMIO-touching driver, diff for removed `(read|write)_volatile` and compare `grep -c volatile` before/after; independently verify subagent self-reports (one was confidently wrong on 19 sites).
 **Source:** `feedback_mmio_volatile_in_translation.md`
 
+### Shared clock reads in spin-waits need volatile
+**Symptom:** amd64/arm64-only driver boot hang immediately after entry begins; i386 works. A tight calibration loop like `KeQuerySystemTime(&t0); do { KeQuerySystemTime(&t1); } while (t0 == t1);` never observes the clock tick changing. uniata.sys hit this after returning from the initial `ScsiPortInitialize`: warm smoke stopped at `IopInitializeBuiltinDriver: uniata.sys`.
+**Root cause:** Rust inline `KeQuerySystemTime` read `KUSER_SHARED_DATA.SystemTime` through ordinary raw-pointer loads. LLVM can reuse/hoist those non-volatile loads inside the spin-wait even though the kernel clock updates the page asynchronously. i386 called the real exported function, so it was immune.
+**Fix:** Use `read_volatile` for `High1Time`, `LowPart`, and `High2Time` in the amd64/arm64 inline helper. Any fixed-VA shared page or MMIO-backed time source used as a polling condition needs volatile loads, not just a raw pointer.
+**Source:** uniata-rust `KeQuerySystemTime` amd64 clean-smoke hang, 2026-06-13
+
+### Incomplete Rust cohab flip — link breaks ONLY on a clean arm64 tree (stale x86 archives hide it)
+**Symptom:** A C→Rust cohab flip (the cmake `libX.a` becomes a `rust_cohab_stub.c` placeholder; real symbols move to `libX_rust.a`) builds + boots fine on i386/amd64, but a clean/fresh arm64 tree fails at link with undefined symbols that "should" exist: `ld.lld: error: undefined symbol: CpInitialize / IoCsqInsertIrpEx / csStdIn / ConResPrintf / StringCchVPrintfExW`. Forcing a fresh relink of the *same* consumer on x86 still succeeds, so it reads as "arm64-only."
+**Root cause:** the flip was only half-wired. Two failure shapes: (a) **cargo-consumer didn't add the rust archive** — e.g. `ntoskrnl-cargo/build.rs` listed the now-empty `libcportlib.a`/`libcsq.a`/`libarbiter.a` but never the sibling `libcport_rust.a`/&c.; (b) **a symbol the rust crate still references is inline/intrinsic on x86 but has no provider on arm64** — strsafe FORCEINLINEs (`StringCchVPrintfExW`), compiler intrinsics (`InterlockedCompareExchangePointer`), C variadic forwarders Rust can't define (`ConPrintf`→`ConPrintfV`), or a Rust `static` consumed by C but missing `#[no_mangle]` (`csStdIn`). **x86 only "works" because the stale pre-flip `libX.a` (or a weak inline copy clang emits on x86 but not arm64) still carries the symbol** — a truly clean x86 rebuild of `libX.a` would break identically. Verify with `llvm-nm libX.a`: a stub-only archive has 0–1 `T` symbols (just the cohab stub).
+**Fix:** complete the flip so the rust crate is self-sufficient on every arch: (a) add `libX_rust.a` to each cargo consumer's `build.rs static_libs` (placed after the C placeholder; `--allow-multiple-definition` keeps C-first precedence and tolerates the transient stale dup); (b) make the crate provide its own symbols — `#[no_mangle]` on statics consumed by C; replace `extern` intrinsic decls (`InterlockedCompareExchangePointer`) with `core::sync::atomic`; replace strsafe-inline `extern`s with the msvcrt primitive they wrap (`StringCchVPrintfExW`→`_vsnwprintf`, cdecl `extern "C"`); add a small C variadic-shim TU to the cohab for the `...`→va_list forwarders. Audit ALL `static_libs` C archives on arm64 with `llvm-nm | grep -c ' T '` before trusting a flip.
+**Source:** uniata arm64 bring-up 2026-06-14 — ntoskrnl-cargo (cport/csq/arbiter/lsalib/rossym) + conutils-rust (csStd*/StringCchVPrintfExW/InterlockedCompareExchangePointer/Con*printf forwarders)
+
 ### cnt-rust CRT shim returns garbage / hangs ONLY on amd64/arm64
 **Symptom:** A `libcntpr` CRT symbol misbehaves only on amd64/arm64 — memset dead-store-eliminated into a guard-only spin (freeldr hung after "Starting freeldr from UEFI"); `_strnicmp` collapsed to "always equal"; or (cargo-drive) arm64 ntdll printf misformats (`0xc000003a`→`0xc`) → 0x6A bugcheck.
 **Root cause:** After the per-fn cgu-split, tiny one-shim-per-CGU objects let LLVM's full pipeline miscompile isolated shims. i386 always carried `-C no-prepopulate-passes`; amd64/arm64 (and any cargo-driver scrubbing RUSTFLAGS) never got it. It's a class bug, not whack-a-mole.
@@ -257,6 +269,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Root cause:** rustconv translates C `extern CCHAR Foo[N]` (an array) as `extern static Foo: *const i8` (a pointer). Rust reads the first 4/8 buffer bytes (`"mult"`=0x746C756D) and uses them as a pointer.
 **Fix:** mirror the array type — `extern { static Foo: [i8; 260]; }` then `Foo.as_ptr()`; or prefer a C accessor (`FrLdrGetBootPath()`). Grep `extern "C" { ... static .*: \*(const|mut) (i8|c_char)` against array-typed C symbols.
 **Source:** `feedback_extern_array_as_pointer.md`
+
+### BUGCHECK 0x1E in `wcsnlen`/`swprintf` from a wide string literal sized with no room for the NUL
+**Symptom:** deterministic BUGCHECK 0x1E (0xC0000005 read fault) deep in the kernel's wide-string formatter — backtrace is `swprintf → wstreamout → streamout_impl::<u16> → case_string::<u16> → wcsnlen` faulting on a garbage `%ws` pointer; the immediate caller is your driver formatting a registry/path string. (uniata.sys C++→Rust, 2026-06-13: `AtapiRegCheckDevLunValue` → `swprintf(namex, FMT_CHAN, NamePrefix, chan)`.)
+**Root cause:** the translation builds a wide C-string literal as a fixed array sized to the *exact* character count, dropping the NUL terminator — e.g. `const fn wlit<const N>(b:&[u8])->[u16;N]` called `wlit::<13>(b"%s\\Chan_%1.1d")` (13 chars → `[u16;13]`, no trailing 0). `swprintf`/`RtlQueryRegistryValues` scan for the NUL, walk off the end of the array into adjacent garbage, hit a bogus `%s`/`%ws` conversion, and `wcsnlen` faults. Inconsistent across sites: some `wlit::<N>` were sized `len+1` (NUL OK), some `len` (bug).
+**Fix:** size every wide/narrow literal array to `byte_len + 1`. Harden the builder so it can't recur: `const fn wlit<const N>(b:&[u8])->[u16;N] { assert!(N > b.len(), "room for NUL"); ... }` turns every too-tight call into a build error. Audit: regex `wlit::<(\d+)>\(\s*b"((?:[^"\\]|\\.)*)"` and flag where `N <= decoded_len` (count `\\`/`\n` as 1 byte).
+**Source:** uniata-rust `id_ata_part3.rs` (the `wlit` helper); 6 of 52 sites were undersized.
 
 ### Silent csrss/PnP hang or kernel BUGCHECK indexing a bindgen flexible array past 0
 **Symptom:** enumeration processes element [0] then dies before [1]; csrss silently dies (no panic output) at i=1 → BUGCHECK 0x4C STATUS_SYSTEM_PROCESS_TERMINATED; amd64 silently corrupts/hangs (no bounds-check crash visible).
@@ -369,6 +387,12 @@ FIXED count. (b) Name-collisions are real false positives: mountmgr has a module
 those. `--unverifiable` (ALL_CAPS const not in ANY header) is too noisy to gate on (~4k hits);
 opt-in investigative only.
 **Source:** [[feedback_llm_invented_enum_constants]], [[project_disk_rust_track]], [[project_mountmgr_rust_track]]
+
+### Odd ATAPI PIO transfer uses dword I/O and wedges CD reads
+**Symptom:** Boot reaches SMSS, then registry hive reads never complete; storage timeouts churn through `AtapiTimerDpc -> AtapiInterruptDpc -> AtapiResetController`, and the system eventually bugchecks because the boot CD is inaccessible. GDB/debugcon can prove real interrupts fire, so IRQ wiring is a red herring.
+**Root cause:** On ATAPI PIO reads, QEMU/IDE can report an odd final word count with DRQ still set on large CD reads (e.g. READ(10) length over 64 KiB). The C has a 64K/odd-count special case: unaligned ATAPI PIO must fall through to the 16-bit transfer path. The Rust port gated that fallback on `g_opt_VirtualMachine == VM_BOCHS`, so this QEMU path kept dword I/O enabled and missed the final word/DRQ transition.
+**Fix:** For ATAPI reads with an odd `wordCount`, force the 16-bit path regardless of VM detection: `if wordCount & 1 != 0 && atapiDev != 0 { ... } else if DFLAGS_DWORDIO_ENABLED { ... }`. When storage reads time out after interrupts are proven real, instrument opcode/count/status around `AtapiInterrupt__` before chasing reset loops.
+**Source:** uniata-rust i386 boot-CD read hang, 2026-06-13
 
 ### rustconv drops ALL non-fn header content at scale (structs / const-tables / #defines / FuncTables)
 **Symptom:** A bulk `translate` of a unit compiles per-function but is missing every file-local struct, const lookup table, `#define`, and static FuncTable — E0425/E0412 undefined-name storms, or worse, silent wrong behavior from a missing default table.

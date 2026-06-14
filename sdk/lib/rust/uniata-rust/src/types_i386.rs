@@ -1098,7 +1098,6 @@ pub const MODE_HEADER_LENGTH: u32 = 4;
 pub const MODE_HEADER_LENGTH10: u32 = 8;
 pub const CDB_USE_MSF: u32 = 1;
 pub const PRINT_PREFIX: &[u8; 9] = b"UniATA: \0";
-pub const IDX_IO1: u32 = 0;
 pub const DFLAGS_DEVICE_PRESENT: u32 = 1;
 pub const DFLAGS_ATAPI_DEVICE: u32 = 2;
 pub const DFLAGS_TAPE_DEVICE: u32 = 4;
@@ -1248,7 +1247,6 @@ pub const IDE_ERROR_COMMAND_ABORTED: u32 = 4;
 pub const IDE_ERROR_END_OF_MEDIA: u32 = 2;
 pub const IDE_ERROR_NO_MEDIA: u32 = 2;
 pub const IDE_ERROR_ILLEGAL_LENGTH: u32 = 1;
-pub const IDX_ATAPI_IO1: u32 = 0;
 pub const ATAPI_IR_COD: u32 = 1;
 pub const ATAPI_IR_COD_Data: u32 = 0;
 pub const ATAPI_IR_COD_Cmd: u32 = 1;
@@ -1990,7 +1988,6 @@ pub const BM_DS0_SII_IRQ: u32 = 8;
 pub const BM_DS0_SII_DMA_SATA_IRQ: u32 = 16;
 pub const BM_DS0_SII_DMA_ERROR: u32 = 131072;
 pub const BM_DS0_SII_DMA_COMPLETE: u32 = 262144;
-pub const IDX_BM_IO_SZ: u32 = 5;
 pub const AHCI_CAP_NOP_MASK: u32 = 31;
 pub const AHCI_CAP_CCC: u32 = 128;
 pub const AHCI_CAP_NCS_MASK: u32 = 7936;
@@ -2081,8 +2078,6 @@ pub const ATA_SE_HANDSHAKE_ERR: u32 = 4194304;
 pub const ATA_SE_LINKSEQ_ERR: u32 = 8388608;
 pub const ATA_SE_TRANSPORT_ERR: u32 = 16777216;
 pub const ATA_SE_UNKNOWN_FIS: u32 = 33554432;
-pub const IDX_SATA_IO_SZ: u32 = 5;
-pub const IDX_INDEXED_IO_SZ: u32 = 2;
 pub const ATA_AHCI_P_IX_DHR: u32 = 1;
 pub const ATA_AHCI_P_IX_PS: u32 = 2;
 pub const ATA_AHCI_P_IX_DS: u32 = 4;
@@ -27477,152 +27472,70 @@ impl _TRIM_DATA {
 pub type TRIM_DATA = _TRIM_DATA;
 pub type PTRIM_DATA = *mut _TRIM_DATA;
 unsafe extern "fastcall" {
-    pub fn SelectDrive(chan: *mut _HW_CHANNEL, DeviceNumber: ULONG) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitOnBusy(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitOnBusyLong(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitOnBaseBusy(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitOnBaseBusyLong(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitForDrq(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn WaitShortForDrq(chan: *mut _HW_CHANNEL) -> UCHAR;
 }
 unsafe extern "fastcall" {
-    pub fn AtapiSoftReset(chan: *mut _HW_CHANNEL, DeviceNumber: ULONG);
 }
 unsafe extern "fastcall" {
-    pub fn AtapiHardReset(chan: *mut _HW_CHANNEL, DisableInterrupts: BOOLEAN, Delay: ULONG);
 }
 unsafe extern "stdcall" {
-    pub fn BuildMechanismStatusSrb(
-        HwDeviceExtension: PVOID,
-        Srb: PSCSI_REQUEST_BLOCK,
-    ) -> PSCSI_REQUEST_BLOCK;
 }
 unsafe extern "stdcall" {
-    pub fn BuildRequestSenseSrb(
-        HwDeviceExtension: PVOID,
-        Srb: PSCSI_REQUEST_BLOCK,
-    ) -> PSCSI_REQUEST_BLOCK;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiHwInitializeChanger(
-        HwDeviceExtension: PVOID,
-        TargetId: ULONG,
-        MechanismStatus: PMECHANICAL_STATUS_INFORMATION_HEADER,
-    );
 }
 unsafe extern "stdcall" {
-    pub fn AtapiSendCommand(
-        HwDeviceExtension: PVOID,
-        Srb: PSCSI_REQUEST_BLOCK,
-        CmdAction: ULONG,
-    ) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn IdeSendCommand(
-        HwDeviceExtension: PVOID,
-        Srb: PSCSI_REQUEST_BLOCK,
-        CmdAction: ULONG,
-    ) -> ULONG;
 }
 unsafe extern "stdcall" {
     pub fn AtapiHexToString(Value: ULONG, Buffer: *mut PCHAR);
 }
 unsafe extern "stdcall" {
-    pub fn AtapiInterrupt(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiInterrupt__(HwDeviceExtension: PVOID, c: UCHAR) -> BOOLEAN;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiCheckInterrupt__(HwDeviceExtension: PVOID, c: UCHAR) -> UCHAR;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiHwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
 unsafe extern "stdcall" {
-    pub fn IdeBuildSenseBuffer(HwDeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn IdeMediaStatus(
-        EnableMSN: BOOLEAN,
-        HwDeviceExtension: PVOID,
-        lChannel: ULONG,
-        DeviceNumber: ULONG,
-    );
 }
 unsafe extern "stdcall" {
-    pub fn AtapiFindIsaController(
-        HwDeviceExtension: PVOID,
-        Context: PVOID,
-        BusInformation: PVOID,
-        ArgumentString: PCHAR,
-        ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
-        Again: PBOOLEAN,
-    ) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiReadArgumentString(
-        HwDeviceExtension: PVOID,
-        Context: PVOID,
-        BusInformation: PVOID,
-        ArgumentString: PCHAR,
-        ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
-        Again: PBOOLEAN,
-    ) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn AtapiParseArgumentString(String: PCCH, KeyWord: PCCH) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn IssueIdentify(
-        HwDeviceExtension: PVOID,
-        DeviceNumber: ULONG,
-        Channel: ULONG,
-        Command: UCHAR,
-        NoSetup: BOOLEAN,
-    ) -> BOOLEAN;
 }
 unsafe extern "stdcall" {
-    pub fn SetDriveParameters(
-        HwDeviceExtension: PVOID,
-        DeviceNumber: ULONG,
-        Channel: ULONG,
-    ) -> BOOLEAN;
 }
 unsafe extern "stdcall" {
-    pub fn CheckDevice(
-        HwDeviceExtension: PVOID,
-        Channel: ULONG,
-        deviceNumber: ULONG,
-        ResetBus: BOOLEAN,
-    ) -> ULONG;
 }
 unsafe extern "stdcall" {
-    pub fn FindDevices(HwDeviceExtension: PVOID, Flags: ULONG, Channel: ULONG) -> BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut g_LogToDisplay: ULONG;
 }
 unsafe extern "C" {
     pub fn _PrintNtConsole(DebugMessage: PCCH, ...);
 }
 unsafe extern "C" {
-    pub static AtaCommands48: [UCHAR; 256usize];
 }
 unsafe extern "C" {
-    pub static AtaCommandFlags: [UCHAR; 256usize];
 }
 #[repr(C)]
 pub struct _SCSI_PASS_THROUGH {
@@ -27742,7 +27655,6 @@ pub struct _FOUR_BYTE {
 pub type FOUR_BYTE = _FOUR_BYTE;
 pub type PFOUR_BYTE = *mut _FOUR_BYTE;
 unsafe extern "C" {
-    pub static mut SavedSPString: UNICODE_STRING;
 }
 #[repr(C)]
 pub struct _BUSMASTER_CONTROLLER_INFORMATION_BASE {
@@ -27793,10 +27705,8 @@ pub struct _BUSMASTER_CONTROLLER_INFORMATION__bindgen_ty_1 {
 pub type BUSMASTER_CONTROLLER_INFORMATION = _BUSMASTER_CONTROLLER_INFORMATION;
 pub type PBUSMASTER_CONTROLLER_INFORMATION = *mut _BUSMASTER_CONTROLLER_INFORMATION;
 unsafe extern "C" {
-    pub static BusMasterAdapters: [BUSMASTER_CONTROLLER_INFORMATION_BASE; 0usize];
 }
 unsafe extern "C" {
-    pub static _NUM_BUSMASTER_ADAPTERS: ULONG;
 }
 #[repr(C)]
 pub struct _ADDREMOVEDEV {
@@ -34488,58 +34398,40 @@ pub type PISR2_DEVICE_EXTENSION = *mut _ISR2_DEVICE_EXTENSION;
 pub type PCIIDE_DEVICE_EXTENSION = ISR2_DEVICE_EXTENSION;
 pub type PPCIIDE_DEVICE_EXTENSION = PISR2_DEVICE_EXTENSION;
 unsafe extern "C" {
-    pub static mut pciBuffer: [UCHAR; 256usize];
 }
 unsafe extern "C" {
-    pub static mut BMList: PBUSMASTER_CONTROLLER_INFORMATION;
 }
 unsafe extern "C" {
-    pub static mut BMListLen: ULONG;
 }
 unsafe extern "C" {
-    pub static mut IsaCount: ULONG;
 }
 unsafe extern "C" {
-    pub static mut MCACount: ULONG;
 }
 unsafe extern "C" {
-    pub static mut SavedRegPath: UNICODE_STRING;
 }
 unsafe extern "C" {
-    pub static mut SavedDriverObject: PDRIVER_OBJECT;
 }
 unsafe extern "C" {
-    pub static mut SkipRaids: ULONG;
 }
 unsafe extern "C" {
-    pub static mut ForceSimplex: ULONG;
 }
 unsafe extern "C" {
-    pub static mut g_opt_AtapiDmaRawRead: BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut hasPCI: BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut InDriverEntry: BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut g_Dump: BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut g_opt_Verbose: BOOLEAN;
 }
 unsafe extern "C" {
-    pub static mut g_opt_VirtualMachine: ULONG;
 }
 unsafe extern "C" {
-    pub static mut g_opt_WaitBusyResetCount: ULONG;
 }
 unsafe extern "C" {
-    pub static mut CPU_num: ULONG;
 }
 unsafe extern "C" {
-    pub static mut WinVer_WDM_Model: BOOLEAN;
 }
 #[repr(C, packed(4))]
 pub struct _SBadBlockRange {

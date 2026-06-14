@@ -2,6 +2,7 @@
 //! (drivers/storage/ide/uniata). Boot-loaded; cohab uniata.sys. See Cargo.toml.
 //! First C++-tier proof (rustconv C++ front-end: tree-sitter-cpp + partial preproc).
 #![no_std]
+#![feature(c_variadic)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_parens, unused_mut, unused_variables)]
 
@@ -16,12 +17,34 @@ pub mod io_port;
 // reconstructed via offset_of!. Every IO call's first arg comes from here.
 pub mod regidx;
 
-// Foundation: kernel imports the bindgen substrate couldn't bind correctly
-// (ScsiPortGetBusDataByOffset — C++-mangled in uniata headers, re-bound with C linkage).
-pub mod kernel_ext;
-pub use kernel_ext::*;
+// NOTE: ScsiPortGetBusDataByOffset is uniata's OWN function (a HalGetBusData wrapper
+// defined in id_probe.cpp — that's why bindgen C++-mangled it). It is translated by the
+// id_probe module and reached via the flat re-export, NOT bound as a kernel import.
 
-// Translated modules land here (10 .cpp → modules, via parallel subagents).
+// Centralized shim layer (kernel names outside ddk, SMART consts, header-inlines).
+pub mod compat;
+pub use compat::*;
+
+// Translated modules — flat re-export so any uniata fn is `crate::Name`.
+pub mod data;
+pub mod id_ata_part1;
+pub mod id_ata_part2;
+pub mod id_ata_part3;
+pub mod id_dma;
+pub mod id_init;
+pub mod id_probe;
+pub mod id_queue_badblock;
+pub mod id_sata;
+
+pub use data::*;
+pub use id_ata_part1::*;
+pub use id_ata_part2::*;
+pub use id_ata_part3::*;
+pub use id_dma::*;
+pub use id_init::*;
+pub use id_probe::*;
+pub use id_queue_badblock::*;
+pub use id_sata::*;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
