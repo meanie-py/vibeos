@@ -39,15 +39,16 @@ type BOOLEAN = i32;
 type ULONG = u32;
 type PIRP_CONTEXT = *mut core::ffi::c_void; // placeholder
 type PVCB = *mut VCB;
-#[repr(C)]
-struct VCB {
-    Resource: ERESOURCE,
-    // other fields unknown
-}
-#[repr(C)]
-struct ERESOURCE {
-    // opaque
-}
+// FIX (arm64 boot hang): use the REAL VCB + ERESOURCE from the shared bindgen
+// types, NOT a bogus local mirror. The old local `struct VCB { Resource:
+// ERESOURCE }` placed Resource at offset 0, so FatAcquireExclusiveVcb_Real's /
+// FatAcquireSharedVcb's `&(*Vcb).Resource` resolved to the VCB base (the FSRTL
+// VolumeFileHeader) instead of the real ERESOURCE at VCB+440. The create path
+// then acquired a garbage "resource" (the header) and waited on it forever —
+// the arm64 smss-load boot hang. (Other fns here use the real VCB via
+// FCB.Vcb's declared type, which is why only these two were affected.)
+use crate::types::VCB;
+use ntkrnl_sys::ddk::ERESOURCE;
 
 const IRP_NOCACHE: u32 = 0x01;
 
