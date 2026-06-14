@@ -36,9 +36,12 @@ use crate::ddk_shims::{FsRtlCopyRead, FsRtlCopyWrite, FsRtlMdlReadCompleteDev, F
 
 // KeNumberProcessors is a kernel DATA export — raw-dylib routes the reference
 // through the __imp_ thunk instead of expecting a local definition.
+// NOTE: the kernel exports it as CCHAR (1 byte), NOT ULONG. Declaring it ULONG
+// reads 3 adjacent garbage bytes (e.g. count 1 -> 0x000C0001), which blew up the
+// per-processor stats allocation to 0x6000080 bytes -> STATUS_INSUFFICIENT_RESOURCES.
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
-    static mut KeNumberProcessors: ULONG;
+    static KeNumberProcessors: core::ffi::c_char;
 }
 extern "C" { fn DbgPrint(format: *const u8, ...) -> i32; }
 extern "system" {
@@ -378,7 +381,7 @@ pub unsafe extern "system" fn DriverEntry(
         core::mem::transmute::<*const (), PRELEASE_FROM_READ_AHEAD>(FatNoOpRelease as *const ());
 
     FatData.OurProcess = (PsGetCurrentProcess()).cast();
-    FatData.NumberProcessors = KeNumberProcessors as ULONG;
+    FatData.NumberProcessors = (KeNumberProcessors as u8) as ULONG;
 
     // Registry: ChicagoMode
     ValueName.Buffer = COMPATIBILITY_MODE_VALUE_NAME.as_ptr() as PWCH;
