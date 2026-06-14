@@ -1095,11 +1095,42 @@ catalog hive is innocent. Diagnosis chain that worked when the usual symbolicati
   *ruled it out* (its entry `DbgPrint` never fired before the fault). Lesson: when a PC
   refuses to move under your edits, you're editing the wrong module — bisect by *which
   module* moves the PC, not just which function.
-- **Next step to finish:** GDB-break at the exact faulting PC (`--skip-preflight`), read the
-  register holding the bad `0xfffff8a0...` paged-pool pointer + confirm the owning module
-  (uniata vs scsiport), then fix the bad deref (candidates: `Interrupt[0]` is NULL after the
-  failed connect and is passed to `KeSynchronizeExecution`; or a wrong-pool-type / stale
-  list pointer in the IDE timeout path).
+**SOLVED (2026-06-14, commit `scsiport: fix uninitialized PortConfig on find-loop retries`):**
+The earlier "IoConnectInterrupt fails ~33×" / "`Interrupt[0]` NULL → `KeSynchronizeExecution`"
+hypotheses were **wrong** — instrumenting the connect path showed *both* IDE channels connect
+fine (IRQ14→vec176, IRQ15→vec160, Status=0). The real bug is in **scsiport's `ScsiPortInitialize`
+HwFindAdapter while-loop**, not uniata or the interrupt path:
+- `ScsiPortInitialize` **re-allocates `PortConfig` fresh (non-zeroed pool) every loop iteration**,
+  but `SpiCreatePortConfig` only *initializes* the struct when `ZeroStruct` (`FirstConfigCall`)
+  is TRUE — i.e. only before the first device is found. On later iterations every PortConfig
+  field is uninitialized garbage.
+- The killer field is **`AdapterInterfaceType`**: when the garbage reads `0` (== `Internal`),
+  `SpiCreatePortConfig` wrongly enters the Internal hardware-database branch and **resets
+  `InternalConfigInfo->BusNumber = 0`**. The legacy per-channel find loop (uniata
+  `AtapiFindIsaController`, `AdapterInterfaceType=Isa`) then never advances past bus 0, the
+  `IoQueryDeviceDescription` bus bound never trips, and `ScsiPortInitialize` spins ~25 000×
+  → 0x50. The catalog only perturbs the pool so the garbage is deterministically `0`.
+- Secondary garbage field: `AtdiskPrimaryClaimed`/`AtdiskSecondaryClaimed` (uniata's
+  "channel already claimed" check reads them).
+- **Fix:** in `SpiCreatePortConfig`, seed `AdapterInterfaceType` from `HwInitData` before the
+  Internal check; and re-seed the AT-disk claim state from `IoGetConfigurationInformation()`
+  before every `HwFindAdapter` call. Both target the *fresh-PortConfig-not-reinitialized* root.
+- **Diagnosis tooling that cracked it:** tagged `DbgPrint` probes walking the chain
+  scsiport find-loop → `SpiCreatePortConfig`/`IoQueryDeviceDescription` → the BusNumber value
+  per iteration (it was stuck at 0 — the smoking gun). Confirmed ×3 amd64 + i386 + arm64 boot to
+  desktop **with the catalog enabled**.
+
+**General lesson (recurs across the C→Rust port):** a C `for(;;){…}` loop body that re-allocates
+a struct each pass and relies on a `ZeroStruct`/first-call flag to initialize it is a garbage-on-
+retry trap — the "preserve across iterations" optimization assumes the buffer is *reused*, which
+ReactOS violates by re-allocating. Any field read before it is set (here `AdapterInterfaceType`
+gates a code path) becomes a non-deterministic, pool-layout-sensitive bug. When a loop "never
+terminates", print the loop's *advancement variable* (here `BusNumber`) every iteration — if it
+doesn't move, find who resets it.
+
+- **Remaining (M5, separate bug):** with the 0x50 gone and the catalog in the hive, usermode
+  `socket()` still returns `WSAEINVAL (10022)` — ws2_32/msafd isn't consuming the netstack
+  Winsock2 catalog entries. Boot-unblocked; catalog-loading issue, tracked on M5/task-77.
 
 ---
 
