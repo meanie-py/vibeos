@@ -4,3 +4,5 @@ pub mod nls_subst;
 pub mod locale;
 pub mod nls;
 pub mod lcformat;
+pub mod casemap;
+pub mod collation;

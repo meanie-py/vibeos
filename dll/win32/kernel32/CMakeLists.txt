@@ -80,8 +80,8 @@ list(APPEND SOURCE
     wine/profile.c
     wine/res.c
     wine/timezone.c
-    winnls/string/casemap.c
-    winnls/string/collation.c
+    # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
+    # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)
     winnls/string/digitmap.c
     winnls/string/fold.c
     winnls/string/format_msg.c
