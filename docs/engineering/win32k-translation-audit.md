@@ -16,8 +16,9 @@
 > (`.__bindgen_anon_1.DriverFunctions`); FLONG i32-vs-u32 mask casts; cross-crate
 > `_ERESOURCE`/HGDIOBJ→HDC `.cast()`; BOOL→BOOLEAN `as u8`; amd64 DWORD_PTR(u64)
 > match-scrutinee + ULONG field casts.
-> **Boots green ×3 (i386/amd64/arm64, warm; cold ×3 owed).** win32k.sys now has
-> **4 live C files**: `safe_user_io.c`, `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
+> **Cold `--clean` smoke GREEN ×3 (i386/amd64/arm64 — ✓ staleness ✓ boot).**
+> win32k.sys now has **4 live C files**: `safe_user_io.c`,
+> `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
 
 > **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
 
