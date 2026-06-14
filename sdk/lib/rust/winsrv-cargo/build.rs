@@ -41,6 +41,11 @@ fn main() {
         o => panic!("winsrv-cargo: unsupported arch {o}"),
     };
 
+    // cnt-rust-lib `float` feature, mirroring libcntpr.cmake / ntdll-cargo: amd64
+    // + arm64 build the Rust format_float/format_floatw; i386 (no-SSE) omits it
+    // and takes the C residual from liblibcntpr.a (still reused below).
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         // winsrv_dll_only gates init.rs's DllMain/GetTimeouts/ShutdownSettings.
         // ntddi_ws03 stays on as the default (additive) → matches cmake's
@@ -49,6 +54,12 @@ fn main() {
         // pulling concfg-rust as a Cargo dep).
         .rust_staticlib("winsrv-rust")
         .rust_features(&["winsrv_dll_only"])
+        // cntpr's Rust half as a cargo-native sibling (was the cmake-copied
+        // libcntpr_rust.a) + the DUMMY_PSEH _SEH2_Volatile* symbols compiled
+        // in-cargo from dummy.c (was libpseh.a). Both proven on the other spine
+        // binaries / ntdll / hal; dummy.c provides exactly libpseh.a's 2 symbols.
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        .c_shims(&["sdk/lib/pseh/dummy.c"])
         // Exports via spec2def-generated winsrv.def (ConServerDllInitialization
         // / UserServerDllInitialization / _UserSoundSentry / …).
         .spec2def("win32ss/user/winsrv/winsrv.spec", "winsrv.dll")
@@ -70,16 +81,18 @@ fn main() {
         // tier every spine binary reuses). libwinsrv_rust.a is emitted first by
         // the engine (rust_staticlib). --allow-multiple-definition (engine)
         // covers the concfg-rust / cntpr overlaps.
+        // libpseh.a → dummy.c c_shim, libcntpr_rust.a → .rust_lib(cnt-rust-lib)
+        // (both above). libchkstk.a KEPT: i386 winsrv-rust references __alloca.
+        // liblibcntpr.a (C variadic + i386 float residual) + the csr server
+        // bodies + concfg_rust stay reused.
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
             "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/pseh/libpseh.a",
             "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
             "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
             "sdk/lib/crt/libchkstk.a",
             "win32ss/user/winsrv/concfg/libconcfg_rust.a",
-            "sdk/lib/crt/libcntpr_rust.a",
         ])
         // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
         // not reused as cmake lib<dll>.a — same as the other 6 spine binaries.
