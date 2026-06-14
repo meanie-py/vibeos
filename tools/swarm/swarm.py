@@ -49,6 +49,31 @@ import urllib.request
 # DB
 # ---------------------------------------------------------------------------
 
+def load_config() -> None:
+    """Populate os.environ from a config file so hooks don't depend on shell env.
+
+    Reads $VIBEOS_SWARM_CONFIG, else ~/.vibeos-swarm/config.env. KEY=VALUE lines,
+    '#' comments, optional surrounding quotes. Never overrides an already-set var.
+    This is where the Mattermost secrets live — outside any repo, shared across all
+    worktrees, naturally un-committable.
+    """
+    path = os.environ.get("VIBEOS_SWARM_CONFIG") or os.path.join(
+        os.path.expanduser("~"), ".vibeos-swarm", "config.env")
+    if not os.path.exists(path):
+        return
+    try:
+        for raw in open(path):
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            os.environ.setdefault(k, v)
+    except OSError:
+        pass
+
+
 def db_path() -> str:
     p = os.environ.get("VIBEOS_SWARM_DB")
     if not p:
@@ -177,14 +202,21 @@ def mattermost_post(text: str, username: str | None = None,
         payload["username"] = username
     ch = channel or os.environ.get("MATTERMOST_PRESENCE_CHANNEL")
     if ch:
-        payload["channel"] = ch
-    icon = os.environ.get("MATTERMOST_ICON_URL")
-    if icon:
-        payload["icon_url"] = icon
+        payload["channel"] = ch  # webhook payloads take the channel NAME
+    icon_emoji = os.environ.get("MATTERMOST_ICON_EMOJI")
+    icon_url = os.environ.get("MATTERMOST_ICON_URL")
+    if icon_emoji:
+        payload["icon_emoji"] = icon_emoji
+    elif icon_url:
+        payload["icon_url"] = icon_url
+    headers = {"Content-Type": "application/json"}  # form-encoded → 400
+    basic = os.environ.get("MATTERMOST_WEBHOOK_BASIC")  # "user:pass" Traefik gate
+    if basic:
+        import base64
+        headers["Authorization"] = "Basic " + base64.b64encode(basic.encode()).decode()
     try:
         req = urllib.request.Request(
-            url, data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            url, data=json.dumps(payload).encode(), headers=headers,
         )
         urllib.request.urlopen(req, timeout=5).read()
         return True
@@ -417,6 +449,7 @@ def main(argv=None):
     pi.add_argument("--write", nargs="?", const=True, default=False,
                     help="merge into settings.json (default ~/.claude/settings.json) instead of printing")
 
+    load_config()
     args = p.parse_args(argv)
     args.fn(args)
     return 0
