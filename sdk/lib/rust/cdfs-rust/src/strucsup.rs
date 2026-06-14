@@ -1603,8 +1603,13 @@ pub unsafe extern "C" fn CdDeleteFcbNonpaged(
     // The macro expands to: ExFreePoolWithTag(FcbNonpaged, TAG_FCB_NONPAGED)
     ExFreePoolWithTag(FcbNonpaged as *mut core::ffi::c_void, TAG_FCB_NONPAGED);
 }
+// NTAPI (stdcall on i386): the Rtl generic-table machinery calls these three
+// callbacks as extern "system" with no caller-side stack cleanup. Declaring them
+// extern "C" (cdecl) leaves the args on the stack after each call → ESP drift →
+// stack corruption → eventual ret-to-NULL (BUGCHECK 0x1E at mount). i386-only;
+// harmless on amd64/arm64 where system==C. The C cdfs declares these NTAPI.
 #[no_mangle]
-pub unsafe extern "C" fn CdFcbTableCompare(
+pub unsafe extern "system" fn CdFcbTableCompare(
     FcbTable: *mut ntkrnl_sys::ddk::RTL_GENERIC_TABLE,
     Fid1: *mut core::ffi::c_void,
     Fid2: *mut core::ffi::c_void,
@@ -1625,7 +1630,7 @@ pub unsafe extern "C" fn CdFcbTableCompare(
     let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdAllocateFcbTable(
+pub unsafe extern "system" fn CdAllocateFcbTable(
     FcbTable: *mut core::ffi::c_void,
     ByteSize: i32,
 ) -> *mut core::ffi::c_void {
@@ -1634,7 +1639,7 @@ pub unsafe extern "C" fn CdAllocateFcbTable(
     FsRtlAllocatePoolWithTag(CdPagedPool, ByteSize as u32, TAG_FCB_TABLE)
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdDeallocateFcbTable(
+pub unsafe extern "system" fn CdDeallocateFcbTable(
     FcbTable: *mut RTL_GENERIC_TABLE,
     mut Buffer: *mut core::ffi::c_void,
 ) {

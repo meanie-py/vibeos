@@ -117,7 +117,10 @@ extern "C" {
     fn CdInitializeDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
 }
 extern "C" {
-    fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StreamOffset: i64, DirContext: *mut DIRENT_ENUM_CONTEXT, );
+    // C header: CdLookupDirent(.., ULONG DirentOffset, ..). MUST be u32 — an i64
+    // here pushes 8 bytes on i386, shifting DirContext to the always-zero high
+    // dword → NULL Dirent → BUGCHECK 0x1E writing [0x4] in CdLookupDirent.
+    fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StreamOffset: u32, DirContext: *mut DIRENT_ENUM_CONTEXT, );
 }
 extern "C" {
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
@@ -275,7 +278,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                 CdLookupDirent(
                     IrpContext,
                     Fcb,
-                    (*fcb_index(Fcb)).StreamOffset as i64,
+                    (*fcb_index(Fcb)).StreamOffset as u32,
                     &mut DirContext,
                 );
 
