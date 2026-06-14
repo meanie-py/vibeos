@@ -24,6 +24,22 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// CRT-startup personality for `.msvcrtex_crt()` — selects which
+/// crt-startup-rust feature (+ overridable sibling) the consumer links,
+/// mirroring how the C archive lazily pulled crtdll.o / crtexe.o /
+/// wcrtexe.o (+ dllmain.o / crt0_c.o / crt0_w.o) per the module's entry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MsvcrtexKind {
+    /// DLL: DllMainCRTStartup + _CRT_INIT (+ default DllMain/DllEntryPoint).
+    Dll,
+    /// ANSI exe: [Win]?mainCRTStartup; with a GUI WinMain → crt0 `main`.
+    ExeAnsi,
+    /// wide exe: w[main|WinMain]CRTStartup; with a GUI wWinMain → crt0 `wmain`.
+    ExeWide,
+    /// Just the shared CRT floor + asm (custom native entry, no main/dll init).
+    Bare,
+}
+
 /// Final PE-module flavor. Carries the entry symbol (already i386
 /// stdcall-decorated, e.g. `_HalInitSystem@8`) and preferred image base.
 pub enum ModuleKind {
@@ -607,6 +623,67 @@ impl Linker {
             name.to_string(),
             rels.iter().map(|s| s.to_string()).collect(),
         ));
+        self
+    }
+
+    /// Link the mingw CRT-startup floor (`msvcrtex`) — the "hidden" CRT glue
+    /// every user-mode PE needs: the entry point (`DllMainCRTStartup` /
+    /// `[w]WinMainCRTStartup` / `[w]mainCRTStartup`), `_CRT_INIT` + the
+    /// `.CRT$XI*/XC*` initializer-section walk (`_initterm`), the security
+    /// cookie, `_pei386_runtime_relocator`, TLS callbacks, the `__main` ctor
+    /// hook, `_fltused`, _invalid_parameter/rand_s/mbrtowc/wcrtomb, etc.
+    ///
+    /// The C floor is now Rust: `crt-startup-rust` (one `kind`-selected
+    /// feature, mirroring the C archive's lazy crtdll.o/crtexe.o/wcrtexe.o
+    /// pull) plus the overridable siblings `crt-dllmain-rust` (default
+    /// DllMain/DllEntryPoint) and `crt0-rust` (the GUI WinMain→main bridge).
+    /// Only the i386/amd64 MSVC stack-probe + 64-bit integer intrinsics
+    /// (`_chkstk`/`_alldiv`/`_aulldiv`/i386 ceilf/floorf) remain asm — linked
+    /// via the sibling `_asm` archive (the asm `#include`s asm.inc / ks386.inc,
+    /// resolved by the kernel asm `-I` chain like ntdll's chkstk_ms). arm64
+    /// needs no asm (clang_rt.builtins-aarch64 covers `__chkstk`, no MSVC
+    /// integer-intrinsic names). Drop `sdk/lib/crt/libmsvcrtex.a` from
+    /// `static_libs` when calling this.
+    ///
+    /// `dbgrpt.cpp` (the `_CrtDbgReport*` C++ debug-report facility) is NOT
+    /// translated — it is lazy-pulled only by a `_DEBUG` libstdc++ and is
+    /// unreferenced in our release links.
+    pub fn msvcrtex_crt(mut self, kind: MsvcrtexKind) -> Self {
+        let asm: &[&str] = match self.arch.name {
+            "i386" => &[
+                "sdk/lib/crt/except/i386/chkstk_asm.s",
+                "sdk/lib/crt/except/i386/chkstk_ms.s",
+                "sdk/lib/crt/math/i386/alldiv_asm.s",
+                "sdk/lib/crt/math/i386/aulldiv_asm.s",
+                "sdk/lib/crt/math/i386/ceilf.S",
+                "sdk/lib/crt/math/i386/floorf.S",
+            ],
+            "amd64" => &["sdk/lib/crt/except/amd64/chkstk_ms.s"],
+            _ => &[],
+        };
+        if !asm.is_empty() {
+            self.asm_archives.push((
+                "msvcrtex_asm".to_string(),
+                asm.iter().map(|s| s.to_string()).collect(),
+            ));
+        }
+
+        // crt-startup-rust personality (no default features).
+        let feat = match kind {
+            MsvcrtexKind::Dll => &["crtdll"][..],
+            MsvcrtexKind::ExeAnsi => &["crtexe"][..],
+            MsvcrtexKind::ExeWide => &["wcrtexe"][..],
+            MsvcrtexKind::Bare => &[][..],
+        };
+        self = self.rust_lib("crt-startup-rust", feat, false);
+
+        // overridable siblings: default DllMain (dll), WinMain→main bridge (exe).
+        self = match kind {
+            MsvcrtexKind::Dll => self.rust_lib("crt-dllmain-rust", &[], true),
+            MsvcrtexKind::ExeAnsi => self.rust_lib("crt0-rust", &["ansi"], false),
+            MsvcrtexKind::ExeWide => self.rust_lib("crt0-rust", &["wide"], false),
+            MsvcrtexKind::Bare => self,
+        };
         self
     }
 

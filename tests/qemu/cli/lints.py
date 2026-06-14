@@ -105,6 +105,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         f = rc / rel
         specs.append((tool, [py, str(f)] if f.is_file() else ["MISSING"], "both"))
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
+    # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
+    # here). tables + match_consts are clean today (empty baseline = strict);
+    # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.
+    for tool, rel in (("verify_tables", "verify_tables.py"),
+                      ("verify_match_consts", "verify_match_consts.py"),
+                      ("verify_signatures", "verify_signatures.py")):
+        t = repo / "tools" / rel
+        specs.append((tool, [py, str(t)] if t.is_file() else ["MISSING"], "stdout"))
     return specs
 
 

@@ -13,12 +13,12 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 #
 # smss.rc is version-only (non-load-bearing) → omitted, like lsass.
 
-# The native CRT/leaf statics the cargo link reuses (libnt provides the
-# _NtProcessStartup@4 entry → Rust _main; libsmlib the Sm* client lib; pseh;
-# chkstk) live in sdk/lib, so DEPENDS on their .a FILE paths for parallel-build
-# ordering. The ntdll import lib is generated in-cargo from ntdll.spec.
+# Leaf statics the cargo link reuses (libsmlib the Sm* client lib — real C debt;
+# pseh; chkstk) live in sdk/lib, so DEPENDS on their .a FILE paths for
+# parallel-build ordering. libnt.a is GONE — the _NtProcessStartup@4 entry is
+# now a Rust port in smss-csrss-rust (crate::entry_point → Rust _main). The
+# ntdll import lib is generated in-cargo from ntdll.spec.
 set(SMSS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/nt/libnt.a
     ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/sdk/lib/smlib/libsmlib.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)

@@ -16,6 +16,10 @@ spec2def(classpnp.sys classpnp.spec ADD_IMPORTLIB)
 # Version resource (class.rc) dropped. BOOT-CRITICAL (disk.sys / cdrom.sys are
 # class drivers that import classpnp). The spec2def(... ADD_IMPORTLIB) above
 # STAYS (consumers link the libclasspnp import lib, independent of this target).
+# classpnp links a fully cargo-native floor — ZERO cmake-built .a. cnt-rust-lib
+# (libcntpr's Rust half incl. the Wave MATH-i386 no-SSE softfloat) + pseh
+# dummy.c + ntoskrnl-vista-rust + compiler-builtins-mem (memcmp) + clang_rt
+# (__chkstk) cover everything; liblibcntpr.a (step 8) and libchkstk.a both
+# dropped (cold-link confirms nothing referenced chkstk). EXTRA_DEPENDS is empty.
 add_cargo_module(classpnp classpnp-cargo classpnp.sys KIND kerneldll
-    BODY_CRATE classpnp-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS ntoskrnl_vista libcntpr ${PSEH_LIB} chkstk rust_cnt memcmp)
+    BODY_CRATE classpnp-rust DESTINATION reactos/system32/drivers)

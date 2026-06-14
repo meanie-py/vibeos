@@ -16,7 +16,8 @@
 //! does NOT carry its own copies of csrsrv.dll's data exports. NativeExe builds
 //! the user hardfloat target (.rust_user_target), like smss. csrss.rc is
 //! version-only (non-load-bearing) → omitted. csrsrv + ntdll import libs
-//! self-hosted; libnt.a reused.
+//! self-hosted. ZERO cmake .a: _NtProcessStartup@4 is now a Rust port in
+//! smss-csrss-rust (crate::entry_point), so libnt.a is no longer linked.
 
 use reactos_link::{Linker, ModuleKind};
 use std::env;
@@ -39,9 +40,10 @@ fn main() {
         .rust_user_target()
         // csrsrv + ntdll import libs self-hosted from each .spec.
         .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
-        .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libnt.a (native CRT startup _NtProcessStartup@4) reused from cmake.
-        .static_libs(&["sdk/lib/nt/libnt.a"]);
+        .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll");
+    // ZERO cmake .a: libnt.a dropped — the native CRT startup
+    // _NtProcessStartup@4 is now a Rust port in smss-csrss-rust
+    // (crate::entry_point, compiled under csrss_main_only).
 
     // arm64 only: llvm-dlltool collapses delay-imports to regular imports, so
     // every dependency loads at once and the LdrpLoadDll recursion overflows the

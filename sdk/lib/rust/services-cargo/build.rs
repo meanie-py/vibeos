@@ -18,7 +18,7 @@
 //! source). Import libs are generated in-cargo from each .spec. CRT statics +
 //! the load-bearing .res (localized STRINGTABLEs) are reused from cmake.
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -57,13 +57,13 @@ fn main() {
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // libpseh + CRT statics, reused from cmake.
-        .static_libs(&[
-            "sdk/lib/pseh/libpseh.a",
-            "sdk/lib/crt/libchkstk.a",
-            "sdk/lib/crt/libmsvcrtex.a",
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-        ])
+        // ZERO cmake .a: libpseh + chkstk + oldnames all dropped — each proved
+        // INERT via the residue probe (nm -u <body> ∩ nm <.a> ' T ' = empty ×3).
+        // The body emits no PSEH (DUMMY_PSEH), no undefined stack-probe (i386
+        // chkstk now rides the msvcrtex_asm archive), and references nothing from
+        // the oldnames CRT aliases. libmsvcrtex (CRT startup) is now Rust via
+        // .msvcrtex_crt(MsvcrtexKind::ExeWide).
+        .msvcrtex_crt(MsvcrtexKind::ExeWide)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

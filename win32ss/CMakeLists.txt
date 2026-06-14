@@ -102,15 +102,15 @@ list(APPEND SOURCE
     # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/registry.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/registry.rs) — cohabitation [ntuser wave 11]
-    reactx/ntddraw/ddraw.c
-    reactx/ntddraw/dd.c
-    reactx/ntddraw/ddsurf.c
-    reactx/ntddraw/d3d.c
-    reactx/ntddraw/d3dkmt.c
-    reactx/ntddraw/dvp.c
-    reactx/ntddraw/mocomp.c
-    reactx/ntddraw/eng.c
-    reactx/ntddraw/dxeng.c
+    # reactx/ntddraw/ddraw.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_ddraw.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dd.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dd.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/ddsurf.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_ddsurf.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/d3d.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_d3d.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/d3dkmt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_d3dkmt.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dvp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dvp.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/mocomp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_mocomp.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/eng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_eng.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dxeng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dxeng.rs) — cohabitation [DirectDraw flip: all 42 DxEng* bodies + gaEngFuncs table now Rust]
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     # user/ntuser/callback.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callback.rs) — cohabitation [ntuser wave 28]
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]

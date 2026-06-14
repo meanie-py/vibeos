@@ -26,10 +26,10 @@ function(add_bootvid _target _configfile)
         if(NOT _bviddata_NAME_ON_CD)
             set(_bviddata_NAME_ON_CD ${_target}.dll)
         endif()
-        # EXTRA_DEPENDS memcmp: the cargo link reuses libmemcmp.a.
+        # ZERO cmake .a: libmemcmp.a dropped (bootvid.sys has no memcmp call;
+        # compiler-builtins-mem covers it). EXTRA_DEPENDS empty.
         add_cargo_kernel_dll(${_target} bootvid-cargo ${_target}.dll
-            BODY_CRATE bootvid-rust NAME_ON_CD ${_bviddata_NAME_ON_CD}
-            EXTRA_DEPENDS memcmp)
+            BODY_CRATE bootvid-rust NAME_ON_CD ${_bviddata_NAME_ON_CD})
         return()
     endif()
 

@@ -63,6 +63,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
@@ -120,6 +127,7 @@ dependencies = [
 name = "cabinet-rust"
 version = "0.1.0"
 dependencies = [
+ "libz-rs-sys",
  "ntdll-sys",
 ]
 
@@ -241,6 +249,18 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "crt-dllmain-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt-startup-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt0-rust"
+version = "0.1.0"
+
+[[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
 
@@ -342,6 +362,10 @@ dependencies = [
 
 [[package]]
 name = "generictable"
+version = "0.1.0"
+
+[[package]]
+name = "guids-rust"
 version = "0.1.0"
 
 [[package]]
@@ -532,6 +556,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libz-rs-sys"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1116a951fd9d5110720bb2ae66f72ce5d7b10bd8aa8744924677157089ce13f"
+dependencies = [
+ "zlib-rs",
+]
+
+[[package]]
 name = "log"
 version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -639,6 +672,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "network"
 version = "0.1.0"
 
@@ -707,6 +747,13 @@ dependencies = [
  "ntkrnl-sys",
  "ntprintf",
  "ntprintf_w",
+]
+
+[[package]]
+name = "ntoskrnl-vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -1090,6 +1137,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "setjmp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1399,3 +1453,9 @@ dependencies = [
 [[package]]
 name = "wmilib-rust"
 version = "0.1.0"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be3d40e40a133f9c916ee3f9f4fa2d9d63435b5fbe1bfc6d9dae0aa0ada1513"

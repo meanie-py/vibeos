@@ -9,6 +9,11 @@
 #![allow(dead_code, unused_assignments, unused_variables, unused_mut)]
 #![allow(unused_parens, unused_unsafe, unused_imports)]
 
+// Pull libz-rs-sys's #[export_name] C symbols (deflateInit2/deflate/deflateEnd)
+// into the cabinet.dll link — fci.rs calls them via its extern "C" block, but
+// nothing references the crate at the Rust level, so force its inclusion.
+extern crate libz_rs_sys;
+
 #[path = "cabinet/types.rs"]
 mod types;
 #[path = "cabinet/cabinet_main.rs"]
