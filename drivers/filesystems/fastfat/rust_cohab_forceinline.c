@@ -182,6 +182,20 @@ typedef NTSTATUS (*PIO_COMPLETION_ROUTINE)(PVOID DevObj, PVOID Irp, PVOID Contex
  * the real value from wdm.h: on amd64 it is at offset 72 within the
  * IO_STACK_LOCATION union.
  * For IoCopyCurrentIrpStackLocationToNext we copy up to that offset. */
+#if defined(_M_ARM64) || defined(__aarch64__)
+/* arm64 IO_STACK_LOCATION is PACKED (verified vs bindgen offset_of):
+ * size 0x44; Control@0x03; CompletionRoutine@0x34; Context@0x3c. */
+#define IO_STACK_COMPLETION_ROUTINE_OFFSET 0x34
+#pragma pack(push, 1)
+typedef struct {
+    UCHAR  pre0[3];                             /* 0x00 Major,Minor,Flags */
+    UCHAR  Control;                             /* 0x03 */
+    UCHAR  pre1[IO_STACK_COMPLETION_ROUTINE_OFFSET - 4]; /* 0x04..0x33 */
+    PIO_COMPLETION_ROUTINE CompletionRoutine;   /* 0x34 */
+    PVOID  Context;                             /* 0x3c */
+} MY_IO_STACK_LOCATION;                          /* total 0x44 */
+#pragma pack(pop)
+#else
 #define IO_STACK_COMPLETION_ROUTINE_OFFSET 72
 
 typedef struct {
@@ -192,11 +206,17 @@ typedef struct {
     UCHAR Control;
     UCHAR pad2[7];
 } MY_IO_STACK_LOCATION;
+#endif
 
 /* IRP layout — only the fields we care about.
  * We use raw byte offsets verified from wdm.h.
  */
-#ifdef _WIN64
+#if defined(_M_ARM64) || defined(__aarch64__)
+/* arm64 IRP layout (verified vs bindgen + ntoskrnl/ramdisk disasm):
+ * Tail.Overlay.CurrentStackLocation at 0xb8 (184), CurrentLocation char at 0x43 (67). */
+#define IRP_CURRENT_LOCATION_OFFSET     67
+#define IRP_CURRENT_STACK_PTR_OFFSET    184
+#elif defined(_WIN64)
 #define IRP_CURRENT_LOCATION_OFFSET     67
 #define IRP_CURRENT_STACK_PTR_OFFSET    176
 #else

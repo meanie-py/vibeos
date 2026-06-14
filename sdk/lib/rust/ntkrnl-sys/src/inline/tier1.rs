@@ -54,9 +54,9 @@ const WR_EXECUTIVE: ddk::KWAIT_REASON = ddk::_KWAIT_REASON_WrExecutive;
 const SL_PENDING_RETURNED: u8 = 0x01;
 
 #[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb0;
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
 #[cfg(target_arch = "aarch64")]
-const IO_STACK_LOCATION_ABI_SIZE: usize = 0x60;
+const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
 
 #[inline]
 unsafe fn irp_current_stack_location_slot(irp: ddk::PIRP) -> *mut ddk::PIO_STACK_LOCATION {

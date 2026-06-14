@@ -33,9 +33,9 @@ use ntkrnl_sys::ddk::{
 const IO_TYPE_OPEN_PACKET: i16 = 8;
 
 #[cfg(target_arch = "aarch64")]
-const IO_STACK_LOCATION_ABI_SIZE: usize = 0x60;
+const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
 #[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb0;
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
 
 #[inline(always)]
 unsafe fn irp_current_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {

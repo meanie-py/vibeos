@@ -146,13 +146,13 @@ unsafe fn IoSizeOfIrp(StackSize: CCHAR) -> USHORT {
 }
 
 #[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb0;
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
 
 #[inline]
 const fn io_stack_location_abi_size() -> usize {
     #[cfg(target_arch = "aarch64")]
     {
-        0x60
+        0x44
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
