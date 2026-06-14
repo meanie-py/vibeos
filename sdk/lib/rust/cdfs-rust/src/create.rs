@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, _FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{ACCESS_MASK, _FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::null_mut;
@@ -13,50 +13,193 @@ use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION};
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlCurrentBatchOplock};
 use crate::glue::{CDFS_BUG_CHECK_CREATE, Ccb, FILE_NO_INTERMEDIATE_BUFFERING, FILE_OPENED, Fcb, STATUS_CANT_WAIT, Vcb};
 
-extern "system" {
+extern "C" {
     fn CdCreateCcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, UserCcbFlags: u32) -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
+}
+extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> POPLOCK;
+}
+extern "C" {
     fn CdIncrementCleanupCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, CleanupCount: u32);
+}
+extern "C" {
     fn CdIsFastIoPossible(Fcb: *mut FCB) -> u32;
+}
+extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, IgnoreReferences: u8) -> NTSTATUS;
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+}
+extern "C" {
     fn CdSetFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, TypeOfOpen: u32, Fcb: *mut FCB, Ccb: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u8;
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "system" {
     fn CdOplockComplete(Context: *mut core::ffi::c_void, Irp: PIRP) -> NTSTATUS;
+}
+extern "system" {
     fn CdPrePostIrp(Context: *mut core::ffi::c_void, Irp: PIRP);
+}
+extern "C" {
     fn CdFidIsDirectory(fid: FILE_ID) -> u8;
+}
+extern "C" {
     fn CdFidSetDirectory(fid: *mut FILE_ID);
+}
+extern "C" {
     fn CdQueryFidDirentOffset(fid: FILE_ID) -> u32;
+}
+extern "C" {
     fn CdQueryFidPathTableOffset(fid: FILE_ID) -> u32;
+}
+extern "C" {
     fn CdSetFidDirentOffset(fid: *mut FILE_ID, offset: u32);
+}
+extern "C" {
     fn CdSetFidPathTableOffset(fid: *mut FILE_ID, offset: u32);
+}
+extern "C" {
     fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, SpinLock: u8) -> u8;
+}
+extern "C" {
     fn CdCleanupCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
+}
+extern "C" {
     fn CdCleanupFileContext(IrpContext: *mut IRP_CONTEXT, Ctx: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdCreateFcb(IrpContext: *mut IRP_CONTEXT, FileId: FILE_ID, NodeTypeCode: u32, Found: *mut u8) -> *mut FCB;
+}
+extern "C" {
     fn CdIllegalFcbAccess(IrpContext: *mut IRP_CONTEXT, TypeOfOpen: u32, DesiredAccess: u32) -> u8;
+}
+extern "C" {
     fn CdInitializeCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
+}
+extern "C" {
     fn CdInitializeFcbFromFileContext(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Parent: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdInitializeFcbFromPathEntry(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Parent: *mut FCB, Entry: *mut PATH_ENTRY);
+}
+extern "C" {
     fn CdInitializeFileContext(IrpContext: *mut IRP_CONTEXT, Ctx: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdLookupFcbTable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FileId: FILE_ID) -> *mut FCB;
+}
+extern "C" {
     fn CdLookupInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT, StreamOffset: u32);
+}
+extern "C" {
     fn CdLookupLastFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdLookupNextInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Ctx: *mut FILE_ENUM_CONTEXT) -> u8;
+}
+extern "C" {
     fn CdLookupNextPathEntry(IrpContext: *mut IRP_CONTEXT, PathContext: *mut FILE_ENUM_CONTEXT, PathEntry: *mut COMPOUND_PATH_ENTRY) -> u8;
+}
+extern "C" {
     fn CdLookupPathEntry(IrpContext: *mut IRP_CONTEXT, StreamOffset: u32, Index: u32, CaseInsensitive: u8, Entry: *mut COMPOUND_PATH_ENTRY);
+}
+extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn RtlCopyMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
+}
+extern "C" {
     fn CdInsertPrefix( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *const CD_NAME, IgnoreCase: u8, ReplaceParent: u8, ParentFcb: *mut FCB, );
 }
+extern "C" {
+    // ---- callees for CdCommonCreate / CdNormalizeFileNames (added by hand-translation) ----
+    fn CdCompleteRequest(IrpContext: *mut core::ffi::c_void, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
+    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8);
+}
+extern "C" {
+    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8);
+}
+extern "C" {
+    fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
+    fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
+    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
+}
+extern "C" {
+    fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RemovedFcb: *mut u8);
+}
+extern "C" {
+    fn SafeNodeType(Fcb: *mut FCB) -> u32;
+}
+extern "C" {
+    fn CdFindPrefix(IrpContext: *mut IRP_CONTEXT, CurrentFcb: *mut *mut FCB, RemainingName: *mut _UNICODE_STRING, IgnoreCase: i32);
+}
+extern "C" {
+    fn CdDissectName(IrpContext: *mut IRP_CONTEXT, RemainingName: *mut _UNICODE_STRING, FinalName: *mut _UNICODE_STRING);
+}
+extern "C" {
+    fn CdFindPathEntry(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, DirName: *mut CD_NAME, IgnoreCase: u8, CompoundPathEntry: *mut COMPOUND_PATH_ENTRY) -> u8;
+}
+extern "C" {
+    fn CdShortNameDirentOffset(IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING) -> u32;
+}
+extern "C" {
+    fn CdFindFileByShortName(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *mut CD_NAME, IgnoreCase: u8, ShortNameDirentOffset: u32, FileContext: *mut FILE_ENUM_CONTEXT) -> u8;
+}
+extern "C" {
+    fn CdUpcaseName(IrpContext: *mut core::ffi::c_void, Name: *mut CD_NAME, UpcaseName: *mut CD_NAME);
+}
+extern "C" {
+    fn CdConvertNameToCdName(IrpContext: *mut IRP_CONTEXT, CdName: *mut CD_NAME);
+}
+extern "C" {
+    fn CdFindFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *mut CD_NAME, IgnoreCase: i32, FileContext: *mut FILE_ENUM_CONTEXT, MatchingName: *mut *mut CD_NAME) -> i32;
+}
+extern "C" {
+    fn _SEH2_AbnormalTermination() -> i32;
+}
+extern "system" {
+    fn RtlMoveMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
+}
+use crate::ddk_shims::{Add2Ptr, CdFreePool, FsRtlAllocatePoolWithTag, FsRtlDoesNameContainWildCards};
+use crate::glue::CdPagedPool;
+
+// ntstatus.h
+const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102u32 as i32;
+const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CREATE;
@@ -83,7 +226,7 @@ const CCB_FLAG_OPEN_BY_ID: u32 = 0x00000001;
 const CDFS_NTC_FCB_INDEX: u32 = 0x0304;
 const CDFS_NTC_FCB_DATA: u32 = 0x0305;
 const FILE_NON_DIRECTORY_FILE: u32 = 0x00000040;
-const FILE_DIRECTORY_FILE: u32 = 0x00000010;
+const FILE_DIRECTORY_FILE: u32 = 0x01;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const CD_ATTRIBUTE_DIRECTORY: u32 = 0x02;
 
@@ -154,7 +297,7 @@ pub unsafe extern "C" fn CdOpenExistingFcb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CdOpenDirectoryFromPathEntry(
+pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
     IrpContext: *mut IRP_CONTEXT,
     IrpSp: *mut IO_STACK_LOCATION,
     Vcb: *mut VCB,
@@ -641,6 +784,1063 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     (*(*IrpSp).FileObject).SectionObjectPointer = core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).SegmentObject);
 
     return OplockStatus;
+}
+
+// ---- consts for CdCommonCreate / CdNormalizeFileNames (verified vs headers) ----
+// cdstruc.h
+const IRP_CONTEXT_FLAG_FULL_NAME: u32 = 0x10000000;
+const IRP_CONTEXT_FLAG_TRAIL_BACKSLASH: u32 = 0x20000000;
+const VCB_STATE_AUDIO_DISK: u32 = 0x00000080;
+// nodetype.h / cdprocs.h
+const UnopenedFileObject: u32 = 0;
+// iotypes.h
+const FILE_OPEN: u32 = 0x00000001;
+const FILE_CREATE: u32 = 0x00000002;
+const FILE_OPEN_IF: u32 = 0x00000003;
+const FILE_OVERWRITE: u32 = 0x00000004;
+const FILE_OPEN_BY_FILE_ID: u32 = 0x00002000;
+const FILE_OPEN_REQUIRING_OPLOCK: u32 = 0x00010000;
+const SL_OPEN_PAGING_FILE: u32 = 0x02;
+const SL_OPEN_TARGET_DIRECTORY: u32 = 0x04;
+const SL_CASE_SENSITIVE: u32 = 0x80;
+// ntbasedef.h
+const MAXUSHORT: u32 = 0xffff;
+const MAXULONG: u32 = 0xffffffff;
+// cdprocs.h: TAG_FILE_NAME 'nFdC'
+const TAG_FILE_NAME: u32 = 0x6e466443;
+
+#[no_mangle]
+pub unsafe extern "C" fn CdCommonCreate(
+    mut IrpContext: *mut IRP_CONTEXT,
+    mut Irp: PIRP,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
+
+    let FileObject: *mut FILE_OBJECT;
+
+    let mut CompoundPathEntry: COMPOUND_PATH_ENTRY = zeroed();
+    let mut CleanupCompoundPathEntry: u8 = 0; // FALSE
+
+    let mut FileContext: FILE_ENUM_CONTEXT = zeroed();
+    let mut CleanupFileContext: u8 = 0; // FALSE
+    let mut FoundEntry: u8;
+
+    let Vcb: *mut VCB;
+
+    let OpenByFileId: u8;
+    let IgnoreCase: u8;
+    let CreateDisposition: u32;
+
+    let mut ShortNameMatch: u8;
+    let mut ShortNameDirentOffset: u32;
+
+    let mut VolumeOpen: u8 = 0; // FALSE
+
+    let mut RelatedTypeOfOpen: TYPE_OF_OPEN = UnopenedFileObject;
+    let mut RelatedFileObject: *mut FILE_OBJECT;
+    let mut RelatedCcb: *mut CCB = null_mut();
+
+    let mut NextFcb: *mut FCB;
+    let mut CurrentFcb: *mut FCB = null_mut();
+
+    let FileName: *mut _UNICODE_STRING;
+    let mut RelatedFileName: *mut _UNICODE_STRING = null_mut();
+
+    let mut RemainingName: CD_NAME = zeroed();
+    let mut FinalName: CD_NAME = zeroed();
+    let mut MatchingName: *mut CD_NAME = null_mut();
+
+    // PAGED_CODE();
+
+    //
+    //  If we were called with our file system device object instead of a
+    //  volume device object, just complete this request with STATUS_SUCCESS.
+    //
+    if (*IrpContext).Vcb.is_null() {
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_SUCCESS);
+        return STATUS_SUCCESS;
+    }
+
+    //
+    //  Get create parameters from the Irp.
+    //
+    OpenByFileId = (FlagOn((*IrpSp).Parameters.Create.Options, FILE_OPEN_BY_FILE_ID) != 0) as u8;
+    IgnoreCase = (FlagOn((*IrpSp).Flags as u32, SL_CASE_SENSITIVE) == 0) as u8;
+    CreateDisposition = ((*IrpSp).Parameters.Create.Options >> 24) & 0x000000ff;
+
+    //
+    //  Do some preliminary checks to make sure the operation is supported.
+    //
+    if FlagOn((*IrpSp).Flags as u32, SL_OPEN_PAGING_FILE | SL_OPEN_TARGET_DIRECTORY) != 0
+        || ((*IrpSp).Parameters.Create.EaLength != 0)
+        || (CreateDisposition == FILE_CREATE)
+    {
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_ACCESS_DENIED);
+        return STATUS_ACCESS_DENIED;
+    }
+
+    //
+    //  CDFS does not support FILE_OPEN_REQUIRING_OPLOCK
+    //
+    if FlagOn((*IrpSp).Parameters.Create.Options, FILE_OPEN_REQUIRING_OPLOCK) != 0 {
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //
+    //  Copy the Vcb to a local.  Assume the starting directory is the root.
+    //
+    Vcb = (*IrpContext).Vcb;
+    NextFcb = (*Vcb).RootIndexFcb;
+
+    //
+    //  Reference our input parameters to make things easier.
+    //
+    FileObject = (*IrpSp).FileObject;
+    RelatedFileObject = null_mut();
+
+    FileName = core::ptr::addr_of_mut!((*FileObject).FileName);
+
+    //
+    //  Set up the file object's Vpb pointer in case anything happens.
+    //
+    if !(*FileObject).RelatedFileObject.is_null() && OpenByFileId == 0 {
+        RelatedFileObject = (*FileObject).RelatedFileObject;
+        (*FileObject).Vpb = (*RelatedFileObject).Vpb;
+
+        RelatedTypeOfOpen = CdDecodeFileObject(
+            IrpContext,
+            RelatedFileObject,
+            &mut NextFcb,
+            &mut RelatedCcb,
+        );
+
+        //
+        //  Fail the request if this is not a user file object.
+        //
+        if RelatedTypeOfOpen < UserVolumeOpen {
+            CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_INVALID_PARAMETER);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        //
+        //  Remember the name in the related file object.
+        //
+        RelatedFileName = core::ptr::addr_of_mut!((*RelatedFileObject).FileName);
+    }
+
+    //
+    //  Make sure the strings are valid / verify the file id buffer.
+    //
+    Status = CdNormalizeFileNames(
+        IrpContext,
+        Vcb,
+        OpenByFileId,
+        IgnoreCase,
+        RelatedTypeOfOpen,
+        RelatedCcb,
+        RelatedFileName,
+        FileName,
+        &mut RemainingName,
+    );
+
+    //
+    //  Return the error code if not successful.
+    //
+    if !NT_SUCCESS(Status) {
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, Status);
+        return Status;
+    }
+
+    //
+    //  Acquire the Vcb.  Exclusively for a volume open, shared otherwise.
+    //
+    if ((*FileName).Length == 0) && (RelatedTypeOfOpen <= UserVolumeOpen) && OpenByFileId == 0 {
+        VolumeOpen = 1; // TRUE
+        CdAcquireVcbExclusive(IrpContext, Vcb, 0); // Wait = FALSE
+    } else {
+        CdAcquireVcbShared(IrpContext, Vcb, 0); // Wait = FALSE
+    }
+
+    //
+    //  Use a try-finally to facilitate cleanup.
+    //
+    'try_block: {
+        //
+        //  Verify that the Vcb is not in an unusable condition.
+        //
+        CdVerifyVcb(IrpContext, Vcb);
+
+        //
+        //  If the Vcb is locked then we cannot open another file.
+        //
+        if FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED) != 0 {
+            Status = STATUS_ACCESS_DENIED;
+            break 'try_block;
+        }
+
+        //
+        //  If we are opening this file by FileId then process this immediately.
+        //
+        if OpenByFileId != 0 {
+            //
+            //  We only allow Dasd opens of audio disks.
+            //
+            if FlagOn((*Vcb).VcbState, VCB_STATE_AUDIO_DISK) != 0 {
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+                break 'try_block;
+            }
+
+            //
+            //  The only create disposition we allow is OPEN.
+            //
+            if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+                Status = STATUS_ACCESS_DENIED;
+                break 'try_block;
+            }
+
+            //
+            //  Make sure we can wait for this request.
+            //
+            if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {
+                CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+            }
+
+            Status = CdOpenByFileId(IrpContext, IrpSp, Vcb, &mut CurrentFcb);
+            break 'try_block;
+        }
+
+        //
+        //  If we are opening this volume Dasd then process this immediately.
+        //
+        if VolumeOpen != 0 {
+            //
+            //  The only create disposition we allow is OPEN.
+            //
+            if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+                Status = STATUS_ACCESS_DENIED;
+                break 'try_block;
+            }
+
+            //
+            //  If they wanted to open a directory, surprise.
+            //
+            if FlagOn((*IrpSp).Parameters.Create.Options, FILE_DIRECTORY_FILE) != 0 {
+                Status = STATUS_NOT_A_DIRECTORY;
+                break 'try_block;
+            }
+
+            //
+            //  Acquire the Fcb first.
+            //
+            CurrentFcb = (*Vcb).VolumeDasdFcb;
+            CdAcquireFcbExclusive(IrpContext, CurrentFcb, 0u8); // Wait = FALSE
+
+            Status = CdOpenExistingFcb(
+                IrpContext,
+                IrpSp,
+                &mut CurrentFcb,
+                UserVolumeOpen,
+                0u8,
+                null_mut(),
+            );
+            break 'try_block;
+        }
+
+        //
+        //  Acquire the deepest Fcb to keep it from being deleted beneath us.
+        //
+        CdAcquireFcbExclusive(IrpContext, NextFcb, 0u8); // Wait = FALSE
+        CurrentFcb = NextFcb;
+
+        //
+        //  Do a prefix search if there is more of the name to parse.
+        //
+        if RemainingName.FileName.Length != 0 {
+            CdFindPrefix(
+                IrpContext,
+                &mut CurrentFcb,
+                core::ptr::addr_of_mut!(RemainingName.FileName),
+                IgnoreCase as i32,
+            );
+        }
+
+        //
+        //  If the remaining name length is zero then we have found our target.
+        //
+        if RemainingName.FileName.Length == 0 {
+            //
+            //  If this is a file verify the user didn't want to open a directory.
+            //
+            if SafeNodeType(CurrentFcb) == CDFS_NTC_FCB_DATA {
+                if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TRAIL_BACKSLASH) != 0
+                    || FlagOn((*IrpSp).Parameters.Create.Options, FILE_DIRECTORY_FILE) != 0
+                {
+                    Status = STATUS_NOT_A_DIRECTORY;
+                    break 'try_block;
+                }
+
+                if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+                    Status = STATUS_ACCESS_DENIED;
+                    break 'try_block;
+                }
+
+                Status = CdOpenExistingFcb(
+                    IrpContext,
+                    IrpSp,
+                    &mut CurrentFcb,
+                    UserFileOpen,
+                    IgnoreCase,
+                    RelatedCcb,
+                );
+                break 'try_block;
+
+            //
+            //  This is a directory.  Verify the user didn't want to open as a file.
+            //
+            } else if FlagOn((*IrpSp).Parameters.Create.Options, FILE_NON_DIRECTORY_FILE) != 0 {
+                Status = STATUS_FILE_IS_A_DIRECTORY;
+                break 'try_block;
+
+            //
+            //  Open the file as a directory.
+            //
+            } else {
+                if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+                    Status = STATUS_ACCESS_DENIED;
+                    break 'try_block;
+                }
+
+                Status = CdOpenExistingFcb(
+                    IrpContext,
+                    IrpSp,
+                    &mut CurrentFcb,
+                    UserDirectoryOpen,
+                    IgnoreCase,
+                    RelatedCcb,
+                );
+                break 'try_block;
+            }
+        }
+
+        //
+        //  Our starting Fcb better be a directory.
+        //
+        if FlagOn((*CurrentFcb).FileAttributes, FILE_ATTRIBUTE_DIRECTORY) == 0 {
+            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            break 'try_block;
+        }
+
+        //
+        //  If we can't wait then post this request.
+        //
+        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {
+            CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+        }
+
+        //
+        //  Make sure the final name has no version string.
+        //
+        FinalName.VersionString.Length = 0;
+
+        // walk the name component by component
+        FoundEntry = 0;
+        loop {
+            ShortNameMatch = 0; // FALSE
+
+            //
+            //  Split off the next component from the name.
+            //
+            CdDissectName(
+                IrpContext,
+                core::ptr::addr_of_mut!(RemainingName.FileName),
+                core::ptr::addr_of_mut!(FinalName.FileName),
+            );
+
+            //
+            //  Look this entry up in the path table.
+            //
+            CdInitializeCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+            CleanupCompoundPathEntry = 1; // TRUE
+
+            FoundEntry = CdFindPathEntry(
+                IrpContext,
+                CurrentFcb,
+                &mut FinalName,
+                IgnoreCase,
+                &mut CompoundPathEntry,
+            );
+
+            //
+            //  If we didn't find the entry then check for a possible short name.
+            //
+            if FoundEntry == 0 {
+                ShortNameDirentOffset =
+                    CdShortNameDirentOffset(IrpContext, core::ptr::addr_of_mut!(FinalName.FileName));
+
+                //
+                //  If there is an embedded short name offset then look for the
+                //  matching long name in the directory.
+                //
+                if ShortNameDirentOffset != MAXULONG {
+                    if CleanupFileContext != 0 {
+                        CdCleanupFileContext(IrpContext, &mut FileContext);
+                    }
+
+                    CdInitializeFileContext(IrpContext, &mut FileContext);
+                    CleanupFileContext = 1; // TRUE
+
+                    FoundEntry = CdFindFileByShortName(
+                        IrpContext,
+                        CurrentFcb,
+                        &mut FinalName,
+                        IgnoreCase,
+                        ShortNameDirentOffset,
+                        &mut FileContext,
+                    );
+
+                    //
+                    //  If we found an entry and it is a directory then look this
+                    //  up in the path table.
+                    //
+                    if FoundEntry != 0 {
+                        ShortNameMatch = 1; // TRUE
+
+                        if FlagOn(
+                            (*FileContext.InitialDirent).Dirent.DirentFlags as u32,
+                            CD_ATTRIBUTE_DIRECTORY,
+                        ) != 0
+                        {
+                            CdCleanupCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+                            CdInitializeCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+
+                            FoundEntry = CdFindPathEntry(
+                                IrpContext,
+                                CurrentFcb,
+                                core::ptr::addr_of_mut!(
+                                    (*FileContext.InitialDirent).Dirent.CdCaseFileName
+                                ),
+                                IgnoreCase,
+                                &mut CompoundPathEntry,
+                            );
+
+                            //
+                            //  We better find this entry.
+                            //
+                            if FoundEntry == 0 {
+                                CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                            }
+
+                            //
+                            //  Upcase the name with the short name if case insensitive.
+                            //
+                            if IgnoreCase != 0 {
+                                CdUpcaseName(
+                                    IrpContext as *mut core::ffi::c_void,
+                                    &mut FinalName,
+                                    &mut FinalName,
+                                );
+                            }
+
+                        //
+                        //  We found a matching file.  If we are at the last entry
+                        //  then break out of the loop and open the file below.
+                        //
+                        } else if RemainingName.FileName.Length == 0 {
+                            MatchingName = core::ptr::addr_of_mut!(FileContext.ShortName);
+                            break;
+                        } else {
+                            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+                            break 'try_block;
+                        }
+                    }
+                }
+
+                //
+                //  We didn't find the name.  If the remaining name length is zero
+                //  then break out of the loop to search the directory.
+                //
+                if FoundEntry == 0 {
+                    if RemainingName.FileName.Length == 0 {
+                        break;
+                    } else {
+                        Status = STATUS_OBJECT_PATH_NOT_FOUND;
+                        break 'try_block;
+                    }
+                }
+            }
+
+            //
+            //  If this is an ignore case open then copy the exact case in the
+            //  file object name.  If short name match the name is upcase already.
+            //
+            if IgnoreCase != 0 && ShortNameMatch == 0 {
+                RtlCopyMemory(
+                    FinalName.FileName.Buffer as *mut core::ffi::c_void,
+                    CompoundPathEntry.PathEntry.CdDirName.FileName.Buffer as *const core::ffi::c_void,
+                    CompoundPathEntry.PathEntry.CdDirName.FileName.Length as usize,
+                );
+            }
+
+            //
+            //  If we have found the last component then open this as a directory
+            //  and return to our caller.
+            //
+            if RemainingName.FileName.Length == 0 {
+                if FlagOn((*IrpSp).Parameters.Create.Options, FILE_NON_DIRECTORY_FILE) != 0 {
+                    Status = STATUS_FILE_IS_A_DIRECTORY;
+                    break 'try_block;
+                }
+
+                if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+                    Status = STATUS_ACCESS_DENIED;
+                    break 'try_block;
+                }
+
+                Status = CdOpenDirectoryFromPathEntry(
+                    IrpContext,
+                    IrpSp,
+                    Vcb,
+                    &mut CurrentFcb,
+                    &mut FinalName,
+                    IgnoreCase,
+                    ShortNameMatch,
+                    core::ptr::addr_of_mut!(CompoundPathEntry.PathEntry),
+                    1u8, // TRUE
+                    RelatedCcb,
+                );
+                break 'try_block;
+            }
+
+            //
+            //  Otherwise open an Fcb for this intermediate index Fcb.
+            //
+            CdOpenDirectoryFromPathEntry(
+                IrpContext,
+                IrpSp,
+                Vcb,
+                &mut CurrentFcb,
+                &mut FinalName,
+                IgnoreCase,
+                ShortNameMatch,
+                core::ptr::addr_of_mut!(CompoundPathEntry.PathEntry),
+                0u8, // FALSE
+                null_mut(),
+            );
+
+            CdCleanupCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+            CleanupCompoundPathEntry = 0; // FALSE
+        }
+
+        //
+        //  Scan the current directory for a matching file name if we don't
+        //  already have one.
+        //
+        if FoundEntry == 0 {
+            if CleanupFileContext != 0 {
+                CdCleanupFileContext(IrpContext, &mut FileContext);
+            }
+
+            CdInitializeFileContext(IrpContext, &mut FileContext);
+            CleanupFileContext = 1; // TRUE
+
+            //
+            //  Split our search name into separate components.
+            //
+            CdConvertNameToCdName(IrpContext, &mut FinalName);
+
+            FoundEntry = CdFindFile(
+                IrpContext,
+                CurrentFcb,
+                &mut FinalName,
+                IgnoreCase as i32,
+                &mut FileContext,
+                &mut MatchingName,
+            ) as u8;
+        }
+
+        //
+        //  If we didn't find a match then check the name to determine which
+        //  error code to return.
+        //
+        if FoundEntry == 0 {
+            if (CreateDisposition == FILE_OPEN) || (CreateDisposition == FILE_OVERWRITE) {
+                Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                break 'try_block;
+            }
+
+            //
+            //  Any other operation return STATUS_ACCESS_DENIED.
+            //
+            Status = STATUS_ACCESS_DENIED;
+            break 'try_block;
+        }
+
+        //
+        //  If this is a directory then the disk is corrupt because it wasn't
+        //  in the Path Table.
+        //
+        if FlagOn(
+            (*FileContext.InitialDirent).Dirent.Flags as u32,
+            CD_ATTRIBUTE_DIRECTORY,
+        ) != 0
+        {
+            CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+        }
+
+        //
+        //  Make sure our opener didn't want a directory.
+        //
+        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TRAIL_BACKSLASH) != 0
+            || FlagOn((*IrpSp).Parameters.Create.Options, FILE_DIRECTORY_FILE) != 0
+        {
+            Status = STATUS_NOT_A_DIRECTORY;
+            break 'try_block;
+        }
+
+        //
+        //  The only create disposition we allow is OPEN.
+        //
+        if (CreateDisposition != FILE_OPEN) && (CreateDisposition != FILE_OPEN_IF) {
+            Status = STATUS_ACCESS_DENIED;
+            break 'try_block;
+        }
+
+        //
+        //  If this is an ignore case open then copy the exact case in the
+        //  file object name.
+        //
+        if IgnoreCase != 0 {
+            RtlCopyMemory(
+                FinalName.FileName.Buffer as *mut core::ffi::c_void,
+                (*MatchingName).FileName.Buffer as *const core::ffi::c_void,
+                (*MatchingName).FileName.Length as usize,
+            );
+        }
+
+        //
+        //  Open the file using the file context.
+        //
+        Status = CdOpenFileFromFileContext(
+            IrpContext,
+            IrpSp,
+            Vcb as *mut Vcb,
+            &mut CurrentFcb as *mut *mut FCB as *mut *mut Fcb,
+            &mut FinalName,
+            IgnoreCase,
+            (MatchingName == core::ptr::addr_of_mut!(FileContext.ShortName)) as u8,
+            &mut FileContext,
+            RelatedCcb as *mut Ccb,
+        );
+        break 'try_block;
+
+        // try_exit: NOTHING;
+    }
+
+    // _SEH2_FINALLY {
+    {
+        //
+        //  Cleanup the PathEntry if initialized.
+        //
+        if CleanupCompoundPathEntry != 0 {
+            CdCleanupCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+        }
+
+        //
+        //  Cleanup the FileContext if initialized.
+        //
+        if CleanupFileContext != 0 {
+            CdCleanupFileContext(IrpContext, &mut FileContext);
+        }
+
+        //
+        //  The result of this open could be success, pending or some error.
+        //
+        if _SEH2_AbnormalTermination() != 0 {
+            //
+            //  In the error path call our teardown routine if we have a
+            //  CurrentFcb and its not the volume Dasd Fcb.
+            //
+            if !CurrentFcb.is_null() && (CurrentFcb != (*Vcb).VolumeDasdFcb) {
+                let mut RemovedFcb: u8 = 0;
+
+                CdTeardownStructures(IrpContext, CurrentFcb, &mut RemovedFcb);
+
+                if RemovedFcb != 0 {
+                    CurrentFcb = null_mut();
+                }
+            }
+
+            //
+            //  No need to complete the request.
+            //
+            IrpContext = null_mut();
+            Irp = null_mut();
+
+        //
+        //  If we posted this request through the oplock package we need to show
+        //  there is no reason to complete the request.
+        //
+        } else if Status == STATUS_PENDING {
+            IrpContext = null_mut();
+            Irp = null_mut();
+        }
+
+        //
+        //  Release the Current Fcb if still acquired.
+        //
+        if !CurrentFcb.is_null() {
+            CdReleaseFcb(IrpContext, CurrentFcb);
+        }
+
+        //
+        //  Release the Vcb.
+        //
+        CdReleaseVcb(IrpContext, Vcb);
+
+        //
+        //  Call our completion routine.
+        //
+        CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, Status);
+    }
+
+    Status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdNormalizeFileNames(
+    IrpContext: *mut IRP_CONTEXT,
+    Vcb: *mut VCB,
+    OpenByFileId: u8,
+    IgnoreCase: u8,
+    RelatedTypeOfOpen: TYPE_OF_OPEN,
+    RelatedCcb: *mut CCB,
+    RelatedFileName: *mut _UNICODE_STRING,
+    FileName: *mut _UNICODE_STRING,
+    RemainingName: *mut CD_NAME,
+) -> NTSTATUS {
+    let mut RemainingNameLength: u32 = 0;
+    let mut RelatedNameLength: u32 = 0;
+    let mut SeparatorLength: u32 = 0;
+
+    let BufferLength: u32;
+
+    let mut NewFileName: _UNICODE_STRING = zeroed();
+
+    // PAGED_CODE();
+
+    //
+    //  If this is the first pass then build the full name and check for name
+    //  compatibility.
+    //
+    if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_FULL_NAME) == 0 {
+        //
+        //  Deal with the regular file name case first.
+        //
+        if OpenByFileId == 0 {
+            //
+            //  The Win32 layer can't avoid sending double beginning backslashes.
+            //
+            if ((*FileName).Length as usize > size_of::<u16>())
+                && (*(*FileName).Buffer.add(1) == b'\\' as u16)
+                && (*(*FileName).Buffer.add(0) == b'\\' as u16)
+            {
+                //
+                //  If there are still two beginning backslashes, the name is bogus.
+                //
+                if ((*FileName).Length as usize > 2 * size_of::<u16>())
+                    && (*(*FileName).Buffer.add(2) == b'\\' as u16)
+                {
+                    return STATUS_OBJECT_NAME_INVALID;
+                }
+
+                //
+                //  Slide the name down in the buffer.
+                //
+                (*FileName).Length -= size_of::<u16>() as u16;
+
+                RtlMoveMemory(
+                    (*FileName).Buffer as *mut core::ffi::c_void,
+                    (*FileName).Buffer.add(1) as *const core::ffi::c_void,
+                    (*FileName).Length as usize,
+                );
+            }
+
+            //
+            //  Check for a trailing backslash.  Don't strip off if only character
+            //  in the full name or for relative opens where this is illegal.
+            //
+            if (((*FileName).Length as usize > size_of::<u16>())
+                || (((*FileName).Length as usize == size_of::<u16>())
+                    && (RelatedTypeOfOpen == UserDirectoryOpen)))
+                && (*(*FileName).Buffer.add(((*FileName).Length / 2) as usize - 1) == b'\\' as u16)
+            {
+                SetFlag(
+                    core::ptr::addr_of_mut!((*IrpContext).Flags),
+                    IRP_CONTEXT_FLAG_TRAIL_BACKSLASH,
+                );
+                (*FileName).Length -= size_of::<u16>() as u16;
+            }
+
+            //
+            //  Remember the length we need for this portion of the name.
+            //
+            RemainingNameLength = (*FileName).Length as u32;
+
+            //
+            //  If this is a related file object then verify the compatibility of
+            //  the name in the file object with the relative file object.
+            //
+            if RelatedTypeOfOpen != UnopenedFileObject {
+                //
+                //  If the filename length was zero then it must be legal.
+                //
+                if (*FileName).Length != 0 {
+                    //
+                    //  The name length must always be zero for a volume open.
+                    //
+                    if RelatedTypeOfOpen <= UserVolumeOpen {
+                        return STATUS_INVALID_PARAMETER;
+
+                    //
+                    //  The remaining name cannot begin with a backslash.
+                    //
+                    } else if *(*FileName).Buffer.add(0) == b'\\' as u16 {
+                        return STATUS_INVALID_PARAMETER;
+
+                    //
+                    //  If the related file is a user file then there is no file
+                    //  with this path.
+                    //
+                    } else if RelatedTypeOfOpen == UserFileOpen {
+                        return STATUS_OBJECT_PATH_NOT_FOUND;
+                    }
+                }
+
+                //
+                //  Remember the length of the related name when building the full
+                //  name.  Leave the lengths at zero if the relative file is opened
+                //  by Id.
+                //
+                if FlagOn((*RelatedCcb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
+                    //
+                    //  Add a separator if the name length is non-zero unless the
+                    //  relative Fcb is at the root.
+                    //
+                    if ((*FileName).Length != 0)
+                        && ((*RelatedCcb).Fcb != (*Vcb).RootIndexFcb)
+                    {
+                        SeparatorLength = size_of::<u16>() as u32;
+                    }
+
+                    RelatedNameLength = (*RelatedFileName).Length as u32;
+                }
+
+            //
+            //  The full name is already in the filename.  It must either be
+            //  length 0 or begin with a backslash.
+            //
+            } else if (*FileName).Length != 0 {
+                if *(*FileName).Buffer.add(0) != b'\\' as u16 {
+                    return STATUS_INVALID_PARAMETER;
+                }
+
+                //
+                //  We will want to trim the leading backslash from the remaining
+                //  name we return.
+                //
+                RemainingNameLength -= size_of::<u16>() as u32;
+                SeparatorLength = size_of::<u16>() as u32;
+            }
+
+            //
+            //  Now see if the buffer is large enough to hold the full name.
+            //
+            BufferLength = RelatedNameLength + SeparatorLength + RemainingNameLength;
+
+            //
+            //  Check for an overflow of the maximum filename size.
+            //
+            if BufferLength > MAXUSHORT {
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            //
+            //  Now see if we need to allocate a new buffer.
+            //
+            if ((*FileName).MaximumLength as u32) < BufferLength {
+                NewFileName.Buffer =
+                    FsRtlAllocatePoolWithTag(CdPagedPool, BufferLength, TAG_FILE_NAME) as *mut u16;
+
+                NewFileName.MaximumLength = BufferLength as u16;
+            } else {
+                NewFileName.Buffer = (*FileName).Buffer;
+                NewFileName.MaximumLength = (*FileName).MaximumLength;
+            }
+
+            //
+            //  If there is a related name then slide the remaining bytes up and
+            //  insert the related name.  Otherwise the name is correctly placed.
+            //
+            if RelatedNameLength != 0 {
+                //
+                //  Store the remaining name in its correct position.
+                //
+                if RemainingNameLength != 0 {
+                    RtlMoveMemory(
+                        Add2Ptr(
+                            NewFileName.Buffer as *mut core::ffi::c_void,
+                            (RelatedNameLength + SeparatorLength) as usize,
+                        ),
+                        (*FileName).Buffer as *const core::ffi::c_void,
+                        RemainingNameLength as usize,
+                    );
+                }
+
+                RtlCopyMemory(
+                    NewFileName.Buffer as *mut core::ffi::c_void,
+                    (*RelatedFileName).Buffer as *const core::ffi::c_void,
+                    RelatedNameLength as usize,
+                );
+
+                //
+                //  Add the separator if needed.
+                //
+                if SeparatorLength != 0 {
+                    *(Add2Ptr(
+                        NewFileName.Buffer as *mut core::ffi::c_void,
+                        RelatedNameLength as usize,
+                    ) as *mut u16) = b'\\' as u16;
+                }
+
+                //
+                //  Update the filename value we got from the user.
+                //
+                if NewFileName.Buffer != (*FileName).Buffer {
+                    if !(*FileName).Buffer.is_null() {
+                        CdFreePool(core::ptr::addr_of_mut!((*FileName).Buffer) as *mut *mut core::ffi::c_void);
+                    }
+
+                    (*FileName).Buffer = NewFileName.Buffer;
+                    (*FileName).MaximumLength = NewFileName.MaximumLength;
+                }
+
+                //
+                //  Copy the name length to the user's filename.
+                //
+                (*FileName).Length =
+                    (RelatedNameLength + SeparatorLength + RemainingNameLength) as u16;
+            }
+
+            //
+            //  Now update the remaining name to parse.
+            //
+            (*RemainingName).FileName.Length = RemainingNameLength as u16;
+            (*RemainingName).FileName.MaximumLength = RemainingNameLength as u16;
+            (*RemainingName).VersionString.Length = 0;
+
+            (*RemainingName).FileName.Buffer = Add2Ptr(
+                (*FileName).Buffer as *mut core::ffi::c_void,
+                (RelatedNameLength + SeparatorLength) as usize,
+            ) as *mut u16;
+
+            //
+            //  Upcase the name if necessary.
+            //
+            if IgnoreCase != 0 && RemainingNameLength != 0 {
+                CdUpcaseName(
+                    IrpContext as *mut core::ffi::c_void,
+                    RemainingName,
+                    RemainingName,
+                );
+            }
+
+            //
+            //  Do a quick check to make sure there are no wildcards.
+            //
+            if FsRtlDoesNameContainWildCards(core::ptr::addr_of_mut!((*RemainingName).FileName)) != 0
+            {
+                return STATUS_OBJECT_NAME_INVALID;
+            }
+
+        //
+        //  For the open by file Id case we verify the name really contains a
+        //  64 bit value.
+        //
+        } else {
+            if (*FileName).Length as usize != size_of::<FILE_ID>() {
+                return STATUS_INVALID_PARAMETER;
+            }
+        }
+
+        SetFlag(
+            core::ptr::addr_of_mut!((*IrpContext).Flags),
+            IRP_CONTEXT_FLAG_FULL_NAME,
+        );
+
+    //
+    //  Retry path: the full name is already in the file object name.
+    //
+    } else {
+        //
+        //  Assume there is no relative name.
+        //
+        (*RemainingName).FileName = *FileName;
+        (*RemainingName).VersionString.Length = 0;
+
+        //
+        //  Nothing to do if the name length is zero.
+        //
+        if (*RemainingName).FileName.Length != 0 {
+            //
+            //  If there is a relative name then we need to walk past it.
+            //
+            if RelatedTypeOfOpen != UnopenedFileObject {
+                //
+                //  Nothing to walk past if the RelatedCcb is opened by FileId.
+                //
+                if FlagOn((*RelatedCcb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
+                    //
+                    //  Step over the related name.
+                    //
+                    (*RemainingName).FileName.Buffer = Add2Ptr(
+                        (*RemainingName).FileName.Buffer as *mut core::ffi::c_void,
+                        (*RelatedFileName).Length as usize,
+                    ) as *mut u16;
+
+                    (*RemainingName).FileName.Length -= (*RelatedFileName).Length;
+                }
+            }
+
+            //
+            //  If we are pointing at a separator character then step past that.
+            //
+            if (*RemainingName).FileName.Length != 0 {
+                if *(*RemainingName).FileName.Buffer == b'\\' as u16 {
+                    (*RemainingName).FileName.Buffer = Add2Ptr(
+                        (*RemainingName).FileName.Buffer as *mut core::ffi::c_void,
+                        size_of::<u16>(),
+                    ) as *mut u16;
+
+                    (*RemainingName).FileName.Length -= size_of::<u16>() as u16;
+                }
+            }
+        }
+
+        //
+        //  Upcase the name if necessary.
+        //
+        if IgnoreCase != 0 && (*RemainingName).FileName.Length != 0 {
+            CdUpcaseName(
+                IrpContext as *mut core::ffi::c_void,
+                RemainingName,
+                RemainingName,
+            );
+        }
+    }
+
+    STATUS_SUCCESS
 }
 
 
@@ -1735,7 +2935,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
 //
 //     ULONG BufferLength;
 //
-//     UNICODE_STRING NewFileName;
+//     _UNICODE_STRING NewFileName;
 //
 //     PAGED_CODE();
 //

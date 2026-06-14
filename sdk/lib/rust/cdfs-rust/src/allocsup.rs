@@ -5,14 +5,73 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_MCB_ENTRY, DIRENT, FCB, FCB_INDEX, IRP_CONTEXT, PIRP_CONTEXT, VCB};
+use crate::types::{CD_MCB_ENTRY, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_INDEX, FILE_ID, IRP_CONTEXT, PIRP_CONTEXT, VCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FlagOn};
-use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA, CdPagedPool, Fcb, IrpContext, Vcb};
+use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA, CdPagedPool, Fcb, IrpContext, Vcb, STATUS_DISK_CORRUPT_ERROR};
 
 // _CdFreePool((PVOID*)(x)) — real symbol provided by the cdfs glue/strucsup layer.
 extern "C" {
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
+}
+
+// Callees for CdLookupAllocation, provided by sibling cdfs modules.
+extern "C" {
+    fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
+    fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
+    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
+}
+extern "C" {
+    fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
+    fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
+    fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
+    fn CdInitializeDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
+}
+extern "C" {
+    fn CdInitializeDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
+    fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
+}
+extern "C" {
+    fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
+    fn CdLookupDirent(
+        IrpContext: *mut IRP_CONTEXT,
+        Fcb: *mut FCB,
+        DirentOffset: u32,
+        DirContext: *mut DIRENT_ENUM_CONTEXT,
+    );
+}
+extern "C" {
+    fn CdUpdateDirentFromRawDirent(
+        IrpContext: *mut IRP_CONTEXT,
+        Fcb: *mut FCB,
+        DirContext: *mut DIRENT_ENUM_CONTEXT,
+        Dirent: *mut DIRENT,
+    );
+}
+extern "C" {
+    fn CdLookupNextDirent(
+        IrpContext: *mut IRP_CONTEXT,
+        Fcb: *mut FCB,
+        CurrentDirContext: *mut DIRENT_ENUM_CONTEXT,
+        NextDirContext: *mut DIRENT_ENUM_CONTEXT,
+    ) -> i32;
+}
+extern "C" {
+    fn CdQueryFidDirentOffset(FileId: FILE_ID) -> u32;
 }
 
 // DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
@@ -268,6 +327,212 @@ pub unsafe extern "C" fn CdDiskOffsetFromMcbEntry(
         *ByteCount = MAXULONG;
     } else {
         *ByteCount = LocalByteCount as u32;
+    }
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn CdLookupAllocation(
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
+    FileOffset: i64,
+    DiskOffset: *mut i64,
+    ByteCount: *mut u32,
+) {
+    let mut FirstPass: bool = true;
+    let mut McbEntryOffset: u32;
+    let mut ParentFcb: *mut FCB = core::ptr::null_mut();
+    let mut CleanupParent: bool = false;
+
+    let mut UnlockFcb: bool = false;
+
+    let mut CurrentFileOffset: i64;
+    let mut CurrentMcbOffset: u32;
+    let mut CurrentMcbEntry: *mut CD_MCB_ENTRY;
+
+    let mut DirContext: DIRENT_ENUM_CONTEXT = core::mem::zeroed();
+    let mut Dirent: DIRENT = core::mem::zeroed();
+
+    PAGED_CODE();
+
+    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_FCB(Fcb);
+
+    //
+    //  For DASD IO we already have clamped the read to the volume limits.
+    //  We'll allow reading beyond those limits for extended DASD IO, so
+    //  no MCB lookup here.
+    //
+
+    if Fcb == (*(*Fcb).Vcb).VolumeDasdFcb {
+        *DiskOffset = FileOffset;
+        return;
+    }
+
+    //
+    //  Use a try finally to facilitate cleanup.
+    //
+
+    let _ = 'try_block: loop {
+        //
+        //  We use a loop to perform the lookup.  If we don't find the mapping in the
+        //  first pass then we look up all of the allocation and then look again.
+        //
+
+        loop {
+            //
+            //  Lookup the entry containing this file offset.
+            //
+
+            CdLockFcb(IrpContext, Fcb);
+            UnlockFcb = true;
+
+            McbEntryOffset = CdFindMcbEntry(IrpContext, Fcb, FileOffset);
+
+            //
+            //  If within the Mcb then we use the data out of this entry and are
+            //  done.
+            //
+
+            if McbEntryOffset < (*Fcb).Mcb.CurrentEntryCount {
+                CdDiskOffsetFromMcbEntry(
+                    IrpContext,
+                    (*Fcb).Mcb.McbArray.add(McbEntryOffset as usize),
+                    FileOffset,
+                    DiskOffset,
+                    ByteCount,
+                );
+
+                break 'try_block;
+
+            //
+            //  If this is not the first pass then the disk is corrupt.
+            //
+            } else if !FirstPass {
+                CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+            }
+
+            CdUnlockFcb(IrpContext, Fcb);
+            UnlockFcb = false;
+
+            //
+            //  Initialize the search dirent structures.
+            //
+
+            CdInitializeDirContext(IrpContext, &mut DirContext);
+            CdInitializeDirent(IrpContext, &mut Dirent);
+
+            //
+            //  Otherwise we need to walk the dirents for this file until we find
+            //  the one containing this entry.  The parent Fcb should always be
+            //  present.
+            //
+
+            ParentFcb = (*Fcb).ParentFcb;
+            CdAcquireFileShared(IrpContext, ParentFcb);
+            CleanupParent = true;
+
+            //
+            //  Do an unsafe test to see if we need to create a file object.
+            //
+
+            CdVerifyOrCreateDirStreamFile(IrpContext, ParentFcb);
+
+            //
+            //  Initialize the local variables to indicate the first dirent
+            //  and lookup the first dirent.
+            //
+
+            CurrentFileOffset = 0;
+            CurrentMcbOffset = 0;
+
+            CdLookupDirent(
+                IrpContext,
+                ParentFcb,
+                CdQueryFidDirentOffset((*Fcb).FileId),
+                &mut DirContext,
+            );
+
+            //
+            //  If we are adding allocation to the Mcb then add all of it.
+            //
+
+            loop {
+                //
+                //  Update the dirent from the on-disk dirent.
+                //
+
+                CdUpdateDirentFromRawDirent(IrpContext, ParentFcb, &mut DirContext, &mut Dirent);
+
+                //
+                //  Add this dirent to the Mcb if not already present.
+                //
+
+                CdLockFcb(IrpContext, Fcb);
+                UnlockFcb = true;
+
+                if CurrentMcbOffset >= (*Fcb).Mcb.CurrentEntryCount {
+                    CdAddAllocationFromDirent(
+                        IrpContext as *mut IrpContext,
+                        Fcb as *mut Fcb,
+                        CurrentMcbOffset,
+                        CurrentFileOffset,
+                        &mut Dirent,
+                    );
+                }
+
+                CdUnlockFcb(IrpContext, Fcb);
+                UnlockFcb = false;
+
+                //
+                //  If this is the last dirent for the file then exit.
+                //
+
+                if FlagOn(Dirent.DirentFlags as u32, CD_ATTRIBUTE_MULTI) == 0 {
+                    break;
+                }
+
+                //
+                //  If we couldn't find another entry then the directory is corrupt because
+                //  the last dirent for a file doesn't exist.
+                //
+
+                if CdLookupNextDirent(IrpContext, ParentFcb, &mut DirContext, &mut DirContext) == 0 {
+                    CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+                }
+
+                //
+                //  Update our loop variables.
+                //
+
+                CurrentMcbEntry = (*Fcb).Mcb.McbArray.add(CurrentMcbOffset as usize);
+                CurrentFileOffset += (*CurrentMcbEntry).ByteCount as i64;
+                CurrentMcbOffset += 1;
+            }
+
+            //
+            //  All of the allocation is loaded.  Go back and look up the mapping again.
+            //  It better be there this time.
+            //
+
+            FirstPass = false;
+        }
+    };
+
+    //  _SEH2_FINALLY
+    if CleanupParent {
+        //
+        //  Release the parent and cleanup the dirent structures.
+        //
+
+        CdReleaseFile(IrpContext, ParentFcb);
+
+        CdCleanupDirContext(IrpContext, &mut DirContext);
+        CdCleanupDirent(IrpContext, &mut Dirent);
+    }
+
+    if UnlockFcb {
+        CdUnlockFcb(IrpContext, Fcb);
     }
 }
 

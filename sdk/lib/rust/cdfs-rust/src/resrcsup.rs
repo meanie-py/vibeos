@@ -15,8 +15,14 @@ extern "C" {
 }
 extern "system" {
     fn IoGetTopLevelIrp() -> *mut IRP;
+}
+extern "system" {
     fn IoSetTopLevelIrp(Irp: *mut IRP);
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+extern "C" {
     fn NT_ASSERT(condition: i32);
 }
 
@@ -42,7 +48,7 @@ const ACQUIRE_SHARED: u32 = 1;
 const ACQUIRE_SHARED_STARVE_EXCLUSIVE: u32 = 2;
 const IRP_CONTEXT_FLAG_WAIT_RS: u32 = 0x00000004;
 #[no_mangle]
-pub unsafe extern "system" fn CdAcquireResource(
+pub unsafe extern "C" fn CdAcquireResource(
     IrpContext: *mut IRP_CONTEXT,
     Resource: ntkrnl_sys::ddk::PERESOURCE,
     IgnoreWait: u8,

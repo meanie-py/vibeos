@@ -12,32 +12,68 @@ use crate::types::{IRP_CONTEXT, THREAD_CONTEXT, VOLUME_DEVICE_OBJECT};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 use crate::glue::{CDFS_BUG_CHECK_FSPDISP};
 
-extern "system" {
+extern "C" {
     fn CdCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonQueryInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonSetInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonQueryVolInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonDirControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonFsControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonDevControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonLockControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonCleanup(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCommonPnp(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
+}
+extern "C" {
     fn NT_ASSERT(condition: BOOLEAN);
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Mask: u32);
+}
+extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: BOOLEAN);
+}
+extern "C" {
     fn __analysis_assert(condition: BOOLEAN);
+}
+extern "system" {
     static IRP_CONTEXT_FSP_FLAGS: u32;
+}
+extern "system" {
     static IRP_CONTEXT_FLAG_MORE_PROCESSING: u32;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_FSPDISP;
 #[no_mangle]
-pub unsafe extern "C" fn CdFspDispatch(
+pub unsafe extern "system" fn CdFspDispatch(
     Context: *mut core::ffi::c_void,
 ) {
     // Forward-declare unknown externals

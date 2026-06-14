@@ -5,6 +5,7 @@
 pub mod types;
 pub mod glue;       // harvested #define consts + grind-noise aliases
 pub mod ddk_shims;  // FsRtl*/macro FORCEINLINE shims (shared w/ fastfat)
+pub mod cdmacros;   // cdprocs.h/cdstruc.h/fsrtlfuncs.h MACRO shims (grind emitted as extern calls)
 
 pub mod allocsup;
 pub mod cachesup;

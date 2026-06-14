@@ -16,14 +16,26 @@ use crate::ddk_shims::{FsRtlIsFatDbcsLegal};
 
 extern "C" {
     fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: u32);
+}
+extern "C" {
     fn FlagOn(Value: u32, Flags: u32) -> i32;
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn NT_ASSERT(condition: i32);
 }
-extern "system" {
+extern "C" {
     fn FsRtlIsAnsiCharacterLegalHpfs(c: u16, strict: i32) -> i32;
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+extern "C" {
     fn FsRtlIsLeadDbcsCharacter(Char: u8) -> u8;
+}
+extern "C" {
     fn RtlEqualMemory(Buffer1: *const c_void, Buffer2: *const c_void, Length: usize) -> BOOLEAN;
 }
 
@@ -33,9 +45,9 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_NAMESUP;
 const BYTE_COUNT_8_DOT_3: usize = 24;
 const SHORT_NAME_SHIFT: u32 = 5;
 
-const CCB_FLAG_ENUM_NAME_EXP_HAS_WILD: ULONG = 0x0001;
-const CCB_FLAG_ENUM_VERSION_MATCH_ALL: ULONG = 0x0002;
-const CCB_FLAG_ENUM_VERSION_EXP_HAS_WILD: ULONG = 0x0004;
+const CCB_FLAG_ENUM_NAME_EXP_HAS_WILD: ULONG = 0x00010000;
+const CCB_FLAG_ENUM_VERSION_MATCH_ALL: ULONG = 0x00080000;
+const CCB_FLAG_ENUM_VERSION_EXP_HAS_WILD: ULONG = 0x00020000;
 #[no_mangle]
 pub unsafe extern "C" fn CdConvertNameToCdName(
     IrpContext: *mut IRP_CONTEXT,

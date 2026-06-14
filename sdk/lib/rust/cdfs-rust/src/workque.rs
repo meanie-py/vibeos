@@ -17,17 +17,37 @@ const IoReadAccess: u32 = 0;
 const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn ASSERT_IRP(Irp: *mut IRP);
+}
+extern "C" {
     fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, TeardownFcb: *mut core::ffi::c_void, RemovedFcb: *mut u8);
+}
+extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut core::ffi::c_void);
+}
+extern "C" {
     fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: u8);
+}
+extern "C" {
     fn CdLockUserBuffer(IrpContext: *mut IRP_CONTEXT, Length: u32, DesiredAccess: u32);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 
@@ -112,7 +132,7 @@ pub unsafe extern "C" fn CdAddToWorkque(IrpContext: PIRP_CONTEXT, Irp: PIRP) {
 const IRP_MJ_DIRECTORY_CONTROL: u8 = 12;
 const IRP_MN_MDL: u32 = 2;
 const IRP_MN_QUERY_DIRECTORY: u32 = 1;
-const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000001;
+const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x02;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 #[no_mangle]

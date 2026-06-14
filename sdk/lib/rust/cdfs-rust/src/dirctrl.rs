@@ -17,38 +17,100 @@ extern "C" {
     fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> u32;
 }
 
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN);
+}
+extern "C" {
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdFreePool(pBuffer: *mut *mut u16);
+}
+extern "C" {
     fn CdConvertNameToCdName(IrpContext: PIRP_CONTEXT, WildCardName: *mut CD_NAME);
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
+}
+extern "C" {
     fn CdLookupInitialFileDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, FileContext: PFILE_ENUM_CONTEXT, DirentOffset: ULONG);
+}
+extern "C" {
     fn CdLookupNextInitialFileDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, FileContext: PFILE_ENUM_CONTEXT) -> BOOLEAN;
+}
+extern "C" {
     fn CdCleanupFileContext(IrpContext: PIRP_CONTEXT, FileContext: PFILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdInitializeFileContext(IrpContext: PIRP_CONTEXT, FileContext: PFILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdUpdateDirentName(IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: BOOLEAN);
+}
+extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn NT_ASSERT(expr: i32);
+}
+extern "system" {
     fn FsRtlAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: ULONG, Tag: ULONG) -> *mut core::ffi::c_void;
+}
+extern "system" {
     fn FsRtlDoesNameContainWildCards(Name: *mut _UNICODE_STRING) -> BOOLEAN;
+}
+extern "C" {
     fn CdGenerate8dot3Name( IrpContext: *mut IRP_CONTEXT, pFileName: *const _UNICODE_STRING, DirentOffset: u32, Buffer: *mut u16, Length: *mut u16, );
+}
+extern "C" {
     fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, FileName: _UNICODE_STRING) -> i32;
+}
+extern "C" {
     fn CdIsNameInExpression( IrpContext: *mut IRP_CONTEXT, CurrentName: *mut CD_NAME, SearchExpression: *mut CD_NAME, WildcardFlags: u32, CheckVersion: BOOLEAN, ) -> BOOLEAN;
+}
+extern "C" {
     fn CdLookupLastFileDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT, );
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
+}
+extern "C" {
     fn RtlEqualMemory( Buffer1: *const core::ffi::c_void, Buffer2: *const core::ffi::c_void, Length: usize, ) -> i32;
+}
+extern "C" {
     fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut u8) -> NTSTATUS;
+}
+extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: *mut i8, NtTime: *mut LARGE_INTEGER);
+}
+extern "C" {
     fn CdSetFidFromParentAndDirent(FileId: *mut i64, Fcb: *mut FCB, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn LlSectorAlign(FileSize: i64) -> i64;
+}
+extern "C" {
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 
@@ -61,7 +123,7 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_DIRCTRL;
 
 // Forward declarations for unknown externals used by this function.
 
-const UserDirectoryOpen: u32 = 0x1; // placeholder, actual constant unknown
+const UserDirectoryOpen: u32 = 3; // TYPE_OF_OPEN (cdprocs.h): Unopened=0,Stream=1,Volume=2,Directory=3,File=4
 const IRP_MN_QUERY_DIRECTORY: u8 = 0x01;
 const IRP_MN_NOTIFY_CHANGE_DIRECTORY: u8 = 0x02;
 #[no_mangle]
@@ -474,7 +536,7 @@ pub unsafe extern "C" fn CdNotifyChangeDirectory(
     Ccb: PCCB,
 ) -> NTSTATUS {
 
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x04;
     const SL_WATCH_TREE: u32 = 0x00000001;
 
     PAGED_CODE();

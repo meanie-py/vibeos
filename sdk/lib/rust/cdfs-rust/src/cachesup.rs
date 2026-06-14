@@ -31,6 +31,25 @@ unsafe fn fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
     core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2).cast::<FCB_INDEX>()
 }
 
+// cdprocs.h static INLINE CdVerifyOrCreateDirStreamFile — provided out-of-line for
+// the Rust cohab (the C header inline is `static`, so no exported symbol exists, and
+// the translated .c that would inline it is commented out). cdecl (no NTAPI).
+//   if (NULL == Fcb->FileObject)
+//       CdCreateInternalStream(IrpContext, Fcb->Vcb, Fcb,
+//                              &Fcb->FileNamePrefix.ExactCaseName.FileName);
+#[no_mangle]
+pub unsafe extern "C" fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) {
+    if (*fcb_index(Fcb)).FileObject.is_null() {
+        CdCreateInternalStream(
+            IrpContext,
+            (*Fcb).Vcb,
+            Fcb,
+            core::ptr::addr_of_mut!((*Fcb).FileNamePrefix.ExactCaseName.FileName)
+                as *mut _UNICODE_STRING,
+        );
+    }
+}
+
 /// Inlined from drivers/filesystems/cdfs/cd.h: CdConvertCdTimeToNtTime(IC,CD,NT) fn-macro.
 #[inline]
 unsafe fn CdConvertCdTimeToNtTime(
@@ -58,49 +77,119 @@ unsafe fn CdConvertCdTimeToNtTime(
     }
 }
 
-extern "system" {
+extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn ASSERT_FCB(Fcb: *mut FCB);
+}
+extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "system" {
     fn IoCreateStreamFileObjectLite( FileObject: *mut core::ffi::c_void, DeviceObject: *mut core::ffi::c_void, ) -> *mut FILE_OBJECT;
+}
+extern "C" {
     fn CdSetFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Type: u32, Fcb: *mut FCB, Ccb: *mut core::ffi::c_void, );
+}
+extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdIncrementReferenceCounts( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Count: u32, Flags: u32, );
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "system" {
     fn CcInitializeCacheMap( FileObject: *mut FILE_OBJECT, FileSizes: *mut core::ffi::c_void, PinAccess: BOOLEAN, Callbacks: *mut core::ffi::c_void, LazyWriteContext: *mut core::ffi::c_void, );
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
+}
+extern "C" {
     fn CdInitializeDirContext( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, );
+}
+extern "C" {
     fn CdInitializeDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StreamOffset: i64, DirContext: *mut DIRENT_ENUM_CONTEXT, );
+}
+extern "C" {
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
+}
+extern "C" {
     fn CdUpdateDirentName( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: BOOLEAN, );
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
+}
+extern "C" {
     fn BlockAlign(Vcb: *mut VCB, Length: u32) -> u32;
+}
+extern "system" {
     fn CcSetFileSizes( FileObject: *mut FILE_OBJECT, FileSizes: *mut core::ffi::c_void, );
+}
+extern "C" {
     fn CdTruncateAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Flags: u32, );
+}
+extern "C" {
     fn CdAddInitialAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, Length: u32, );
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "system" {
     fn CcPurgeCacheSection( SegmentObject: *mut core::ffi::c_void, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN, ) -> BOOLEAN;
+}
+extern "C" {
     fn CdCleanupDirContext( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, );
+}
+extern "C" {
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn CdDecrementReferenceCounts( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Count: u32, Flags: u32, );
+}
+extern "system" {
     fn ObDereferenceObject(Object: *mut core::ffi::c_void);
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
+}
+extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
+}
+extern "C" {
     fn CdAcquireAllFiles(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdGetNextFcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, RestartKey: *mut *mut core::ffi::c_void) -> *mut FCB;
+}
+extern "C" {
     fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RemovedFcb: *mut BOOLEAN);
+}
+extern "C" {
     fn CdReleaseAllFiles(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn SafeNodeType(Fcb: *mut FCB) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = 0x0D; // CDFS_BUG_CHECK_CACHESUP
 
-const CDFS_NTC_FCB_DATA: u32 = 0; // CDFS_NTC_FCB_DATA (unknown value)
+const CDFS_NTC_FCB_DATA: u32 = 0x0305; // nodetype.h
 #[no_mangle]
 pub unsafe extern "C" fn CdCreateInternalStream(
     IrpContext: *mut IRP_CONTEXT,

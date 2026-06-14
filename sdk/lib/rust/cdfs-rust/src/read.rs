@@ -31,20 +31,46 @@ extern "C" {
 extern "C" {
     static mut CdData: CD_DATA;
 }
-extern "system" {
+extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdAcquireFileSharedStarveExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
+}
+extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
+}
+extern "C" {
     fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, Buffer: *mut *mut c_void);
+}
+extern "C" {
     fn CdNonCachedRead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
+}
+extern "C" {
     fn CdNonCachedXARead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
+}
+extern "C" {
     fn CdNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+}
+extern "C" {
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn ExGetCurrentResourceThread() -> *mut c_void;
+}
+extern "system" {
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
 }
 

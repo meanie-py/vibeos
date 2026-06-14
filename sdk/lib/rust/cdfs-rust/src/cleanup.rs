@@ -17,30 +17,76 @@ extern "C" {
     fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
 }
 
-extern "system" {
+extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn ASSERT_IRP(Irp: PIRP);
+}
+extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdAcquireFcbExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Flag: BOOLEAN);
+}
+extern "C" {
     fn CdAcquireFileExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdBugCheck(Arg1: u32, Arg2: u32, Arg3: u32);
+}
+extern "C" {
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: BOOLEAN);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdDecrementCleanupCounts(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
+}
+extern "C" {
     fn CdHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: PDEVICE_OBJECT);
+}
+extern "C" {
     fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
+}
+extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdLockVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn CdMarkDevForVerifyIfVcbMounted(Vcb: PVCB);
+}
+extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
+}
+extern "C" {
     fn NT_ASSERT(condition: BOOLEAN);
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn CdReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 

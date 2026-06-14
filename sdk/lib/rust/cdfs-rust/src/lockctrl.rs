@@ -19,19 +19,39 @@ use crate::glue::CDFS_BUG_CHECK_LOCKCTRL;
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
     fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
+}
+extern "C" {
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> TYPE_OF_OPEN;
 }
 
-extern "system" {
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
+}
+extern "C" {
     fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+}
+extern "C" {
     fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN) -> BOOLEAN;
+}
+extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
+}
+extern "system" {
     fn CdOplockComplete(Context: PIRP_CONTEXT, Irp: PIRP);
+}
+extern "C" {
     fn FsRtlFastLock(FileLock: PFILE_LOCK, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: ULONG, FailImmediately: BOOLEAN, ExclusiveLock: BOOLEAN, IoStatus: PIO_STATUS_BLOCK, DeviceObject: PDEVICE_OBJECT, Wait: BOOLEAN) -> BOOLEAN;
+}
+extern "C" {
     fn FsRtlAreThereCurrentFileLocks(FileLock: PFILE_LOCK) -> BOOLEAN;
 }
 

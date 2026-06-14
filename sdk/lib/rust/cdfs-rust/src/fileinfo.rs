@@ -40,42 +40,108 @@ unsafe fn cd_fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
     fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
+}
+extern "C" {
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN
 }
 
-extern "system" {
+extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+}
+extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Bit: u32) -> u8;
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdFidIsDirectory(FileId: FILE_ID) -> BOOLEAN;
+}
+extern "C" {
     fn CdInitializeCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
+}
+extern "C" {
     fn CdInitializeFileContext(IrpContext: *mut IRP_CONTEXT, Context: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdLookupPathEntry( IrpContext: *mut IRP_CONTEXT, Offset: ULONG, Ordinal: ULONG, SomeFlag: BOOLEAN, Entry: *mut COMPOUND_PATH_ENTRY, );
+}
+extern "C" {
     fn CdUpdatePathEntryName(IrpContext: *mut IRP_CONTEXT, PathEntry: *mut PATH_ENTRY, Flag: BOOLEAN);
+}
+extern "C" {
     fn CdFindDirectory( IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, Name: *mut CD_NAME, Flag: BOOLEAN, FileContext: *mut FILE_ENUM_CONTEXT, ) -> BOOLEAN;
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+}
+extern "C" {
     fn CdInitializeDirContext(IrpContext: *mut IRP_CONTEXT, Context: *mut DIRENT_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdInitializeDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Offset: ULONG, Context: *mut DIRENT_ENUM_CONTEXT, );
+}
+extern "C" {
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Context: *mut DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
+}
+extern "C" {
     fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Flag: BOOLEAN);
+}
+extern "C" {
     fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> BOOLEAN;
+}
+extern "C" {
     fn CdGenerate8dot3Name( IrpContext: *mut IRP_CONTEXT, NameToUse: *mut _UNICODE_STRING, DirentOffset: ULONG, ShortNameBuffer: *mut u16, ShortNameLength: *mut u16, );
+}
+extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, Context: *mut DIRENT_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn CdCleanupCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
+}
+extern "C" {
     fn CdCleanupFileContext(IrpContext: *mut IRP_CONTEXT, Context: *mut FILE_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdQueryFidPathTableOffset(FileId: FILE_ID) -> ULONG;
+}
+extern "C" {
     fn CdQueryFidDirentOffset(FileId: FILE_ID) -> ULONG;
+}
+extern "C" {
     fn NT_ASSERT(cond: i32);
 }
 

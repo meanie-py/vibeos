@@ -1,6 +1,6 @@
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::RtlZeroMemory;
-use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, FSRTL_COMPARISON_RESULT};
+use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, RtlSplay, FSRTL_COMPARISON_RESULT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CD_NAME, FCB, FCB_INDEX, IRP_CONTEXT, NAME_LINK, PREFIX_ENTRY, VCB, IRP_CONTEXT_FLAG_WAIT, CdDissectName};
 use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _UNICODE_STRING};
@@ -10,20 +10,33 @@ use crate::glue::{CDFS_BUG_CHECK_PREFXSUP, CDFS_NTC_FCB_INDEX, STATUS_CANT_WAIT,
 use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertAsRightChild,
     FlagOn, ClearFlag, Add2Ptr, CdRaiseStatus};
 
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdFreePool(Pool: *mut *mut u16);
+}
+extern "C" {
     fn SafeNodeType(fcb: *mut FCB) -> u32;
+}
+extern "C" {
     fn CdLockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
+}
+extern "C" {
     fn CdUnlockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
+}
+extern "C" {
     fn CdReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
+}
+extern "C" {
     fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL
     // SHARED NEED: cdfs-local static, not yet translated.
-    //   PNAME_LINK CdFindNameLink(PIRP_CONTEXT, PRTL_SPLAY_LINKS *RootNode, PUNICODE_STRING Name);
-    fn CdFindNameLink(irp_context: *mut IRP_CONTEXT, root_node: *mut *mut RTL_SPLAY_LINKS, name: *const _UNICODE_STRING) -> *mut NAME_LINK;
-    // SHARED NEED: cdfs-local static, not yet translated.
     //   FSRTL_COMPARISON_RESULT CdFullCompareNames(PIRP_CONTEXT, PUNICODE_STRING, PUNICODE_STRING);
+}
+extern "C" {
     fn CdFullCompareNames(IrpContext: *mut IRP_CONTEXT, Name1: *const _UNICODE_STRING, Name2: *const _UNICODE_STRING) -> FSRTL_COMPARISON_RESULT;
 }
 
@@ -49,8 +62,8 @@ unsafe fn FcbIndex(Fcb: *mut FCB) -> *mut FCB_INDEX {
 }
 
 // cdprocs.h
-const TAG_PREFIX_ENTRY: u32 = 0x43647065; // 'epdC'
-const TAG_PREFIX_NAME: u32 = 0x4364706e;  // 'npdC'
+const TAG_PREFIX_ENTRY: u32 = 0x65706443; // 'epdC'
+const TAG_PREFIX_NAME: u32 = 0x6E706443;  // 'npdC'
 // cdstruc.h
 const PREFIX_FLAG_EXACT_CASE_IN_TREE: u32 = 0x00000001;
 const PREFIX_FLAG_IGNORE_CASE_IN_TREE: u32 = 0x00000002;
@@ -314,6 +327,51 @@ pub unsafe extern "C" fn CdFindPrefix(
 
         *current_fcb = (*prefix_entry).Fcb;
     }
+}
+//
+//  Local support routine
+//
+#[no_mangle]
+pub unsafe extern "C" fn CdFindNameLink(
+    IrpContext: *mut IRP_CONTEXT,
+    RootNode: *mut PRTL_SPLAY_LINKS,
+    Name: *const _UNICODE_STRING,
+) -> *mut NAME_LINK {
+    let mut Comparison: FSRTL_COMPARISON_RESULT;
+    let mut Node: *mut NAME_LINK;
+
+    PAGED_CODE();
+
+    let mut Links: PRTL_SPLAY_LINKS = *RootNode;
+
+    while !Links.is_null() {
+        // CONTAINING_RECORD( Links, NAME_LINK, Links )
+        Node = ((Links as *const u8).sub(core::mem::offset_of!(NAME_LINK, Links)))
+            as *mut NAME_LINK;
+
+        // Compare the prefix in the tree with the full name.
+        Comparison = CdFullCompareNames(
+            IrpContext,
+            core::ptr::addr_of!((*Node).FileName) as *const _UNICODE_STRING,
+            Name,
+        );
+
+        if Comparison == GreaterThan {
+            // The prefix is greater than the full name so we go down the left child.
+            Links = RtlLeftChild(Links);
+        } else if Comparison == LessThan {
+            // The prefix is less than the full name so we go down the right child.
+            Links = RtlRightChild(Links);
+        } else {
+            // We found it.  Splay the tree and save the new root.
+            *RootNode = RtlSplay(Links);
+
+            return Node;
+        }
+    }
+
+    // We didn't find the Link.
+    core::ptr::null_mut()
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdInsertNameLink(

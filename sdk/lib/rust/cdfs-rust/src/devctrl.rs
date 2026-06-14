@@ -17,9 +17,13 @@ extern "C" {
     fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut core::ffi::c_void, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
 }
 
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
 }
 
@@ -90,7 +94,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CdDevCtrlCompletionRoutine(
+pub unsafe extern "C" fn CdDevCtrlCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,

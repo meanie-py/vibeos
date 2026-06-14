@@ -22,47 +22,125 @@ const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 <<
 
 extern "C" {
     fn ASSERT_IRP_CONTEXT(arg: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn ASSERT_VCB(arg: *mut VCB);
+}
+extern "C" {
     fn ASSERT_EXCLUSIVE_CDDATA();
+}
+extern "C" {
     fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: i32);
+}
+extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
+}
+extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdDeleteVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn _Analysis_assume_lock_not_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMarkRealDevForVerify(Device: *mut DEVICE_OBJECT);
+}
+extern "C" {
     fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
+}
+extern "C" {
     fn NT_ASSERT(condition: i32);
+}
+extern "C" {
     fn CdFreePool(Ptr: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flag: i32);
+}
+extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
+}
+extern "C" {
     fn CdRealDevNeedsVerify(DeviceObject: PDEVICE_OBJECT) -> u8;
+}
+extern "C" {
     fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
+}
+extern "C" {
     fn CdIsRawDevice(IrpContext: *mut IRP_CONTEXT, Status: i32) -> u8;
+}
+extern "C" {
     fn _SEH2_TRY();
+}
+extern "C" {
     fn _SEH2_EXCEPT(filter: i32);
+}
+extern "C" {
     fn _SEH2_END();
+}
+extern "C" {
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn _SEH2_GetExceptionCode() -> i32;
+}
+extern "C" {
     fn CdExceptionFilter( _: PIRP_CONTEXT, _: *mut core::ffi::c_void, ) -> i32;
+}
+extern "C" {
     fn CdProcessException( IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32, ) -> NTSTATUS;
+}
+extern "C" {
     fn CdOperationIsDasdOpen(IrpContext: PIRP_CONTEXT) -> i32;
+}
+extern "C" {
     fn CdAcquireVcbShared( IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: i32, );
+}
+extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdCompleteRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS, );
+}
+extern "C" {
     fn CdFsdPostRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
+}
+extern "C" {
     fn CdNormalizeAndRaiseStatus( IrpContext: PIRP_CONTEXT, Status: NTSTATUS, );
+}
+extern "C" {
     fn ASSERT_IRP(_: PIRP);
+}
+extern "system" {
     fn IoVerifyVolume( DeviceToVerify: PDEVICE_OBJECT, AllowRawMount: i32, ) -> NTSTATUS;
+}
+extern "system" {
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
+}
+extern "system" {
     fn IoSetHardErrorOrVerifyDevice( Irp: PIRP, DeviceToVerify: PDEVICE_OBJECT, );
+}
+extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> *mut IO_STACK_LOCATION;
 }
 

@@ -3,40 +3,88 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{IRP_CONTEXT};
+use crate::types::{IRP_CONTEXT, VOLUME_DEVICE_OBJECT};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::glue::{CDFS_BUG_CHECK_PNP, Vcb};
+use crate::glue::{CDFS_BUG_CHECK_PNP, CDFS_NTC_VCB, Vcb};
+// Canonical VCB_CONDITION discriminants (cdstruc.h: VcbInvalid=3, VcbDismountInProgress=4).
+use crate::types::{_VCB_CONDITION_VcbDismountInProgress as VcbDismountInProgress, _VCB_CONDITION_VcbInvalid as VcbInvalid};
 
-extern "system" {
+// cdstruc.h: #define IRP_CONTEXT_FLAG_WAIT (0x00000004)
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+// ntstatus.h: STATUS_DEVICE_BUSY ((NTSTATUS)0x80000011) — not in ntkrnl_sys constants.
+const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
+
+extern "C" {
     fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Exclusive: u8) -> i32;
+}
+extern "C" {
     fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Unused: *mut core::ffi::c_void) -> i32;
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
+}
+extern "C" {
+    fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
+    fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb);
+}
+extern "C" {
+    fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb);
+}
+extern "C" {
+    fn CdLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, FileObject: *mut core::ffi::c_void) -> i32;
+}
+extern "C" {
+    fn CdUpdateVcbCondition(Vcb: *mut Vcb, Condition: u32);
+}
+extern "C" {
+    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Force: i32) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_PNP;
 
-unsafe fn CdPnpCancelRemove(
+#[no_mangle]
+pub unsafe extern "C" fn CdPnpCancelRemove(
     IrpContext: *mut IRP_CONTEXT,
     Irp: PIRP,
     Vcb: *mut Vcb,
 ) -> i32 {
-    let mut Status: i32;
+    let Status: i32;
 
     // PAGED_CODE();
     // ASSERT_EXCLUSIVE_CDDATA;
 
+    //
+    //  CANCEL - a previous QUERY has been rescinded.  Acquire the Vcb
+    //  exclusive and drop the global resource.
+    //
+
     CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
     CdReleaseCdData(IrpContext);
+
+    //
+    //  Unlock the volume.  This is benign if we never had seen a QUERY.
+    //
 
     let _ = CdUnlockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
 
     CdReleaseVcb(IrpContext, Vcb);
+
+    //
+    //  Send the request.  The underlying driver will complete the IRP.
+    //  Ellide ourselves out of the IRP stack.
+    //
 
     IoSkipCurrentIrpStackLocation(Irp);
 
@@ -48,7 +96,7 @@ unsafe fn CdPnpCancelRemove(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CdPnpCompletionRoutine(
+pub unsafe extern "C" fn CdPnpCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
@@ -67,6 +115,505 @@ pub unsafe extern "system" fn CdPnpCompletionRoutine(
 
     return 0xC0000016u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn CdCommonPnp(
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: PIRP,
+) -> i32 {
+    let mut Status: i32 = STATUS_SUCCESS;
+    let mut PassThrough: u8 = 0; // FALSE
+
+    let IrpSp: PIO_STACK_LOCATION;
+
+    let OurDeviceObject: *mut VOLUME_DEVICE_OBJECT;
+    let Vcb: *mut Vcb;
+
+    // PAGED_CODE();
+
+    // Global lock object is acquired based on internal book-keeping
+    // _Analysis_suppress_lock_checking_(CdData.DataResource);
+
+    //
+    //  Get the current Irp stack location.
+    //
+
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    //
+    //  Find our Vcb.  This is tricky since we have no file object in the Irp.
+    //
+
+    OurDeviceObject = (*IrpSp).DeviceObject as *mut VOLUME_DEVICE_OBJECT;
+
+    //
+    //  IO holds a handle reference on our VDO and holds the device lock, which
+    //  syncs us against mounts/verifies.  However we hold no reference on the
+    //  volume, which may already have been torn down (and the Vpb freed).
+    //
+
+    CdAcquireCdData(IrpContext);
+
+    //
+    //  Make sure this device object really is big enough to be a volume device
+    //  object.  If it isn't, get out before we reference past the end.
+    //
+
+    if ((*OurDeviceObject).DeviceObject.Size as usize) != core::mem::size_of::<VOLUME_DEVICE_OBJECT>()
+        || (*(&mut (*OurDeviceObject).Vcb as *mut Vcb)).NodeTypeCode as u32 != CDFS_NTC_VCB
+    {
+        //
+        //  We were called with something we don't understand.
+        //
+
+        Status = STATUS_INVALID_PARAMETER;
+        CdReleaseCdData(IrpContext);
+        CdCompleteRequest(IrpContext, Irp, Status);
+        return Status;
+    }
+
+    //
+    //  Force all PnP operations to be synchronous.
+    //
+
+    (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
+
+    Vcb = &mut (*OurDeviceObject).Vcb as *mut Vcb;
+
+    //
+    //  Check that the Vcb hasn't already been deleted.  If so, just pass the
+    //  request through to the driver below.
+    //
+
+    if (*Vcb).Vpb.is_null() {
+        PassThrough = 1; // TRUE
+    } else {
+        //
+        //  Case on the minor code.
+        //
+
+        match (*IrpSp).MinorFunction as u32 {
+            IRP_MN_QUERY_REMOVE_DEVICE => {
+                Status = CdPnpQueryRemove(IrpContext, Irp, Vcb);
+            }
+
+            IRP_MN_SURPRISE_REMOVAL => {
+                Status = CdPnpSurpriseRemove(IrpContext, Irp, Vcb);
+            }
+
+            IRP_MN_REMOVE_DEVICE => {
+                Status = CdPnpRemove(IrpContext, Irp, Vcb);
+            }
+
+            IRP_MN_CANCEL_REMOVE_DEVICE => {
+                Status = CdPnpCancelRemove(IrpContext, Irp, Vcb);
+            }
+
+            _ => {
+                PassThrough = 1; // TRUE
+            }
+        }
+    }
+
+    if PassThrough != 0 {
+        CdReleaseCdData(IrpContext);
+
+        //
+        //  Just pass the IRP on.  As we do not need to be in the way on
+        //  return, ellide ourselves out of the stack.
+        //
+
+        IoSkipCurrentIrpStackLocation(Irp);
+
+        Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+
+        //
+        //  Cleanup our Irp Context.  The driver has completed the Irp.
+        //
+
+        CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+    }
+
+    return Status;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdPnpQueryRemove(
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: PIRP,
+    Vcb: *mut Vcb,
+) -> i32 {
+    let mut Status: i32;
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut VcbPresent: i32 = 1; // TRUE
+
+    // PAGED_CODE();
+    // ASSERT_EXCLUSIVE_CDDATA;
+
+    //
+    //  Having said yes to a QUERY, any communication with the underlying
+    //  storage stack is undefined until the bounding CANCEL or REMOVE.
+    //
+    //  Acquire the global resource so that we can try to vaporize the volume,
+    //  and the vcb resource itself.
+    //
+
+    CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
+
+    //
+    //  Drop a reference on the Vcb to keep it around after we drop the locks.
+    //
+
+    CdLockVcb(IrpContext, Vcb);
+    (*Vcb).VcbReference += 1;
+    CdUnlockVcb(IrpContext, Vcb);
+
+    CdReleaseCdData(IrpContext);
+
+    Status = CdLockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
+
+    //
+    //  Reacquire the global lock, which means dropping the Vcb resource.
+    //
+
+    CdReleaseVcb(IrpContext, Vcb);
+
+    CdAcquireCdData(IrpContext);
+    CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
+
+    //
+    //  Remove our extra reference.
+    //
+
+    CdLockVcb(IrpContext, Vcb);
+    (*Vcb).VcbReference -= 1;
+    CdUnlockVcb(IrpContext, Vcb);
+
+    if Status >= 0 {
+        // NT_SUCCESS( Status )
+
+        //
+        //  We need to pass this down before starting the dismount, which
+        //  could disconnect us immediately from the stack.
+        //
+        //  Get the next stack location, and copy over the stack location.
+        //
+
+        IoCopyCurrentIrpStackLocationToNext(Irp);
+
+        //
+        //  Set up the completion routine.
+        //
+
+        KeInitializeEvent(
+            &mut Event as *mut KEVENT,
+            _EVENT_TYPE_NotificationEvent,
+            0u8, // FALSE
+        );
+        IoSetCompletionRoutine(
+            Irp,
+            core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdPnpCompletionRoutine as usize),
+            &mut Event as *mut KEVENT as *mut c_void,
+            1u8,
+            1u8,
+            1u8,
+        );
+
+        //
+        //  Send the request and wait.
+        //
+
+        Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+
+        if Status == STATUS_PENDING {
+            KeWaitForSingleObject(
+                &mut Event as *mut KEVENT as *mut c_void,
+                _KWAIT_REASON_Executive,
+                0i8, // KernelMode
+                0u8, // FALSE
+                core::ptr::null_mut(),
+            );
+
+            Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        }
+
+        //
+        //  Now if no one below us failed already, initiate the dismount on
+        //  this volume, make it go away.
+        //
+
+        if Status >= 0 {
+            // NT_SUCCESS( Status )
+
+            VcbPresent = CdCheckForDismount(IrpContext, Vcb, 1i32); // TRUE
+
+            // NT_ASSERT( !VcbPresent || Vcb->VcbCondition == VcbDismountInProgress );
+        }
+
+        //
+        //  See the C source: it's possible the volume still remains because
+        //  outstanding references (e.g. WMI tracing) keep our internal streams
+        //  alive.  In that case the query must fail.
+        //
+
+        if Status >= 0 && VcbPresent != 0 && (*Vcb).VcbReference != 0 {
+            Status = STATUS_DEVICE_BUSY;
+        }
+    }
+
+    //
+    //  Release the Vcb if it could still remain.
+    //
+
+    if VcbPresent != 0 {
+        CdReleaseVcb(IrpContext, Vcb);
+    } else {
+        // _Analysis_assume_lock_not_held_(Vcb->VcbResource);
+    }
+
+    CdReleaseCdData(IrpContext);
+
+    //
+    //  Cleanup our IrpContext and complete the IRP if neccesary.
+    //
+
+    CdCompleteRequest(IrpContext, Irp, Status);
+
+    return Status;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdPnpRemove(
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: PIRP,
+    Vcb: *mut Vcb,
+) -> i32 {
+    let mut Status: i32;
+    let mut Event: KEVENT = core::mem::zeroed();
+    let VcbPresent: i32;
+
+    // PAGED_CODE();
+    // ASSERT_EXCLUSIVE_CDDATA;
+
+    //
+    //  REMOVE - a storage device is now gone.
+    //
+    //  Acquire the global resource so that we can try to vaporize the volume,
+    //  and the vcb resource itself.
+    //
+
+    CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
+
+    //
+    //  The device will be going away.  Remove our lock and find out if we
+    //  ever had one in the first place.
+    //
+
+    Status = CdUnlockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
+
+    //
+    //  If the volume had not been locked, we must invalidate the volume to
+    //  ensure it goes away properly.  The remove will succeed.
+    //
+
+    if Status < 0 {
+        // !NT_SUCCESS( Status )
+
+        CdLockVcb(IrpContext, Vcb);
+
+        if (*Vcb).VcbCondition != VcbDismountInProgress {
+            CdUpdateVcbCondition(Vcb, VcbInvalid);
+        }
+
+        CdUnlockVcb(IrpContext, Vcb);
+
+        Status = STATUS_SUCCESS;
+    }
+
+    //
+    //  We need to pass this down before starting the dismount, which could
+    //  disconnect us immediately from the stack.
+    //
+    //  Get the next stack location, and copy over the stack location.
+    //
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+
+    //
+    //  Set up the completion routine.
+    //
+
+    KeInitializeEvent(
+        &mut Event as *mut KEVENT,
+        _EVENT_TYPE_NotificationEvent,
+        0u8, // FALSE
+    );
+    IoSetCompletionRoutine(
+        Irp,
+        core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdPnpCompletionRoutine as usize),
+        &mut Event as *mut KEVENT as *mut c_void,
+        1u8,
+        1u8,
+        1u8,
+    );
+
+    //
+    //  Send the request and wait.
+    //
+
+    Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+
+    if Status == STATUS_PENDING {
+        KeWaitForSingleObject(
+            &mut Event as *mut KEVENT as *mut c_void,
+            _KWAIT_REASON_Executive,
+            0i8, // KernelMode
+            0u8, // FALSE
+            core::ptr::null_mut(),
+        );
+
+        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+    }
+
+    //
+    //  Now make our dismount happen.  This may not vaporize the Vcb, since
+    //  there could be any number of handles outstanding if we were not
+    //  preceeded by a QUERY.
+    //
+
+    VcbPresent = CdCheckForDismount(IrpContext, Vcb, 1i32); // TRUE
+
+    //
+    //  Release the Vcb if it could still remain.
+    //
+
+    if VcbPresent != 0 {
+        CdReleaseVcb(IrpContext, Vcb);
+    } else {
+        // _Analysis_assume_lock_not_held_(Vcb->VcbResource);
+    }
+
+    CdReleaseCdData(IrpContext);
+
+    //
+    //  Cleanup our IrpContext and complete the IRP.
+    //
+
+    CdCompleteRequest(IrpContext, Irp, Status);
+
+    return Status;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdPnpSurpriseRemove(
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: PIRP,
+    Vcb: *mut Vcb,
+) -> i32 {
+    let mut Status: i32;
+    let mut Event: KEVENT = core::mem::zeroed();
+    let VcbPresent: i32;
+
+    // PAGED_CODE();
+    // ASSERT_EXCLUSIVE_CDDATA;
+
+    //
+    //  SURPRISE - a device was physically yanked away without any warning.
+    //
+
+    CdAcquireVcbExclusive(IrpContext, Vcb, 0u8);
+
+    //
+    //  Invalidate the volume right now.
+    //
+
+    CdLockVcb(IrpContext, Vcb);
+
+    if (*Vcb).VcbCondition != VcbDismountInProgress {
+        CdUpdateVcbCondition(Vcb, VcbInvalid);
+    }
+
+    CdUnlockVcb(IrpContext, Vcb);
+
+    //
+    //  We need to pass this down before starting the dismount, which could
+    //  disconnect us immediately from the stack.
+    //
+    //  Get the next stack location, and copy over the stack location.
+    //
+
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+
+    //
+    //  Set up the completion routine.
+    //
+
+    KeInitializeEvent(
+        &mut Event as *mut KEVENT,
+        _EVENT_TYPE_NotificationEvent,
+        0u8, // FALSE
+    );
+    IoSetCompletionRoutine(
+        Irp,
+        core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdPnpCompletionRoutine as usize),
+        &mut Event as *mut KEVENT as *mut c_void,
+        1u8,
+        1u8,
+        1u8,
+    );
+
+    //
+    //  Send the request and wait.
+    //
+
+    Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+
+    if Status == STATUS_PENDING {
+        KeWaitForSingleObject(
+            &mut Event as *mut KEVENT as *mut c_void,
+            _KWAIT_REASON_Executive,
+            0i8, // KernelMode
+            0u8, // FALSE
+            core::ptr::null_mut(),
+        );
+
+        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+    }
+
+    //
+    //  Now make our dismount happen.  This may not vaporize the Vcb, since
+    //  there could be any number of handles outstanding since this is an out
+    //  of band notification.
+    //
+
+    VcbPresent = CdCheckForDismount(IrpContext, Vcb, 1i32); // TRUE
+
+    //
+    //  Release the Vcb if it could still remain.
+    //
+
+    if VcbPresent != 0 {
+        CdReleaseVcb(IrpContext, Vcb);
+    } else {
+        // _Analysis_assume_lock_not_held_(Vcb->VcbResource);
+    }
+
+    CdReleaseCdData(IrpContext);
+
+    //
+    //  Cleanup our IrpContext and complete the IRP.
+    //
+
+    CdCompleteRequest(IrpContext, Irp, Status);
+
+    return Status;
+}
+
+// IRP_MN_* PnP minor codes (iotypes.h).
+const IRP_MN_QUERY_REMOVE_DEVICE: u32 = 0x01;
+const IRP_MN_REMOVE_DEVICE: u32 = 0x02;
+const IRP_MN_CANCEL_REMOVE_DEVICE: u32 = 0x03;
+const IRP_MN_SURPRISE_REMOVAL: u32 = 0x17;
 
 
 // ============================================================================

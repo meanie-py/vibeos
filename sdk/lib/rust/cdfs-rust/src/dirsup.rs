@@ -17,34 +17,83 @@ use crate::glue::{CdPagedPool};
 
 extern "C" {
     fn CdRawDirent( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, ) -> *mut RAW_DIRENT;
+}
+extern "C" {
     fn CdRawDirentFlags( IrpContext: *mut IRP_CONTEXT, RawDirent: *mut RAW_DIRENT, ) -> u32;
+}
+extern "C" {
     fn CopyUchar4( dest: *mut u32, src: *const u8, );
+}
+extern "C" {
     fn CdRaiseStatus( IrpContext: *mut IRP_CONTEXT, Status: i32, ) -> !;
+}
+extern "C" {
     fn WordAlign(offset: u32) -> u32;
+}
+extern "C" {
     fn SectorBlockOffset(Vcb: *mut VCB, Offset: ULONG) -> ULONG;
+}
+extern "C" {
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdConvertBigToLittleEndian(IrpContext: PIRP_CONTEXT, Src: *const u8, SrcLen: ULONG, Dst: *mut u8);
+}
+extern "C" {
     fn CdConvertNameToCdName(IrpContext: PIRP_CONTEXT, FileName: *mut CD_NAME);
+}
+extern "C" {
     fn CdUpcaseName(IrpContext: PIRP_CONTEXT, ExactName: *const CD_NAME, UpcasedName: *mut CD_NAME);
+}
+extern "C" {
     fn CdIsLegalName(IrpContext: PIRP_CONTEXT, Name: *const _UNICODE_STRING) -> BOOLEAN;
+}
+extern "C" {
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn NT_ASSERT(condition: BOOLEAN);
+}
+extern "C" {
     fn __analysis_assert(condition: BOOLEAN);
+}
+extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
+}
+extern "C" {
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdLookupInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT, StreamOffset: i64);
+}
+extern "C" {
     fn CdIsNameInExpression(IrpContext: *mut IRP_CONTEXT, Name: *mut CD_NAME, Expression: *mut CD_NAME, IgnoreWild: u32, IgnoreCase: u8) -> u8;
-    fn CdLookupNextInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT) -> u8;
+}
+extern "C" {
     fn SectorTruncate(Offset: u32) -> i64;
+}
+extern "C" {
     fn SectorOffset(Offset: u32) -> u32;
+}
+extern "C" {
     fn CdUnpinData(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdShortNameDirentOffset(IrpContext: *mut IRP_CONTEXT, FileName: *mut _UNICODE_STRING) -> u32;
+}
+extern "C" {
     fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING) -> i32;
+}
+extern "C" {
     fn CdGenerate8dot3Name(IrpContext: *mut IRP_CONTEXT, Source: *mut _UNICODE_STRING, Offset: u32, Buffer: *mut u16, Length: *mut u16);
 }
 
@@ -807,6 +856,252 @@ pub unsafe extern "C" fn CdCheckForXAExtent(
 
     (*Dirent).ExtentType = ExtentType;
     ExtentType
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdFindFileByShortName(
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
+    Name: *mut CD_NAME,
+    IgnoreCase: u8,
+    ShortNameDirentOffset: u32,
+    FileContext: *mut FILE_ENUM_CONTEXT,
+) -> u8 {
+    let mut Found: u8 = 0; // FALSE
+    let mut Dirent: *mut DIRENT;
+
+    let mut ThisShortNameDirentOffset: u32;
+
+    // PAGED_CODE();
+
+    //
+    //  Make sure there is a stream file for this Fcb.
+    //
+
+    CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
+
+    //
+    //  Position ourselves at the start of the directory and update
+    //
+
+    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as i64);
+
+    //
+    //  Loop until we have found the entry or are beyond this dirent.
+    //
+
+    loop {
+        //
+        //  Compute the short name dirent offset for the current dirent.
+        //
+
+        Dirent = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent);
+        ThisShortNameDirentOffset = (*Dirent).DirentOffset >> SHORT_NAME_SHIFT;
+
+        //
+        //  If beyond the target then exit.
+        //
+
+        if ThisShortNameDirentOffset > ShortNameDirentOffset {
+            break;
+        }
+
+        //
+        //  If equal to the target then check if we have a name match.
+        //  We will either match or fail here.
+        //
+
+        if ThisShortNameDirentOffset == ShortNameDirentOffset {
+            //
+            //  If this is an associated file then get out.
+            //
+
+            if FlagOnU32((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_ASSOC) {
+                break;
+            }
+
+            //
+            //  Update the name in the dirent and check if it is not
+            //  an 8.3 name.
+            //
+
+            CdUpdateDirentName(IrpContext, Dirent, IgnoreCase as u32);
+
+            if CdIs8dot3Name(
+                IrpContext,
+                core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
+            ) != 0 {
+                break;
+            }
+
+            //
+            //  Generate the 8.3 name see if it matches our input name.
+            //
+
+            CdGenerate8dot3Name(
+                IrpContext,
+                core::ptr::addr_of_mut!((*Dirent).CdCaseFileName.FileName),
+                (*Dirent).DirentOffset,
+                (*FileContext).ShortName.FileName.Buffer,
+                core::ptr::addr_of_mut!((*FileContext).ShortName.FileName.Length),
+            );
+
+            //
+            //  Check if this name matches.
+            //
+
+            if CdIsNameInExpression(
+                IrpContext,
+                Name,
+                core::ptr::addr_of_mut!((*FileContext).ShortName) as *mut CD_NAME,
+                0,
+                0, // FALSE
+            ) != 0 {
+                //
+                //  Let our caller know we found an entry.
+                //
+
+                Found = 1; // TRUE
+            }
+
+            //
+            //  Break out of the loop.
+            //
+
+            break;
+        }
+
+        //
+        //  Continue until there are no more entries.
+        //
+
+        if CdLookupNextInitialFileDirent(IrpContext, Fcb, FileContext) == 0 {
+            break;
+        }
+    }
+
+    //
+    //  If we find the file then collect all of the dirents.
+    //
+
+    if Found != 0 {
+        CdLookupLastFileDirent(IrpContext, Fcb, FileContext);
+    }
+
+    Found
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdLookupNextInitialFileDirent(
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
+    FileContext: *mut FILE_ENUM_CONTEXT,
+) -> u8 {
+    let mut RawDirent: *mut RAW_DIRENT;
+
+    let mut CurrentDirContext: *mut DIRENT_ENUM_CONTEXT;
+    let TargetDirContext: *mut DIRENT_ENUM_CONTEXT;
+    let TempDirent: *mut COMPOUND_DIRENT;
+
+    let mut FoundDirent: u8 = 0; // FALSE
+    let mut FoundLastDirent: bool;
+
+    // PAGED_CODE();
+
+    //
+    //  Start by saving the initial dirent of the current file as the
+    //  previous file.
+    //
+
+    TempDirent = (*FileContext).PriorDirent;
+    (*FileContext).PriorDirent = (*FileContext).InitialDirent;
+    (*FileContext).InitialDirent = TempDirent;
+
+    //
+    //  We will use the initial dirent of the prior file unless the
+    //  previous search returned multiple extents.
+    //
+
+    CurrentDirContext = core::ptr::addr_of_mut!((*(*FileContext).PriorDirent).DirContext);
+
+    if FlagOnU32((*FileContext).Flags, FILE_CONTEXT_MULTIPLE_DIRENTS) {
+        CurrentDirContext = core::ptr::addr_of_mut!((*(*FileContext).CurrentDirent).DirContext);
+    }
+
+    //
+    //  Clear all of the flags and file size for the next file.
+    //
+
+    (*FileContext).Flags = 0;
+    (*FileContext).FileSize = 0;
+
+    (*FileContext).ShortName.FileName.Length = 0;
+
+    //
+    //  We always want to store the result into the updated initial dirent
+    //  context.
+    //
+
+    TargetDirContext = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).DirContext);
+
+    //
+    //  Loop until we find the first dirent after the last dirent of the
+    //  current file.  We may not be at the last dirent for the current file yet
+    //  so we may walk forward looking for the last and then find the
+    //  initial dirent for the next file after that.
+    //
+
+    loop {
+        //
+        //  Remember if the last dirent we visited was the last dirent for
+        //  a file.
+        //
+
+        RawDirent = CdRawDirent(IrpContext, CurrentDirContext);
+
+        FoundLastDirent = !FlagOnU32(CdRawDirentFlags(IrpContext, RawDirent), CD_ATTRIBUTE_MULTI);
+
+        //
+        //  Try to find another dirent.
+        //
+
+        FoundDirent = CdLookupNextDirent(IrpContext, Fcb, CurrentDirContext, TargetDirContext) as u8;
+
+        //
+        //  Exit the loop if no entry found.
+        //
+
+        if FoundDirent == 0 {
+            break;
+        }
+
+        //
+        //  Update the in-memory dirent.
+        //
+
+        CdUpdateDirentFromRawDirent(
+            IrpContext,
+            Fcb,
+            TargetDirContext,
+            core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent),
+        );
+
+        //
+        //  Exit the loop if we had the end for the previous file.
+        //
+
+        if FoundLastDirent {
+            break;
+        }
+
+        //
+        //  Always use a single dirent from this point on.
+        //
+
+        CurrentDirContext = TargetDirContext;
+    }
+
+    FoundDirent
 }
 
 

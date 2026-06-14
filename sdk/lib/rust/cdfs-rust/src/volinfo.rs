@@ -24,16 +24,32 @@ extern "C" {
     fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> u32;
 }
 
-extern "system" {
+extern "C" {
     fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn LlSectorsFromBytes(bytes: i64) -> i64;
+}
+extern "system" {
     fn ASSERT(condition: bool);
+}
+extern "system" {
     #[cfg(feature = "ntddi_win8")]
     fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
+}
+extern "C" {
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8);
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 
@@ -45,7 +61,7 @@ const FILE_CASE_SENSITIVE_SEARCH: u32 = 1;
 const FILE_READ_ONLY_VOLUME: u32 = 0x00080000;
 const FILE_SUPPORTS_OPEN_BY_FILE_ID: u32 = 0x01000000;
 const FILE_UNICODE_ON_DISK: u32 = 0x00000004;
-const VCB_STATE_JOLIET: u32 = 1;
+const VCB_STATE_JOLIET: u32 = 0x04;
 
 const UnopenedFileObject: u32 = 0;
 #[no_mangle]

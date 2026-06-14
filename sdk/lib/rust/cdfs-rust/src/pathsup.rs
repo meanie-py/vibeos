@@ -14,26 +14,62 @@ use crate::cddata::{CdUnicodeDirectoryNames};
 
 extern "C" {
     fn CdUnpinData(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdFreePool(Data: *mut *mut core::ffi::c_void);
 }
-extern "system" {
+extern "C" {
     fn CdRawPathEntry(IrpContext: *mut IRP_CONTEXT, PathContext: *const PATH_ENUM_CONTEXT) -> *mut RAW_PATH_ENTRY;
+}
+extern "C" {
     fn CdRawPathIdLen(IrpContext: *mut IRP_CONTEXT, RawPathEntry: *const RAW_PATH_ENTRY) -> u32;
+}
+extern "C" {
     fn CdRawPathLoc(IrpContext: *mut IRP_CONTEXT, RawPathEntry: *const RAW_PATH_ENTRY) -> *const u32;
+}
+extern "C" {
     fn CdRawPathXar(IrpContext: *mut IRP_CONTEXT, RawPathEntry: *const RAW_PATH_ENTRY) -> u32;
+}
+extern "C" {
     fn BlockOffset(Vcb: *mut VCB, DataLength: u32) -> u32;
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
+}
+extern "C" {
     fn CopyUchar2(dest: *mut u16, src: *const u16);
+}
+extern "C" {
     fn CopyUchar4(dest: *mut u32, src: *const u32);
+}
+extern "C" {
     fn WordAlign(Value: u32) -> u32;
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdConvertBigToLittleEndian( IrpContext: *mut IRP_CONTEXT, DiskName: *const u8, DiskNameLen: u32, Buffer: *mut u8, );
+}
+extern "C" {
     fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut CD_NAME, OutputName: *mut CD_NAME, );
+}
+extern "C" {
     fn NT_ASSERT(cond: bool);
+}
+extern "C" {
     fn __analysis_assert(cond: bool);
+}
+extern "C" {
     fn SectorTruncate(offset: u32) -> i64;
+}
+extern "C" {
     fn CdIsNameInExpression( IrpContext: *mut IRP_CONTEXT, name1: *mut CD_NAME, name2: *mut CD_NAME, unknown: u32, exact: u8, ) -> u8;
+}
+extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 

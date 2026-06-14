@@ -4,8 +4,8 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
-use ntkrnl_sys::ddk::{IO_WORKITEM, PFILE_OBJECT, WORK_QUEUE_TYPE};
+use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PIRP_CONTEXT_LITE, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
+use ntkrnl_sys::ddk::{IO_WORKITEM, PFILE_OBJECT, WORK_QUEUE_ITEM, WORK_QUEUE_TYPE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 use crate::glue::{CDFS_BUG_CHECK_CLOSE};
@@ -17,57 +17,449 @@ extern "C" {
     fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
 }
 
-extern "system" {
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn ASSERT_IRP_CONTEXT(p: PIRP_CONTEXT);
+}
+extern "C" {
     fn ASSERT_FCB(p: PFCB);
+}
+extern "C" {
     fn CdCreateIrpContextLite(IrpContext: PIRP_CONTEXT) -> *mut IRP_CONTEXT_LITE;
+}
+extern "C" {
     fn CdLockCdData();
+}
+extern "C" {
     fn CdUnlockCdData();
+}
+extern "C" {
     fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, arg1: u8);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
+}
+extern "C" {
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
+}
+extern "system" {
     fn IoQueueWorkItem( IoObject: *mut IO_WORKITEM, WorkerRoutine: unsafe extern "system" fn(PDEVICE_OBJECT, *mut core::ffi::c_void), QueueType: WORK_QUEUE_TYPE, Context: *mut core::ffi::c_void, );
+}
+extern "system" {
     fn ASSERT_OPTIONAL_VCB(Vcb: PVCB);
+}
+extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn CdDeleteCcb(IrpContext: PIRP_CONTEXT, Ccb: PCCB);
+}
+extern "C" {
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Param: i32);
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
-    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: i32);
+}
+extern "C" {
+    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: i32) -> BOOLEAN;
+}
+extern "C" {
     fn CdFreeIrpContextLite(Ptr: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdInitializeStackIrpContext(StackIrpContext: *mut IRP_CONTEXT, Lite: *mut IRP_CONTEXT_LITE);
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
+}
+extern "C" {
     fn SafeNodeType(Node: *mut IRP_CONTEXT) -> u32;
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Mask: u32);
+}
+extern "C" {
     fn ClearFlag(Flags: *mut u32, Mask: u32);
+}
+extern "C" {
+    // Additional cdfs-internal NTAPI routines used by the (re-)translated bodies below.
+    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: BOOLEAN) -> BOOLEAN;
+}
+extern "C" {
+    fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
+    fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
+    fn CdDecrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, UserRefCount: u32);
+}
+extern "C" {
+    fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RemovedFcb: *mut BOOLEAN);
+}
+extern "C" {
+    fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CLOSE;
 
-// Local support routines defined in close.c (cohab) — bodies not yet translated to Rust.
-// Declared extern so the in-file call sites resolve; the C cohab object provides them.
-extern "C" {
-    fn CdCommonClosePrivate(
-        IrpContext: PIRP_CONTEXT,
-        Vcb: PVCB,
-        Fcb: PFCB,
-        UserReference: ULONG,
-        FromFsd: BOOLEAN,
-    ) -> BOOLEAN;
-    fn CdQueueClose(
-        IrpContext: PIRP_CONTEXT,
-        Fcb: PFCB,
-        UserReference: ULONG,
-        DelayedClose: BOOLEAN,
-    );
-    fn CdRemoveClose(Vcb: PVCB) -> PIRP_CONTEXT;
+// ---- Local constants (verified against drivers/filesystems/cdfs headers) ----
+// nodetype.h: CDFS_NTC_IRP_CONTEXT_LITE = 0x0309
+const CDFS_NTC_IRP_CONTEXT_LITE: u16 = 0x0309;
+// cdstruc.h flag bits.
+const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000010;
+// IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS (0x20) imported from crate::types.
+const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000040;
+// cdstruc.h: IRP_CONTEXT_FSP_FLAGS = WAIT | TOP_LEVEL | TOP_LEVEL_CDFS | IN_FSP
+#[allow(dead_code)]
+const IRP_CONTEXT_FSP_FLAGS: u32 =
+    IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_TOP_LEVEL | IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS | IRP_CONTEXT_FLAG_IN_FSP;
+// extypes.h _WORK_QUEUE_TYPE::CriticalWorkQueue = 0
+const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
+
+//
+//  Local support routine
+//
+//  _Requires_lock_held_(_Global_critical_region_)
+//  BOOLEAN CdCommonClosePrivate( IrpContext, Vcb, Fcb, UserReference, FromFsd )
+//
+//  This is the worker routine for the close operation.  Returns TRUE if this
+//  thread processed the close, FALSE if the caller should post the request.
+//  cdfs-internal => plain cdecl on all arches (no NTAPI in C prototype).
+#[no_mangle]
+pub unsafe extern "C" fn CdCommonClosePrivate(
+    IrpContext: PIRP_CONTEXT,
+    Vcb: PVCB,
+    Fcb: PFCB,
+    UserReference: ULONG,
+    FromFsd: BOOLEAN,
+) -> BOOLEAN {
+    let mut RemovedFcb: BOOLEAN = 0;
+
+    // PAGED_CODE();
+    // ASSERT_IRP_CONTEXT( IrpContext );
+    // ASSERT_FCB( Fcb );
+
+    //
+    //  Try to acquire the Vcb and Fcb.  If we can't acquire them then return
+    //  FALSE and let our caller post the request to the async queue.
+    //
+    if CdAcquireVcbShared(IrpContext, Vcb, FromFsd as i32) != 0 {
+        if CdAcquireFcbExclusive(IrpContext, Fcb, FromFsd) == 0 {
+            //
+            //  We couldn't get the Fcb.  Release the Vcb and let our caller
+            //  know to post this request.
+            //
+            CdReleaseVcb(IrpContext, Vcb);
+            return 0; // FALSE
+        }
+    } else {
+        //
+        //  We didn't get the Vcb.  Let our caller know to post this request.
+        //
+        return 0; // FALSE
+    }
+
+    //
+    //  Lock the Vcb and decrement the reference counts.
+    //
+    CdLockVcb(IrpContext, Vcb);
+    CdDecrementReferenceCounts(IrpContext, Fcb, 1, UserReference);
+    CdUnlockVcb(IrpContext, Vcb);
+
+    //
+    //  Call our teardown routine to see if this object can go away.
+    //  If we don't remove the Fcb then release it.
+    //
+    CdTeardownStructures(IrpContext, Fcb, &mut RemovedFcb);
+
+    if RemovedFcb == 0 {
+        CdReleaseFcb(IrpContext, Fcb);
+    } else {
+        // _Analysis_assume_lock_not_held_(Fcb->FcbNonpaged->FcbResource);
+    }
+
+    //
+    //  Release the Vcb and return to our caller (we completed this request).
+    //
+    CdReleaseVcb(IrpContext, Vcb);
+
+    1 // TRUE
 }
-// CdCloseWorker is NTAPI (stdcall on i386) — workitem routine.
-extern "system" {
-    fn CdCloseWorker(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
+
+//
+//  CdCloseWorker is NTAPI (stdcall on i386) — IO_WORKITEM_ROUTINE.
+//  Worker routine to call CdFspClose.
+//  IO_WORKITEM_ROUTINE — NTAPI (stdcall on i386); must be "system" to match the
+//  IoQueueWorkItem callback fn-pointer type.
+#[no_mangle]
+pub unsafe extern "system" fn CdCloseWorker(DeviceObject: PDEVICE_OBJECT, Context: PVOID) {
+    // PAGED_CODE();
+    let _ = DeviceObject; // UNREFERENCED_PARAMETER
+    let _ = Context; // UNREFERENCED_PARAMETER
+
+    CdFspClose(core::ptr::null_mut());
+}
+
+//
+//  VOID CdQueueClose( IrpContext, Fcb, UserReference, DelayedClose )
+//
+//  Queue a close request to either the async or delayed close queue.  For the
+//  delayed queue we allocate a smaller IRP_CONTEXT_LITE; if that allocation
+//  fails we fall back to the async queue using the original IrpContext.
+//  cdfs-internal => plain cdecl.
+#[no_mangle]
+pub unsafe extern "C" fn CdQueueClose(
+    IrpContext: PIRP_CONTEXT,
+    Fcb: PFCB,
+    UserReference: ULONG,
+    DelayedClose: BOOLEAN,
+) {
+    let mut IrpContextLite: *mut IRP_CONTEXT_LITE = core::ptr::null_mut();
+    let mut StartWorker: BOOLEAN = 0; // FALSE
+
+    // PAGED_CODE();
+    // ASSERT_IRP_CONTEXT( IrpContext );
+    // ASSERT_FCB( Fcb );
+
+    //
+    //  Start with the delayed queue request.  We can move this to the async
+    //  queue if there is an allocation failure.
+    //
+    if DelayedClose != 0 {
+        //
+        //  Try to allocate non-paged pool for the IRP_CONTEXT_LITE.
+        //
+        IrpContextLite = CdCreateIrpContextLite(IrpContext);
+    }
+
+    //
+    //  We want to clear the top level context in this thread if
+    //  necessary.  Call our cleanup routine to do the work.
+    //
+    SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_MORE_PROCESSING);
+    CdCleanupIrpContext(IrpContext, 1 /* TRUE */);
+
+    //
+    //  Synchronize with the CdData lock.
+    //
+    CdLockCdData();
+
+    //
+    //  If we have an IrpContextLite then put the request on the delayed close queue.
+    //
+    if !IrpContextLite.is_null() {
+        //
+        //  Initialize the IrpContextLite.
+        //
+        (*IrpContextLite).NodeTypeCode = CDFS_NTC_IRP_CONTEXT_LITE;
+        (*IrpContextLite).NodeByteSize = core::mem::size_of::<IRP_CONTEXT_LITE>() as _;
+        (*IrpContextLite).Fcb = Fcb;
+        (*IrpContextLite).UserReference = UserReference;
+        (*IrpContextLite).RealDevice = (*IrpContext).RealDevice;
+
+        //
+        //  Add this to the delayed close list and increment the count.
+        //
+        InsertTailList(
+            &raw mut CdData.DelayedCloseQueue,
+            &raw mut (*IrpContextLite).DelayedCloseLinks,
+        );
+
+        CdData.DelayedCloseCount += 1;
+
+        //
+        //  If we are above our threshold then start the delayed close operation.
+        //
+        if CdData.DelayedCloseCount > CdData.MaxDelayedCloseCount {
+            CdData.ReduceDelayedClose = 1; // TRUE
+
+            if CdData.FspCloseActive == 0 {
+                CdData.FspCloseActive = 1; // TRUE
+                StartWorker = 1; // TRUE
+            }
+        }
+
+        //
+        //  Unlock the CdData.
+        //
+        CdUnlockCdData();
+
+        //
+        //  Cleanup the IrpContext.
+        //
+        CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+
+    //
+    //  Otherwise drop into the async case below.
+    //
+    } else {
+        //
+        //  Store the information about the file object into the IrpContext.
+        //
+        (*IrpContext).Irp = Fcb as PIRP;
+        (*IrpContext).ExceptionStatus = UserReference as NTSTATUS;
+
+        //
+        //  Add this to the async close list and increment the count.
+        //
+        InsertTailList(
+            &raw mut CdData.AsyncCloseQueue,
+            &raw mut (*IrpContext).WorkQueueItem.List,
+        );
+
+        CdData.AsyncCloseCount += 1;
+
+        //
+        //  Remember to start the Fsp close thread if not currently started.
+        //
+        if CdData.FspCloseActive == 0 {
+            CdData.FspCloseActive = 1; // TRUE
+            StartWorker = 1; // TRUE
+        }
+
+        //
+        //  Unlock the CdData.
+        //
+        CdUnlockCdData();
+    }
+
+    //
+    //  Start the FspClose thread if we need to.
+    //
+    if StartWorker != 0 {
+        IoQueueWorkItem(
+            CdData.CloseItem,
+            CdCloseWorker,
+            CriticalWorkQueue,
+            core::ptr::null_mut(),
+        );
+    }
+}
+
+//
+//  Local support routine
+//
+//  PIRP_CONTEXT CdRemoveClose( Vcb )
+//
+//  Scan the async and delayed close queues for a suitable entry.  If Vcb is
+//  specified we scan both queues looking for an entry with that Vcb.  Otherwise
+//  we look in the async queue first, then the delayed queue (only if the delayed
+//  close operation is active).  Returns NULL if no work item found, else the
+//  IrpContext or IrpContextLite for the request.
+//  cdfs-internal => plain cdecl.  (A caller references it undecorated as
+//  `_CdRemoveClose`, i.e. the standard i386 cdecl single-underscore decoration.)
+#[no_mangle]
+pub unsafe extern "C" fn CdRemoveClose(Vcb: PVCB) -> PIRP_CONTEXT {
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
+    let mut NextIrpContext: PIRP_CONTEXT;
+    let mut NextIrpContextLite: PIRP_CONTEXT_LITE;
+    let mut Entry: PLIST_ENTRY;
+
+    // PAGED_CODE();
+    // ASSERT_OPTIONAL_VCB( Vcb );
+
+    //
+    //  Lock the CdData to perform the scan.
+    //
+    CdLockCdData();
+
+    //
+    //  First check the list of async closes.
+    //
+    Entry = CdData.AsyncCloseQueue.Flink;
+
+    while Entry != &raw mut CdData.AsyncCloseQueue {
+        //
+        //  Extract the IrpContext.  WorkQueueItem.List is the embedded link;
+        //  CONTAINING_RECORD( Entry, IRP_CONTEXT, WorkQueueItem.List ).
+        //
+        NextIrpContext = (Entry as *mut u8)
+            .sub(core::mem::offset_of!(IRP_CONTEXT, WorkQueueItem)
+                + core::mem::offset_of!(WORK_QUEUE_ITEM, List)) as PIRP_CONTEXT;
+
+        //
+        //  If no Vcb was specified or this Vcb is for our volume then close it.
+        //
+        if Vcb.is_null() || (*NextIrpContext).Vcb == Vcb {
+            RemoveEntryList(Entry);
+            CdData.AsyncCloseCount -= 1;
+
+            IrpContext = NextIrpContext;
+            break;
+        }
+
+        //
+        //  Move to the next entry.
+        //
+        Entry = (*Entry).Flink;
+    }
+
+    //
+    //  If we didn't find anything look through the delayed close queue.
+    //  We only check it if we were given a Vcb or the delayed close
+    //  operation is active.
+    //
+    if IrpContext.is_null()
+        && (!Vcb.is_null()
+            || (CdData.ReduceDelayedClose != 0
+                && CdData.DelayedCloseCount > CdData.MinDelayedCloseCount))
+    {
+        Entry = CdData.DelayedCloseQueue.Flink;
+
+        while Entry != &raw mut CdData.DelayedCloseQueue {
+            //
+            //  Extract the IrpContextLite.
+            //  CONTAINING_RECORD( Entry, IRP_CONTEXT_LITE, DelayedCloseLinks ).
+            //
+            NextIrpContextLite = (Entry as *mut u8)
+                .sub(core::mem::offset_of!(IRP_CONTEXT_LITE, DelayedCloseLinks))
+                as PIRP_CONTEXT_LITE;
+
+            //
+            //  If no Vcb was specified or this Vcb is for our volume then close it.
+            //
+            if Vcb.is_null() || (*(*NextIrpContextLite).Fcb).Vcb == Vcb {
+                RemoveEntryList(Entry);
+                CdData.DelayedCloseCount -= 1;
+
+                IrpContext = NextIrpContextLite as PIRP_CONTEXT;
+                break;
+            }
+
+            //
+            //  Move to the next entry.
+            //
+            Entry = (*Entry).Flink;
+        }
+    }
+
+    //
+    //  If the Vcb wasn't specified and we couldn't find an entry then turn
+    //  off the Fsp thread.
+    //
+    if Vcb.is_null() && IrpContext.is_null() {
+        CdData.FspCloseActive = 0; // FALSE
+        CdData.ReduceDelayedClose = 0; // FALSE
+    }
+
+    //
+    //  Unlock the CdData.
+    //
+    CdUnlockCdData();
+
+    IrpContext
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {

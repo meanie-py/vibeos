@@ -15,21 +15,47 @@ extern "C" {
     fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
 }
 
-extern "system" {
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
+}
+extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !; // never returns
     fn CdVolumeDasdWrite( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: LONGLONG, WriteByteCount: ULONG, ) -> NTSTATUS;
+}
+extern "system" {
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
+}
+extern "C" {
     fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
+}
+extern "C" {
     fn ExGetCurrentResourceThread() -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn BooleanFlagOn(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
+}
+extern "C" {
     fn FlagOn(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
+}
+extern "C" {
     fn ClearFlag(Flags: *mut ULONG, Flag: ULONG);
+}
+extern "C" {
     fn SetFlag(Flags: *mut ULONG, Flag: ULONG);
+}
+extern "system" {
     fn FsRtlNormalizeNtstatus( NtStatusToNormalize: NTSTATUS, NormalizedNtStatus: NTSTATUS, ) -> NTSTATUS;
 }
 
@@ -45,12 +71,12 @@ const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011u32 as i32;    // STATUS_END_OF_F
 const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010u32 as i32;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // ntstatus.h STATUS_CANT_WAIT (grind fabricated 0xC000009A=STATUS_INSUFFICIENT_RESOURCES)
 const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000E9u32 as i32;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x00000002;
-const FO_SYNCHRONOUS_IO: u32 = 0x00000010;
-const FO_FILE_MODIFIED: u32 = 0x00000004;
-const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 0x00000001;
-const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x00000002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x04;
+const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
+const FO_SYNCHRONOUS_IO: u32 = 0x02;
+const FO_FILE_MODIFIED: u32 = 0x1000;
+const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 0x10;
+const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x20;
 const UserVolumeOpen: TYPE_OF_OPEN = 2;            // guess
 #[no_mangle]
 pub unsafe extern "C" fn CdCommonWrite(

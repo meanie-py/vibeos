@@ -27,9 +27,11 @@ use crate::ddk_shims::{
     FsRtlMdlWriteCompleteDev,
 };
 
-extern "system" {
+extern "C" {
     // cdfs-internal _CdFreePool (static INLINE in C); cdfs-private helper, not NTAPI table.
     fn CdFreePool(IrpContext: *mut *mut IRP_CONTEXT);
+}
+extern "system" {
     #[cfg(feature = "CDFS_TELEMETRY_DATA")]
     fn CdInitializeTelemetry();
 }
@@ -38,13 +40,15 @@ extern "system" {
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CDINIT;
 
 // Manually define missing constants
-const FILE_DEVICE_CD_ROM_FILE_SYSTEM: u32 = 0x00000009;
+const FILE_DEVICE_CD_ROM_FILE_SYSTEM: u32 = 0x03;
 const FILE_DEVICE_DISK_FILE_SYSTEM: u32 = 0x00000008;
-const DO_LOW_PRIORITY_FILESYSTEM: u32 = 0x00020000;
+const DO_LOW_PRIORITY_FILESYSTEM: u32 = 0x00010000;
 const IRP_MJ_QUERY_VOLUME_INFORMATION: i32 = 0x0a;
 const IRP_MJ_DIRECTORY_CONTROL: i32 = 0x0c;
 
 // Declare external items not available in the given imports
+// DriverEntry is the kernel-called module entry — NTAPI (stdcall on i386), so it
+// must be "system" to export the expected `_DriverEntry@8` symbol.
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
@@ -56,12 +60,16 @@ pub unsafe extern "system" fn DriverEntry(
     let mut Status: NTSTATUS;
     let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
     let mut CdfsFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-    #[cfg(feature = "__REACTOS__")]
+    #[cfg(feature = "reactos")]
     let mut HddFileSystemDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut FilterCallbacks: FS_FILTER_CALLBACKS = core::mem::zeroed();
 
-    // Create the device object.
-    RtlInitUnicodeString(&mut UnicodeString, b"\\Cdfs\0".as_ptr() as *const u16);
+    // Create the device object. NB: RtlInitUnicodeString takes a UTF-16 (wide)
+    // string; the C source uses L"\\Cdfs". A byte string cast to *const u16
+    // reinterprets ASCII as wide chars and scans past the literal for a wide NUL,
+    // producing a garbage-length device name that corrupts the object namespace.
+    const CDFS_NAME: [u16; 6] = [0x005C, 0x0043, 0x0064, 0x0066, 0x0073, 0x0000]; // L"\\Cdfs"
+    RtlInitUnicodeString(&mut UnicodeString, CDFS_NAME.as_ptr());
 
     Status = IoCreateDevice(
         DriverObject,
@@ -77,10 +85,12 @@ pub unsafe extern "system" fn DriverEntry(
         return Status;
     }
 
-    #[cfg(feature = "__REACTOS__")]
+    #[cfg(feature = "reactos")]
     {
-        // Create the HDD device object.
-        RtlInitUnicodeString(&mut UnicodeString, b"\\CdfsHdd\0".as_ptr() as *const u16);
+        // Create the HDD device object. (wide string — see CDFS_NAME note above)
+        const CDFSHDD_NAME: [u16; 9] =
+            [0x005C, 0x0043, 0x0064, 0x0066, 0x0073, 0x0048, 0x0064, 0x0064, 0x0000]; // L"\\CdfsHdd"
+        RtlInitUnicodeString(&mut UnicodeString, CDFSHDD_NAME.as_ptr());
 
         Status = IoCreateDevice(
             DriverObject,
@@ -165,30 +175,30 @@ pub unsafe extern "system" fn DriverEntry(
 
     if !NT_SUCCESS(Status) {
         IoDeleteDevice(CdfsFileSystemDeviceObject);
-        #[cfg(feature = "__REACTOS__")]
+        #[cfg(feature = "reactos")]
         IoDeleteDevice(HddFileSystemDeviceObject);
         return Status;
     }
 
     // Initialize the global data structures
-    #[cfg(not(feature = "__REACTOS__"))]
+    #[cfg(not(feature = "reactos"))]
     {
         Status = CdInitializeGlobalData(DriverObject, CdfsFileSystemDeviceObject);
     }
-    #[cfg(feature = "__REACTOS__")]
+    #[cfg(feature = "reactos")]
     {
         Status = CdInitializeGlobalData(DriverObject, CdfsFileSystemDeviceObject, HddFileSystemDeviceObject);
     }
     if !NT_SUCCESS(Status) {
         IoDeleteDevice(CdfsFileSystemDeviceObject);
-        #[cfg(feature = "__REACTOS__")]
+        #[cfg(feature = "reactos")]
         IoDeleteDevice(HddFileSystemDeviceObject);
         return Status;
     }
 
     // Register the file system as low priority.
     (*CdfsFileSystemDeviceObject).Flags |= DO_LOW_PRIORITY_FILESYSTEM;
-    #[cfg(feature = "__REACTOS__")]
+    #[cfg(feature = "reactos")]
     {
         (*HddFileSystemDeviceObject).Flags |= DO_LOW_PRIORITY_FILESYSTEM;
     }
@@ -196,7 +206,7 @@ pub unsafe extern "system" fn DriverEntry(
     IoRegisterFileSystem(CdfsFileSystemDeviceObject);
     ObReferenceObject(CdfsFileSystemDeviceObject as *mut c_void);
 
-    #[cfg(feature = "__REACTOS__")]
+    #[cfg(feature = "reactos")]
     {
         IoRegisterFileSystem(HddFileSystemDeviceObject);
         ObReferenceObject(HddFileSystemDeviceObject as *mut c_void);
@@ -207,6 +217,8 @@ pub unsafe extern "system" fn DriverEntry(
 
     return STATUS_SUCCESS;
 }
+// DRIVER_UNLOAD callback — NTAPI (stdcall on i386); the kernel calls
+// DriverObject->DriverUnload with that convention, so must be "system".
 #[no_mangle]
 pub unsafe extern "system" fn CdUnload(DriverObject: *mut DRIVER_OBJECT) {
     // PAGED_CODE();
@@ -229,7 +241,7 @@ pub unsafe extern "system" fn CdUnload(DriverObject: *mut DRIVER_OBJECT) {
     ExDeleteResourceLite(core::ptr::addr_of_mut!(cd_data.DataResource));
     ObDereferenceObject(cd_data.FileSystemDeviceObject as *mut c_void);
 
-    #[cfg(reactos)]
+    #[cfg(feature = "reactos")]
     ObDereferenceObject(cd_data.HddFileSystemDeviceObject as *mut c_void);
 }
 #[no_mangle]

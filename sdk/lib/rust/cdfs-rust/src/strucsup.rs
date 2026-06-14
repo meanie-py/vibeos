@@ -26,77 +26,221 @@ use crate::types::{CDROM_READ_TOC_EX};
 
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn CdAllocateFcbIndex(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
+}
+extern "C" {
     fn CdAllocateFcbData(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
+}
+extern "C" {
     fn CdBugCheck(a: u32, b: u32, c: u32);
+}
+extern "C" {
     fn CdFreePool(P: *mut *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
+}
+extern "C" {
     fn CdInitializeMcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+}
+extern "C" {
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
 }
-extern "system" {
+extern "C" {
     fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn _SEH2_AbnormalTermination() -> i32;
+}
+extern "C" {
     fn CdUpdateMediaChangeCount(Vcb: *mut VCB, MediaChangeCount: ULONG);
+}
+extern "C" {
     fn CdUpdateVcbCondition(Vcb: *mut VCB, condition: u32); // assuming VcbMountInProgress is u32 enum fn FlagOn(Flags: ULONG, Flag: ULONG) -> i32;
+}
+extern "C" {
     fn BytesFromBlocks(Vcb: *mut VCB, BlockOffset: u32) -> u32;
+}
+extern "C" {
     fn SectorBlockOffset(Vcb: *mut VCB, DiskOffset: u32) -> u32;
+}
+extern "C" {
     fn CdAddInitialAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DiskOffset: u32, Size: u32);
+}
+extern "C" {
     fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefInc: i32, UserRefInc: i32);
+}
+extern "C" {
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
+}
+extern "system" {
     fn RtlInsertElementGenericTable( Table: *mut RTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void, BufferSize: u32, NewElement: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn CdAddAllocationFromDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, McbEntryOffset: u32, FileOffset: i64, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: *mut i8, Time: *mut LARGE_INTEGER);
+}
+extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdLookupNextDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, CurrentDirContext: *mut DIRENT_ENUM_CONTEXT, PreviousDirContext: *const DIRENT_ENUM_CONTEXT) -> i32;
+}
+extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdUpdateDirentFromRawDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT);
+}
+extern "C" {
     fn LlBlockAlign(Vcb: *mut VCB, FileSize: i64) -> i64;
+}
+extern "C" {
     fn CdAllocateCcb(IrpContext: *mut IRP_CONTEXT) -> *mut CCB;
+}
+extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
+}
+extern "C" {
     fn ClearFlag(Flags: *mut u32, Mask: u32);
+}
+extern "C" {
     fn CdRestoreThreadContext(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdFreeIoContext(IoContext: *mut c_void);
+}
+extern "C" {
     fn CdLockCdData();
+}
+extern "C" {
     fn CdUnlockCdData();
+}
+extern "C" {
     fn PushEntryList(ListHead: *mut SINGLE_LIST_ENTRY, Entry: *mut SINGLE_LIST_ENTRY);
+}
+extern "system" {
     fn RtlEnumerateGenericTableWithoutSplaying( Table: *mut RTL_GENERIC_TABLE, RestartKey: *mut *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
+}
+extern "C" {
+    // CdPerformDevIoCtrlEx is plain cdecl (no FASTCALL in cdprocs.h).
     fn CdPerformDevIoCtrlEx( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut u8, InputBufferLength: usize, OutputBuffer: *mut u8, OutputBufferLength: usize, InternalDeviceIoControl: u8, Wait: u8, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> i32;
+}
+extern "C" {
     fn CdAllocateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *mut FCB_NONPAGED;
+}
+extern "system" {
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn SwapCopyUchar4(dest: *mut u32, src: *const u8);
+}
+extern "C" {
     fn CdLbnToMmSsFf(lbn: u32, dest: *mut u8);
+}
+extern "C" {
     fn NT_ASSERT(condition: i32);
+}
+extern "C" {
     fn CdUninitializeMcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "system" {
     fn CdDeallocateFcbNonpaged(IrpContext: *mut IRP_CONTEXT, FcbNonpaged: *mut FCB_NONPAGED);
+}
+extern "C" {
     fn CdDeallocateFcbIndex(IrpContext: *mut IRP_CONTEXT, fcb: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdDeallocateFcbData(IrpContext: *mut IRP_CONTEXT, fcb: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdCreateInternalStream( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Fcb: *mut FCB, Name: *const _UNICODE_STRING, );
+}
+extern "C" {
     fn CdFidSetDirectory(FileId: *mut FILE_ID);
+}
+extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdRvdBlkSz(RawIsoVd: *mut i8, VcbState: u32) -> u32;
+}
+extern "C" {
     fn CdRvdDirent(RawIsoVd: *mut i8, VcbState: u32) -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn CdRvdPtLoc(RawIsoVd: *mut i8, VcbState: u32) -> u32;
+}
+extern "C" {
     fn CdRvdPtSz(RawIsoVd: *mut i8, VcbState: u32) -> u32;
+}
+extern "C" {
     fn CdRvdVolSz(RawIsoVd: *mut i8, VcbState: u32) -> u32;
+}
+extern "C" {
     fn CdSetFidPathTableOffset(FileId: *mut FILE_ID, Offset: LONGLONG);
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CopyUchar4(Dst: *mut u32, Src: *const u8);
+}
+extern "C" {
     fn RtlEqualMemory(B1: *const core::ffi::c_void, B2: *const core::ffi::c_void, Length: usize) -> i32;
+}
+extern "C" {
     fn LlBytesFromBlocks(Vcb: *mut VCB, Block: u32) -> LONGLONG;
+}
+extern "C" {
     fn LlSectorAlign(Value: LONGLONG) -> LONGLONG;
+}
+extern "C" {
     fn SectorAlign(Value: u32) -> u32;
+}
+extern "system" {
     static CdXaId: [u8; 8];
+}
+extern "system" {
     static CdAudioLabel: [u8; 32];
+}
+extern "C" {
     fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: u32) -> u32;
+}
+extern "C" {
     fn CdDecrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, UserRefCount: u32);
+}
+extern "C" {
     fn CdDeleteFcbTable(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdDeleteInternalStream(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn CdRemovePrefix(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+}
+extern "C" {
     fn SafeNodeType(Node: *mut FCB) -> u32;
+}
+extern "system" {
+    // PFILE_LOCK NTAPI FsRtlAllocateFileLock(PCOMPLETE_LOCK_IRP_ROUTINE, PUNLOCK_ROUTINE);
+    fn FsRtlAllocateFileLock(
+        CompleteLockIrpRoutine: *mut core::ffi::c_void,
+        UnlockRoutine: *mut core::ffi::c_void,
+    ) -> PFILE_LOCK;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -166,16 +310,16 @@ const FILE_ATTRIBUTE_HIDDEN: u32 = 0x00000002;
 const CD_ATTRIBUTE_HIDDEN: u32 = 0x01;
 const Form1Data: u32 = 0;
 const Mode2Form2Data: u32 = 1;
-const FCB_STATE_MODE2FORM2_FILE: u32 = 0x10;
-const FCB_STATE_DA_FILE: u32 = 0x20;
+const FCB_STATE_MODE2FORM2_FILE: u32 = 0x04;
+const FCB_STATE_DA_FILE: u32 = 0x10;
 const FCB_STATE_INITIALIZED: u32 = 0x01;
-const FCB_STATE_IN_FCB_TABLE: u32 = 0x04;
-const CD_ATTRIBUTE_MULTI: u32 = 0x02;
+const FCB_STATE_IN_FCB_TABLE: u32 = 0x02;
+const CD_ATTRIBUTE_MULTI: u32 = 0x80;
 const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102u32 as i32;
 
-const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000001;
-const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x00000002;
-const IRP_CONTEXT_FLAG_ON_STACK: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x02;
+const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
+const IRP_CONTEXT_FLAG_ON_STACK: u32 = 0x01;
 const IRP_CONTEXT_FLAGS_CLEAR_ON_POST: u32 = 0x00000008;
 const IRP_CONTEXT_FLAGS_CLEAR_ON_RETRY: u32 = 0x00000010;
 
@@ -187,7 +331,7 @@ const STATUS_INVALID_PARAMETER: i32 = 0xC000000Du32 as i32;
 const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
 const TOC_DATA_TRACK: u32 = 0x04;
 const CDROM_DISK_AUDIO_TRACK: u32 = 0x00000001;
-const CDROM_DISK_DATA_TRACK: u32 = 0x00000004;
+const CDROM_DISK_DATA_TRACK: u32 = 0x02;
 const TOC_LAST_TRACK: u32 = 0xAA;
 
 #[repr(C)]
@@ -291,7 +435,7 @@ pub unsafe extern "C" fn CdCreateIrpContext(Irp: PIRP, Wait: BOOLEAN) -> *mut IR
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CdInitializeVcb(
+pub unsafe extern "C" fn CdInitializeVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     TargetDeviceObject: *mut DEVICE_OBJECT,
@@ -421,14 +565,14 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
     const SECTOR_SIZE: u32 = 2048;
     const SECTOR_SHIFT: u32 = 11;
     const FILE_ATTRIBUTE_READONLY: u32 = 1;
-    const CDFS_NTC_FCB_PATH_TABLE: NODE_TYPE_CODE = 0;
-    const CDFS_NTC_FCB_INDEX: NODE_TYPE_CODE = 1;
-    const CDFS_NTC_FCB_DATA: NODE_TYPE_CODE = 2;
-    const VCB_STATE_ISO: u32 = 0x01;
-    const VCB_STATE_JOLIET: u32 = 0x02;
-    const VCB_STATE_CDXA: u32 = 0x04;
-    const VCB_STATE_AUDIO_DISK: u32 = 0x08;
-    const FCB_STATE_INITIALIZED: u32 = 0x10;
+    const CDFS_NTC_FCB_PATH_TABLE: NODE_TYPE_CODE = 0x0303;
+    const CDFS_NTC_FCB_INDEX: NODE_TYPE_CODE = 0x0304;
+    const CDFS_NTC_FCB_DATA: NODE_TYPE_CODE = 0x0305;
+    const VCB_STATE_ISO: u32 = 0x02;
+    const VCB_STATE_JOLIET: u32 = 0x04;
+    const VCB_STATE_CDXA: u32 = 0x40;
+    const VCB_STATE_AUDIO_DISK: u32 = 0x80;
+    const FCB_STATE_INITIALIZED: u32 = 0x01;
     const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
     const CdAudioDirentSize: u32 = 32;
     const CdAudioLabelLength: u32 = 32;
@@ -839,7 +983,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromPathEntry(
 ) {
     // PAGED_CODE();
     const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-    const FCB_STATE_IN_FCB_TABLE: u32 = 0x1;
+    const FCB_STATE_IN_FCB_TABLE: u32 = 0x02;
     const SECTOR_SIZE: u32 = 2048;
 
     let fcb = &mut *Fcb;
@@ -1430,7 +1574,10 @@ pub unsafe extern "C" fn CdCreateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *m
     FcbNonpaged = CdAllocateFcbNonpaged(IrpContext);
 
     if !FcbNonpaged.is_null() {
-        core::ptr::write_bytes(FcbNonpaged, 0u8, core::mem::size_of::<FCB_NONPAGED>());
+        // RtlZeroMemory(FcbNonpaged, sizeof(FCB_NONPAGED)) — zero BYTES. write_bytes
+        // counts ELEMENTS, so the pointer MUST be *mut u8 or it zeroes size_of² bytes
+        // (a heap overflow that corrupted the adjacent VCB → BUGCHECK 0x1E).
+        core::ptr::write_bytes(FcbNonpaged as *mut u8, 0u8, core::mem::size_of::<FCB_NONPAGED>());
 
         (*FcbNonpaged).NodeTypeCode = CDFS_NTC_FCB_NONPAGED as u16;
         (*FcbNonpaged).NodeByteSize = core::mem::size_of::<FCB_NONPAGED>() as i16;
@@ -1535,6 +1682,44 @@ pub unsafe extern "C" fn CdTocSerial(
     }
 
     SerialNumber
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CdCreateFileLock(
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
+    RaiseOnError: u8, // BOOLEAN
+) -> u8 {
+    let mut Result: u8 = 1; // TRUE
+
+    PAGED_CODE();
+
+    // Lock the Fcb and check if there is really any work to do.
+    CdLockFcb(IrpContext, Fcb);
+
+    if !(*fcb_data(Fcb)).FileLock.is_null() {
+        CdUnlockFcb(IrpContext, Fcb);
+        return 1; // TRUE
+    }
+
+    let FileLock: PFILE_LOCK =
+        FsRtlAllocateFileLock(core::ptr::null_mut(), core::ptr::null_mut());
+    (*fcb_data(Fcb)).FileLock = FileLock;
+
+    CdUnlockFcb(IrpContext, Fcb);
+
+    // Return or raise as appropriate.
+    if FileLock.is_null() {
+        if RaiseOnError != 0 {
+            NT_ASSERT((!IrpContext.is_null()) as i32); // ARGUMENT_PRESENT( IrpContext )
+
+            CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
+        }
+
+        Result = 0; // FALSE
+    }
+
+    Result
 }
 
 

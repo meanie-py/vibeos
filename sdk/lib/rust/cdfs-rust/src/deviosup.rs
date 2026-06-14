@@ -20,53 +20,139 @@ use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA
 
 extern "C" {
     fn PAGED_CODE();
+}
+extern "C" {
     fn NT_ASSERT(condition: i32);
+}
+extern "C" {
     fn SectorOffset(byte_count: u32) -> i32;
+}
+extern "C" {
     fn SectorsFromBytes(byte_count: u32) -> u32;
+}
+extern "C" {
     fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
+}
+extern "C" {
     fn SafeNodeType(fcb: *mut FCB) -> u32;
+}
+extern "C" {
     static CdAudioPlayHeader: AUDIO_PLAY_HEADER;
+}
+extern "C" {
     static CdXAAudioPhileHeader: RIFF_HEADER;
+}
+extern "C" {
     static CdXAFileHeader: RIFF_HEADER;
 }
-extern "system" {
+extern "C" {
     fn FlagOn(flags: u32, mask: u32) -> i32;
+}
+extern "C" {
     fn CdNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+}
+extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
+}
+extern "C" {
     fn ASSERT_IRP(Irp: PIRP);
+}
+extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
+}
+extern "C" {
     fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value
     // these mimic the MSVC __try/__except/__end
     fn _SEH2_TRY();
+}
+extern "C" {
     fn _SEH2_EXCEPT(code: i32);
+}
+extern "C" {
     fn _SEH2_END();
+}
+extern "C" {
     fn _SEH2_GetExceptionCode() -> i32;
+}
+extern "C" {
     fn CdLookupAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, CurrentFileOffset: i64, DiskOffset: *mut i64, CurrentByteCount: *mut u32);
+}
+extern "C" {
     fn LlSectorTruncate(offset: i64) -> i64;
+}
+extern "C" {
     fn SectorTruncate(size: u32) -> u32;
+}
+extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdFreePool(pool: *mut *mut c_void);
+}
+extern "C" {
     fn PagedCode();
+}
+extern "C" {
     fn CdAcquireCacheForUpdate(ctx: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdReleaseCache(ctx: *mut IRP_CONTEXT);
+}
+extern "system" {
     fn KeGetCurrentIrql() -> u8;
+}
+extern "C" {
     fn SectorsFromLlBytes(offset: i64) -> u32;
+}
+extern "C" {
     fn BytesFromSectors(sectors: u32) -> u32;
+}
+extern "C" {
     fn LlBytesFromSectors(sectors: u32) -> i64;
+}
+extern "C" {
     fn Min(a: u32, b: u32) -> u32;
+}
+extern "C" {
     fn SwapCopyUchar4(dest: *mut u32, src: *mut u8);
+}
+extern "C" {
     fn CdAcquireCacheForRead(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdConvertCacheToShared(IrpContext: *mut IRP_CONTEXT);
+}
+extern "system" {
     fn PsGetCurrentThread() -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn AssertVerifyDeviceIrp(Irp: PIRP);
+}
+extern "C" {
     fn CdFreeIoContext(IoContext: *mut CD_IO_CONTEXT);
+}
+extern "C" {
     fn _Analysis_assume_(condition: bool);
+}
+extern "C" {
     fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
+}
+extern "C" {
     fn CdMapUserBuffer(irp_context: *mut IRP_CONTEXT, user_buffer: *mut *mut core::ffi::c_void);
+}
+extern "system" {
     fn Add2Ptr(ptr: *mut core::ffi::c_void, offset: u32, _type: *const i8) -> *mut core::ffi::c_void;
+}
+extern "C" {
     fn ClearFlag(flags: *mut u32, mask: u32);
+}
+extern "C" {
     fn KeFlushIoBuffers(mdl: *mut MDL, flush_io: i32, flush_cpu_cache: i32);
+}
+extern "C" {
     fn CdLockUserBuffer(IrpContext: PIRP_CONTEXT, ByteCount: u32, Access: u32);
 }
 
@@ -88,12 +174,12 @@ pub struct IO_RUN {
 }
 pub type PIO_RUN = *mut IO_RUN;
 
-const FCB_STATE_MODE2FORM2_FILE: u32 = 0; // unknown value
-const FCB_STATE_MODE2_FILE: u32 = 0; // unknown value
-const FCB_STATE_DA_FILE: u32 = 0; // unknown value
+const FCB_STATE_MODE2FORM2_FILE: u32 = 0x00000004; // cdstruc.h
+const FCB_STATE_MODE2_FILE: u32 = 0x00000008; // cdstruc.h
+const FCB_STATE_DA_FILE: u32 = 0x00000010; // cdstruc.h
 
 // SL_OVERRIDE_VERIFY_VOLUME constant (value from WinNT.h)
-const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00020000;
+const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
 // EXCEPTION_EXECUTE_HANDLER (value 1, matches ntkrnl_sys hal_ddk definition)
 const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 
@@ -105,16 +191,16 @@ const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32; // ntstatus.h
 const RAW_SECTOR_SIZE: u32 = 2352; // placeholder, must match CDFS
 const SECTOR_SHIFT: u32 = 11;      // log2 of SECTOR_SIZE
 const SECTOR_SIZE: u32 = 2048;
-const TAG_IO_BUFFER: u32 = 0x494F4344; // 'CDOI' backwards? placeholder
+const TAG_IO_BUFFER: u32 = 0x66626443; // 'fbdC' (cdprocs.h TAG_IO_BUFFER)
 const CdNonPagedPool: u32 = 0; // NonPagedPool value
 
-const CD_SEC_CACHE_CHUNKS: u32 = 16;
-const CD_SEC_CHUNK_BLOCKS: u32 = 32;
+const CD_SEC_CACHE_CHUNKS: u32 = 0x04;
+const CD_SEC_CHUNK_BLOCKS: u32 = 0x18;
 const PASSIVE_LEVEL: u8 = 0;
 
 const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
-const CDFS_NTC_FCB_PATH_TABLE: u32 = 6;
+const CDFS_NTC_FCB_PATH_TABLE: u32 = 0x0303;
 const CD_ATTRIBUTE_DIRECTORY: u8 = 0x02;
 const CdAudioDirentSize: u32 = 32;
 const CdAudioDirentsPerSector: u32 = SECTOR_SIZE / CdAudioDirentSize;
@@ -125,18 +211,18 @@ const CdAudioFileName: [u8; CdAudioFileNameLength as usize] = [
 const CdAudioSystemUseOffset: u32 = 24;
 const AUDIO_NAME_TENS_OFFSET: u32 = 4;
 const AUDIO_NAME_ONES_OFFSET: u32 = 5;
-const SYSTEM_USE_XA_DA: u8 = 0x0A;
+const SYSTEM_USE_XA_DA: u8 = 0x40;
 const SYSTEM_XA_SIGNATURE: u8 = b'X';
 
 const STATUS_SUCCESS: i32 = 0;
-const CDFS_NTC_FCB_INDEX: u32 = 0x0500; // FIXME: unknown value
-const VcbMounted: u32 = 1; // FIXME: unknown value
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000002;
+const CDFS_NTC_FCB_INDEX: u32 = 0x0304; // nodetype.h
+const VcbMounted: u32 = 2; // _VCB_CONDITION (cdstruc.h: NotMounted=0,MountInProgress=1,Mounted=2)
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // cdstruc.h
+const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000010; // cdstruc.h
 
 // Constants (TODO: replace with correct numeric values)
-const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0;
-const VCB_STATE_AUDIO_DISK: u32 = 0;
+const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
+const VCB_STATE_AUDIO_DISK: u32 = 0x80;
 const NotificationEvent: u32 = 1;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // real value (was fabricated 0xC0002001)
 const STATUS_PENDING: NTSTATUS = 0x00000103;
@@ -214,8 +300,9 @@ pub unsafe extern "C" fn CdNonCachedRead(
         'try_block: loop {
             // main do-while loop
             loop {
-                // Zero the IoRuns array
-                core::ptr::write_bytes(IoRuns.as_mut_ptr(), 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS as usize]>());
+                // Zero the IoRuns array — write_bytes counts ELEMENTS, so cast to
+                // *mut u8 to zero the byte count (else size_of² byte overflow).
+                core::ptr::write_bytes(IoRuns.as_mut_ptr() as *mut u8, 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS as usize]>());
 
                 Unaligned = CdPrepareBuffers(
                     IrpContext,
@@ -310,12 +397,12 @@ pub unsafe extern "C" fn CdNonCachedXARead(
     mut starting_offset: i64,
     mut byte_count: u32,
 ) -> i32 {
-    const FCB_STATE_DA_FILE: u32 = 0x0001; // TODO: correct value
-    const FCB_STATE_MODE2_FILE: u32 = 0x0002;
-    const FCB_STATE_MODE2FORM2_FILE: u32 = 0x0004;
-    const VCB_STATE_AUDIO_DISK: u32 = 0x0010;
+    const FCB_STATE_DA_FILE: u32 = 0x00000010; // cdstruc.h
+    const FCB_STATE_MODE2_FILE: u32 = 0x00000008; // cdstruc.h
+    const FCB_STATE_MODE2FORM2_FILE: u32 = 0x00000004; // cdstruc.h
+    const VCB_STATE_AUDIO_DISK: u32 = 0x00000080; // cdstruc.h
     const MAX_PARALLEL_IOS: usize = 5;
-    const YellowMode2: TRACK_MODE_TYPE = 2; // placeholder
+    const YellowMode2: TRACK_MODE_TYPE = 0; // ntddcdrm.h _TRACK_MODE_TYPE (first enumerator)
 
     let mut status: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
     let mut local_riff_header: RIFF_HEADER = core::mem::zeroed();
@@ -715,7 +802,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
     OverrideVerify: u8,
     Iosb: PIO_STATUS_BLOCK,
 ) -> i32 {
-    const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000004;
+    const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
     const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32; // ntstatus.h STATUS_VERIFY_REQUIRED (grind fabricated 0xC0000020)
 
     let mut Status: i32;
@@ -902,7 +989,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
             (*ThisIoRun).TransferBuffer = FsRtlAllocatePoolWithTag(
                 0, // CdNonPagedPool (NonPagedPool = 0)
                 PAGE_SIZE as u32,
-                0x426F4942, // TAG_IO_BUFFER ('IoBb')
+                0x66626443, // TAG_IO_BUFFER 'fbdC' (cdprocs.h)
             );
 
             (*ThisIoRun).TransferMdl = IoAllocateMdl(
@@ -1226,7 +1313,7 @@ pub unsafe extern "C" fn CdFinishBuffers(
     FlushIoBuffers
 }
 #[no_mangle]
-pub unsafe extern "system" fn CdSyncCompletionRoutine(
+pub unsafe extern "C" fn CdSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: *mut core::ffi::c_void,
@@ -1267,8 +1354,8 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     let mut Found: u32;
     let mut BufferSectorOffset: u32;
     let mut StartBlock: u32;
-    let mut EndBlock: u32;
-    let mut Blocks: u32;
+    let mut EndBlock: u32 = 0; // filled by SwapCopyUchar4 in the reactos TOC branch
+    let mut Blocks: u32 = 0;
 
     let mut IrpSp: *mut IO_STACK_LOCATION;
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -1323,13 +1410,13 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
 
             StartBlock = Lbn - ((Lbn - 16) % CD_SEC_CHUNK_BLOCKS);
 
-            #[cfg(reactos)]
+            #[cfg(feature = "reactos")]
             if !(*Vcb).CdromToc.is_null() {
                 TrackData = &(*Vcb).CdromToc.as_ref().unwrap().TrackData[((*Vcb).CdromToc.as_ref().unwrap().LastTrack
                     - (*Vcb).CdromToc.as_ref().unwrap().FirstTrack
                     + 1) as usize] as *const TRACK_DATA as *mut TRACK_DATA;
 
-                SwapCopyUchar4(&mut EndBlock as *mut u32, &(*TrackData).Address as *const u32 as *const u8);
+                SwapCopyUchar4(core::ptr::addr_of_mut!(EndBlock), core::ptr::addr_of!((*TrackData).Address) as *const u8 as *mut u8);
 
                 Blocks = EndBlock - StartBlock;
 
@@ -1337,7 +1424,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
                     Blocks = CD_SEC_CHUNK_BLOCKS;
                 }
             }
-            #[cfg(not(reactos))]
+            #[cfg(not(feature = "reactos"))]
             {
                 Blocks = CD_SEC_CHUNK_BLOCKS;
             }
@@ -1800,7 +1887,7 @@ pub unsafe extern "C" fn CdWaitSync(IrpContext: *mut IRP_CONTEXT) {
     );
 }
 #[no_mangle]
-pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
+pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1833,7 +1920,7 @@ pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
+pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
     _DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
     Context: *mut core::ffi::c_void,
@@ -1876,7 +1963,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
+pub unsafe extern "C" fn CdSingleSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1894,10 +1981,14 @@ pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     let event_ptr = (*cd_context).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void;
     KeSetEvent(event_ptr, 0, 0);
 
-    0x103 // STATUS_MORE_PROCESSING_REQUIRED
+    // STATUS_MORE_PROCESSING_REQUIRED (0xC0000016) — tells the I/O manager to STOP
+    // completing the IRP so the synchronous caller (waiting on SyncEvent) owns it.
+    // The grind wrote 0x103 (STATUS_PENDING) with a wrong comment → the IRP got
+    // completed/freed under us → use-after-free during the mount descriptor read.
+    0xC0000016u32 as i32
 }
 #[no_mangle]
-pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
+pub unsafe extern "C" fn CdSingleAsyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

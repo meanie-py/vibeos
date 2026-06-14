@@ -14,13 +14,25 @@ use crate::cddata::{CdData};
 use crate::ddk_shims::{FlagOn, SetFlag};
 
 // Real cdfs support routines (PIRP_CONTEXT == *mut IRP_CONTEXT).
-extern "system" {
+extern "C" {
     fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+}
+extern "C" {
     fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+}
+extern "C" {
     fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32) -> i32;
+}
+extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+}
+extern "C" {
     fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
+}
+extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
 }
 
