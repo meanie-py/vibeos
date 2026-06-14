@@ -445,7 +445,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
 
             (*FullPath).Length += (*SymlinkObject).LinkTargetRemaining.Length;
             (*RemainingName).Length += (*SymlinkObject).LinkTargetRemaining.Length;
-            (*RemainingName).MaximumLength =
+            (*RemainingName).MaximumLength +=
                 (*RemainingName).Length + core::mem::size_of::<WCHAR>() as USHORT;
             *(*FullPath)
                 .Buffer

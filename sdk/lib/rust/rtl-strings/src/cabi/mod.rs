@@ -7147,7 +7147,7 @@ extern "system" {
     fn ZwOpenFile(
         FileHandle: *mut *mut u8,
         DesiredAccess: u32,
-        ObjectAttributes: *mut prc::IO_STATUS_BLOCK,
+        ObjectAttributes: *mut thr::OBJECT_ATTRIBUTES,
         IoStatusBlock: *mut prc::IO_STATUS_BLOCK,
         ShareAccess: u32,
         OpenOptions: u32,
@@ -7240,7 +7240,7 @@ pub unsafe extern "system" fn RtlpMapFile(
     let status = ZwOpenFile(
         &mut h_file,
         prc::SYNCHRONIZE | prc::FILE_EXECUTE | prc::FILE_READ_DATA,
-        &mut oa as *mut _ as *mut prc::IO_STATUS_BLOCK,
+        &mut oa,
         &mut io_status_block,
         prc::FILE_SHARE_DELETE | prc::FILE_SHARE_READ,
         prc::FILE_SYNCHRONOUS_IO_NONALERT | prc::FILE_NON_DIRECTORY_FILE,

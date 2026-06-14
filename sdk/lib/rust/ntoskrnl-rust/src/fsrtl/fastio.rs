@@ -11,7 +11,7 @@ use ntkrnl_sys::ddk::{
     PFSRTL_COMMON_FCB_HEADER, PLARGE_INTEGER, PIO_STATUS_BLOCK, PMDL,
     PSHARED_CACHE_MAP, PDRIVER_OBJECT, PFS_FILTER_CALLBACKS,
     PEXTENDED_DRIVER_EXTENSION, FILE_STANDARD_INFORMATION, _IO_STATUS_BLOCK,
-    KEVENT, PIRP, PIO_STACK_LOCATION, FS_FILTER_CALLBACK_DATA, CcCanIWrite,
+    KEVENT, PIRP, FS_FILTER_CALLBACK_DATA, CcCanIWrite,
     CcFastCopyRead, CcCopyRead, CcFastCopyWrite, CcCopyWrite, CcZeroData,
     CcMdlRead, CcMdlReadComplete2, CcPrepareMdlWrite, CcMdlWriteComplete2,
     ExAcquireResourceSharedLite, ExAcquireResourceExclusiveLite, ExReleaseResourceLite,
@@ -563,7 +563,6 @@ pub unsafe extern "system" fn FsRtlGetFileSize(
     let DeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
     let mut Event: KEVENT = core::mem::zeroed();
-    let IoStackLocation: PIO_STACK_LOCATION;
     let Irp: PIRP;
     let OldHardError: BOOLEAN;
 
@@ -598,8 +597,7 @@ pub unsafe extern "system" fn FsRtlGetFileSize(
         (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
         (*Irp).AssociatedIrp.SystemBuffer = &mut Info as *mut _ as PVOID;
 
-        IoStackLocation = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
-        let IoStackLocation = IoStackLocation.offset(-1);
+        let IoStackLocation = ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(Irp);
         (*IoStackLocation).MajorFunction = IRP_MJ_QUERY_INFORMATION;
         (*IoStackLocation).FileObject = FileObject;
         (*IoStackLocation).DeviceObject = DeviceObject;

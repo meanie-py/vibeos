@@ -142,7 +142,69 @@ const LockQueueIoCompletionLock: ULONG = 11;
 // Inline function: IoSizeOfIrp
 #[inline]
 unsafe fn IoSizeOfIrp(StackSize: CCHAR) -> USHORT {
-    (size_of::<_IRP>() + (StackSize as usize) * size_of::<_IO_STACK_LOCATION>()) as USHORT
+    (size_of::<_IRP>() + (StackSize as usize) * io_stack_location_abi_size()) as USHORT
+}
+
+#[cfg(target_arch = "aarch64")]
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb0;
+
+#[inline]
+const fn io_stack_location_abi_size() -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        0x60
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        size_of::<_IO_STACK_LOCATION>()
+    }
+}
+
+#[inline]
+unsafe fn irp_current_stack_location_slot(irp: PIRP) -> *mut PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        core::ptr::addr_of_mut!(
+            (*irp)
+                .Tail
+                .Overlay
+                .__bindgen_anon_2
+                .__bindgen_anon_1
+                .CurrentStackLocation
+        )
+    }
+}
+
+#[inline]
+unsafe fn get_current_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {
+    *irp_current_stack_location_slot(irp)
+}
+
+#[inline]
+unsafe fn set_current_stack_location(irp: PIRP, stack: PIO_STACK_LOCATION) {
+    *irp_current_stack_location_slot(irp) = stack;
+}
+
+#[inline]
+unsafe fn stack_location_add(stack: PIO_STACK_LOCATION, count: isize) -> PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (stack as *mut u8).offset(count * io_stack_location_abi_size() as isize)
+            as PIO_STACK_LOCATION
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        stack.offset(count)
+    }
+}
+
+#[inline]
+unsafe fn first_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {
+    (irp as *mut u8).add(size_of::<_IRP>()) as PIO_STACK_LOCATION
 }
 
 // FORCEINLINE shim declarations (implemented in io_rust_shims.c)
@@ -242,11 +304,11 @@ unsafe fn IopClearStackLocation(stack: PIO_STACK_LOCATION) {
 }
 
 unsafe fn IoGetCurrentIrpStackLocation(irp: PIRP) -> PIO_STACK_LOCATION {
-    (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation
+    get_current_stack_location(irp)
 }
 
 unsafe fn IoGetNextIrpStackLocation(irp: PIRP) -> PIO_STACK_LOCATION {
-    (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation.sub(1)
+    stack_location_add(get_current_stack_location(irp), -1)
 }
 
 unsafe fn IoMarkIrpPending(irp: PIRP) {
@@ -1200,7 +1262,7 @@ unsafe fn IofCallDriverInner(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATU
     }
 
     StackPtr = IoGetNextIrpStackLocation(Irp);
-    (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation = StackPtr;
+    set_current_stack_location(Irp, StackPtr);
     (*StackPtr).DeviceObject = DeviceObject;
 
     ((*DriverObject).MajorFunction[(*StackPtr).MajorFunction as usize].unwrap())(DeviceObject, Irp)
@@ -1238,14 +1300,14 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
         KeBugCheckEx(MULTIPLE_IRP_COMPLETE_REQUESTS, Irp as usize, 0, 0, 0);
     }
 
-    LastStackPtr = (Irp.offset(1)) as PIO_STACK_LOCATION;
+    LastStackPtr = first_stack_location(Irp);
     if ((*LastStackPtr).Control & SL_ERROR_RETURNED) != 0 {
         ErrorCode = PtrToUlong((*LastStackPtr).Parameters.Others.Argument4) as NTSTATUS;
     }
 
     StackPtr = IoGetCurrentIrpStackLocation(Irp);
     (*Irp).CurrentLocation += 1;
-    (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation.offset(1);
+    set_current_stack_location(Irp, stack_location_add(get_current_stack_location(Irp), 1));
 
     while (*Irp).CurrentLocation <= ((*Irp).StackCount + 1) as i8 {
         (*Irp).PendingReturned = if ((*StackPtr).Control & SL_PENDING_RETURNED) != 0 { 1u8 } else { 0u8 };
@@ -1283,9 +1345,9 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
             IopClearStackLocation(StackPtr);
         }
 
-        StackPtr = StackPtr.offset(1);
+        StackPtr = stack_location_add(StackPtr, 1);
         (*Irp).CurrentLocation += 1;
-        (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation.offset(1);
+        set_current_stack_location(Irp, stack_location_add(get_current_stack_location(Irp), 1));
     }
 
     if ((*Irp).Flags & IRP_ASSOCIATED_IRP) != 0 {
@@ -1590,8 +1652,10 @@ pub unsafe extern "system" fn IoInitializeIrp(Irp: PIRP, PacketSize: USHORT, Sta
     (*Irp).StackCount = StackSize;
     (*Irp).CurrentLocation = (StackSize + 1) as CCHAR;
     (*Irp).ApcEnvironment = (*(PsGetCurrentThread() as *mut _KTHREAD)).ApcStateIndex as i8;
-    (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation =
-        ((Irp.offset(1)) as PIO_STACK_LOCATION).offset(StackSize as isize);
+    set_current_stack_location(
+        Irp,
+        stack_location_add(first_stack_location(Irp), StackSize as isize),
+    );
 
     InitializeListHead(addr_of_mut!((*Irp).ThreadListEntry));
 }
