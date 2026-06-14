@@ -1,0 +1,28 @@
+"""The shared `send` primitive — post to a channel as an identity.
+
+Deliberately small and dependency-light so *any* component reuses it (the channel
+server's reply tool, the merge announcer, the Vikunja bridge, the CLI). One credential
+model (Config), one code path.
+"""
+from __future__ import annotations
+
+from .config import Config, config as default_config
+from .mattermost import MattermostClient
+
+
+def send(text: str, *, channel: str, as_identity: str | None = None,
+         icon_emoji: str | None = None, cfg: Config | None = None) -> bool:
+    """Post `text` to `channel` (name) as `as_identity` via the incoming webhook.
+
+    Returns True on success. Best-effort: a down server never raises.
+    """
+    cfg = cfg or default_config()
+    mm = MattermostClient.from_config(cfg)
+    return mm.webhook_post(text, channel=channel, username=as_identity, icon_emoji=icon_emoji)
+
+
+def send_threaded(channel_id: str, text: str, *, root_id: str = "", cfg: Config | None = None):
+    """Bot REST post when you need the post id / threading (no per-message avatar)."""
+    cfg = cfg or default_config()
+    mm = MattermostClient.from_config(cfg)
+    return mm.post(channel_id, text, root_id=root_id)

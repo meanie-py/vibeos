@@ -1,0 +1,151 @@
+"""Mattermost client — messaging, reads, and (registrar) identity provisioning.
+
+Native Mattermost /api/v4 with bearer tokens; the incoming webhook (Slack-shaped, Traefik
+basic-auth-gated) is the per-agent-avatar post path. Three token roles:
+  - bot token       → reads + bot posts
+  - registrar token → create bots/channels/memberships (system-admin)
+  - webhook + basic  → cheap posts with a per-message username/avatar
+"""
+from __future__ import annotations
+
+from . import http
+from .errors import HttpError
+
+
+class MattermostClient:
+    def __init__(self, *, api, bot_token=None, registrar_token=None,
+                 webhook_url=None, webhook_basic=None, team="vibeos", icon_emoji=None):
+        self.api = (api or "").rstrip("/")
+        self.bot_token = bot_token
+        self.registrar_token = registrar_token
+        self.webhook_url = webhook_url
+        self.webhook_basic = webhook_basic
+        self.team = team
+        self.icon_emoji = icon_emoji
+
+    @classmethod
+    def from_config(cls, cfg):
+        return cls(api=cfg.mm_api, bot_token=cfg.mm_bot_token,
+                   registrar_token=cfg.mm_registrar_token, webhook_url=cfg.mm_webhook_url,
+                   webhook_basic=cfg.mm_webhook_basic, team=cfg.mm_team,
+                   icon_emoji=cfg.mm_icon_emoji)
+
+    # --- posting ---------------------------------------------------------
+    def webhook_post(self, text, *, channel, username=None, icon_emoji=None):
+        """Post via the incoming webhook (per-message username/avatar). Best-effort."""
+        if not self.webhook_url:
+            return False
+        payload = {"text": text, "channel": channel}
+        if username:
+            payload["username"] = username
+        emoji = icon_emoji or self.icon_emoji
+        if emoji:
+            payload["icon_emoji"] = emoji
+        try:
+            http.post(self.webhook_url, basic=self.webhook_basic, json_body=payload)
+            return True
+        except HttpError:
+            return False
+
+    def post(self, channel_id, message, *, root_id="", token=None):
+        """Bot REST post (returns the created post; supports threading via root_id)."""
+        return http.post(f"{self.api}/posts", token=token or self.bot_token,
+                         json_body={"channel_id": channel_id, "message": message,
+                                    "root_id": root_id})
+
+    # --- reading ---------------------------------------------------------
+    def read_posts(self, channel_id, since_ms, *, token=None):
+        """Posts created after since_ms, oldest-first; skips system messages + own-noise."""
+        data = http.get(f"{self.api}/channels/{channel_id}/posts",
+                        token=token or self.bot_token, params={"since": since_ms})
+        out = []
+        if not data:
+            return out
+        for pid in reversed(data.get("order", [])):
+            p = data["posts"].get(pid, {})
+            if p.get("create_at", 0) <= since_ms or p.get("type"):
+                continue
+            out.append({
+                "id": pid,
+                "create_at": p.get("create_at", 0),
+                "user": (p.get("props") or {}).get("override_username") or p.get("user_id", "?"),
+                "message": p.get("message", ""),
+            })
+        return out
+
+    def latest_create_at(self, channel_id, *, token=None):
+        """Newest post's create_at (server clock) — seed cursors with this, not local time."""
+        data = http.get(f"{self.api}/channels/{channel_id}/posts",
+                        token=token or self.bot_token, params={"per_page": 1})
+        order = (data or {}).get("order", [])
+        return data["posts"][order[0]]["create_at"] if order else None
+
+    def me(self, *, token=None):
+        return http.get(f"{self.api}/users/me", token=token or self.bot_token)
+
+    # --- resolution ------------------------------------------------------
+    def team_id(self):
+        return http.get(f"{self.api}/teams/name/{self.team}", token=self._reg())["id"]
+
+    def channel_id_by_name(self, name):
+        ch = http.get(f"{self.api}/teams/name/{self.team}/channels/name/{name}",
+                      token=self._reg())
+        return ch["id"]
+
+    # --- registrar (provisioning) ---------------------------------------
+    def _reg(self):
+        return self.registrar_token or self.bot_token
+
+    def create_bot(self, username, display_name):
+        """Create a bot account; returns {user_id, ...}. Idempotent-ish: caller checks first."""
+        return http.post(f"{self.api}/bots", token=self._reg(),
+                         json_body={"username": username, "display_name": display_name})
+
+    def find_bot(self, username):
+        try:
+            u = http.get(f"{self.api}/users/username/{username}", token=self._reg())
+            return u.get("id")
+        except HttpError as e:
+            if e.status == 404:
+                return None
+            raise
+
+    def create_user_token(self, user_id, description="agent token"):
+        return http.post(f"{self.api}/users/{user_id}/tokens", token=self._reg(),
+                         json_body={"description": description})
+
+    def add_to_team(self, team_id, user_id):
+        return http.post(f"{self.api}/teams/{team_id}/members", token=self._reg(),
+                         json_body={"team_id": team_id, "user_id": user_id})
+
+    def add_to_channel(self, channel_id, user_id):
+        return http.post(f"{self.api}/channels/{channel_id}/members", token=self._reg(),
+                         json_body={"user_id": user_id})
+
+    def create_channel(self, team_id, name, display_name, *, ch_type="O"):
+        """ch_type: 'O' public, 'P' private."""
+        return http.post(f"{self.api}/channels", token=self._reg(),
+                         json_body={"team_id": team_id, "name": name,
+                                    "display_name": display_name, "type": ch_type})
+
+    def find_channel(self, name):
+        try:
+            return self.channel_id_by_name(name)
+        except HttpError as e:
+            if e.status == 404:
+                return None
+            raise
+
+    def pin_post(self, post_id):
+        return http.post(f"{self.api}/posts/{post_id}/pin", token=self._reg())
+
+    def pinned_posts(self, channel_id):
+        return http.get(f"{self.api}/channels/{channel_id}/pinned", token=self._reg())
+
+    # --- cleanup (test/teardown) ----------------------------------------
+    def delete_bot_user(self, user_id):
+        """Deactivate a user (Mattermost soft-deletes). Used by test teardown."""
+        return http.delete(f"{self.api}/users/{user_id}", token=self._reg())
+
+    def delete_channel(self, channel_id):
+        return http.delete(f"{self.api}/channels/{channel_id}", token=self._reg())

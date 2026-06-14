@@ -1,8 +1,8 @@
 # Agent Swarm Platform — Design & Build Plan
 
-**Status:** design, converging (2026-06-14). Will refine during implementation.
-**Supersedes:** `docs/engineering/swarm-comms-plan.md` (that was the messaging-layer
-subset — board-vs-channel; this is the whole platform).
+**Status:** design → implementation (2026-06-14). Will refine during the build.
+**Absorbs:** the former `swarm-comms-plan.md` (messaging-layer subset); its transport
+analysis is now Appendix A. This is the single cohesive design.
 **Audience:** the implementation session(s), and the agents themselves.
 
 > Build everything here as **professional, modular code**, not glue scripts. A **core
@@ -266,3 +266,28 @@ Ordered by value-now; each phase shippable.
 - Per-agent **Vikunja users** (so assignees name a specific agent) vs the interim
   shared board token — mint per-agent users via the registrar; until then, ownership
   maps Mattermost-side.
+
+---
+
+## Appendix A — Transport mechanism analysis (why MCP channel + hooks)
+
+How to get a message into a *running* agent. Four mechanisms evaluated; verified
+against Claude Code docs (2026-06):
+
+| Transport | Fresh? | Cache-safe? | Reaches idle? | Verdict |
+|---|---|---|---|---|
+| **`@`-import** (`@file` in AGENTS.md) | ❌ frozen at session start | ❌ busts the cached prefix on every edit | ❌ | **rejected** — worst of both |
+| **Read-on-demand** (Read at triggers) | ✅ | ✅ | ❌ (must remember) | fallback only |
+| **MCP tools** (`swarm_read`/`say`) | ✅ | ✅ | ❌ (must call) | pull path; serializes writes |
+| **PostToolUse hook → `additionalContext`** | ✅ | ✅ (mutable stream, not prefix) | ❌ (needs a tool call) | **busy-path delivery** |
+| **MCP channel** (`notifications/claude/channel`) | ✅ | ✅ | ✅ **true push** | **idle-path delivery** |
+
+`@`-import is read once at session start (frozen mid-session) *and* sits in the cached
+prompt prefix, so any change forces a full-prefix cache miss — never use it for mutable
+shared state. The MCP **channel** push into an idle session is **confirmed real and
+implemented** (research preview; requires Anthropic auth — Pro/Max/Console, not Bedrock/
+Vertex). Conclusion → the unified delivery (§8): **hooks drain when busy, the MCP
+channel drains when idle**, one queue/cursor behind both.
+
+Detailed walkthrough of each (and the cache-prefix reasoning) is preserved in git
+history at `swarm-comms-plan.md` before its removal.

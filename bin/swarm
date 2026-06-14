@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# `swarm` on PATH → the vibeos swarm registry CLI (tools/swarm/swarm.py).
-# Resolves relative to its own location, so it works from any cwd / any worktree.
-# swarm.py is repo-location-independent (shared DB at ~/.vibeos-swarm), so using the
-# wrapper's own repo copy is always correct.
+# `swarm` on PATH → the vibeos agent-swarm CLI (agent_swarm package).
+# Resolves relative to its own location and runs via PYTHONPATH (NOT pip-installed —
+# avoids the worktree site-packages shadowing trap). Identity is resolved by the CLI.
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # .../<repo>/bin
-exec python3 "$here/../tools/swarm/swarm.py" "$@"
+exec env PYTHONPATH="$here/../agent-swarm${PYTHONPATH:+:$PYTHONPATH}" python3 -m agent_swarm "$@"

@@ -1,4 +1,10 @@
-# `tools/swarm` — agent presence registry
+# `tools/swarm` — agent presence registry  ⚠️ DEPRECATED
+
+> **Superseded by [`agent-swarm/`](../../agent-swarm/)** (2026-06-14) — the professional
+> core-library + CLI/MCP-front-ends rewrite with Authentik/Mattermost/Vikunja integration.
+> This directory is kept only so already-running sessions/hooks that reference it don't
+> break mid-flight; new work uses `agent-swarm/`. Remove once the live sessions migrate.
+
 
 Local, SQLite-backed roster of the Claude/Codex agents working vibeos
 concurrently. Answers *"who is live, on which worktree/branch, working on what?"* —
