@@ -10,7 +10,7 @@ add_cargo_module(netstack netstack-cargo netstack.sys KIND kerneldll
     BODY_CRATE netstack-rust DESTINATION reactos/system32/drivers)
 
 # netstack_reg.inf: the netstack.sys service (Start=1).
-add_registry_inf(netstack_reg.inf)
+add_registry_inf(netstack_reg.inf netstack_winsock.inf)
 
 # netstack_winsock.inf (PRESERVED BUT NOT REGISTERED): the Winsock2 protocol
 # catalog (msafd providers for TCP/UDP/RAW). This is REQUIRED for usermode ws2_32

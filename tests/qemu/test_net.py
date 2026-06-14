@@ -226,19 +226,19 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
 
 
 @pytest.mark.skip(
-    reason="BLOCKED on the Winsock2 catalog vs the amd64 boot 0x50. The usermode "
-    "vehicle is in place and verified up to the catalog gap: winlogon spawns "
-    "nettest.exe (DETACHED_PROCESS), main() runs, WSAStartup OK, and "
-    "OutputDebugStringA reaches the serial log. But socket() returns WSAEINVAL "
-    "(10022) because the Winsock2 protocol catalog (msafd providers) is empty on "
-    "the LiveCD. The catalog (drivers/network/netstack/netstack_winsock.inf) is "
-    "the correct fix, BUT baking it into the shared system hive deterministically "
-    "trips a BUGCHECK 0x50 in an early kernel driver (amd64 layout-sensitive 0x50 "
-    "family) before shell ready. So the usermode round-trip is blocked on that "
-    "separate latent driver bug — for which netstack_winsock.inf is now a "
-    "DETERMINISTIC repro. The netstack TRANSPORT itself (TCP+UDP via the exact AFD "
-    "TDI event-indication path) is proven by test_tdi_selftest_roundtrip + "
-    "test_tdi_datagram_roundtrip. Re-enable once the 0x50 is root-caused."
+    reason="UNBLOCKED at the boot layer, now blocked on catalog *content*. The "
+    "amd64 boot 0x50 that the Winsock2 catalog deterministically tripped is FIXED "
+    "(scsiport SpiCreatePortConfig left PortConfig->AdapterInterfaceType / "
+    "AtdiskClaimed as uninitialized pool garbage on non-first find-loop iterations; "
+    "garbage==Internal reset BusNumber=0 and the legacy uniata find loop never "
+    "terminated). With netstack_winsock.inf enabled, all 3 arches now boot to the "
+    "desktop. BUT the usermode round-trip still fails: nettest.exe runs, WSAStartup "
+    "OK, and socket() STILL returns WSAEINVAL (10022) even though the msafd protocol "
+    "catalog entries are present in the SYSTEM hive (registry.inf -> livecd_hives). "
+    "So ws2_32/msafd is not consuming the catalog correctly for the netstack "
+    "transport — a separate M5 catalog-loading issue, no longer a boot bug. The "
+    "netstack TRANSPORT itself is proven by test_tdi_selftest_roundtrip + "
+    "test_tdi_datagram_roundtrip. Re-enable once socket() succeeds."
 )
 def test_usermode_winsock_roundtrip(vm: QemuVM) -> None:
     r"""M5 capstone (BLOCKED — see skip reason): a REAL usermode winsock process
