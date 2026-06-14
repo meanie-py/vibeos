@@ -55,7 +55,6 @@ extern "system" {
     fn EnterCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn LeaveCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn wcslen(s: *const u16) -> usize;
-    fn StringCchVPrintfExW(pszDest: *mut u16, cchDest: usize, ppszDestEnd: *mut *mut u16, pcchRemaining: *mut usize, dwFlags: u32, pszFormat: *const u16, argList: va_list) -> i32;
     fn K32LoadStringExW(hInstance: HINSTANCE, uID: UINT, LanguageId: LANGID, lpBuffer: PWSTR, cchBufferMax: i32) -> i32;
     fn FormatMessageW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *mut c_void) -> u32;
     fn LocalFree(hMem: *mut c_void) -> *mut c_void;
@@ -68,6 +67,13 @@ extern "system" {
 extern "C" {
     fn va_start(ap: *mut va_list, ...);
     fn va_end(ap: *mut va_list);
+    // msvcrt cdecl (`@ cdecl _vsnwprintf` in msvcrt.spec). The original
+    // ConPrintfV called the strsafe FORCEINLINE StringCchVPrintfExW, which only
+    // resolved on x86 because clang emitted an out-of-line weak copy from a C TU
+    // that included <strsafe.h>; arm64 clang emitted no such copy → undefined at
+    // link. Calling _vsnwprintf directly (what strsafe does internally) is
+    // arch-neutral — see pciidex-rust/src/inlines.rs for the same import.
+    fn _vsnwprintf(buffer: *mut u16, count: usize, format: *const u16, argptr: va_list) -> i32;
 }
 
 pub const CON_RC_STRING_MAX_SIZE: usize = 4096;
@@ -318,15 +324,20 @@ pub unsafe extern "C" fn ConPrintfV(
     let mut bufSrc: [u16; CON_RC_STRING_MAX_SIZE] = [0u16; CON_RC_STRING_MAX_SIZE];
     let mut pEnd: *mut u16 = core::ptr::null_mut();
 
-    StringCchVPrintfExW(
-        bufSrc.as_mut_ptr(),
-        bufSrc.len(),
-        core::ptr::addr_of_mut!(pEnd),
-        core::ptr::null_mut(),
-        0,
-        szStr,
-        args,
-    );
+    // strsafe StringCchVPrintfExW(dest, cch, &pEnd, NULL, 0, fmt, args) semantics
+    // via the msvcrt cdecl primitive it wraps: bounded format, guaranteed NUL, and
+    // pEnd → the terminating NUL (so the existing pEnd-based length math below is
+    // unchanged). _vsnwprintf returns the wide-char count, or <0 when the result
+    // (incl. NUL) does not fit `cch`.
+    {
+        let cch = bufSrc.len();
+        let mut n = _vsnwprintf(bufSrc.as_mut_ptr(), cch, szStr, args);
+        if n < 0 || (n as usize) >= cch {
+            n = (cch - 1) as i32; // truncated — terminate at the last slot
+        }
+        bufSrc[n as usize] = 0;
+        pEnd = bufSrc.as_mut_ptr().add(n as usize);
+    }
 
     Len = if pEnd.is_null() {
         wcslen(bufSrc.as_ptr()) as i32
