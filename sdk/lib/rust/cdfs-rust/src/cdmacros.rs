@@ -1639,13 +1639,17 @@ use ntkrnl_sys::ddk::{
 };
 use crate::ddk_shims::CdRaiseStatusEx;
 
-// FsRtlLegalAnsiCharacterArray is a real ntoskrnl DATA export. C drivers see it
-// as `const UCHAR * const *FsRtlLegalAnsiCharacterArray` (a pointer-to-the-array-
-// pointer) and double-deref. Import it from ntoskrnl via raw-dylib so rustc emits
-// the __imp_ indirection rather than a bare (unresolved) _FsRtlLegalAnsiCharacterArray.
+// FsRtlLegalAnsiCharacterArray is a real ntoskrnl DATA export. The EXPORTED symbol is a
+// SINGLE pointer to the byte array — `const UCHAR * const FsRtlLegalAnsiCharacterArray`
+// (fsrtlfuncs.h:1600/1606, ntoskrnl fsrtlpc.c:154 / fsrtlpc.rs:176, value = array base).
+// (The `* const *` form in fsrtlfuncs.h:1610 is only the __CREATE_NTOS_DATA_IMPORT_ALIAS
+// variant; it is NOT what ntoskrnl exports.) Declaring it `*const *const u8` + double-deref
+// over-derefs by one level: the raw-dylib __imp_ load already yields the symbol's value (the
+// array base), so the extra `*` reads array bytes AS a pointer → access violation in
+// CdIsLegalName. Declare a single pointer and index it directly.
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
-    static FsRtlLegalAnsiCharacterArray: *const *const u8;
+    static FsRtlLegalAnsiCharacterArray: *const u8;
 }
 
 // PSEH3 DUMMY no-ops / exception accessors (SEH bodies are dead code).
@@ -1782,9 +1786,8 @@ pub unsafe extern "C" fn FsRtlIsAnsiCharacterLegalHpfs(Char: u16, WildOk: i32) -
         return 1; // DEFAULT_RET = TRUE
     }
     let flags = FSRTL_HPFS_LEGAL | if WildOk != 0 { FSRTL_WILD_CHARACTER } else { 0 };
-    // LEGAL_ANSI_CHARACTER_ARRAY = (*FsRtlLegalAnsiCharacterArray); index by C.
-    let array = *FsRtlLegalAnsiCharacterArray;
-    let legal = *array.add(c as usize);
+    // LEGAL_ANSI_CHARACTER_ARRAY = FsRtlLegalAnsiCharacterArray (single ptr); index by C.
+    let legal = *FsRtlLegalAnsiCharacterArray.add(c as usize);
     if (legal & flags) != 0 { 1 } else { 0 }
 }
 
