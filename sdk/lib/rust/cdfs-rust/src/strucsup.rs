@@ -73,7 +73,9 @@ extern "C" {
     fn SectorBlockOffset(Vcb: *mut VCB, DiskOffset: u32) -> u32;
 }
 extern "C" {
-    fn CdAddInitialAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DiskOffset: u32, Size: u32);
+    // 4th arg DataLength is i64 in the definition (allocsup.rs), not u32 — a u32 here makes
+    // the i386 callee read 4 garbage stack bytes for the high dword (see cachesup note).
+    fn CdAddInitialAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingBlock: u32, DataLength: i64);
 }
 extern "C" {
     fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefInc: i32, UserRefInc: i32);
@@ -643,7 +645,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 IrpContext,
                 path_table_fcb,
                 StartingBlock,
-                (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart as u32,
+                (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart, // DataLength: i64
             );
             CdUnlockFcb(IrpContext, path_table_fcb);
 
@@ -997,7 +999,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromPathEntry(
     (*fcb_hdr(Fcb)).FileSize.QuadPart = SECTOR_SIZE as i64;
     (*fcb_hdr(Fcb)).ValidDataLength.QuadPart = SECTOR_SIZE as i64;
 
-    CdAddInitialAllocation(IrpContext, Fcb, path_entry.DiskOffset, SECTOR_SIZE);
+    CdAddInitialAllocation(IrpContext, Fcb, path_entry.DiskOffset, SECTOR_SIZE as i64);
 
     fcb.FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
 

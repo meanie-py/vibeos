@@ -73,7 +73,7 @@ extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdLookupInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT, StreamOffset: i64);
+    fn CdLookupInitialFileDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT, DirentOffset: u32); // def takes u32, not i64 (arg-width)
 }
 extern "C" {
     fn CdIsNameInExpression(IrpContext: *mut IRP_CONTEXT, Name: *mut CD_NAME, Expression: *mut CD_NAME, IgnoreWild: u32, IgnoreCase: u8) -> u8;
@@ -555,7 +555,7 @@ pub unsafe extern "C" fn CdFindFile(
         IrpContext,
         Fcb,
         FileContext,
-        (*FcbIndex(Fcb)).StreamOffset as i64,
+        (*FcbIndex(Fcb)).StreamOffset as u32,
     );
 
     loop {
@@ -635,7 +635,7 @@ pub unsafe extern "C" fn CdFindDirectory(
 
     CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
 
-    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as i64);
+    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as u32);
 
     loop {
         let dirent: *mut DIRENT = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent);
@@ -884,7 +884,7 @@ pub unsafe extern "C" fn CdFindFileByShortName(
     //  Position ourselves at the start of the directory and update
     //
 
-    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as i64);
+    CdLookupInitialFileDirent(IrpContext, Fcb, FileContext, (*FcbIndex(Fcb)).StreamOffset as u32);
 
     //
     //  Loop until we have found the entry or are beyond this dirent.

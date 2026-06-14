@@ -80,7 +80,7 @@ extern "C" {
     fn CdSetFidDirentOffset(fid: *mut FILE_ID, offset: u32);
 }
 extern "C" {
-    fn CdSetFidPathTableOffset(fid: *mut FILE_ID, offset: u32);
+    fn CdSetFidPathTableOffset(fid: *mut FILE_ID, offset: i64); // def takes i64, not u32 (arg-width)
 }
 extern "C" {
     fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, SpinLock: u8) -> u8;
@@ -343,7 +343,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
             }
 
             FileId.QuadPart = 0;
-            CdSetFidPathTableOffset(&mut FileId, (*PathEntry).PathTableOffset);
+            CdSetFidPathTableOffset(&mut FileId, (*PathEntry).PathTableOffset as i64);
             CdFidSetDirectory(&mut FileId);
 
             CdLockVcb(IrpContext, Vcb);
@@ -492,7 +492,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
 
         // Build the file ID
         let fid_offset = CdQueryFidPathTableOffset((**current_fcb).FileId);
-        CdSetFidPathTableOffset(&mut file_id, fid_offset);
+        CdSetFidPathTableOffset(&mut file_id, fid_offset as i64);
         CdSetFidDirentOffset(
             &mut file_id,
             (*(*file_context).InitialDirent).Dirent.DirentOffset,

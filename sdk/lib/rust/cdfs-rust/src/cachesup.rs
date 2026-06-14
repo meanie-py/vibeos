@@ -138,10 +138,18 @@ extern "system" {
     fn CcSetFileSizes( FileObject: *mut FILE_OBJECT, FileSizes: *mut core::ffi::c_void, );
 }
 extern "C" {
-    fn CdTruncateAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Flags: u32, );
+    // 3rd arg is StartingFileOffset: i64 in the def (allocsup.rs), NOT u32 — a u32 here
+    // makes the i386 callee read 4 garbage stack bytes for the high dword → truncates at
+    // a bogus file offset. (arg-width ABI bug, same class as CdAddInitialAllocation.)
+    fn CdTruncateAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingFileOffset: i64, );
 }
 extern "C" {
-    fn CdAddInitialAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, Length: u32, );
+    // Must match the definition (allocsup.rs): StartingBlock is u32, DataLength is i64.
+    // The grind had these swapped (StartingOffset:i64, Length:u32) → on i386 the i64
+    // DataLength read picked up 4 garbage stack bytes → Mcb ByteCount got a bogus high
+    // dword (0x80000000…) → CdFindMcbEntry's `off < FileOffset+ByteCount` went negative →
+    // entry "not found" → BUGCHECK 0x1E STATUS_DISK_CORRUPT_ERROR (allocsup.rs:412).
+    fn CdAddInitialAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingBlock: u32, DataLength: i64, );
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -322,8 +330,8 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                     CdAddInitialAllocation(
                         IrpContext,
                         Fcb,
-                        Dirent.StartingOffset as i64,
-                        NewDataLength,
+                        Dirent.StartingOffset,        // StartingBlock: u32
+                        NewDataLength as i64,         // DataLength: i64
                     );
 
                     UpdateFcbSizes = 1;
