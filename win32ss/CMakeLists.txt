@@ -165,8 +165,8 @@ list(APPEND SOURCE
     # user/ntuser/winpos.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winpos.rs) — cohabitation [ntuser frontier]
     # user/ntuser/winsta.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winsta.rs) — cohabitation [ntuser wave 14 spine]
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
-    user/rtl/image.c
-    user/rtl/text.c
+    # user/rtl/image.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/image.rs) — cohabitation [RtlGetExpWinVer]
+    # user/rtl/text.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtl_text.rs) — cohabitation [DrawTextExWorker/UserExtTextOutW + ellipsify/wordbreak]
     # gdi/ntgdi/arc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/arc.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/bitblt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntbitblt.rs) — cohabitation [Phase 2c wave 20: ntgdi bitblt syscalls; bitblt.c + split2 = one TU]
