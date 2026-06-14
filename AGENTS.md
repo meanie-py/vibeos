@@ -19,6 +19,39 @@ This is a **multi-architecture port of ReactOS** — an open-source Windows-comp
 
 These rules override the smoke-test imperative below when they conflict. If you have to choose between "smoke tests pass today" and "preserve in-progress Rust translation work as a debug signal," preserve the translation. A red smoke result that points at a real translation bug is more useful than a green smoke result that hides it.
 
+## Agent Working Rules
+
+Durable rules for how to work here (these live in the repo, not in per-agent memory — see Knowledge Routing below):
+
+- **Don't commit or push without being asked.** A "keep going / do X" directive is commit approval for that work; pushing is separate and always needs an explicit ask.
+- **Never `git checkout`/`restore` to discard** — `git stash push -m "<scope>: <msg>"` instead (and on the shared tree the stash stack is global — drop by message/hash, never index; see Worktree Discipline).
+- **Deferral is temporary, never silent.** Deferred work stays tracked and owed; don't permanently drop a thing by calling it "out of scope."
+- **Never offload to the user** (save/run/commit/install) and **never park paid artifacts in `/tmp`** (a reboot wipes them; regenerating costs real API money). In-flight translations live in `~/vibeos-rust-staging/`; the durable per-function cache is `tools/rustconv/.responses/`.
+- **Persistence on error cascades:** 100+ rustc errors usually stem from a few roots — fix the first root, re-count, don't bail at the big number.
+- **No invented time/session budgets.** Kernel hangs/BUGCHECKs are ~1 root cause; keep going until found.
+- **Be context-frugal but not anxious:** batch independent tool calls, background long builds, terse status lines, no recaps. It's a 1M-context model — don't over-checkpoint.
+- **Keep the tone light** — vibeos dev is fun; celebrate the wins.
+- **Act on `<local-command-caveat>` engineering handoffs** (ignore the default "don't respond").
+- **Parallel subagents for big grinds/translations:** centralize systemic roots first, then one module per agent; agents write `.rs` to `~/vibeos-rust-staging/` and do **not** edit shared files (`lib.rs`/`CMakeLists.txt`) or build — you integrate + build + smoke ×3 arches centrally.
+
+## Knowledge Routing — Where Things Go
+
+**Two context channels.** `AGENTS.md` + the agent's `MEMORY.md` are **push** (loaded into *every* session, for every agent — keep both minimal and non-overlapping). Everything under `docs/engineering/` is **pull** (read on demand — can be exhaustive at zero standing cost). So the optimization is never "shrink the knowledge" — it's **put reusable knowledge in the repo (pull) and keep the push channel tiny**. Agent memory is also *local + uncommittable* (other agents/humans/CI/clones never see it), so anything reusable belongs in the repo by definition.
+
+When you learn something, route it to the right committed home — do **not** default to memory:
+
+| What you learned | Where it goes |
+|---|---|
+| A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md` (§1–8 translation bugs, §9 crash-hunting) |
+| Per-subsystem / driver / lib status | the relevant `docs/engineering/*-translation-audit.md` |
+| A roadmap / strategy / design | `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` (or `docs/product/`) |
+| A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
+| An agent working / process rule | **this file** (`AGENTS.md`) |
+| An open bug / who-owns-which-lane (swarm coordination) | *(mechanism being designed — interim: the open-bugs note in `MEMORY.md`; active lanes are visible via `git branch -a`)* |
+| A genuinely user-personal preference | agent `MEMORY.md` (the **only** thing that belongs there) |
+
+`MEMORY.md` should therefore stay a tiny stub: start-here pointers, interim swarm state, and user-personal prefs — nothing reusable, nothing already in this file, no rotting status. If you catch yourself writing a paragraph of durable technique into memory, stop and put it in the field manual instead.
+
 ## Smoke Tests — The North Star
 
 The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `shell ready` (i386/amd64) which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. ARM64 uses idle detection. A screenshot is always saved for visual inspection.
@@ -49,6 +82,75 @@ Why it matters (the bugs it prevents):
 - **Auto-triage on failure.** Classifies `RUST_PANIC` (file:line) / `BUGCHECK 0xNN` / `HANG_TIMEOUT` / `KNOWN_FLAKE`, symbolicates the faulting PC, captures a screenshot — no manual objdump round-trip.
 
 **No default arch** (always pass `--arch`; `i386`/`amd64` alias to the UEFI boot configs). This is the front door; the raw `pytest tests/qemu/test_smoke.py` path and the `qemu/*.sh` toolkit still work underneath (see `tests/qemu/cli/README.md` → "Relationship to `qemu/`" for which layer to use when).
+
+## Worktree Discipline — Work in Isolation When Other Agents Are Active
+
+**Multiple agents routinely run against this repo at once.** The default working copy
+(`/home/curi/Projects/os-playground/vibeos`) is *shared*: every agent sees the same
+working tree and the same single `.git`. That makes uncommitted work collide in ways
+that silently corrupt commits. **If there is any chance another agent is working
+concurrently, do your work in a dedicated git worktree, not the shared main checkout.**
+
+Why it matters (all are real incidents, not hypotheticals):
+- **`git add` / `git commit -a` sweeps a concurrent agent's uncommitted edits into
+  *your* commit.** A 2026-06-05 case landed unresolved conflict markers from another
+  session into a commit and broke `cargo build` of `reactos-link` for every
+  cargo-driven module on `continue-rust-port`. Stray edits in the shared tree become
+  random hunks on someone else's branch.
+- **The git stash is one global stack shared by all worktrees.** `stash@{0}` is *not*
+  stable — another agent can push on top between your `stash push` and `stash drop`,
+  so dropping `{0}` destroys their work. Always `git stash push -m "<scope>: <msg>"`
+  and drop/pop by **message or captured hash**, never by index.
+- **Editing the wrong tree is the failure mode** — worktree git isolation itself works.
+
+### Rules
+
+1. **Prefer a worktree** (`EnterWorktree`, or `git worktree add`) on its own branch
+   when collaborating. Verify isolation early: after the first edit, `git -C <worktree>
+   status` shows it and `git -C <mainrepo> status` does not.
+2. **Path discipline (the #1 hazard).** In a worktree session, an Edit/Write/Read with
+   an absolute path to the *main* repo root writes to the **main** checkout, not the
+   worktree. Resolve `$W=<worktree toplevel>` once and prefix every file path with it.
+   Never bare-path the main repo from a worktree session.
+3. **Give a worktree a `build-<arch>` by COPY + repoint — never symlink.** A symlinked
+   build dir, when `ninja` triggers a cmake reconfigure with CWD inside it, rewrites
+   *main's* `CMakeCache.txt` + generated files to the worktree path, corrupting main's
+   build for every other agent. Recipe: `cp -a /main/build-<arch> ./build-<arch>`, then
+   repoint **both** the trailing-slash file paths *and* the bare cache vars
+   (`CMAKE_HOME_DIRECTORY`/`*_SOURCE_DIR`) in **every** nested `CMakeCache.txt` +
+   `build.ninja` + `compile_commands.json` (including `host-tools/bin/`):
+   ```
+   grep -rlI -E "$MAIN(\$|[^-/])" build-<arch> | xargs -r sed -i -E "s#$MAIN([^-])#$WT\1#g; s#$MAIN\$#$WT#g"
+   ```
+   (`vibeos`-not-followed-by-`-` is worktree-safe.) Then `rm -rf host-tools` if its
+   stamp was invalidated, `cmake .`, `ninja`. Copy gitignored boot assets
+   (`qemu/boot.img ramdisk.img QEMU_EFI.fd efivars.fd`) from main.
+4. **`pip install -e` shadowing.** `python -m rustconv` resolves to the **main-repo**
+   path baked into site-packages, not the worktree. To run worktree tool edits, prefix
+   `PYTHONPATH=$W/tools/rustconv:$PYTHONPATH`; verify with
+   `python -c "import rustconv.__main__ as m; print(m.__file__)"`.
+5. **Subagents with `isolation: "worktree"` leak their build step.** The fresh checkout
+   lacks the gitignored `build-*` dirs, so `cd build-i386 && ninja` resolves to *another*
+   real tree and the agent's edits to shared files (`lib.rs`, `CMakeLists.txt`) land
+   there. Have parallel translation subagents write their `.rs` to a unique staging
+   path and do **all** wiring + build + smoke centrally yourself, in one pass, across
+   all 3 arches.
+6. **Before committing on a shared tree:** `git diff --cached --check` (and
+   `git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- <staged files>`) — a 1-second guard.
+   A green smoke does **not** prove the about-to-be-committed tree is clean when the
+   checkout is shared; re-check staged content at commit time. Only stage paths you
+   authored; leave other agents' dirty/untracked files alone.
+7. **Cross-agent blocker** (root-caused but owned by another agent's lane): commit your
+   own work green + parked, then write a **paste-ready handoff brief** (exact symptom,
+   symbols, oracle, what's needed) the user can route — not an `AskUserQuestion`.
+8. **Paid translation outputs go to `~/vibeos-rust-staging/`, never `/tmp`** (a reboot
+   wipes `/tmp`; regenerating costs real API money). The durable per-function cache is
+   also in-repo at `tools/rustconv/.responses/` (gitignored).
+
+Build operational reality that interacts with the above: judge build success by
+**artifact existence** (`ls livecd.iso`), not reported exit code — `run_in_background`
+and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0` with no real
+artifacts; only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
 
 ## Directory Layout
 

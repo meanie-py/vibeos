@@ -585,11 +585,12 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ddk::_LARGE_INTEGER) {
     extern "C" {
         static SharedUserData: *mut ddk::_KUSER_SHARED_DATA;
     }
-    // Read high1, low, high2, loop until consistent
+    // SharedUserData is updated asynchronously by the kernel clock tick; these
+    // reads must remain actual memory loads for spin-wait callers.
     loop {
-        let high1 = (*SharedUserData).SystemTime.High1Time;
-        let low = (*SharedUserData).SystemTime.LowPart;
-        let high2 = (*SharedUserData).SystemTime.High2Time;
+        let high1 = core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time).read_volatile();
+        let low = core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart).read_volatile();
+        let high2 = core::ptr::addr_of!((*SharedUserData).SystemTime.High2Time).read_volatile();
         if high1 == high2 {
             (*current_time).QuadPart = ((high1 as i64) << 32) | (low as u32 as i64);
             break;

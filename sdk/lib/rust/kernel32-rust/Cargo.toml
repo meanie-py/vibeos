@@ -1,0 +1,22 @@
+# kernel32-rust — Rust translation of dll/win32/kernel32 (the Win32 base API DLL).
+# staticlib → libkernel32_rust.a, cohab-linked into the cmake-built kernel32.dll with the
+# translated .c files commented out (per-file flip, like ntdll-rust). User-mode DLL:
+# builds for the STANDARD per-arch targets (i686/x86_64 gnu, aarch64 gnullvm) with
+# i386 -sse,-sse2 (the user-mode no-SSE rule — SSE leaking into user-mode ntdll/kernel32
+# caused the i386 taskbar deadlock). Imports resolve to ntdll.dll at runtime; the FFI
+# decls come from ntdll-sys (Nt*/Rtl*/Ldr*/Csr* + BASE_* csr message types).
+#
+# First target: client/proc.c (CreateProcessInternalW + the whole process-creation path) —
+# the hardest, most boot-critical function in the DLL, tackled first (hardest-first, like
+# ntoskrnl). Maximally boot-exercised: every process launch flows through it.
+
+[package]
+name = "kernel32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

@@ -7,3 +7,6 @@
 # semdiff reports + per-pair response cache (rustconv/semdiff.py). Generated
 # output — regenerable, local-only.
 .semdiff/
+
+# Local manual backups (e.g. pre-c2rust response snapshots). Never committed.
+.responses-backup*/

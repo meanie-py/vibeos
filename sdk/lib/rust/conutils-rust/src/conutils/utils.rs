@@ -1,6 +1,5 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
-use core::sync::atomic::{AtomicPtr, Ordering};
 
 extern "system" {
     fn FindResourceExW(hModule: HINSTANCE, lpType: *const u16, lpName: *const u16, wLanguage: u16) -> HRSRC;
@@ -13,6 +12,23 @@ extern "system" {
     fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: *mut u32) -> i32;
 }
 
+// InterlockedCompareExchangePointer is a compiler intrinsic on x86 (lowered to an
+// inline cmpxchg, no symbol), so the original extern decl resolved there but had no
+// provider on arm64 → undefined at link. A pointer-width atomic CAS is the portable
+// equivalent and keeps the call site below unchanged.
+#[inline]
+unsafe fn InterlockedCompareExchangePointer(
+    Destination: *mut *mut c_void,
+    Exchange: *mut c_void,
+    Comperand: *mut c_void,
+) -> *mut c_void {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    let atomic = &*(Destination as *const AtomicPtr<c_void>);
+    match atomic.compare_exchange(Comperand, Exchange, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(prev) | Err(prev) => prev,
+    }
+}
+
 const RT_STRING: u32 = 6;
 
 const FILE_TYPE_CHAR: u32 = 0x0002;
@@ -23,7 +39,7 @@ const SUBLANG_NEUTRAL: u16 = 0x00;
 const MAKELANGID_LN_SN: u16 = ((SUBLANG_NEUTRAL as u16) << 10) | (LANG_NEUTRAL as u16);
 
 // Thread-safe function pointer for SetThreadUILanguage (from kernel32)
-static pfnSetThreadUILanguage: AtomicPtr<c_void> = AtomicPtr::new(core::ptr::null_mut());
+static mut pfnSetThreadUILanguage: *mut c_void = core::ptr::null_mut();
 
 unsafe fn LOWORD(dw: u32) -> u16 {
     dw as u16
@@ -137,7 +153,7 @@ pub unsafe extern "system" fn FormatMessageSafeW(
 
 #[no_mangle]
 pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
-    let initial = pfnSetThreadUILanguage.load(Ordering::Acquire);
+    let initial = core::ptr::read_volatile(&pfnSetThreadUILanguage);
     if initial.is_null() {
         let kernel32_name: [u16; 13] = [
             b'k' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'e' as u16, b'l' as u16,
@@ -150,14 +166,13 @@ pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
         if p_func.is_null() {
             return 0;
         }
-        let _ = pfnSetThreadUILanguage.compare_exchange(
-            core::ptr::null_mut(),
+        InterlockedCompareExchangePointer(
+            core::ptr::addr_of_mut!(pfnSetThreadUILanguage),
             p_func,
-            Ordering::AcqRel,
-            Ordering::Acquire,
+            core::ptr::null_mut(),
         );
     }
-    let fn_ptr = pfnSetThreadUILanguage.load(Ordering::Acquire);
+    let fn_ptr = core::ptr::read_volatile(&pfnSetThreadUILanguage);
     if !fn_ptr.is_null() {
         let func: unsafe extern "system" fn(LANGID) -> LANGID = core::mem::transmute(fn_ptr);
         func(lang_id)

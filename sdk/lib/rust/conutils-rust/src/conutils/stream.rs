@@ -45,7 +45,11 @@ pub struct CON_STREAM {
 }
 
 // ---- file-scope globals ----
-
+// These are the canonical CON_STREAM instances consumed by C callers (cmd.exe's
+// StdIn/StdOut/StdErr = &csStd*). The original cohab relied on a stale C stream.c
+// object in libconutils.a to provide them on x86; arm64 (clean, stub-only) had no
+// definer → undefined at link. #[no_mangle] makes conutils-rust itself the single
+// canonical provider on every arch (stream.c is no longer built).
 #[no_mangle]
 pub static mut csStdIn: CON_STREAM = unsafe { core::mem::zeroed() };
 #[no_mangle]

@@ -142,14 +142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cdrom-rust"
-version = "0.1.0"
-dependencies = [
- "kmdf-sys",
- "ntkrnl-sys",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -541,10 +533,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "kmdf-sys"
+name = "kernel32-rust"
 version = "0.1.0"
 dependencies = [
- "ntkrnl-sys",
+ "ntdll-sys",
 ]
 
 [[package]]
@@ -1298,6 +1290,13 @@ name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "uniata-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

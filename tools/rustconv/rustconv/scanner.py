@@ -1,4 +1,11 @@
-"""C source parser using tree-sitter for structural analysis."""
+"""C/C++ source parser using tree-sitter for structural analysis.
+
+C++ (.cpp/.cc/.cxx) is parsed with tree-sitter-cpp, a superset grammar. The
+L2 "C-as-C++" tier (uniata, udfs — C code in .cpp clothing whose only C++-ism
+is `extern "C"` linkage blocks) translates through the same per-function path
+as C; the only structural delta is flattening `linkage_specification` nodes so
+their contents are treated as top-level (see scan_file).
+"""
 
 import re
 from dataclasses import dataclass, field
@@ -6,9 +13,14 @@ from pathlib import Path
 from typing import Optional
 
 import tree_sitter_c as tsc
+import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
 C_LANG = Language(tsc.language())
+CPP_LANG = Language(tscpp.language())
+
+# Extensions that select the C++ grammar.
+_CPP_SUFFIXES = (".cpp", ".cc", ".cxx", ".c++", ".cpp")
 
 # Calling convention macros
 CALLING_CONVENTIONS = {"NTAPI", "FASTCALL", "WINAPI", "CDECL", "__cdecl", "__stdcall", "__fastcall"}
@@ -373,6 +385,13 @@ def _strip_known_off_ifdefs(text: str) -> str:
 # function — font.c found 2 of 14). Resolving them (drop the directive lines,
 # keep the live branch) lets tree-sitter parse the body.
 _KNOWN_UNDEFINED_SYMS = ("FONT_CACHE_PRESENT",)
+# Symbols the build defines to 1 (`-DDBG=1` for the checked/debug kernel). A bare
+# `#if DBG` body sits INSIDE function bodies (the FAT/CDFS drivers wrap their SEH
+# frames in `#if DBG`); tree-sitter-c recovers catastrophically from a `#if/#endif`
+# inside a compound statement (swallows every following function — fsctrl.c lost 50
+# of 76, FatMountVolume among them). Resolving `#if DBG` → keep the live branch,
+# drop the directive lines, lets the SEH parse with balanced braces.
+_KNOWN_DEFINED_TRUE_SYMS = ("DBG",)
 _PP_IF = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef)\b[ \t]*(.*)$')
 
 
@@ -380,10 +399,17 @@ def _eval_pp_cond(kw: str, expr: str) -> Optional[bool]:
     """Resolve a preprocessor condition to True/False, or None if unknown."""
     expr = expr.split('//')[0].split('/*')[0].strip()
     if kw == 'if':
-        return {'0': False, '1': True}.get(expr)
+        v = {'0': False, '1': True}.get(expr)
+        if v is not None:
+            return v
+        if expr in _KNOWN_DEFINED_TRUE_SYMS:   # bare `#if DBG` → DBG=1 in the build
+            return True
+        return None
     sym = expr.split()[0] if expr.split() else ''
     if sym in _KNOWN_UNDEFINED_SYMS:
         return kw == 'ifndef'          # #ifndef UNDEF → True, #ifdef UNDEF → False
+    if sym in _KNOWN_DEFINED_TRUE_SYMS:
+        return kw == 'ifdef'           # #ifdef DBG → True, #ifndef DBG → False
     return None
 
 
@@ -456,22 +482,188 @@ def extract_preamble(scan: "ScanResult") -> str:
     return re.sub(r'\n{3,}', '\n\n', text).strip()
 
 
+# ---------------------------------------------------------------------------
+# Partial preprocessor — #if/#ifdef conditional resolution (macros preserved).
+#
+# tree-sitter does NOT evaluate preprocessor conditionals, so #if/#endif blocks
+# that span constructs (pervasive in #ifdef-heavy drivers like uniata: 190 such
+# lines in id_ata.cpp vs 7 in atapi.c) wreck the parse — functions get swept
+# into the file-scope preamble instead of extracted per-function. We resolve the
+# conditionals ourselves against a symbol table (a ReactOS-i386 build -D default
+# set + object-like #defines harvested from the target's local headers + in-file
+# #defines tracked top-down), dropping dead branches and the directive lines but
+# leaving macro INVOCATIONS unexpanded (faithful translation). Applied to C++
+# (.cpp) only for now — the proven C path is unchanged. Unknown conditions keep
+# their branch (never silently drop live code).
+# ---------------------------------------------------------------------------
+
+# Stable ReactOS i386 driver-build symbols (from the cmake compile command's -D
+# flags). Per-target -D overrides could be threaded later; these cover the gate
+# symbols that decide live branches (__REACTOS__ defined; feature flags off).
+_DEFAULT_PP_DEFINES: dict[str, str] = {
+    '__REACTOS__': '1', '_M_IX86': '1', '_X86_': '1', '__i386__': '1', 'i386': '1',
+    '_USE_DUMMY_PSEH': '1', 'DBG': '1', 'WINVER': '0x502', '_WIN32_WINNT': '0x502',
+    '_WIN32_WINDOWS': '0x502', '_WIN32_IE': '0x603', '_SETUPAPI_VER': '0x502',
+    'USE_COMPILER_EXCEPTIONS': '1', '_NEW_DELETE_OPERATORS_': '1',
+    'DLL_EXPORT_VERSION': '0x502', '__USE_CRTIMP': '1', '_DLL': '1',
+    'MINGW_HAS_SECURE_API': '1',
+}
+
+_PP_SAFE_EXPR = re.compile(r'^[0-9xXa-fA-F\s()+\-*/%<>=!&|~^]*'
+                           r'(?:\b(?:and|or|not)\b[0-9xXa-fA-F\s()+\-*/%<>=!&|~^]*)*$')
+_DEFINE_RE = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)(?!\()(?:\s+(.*))?$')
+_UNDEF_RE = re.compile(r'^\s*#\s*undef\s+([A-Za-z_]\w*)')
+_COND_RE = re.compile(r'^\s*#\s*(ifdef|ifndef|if|elif|else|endif)\b(.*)$')
+
+
+def _harvest_local_defines(path: Path) -> dict[str, str]:
+    """Object-like #defines from the target's own directory + inc/ headers."""
+    defs: dict[str, str] = {}
+    for d in (path.parent, path.parent / 'inc'):
+        if not d.is_dir():
+            continue
+        for h in sorted(d.glob('*.h')):
+            try:
+                ht = h.read_text(errors='replace')
+            except Exception:
+                continue
+            for m in _DEFINE_RE.finditer(ht):
+                # strip trailing line-comments from the value
+                val = (m.group(2) or '1')
+                val = re.sub(r'/\*.*?\*/', '', val)
+                val = val.split('//')[0].strip() or '1'
+                defs.setdefault(m.group(1), val)
+    return defs
+
+
+def _eval_c_const_expr(expr: str, symbols: dict[str, str]):
+    """Evaluate a #if/#elif integer-constant expression. Returns bool or None."""
+    expr = re.sub(r'/\*.*?\*/', '', expr).split('//')[0]
+    # defined(X) / defined X
+    expr = re.sub(r'defined\s*\(\s*([A-Za-z_]\w*)\s*\)',
+                  lambda m: '1' if m.group(1) in symbols else '0', expr)
+    expr = re.sub(r'defined\s+([A-Za-z_]\w*)',
+                  lambda m: '1' if m.group(1) in symbols else '0', expr)
+    # substitute object-like macro identifiers with their values (bounded passes)
+    for _ in range(8):
+        def _sub(m):
+            name = m.group(0)
+            v = symbols.get(name)
+            return f'({v})' if (v not in (None, '')) else '0'
+        new = re.sub(r'[A-Za-z_]\w*', _sub, expr)
+        if new == expr:
+            break
+        expr = new
+    # any leftover bare identifiers → undefined → 0
+    expr = re.sub(r'[A-Za-z_]\w*', '0', expr)
+    # strip integer suffixes (0x1FUL, 5L, ...)
+    expr = re.sub(r'(\b0[xX][0-9a-fA-F]+|\b\d+)[uUlL]+', r'\1', expr)
+    # C → Python operators
+    expr = expr.replace('&&', ' and ').replace('||', ' or ')
+    expr = re.sub(r'!(?!=)', ' not ', expr)
+    expr = re.sub(r'(?<![/])/(?![/])', '//', expr)  # int division
+    if not _PP_SAFE_EXPR.match(expr):
+        return None
+    try:
+        return bool(eval(expr, {'__builtins__': {}}, {}))  # sanitized: digits/ops only
+    except Exception:
+        return None
+
+
+def _resolve_pp_conditionals(path: Path, text: str) -> str:
+    """Drop dead #if/#ifdef branches; keep live ones + all macro invocations."""
+    symbols = dict(_DEFAULT_PP_DEFINES)
+    symbols.update(_harvest_local_defines(path))
+    out: list[str] = []
+    stack: list[dict] = []  # each: {active, taken, parent, unknown}
+
+    def emitting() -> bool:
+        return all(f['active'] for f in stack)
+
+    for line in text.splitlines():
+        cm = _COND_RE.match(line)
+        if not cm:
+            if emitting():
+                dm = _DEFINE_RE.match(line)
+                if dm:
+                    val = (dm.group(2) or '1')
+                    val = re.sub(r'/\*.*?\*/', '', val).split('//')[0].strip() or '1'
+                    symbols[dm.group(1)] = val
+                um = _UNDEF_RE.match(line)
+                if um:
+                    symbols.pop(um.group(1), None)
+                out.append(line)
+            continue
+        kw, rest = cm.group(1), cm.group(2).strip()
+        if kw in ('ifdef', 'ifndef', 'if'):
+            parent = emitting()
+            if not parent:
+                stack.append({'active': False, 'taken': True, 'parent': False})
+            elif kw == 'ifdef':
+                v = re.match(r'([A-Za-z_]\w*)', rest)
+                val = bool(v and v.group(1) in symbols)
+                stack.append({'active': val, 'taken': val, 'parent': True})
+            elif kw == 'ifndef':
+                v = re.match(r'([A-Za-z_]\w*)', rest)
+                val = not (v and v.group(1) in symbols)
+                stack.append({'active': val, 'taken': val, 'parent': True})
+            else:
+                val = _eval_c_const_expr(rest, symbols)
+                if val is None:  # unknown → keep branch (never drop live code)
+                    stack.append({'active': True, 'taken': True, 'parent': True, 'unknown': True})
+                else:
+                    stack.append({'active': val, 'taken': val, 'parent': True})
+        elif kw == 'elif':
+            if not stack:
+                continue
+            top = stack[-1]
+            if top.get('unknown') or not top['parent']:
+                top['active'] = top.get('unknown', False)
+            elif top['taken']:
+                top['active'] = False
+            else:
+                val = _eval_c_const_expr(rest, symbols)
+                if val is None:
+                    top['active'] = True
+                    top['unknown'] = True
+                else:
+                    top['active'] = val
+                top['taken'] = top['taken'] or top['active']
+        elif kw == 'else':
+            if not stack:
+                continue
+            top = stack[-1]
+            if top.get('unknown'):
+                top['active'] = True
+            else:
+                top['active'] = top['parent'] and not top['taken']
+            top['taken'] = True
+        elif kw == 'endif':
+            if stack:
+                stack.pop()
+    return '\n'.join(out)
+
+
 def scan_file(path: Path) -> ScanResult:
-    """Parse a C source file and extract structural information."""
+    """Parse a C/C++ source file and extract structural information."""
+    raw = _expand_split_includes(path, path.read_text(errors='replace'))
+    is_cpp = path.suffix.lower() in _CPP_SUFFIXES
+    if is_cpp:
+        # Resolve preprocessor conditionals so #ifdef-spanning constructs don't
+        # break tree-sitter function extraction (uniata etc.). Macros preserved.
+        raw = _resolve_pp_conditionals(path, raw)
     source_text = _normalize_callbacks(
         _strip_sal(
             _expand_csr_api(
                 _resolve_known_preproc(
-                    _strip_known_off_ifdefs(
-                        _expand_split_includes(path, path.read_text(errors='replace'))
-                    )
+                    _strip_known_off_ifdefs(raw)
                 )
             )
         )
     )
     source = source_text.encode('utf-8')
 
-    parser = Parser(C_LANG)
+    parser = Parser(CPP_LANG if is_cpp else C_LANG)
     tree = parser.parse(source)
 
     result = ScanResult(path=path, raw_source=source_text)
@@ -543,12 +735,29 @@ def scan_file(path: Path) -> ScanResult:
     # is empty. `translate` feeds this through the LLM as one preamble unit.
     _SKIP_TOPLEVEL = {"function_definition", "preproc_include", "comment"}
     preamble_parts: list[str] = []
-    for child in cursor.node.children:
-        if child.type in _SKIP_TOPLEVEL:
-            continue
-        if child.type == ";":  # stray empty top-level statement
-            continue
-        preamble_parts.append(_extract_text(child, source))
+
+    def _collect_preamble(children):
+        # Append every top-level construct that is NOT a function body / include
+        # / comment. C++ `extern "C" { ... }` is a `linkage_specification`
+        # wrapping a `declaration_list`; flatten it so its inner functions
+        # (already captured as CFunctions via walk) aren't re-dumped as text and
+        # its inner typedefs/decls still land in the preamble.
+        for child in children:
+            if child.type in _SKIP_TOPLEVEL:
+                continue
+            if child.type == ";":  # stray empty top-level statement
+                continue
+            if child.type == "linkage_specification":
+                body = child.child_by_field_name("body")
+                if body is not None and body.type == "declaration_list":
+                    _collect_preamble(body.children)
+                    continue
+                # `extern "C" <single-decl>;` (no braces) — keep verbatim.
+            if child.type in ("{", "}"):  # declaration_list braces when flattened
+                continue
+            preamble_parts.append(_extract_text(child, source))
+
+    _collect_preamble(cursor.node.children)
     result.preamble_text = "\n".join(preamble_parts).strip()
 
     # Parse globals from the globals section text using simple regex

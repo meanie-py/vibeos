@@ -1,25 +1,67 @@
-
-
 include_directories(
     BEFORE ${CMAKE_CURRENT_SOURCE_DIR}
     inc)
 
 #add_definitions(-D_DEBUG)
 
+# ============================================================================
+# uniata.sys — Rust cohabitation flip (9 .cpp -> Rust; ros_glue.cpp stays C)
+# ============================================================================
+# The UniATA miniport is translated to Rust (uniata-rust, kept on disk per the
+# never-delete rule). DriverEntry + the SCSIPORT HwXxx miniport machinery + the
+# PCI/AHCI/SATA register stacks + chip-detect tables come from libuniata_rust.a;
+# the driver-private DDK types (HW_DEVICE_EXTENSION/HW_CHANNEL/HW_LU_EXTENSION/
+# ATA_REQ/IORES + the IDENTIFY/SRB/CDB layouts) come from the per-driver bindgen
+# substrate (uniata-rust/src/types_*.rs). ros_glue/ros_glue.cpp stays as the C TU
+# defining the mutable MajorVersion/MinorVersion/BuildNumber globals the Rust crate
+# references. _PrintNtConsole is a cdecl varargs helper (c_variadic feature -> the
+# cargo build runs under RUSTC_BOOTSTRAP=1). Standard per-arch RUST_TARGET, i386
+# no-SSE RUSTFLAGS. First C++-tier proof (rustconv tree-sitter-cpp front-end).
+#
+# C bodies replaced by Rust (kept on disk per the never-delete rule):
+#   atacmd_map.cpp bm_devs.cpp id_ata.cpp id_badblock.cpp id_dma.cpp
+#   id_init.cpp id_probe.cpp id_queue.cpp id_sata.cpp
 list(APPEND SOURCE
-    atacmd_map.cpp
-    bm_devs.cpp
-    id_ata.cpp
-    id_badblock.cpp
-    id_dma.cpp
-    id_init.cpp
-    id_probe.cpp
-    id_queue.cpp
-    id_sata.cpp
     ros_glue/ros_glue.cpp
     stdafx.h)
 
-add_library(uniata MODULE ${SOURCE} idedma.rc)
+set(UNIATA_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(UNIATA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-uniata-target")
+set(UNIATA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libuniata_rust.a")
+if(ARCH STREQUAL "i386")
+    set(UNIATA_RUST_TARGET "i686-pc-windows-gnu")
+    set(UNIATA_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(UNIATA_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(UNIATA_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(UNIATA_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(UNIATA_RUST_RUSTFLAGS "")
+endif()
+file(GLOB UNIATA_RUST_SRCS "${UNIATA_RUST_WORKSPACE_DIR}/uniata-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${UNIATA_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${UNIATA_RUST_TARGET_DIR}
+        RUSTC_BOOTSTRAP=1
+        RUSTFLAGS=${UNIATA_RUST_RUSTFLAGS}
+        cargo build --release --target ${UNIATA_RUST_TARGET}
+            -p uniata-rust
+            --manifest-path ${UNIATA_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${UNIATA_RUST_TARGET_DIR}/${UNIATA_RUST_TARGET}/release/libuniata_rust.a
+        ${UNIATA_RUST_LIB}
+    DEPENDS ${UNIATA_RUST_SRCS}
+            ${UNIATA_RUST_WORKSPACE_DIR}/uniata-rust/Cargo.toml
+    WORKING_DIRECTORY ${UNIATA_RUST_WORKSPACE_DIR}
+    COMMENT "Building uniata-rust (${UNIATA_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_uniata DEPENDS ${UNIATA_RUST_LIB})
+
+add_library(uniata MODULE
+    rust_cohab_stub.cpp
+    ${SOURCE}
+    idedma.rc)
 
 if(MSVC)
     # Disable warning C4267: '=': conversion from 'size_t' to 'USHORT', possible loss of data
@@ -38,6 +80,8 @@ endif()
 add_pch(uniata stdafx.h SOURCE)
 set_module_type(uniata kernelmodedriver)
 add_importlibs(uniata scsiport ntoskrnl hal)
+add_dependencies(uniata rust_uniata)
+target_link_libraries(uniata ${UNIATA_RUST_LIB})
 add_cd_file(TARGET uniata DESTINATION reactos/system32/drivers NO_CAB FOR all)
 add_registry_inf(uniata_reg.inf)
 add_driver_inf(uniata uniata_comm.inf)

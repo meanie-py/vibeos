@@ -54,6 +54,7 @@ extern "system" {
     fn WriteFile(hFile: *mut c_void, lpBuffer: *const c_void, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: *mut u32, lpOverlapped: *mut c_void) -> i32;
     fn EnterCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn LeaveCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
+    fn wcslen(s: *const u16) -> usize;
     fn K32LoadStringExW(hInstance: HINSTANCE, uID: UINT, LanguageId: LANGID, lpBuffer: PWSTR, cchBufferMax: i32) -> i32;
     fn FormatMessageW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *mut c_void) -> u32;
     fn LocalFree(hMem: *mut c_void) -> *mut c_void;
@@ -64,8 +65,15 @@ extern "system" {
 }
 
 extern "C" {
-    fn wcslen(s: *const u16) -> usize;
-    fn _vsnwprintf(buffer: *mut u16, count: usize, format: *const u16, arg_list: va_list) -> i32;
+    fn va_start(ap: *mut va_list, ...);
+    fn va_end(ap: *mut va_list);
+    // msvcrt cdecl (`@ cdecl _vsnwprintf` in msvcrt.spec). The original
+    // ConPrintfV called the strsafe FORCEINLINE StringCchVPrintfExW, which only
+    // resolved on x86 because clang emitted an out-of-line weak copy from a C TU
+    // that included <strsafe.h>; arm64 clang emitted no such copy → undefined at
+    // link. Calling _vsnwprintf directly (what strsafe does internally) is
+    // arch-neutral — see pciidex-rust/src/inlines.rs for the same import.
+    fn _vsnwprintf(buffer: *mut u16, count: usize, format: *const u16, argptr: va_list) -> i32;
 }
 
 pub const CON_RC_STRING_MAX_SIZE: usize = 4096;
@@ -76,6 +84,16 @@ const FORMAT_MESSAGE_FROM_HMODULE: u32 = 0x00000800;
 const FORMAT_MESSAGE_FROM_SYSTEM: u32 = 0x00001000;
 const FORMAT_MESSAGE_IGNORE_INSERTS: u32 = 0x00000200;
 const FORMAT_MESSAGE_ARGUMENT_ARRAY: u32 = 0x00002000;
+
+extern "C" {
+    pub fn ConPrintf(Stream: *mut CON_STREAM, szStr: *const u16, ...) -> i32;
+    pub fn ConResPutsEx(Stream: *mut CON_STREAM, hInstance: HINSTANCE, uID: u32, LanguageId: LANGID) -> i32;
+    pub fn ConResPrintfEx(Stream: *mut CON_STREAM, hInstance: HINSTANCE, uID: UINT, LanguageId: LANGID, ...) -> i32;
+    pub fn ConResPrintf(Stream: *mut CON_STREAM, uID: u32, ...) -> i32;
+    pub fn ConMsgPrintf(Stream: *mut CON_STREAM, dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, ...) -> i32;
+    pub fn ConResMsgPrintfEx(Stream: *mut CON_STREAM, hInstance: HINSTANCE, dwFlags: DWORD, uID: UINT, LanguageId: LANGID, ...) -> i32;
+    pub fn ConResMsgPrintf(Stream: *mut CON_STREAM, dwFlags: u32, uID: u32, ...) -> i32;
+}
 
 unsafe fn write_console(Stream: *mut CON_STREAM, szStr: *const u16, len: u32) -> i32 {
     let mut TotalLen: u32 = len;
@@ -304,22 +322,27 @@ pub unsafe extern "C" fn ConPrintfV(
 ) -> i32 {
     let mut Len: i32;
     let mut bufSrc: [u16; CON_RC_STRING_MAX_SIZE] = [0u16; CON_RC_STRING_MAX_SIZE];
-    Len = _vsnwprintf(
-        bufSrc.as_mut_ptr(),
-        bufSrc.len(),
-        szStr,
-        args,
-    );
+    let mut pEnd: *mut u16 = core::ptr::null_mut();
 
-    Len = if Len < 0 {
-        bufSrc[bufSrc.len() - 1] = 0;
-        wcslen(bufSrc.as_ptr()) as i32
-    } else if Len as usize >= bufSrc.len() {
-        bufSrc[bufSrc.len() - 1] = 0;
+    // strsafe StringCchVPrintfExW(dest, cch, &pEnd, NULL, 0, fmt, args) semantics
+    // via the msvcrt cdecl primitive it wraps: bounded format, guaranteed NUL, and
+    // pEnd → the terminating NUL (so the existing pEnd-based length math below is
+    // unchanged). _vsnwprintf returns the wide-char count, or <0 when the result
+    // (incl. NUL) does not fit `cch`.
+    {
+        let cch = bufSrc.len();
+        let mut n = _vsnwprintf(bufSrc.as_mut_ptr(), cch, szStr, args);
+        if n < 0 || (n as usize) >= cch {
+            n = (cch - 1) as i32; // truncated — terminate at the last slot
+        }
+        bufSrc[n as usize] = 0;
+        pEnd = bufSrc.as_mut_ptr().add(n as usize);
+    }
+
+    Len = if pEnd.is_null() {
         wcslen(bufSrc.as_ptr()) as i32
     } else {
-        bufSrc[Len as usize] = 0;
-        Len
+        ((pEnd as usize).wrapping_sub(bufSrc.as_ptr() as usize) / 2) as i32
     };
 
     EnterCriticalSection(core::ptr::addr_of_mut!((*Stream).Lock));
