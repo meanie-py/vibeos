@@ -120,27 +120,16 @@ fn main() {
     // --allow-multiple-definition cohab precedence). Order mirrors the cmake
     // link line; the engine wraps the whole set in --start-group so inter-C
     // order is non-critical.
-    // Rust-flipped cohab static libs (cportlib/csq/arbiter/lsalib/rossym): the
-    // cmake `libX.a` is now a rust_cohab_stub placeholder; the real symbols live
-    // in the sibling libX_rust.a, which each cargo consumer must pull itself. Same
-    // fix as ntoskrnl-cargo — ntkrnlmp is a separate crate and needs it too, or the
-    // SMP kernel breaks on a clean arm64 tree (undefined Cp*/IoCsq*/Arb*/Lsa*).
-    // Listed after each C placeholder; --allow-multiple-definition keeps C-first.
     let mut static_libs: Vec<&str> = vec![
         "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
         "sdk/lib/cportlib/libcportlib.a",
-        "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/drivers/csq/libcsq.a",
-        "sdk/lib/drivers/csq/libcsq_rust.a",
         "sdk/lib/pseh/libpseh.a",
         "sdk/lib/drivers/arbiter/libarbiter.a",
-        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
         "sdk/lib/lsalib/libntlsalib.a",
-        "sdk/lib/lsalib/liblsalib_rust.a",
         "sdk/lib/rtl/librtl.a",
         "sdk/lib/rossym/librossym.a",
-        "sdk/lib/rossym/librossym_rust.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
@@ -158,6 +147,20 @@ fn main() {
     ];
     if chkstk {
         static_libs.push("sdk/lib/crt/libchkstk.a");
+    }
+
+    // Rust-flipped cohab archives — ARM64 ONLY (same rationale as ntoskrnl-cargo):
+    // arm64's clean stub-only C archives need them; i386/amd64 resolve from the
+    // cmake C `libX.a` and adding these shifts the link layout, tipping a latent
+    // cmlib Hv* hive-write miscompile (cold amd64 hivewrt HANG). Gate to arm64.
+    if arch == "aarch64" {
+        static_libs.extend_from_slice(&[
+            "sdk/lib/cportlib/libcport_rust.a",
+            "sdk/lib/drivers/csq/libcsq_rust.a",
+            "sdk/lib/drivers/arbiter/libarbiter_rust.a",
+            "sdk/lib/lsalib/liblsalib_rust.a",
+            "sdk/lib/rossym/librossym_rust.a",
+        ]);
     }
 
     // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
