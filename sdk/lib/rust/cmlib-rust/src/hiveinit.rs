@@ -401,7 +401,11 @@ pub unsafe extern "system" fn HvpGetHiveHeader(
     ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
 
     /* Assume failure and allocate the base block */
-    *HiveBaseBlock = core::ptr::null_mut();
+    // write_volatile: these are #[no_mangle]-reachable output params; a plain
+    // store is captures(none)-elidable and gets DROPPED under a shifted link
+    // layout → caller reads an uninit BaseBlock → garbage Storage.Length →
+    // HvpWriteHive block-loop hangs (the latent layout-sensitive Hv* hang).
+    HiveBaseBlock.write_volatile(core::ptr::null_mut());
     let BaseBlock: PHBASE_BLOCK = HvpAllocBaseBlockAligned(Hive, 1 /* TRUE */, TAG_CM);
     if BaseBlock.is_null() {
         return RESULT::NoMemory;
@@ -451,7 +455,7 @@ pub unsafe extern "system" fn HvpGetHiveHeader(
         }
 
         /* There's still hope: acknowledge the header needs recovery. */
-        *TimeStamp = (*BaseBlock).TimeStamp;
+        TimeStamp.write_volatile((*BaseBlock).TimeStamp);
         return RESULT::RecoverHeader;
     }
 
@@ -459,14 +463,14 @@ pub unsafe extern "system" fn HvpGetHiveHeader(
      * The base block isn't maimed but is the header data valid?
      */
     if HvpVerifyHiveHeader(BaseBlock, HFILE_TYPE_PRIMARY) == 0 {
-        *TimeStamp = (*BaseBlock).TimeStamp;
+        TimeStamp.write_volatile((*BaseBlock).TimeStamp);
         free(BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
         return RESULT::RecoverHeader;
     }
 
     /* Return information */
-    *HiveBaseBlock = BaseBlock;
-    *TimeStamp = (*BaseBlock).TimeStamp;
+    HiveBaseBlock.write_volatile(BaseBlock);
+    TimeStamp.write_volatile((*BaseBlock).TimeStamp);
     RESULT::HiveSuccess
 }
 
@@ -699,7 +703,7 @@ pub unsafe extern "system" fn HvpRecoverHeaderFromLog(
         return RESULT::Fail;
     }
 
-    *BaseBlock = LogHeader;
+    BaseBlock.write_volatile(LogHeader);
     if HeaderResuscitated != 0 {
         RESULT::SelfHeal
     } else {
