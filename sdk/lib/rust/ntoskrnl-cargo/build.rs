@@ -120,16 +120,32 @@ fn main() {
     // --allow-multiple-definition cohab precedence). Order mirrors the cmake
     // link line; the engine wraps the whole set in --start-group so inter-C
     // order is non-critical.
+    // Rust-flipped cohab static libs: cportlib/csq/arbiter/lsalib/rossym were
+    // each C→Rust flipped, so their cmake `libX.a` is now just a rust_cohab_stub
+    // placeholder (the real Cp*/IoCsq*/Arb*/Lsa*/RosSym* symbols live in the
+    // sibling libX_rust.a). Like cmlib (handled via .rust_lib("cmlib-rust")
+    // below), each cargo-driven consumer must pull the rust archive itself —
+    // the kdcom/kdgdb/uefildr build.rs files already do this for libcport_rust.a;
+    // ntoskrnl-cargo had not, so they linked only by luck on x86 (STALE pre-flip
+    // libX.a still carried the symbols) and broke on a clean arm64 tree
+    // (correctly stub-only → undefined Cp*/IoCsq*/Arb*). Listed right after each
+    // C placeholder so the C stub keeps first-match cohab precedence under
+    // --allow-multiple-definition; unreferenced members pull lazily.
     let mut static_libs: Vec<&str> = vec![
         "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
         "sdk/lib/cportlib/libcportlib.a",
+        "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/drivers/csq/libcsq.a",
+        "sdk/lib/drivers/csq/libcsq_rust.a",
         "sdk/lib/pseh/libpseh.a",
         "sdk/lib/drivers/arbiter/libarbiter.a",
+        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
         "sdk/lib/lsalib/libntlsalib.a",
+        "sdk/lib/lsalib/liblsalib_rust.a",
         "sdk/lib/rtl/librtl.a",
         "sdk/lib/rossym/librossym.a",
+        "sdk/lib/rossym/librossym_rust.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
