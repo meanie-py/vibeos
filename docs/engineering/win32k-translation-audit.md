@@ -1,5 +1,20 @@
 # Win32k C→Rust Translation Audit
 
+> **2026-06-14 — MILESTONE: win32k.sys default-build body is 100% Rust**
+> (commit translating `safe_user_io.c` → `safe_user_io.rs`, cold `--clean` smoke
+> GREEN ×3). `safe_user_io.c` was the last real subsystem C leaf — SEH-free
+> validate-only user-buffer range/alignment check (`SafeProbeForRead`/`Write`,
+> NTAPI `_Safe…@12`). Pure arithmetic (no variadics/SEH/touch) → full C
+> elimination, zero trampoline residue. Did NOT delegate to
+> `ntkrnl_sys::probe::probe_user_buffer` (it `read_volatile`-touches the page,
+> which this must avoid). `MmUserProbeAddress` cross-DLL data import via class.rs's
+> arch-split pattern (i386/arm64 raw-dylib +verbatim; amd64 `__imp_` + deref).
+> **What remains in win32k.sys is irreducible glue, not subsystem code:**
+> 5 `*_rust_shims.c` (cdecl wrappers for FORCEINLINE/macro helpers + the
+> `Win32kSSDT` syscall dispatch tables), `gdi/eng/i386/floatobj.c` (i386 FLOATOBJ
+> math), and the `if(USE_DIBLIB)` dead path (`dib_new.c`/`bitblt_new.c`, FALSE
+> default — not compiled; `dib.rs` covers it).
+
 > **2026-06-14 — user/rtl flipped: `image.c` + `text.c` → Rust (DrawText)**
 > (commit `68028a7c719`, cold `--clean` smoke GREEN ×3).
 > `image.c` (`RtlGetExpWinVer`) hand-translated → `image.rs`. `text.c` (1402 LOC
