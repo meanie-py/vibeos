@@ -14,7 +14,7 @@
 //! from cmake (resource-only OBJECT lib userinit_res) — it is load-bearing
 //! (manifest + logo bitmaps + dialogs), so unlike lsass it is NOT omitted.
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -44,9 +44,9 @@ fn main() {
         // the residue probe (nm -u <body> ∩ nm <.a> ' T ' = empty ×3). The body's
         // undefined symbols are all satisfied by the import libs + compiler-builtins;
         // it referenced nothing from wine's debug-channel stubs or the oldnames
-        // CRT aliases. libmsvcrtex.a (CRT startup) is still compiled in-cargo via
-        // .msvcrtex_crt() (a separate-agent cross-cutting project, not a .a reuse).
-        .msvcrtex_crt()
+        // CRT aliases. libmsvcrtex (CRT startup) is now Rust via
+        // .msvcrtex_crt(MsvcrtexKind::ExeWide).
+        .msvcrtex_crt(MsvcrtexKind::ExeWide)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

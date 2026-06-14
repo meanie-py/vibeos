@@ -324,6 +324,11 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Fix / oracle:** pre-parse splice passes in `scan_file` — `_expand_csr_api` (CSR_API→real NTAPI sig), `_strip_sal`, `_normalize_callbacks` (→`__stdcall`), `_resolve_known_preproc`. Always diff the .rs's translated-fn list against the C's actual function/handler count; never trust "OK". `\bCSR_API\s*\(` must not match `CSR_API_NUMBER_TO_SERVER_ID`.
 **Source:** `feedback_rustconv_csr_api_macro_skip.md`, `feedback_rustconv_scanner_sal_callback_preproc.md`
 
+#### Variant: pointer-return-type functions silently dropped (dxeng.c, 2026-06-13)
+**Symptom:** `translate` reports N functions but the C has N+k; the missing k all return **pointers**. dxeng.c: scanner found 40 of 42, dropping `DxEngEnumerateHdev` (`HDEV *`) and `DxEngAltLockSurface` (`SURFOBJ *`) — emitted as commented-out C in the stitched output. Flip-link would dangle if the dispatch table (`gaEngFuncs`) references them.
+**Root cause:** the scanner's function-signature detection trips on a pointer return type written on its own line (`HDEV *\nAPIENTRY\nFoo(...)`) or inline (`SURFOBJ * APIENTRY Foo(...)`).
+**Fix / oracle:** the catch is the **symbol-coverage diff** — `comm -23 <(llvm-nm --defined-only build-i386/.../foo.c.obj | grep ' T ' | sed 's/^_//;s/@.*//' | sort -u) <(grep -hA1 '#\[no_mangle\]' foo.rs | grep -oE 'fn [A-Za-z0-9_]+' | sed 's/fn //' | sort -u)` MUST be empty before flipping. Hand-translate the dropped pointer-returning fns (usually trivial). **c2rust anchoring can't backstop win32k**: c2rust 0.22.1 panics `Could not find CDeclId(N) in TypedAstContext` on win32k's heavy header AST (dxsdk/ddk/freetype) even after stripping the binary-PCH flags (`-Winvalid-pch -Xclang -include-pch -Xclang …pch`, keep the plain `-include cmake_pch.h`).
+
 ### Split-TU translation covers only the first chunk
 **Symptom:** crate compiles green ×3 but i386 `ninja win32k` flip-link fails `undefined symbol` for every split-chunk export — discovered only after wiring, not at `cargo check`.
 **Root cause:** win32k files like `painting.c` end with `#include "painting.split2.c"` → one merged `.obj` with all chunks' exports. `rustconv translate foo.c` parses only foo.c's text and does NOT follow the `#include`.
