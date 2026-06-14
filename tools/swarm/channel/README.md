@@ -20,9 +20,12 @@ when the agent is actively working.
 
 ## Design
 
-- An MCP server Claude Code spawns as a subprocess of your session over stdio. It
-  inherits `$CLAUDE_CODE_SESSION_ID`, so it resolves *which* agent it serves (via
-  `swarm.py name`) and filters Mattermost for that name's `@`-mentions.
+- An MCP server Claude Code spawns as a subprocess over stdio. It resolves *which*
+  agent it serves and filters Mattermost for that name's `@`-mentions.
+  **Gotcha (learned live):** an MCP server subprocess does NOT inherit the agent's
+  `CLAUDE_CODE_SESSION_ID` — it gets its own short-lived child-session id. So the
+  server resolves identity by **worktree** (`swarm.py name --by-cwd`, keyed on its
+  cwd = the worktree), not session id. This is why one-agent-per-worktree matters.
 - **Polls** the bot-token REST read path (no WebSocket dep); cursor seeded from the
   **server's** newest-post timestamp (local/server clock skew otherwise drops posts).
 - Two-way: exposes `swarm_reply` → posts back to `#swarm` as this agent.

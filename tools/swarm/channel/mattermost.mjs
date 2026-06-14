@@ -51,8 +51,11 @@ export function loadConfig() {
 }
 
 export function resolveName() {
+  // --by-cwd: resolve by worktree, NOT session id. An MCP server subprocess gets its
+  // own CLAUDE_CODE_SESSION_ID (≠ the agent's), so session lookup finds the wrong agent.
   try {
-    return execFileSync('python3', [SWARM_PY, 'name'], { encoding: 'utf8', timeout: 5000 }).trim() || null
+    return execFileSync('python3', [SWARM_PY, 'name', '--by-cwd'],
+      { encoding: 'utf8', timeout: 5000, cwd: process.cwd() }).trim() || null
   } catch { return null }
 }
 

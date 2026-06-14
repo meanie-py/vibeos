@@ -566,9 +566,17 @@ def cmd_say(args):
 
 
 def cmd_name(args):
-    """Print this agent's resolved name (for the channel server). Empty if unknown."""
+    """Print this agent's resolved name. Empty if unknown.
+
+    --by-cwd forces worktree resolution and IGNORES any session id. The channel
+    server needs this: an MCP server subprocess does NOT inherit the agent's
+    CLAUDE_CODE_SESSION_ID (it gets its own), so session-based lookup returns the
+    wrong agent. Its cwd is the worktree, so resolve by that.
+    """
     conn = connect()
-    if not args.session:
+    if getattr(args, "by_cwd", False):
+        args.session = _session_for_cwd(conn)
+    elif not args.session:
         args.session = _session_for_cwd(conn)
     name = _agent_name(conn, args.session, args.transcript) if args.session else None
     print(name or "")
@@ -665,6 +673,8 @@ def main(argv=None):
     pn = sub.add_parser("name"); pn.set_defaults(fn=cmd_name)
     pn.add_argument("--session")
     pn.add_argument("--transcript")
+    pn.add_argument("--by-cwd", dest="by_cwd", action="store_true",
+                    help="resolve by worktree, ignoring session id (for the channel server)")
 
     pw = sub.add_parser("whoami"); pw.set_defaults(fn=cmd_whoami)
     pw.add_argument("--session")
