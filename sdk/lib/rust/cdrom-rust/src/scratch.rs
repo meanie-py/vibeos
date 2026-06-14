@@ -18,6 +18,8 @@ extern "system" {
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
+    fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
+    fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
 }
 
 const TRACE_LEVEL_FATAL: u32 = 1;
@@ -513,6 +515,13 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
 
         if FirstTry != 0 {
             (*DeviceExtension).ScratchContext.NumRetries = 0;
+            CdromDbgPrint4(
+                b"[READ] xfer=%lx done=%lx max=%lx pkts=%lx\n\0".as_ptr() as *const i8,
+                (*readWriteContext).EntireXferLen as usize,
+                (*readWriteContext).TransferedBytes as usize,
+                (*readWriteContext).MaxLength as usize,
+                (*readWriteContext).PacketsCount as usize,
+            );
         }
 
         ScratchBuffer_ResetItems(DeviceExtension, 0); // FALSE
@@ -547,11 +556,15 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
             core::ptr::null_mut()
         };
 
+        SEND_QPC = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(QPC_FREQ));
         status = ScratchBuffer_SendSrb(DeviceExtension, 0, srbHistoryItemPtr); // FALSE
 
         status
     }
 }
+
+static mut SEND_QPC: i64 = 0;
+static mut QPC_FREQ: i64 = 0;
 #[no_mangle]
 pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
     Dpc: *mut _KDPC,
@@ -648,6 +661,18 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
         RequestGetContext((*device_extension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
     let original_request: WDFREQUEST = (*request_context).OriginalRequest;
 
+    {
+        let now = KeQueryPerformanceCounter(core::ptr::null_mut());
+        let us = if QPC_FREQ != 0 { (now - SEND_QPC).wrapping_mul(1_000_000) / QPC_FREQ } else { 0 };
+        if us > 100_000 {
+            CdromDbgPrint2(
+                b"[IOLAT] send->compl us=%lx srbst=%lx\n\0".as_ptr() as *const i8,
+                us as usize,
+                (*(*device_extension).ScratchContext.ScratchSrb).SrbStatus as usize,
+            );
+        }
+    }
+
     if !NT_SUCCESS(WdfRequestGetStatus(Request)) {
         TracePrint(
             TRACE_LEVEL_WARNING,
@@ -676,6 +701,22 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
             &mut status,
             &mut retry_in_100ns_units,
         ) as i32;
+
+        {
+            let srb = (*device_extension).ScratchContext.ScratchSrb;
+            let sense = (*srb).SenseInfoBuffer as *const u8;
+            let (sk, asc, ascq) = if !sense.is_null() {
+                (*sense.add(2) & 0x0f, *sense.add(12), *sense.add(13))
+            } else { (0xff, 0xff, 0xff) };
+            CdromDbgPrint5(
+                b"[RETRY] srbst=%lx retry=%lx delay100ns=%lx numretry=%lx sense=%lx\n\0".as_ptr() as *const i8,
+                (*srb).SrbStatus as usize,
+                should_retry as usize,
+                retry_in_100ns_units as usize,
+                (*device_extension).ScratchContext.NumRetries as usize,
+                ((sk as usize) << 16) | ((asc as usize) << 8) | (ascq as usize),
+            );
+        }
 
         if should_retry != 0 {
             (*device_extension).ScratchContext.NumRetries += 1;
@@ -1044,7 +1085,11 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
                     let mut remainingBytes: usize;
                     remainingBytes = ((*RequestHistory).UsedHistoryCount as usize).wrapping_sub(1).wrapping_sub(j as usize);
                     remainingBytes = remainingBytes.wrapping_mul(core::mem::size_of::<SRB_HISTORY_ITEM>());
-                    core::ptr::copy(found.add(1), found, remainingBytes);
+                    // C: RtlMoveMemory(found, found+1, remainingBytes) — a BYTE
+                    // count. core::ptr::copy::<SRB_HISTORY_ITEM> takes an ELEMENT
+                    // count, so copy as bytes to match (else a size_of× over-copy
+                    // → heap corruption). Found by `rustconv semdiff`.
+                    core::ptr::copy(found.add(1) as *const u8, found as *mut u8, remainingBytes);
                     (*RequestHistory).UsedHistoryCount -= 1;
                     j -= 1;
                 }
@@ -1282,6 +1327,9 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
 
     PAGED_CODE();
 
+    let mut ecx_freq: i64 = 0;
+    let ecx_t0 = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(ecx_freq));
+
     while shouldRetry != 0 {
         ScratchBuffer_SetupSrb(DeviceExtension, OriginalRequest as WDFREQUEST, TransferSize, GetDataFromDevice);
 
@@ -1312,6 +1360,19 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
                 KeDelayExecutionThread(0i32, 0u8, core::ptr::addr_of_mut!(t));
                 ScratchBuffer_ResetItems(DeviceExtension, 0u8);
             }
+        }
+    }
+
+    {
+        let ecx_t1 = KeQueryPerformanceCounter(core::ptr::null_mut());
+        let us = if ecx_freq != 0 { (ecx_t1 - ecx_t0).wrapping_mul(1_000_000) / ecx_freq } else { 0 };
+        if us > 500_000 {
+            let op = *(Cdb as *const u8);
+            CdromDbgPrintForce2(
+                b"[CDBEX] blocked us=%lx op_retries_srbst=%lx\n\0".as_ptr() as *const i8,
+                us as usize,
+                ((op as usize) << 24) | ((timesAlreadyRetried as usize) << 8) | ((*srb).SrbStatus as usize),
+            );
         }
     }
 

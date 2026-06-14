@@ -45,6 +45,8 @@ extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn CdromDbgPrint0(format: *const i8) -> u32;
     fn CdromGapLog();
+    fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
+    fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn CdromDbgPrint1(format: *const i8, arg1: usize) -> u32;
     fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
     fn CdromDbgPrint4(format: *const i8, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> u32;
@@ -574,7 +576,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
         // 3. Preprocess callbacks
         {
             let mut minorFunctions: [u8; 1] = [0u8; 1];
-            minorFunctions[0] = 0x07; // IRP_MN_SET_POWER (assumed)
+            minorFunctions[0] = 0x02; // IRP_MN_SET_POWER (wdm.h)
             status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
                 DeviceInit,
                 core::mem::transmute::<unsafe extern "system" fn(WDFDEVICE, PIRP) -> NTSTATUS, _>(RequestProcessSetPower),
@@ -1599,8 +1601,8 @@ pub unsafe extern "C" fn RequestDispatchProcessDirectly(
     const IOCTL_STORAGE_SET_HOTPLUG_INFO: u32 = 0x2DCC18;
     const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x2D1C90;
     const IOCTL_VOLUME_ONLINE: u32 = 0x56C008;
-    const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC0000185u32 as i32); // typical value
-    const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32); // typical
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = (0x80000016u32 as i32); // ntstatus.h
+    const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32); // ntstatus.h
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02; // SL_OVERRIDE_VERIFY_VOLUME
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -2934,6 +2936,8 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*deviceExtension).DeviceAdditionalData);
     let mut requestParameters: core::mem::MaybeUninit<WDF_REQUEST_PARAMETERS> = core::mem::MaybeUninit::uninit();
 
+    CdromDbgPrint1(b"[IOCTL-IN] code=%lx\n\0".as_ptr() as *const i8, IoControlCode as usize);
+
     UNREFERENCED_PARAMETER(OutputBufferLength as i32);
     UNREFERENCED_PARAMETER(InputBufferLength as i32);
     UNREFERENCED_PARAMETER(IoControlCode as i32);
@@ -3008,14 +3012,27 @@ pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
         &CDROM_DEVICE_EXTENSION_TYPE_INFO,
     ) as *mut CDROM_DEVICE_EXTENSION;
 
-    if DeviceIsMmcUpdateRequired((*deviceExtension).Device) != 0 {
+    let mut wi_freq: i64 = 0;
+    let wi_t0 = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(wi_freq));
+    let mmc_required = DeviceIsMmcUpdateRequired((*deviceExtension).Device);
+    if mmc_required != 0 {
         DeviceUpdateMmcCapabilities((*deviceExtension).Device);
     }
+    let wi_t1 = KeQueryPerformanceCounter(core::ptr::null_mut());
 
     RequestProcessSerializedIoctl(
         deviceExtension,
         (*deviceExtension).IoctlWorkItemContext.OriginalRequest,
     );
+    let wi_t2 = KeQueryPerformanceCounter(core::ptr::null_mut());
+    let mmc_us = if wi_freq != 0 { (wi_t1 - wi_t0).wrapping_mul(1_000_000) / wi_freq } else { 0 };
+    let ioctl_us = if wi_freq != 0 { (wi_t2 - wi_t1).wrapping_mul(1_000_000) / wi_freq } else { 0 };
+    if mmc_us > 200_000 || ioctl_us > 200_000 {
+        CdromDbgPrint3(
+            b"[IOCTL-WI] mmcReq=%lx mmc_us=%lx ioctl_us=%lx\n\0".as_ptr() as *const i8,
+            mmc_required as usize, mmc_us as usize, ioctl_us as usize,
+        );
+    }
 }
 #[no_mangle] #[no_mangle]
 #[no_mangle] pub unsafe extern "C" fn RequestProcessSerializedIoctl(
@@ -3231,6 +3248,9 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
     let bufferToFree: *mut KEVENT = (*requestContext).SyncEvent;
 
+    let mut sync_freq: i64 = 0;
+    let sync_t0 = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(sync_freq));
+
     // KeGetCurrentIrql returns KIRQL (u8); DISPATCH_LEVEL is a constant
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
         TracePrint(
@@ -3326,6 +3346,21 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 );
             }
         } // end while
+
+        {
+            let sync_t1 = KeQueryPerformanceCounter(core::ptr::null_mut());
+            let us = if sync_freq != 0 { (sync_t1 - sync_t0).wrapping_mul(1_000_000) / sync_freq } else { 0 };
+            if us > 500_000 {
+                let mut rp: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
+                WDF_REQUEST_PARAMETERS_INIT(&mut rp);
+                WdfRequestGetParameters(Request, &mut rp);
+                CdromDbgPrintForce2(
+                    b"[SYNCQ] blocked us=%lx ioctl=%lx\n\0".as_ptr() as *const i8,
+                    us as usize,
+                    rp.Parameters.DeviceIoControl.as_ref().IoControlCode as usize,
+                );
+            }
+        }
 
         // Check cancellation or exclusive access
         if WdfRequestIsCanceled(Request) != 0 {
@@ -3458,11 +3493,11 @@ pub unsafe extern "C" fn RequestIsIoctlBlockedByExclusiveAccess(
             }
         }
         // Return TRUE for unknown IOCTLs with STORAGE bases
-        else if baseCode == 0x1 // IOCTL_SCSI_BASE
+        else if baseCode == 0x4 // IOCTL_SCSI_BASE = FILE_DEVICE_CONTROLLER
             || baseCode == 0x7 // IOCTL_DISK_BASE
             || baseCode == 0x2 // IOCTL_CDROM_BASE
             || baseCode == 0x2D // IOCTL_STORAGE_BASE
-            || baseCode == 0x2B // IOCTL_DVD_BASE
+            || baseCode == 0x33 // IOCTL_DVD_BASE = FILE_DEVICE_DVD
         {
             *IsBlocked = 1; // TRUE
         }

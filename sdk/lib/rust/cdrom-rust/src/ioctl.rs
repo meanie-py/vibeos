@@ -80,6 +80,7 @@ use core::mem::offset_of;
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn NT_SUCCESS(status: NTSTATUS) -> i32;
     fn PerformEjectionControl( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, LockType: i32, PreventMediaRemoval: i32, ) -> NTSTATUS;
     fn CdromDbgPrintReadWriteValidate(
@@ -4520,6 +4521,11 @@ pub unsafe extern "C" fn RequestHandleCheckVerify(
             CDROM_TEST_UNIT_READY_TIMEOUT,
         );
 
+        CdromDbgPrintForce2(
+            b"[CHKVER] mcc=%lx ioctl=%lx\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).MediaChangeCount as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode as usize,
+        );
         if status >= 0 {
             if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_STORAGE_CHECK_VERIFY
                 && RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength != 0
@@ -6081,21 +6087,21 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
         match rawReadInfo.TrackMode {
             CDDA | YellowMode2 | XAForm2 => {}
             RawWithC2AndSubCode => {
-                if !(*cdData).Mmc.ReadCdC2Pointers != 0 || !(*cdData).Mmc.ReadCdSubCode != 0 {
+                if (*cdData).Mmc.ReadCdC2Pointers == 0 || (*cdData).Mmc.ReadCdSubCode == 0 {
                     // TracePrint omitted
                     *DataLength = 0;
                     status = STATUS_INVALID_DEVICE_REQUEST;
                 }
             }
             RawWithC2 => {
-                if !(*cdData).Mmc.ReadCdC2Pointers != 0 {
+                if (*cdData).Mmc.ReadCdC2Pointers == 0 {
                     // TracePrint omitted
                     *DataLength = 0;
                     status = STATUS_INVALID_DEVICE_REQUEST;
                 }
             }
             RawWithSubCode => {
-                if !(*cdData).Mmc.ReadCdSubCode != 0 {
+                if (*cdData).Mmc.ReadCdSubCode == 0 {
                     // TracePrint omitted
                     *DataLength = 0;
                     status = STATUS_INVALID_DEVICE_REQUEST;

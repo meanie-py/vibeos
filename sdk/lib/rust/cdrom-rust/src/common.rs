@@ -1291,13 +1291,18 @@ pub unsafe extern "C" fn DeviceFindFeaturePage(
     Feature: FEATURE_NUMBER,
 ) -> *mut FEATURE_HEADER {
 
-    // DataLength is a 4-byte big-endian field; the meaningful length is in the
-    // low two bytes. Read them and byte-swap to host order (matches the C
-    // RtlUshortByteSwap of the 16-bit DataLength view).
-    let data_len: u16 = (((*FeatureBuffer).DataLength[2] as u16) << 8)
-        | ((*FeatureBuffer).DataLength[3] as u16);
-    let swapped: u16 = data_len;
-    let validLength: u32 = (swapped as u32) + (core::mem::offset_of!(GET_CONFIGURATION_HEADER, DataLength) + core::mem::size_of::<u16>()) as u32;
+    // DataLength is a 4-byte big-endian field. C: REVERSE_BYTES(&validLength,
+    // FeatureBuffer->DataLength) byte-swaps the FULL 4 bytes, then adds
+    // RTL_SIZEOF_THROUGH_FIELD(GET_CONFIGURATION_HEADER, DataLength) =
+    // offset_of(DataLength) + sizeof(DataLength). The original Rust read only the
+    // low 2 bytes and added size_of::<u16>() (off-by-2 + truncation; found by
+    // rustconv semdiff).
+    let validLength: u32 = ((((*FeatureBuffer).DataLength[0] as u32) << 24)
+        | (((*FeatureBuffer).DataLength[1] as u32) << 16)
+        | (((*FeatureBuffer).DataLength[2] as u32) << 8)
+        | ((*FeatureBuffer).DataLength[3] as u32))
+        + (core::mem::offset_of!(GET_CONFIGURATION_HEADER, DataLength)
+            + core::mem::size_of_val(&(*FeatureBuffer).DataLength)) as u32;
 
     if (Length as usize) < (core::mem::size_of::<GET_CONFIGURATION_HEADER>() + core::mem::size_of::<FEATURE_HEADER>()) {
         return core::ptr::null_mut();
@@ -3195,12 +3200,45 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
 }
 #[no_mangle]
 pub unsafe extern "C" fn RequestCompletion(
-    _DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     Status: NTSTATUS,
     Information: usize,
 ) {
-    WdfRequestCompleteWithInformation(Request, Status, Information as ULONG_PTR);
+    let mut status = Status;
+
+    // IoIsErrorUserInduced(Status) — set the device to be verified / raise a
+    // hard error so the FS / shell prompts for media. The C does this for every
+    // completion; the original Rust dropped it (found by rustconv semdiff).
+    // ntstatus.h values.
+    const STATUS_WRONG_VOLUME: i32 = 0xC0000012u32 as i32;
+    const STATUS_NO_MEDIA_IN_DEVICE: i32 = 0xC0000013u32 as i32;
+    const STATUS_UNRECOGNIZED_MEDIA: i32 = 0xC0000014u32 as i32;
+    const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32;
+    const STATUS_MEDIA_WRITE_PROTECTED: i32 = 0xC00000A2u32 as i32;
+    const STATUS_DEVICE_NOT_READY: i32 = 0xC00000A3u32 as i32;
+    const STATUS_IO_TIMEOUT: i32 = 0xC00000B5u32 as i32;
+    let is_error_user_induced = status == STATUS_DEVICE_NOT_READY
+        || status == STATUS_IO_TIMEOUT
+        || status == STATUS_MEDIA_WRITE_PROTECTED
+        || status == STATUS_NO_MEDIA_IN_DEVICE
+        || status == STATUS_VERIFY_REQUIRED
+        || status == STATUS_UNRECOGNIZED_MEDIA
+        || status == STATUS_WRONG_VOLUME;
+    if is_error_user_induced {
+        let irp = WdfRequestWdmGetIrp(Request);
+        if !irp.is_null() && !(*irp).Tail.Overlay.Thread.is_null() {
+            IoSetHardErrorOrVerifyDevice(irp, (*DeviceExtension).DeviceObject);
+        }
+    }
+
+    // IMAPI expects ERROR_DEV_NOT_EXISTS on a surprise-removed recorder, else it
+    // retries WRITE commands for up to 3 minutes.
+    if !NT_SUCCESS(status) && (*DeviceExtension).SurpriseRemoved != 0 {
+        status = STATUS_DEVICE_DOES_NOT_EXIST;
+    }
+
+    WdfRequestCompleteWithInformation(Request, status, Information as ULONG_PTR);
 }
 #[no_mangle]
 pub unsafe extern "system" fn RequestDummyCompletionRoutine(

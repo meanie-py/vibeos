@@ -1236,7 +1236,7 @@ CdromGapLog(void)
     if (s_last.QuadPart != 0)
     {
         ULONGLONG gap_us = ((ULONGLONG)(now.QuadPart - s_last.QuadPart) * 1000000ULL) / (ULONGLONG)freq.QuadPart;
-        if (gap_us > 5000)
+        if (gap_us > 1000000)
         {
             DbgPrint("[GAP] read#%lu gap=%lu us mcnPolls=%ld\n", (ULONG)s_seq, (ULONG)gap_us, mcn);
         }
@@ -1244,33 +1244,47 @@ CdromGapLog(void)
     s_last = now;
 }
 
+/* Per-read trace gate. 0 = silent (measure real boot speed); 1 = verbose. */
+volatile LONG g_cdromTrace = 0;
+
+/* Ungated forced trace for rare (>500ms) stall events — never floods. */
+ULONG CdromDbgPrintForce2(const char *Format, ULONG_PTR Arg1, ULONG_PTR Arg2)
+{
+    return DbgPrint(Format, Arg1, Arg2);
+}
+
 ULONG
 CdromDbgPrint0(const char *Format)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint("%s", Format);
 }
 
 ULONG
 CdromDbgPrint1(const char *Format, ULONG_PTR Arg1)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(Format, Arg1);
 }
 
 ULONG
 CdromDbgPrint2(const char *Format, ULONG_PTR Arg1, ULONG_PTR Arg2)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(Format, Arg1, Arg2);
 }
 
 ULONG
 CdromDbgPrint3(const char *Format, ULONG_PTR Arg1, ULONG_PTR Arg2, ULONG_PTR Arg3)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(Format, Arg1, Arg2, Arg3);
 }
 
 ULONG
 CdromDbgPrint4(const char *Format, ULONG_PTR Arg1, ULONG_PTR Arg2, ULONG_PTR Arg3, ULONG_PTR Arg4)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(Format, Arg1, Arg2, Arg3, Arg4);
 }
 
@@ -1283,6 +1297,7 @@ CdromDbgPrint5(
     ULONG_PTR Arg4,
     ULONG_PTR Arg5)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(Format, Arg1, Arg2, Arg3, Arg4, Arg5);
 }
 
@@ -1298,6 +1313,7 @@ CdromDbgPrintReadWriteValidate(
     ULONG_PTR IsValid,
     ULONG_PTR Status)
 {
+    if (!g_cdromTrace) return 0;
     return DbgPrint(
         Format,
         Type,
