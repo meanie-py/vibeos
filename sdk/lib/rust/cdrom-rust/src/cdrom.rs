@@ -41,11 +41,13 @@ const TRACE_FLAG_POWER: u32 = 0x10;
 const TRACE_FLAG_QUEUE: u32 = 0x20;
 const TRACE_LEVEL_WARNING: u32 = 2;
 
+extern "system" {
+    fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
+}
 extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn CdromDbgPrint0(format: *const i8) -> u32;
     fn CdromGapLog();
-    fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn CdromDbgPrint1(format: *const i8, arg1: usize) -> u32;
     fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
@@ -1322,16 +1324,6 @@ pub unsafe extern "system" fn DeviceEvtSurpriseRemoval(Device: WDFDEVICE) {
     );
 }
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn CreateQueueEvtIoDefault(
-    Queue: WDFQUEUE,
-    Request: WDFREQUEST,
-) {
-    CreateQueueEvtIoDefaultImpl(Queue, Request);
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
 pub unsafe extern "system" fn CreateQueueEvtIoDefault(
     Queue: WDFQUEUE,
     Request: WDFREQUEST,

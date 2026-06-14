@@ -1425,14 +1425,14 @@ pub unsafe extern "C" fn RequestValidateReadToc(
 #[no_mangle]
 pub unsafe extern "C" fn RequestValidateGetLastSession(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
     *DataLength = 0;
 
-    let output_buffer_len = (*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength;
+    let output_buffer_len = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
 
     if output_buffer_len < core::mem::size_of::<CDROM_TOC_SESSION_DATA>() {
         status = STATUS_BUFFER_TOO_SMALL;
@@ -1815,7 +1815,7 @@ pub unsafe extern "C" fn RequestValidateAacsReadMediaKeyBlock(
 #[no_mangle]
 pub unsafe extern "C" fn RequestValidateAacsStartSession(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -1825,12 +1825,12 @@ pub unsafe extern "C" fn RequestValidateAacsStartSession(
 
     if (*cdData).Mmc.IsAACS == 0 {
         status = STATUS_INVALID_DEVICE_REQUEST;
-    } else if ((*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize)
+    } else if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize)
         < core::mem::size_of::<DVD_SESSION_ID>()
     {
         *DataLength = core::mem::size_of::<DVD_SESSION_ID>();
         status = STATUS_BUFFER_TOO_SMALL;
-    } else if ((*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize)
+    } else if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize)
         > core::mem::size_of::<DVD_SESSION_ID>()
     {
         status = STATUS_INVALID_BUFFER_SIZE;
@@ -2147,7 +2147,7 @@ pub unsafe extern "C" fn RequestValidateAacsReadMediaId(
 pub unsafe extern "C" fn RequestValidateAacsBindingNonce(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -2159,16 +2159,16 @@ pub unsafe extern "C" fn RequestValidateAacsBindingNonce(
 
     if (*cdData).Mmc.IsAACS == 0 {
         status = STATUS_INVALID_DEVICE_REQUEST;
-    } else if (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize
+    } else if RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize
         != core::mem::size_of::<AACS_READ_BINDING_NONCE>()
     {
         status = STATUS_INFO_LENGTH_MISMATCH;
-    } else if (*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength
+    } else if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength
         < core::mem::size_of::<AACS_BINDING_NONCE>()
     {
         *DataLength = core::mem::size_of::<AACS_BINDING_NONCE>();
         status = STATUS_BUFFER_TOO_SMALL;
-    } else if (*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength
+    } else if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength
         > core::mem::size_of::<AACS_BINDING_NONCE>()
     {
         status = STATUS_INVALID_BUFFER_SIZE;
@@ -2177,7 +2177,7 @@ pub unsafe extern "C" fn RequestValidateAacsBindingNonce(
     if status >= 0 {
         status = WdfRequestRetrieveInputBuffer(
             Request,
-            (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
             &raw mut inputBuffer as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -3915,7 +3915,7 @@ pub unsafe extern "C" fn RequestHandleReadTOC(
 pub unsafe extern "C" fn RequestHandleReadTocEx(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
     // PAGED_CODE();
@@ -3932,7 +3932,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
 
     // Retrieve input buffer
     if status >= 0 {
-        let input_length = (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength;
+        let input_length = RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength;
         status = WdfRequestRetrieveInputBuffer(
             Request,
             input_length,
@@ -3943,7 +3943,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
 
     // Retrieve output buffer
     if status >= 0 {
-        let output_length = (*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength;
+        let output_length = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
         status = WdfRequestRetrieveOutputBuffer(
             Request,
             output_length,
@@ -3954,7 +3954,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
 
     // Handle the request
     if status >= 0 {
-        let output_length = (*RequestParameters).Parameters.DeviceIoControl.as_ref().OutputBufferLength;
+        let output_length = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
         let transfer_size = if output_length < MAXUSHORT as usize {
             output_length
         } else {
@@ -4874,7 +4874,7 @@ pub unsafe extern "C" fn RequestHandleEventNotification(
 pub unsafe extern "C" fn RequestHandleEjectionControl(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // PAGED_CODE();
@@ -4883,21 +4883,21 @@ pub unsafe extern "C" fn RequestHandleEjectionControl(
 
     *DataLength = 0;
 
-    if (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength
+    if RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength
         < core::mem::size_of::<PREVENT_MEDIA_REMOVAL>()
     {
         status = STATUS_INFO_LENGTH_MISMATCH;
     } else {
         status = WdfRequestRetrieveInputBuffer(
             Request,
-            (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
             &mut mediaRemoval as *mut *mut PREVENT_MEDIA_REMOVAL as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
     }
 
     if NT_SUCCESS(status) != 0 {
-        let lock_type = if (*RequestParameters).Parameters.DeviceIoControl.as_ref().IoControlCode
+        let lock_type = if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode
             == IOCTL_STORAGE_EJECTION_CONTROL
         {
             SecureMediaLock
@@ -5564,7 +5564,7 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
 pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -5603,7 +5603,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
             (*cdb).START_STOP.as_mut().OperationCode = SCSIOP_START_STOP_UNIT;
             (*cdb).START_STOP.as_mut().set_LoadEject(1);
 
-            if (*RequestParameters).Parameters.DeviceIoControl.as_ref().IoControlCode
+            if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode
                 == IOCTL_STORAGE_EJECT_MEDIA
             {
                 (*cdb).START_STOP.as_mut().set_Start(0);
@@ -5643,7 +5643,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
 pub unsafe extern "C" fn RequestHandleReserveRelease(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: *mut core::ffi::c_void,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -5665,7 +5665,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
     }
 
     if status >= 0 {
-        ioctl_code = (*RequestParameters).Parameters.DeviceIoControl.as_ref().IoControlCode;
+        ioctl_code = RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
         cdb = core::ptr::addr_of_mut!((*srb).Cdb) as *mut CDB;
 
         core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -6665,7 +6665,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
 pub unsafe extern "C" fn DeviceHandleReadDvdStructure(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = 0;
@@ -6676,7 +6676,7 @@ pub unsafe extern "C" fn DeviceHandleReadDvdStructure(
 
     *DataLength = 0;
 
-    let req_params = &(*RequestParameters);
+    let req_params = &RequestParameters;
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
@@ -6713,7 +6713,7 @@ pub unsafe extern "C" fn DeviceHandleReadDvdStructure(
 pub unsafe extern "C" fn DeviceHandleDvdEndSession(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -6723,7 +6723,7 @@ pub unsafe extern "C" fn DeviceHandleDvdEndSession(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
         (&mut sessionId) as *mut *mut DVD_SESSION_ID as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -7046,7 +7046,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
 pub unsafe extern "C" fn DeviceHandleDvdSendKey(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: *mut core::ffi::c_void,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
 
@@ -7059,7 +7059,7 @@ pub unsafe extern "C" fn DeviceHandleDvdSendKey(
 
     status = WdfRequestRetrieveInputBuffer(
         Request as WDFREQUEST,
-        (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         core::ptr::addr_of_mut!(input_buffer),
         core::ptr::null_mut(),
     );
@@ -7069,7 +7069,7 @@ pub unsafe extern "C" fn DeviceHandleDvdSendKey(
             DeviceExtension,
             Request as WDFREQUEST,
             input_buffer,
-            (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
             DataLength,
         );
     }

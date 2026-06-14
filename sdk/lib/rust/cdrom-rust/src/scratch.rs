@@ -19,6 +19,8 @@ extern "system" {
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
+}
+extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
 }
 

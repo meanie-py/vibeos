@@ -392,7 +392,7 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
 pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    RequestParameters: *mut WDF_REQUEST_PARAMETERS,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -404,7 +404,7 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         core::ptr::addr_of_mut!(input) as *mut *mut core::ffi::c_void,
         core::ptr::null_mut::<usize>(),
     );
