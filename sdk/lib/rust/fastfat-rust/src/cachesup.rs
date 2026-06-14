@@ -1294,12 +1294,18 @@ pub unsafe extern "system" fn FatPrefetchPages(
         // PrefetchFlags.Flags.PriorityProtection = 1;
         prefetch_flags |= 1u32 << 6;
 
-        (*read_list).List[0].Alignment = (StartingPage as u64) * (PAGE_SIZE as u64);
-        (*read_list).List[0].Alignment |= (prefetch_flags as u64);
+        // READ_LIST.List is a C flexible-array member (List[ANYSIZE_ARRAY=1]); the
+        // allocation above is sized for PageCount entries. Index it via raw pointer
+        // arithmetic — array indexing would hit Rust's bounds check (compile-time len 1)
+        // and panic_bounds_check for any PageCount > 1.
+        let list = core::ptr::addr_of_mut!((*read_list).List) as *mut FILE_SEGMENT_ELEMENT;
+        (*list).Alignment = (StartingPage as u64) * (PAGE_SIZE as u64);
+        (*list).Alignment |= prefetch_flags as u64;
 
         page_no = 1;
         while page_no < PageCount {
-            (*read_list).List[page_no as usize].Alignment = (*read_list).List[(page_no - 1) as usize].Alignment + (PAGE_SIZE as u64);
+            (*list.add(page_no as usize)).Alignment =
+                (*list.add((page_no - 1) as usize)).Alignment + (PAGE_SIZE as u64);
             page_no += 1;
         }
 
