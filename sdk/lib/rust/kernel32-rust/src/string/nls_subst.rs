@@ -1447,6 +1447,8 @@ pub extern "C" fn FIXME(_fmt: *const i8) {}
 #[no_mangle]
 pub extern "C" fn WARN(_fmt: *const i8) {}
 #[no_mangle]
+pub extern "C" fn ERR(_fmt: *const i8) {}
+#[no_mangle]
 pub extern "C" fn debugstr_w(_s: *const WCHAR) -> *const u8 {
     core::ptr::null()
 }
@@ -1634,3 +1636,247 @@ pub unsafe extern "system" fn LCIDToLocaleName(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED_K32);
     0
 }
+
+// ===========================================================================
+// NLS substrate additions for nls.rs (ReactOS nls.c) + lcformat.rs (Wine
+// lcformat.c). Types/constants mirror sdk/include/psdk/winnls.h + winnt.h
+// exactly; internal structs come from dll/win32/kernel32/include/kernel32.h and
+// winnls/string/{nls,lcformat,japanese}.{c,h}.
+// ===========================================================================
+
+// ---- winnls.h calendar id / type aliases (winnls.h:582-583) ----
+pub type CALTYPE = DWORD;
+pub type CALID = DWORD;
+
+// ---- winnls.h NUMBERFMT / CURRENCYFMT (winnls.h:670-721) ----
+#[repr(C)]
+pub struct _numberfmtW {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPWSTR,
+    pub lpThousandSep: LPWSTR,
+    pub NegativeOrder: UINT,
+}
+pub type NUMBERFMTW = _numberfmtW;
+pub type LPNUMBERFMTW = *mut _numberfmtW;
+#[repr(C)]
+pub struct _numberfmtA {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPSTR,
+    pub lpThousandSep: LPSTR,
+    pub NegativeOrder: UINT,
+}
+pub type NUMBERFMTA = _numberfmtA;
+pub type LPNUMBERFMTA = *mut _numberfmtA;
+#[repr(C)]
+pub struct _currencyfmtW {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPWSTR,
+    pub lpThousandSep: LPWSTR,
+    pub NegativeOrder: UINT,
+    pub PositiveOrder: UINT,
+    pub lpCurrencySymbol: LPWSTR,
+}
+pub type CURRENCYFMTW = _currencyfmtW;
+pub type LPCURRENCYFMTW = *mut _currencyfmtW;
+#[repr(C)]
+pub struct _currencyfmtA {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPSTR,
+    pub lpThousandSep: LPSTR,
+    pub NegativeOrder: UINT,
+    pub PositiveOrder: UINT,
+    pub lpCurrencySymbol: LPSTR,
+}
+pub type CURRENCYFMTA = _currencyfmtA;
+pub type LPCURRENCYFMTA = *mut _currencyfmtA;
+
+// ---- winnls.h NLSVERSIONINFOEX (winnls.h:699-705) ----
+#[repr(C)]
+pub struct _nlsversioninfoex {
+    pub dwNLSVersionInfoSize: DWORD,
+    pub dwNLSVersion: DWORD,
+    pub dwDefinedVersion: DWORD,
+    pub dwEffectiveId: DWORD,
+    pub guidCustomVersion: GUID,
+}
+pub type NLSVERSIONINFOEX = _nlsversioninfoex;
+pub type LPNLSVERSIONINFOEX = *mut _nlsversioninfoex;
+
+// ---- winnls.h NLS_FUNCTION (winnls.h:614-617): enum {COMPARE_STRING=1} ----
+pub type NLS_FUNCTION = DWORD;
+pub const COMPARE_STRING: NLS_FUNCTION = 0x0001;
+
+// ---- winnls.h enumeration callback typedefs (winnls.h:588-611).
+// CALLBACK == __stdcall on x86 == extern "system". ----
+pub type DATEFMT_ENUMPROCW =
+    Option<unsafe extern "system" fn(LPWSTR) -> BOOL>;
+pub type DATEFMT_ENUMPROCA =
+    Option<unsafe extern "system" fn(LPSTR) -> BOOL>;
+pub type DATEFMT_ENUMPROCEXW =
+    Option<unsafe extern "system" fn(LPWSTR, CALID) -> BOOL>;
+pub type DATEFMT_ENUMPROCEXA =
+    Option<unsafe extern "system" fn(LPSTR, CALID) -> BOOL>;
+pub type DATEFMT_ENUMPROCEXEX =
+    Option<unsafe extern "system" fn(LPWSTR, CALID, LPARAM) -> BOOL>;
+pub type TIMEFMT_ENUMPROCW =
+    Option<unsafe extern "system" fn(LPWSTR) -> BOOL>;
+pub type TIMEFMT_ENUMPROCA =
+    Option<unsafe extern "system" fn(LPSTR) -> BOOL>;
+pub type TIMEFMT_ENUMPROCEX =
+    Option<unsafe extern "system" fn(LPWSTR, LPARAM) -> BOOL>;
+pub type CALINFO_ENUMPROCW =
+    Option<unsafe extern "system" fn(LPWSTR) -> BOOL>;
+pub type CALINFO_ENUMPROCA =
+    Option<unsafe extern "system" fn(LPSTR) -> BOOL>;
+pub type CALINFO_ENUMPROCEXW =
+    Option<unsafe extern "system" fn(LPWSTR, CALID) -> BOOL>;
+pub type CALINFO_ENUMPROCEXA =
+    Option<unsafe extern "system" fn(LPSTR, CALID) -> BOOL>;
+pub type CALINFO_ENUMPROCEXEX =
+    Option<unsafe extern "system" fn(LPWSTR, CALID, LPWSTR, LPARAM) -> BOOL>;
+
+// ---- internal CODEPAGE_ENTRY (kernel32.h:59-66) ----
+#[repr(C)]
+pub struct _CODEPAGE_ENTRY {
+    pub Entry: LIST_ENTRY,
+    pub CodePage: UINT,
+    pub SectionHandle: HANDLE,
+    pub SectionMapping: PBYTE,
+    pub CodePageTable: CPTABLEINFO,
+}
+pub type CODEPAGE_ENTRY = _CODEPAGE_ENTRY;
+pub type PCODEPAGE_ENTRY = *mut _CODEPAGE_ENTRY;
+
+// ---- japanese.h JAPANESE_ERA (winnls/string/japanese.h:9-19). japanese.c stays
+// C — JapaneseEra_* are real internal symbols (declared extern in lcformat.rs). ----
+#[repr(C)]
+pub struct JAPANESE_ERA {
+    pub wYear: WORD,
+    pub wMonth: WORD,
+    pub wDay: WORD,
+    pub szEraName: [WCHAR; 16],
+    pub szEraAbbrev: [WCHAR; 5],
+    pub szEnglishEraName: [WCHAR; 24],
+    pub szEnglishEraAbbrev: [WCHAR; 5],
+}
+pub type PJAPANESE_ERA = *mut JAPANESE_ERA;
+pub type PCJAPANESE_ERA = *const JAPANESE_ERA;
+
+// ---- winnls.h constants (exact header values) ----
+pub const LOCALE_SMONTHDAY: DWORD = 0x0078; // winnls.h:169
+pub const ENUM_ALL_CALENDARS: DWORD = 0xFFFFFFFF; // winnls.h:208 = (-1)
+pub const DATE_SHORTDATE: DWORD = 1; // winnls.h:209
+pub const DATE_LONGDATE: DWORD = 2; // winnls.h:210
+pub const DATE_USE_ALT_CALENDAR: DWORD = 4; // winnls.h:211
+pub const DATE_YEARMONTH: DWORD = 8; // winnls.h:530
+pub const DATE_LTRREADING: DWORD = 16; // winnls.h:531
+pub const DATE_RTLREADING: DWORD = 32; // winnls.h:532
+pub const TIME_NOMINUTESORSECONDS: DWORD = 1; // winnls.h:295
+pub const TIME_NOSECONDS: DWORD = 2; // winnls.h:296
+pub const TIME_NOTIMEMARKER: DWORD = 4; // winnls.h:297
+pub const TIME_FORCE24HOURFORMAT: DWORD = 8; // winnls.h:298
+pub const CAL_JAPAN: DWORD = 3; // winnls.h:487
+// winnls.h:534-536 alias to LOCALE_* (already defined above in this crate).
+pub const CAL_NOUSEROVERRIDE: DWORD = LOCALE_NOUSEROVERRIDE; // 0x80000000
+pub const CAL_RETURN_NUMBER: DWORD = LOCALE_RETURN_NUMBER; // 0x20000000
+pub const CAL_USE_CP_ACP: DWORD = LOCALE_USE_CP_ACP; // 0x40000000
+pub const JAPANESE_MAX_TWODIGITYEAR: INT = 99; // japanese.h:7
+
+// ---- winnt.h / win32 helper macros as const fns (glob-importable) ----
+// #define MAKEWORD(a,b) ((WORD)(((BYTE)(a))|(((WORD)((BYTE)(b)))<<8)))
+#[inline]
+pub const fn MAKEWORD(a: UCHAR, b: UCHAR) -> WORD {
+    (a as WORD) | ((b as WORD) << 8)
+}
+// #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
+#[inline]
+pub fn NT_SUCCESS(status: NTSTATUS) -> bool {
+    status >= 0
+}
+// #define MAKEINTRESOURCEW(i) ((LPWSTR)((ULONG_PTR)((WORD)(i))))
+#[inline]
+pub fn MAKEINTRESOURCEW(i: u16) -> LPWSTR {
+    i as usize as LPWSTR
+}
+// base.h:26 — NLS_SIZEOF_ACE_AND_SIDS(n):
+//   FIELD_OFFSET(ACCESS_ALLOWED_ACE, SidStart) +
+//   FIELD_OFFSET(SID, SubAuthority) + (n)*RTL_FIELD_SIZE(SID, SubAuthority)
+// SubAuthority is a [DWORD;1] → RTL_FIELD_SIZE == 4. const fn for array-size use.
+#[inline]
+pub const fn NLS_SIZEOF_ACE_AND_SIDS(n: usize) -> usize {
+    core::mem::offset_of!(ACCESS_ALLOWED_ACE, SidStart)
+        + core::mem::offset_of!(SID, SubAuthority)
+        + n * 4
+}
+
+// ─── ntstrsafe RtlStringCch/CbCopyW (FORCEINLINE in ntstrsafe.h — no real export;
+// lcformat.rs declares them extern "C", so provide #[no_mangle] cdecl bodies). ───
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCchCopyW(dest: LPWSTR, cch_dest: usize, src: LPCWSTR) -> NTSTATUS {
+    if cch_dest == 0 {
+        return 0xC000000Du32 as NTSTATUS; // STATUS_INVALID_PARAMETER
+    }
+    let mut i: usize = 0;
+    while i + 1 < cch_dest && *src.add(i) != 0 {
+        *dest.add(i) = *src.add(i);
+        i += 1;
+    }
+    *dest.add(i) = 0;
+    if *src.add(i) != 0 {
+        0x80000005u32 as NTSTATUS // STATUS_BUFFER_OVERFLOW
+    } else {
+        0 // STATUS_SUCCESS
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyW(dest: LPWSTR, cb_dest: usize, src: LPCWSTR) -> NTSTATUS {
+    RtlStringCchCopyW(dest, cb_dest / core::mem::size_of::<WCHAR>(), src)
+}
+
+// ─── RtlLocaleNameToLcid: ntdll spec is -version=0x600+ → NOT exported by this build's
+// ntdll.dll. kernel32_vista/LocaleNameToLCID.c (pulled because lcformat.rs calls
+// LocaleNameToLCID) references it. Shim via parse_locale_name (already in this module) so
+// the vista LocaleNameToLCID wrapper links without the version-gated ntdll import. ───
+#[no_mangle]
+pub unsafe extern "system" fn RtlLocaleNameToLcid(
+    name: *const WCHAR,
+    lcid_out: *mut LCID,
+    _flags: ULONG,
+) -> NTSTATUS {
+    if name.is_null() || lcid_out.is_null() {
+        return 0xC000000Du32 as NTSTATUS; // STATUS_INVALID_PARAMETER
+    }
+    let mut ln: locale_name = core::mem::zeroed();
+    parse_locale_name(name, &mut ln);
+    if ln.matches == 0 {
+        return 0xC000000Du32 as NTSTATUS; // not found → STATUS_INVALID_PARAMETER
+    }
+    *lcid_out = ln.lcid as LCID;
+    0 // STATUS_SUCCESS
+}
+
+// kernel32_vista/LocaleNameToLCID.c references RtlLocaleNameToLcid via __declspec(dllimport)
+// — i.e. through the import thunk `__imp__RtlLocaleNameToLcid@12`, not the direct symbol.
+// ntdll doesn't export it (version-gated), so provide the import slot as a data symbol
+// holding the address of our in-crate shim above. (i386 only; the dllimport indirection +
+// @12 stdcall decoration are i386 PE specifics.)
+#[cfg(target_arch = "x86")]
+#[used]
+#[export_name = "_imp__RtlLocaleNameToLcid@12"]
+pub static IMP_RtlLocaleNameToLcid: unsafe extern "system" fn(*const WCHAR, *mut LCID, ULONG) -> NTSTATUS =
+    RtlLocaleNameToLcid;
+// amd64/arm64 PE: import thunk is `__imp_RtlLocaleNameToLcid` (no `@N`, no extra leading
+// underscore — these arches don't decorate symbols the way i386 does).
+#[cfg(not(target_arch = "x86"))]
+#[used]
+#[export_name = "__imp_RtlLocaleNameToLcid"]
+pub static IMP_RtlLocaleNameToLcid: unsafe extern "system" fn(*const WCHAR, *mut LCID, ULONG) -> NTSTATUS =
+    RtlLocaleNameToLcid;

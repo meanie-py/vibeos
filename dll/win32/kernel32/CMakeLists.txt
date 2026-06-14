@@ -87,9 +87,9 @@ list(APPEND SOURCE
     winnls/string/format_msg.c
     winnls/string/japanese.c
     # winnls/string/locale.c   — replaced by Rust (kernel32-rust/src/string/locale.rs)
-    winnls/string/lcformat.c
+    # winnls/string/lcformat.c — replaced by Rust (kernel32-rust/src/string/lcformat.rs)
     winnls/string/lstring.c
-    winnls/string/nls.c
+    # winnls/string/nls.c      — replaced by Rust (kernel32-rust/src/string/nls.rs)
     winnls/string/sortkey.c
     k32.h)
 
