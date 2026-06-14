@@ -1,5 +1,10 @@
 # Swarm Communication & Coordination — Design Plan
 
+> **⚠️ Superseded (2026-06-14) by [`agent-swarm-platform-design.md`](agent-swarm-platform-design.md).**
+> This doc is the messaging-layer subset (board vs channel); the platform design is the
+> whole picture (identity/Authentik, quests/Vikunja, unified delivery, provisioning).
+> Kept for the transport-mechanism analysis (§4, §7) which the platform design references.
+
 **Status:** design approved, implementation deferred to a fresh (compacted) session.
 **Branch/worktree:** `swarm-comms` at `/home/curi/Projects/os-playground/vibeos-swarm-comms`.
 **Date:** 2026-06-14.
