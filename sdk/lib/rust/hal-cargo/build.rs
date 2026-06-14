@@ -36,6 +36,13 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // cnt-rust-lib `float` feature, mirroring libcntpr.cmake CNT_RUST_FEATURES:
+    // i386 omits it (no-SSE softfloat kernel), amd64/arm64 enable it. Used only
+    // on x86/amd64 (the halx86 flavors that reuse libcntpr); arm64 halstubs
+    // reference no cntpr.
+    let is_x86 = arch == "x86" || arch == "x86_64";
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     // Per-arch: (target json, entry, image base, asm sources, static libs in
     // cmake hal.dll link order). x86/amd64 (halx86) carry the full leaf chain
     // (cntpr/setjmp/arbiter/pseh + per-arch extras + memcmp). arm64 (halarm64)
@@ -53,10 +60,11 @@ fn main() {
         // generic/trap.S + pic/pic.S. v86.S is GONE (pre-Vista V86 INT10 BIOS
         // path retired with fast486/x86bios, commit ebf1ac53a99). i386 cmake
         // link adds libchkstk.a (no transitive propagation in the cargo link).
-        // libcntpr_rust.a (the cnt-rust cohabitation twin) is also needed:
-        // cnt-rust now owns symbols the C liblibcntpr.a still references
-        // (strnlen/wcsnlen from the CORE-OPS flip; streamout/wstreamout from the
-        // printf wrappers, pulled when a cgu shift makes hal-rust reach sprintf).
+        // cntpr's Rust half (was the cmake-copied libcntpr_rust.a) now comes
+        // from the cargo-native sibling `cnt-rust-lib` via .rust_lib() below
+        // (classpnp/framebuf pattern); libpseh.a → the dummy.c c_shim; memcmp →
+        // compiler-builtins-mem (build-std). liblibcntpr.a (C residual) +
+        // setjmp/arbiter/chkstk stay reused.
         "x86" => (
             "i686-kernel.json",
             "_HalInitSystem@8",
@@ -70,15 +78,14 @@ fn main() {
                 "sdk/lib/crt/liblibcntpr.a",
                 "sdk/lib/vcruntime/libsetjmp.a",
                 "sdk/lib/drivers/arbiter/libarbiter.a",
-                "sdk/lib/pseh/libpseh.a",
                 "sdk/lib/crt/libchkstk.a",
-                "sdk/lib/crt/libcntpr_rust.a",
-                "sdk/lib/crt/libmemcmp.a",
             ],
         ),
         // amd64 acpi/apic-flavor: the only non-empty component contributions
         // are apic/apictrap.S + apic/tsccal.S (generic + acpi are empty.c).
-        // cmake link adds libcntpr_rust.a (cnt-rust twin); no chkstk.
+        // cntpr Rust half → cnt-rust-lib (.rust_lib); pseh → dummy.c c_shim;
+        // memcmp → compiler-builtins-mem; no chkstk (amd64 takes __chkstk from
+        // clang_rt.builtins).
         "x86_64" => (
             "x86_64-kernel.json",
             "HalInitSystem",
@@ -88,26 +95,36 @@ fn main() {
                 "sdk/lib/crt/liblibcntpr.a",
                 "sdk/lib/vcruntime/libsetjmp.a",
                 "sdk/lib/drivers/arbiter/libarbiter.a",
-                "sdk/lib/pseh/libpseh.a",
-                "sdk/lib/crt/libcntpr_rust.a",
-                "sdk/lib/crt/libmemcmp.a",
             ],
         ),
         // arm64 (hal/halarm64): pure-Rust stubs (src/arm64/halstubs.rs). The
         // build-arm64/build.ninja hal.dll link line is just libhal_rust.a +
-        // libntoskrnl.a (import lib, self-hosted below) + libmemcmp.a — no asm,
+        // libntoskrnl.a (import lib, self-hosted below) + memcmp — no asm,
         // no resource, none of the x86 CRT/setjmp/arbiter/pseh leaf libs.
+        // memcmp now comes from compiler-builtins-mem (build-std), so the last
+        // cmake .a (libmemcmp.a) is dropped → arm64 hal.dll is ZERO cmake .a.
         "aarch64" => (
             "aarch64-kernel.json",
             "HalInitSystem",
             0x7FFB_0000_0000,
             &[],
-            vec!["sdk/lib/crt/libmemcmp.a"],
+            vec![],
         ),
         other => panic!("hal-cargo: unsupported arch {other}"),
     };
 
     let mut linker = Linker::new(target_json).rust_staticlib("hal-rust");
+
+    // x86/amd64 only: cntpr's Rust half as a cargo-native sibling staticlib
+    // (was the cmake-copied libcntpr_rust.a) + the DUMMY_PSEH _SEH2_Volatile*
+    // symbols compiled in-cargo from dummy.c (was libpseh.a). Both are
+    // mechanism-identical reuses turned cargo-native — exactly classpnp/ntdll.
+    // arm64 halstubs reference neither cntpr nor pseh.
+    if is_x86 {
+        linker = linker
+            .rust_lib("cnt-rust-lib", cnt_feats, true)
+            .c_shims(&["sdk/lib/pseh/dummy.c"]);
+    }
 
     // Self-hosted asm (x86 only): the engine assembles the SOURCE `.S` directly
     // via the HAL define set (AsmDefineSet::Hal) + the engine's kernel asm -I

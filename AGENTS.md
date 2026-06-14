@@ -50,6 +50,75 @@ Why it matters (the bugs it prevents):
 
 **No default arch** (always pass `--arch`; `i386`/`amd64` alias to the UEFI boot configs). This is the front door; the raw `pytest tests/qemu/test_smoke.py` path and the `qemu/*.sh` toolkit still work underneath (see `tests/qemu/cli/README.md` → "Relationship to `qemu/`" for which layer to use when).
 
+## Worktree Discipline — Work in Isolation When Other Agents Are Active
+
+**Multiple agents routinely run against this repo at once.** The default working copy
+(`/home/curi/Projects/os-playground/vibeos`) is *shared*: every agent sees the same
+working tree and the same single `.git`. That makes uncommitted work collide in ways
+that silently corrupt commits. **If there is any chance another agent is working
+concurrently, do your work in a dedicated git worktree, not the shared main checkout.**
+
+Why it matters (all are real incidents, not hypotheticals):
+- **`git add` / `git commit -a` sweeps a concurrent agent's uncommitted edits into
+  *your* commit.** A 2026-06-05 case landed unresolved conflict markers from another
+  session into a commit and broke `cargo build` of `reactos-link` for every
+  cargo-driven module on `continue-rust-port`. Stray edits in the shared tree become
+  random hunks on someone else's branch.
+- **The git stash is one global stack shared by all worktrees.** `stash@{0}` is *not*
+  stable — another agent can push on top between your `stash push` and `stash drop`,
+  so dropping `{0}` destroys their work. Always `git stash push -m "<scope>: <msg>"`
+  and drop/pop by **message or captured hash**, never by index.
+- **Editing the wrong tree is the failure mode** — worktree git isolation itself works.
+
+### Rules
+
+1. **Prefer a worktree** (`EnterWorktree`, or `git worktree add`) on its own branch
+   when collaborating. Verify isolation early: after the first edit, `git -C <worktree>
+   status` shows it and `git -C <mainrepo> status` does not.
+2. **Path discipline (the #1 hazard).** In a worktree session, an Edit/Write/Read with
+   an absolute path to the *main* repo root writes to the **main** checkout, not the
+   worktree. Resolve `$W=<worktree toplevel>` once and prefix every file path with it.
+   Never bare-path the main repo from a worktree session.
+3. **Give a worktree a `build-<arch>` by COPY + repoint — never symlink.** A symlinked
+   build dir, when `ninja` triggers a cmake reconfigure with CWD inside it, rewrites
+   *main's* `CMakeCache.txt` + generated files to the worktree path, corrupting main's
+   build for every other agent. Recipe: `cp -a /main/build-<arch> ./build-<arch>`, then
+   repoint **both** the trailing-slash file paths *and* the bare cache vars
+   (`CMAKE_HOME_DIRECTORY`/`*_SOURCE_DIR`) in **every** nested `CMakeCache.txt` +
+   `build.ninja` + `compile_commands.json` (including `host-tools/bin/`):
+   ```
+   grep -rlI -E "$MAIN(\$|[^-/])" build-<arch> | xargs -r sed -i -E "s#$MAIN([^-])#$WT\1#g; s#$MAIN\$#$WT#g"
+   ```
+   (`vibeos`-not-followed-by-`-` is worktree-safe.) Then `rm -rf host-tools` if its
+   stamp was invalidated, `cmake .`, `ninja`. Copy gitignored boot assets
+   (`qemu/boot.img ramdisk.img QEMU_EFI.fd efivars.fd`) from main.
+4. **`pip install -e` shadowing.** `python -m rustconv` resolves to the **main-repo**
+   path baked into site-packages, not the worktree. To run worktree tool edits, prefix
+   `PYTHONPATH=$W/tools/rustconv:$PYTHONPATH`; verify with
+   `python -c "import rustconv.__main__ as m; print(m.__file__)"`.
+5. **Subagents with `isolation: "worktree"` leak their build step.** The fresh checkout
+   lacks the gitignored `build-*` dirs, so `cd build-i386 && ninja` resolves to *another*
+   real tree and the agent's edits to shared files (`lib.rs`, `CMakeLists.txt`) land
+   there. Have parallel translation subagents write their `.rs` to a unique staging
+   path and do **all** wiring + build + smoke centrally yourself, in one pass, across
+   all 3 arches.
+6. **Before committing on a shared tree:** `git diff --cached --check` (and
+   `git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- <staged files>`) — a 1-second guard.
+   A green smoke does **not** prove the about-to-be-committed tree is clean when the
+   checkout is shared; re-check staged content at commit time. Only stage paths you
+   authored; leave other agents' dirty/untracked files alone.
+7. **Cross-agent blocker** (root-caused but owned by another agent's lane): commit your
+   own work green + parked, then write a **paste-ready handoff brief** (exact symptom,
+   symbols, oracle, what's needed) the user can route — not an `AskUserQuestion`.
+8. **Paid translation outputs go to `~/vibeos-rust-staging/`, never `/tmp`** (a reboot
+   wipes `/tmp`; regenerating costs real API money). The durable per-function cache is
+   also in-repo at `tools/rustconv/.responses/` (gitignored).
+
+Build operational reality that interacts with the above: judge build success by
+**artifact existence** (`ls livecd.iso`), not reported exit code — `run_in_background`
+and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0` with no real
+artifacts; only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
+
 ## Directory Layout
 
 ```

@@ -172,6 +172,8 @@ pub mod text;
 pub mod rtl_text;
 // user/rtl/image.c — RtlGetExpWinVer (app PE subsystem-version lookup).
 pub mod image;
+// safe_user_io.c — SEH-free user-buffer validation (SafeProbeForRead/Write).
+pub mod safe_user_io;
 // icm.rs — Phase 2c wave 11: ICM color-management tier (NtGdi{Create,Delete}ColorSpace,
 // NtGdiSet{ColorSpace,IcmMode}, NtGdi{Get,Set}DeviceGammaRamp + Int* helpers).
 pub mod icm;
