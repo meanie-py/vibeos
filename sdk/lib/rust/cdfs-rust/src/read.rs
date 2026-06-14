@@ -213,7 +213,10 @@ pub unsafe extern "C" fn CdCommonRead(
                     (ReadByteCount > OriginalByteCount)
                 {
                     if !Wait {
-                        CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+                        // DUMMY_PSEH: return CANT_WAIT (posted by the tail at the end of
+                        // CdCommonRead) instead of raising into an uncatchable bugcheck.
+                        Status = STATUS_CANT_WAIT;
+                        break;
                     }
                     //  Make sure we don't overwrite the buffer.
                     ReadByteCount = ByteCount;
@@ -265,6 +268,13 @@ pub unsafe extern "C" fn CdCommonRead(
                     read_status = CdNonCachedRead(IrpContext, Fcb, StartingOffset, ReadByteCount);
                 }
                 Status = read_status;
+
+                // DUMMY_PSEH: CdNonCachedRead now RETURNS CANT_WAIT (instead of raising)
+                // when an unaligned/insufficient async run needs posting. Propagate to the
+                // post tail (do not normalize it as an I/O error below).
+                if Status == STATUS_CANT_WAIT {
+                    break;
+                }
 
                 if Status == STATUS_PENDING {
                     Irp = core::ptr::null_mut();

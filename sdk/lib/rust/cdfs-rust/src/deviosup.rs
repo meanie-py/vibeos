@@ -316,11 +316,21 @@ pub unsafe extern "C" fn CdNonCachedRead(
                     &mut CleanupRunCount,
                     &mut ThisByteCount,
                 );
+                // CdPrepareBuffers returns CANT_WAIT (sentinel, != 0/1) when it hits an
+                // unaligned run on a non-wait request. Propagate so CdCommonRead posts.
+                // CleanupRunCount was written via &mut before the sentinel return, so the
+                // FINALLY below cleans up any partial run.
+                if Unaligned == STATUS_CANT_WAIT {
+                    Status = STATUS_CANT_WAIT;
+                    break 'try_block;
+                }
                 RunCount = CleanupRunCount;
 
                 // Async request with insufficient entries
                 if (ThisByteCount < RemainingByteCount) && ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
-                    CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+                    // DUMMY_PSEH: return CANT_WAIT instead of raising; posted by CdCommonRead.
+                    Status = STATUS_CANT_WAIT;
+                    break 'try_block;
                 }
 
                 // Entire I/O in a single run
@@ -973,8 +983,14 @@ pub unsafe extern "C" fn CdPrepareBuffers(
         {
             debug_assert!(SafeNodeType(Fcb) != 0x1234); // CDFS_NTC_FCB_INDEX
 
-            if ((*IrpContext).Flags & 0x1) == 0 { // IRP_CONTEXT_FLAG_WAIT
-                CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+            if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
+                // DUMMY_PSEH: cannot raise+catch. Return CANT_WAIT as a sentinel
+                // (distinct from the 0/1 FoundUnaligned return) so CdNonCachedRead
+                // breaks to its finally and CdCommonRead posts the request to a worker
+                // thread (which runs WAIT-set), mirroring C's raise -> CdFsdDispatch
+                // _SEH2_EXCEPT -> CdProcessException post. (The mask here was 0x1 =
+                // IRP_CONTEXT_FLAG_ON_STACK, NOT WAIT (0x04) — a grind flag-bit bug.)
+                return STATUS_CANT_WAIT;
             }
 
             (*ThisIoRun).TransferBufferOffset = SectorOffset(DiskOffset as u32) as u32;
