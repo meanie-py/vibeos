@@ -2,7 +2,86 @@
 
 **Audience:** Codex (or any agent) picking up the arm64 boot blocker.
 **Worktree:** `/home/curi/Projects/os-playground/vibeos-wt-fastfat`, branch `fastfat-port`.
-**Date:** 2026-06-13. **Status:** open. Tracked as task #22.
+**Date:** 2026-06-13. **Status:** open. Tracked as task #22 (orig) / #23 (current).
+
+---
+
+## ⚡ UPDATE 2026-06-14 — progress + a critical methodology fix + new localization
+
+**Codex landed the IRP stack-location fix** (committed `913c1c24364`): ntkrnl-sys tier1
+IRP helpers now use CurrentStackLocation @ IRP+0xb0, IO_STACK_LOCATION stride 0x60.
+This was the real first suspect and it cleared the original `0xC0000010` INVALID_DEVICE_
+REQUEST. fastfat rebuilt against the same ntkrnl-sys now agrees (its
+`IoGetCurrentIrpStackLocation` also disassembles to `ldr [x0,#0xb0]`). **Necessary but
+not sufficient** — arm64 now fails later: `BUGCHECK 0x64 SYMBOLIC_INITIALIZATION_FAILED`,
+arg1 = `0xC000003A STATUS_OBJECT_PATH_NOT_FOUND`, loading `\SystemRoot\System32\smss.exe`.
+
+### 🚨 CRITICAL TOOLING GOTCHA — non-volatile UART traces are OPTIMIZED AWAY in release
+This invalidated many earlier "function X is/isn't reached" conclusions (both Codex's and
+this author's). In the **release/optimized** kernel build, a plain `*uart = byte`
+(non-volatile store whose result is never read) is **dead-code-eliminated by LLVM**, and
+the associated string constant is dropped too. So a missing `[MOUNT]`/`[CHKVPB]` serial
+line did **NOT** prove the code wasn't running — the trace itself was optimized out. The
+existing `ARM64_UART_TRACE!` macro uses non-volatile writes and is therefore **unreliable
+in release**. **Rule: instrument with `core::ptr::write_volatile` + `#[inline(never)]`
+helpers, and ALWAYS gate on `strings build-arm64/ntoskrnl/ntoskrnl.exe | grep -c <marker>`
+≥ 1 before booting.** Reusable helper pattern (drop in `iomgr/volume.rs`, `pub(crate)`):
+```rust
+#[inline(never)]
+pub(crate) unsafe fn mntv_str(s: &[u8]) {
+    #[cfg(target_arch = "aarch64")]
+    { let u = Arm64UartKernelBase as *mut u32; if !u.is_null() { for &c in s { core::ptr::write_volatile(u, c as u32); } } }
+    #[cfg(not(target_arch = "aarch64"))] { let _ = s; }
+}
+#[inline(never)]
+pub(crate) unsafe fn mntv_hex(v: u64) {
+    #[cfg(target_arch = "aarch64")]
+    { let u = Arm64UartKernelBase as *mut u32; if !u.is_null() {
+        core::ptr::write_volatile(u, b'0' as u32); core::ptr::write_volatile(u, b'x' as u32);
+        for i in (0..16).rev() { let n = ((v >> (i*4)) & 0xf) as u8; core::ptr::write_volatile(u, (if n<10 {b'0'+n} else {b'a'+n-10}) as u32); }
+        core::ptr::write_volatile(u, b'\r' as u32); core::ptr::write_volatile(u, b'\n' as u32);
+    } }
+    #[cfg(not(target_arch = "aarch64"))] { let _ = v; }
+}
+```
+Also: the cargo fingerprint frequently MISSES edits — `touch` the edited `.rs` before
+building, and still gate on `strings`. (kernel build: `rm -rf build-arm64/ntoskrnl/{rust-kernel-target,libkernel_rust.a,ntoskrnl.exe}; ninja ntoskrnl`.)
+
+### New localization (with reliable volatile traces) — the failure is in OBJECT MANAGER, not fastfat or the mount logic
+Traced the actual smss.exe/ntdll.dll open path:
+- **fastfat is healthy and NEVER reached.** `FF_DRVENTRY` fires (DriverEntry registers
+  both FS device objects); `FatMountVolume`, `FatFsdFileSystemControl`, `FatFsdCreate` are
+  **never called**. The earlier "fastfat create-path bug" hypothesis is WRONG.
+- **`IopMountVolume` and `IopCheckVpbMounted` are NEVER reached** (volatile-trace
+  confirmed — the prior non-volatile "MOUNT not reached" was unreliable, but the volatile
+  re-test agrees they aren't called *for these opens*).
+- **`IopParseDevice` is called exactly ONCE** in the whole boot — for a device of type
+  `0x2a = FILE_DEVICE_BUS_EXTENDER` with a **null `Vpb`** and `RemainingName.Length == 0`.
+  The smss.exe / ntdll.dll opens **never reach `IopParseDevice`**.
+- ⇒ The opens of `\SystemRoot\System32\smss.exe` (and the ntdll test open) fail with
+  `STATUS_OBJECT_PATH_NOT_FOUND` **inside Object-Manager name resolution**, before the
+  device parse routine runs. `\SystemRoot` reassign succeeds
+  (→ `\Device\Ramdisk{9e475cab-…}\reactos`), so the break is resolving
+  `\Device\Ramdisk{GUID}` (the volume device) in the object namespace, or that volume
+  device is mis-created (note the lone parsed device is a **bus-extender with no VPB** —
+  disk/cdrom/tape/virtual-disk are the only types that get a VPB and an FS-mount).
+
+### Where to look next (this is OM / ramdisk-volume territory, NOT fastfat)
+1. Does a device object named `\Device\Ramdisk{9e475cab-956f-11d0-a0c4-08002be10d8e}`
+   actually exist, and with what `DeviceType`? The ramdisk driver logs several
+   `UNIMPLEMENTED!` paths (`ramdisk.c:1163` DeviceControl `FSCTL 0xffffffff UNSUPPORTED`,
+   `ramdisk.c:895` WorkerThread `Invalid request: 0`) — the volume device may be created
+   wrong (wrong type → no VPB → unmountable) or under the wrong name.
+2. Trace OM path resolution (`ObpLookupObjectName` / the symlink+device parse) for the
+   smss open to see exactly where `STATUS_OBJECT_PATH_NOT_FOUND` originates (it's before
+   `IopParseDevice`). Use the volatile-trace pattern above.
+3. Re-verify Codex's `IopParseDevice` related-file-object changes with volatile traces
+   (some of their original validation may have used now-known-unreliable non-volatile
+   traces).
+
+**fastfat is done and exonerated for this bug.** Don't touch fastfat. The remaining work
+is OM device-name resolution + the ramdisk volume device — a separate kernel/ramdisk
+track.
 
 ---
 
