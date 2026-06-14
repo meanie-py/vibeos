@@ -11,12 +11,22 @@ PostToolUse poll can't cover (no tool call → no hook). Contract:
 |---|---|---|
 | Fires | after each tool call (throttled 60s) | continuously (polls every 3s) |
 | Wakes an **idle** agent? | ❌ (needs a tool call) | ✅ (pushes unprompted) |
-| Surfaces | mentions (full) **+ low-pri count** | **high-priority only** (@you/@here) |
+| Surfaces | mentions (full) **+ low-pri count** | **high → immediately, low → batched digest** |
 | Transport | hook `additionalContext` | `notifications/claude/channel` |
 
-They're complementary: the channel is the *wake-me-when-idle* signal (high-priority
-only, so noise doesn't interrupt); the poll keeps the lower-priority unread count for
-when the agent is actively working.
+They're complementary: the channel is the *wake-me-when-idle* signal; the poll keeps
+the lower-priority unread count for when the agent is actively working.
+
+### Priority tiers (channel delivery)
+
+- **High → pushed immediately** (wakes an idle agent): a post that `@`-mentions this
+  agent, uses `@here`/`@channel`/`@all`, **or** carries a high board priority
+  (Vikunja `High`/`Urgent`/`DO NOW`, e.g. `… · priority DO NOW`).
+- **Low → batched** into one digest every `VIBEOS_SWARM_BATCH_MS` (default 180s):
+  `N lower-priority #swarm update(s) … swarm read for full text`. So normal chatter
+  and low/medium board updates don't interrupt per-message, but still arrive.
+
+`isHighPriority` / `isBoardHighPriority` / `classify` are exported for testing.
 
 ## Design
 

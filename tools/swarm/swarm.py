@@ -166,13 +166,10 @@ def resolve_name(transcript_path: str | None, session_id: str | None = None,
                     break
         except OSError:
             pass
-    if name:
-        return name
-    if title:
-        return title
-    if session_id:
-        return session_id[:8]
-    return None
+    # Return a REAL name only (from /rename, else ai-title). No session-id fallback:
+    # callers use session_id[:8] for *display*, but a short-id is not an identity and
+    # must never overwrite a real name or let a nameless phantom register (see guards).
+    return name or title or None
 
 
 # ---------------------------------------------------------------------------
@@ -320,10 +317,21 @@ def _init_cursor(conn, session_id, channel_id):
 # ---------------------------------------------------------------------------
 
 def cmd_register(args):
-    name = resolve_name(args.transcript, args.session)
+    real = resolve_name(args.transcript)  # real name or None (no short-id fallback)
     worktree, branch = git_info(args.cwd)
     now = time.time()
     conn = connect()
+    # Phantom guard: a no-real-name session (e.g. the transient MCP child-session that
+    # Claude Code spins up for a channel) must NOT register into a worktree that already
+    # has a named, live agent — it would spam #presence and corrupt by-cwd identity.
+    if not real and worktree:
+        dup = conn.execute(
+            "SELECT 1 FROM agents WHERE worktree=? AND status='online' "
+            "AND name IS NOT NULL AND session_id!=?", (worktree, args.session)).fetchone()
+        if dup:
+            conn.close()
+            return  # skip silently — the named agent owns this worktree
+    disp = real or (args.session[:8] if args.session else "agent")
     with conn:
         row = conn.execute(
             "SELECT started_at FROM agents WHERE session_id=?", (args.session,)
@@ -333,19 +341,20 @@ def cmd_register(args):
             """INSERT INTO agents(session_id,name,worktree,branch,cwd,pid,status,started_at,last_seen)
                VALUES(?,?,?,?,?,?,'online',?,?)
                ON CONFLICT(session_id) DO UPDATE SET
-                 name=excluded.name, worktree=excluded.worktree, branch=excluded.branch,
-                 cwd=excluded.cwd, pid=excluded.pid, status='online', last_seen=excluded.last_seen""",
-            (args.session, name, worktree, branch, args.cwd, args.pid, started, now),
+                 name=COALESCE(excluded.name, agents.name), worktree=excluded.worktree,
+                 branch=excluded.branch, cwd=excluded.cwd, pid=excluded.pid,
+                 status='online', last_seen=excluded.last_seen""",
+            (args.session, real, worktree, branch, args.cwd, args.pid, started, now),
         )
-        log_event(conn, args.session, "register", f"{name} @ {worktree} [{branch}]")
+        log_event(conn, args.session, "register", f"{disp} @ {worktree} [{branch}]")
         ch = _swarm_channel_id()
         if ch:
             _init_cursor(conn, args.session, ch)  # start unread-clock at boot
     mattermost_post(
-        f"🟢 **{name or args.session[:8]}** online — `{branch}` in `{worktree}`",
-        username=_mm_username(name or args.session[:8], worktree),
+        f"🟢 **{disp}** online — `{branch}` in `{worktree}`",
+        username=_mm_username(disp, worktree),
     )
-    print(f"registered {name or args.session[:8]} @ {worktree} [{branch}]")
+    print(f"registered {disp} @ {worktree} [{branch}]")
 
 
 def cmd_heartbeat(args):
@@ -582,6 +591,22 @@ def cmd_name(args):
     print(name or "")
 
 
+def cmd_touch(args):
+    """Bump last_seen for the worktree's agent (keeps an IDLE agent from going stale).
+
+    The channel server is alive iff its agent session is alive (it's a subprocess), so
+    it calls this periodically — an idle agent with no tool calls still stays 'online'.
+    """
+    conn = connect()
+    sid = args.session
+    if getattr(args, "by_cwd", False) or not sid:
+        sid = _session_for_cwd(conn)
+    if sid:
+        with conn:
+            conn.execute("UPDATE agents SET last_seen=?, status='online' WHERE session_id=?",
+                         (time.time(), sid))
+
+
 def cmd_whoami(args):
     print(resolve_name(args.transcript, args.session) or "(unknown)")
 
@@ -675,6 +700,10 @@ def main(argv=None):
     pn.add_argument("--transcript")
     pn.add_argument("--by-cwd", dest="by_cwd", action="store_true",
                     help="resolve by worktree, ignoring session id (for the channel server)")
+
+    pt = sub.add_parser("touch"); pt.set_defaults(fn=cmd_touch)
+    pt.add_argument("--session")
+    pt.add_argument("--by-cwd", dest="by_cwd", action="store_true")
 
     pw = sub.add_parser("whoami"); pw.set_defaults(fn=cmd_whoami)
     pw.add_argument("--session")

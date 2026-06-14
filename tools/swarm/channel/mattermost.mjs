@@ -34,6 +34,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))      // .../tools/swarm/channel
 const SWARM_PY = join(HERE, '..', 'swarm.py')
 const POLL_MS = Number(process.env.VIBEOS_SWARM_CHANNEL_POLL_MS || 3000)
+const BATCH_MS = Number(process.env.VIBEOS_SWARM_BATCH_MS || 180000)  // low-pri digest cadence
 
 export function loadConfig() {
   const p = process.env.VIBEOS_SWARM_CONFIG || join(homedir(), '.vibeos-swarm', 'config.env')
@@ -65,6 +66,20 @@ export function isHighPriority(msg, name) {
   if (name && m.includes('@' + name.toLowerCase())) return true
   return false
 }
+
+// Board (Vikunja) posts carry a priority label, e.g. "… · priority DO NOW". Treat the
+// top Vikunja tiers (High/Urgent/DO NOW) as high; Low/Medium/Unset fall to the batch.
+export function isBoardHighPriority(msg) {
+  return /\bpriority\s*[:\-]?\s*(do\s*now|urgent|high)\b/i.test(msg || '') || /\bDO\s*NOW\b/i.test(msg || '')
+}
+
+// 'high' → push immediately (wake the agent). 'low' → batch into a periodic digest.
+export function classify(msg, name) {
+  return (isHighPriority(msg, name) || isBoardHighPriority(msg)) ? 'high' : 'low'
+}
+
+const trunc = (s, n) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length <= n ? s : s.slice(0, n - 1) + '…' }
+const sanitize = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_')
 
 export async function mmRead(cfg, since) {
   const { MATTERMOST_API: api, MATTERMOST_BOT_TOKEN: tok, MATTERMOST_CHANNEL_SWARM: ch } = cfg
@@ -158,27 +173,48 @@ async function main() {
 
   await mcp.connect(new StdioServerTransport())
 
+  const touchAgent = () => {  // keep this (possibly idle) agent's last_seen fresh
+    try { execFileSync('python3', [SWARM_PY, 'touch', '--by-cwd'], { timeout: 5000, cwd: process.cwd() }) }
+    catch { /* best effort */ }
+  }
+
   // Poll loop. Seed the cursor from the server's newest post (skew-immune) so we only
   // push messages that arrive after the server is up. Refresh name to catch /rename.
   let cursor = (await mmLatestCreateAt(cfg)) ?? Date.now()
   let ticks = 0
+  const lowBuffer = []
   setInterval(async () => {
-    if (ticks++ % 10 === 0) myName = resolveName() ?? myName
+    if (ticks++ % 10 === 0) { myName = resolveName() ?? myName; touchAgent() }
     const posts = await mmRead(cfg, cursor)
     for (const p of posts) {
       cursor = Math.max(cursor, p.create_at)
-      const fromName = String(p.user).split(' @ ')[0]
-      if (myName && fromName === myName) continue          // never wake on own post
-      if (!isHighPriority(p.message, myName)) continue      // channel = high-priority only
-      await mcp.notification({
-        method: 'notifications/claude/channel',
-        params: {
-          content: p.message,
-          meta: { from: String(p.user).replace(/[^A-Za-z0-9_]/g, '_'), post_id: p.id },
-        },
-      })
+      if (myName && String(p.user).split(' @ ')[0] === myName) continue  // never wake on own post
+      if (classify(p.message, myName) === 'high') {
+        await mcp.notification({
+          method: 'notifications/claude/channel',
+          params: { content: p.message, meta: { from: sanitize(p.user), post_id: p.id, priority: 'high' } },
+        })
+      } else {
+        lowBuffer.push(p)   // batch lower-priority into the periodic digest below
+      }
     }
   }, POLL_MS)
+
+  // Batched low-priority digest: one notification every BATCH_MS, only if anything queued.
+  setInterval(async () => {
+    if (!lowBuffer.length) return
+    const batch = lowBuffer.splice(0, lowBuffer.length)
+    const lines = batch.slice(0, 10)
+      .map((p) => `- ${String(p.user).split(' @ ')[0]}: ${trunc(p.message, 80)}`).join('\n')
+    const more = batch.length > 10 ? `\n…and ${batch.length - 10} more` : ''
+    await mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: `${batch.length} lower-priority #swarm update(s) — \`swarm read\` for full text:\n${lines}${more}`,
+        meta: { priority: 'low', count: String(batch.length) },
+      },
+    })
+  }, BATCH_MS)
 }
 
 // Run only when invoked directly (so tests can import the helpers above).
