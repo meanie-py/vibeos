@@ -79,7 +79,7 @@ extern "C" {
     fn CdIsNameInExpression(IrpContext: *mut IRP_CONTEXT, Name: *mut CD_NAME, Expression: *mut CD_NAME, IgnoreWild: u32, IgnoreCase: u8) -> u8;
 }
 extern "C" {
-    fn SectorTruncate(Offset: u32) -> i64;
+    fn SectorTruncate(Offset: u32) -> u32; // defined -> u32; i64 decl leaks garbage EDX on i386
 }
 extern "C" {
     fn SectorOffset(Offset: u32) -> u32;

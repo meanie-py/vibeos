@@ -61,7 +61,11 @@ extern "C" {
     fn __analysis_assert(cond: bool);
 }
 extern "C" {
-    fn SectorTruncate(offset: u32) -> i64;
+    // Defined `-> u32` (cdmacros.rs). Declaring it `-> i64` here makes i386 read EDX:EAX
+    // for the return — but a u32 callee only sets EAX, leaving EDX garbage → the high
+    // dword leaks in (StartingOffset became 0x1_00000000 → spurious EOF → DISK_CORRUPT).
+    // Match the definition's u32; cast to i64 at the call site.
+    fn SectorTruncate(offset: u32) -> u32;
 }
 extern "C" {
     fn CdIsNameInExpression( IrpContext: *mut IRP_CONTEXT, name1: *mut CD_NAME, name2: *mut CD_NAME, unknown: u32, exact: u8, ) -> u8;
@@ -107,7 +111,7 @@ pub unsafe extern "C" fn CdLookupPathEntry(
     compound_path_entry: *mut COMPOUND_PATH_ENTRY,
 ) {
     let path_context: *mut PATH_ENUM_CONTEXT = core::ptr::addr_of_mut!((*compound_path_entry).PathContext);
-    let current_base_offset: i64 = SectorTruncate(path_entry_offset);
+    let current_base_offset: i64 = SectorTruncate(path_entry_offset) as i64;
 
     CdMapPathTableBlock(
         irp_context,

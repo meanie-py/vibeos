@@ -305,7 +305,7 @@ pub unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR) {
 
 //  ntddk.h IoIsErrorUserInduced(Status): the user-induced media error set.
 #[inline]
-pub fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN {
+pub fn IoIsErrorUserInduced(Status: NTSTATUS) -> u32 {
     const SET: [NTSTATUS; 7] = [
         0xC00000A3u32 as i32, // STATUS_DEVICE_NOT_READY
         0xC00000B5u32 as i32, // STATUS_IO_TIMEOUT
@@ -315,7 +315,7 @@ pub fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN {
         0xC0000014u32 as i32, // STATUS_UNRECOGNIZED_MEDIA
         0xC0000012u32 as i32, // STATUS_WRONG_VOLUME
     ];
-    (SET.contains(&Status)) as BOOLEAN
+    (SET.contains(&Status)) as u32
 }
 
 //  ntrtl.h splay-link FORCEINLINEs (operate on RTL_SPLAY_LINKS in place).
@@ -344,8 +344,16 @@ pub unsafe fn RtlInsertAsRightChild(ParentLinks: PRTL_SPLAY_LINKS, ChildLinks: P
 // ===========================================================================
 use crate::types::{VCB, IRP_CONTEXT};
 
-#[no_mangle] pub extern "C" fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN { ((Flags & Flag) != 0) as BOOLEAN }
-#[no_mangle] pub extern "C" fn BooleanFlagOn(Flags: u32, Flag: u32) -> BOOLEAN { ((Flags & Flag) != 0) as BOOLEAN }
+// MUST return a full-width zero-extended 0/1 (u32), NOT a u8 BOOLEAN. The grind
+// declares these per-module with inconsistent return types — some `-> BOOLEAN`
+// (u8, reads only `al`), others `-> i32`/`-> u32` (read the full `eax` via
+// `testl %eax,%eax`). A u8 return emits `setne %al` and leaves the upper 24 bits
+// of eax as garbage; a u32-declaring caller then sees a stale-nonzero "true" for a
+// clear flag. That mis-fired the ALLOC_IO check in CdCleanupIrpContext and freed a
+// stack IoContext → BUGCHECK 0x19. Returning u32 forces movzbl, making both `al`
+// and `eax` valid for every caller. (i386-specific; harmless on amd64/arm64.)
+#[no_mangle] pub extern "C" fn FlagOn(Flags: u32, Flag: u32) -> u32 { ((Flags & Flag) != 0) as u32 }
+#[no_mangle] pub extern "C" fn BooleanFlagOn(Flags: u32, Flag: u32) -> u32 { ((Flags & Flag) != 0) as u32 }
 #[no_mangle] pub unsafe extern "C" fn SetFlag(Flags: *mut u32, Flag: u32) { *Flags |= Flag; }
 #[no_mangle] pub unsafe extern "C" fn ClearFlag(Flags: *mut u32, Flag: u32) { *Flags &= !Flag; }
 

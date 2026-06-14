@@ -129,21 +129,24 @@ pub unsafe extern "C" fn CdLockCdData() {
 // VcbCondition VcbMounted is the 3rd VCB_CONDITION enum value (== 2); see fsctrl.rs.
 const VCB_CONDITION_VcbMounted: u32 = 2;
 #[no_mangle]
-pub unsafe extern "C" fn CdIsFastIoPossible(Fcb: *mut FCB) -> BOOLEAN {
+// Returns u32 (not BOOLEAN/u8): callers declare this `-> u32`/`-> i32` and test the
+// full eax; a u8 return leaves the upper eax bytes garbage → false branch-taken.
+// (i386 return-width hazard — see FlagOn note in ddk_shims.rs.)
+pub unsafe extern "C" fn CdIsFastIoPossible(Fcb: *mut FCB) -> u32 {
     if (*(*Fcb).Vcb).VcbCondition != VCB_CONDITION_VcbMounted
         || FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0
     {
-        return _FAST_IO_POSSIBLE_FastIoIsNotPossible as BOOLEAN;
+        return _FAST_IO_POSSIBLE_FastIoIsNotPossible as u32;
     }
 
     // F->FileLock lives in the FCB_DATA arm of the FCB anonymous union (__bindgen_anon_2).
     let fcb_data = core::ptr::addr_of!((*Fcb).__bindgen_anon_2) as *const FCB_DATA;
     let file_lock = (*fcb_data).FileLock;
     if !file_lock.is_null() && FsRtlAreThereCurrentFileLocks(file_lock as PFILE_LOCK) != 0 {
-        return _FAST_IO_POSSIBLE_FastIoIsQuestionable as BOOLEAN;
+        return _FAST_IO_POSSIBLE_FastIoIsQuestionable as u32;
     }
 
-    _FAST_IO_POSSIBLE_FastIoIsPossible as BOOLEAN
+    _FAST_IO_POSSIBLE_FastIoIsPossible as u32
 }
 
 // CdFreeIoContext(IO): CdFreePool( (PVOID)&(IO) )
@@ -629,8 +632,9 @@ pub unsafe extern "C" fn FsRtlSetupAdvancedHeader(
 // 4-byte returns, same @0 decoration).
 // ---------------------------------------------------------------------------
 #[no_mangle]
-pub unsafe extern "C" fn _SEH2_AbnormalTermination() -> BOOLEAN {
-    0 as BOOLEAN
+// u32 (not BOOLEAN/u8): callers declare `-> i32` and test full eax — see FlagOn note.
+pub unsafe extern "C" fn _SEH2_AbnormalTermination() -> u32 {
+    0u32
 }
 
 // ===========================================================================
@@ -648,13 +652,14 @@ pub unsafe extern "C" fn CdAcquireFcbExclusive(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
     IgnoreWait: BOOLEAN,
-) -> BOOLEAN {
+) -> u32 {
+    // u32 (not BOOLEAN/u8): callers test full eax — see FlagOn note in ddk_shims.rs.
     CdAcquireResource(
         IrpContext,
         core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).FcbResource) as PERESOURCE,
         IgnoreWait,
         ACQUIRE_EXCLUSIVE,
-    )
+    ) as u32
 }
 
 // cdprocs.h:
@@ -802,7 +807,8 @@ pub unsafe extern "C" fn RtlEqualMemory(
     Buffer1: *const c_void,
     Buffer2: *const c_void,
     Length: usize,
-) -> BOOLEAN {
+) -> u32 {
+    // u32 (not BOOLEAN/u8): callers test full eax — see FlagOn note in ddk_shims.rs.
     let a = core::slice::from_raw_parts(Buffer1 as *const u8, Length);
     let b = core::slice::from_raw_parts(Buffer2 as *const u8, Length);
     if a == b { 1 } else { 0 }
@@ -945,8 +951,9 @@ pub unsafe extern "C" fn CdAcquireVcbExclusive(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
     IgnoreWait: BOOLEAN,
-) -> BOOLEAN {
-    cd_acquire_vcb_excl(IrpContext, Vcb, IgnoreWait)
+) -> u32 {
+    // u32 (not BOOLEAN/u8): callers test full eax — see FlagOn note in ddk_shims.rs.
+    cd_acquire_vcb_excl(IrpContext, Vcb, IgnoreWait) as u32
 }
 // One caller (verfysup.rs) declares this `extern "C"` (cdecl, _CdAcquireVcbExclusive,
 // no @N). Two #[no_mangle] items can't share the pre-decoration name, so emit a
@@ -1587,7 +1594,8 @@ pub unsafe extern "C" fn CdRealDevNeedsVerify(DeviceObject: PDEVICE_OBJECT) -> B
 // cdecl (_CdOperationIsDasdOpen, no @N) -> BOOLEAN.
 const IRP_MJ_CREATE: u8 = 0x00;
 #[no_mangle]
-pub unsafe extern "C" fn CdOperationIsDasdOpen(IrpContext: *mut IRP_CONTEXT) -> BOOLEAN {
+// u32 (not BOOLEAN/u8): callers test full eax — see FlagOn note in ddk_shims.rs.
+pub unsafe extern "C" fn CdOperationIsDasdOpen(IrpContext: *mut IRP_CONTEXT) -> u32 {
     let irp_sp: PIO_STACK_LOCATION =
         ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation((*IrpContext).Irp);
     let file_object = (*irp_sp).FileObject;
@@ -1768,7 +1776,7 @@ const FSRTL_WILD_CHARACTER: u8 = 8;
 //   ((SCHAR)C < 0) ? TRUE : FlagOn(LegalArray[C], FSRTL_HPFS_LEGAL | (WILD?WILD_CHAR:0))
 // stdcall (@8) -> BOOLEAN.
 #[no_mangle]
-pub unsafe extern "C" fn FsRtlIsAnsiCharacterLegalHpfs(Char: u16, WildOk: i32) -> BOOLEAN {
+pub unsafe extern "C" fn FsRtlIsAnsiCharacterLegalHpfs(Char: u16, WildOk: i32) -> u32 {
     let c = Char as u8;
     if (c as i8) < 0 {
         return 1; // DEFAULT_RET = TRUE

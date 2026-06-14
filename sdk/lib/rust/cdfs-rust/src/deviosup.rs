@@ -1313,7 +1313,11 @@ pub unsafe extern "C" fn CdFinishBuffers(
     FlushIoBuffers
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSyncCompletionRoutine(
+// i386: IO_COMPLETION_ROUTINE is NTAPI=stdcall — IofCompleteRequest invokes it
+// stdcall (callee does `ret 0xc`). Defining it cdecl ("C") leaves the 3 args on
+// the stack on return → ESP drifts by 12 → a later `ret` jumps to pool garbage
+// (BUGCHECK 0x1E IN_PAGE_ERROR). Must be "system" (== "C" on amd64/arm64).
+pub unsafe extern "system" fn CdSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: *mut core::ffi::c_void,
@@ -1887,7 +1891,8 @@ pub unsafe extern "C" fn CdWaitSync(IrpContext: *mut IRP_CONTEXT) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — see CdSyncCompletionRoutine note.
+pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1920,7 +1925,8 @@ pub unsafe extern "C" fn CdMultiSyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — see CdSyncCompletionRoutine note.
+pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     _DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
     Context: *mut core::ffi::c_void,
@@ -1963,7 +1969,8 @@ pub unsafe extern "C" fn CdMultiAsyncCompletionRoutine(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSingleSyncCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — see CdSyncCompletionRoutine note.
+pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -1988,7 +1995,8 @@ pub unsafe extern "C" fn CdSingleSyncCompletionRoutine(
     0xC0000016u32 as i32
 }
 #[no_mangle]
-pub unsafe extern "C" fn CdSingleAsyncCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — see CdSyncCompletionRoutine note.
+pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

@@ -94,7 +94,8 @@ pub unsafe extern "C" fn CdCommonDevControl(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CdDevCtrlCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — cdecl drifts ESP by 12 on return.
+pub unsafe extern "system" fn CdDevCtrlCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,

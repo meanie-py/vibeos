@@ -96,7 +96,8 @@ pub unsafe extern "C" fn CdPnpCancelRemove(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CdPnpCompletionRoutine(
+// i386 NTAPI=stdcall IO_COMPLETION_ROUTINE — cdecl drifts ESP by 12 on return.
+pub unsafe extern "system" fn CdPnpCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
