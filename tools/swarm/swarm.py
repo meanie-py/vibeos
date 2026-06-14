@@ -451,6 +451,21 @@ def _agent_name(conn, session_id, transcript=None):
     return resolve_name(transcript, session_id)
 
 
+def _session_for_cwd(conn):
+    """Resolve the agent owning the current worktree (one agent per worktree model).
+
+    Lets `swarm read`/`say` work with no --session from inside a worktree: find the
+    most-recently-active online agent whose registered worktree == this cwd's git root.
+    """
+    wt, _ = git_info(os.getcwd())
+    if not wt:
+        return None
+    row = conn.execute(
+        "SELECT session_id FROM agents WHERE worktree=? AND status='online' "
+        "ORDER BY last_seen DESC LIMIT 1", (wt,)).fetchone()
+    return row["session_id"] if row else None
+
+
 def _trunc(s, n=140):
     s = " ".join((s or "").split())  # collapse whitespace/newlines
     return s if len(s) <= n else s[: n - 1] + "…"
@@ -464,6 +479,10 @@ def cmd_poll(args):
     if not ch:
         return
     conn = connect()
+    if not args.session:
+        args.session = _session_for_cwd(conn)
+    if not args.session:
+        return
     name = _agent_name(conn, args.session, args.transcript)
     with conn:
         _init_cursor(conn, args.session, ch)
@@ -497,6 +516,10 @@ def cmd_read(args):
     if not ch:
         print("(no swarm channel configured)"); return
     conn = connect()
+    if not args.session:
+        args.session = _session_for_cwd(conn)
+    if not args.session:
+        print("(could not identify this agent — no session id or registered worktree)"); return
     name = _agent_name(conn, args.session, args.transcript)
     with conn:
         _init_cursor(conn, args.session, ch)
@@ -520,6 +543,8 @@ def cmd_read(args):
 def cmd_say(args):
     """Post chatter to #swarm as this agent."""
     conn = connect()
+    if not args.session:
+        args.session = _session_for_cwd(conn)  # resolve identity from the worktree
     row = conn.execute("SELECT name, worktree FROM agents WHERE session_id=?",
                        (args.session,)).fetchone() if args.session else None
     name = (row["name"] if row else None) or args.as_name or (args.session or "agent")[:8]
@@ -605,11 +630,11 @@ def main(argv=None):
     pp.add_argument("--delete", action="store_true")
 
     ppoll = sub.add_parser("poll"); ppoll.set_defaults(fn=cmd_poll)
-    ppoll.add_argument("--session", required=True)
+    ppoll.add_argument("--session")  # falls back to $CLAUDE_CODE_SESSION_ID / cwd
     ppoll.add_argument("--transcript")
 
     pread = sub.add_parser("read"); pread.set_defaults(fn=cmd_read)
-    pread.add_argument("--session", required=True)
+    pread.add_argument("--session")
     pread.add_argument("--transcript")
 
     psay = sub.add_parser("say"); psay.set_defaults(fn=cmd_say)
@@ -627,6 +652,11 @@ def main(argv=None):
 
     load_config()
     args = p.parse_args(argv)
+    # Identity: Claude Code puts the session id in every tool-call's env, so a bare
+    # `swarm say`/`read` self-identifies with no flag. Precedence: explicit --session
+    # > $CLAUDE_CODE_SESSION_ID > (per-command) cwd-worktree fallback.
+    if "session" in vars(args) and not getattr(args, "session", None):
+        args.session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     args.fn(args)
     return 0
 

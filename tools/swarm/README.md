@@ -31,10 +31,29 @@ transcript (repeatedly). We read it back. Resolution order:
 - **Mattermost is an optional mirror**, never a dependency. Registry is authoritative
   and works while the chat server is down/being-configured.
 
+## `swarm` on PATH + zero-flag identity
+
+`bin/swarm` is a wrapper for the CLI. Symlink it into `~/.local/bin` (already on the
+tool-call PATH) so agents can just type `swarm …` in a Bash tool call:
+
+```bash
+ln -sf "$PWD/bin/swarm" ~/.local/bin/swarm     # from the repo root
+```
+
+(Bare `swarm` is a shell *alias* won't exist in non-interactive tool-call bash —
+aliases aren't inherited; a real executable on PATH is. To add the rest of the
+vibeos CLI suite the same way, drop wrappers in `bin/` and symlink, or set
+`BASH_ENV` via Claude Code `settings.env` to prepend `bin/`.)
+
+**Identity needs no flag.** Claude Code injects `CLAUDE_CODE_SESSION_ID` into every
+tool-call's environment, so `swarm say`/`read`/`poll` self-identify from it. Precedence:
+explicit `--session` > `$CLAUDE_CODE_SESSION_ID` > the cwd's worktree (one-agent-per-
+worktree fallback). So inside an agent, `swarm say "…"` and `swarm read` Just Work.
+
 ## CLI
 
 ```bash
-PY=python3; S="$CLAUDE_PROJECT_DIR/tools/swarm/swarm.py"
+PY=python3; S="$CLAUDE_PROJECT_DIR/tools/swarm/swarm.py"   # or just: swarm
 $PY $S register  --session ID --transcript PATH --cwd DIR [--pid N]
 $PY $S heartbeat --session ID [--transcript PATH]      # last_seen + pick up /rename
 $PY $S offline   --session ID [--reason R]

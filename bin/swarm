@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# `swarm` on PATH → the vibeos swarm registry CLI (tools/swarm/swarm.py).
+# Resolves relative to its own location, so it works from any cwd / any worktree.
+# swarm.py is repo-location-independent (shared DB at ~/.vibeos-swarm), so using the
+# wrapper's own repo copy is always correct.
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"   # .../<repo>/bin
+exec python3 "$here/../tools/swarm/swarm.py" "$@"
