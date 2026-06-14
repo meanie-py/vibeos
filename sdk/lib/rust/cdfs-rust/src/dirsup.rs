@@ -510,11 +510,16 @@ pub unsafe extern "C" fn CdUpdateDirentName(
         if IgnoreCase == 0 {
             (*Dirent).CdCaseFileName = core::ptr::read(&(*Dirent).CdFileName as *const CD_NAME);
         } else {
-            (*Dirent).CdCaseFileName.FileName.Buffer = (*Dirent)
+            // C uses Add2Ptr (BYTE arithmetic): Buffer + MaximumLength/2 *bytes*.
+            // Buffer is *mut u16, so .add() scales by 2 — cast to *mut u8 first or
+            // we advance MaximumLength bytes (2x too far), spilling the upcased name
+            // one full NameBuffer past its end onto Dirents[n+1].DirContext.Bcb.
+            (*Dirent).CdCaseFileName.FileName.Buffer = ((*Dirent)
                 .CdFileName
                 .FileName
-                .Buffer
-                .add((*Dirent).CdFileName.FileName.MaximumLength as usize / 2);
+                .Buffer as *mut u8)
+                .add((*Dirent).CdFileName.FileName.MaximumLength as usize / 2)
+                as *mut u16;
             (*Dirent).CdCaseFileName.FileName.MaximumLength =
                 (*Dirent).CdFileName.FileName.MaximumLength / 2;
 

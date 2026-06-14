@@ -71,7 +71,7 @@ extern "C" {
     fn ExGetCurrentResourceThread() -> *mut c_void;
 }
 extern "system" {
-    fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
+    fn IoIsErrorUserInduced(Status: NTSTATUS) -> u8;
 }
 
 // ---- file-scope preamble (translated) ----

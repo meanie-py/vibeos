@@ -760,7 +760,14 @@ pub unsafe extern "C" fn CdCreateUserMdl(
             Status = STATUS_SUCCESS;
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER as i32);
-        {
+        // DUMMY_PSEH: MmProbeAndLockPages either succeeds (Status=SUCCESS) or
+        // bugchecks (never returns here). The _SEH2_EXCEPT handler is dead code
+        // on the only reachable (success) path, so it MUST be gated — the LLM
+        // grind emitted it as an unconditional bare block, which freed the
+        // freshly-locked MDL and nulled Irp->MdlAddress out from under the
+        // in-flight read IRP, crashing cdrom.sys in MmGetMdlVirtualAddress of a
+        // freed/NULL MDL (BUGCHECK 0x1E). Only run the handler on real failure.
+        if Status != STATUS_SUCCESS {
             Status = _SEH2_GetExceptionCode();
 
             IoFreeMdl(Mdl);

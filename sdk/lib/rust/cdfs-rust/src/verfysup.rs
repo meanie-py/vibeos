@@ -135,7 +135,7 @@ extern "system" {
     fn IoVerifyVolume( DeviceToVerify: PDEVICE_OBJECT, AllowRawMount: i32, ) -> NTSTATUS;
 }
 extern "system" {
-    fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
+    fn IoIsErrorUserInduced(Status: NTSTATUS) -> u8;
 }
 extern "system" {
     fn IoSetHardErrorOrVerifyDevice( Irp: PIRP, DeviceToVerify: PDEVICE_OBJECT, );
@@ -241,8 +241,16 @@ pub unsafe extern "C" fn CdPerformVerify(
         _SEH2_GetExceptionInformation(),
     ));
     {
-        // The filter returned EXCEPTION_EXECUTE_HANDLER (non-zero), so execute this block
-        Status = CdProcessException(IrpContext, Irp, _SEH2_GetExceptionCode());
+        // DUMMY_PSEH: there is no exception unwind — a raise bugchecks rather than
+        // transferring control here, so this _SEH2_EXCEPT handler is dead code on
+        // every reachable path. The grind emitted it as an UNCONDITIONAL bare block,
+        // which ran CdProcessException(IrpContext, Irp, 0) on the SUCCESS path — after
+        // the try body had already completed the IRP (REPARSE: Irp/IrpContext NULL)
+        // or handed it off via CdFsdPostRequest — causing a NULL-deref / double-
+        // complete. Gate it so it runs only on a real (never-occurring) exception.
+        if false {
+            Status = CdProcessException(IrpContext, Irp, _SEH2_GetExceptionCode());
+        }
     }
     _SEH2_END();
 
