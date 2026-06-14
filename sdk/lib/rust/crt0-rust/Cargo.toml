@@ -1,0 +1,25 @@
+# crt0-rust — the default `main`/`wmain` → WinMain/wWinMain bridges
+# (startup/crt0_c.c + startup/crt0_w.c).
+#
+# Separate staticlib (not crt-startup-rust) for two reasons: (1) the bridge
+# `main` references `WinMain` (consumer-provided), so it must be lazy /
+# omittable — a console exe with its own `main` links neither feature and
+# never drags in an undefined `WinMain`; (2) crt-startup-rust calls
+# `main`/`wmain` via extern symbols, which can't also be defined in that
+# crate. A GUI exe selects exactly the feature matching its entry:
+#   ansi  → crt0_c `main`  → WinMain     (with crt-startup-rust `crtexe`)
+#   wide  → crt0_w `wmain` → wWinMain    (with crt-startup-rust `wcrtexe`)
+
+[package]
+name = "crt0-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[features]
+default = []
+ansi = []
+wide = []

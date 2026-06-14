@@ -134,16 +134,33 @@ fn main() {
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
         // (cntpr_residue / cntpr_asm below). See cargo-drive-unification-plan.md.
-        "sdk/lib/vcruntime/libsetjmp.a",
-        "sdk/lib/wdmguid/libwdmguid.a",
-        "sdk/lib/poguid/libpoguid.a",
-        "sdk/lib/ioevent/libioevent.a",
+        // libsetjmp.a DROPPED → `setjmp-rust` (amd64 .rust_lib below). i386
+        // (DUMMY_PSEH) + arm64 don't reference setjmp at all (drop-test: link
+        // clean without it); amd64's SEH unwind path needs _setjmp/_setjmpex/
+        // longjmp. C kept on disk for hal/ftfd cmake consumers.
+        // wdmguid/poguid/ioevent (the 3 cmake C GUID libs) → `guids-rust`
+        // (.rust_lib below): 217 deduped #[no_mangle] GUID data constants. C
+        // kept on disk for any remaining cmake consumers.
         &hal_lib,
         "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
         "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
     ];
     if chkstk {
         static_libs.push("sdk/lib/crt/libchkstk.a");
+    }
+
+    // Rust-flipped cohab archives — ARM64 ONLY (same rationale as ntoskrnl-cargo):
+    // arm64's clean stub-only C archives need them; i386/amd64 resolve from the
+    // cmake C `libX.a` and adding these shifts the link layout, tipping a latent
+    // cmlib Hv* hive-write miscompile (cold amd64 hivewrt HANG). Gate to arm64.
+    if arch == "aarch64" {
+        static_libs.extend_from_slice(&[
+            "sdk/lib/cportlib/libcport_rust.a",
+            "sdk/lib/drivers/csq/libcsq_rust.a",
+            "sdk/lib/drivers/arbiter/libarbiter_rust.a",
+            "sdk/lib/lsalib/liblsalib_rust.a",
+            "sdk/lib/rossym/librossym_rust.a",
+        ]);
     }
 
     // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
@@ -254,6 +271,8 @@ fn main() {
         // the real Hv*/Cmp*/Cm* symbols live in cmlib-rust (DEFAULT features, the
         // full kernel variant; NOT `bldr`, which is the loader's read-only build).
         .rust_lib("cmlib-rust", &[], true)
+        // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
+        .rust_lib("guids-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
@@ -277,6 +296,12 @@ fn main() {
     }
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
+    }
+    // amd64 only: the SEH unwind path links _setjmp/_setjmpex/longjmp →
+    // setjmp-rust (global_asm! save/restore, disasm-identical to the cmake asm,
+    // + Rust longjmp). libsetjmp.a dropped. i386/arm64 don't reference setjmp.
+    if arch == "x86_64" {
+        linker = linker.rust_lib("setjmp-rust", &[], true);
     }
     linker
         .static_libs(&static_libs)

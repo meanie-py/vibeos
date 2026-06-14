@@ -1,5 +1,58 @@
 # Win32k C→Rust Translation Audit
 
+> **2026-06-14 — MILESTONE: win32k.sys default-build body is 100% Rust**
+> (commit translating `safe_user_io.c` → `safe_user_io.rs`, cold `--clean` smoke
+> GREEN ×3). `safe_user_io.c` was the last real subsystem C leaf — SEH-free
+> validate-only user-buffer range/alignment check (`SafeProbeForRead`/`Write`,
+> NTAPI `_Safe…@12`). Pure arithmetic (no variadics/SEH/touch) → full C
+> elimination, zero trampoline residue. Did NOT delegate to
+> `ntkrnl_sys::probe::probe_user_buffer` (it `read_volatile`-touches the page,
+> which this must avoid). `MmUserProbeAddress` cross-DLL data import via class.rs's
+> arch-split pattern (i386/arm64 raw-dylib +verbatim; amd64 `__imp_` + deref).
+> **What remains in win32k.sys is irreducible glue, not subsystem code:**
+> 5 `*_rust_shims.c` (cdecl wrappers for FORCEINLINE/macro helpers + the
+> `Win32kSSDT` syscall dispatch tables), `gdi/eng/i386/floatobj.c` (i386 FLOATOBJ
+> math), and the `if(USE_DIBLIB)` dead path (`dib_new.c`/`bitblt_new.c`, FALSE
+> default — not compiled; `dib.rs` covers it).
+
+> **2026-06-14 — user/rtl flipped: `image.c` + `text.c` → Rust (DrawText)**
+> (commit `68028a7c719`, cold `--clean` smoke GREEN ×3).
+> `image.c` (`RtlGetExpWinVer`) hand-translated → `image.rs`. `text.c` (1402 LOC
+> Wine DrawText: `DrawTextExWorker`/`UserExtTextOutW` + 8 ellipsify/wordbreak/
+> prefix statics) via rustconv (sonnet, $0.25) → `rtl_text.rs` (named to dodge the
+> gdi/ntgdi `text.rs`). Both retired from `win32k_residue`.
+> Integration fixups (raw sonnet→×3): NT_SUCCESS/pool imports; `CR` const +
+> `USERTAG_RTL` ('trsU'); C `assert()` macro → local no-op (translator emitted
+> mixed 1-arg/4-arg calls + a bogus `extern fn assert`); raw-ptr-write
+> immutability hacks (`lh`) → `let mut`; uninit bindings initialised;
+> HPEN/HRGN→HGDIOBJ + RECT→RECTL `.cast()`; INT/UINT width casts; `KinsokuClassA`
+> `[u16;70]`→`[u16;78]` (translator miscounted); `DrawTextExWorker` →
+> `#[no_mangle] extern "system"`.
+> **`dib_new.c` needs NO flip** — it's behind `if(USE_DIBLIB)` (FALSE by default,
+> never compiled); the active path is `dib.c` → already `dib.rs`, which also
+> covers dib_new's table/Dummy_*/DIB_DoRop. win32k.sys default-build residue is
+> now just **`safe_user_io.c`**.
+
+> **2026-06-13 — DirectDraw fully flipped: `reactx/ntddraw` is 100% Rust**
+> (commits `5825b175fba` + `438a847c168`).
+> *Phase 1* (`5825b175fba`): retired 8/9 banked-Opus `ntddraw_*.rs` (ddraw, dd,
+> ddsurf, d3d, d3dkmt, dvp, mocomp, eng) from `win32k_residue` — Rust symbols win.
+> *Phase 2* (`438a847c168`): translated `dxeng.c`'s 42 `DxEng*` bodies via
+> rustconv (sonnet, $0.12) — the table-only `ntddraw_dxeng.rs` became the full
+> translation, and `dxeng.c` was retired too.
+> **Lesson — silent drop the c2rust anchor would have caught**: c2rust panics on
+> win32k's header AST (`CDeclId`-not-found, c2rust 0.22.1), so this ran plain
+> sonnet; the per-function scanner skips **pointer-return-type** fns, dropping
+> `DxEngEnumerateHdev` (HDEV*) + `DxEngAltLockSurface` (SURFOBJ*) — hand-completed.
+> Integration fixups (raw sonnet → compiles ×3): gaEngFuncs table → `transmute`
+> to PFN; `InterlockedIncrement` import; bindgen anon-union
+> (`.__bindgen_anon_1.DriverFunctions`); FLONG i32-vs-u32 mask casts; cross-crate
+> `_ERESOURCE`/HGDIOBJ→HDC `.cast()`; BOOL→BOOLEAN `as u8`; amd64 DWORD_PTR(u64)
+> match-scrutinee + ULONG field casts.
+> **Cold `--clean` smoke GREEN ×3 (i386/amd64/arm64 — ✓ staleness ✓ boot).**
+> win32k.sys now has **4 live C files**: `safe_user_io.c`,
+> `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
+
 > **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
 
 Last updated **2026-06-04**. **Status: Phase 1 (handle tables) DONE;

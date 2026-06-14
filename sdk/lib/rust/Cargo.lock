@@ -242,6 +242,18 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "crt-dllmain-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt-startup-rust"
+version = "0.1.0"
+
+[[package]]
+name = "crt0-rust"
+version = "0.1.0"
+
+[[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
 
@@ -350,6 +362,10 @@ dependencies = [
 
 [[package]]
 name = "generictable"
+version = "0.1.0"
+
+[[package]]
+name = "guids-rust"
 version = "0.1.0"
 
 [[package]]
@@ -1121,6 +1137,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "setjmp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1267,6 +1290,13 @@ name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "uniata-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

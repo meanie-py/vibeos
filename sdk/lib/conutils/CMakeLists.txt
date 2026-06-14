@@ -12,6 +12,10 @@ list(APPEND SOURCE
     # utils.c      — replaced by Rust implementation (sdk/lib/rust/conutils-rust/)
     # conutils.h
     rust_cohab_stub.c
+    # C variadic forwarders (ConPrintf/ConResPrintf/&c.) — Rust can't define C
+    # variadics, so the `...`->va_list bridges to conutils-rust's *V cores live
+    # here (were in outstream.c, no longer built).
+    conutils_variadic_shims.c
     )
 
 set(CONUTILS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")

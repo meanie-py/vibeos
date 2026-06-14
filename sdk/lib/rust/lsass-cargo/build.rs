@@ -17,7 +17,7 @@
 //! (`.rust_staticlib("lsass-rust")`, user-mode target). amd64/arm64 follow
 //! (entry undecorated there; subsystem identical).
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -51,9 +51,13 @@ fn main() {
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // oldnames.a (_name aliases) still reused from cmake; the CRT startup
         // (libmsvcrtex.a — _wWinMainCRTStartup → wWinMain) is now compiled
-        // in-cargo via .msvcrtex_crt() (msvcrtex.cmake sources replayed).
-        .static_libs(&["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"])
-        .msvcrtex_crt()
+        // in-cargo via .msvcrtex_crt(MsvcrtexKind::ExeWide) (msvcrtex.cmake sources replayed).
+        // oldnames.a (CRT _name aliases) DROPPED: nm -u on liblsass_rust.a ×3
+        // shows zero underscore-oldname refs (the Rust body calls the canonical
+        // CRT names via the msvcrt import lib). lsass.exe is a NON-shared exe
+        // link (--gc-sections, no -shared) so a clean cold link is itself proof
+        // the alias bridge is unreferenced. CRT startup stays in-cargo below.
+        .msvcrtex_crt(MsvcrtexKind::ExeWide)
         .link(ModuleKind::Win32Exe {
             entry: entry.into(),
             subsystem: "windows:5.01".into(),

@@ -12,8 +12,9 @@
 //!   base   i386/amd64 `--image-base,0x00010000`; arm64
 //!          `--image-base,0x7FFB00000000` (verbatim from build-arm64).
 //!   libs   ntoskrnl import lib (self-generated from ntoskrnl.spec —
-//!          only `DbgPrint` is referenced) + cportlib + memcmp leaf static
-//!          libs (cmake LINK_LIBRARIES).
+//!          only `DbgPrint` is referenced) + the Cp* serial port symbols.
+//!          ZERO cmake .a: cportlib/cport_rust → the cargo-sibling `cport-rust`
+//!          (.rust_lib, like uefildr); memcmp → compiler-builtins-mem.
 //!
 //! The C `kdrosdbg` target also imports `hal`, but the stub references zero
 //! hal symbols, so no hal import lib is needed.
@@ -36,13 +37,14 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("kdcom-rust")
         .spec2def("drivers/base/kdrosdbg/kdrosdbg.spec", "kdcom.dll")
-        .static_libs(&[
-            "sdk/lib/cportlib/libcportlib.a",
-            // cport.c is Rust now (cohabitation); libcportlib.a is just the
-            // stub, the Cp* serial symbols come from libcport_rust.a.
-            "sdk/lib/cportlib/libcport_rust.a",
-            "sdk/lib/crt/libmemcmp.a",
-        ])
+        // ZERO cmake .a. The Cp* serial port symbols come from `cport-rust` as a
+        // DIRECT cargo sibling (.rust_lib) — exactly what uefildr-cargo does —
+        // which subsumes BOTH the C cohab stub libcportlib.a (its only unique
+        // symbol is the unreferenced __cportlib_rust_cohab_stub) AND the
+        // cmake-copied libcport_rust.a. libmemcmp.a is dropped: `memcmp` comes
+        // from `-Z build-std-features=compiler-builtins-mem` (same one-line drop
+        // the cargo-cut driver/DLL fleet already took).
+        .rust_lib("cport-rust", &[], true)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .link(ModuleKind::KernelDll {
             // ENTRYPOINT 0: the DLL has no DllMain (ntoskrnl resolves the 8

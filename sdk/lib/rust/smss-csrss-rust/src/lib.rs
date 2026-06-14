@@ -167,6 +167,14 @@ macro_rules! dbg_print {
 )))]
 pub mod csrss;
 
+// Native process entry point (`NtProcessStartup`) — Rust port of sdk/lib/nt
+// (was cmake's libnt.a). The PE entry for the two native-subsystem exes; it
+// builds argc/argv/envp and calls the binary's `_main`. Compiled ONLY for the
+// csrss.exe / smss.exe lean builds — the DLL builds (csrsrv/basesrv) enter at
+// DllMain and have no `_main`, so they must not pull this in.
+#[cfg(any(feature = "csrss_main_only", feature = "smss_exe_only"))]
+pub mod entry_point;
+
 // Phase 3 (smss.exe) + Phase 4 (basesrv.dll) translations sit under
 // src/smss/ and src/basesrv/. Both modules compile in default
 // features and provide reusable `#[no_mangle]` data globals + macro

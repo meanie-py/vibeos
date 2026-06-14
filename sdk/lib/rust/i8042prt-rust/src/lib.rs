@@ -27,6 +27,7 @@ pub(crate) use i8042prt_h::*;
 
 pub mod i8042prt;
 pub mod createclose;
+pub mod dmi;
 pub mod hwhacks;
 pub mod keyboard;
 pub mod misc;

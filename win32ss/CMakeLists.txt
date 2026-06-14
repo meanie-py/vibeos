@@ -52,7 +52,7 @@ add_custom_command(
     DEPENDS native-gendib)
 
 list(APPEND SOURCE
-    safe_user_io.c
+    # safe_user_io.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/safe_user_io.rs) — cohabitation [SafeProbeForRead/Write, validate-only]
     # gdi/dib/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
     # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
@@ -102,15 +102,15 @@ list(APPEND SOURCE
     # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/registry.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/registry.rs) — cohabitation [ntuser wave 11]
-    reactx/ntddraw/ddraw.c
-    reactx/ntddraw/dd.c
-    reactx/ntddraw/ddsurf.c
-    reactx/ntddraw/d3d.c
-    reactx/ntddraw/d3dkmt.c
-    reactx/ntddraw/dvp.c
-    reactx/ntddraw/mocomp.c
-    reactx/ntddraw/eng.c
-    reactx/ntddraw/dxeng.c
+    # reactx/ntddraw/ddraw.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_ddraw.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dd.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dd.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/ddsurf.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_ddsurf.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/d3d.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_d3d.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/d3dkmt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_d3dkmt.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dvp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dvp.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/mocomp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_mocomp.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/eng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_eng.rs) — cohabitation [DirectDraw flip]
+    # reactx/ntddraw/dxeng.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntddraw_dxeng.rs) — cohabitation [DirectDraw flip: all 42 DxEng* bodies + gaEngFuncs table now Rust]
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     # user/ntuser/callback.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callback.rs) — cohabitation [ntuser wave 28]
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
@@ -165,8 +165,8 @@ list(APPEND SOURCE
     # user/ntuser/winpos.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winpos.rs) — cohabitation [ntuser frontier]
     # user/ntuser/winsta.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winsta.rs) — cohabitation [ntuser wave 14 spine]
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
-    user/rtl/image.c
-    user/rtl/text.c
+    # user/rtl/image.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/image.rs) — cohabitation [RtlGetExpWinVer]
+    # user/rtl/text.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtl_text.rs) — cohabitation [DrawTextExWorker/UserExtTextOutW + ellipsify/wordbreak]
     # gdi/ntgdi/arc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/arc.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/bitblt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntbitblt.rs) — cohabitation [Phase 2c wave 20: ntgdi bitblt syscalls; bitblt.c + split2 = one TU]

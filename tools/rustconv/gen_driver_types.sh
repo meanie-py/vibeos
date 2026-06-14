@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -30,6 +30,10 @@ NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
 EXTRA_INC=()
+# LANG_ARGS: extra clang language flags. Default empty = C. C-in-.cpp drivers whose
+# HEADERS use C++ (default args, bool, anon unions — e.g. uniata) set `-x c++` so the
+# parse succeeds; bindgen still emits the plain structs.
+LANG_ARGS=()
 # SYS_CRATES: extra sibling -sys crates whose bindgen types must ALSO be blocklisted
 # (kept a single identity) and re-exported. Format: "crate_name:src_subdir". Only ACPI
 # bridges two -sys crates (ntkrnl-sys + acpica-sys), so it's the only user today.
@@ -275,6 +279,30 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
     ;;
+  uniata)
+    # The UniATA IDE/SATA/AHCI driver (drivers/storage/ide/uniata, 10 .cpp / 24K LOC,
+    # C-in-.cpp). All .cpp #include "stdafx.h", which pulls the driver's OWN private
+    # headers — the core structs (HW_DEVICE_EXTENSION/HW_CHANNEL/HW_LU_EXTENSION/ATA_REQ/
+    # IORES) live in bsmaster.h, plus atapi.h/scsi.h/srb.h/ntddscsi.h/id_sata.h/bm_devs*.h/
+    # uata_ctl.h/badblock.h/tools.h/config.h (all in the uniata dir, which uniata's OWN
+    # scsi.h/srb.h/ntddscsi.h SHADOW the sdk ones — the -I DRIVER_DIR comes first). The
+    # CrossNt.h dynamic-ntoskrnl compat layer is NOT pulled (bsmaster.h doesn't use it).
+    # Allowlist the whole uniata header dir → emit every private struct; blocklist keeps
+    # shared ntkrnl-sys kernel types on one identity. The live config.h feature flags
+    # (USE_OWN_DMA/QUEUE_STATISTICS/IO_STATISTICS/USE_REACTOS_DDK) are passed so the
+    # header conditionals resolve to the real build. NTDDI 0x05020400 (peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/ide/uniata"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "atapi.h"\n#include "ntdddisk.h"\n#include "ntddscsi.h"\n#include "bsmaster.h"\n#include "id_sata.h"\n#include "badblock.h"'
+    ALLOW_FILES=( --allowlist-file '.*ide[/\\]uniata[/\\].*\.h' )
+    LANG_ARGS=( -x c++ -std=gnu++17 )  # headers use C++ (default args, bool, anon unions)
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DUSE_OWN_DMA -DQUEUE_STATISTICS
+               -DIO_STATISTICS -DUSE_REACTOS_DDK -D_NEW_DELETE_OPERATORS_
+               -DUSE_COMPILER_EXCEPTIONS )
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/uniata/inc" )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -345,7 +373,7 @@ run_arch() {
     "${SYS_USE[@]}" \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
-    -fms-extensions \
+    -fms-extensions "${LANG_ARGS[@]}" \
     $ARCHDEF -D__REACTOS__ -D_USE_DUMMY_PSEH=1 -DDBG=1 "${VER_DEFS[@]}" \
     -I"${DRIVER_DIR}" "${EXTRA_INC[@]}" \
     -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk" \
@@ -374,6 +402,14 @@ out = [ln for ln in s.splitlines(keepends=True)
                and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]
 open(final, "w").write("".join(out))
 ' "$RAW" "$FINAL"
+  # C++ drivers (LANG_ARGS has `-x c++`): the driver's OWN functions are declared without
+  # `extern "C"`, so bindgen emits them as `_Z`-mangled extern decls. In an all-Rust cohab
+  # those are dead AND collide name-for-name with the translated modules under a flat
+  # re-export. Strip every `_Z`-mangled extern block (a rare genuinely-mangled kernel import
+  # is re-bound with C linkage in the crate foundation). See strip_cpp_mangled_externs.py.
+  if printf '%s\n' "${LANG_ARGS[@]}" | grep -q 'c++'; then
+    python3 "$(dirname "$0")/strip_cpp_mangled_externs.py" "$FINAL" >/dev/null
+  fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }
 
