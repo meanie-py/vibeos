@@ -34,4 +34,17 @@ echo "$NOW" > "$STAMP" 2>/dev/null
 "$PY" "$DIR/tools/swarm/swarm.py" heartbeat \
     --session "$SID" --transcript "$TRANS" --cwd "${CWD:-$DIR}" \
     >/dev/null 2>&1
+
+# Poll #swarm for new chatter. Output (if any) is delta-surfaced into the agent's
+# context via the PostToolUse additionalContext field. Silent when nothing's new.
+MSG="$("$PY" "$DIR/tools/swarm/swarm.py" poll --session "$SID" --transcript "$TRANS" 2>/dev/null)"
+if [ -n "$MSG" ]; then
+    "$PY" - "$MSG" <<'EOF'
+import json, sys
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": sys.argv[1],
+}}))
+EOF
+fi
 exit 0

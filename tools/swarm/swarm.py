@@ -108,6 +108,14 @@ def connect() -> sqlite3.Connection:
             kind       TEXT,      -- register | rename | heartbeat | offline
             detail     TEXT
         );
+        CREATE TABLE IF NOT EXISTS cursors (
+            session_id TEXT,
+            channel_id TEXT,
+            read_at    INTEGER,   -- epoch ms: last post the agent has READ (drives unread count)
+            mention_at INTEGER,   -- epoch ms: last @-mention already surfaced (so each fires once)
+            last_count INTEGER,   -- last unread count we surfaced (emit only when it grows)
+            PRIMARY KEY(session_id, channel_id)
+        );
         """
     )
     return conn
@@ -229,6 +237,73 @@ def _mm_username(name, worktree):
     return f"{name} @ {wt}"
 
 
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _mm_get(path: str):
+    """Authenticated Mattermost REST GET (bot token). None on any failure."""
+    api = os.environ.get("MATTERMOST_API")
+    token = os.environ.get("MATTERMOST_BOT_TOKEN")
+    if not api or not token:
+        return None
+    try:
+        req = urllib.request.Request(
+            api + path, headers={"Authorization": "Bearer " + token})
+        return json.loads(urllib.request.urlopen(req, timeout=8).read())
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def mm_read_posts(channel_id: str, since_ms: int) -> list[dict]:
+    """Posts in a channel created after since_ms, oldest-first. [] on failure/none."""
+    data = _mm_get(f"/channels/{channel_id}/posts?since={since_ms}")
+    if not data:
+        return []
+    out = []
+    for pid in reversed(data.get("order", [])):  # API order is newest-first
+        p = data["posts"].get(pid, {})
+        if p.get("create_at", 0) <= since_ms:
+            continue
+        if p.get("type"):  # skip system messages (joins/leaves) — they have a type
+            continue
+        out.append({
+            "id": pid,
+            "create_at": p.get("create_at", 0),
+            "user": (p.get("props", {}) or {}).get("override_username") or p.get("user_id", "?"),
+            "message": p.get("message", ""),
+        })
+    return out
+
+
+def is_high_priority(message: str, agent_name: str | None) -> bool:
+    m = (message or "").lower()
+    if any(t in m for t in ("@here", "@channel", "@all")):
+        return True
+    if agent_name and ("@" + agent_name.lower()) in m:
+        return True
+    return False
+
+
+def _swarm_channel_id() -> str | None:
+    return os.environ.get("MATTERMOST_CHANNEL_SWARM")
+
+
+def _get_cursor(conn, session_id, channel_id):
+    row = conn.execute(
+        "SELECT read_at, mention_at, last_count FROM cursors WHERE session_id=? AND channel_id=?",
+        (session_id, channel_id)).fetchone()
+    return row
+
+
+def _init_cursor(conn, session_id, channel_id, at=None):
+    at = at if at is not None else now_ms()
+    conn.execute(
+        """INSERT INTO cursors(session_id,channel_id,read_at,mention_at,last_count)
+           VALUES(?,?,?,?,0) ON CONFLICT(session_id,channel_id) DO NOTHING""",
+        (session_id, channel_id, at, at))
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -252,6 +327,9 @@ def cmd_register(args):
             (args.session, name, worktree, branch, args.cwd, args.pid, started, now),
         )
         log_event(conn, args.session, "register", f"{name} @ {worktree} [{branch}]")
+        ch = _swarm_channel_id()
+        if ch:
+            _init_cursor(conn, args.session, ch)  # start unread-clock at boot
     mattermost_post(
         f"🟢 **{name or args.session[:8]}** online — `{branch}` in `{worktree}`",
         username=_mm_username(name or args.session[:8], worktree),
@@ -366,6 +444,91 @@ def cmd_prune(args):
     print(f"pruned {len(stale)} stale agent(s)" + (" (+deleted)" if args.delete else ""))
 
 
+def _agent_name(conn, session_id, transcript=None):
+    row = conn.execute("SELECT name FROM agents WHERE session_id=?", (session_id,)).fetchone()
+    if row and row["name"]:
+        return row["name"]
+    return resolve_name(transcript, session_id)
+
+
+def _trunc(s, n=140):
+    s = " ".join((s or "").split())  # collapse whitespace/newlines
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def cmd_poll(args):
+    """Delta surface for the PostToolUse hook. Prints a SHORT block ONLY when there's
+    something new: @-mentions / @here in full (≤140 chars), everything else as a count.
+    Silent otherwise. Does NOT advance the read cursor (that's `read`/`catchup`)."""
+    ch = _swarm_channel_id()
+    if not ch:
+        return
+    conn = connect()
+    name = _agent_name(conn, args.session, args.transcript)
+    with conn:
+        _init_cursor(conn, args.session, ch)
+        cur = _get_cursor(conn, args.session, ch)
+        read_at, mention_at, last_count = cur["read_at"], cur["mention_at"], cur["last_count"]
+        posts = mm_read_posts(ch, read_at)
+        # never notify an agent about its own posts
+        posts = [p for p in posts if str(p["user"]).split(" @ ")[0] != (name or "")]
+        unread = posts  # already > read_at
+        new_mentions = [p for p in unread
+                        if is_high_priority(p["message"], name) and p["create_at"] > mention_at]
+        low_count = sum(1 for p in unread if not is_high_priority(p["message"], name))
+        # emit only on new info: a fresh mention, or the low-priority backlog grew
+        emit = bool(new_mentions) or low_count > last_count
+        if new_mentions:
+            mention_at = max(mention_at, max(p["create_at"] for p in new_mentions))
+        conn.execute(
+            "UPDATE cursors SET mention_at=?, last_count=? WHERE session_id=? AND channel_id=?",
+            (mention_at, low_count, args.session, ch))
+    if not emit:
+        return
+    lines = [f"  💬 {p['user']}: {_trunc(p['message'])}" for p in new_mentions]
+    if low_count > 0:
+        lines.append(f"  ({low_count} other unread in #swarm — run `swarm read` to view)")
+    print("📨 Mattermost #swarm:\n" + "\n".join(lines))
+
+
+def cmd_read(args):
+    """Dump all unread #swarm posts in full and advance the read cursor. Run whenever."""
+    ch = _swarm_channel_id()
+    if not ch:
+        print("(no swarm channel configured)"); return
+    conn = connect()
+    name = _agent_name(conn, args.session, args.transcript)
+    with conn:
+        _init_cursor(conn, args.session, ch)
+        cur = _get_cursor(conn, args.session, ch)
+        posts = mm_read_posts(ch, cur["read_at"])
+        posts = [p for p in posts if str(p["user"]).split(" @ ")[0] != (name or "")]
+        high = now_ms()
+        if posts:
+            high = max(p["create_at"] for p in posts)
+        conn.execute(
+            "UPDATE cursors SET read_at=?, mention_at=?, last_count=0 WHERE session_id=? AND channel_id=?",
+            (high, high, args.session, ch))
+    if not posts:
+        print("#swarm: no unread."); return
+    print(f"#swarm — {len(posts)} unread:")
+    for p in posts:
+        flag = "‼️ " if is_high_priority(p["message"], name) else "  "
+        print(f"{flag}{p['user']}: {p['message'].strip()}")
+
+
+def cmd_say(args):
+    """Post chatter to #swarm as this agent."""
+    conn = connect()
+    row = conn.execute("SELECT name, worktree FROM agents WHERE session_id=?",
+                       (args.session,)).fetchone() if args.session else None
+    name = (row["name"] if row else None) or args.as_name or (args.session or "agent")[:8]
+    worktree = row["worktree"] if row else None
+    ok = mattermost_post(args.text, username=_mm_username(name, worktree),
+                         channel=os.environ.get("MATTERMOST_SWARM_CHANNEL", "swarm"))
+    print("posted to #swarm" if ok else "post failed (mattermost not configured/reachable)")
+
+
 def cmd_whoami(args):
     print(resolve_name(args.transcript, args.session) or "(unknown)")
 
@@ -440,6 +603,19 @@ def main(argv=None):
     pp = sub.add_parser("prune"); pp.set_defaults(fn=cmd_prune)
     pp.add_argument("--secs", type=int, default=900)
     pp.add_argument("--delete", action="store_true")
+
+    ppoll = sub.add_parser("poll"); ppoll.set_defaults(fn=cmd_poll)
+    ppoll.add_argument("--session", required=True)
+    ppoll.add_argument("--transcript")
+
+    pread = sub.add_parser("read"); pread.set_defaults(fn=cmd_read)
+    pread.add_argument("--session", required=True)
+    pread.add_argument("--transcript")
+
+    psay = sub.add_parser("say"); psay.set_defaults(fn=cmd_say)
+    psay.add_argument("text")
+    psay.add_argument("--session")
+    psay.add_argument("--as", dest="as_name", help="username if no session in registry")
 
     pw = sub.add_parser("whoami"); pw.set_defaults(fn=cmd_whoami)
     pw.add_argument("--session")

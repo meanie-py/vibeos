@@ -40,12 +40,35 @@ $PY $S heartbeat --session ID [--transcript PATH]      # last_seen + pick up /re
 $PY $S offline   --session ID [--reason R]
 $PY $S list      [--json] [--all] [--stale-secs 300]   # the roster
 $PY $S prune     [--secs 900] [--delete]               # stale online → offline
+$PY $S poll      --session ID [--transcript PATH]      # delta-surface new #swarm (hook calls this)
+$PY $S read      --session ID                          # dump unread #swarm in full, advance cursor
+$PY $S say       "msg" --session ID                    # post chatter to #swarm as this agent
 $PY $S whoami    --transcript PATH                      # debug: resolve name only
 $PY $S install-hooks [--write [settings.json]]          # wire the hooks
 ```
 
 `list` marks each agent 🟢 online / 🟡 stale (last_seen older than `--stale-secs`) /
 ⚫ offline.
+
+## How #swarm chatter surfaces (priority-tiered)
+
+The PostToolUse hook calls `poll` (throttled like the heartbeat). It surfaces by
+priority, and **only when there's something new** (so it doesn't spam the context):
+
+- **High priority → full text** (≤140 chars): messages that `@`-mention this agent's
+  name, or use `@here` / `@channel` / `@all`. Each fires **once**.
+- **Lower priority → just a count:** `(N other unread in #swarm — run swarm read to view)`.
+  The agent reads them whenever convenient via `swarm read`, which dumps all unread in
+  full and advances the read cursor.
+
+Two cursors per agent track this: `mention_at` (so a mention surfaces once) and
+`read_at` (advanced only by `read`, drives the unread count). An agent's clock starts
+at `register`, so it only ever sees chatter from when it came online — never a backlog
+dump. An agent never gets notified about its own posts. SessionStart injects the live
+roster so a new agent immediately knows who else is working.
+
+> v1 scope: mentions are matched in `#swarm` by literal `@name` substring; true DM
+> channels aren't polled yet. Identity (`@name`) is the agent's `/rename` name.
 
 ## Wiring the hooks (opt-in, per-user)
 

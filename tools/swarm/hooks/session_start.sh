@@ -23,4 +23,17 @@ EOF
 "$PY" "$DIR/tools/swarm/swarm.py" register \
     --session "$SID" --transcript "$TRANS" --cwd "${CWD:-$DIR}" --pid "$PPID" \
     >/dev/null 2>&1
+
+# Surface the live roster into the new session so the agent knows who else is working.
+ROSTER="$("$PY" "$DIR/tools/swarm/swarm.py" list 2>/dev/null)"
+if [ -n "$ROSTER" ]; then
+    "$PY" - "$ROSTER" <<'EOF'
+import json, sys
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "You are registered in the vibeos swarm. Live agents:\n" + sys.argv[1]
+        + "\n(Coordinate via Mattermost #swarm: `swarm read` to view, `swarm say \"...\"` to post.)",
+}}))
+EOF
+fi
 exit 0
