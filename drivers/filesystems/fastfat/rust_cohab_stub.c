@@ -153,45 +153,28 @@ extern VOID    FatDeleteIrpContext_Real(PIRP_CONTEXT);
  * in fatstruc.h. Rust code calls IRP_CONTEXT_FLAG_WAIT() as a fn. */
 #define FAT_IRP_CTX_FLAG_WAIT 0x00000001U
 
-/* FCB Header.Resource is at standard FSRTL_ADVANCED_FCB_HEADER offset.
- * The field is a PERESOURCE (pointer). We access it via a helper struct
- * that mirrors only the FSRTL_ADVANCED_FCB_HEADER prefix. */
-typedef struct _FAT_FCB_OPAQUE {
-    FSRTL_ADVANCED_FCB_HEADER Header; /* Standard header, has Resource ptr */
-    UCHAR rest[4096];
-} FAT_FCB_OPAQUE;
+/* Real struct field byte offsets. These are NOT hand-counted (the old
+ * hard-coded values 397/404/478/68 were wrong & unaligned → arm64 mount AV in
+ * ExAcquireFastMutexUnsafe). They are computed with FIELD_OFFSET against the
+ * REAL fatstruc.h layout over in rust_cohab_fat.c (which includes fatprocs.h)
+ * and exported as const globals — arch-correct and self-maintaining. */
+extern const unsigned int FatVcbFreeClusterBitMapMutexOffset;
+extern const unsigned int FatVcbResourceOffset;
+extern const unsigned int FatVcbDirCreationMutexOffset;
+extern const unsigned int FatDataResourceOffset;
+extern const unsigned int FatFcbHeaderResourceOffset;
+extern const unsigned int FatIrpContextFlagsOffset;
 
-typedef struct _FAT_VCB_OPAQUE {
-    UCHAR before_resource[404];  /* FreeClusterBitMapMutex=397, Resource=404 */
-    ERESOURCE Resource;          /* VCB.Resource at offset 404 */
-    UCHAR more[1024];
-} FAT_VCB_OPAQUE;
+/* FCB Header.Resource is a PERESOURCE (pointer) field — read the pointer. */
+#define FCB_RESOURCE(fcb)       (*(PERESOURCE *)((PUCHAR)(fcb) + FatFcbHeaderResourceOffset))
+#define VCB_RESOURCE(vcb)       ((PERESOURCE)((PUCHAR)(vcb) + FatVcbResourceOffset))
 
-#define FCB_RESOURCE(fcb)       (((FAT_FCB_OPAQUE*)(fcb))->Header.Resource)
-#define VCB_RESOURCE(vcb)       (&((FAT_VCB_OPAQUE*)(vcb))->Resource)
+#define VCB_FREECLUSTER_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + FatVcbFreeClusterBitMapMutexOffset))
+#define VCB_DIRCREATION_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + FatVcbDirCreationMutexOffset))
 
-/* VCB offsets from fatstruc.h (verified against the actual struct layout):
- *   FreeClusterBitMapMutex = offset 397 (FAST_MUTEX)
- *   Resource               = offset 404 (ERESOURCE)
- *   DirectoryFileCreationMutex = offset 478 (FAST_MUTEX)
- *
- * FAST_MUTEX is 32 bytes on amd64. Offsets in bytes.
- */
-#define VCB_FREE_CLUSTER_BITMAP_MUTEX_OFFSET 397
-#define VCB_RESOURCE_OFFSET                  404
-#define VCB_DIR_FILE_CREATION_MUTEX_OFFSET   478
+#define FATDATA_RESOURCE()  ((PERESOURCE)((PUCHAR)&FatData + FatDataResourceOffset))
 
-#define VCB_FREECLUSTER_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + VCB_FREE_CLUSTER_BITMAP_MUTEX_OFFSET))
-#define VCB_DIRCREATION_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + VCB_DIR_FILE_CREATION_MUTEX_OFFSET))
-
-/* FAT_DATA.Resource is at offset 68 (after 68 bytes of other fields).
- * We use the Rust-provided FatData global directly. */
-#define FAT_DATA_RESOURCE_OFFSET 68
-#define FATDATA_RESOURCE()  ((PERESOURCE)((PUCHAR)&FatData + FAT_DATA_RESOURCE_OFFSET))
-
-/* IRP context flags word is the second ULONG in IRP_CONTEXT (after NodeTypeCode
- * CSHORT + NodeByteSize CSHORT = 4 bytes, then Flags ULONG at offset 4). */
-#define IRP_CTX_FLAGS(irpctx) (*((PULONG)((PUCHAR)(irpctx) + 4)))
+#define IRP_CTX_FLAGS(irpctx) (*((PULONG)((PUCHAR)(irpctx) + FatIrpContextFlagsOffset)))
 
 /* ======================================================================
  * 1. FAT macro → real-symbol wrappers
@@ -638,17 +621,12 @@ NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID 
 NTSTATUS FatGenerateFileIdFromFcb(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)
     { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatReadDirent(PIRP_CONTEXT a, PDCB b, PULONG c, PDIRENT *d, PBCB *e, PLARGE_INTEGER f)
-    { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatReadDirent -> rust_cohab_fat.c (real dirsup.c macro) */
 NTSTATUS fat_check_system_security_access(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS fat_supersede_or_overwrite_file(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 
-VOID FatConstructDot(PIRP_CONTEXT a, PDCB b, PDIRENT c, PDIRENT d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
-VOID FatConstructDotDot(PIRP_CONTEXT a, PDCB b, PDIRENT c, PDIRENT d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); }
-VOID FatNotifyReportChange(PIRP_CONTEXT a, PVCB b, PFCB c, ULONG d, ULONG e)
-    { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); }
+/* FatConstructDot / FatConstructDotDot / FatNotifyReportChange
+ * -> rust_cohab_fat.c (real dirsup.c / fatprocs.h macros) */
 __cdecl VOID Fat8QMdot3QM(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); }
 
 /* FatFsdEntryCount: a FASTFATDBG-only debug counter. The Rust definition is
@@ -659,10 +637,7 @@ ULONG FatFsdEntryCount = 0;
 ULONG FatIoCallDriverCount = 0;  /* FASTFATDBG counter; real DATA, incremented by Rust */
 
 
-BOOLEAN FatAreNamesEqual(PIRP_CONTEXT a, PUNICODE_STRING b, PUNICODE_STRING c, BOOLEAN d, PWCHAR e)
-    { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT a, OEM_STRING b, BOOLEAN c, BOOLEAN d, BOOLEAN e)
-    { (void)a;(void)b;(void)c;(void)d;(void)e; STUB_BUGCHECK(); return FALSE; }
+/* FatAreNamesEqual / FatIsNameShortOemValid -> rust_cohab_fat.c (real fatprocs.h macros) */
 BOOLEAN FatIsNameLongUnicodeValid(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatIsPathnameValid(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return FALSE; }
 BOOLEAN FatIsIoRangeValid(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; STUB_BUGCHECK(); return FALSE; }

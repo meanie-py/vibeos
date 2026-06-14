@@ -40,6 +40,26 @@
 #include "fatprocs.h"
 
 /* ======================================================================
+ * (a0) Real struct field offsets, exported for rust_cohab_stub.c.
+ *
+ * rust_cohab_stub.c deliberately does NOT include fatprocs.h, so it used to
+ * hand-count these byte offsets — and got them WRONG and unaligned
+ * (FreeClusterBitMapMutex 397/Resource 404/DirCreationMutex 478, plus
+ * FatData.Resource 68). On arm64 `Vcb + 478` is unaligned garbage → the FAT
+ * mount AV'd inside ExAcquireFastMutexUnsafe's `ldaxr` (FatCheckFreeDirentBitmap
+ * → FatAcquireDirectoryFileMutex). This TU has the REAL VCB/FCB/FAT_DATA/
+ * IRP_CONTEXT layout, so let the compiler compute the offsets — arch-correct,
+ * self-maintaining. (Verified 2026-06-14: arm64/amd64 = 384/440/744/56,
+ * i386 = 296/328/488/…)
+ * ====================================================================== */
+__attribute__((used)) const unsigned int FatVcbFreeClusterBitMapMutexOffset = FIELD_OFFSET(VCB, FreeClusterBitMapMutex);
+__attribute__((used)) const unsigned int FatVcbResourceOffset               = FIELD_OFFSET(VCB, Resource);
+__attribute__((used)) const unsigned int FatVcbDirCreationMutexOffset        = FIELD_OFFSET(VCB, DirectoryFileCreationMutex);
+__attribute__((used)) const unsigned int FatDataResourceOffset               = FIELD_OFFSET(FAT_DATA, Resource);
+__attribute__((used)) const unsigned int FatFcbHeaderResourceOffset          = FIELD_OFFSET(FCB, Header.Resource);
+__attribute__((used)) const unsigned int FatIrpContextFlagsOffset            = FIELD_OFFSET(IRP_CONTEXT, Flags);
+
+/* ======================================================================
  * (b) MACRO captures — wrap-then-undef-then-provide
  * ====================================================================== */
 
@@ -253,6 +273,74 @@ VOID FatVerifyIndexIsValid(PIRP_CONTEXT IrpContext, PVCB Vcb, ULONG Index){ __c_
 static VOID __c_FatUpcaseEaName(PIRP_CONTEXT IC, POEM_STRING N, POEM_STRING U){ FatUpcaseEaName(IC, N, U); }
 #undef FatUpcaseEaName
 VOID FatUpcaseEaName(PIRP_CONTEXT IrpContext, POEM_STRING Name, POEM_STRING UpcasedName){ __c_FatUpcaseEaName(IrpContext, Name, UpcasedName); }
+
+/* ======================================================================
+ * Directory-path macro wrappers — these fatprocs.h/dirsup.c macros were
+ * lazily STUB_BUGCHECK'd by the batch translation (rust_cohab_stub.c) and
+ * fired during the arm64 FAT mount/dirent path. They are genuine C macros,
+ * so reuse the real implementation here (wrap-then-undef-then-provide), the
+ * same pattern as FatUnpinBcb above. Stubs removed from rust_cohab_stub.c.
+ * 2026-06-14.
+ * ====================================================================== */
+/* FatReadDirent / FatConstructDot / FatConstructDotDot are LOCAL macros in
+ * dirsup.c (not a header), so they aren't visible here — inline their bodies
+ * directly. FatUnpinBcb below is the cohab FUNCTION (PBCB*) from above. */
+VOID FatReadDirent(PIRP_CONTEXT IrpContext, PDCB Dcb, ULONG Vbo, PBCB *Bcb, PDIRENT *Dirent, PNTSTATUS Status){
+    if (Vbo >= Dcb->Header.AllocationSize.LowPart) {
+        *Status = STATUS_END_OF_FILE;
+        FatUnpinBcb(IrpContext, Bcb);
+    } else if ((Vbo % PAGE_SIZE == 0) || (*Bcb == NULL)) {
+        FatUnpinBcb(IrpContext, Bcb);
+        FatReadDirectoryFile(IrpContext, Dcb, Vbo & ~(PAGE_SIZE - 1), PAGE_SIZE,
+                             FALSE, Bcb, (PVOID *)Dirent, Status);
+        *Dirent = (PDIRENT)((PUCHAR)*Dirent + (Vbo % PAGE_SIZE));
+    }
+}
+
+VOID FatConstructDot(PIRP_CONTEXT IrpContext, PDCB Dcb, PDIRENT ParentDirent, PDIRENT Dirent){
+    UNREFERENCED_PARAMETER(IrpContext);
+    RtlCopyMemory((PUCHAR)Dirent, ".          ", 11);
+    Dirent->Attributes = FAT_DIRENT_ATTR_DIRECTORY;
+    Dirent->LastWriteTime = ParentDirent->LastWriteTime;
+    if (FatData.ChicagoMode) {
+        Dirent->CreationTime = ParentDirent->CreationTime;
+        Dirent->CreationMSec = ParentDirent->CreationMSec;
+        Dirent->LastAccessDate = ParentDirent->LastAccessDate;
+    }
+    Dirent->FirstClusterOfFile = (USHORT)Dcb->FirstClusterOfFile;
+    Dirent->FirstClusterOfFileHi = (USHORT)(Dcb->FirstClusterOfFile / 0x10000);
+}
+
+VOID FatConstructDotDot(PIRP_CONTEXT IrpContext, PDCB Dcb, PDIRENT ParentDirent, PDIRENT Dirent){
+    UNREFERENCED_PARAMETER(IrpContext);
+    RtlCopyMemory((PUCHAR)Dirent, "..         ", 11);
+    Dirent->Attributes = FAT_DIRENT_ATTR_DIRECTORY;
+    Dirent->LastWriteTime = ParentDirent->LastWriteTime;
+    if (FatData.ChicagoMode) {
+        Dirent->CreationTime = ParentDirent->CreationTime;
+        Dirent->CreationMSec = ParentDirent->CreationMSec;
+        Dirent->LastAccessDate = ParentDirent->LastAccessDate;
+    }
+    if (NodeType(Dcb->ParentDcb) == FAT_NTC_ROOT_DCB) {
+        Dirent->FirstClusterOfFile = 0;
+        Dirent->FirstClusterOfFileHi = 0;
+    } else {
+        Dirent->FirstClusterOfFile = (USHORT)(Dcb->ParentDcb->FirstClusterOfFile);
+        Dirent->FirstClusterOfFileHi = (USHORT)(Dcb->ParentDcb->FirstClusterOfFile / 0x10000);
+    }
+}
+
+static VOID __c_FatNotifyReportChange(PIRP_CONTEXT IC, PVCB V, PFCB F, ULONG FL, ULONG A){ FatNotifyReportChange(IC, V, F, FL, A); }
+#undef FatNotifyReportChange
+VOID FatNotifyReportChange(PIRP_CONTEXT IrpContext, PVCB Vcb, PFCB Fcb, ULONG Filter, ULONG Action){ __c_FatNotifyReportChange(IrpContext, Vcb, Fcb, Filter, Action); }
+
+static BOOLEAN __c_FatAreNamesEqual(PIRP_CONTEXT IC, OEM_STRING A, OEM_STRING B){ return FatAreNamesEqual(IC, A, B); }
+#undef FatAreNamesEqual
+BOOLEAN FatAreNamesEqual(PIRP_CONTEXT IrpContext, OEM_STRING Name1, OEM_STRING Name2){ return __c_FatAreNamesEqual(IrpContext, Name1, Name2); }
+
+static BOOLEAN __c_FatIsNameShortOemValid(PIRP_CONTEXT IC, OEM_STRING N, BOOLEAN W, BOOLEAN P, BOOLEAN L){ return FatIsNameShortOemValid(IC, N, W, P, L); }
+#undef FatIsNameShortOemValid
+BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT IrpContext, OEM_STRING OemName, BOOLEAN CanContainWildCards, BOOLEAN PathNameOk, BOOLEAN LeadingBackslashOk){ return __c_FatIsNameShortOemValid(IrpContext, OemName, CanContainWildCards, PathNameOk, LeadingBackslashOk); }
 
 /* FatTestRaisedStatus: fault-injection debug global referenced by the FatRaiseStatus
  * debug path (pulled in by FatVerifyIndexIsValid). Defaults to 0 (disabled). */
