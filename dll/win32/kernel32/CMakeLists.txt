@@ -86,7 +86,7 @@ list(APPEND SOURCE
     winnls/string/fold.c
     winnls/string/format_msg.c
     winnls/string/japanese.c
-    winnls/string/locale.c
+    # winnls/string/locale.c   — replaced by Rust (kernel32-rust/src/string/locale.rs)
     winnls/string/lcformat.c
     winnls/string/lstring.c
     winnls/string/nls.c
@@ -134,7 +134,10 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(KERNEL32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB KERNEL32_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-rust/src/*.rs")
+# GLOB_RECURSE so .rs under src/<subdir>/ (e.g. src/string/locale.rs) also retrigger
+# the libkernel32_rust.a rebuild — a non-recursive src/*.rs glob silently used a stale
+# archive when only subdir files changed.
+file(GLOB_RECURSE KERNEL32_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-rust/src/*.rs")
 add_custom_command(
     OUTPUT ${KERNEL32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

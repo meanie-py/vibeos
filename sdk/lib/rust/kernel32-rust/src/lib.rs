@@ -28,6 +28,9 @@ pub mod proc_helpers; // StuffStdHandle/AppCert/Sxs/BaseProcessStartup/InitComma
 pub mod proc_params; // BasePushProcessParameters
 pub mod proc_create; // CreateProcessInternalW + CreateProcessW/A + WinExec
 
+// winnls/string/ — NLS/locale/string family (rustconv Sonnet+c2rust). locale.c first.
+pub mod string;
+
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}

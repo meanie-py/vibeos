@@ -117,6 +117,10 @@ BASESRV_DIR = REACTOS_ROOT / "subsystems" / "win" / "basesrv"
 # user-mode substrate as smss-csrss (ntdll-sys), output to its own
 # ntdll-rust crate. See docs/engineering/ntdll-translation-audit.md.
 NTDLL_DIR = REACTOS_ROOT / "dll" / "ntdll"
+# kernel32.dll — the Win32 base API DLL. Per-file Rust cohabitation into the
+# cmake-built kernel32.dll (proc.c was the first flip; see project memory).
+# Same user-mode substrate as ntdll/smss-csrss (ntdll-sys → ntdll_sys::nt).
+KERNEL32_DIR = REACTOS_ROOT / "dll" / "win32" / "kernel32"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
     "arm64": NTDLL_SYS_DIR / "bindgen_arm64.rs",
@@ -728,6 +732,30 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # kernel32.dll — the Win32 base API DLL. Per-file cohabitation into the
+    # cmake-built kernel32.dll (libkernel32_rust.a linked in, the .c commented
+    # out). Same user-mode substrate as ntdll/smss-csrss: ntdll-sys scanned as
+    # "ddk" via NTDLL_BINDGEN_FILES, collapsed to ntdll_sys::nt in postprocess.
+    # spec_file=None — WINAPI=stdcall(i386) handled by the user prompt + c2rust
+    # anchor (mirrors ntdll). Assembler namespaces by C parent dir
+    # (client/, winnls/string/, wine/) → kernel32-rust/src/<dir>/<stem>.rs.
+    # NLS/string family is the current target (locale/lcformat/nls first).
+    "kernel32": Target(
+        name="kernel32",
+        source_dir=KERNEL32_DIR,
+        output_crate=RUST_DIR / "kernel32-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # winsrv.dll — USER + Console server (consrv + usersrv + concfg
     # aggregated into winsrv.dll, loaded by csrss). Phase 5 of the
     # SMSS→CSRSS spine. CSR server DLL, NOT a standalone exe — entry
@@ -842,6 +870,10 @@ def detect_target(c_path: Path) -> Target:
     # rtl-strings crates; only dll/ntdll/'s own .c belong to this target.
     if "/dll/ntdll/" in posix:
         return TARGETS["ntdll"]
+    # kernel32.dll body (Win32 base API). Own kernel32-rust crate, same
+    # user-mode substrate as ntdll. NLS/string family + client/* etc.
+    if "/dll/win32/kernel32/" in posix:
+        return TARGETS["kernel32"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
     if "/drivers/input/kbdclass" in posix:
