@@ -70,3 +70,4 @@ cmake_install.cmake
 qemu/manual-arm64-*/
 ~*.md
 .cargo-wt-target/
+tools/swarm/MATTERMOST_HANDOFF.md
