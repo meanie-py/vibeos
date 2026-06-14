@@ -13,7 +13,6 @@ use core::ffi::c_void;
 extern "system" {
     fn NT_ASSERT(condition: i32);
     fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
-    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, iotarget: *mut core::ffi::c_void, options: u32, timeout: *mut core::ffi::c_void, ) -> i32;
     fn PAGED_CODE();
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
@@ -22,6 +21,14 @@ extern "system" {
 }
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
+    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, iotarget: *mut core::ffi::c_void, options: u32, timeout: *mut core::ffi::c_void, ) -> i32;
+    fn CdromRustScratchCompleteOrContinueReadWrite(
+        DeviceExtension: PCDROM_DEVICE_EXTENSION,
+        OriginalRequest: WDFREQUEST,
+        Status: i32,
+        MayContinue: u8,
+    );
+    fn CdromRustScratchAllocatePartialMdl(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> i32;
 }
 
 const TRACE_LEVEL_FATAL: u32 = 1;
@@ -57,7 +64,7 @@ extern "system" {
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
 #[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
-extern "system" {
+extern "C" {
     fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsRead: u8) -> u8; // BOOLEAN
     fn MmPrepareMdlForReuse(Mdl: *mut MDL);
     fn SRB_STATUS(srb_status: u8) -> u32;
@@ -73,7 +80,7 @@ const DPFLTR_CDROM_ID: u32 = 0x52; // DPFLTR component id for cdrom
 const IRP_MJ_SCSI: u32 = 0x0F;
 const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0001D004 (LLM-invented); bindgen-correct
 const IOCTL_SCSI_EXECUTE_OUT: u32 = 0x1b0012;  // was 0x0001D008 (LLM-invented); bindgen-correct
-const SCSI_REQUEST_BLOCK_SIZE: u32 = 0x50; // placeholder
+const SCSI_REQUEST_BLOCK_SIZE: u32 = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32; // = C SCSI_REQUEST_BLOCK_SIZE (arch-correct: i386 0x44 / amd64 0x68); 0x50 placeholder was i386-fatal (scsiport SRB_STATUS_BAD_SRB_BLOCK_LENGTH → STATUS_INVALID_DEVICE_REQUEST)
 const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
 const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
 const SENSE_BUFFER_SIZE: u32 = 18;
@@ -359,48 +366,15 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
 
     // allocate the MDL (PartialMdl)
     if NT_SUCCESS(status) {
-        let mut transfer_length: u32 = 0;
-        status = RtlULongAdd(
-            (*DeviceExtension)
-                .DeviceAdditionalData
-                .MaxPageAlignedTransferBytes,
-            PAGE_SIZE as u32,
-            &mut transfer_length,
-        );
-        if NT_SUCCESS(status) {
-            (*DeviceExtension).ScratchContext.PartialMdlIsBuilt = 0;
-            (*DeviceExtension).ScratchContext.PartialMdl =
-                IoAllocateMdl(
-                    core::ptr::null_mut(),
-                    transfer_length,
-                    0,
-                    0,
-                    core::ptr::null_mut(),
-                );
-            if (*DeviceExtension).ScratchContext.PartialMdl.is_null() {
-                status = STATUS_INSUFFICIENT_RESOURCES;
-                TracePrint!(
-                    TRACE_LEVEL_WARNING,
-                    TRACE_FLAG_INIT,
-                    b"Failed to allocate MDL for %x byte buffer\n\0".as_ptr()
-                        as *const i8,
-                    scratch_size,
-                );
-            } else {
-                debug_assert!(
-                    (*(*DeviceExtension).ScratchContext.PartialMdl).Size as i32
-                        >= (core::mem::size_of::<MDL>()
-                            + (BYTES_TO_PAGES(
-                                (*DeviceExtension)
-                                    .DeviceAdditionalData
-                                    .MaxPageAlignedTransferBytes as usize,
-                            ) as usize)
-                                * core::mem::size_of::<PFN_NUMBER>())
-                            as i32
-                );
-            }
-        } else {
-            status = STATUS_INTEGER_OVERFLOW;
+        status = CdromRustScratchAllocatePartialMdl(DeviceExtension);
+        if !NT_SUCCESS(status) {
+            TracePrint!(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"Failed to allocate MDL for %x byte buffer\n\0".as_ptr()
+                    as *const i8,
+                scratch_size,
+            );
         }
     }
 
@@ -496,7 +470,7 @@ pub unsafe extern "system" fn ScratchBuffer_ResetItems(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
+pub unsafe extern "system" fn ScratchBuffer_PerformNextReadWrite(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     FirstTry: i32,
 ) -> i32 {
@@ -567,6 +541,12 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
 
 static mut SEND_QPC: i64 = 0;
 static mut QPC_FREQ: i64 = 0;
+
+#[inline(never)]
+unsafe fn ScratchBuffer_RequestIsCanceled(request: WDFREQUEST) -> u8 {
+    WdfRequestIsCanceled(request)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
     Dpc: *mut _KDPC,
@@ -804,7 +784,11 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
             (*read_write_context).DataBuffer.add(data_transfer_length as usize);
         (*read_write_context).StartingOffset.QuadPart += data_transfer_length as i64;
         (*read_write_context).TransferedBytes += data_transfer_length;
-        (*read_write_context).PacketsCount -= 1;
+        let packets_count = core::ptr::read_volatile(core::ptr::addr_of!((*read_write_context).PacketsCount));
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*read_write_context).PacketsCount),
+            packets_count.wrapping_sub(1),
+        );
 
         // Update the SRB history item
         if !(*read_write_context).SrbHistoryItem.is_null() {
@@ -855,23 +839,20 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
         }
 
         // Check whether we need to send more SCSI commands to complete the request
-        if (*read_write_context).PacketsCount > 0 {
-            status = ScratchBuffer_PerformNextReadWrite(device_extension, TRUE);
-
-            if NT_SUCCESS(status) {
-                // We're not done with the request yet, no need to complete it now
-                return;
-            }
-        }
+        CdromRustScratchCompleteOrContinueReadWrite(
+            device_extension,
+            original_request,
+            status,
+            TRUE as u8,
+        );
+        return;
     }
 
-    ScratchBuffer_EndUse(device_extension);
-
-    RequestCompletion(
+    CdromRustScratchCompleteOrContinueReadWrite(
         device_extension,
         original_request,
         status,
-        (*read_write_context).TransferedBytes,
+        FALSE as u8,
     );
 }
 #[no_mangle]
@@ -895,7 +876,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
 
     PAGED_CODE();
 
-    (*requestContext).OriginalRequest = OriginalRequest;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*requestContext).OriginalRequest), OriginalRequest);
 
     // set to use the full scratch buffer via the scratch SRB
     irpStack = IoGetNextIrpStackLocation(irp);
@@ -907,7 +888,11 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     } else {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_OUT;
     }
-    (*irpStack).Parameters.Scsi.Srb = srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*irpStack).Parameters)
+            as *mut *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK,
+        srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK,
+    );
 
     if MaximumTransferLength > 0 {
         // the Irp must show the MDL's address for the transfer
@@ -986,9 +971,9 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
 
     let request_context =
         RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
-    if !(*request_context).OriginalRequest.is_null() {
-        request_cancelled =
-            WdfRequestIsCanceled((*request_context).OriginalRequest as WDFREQUEST);
+    let original_request = core::ptr::read_volatile(core::ptr::addr_of!((*request_context).OriginalRequest));
+    if !original_request.is_null() {
+        request_cancelled = ScratchBuffer_RequestIsCanceled(original_request as WDFREQUEST);
     }
 
     if request_cancelled == 0 {
@@ -1200,21 +1185,32 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     IsReadRequest: u8,
     UsePartialMdl: u8,
 ) {
-    let srb: *mut SCSI_REQUEST_BLOCK = (*DeviceExtension).ScratchContext.ScratchSrb;
-    let cdb: *mut CDB = (*srb).Cdb.as_mut_ptr() as *mut CDB;
+    let scratch_context = core::ptr::addr_of_mut!((*DeviceExtension).ScratchContext);
+    let srb: *mut SCSI_REQUEST_BLOCK =
+        core::ptr::read_unaligned(core::ptr::addr_of!((*scratch_context).ScratchSrb));
+    let scratch_request =
+        core::ptr::read_unaligned(core::ptr::addr_of!((*scratch_context).ScratchRequest));
+    let scratch_sense =
+        core::ptr::read_unaligned(core::ptr::addr_of!((*scratch_context).ScratchSense));
+    let partial_mdl =
+        core::ptr::read_unaligned(core::ptr::addr_of!((*scratch_context).PartialMdl));
+    let srb_bytes = srb.cast::<u8>();
+    let cdb_bytes: *mut u8 =
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, Cdb));
     let mut logicalBlockAddr: LARGE_INTEGER = core::mem::zeroed();
     let numTransferBlocks: u32;
 
     let originalIrp: PIRP = WdfRequestWdmGetIrp(OriginalRequest);
-    let irp: PIRP = WdfRequestWdmGetIrp((*DeviceExtension).ScratchContext.ScratchRequest);
+    let irp: PIRP = WdfRequestWdmGetIrp(scratch_request);
     let mut irpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
-    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
+    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(scratch_request as *mut core::ffi::c_void);
 
     (*requestContext).OriginalRequest = OriginalRequest;
 
     // Int64ShrlMod32 expanded
-    logicalBlockAddr.QuadPart = ((StartingOffset.QuadPart as u64) >> (*DeviceExtension).SectorShift as u64) as i64;
-    numTransferBlocks = RequiredLength >> (*DeviceExtension).SectorShift;
+    let sector_shift = core::ptr::read_unaligned(core::ptr::addr_of!((*DeviceExtension).SectorShift));
+    logicalBlockAddr.QuadPart = ((StartingOffset.QuadPart as u64) >> sector_shift as u64) as i64;
+    numTransferBlocks = RequiredLength >> sector_shift;
 
     irpStack = IoGetNextIrpStackLocation(irp);
     (*irpStack).MajorFunction = IRP_MJ_SCSI as u8;
@@ -1223,94 +1219,171 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     } else {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_OUT;
     }
-    (*irpStack).Parameters.Scsi.Srb = srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
+    core::ptr::write_unaligned(
+        core::ptr::addr_of_mut!((*irpStack).Parameters)
+            as *mut *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK,
+        srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK,
+    );
 
-    (*srb).Length = SCSI_REQUEST_BLOCK_SIZE as u16;
-    (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
-    (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as u8;
-    (*srb).SrbStatus = 0;
-    (*srb).ScsiStatus = 0;
-    (*srb).NextSrb = core::ptr::null_mut();
-    (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8;
-    (*srb).SenseInfoBuffer = (*DeviceExtension).ScratchContext.ScratchSense as *mut core::ffi::c_void;
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, Length)).cast::<u16>(),
+        SCSI_REQUEST_BLOCK_SIZE as u16,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, Function)).cast::<u8>(),
+        SRB_FUNCTION_EXECUTE_SCSI as u8,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, QueueAction)).cast::<u8>(),
+        SRB_SIMPLE_TAG_REQUEST as u8,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, SrbStatus)).cast::<u8>(),
+        0,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, ScsiStatus)).cast::<u8>(),
+        0,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, NextSrb)).cast::<*mut SCSI_REQUEST_BLOCK>(),
+        core::ptr::null_mut(),
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, SenseInfoBufferLength)).cast::<u8>(),
+        SENSE_BUFFER_SIZE as u8,
+    );
+    core::ptr::write_volatile(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, SenseInfoBuffer)).cast::<*mut core::ffi::c_void>(),
+        scratch_sense as *mut core::ffi::c_void,
+    );
+    core::ptr::write_volatile(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, DataBuffer)).cast::<*mut core::ffi::c_void>(),
+        DataBuffer as *mut core::ffi::c_void,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, DataTransferLength)).cast::<u32>(),
+        RequiredLength,
+    );
 
-    (*srb).DataBuffer = DataBuffer as *mut core::ffi::c_void;
-    (*srb).DataTransferLength = RequiredLength;
-
-    *(*srb).__bindgen_anon_1.QueueSortKey.as_mut() = logicalBlockAddr.__bindgen_anon_1.LowPart as u32;
+    let queue_sort_key = srb_bytes
+        .wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, __bindgen_anon_1))
+        .cast::<u32>();
+    core::ptr::write_unaligned(queue_sort_key, logicalBlockAddr.__bindgen_anon_1.LowPart as u32);
     if logicalBlockAddr.QuadPart > 0xFFFFFFFF_u64 as i64 {
-        *(*srb).__bindgen_anon_1.QueueSortKey.as_mut() = 0xFFFFFFFF;
+        core::ptr::write_unaligned(queue_sort_key, 0xFFFFFFFF);
     }
 
-    (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
-    (*srb).TimeOutValue = (*DeviceExtension).TimeOutValue;
+    core::ptr::write_volatile(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, OriginalRequest)).cast::<*mut core::ffi::c_void>(),
+        irp as *mut core::ffi::c_void,
+    );
+    core::ptr::write_unaligned(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, TimeOutValue)).cast::<u32>(),
+        core::ptr::read_unaligned(core::ptr::addr_of!((*DeviceExtension).TimeOutValue)),
+    );
 
     if RequestIsRealtimeStreaming(OriginalRequest, IsReadRequest) != 0
-        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as ntkrnl_sys::ddk::ULONG_PTR) == 0
+        && ((*core::ptr::read_unaligned(core::ptr::addr_of!((*DeviceExtension).PrivateFdoData))).HackFlags & FDO_HACK_NO_STREAMING as ntkrnl_sys::ddk::ULONG_PTR) == 0
     {
         if IsReadRequest != 0 {
-            RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).READ12) as *mut core::ffi::c_void, SIZEOF_CDB_READ12);
+            RtlZeroMemory(cdb_bytes as *mut core::ffi::c_void, SIZEOF_CDB_READ12);
             // REVERSE_BYTES expanded
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.as_mut().LogicalBlock) as *mut u32, src_val.swap_bytes());
+            core::ptr::write_unaligned(cdb_bytes.wrapping_add(2) as *mut u32, src_val.swap_bytes());
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(numTransferBlocks) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.as_mut().TransferLength) as *mut u32, src_val.swap_bytes());
-            (*cdb).READ12.as_mut().set_Streaming(1);
-            (*cdb).READ12.as_mut().OperationCode = SCSIOP_READ12;
-            (*srb).CdbLength = SIZEOF_CDB_READ12 as u8;
+            core::ptr::write_unaligned(cdb_bytes.wrapping_add(6) as *mut u32, src_val.swap_bytes());
+            *cdb_bytes.wrapping_add(10) |= 0x80;
+            *cdb_bytes = SCSIOP_READ12;
+            core::ptr::write_unaligned(
+                srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, CdbLength)).cast::<u8>(),
+                SIZEOF_CDB_READ12 as u8,
+            );
         } else {
-            RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).WRITE12) as *mut core::ffi::c_void, SIZEOF_CDB_WRITE12);
+            RtlZeroMemory(cdb_bytes as *mut core::ffi::c_void, SIZEOF_CDB_WRITE12);
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.as_mut().LogicalBlock) as *mut u32, src_val.swap_bytes());
+            core::ptr::write_unaligned(cdb_bytes.wrapping_add(2) as *mut u32, src_val.swap_bytes());
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(numTransferBlocks) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.as_mut().TransferLength) as *mut u32, src_val.swap_bytes());
-            (*cdb).WRITE12.as_mut().set_Streaming(1);
-            (*cdb).WRITE12.as_mut().OperationCode = SCSIOP_WRITE12;
-            (*srb).CdbLength = SIZEOF_CDB_WRITE12 as u8;
+            core::ptr::write_unaligned(cdb_bytes.wrapping_add(6) as *mut u32, src_val.swap_bytes());
+            *cdb_bytes.wrapping_add(10) |= 0x80;
+            *cdb_bytes = SCSIOP_WRITE12;
+            core::ptr::write_unaligned(
+                srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, CdbLength)).cast::<u8>(),
+                SIZEOF_CDB_WRITE12 as u8,
+            );
         }
     } else {
-        RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).CDB10) as *mut core::ffi::c_void, SIZEOF_CDB_CDB10);
+        RtlZeroMemory(cdb_bytes as *mut core::ffi::c_void, SIZEOF_CDB_CDB10);
         let fp: *const FOUR_BYTE = core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const FOUR_BYTE;
-        (*cdb).CDB10.as_mut().LogicalBlockByte0 = (*fp).__bindgen_anon_1.as_ref().Byte3;
-        (*cdb).CDB10.as_mut().LogicalBlockByte1 = (*fp).__bindgen_anon_1.as_ref().Byte2;
-        (*cdb).CDB10.as_mut().LogicalBlockByte2 = (*fp).__bindgen_anon_1.as_ref().Byte1;
-        (*cdb).CDB10.as_mut().LogicalBlockByte3 = (*fp).__bindgen_anon_1.as_ref().Byte0;
+        *cdb_bytes.wrapping_add(2) = (*fp).__bindgen_anon_1.as_ref().Byte3;
+        *cdb_bytes.wrapping_add(3) = (*fp).__bindgen_anon_1.as_ref().Byte2;
+        *cdb_bytes.wrapping_add(4) = (*fp).__bindgen_anon_1.as_ref().Byte1;
+        *cdb_bytes.wrapping_add(5) = (*fp).__bindgen_anon_1.as_ref().Byte0;
         let fp_num: *const FOUR_BYTE = core::ptr::addr_of!(numTransferBlocks) as *const FOUR_BYTE;
-        (*cdb).CDB10.as_mut().TransferBlocksMsb = (*fp_num).__bindgen_anon_1.as_ref().Byte1;
-        (*cdb).CDB10.as_mut().TransferBlocksLsb = (*fp_num).__bindgen_anon_1.as_ref().Byte0;
-        (*cdb).CDB10.as_mut().OperationCode = if IsReadRequest != 0 { SCSIOP_READ } else { SCSIOP_WRITE };
-        (*srb).CdbLength = SIZEOF_CDB_CDB10 as u8;
+        *cdb_bytes.wrapping_add(7) = (*fp_num).__bindgen_anon_1.as_ref().Byte1;
+        *cdb_bytes.wrapping_add(8) = (*fp_num).__bindgen_anon_1.as_ref().Byte0;
+        *cdb_bytes = if IsReadRequest != 0 { SCSIOP_READ } else { SCSIOP_WRITE };
+        core::ptr::write_unaligned(
+            srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, CdbLength)).cast::<u8>(),
+            SIZEOF_CDB_CDB10 as u8,
+        );
     }
 
-    (*srb).SrbFlags = (*DeviceExtension).SrbFlags;
+    let srb_flags = srb_bytes
+        .wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, SrbFlags))
+        .cast::<u32>();
+    core::ptr::write_unaligned(
+        srb_flags,
+        core::ptr::read_unaligned(core::ptr::addr_of!((*DeviceExtension).SrbFlags)),
+    );
     if ((*originalIrp).Flags & IRP_PAGING_IO) != 0 || ((*originalIrp).Flags & IRP_SYNCHRONOUS_PAGING_IO) != 0 {
-        (*srb).SrbFlags |= SRB_CLASS_FLAGS_PAGING;
+        core::ptr::write_unaligned(
+            srb_flags,
+            core::ptr::read_unaligned(srb_flags) | SRB_CLASS_FLAGS_PAGING,
+        );
     }
 
-    (*srb).SrbFlags |= if IsReadRequest != 0 { SRB_FLAGS_DATA_IN } else { SRB_FLAGS_DATA_OUT };
-    (*srb).SrbFlags |= SRB_FLAGS_ADAPTER_CACHE_ENABLE;
+    core::ptr::write_unaligned(
+        srb_flags,
+        core::ptr::read_unaligned(srb_flags)
+            | if IsReadRequest != 0 { SRB_FLAGS_DATA_IN } else { SRB_FLAGS_DATA_OUT },
+    );
+    core::ptr::write_unaligned(
+        srb_flags,
+        core::ptr::read_unaligned(srb_flags) | SRB_FLAGS_ADAPTER_CACHE_ENABLE,
+    );
 
     if UsePartialMdl == 0 {
-        (*irp).MdlAddress = (*originalIrp).MdlAddress;
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!((*irp).MdlAddress),
+                core::ptr::read_volatile(core::ptr::addr_of!((*originalIrp).MdlAddress)),
+            );
     } else {
-        if (*DeviceExtension).ScratchContext.PartialMdlIsBuilt != 0 {
-            MmPrepareMdlForReuse((*DeviceExtension).ScratchContext.PartialMdl);
+        if core::ptr::read_unaligned(core::ptr::addr_of!((*scratch_context).PartialMdlIsBuilt)) != 0 {
+            MmPrepareMdlForReuse(partial_mdl);
         }
         IoBuildPartialMdl(
             (*originalIrp).MdlAddress,
-            (*DeviceExtension).ScratchContext.PartialMdl,
-            (*srb).DataBuffer,
-            (*srb).DataTransferLength,
+            partial_mdl,
+            core::ptr::read_unaligned(
+                srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, DataBuffer)).cast::<*mut core::ffi::c_void>(),
+            ),
+            core::ptr::read_unaligned(
+                srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, DataTransferLength)).cast::<u32>(),
+            ),
         );
-        (*DeviceExtension).ScratchContext.PartialMdlIsBuilt = 1;
-        (*irp).MdlAddress = (*DeviceExtension).ScratchContext.PartialMdl;
+        core::ptr::write_unaligned(core::ptr::addr_of_mut!((*scratch_context).PartialMdlIsBuilt), 1);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*irp).MdlAddress), partial_mdl);
     }
 
-    (*srb).SrbExtension = originalIrp as *mut core::ffi::c_void;
+    core::ptr::write_volatile(
+        srb_bytes.wrapping_add(core::mem::offset_of!(SCSI_REQUEST_BLOCK, SrbExtension)).cast::<*mut core::ffi::c_void>(),
+        originalIrp as *mut core::ffi::c_void,
+    );
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
+pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     OriginalRequest: *mut core::ffi::c_void,
     TransferSize: u32,

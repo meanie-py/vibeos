@@ -81,10 +81,16 @@ pub unsafe extern "system" fn WPP_INIT_TRACING(
     _RegistryPath: PUNICODE_STRING,
 ) {
 }
-// TracePrint is a C-variadic WPP macro; the callers use the cdecl variadic ABI (caller cleans),
-// so a fixed-arity no-op definition resolves the symbol and is ABI-compatible. No-op = telemetry.
+// TracePrint is a C-variadic WPP macro; keep the no-op shim variadic too so all Rust
+// declarations and calls have the same LLVM function type.
 #[no_mangle]
-pub unsafe extern "C" fn TracePrint(_level: u32, _flag: u32, _fmt: *const i8) {}
+pub unsafe extern "C" fn TracePrint(
+    _level: u32,
+    _flag: u32,
+    _fmt: *const i8,
+    mut _args: ...
+) {
+}
 // EXCLUSIVE_MODE(_CdData) := (_CdData->ExclusiveOwner != NULL)
 #[no_mangle]
 pub unsafe extern "C" fn EXCLUSIVE_MODE(CdData: *mut CDROM_DATA) -> i32 {
@@ -316,7 +322,7 @@ pub unsafe extern "C" fn DEVICE_TYPE_FROM_CTL_CODE(ControlCode: u32) -> u32 { (C
 #[no_mangle]
 pub unsafe extern "C" fn PORT_ALLOCATED_SENSE(_Srb: PVOID) -> u8 { 0 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestGetCurrentStackLocationFlags(_Request: WDFREQUEST) -> u8 { 0 }
+pub unsafe extern "system" fn RequestGetCurrentStackLocationFlags(_Request: WDFREQUEST) -> u8 { 0 }
 // RtlStringCchPrintfW: ntstrsafe inline (no export). Stub returns STATUS_SUCCESS; building the
 // formatted device-interface ref-string is non-fatal to boot (the GUID path still resolves).
 // TODO: real swprintf impl for correct symbolic-link suffixes.
@@ -325,7 +331,7 @@ pub unsafe extern "C" fn RtlStringCchPrintfW(_Dst: *mut u16, _CchDst: usize, _Fo
 // ===== translated scratch.h FORCEINLINEs the c2rust pass left declared-not-defined =====
 // ScratchBuffer_ExecuteCdb := ExecuteCdbEx(.., TimeoutValue=0) (scratch.h FORCEINLINE).
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ExecuteCdb(
+pub unsafe extern "system" fn ScratchBuffer_ExecuteCdb(
     DeviceExtension: PCDROM_DEVICE_EXTENSION,
     OriginalRequest: WDFREQUEST,
     TransferSize: u32,
@@ -345,7 +351,7 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdb(
 }
 // ScratchBuffer_BeginUse / EndUse: the scratch-buffer "soft lock" (NOT atomic per the C comment).
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_BeginUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+pub unsafe extern "system" fn ScratchBuffer_BeginUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
     (*DeviceExtension).ScratchContext.ScratchInUse = usize::MAX as PVOID; // mark in-use
     (*DeviceExtension).ScratchContext.ScratchInUseFileName = core::ptr::null();
     (*DeviceExtension).ScratchContext.ScratchInUseLineNumber = u32::MAX;
@@ -353,7 +359,7 @@ pub unsafe extern "C" fn ScratchBuffer_BeginUse(DeviceExtension: PCDROM_DEVICE_E
     crate::common::RequestClearSendTime((*DeviceExtension).ScratchContext.ScratchRequest);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+pub unsafe extern "system" fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
     (*DeviceExtension).ScratchContext.ScratchInUseFileName = core::ptr::null();
     (*DeviceExtension).ScratchContext.ScratchInUseLineNumber = 0;
     if (*DeviceExtension).ScratchContext.PartialMdlIsBuilt != 0 {
@@ -410,8 +416,8 @@ extern "system" {
     *p = (*p).offset(-1);
     (*Irp).CurrentLocation = ((*Irp).CurrentLocation as i8 - 1) as i8;
 }
-#[no_mangle] pub unsafe extern "C" fn MmGetMdlByteCount(Mdl: PMDL) -> u32 { (*Mdl).ByteCount }
-#[no_mangle] pub unsafe extern "C" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut c_void {
+#[no_mangle] pub unsafe extern "system" fn MmGetMdlByteCount(Mdl: PMDL) -> u32 { (*Mdl).ByteCount }
+#[no_mangle] pub unsafe extern "system" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut c_void {
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as *mut c_void
 }
 #[no_mangle] pub unsafe extern "C" fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS {
@@ -433,7 +439,7 @@ extern "system" {
 #[no_mangle] pub unsafe extern "C" fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN {
     matches!(Status as u32, 0xC000009A|0xC0000010|0xC0000013|0xC0000022|0xC000000E|0xC0000056|0xC0000288|0xC000020C) as BOOLEAN
 }
-#[no_mangle] pub unsafe extern "C" fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32 {
+#[no_mangle] pub unsafe extern "system" fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32 {
     MmProbeAndLockPages(mdl, mode as i8, access as i32);
     // Returns the SEH "exception code": callers do `if status != 0 { break }`, i.e. 0 = success,
     // non-zero = exception. Under DUMMY_PSEH a probe fault bugchecks (no frame to catch) so the

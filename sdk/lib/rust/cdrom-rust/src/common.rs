@@ -98,21 +98,24 @@ const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
     fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
+    fn PAGED_CODE();
+    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
+    fn FREE_POOL(ptr: *mut core::ffi::c_void);
+    fn DeviceMarkActive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, arg1: BOOLEAN, arg2: BOOLEAN);
+    fn FREE_PORT_ALLOCATED_SENSE_BUFFER(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
+    fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
 extern "system" {
-    fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(x: usize);
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn NT_ASSERT(expr: BOOLEAN);
+    fn NT_ASSERT(expr: i32);
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> NTSTATUS;
-    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
 }
 extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
-    fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn InterlockedIncrement(p: *mut i32) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn WHICH_BIT(bps: u32, shift: *mut u8);
@@ -141,9 +144,6 @@ extern "system" {
     fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn DeviceMarkActive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, arg1: u8, arg2: u8);
-    fn FREE_PORT_ALLOCATED_SENSE_BUFFER(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
-    fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> u8;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: i32);
     fn PagedCode();
@@ -513,6 +513,7 @@ pub unsafe extern "system" fn DeviceSetParameter(
     status
 }
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn DeviceSendRequestSynchronously(
     device: WDFDEVICE,
     request: WDFREQUEST,
@@ -765,20 +766,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
             }
 
             // 4.3 send Request to lower driver
-            CdromDbgPrint4(
-                b"[SRB] pre-send ioctl=%x mj=%x srb=%p irp=%p\n\0".as_ptr() as *const i8,
-                ioctlCode as usize,
-                (*nextStack).MajorFunction as usize,
-                Srb as usize,
-                irp as usize,
-            );
             status = DeviceSendRequestSynchronously(Device, request, 1);
-            CdromDbgPrint3(
-                b"[SRB] post-send st=%x srbst=%x dtl=%x\n\0".as_ptr() as *const i8,
-                status as usize,
-                (*Srb).SrbStatus as usize,
-                (*Srb).DataTransferLength as usize,
-            );
 
             if status != STATUS_CANCELLED {
                 // NT_ASSERTs skipped for translation
@@ -787,7 +775,8 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                 // NT_ASSERT(!((*Srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN != 0));
 
                 // 4.4 error process
-                if ((*Srb).SrbStatus & 0x3f) != SRB_STATUS_SUCCESS {
+                let srb_status = core::ptr::read_volatile(core::ptr::addr_of!((*Srb).SrbStatus));
+                if (srb_status & 0x3f) != SRB_STATUS_SUCCESS {
                     let mut retryIntervalIn100ns: i64 = 0;
 
                     retry = RequestSenseInfoInterpret(deviceExtension,
@@ -815,7 +804,8 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
         } // end retry loop
 
         // zpoddInfo check
-        if !zpoddInfo.is_null() && ((*zpoddInfo).MonitorStartStopUnit != 0) && (((*Srb).SrbStatus & 0x3f) == SRB_STATUS_SUCCESS) {
+        let srb_status = core::ptr::read_volatile(core::ptr::addr_of!((*Srb).SrbStatus));
+        if !zpoddInfo.is_null() && ((*zpoddInfo).MonitorStartStopUnit != 0) && ((srb_status & 0x3f) == SRB_STATUS_SUCCESS) {
             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                        b"DeviceSendSrbSynchronously: soft eject detected, device marked as active\n\0".as_ptr() as *const i8);
             DeviceMarkActive(deviceExtension, 1, 0);
@@ -988,7 +978,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
 
     if NT_SUCCESS(status) {
         (*srb).OriginalRequest = WdfRequestWdmGetIrp(startUnitRequest) as *mut core::ffi::c_void;
-        NT_ASSERT((!(*srb).OriginalRequest.is_null()) as BOOLEAN);
+        NT_ASSERT((!(*srb).OriginalRequest.is_null()) as i32);
 
         // WDF_OBJECT_ATTRIBUTES_INIT(&attributes) – expand: zero + set size
         core::ptr::write_bytes(
@@ -2097,9 +2087,11 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
     ReadCapacityBuffer: PREAD_CAPACITY_DATA,
 ) {
     let deviceExtension = DeviceGetExtension(Device);
+    if deviceExtension.is_null() {
+        return;
+    }
     let mut lastSector: u32 = 0;
     let mut bps: u32 = 0;
-    let mut lastBit: u32 = 0;
     let mut bytesPerBlock: u32 = 0;
     let mut errorHappened: i32 = 0;
 
@@ -2128,12 +2120,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
         bps = 2048;
         errorHappened = 1;
     } else {
-        lastBit = u32::MAX;
-        while bps != 0 {
-            lastBit += 1;
-            bps >>= 1;
-        }
-        bps = 1 << lastBit;
+        bps = 1u32 << (31 - bps.leading_zeros());
     }
 
     (*deviceExtension).DiskGeometry.BytesPerSector = bps;
@@ -2675,7 +2662,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
 pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString: *mut i8) -> i32 {
     let length: usize;
     PAGED_CODE();
-    NT_ASSERT((!TargetString.is_null()) as BOOLEAN);
+    NT_ASSERT((!TargetString.is_null()) as i32);
     if StringToMatch.is_null() {
         return 1;
     }
@@ -3011,12 +2998,12 @@ pub unsafe extern "C" fn PerformEjectionControl(
                     break;
                 }
                 fileObjectContext = FileObjectGetContext(fileObject);
-                NT_ASSERT(((!fileObjectContext.is_null())) as BOOLEAN);
+                NT_ASSERT(((!fileObjectContext.is_null())) as i32);
             }
 
-            NT_ASSERT((((*DeviceExtension).LockCount >= 0)) as BOOLEAN);
-            NT_ASSERT((((*DeviceExtension).ProtectedLockCount >= 0)) as BOOLEAN);
-            NT_ASSERT((((*DeviceExtension).InternalLockCount >= 0)) as BOOLEAN);
+            NT_ASSERT((((*DeviceExtension).LockCount >= 0)) as i32);
+            NT_ASSERT((((*DeviceExtension).ProtectedLockCount >= 0)) as i32);
+            NT_ASSERT((((*DeviceExtension).InternalLockCount >= 0)) as i32);
 
             newLockCount = (*DeviceExtension).LockCount;
             newProtectedLockCount = (*DeviceExtension).ProtectedLockCount;
@@ -3049,7 +3036,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 newProtectedLockCount -= 1;
                 countChanged = 1;
             } else if Lock == 0 && LockType == InternalMediaLock {
-                NT_ASSERT(((newInternalLockCount != 0)) as BOOLEAN);
+                NT_ASSERT(((newInternalLockCount != 0)) as i32);
                 newInternalLockCount -= 1;
                 countChanged = 1;
             }
@@ -3383,7 +3370,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
 
                 NT_ASSERT(
                     ((((*DeviceExtension).PowerContext.Srb.SrbStatus as u32) & SRB_STATUS_QUEUE_FROZEN)
-                        == 0) as BOOLEAN,
+                        == 0) as i32,
                 );
 
                 let retry_remaining = retryCount - (*DeviceExtension).PowerContext.RetryCount;
@@ -3444,12 +3431,9 @@ pub unsafe extern "C" fn RequestSend(
         Timeout: 0,
     };
 
-    let _ = DeviceExtension;
-
-    if !(*DeviceExtension).ZeroPowerODDInfo.is_null()
-        && (*(*DeviceExtension).ZeroPowerODDInfo).InZeroPowerState != 0
-    {
-        // empty block
+    let zpodd_info = core::ptr::read_volatile(core::ptr::addr_of!((*DeviceExtension).ZeroPowerODDInfo));
+    if !zpodd_info.is_null() {
+        let _ = core::ptr::read_volatile(core::ptr::addr_of!((*zpodd_info).InZeroPowerState));
     }
 
     if NT_SUCCESS(status) {

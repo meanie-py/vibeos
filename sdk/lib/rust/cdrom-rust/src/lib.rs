@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(c_variadic)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut, unused_unsafe)]
 #![allow(clippy::all)]

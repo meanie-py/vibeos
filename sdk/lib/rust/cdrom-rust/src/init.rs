@@ -54,7 +54,9 @@ extern "system" {
 extern "C" {
     fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
+    fn IoSetDeviceInterfacePropertyData( symbolic_link_name: *const ntkrnl_sys::ddk::UNICODE_STRING, property_key: *const DEVPROPKEY, lcid: i32, flags: u32, property_type: u32, property_size: u32, property_data: *const core::ffi::c_void, ) -> NTSTATUS;
 }
 extern "system" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
@@ -76,10 +78,8 @@ extern "system" {
     fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: i32, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn DeviceErrorHandlerForMmc();
-    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn DeviceSetMediaChangeStateEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, new_state: u32, old_state: *mut u32, );
-    fn IoSetDeviceInterfacePropertyData( symbolic_link_name: *const ntkrnl_sys::ddk::UNICODE_STRING, property_key: *const DEVPROPKEY, lcid: i32, flags: u32, property_type: u32, property_size: u32, property_data: *const core::ffi::c_void, ) -> NTSTATUS;
 }
 extern "C" {
     fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, OriginalRequest: WDFREQUEST, InputBuffer: *mut core::ffi::c_void, InputBufferLength: usize, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
@@ -315,11 +315,17 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
 
     deviceExtension = DeviceGetExtension(Device);
     CdromDbgPrint0(b"[SMIO] enter\n\0".as_ptr() as *const i8);
+    if deviceExtension.is_null() {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    let io_target = core::ptr::read_volatile(core::ptr::addr_of!((*deviceExtension).IoTarget));
+    let is_initialized = core::ptr::read_volatile(core::ptr::addr_of!((*deviceExtension).IsInitialized));
     CdromDbgPrint3(
         b"[SMIO] ext=%p io=%p init=%x\n\0".as_ptr() as *const i8,
         deviceExtension as usize,
-        (*deviceExtension).IoTarget as usize,
-        (*deviceExtension).IsInitialized as usize,
+        io_target as usize,
+        is_initialized as usize,
     );
 
     // 1. Set/retrieve basic information, some of the following operations may depend on it
@@ -443,9 +449,13 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     if NT_SUCCESS(status) {
         // Device successfully added and initialized, increase CdRomCount.
         CdromDbgPrint0(b"[SMIO] 8-CdRomCount++\n\0".as_ptr() as *const i8);
-        (*IoGetConfigurationInformation()).CdRomCount += 1;
+        let config = IoGetConfigurationInformation();
+        if !config.is_null() {
+            let count = core::ptr::read_volatile(core::ptr::addr_of!((*config).CdRomCount));
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*config).CdRomCount), count + 1);
+        }
 
-        (*deviceExtension).IsInitialized = 1;
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*deviceExtension).IsInitialized), 1);
 
         DeviceEnableMainTimer(deviceExtension);
     }

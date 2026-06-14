@@ -43,6 +43,8 @@ extern "C" {
     fn DevicePerfIncrementErrorCount(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn IS_SCSIOP_READ(opcode: u8) -> u8;
     fn DeviceReleaseQueue(device: *mut core::ffi::c_void);
+}
+extern "system" {
     fn NT_ASSERT(Expression: i32);
 }
 

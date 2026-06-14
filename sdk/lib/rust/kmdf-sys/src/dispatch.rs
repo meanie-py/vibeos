@@ -1414,8 +1414,11 @@ pub unsafe fn WdfMemoryCreateFromLookaside(Lookaside: WDFLOOKASIDE, Memory: *mut
 #[inline]
 pub unsafe fn WdfObjectGetTypedContextWorker(Handle: WDFOBJECT, TypeInfo: PCWDF_OBJECT_CONTEXT_TYPE_INFO) -> PVOID {
     let __f: PFN_WDFOBJECTGETTYPEDCONTEXTWORKER = ::core::mem::transmute::<WDFFUNC, PFN_WDFOBJECTGETTYPEDCONTEXTWORKER>(
-        *WdfFunctions_01017.add(_WDFFUNCENUM_WdfObjectGetTypedContextWorkerTableIndex as usize));
-    (__f.unwrap_unchecked())(WdfDriverGlobals, Handle, TypeInfo)
+        *WdfFunctions_01017.wrapping_add(_WDFFUNCENUM_WdfObjectGetTypedContextWorkerTableIndex as usize));
+    match __f {
+        Some(f) => f(WdfDriverGlobals, Handle, TypeInfo),
+        None => core::ptr::null_mut(),
+    }
 }
 
 #[inline]
@@ -1939,8 +1942,11 @@ pub unsafe fn WdfRequestGetInformation(Request: WDFREQUEST) -> ULONG_PTR {
 #[inline]
 pub unsafe fn WdfRequestGetFileObject(Request: WDFREQUEST) -> WDFFILEOBJECT {
     let __f: PFN_WDFREQUESTGETFILEOBJECT = ::core::mem::transmute::<WDFFUNC, PFN_WDFREQUESTGETFILEOBJECT>(
-        *WdfFunctions_01017.add(_WDFFUNCENUM_WdfRequestGetFileObjectTableIndex as usize));
-    (__f.unwrap_unchecked())(WdfDriverGlobals, Request)
+        *WdfFunctions_01017.wrapping_add(_WDFFUNCENUM_WdfRequestGetFileObjectTableIndex as usize));
+    match __f {
+        Some(f) => f(WdfDriverGlobals, Request),
+        None => core::ptr::null_mut(),
+    }
 }
 
 #[inline]
@@ -2691,4 +2697,3 @@ pub unsafe fn WdfDeviceOpenDevicemapKey(Device: WDFDEVICE, KeyName: PCUNICODE_ST
         *WdfFunctions_01017.add(_WDFFUNCENUM_WdfDeviceOpenDevicemapKeyTableIndex as usize));
     (__f.unwrap_unchecked())(WdfDriverGlobals, Device, KeyName, DesiredAccess, KeyAttributes, Key)
 }
-

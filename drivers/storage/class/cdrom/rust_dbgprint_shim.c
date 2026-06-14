@@ -81,12 +81,50 @@ CdromRustScratchBufferAllocate(
 EVT_WDF_REQUEST_COMPLETION_ROUTINE ScratchBuffer_ReadWriteCompletionRoutine;
 
 NTSTATUS
+NTAPI
+CdromRustScratchBufferPerformNextReadWrite(
+#if defined(_M_IX86)
+    PCDROM_DEVICE_EXTENSION DeviceExtension,
+    BOOLEAN FirstTry) __asm__("_ScratchBuffer_PerformNextReadWrite@8");
+#else
+    PCDROM_DEVICE_EXTENSION DeviceExtension,
+    BOOLEAN FirstTry) __asm__("ScratchBuffer_PerformNextReadWrite");
+#endif
+
+NTSTATUS
 RequestSend(
     PCDROM_DEVICE_EXTENSION DeviceExtension,
     WDFREQUEST Request,
     WDFIOTARGET IoTarget,
     ULONG Flags,
     PBOOLEAN RequestSent);
+
+NTSTATUS
+CdromRustScratchAllocatePartialMdl(
+    PCDROM_DEVICE_EXTENSION DeviceExtension)
+{
+    NTSTATUS Status;
+    ULONG TransferLength = 0;
+
+    Status = RtlULongAdd(
+        DeviceExtension->DeviceAdditionalData.MaxPageAlignedTransferBytes,
+        PAGE_SIZE,
+        &TransferLength);
+    if (!NT_SUCCESS(Status))
+    {
+        return STATUS_INTEGER_OVERFLOW;
+    }
+
+    DeviceExtension->ScratchContext.PartialMdlIsBuilt = FALSE;
+    DeviceExtension->ScratchContext.PartialMdl =
+        IoAllocateMdl(NULL, TransferLength, FALSE, FALSE, NULL);
+    if (DeviceExtension->ScratchContext.PartialMdl == NULL)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    return STATUS_SUCCESS;
+}
 
 extern WDF_OBJECT_CONTEXT_TYPE_INFO CDROM_REQUEST_CONTEXT_TYPE_INFO;
 extern WDF_OBJECT_CONTEXT_TYPE_INFO CDROM_DEVICE_EXTENSION_TYPE_INFO;
@@ -1102,6 +1140,33 @@ CdromScratchBufferPerformReadWriteSynchronously(
     return Status;
 }
 
+VOID
+CdromRustScratchCompleteOrContinueReadWrite(
+    PCDROM_DEVICE_EXTENSION DeviceExtension,
+    WDFREQUEST OriginalRequest,
+    NTSTATUS Status,
+    BOOLEAN MayContinue)
+{
+    PCDROM_SCRATCH_READ_WRITE_CONTEXT ReadWriteContext =
+        &DeviceExtension->ScratchContext.ScratchReadWriteContext;
+
+    if (MayContinue && ReadWriteContext->PacketsCount > 0)
+    {
+        Status = CdromRustScratchBufferPerformNextReadWrite(DeviceExtension, TRUE);
+        if (NT_SUCCESS(Status))
+        {
+            return;
+        }
+    }
+
+    ScratchBuffer_EndUse(DeviceExtension);
+    RequestCompletion(
+        DeviceExtension,
+        OriginalRequest,
+        Status,
+        ReadWriteContext->TransferedBytes);
+}
+
 static
 NTSTATUS
 CdromHandleReadWrite(
@@ -1245,7 +1310,7 @@ CdromGapLog(void)
 }
 
 /* Per-read trace gate. 0 = silent (measure real boot speed); 1 = verbose. */
-volatile LONG g_cdromTrace = 0;
+volatile LONG g_cdromTrace = 0; /* 0 = silent (production); 1 = verbose per-read tracing */
 
 /* Ungated forced trace for rare (>500ms) stall events — never floods. */
 ULONG CdromDbgPrintForce2(const char *Format, ULONG_PTR Arg1, ULONG_PTR Arg2)

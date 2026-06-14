@@ -60,7 +60,7 @@ extern "C" {
 extern "C" {
     fn RtlStringCchPrintfW(buf: NTSTRSAFE_PWSTR, cch: usize, fmt: *const u16, ...) -> NTSTATUS;
     fn DeviceClaimRelease(ext: *mut CDROM_DEVICE_EXTENSION, release: u8) -> NTSTATUS;
-    fn DeviceSendRequestSynchronously(device: WDFDEVICE, request: WDFREQUEST, sendFlags: i32) -> NTSTATUS;
+    fn DeviceSendRequestSynchronously(device: WDFDEVICE, request: WDFREQUEST, sendFlags: BOOLEAN) -> NTSTATUS;
     fn CdromRequestCompletion(deviceExtension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, information: ULONG_PTR);
     fn CdromPrepareRequestContext(request: WDFREQUEST, deviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn CdromGetReadWriteVerifyState(
@@ -121,7 +121,6 @@ extern "system" {
     fn DeviceReleaseZPODDResources(devExt: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceZPODDGetPowerupReason( DeviceExtension: PCDROM_DEVICE_EXTENSION, PowerupReason: *mut STORAGE_IDLE_POWERUP_REASON, ) -> NTSTATUS;
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoctlCode: u32, DeviceObject: PDEVICE_OBJECT, );
-    fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn DeviceDisableMainTimer(extension: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceSendPowerDownProcessRequest(extension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, param3: *mut core::ffi::c_void) -> i32;
     fn PoQueryWatchdogTime(LowerPdo: *mut core::ffi::c_void, secondsRemaining: *mut u32) -> i32;
@@ -227,6 +226,9 @@ extern "system" {
     fn RequestHandleUnknownIoctl(Device: WDFDEVICE, Request: WDFREQUEST) -> NTSTATUS;
     fn RequestHandleQueryPropertyRetrieveCachedData( Extension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Params: *const WDF_REQUEST_PARAMETERS, DataLength: *mut usize, ) -> NTSTATUS;
     fn RequestSetReceivedTime(Request: *mut core::ffi::c_void);
+}
+extern "C" {
+    fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION);
 }
 extern "C" {
     fn RequestHandleGetMediaTypeEx( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, dataLength: *mut usize, ) -> NTSTATUS;
@@ -2795,6 +2797,12 @@ pub unsafe extern "system" fn SequentialQueueEvtIoReadWrite(
         Length,
         Request as usize,
     );
+    CdromDbgPrint3(
+        b"[RWQ2] rdlen=%zx rdoff_lo=%zx wdlen=%zx\n\0".as_ptr() as *const i8,
+        requestParameters.Parameters.Read.as_ref().Length,
+        requestParameters.Parameters.Read.as_ref().DeviceOffset as usize,
+        Length,
+    );
 
     // Check if a verify is required before a READ/WRITE
     CdromGetReadWriteVerifyState(
@@ -2858,6 +2866,12 @@ pub unsafe extern "system" fn SequentialQueueEvtIoReadWrite(
             WdfWorkItemEnqueue((*deviceExtension).ReadWriteWorkItem);
             status = STATUS_SUCCESS;
         } else {
+            CdromDbgPrint3(
+                b"[RWQ3] preval rdlen=%zx ptr=%p type=%x\n\0".as_ptr() as *const i8,
+                requestParameters.Parameters.Read.as_ref().Length,
+                core::ptr::addr_of!(requestParameters) as usize,
+                requestParameters.Type as usize,
+            );
             status = RequestValidateReadWrite(deviceExtension, Request, &mut requestParameters);
             if status >= 0 {
                 // NT_SUCCESS

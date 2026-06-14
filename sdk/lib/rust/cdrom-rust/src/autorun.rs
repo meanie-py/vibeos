@@ -18,7 +18,6 @@ extern "C" {
     static GUID_IO_MEDIA_REMOVAL: GUID;
     static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn NT_ASSERT(condition: i32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn SRB_STATUS(srb_status: u8) -> u32;
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
@@ -26,6 +25,9 @@ extern "C" {
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
+}
+extern "system" {
+    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
