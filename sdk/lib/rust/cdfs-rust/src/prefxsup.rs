@@ -298,9 +298,15 @@ pub unsafe extern "C" fn CdFindPrefix(
         }
 
         if ignore_case != 0 {
+            // C: RtlCopyMemory(FinalName.Buffer, ExactCaseName.Buffer, ExactCaseName.Length).
+            // Length is a BYTE count. copy_nonoverlapping on *mut u16 takes a COUNT IN
+            // ELEMENTS, so passing the byte Length copies 2x too many bytes — reading past
+            // "reactos" into the adjacent IgnoreCaseName ("REACTOS") and clobbering the next
+            // path component ("SYSTEM32" -> "EACTOS32"), which broke every dir traversal.
+            // Cast to *u8 so the count is in bytes, matching RtlCopyMemory.
             core::ptr::copy_nonoverlapping(
-                (*prefix_entry).ExactCaseName.FileName.Buffer,
-                final_name.Buffer,
+                (*prefix_entry).ExactCaseName.FileName.Buffer as *const u8,
+                final_name.Buffer as *mut u8,
                 (*prefix_entry).ExactCaseName.FileName.Length as usize,
             );
         }
