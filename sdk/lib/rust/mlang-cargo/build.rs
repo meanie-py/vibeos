@@ -24,7 +24,7 @@
 //! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's libuuid.a
 //! / libwine.a / oldnames.a / libmsvcrtex.a + the spec2def host tool).
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -43,18 +43,15 @@ fn main() {
         .spec2def("dll/win32/mlang/mlang.spec", "mlang.dll")
         // mlang.spec has `stub`-only entries → compile + link mlang_stubs.c.
         .spec_stubs()
-        .static_libs(&[
-            "sdk/lib/uuid/libuuid.a",
-            // libwine.a dropped — mlang-rust's wine surface (TRACE/WARN/FIXME +
-            // IsEqualGUID/min/list_*/vtbl helpers) is already provided
-            // header-free by rust_cohab_stub.c (c_shims above).
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-            // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
-        ])
+        // ZERO cmake-built .a: wine→c_shim (step 6), msvcrtex→.msvcrtex_crt(MsvcrtexKind::Dll),
+        // libuuid.a dropped (mlang-rust defines its own IID/CLSID GUIDs — the
+        // cold-link confirms no uuid symbol referenced), and oldnames.a dropped
+        // (its only alias need, `wcsicmp`, is now a self-contained Rust fn in
+        // mlang-rust). Fully cargo-native floor (+ the import libs below).
         // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
         // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
         // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::Dll)
         .import_lib("dll/win32/oleaut32/oleaut32.spec", "oleaut32.dll", "oleaut32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")

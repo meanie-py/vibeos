@@ -9,11 +9,12 @@ spec2def(mlang.dll mlang.spec ADD_IMPORTLIB)
 # custom_command. mlang-cargo's build.rs (reactos-link, ModuleKind::Win32Dll)
 # compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min/list_* + vtbl
 # dispatch) via c_shims, EXPORTS via spec2def(mlang.spec) + spec_stubs (the
-# spec2def-generated mlang_stubs.c for the `stub`-only entries), reuses the
-# uuid/wine/oldnames/msvcrtex statics, and imports oleaut32 (was a cmake delay
+# spec2def-generated mlang_stubs.c for the `stub`-only entries), compiles the
+# CRT startup in-cargo (.msvcrtex_crt), and imports oleaut32 (was a cmake delay
 # import; collapses to a regular import on llvm-mingw) + gdi32/advapi32/msvcrt/
-# kernel32/ntdll. Version resource (mlang.rc) dropped. The spec2def(...
-# ADD_IMPORTLIB) above STAYS (consumers link the libmlang import lib).
+# kernel32/ntdll. ZERO cmake-built .a: wine→c_shim (step 6), msvcrtex→in-cargo,
+# uuid.a dropped (mlang-rust defines its own GUIDs), oldnames.a dropped
+# (`wcsicmp` is now a self-contained Rust fn). Version resource (mlang.rc)
+# dropped. The spec2def(... ADD_IMPORTLIB) above STAYS (libmlang import lib).
 add_cargo_module(mlang mlang-cargo mlang.dll KIND win32dll
-    BODY_CRATE mlang-rust
-    EXTRA_DEPENDS uuid msvcrtex)
+    BODY_CRATE mlang-rust)

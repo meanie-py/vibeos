@@ -6,9 +6,11 @@
 //!             + 0x1000 align, no `--gc-sections`.
 //!   entry  `DriverEntry@8` — i386 `_DriverEntry@8`; amd64/arm64 `DriverEntry`.
 //!   base   i386/amd64 `0x00010000`; arm64 `0x7FFB00000000`.
-//!   libs   dmilib (ParseSMBiosTables — cmake `target_link_libraries(i8042prt
-//!          dmilib …)`) + ntoskrnl + hal import libs (`add_importlibs(i8042prt
-//!          ntoskrnl hal)`; strcmp is an ntoskrnl cdecl export).
+//!   libs   ntoskrnl + hal import libs (`add_importlibs(i8042prt ntoskrnl
+//!          hal)`; strcmp is an ntoskrnl cdecl export). cmake's
+//!          `target_link_libraries(i8042prt dmilib …)` is GONE — ParseSMBiosTables
+//!          is now a Rust port in i8042prt-rust (crate::dmi), so libdmilib.a is
+//!          no longer linked.
 //!
 //! No guid.c / c_from_compile_db: i8042prt-rust defines its sole poclass GUID
 //! (GUID_DEVICE_SYS_BUTTON) as a Rust-internal `static` used via addr_of!, so
@@ -18,8 +20,8 @@
 //! cmake. The cohab body built with the user target i686-pc-windows-gnu
 //! -sse,-sse2; the kernel softfloat json here is correct for a kernel driver.
 //!
-//! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's
-//! libdmilib.a + the spec2def host tool).
+//! Run `ninja` in build-<arch>/ first (the cargo link reuses the spec2def host
+//! tool). ZERO cmake .a: libdmilib.a dropped (ParseSMBiosTables ported to Rust).
 
 use reactos_link::{Linker, ModuleKind};
 use std::env;
@@ -35,7 +37,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("i8042prt-rust")
-        .static_libs(&["sdk/lib/dmilib/libdmilib.a"])
+        // ZERO cmake .a: libdmilib.a dropped — ParseSMBiosTables is a Rust port
+        // in i8042prt-rust (crate::dmi). The host tool udmihelp keeps the C copy.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

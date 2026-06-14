@@ -32,7 +32,8 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("bootvid-rust")
         .spec2def("drivers/base/bootvid/bootvid.spec", "bootvid.dll")
-        .static_libs(&["sdk/lib/crt/libmemcmp.a"])
+        // ZERO cmake .a: libmemcmp.a dropped (cold-link confirms bootvid.sys
+        // references no memcmp; compiler-builtins-mem covers it if ever).
         // Chainable multi-import (reactos-link Vec<import_lib>): exactly
         // cmake's `add_importlibs(bootvid ntoskrnl hal)`.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")

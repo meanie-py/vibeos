@@ -13,16 +13,27 @@ fn main() {
         other => panic!("kdcom-serial-cargo: unsupported arch {other} (i386/amd64 only)"),
     };
 
+    // cnt-rust-lib float feature: i386's softfloat kernel target omits it,
+    // amd64 enables it (mirrors libcntpr.cmake CNT_RUST_FEATURES + uefildr).
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     Linker::new(target_json)
         .rust_staticlib("kdcom-serial-rust")
         .spec2def("drivers/base/kdcom/kdcom.spec", "kdcom.dll")
-        .static_libs(&[
-            "sdk/lib/cportlib/libcportlib.a",
-            "sdk/lib/cportlib/libcport_rust.a",
-            "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-            "sdk/lib/crt/libmemcmp.a",
-        ])
+        // Cp* serial port → `cport-rust` cargo sibling (.rust_lib), subsuming the
+        // C cohab stub libcportlib.a + the cmake-copied libcport_rust.a (uefildr
+        // precedent). cntpr_rust → `cnt-rust-lib` cargo sibling. libmemcmp →
+        // compiler-builtins-mem.
+        .rust_lib("cport-rust", &[], true)
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // ZERO cmake .a: liblibcntpr.a DROPPED. The ONLY symbol this transport
+        // pulled from it is `cnt_va_next_ptr` — cnt-rust-lib's scanf engine's
+        // irreducible va_arg helper, which lives in cnt-rust's own
+        // `cabi/scanf_trampoline.c` (Rust can't DEFINE variadics on stable). We
+        // compile that one C shell in-cargo via c_from_compile_db (the ntdll-cargo
+        // pattern), replaying cmake's libcntpr flags. No printf wrappers needed —
+        // this transport doesn't sprintf.
+        .c_from_compile_db("libcntpr", &["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

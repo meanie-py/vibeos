@@ -27,10 +27,11 @@ non-Rust floor. In rough order of "most cmake-coupled" → "least":
    in-group archive (lazy pull, byte-equiv to the cmake `.a`). Still C, still
    needs the cmake-generated headers + `compile_commands.json`, but **no
    prebuilt `.a`**. (libcntpr printf/scanf residue; blrtl; usersrv shim.)
-3. **`.msvcrtex_crt()`** — a packaged `c_from_compile_db("msvcrtex", …)` +
-   `asm_archive` for the ~40-file mingw CRT-startup set (entry +
-   `_CRT_INIT`/`_initterm` + security cookie + pei386 relocator + i386/amd64
-   stack-probe/integer asm). Added 2026-06-13; see "Debt" below.
+3. **`.msvcrtex_crt(MsvcrtexKind)`** — the mingw CRT-startup floor. Originally
+   (2026-06-13) a packaged `c_from_compile_db` + `asm_archive`; **now**
+   (2026-06-13, later) the three Rust staticlibs (crt-startup-rust /
+   crt-dllmain-rust / crt0-rust) + the `msvcrtex_asm` archive (the only C-side
+   residue is the i386/amd64 stack-probe/integer asm). See "Debt → DONE" below.
 4. **`.c_shims(&["x.c"])` / `.asm[_archive](…)`** — cargo compiles **header-free**
    C (or assembles asm) in-cargo. Closest to the "no headers" goal. (pseh
    `dummy.c`; the driver cohab stubs; the ntdll/ntoskrnl `*_rust_shims.c`.)
@@ -49,6 +50,31 @@ many. The kernel (`ntoskrnl-cargo`/`ntkrnlmp-cargo`) is now **by far the
 deepest remaining cmake tie** — it alone still reuses 16 cmake-built `.a`s as
 its C-first cohab floor.
 
+**Landed 2026-06-13 (this session):** bootvid + framebuf dropped their last
+`.a` (memcmp / libcntpr → cnt-rust-lib); **basesrv reached ZERO cmake .a**
+(inert pseh+chkstk dropped after an `nm -u` residue probe); lsass dropped
+oldnames. Two genuine C leaf libs were **translated to Rust**: `libdmilib.a`
+(`ParseSMBiosTables` → `i8042prt-rust::dmi`, i8042prt now ZERO .a) and `libnt.a`
+(`NtProcessStartup` → `smss-csrss-rust::entry_point`, **csrss.exe now ZERO .a**).
+The dmilib port also fixed a fabricated SYS_VENDOR/PRODUCT enum-slot bug.
+**csrsrv + smss reached ZERO cmake .a (commit `cf7a6caa082`)**: `libsmlib.a` is
+NOT translation debt — smclient.c is already a Rust port (`smclient.rs`, compiled
+into the body via `pub mod smlib`), smutils.c is dead (compiled nowhere), so the
+cmake target is a comment-only cohab stub. The body defines all 7 Sm* + SmBaseTag
+itself → libsmlib inert; smss's pseh/chkstk likewise inert (residue probe ×3).
+All booted ×3. **userinit + winlogon + services reached ZERO `.static_libs()` .a
+(commit `36af6b0eebb`)**: their reused libwine/libpseh/libchkstk/oldnames all
+proved inert (residue probe ×3 — no PSEH, no undefined stack-probe, nothing from
+wine debug stubs or oldnames CRT aliases). libmsvcrtex stays in-cargo via
+`.msvcrtex_crt()` (separate cross-cutting CRT project, not a `.a` reuse).
+Modules now fully cargo-native (ZERO cmake `.static_libs()` .a): pci, usbd,
+processr, swenum, hidparse, classpnp, cabinet, mlang, bootvid, framebuf,
+i8042prt, basesrv, csrss, csrsrv, smss, **userinit, winlogon, services** (18).
+The entire user-mode spine is now `.a`-free; what remains is boot-critical
+(hal — cgu-fragile guardrail; uefildr/rosload bootloaders keep genuine
+mini_hal+libcntpr), unvalidatable (KD transports — not smoke-covered), or active
+other-agent lanes (kernel ntoskrnl/ntkrnlmp 16-.a floor, win32k/winsrv, ntdll librtl).
+
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
 
 Distinct cmake-built archives still on a cargo link line, with consumers.
@@ -56,30 +82,30 @@ Sorted roughly by how entrenched (consumer count / centrality):
 
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
-| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial, rosload, uefildr (11; classpnp dropped it 2026-06-13) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). Tail = i386 no-SSE float + a few leaves. classpnp needed NO residue (cnt-rust-lib + compiler-builtins sufficed); the rest may follow. |
-| `sdk/lib/pseh/libpseh.a` | kernel ×2, hal, csrsrv, smss, basesrv, winsrv, win32k (8) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); remaining consumers can follow — trivial. |
-| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), smss, basesrv, classpnp (i386+arm64), winlogon, services, winsrv, win32k (i386+arm64), uefildr (11) | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). → `global_asm!` crate or asm_archive everywhere. |
-| `sdk/lib/crt/libcntpr_rust.a` | hal, win32k, winsrv, framebuf, kdgdb, kdvm, kdcom-serial (7) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel already do). |
-| `sdk/lib/crt/libmemcmp.a` | hal, win32k, bootvid, kdcom, kdgdb, kdvm (6) | One C fn. The 8 driver/DLL modules already dropped it (compiler-builtins-mem). Remaining = same one-line drop. |
-| `sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a` | lsass, userinit, winlogon, services, cabinet, mlang (6) | `_name`→`name` MSVC alias archive. Tiny; absorb as c_shim/Rust statics. |
+| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, rosload, uefildr (classpnp + all 4 KD transports dropped it) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). NOT a softfloat gap — the float/printf/scanf CORE is already Rust (streamout engine incl. format_float, floatcvt, math, strtod, scanf). What stays C = the **irreducible variadic plumbing** (thin `va_start; streamout(...)` shells sprintf/_snprintf/… + scanf's `cnt_va_next_ptr`); Rust can't DEFINE C-variadics on stable. ELIMINATION (done for ntdll + all 4 KD transports): `.c_from_compile_db("libcntpr", &[shells + cnt-rust scanf_trampoline.c])` then drop the `.a`. |
+| `sdk/lib/pseh/libpseh.a` | kernel ×2, win32k (3) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss + winlogon + services dropped it 2026-06-13; hal + winsrv 2026-06-14** (probe: zero PSEH-runtime refs in the Rust body — dummy.c provides only `_SEH2_Volatile0`/`_SEH2_VolatileExceptionCode`). Remaining (kernel ×2, win32k) can follow — trivial. |
+| `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: no >4KB-frame refs; uefildr i386 also probes inert but kept — bootloader risk). → `global_asm!` crate or asm_archive everywhere. |
+| `sdk/lib/crt/libcntpr_rust.a` | win32k, framebuf, kdgdb, kdvm, kdcom-serial (5) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel/**hal + winsrv 2026-06-14** already do). |
+| `sdk/lib/crt/libmemcmp.a` | win32k, bootvid, kdcom, kdgdb, kdvm (5) | One C fn. The 8 driver/DLL modules + **hal (2026-06-14)** already dropped it (compiler-builtins-mem, build-std). Remaining = same one-line drop. |
+| ~~`sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a`~~ | ~~userinit, winlogon, services~~ | `_name`→`name` MSVC alias archive. **All cargo consumers dropped it: cabinet/mlang (Push A), lsass + userinit + winlogon + services 2026-06-13** (probe: zero oldname refs ×3). No cargo module reuses it now. |
 | `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. `cport-rust` exists (uefildr uses it via `.rust_lib`). |
-| `sdk/lib/3rdparty/libwine/libwine.a` | userinit, winlogon (2) | 3rd-party wine glue (~1.1K LOC). cabinet/mlang already dropped it (cohab c_shim covers their surface); winlogon/userinit still pull it. |
-| `sdk/lib/vcruntime/libsetjmp.a` | kernel ×2, hal (3) | setjmp/longjmp. ntdll amd64 assembles it from source asm + Rust glue (no `.a`). |
-| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter (~406 LOC C). Untranslated. |
+| ~~`sdk/lib/3rdparty/libwine/libwine.a`~~ | ~~userinit, winlogon~~ | 3rd-party wine glue (~1.1K LOC). **All cargo consumers dropped it: cabinet/mlang (cohab c_shim), userinit + winlogon 2026-06-13** (probe: inert ×3 — bodies reference none of wine's debug-channel stubs). No cargo module reuses it now. |
+| `sdk/lib/vcruntime/libsetjmp.a` | hal (1) | setjmp/longjmp. **✅ Rust (`setjmp-rust`, commit `a0f85f894bb`)** for the kernel — global_asm! save/restore (disasm-identical to the cmake asm) + Rust longjmp. DROPPED from both kernels' static_libs: amd64 links setjmp-rust, i386 (DUMMY_PSEH) + arm64 reference no setjmp (inert). hal still links the C `.a`. |
+| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — cohab-wired (kernel keeps the `.a` name as a cohab stub). hal still links the C. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
 | `sdk/lib/cmlib/libcmlib.a` | kernel ×2 | Config-Manager hive lib. **`cmlib-rust` is the translation** (linked alongside via mechanism 5); the cmake `.a` lingers as cohab placeholder. |
 | `drivers/base/…/libkdcom.a` | kernel ×2 | KD COM transport. `kdcom-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `drivers/base/…/libbootvid.a` | kernel ×2 | Boot video. `bootvid-rust` is the standalone Rust flip; kernel keeps the `.a`. |
-| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue (~440 LOC C). Untranslated. |
-| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers (~345 LOC C). Untranslated. |
-| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC C). Untranslated. |
-| `sdk/lib/{wdmguid,poguid,ioevent}.a` | kernel ×2 | GUID-only (~20/14/9 LOC). Trivial `#[link_section]` Rust statics. |
+| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — cohab-wired (kernel keeps the `.a` name). |
+| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers. **✅ Rust (`lsalib-rust`)** — cohab-wired. |
+| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)** — cohab-wired. |
+| ~~`sdk/lib/{wdmguid,poguid,ioevent}.a`~~ | ~~kernel ×2~~ | GUID data libs. **✅ Rust (`guids-rust`, commit `8e61fee3e68`)** — 217 deduped GUID statics, `.rust_lib()`'d into both kernels, the 3 cmake `.a` DROPPED from static_libs. cold smoke ×3. C kept on disk for non-kernel cmake consumers. |
 | `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
-| `sdk/lib/nt/libnt.a` | csrss, smss (2) | NT user-mode entry lib. Untranslated. |
-| `sdk/lib/smlib/libsmlib.a` | csrsrv, smss (2) | SM client lib. Untranslated. |
+| ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
+| ~~`sdk/lib/smlib/libsmlib.a`~~ | ~~csrsrv, smss~~ | **✅ Resolved 2026-06-13 (`cf7a6caa082`)** — NOT translation debt: smclient.c is already a Rust port (`smss-csrss-rust/src/smlib/smclient.rs`, compiled into the body via `pub mod smlib`); smutils.c is dead (compiled nowhere). The cmake target is a comment-only cohab stub; the body defines all 7 Sm* + SmBaseTag, so it was inert (residue probe ×3). Dropped from both build.rs → csrsrv + smss ZERO cmake .a. C kept on disk. |
 | `sdk/lib/uuid/libuuid.a` | winsrv, mlang (2) | GUID/IID constants. Tiny; data. |
 | `sdk/lib/cportlib/libcport_rust.a` | kdcom, kdgdb, kdcom-serial (3) | **Already Rust** (cmake-built). Swap for `.rust_lib`. |
-| `sdk/lib/dmilib/libdmilib.a` | i8042prt (1) | DMI/SMBIOS parse. Untranslated. |
+| ~~`sdk/lib/dmilib/libdmilib.a`~~ | ~~i8042prt~~ | **✅ Rust 2026-06-13** — `ParseSMBiosTables` ported to `i8042prt-rust::dmi` (also fixed a fabricated SYS_VENDOR/PRODUCT slot-index bug). i8042prt now ZERO cmake .a; the host tool udmihelp keeps the C copy. |
 | `sdk/lib/dxguid/libdxguid.a` | win32k (1) | DirectX GUIDs. Data. |
 | `win32ss/libwin32ksys.a`, `win32ss/libwin32k_residue.a` | winsrv / win32k | win32k C residue — own track (`win32k-translation-audit.md`). |
 | `subsystems/.../libbasesrv.a`, `.../libcsrsrv.a`, `win32ss/.../libconcfg_rust.a` | winsrv | csr server C bodies (+ one already-Rust `concfg`). |
@@ -89,21 +115,21 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | Lib | Then | Now |
 |---|---|---|
 | `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
-| `liblibcntpr` | C (~59K) | C residual `.a` (11 consumers; classpnp dropped it 2026-06-13) + `cnt-rust-lib` Rust half. i386 float tail remains for the rest. |
+| `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD dropped it) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
 | `libcmlib` | C | `cmlib-rust` is the translation (kernel links both; `.a` = cohab placeholder). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
-| `librossym` | C (~3K) | unchanged C. |
-| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, 8 still reuse `.a`. |
-| `libsetjmp` | C | kernel/hal reuse; ntdll amd64 in-cargo asm. |
+| `librossym` | C (~3K) | **Rust** (`rossym-rust`); kernel `.a` cohab. |
+| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13, 5 still reuse `.a` (kernel ×2, hal, winsrv, win32k). |
+| `libsetjmp` | C | **Rust** (`setjmp-rust`) for the kernel (amd64 global_asm!+Rust; i386/arm64 inert, dropped). hal still C. |
 | `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). |
 | `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
-| `libcsq` | C (~440) | unchanged C. |
-| `libarbiter` | C (~406) | unchanged C. |
-| `libntlsalib` | C (~345) | unchanged C. |
-| `libchkstk` | C/asm | hybrid: 11 reuse `.a`; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
+| `libcsq` | C (~440) | **Rust** (`csq-rust`); kernel `.a` cohab. |
+| `libarbiter` | C (~406) | **Rust** (`arbiter-rust`); kernel `.a` cohab, hal still C. |
+| `libntlsalib` | C (~345) | **Rust** (`lsalib-rust`); kernel `.a` cohab. |
+| `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss/winlogon/services dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
 | `libkdcom` | C (~116) | **Rust** (`kdcom-rust`); kernel `.a` reuse. |
-| `libwdmguid`/`libpoguid`/`libioevent` | C (~43 total) | unchanged; trivial GUID-statics flip. |
+| `libwdmguid`/`libpoguid`/`libioevent` | C | **Rust** (`guids-rust`, 217 GUID statics); DROPPED from both kernels' static_libs (commit `8e61fee3e68`). C on disk for non-kernel cmake consumers. |
 | `rtl-rust` (umbrella) | Rust | Rust, via `.rust_lib` (no cmake reuse) in kernel ×2 + ntdll. |
 
 ## Translation debt (C that's compiled in-cargo but NOT yet Rust)
@@ -111,15 +137,25 @@ Sorted roughly by how entrenched (consumer count / centrality):
 Mechanism (2)/(3)/(4) C is off the prebuilt-`.a` hook but is still C — owed
 translation for the "all-Rust, no-headers" endpoint:
 
-- **msvcrtex CRT-startup — ~3,623 LOC C** (`sdk/lib/crt/startup/*.c` + a few
-  `math/misc/stdio/stdlib/wstring` TUs), now `.msvcrtex_crt()`-compiled in-cargo
-  for cabinet/mlang/lsass/winlogon/services/userinit. It's the mingw runtime
-  entry glue: `DllMainCRTStartup`/`[w]WinMainCRTStartup`, `_CRT_INIT` +
+- ✅ **msvcrtex CRT-startup → Rust (DONE 2026-06-13)** — the mingw runtime
+  entry glue (`DllMainCRTStartup`/`[w]WinMainCRTStartup`, `_CRT_INIT` +
   `.CRT$XI*/XC*` `_initterm` walk, `__security_init_cookie`,
-  `_pei386_runtime_relocator`, TLS callbacks, `__main`, `_fltused`, i386/amd64
-  `__chkstk`/`_alldiv`/`_aulldiv`. **Debt: port to Rust** (hard — linker-section
-  initializer arrays + CRT-init semantics; lower priority, runtime-untested by
-  smoke except via the spine exes).
+  `_pei386_runtime_relocator`, TLS callbacks + key-dtor registry, atexit table,
+  PE-section helpers, the gnu top-level exception handler + WIN64 ehandler
+  table, `__main`, `_fltused`, and the math/misc/ctype/_invalid_parameter/
+  rand_s/mbrtowc/wcrtomb leaves) is now three Rust staticlibs:
+  `crt-startup-rust` (the floor; exe/wexe/dll mutually-exclusive features),
+  `crt-dllmain-rust` (overridable default DllMain/DllEntryPoint), `crt0-rust`
+  (overridable GUI main/wmain→WinMain bridges). `.msvcrtex_crt(MsvcrtexKind)`
+  wires them. Only the i386/amd64 MSVC stack-probe + 64-bit integer asm
+  (`__chkstk`/`_alldiv`/`_aulldiv`/i386 ceilf/floorf) stays asm (`msvcrtex_asm`
+  archive). `dbgrpt.cpp` (`_CrtDbgReport*`) left untranslated — lazy-pulled
+  only by a `_DEBUG` libstdc++, unreferenced in release. Boot ×3 validated.
+  Key gotchas: `.CRT$X*` `#[link_section]` + `#[used]` boundary arrays
+  (lld $-sorts them); msvcrt dllimport DATA (`_acmdln`/`__initenv`/…) via the
+  import lib's `__imp_*` slots; **i686-windows-gnu PREPENDS `_` to
+  `#[link_name]`** (i386 names carry one fewer leading underscore); `exp2`
+  base in a `static mut` (not `black_box`, whose f64 ABI needs SSE).
 - **libcntpr i386 float residual** — the no-SSE tail (`nexttowardf`, dead
   `exp2f`/`_invoke_matherr`, `winesup`/`wctype`) → **step 8**. (Possible tie-in:
   the cnt-rust x87-return/`floatbits.rs` softfloat shim.)
@@ -141,7 +177,8 @@ translation for the "all-Rust, no-headers" endpoint:
    it dropped `liblibcntpr.a` entirely (no C residue needed; cnt-rust-lib +
    compiler-builtins cover it). The other 11 `liblibcntpr.a` consumers remain.
 5. **Kernel deep-C** (arbiter/csq/ntlsalib/rossym/…): per-lib translation arcs.
-6. **msvcrtex CRT-startup → Rust** (lower priority; the hard CRT-init port).
+6. ✅ **msvcrtex CRT-startup → Rust**: DONE 2026-06-13 (crt-startup-rust +
+   crt-dllmain-rust + crt0-rust; boot ×3). See the debt note above.
 
 ## Definition of done
 

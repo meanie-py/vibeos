@@ -26,31 +26,26 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
-    let (target_json, entry, image_base, chkstk): (&str, &str, u64, bool) =
-        match arch.as_str() {
-            "x86" => ("i686-kernel.json", "_DriverEntry@8", 0x0001_0000, true),
-            "x86_64" => ("x86_64-kernel.json", "DriverEntry", 0x0001_0000, false),
-            "aarch64" => ("aarch64-kernel.json", "DriverEntry", 0x7FFB_0000_0000, true),
-            o => panic!("classpnp-cargo: unsupported arch {o} (i386/amd64/arm64 only)"),
-        };
+    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
+        "x86" => ("i686-kernel.json", "_DriverEntry@8", 0x0001_0000),
+        "x86_64" => ("x86_64-kernel.json", "DriverEntry", 0x0001_0000),
+        "aarch64" => ("aarch64-kernel.json", "DriverEntry", 0x7FFB_0000_0000),
+        o => panic!("classpnp-cargo: unsupported arch {o} (i386/amd64/arm64 only)"),
+    };
 
     // cnt-rust-lib feature set: amd64/arm64 enable `float` (the forbid-unsafe
     // floatcvt/scanf cabi surface); i386 omits it (no-SSE-illegal by-value f64
     // returns stay C). Mirrors libcntpr.cmake's CNT_RUST_FEATURES + ntdll-cargo.
     let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
-    // Remaining cmake C floor (C-first link order): only chkstk asm now.
-    // liblibcntpr.a is GONE (step 8) — cnt-rust-lib (the Wave MATH-i386 no-SSE
-    // softfloat math + the whole CRT surface) + compiler-builtins-mem cover
-    // every symbol classpnp referenced from it; the cold-link is the oracle
-    // (drops clean ×3, no c_from_compile_db residue / cntpr_asm needed, unlike
-    // ntdll which exports the _CIxxx/printf/scanf residue). ntoskrnl_vista
-    // (step 5) is the ntoskrnl-vista-rust sibling below; pseh/cntpr_rust/memcmp
-    // absorbed below too. (chkstk = a separate lib, its own plumbing swap.)
-    let mut static_libs: Vec<&str> = vec![];
-    if chkstk {
-        static_libs.push("sdk/lib/crt/libchkstk.a");
-    }
+    // ZERO cmake-built .a — classpnp links a fully cargo-native floor. Each
+    // former reuse is gone: liblibcntpr.a (step 8, cnt-rust-lib + the Wave
+    // MATH-i386 no-SSE softfloat math cover it), libchkstk.a (clang_rt.builtins
+    // provides __chkstk on all 3 arches — cold-link confirms nothing else
+    // referenced it), ntoskrnl_vista (→ ntoskrnl-vista-rust sibling below),
+    // pseh (→ dummy.c c_shim), cntpr_rust (→ cnt-rust-lib), memcmp
+    // (compiler-builtins-mem). The cold-link is the oracle (clean ×3).
+    let static_libs: Vec<&str> = vec![];
 
     let mut linker = Linker::new(target_json)
         .rust_staticlib("classpnp-rust")

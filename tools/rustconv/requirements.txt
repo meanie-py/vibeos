@@ -1,9 +1,10 @@
 # rustconv runtime dependencies.
 # Install:  pip install -r requirements.txt   (into the repo .venv)
 
-# C parsing (Stage 1 scanner / call-graph)
+# C/C++ parsing (Stage 1 scanner / call-graph)
 tree-sitter>=0.24
 tree-sitter-c>=0.24
+tree-sitter-cpp>=0.23   # L2 C++ tier (uniata etc.) — see scanner._resolve_pp_conditionals
 
 # LLM backends
 anthropic>=0.97          # Claude (Anthropic) backend

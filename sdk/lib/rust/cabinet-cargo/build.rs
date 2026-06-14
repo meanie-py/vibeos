@@ -19,7 +19,7 @@
 //! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's libwine.a
 //! / libzlib.a / libmsvcrtex.a / oldnames.a + the spec2def host tool).
 
-use reactos_link::{Linker, ModuleKind};
+use reactos_link::{Linker, ModuleKind, MsvcrtexKind};
 use std::env;
 
 fn main() {
@@ -36,20 +36,14 @@ fn main() {
         // wine debug no-ops + HRESULT_FROM_WIN32 cabinet-rust calls (header-free).
         .c_shims(&["dll/win32/cabinet/rust_cohab_stub.c"])
         .spec2def("dll/win32/cabinet/cabinet.spec", "cabinet.dll")
-        .static_libs(&[
-            // libwine.a dropped — cabinet-rust's only wine surface is the
-            // TRACE/WARN/ERR/FIXME/debugstr_a debug shims, already provided
-            // header-free by rust_cohab_stub.c (c_shims above).
-            // libzlib.a dropped — cabinet-rust now depends on the pure-Rust
-            // libz-rs-sys (zlib-rs) crate for the deflate* C symbols (compress/
-            // MSZIP); FDI inflate was already cabinet's own Rust. (step 7)
-            // libmsvcrtex.a dropped → compiled in-cargo via .msvcrtex_crt() below.
-            "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
-        ])
+        // ZERO cmake-built .a: wine→c_shim (step 6), zlib→libz-rs-sys (step 7),
+        // msvcrtex→.msvcrtex_crt(MsvcrtexKind::Dll), and oldnames.a dropped — the cold-link
+        // confirms cabinet-rust references none of its _name aliases. The
+        // floor is now fully cargo-native (+ msvcrt/kernel32/ntdll imports).
         // The mingw CRT-startup floor (entry _DllMainCRTStartup@12 + _CRT_INIT +
         // security cookie + pei386 relocator + i386 chkstk/integer intrinsics),
         // compiled in-cargo from msvcrtex.cmake's sources instead of the cmake .a.
-        .msvcrtex_crt()
+        .msvcrtex_crt(MsvcrtexKind::Dll)
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
