@@ -276,6 +276,14 @@ def mm_read_posts(channel_id: str, since_ms: int) -> list[dict]:
     return out
 
 
+def mm_latest_create_at(channel_id: str):
+    """Newest post's create_at (server clock) — for skew-immune cursor init. None if N/A."""
+    data = _mm_get(f"/channels/{channel_id}/posts?per_page=1")
+    if not data or not data.get("order"):
+        return None
+    return data["posts"][data["order"][0]].get("create_at")
+
+
 def is_high_priority(message: str, agent_name: str | None) -> bool:
     m = (message or "").lower()
     if any(t in m for t in ("@here", "@channel", "@all")):
@@ -296,8 +304,11 @@ def _get_cursor(conn, session_id, channel_id):
     return row
 
 
-def _init_cursor(conn, session_id, channel_id, at=None):
-    at = at if at is not None else now_ms()
+def _init_cursor(conn, session_id, channel_id):
+    if conn.execute("SELECT 1 FROM cursors WHERE session_id=? AND channel_id=?",
+                    (session_id, channel_id)).fetchone():
+        return  # already initialized — don't re-hit the network on every poll
+    at = mm_latest_create_at(channel_id) or now_ms()  # server clock, immune to skew
     conn.execute(
         """INSERT INTO cursors(session_id,channel_id,read_at,mention_at,last_count)
            VALUES(?,?,?,?,0) ON CONFLICT(session_id,channel_id) DO NOTHING""",
@@ -554,6 +565,15 @@ def cmd_say(args):
     print("posted to #swarm" if ok else "post failed (mattermost not configured/reachable)")
 
 
+def cmd_name(args):
+    """Print this agent's resolved name (for the channel server). Empty if unknown."""
+    conn = connect()
+    if not args.session:
+        args.session = _session_for_cwd(conn)
+    name = _agent_name(conn, args.session, args.transcript) if args.session else None
+    print(name or "")
+
+
 def cmd_whoami(args):
     print(resolve_name(args.transcript, args.session) or "(unknown)")
 
@@ -641,6 +661,10 @@ def main(argv=None):
     psay.add_argument("text")
     psay.add_argument("--session")
     psay.add_argument("--as", dest="as_name", help="username if no session in registry")
+
+    pn = sub.add_parser("name"); pn.set_defaults(fn=cmd_name)
+    pn.add_argument("--session")
+    pn.add_argument("--transcript")
 
     pw = sub.add_parser("whoami"); pw.set_defaults(fn=cmd_whoami)
     pw.add_argument("--session")

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mattermost-swarm": {
+      "command": "node",
+      "args": ["tools/swarm/channel/mattermost.mjs"]
+    }
+  }
+}
