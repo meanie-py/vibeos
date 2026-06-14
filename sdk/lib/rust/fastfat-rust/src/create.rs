@@ -140,8 +140,8 @@ extern "system" {
     fn KeSetEvent(Event: *mut KEVENT, Increment: i32, Wait: i32);
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatStringTo8dot3(IrpContext: *mut IRP_CONTEXT, OemName: OEM_STRING, Constant: *mut u8);
-    fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> NTSTATUS;
-    fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> NTSTATUS;
+    fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FsRtlDissectName( Name: _UNICODE_STRING, FirstPart: *mut _UNICODE_STRING, RemainingPart: *mut _UNICODE_STRING, );
     fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn IoSetHardErrorOrVerifyDevice(Irp: *mut IRP, RealDevice: *mut DEVICE_OBJECT);
@@ -543,13 +543,14 @@ pub unsafe extern "system" fn FatCommonCreate(
     let mut abnormal_termination = false;
 
     'main_try: loop {
-        // FatVerifyVcb may raise; treat as return status for simulation
-        let vcb_status = FatVerifyVcb(IrpContext, Vcb);
-        if vcb_status != STATUS_SUCCESS {
-            Iosb.__bindgen_anon_1.Status = vcb_status;
-            abnormal_termination = true;
-            break 'main_try;
-        }
+        // FatVerifyVcb is a VOID function — it FatRaiseStatus()es on a bad/verify
+        // volume and returns nothing otherwise. The old code did `let vcb_status =
+        // FatVerifyVcb(...)` and tested it, but there is no return value, so
+        // vcb_status was the garbage in x0 (0xffffffff on arm64) → EVERY create
+        // broke out of 'main_try with status -1 at the very top (smss/ntdll failed
+        // to map → BUGCHECK 0x64). Under USE_DUMMY_PSEH the C _SEH2_EXCEPT is dead;
+        // just call and continue. (Same void-as-status bug as FatVerifyFcb below.)
+        FatVerifyVcb(IrpContext, Vcb);
 
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 {
             DebugTrace(0, 0, b"Volume is locked\n\0".as_ptr() as *const i8);
@@ -616,17 +617,8 @@ pub unsafe extern "system" fn FatCommonCreate(
             NT_ASSERT((Vcb == RelatedVcb) as i32);
             (*FileObject).Vpb = (*RelatedFileObject).Vpb;
 
-            // Simulate FatVerifyFcb with exception handling
-            {
-                let ret = FatVerifyFcb(IrpContext, RelatedDcb);
-                if ret == STATUS_FILE_INVALID {
-                    FatResetExceptionState(IrpContext);
-                } else if ret != STATUS_SUCCESS {
-                    Iosb.__bindgen_anon_1.Status = ret;
-                    abnormal_termination = true;
-                    break 'main_try;
-                }
-            }
+            // FatVerifyFcb is VOID (raises on bad Fcb; DUMMY_PSEH except is dead). See fix note above.
+            FatVerifyFcb(IrpContext, RelatedDcb);
             ParentDcb = RelatedDcb;
         } else {
             if (*FileObject).FileName.Length == core::mem::size_of::<u16>() as u16 &&
@@ -653,17 +645,8 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             ParentDcb = (*Vcb).RootDcb;
 
-            // Verify root Dcb with exception handling
-            {
-                let ret = FatVerifyFcb(IrpContext, ParentDcb);
-                if ret == STATUS_FILE_INVALID {
-                    FatResetExceptionState(IrpContext);
-                } else if ret != STATUS_SUCCESS {
-                    Iosb.__bindgen_anon_1.Status = ret;
-                    abnormal_termination = true;
-                    break 'main_try;
-                }
-            }
+            // FatVerifyFcb is VOID (raises on bad Fcb; DUMMY_PSEH except is dead). See fix note above.
+            FatVerifyFcb(IrpContext, ParentDcb);
         }
 
         if (*FileObject).FileName.Length != 0 &&
@@ -737,17 +720,15 @@ pub unsafe extern "system" fn FatCommonCreate(
                 RemainingPart.Buffer = RemainingPart.Buffer.offset(1);
             }
 
-            // Verify the Fcb reached with exception handling
-            {
-                let ret = FatVerifyFcb(IrpContext, Fcb);
-                if ret == STATUS_FILE_INVALID {
-                    FatResetExceptionState(IrpContext);
-                } else if ret != STATUS_SUCCESS {
-                    Iosb.__bindgen_anon_1.Status = ret;
-                    abnormal_termination = true;
-                    break 'main_try;
-                }
-            }
+            // Verify the Fcb. BUG FIX (arm64 every-create-fails): FatVerifyFcb is
+            // a VOID function — it FatRaiseStatus()es on a bad/needs-verify Fcb and
+            // returns nothing on a good one. The old code did `let ret =
+            // FatVerifyFcb(...)` and tested `ret`, but there is no return value, so
+            // `ret` was the garbage left in x0 (0xffffffff on arm64) → every create
+            // broke out with status -1 (smss/ntdll failed to load → BUGCHECK 0x64).
+            // Under USE_DUMMY_PSEH the C `_SEH2_EXCEPT` (STATUS_FILE_INVALID reset /
+            // re-raise) is dead code; on a good Fcb we simply call and continue.
+            FatVerifyFcb(IrpContext, Fcb);
 
             if (*Fcb).FcbCondition == FcbGood as u32 {
                 if IsPagingFile && FirstLoop && NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 &&
@@ -1852,7 +1833,6 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
         }
         DebugTrace(-1, (Dbg) as i32, b"FatOpenExistingFcb -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8, Iosb.__bindgen_anon_1.Status);
     }
-
     Iosb
 }
 
