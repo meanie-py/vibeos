@@ -69,6 +69,7 @@ members = [
     "processr-rust",
     "csq-rust",
     "guids-rust",
+    "setjmp-rust",
     "arbiter-rust",
     "lsass-sys",
     "lsalib-rust",

@@ -139,7 +139,10 @@ fn main() {
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
         // (cntpr_residue / cntpr_asm below). See cargo-drive-unification-plan.md.
-        "sdk/lib/vcruntime/libsetjmp.a",
+        // libsetjmp.a DROPPED → `setjmp-rust` (amd64 .rust_lib below). i386
+        // (DUMMY_PSEH) + arm64 don't reference setjmp at all (drop-test: link
+        // clean without it); amd64's SEH unwind path needs _setjmp/_setjmpex/
+        // longjmp. C kept on disk for hal/ftfd cmake consumers.
         // wdmguid/poguid/ioevent (the 3 cmake C GUID libs) → `guids-rust`
         // (.rust_lib below): 217 deduped #[no_mangle] GUID data constants. C
         // kept on disk for any remaining cmake consumers.
@@ -279,6 +282,12 @@ fn main() {
     }
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
+    }
+    // amd64 only: the SEH unwind path links _setjmp/_setjmpex/longjmp →
+    // setjmp-rust (global_asm! save/restore, disasm-identical to the cmake asm,
+    // + Rust longjmp). libsetjmp.a dropped. i386/arm64 don't reference setjmp.
+    if arch == "x86_64" {
+        linker = linker.rust_lib("setjmp-rust", &[], true);
     }
     linker
         .static_libs(&static_libs)

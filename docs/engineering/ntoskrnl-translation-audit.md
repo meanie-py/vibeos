@@ -1,5 +1,61 @@
 # ntoskrnl C→Rust Translation Audit
 
+## 2026-06-13 — MILESTONE: the ntoskrnl body is 100% Rust at link time
+
+The shipping `ntoskrnl.exe` (and `ntkrnlmp.exe`) links **zero** ntoskrnl C
+objects for its body. Verified mechanically:
+
+- `ntoskrnl-cargo/build.rs` pulls in no `libntoskrnl.a` and no per-`.dir`
+  `.obj` glob; `reactos-link` has no auto-include of cmake ntoskrnl objects.
+  The only `static_libs` are *helper* archives (hal, kdcom, bootvid, cmlib,
+  cportlib, rtl, rossym, arbiter, csq, lsalib, ntoskrnl_vista) — cohab
+  placeholders or genuine non-ntoskrnl-body libs — plus the irreducible
+  CRT/SEH/asm floor compiled in-cargo (`c_from_compile_db` printf/scanf
+  shells + i386 x87 `_CIxxx` math + amd64 SEH personality, `c_shims`).
+- Every core kernel symbol resolves to Rust: `NtCreateFile`/`IopParseDevice`
+  → `iomgr/file.rs`, `MmCreateProcessAddressSpace` → `ARM3/procsup.rs`,
+  `KeBugCheckEx` → `ps/psmgr.rs`, `KdpSafeReadMemory` → `kdbg/i386_dis.rs`.
+- Subsystem dirs are 1:1: e.g. all 26 `io/iomgr/*.c` have `.rs` twins.
+
+The **337 `.c` files still in `ntoskrnl/`** are inert reference copies (kept
+per the never-delete-a-translation rule). The 5 basename "gaps" a naive scan
+flags are all false positives: `priv.c`→`priv_.rs`, `i386-dis.c`→`i386_dis.rs`,
+`kdmemsup.c`→`i386_dis.rs`, `cmboot.c`→`cmboot-rust` crate, and `pagepae.c`
+**is not compiled by cmake at all** (ReactOS i386 builds non-PAE `page.c`→
+`page.rs`; PAE is excluded from the build).
+
+**Consequence:** there are no ntoskrnl "C leaves" left to eliminate from the
+build. The remaining ntoskrnl translation frontier is *quality*, not coverage
+— Stage-3 idiomation (Result/Drop-RAII over the mechanically-transliterated
+unsafe Rust) and runtime correctness (the open amd64 taskbar BUGCHECK 0x50).
+
+### Kernel-land status (other PEs), surveyed 2026-06-13
+
+Probed each `*-cargo/build.rs` for residual C (the same way as ntoskrnl).
+"CRT floor" = printf variadic shells / i386 x87 math / SEH personality /
+scanf trampoline / strsafe shim — the irreducible mingw-CRT residue, not
+subsystem body C.
+
+| PE / module        | Body              | Residual C in link                          | State |
+|--------------------|-------------------|---------------------------------------------|-------|
+| ntoskrnl / ntkrnlmp| ntoskrnl-rust     | CRT floor only (in-cargo)                   | ✅ 100% Rust body |
+| smss               | smss-csrss-rust   | none                                        | ✅ |
+| csrss / csrsrv     | smss-csrss-rust   | CRT floor only                              | ✅ |
+| basesrv / winsrv   | winsrv-rust       | CRT floor + strsafe shim (placeholder .a)   | ✅ |
+| lsass              | lsass-rust        | none                                        | ✅ |
+| services / winlogon / userinit | *-rust| CRT floor only                              | ✅ |
+| ntdll / ntdll_vista| ntdll-rust        | CRT floor (rtl placeholder .a)              | ✅ |
+| HAL                | hal-rust          | 42/45 `.c` retired; only a generated empty stub live | ✅ ~100% |
+| **win32k.sys**     | win32k-rust (164 .rs) | **13 live `.c`** (147 retired): the `reactx/ntddraw` DirectDraw/D3D stack (9), `safe_user_io.c`, `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c` | 🔶 ~92% — active flip lane |
+| uefildr / rosload  | freeldr-rust      | boot RTL `.c` (bitmap/compress/crc32/image/largeint/random/unicode/mem) + `libmini_hal.a` + 2 asm | 🔶 boot-loader RTL not on rtl-rust; `systimer.S`-blocked |
+
+The only kernel-mode bodies with substantial *body* C remaining are
+**win32k DirectDraw** (active other-agent lane — coordinate, don't collide)
+and the **uefildr/rosload boot RTL** (the `_MINIHAL_`/`systimer.S` asm-define
+blocker documented in the freeldr audit). Everything else is Rust-bodied.
+
+---
+
 Last updated 2026-05-09. Sixteen milestones landed this session.
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
