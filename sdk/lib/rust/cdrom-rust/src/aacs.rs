@@ -297,7 +297,7 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
 
         status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, dataTransferLength, 1, core::ptr::addr_of_mut!(cdb) as *const core::ffi::c_void, 12);
 
-        #[cfg(feature = "enable_aacs_testing")]
+        #[cfg(feature = "ENABLE_AACS_TESTING")]
         {
             const RESULTS: [u8; 8] = [0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0];
             RtlCopyMemory((*DeviceExtension).ScratchContext.ScratchBuffer as *mut core::ffi::c_void, RESULTS.as_ptr() as *const core::ffi::c_void, RESULTS.len());
@@ -535,7 +535,8 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
             12,
         );
 
-        // #ifdef ENABLE_AACS_TESTING block (present unconditionally for faithful transliteration)
+        // #ifdef ENABLE_AACS_TESTING (C aacs.c:651) — test-only override, off in production
+        #[cfg(feature = "ENABLE_AACS_TESTING")]
         {
             const RESULTS: [u8; 4] = [0x00, 0x72, 0x00, 0x00];
             const DEFAULT_FILL: u8 = 0x31;
@@ -657,7 +658,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
             12,
         );
 
-        if cfg!(feature = "enable_aacs_testing") {
+        if cfg!(feature = "ENABLE_AACS_TESTING") {
             const RESULTS: [u8; 4] = [0x00, 0x52, 0x00, 0x00];
             const DEFAULT_FILL: u8 = 0x32;
             // RtlFillMemory inline
@@ -856,7 +857,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
             12,
         );
 
-        #[cfg(ENABLE_AACS_TESTING)]
+        #[cfg(feature = "ENABLE_AACS_TESTING")]
         {
             let results: [u8; 4] = [0x00, 0x22, 0x00, 0x00];
             // RtlFillMemory expanded: fill 0x24 bytes with 0x33
@@ -981,7 +982,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
                 12,
             );
 
-            #[cfg(feature = "enable_aacs_testing")]
+            #[cfg(feature = "ENABLE_AACS_TESTING")]
             {
                 const RESULTS: [u8; 4] = [0x00, 0x22, 0x00, 0x00];
                 const DEFAULT_FILL: u8 = 0x34;

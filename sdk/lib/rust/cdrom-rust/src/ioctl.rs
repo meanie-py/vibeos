@@ -6258,6 +6258,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
     );
 
     if status >= 0 {
+        ScratchBuffer_BeginUse(DeviceExtension);
         let mut transfer_size: u32 = 0;
         let mut cdb: CDB = core::mem::zeroed();
         // RtlZeroMemory(&cdb, sizeof(CDB));
@@ -6544,6 +6545,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
     *DataLength = 0;
 
     if NT_SUCCESS(status) != 0 {
+        ScratchBuffer_BeginUse(DeviceExtension);
         let transferSize: u32 = MODE_DATA_SIZE;
         let mut cdb: CDB = core::mem::zeroed();
         core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb) as *mut u8, 0, core::mem::size_of::<CDB>());
