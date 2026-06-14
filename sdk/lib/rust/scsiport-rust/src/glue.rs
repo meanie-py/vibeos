@@ -199,3 +199,33 @@ const _: () = assert!(core::mem::size_of::<PCI_COMMON_CONFIG_FIXED>() == 256);
 // sites (and their argument expressions) intact while matching C's silent behavior;
 // per-IO DbgPrint over the serial port was slowing boot past the smoke timeout.
 pub unsafe extern "C" fn dprint_noop(_format: *const core::ffi::c_char, mut _args: ...) -> i32 { 0 }
+
+// sync_exec — KeSynchronizeExecution that tolerates a no-interrupt adapter.
+//
+// `KeSynchronizeExecution` (ntoskrnl) dereferences `Interrupt->SynchronizeIrql`
+// unconditionally; the C scsiport (scsi.c:1288/1778, scsiport.c StartIo, etc.)
+// passes `DeviceExtension->Interrupt[0]` raw, relying on the IRQ always
+// connecting. When `IoConnectInterrupt` fails for an adapter — e.g. the empty
+// secondary IDE channel once the Winsock catalog grows the system hive and
+// perturbs IRQ arbitration — `Interrupt[0]` is NULL and the scan path
+// (SpiStartReq -> KeSynchronizeExecution) NULL-derefs in KeSynchronizeExecution+0x18
+// -> BUGCHECK 0x1E (STATUS_IN_PAGE_ERROR). With no ISR there is nothing to
+// synchronize against, so run the routine directly at the caller's IRQL; the
+// device spinlock the caller already holds supplies the serialization. The
+// no-interrupt adapter then completes via the IoTimer poll path. See task 79 /
+// docs/engineering/translation-debugging-field-manual.md §9.9.
+#[inline]
+pub unsafe fn sync_exec(
+    interrupt: ntkrnl_sys::ddk::PKINTERRUPT,
+    routine: ntkrnl_sys::ddk::PKSYNCHRONIZE_ROUTINE,
+    context: ntkrnl_sys::ddk::PVOID,
+) -> ntkrnl_sys::ddk::BOOLEAN {
+    if interrupt.is_null() {
+        match routine {
+            Some(f) => f(context),
+            None => 0,
+        }
+    } else {
+        ntkrnl_sys::ddk::KeSynchronizeExecution(interrupt, routine, context)
+    }
+}

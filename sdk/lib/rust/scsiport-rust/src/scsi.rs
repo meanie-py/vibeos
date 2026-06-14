@@ -655,7 +655,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
         Context.InterruptData = &raw mut InterruptData as PSCSI_PORT_INTERRUPT_DATA;
         Context.DeviceExtension = DeviceExtension;
 
-        if KeSynchronizeExecution(
+        if crate::glue::sync_exec(
             (*DeviceExtension).Interrupt[0],
             Some(core::mem::transmute(SpiSaveInterruptData as *const ())),
             &raw mut Context as PVOID,
@@ -1640,7 +1640,7 @@ pub unsafe extern "system" fn ScsiPortStartIo(
 
     KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
 
-    if KeSynchronizeExecution(
+    if crate::glue::sync_exec(
         (*DeviceExtension).Interrupt[0],
         Some(core::mem::transmute(ScsiPortStartPacket as *const ())),
         DeviceObject as PVOID,
