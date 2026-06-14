@@ -3,3 +3,7 @@
 # committed — but DO NOT delete a run dir while its translation is in progress
 # or unintegrated; it is the only copy of work you paid for.
 .responses/
+
+# semdiff reports + per-pair response cache (rustconv/semdiff.py). Generated
+# output — regenerable, local-only.
+.semdiff/
