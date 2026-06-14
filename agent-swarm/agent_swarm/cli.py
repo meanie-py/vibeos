@@ -39,6 +39,16 @@ def _mm() -> MattermostClient:
     return MattermostClient.from_config(config())
 
 
+def _mm_as(identity) -> MattermostClient:
+    """A client that READS as the agent (its token sees #swarm + its own private channel;
+    the shared bot token can't see the agent's channel)."""
+    mm = MattermostClient.from_config(config())
+    tok = (ident.creds_for(identity) or {}).get("mm_token") if identity else None
+    if tok:
+        mm.bot_token = tok
+    return mm
+
+
 def _channels_for(identity, mm) -> list:
     """The channels this agent listens on: #swarm + its own agent channel (if present)."""
     cfg = config()
@@ -55,7 +65,7 @@ def _channels_for(identity, mm) -> list:
 # --- identity ------------------------------------------------------------
 
 def cmd_login(args):
-    ident.login(args.name, set_default=not args.no_default)
+    ident.login(args.name, creds=ident.load_agent_creds(args.name), set_default=not args.no_default)
     print(f"logged in as {args.name}")
 
 
@@ -81,7 +91,7 @@ def cmd_register(args):
     roster().upsert(identity, **fields)
     st.set_state(identity, "busy")
     try:
-        mm = _mm()
+        mm = _mm_as(identity)
         q.seed(identity, _channels_for(identity, mm), mm)  # unread-clock starts now
     except SwarmError:
         pass
@@ -138,7 +148,7 @@ def cmd_say(args):
 
 def cmd_read(args):
     identity = _require_identity(args)
-    mm = _mm()
+    mm = _mm_as(identity)
     posts = q.unread(identity, identity, _channels_for(identity, mm), mm)
     if not posts:
         print("no unread."); return
@@ -155,7 +165,7 @@ def cmd_drain(args):
         if args.json:
             print(json.dumps({"high": [], "low_count": 0}))
         return
-    mm = _mm()
+    mm = _mm_as(identity)
     chans = args.channels.split(",") if args.channels else _channels_for(identity, mm)
     result = q.drain(identity, identity, chans, mm, high_only=args.high_only)
     if args.json:

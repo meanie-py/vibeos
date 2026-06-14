@@ -56,22 +56,33 @@ class Registrar:
             except HttpError:
                 pass
 
-        # 2. Mattermost bot + token + team + per-agent channel + banner
-        bot_id = self.mm.find_bot(name)
-        if not bot_id:
-            bot = self.mm.create_bot(name, f"{name} (agent)")
-            bot_id = bot["user_id"]
-            bundle["mattermost"] = {"user_id": bot_id, "created": True}
+        # 2. Mattermost REGULAR user (not a bot → no "BOT" badge) + personal-access token,
+        #    added to the team, #swarm, and its own channel; posts use its own token.
+        import time as _time
+        u = self.mm.find_user(name)
+        if u:
+            uid = u["id"]
+            bundle["mattermost"] = {"user_id": uid, "created": False}
         else:
-            bundle["mattermost"] = {"user_id": bot_id, "created": False}
+            created = self.mm.create_user(name, f"{name}@swarm.local",
+                                          f"Sw@rm-{name}-{int(_time.time())}")
+            uid = created["id"]
+            bundle["mattermost"] = {"user_id": uid, "created": True}
+        agent_token = None
         try:
-            tok = self.mm.create_user_token(bot_id)
-            bundle["mattermost"]["token"] = tok.get("token")
+            tok = self.mm.create_user_token(uid)
+            agent_token = tok.get("token")
+            bundle["mattermost"]["token"] = agent_token
         except HttpError:
             pass
         team_id = self.mm.team_id()
+        for cid in (None,):  # add to team first
+            try:
+                self.mm.add_to_team(team_id, uid)
+            except HttpError:
+                pass
         try:
-            self.mm.add_to_team(team_id, bot_id)
+            self.mm.add_to_channel(self.cfg.mm_swarm_channel_id, uid)  # so it can post to #swarm
         except HttpError:
             pass
         ch_name = f"agent-{name}"
@@ -82,9 +93,14 @@ class Registrar:
             bundle["mattermost"]["channel_created"] = True
         bundle["mattermost"]["channel_id"] = ch_id
         try:
-            self.mm.add_to_channel(ch_id, bot_id)
+            self.mm.add_to_channel(ch_id, uid)
         except HttpError:
             pass
+        # persist runtime creds locally (interim; OAuth-derived later)
+        if agent_token:
+            from . import identity
+            identity.save_agent_creds(name, {"identity": name, "mm_user_id": uid,
+                                             "mm_token": agent_token})
         # pinned banner (charter) — post as the agent itself (it's a member of its own
         # channel; the shared registrar/bot is not, so its post would 403).
         banner = charter or f"# {name}\n\n(Charter not set — edit this pinned banner.)"
@@ -125,13 +141,18 @@ class Registrar:
                 result["authentik"] = "deleted"
             except HttpError as e:
                 result["authentik"] = f"err {e.status}"
-        bot_id = self.mm.find_bot(name)
-        if bot_id:
+        mu = self.mm.find_user(name)
+        if mu:
             try:
-                self.mm.delete_bot_user(bot_id)
-                result["mm_bot"] = "deactivated"
+                self.mm.delete_bot_user(mu["id"])  # DELETE /users/{id} deactivates
+                result["mm_user"] = "deactivated"
             except HttpError as e:
-                result["mm_bot"] = f"err {e.status}"
+                result["mm_user"] = f"err {e.status}"
+        from . import identity
+        try:
+            (identity._agents_dir() / f"{name}.json").unlink()
+        except OSError:
+            pass
         ch_id = self.mm.find_channel(f"agent-{name}")
         if ch_id:
             try:

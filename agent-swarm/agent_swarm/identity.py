@@ -75,16 +75,48 @@ def logout() -> None:
             pass
 
 
+def _agents_dir() -> Path:
+    return Path.home() / ".vibeos-swarm" / "agents"
+
+
+def save_agent_creds(name: str, creds: dict) -> None:
+    """Persist an agent's runtime creds (e.g. its MM personal-access token) locally.
+
+    Interim single-machine store written by the registrar; the cross-machine path derives
+    these from the human lead's OAuth at login. Mode 600 — never committed.
+    """
+    d = _agents_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{name}.json"
+    f.write_text(json.dumps(creds))
+    try:
+        os.chmod(f, 0o600)
+    except OSError:
+        pass
+
+
+def load_agent_creds(name: str) -> dict:
+    f = _agents_dir() / f"{name}.json"
+    if f.exists():
+        try:
+            return json.loads(f.read_text())
+        except (ValueError, OSError):
+            pass
+    return {}
+
+
 def creds_for(name: str) -> dict:
-    """Stored creds bundle for an identity (interim: empty → callers use Config tokens)."""
+    # session bundle first, then the local agent creds file
     sid = _session_id()
     if sid:
         f = _sessions_dir() / f"{sid}.json"
         if f.exists():
             try:
                 d = json.loads(f.read_text())
-                if d.get("identity") == name:
-                    return d.get("creds") or {}
+                if d.get("identity") == name and d.get("creds"):
+                    return d["creds"]
             except (ValueError, OSError):
                 pass
-    return {}
+    return load_agent_creds(name)
+
+

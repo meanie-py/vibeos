@@ -6,18 +6,32 @@ model (Config), one code path.
 """
 from __future__ import annotations
 
+from . import identity as ident
 from .config import Config, config as default_config
+from .errors import HttpError
 from .mattermost import MattermostClient
 
 
 def send(text: str, *, channel: str, as_identity: str | None = None,
          icon_emoji: str | None = None, cfg: Config | None = None) -> bool:
-    """Post `text` to `channel` (name) as `as_identity` via the incoming webhook.
+    """Post `text` to `channel` (name) as `as_identity`.
 
-    Returns True on success. Best-effort: a down server never raises.
+    Preferred path: the agent's OWN personal-access token via REST → posts as a proper
+    account (no "BOT" badge). Falls back to the incoming webhook (username override,
+    BOT-tagged) when the agent has no token yet. Best-effort: never raises.
     """
     cfg = cfg or default_config()
     mm = MattermostClient.from_config(cfg)
+    if as_identity:
+        token = (ident.creds_for(as_identity) or {}).get("mm_token")
+        if token:
+            ch_id = mm.resolve_channel_id(channel, token=token)
+            if ch_id:
+                try:
+                    mm.post(ch_id, text, token=token)
+                    return True
+                except HttpError:
+                    pass  # fall through to webhook
     return mm.webhook_post(text, channel=channel, username=as_identity, icon_emoji=icon_emoji)
 
 

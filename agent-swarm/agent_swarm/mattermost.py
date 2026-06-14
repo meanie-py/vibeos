@@ -101,6 +101,29 @@ class MattermostClient:
         return http.post(f"{self.api}/bots", token=self._reg(),
                          json_body={"username": username, "display_name": display_name})
 
+    def create_user(self, username, email, password):
+        """Create a REGULAR user (not a bot → no BOT badge). Posts via its own token."""
+        return http.post(f"{self.api}/users", token=self._reg(),
+                         json_body={"username": username, "email": email, "password": password})
+
+    def find_user(self, username):
+        try:
+            return http.get(f"{self.api}/users/username/{username}", token=self._reg())
+        except HttpError as e:
+            if e.status == 404:
+                return None
+            raise
+
+    def resolve_channel_id(self, name, *, token=None):
+        try:
+            ch = http.get(f"{self.api}/teams/name/{self.team}/channels/name/{name}",
+                          token=token or self._reg())
+            return ch["id"]
+        except HttpError as e:
+            if e.status in (403, 404):
+                return None
+            raise
+
     def find_bot(self, username):
         try:
             u = http.get(f"{self.api}/users/username/{username}", token=self._reg())
