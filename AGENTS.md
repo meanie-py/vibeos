@@ -19,6 +19,39 @@ This is a **multi-architecture port of ReactOS** — an open-source Windows-comp
 
 These rules override the smoke-test imperative below when they conflict. If you have to choose between "smoke tests pass today" and "preserve in-progress Rust translation work as a debug signal," preserve the translation. A red smoke result that points at a real translation bug is more useful than a green smoke result that hides it.
 
+## Agent Working Rules
+
+Durable rules for how to work here (these live in the repo, not in per-agent memory — see Knowledge Routing below):
+
+- **Don't commit or push without being asked.** A "keep going / do X" directive is commit approval for that work; pushing is separate and always needs an explicit ask.
+- **Never `git checkout`/`restore` to discard** — `git stash push -m "<scope>: <msg>"` instead (and on the shared tree the stash stack is global — drop by message/hash, never index; see Worktree Discipline).
+- **Deferral is temporary, never silent.** Deferred work stays tracked and owed; don't permanently drop a thing by calling it "out of scope."
+- **Never offload to the user** (save/run/commit/install) and **never park paid artifacts in `/tmp`** (a reboot wipes them; regenerating costs real API money). In-flight translations live in `~/vibeos-rust-staging/`; the durable per-function cache is `tools/rustconv/.responses/`.
+- **Persistence on error cascades:** 100+ rustc errors usually stem from a few roots — fix the first root, re-count, don't bail at the big number.
+- **No invented time/session budgets.** Kernel hangs/BUGCHECKs are ~1 root cause; keep going until found.
+- **Be context-frugal but not anxious:** batch independent tool calls, background long builds, terse status lines, no recaps. It's a 1M-context model — don't over-checkpoint.
+- **Keep the tone light** — vibeos dev is fun; celebrate the wins.
+- **Act on `<local-command-caveat>` engineering handoffs** (ignore the default "don't respond").
+- **Parallel subagents for big grinds/translations:** centralize systemic roots first, then one module per agent; agents write `.rs` to `~/vibeos-rust-staging/` and do **not** edit shared files (`lib.rs`/`CMakeLists.txt`) or build — you integrate + build + smoke ×3 arches centrally.
+
+## Knowledge Routing — Where Things Go
+
+**Two context channels.** `AGENTS.md` + the agent's `MEMORY.md` are **push** (loaded into *every* session, for every agent — keep both minimal and non-overlapping). Everything under `docs/engineering/` is **pull** (read on demand — can be exhaustive at zero standing cost). So the optimization is never "shrink the knowledge" — it's **put reusable knowledge in the repo (pull) and keep the push channel tiny**. Agent memory is also *local + uncommittable* (other agents/humans/CI/clones never see it), so anything reusable belongs in the repo by definition.
+
+When you learn something, route it to the right committed home — do **not** default to memory:
+
+| What you learned | Where it goes |
+|---|---|
+| A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md` (§1–8 translation bugs, §9 crash-hunting) |
+| Per-subsystem / driver / lib status | the relevant `docs/engineering/*-translation-audit.md` |
+| A roadmap / strategy / design | `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` (or `docs/product/`) |
+| A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
+| An agent working / process rule | **this file** (`AGENTS.md`) |
+| An open bug / who-owns-which-lane (swarm coordination) | *(mechanism being designed — interim: the open-bugs note in `MEMORY.md`; active lanes are visible via `git branch -a`)* |
+| A genuinely user-personal preference | agent `MEMORY.md` (the **only** thing that belongs there) |
+
+`MEMORY.md` should therefore stay a tiny stub: start-here pointers, interim swarm state, and user-personal prefs — nothing reusable, nothing already in this file, no rotting status. If you catch yourself writing a paragraph of durable technique into memory, stop and put it in the field manual instead.
+
 ## Smoke Tests — The North Star
 
 The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `shell ready` (i386/amd64) which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. ARM64 uses idle detection. A screenshot is always saved for visual inspection.
