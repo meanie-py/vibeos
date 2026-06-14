@@ -362,9 +362,9 @@ const IOCTL_STORAGE_FIND_NEW_DEVICES: u32 = 0x2D4818;
 const IOCTL_STORAGE_PERSISTENT_RESERVE_IN: u32 = 0x2D5018;
 const IOCTL_STORAGE_PERSISTENT_RESERVE_OUT: u32 = 0x2DD01C;
 const IOCTL_STORAGE_CHECK_PRIORITY_HINT_SUPPORT: u32 = 0x2D1880;
-const IOCTL_DISK_ARE_VOLUMES_READY: u32 = 0x70030;
-const IOCTL_VOLUME_ONLINE: u32 = 0x70034;
-const IOCTL_VOLUME_POST_ONLINE: u32 = 0x70038;
+const IOCTL_DISK_ARE_VOLUMES_READY: u32 = 0x7421C; // CTL_CODE(DISK,0x87,0,READ)
+const IOCTL_VOLUME_ONLINE: u32 = 0x56C008;          // CTL_CODE(VOLUME,2,0,ANY)
+const IOCTL_VOLUME_POST_ONLINE: u32 = 0x56C064;     // CTL_CODE(VOLUME,25,0,ANY)
 const FeatureDefectManagement: u32 = 0x10;
 
 const IO_CD_ROM_INCREMENT: i32 = 1;
@@ -1009,8 +1009,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     // Cleanup
     if !NT_SUCCESS(status) {
         if !wideDeviceName.is_null() {
-            // FREE_POOL not available; assume free function
-            // ExFreePool(wideDeviceName as *mut c_void);
+            FREE_POOL(wideDeviceName as *mut core::ffi::c_void);
         }
 
         if !deviceExtension.is_null() {
@@ -3407,7 +3406,9 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
         if fCallSyncCallback != 0 {
             status = CdromInvokeSyncCallback(requestContext, Device, Request);
             if !NT_SUCCESS(status) {
-                CdromRequestCompletion(deviceExtension, Request, status, 0);
+                // The callback completes the request itself in every path (incl.
+                // failure); do NOT complete again here (was a double-complete of
+                // an already-completed WDF request). Found by rustconv semdiff.
                 FREE_POOL(bufferToFree as *mut core::ffi::c_void);
                 return status;
             }

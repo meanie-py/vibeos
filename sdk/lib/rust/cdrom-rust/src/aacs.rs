@@ -460,8 +460,10 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
             12u32,
         );
 
-        // #ifdef ENABLE_AACS_TESTING
-        status = STATUS_SUCCESS; // kept unconditionally from guarded block
+        // #ifdef ENABLE_AACS_TESTING — must NOT mask the real CDB status in
+        // production (was unconditionally forcing SUCCESS). Found by semdiff.
+        #[cfg(feature = "ENABLE_AACS_TESTING")]
+        { status = STATUS_SUCCESS; }
 
         if status >= 0 {
             *DataLength = 0;

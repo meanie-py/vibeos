@@ -1003,7 +1003,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
     // ---- constants ----
     const SCSIOP_GET_PERFORMANCE: u8 = 0xAC;
     const CDROM_GET_PERFORMANCE_TIMEOUT: u32 = 0x14; // placeholder  // was 15 (LLM-invented); bindgen-correct
-    const MAXIMUM_RETRY_FOR_SINGLE_IO_IN_100NS_UNITS: i64 = i64::MAX; // placeholder
+    const MAXIMUM_RETRY_FOR_SINGLE_IO_IN_100NS_UNITS: i64 = 0x3B9ACA00; // 1e9 (classpnp.h)
 
     // ---- local struct types (mirror C definitions exactly) ----
     #[repr(C)]

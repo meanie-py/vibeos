@@ -787,7 +787,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                 // NT_ASSERT(!((*Srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN != 0));
 
                 // 4.4 error process
-                if ((*Srb).SrbStatus & 0xFF) != SRB_STATUS_SUCCESS {
+                if ((*Srb).SrbStatus & 0x3f) != SRB_STATUS_SUCCESS {
                     let mut retryIntervalIn100ns: i64 = 0;
 
                     retry = RequestSenseInfoInterpret(deviceExtension,
@@ -815,7 +815,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
         } // end retry loop
 
         // zpoddInfo check
-        if !zpoddInfo.is_null() && ((*zpoddInfo).MonitorStartStopUnit != 0) && (((*Srb).SrbStatus & 0xFF) == SRB_STATUS_SUCCESS) {
+        if !zpoddInfo.is_null() && ((*zpoddInfo).MonitorStartStopUnit != 0) && (((*Srb).SrbStatus & 0x3f) == SRB_STATUS_SUCCESS) {
             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                        b"DeviceSendSrbSynchronously: soft eject detected, device marked as active\n\0".as_ptr() as *const i8);
             DeviceMarkActive(deviceExtension, 1, 0);

@@ -540,9 +540,9 @@ pub unsafe extern "C" fn ReadDvdStructure(
     // UNREFERENCED_PARAMETER(InputBufferLength);
     let _ = InputBufferLength;
 
-    if (*DeviceExtension).DeviceAdditionalData.DriveDeviceType != 0x0000001c { // FILE_DEVICE_DVD
+    if (*DeviceExtension).DeviceAdditionalData.DriveDeviceType != 0x33 { // FILE_DEVICE_DVD
         *DataLength = 0;
-        return -0x0F000000; // STATUS_INVALID_DEVICE_REQUEST (0xC00000FF) - we use negative because NTSTATUS is signed
+        return 0xC0000010u32 as i32; // STATUS_INVALID_DEVICE_REQUEST
     }
 
     dataLength = OutputBufferLength as u16;
@@ -3084,8 +3084,8 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         information = core::mem::size_of::<STORAGE_WRITE_CACHE_PROPERTY>() as u32;
     }
 
-    ExFreePool(srb as *mut core::ffi::c_void);
-    ExFreePool(modeData as *mut core::ffi::c_void);
+    if !srb.is_null() { ExFreePool(srb as *mut core::ffi::c_void); }
+    if !modeData.is_null() { ExFreePool(modeData as *mut core::ffi::c_void); }
 
     RequestCompletion(deviceExtension, Request, status, information);
 
@@ -5905,10 +5905,13 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
             (*cdb).PERSISTENT_RESERVE_OUT.as_mut().ParameterListLength[1] =
                 core::mem::size_of::<PRO_PARAMETER_LIST>() as u8;
 
-            // Move the parameter list to the beginning of the data buffer
-            RtlCopyMemory(
-                reserveCommand as *mut core::ffi::c_void,
-                (*reserveCommand).__bindgen_anon_1.PR_OUT.as_ref().ParameterList.as_ptr() as *const core::ffi::c_void,
+            // Move the parameter list to the beginning of the data buffer.
+            // src (field inside reserveCommand) overlaps dst (its base): C uses
+            // RtlMoveMemory; RtlCopyMemory here = copy_nonoverlapping = UB on
+            // overlap. Use ptr::copy (memmove). Found by rustconv semdiff.
+            core::ptr::copy(
+                (*reserveCommand).__bindgen_anon_1.PR_OUT.as_ref().ParameterList.as_ptr() as *const u8,
+                reserveCommand as *mut u8,
                 core::mem::size_of::<PRO_PARAMETER_LIST>(),
             );
 
@@ -6828,7 +6831,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     let mut status: i32 = STATUS_SUCCESS;
     let mut keyLength: u32 = 0;
     let mut result: u32 = 0;
-    let allocationLength: u32 = 0; // declared later, used only for scratch; unused in C
+    let mut allocationLength: u32 = 0; // set to keyLength below (REPORT KEY alloc len)
     let mut fourByte: *mut FOUR_BYTE;
     let keyParameters: *mut DVD_COPY_PROTECT_KEY = InputBuffer as *mut DVD_COPY_PROTECT_KEY;
 
@@ -6943,7 +6946,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     if status >= 0 {
         let mut cdb: CDB = core::mem::zeroed();
 
-        // allocationLength = keyLength; (unused but kept for fourByte)
+        allocationLength = keyLength; // fourByte points here → CDB AllocationLength
         core::ptr::write_bytes(&mut cdb as *mut CDB as *mut u8, 0, core::mem::size_of::<CDB>());
 
         cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;

@@ -1639,8 +1639,8 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
 
     status = WdfDeviceOpenRegistryKey(
         (*DeviceExtension).Device,
-        0u32, /* PLUGPLAY_REGKEY_DEVICE */
-        0u32, /* KEY_ALL_ACCESS */
+        1u32, /* PLUGPLAY_REGKEY_DEVICE */
+        0xF003Fu32, /* KEY_ALL_ACCESS */
         core::ptr::null_mut(), /* WDF_NO_OBJECT_ATTRIBUTES */
         &mut deviceKey,
     );
@@ -1664,7 +1664,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         status = WdfRegistryOpenKey(
             deviceKey,
             &mut subkeyName,
-            0u32, /* KEY_READ */
+            0x20019u32, /* KEY_READ */
             core::ptr::null_mut(), /* WDF_NO_OBJECT_ATTRIBUTES */
             &mut subKey,
         );
@@ -2429,6 +2429,9 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
         timer_attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
         timer_attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
         timer_attributes.ExecutionLevel = WdfExecutionLevelInheritFromParent;
+        // C WDF_OBJECT_ATTRIBUTES_INIT sets this; zeroed struct left it 0
+        // (WdfSynchronizationScopeInvalid → WDF rejects the timer). semdiff.
+        timer_attributes.SynchronizationScope = 1; // WdfSynchronizationScopeInheritFromParent
 
         status = WdfTimerCreate(
             &mut timer_config,
