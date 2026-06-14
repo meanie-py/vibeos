@@ -315,7 +315,7 @@ pub unsafe extern "system" fn FatInitializeVcb(
     let mut abnormal_termination: bool = true;
     'try_block: loop {
         // Try block
-        write_bytes(vcb, 0, core::mem::size_of::<VCB>());
+        write_bytes(vcb as *mut u8, 0, core::mem::size_of::<VCB>());
 
         // Set node type code and node byte size
         (*vcb).VolumeFileHeader.NodeTypeCode = (FAT_NTC_VCB) as i16;
@@ -493,7 +493,7 @@ pub unsafe extern "system" fn FatInitializeVcb(
         unwind_statistics = stats;
 
         write_bytes(
-            stats,
+            stats as *mut u8,
             0,
             core::mem::size_of::<FILE_SYSTEM_STATISTICS>() * FatData.NumberProcessors as usize,
         );
@@ -516,7 +516,7 @@ pub unsafe extern "system" fn FatInitializeVcb(
             TAG_VPB,
         ) as *mut VPB;
         (*vcb).SwapVpb = swap_vpb;
-        write_bytes(swap_vpb, 0, core::mem::size_of::<VPB>());
+        write_bytes(swap_vpb as *mut u8, 0, core::mem::size_of::<VPB>());
 
         // Initialize the close queue listheads
         InitializeListHead(&raw mut (*vcb).AsyncCloseList);
