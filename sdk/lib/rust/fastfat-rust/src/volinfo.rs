@@ -49,7 +49,7 @@ extern "system" {
     fn FatLocateVolumeLabel( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
     fn FatSetDirtyBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut PVCB, dirty: BOOLEAN, );
-    fn FatUnpinBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, );
+    fn FatUnpinBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
     fn FsRtlIsAnsiCharacterLegalFat( ch: UCHAR, second: BOOLEAN, ) -> BOOLEAN;
     fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
@@ -378,9 +378,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
             dirty: u8,
         );
         fn FatUnpinBcb(
-            IrpContext: *mut IRP_CONTEXT,
-            Bcb: PBCB,
-        );
+            IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
         fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
         fn FsRtlIsAnsiCharacterLegalFat(
             ch: UCHAR,
@@ -562,7 +560,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                 );
 
                 // Unpin to catch IO errors before VPB change
-                FatUnpinBcb(*IrpContext, (DirentBcb).cast());
+                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
                 FatUnpinRepinnedBcbs(*IrpContext);
 
                 // Set upcased label in VPB
@@ -611,7 +609,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                 FatSetDirtyBcb(*IrpContext, DirentBcb, *Vcb, TRUE as u8);
 
                 // Unpin
-                FatUnpinBcb(*IrpContext, (DirentBcb).cast());
+                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
                 FatUnpinRepinnedBcbs(*IrpContext);
 
                 // Clear label in VPB
@@ -623,7 +621,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
         // _SEH2_FINALLY
         DebugUnwind(b"FatSetFsALabelInfo\0".as_ptr() as usize);
-        FatUnpinBcb(*IrpContext, (DirentBcb).cast());
+        FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
         DebugTrace(
             -1,
             DEBUG_TRACE_VOLINFO,

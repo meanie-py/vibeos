@@ -35,7 +35,7 @@ extern "system" {
     fn FatBytesPerFat(Bpb: *const core::ffi::c_void) -> u32;
     fn FatLookup12BitEntry(PinnedPage: *mut u8, FatIndex: u32, FatEntry: *mut u32);
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, ByteLength: u32, Bcb: *mut *mut core::ffi::c_void, PinnedPage: *mut *mut u8, );
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut core::ffi::c_void);
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatBugCheck(value: u32, log: u32, zero: u32);
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
@@ -856,7 +856,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
     //  that is hanging around.
     //
 
-    FatUnpinBcb((IrpContext).cast(), Context.Bcb as *mut core::ffi::c_void);
+    FatUnpinBcb((IrpContext).cast(), core::ptr::addr_of_mut!(Context.Bcb) as *mut *mut core::ffi::c_void);
 
     DebugTrace(
         -1,
@@ -1077,7 +1077,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
                 }
             }
 
-            FatUnpinBcb(IrpContext, (bcb).cast());
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((bcb)) as *mut *mut core::ffi::c_void);
 
             // Nested SEH2_TRY for FatDeallocateDiskSpace
             let mut _abnormal2: i32 = 1;
@@ -1261,7 +1261,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
         }
     }
 
-    FatUnpinBcb((IrpContext).cast(), Bcb);
+    FatUnpinBcb((IrpContext).cast(), core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
     SetFlag(&mut (*FcbOrDcb).FcbState as *mut u32, FCB_STATE_FLUSH_FAT);
     DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
 }
@@ -2406,7 +2406,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                 || (OffsetIntoVolumeFile / PAGE_SIZE as u32
                     != (*Context).VboOfPinnedPage / PAGE_SIZE as u32)
             {
-                FatUnpinBcb(IrpContext, (*Context).Bcb as *mut core::ffi::c_void);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((*Context).Bcb) as *mut *mut core::ffi::c_void);
 
                 FatReadVolumeFile(
                     IrpContext,
@@ -2436,7 +2436,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                 || (OffsetIntoVolumeFile / PAGE_SIZE as u32
                     != (*Context).VboOfPinnedPage / PAGE_SIZE as u32)
             {
-                FatUnpinBcb(IrpContext, (*Context).Bcb as *mut core::ffi::c_void);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((*Context).Bcb) as *mut *mut core::ffi::c_void);
 
                 FatReadVolumeFile(
                     IrpContext,
@@ -2660,7 +2660,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
         DbgDoit(&mut ((*IrpContext).PinCount) as *mut _ as *mut c_void); // approximate
         CcUnpinRepinnedBcb(Bcb, 1, &mut IgnoreStatus);
     } else {
-        FatUnpinBcb(IrpContext, (Bcb).cast());
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((Bcb)) as *mut *mut core::ffi::c_void);
     }
 
     // DebugTrace(-1, Dbg, "FatSetFatEntry -> (VOID)\n", 0);
@@ -2850,7 +2850,7 @@ pub unsafe extern "system" fn FatSetFatRun(
                 {
                     let mut i = 0;
                     while i < COUNTSAVEDBCBS && !SavedBcbs[i][0].is_null() {
-                        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, SavedBcbs[i][0]);
+                        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(SavedBcbs[i][0]) as *mut *mut core::ffi::c_void);
                         SavedBcbs[i][0] = core::ptr::null_mut();
                         i += 1;
                     }
@@ -2947,7 +2947,7 @@ pub unsafe extern "system" fn FatSetFatRun(
         }
 
         while i < COUNTSAVEDBCBS && !SavedBcbs[i][0].is_null() {
-            FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, SavedBcbs[i][0]);
+            FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(SavedBcbs[i][0]) as *mut *mut core::ffi::c_void);
             i += 1;
         }
 
@@ -3223,7 +3223,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
 
                 // Page boundary crossing
                 if (fat_buffer as usize & (PAGE_SIZE as usize - 1)) == 0 {
-                    FatUnpinBcb(irp_context, (bcb).cast());
+                    FatUnpinBcb(irp_context, core::ptr::addr_of_mut!((bcb)) as *mut *mut core::ffi::c_void);
 
                     page += 1;
                     offset += (PAGE_SIZE) as u32;
@@ -3385,7 +3385,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
 
     // ----------------------- FINALLY BLOCK -----------------------
     // Unpin last Bcb and free temporary bitmap buffer if allocated
-    FatUnpinBcb(irp_context, (bcb).cast());
+    FatUnpinBcb(irp_context, core::ptr::addr_of_mut!((bcb)) as *mut *mut core::ffi::c_void);
 
     if !new_bit_map_buffer.is_null() {
         ExFreePool(new_bit_map_buffer);

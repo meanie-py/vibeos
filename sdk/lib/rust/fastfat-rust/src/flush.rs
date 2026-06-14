@@ -29,7 +29,7 @@ extern "system" {
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
     fn FatTruncateFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, file_size: i32, );
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, bcb: PBCB);
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(p: *mut FCB) -> u32;
@@ -512,7 +512,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
                         (*Dirent).FileSize = CorrectedFileSize;
                     }
 
-                    FatUnpinBcb(IrpContext, DirentBcb);
+                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
 
                     Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
 
@@ -521,7 +521,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
                     }
                 }
                 // _SEH2_FINALLY (always runs):
-                FatUnpinBcb(IrpContext, DirentBcb);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
                 if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_DELETED_FCB as u32) == 0 {
                     FatReleaseFcb(IrpContext, Fcb);
                 }

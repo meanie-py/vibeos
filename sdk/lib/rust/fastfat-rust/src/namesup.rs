@@ -16,7 +16,7 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 extern "system" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB);
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
 }
 extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
@@ -270,7 +270,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
     {
         // If we didn't find the Dirent, something is terribly wrong.
         if dirent_bcb.is_null() || dirent_byte_offset != (*Fcb).DirentOffsetWithinDirectory {
-            FatUnpinBcb(IrpContext, dirent_bcb);
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
             FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
         }
 
@@ -285,7 +285,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
             NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory) as i32);
 
             if (*Fcb).LfnOffsetWithinDirectory != (*Fcb).DirentOffsetWithinDirectory {
-                FatUnpinBcb(IrpContext, dirent_bcb);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
                 FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
             }
 
@@ -313,7 +313,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
     }
 
     // _SEH2_FINALLY
-    FatUnpinBcb(IrpContext, dirent_bcb);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatSetFullFileNameInFcb(
@@ -494,9 +494,7 @@ pub unsafe extern "system" fn FatSelectNames(
         {
             loop {
                 FatUnpinBcb(
-                    IrpContext as *mut IRP_CONTEXT,
-                    Bcb,
-                );
+                    IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
 
                 if TrySuggestedShortName != 0 {
                     ShortUnicodeName.Length = (*SuggestedShortName).Length;
@@ -537,9 +535,7 @@ pub unsafe extern "system" fn FatSelectNames(
         }
         // _SEH2_FINALLY
         FatUnpinBcb(
-            IrpContext as *mut IRP_CONTEXT,
-            Bcb,
-        );
+            IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
         // _SEH2_END
     } else {
         if ShortName != OemName {

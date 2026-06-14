@@ -61,7 +61,7 @@ extern "system" {
     fn DebugUnwind(name: *const i8);
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, FileObject: PFILE_OBJECT, NewAllocation: u32, );
     fn FatTruncateFileAllocation(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, InitialAllocation: u32);
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut c_void);
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatIsFat32(Vcb: PVCB) -> u8;
 }
 
@@ -243,7 +243,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     FatSetDirtyBcb(IrpContext, *Bcb as *mut c_void, Vcb, Reversible as u8);
 
     if _SEH2_AbnormalTermination() != 0 {
-        FatUnpinBcb(IrpContext, *Bcb as *mut c_void);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
     }
 
     DebugTrace(
@@ -495,7 +495,7 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
 
             if *Bcb != local_bcb {
                 FatRepinBcb(*IrpContext, local_bcb);
-                FatUnpinBcb(*IrpContext, local_bcb);
+                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(local_bcb) as *mut *mut core::ffi::c_void);
             }
         }
 
@@ -510,9 +510,9 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
 
     if abnormal {
         if *Bcb != local_bcb {
-            FatUnpinBcb(*IrpContext, local_bcb);
+            FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(local_bcb) as *mut *mut core::ffi::c_void);
         }
-        FatUnpinBcb(*IrpContext, *Bcb);
+        FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
 
         if unwind_we_allocated_disk_space != 0 {
             FatTruncateFileAllocation(*IrpContext, *Dcb, initial_allocation);

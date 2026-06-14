@@ -46,7 +46,7 @@ extern "system" {
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatSetFatEntry(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Index: u32, Value: u32);
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB);
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> i32;
     fn FatIsFat12(Vcb: *mut VCB) -> i32;
     fn FatIsFat32(Vcb: *mut VCB) -> i32;
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
             FatMarkFcbCondition(IrpContext, Fcb, 0/*FcbGood*/, 0/*FALSE*/);
         }
     // } _SEH2_FINALLY {
-        FatUnpinBcb(IrpContext, DirentBcb);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
     // } _SEH2_END;
 }
 
@@ -736,7 +736,7 @@ pub unsafe extern "system" fn FatCheckDirtyBit(
         }
     }
 
-    FatUnpinBcb(IrpContext, BootSectorBcb as *mut BCB);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(BootSectorBcb) as *mut *mut core::ffi::c_void);
 }
 
 #[no_mangle]
@@ -1273,7 +1273,7 @@ pub unsafe extern "system" fn FatMarkVolume(
                 IoFreeIrp(Irp);
             }
             if !Bcb.is_null() {
-                FatUnpinBcb(IrpContext, Bcb);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
             }
         }
     }

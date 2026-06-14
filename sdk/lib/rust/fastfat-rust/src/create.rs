@@ -58,7 +58,7 @@ extern "system" {
     fn FatDeleteDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirectoryFile: *mut FILE_OBJECT, PreserveDcb: i32, );
     fn FatDeleteFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB, );
     fn FatDeleteCcb( IrpContext: *mut IRP_CONTEXT, Ccb: *mut *mut CCB, );
-    fn FatUnpinBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, );
+    fn FatUnpinBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatDirectoryKey(Dcb: *mut DCB) -> u64;
     fn FatLfnDirentExists( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Name: *mut _UNICODE_STRING, LfnBuffer: *mut _UNICODE_STRING, ) -> i32;
@@ -1265,7 +1265,7 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
             let mut NeedEaCount: ULONG = 0;
             FatGetDirentFromFcbOrDcb(IrpContext, Dcb, 0, &mut Dirent, &mut DirentBcb);
             FatGetNeedEaCount(IrpContext, Vcb, Dirent, &mut NeedEaCount);
-            FatUnpinBcb(IrpContext, DirentBcb);
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
             if NeedEaCount != 0 {
                 Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
                 break 'try_body_dcb; // try_return Iosb
@@ -1386,7 +1386,7 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
     // _SEH2_FINALLY block
     DebugTrace(-1, 0 /* Dbg */, b"FatOpenExistingDcb -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8, Iosb.__bindgen_anon_1.Status);
 
-    FatUnpinBcb(IrpContext, DirentBcb);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
 
     if abnormal_termination {
         if !UnwindCcb.is_null() {
@@ -1641,7 +1641,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                         &mut DirentBcb,
                     );
                     FatGetNeedEaCount(IrpContext, Vcb, Dirent, &mut NeedEaCount);
-                    FatUnpinBcb(IrpContext, DirentBcb);
+                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
                     if NeedEaCount != 0 {
                         Iosb.__bindgen_anon_1.Status = 0xC0000022_u32 as i32;
                         break 'try_scope_body;
@@ -1746,7 +1746,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
         }
 
         // Finally block
-        FatUnpinBcb(IrpContext, DirentBcb);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
         if false {
             // Abnormal termination cleanup (never executed)
             if !UnwindCcb.is_null() {
@@ -2514,8 +2514,8 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         }
     }
 
-    FatUnpinBcb(IrpContext, (DirentBcb).cast());
-    FatUnpinBcb(IrpContext, (SecondPageBcb).cast());
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((SecondPageBcb)) as *mut *mut core::ffi::c_void);
 
     if DirentFromPool != 0 {
         ExFreePool(Dirent as PVOID);
@@ -2978,8 +2978,8 @@ pub unsafe extern "system" fn FatCreateNewFile(
                         FatDeleteCcb(IrpContext, &mut UnwindCcb);
                     }
                 }
-                FatUnpinBcb(IrpContext, DirentBcb);
-                FatUnpinBcb(IrpContext, SecondPageBcb);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(SecondPageBcb) as *mut *mut core::ffi::c_void);
                 if DirentFromPool != 0 {
                     ExFreePool(Dirent as *mut c_void);
                 }
@@ -3256,7 +3256,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             }
         }
 
-        FatUnpinBcb(irp_context, dirent_bcb);
+        FatUnpinBcb(irp_context, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
 
         ClearFlag(
             &mut (*(*fcb).Vcb).VcbState,

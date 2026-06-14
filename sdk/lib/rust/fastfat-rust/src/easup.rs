@@ -20,7 +20,7 @@ extern "system" {
     fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
     fn PAGED_CODE();
     fn Fat8dot3ToString( irp_context: *mut IRP_CONTEXT, dirent: *const DIRENT, flag: i32, filename: *mut OEM_STRING, );
-    fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut BCB);
+    fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
 }
 extern "system" {
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn FatGetEaLength(
         DebugUnwind(FatGetEaLength as usize);
 
         // Unpin the EaDirent and the EaSetHeader if pinned.
-        FatUnpinBcb(IrpContext, EaBcb);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(EaBcb) as *mut *mut core::ffi::c_void);
 
         let mut eap: *mut EA_RANGE = &raw mut EaSetRange;
         FatUnpinEaRange(IrpContext, &raw mut eap);
@@ -336,7 +336,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
 
         // finally block
         DebugUnwind(b"FatGetNeedEaCount\0".as_ptr() as usize);
-        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, EaBcb);
+        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(EaBcb) as *mut *mut core::ffi::c_void);
         let mut ea_range_ptr: *mut EA_RANGE = &mut EaSetRange as *mut EA_RANGE;
         FatUnpinEaRange(IrpContext as *mut IRP_CONTEXT, &mut ea_range_ptr as *mut PEA_RANGE);
         if LockedEaFcb != 0 {
@@ -577,7 +577,7 @@ pub unsafe extern "system" fn FatCreateEa(
             FatReleaseFcb(irp_context, (*vcb).EaFcb as *mut FCB);
         }
 
-        FatUnpinBcb(irp_context, ea_bcb);
+        FatUnpinBcb(irp_context, core::ptr::addr_of_mut!(ea_bcb) as *mut *mut core::ffi::c_void);
         FatUnpinEaRange(irp_context, (ea_set_range_ptr).cast());
 
         DebugTrace(-1, Dbg, b"FatCreateEa -> Exit\n\0".as_ptr() as *const i8);
@@ -657,7 +657,7 @@ pub unsafe extern "system" fn FatDeleteEa(
             );
         }
 
-        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, EaBcb);
+        FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(EaBcb) as *mut *mut core::ffi::c_void);
 
         DebugTrace(-1, Dbg, b"FatDeleteEa -> Exit\n\0".as_ptr() as *const i8, 0);
     }
@@ -1017,7 +1017,7 @@ pub unsafe extern "system" fn FatGetEaFile(
                 (*(*Vcb).EaFcb).Header.FileSize.QuadPart = 0;
             }
 
-            FatUnpinBcb(IrpContext, *EaBcb);
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*EaBcb) as *mut *mut core::ffi::c_void);
             FatDeleteDirent(IrpContext, (*Vcb).EaFcb, core::ptr::null_mut(), 1);
         }
 

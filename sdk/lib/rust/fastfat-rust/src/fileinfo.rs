@@ -64,7 +64,7 @@ extern "system" {
     fn FatReadEaSet( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ExtendedAttributes: u16, OldOemName: *mut OEM_STRING, Flag: i32, EaSetRange: *mut EA_RANGE, );
     fn FatMarkEaRangeDirty( IrpContext: *mut IRP_CONTEXT, VirtualEaFile: *mut FILE_OBJECT, EaSetRange: *mut EA_RANGE, );
     fn FatUnpinEaRange( IrpContext: *mut IRP_CONTEXT, EaSetRange: *mut EA_RANGE, );
-    fn FatUnpinBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, );
+    fn FatUnpinBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatReleaseFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, );
     fn CcFlushCache( SectionObjectPointer: *mut core::ffi::c_void, FileOffset: *const LARGE_INTEGER, Length: u32, IoStatus: *mut _IO_STATUS_BLOCK, );
     fn FatExceptionFilter( IrpContext: *mut IRP_CONTEXT, ExceptionInformation: *mut EXCEPTION_POINTERS, ) -> i32;
@@ -349,7 +349,7 @@ pub unsafe extern "system" fn FatQueryEaInfo(
     }
     // _SEH2_FINALLY
     DebugUnwind(FatQueryEaInfo as *const core::ffi::c_void);
-    FatUnpinBcb(IrpContext, Bcb);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
     DebugTrace(0, 0u32 /* DEBUG_TRACE_FILEINFO */, b"*Length = %08lx\n\0".as_ptr() as *const i8, *Length);
     DebugTrace(-1, 0u32 /* DEBUG_TRACE_FILEINFO */, b"FatQueryEaInfo -> VOID\n\0".as_ptr() as *const i8, 0);
 }
@@ -953,7 +953,7 @@ unsafe extern "system" fn FatSetBasicInfo(
 
     // _SEH2_FINALLY block
     DebugUnwind(b"FatSetBasicInfo\0".as_ptr() as *const core::ffi::c_void);
-    FatUnpinBcb(IrpContext, DirentBcb);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
     DebugTrace(-1, Dbg, b"FatSetBasicInfo -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     return Status;
@@ -1085,7 +1085,7 @@ pub unsafe extern "system" fn FatSetDispositionInfo(
 
             FatSetDirtyBcb(IrpContext, Bcb as *mut _, (*Fcb).Vcb, 1u8);
             // finally
-            FatUnpinBcb(IrpContext, (Bcb).cast());
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((Bcb)) as *mut *mut core::ffi::c_void);
         }
 
         // At this point either we have a file or an empty directory so we know the delete can proceed.
@@ -1618,7 +1618,7 @@ pub unsafe extern "system" fn FatRenameEAs(
     }
 
     // Finally block
-    FatUnpinBcb(IrpContext, ea_bcb);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(ea_bcb) as *mut *mut core::ffi::c_void);
     FatUnpinEaRange(IrpContext, &mut ea_set_range);
 
     if locked_ea_fcb != 0 {
@@ -2035,7 +2035,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
                             && (FsRtlCurrentBatchOplock(FatGetFcbOplock(TempFcb)) != 0
                                 || FsRtlCurrentOplockH(FatGetFcbOplock(TempFcb)) != 0)
                         {
-                            FatUnpinBcb(IrpContext, (TargetDirentBcb).cast());
+                            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((TargetDirentBcb)) as *mut *mut core::ffi::c_void);
                             Status = FsRtlCheckOplock(
                                 FatGetFcbOplock(TempFcb),
                                 Irp,
@@ -2077,7 +2077,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
     // Finally block
     if ContinueWithRename == 0 {
         ExFreePool(UnicodeBuffer as *mut c_void);
-        FatUnpinBcb(IrpContext, (TargetDirentBcb).cast());
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((TargetDirentBcb)) as *mut *mut core::ffi::c_void);
         return Status;
     }
 
@@ -2253,10 +2253,10 @@ pub unsafe extern "system" fn FatSetRenameInfo(
             ExFreePool((*Fcb).ExactCaseLongName.Buffer as *mut c_void);
             (*Fcb).ExactCaseLongName.Buffer = core::ptr::null_mut();
         }
-        FatUnpinBcb(IrpContext, (OldDirentBcb).cast());
-        FatUnpinBcb(IrpContext, (TargetDirentBcb).cast());
-        FatUnpinBcb(IrpContext, (NewDirentBcb).cast());
-        FatUnpinBcb(IrpContext, (SecondPageBcb).cast());
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((OldDirentBcb)) as *mut *mut core::ffi::c_void);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((TargetDirentBcb)) as *mut *mut core::ffi::c_void);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((NewDirentBcb)) as *mut *mut core::ffi::c_void);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((SecondPageBcb)) as *mut *mut core::ffi::c_void);
         // End of inner SEH finally
 
         // Update directory offsets
@@ -2408,7 +2408,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
             FatRenameEAs(IrpContext, Fcb, Dirent.__bindgen_anon_1.bindgen_union_field, &raw mut OldOemName);
         }
 
-        FatUnpinBcb(IrpContext, (DotDotBcb).cast());
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DotDotBcb)) as *mut *mut core::ffi::c_void);
         FatUnpinRepinnedBcbs(IrpContext);
 
         Status = STATUS_SUCCESS;
@@ -2423,8 +2423,8 @@ pub unsafe extern "system" fn FatSetRenameInfo(
     if NewDirentFromPool != 0 {
         ExFreePool(NewDirent as *mut c_void);
     }
-    FatUnpinBcb(IrpContext, (TargetDirentBcb).cast());
-    FatUnpinBcb(IrpContext, (DotDotBcb).cast());
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((TargetDirentBcb)) as *mut *mut core::ffi::c_void);
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DotDotBcb)) as *mut *mut core::ffi::c_void);
     if !DirectoryFileObject.is_null() {
         DebugTrace(0, Dbg, b"Uninitialize our parent Stream Cache Map\n\0".as_ptr() as *const i8, 0);
         CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null_mut(), core::ptr::null_mut());
