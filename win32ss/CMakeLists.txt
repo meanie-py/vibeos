@@ -52,7 +52,7 @@ add_custom_command(
     DEPENDS native-gendib)
 
 list(APPEND SOURCE
-    safe_user_io.c
+    # safe_user_io.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/safe_user_io.rs) — cohabitation [SafeProbeForRead/Write, validate-only]
     # gdi/dib/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
     # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
