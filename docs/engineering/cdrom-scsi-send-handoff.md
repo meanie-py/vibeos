@@ -302,6 +302,34 @@ uniform ~6.3s smells like a fixed timeout/periodic worker in the read-issue path
 
 Diagnostic probes parked in `git stash` ("amd64-stall diag: MMSR timing + SCSI-TIMEOUT").
 
+### FOLLOW-UP 2026-06-14(c) — thread-walk during a gap: the system is FULLY IDLE (not blocked-IO)
+
+Built a `debug=true` (DWARF) kernel (force-relink), `qemu/start.sh amd64 --gdb`, halted
+during the gappy phase (read#40–#547), `inspect.sh list-threads` + manual kernel-stack
+symbolication of every thread:
+
+- **All 15 System (Pid 4) threads are idle infrastructure**, each blocked on a timer or
+  work-queue: 9× `ExpWorkerThreadEntryPoint` (WrQueue, idle pool), `ExpWorkerThreadBalanceManager`,
+  `MiBalancerThread`, 2× `FsRtlWorkerThread`, + scheduler/`NtDelayExecution` waiters. The
+  "Running" thread (Tid 8) is `KiIdleLoop`. **No thread is in any Io/Cc/Cdfs/Mm/read path.**
+- ⇒ During the 6.3s gap the box is **genuinely idle** — boot is **waiting for a coarse
+  timer to advance**, NOT spinning and NOT blocked in an in-flight read. Yet reads *do*
+  complete (read count climbs) and there's no SRB-timeout/reset.
+- **Refined hypothesis (storage interrupt delivery on amd64):** reads complete only ~6.3s
+  late and the system idles meanwhile ⇒ the storage **completion interrupt is delayed/lost
+  on amd64** (i386 delivers it promptly → 0 gaps, same Rust). Reads still finish (so the IRQ
+  isn't *totally* absent — delayed, or recovered by a periodic re-eval), below the SRB
+  reset timeout (hence 0 `[SCSI-TIMEOUT]`). amd64=APIC/IOAPIC vs i386=PIC is the obvious
+  delta; same QEMU `-M pc` + IDE CD for both, so it's guest-side interrupt handling.
+- **Cross-lane signal:** the arm64 fastfat lane independently reports an Mm/Cc **section
+  page-in** problem (`CcMapData → MmGetPageEntrySectionSegment/MmDereferenceSegmentWithLock`,
+  a *busy* livelock) — related Mm/Cc-section family, different mode (busy vs idle).
+- **Next step (confirm interrupt hypothesis):** instrument the scsiport ISR
+  (`ScsiPortInterrupt`/miniport `HwInterrupt`) with a call counter + log the delta at each
+  read completion (`scsi.rs:566` `ScsiPortNotification(RequestComplete)`). ISR-count flat
+  across a 6.3s completion ⇒ completion is NOT interrupt-driven ⇒ chase HAL/IoConnectInterrupt
+  vector/affinity/EOI on amd64. (DWARF `debug=true` left reverted; `list-threads` works with it.)
+
 ---
 
 ## UPDATE 2026-06-15 — ~~ROOT CAUSE FOUND: `MmMakeSegmentResident` collided-fault wait~~ (RETRACTED — see above; stale-kernel artifact)
