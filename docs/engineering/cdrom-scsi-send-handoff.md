@@ -273,7 +273,38 @@ secondary concern (PIO only affects the <100ms transfer time, not the 6.4s idle)
   `[profile.release] debug = true` (or `RUSTFLAGS=-Cdebuginfo=2`), then `list-threads` + `bt` the blocked
   System-process loader thread during a stall** → that backtrace names the exact wait object/timeout = root.
 
-## UPDATE 2026-06-15 — ROOT CAUSE FOUND: `MmMakeSegmentResident` collided-fault wait (ntoskrnl Mm, not cdrom/scsiport)
+## ⚠️ RETRACTION 2026-06-14(b) — the `MmMakeSegmentResident` root cause below is WRONG (diagnosed against a STALE kernel)
+
+The "ROOT CAUSE FOUND: MmMakeSegmentResident" section immediately below was reached
+against a **5-hour-stale `ntoskrnl.exe`** — `ninja livecd`/`vibeos-cli build --clean`
+does **not** relink the cargo-driven amd64 kernel on a `.rs` edit (see field-manual
+§9.6b). Re-verified on a freshly-forced kernel build with **in-place timing
+instrumentation** in `MmMakeSegmentResident` (the wait-loop at `section.rs:911` AND the
+`IoPageRead` at `:1003`, threshold >200ms):
+
+- **`[MMSR-WAIT]` / `[MMSR-READ]` fired 0 times** while **37× `[GAP]` 6.3s stalls** occurred.
+  → the 6.3s is **NOT** in `MmMakeSegmentResident` (neither the collided-fault wait nor IoPageRead).
+- **scsiport SRB-timeout also DISPROVEN:** instrumented the `RequestTimeout==0` → bus-reset
+  path (`scsiport.rs:2116`) → **0 `[SCSI-TIMEOUT]` events** vs 37 gaps. No reset/retry firing.
+- **PC sampling during a stall:** 84% `sti;hlt` (CPU **idle**), 10% a storage-miniport PIO
+  `in (%dx)` loop. The idle PC is just the idle thread — the *blocked* thread is off-CPU.
+- **`CdromGapLog` measures the gap between read-IRP *arrivals* at cdrom's sequential queue**
+  (`cdrom.rs:2789`). So cdrom sits **idle ~6.3s waiting for the UPPER layer to issue the
+  next read** — ~1 read in every ~30–60 blocks, **throughout boot** (not 1:1 with the 11
+  boot-driver loads; gaps continue well past the last `[SYSDRV]`).
+
+**Corrected conclusion:** the amd64 boot timeout is an **upper-layer (CDFS / Cc / Mm / Io)
+blocked wait of ~6.3s, ~1/40 reads, CPU idle** — origin still unidentified. It is NOT
+cdrom, NOT scsiport-timeout, NOT `MmMakeSegmentResident`. **Next step:** get the *blocked
+thread's* stack during a gap (per-vCPU PC sampling can't — need a DWARF/struct-offset
+thread-walk via `inspect.sh list-threads`, which needs a `debug=true` kernel build). The
+uniform ~6.3s smells like a fixed timeout/periodic worker in the read-issue path.
+
+Diagnostic probes parked in `git stash` ("amd64-stall diag: MMSR timing + SCSI-TIMEOUT").
+
+---
+
+## UPDATE 2026-06-15 — ~~ROOT CAUSE FOUND: `MmMakeSegmentResident` collided-fault wait~~ (RETRACTED — see above; stale-kernel artifact)
 
 GDB backtrace (after fixing the toolkit — see below) at the stall:
 ```
