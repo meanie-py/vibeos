@@ -146,7 +146,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const BugCheckFileId: u32 = 0; // CDFS_BUG_CHECK_FILEINFO
+pub const BugCheckFileId: u32 = 0x000d0000; // CDFS_BUG_CHECK_FILEINFO
 
 // The translated function
 #[no_mangle]

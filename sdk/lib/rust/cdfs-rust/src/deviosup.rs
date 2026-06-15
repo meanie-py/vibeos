@@ -981,7 +981,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
         if ((DiskOffset as u32 & 2047) != 0) || // SECTOR_MASK = SECTOR_SIZE-1 (2047)
            (((CurrentByteCount & 2047) != 0) && (CurrentByteCount < 2048)) // SECTOR_SIZE = 2048
         {
-            debug_assert!(SafeNodeType(Fcb) != 0x1234); // CDFS_NTC_FCB_INDEX
+            debug_assert!(SafeNodeType(Fcb) != 0x0304); // CDFS_NTC_FCB_INDEX
 
             if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
                 // DUMMY_PSEH: cannot raise+catch. Return CANT_WAIT as a sentinel
