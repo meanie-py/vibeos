@@ -2,11 +2,20 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// HandleToLong / LongToHandle are FORCEINLINE intrinsics in winnt.h (no exported
+// symbol) — just truncating pointer<->LONG casts. Provide them locally.
+#[inline]
+unsafe fn HandleToLong(h: *mut core::ffi::c_void) -> i32 {
+    h as isize as i32
+}
+#[inline]
+unsafe fn LongToHandle(l_long: i32) -> HANDLE {
+    l_long as isize as HANDLE
+}
+
 extern "system" {
     fn CreateFileA( lpFileName: LPCSTR, dwDesiredAccess: u32, dwShareMode: u32, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: u32, dwFlagsAndAttributes: u32, hTemplateFile: *mut core::ffi::c_void, ) -> isize;
-    fn HandleToLong(h: *mut core::ffi::c_void) -> i32;
     fn CloseHandle(hObject: HANDLE) -> BOOL;
-    fn LongToHandle(lLong: i32) -> HANDLE;
     fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: DWORD, ) -> DWORD;
     fn ReadFile( hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
     fn WriteFile( hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;

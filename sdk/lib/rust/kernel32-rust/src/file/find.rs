@@ -15,22 +15,18 @@ use _FIND_DATA_TYPE::{FindFile, FindStream};
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
-    fn BasepUnicodeStringTo8BitString(
-        DestinationString: PANSI_STRING,
-        SourceString: PCUNICODE_STRING,
-        AllocateDestinationString: BOOLEAN,
-    ) -> NTSTATUS;
 }
 
-// RtlStringCbCopyNW — ntstrsafe (cdecl/NTAPI). Faithful signature from strsafe.h.
-extern "system" {
-    fn RtlStringCbCopyNW(
-        pszDest: PWSTR,
-        cbDest: usize,
-        pszSrc: PCWSTR,
-        cbToCopy: usize,
-    ) -> NTSTATUS;
+// BasepUnicodeStringTo8BitString is a PRTL_CONVERT_STRINGA fn-pointer GLOBAL in C
+// (utils.c), called directly — declare it as a data symbol (no @N), not a function.
+extern "C" {
+    static BasepUnicodeStringTo8BitString:
+        unsafe extern "system" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS;
 }
+
+// RtlStringCbCopyNW is FORCEINLINE in ntstrsafe.h (no export) → use the crate's
+// faithful Rust implementation in the ntstrsafe helper module.
+use crate::ntstrsafe::RtlStringCbCopyNW;
 
 #[repr(C)]
 #[derive(Copy, Clone)]

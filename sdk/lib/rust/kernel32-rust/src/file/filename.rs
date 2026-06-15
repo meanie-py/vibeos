@@ -14,12 +14,18 @@ use crate::client::utils::bIsFileApiAnsi;
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
-    fn BasepUnicodeStringTo8BitString(
-        DestinationString: PANSI_STRING,
-        SourceString: PCUNICODE_STRING,
-        AllocateDestinationString: BOOLEAN,
-    ) -> NTSTATUS;
+}
+
+// FilenameA2W is cdecl in C (fileutils.c / kernel32.h: no WINAPI) → extern "C".
+extern "C" {
     fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
+}
+
+// BasepUnicodeStringTo8BitString is a PRTL_CONVERT_STRINGA fn-pointer GLOBAL in C
+// (utils.c), called directly — declare it as a data symbol (no @N), not a function.
+extern "C" {
+    static BasepUnicodeStringTo8BitString:
+        unsafe extern "system" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS;
 }
 
 // ntstatus.h

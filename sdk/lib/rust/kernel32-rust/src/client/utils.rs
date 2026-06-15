@@ -58,14 +58,20 @@ pub static mut Restricted: _UNICODE_STRING = _UNICODE_STRING {
     Buffer: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
 };
 
+// Cross-file referenced by active/translated callers (create.rs) → keep C symbol.
+#[no_mangle]
 pub static mut bIsFileApiAnsi: BOOL = 1; // TRUE
 
+// Cross-file referenced by active C (dllmain.c, find.c) → keep the C symbol.
+#[no_mangle]
 pub static mut Basep8BitStringToUnicodeString: PRTL_CONVERT_STRING =
     Some(RtlAnsiStringToUnicodeString);
 
+#[no_mangle]
 pub static mut BasepUnicodeStringTo8BitString: PRTL_CONVERT_STRINGA =
     Some(RtlUnicodeStringToAnsiString);
 
+#[no_mangle]
 pub static mut BasepUnicodeStringTo8BitSize: PRTL_COUNT_STRING =
     Some(BasepUnicodeStringToAnsiSize);
 
@@ -529,8 +535,10 @@ pub unsafe extern "system" fn BaseFreeThreadStack(
     );
 }
 
+// i386 asm thunks are PUBLIC _BaseThreadStartupThunk@0 etc. (stdcall-decorated,
+// @0). `extern "system"` on a zero-arg fn produces the `@0` decoration to match.
 #[cfg(target_arch = "x86")]
-extern "C" {
+extern "system" {
     fn BaseThreadStartupThunk();
     fn BaseProcessStartThunk();
     fn BaseFiberStartup();

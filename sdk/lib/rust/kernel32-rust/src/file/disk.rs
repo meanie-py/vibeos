@@ -10,6 +10,11 @@ const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(AnsiString: LPCSTR) -> PUNICODE_STRING;
+}
+
+// BasepGetVolumeNameFromReparsePoint and IsThisARootDirectory are cdecl in C
+// (kernel32.h: no WINAPI) and defined extern "C" in mntpoint.rs / volume.rs.
+extern "C" {
     fn BasepGetVolumeNameFromReparsePoint(
         lpszMountPoint: LPCWSTR,
         lpszVolumeName: LPWSTR,

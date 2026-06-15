@@ -8,10 +8,14 @@ macro_rules! WARN  { ($($t:tt)*) => {{}} }
 
 const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
 
-extern "system" {
-    static bIsFileApiAnsi: BOOL;
+// FilenameA2W and IntCheckForConsoleFileName are cdecl in C (fileutils.c /
+// console.c — no WINAPI in their decls) → extern "C".
+extern "C" {
     fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
     fn IntCheckForConsoleFileName(pszName: LPCWSTR, dwDesiredAccess: DWORD) -> LPCWSTR;
+}
+extern "system" {
+    static bIsFileApiAnsi: BOOL;
     fn OpenConsoleW(wsName: LPCWSTR, dwDesiredAccess: DWORD, bInheritHandle: BOOL,
         dwShareMode: DWORD) -> HANDLE;
     fn GetFullPathNameA(lpFileName: LPCSTR, nBufferLength: DWORD, lpBuffer: LPSTR,

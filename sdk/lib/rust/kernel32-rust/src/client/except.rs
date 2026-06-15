@@ -39,8 +39,11 @@ unsafe fn wcslen(mut s: *const u16) -> usize {
 }
 
 extern "C" {
-    // strsafe.h — cdecl on this codebase's strsafe surface.
-    fn StringCchPrintfW(pszDest: *mut u16, cchDest: usize, pszFormat: *const u16, ...) -> HRESULT;
+    // strsafe.h StringCchPrintfW is FORCEINLINE (no export) → its body is just
+    // `_vsnwprintf(dest, cchDest-1, fmt, args)` + NUL-terminate. Call the CRT
+    // _snwprintf directly (variadic, cdecl); StringCchPrintfW_hr() wraps the
+    // S_OK/STRSAFE_E_INSUFFICIENT_BUFFER result.
+    fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
 }
 extern "system" {
     // interlckd.h FORCEINLINE wrapper around the InterlockedExchange intrinsic.
@@ -48,6 +51,27 @@ extern "system" {
         Target: *mut *mut core::ffi::c_void,
         Value: *mut core::ffi::c_void,
     ) -> *mut core::ffi::c_void;
+}
+
+// StringCchPrintfW result mapping (strsafe.h): S_OK on full write, else
+// STRSAFE_E_INSUFFICIENT_BUFFER (0x8007007A). except.c only tests hr >= 0.
+const STRSAFE_E_INSUFFICIENT_BUFFER: HRESULT = 0x8007_007A_u32 as HRESULT;
+#[inline]
+unsafe fn strsafe_printf_hr(written: i32, cch_dest: usize, dest: *mut u16) -> HRESULT {
+    if cch_dest == 0 {
+        return STRSAFE_E_INSUFFICIENT_BUFFER;
+    }
+    let cch_max = cch_dest - 1;
+    if written < 0 || (written as usize) > cch_max {
+        // overflow/truncation: NUL-terminate at the end of the buffer
+        *dest.add(cch_max) = 0;
+        STRSAFE_E_INSUFFICIENT_BUFFER
+    } else {
+        if (written as usize) == cch_max {
+            *dest.add(cch_max) = 0;
+        }
+        0 // S_OK
+    }
 }
 
 // const-fn UTF-16 literal helper (same pattern as client/path.rs, dosdev.rs).
@@ -83,6 +107,8 @@ extern "C" {
 pub type LPTOP_LEVEL_EXCEPTION_FILTER =
     Option<unsafe extern "system" fn(*mut EXCEPTION_POINTERS) -> i32>;
 
+// Cross-file referenced by active C (dllmain.c initializes it) → keep the C symbol.
+#[no_mangle]
 pub static mut GlobalTopLevelExceptionFilter: LPTOP_LEVEL_EXCEPTION_FILTER = None;
 pub static mut g_dwLastErrorToBreakOn: DWORD = 0;
 
@@ -581,12 +607,15 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
     {
         PrependLength = wcslen(SharedUserData_NtSystemRoot()) as u32 + 10;
         if PrependLength + Length <= 260 {
-            hr = StringCchPrintfW(
-                AeDebugCmdLine.as_mut_ptr(),
-                (PrependLength + 1) as usize,
+            let cch_dest = (PrependLength + 1) as usize;
+            let dest = AeDebugCmdLine.as_mut_ptr();
+            let n = _snwprintf(
+                dest,
+                cch_dest.saturating_sub(1),
                 SYSTEM32_FMT_W.as_ptr(),
                 SharedUserData_NtSystemRoot(),
             );
+            hr = strsafe_printf_hr(n, cch_dest, dest);
             Success = if hr as i32 >= 0 { 1 } else { 0 };
         }
     } else {
@@ -597,13 +626,16 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
     }
 
     if Success != 0 {
-        hr = StringCchPrintfW(
-            AeDebugCmdLine.as_mut_ptr().offset(PrependLength as isize),
-            Length as usize,
+        let cch_dest = Length as usize;
+        let dest = AeDebugCmdLine.as_mut_ptr().offset(PrependLength as isize);
+        let n = _snwprintf(
+            dest,
+            cch_dest.saturating_sub(1),
             AeDebugPath,
             HandleToUlong((*NtCurrentTeb()).ClientId.UniqueProcess),
             hDebugEvent,
         );
+        hr = strsafe_printf_hr(n, cch_dest, dest);
         Success = if hr as i32 >= 0 { 1 } else { 0 };
     }
 

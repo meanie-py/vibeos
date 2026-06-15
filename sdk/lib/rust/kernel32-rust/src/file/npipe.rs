@@ -25,12 +25,35 @@ const FSCTL_PIPE_TRANSCEIVE: ULONG = 0x0011_C017;
 const FILE_GENERIC_WRITE: ACCESS_MASK = 0x0012_0116;
 
 extern "system" {
-    fn ConvertWin32AnsiChangeApiToUnicodeApi( ApiName: LPCSTR, lpName: LPCSTR, dwOpenMode: DWORD, dwPipeMode: DWORD, nMaxInstances: DWORD, nOutBufferSize: DWORD, nInBufferSize: DWORD, nDefaultTimeOut: DWORD, lpSecurityAttributes: LPSECURITY_ATTRIBUTES, ) -> HANDLE;
     fn InterlockedIncrement(addend: *mut LONG) -> LONG;
-    fn RtlExtendedLargeIntegerDivide(dividend: LARGE_INTEGER, divisor: ULONG, remainder: *mut ULONG) -> LARGE_INTEGER;
-    // WaitNamedPipeW lives in a sibling kernel32 module (cohab-resolved at link).
-    fn WaitNamedPipeW(lpNamedPipeName: LPCWSTR, nTimeOut: DWORD) -> BOOL;
 }
+
+// RtlExtendedLargeIntegerDivide: a real ntdll export on i386; a winnt.h
+// FORCEINLINE (plain 64-bit divide) on amd64/arm64 — provide it locally there.
+#[cfg(target_arch = "x86")]
+extern "system" {
+    fn RtlExtendedLargeIntegerDivide(dividend: LARGE_INTEGER, divisor: ULONG, remainder: *mut ULONG) -> LARGE_INTEGER;
+}
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn RtlExtendedLargeIntegerDivide(
+    dividend: LARGE_INTEGER,
+    divisor: ULONG,
+    remainder: *mut ULONG,
+) -> LARGE_INTEGER {
+    let mut result: LARGE_INTEGER = core::mem::zeroed();
+    result.QuadPart = dividend.QuadPart / (divisor as i64);
+    if !remainder.is_null() {
+        *remainder = (dividend.QuadPart % (divisor as i64)) as ULONG;
+    }
+    result
+}
+
+// RTL_PATH_TYPE values (sdk/include/ndk/rtltypes.h) compared as ULONG.
+const RtlPathTypeUncAbsolute: ULONG = 1;
+const RtlPathTypeLocalDevice: ULONG = 6;
+// FSCTL_PIPE_WAIT = CTL_CODE(FILE_DEVICE_NAMED_PIPE=0x11, 6, BUFFERED, ANY) = 0x110018
+const FSCTL_PIPE_WAIT: ULONG = 0x0011_0018;
 
 extern "C" {
     fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> core::ffi::c_int;
@@ -299,17 +322,34 @@ pub unsafe extern "system" fn CreateNamedPipeA(
     lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
 ) -> HANDLE {
 
-    ConvertWin32AnsiChangeApiToUnicodeApi(
-        b"CreateNamedPipe\0".as_ptr() as LPCSTR,
-        lpName,
-        dwOpenMode,
-        dwPipeMode,
-        nMaxInstances,
-        nOutBufferSize,
-        nInBufferSize,
-        nDefaultTimeOut,
-        lpSecurityAttributes,
-    )
+    // Expansion of the ConvertWin32AnsiChangeApiToUnicodeApi(CreateNamedPipe, lpName, ...)
+    // macro (dll/win32/kernel32/include/base_x.h): ANSI→Unicode via the TEB static
+    // unicode string, then tail-call CreateNamedPipeW.
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, FALSE as BOOLEAN);
+    if NT_SUCCESS(Status) {
+        return CreateNamedPipeW(
+            (*UnicodeCache).Buffer,
+            dwOpenMode,
+            dwPipeMode,
+            nMaxInstances,
+            nOutBufferSize,
+            nInBufferSize,
+            nDefaultTimeOut,
+            lpSecurityAttributes,
+        );
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -480,6 +520,259 @@ pub unsafe extern "system" fn WaitNamedPipeA(
     }
 
     return r;
+}
+
+// Faithful translation of WaitNamedPipeW (dll/win32/kernel32/client/file/npipe.c).
+// The C body was dropped by the bulk translation; restored here verbatim in logic.
+#[no_mangle]
+pub unsafe extern "system" fn WaitNamedPipeW(
+    lpNamedPipeName: LPCWSTR,
+    nTimeOut: DWORD,
+) -> BOOL {
+    let mut NamedPipeName: _UNICODE_STRING = core::mem::zeroed();
+    let mut NewName: _UNICODE_STRING;
+    let mut DevicePath: _UNICODE_STRING = core::mem::zeroed();
+    let mut PipePrefix: _UNICODE_STRING = core::mem::zeroed();
+    let NameLength: ULONG;
+    let mut i: ULONG;
+    let mut p: *mut WCHAR;
+    let Type: ULONG;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut FileHandle: HANDLE = core::ptr::null_mut();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let WaitPipeInfoSize: ULONG;
+    let mut DevicePathBuffer: PVOID;
+    let WaitPipeInfo: PFILE_PIPE_WAIT_FOR_BUFFER;
+
+    /* Start by making a unicode string of the name */
+    TRACE!("Sent path");
+    if RtlCreateUnicodeString(&raw mut NamedPipeName, lpNamedPipeName) == 0 {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return FALSE as BOOL;
+    }
+    NameLength = (NamedPipeName.Length as ULONG) / (core::mem::size_of::<WCHAR>() as ULONG);
+
+    /* All slashes must become backslashes */
+    i = 0;
+    while i < NameLength {
+        /* Check and convert */
+        if *NamedPipeName.Buffer.add(i as usize) == b'/' as WCHAR {
+            *NamedPipeName.Buffer.add(i as usize) = b'\\' as WCHAR;
+        }
+        i += 1;
+    }
+
+    DevicePathBuffer = core::ptr::null_mut();
+
+    /* Find the path type of the name we were given */
+    NewName = NamedPipeName;
+    Type = RtlDetermineDosPathNameType_U(lpNamedPipeName) as ULONG;
+
+    /* Check if this was a device path, ie : "\\.\pipe\name" */
+    if Type == RtlPathTypeLocalDevice {
+        /* Make sure it's a valid prefix */
+        RtlInitUnicodeString(&raw mut PipePrefix, w!("\\\\.\\pipe\\").as_ptr());
+        if RtlPrefixUnicodeString(&raw const PipePrefix, &raw const NewName, TRUE as BOOLEAN) == 0 {
+            /* The name is invalid */
+            WARN!("Invalid name!");
+            RtlFreeUnicodeString(&raw mut NamedPipeName);
+            BaseSetLastNTError(STATUS_OBJECT_PATH_SYNTAX_BAD);
+            return FALSE as BOOL;
+        }
+
+        /* Move past it */
+        NewName.Buffer = NewName.Buffer.add(
+            (PipePrefix.Length as usize) / core::mem::size_of::<WCHAR>(),
+        );
+        NewName.Length -= PipePrefix.Length;
+        NewName.MaximumLength -= PipePrefix.Length;
+
+        /* Initialize the Dos Devices name */
+        TRACE!("NewName");
+        RtlInitUnicodeString(&raw mut DevicePath, w!("\\DosDevices\\pipe\\").as_ptr());
+    } else if Type == RtlPathTypeUncAbsolute {
+        let PipeName: *mut WCHAR;
+
+        /* The path is \\server\\pipe\name; find the pipename itself */
+        p = NewName.Buffer.add(2);
+
+        /* First loop to get past the server name */
+        loop {
+            /* Check if this is a backslash */
+            if *p == b'\\' as WCHAR {
+                break;
+            }
+            /* Check next */
+            p = p.add(1);
+            if *p == 0 {
+                break;
+            }
+        }
+
+        /* Now make sure the full name contains "pipe\" */
+        // sizeof("pipe\\") - sizeof(ANSI_NULL) = 6 - 1 = 5 chars
+        if *p != 0 && _wcsnicmp(p.add(1), w!("pipe\\").as_ptr(), 5) == 0 {
+            /* Get to the pipe name itself now */
+            // sizeof("pipe\\") - sizeof(ANSI_NULL) = 5 (byte count of "pipe\")
+            p = p.add(5);
+        } else {
+            /* The name is invalid */
+            WARN!("Invalid name!");
+            RtlFreeUnicodeString(&raw mut NamedPipeName);
+            BaseSetLastNTError(STATUS_OBJECT_PATH_SYNTAX_BAD);
+            return FALSE as BOOL;
+        }
+
+        /* Skip first backslash */
+        NewName.Buffer = NewName.Buffer.add(1);
+        /* And skip pipe for copying name */
+        // (sizeof(L"pipe\\") - sizeof(UNICODE_NULL)) / sizeof(WCHAR) = (12-2)/2 = 5
+        PipeName = p.add(5);
+        /* Update the string */
+        NewName.Length =
+            ((PipeName as usize) - (NewName.Buffer as usize)) as USHORT;
+        NewName.MaximumLength =
+            ((PipeName as usize) - (NewName.Buffer as usize)) as USHORT;
+
+        /* DevicePath will contain the pipename + the DosDevice prefix */
+        // sizeof(L"\\DosDevices\\UNC\\") = 17 wchars incl NUL = 34 bytes
+        DevicePath.MaximumLength = (((PipeName as usize) - (NewName.Buffer as usize))
+            + (core::mem::size_of::<[u16; 17]>())) as USHORT;
+
+        /* Allocate the buffer for DevicePath */
+        DevicePathBuffer =
+            RtlAllocateHeap(RtlGetProcessHeap(), 0, DevicePath.MaximumLength as SIZE_T);
+        if DevicePathBuffer.is_null() {
+            RtlFreeUnicodeString(&raw mut NamedPipeName);
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return FALSE as BOOL;
+        }
+
+        /* Copy the prefix first */
+        DevicePath.Buffer = DevicePathBuffer as *mut WCHAR;
+        // sizeof(L"\\DosDevices\\UNC\\") - sizeof(UNICODE_NULL) = 34 - 2 = 32 bytes
+        RtlCopyMemory(
+            DevicePathBuffer,
+            w!("\\DosDevices\\UNC\\").as_ptr() as *const c_void,
+            32,
+        );
+        DevicePath.Length = 32;
+        /* And append the rest */
+        RtlAppendUnicodeStringToString(&raw mut DevicePath, &raw const NewName);
+        /* And fix pipe name without its prefix */
+        RtlInitUnicodeString(&raw mut NewName, PipeName.add(1));
+    } else {
+        WARN!("Invalid path type");
+        RtlFreeUnicodeString(&raw mut NamedPipeName);
+        BaseSetLastNTError(STATUS_OBJECT_PATH_SYNTAX_BAD);
+        return FALSE as BOOL;
+    }
+
+    /* Now calculate the total length of the structure and allocate it */
+    WaitPipeInfoSize = (core::mem::offset_of!(_FILE_PIPE_WAIT_FOR_BUFFER, Name) as ULONG)
+        + (NewName.Length as ULONG);
+    WaitPipeInfo =
+        RtlAllocateHeap(RtlGetProcessHeap(), 0, WaitPipeInfoSize as SIZE_T) as PFILE_PIPE_WAIT_FOR_BUFFER;
+    if WaitPipeInfo.is_null() {
+        if !DevicePathBuffer.is_null() {
+            RtlFreeHeap(RtlGetProcessHeap(), 0, DevicePathBuffer);
+        }
+        RtlFreeUnicodeString(&raw mut NamedPipeName);
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return FALSE as BOOL;
+    }
+
+    /* Initialize the object attributes */
+    TRACE!("Opening");
+    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    ObjectAttributes.RootDirectory = core::ptr::null_mut();
+    ObjectAttributes.ObjectName = &raw mut DevicePath;
+    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE as ULONG;
+    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
+    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+
+    /* Open the path */
+    Status = NtOpenFile(
+        &raw mut FileHandle,
+        (FILE_READ_ATTRIBUTES | SYNCHRONIZE) as ACCESS_MASK,
+        &raw mut ObjectAttributes,
+        &raw mut IoStatusBlock,
+        (FILE_SHARE_READ | FILE_SHARE_WRITE) as ULONG,
+        FILE_SYNCHRONOUS_IO_NONALERT as ULONG,
+    );
+
+    if !DevicePathBuffer.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, DevicePathBuffer);
+    }
+
+    if !NT_SUCCESS(Status) {
+        /* Fail; couldn't open */
+        WARN!("Status");
+        RtlFreeHeap(RtlGetProcessHeap(), 0, WaitPipeInfo as PVOID);
+        RtlFreeUnicodeString(&raw mut NamedPipeName);
+        BaseSetLastNTError(Status);
+        return FALSE as BOOL;
+    }
+
+    /* Check what timeout we got */
+    if nTimeOut == NMPWAIT_USE_DEFAULT_WAIT {
+        /* Don't use a timeout */
+        (*WaitPipeInfo).TimeoutSpecified = FALSE as BOOLEAN;
+    } else {
+        /* Check if we should wait forever */
+        if nTimeOut == NMPWAIT_WAIT_FOREVER {
+            /* Set the max */
+            (*WaitPipeInfo).Timeout.u.LowPart = 0;
+            (*WaitPipeInfo).Timeout.u.HighPart = 0x80000000u32 as LONG;
+        } else {
+            /* Convert to NT format */
+            (*WaitPipeInfo).Timeout.QuadPart = (nTimeOut as i64) * -10000i64;
+        }
+
+        /* In both cases, we do have a timeout */
+        (*WaitPipeInfo).TimeoutSpecified = TRUE as BOOLEAN;
+    }
+
+    /* Set the length and copy the name */
+    (*WaitPipeInfo).NameLength = NewName.Length as ULONG;
+    RtlCopyMemory(
+        core::ptr::addr_of_mut!((*WaitPipeInfo).Name) as PVOID,
+        NewName.Buffer as *const c_void,
+        NewName.Length as SIZE_T,
+    );
+
+    /* Get rid of the full name */
+    RtlFreeUnicodeString(&raw mut NamedPipeName);
+
+    /* Let NPFS know of our request */
+    Status = NtFsControlFile(
+        FileHandle,
+        core::ptr::null_mut(),
+        None,
+        core::ptr::null_mut(),
+        &raw mut IoStatusBlock,
+        FSCTL_PIPE_WAIT,
+        WaitPipeInfo as PVOID,
+        WaitPipeInfoSize,
+        core::ptr::null_mut(),
+        0,
+    );
+
+    /* Free our pipe info data and close the handle */
+    RtlFreeHeap(RtlGetProcessHeap(), 0, WaitPipeInfo as PVOID);
+    NtClose(FileHandle);
+
+    /* Check the status */
+    if !NT_SUCCESS(Status) {
+        /* Failure to wait on the pipe */
+        WARN!("Status");
+        BaseSetLastNTError(Status);
+        return FALSE as BOOL;
+    }
+
+    /* Success */
+    TRUE as BOOL
 }
 
 #[no_mangle]

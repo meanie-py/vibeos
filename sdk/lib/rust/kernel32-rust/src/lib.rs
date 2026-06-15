@@ -55,6 +55,17 @@ pub mod k32_types;
 pub mod prelude;
 pub mod substrate;
 
+// Interlocked* intrinsics kernel32 owns as real symbols (i386 32-bit family +
+// the pointer ExchangePointer wrapper). See module doc.
+pub mod interlocked;
+
+// ntstrsafe.h FORCEINLINE string routines (no export) referenced by the C
+// translation as extern symbols → faithful Rust bodies. See module doc.
+pub mod ntstrsafe;
+
+// mountmgr.h MOUNTMGR_IS_*_VOLUME_NAME macros referenced as extern fns → real defs.
+pub mod mountmgr;
+
 // client/proc.c — CreateProcessInternalW + the process-creation path (first flip).
 // Body modules land per the parallel hand-translation; each `use crate::substrate::*`.
 pub mod proc_getters; // GetProcess*/Set*/Open/Exit/Terminate/Fatal/ReadWriteMem

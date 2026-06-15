@@ -2,12 +2,29 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// RtlExtendedLargeIntegerDivide: a real ntdll export on i386; a winnt.h
+// FORCEINLINE (plain 64-bit divide) on amd64/arm64 — provide it locally there.
+#[cfg(target_arch = "x86")]
 extern "system" {
     fn RtlExtendedLargeIntegerDivide(
         dividend: LARGE_INTEGER,
         divisor: ULONG,
         remainder: *mut ULONG,
     ) -> LARGE_INTEGER;
+}
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn RtlExtendedLargeIntegerDivide(
+    dividend: LARGE_INTEGER,
+    divisor: ULONG,
+    remainder: *mut ULONG,
+) -> LARGE_INTEGER {
+    let mut result: LARGE_INTEGER = core::mem::zeroed();
+    result.QuadPart = dividend.QuadPart / (divisor as i64);
+    if !remainder.is_null() {
+        *remainder = (dividend.QuadPart % (divisor as i64)) as ULONG;
+    }
+    result
 }
 
 // winbase.h

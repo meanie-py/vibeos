@@ -24,7 +24,9 @@ const VdmEntryUpdateControlCHandler: ULONG = 2;
 // Win32 APIs (stdcall) — resolve to other kernel32 modules' `#[no_mangle]` symbols
 // (or the C TUs) at link time.
 extern "system" {
-    fn SetFilePointer( hFile: HANDLE, lDistanceToMove: i64, lpDistanceToMoveHigh: *mut i64, dwMoveMethod: u32, ) -> u32;
+    // SetFilePointer is WINAPI SetFilePointer(HANDLE, LONG, PLONG, DWORD) -> DWORD
+    // (kernel32.spec: stdcall, @16). The distance args are 32-bit LONG, not i64.
+    fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: u32, ) -> u32;
     fn ReadFile( hFile: HANDLE, lpBuffer: *mut core::ffi::c_void, nNumberOfBytesToRead: u32, lpNumberOfBytesRead: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> u32;
     fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
     fn CloseHandle(hObject: HANDLE) -> BOOL;
@@ -32,9 +34,24 @@ extern "system" {
     fn GetShortPathNameW(lpszLongPath: LPCWSTR, lpszShortPath: LPWSTR, cchBuffer: DWORD) -> DWORD;
     fn lstrcmpiW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> i32;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: DWORD, dwBytes: usize) -> *mut core::ffi::c_void;
-    fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: DWORD, lpMem: *mut core::ffi::c_void) -> BOOL;
+    // Win32 exports used by BaseCheckVDM (resolve to other kernel32 modules).
+    fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
+    fn GetLastError() -> DWORD;
+    fn WideCharToMultiByte(
+        CodePage: UINT,
+        dwFlags: DWORD,
+        lpWideCharStr: LPCWSTR,
+        cchWideChar: i32,
+        lpMultiByteStr: LPSTR,
+        cbMultiByte: i32,
+        lpDefaultChar: LPCSTR,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> i32;
 }
+
+// HeapAlloc/HeapFree are pure ntdll forwarders in kernel32.spec (no link-time
+// local symbol) — route to the crate's thin Rtl* wrappers instead of an extern.
+use crate::string::nls_subst::{HeapAlloc, HeapFree};
 
 // CRT string helpers (cdecl).
 extern "C" {
@@ -727,7 +744,7 @@ unsafe fn InternalIsOS2OrOldWin(
     'done: {
         'broken: {
             /* read modref table */
-            if (SetFilePointer(hFile, (*mz).e_lfanew as i64 + (*ne).ne_modtab as i64, core::ptr::null_mut(), FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+            if (SetFilePointer(hFile, (*mz).e_lfanew as LONG + (*ne).ne_modtab as LONG, core::ptr::null_mut(), FILE_BEGIN) == INVALID_SET_FILE_POINTER)
                 || {
                     modtab = HeapAlloc(GetProcessHeap(), 0, ((*ne).ne_cmod as usize) * core::mem::size_of::<WORD>()) as LPWORD;
                     modtab.is_null()
@@ -747,7 +764,7 @@ unsafe fn InternalIsOS2OrOldWin(
             }
 
             /* read imported names table */
-            if (SetFilePointer(hFile, (*mz).e_lfanew as i64 + (*ne).ne_imptab as i64, core::ptr::null_mut(), FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+            if (SetFilePointer(hFile, (*mz).e_lfanew as LONG + (*ne).ne_imptab as LONG, core::ptr::null_mut(), FILE_BEGIN) == INVALID_SET_FILE_POINTER)
                 || {
                     nametab = HeapAlloc(
                         GetProcessHeap(),
@@ -792,7 +809,7 @@ unsafe fn InternalIsOS2OrOldWin(
 
     HeapFree(GetProcessHeap(), 0, modtab as LPVOID);
     HeapFree(GetProcessHeap(), 0, nametab as LPVOID);
-    SetFilePointer(hFile, CurPos as i64, core::ptr::null_mut(), FILE_BEGIN);
+    SetFilePointer(hFile, CurPos as LONG, core::ptr::null_mut(), FILE_BEGIN);
     return Ret;
 }
 unsafe fn InternalGetBinaryType(hFile: HANDLE) -> DWORD {
@@ -858,7 +875,7 @@ unsafe fn InternalGetBinaryType(hFile: HANDLE) -> DWORD {
     }
 
     if Header.mz.e_magic == IMAGE_DOS_SIGNATURE {
-        if (SetFilePointer(hFile, Header.mz.e_lfanew as i64, core::ptr::null_mut(), FILE_BEGIN)
+        if (SetFilePointer(hFile, Header.mz.e_lfanew as LONG, core::ptr::null_mut(), FILE_BEGIN)
             == INVALID_SET_FILE_POINTER)
             || (ReadFile(
                 hFile,
@@ -903,7 +920,7 @@ unsafe fn InternalGetBinaryType(hFile: HANDLE) -> DWORD {
         ) == 0
         {
             let mut ne: IMAGE_OS2_HEADER = core::mem::zeroed();
-            if (SetFilePointer(hFile, Header.mz.e_lfanew as i64, core::ptr::null_mut(), FILE_BEGIN)
+            if (SetFilePointer(hFile, Header.mz.e_lfanew as LONG, core::ptr::null_mut(), FILE_BEGIN)
                 == 1)
                 || ReadFile(
                     hFile,
@@ -1626,6 +1643,381 @@ pub unsafe extern "system" fn VDMOperationStarted(
         0,
         Unknown0,
     )
+}
+
+// Faithful translation of BaseCheckVDM (dll/win32/kernel32/client/vdm.c). Builds the
+// BASESRV BasepCheckVDM CSR request, captures the ANSI strings into a CSR capture
+// buffer, and calls CSRSS. The bulk translation dropped this 448-line body; restored.
+#[no_mangle]
+pub unsafe extern "system" fn BaseCheckVDM(
+    BinaryType: ULONG,
+    mut ApplicationName: PCWCH,
+    mut CommandLine: PCWCH,
+    mut CurrentDirectory: PCWCH,
+    AnsiEnvironment: PANSI_STRING,
+    ApiMessage: PBASE_API_MESSAGE,
+    iTask: PULONG,
+    CreationFlags: DWORD,
+    StartupInfo: LPSTARTUPINFOW,
+    hUserToken: HANDLE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let CheckVdm: PBASE_CHECK_VDM = &raw mut (*ApiMessage).Data.CheckVDMRequest;
+    let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
+    let mut CurrentDir: PWCHAR = core::ptr::null_mut();
+    let mut ShortAppName: PWCHAR = core::ptr::null_mut();
+    let mut ShortCurrentDir: PWCHAR = core::ptr::null_mut();
+    let mut Length: usize;
+    let mut AnsiCmdLine: PCHAR = core::ptr::null_mut();
+    let mut AnsiAppName: PCHAR = core::ptr::null_mut();
+    let mut AnsiCurDirectory: PCHAR = core::ptr::null_mut();
+    let mut AnsiDesktop: PCHAR = core::ptr::null_mut();
+    let mut AnsiTitle: PCHAR = core::ptr::null_mut();
+    let mut AnsiReserved: PCHAR = core::ptr::null_mut();
+    let mut AnsiStartupInfo: STARTUPINFOA = core::mem::zeroed();
+    let mut NumStrings: ULONG = 5;
+
+    /* Parameters validation */
+    if ApplicationName.is_null() || CommandLine.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Trim leading whitespace from ApplicationName */
+    while *ApplicationName == b' ' as u16 || *ApplicationName == b'\t' as u16 {
+        ApplicationName = ApplicationName.add(1);
+    }
+
+    /* Calculate the size of the short application name */
+    Length = GetShortPathNameW(ApplicationName, core::ptr::null_mut(), 0) as usize;
+    if Length == 0 {
+        Status = STATUS_OBJECT_PATH_INVALID;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Allocate memory for the short application name */
+    ShortAppName = RtlAllocateHeap(
+        RtlGetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        (Length * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as PWCHAR;
+    if ShortAppName.is_null() {
+        Status = STATUS_NO_MEMORY;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Get the short application name */
+    if GetShortPathNameW(ApplicationName, ShortAppName, Length as DWORD) == 0 {
+        Status = match GetLastError() {
+            ERROR_NOT_ENOUGH_MEMORY => STATUS_NO_MEMORY,
+            ERROR_INVALID_PARAMETER => STATUS_INVALID_PARAMETER,
+            _ => STATUS_OBJECT_PATH_INVALID,
+        };
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Trim leading whitespace from CommandLine */
+    while *CommandLine == b' ' as u16 || *CommandLine == b'\t' as u16 {
+        CommandLine = CommandLine.add(1);
+    }
+
+    /* Strip the first token (ApplicationName) from CommandLine */
+    if *CommandLine != 0 {
+        Length = wcslen(ApplicationName);
+        if Length <= wcslen(CommandLine) && _wcsnicmp(ApplicationName, CommandLine, Length) == 0 {
+            /* Skip it */
+            CommandLine = CommandLine.add(Length);
+        } else {
+            /* Get rid of the first token. We stop when we see whitespace. */
+            while *CommandLine != 0 && !(*CommandLine == b' ' as u16 || *CommandLine == b'\t' as u16) {
+                if *CommandLine == b'\"' as u16 {
+                    /* We enter a quoted part, skip it */
+                    CommandLine = CommandLine.add(1);
+                    while *CommandLine != 0 {
+                        let c = *CommandLine;
+                        CommandLine = CommandLine.add(1);
+                        if c == b'\"' as u16 {
+                            break;
+                        }
+                    }
+                } else {
+                    CommandLine = CommandLine.add(1);
+                }
+            }
+        }
+    }
+
+    /* Trim remaining whitespace between the application name and the parameters */
+    while *CommandLine == b' ' as u16 || *CommandLine == b'\t' as u16 {
+        CommandLine = CommandLine.add(1);
+    }
+
+    /* Get the current directory */
+    if CurrentDirectory.is_null() {
+        Length = GetCurrentDirectoryW(0, core::ptr::null_mut()) as usize;
+        CurrentDir = RtlAllocateHeap(
+            RtlGetProcessHeap(),
+            HEAP_ZERO_MEMORY,
+            (Length * core::mem::size_of::<WCHAR>()) as SIZE_T,
+        ) as PWCHAR;
+        if CurrentDir.is_null() {
+            Status = STATUS_NO_MEMORY;
+            return base_check_vdm_cleanup(
+                Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+                AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+            );
+        }
+        GetCurrentDirectoryW(Length as DWORD, CurrentDir);
+        CurrentDirectory = CurrentDir;
+    }
+
+    /* Calculate the size of the short current directory path */
+    Length = GetShortPathNameW(CurrentDirectory, core::ptr::null_mut(), 0) as usize;
+
+    /* Allocate memory for the short current directory path */
+    ShortCurrentDir = RtlAllocateHeap(
+        RtlGetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        (Length * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as PWCHAR;
+    if ShortCurrentDir.is_null() {
+        Status = STATUS_NO_MEMORY;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Get the short current directory path */
+    if GetShortPathNameW(CurrentDirectory, ShortCurrentDir, Length as DWORD) == 0 {
+        Status = match GetLastError() {
+            ERROR_NOT_ENOUGH_MEMORY => STATUS_NO_MEMORY,
+            ERROR_INVALID_PARAMETER => STATUS_INVALID_PARAMETER,
+            _ => STATUS_OBJECT_PATH_INVALID,
+        };
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Make sure that the command line isn't too long */
+    Length = wcslen(CommandLine);
+    if Length > (UNICODE_STRING_MAX_CHARS as usize) - 1 {
+        Status = STATUS_INVALID_PARAMETER;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Setup the input parameters */
+    (*CheckVdm).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
+    (*CheckVdm).BinaryType = BinaryType;
+    (*CheckVdm).CodePage = CP_ACP as ULONG;
+    (*CheckVdm).dwCreationFlags = CreationFlags;
+    (*CheckVdm).CurDrive = (*CurrentDirectory.add(0)).wrapping_sub(b'A' as u16) as USHORT;
+    (*CheckVdm).CmdLen = (Length as USHORT) + 1;
+    (*CheckVdm).AppLen = (wcslen(ShortAppName) as USHORT) + 1;
+    (*CheckVdm).PifLen = 0; // TODO: PIF file support!
+    (*CheckVdm).CurDirectoryLen = (wcslen(ShortCurrentDir) as USHORT) + 1;
+    (*CheckVdm).EnvLen = (*AnsiEnvironment).Length as ULONG;
+    (*CheckVdm).DesktopLen = if !(*StartupInfo).lpDesktop.is_null() {
+        (wcslen((*StartupInfo).lpDesktop) + 1) as ULONG
+    } else {
+        0
+    };
+    (*CheckVdm).TitleLen = if !(*StartupInfo).lpTitle.is_null() {
+        (wcslen((*StartupInfo).lpTitle) + 1) as ULONG
+    } else {
+        0
+    };
+    (*CheckVdm).ReservedLen = if !(*StartupInfo).lpReserved.is_null() {
+        (wcslen((*StartupInfo).lpReserved) + 1) as ULONG
+    } else {
+        0
+    };
+
+    if (*StartupInfo).dwFlags & STARTF_USESTDHANDLES != 0 {
+        (*CheckVdm).StdIn = (*StartupInfo).hStdInput;
+        (*CheckVdm).StdOut = (*StartupInfo).hStdOutput;
+        (*CheckVdm).StdErr = (*StartupInfo).hStdError;
+    }
+
+    /* Allocate memory for the ANSI strings (+2 for the '\r\n' on the command line) */
+    AnsiCmdLine = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, ((*CheckVdm).CmdLen as SIZE_T) + 2) as PCHAR;
+    AnsiAppName = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*CheckVdm).AppLen as SIZE_T) as PCHAR;
+    AnsiCurDirectory = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*CheckVdm).CurDirectoryLen as SIZE_T) as PCHAR;
+    if !(*StartupInfo).lpDesktop.is_null() {
+        AnsiDesktop = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*CheckVdm).DesktopLen as SIZE_T) as PCHAR;
+    }
+    if !(*StartupInfo).lpTitle.is_null() {
+        AnsiTitle = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*CheckVdm).TitleLen as SIZE_T) as PCHAR;
+    }
+    if !(*StartupInfo).lpReserved.is_null() {
+        AnsiReserved = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*CheckVdm).ReservedLen as SIZE_T) as PCHAR;
+    }
+
+    if AnsiCmdLine.is_null()
+        || AnsiAppName.is_null()
+        || AnsiCurDirectory.is_null()
+        || (!(*StartupInfo).lpDesktop.is_null() && AnsiDesktop.is_null())
+        || (!(*StartupInfo).lpTitle.is_null() && AnsiTitle.is_null())
+        || (!(*StartupInfo).lpReserved.is_null() && AnsiReserved.is_null())
+    {
+        Status = STATUS_NO_MEMORY;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Convert the command line into an ANSI string */
+    WideCharToMultiByte(CP_ACP, 0, CommandLine, (*CheckVdm).CmdLen as i32, AnsiCmdLine, (*CheckVdm).CmdLen as i32, core::ptr::null(), core::ptr::null_mut());
+    /* Add the needed newline and NULL-terminate */
+    (*CheckVdm).CmdLen -= 1; // Rewind back to the NULL character
+    *AnsiCmdLine.add((*CheckVdm).CmdLen as usize) = b'\r' as CHAR;
+    (*CheckVdm).CmdLen += 1;
+    *AnsiCmdLine.add((*CheckVdm).CmdLen as usize) = b'\n' as CHAR;
+    (*CheckVdm).CmdLen += 1;
+    *AnsiCmdLine.add((*CheckVdm).CmdLen as usize) = 0;
+    (*CheckVdm).CmdLen += 1;
+
+    /* Convert the short application name into an ANSI string */
+    WideCharToMultiByte(CP_ACP, 0, ShortAppName, (*CheckVdm).AppLen as i32, AnsiAppName, (*CheckVdm).AppLen as i32, core::ptr::null(), core::ptr::null_mut());
+
+    /* Convert the short current directory path into an ANSI string */
+    WideCharToMultiByte(CP_ACP, 0, ShortCurrentDir, (*CheckVdm).CurDirectoryLen as i32, AnsiCurDirectory, (*CheckVdm).CurDirectoryLen as i32, core::ptr::null(), core::ptr::null_mut());
+
+    if !(*StartupInfo).lpDesktop.is_null() {
+        WideCharToMultiByte(CP_ACP, 0, (*StartupInfo).lpDesktop, (*CheckVdm).DesktopLen as i32, AnsiDesktop, (*CheckVdm).DesktopLen as i32, core::ptr::null(), core::ptr::null_mut());
+        NumStrings += 1;
+    }
+
+    if !(*StartupInfo).lpTitle.is_null() {
+        WideCharToMultiByte(CP_ACP, 0, (*StartupInfo).lpTitle, (*CheckVdm).TitleLen as i32, AnsiTitle, (*CheckVdm).TitleLen as i32, core::ptr::null(), core::ptr::null_mut());
+        NumStrings += 1;
+    }
+
+    if !(*StartupInfo).lpReserved.is_null() {
+        WideCharToMultiByte(CP_ACP, 0, (*StartupInfo).lpReserved, (*CheckVdm).ReservedLen as i32, AnsiReserved, (*CheckVdm).ReservedLen as i32, core::ptr::null(), core::ptr::null_mut());
+        NumStrings += 1;
+    }
+
+    /* Fill the ANSI startup info structure */
+    RtlCopyMemory(
+        &raw mut AnsiStartupInfo as PVOID,
+        StartupInfo as *const c_void,
+        core::mem::size_of::<STARTUPINFOA>() as SIZE_T,
+    );
+    AnsiStartupInfo.lpReserved = AnsiReserved;
+    AnsiStartupInfo.lpDesktop = AnsiDesktop;
+    AnsiStartupInfo.lpTitle = AnsiTitle;
+
+    /* Allocate the capture buffer */
+    CaptureBuffer = CsrAllocateCaptureBuffer(
+        NumStrings,
+        (*CheckVdm).CmdLen as ULONG
+            + (*CheckVdm).AppLen as ULONG
+            + (*CheckVdm).PifLen as ULONG
+            + (*CheckVdm).CurDirectoryLen as ULONG
+            + (*CheckVdm).DesktopLen
+            + (*CheckVdm).TitleLen
+            + (*CheckVdm).ReservedLen
+            + (*CheckVdm).EnvLen
+            + core::mem::size_of::<STARTUPINFOA>() as ULONG,
+    );
+    if CaptureBuffer.is_null() {
+        Status = STATUS_NO_MEMORY;
+        return base_check_vdm_cleanup(
+            Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+            AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+        );
+    }
+
+    /* Capture the command line */
+    CsrCaptureMessageBuffer(CaptureBuffer, AnsiCmdLine as PVOID, (*CheckVdm).CmdLen as ULONG, &raw mut (*CheckVdm).CmdLine as *mut PVOID);
+    /* Capture the application name */
+    CsrCaptureMessageBuffer(CaptureBuffer, AnsiAppName as PVOID, (*CheckVdm).AppLen as ULONG, &raw mut (*CheckVdm).AppName as *mut PVOID);
+
+    (*CheckVdm).PifFile = core::ptr::null_mut(); // TODO: PIF file support!
+
+    /* Capture the current directory */
+    CsrCaptureMessageBuffer(CaptureBuffer, AnsiCurDirectory as PVOID, (*CheckVdm).CurDirectoryLen as ULONG, &raw mut (*CheckVdm).CurDirectory as *mut PVOID);
+    /* Capture the environment */
+    CsrCaptureMessageBuffer(CaptureBuffer, (*AnsiEnvironment).Buffer as PVOID, (*CheckVdm).EnvLen, &raw mut (*CheckVdm).Env as *mut PVOID);
+    /* Capture the startup info structure */
+    CsrCaptureMessageBuffer(CaptureBuffer, &raw mut AnsiStartupInfo as PVOID, core::mem::size_of::<STARTUPINFOA>() as ULONG, &raw mut (*CheckVdm).StartupInfo as *mut PVOID);
+
+    if !(*StartupInfo).lpDesktop.is_null() {
+        CsrCaptureMessageBuffer(CaptureBuffer, AnsiDesktop as PVOID, (*CheckVdm).DesktopLen, &raw mut (*CheckVdm).Desktop as *mut PVOID);
+    } else {
+        (*CheckVdm).Desktop = core::ptr::null_mut();
+    }
+
+    if !(*StartupInfo).lpTitle.is_null() {
+        CsrCaptureMessageBuffer(CaptureBuffer, AnsiTitle as PVOID, (*CheckVdm).TitleLen, &raw mut (*CheckVdm).Title as *mut PVOID);
+    } else {
+        (*CheckVdm).Title = core::ptr::null_mut();
+    }
+
+    if !(*StartupInfo).lpReserved.is_null() {
+        CsrCaptureMessageBuffer(CaptureBuffer, AnsiReserved as PVOID, (*CheckVdm).ReservedLen, &raw mut (*CheckVdm).Reserved as *mut PVOID);
+    } else {
+        (*CheckVdm).Reserved = core::ptr::null_mut();
+    }
+
+    /* Send the message to CSRSS */
+    Status = CsrClientCallServer(
+        ApiMessage as PCSR_API_MESSAGE,
+        CaptureBuffer,
+        CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCheckVDM as ULONG) as CSR_API_NUMBER,
+        core::mem::size_of::<BASE_CHECK_VDM>() as ULONG,
+    );
+
+    /* Write back the task ID */
+    *iTask = (*CheckVdm).iTask;
+
+    base_check_vdm_cleanup(
+        Status, AnsiCmdLine, AnsiAppName, AnsiCurDirectory, AnsiDesktop, AnsiTitle,
+        AnsiReserved, CaptureBuffer, ShortCurrentDir, CurrentDir, ShortAppName,
+    )
+}
+
+// BaseCheckVDM's `Cleanup:` epilogue (frees all allocations and returns Status).
+#[allow(clippy::too_many_arguments)]
+unsafe fn base_check_vdm_cleanup(
+    Status: NTSTATUS,
+    AnsiCmdLine: PCHAR,
+    AnsiAppName: PCHAR,
+    AnsiCurDirectory: PCHAR,
+    AnsiDesktop: PCHAR,
+    AnsiTitle: PCHAR,
+    AnsiReserved: PCHAR,
+    CaptureBuffer: PCSR_CAPTURE_BUFFER,
+    ShortCurrentDir: PWCHAR,
+    CurrentDir: PWCHAR,
+    ShortAppName: PWCHAR,
+) -> NTSTATUS {
+    if !AnsiCmdLine.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiCmdLine as PVOID); }
+    if !AnsiAppName.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiAppName as PVOID); }
+    if !AnsiCurDirectory.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiCurDirectory as PVOID); }
+    if !AnsiDesktop.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiDesktop as PVOID); }
+    if !AnsiTitle.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiTitle as PVOID); }
+    if !AnsiReserved.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AnsiReserved as PVOID); }
+    if !CaptureBuffer.is_null() { CsrFreeCaptureBuffer(CaptureBuffer); }
+    if !ShortCurrentDir.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, ShortCurrentDir as PVOID); }
+    if !CurrentDir.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, CurrentDir as PVOID); }
+    if !ShortAppName.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, ShortAppName as PVOID); }
+    Status
 }
 
 

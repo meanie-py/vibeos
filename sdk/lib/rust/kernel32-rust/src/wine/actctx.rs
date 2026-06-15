@@ -170,7 +170,11 @@ pub unsafe extern "system" fn CreateActCtxW(pActCtx: PCACTCTXW) -> HANDLE {
     hActCtx
 }
 
-#[no_mangle]
+// NOTE: ActivateActCtx/DeactivateActCtx/GetCurrentActCtx/AddRefActCtx/ReleaseActCtx/
+// ZombifyActCtx/QueryActCtxW are owned by client/actctx.c (→ client/actctx.rs is the
+// #[no_mangle] provider). DeepSeek duplicated them here even though they are NOT defined
+// in wine/actctx.c — the `#[no_mangle]` is dropped so there is a single link definition.
+// The (now-unexported, dead) bodies are kept for reference per the never-delete rule.
 pub unsafe extern "system" fn ActivateActCtx(
     hActCtx: HANDLE,
     ulCookie: *mut ULONG_PTR,
@@ -184,7 +188,6 @@ pub unsafe extern "system" fn ActivateActCtx(
     return 1i32;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn DeactivateActCtx(
     dwFlags: DWORD,
     ulCookie: ULONG_PTR,
@@ -193,7 +196,6 @@ pub unsafe extern "system" fn DeactivateActCtx(
     return 1;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn GetCurrentActCtx(phActCtx: *mut HANDLE) -> BOOL {
     let status: NTSTATUS;
     status = RtlGetActiveActivationContext(phActCtx);
@@ -204,17 +206,14 @@ pub unsafe extern "system" fn GetCurrentActCtx(phActCtx: *mut HANDLE) -> BOOL {
     return 1i32;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn AddRefActCtx(hActCtx: HANDLE) {
     RtlAddRefActivationContext(hActCtx);
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn ReleaseActCtx(hActCtx: HANDLE) {
     RtlReleaseActivationContext(hActCtx);
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn ZombifyActCtx(hActCtx: HANDLE) -> BOOL {
     let status: NTSTATUS;
     status = RtlZombifyActivationContext(hActCtx);
@@ -310,7 +309,7 @@ pub unsafe extern "system" fn FindActCtxSectionGuid(
     return 1;
 }
 
-#[no_mangle]
+// QueryActCtxW: owned by client/actctx.c (see note above) — export dropped here.
 pub unsafe extern "system" fn QueryActCtxW(
     dwFlags: DWORD,
     hActCtx: HANDLE,

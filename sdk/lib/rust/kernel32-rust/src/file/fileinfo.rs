@@ -21,11 +21,12 @@ pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF;
 
 extern "C" {
     fn TranslateStdHandle(hHandle: HANDLE) -> HANDLE;
+    // FilenameA2W is cdecl in C (fileutils.c / kernel32.h: no WINAPI).
+    fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
 }
 extern "system" {
     fn FlushConsoleInputBuffer(hConsoleInput: HANDLE) -> BOOL;
     fn VerifyConsoleIoHandle(Handle: HANDLE) -> BOOL;
-    fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
 }
 
 // value-type aliases (the underlying `_FILE_*` structs come from ntdll_sys::nt).

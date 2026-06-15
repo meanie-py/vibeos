@@ -45,8 +45,6 @@ extern "system" {
     fn ReleaseMutex(hMutex: HANDLE) -> BOOL;
     fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HANDLE;
     fn GlobalFree(hMem: HANDLE) -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
-    fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn GetProcessHeap() -> HANDLE;
     fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
     fn OpenFileMappingW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
@@ -58,6 +56,10 @@ extern "system" {
     fn RaiseException(dwExceptionCode: DWORD, dwExceptionFlags: DWORD, nNumberOfArguments: DWORD, lpArguments: *const ULONG_PTR);
     fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
 }
+
+// HeapAlloc/HeapFree are pure ntdll forwarders in kernel32.spec (no link-time
+// local symbol) — route to the crate's thin Rtl* wrappers instead of an extern.
+use crate::string::nls_subst::{HeapAlloc, HeapFree};
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]

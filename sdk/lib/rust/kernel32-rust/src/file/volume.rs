@@ -526,7 +526,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
     return Ret;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetVolumeLabelA(
+pub unsafe extern "system" fn SetVolumeLabelA(
     lpRootPathName: LPCSTR,
     lpVolumeName: LPCSTR,
 ) -> BOOL {
@@ -558,7 +558,7 @@ pub unsafe extern "C" fn SetVolumeLabelA(
     return Ret;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetVolumeLabelW(
+pub unsafe extern "system" fn SetVolumeLabelW(
     lpRootPathName: LPCWSTR,
     lpVolumeName: LPCWSTR,
 ) -> BOOL {
