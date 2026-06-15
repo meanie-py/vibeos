@@ -485,7 +485,7 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
         }
 
         // Check node type
-        if SafeNodeType(IrpContext) != /* CDFS_NTC_IRP_CONTEXT */ 0x0 {
+        if SafeNodeType(IrpContext) != /* CDFS_NTC_IRP_CONTEXT (grind had 0x0) */ 0x0308 {
             // IrpContext is PIRP_CONTEXT_LITE
             let lite = IrpContext as *mut IRP_CONTEXT_LITE;
             Fcb = (*lite).Fcb;
@@ -512,14 +512,14 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
         // _Analysis_assume_ comment
         // _Analysis_assume_(Fcb != NULL && Fcb->Vcb != NULL);
 
-        // Set FSP flag
-        SetFlag(&raw mut (*IrpContext).Flags, /* IRP_CONTEXT_FSP_FLAGS */ 0x2);
+        // Set FSP flag (grind had 0x2 = MORE_PROCESSING; real FSP_FLAGS = 0x74)
+        SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FSP_FLAGS);
 
-        // If Vcb supplied, clear top-level flags
+        // If Vcb supplied, clear top-level flags (grind had 0x4|0x8 = WAIT|FORCE_POST)
         if !Vcb.is_null() {
             ClearFlag(
                 &raw mut (*IrpContext).Flags,
-                (/* IRP_CONTEXT_FLAG_TOP_LEVEL */ 0x4) | (/* IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS */ 0x8),
+                IRP_CONTEXT_FLAG_TOP_LEVEL | IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS,
             );
         }
 

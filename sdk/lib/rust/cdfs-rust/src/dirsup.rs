@@ -649,6 +649,13 @@ pub unsafe extern "C" fn CdFindDirectory(
             CdUpdateDirentName(IrpContext, dirent, IgnoreCase as u32);
 
             if FlagOnU32((*dirent).Flags as u32, DIRENT_FLAG_CONSTANT_ENTRY) {
+                // C is a do/while: `continue` jumps to the while-condition which ADVANCES
+                // the enumeration. A bare `continue` here re-reads the SAME InitialDirent
+                // (no advance) -> infinite loop on every "."/".." entry. Advance first,
+                // mirroring CdFindFile.
+                if CdLookupNextInitialFileDirent(IrpContext, Fcb, FileContext) == 0 {
+                    break;
+                }
                 continue;
             }
 

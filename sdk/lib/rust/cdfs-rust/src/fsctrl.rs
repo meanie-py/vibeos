@@ -247,7 +247,7 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x04;
 const VPB_LOCKED: u32 = 0x02;
 const VCB_STATE_LOCKED: u32 = 0x00000010;  // cdstruc.h
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
-const CDFS_RESIDUAL_USER_REFERENCE: u32 = 1;
+const CDFS_RESIDUAL_USER_REFERENCE: u32 = 3; // cddata.h (grind had 1)
 // IOCTL_CDROM_CHECK_VERIFY = CTL_CODE(FILE_DEVICE_CD_ROM(2), 0x0200, METHOD_BUFFERED(0), FILE_READ_ACCESS(1))
 const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 << 2) | 0u32;
 
@@ -272,7 +272,7 @@ const FSRTL_VOLUME_DISMOUNT: u32 = 2u32;
 const VcbDismountInProgress: u32 = 4u32;  // _VCB_CONDITION (cdstruc.h)
 const VcbInvalid: u32 = 3u32;
 const VCB_STATE_DISMOUNTED: u32 = 0x00000800;  // cdstruc.h
-const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 8u32;
+const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 0x10; // cdstruc.h (grind had 8 = OPEN_WITH_VERSION)
 const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026Eu32 as i32;
 
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8u32 as i32; // ntstatus.h STATUS_INVALID_USER_BUFFER (grind fabricated 0xC00000F6=STATUS_INVALID_PARAMETER_8)
@@ -1091,7 +1091,7 @@ pub unsafe extern "C" fn CdIsVolumeMounted(
     CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
 
     if !Fcb.is_null() {
-        SetFlag(&mut (*IrpContext).Flags, 0x1 /* IRP_CONTEXT_FLAG_DISABLE_POPUPS */);
+        SetFlag(&mut (*IrpContext).Flags, 0x200 /* IRP_CONTEXT_FLAG_DISABLE_POPUPS (grind had 0x1 = ON_STACK) */);
         CdVerifyVcb(IrpContext, (*Fcb).Vcb);
     }
 

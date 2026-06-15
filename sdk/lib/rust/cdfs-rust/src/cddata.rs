@@ -564,7 +564,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
     if CurrentThreadContext.is_null() {
         SetFlag(
             core::ptr::addr_of_mut!((*IrpContext).Flags),
-            0x2, // IRP_CONTEXT_FLAG_TOP_LEVEL
+            0x10, // IRP_CONTEXT_FLAG_TOP_LEVEL (grind had 0x2 = MORE_PROCESSING)
         );
     }
 
@@ -572,7 +572,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
 
     // Evaluate the big OR condition with exact C short-circuit behaviour
     if !condition {
-        condition = FlagOn((*IrpContext).Flags, 0x2 /* IRP_CONTEXT_FLAG_TOP_LEVEL */) != 0;
+        condition = FlagOn((*IrpContext).Flags, 0x10 /* IRP_CONTEXT_FLAG_TOP_LEVEL (grind had 0x2) */) != 0;
     }
 
     if !condition {
@@ -620,7 +620,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
         (*IrpContext).ThreadContext = ThreadContext;
         SetFlag(
             core::ptr::addr_of_mut!((*IrpContext).Flags),
-            0x4, // IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS
+            0x20, // IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS (grind had 0x4 = WAIT)
         );
     } else {
         (*IrpContext).TopLevel = (*CurrentThreadContext).TopLevelIrpContext;

@@ -27,6 +27,12 @@ extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
+    // Teardown-on-last-cleanup helpers (cleanup.c AttemptTeardown block).
+    fn CdAcquireVcbExclusive(IrpContext: PIRP_CONTEXT, Vcb: PVCB, IgnoreWait: BOOLEAN) -> u32;
+    fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+    fn CdPurgeVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, DismountUnderway: BOOLEAN) -> NTSTATUS;
+}
+extern "C" {
     fn CdAcquireFcbExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Flag: BOOLEAN);
 }
 extern "C" {
@@ -337,6 +343,27 @@ pub unsafe extern "C" fn CdCommonCleanup(
 
     if SendUnlockNotification != 0 {
         FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
+    }
+
+    //
+    //  If the cleanup hit zero on an unmounted volume, spark teardown — purge the
+    //  volume (generates closes). The grind dropped this whole block (cleanup.c:332).
+    //  DUMMY_PSEH: the _SEH2_FINALLY runs inline. Pre-acquire CdData since the purges
+    //  generate closes that may acquire CdData during teardown.
+    //
+    if AttemptTeardown != 0 {
+        CdAcquireCdData(IrpContext);
+
+        CdAcquireVcbExclusive(IrpContext, Vcb, 0 /* FALSE */);
+        VcbAcquired = 1;
+
+        CdPurgeVolume(IrpContext, Vcb, 0 /* FALSE */);
+
+        // _SEH2_FINALLY
+        if VcbAcquired != 0 {
+            CdReleaseVcb(IrpContext, Vcb);
+        }
+        CdReleaseCdData(IrpContext);
     }
 
     CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
