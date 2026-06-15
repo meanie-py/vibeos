@@ -1007,7 +1007,7 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
             media_info = media_info.sub(1);
         }
 
-        let cond = (!EXCLUSIVE_MODE(cd_data) != 0
+        let cond = (EXCLUSIVE_MODE(cd_data) == 0
             || EXCLUSIVE_OWNER(cd_data, WdfRequestGetFileObject(Request) as *mut core::ffi::c_void) != 0)
             && (zpodd_info.is_null() || (*zpodd_info).InZeroPowerState == 0);
         if cond {
