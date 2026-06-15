@@ -109,6 +109,12 @@ class MattermostClient:
     def me(self, *, token=None):
         return http.get(f"{self.api}/users/me", token=token or self.bot_token)
 
+    def search_posts(self, terms, *, token=None, is_or=True, per_page=20):
+        """Full-text search, scoped to the channels the token's user can see."""
+        tid = self.team_id()
+        return http.post(f"{self.api}/teams/{tid}/posts/search", token=token or self.bot_token,
+                         json_body={"terms": terms, "is_or_search": is_or, "per_page": per_page})
+
     # --- resolution ------------------------------------------------------
     def team_id(self):
         return http.get(f"{self.api}/teams/name/{self.team}", token=self._reg())["id"]

@@ -151,6 +151,22 @@ def cmd_say(args):
     print("posted to #swarm" if ok else "post failed")
 
 
+def cmd_search(args):
+    """Full-text search Mattermost, scoped to what this agent can see."""
+    identity = _identity(args)
+    mm = _mm_as(identity)
+    r = mm.search_posts(args.query) or {}
+    order = r.get("order", [])
+    if args.json:
+        print(json.dumps([r["posts"][i] for i in order], default=str)); return
+    if not order:
+        print("no matches."); return
+    for i in order[:args.limit]:
+        p = r["posts"][i]
+        who = (p.get("props") or {}).get("override_username") or p.get("user_id", "?")[:8]
+        print(f"  {who}: {p.get('message','').strip()[:120]}")
+
+
 def cmd_read(args):
     identity = _require_identity(args)
     mm = _mm_as(identity)
@@ -203,6 +219,18 @@ def cmd_quest_list(args):
 
 def cmd_quest_show(args):
     print(json.dumps(_vik().get_task(args.id), indent=2, default=str))
+
+
+def cmd_quest_search(args):
+    tasks = _vik().search_tasks(args.query)
+    if args.json:
+        print(json.dumps(tasks, indent=2, default=str)); return
+    if not tasks:
+        print("(no matches)"); return
+    PR = {0: "-", 1: "low", 2: "med", 3: "HIGH", 4: "URGENT", 5: "DO NOW"}
+    for t in tasks:
+        done = "✓" if t.get("done") else " "
+        print(f"  [{done}] #{t['id']:<4} p:{PR.get(t.get('priority',0),'?'):<7} {t['title']}")
 
 
 def cmd_quest_claim(args):
@@ -305,6 +333,9 @@ def build_parser():
     s = add("say", cmd_say, "Post chatter to #swarm as this identity.")
     s.add_argument("text")
     add("read", cmd_read, "Show unread messages across this agent's channels, in full.")
+    s = add("search", cmd_search, "Full-text search Mattermost (what this agent can see).")
+    s.add_argument("query"); s.add_argument("--json", action="store_true")
+    s.add_argument("--limit", type=int, default=15)
     s = add("drain", cmd_drain, "Emit new high-priority messages (+low count) for delivery.")
     s.add_argument("--json", action="store_true"); s.add_argument("--high-only", action="store_true")
     s.add_argument("--channels", help="comma-separated channel ids (default: #swarm + agent channel)")
@@ -314,6 +345,8 @@ def build_parser():
     qs = qsub.add_parser("list"); qs.set_defaults(qfn=cmd_quest_list)
     qs.add_argument("--json", action="store_true"); qs.add_argument("--done", action="store_true")
     qs = qsub.add_parser("show"); qs.set_defaults(qfn=cmd_quest_show); qs.add_argument("id", type=int)
+    qs = qsub.add_parser("search"); qs.set_defaults(qfn=cmd_quest_search)
+    qs.add_argument("query"); qs.add_argument("--json", action="store_true")
     qs = qsub.add_parser("claim"); qs.set_defaults(qfn=cmd_quest_claim); qs.add_argument("id", type=int)
     qs = qsub.add_parser("done"); qs.set_defaults(qfn=cmd_quest_done); qs.add_argument("id", type=int)
     qs = qsub.add_parser("comment"); qs.set_defaults(qfn=cmd_quest_comment)

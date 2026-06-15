@@ -31,37 +31,60 @@ function swarm(args, { json = false } = {}) {
   }
 }
 
+// First-class tools over the swarm CLI core. These work even WITHOUT --channels (only
+// the push needs the flag), so any agent loading this MCP server gets outbound + search.
+const TOOLS = [
+  { name: 'swarm_post', description: 'Post a message to #swarm (or a named channel) as this agent.',
+    inputSchema: { type: 'object', required: ['text'], properties: {
+      text: { type: 'string' }, channel: { type: 'string', description: 'channel name; default #swarm' } } },
+    argv: (a) => a.channel ? ['send', String(a.text), '--channel', String(a.channel)] : ['say', String(a.text)] },
+  { name: 'swarm_read', description: "Show unread messages across this agent's channels, in full.",
+    inputSchema: { type: 'object', properties: {} }, argv: () => ['read'] },
+  { name: 'swarm_who', description: 'Show the swarm roster (who is online, on what quest).',
+    inputSchema: { type: 'object', properties: {} }, argv: () => ['who'] },
+  { name: 'mm_search', description: 'Full-text search Mattermost for what this agent can see.',
+    inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
+    argv: (a) => ['search', String(a.query)] },
+  { name: 'quest_list', description: 'List open quests (Vikunja tasks) by priority.',
+    inputSchema: { type: 'object', properties: {} }, argv: () => ['quest', 'list'] },
+  { name: 'quest_search', description: 'Search the quest board (Vikunja) by text.',
+    inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
+    argv: (a) => ['quest', 'search', String(a.query)] },
+  { name: 'quest_comment', description: 'Comment on a quest.',
+    inputSchema: { type: 'object', required: ['id', 'text'], properties: {
+      id: { type: 'integer' }, text: { type: 'string' } } },
+    argv: (a) => ['quest', 'comment', String(a.id), String(a.text)] },
+  { name: 'quest_claim', description: 'Claim a quest (announces to #swarm + comments).',
+    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+    argv: (a) => ['quest', 'claim', String(a.id)] },
+  { name: 'quest_done', description: 'Mark a quest done.',
+    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+    argv: (a) => ['quest', 'done', String(a.id)] },
+]
+
 async function main() {
   const mcp = new Server(
-    { name: 'mattermost-swarm', version: '0.2.0' },
+    { name: 'mattermost-swarm', version: '0.3.0' },
     {
       capabilities: { experimental: { 'claude/channel': {} }, tools: {} },
       instructions:
         'Events tagged <channel source="mattermost-swarm"> are chat from the vibeos swarm. ' +
         'High-priority ones (an @-mention of you, @here/@channel, or a high board priority) ' +
         'arrive immediately; lower-priority traffic arrives as a periodic count. Read and act ' +
-        'on them; coordinate. To reply, call swarm_reply. For the full backlog run `swarm read`.',
+        'on them; coordinate. Use swarm_post to reply/announce, swarm_read for the full backlog, ' +
+        'mm_search / quest_search to look things up, and quest_* to work the board.',
     },
   )
 
   mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [{
-      name: 'swarm_reply',
-      description: 'Post a message to the vibeos #swarm Mattermost channel as this agent.',
-      inputSchema: {
-        type: 'object',
-        properties: { text: { type: 'string', description: 'message to post to #swarm' } },
-        required: ['text'],
-      },
-    }],
+    tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
   }))
 
   mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-    if (req.params.name === 'swarm_reply') {
-      const out = swarm(['say', String(req.params.arguments?.text ?? '')])
-      return { content: [{ type: 'text', text: out || 'posted' }] }
-    }
-    throw new Error('unknown tool: ' + req.params.name)
+    const t = TOOLS.find((x) => x.name === req.params.name)
+    if (!t) throw new Error('unknown tool: ' + req.params.name)
+    const out = swarm(t.argv(req.params.arguments || {}))
+    return { content: [{ type: 'text', text: out || 'ok' }] }
   })
 
   await mcp.connect(new StdioServerTransport())

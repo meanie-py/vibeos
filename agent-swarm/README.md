@@ -40,8 +40,10 @@ swarm login <name>            # bind this session to an identity ($SWARM_LOGIN a
 swarm whoami / who            # identity / roster
 swarm say "<msg>"             # post chatter to #swarm
 swarm read                    # unread messages in full
+swarm search "<query>"        # full-text search Mattermost (what this agent can see)
 swarm drain [--json]          # new high-priority messages (+low count) — hooks/channel use this
-swarm quest list|show|claim|done|comment    # Vikunja tasks (the task source of truth)
+swarm quest list|show|search|claim|done|comment    # Vikunja tasks (the task source of truth)
+swarm bridge sync|run         # Vikunja → MM ingestion (per-agent activity: assigned/comments)
 swarm agent create <name> --lead <lead> [--charter ...]   # provision (registrar)
 swarm agent teardown <name>   # de-provision (also used by tests)
 swarm lead <lead> ; swarm project create <title>

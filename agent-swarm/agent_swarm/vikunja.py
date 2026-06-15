@@ -56,6 +56,11 @@ class VikunjaClient:
     def get_task(self, task_id):
         return http.get(f"{self.api}/tasks/{task_id}", token=self._t())
 
+    def search_tasks(self, query, project_id=None):
+        pid = project_id or self.default_project
+        return http.get(f"{self.api}/projects/{pid}/tasks", token=self._t(),
+                        params={"s": query}) or []
+
     def create_task(self, title, *, project_id=None, priority=None, description=None, **fields):
         pid = project_id or self.default_project
         body = {"title": title, **fields}
