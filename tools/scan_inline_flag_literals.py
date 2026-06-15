@@ -37,9 +37,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
-from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
-
 import tree_sitter_rust as tsr  # noqa: E402
+from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
 DEFINE_RE = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
@@ -143,7 +142,10 @@ def scan_file(path, catalog):
     root = _PARSER.parse(src).root_node
     lits, comments = [], []
     collect(root, lits, comments)
-    txt = lambda n: src[n.start_byte : n.end_byte].decode("utf8", "replace")
+
+    def txt(n):
+        return src[n.start_byte : n.end_byte].decode("utf8", "replace")
+
     lines = src.split(b"\n")
 
     out = []  # (line, litval, name, want, linetext)
@@ -160,7 +162,7 @@ def scan_file(path, catalog):
                 (L for L in lits if L.start_point[0] == cline and L.start_byte < c.start_byte),
                 key=lambda n: n.start_byte,
             )
-            pairs = list(zip(row, names))
+            pairs = list(zip(row, names, strict=False))
         else:
             # single name: the adjacent literal — the closest one touching the comment
             # (trailing `0x4 /* N */`, or leading `/* N */ 0x4`), same line only.
@@ -242,7 +244,7 @@ def main():
             continue  # test fixtures use intentional non-canonical values
         try:
             hits = scan_file(p, catalog)
-        except Exception as e:  # noqa: BLE001 — never let one file abort the sweep
+        except Exception as e:
             print(f"{f}: parse error: {e}", file=sys.stderr)
             continue
         for ln, lv, name, want, line_src in hits:
