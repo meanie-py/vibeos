@@ -79,12 +79,21 @@ def seed(identity, channel_ids, mm):
                 _init_cursor(c, identity, ch, mm)
 
 
-def drain(identity, name, channel_ids, mm, *, high_only=False):
+def _not_self(posts, selves):
+    # An agent's own posts show as its username (webhook) OR its user_id (REST) — drop both.
+    return [p for p in posts if str(p["user"]).split(" @ ")[0] not in selves]
+
+
+def drain(identity, name, channel_ids, mm, *, high_only=False, self_ids=None):
     """Read new posts across channels, classify, advance the mention cursor.
 
     Returns {"high": [{from, message, post_id, channel}], "low_count": N}.
     Does NOT advance the read cursor (that's mark_read / an explicit `read`).
+    `self_ids` (e.g. the agent's mm_user_id) are dropped alongside `name` so the agent is
+    never notified of its own posts.
     """
+    selves = {name} | set(self_ids or ())
+    selves.discard(None)
     high, low_count = [], 0
     with _conn() as c:
         for ch in channel_ids:
@@ -94,8 +103,7 @@ def drain(identity, name, channel_ids, mm, *, high_only=False):
             cur = c.execute("SELECT read_at, mention_at, last_count FROM cursors "
                             "WHERE identity=? AND channel_id=?", (identity, ch)).fetchone()
             read_at, mention_at = cur["read_at"], cur["mention_at"]
-            posts = mm.read_posts(ch, read_at)
-            posts = [p for p in posts if str(p["user"]).split(" @ ")[0] != (name or "")]
+            posts = _not_self(mm.read_posts(ch, read_at), selves)
             new_high = [p for p in posts
                         if classify(p["message"], name) == "high" and p["create_at"] > mention_at]
             low_count += sum(1 for p in posts if classify(p["message"], name) == "low")
@@ -109,8 +117,10 @@ def drain(identity, name, channel_ids, mm, *, high_only=False):
     return {"high": high, "low_count": 0 if high_only else low_count}
 
 
-def unread(identity, name, channel_ids, mm):
+def unread(identity, name, channel_ids, mm, *, self_ids=None):
     """All unread posts across channels (for `read`), then advance the read cursor."""
+    selves = {name} | set(self_ids or ())
+    selves.discard(None)
     out = []
     with _conn() as c:
         for ch in channel_ids:
@@ -119,8 +129,7 @@ def unread(identity, name, channel_ids, mm):
             _init_cursor(c, identity, ch, mm)
             cur = c.execute("SELECT read_at FROM cursors WHERE identity=? AND channel_id=?",
                             (identity, ch)).fetchone()
-            posts = mm.read_posts(ch, cur["read_at"])
-            posts = [p for p in posts if str(p["user"]).split(" @ ")[0] != (name or "")]
+            posts = _not_self(mm.read_posts(ch, cur["read_at"]), selves)
             hi = max([p["create_at"] for p in posts], default=cur["read_at"])
             c.execute("UPDATE cursors SET read_at=?, mention_at=?, last_count=0 "
                       "WHERE identity=? AND channel_id=?", (hi, hi, identity, ch))

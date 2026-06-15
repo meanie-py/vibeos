@@ -49,6 +49,11 @@ def _mm_as(identity) -> MattermostClient:
     return mm
 
 
+def _self_ids(identity):
+    creds = ident.creds_for(identity) or {}
+    return [identity, creds.get("mm_user_id")]
+
+
 def _channels_for(identity, mm) -> list:
     """The channels this agent listens on: #swarm + its own agent channel (if present)."""
     cfg = config()
@@ -149,7 +154,7 @@ def cmd_say(args):
 def cmd_read(args):
     identity = _require_identity(args)
     mm = _mm_as(identity)
-    posts = q.unread(identity, identity, _channels_for(identity, mm), mm)
+    posts = q.unread(identity, identity, _channels_for(identity, mm), mm, self_ids=_self_ids(identity))
     if not posts:
         print("no unread."); return
     print(f"{len(posts)} unread:")
@@ -167,7 +172,7 @@ def cmd_drain(args):
         return
     mm = _mm_as(identity)
     chans = args.channels.split(",") if args.channels else _channels_for(identity, mm)
-    result = q.drain(identity, identity, chans, mm, high_only=args.high_only)
+    result = q.drain(identity, identity, chans, mm, high_only=args.high_only, self_ids=_self_ids(identity))
     if args.json:
         print(json.dumps(result)); return
     if result["high"]:
