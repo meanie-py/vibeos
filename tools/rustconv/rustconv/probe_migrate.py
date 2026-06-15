@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-from .config import OUTPUT_CRATE, TEMPLATES_DIR, NTOSKRNL_DIR
-
+from .batch_runner import submit_single
+from .config import NTOSKRNL_DIR, TEMPLATES_DIR
+from .seh_classifier import classify_file
 
 # ============================================================================
 # Scanner: find migration targets in Rust files
@@ -33,24 +34,24 @@ from .config import OUTPUT_CRATE, TEMPLATES_DIR, NTOSKRNL_DIR
 
 # Patterns that indicate a file needs probe/SEH migration
 PROBE_PATTERNS = [
-    re.compile(r'\bProbeForRead\b'),
-    re.compile(r'\bProbeForWrite\b'),
-    re.compile(r'\bProbeForWriteHandle\b'),
-    re.compile(r'\bProbeForWriteUlong\b'),
-    re.compile(r'\bProbeForWriteBoolean\b'),
-    re.compile(r'\bProbeForReadUnicodeString\b'),
-    re.compile(r'\bProbeForReadLargeInteger\b'),
-    re.compile(r'\bProbeForReadUchar\b'),
-    re.compile(r'\bProbeForReadUshort\b'),
-    re.compile(r'\bProbeAndZeroHandle\b'),
+    re.compile(r"\bProbeForRead\b"),
+    re.compile(r"\bProbeForWrite\b"),
+    re.compile(r"\bProbeForWriteHandle\b"),
+    re.compile(r"\bProbeForWriteUlong\b"),
+    re.compile(r"\bProbeForWriteBoolean\b"),
+    re.compile(r"\bProbeForReadUnicodeString\b"),
+    re.compile(r"\bProbeForReadLargeInteger\b"),
+    re.compile(r"\bProbeForReadUchar\b"),
+    re.compile(r"\bProbeForReadUshort\b"),
+    re.compile(r"\bProbeAndZeroHandle\b"),
 ]
 
 # Extern declaration pattern for probe functions
 PROBE_EXTERN_RE = re.compile(
-    r'^\s*fn\s+(ProbeForRead|ProbeForWrite|ProbeForWriteHandle|'
-    r'ProbeForWriteUlong|ProbeForWriteBoolean|ProbeForReadUnicodeString|'
-    r'ProbeForReadLargeInteger|ProbeForReadUchar|ProbeForReadUshort|'
-    r'ProbeAndZeroHandle)\b',
+    r"^\s*fn\s+(ProbeForRead|ProbeForWrite|ProbeForWriteHandle|"
+    r"ProbeForWriteUlong|ProbeForWriteBoolean|ProbeForReadUnicodeString|"
+    r"ProbeForReadLargeInteger|ProbeForReadUchar|ProbeForReadUshort|"
+    r"ProbeAndZeroHandle)\b",
     re.MULTILINE,
 )
 
@@ -58,6 +59,7 @@ PROBE_EXTERN_RE = re.compile(
 @dataclass
 class ProbeScanResult:
     """Result of scanning a Rust file for migration targets."""
+
     path: Path
     raw_source: str
     probe_call_count: int = 0
@@ -98,7 +100,7 @@ def scan_rust_file(path: Path) -> ProbeScanResult:
     result.probe_extern_count = len(PROBE_EXTERN_RE.findall(active))
 
     # Detect mode variable name
-    for name in ['PreviousMode', 'previous_mode', 'AccessMode', 'CurrentMode', 'ProcessorMode']:
+    for name in ["PreviousMode", "previous_mode", "AccessMode", "CurrentMode", "ProcessorMode"]:
         if name in active:
             result.mode_variable = name
             break
@@ -124,7 +126,7 @@ def _find_c_source(rust_path: Path) -> Path | None:
         subsys = parts[src_idx + 1]
         stem = rust_path.stem
         # Handle priv_ → priv mapping
-        if stem.endswith('_'):
+        if stem.endswith("_"):
             stem = stem[:-1]
         c_path = NTOSKRNL_DIR / subsys / f"{stem}.c"
         if c_path.exists():
@@ -137,7 +139,6 @@ def _find_c_source(rust_path: Path) -> Path | None:
 def _build_seh_context(c_path: Path) -> str:
     """Build SEH pattern context block from C source classification."""
     try:
-        from .seh_classifier import classify_file
         infos = classify_file(c_path)
     except Exception:
         return ""
@@ -153,9 +154,9 @@ def _build_seh_context(c_path: Path) -> str:
         lines.append(f"  TRY patterns: {try_pats}")
         lines.append(f"  Handler patterns: {handler_pats}")
         if info.needs_safe_copy:
-            lines.append(f"  Needs: safe_copy_to/from_user")
+            lines.append("  Needs: safe_copy_to/from_user")
         if info.needs_raii_guard:
-            lines.append(f"  Needs: RAII guard")
+            lines.append("  Needs: RAII guard")
         for block in info.seh_blocks:
             if block.write_backs:
                 for wb in block.write_backs[:5]:
@@ -194,6 +195,7 @@ def find_rust_files(directory: Path, subsystems: list[str] | None = None) -> lis
 # Preprocessor: strip trailing C source to save tokens
 # ============================================================================
 
+
 def preprocess(source: str) -> str:
     """Strip trailing C source comments to reduce token count."""
     c_source_marker = "// ORIGINAL C SOURCE"
@@ -208,6 +210,7 @@ def preprocess(source: str) -> str:
 # ============================================================================
 # Prompt builder
 # ============================================================================
+
 
 def load_probe_system_prompt() -> str:
     """Load the SEH migration system prompt."""
@@ -263,7 +266,6 @@ def _extract_c_seh_functions(c_path: Path) -> str:
     to keep the prompt size reasonable.
     """
     try:
-        from .seh_classifier import classify_file
         infos = classify_file(c_path)
     except Exception:
         return ""
@@ -271,16 +273,16 @@ def _extract_c_seh_functions(c_path: Path) -> str:
     if not infos:
         return ""
 
-    c_source = c_path.read_text(errors='replace')
+    c_source = c_path.read_text(errors="replace")
 
     # Extract relevant function bodies
     parts = []
     for info in infos:
         # Find function in C source by line range
-        lines = c_source.split('\n')
+        lines = c_source.split("\n")
         start = max(0, info.line_start - 1)
         end = min(len(lines), info.line_end)
-        func_body = '\n'.join(lines[start:end])
+        func_body = "\n".join(lines[start:end])
 
         # Truncate very long functions to keep prompt size sane
         if len(func_body) > 4000:
@@ -298,6 +300,7 @@ def _extract_c_seh_functions(c_path: Path) -> str:
 # Postprocessor: mechanical fixes after LLM output
 # ============================================================================
 
+
 def _fix_question_mark_operator(code: str) -> str:
     """Convert `probe_call(...)?;` to `if let Err(s) = probe_call(...) { return s; }`.
 
@@ -308,17 +311,23 @@ def _fix_question_mark_operator(code: str) -> str:
     # Pattern: standalone probe/safe_copy call with ? at end of statement
     # Matches: `probe_write_user(args)?;` or `safe_copy_from_user(args)?;`
     PROBE_FUNCS = (
-        'probe_read_user', 'probe_write_user', 'probe_user_buffer',
-        'probe_capture_unicode_string_header',
-        'probe_read_ulong', 'probe_write_ulong', 'probe_write_handle',
-        'probe_write_boolean', 'probe_write_size_t',
-        'safe_copy_from_user', 'safe_copy_to_user',
+        "probe_read_user",
+        "probe_write_user",
+        "probe_user_buffer",
+        "probe_capture_unicode_string_header",
+        "probe_read_ulong",
+        "probe_write_ulong",
+        "probe_write_handle",
+        "probe_write_boolean",
+        "probe_write_size_t",
+        "safe_copy_from_user",
+        "safe_copy_to_user",
     )
-    func_alt = '|'.join(re.escape(f) for f in PROBE_FUNCS)
+    func_alt = "|".join(re.escape(f) for f in PROBE_FUNCS)
 
     # Fix standalone `call(...)?;` → `if let Err(s) = call(...) { return s; }`
     # Need to handle nested parens in arguments
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
     i = 0
     while i < len(lines):
@@ -326,60 +335,62 @@ def _fix_question_mark_operator(code: str) -> str:
         stripped = line.lstrip()
 
         # Check if line starts with a probe function call (with optional ::<Type>)
-        match = re.match(rf'^(\s*)({func_alt})((?:::<[^>]+>)?)\s*(\(.*)', stripped)
+        match = re.match(rf"^(\s*)({func_alt})((?:::<[^>]+>)?)\s*(\(.*)", stripped)
         if match:
-            indent = line[:len(line) - len(stripped)]
+            indent = line[: len(line) - len(stripped)]
             func_name = match.group(2) + match.group(3)  # includes ::<Type> if present
             rest = match.group(4)
 
             # Collect full call (may span multiple lines)
             full_call = rest
             j = i + 1
-            while full_call.count('(') > full_call.count(')') and j < len(lines):
-                full_call += '\n' + lines[j]
+            while full_call.count("(") > full_call.count(")") and j < len(lines):
+                full_call += "\n" + lines[j]
                 j += 1
 
             # Check if it ends with `?;`
             call_stripped = full_call.rstrip()
-            if call_stripped.endswith('?;'):
+            if call_stripped.endswith("?;"):
                 # Remove trailing `?;` and get the args
                 call_body = call_stripped[:-2].rstrip()
-                result.append(f'{indent}if let Err(s) = {func_name}{call_body} {{')
-                result.append(f'{indent}    return s;')
-                result.append(f'{indent}}}')
+                result.append(f"{indent}if let Err(s) = {func_name}{call_body} {{")
+                result.append(f"{indent}    return s;")
+                result.append(f"{indent}}}")
                 i = j
                 continue
 
         # Check for `let x = call(...)?;` pattern → `let x = call(...).map_err(|s| return s)?;`
         # Actually, for `let x = probe_read_user()?;` this IS valid in Result-returning fns,
         # but not in NTSTATUS-returning fns. Convert to `match`.
-        assign_match = re.match(rf'^(\s*)(let\s+(?:mut\s+)?\w+)\s*=\s*({func_alt})((?:::<[^>]+>)?)\s*(\(.*)', stripped)
+        assign_match = re.match(
+            rf"^(\s*)(let\s+(?:mut\s+)?\w+)\s*=\s*({func_alt})((?:::<[^>]+>)?)\s*(\(.*)", stripped
+        )
         if assign_match:
-            indent = line[:len(line) - len(stripped)]
+            indent = line[: len(line) - len(stripped)]
             let_part = assign_match.group(2)
             func_name = assign_match.group(3) + assign_match.group(4)
             rest = assign_match.group(5)
 
             full_call = rest
             j = i + 1
-            while full_call.count('(') > full_call.count(')') and j < len(lines):
-                full_call += '\n' + lines[j]
+            while full_call.count("(") > full_call.count(")") and j < len(lines):
+                full_call += "\n" + lines[j]
                 j += 1
 
             call_stripped = full_call.rstrip()
-            if call_stripped.endswith('?;'):
+            if call_stripped.endswith("?;"):
                 call_body = call_stripped[:-2].rstrip()
-                result.append(f'{indent}{let_part} = match {func_name}{call_body} {{')
-                result.append(f'{indent}    Ok(v) => v,')
-                result.append(f'{indent}    Err(s) => return s,')
-                result.append(f'{indent}}};')
+                result.append(f"{indent}{let_part} = match {func_name}{call_body} {{")
+                result.append(f"{indent}    Ok(v) => v,")
+                result.append(f"{indent}    Err(s) => return s,")
+                result.append(f"{indent}}};")
                 i = j
                 continue
 
         result.append(line)
         i += 1
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 def _fix_convenience_wrapper_args(code: str) -> str:
@@ -391,19 +402,23 @@ def _fix_convenience_wrapper_args(code: str) -> str:
     """
     # Map convenience wrapper to the correct type
     WRAPPER_MAP = {
-        'probe_write_ulong': 'ULONG',
-        'probe_write_handle': 'PVOID',
-        'probe_write_boolean': 'BOOLEAN',
-        'probe_write_size_t': 'ULONG_PTR',
-        'probe_read_ulong': 'ULONG',
+        "probe_write_ulong": "ULONG",
+        "probe_write_handle": "PVOID",
+        "probe_write_boolean": "BOOLEAN",
+        "probe_write_size_t": "ULONG_PTR",
+        "probe_read_ulong": "ULONG",
     }
 
     for wrapper, typ in WRAPPER_MAP.items():
         # Match 3-arg calls: wrapper(a, b, c)
         # The wrapper only takes 2 args, so 3 args means the LLM confused it
         # with probe_write_user/probe_read_user
-        pattern = rf'\b{re.escape(wrapper)}\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\)'
-        replacement = rf'probe_write_user::<{typ}>(\1, \2, \3)' if 'write' in wrapper else rf'probe_read_user::<{typ}>(\1, \2, \3)'
+        pattern = rf"\b{re.escape(wrapper)}\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\)"
+        replacement = (
+            rf"probe_write_user::<{typ}>(\1, \2, \3)"
+            if "write" in wrapper
+            else rf"probe_read_user::<{typ}>(\1, \2, \3)"
+        )
         code = re.sub(pattern, replacement, code)
 
     return code
@@ -422,7 +437,7 @@ def postprocess_probe(code: str, original_source: str) -> str:
     # 1. Ensure probe import exists
     if "use ntkrnl_sys::probe::*;" not in code:
         last_use = -1
-        for m in re.finditer(r'^use\s+\S+;', code, re.MULTILINE):
+        for m in re.finditer(r"^use\s+\S+;", code, re.MULTILINE):
             last_use = m.end()
         if last_use >= 0:
             code = code[:last_use] + "\nuse ntkrnl_sys::probe::*;" + code[last_use:]
@@ -431,19 +446,26 @@ def postprocess_probe(code: str, original_source: str) -> str:
 
     # 2. Remove leftover ProbeForRead/ProbeForWrite extern declarations
     code = re.sub(
-        r'^\s*fn\s+(?:ProbeForRead|ProbeForWrite)\s*\([^)]*\)\s*(?:->\s*\S+\s*)?;\s*\n',
-        '',
+        r"^\s*fn\s+(?:ProbeForRead|ProbeForWrite)\s*\([^)]*\)\s*(?:->\s*\S+\s*)?;\s*\n",
+        "",
         code,
         flags=re.MULTILINE,
     )
 
     # Remove typed probe helper extern declarations
-    for helper in ['ProbeForWriteHandle', 'ProbeForWriteUlong', 'ProbeForWriteBoolean',
-                   'ProbeForReadUnicodeString', 'ProbeForReadLargeInteger',
-                   'ProbeForReadUchar', 'ProbeForReadUshort', 'ProbeAndZeroHandle']:
+    for helper in [
+        "ProbeForWriteHandle",
+        "ProbeForWriteUlong",
+        "ProbeForWriteBoolean",
+        "ProbeForReadUnicodeString",
+        "ProbeForReadLargeInteger",
+        "ProbeForReadUchar",
+        "ProbeForReadUshort",
+        "ProbeAndZeroHandle",
+    ]:
         code = re.sub(
-            rf'^\s*fn\s+{re.escape(helper)}\s*\([^)]*\)\s*(?:->\s*[^;]+)?\s*;\s*\n',
-            '',
+            rf"^\s*fn\s+{re.escape(helper)}\s*\([^)]*\)\s*(?:->\s*[^;]+)?\s*;\s*\n",
+            "",
             code,
             flags=re.MULTILINE,
         )
@@ -451,7 +473,7 @@ def postprocess_probe(code: str, original_source: str) -> str:
     # 3. Clean up empty extern blocks
     code = re.sub(
         r'extern\s+"(?:system|C)"\s*\{\s*\}\s*\n?',
-        '',
+        "",
         code,
     )
 
@@ -478,6 +500,7 @@ def postprocess_probe(code: str, original_source: str) -> str:
 # Pipeline: scan → preprocess → LLM → postprocess → write
 # ============================================================================
 
+
 def run_probe_migration(
     files: list[Path],
     model: str,
@@ -488,8 +511,6 @@ def run_probe_migration(
 
     Returns dict of filename → success.
     """
-    from .batch_runner import submit_single
-
     if not system_prompt:
         system_prompt = load_probe_system_prompt()
 
@@ -522,15 +543,14 @@ def run_probe_migration(
             results[filepath.name] = False
             continue
 
-        print(f"    {result.input_tokens} in / {result.output_tokens} out tokens",
-              file=sys.stderr)
+        print(f"    {result.input_tokens} in / {result.output_tokens} out tokens", file=sys.stderr)
 
         # Postprocess
         migrated = postprocess_probe(result.rust_code, scan.raw_source)
 
         if dry_run:
-            old_lines = scan.raw_source.count('\n')
-            new_lines = migrated.count('\n')
+            old_lines = scan.raw_source.count("\n")
+            new_lines = migrated.count("\n")
             print(f"    Would write {new_lines} lines (was {old_lines})", file=sys.stderr)
         else:
             filepath.write_text(migrated)

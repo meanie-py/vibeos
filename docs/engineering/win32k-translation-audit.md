@@ -1,5 +1,7 @@
 # Win32k C→Rust Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against `win32ss/CMakeLists.txt` + on-disk `.rs`: BOTH halves are fully flipped — all 59 `user/ntuser/*.c` are commented `# replaced by Rust … cohabitation` (only `main_rust_shims.c` stays active = irreducible syscall tables); GDI (ntgdi+eng+dib) and DirectDraw (reactx/ntddraw, all 9 .c) are 100% flipped. The only active C is irreducible glue: 5 `*_rust_shims.c`, `main_rust_shims.c`, i386 `floatobj.c`/`floatobj.S` + i386 dib `.s`, gendib generated tables, and the dead `USE_DIBLIB` path (`dib_new.c`/`bitblt_new.c`, FALSE — not compiled). The "USER 3/59" snapshot in the older sections below is corrected inline.
+
 > **2026-06-14 — MILESTONE: win32k.sys default-build body is 100% Rust**
 > (commit translating `safe_user_io.c` → `safe_user_io.rs`, cold `--clean` smoke
 > GREEN ×3). `safe_user_io.c` was the last real subsystem C leaf — SEH-free
@@ -53,17 +55,17 @@
 > win32k.sys now has **4 live C files**: `safe_user_io.c`,
 > `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
 
-> **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
+> **SUPERSEDED 2026-06-09 / re-verified 2026-06-14 — the ntuser flip is now COMPLETE: all 59 `user/ntuser/*.c` are cohabitation-commented in `win32ss/CMakeLists.txt`; the "3/59" counts below are the obsolete 2026-06-04 snapshot, kept only for history.**
 
-Last updated **2026-06-04**. **Status: Phase 1 (handle tables) DONE;
-Phase 2 (GDI half) ✅ DONE — the entire GDI half (ntgdi + eng + dib) is
-Rust and smoke-green ×3; Phase 3 (USER half) 🟡 STARTED (3 of 59 ntuser
-files flipped).** The "bulk translation not yet started" premise of the
-2026-05-16 draft is long obsolete — **98 Rust modules (~140K LOC) are in
-the tree and 91 C files are cohabitation-flipped.** See **"Landed reality
-— 2026-06-04"** immediately below; the planning sections that follow are
-kept for the parts still ahead (USER half, typestate API, cleanup) and
-annotated where superseded.
+Last updated **2026-06-04** *(status re-verified 2026-06-14)*. **Status:
+Phase 1 (handle tables) DONE; Phase 2 (GDI half) ✅ DONE — the entire GDI
+half (ntgdi + eng + dib) is Rust and smoke-green ×3; Phase 3 (USER half)
+✅ DONE — all 59 ntuser files flipped (was "3/59" at the 2026-06-04
+snapshot; completed over the wave-1→38 saga, re-verified against cmake
+2026-06-14).** The "bulk translation not yet started" premise of the
+2026-05-16 draft is long obsolete — the full kernel-mode win32k body is
+now Rust. See **"Landed reality"** immediately below; the planning
+sections that follow are kept for history and annotated where superseded.
 
 This audit defines the keep-set, the (corrected) prune-set, the
 translation order, and the rustconv configuration for the bulk
@@ -113,7 +115,7 @@ See [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md)
 for the full landed inventory. The rest of this document is updated to
 match that reality.
 
-## Landed reality — 2026-06-04
+## Landed reality — 2026-06-04 *(re-verified 2026-06-14)*
 
 This section is the **source of truth for what's translated**; the
 planning sections below (TL;DR, Phasing, Forward path) predate the work
@@ -123,13 +125,15 @@ and are now annotated/superseded where they disagree.
 
 | Metric | Value |
 |---|---|
-| Rust modules in `win32k-rust/src/` | **98** (`.rs`) |
-| Rust LOC | **~140,000** |
-| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **91** |
+| Rust modules in `win32k-rust/src/` | **166** (`.rs` on disk, 2026-06-14) |
+| Rust LOC | **~140,000+** |
+| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **all subsystem C** — only irreducible glue stays active |
 | Smoke status | **green ×3** (i386/amd64/arm64), 0 unexpected ud2 |
 
-Flipped by subsystem: **gdi/eng 100%, gdi/dib 100%, gdi/ntgdi 100%,
-user/ntuser 3 of 59** (object + session + useratom).
+Flipped by subsystem (re-verified against cmake 2026-06-14): **gdi/eng
+100%, gdi/dib 100%, gdi/ntgdi 100%, reactx/ntddraw 100% (all 9 .c),
+user/ntuser 100% — all 59 .c commented `# replaced by Rust … cohabitation`,
+only `main_rust_shims.c` (syscall dispatch tables) stays active.**
 
 ### Phase status (vs the original plan)
 
@@ -162,13 +166,16 @@ user/ntuser 3 of 59** (object + session + useratom).
   the *deep* USER work (callouts/messages/hooks). Still owed — design
   lives in `qemu/~temp-chat-consolidated.md` §6 (must be promoted into
   `docs/engineering/` before the message/hook/window-create chain).
-- **Phase 3 — USER half (`user/ntuser/`, ~73K LOC): 🟡 STARTED, 3/59.**
-  `object.c` (handle table, Phase 1b) + the **ntuser-saga wave 1**
-  atom-table pair `session.c` + `useratom.c` (`16713361083`, cold-green
-  ×3, runtime-exercised: window-class registration drives `IntAddAtom`
-  against the Rust `gAtomTable`). **56 files remain** — see "Remaining
-  USER work". This is the hard half (callouts, message queues, hooks,
-  the window-create chain) and the bulk of all work left.
+- **Phase 3 — USER half (`user/ntuser/`, ~73K LOC): ✅ DONE (re-verified
+  2026-06-14).** All 59 `user/ntuser/*.c` are cohabitation-commented in
+  `win32ss/CMakeLists.txt`; only `main_rust_shims.c` (the `Win32kSSDT`/
+  `Win32kSSPT`/`NumberOfSysCalls` syscall dispatch tables) stays active as
+  irreducible glue. The saga ran wave 1 (atom-table `session.c`/`useratom.c`
+  against the Rust `gAtomTable`) through ~wave 38 (`keyboard.c`) plus the
+  "frontier" set (`window.c`/`winpos.c`/`message.c`/`menu.c`/`defwnd.c`/
+  `painting.c`/`sysparams.c`/`kbdlayout.c`/`main.c`). The hard core
+  (callouts, message queues, hooks, the window-create chain) is flipped.
+  The "3/59 / 56 remain" text below is the obsolete 2026-06-04 snapshot.
 
 ### Wave naming as it actually happened
 
@@ -181,11 +188,16 @@ dcattr → arc/stockobj/xformobj → drawing/line/fillshap → rect/polyfill
 residue (gdibatch/gdidbg/gdikdbgext). The **ntuser saga** then opened
 its own wave series; wave 1 = the session/useratom atom-table pair.
 
-### Remaining USER work (Phase 3 — the bulk of what's left)
+### Remaining USER work (Phase 3) — ✅ COMPLETE (history kept below)
 
-**56 active `user/ntuser/*.c` files, ~73K LOC.** Suggested leaf-first
-order (low-dependency leaves before the reentrant core), with the hard
-core last:
+> **Re-verified 2026-06-14: there is NO remaining USER work.** All 59
+> `user/ntuser/*.c` are flipped. The leaf-first ordering below is retained
+> only as a record of how the saga was sequenced; every file listed is now
+> cohabitation-commented in `win32ss/CMakeLists.txt`.
+
+**~~56 active~~ 0 remaining `user/ntuser/*.c` files.** Original suggested
+leaf-first order (low-dependency leaves before the reentrant core), with
+the hard core last:
 
 - **Easy leaves (flip next, same playbook as GDI):** `guicheck.c`,
   `metric.c`, `prop.c`, `caret.c`, `focus.c`, `ghost.c`, `misc.c`,
@@ -216,8 +228,11 @@ The old `device.rs` "INTEGRATED + FAILING (i386 smoke hangs pre-`shell
 ready`)" cmake tag is **resolved** — fixed by `20bc456b6d0`
 (DC_bIsBitmapCompatible flexible-array index = the InitializeClasses
 hang) + the FillSolid/EngEraseSurface i386 dup-ABI ud2 fix; i386 smokes
-green with `device.rs` live. (Verify the cmake comment was downgraded;
-if not, do it on the next CMakeLists touch.)
+green with `device.rs` live. <!-- VERIFY: as of 2026-06-14 the
+`gdi/eng/device.c` line in win32ss/CMakeLists.txt STILL carries the stale
+"INTEGRATED + FAILING (i386 smoke hangs pre-`shell ready`)" comment. Smoke
+is green ×3, so the annotation is wrong — downgrade it on the next
+CMakeLists touch. -->
 
 ## Notable learnings (banked across the GDI waves — apply to USER)
 
@@ -395,15 +410,17 @@ win32ss/
 
 **Win32k.sys composition** (what actually compiles into the .sys):
 
-| Component | LOC C | Files | Translation phase |
+*(Translation-status column re-verified against cmake 2026-06-14.)*
+
+| Component | LOC C | Files | Status (2026-06-14) |
 |---|---:|---:|---|
-| `gdi/ntgdi/` | 41,471 | 39 | Phase 2 |
-| `gdi/eng/` | 19,192 | 40 | Phase 2 |
-| `gdi/dib/` | 5,426 | 13 | Phase 2 |
-| `user/ntuser/` | 73,166 | 59 | Phase 3 |
-| `reactx/ntddraw/` | 3,193 | 9 | **Prune-or-defer** |
-| `reactx/dxg/` | 1,884 | 9 | **Prune-or-defer** |
-| `gdi/ntgdi/brush.cpp` | 605 | 1 (C++) | One-off |
+| `gdi/ntgdi/` | 41,471 | 39 | ✅ flipped (Phase 2) |
+| `gdi/eng/` | 19,192 | 40 | ✅ flipped (Phase 2; i386 `floatobj.c` stays C by design) |
+| `gdi/dib/` | 5,426 | 13 | ✅ flipped (Phase 2; i386 `.s` + dead `dib_new.c` stay C) |
+| `user/ntuser/` | 73,166 | 59 | ✅ flipped (Phase 3; only `main_rust_shims.c` syscall tables active) |
+| `reactx/ntddraw/` | 3,193 | 9 | ✅ flipped (all 9 .c → `ntddraw_*.rs`, DirectDraw flip) |
+| `reactx/dxg/` | 1,884 | 9 | ⬜ STILL C — separate `dxg.sys` MODULE (`reactx/dxg/CMakeLists.txt`), NOT part of win32k.sys; all 9 .c uncommented. Out of the win32k.sys core. |
+| `gdi/ntgdi/brush.cpp` | 605 | 1 (C++) | ✅ flipped (one-off, wave 23) |
 | **win32k.sys total** | **~145K** | **170** | — |
 
 Plus sys-stubs.S (auto-generated syscall table from `w32ksvc{32,64}.h`)
@@ -827,12 +844,14 @@ Mirroring the HAL/FreeLDR audits' forward-path shape:
    `~temp-chat-consolidated.md` §6 (promote that file into
    `docs/engineering/` first). Spike on `co_IntClientLoadLibrary`.
    **2–3 sessions.**
-8. **Phase 3 — USER half (`user/ntuser`, ~73K LOC).** 🟡 **STARTED, 3/59**
-   (object + session + useratom). The hard half — callouts, message
-   queues, hooks, window-create chain. **Next: the easy/mid leaves**
-   (guicheck/metric/prop/caret/focus/class/cursoricon/…) on the proven
-   cohab loop; **then** Phase 1.5, **then** the message/hook/window core.
-   **~6–9 sessions.** See "Remaining USER work".
+8. ~~**Phase 3 — USER half (`user/ntuser`, ~73K LOC).**~~ ✅ **DONE
+   (re-verified 2026-06-14)** — all 59 ntuser .c flipped, only
+   `main_rust_shims.c` syscall tables stay C. The hard core (callouts,
+   message queues, hooks, window-create chain) is flipped along with the
+   leaves. <!-- VERIFY: Phase 1.5 typestate API (UserLock/CoRef/CoCallout)
+   was declared "STILL OWED" as the gate for the deep USER core, yet the
+   deep core flipped anyway — confirm whether the typestate API actually
+   landed or whether the core was translated without it. -->.
 9. **Per-arch verification.** All 3 arches green on smoke. **Continuous.**
 10. **Cleanup.** Retire the C `win32ss/` kernel-mode tree; flip the
     `--allow-multiple-definition` cohabitation to Rust-only. Confirm the

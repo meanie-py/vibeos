@@ -102,7 +102,9 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str) -> list[dict]:
     """Scan binary for ud2 instructions, return list of {address, function, expected}."""
     result = subprocess.run(
         [objdump, "-d", str(ntoskrnl_path)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
     findings = []
@@ -110,23 +112,25 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str) -> list[dict]:
 
     for line in result.stdout.splitlines():
         # Match function labels like "0046b350 <_IopAcquireFileObjectLock@16>:"
-        func_match = re.match(r'^([0-9a-f]+)\s+<(.+)>:', line)
+        func_match = re.match(r"^([0-9a-f]+)\s+<(.+)>:", line)
         if func_match:
             current_function = func_match.group(2)
             continue
 
         # Match ud2 instruction (0f 0b)
-        ud2_match = re.search(r'^\s+([0-9a-f]+):\s+0f 0b\s+ud2', line)
+        ud2_match = re.search(r"^\s+([0-9a-f]+):\s+0f 0b\s+ud2", line)
         if ud2_match and current_function:
             addr = ud2_match.group(1)
             expected = any(e in current_function for e in EXPECTED_UD2)
             known_cgu = any(e in current_function for e in KNOWN_CGU_UD2)
-            findings.append({
-                "address": addr,
-                "function": current_function,
-                "expected": expected,
-                "known_cgu": known_cgu,
-            })
+            findings.append(
+                {
+                    "address": addr,
+                    "function": current_function,
+                    "expected": expected,
+                    "known_cgu": known_cgu,
+                }
+            )
 
     return findings
 
@@ -179,8 +183,10 @@ def main():
     if not findings:
         print("  No ud2 instructions found.")
 
-    total_expected = len(expected) + len(known_cgu)
-    print(f"\nTotal: {len(findings)} ud2 ({len(expected)} expected, {len(known_cgu)} known CGU, {len(unexpected)} unexpected)")
+    print(
+        f"\nTotal: {len(findings)} ud2 ({len(expected)} expected, "
+        f"{len(known_cgu)} known CGU, {len(unexpected)} unexpected)"
+    )
 
     if check_mode and unexpected:
         print("\nFAILED: Unexpected ud2 found — LLVM miscompilation detected!")

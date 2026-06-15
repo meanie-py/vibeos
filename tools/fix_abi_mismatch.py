@@ -30,7 +30,7 @@ def get_shim_exports_functions() -> dict[str, str]:
     # Match: pub unsafe extern "C" fn FunctionName(
     # or:   pub unsafe extern "system" fn FunctionName(
     for m in re.finditer(
-        r'#\[(?:no_mangle|inline\(never\))\]\s*(?:#\[.*?\]\s*)*'
+        r"#\[(?:no_mangle|inline\(never\))\]\s*(?:#\[.*?\]\s*)*"
         r'pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)',
         source,
         re.DOTALL,
@@ -46,11 +46,14 @@ def get_shim_exports_functions() -> dict[str, str]:
     # KeAcquireInStackQueuedSpinLock is i386-only fastcall in shim_exports
     # but callers already have cfg'd declarations.
     ARCH_SPECIFIC_SKIP = {
-        'KfRaiseIrql', 'KfLowerIrql',
-        'KeAcquireInStackQueuedSpinLock', 'KeReleaseInStackQueuedSpinLock',
-        'KeAcquireInStackQueuedSpinLockRaiseToSynch',
+        "KfRaiseIrql",
+        "KfLowerIrql",
+        "KeAcquireInStackQueuedSpinLock",
+        "KeReleaseInStackQueuedSpinLock",
+        "KeAcquireInStackQueuedSpinLockRaiseToSynch",
         # amd64-only in shim_exports, i386 uses C stdcall:
-        'KeQueryInterruptHandler', 'KeRegisterInterruptHandler',
+        "KeQueryInterruptHandler",
+        "KeRegisterInterruptHandler",
     }
     for name in ARCH_SPECIFIC_SKIP:
         fns.pop(name, None)
@@ -71,18 +74,16 @@ def parse_extern_blocks(source: str) -> list[dict]:
         line = lines[i].strip()
 
         # Match extern block opening
-        extern_match = re.match(
-            r'^(?:unsafe\s+)?extern\s+"(\w+)"\s*\{', line
-        )
+        extern_match = re.match(r'^(?:unsafe\s+)?extern\s+"(\w+)"\s*\{', line)
         if extern_match:
             conv = extern_match.group(1)
             block_start = i
-            brace_count = line.count('{') - line.count('}')
+            brace_count = line.count("{") - line.count("}")
             functions = []
 
             j = i + 1
             while j < len(lines) and brace_count > 0:
-                brace_count += lines[j].count('{') - lines[j].count('}')
+                brace_count += lines[j].count("{") - lines[j].count("}")
 
                 fn_line = lines[j].strip()
                 # Check for link_name on the line above
@@ -93,22 +94,26 @@ def parse_extern_blocks(source: str) -> list[dict]:
                     if link_match:
                         link_name = link_match.group(1)
 
-                fn_match = re.match(r'(?:pub\s+)?fn\s+(\w+)\s*\(', fn_line)
+                fn_match = re.match(r"(?:pub\s+)?fn\s+(\w+)\s*\(", fn_line)
                 if fn_match:
-                    functions.append({
-                        'name': fn_match.group(1),
-                        'line': j,
-                        'link_name': link_name,
-                    })
+                    functions.append(
+                        {
+                            "name": fn_match.group(1),
+                            "line": j,
+                            "link_name": link_name,
+                        }
+                    )
 
                 j += 1
 
-            blocks.append({
-                'convention': conv,
-                'start_line': block_start,
-                'end_line': j - 1,
-                'functions': functions,
-            })
+            blocks.append(
+                {
+                    "convention": conv,
+                    "start_line": block_start,
+                    "end_line": j - 1,
+                    "functions": functions,
+                }
+            )
             i = j
         else:
             i += 1
@@ -123,27 +128,29 @@ def scan_file(filepath: Path, shim_fns: dict[str, str]) -> list[dict]:
     mismatches = []
 
     for block in blocks:
-        for fn in block['functions']:
-            fn_name = fn['name']
+        for fn in block["functions"]:
+            fn_name = fn["name"]
             # Check link_name too (e.g., IoGetCurrentProcess → PsGetCurrentProcess)
-            lookup = fn['link_name'] or fn_name
+            lookup = fn["link_name"] or fn_name
 
             if lookup in shim_fns:
                 expected_conv = shim_fns[lookup]
-                if block['convention'] != expected_conv:
-                    mismatches.append({
-                        'file': str(filepath),
-                        'fn_name': fn_name,
-                        'link_name': fn['link_name'],
-                        'lookup': lookup,
-                        'declared_as': block['convention'],
-                        'should_be': expected_conv,
-                        'fn_line': fn['line'],
-                        'block_start': block['start_line'],
-                        'block_end': block['end_line'],
-                        'block_convention': block['convention'],
-                        'block_functions': block['functions'],
-                    })
+                if block["convention"] != expected_conv:
+                    mismatches.append(
+                        {
+                            "file": str(filepath),
+                            "fn_name": fn_name,
+                            "link_name": fn["link_name"],
+                            "lookup": lookup,
+                            "declared_as": block["convention"],
+                            "should_be": expected_conv,
+                            "fn_line": fn["line"],
+                            "block_start": block["start_line"],
+                            "block_end": block["end_line"],
+                            "block_convention": block["convention"],
+                            "block_functions": block["functions"],
+                        }
+                    )
 
     return mismatches
 
@@ -161,53 +168,52 @@ def fix_file(filepath: Path, mismatches: list[dict]) -> bool:
     # Group mismatches by block (start_line)
     blocks_to_fix = {}
     for m in mismatches:
-        key = m['block_start']
+        key = m["block_start"]
         if key not in blocks_to_fix:
             blocks_to_fix[key] = {
-                'block_start': m['block_start'],
-                'block_end': m['block_end'],
-                'block_convention': m['block_convention'],
-                'block_functions': m['block_functions'],
-                'mismatched': [],
-                'target_convention': m['should_be'],
+                "block_start": m["block_start"],
+                "block_end": m["block_end"],
+                "block_convention": m["block_convention"],
+                "block_functions": m["block_functions"],
+                "mismatched": [],
+                "target_convention": m["should_be"],
             }
-        blocks_to_fix[key]['mismatched'].append(m)
+        blocks_to_fix[key]["mismatched"].append(m)
 
     # Process blocks in reverse order (so line numbers stay valid)
     for block_start in sorted(blocks_to_fix.keys(), reverse=True):
         info = blocks_to_fix[block_start]
-        block_fns = info['block_functions']
-        mismatched_names = {m['fn_name'] for m in info['mismatched']}
-        target_conv = info['target_convention']
+        block_fns = info["block_functions"]
+        mismatched_names = {m["fn_name"] for m in info["mismatched"]}
+        target_conv = info["target_convention"]
 
         all_mismatched = len(mismatched_names) == len(block_fns)
 
         if all_mismatched:
             # Simple case: change the whole block's convention
-            old_line = lines[info['block_start']]
+            old_line = lines[info["block_start"]]
             new_line = old_line.replace(
-                f'extern "{info["block_convention"]}"',
-                f'extern "{target_conv}"'
+                f'extern "{info["block_convention"]}"', f'extern "{target_conv}"'
             )
-            lines[info['block_start']] = new_line
+            lines[info["block_start"]] = new_line
         else:
             # Complex case: split the block
             # Extract the mismatched function declarations and their attributes
-            block_end = info['block_end']
-            block_start_line = info['block_start']
+            block_end = info["block_end"]
+            block_start_line = info["block_start"]
 
             # Collect lines for mismatched functions (including preceding attributes)
             mismatched_lines = []
             lines_to_remove = set()
 
             for fn in block_fns:
-                if fn['name'] in mismatched_names:
-                    fn_line_idx = fn['line']
+                if fn["name"] in mismatched_names:
+                    fn_line_idx = fn["line"]
                     # Include preceding attribute lines (link_name, etc.)
                     attr_start = fn_line_idx
                     while attr_start > block_start_line + 1:
                         prev = lines[attr_start - 1].strip()
-                        if prev.startswith('#['):
+                        if prev.startswith("#["):
                             attr_start -= 1
                         else:
                             break
@@ -217,24 +223,24 @@ def fix_file(filepath: Path, mismatches: list[dict]) -> bool:
                         lines_to_remove.add(k)
 
                     # Handle multi-line fn declarations
-                    if ';' not in lines[fn_line_idx]:
+                    if ";" not in lines[fn_line_idx]:
                         k = fn_line_idx + 1
                         while k <= block_end:
                             mismatched_lines.append(lines[k])
                             lines_to_remove.add(k)
-                            if ';' in lines[k]:
+                            if ";" in lines[k]:
                                 break
                             k += 1
 
             # Build new block for the extracted functions
-            indent = ''.join(c for c in lines[block_start_line] if c in ' \t')
+            indent = "".join(c for c in lines[block_start_line] if c in " \t")
             # Check if original block has 'unsafe'
             orig = lines[block_start_line].strip()
-            unsafe_prefix = 'unsafe ' if orig.startswith('unsafe ') else ''
+            unsafe_prefix = "unsafe " if orig.startswith("unsafe ") else ""
 
             new_block_lines = [f'{indent}{unsafe_prefix}extern "{target_conv}" {{']
             new_block_lines.extend(mismatched_lines)
-            new_block_lines.append(f'{indent}}}')
+            new_block_lines.append(f"{indent}}}")
 
             # Remove mismatched lines from original block
             new_lines = []
@@ -246,7 +252,9 @@ def fix_file(filepath: Path, mismatches: list[dict]) -> bool:
             # Insert new block after the original block
             # Find where the original block ends in new_lines
             # (line numbers shifted due to removal)
-            orig_end_new = info['block_end'] - sum(1 for r in lines_to_remove if r <= info['block_end'])
+            orig_end_new = info["block_end"] - sum(
+                1 for r in lines_to_remove if r <= info["block_end"]
+            )
             insert_pos = orig_end_new + 1
             for nl in reversed(new_block_lines):
                 new_lines.insert(insert_pos, nl)
@@ -262,17 +270,17 @@ def fix_file(filepath: Path, mismatches: list[dict]) -> bool:
         if extern_match:
             # Look ahead for closing brace
             j = i + 1
-            while j < len(lines) and lines[j].strip() == '':
+            while j < len(lines) and lines[j].strip() == "":
                 j += 1
-            if j < len(lines) and lines[j].strip() == '}':
+            if j < len(lines) and lines[j].strip() == "}":
                 i = j + 1
-                if i < len(lines) and lines[i].strip() == '':
+                if i < len(lines) and lines[i].strip() == "":
                     i += 1
                 continue
         cleaned.append(lines[i])
         i += 1
 
-    new_source = '\n'.join(cleaned) + '\n'
+    new_source = "\n".join(cleaned) + "\n"
     if new_source != source:
         filepath.write_text(new_source)
         return True
@@ -292,10 +300,12 @@ def main():
 
     print("Parsing shim_exports.rs...", file=sys.stderr)
     shim_fns = get_shim_exports_functions()
-    print(f"Found {len(shim_fns)} shim functions "
-          f"({sum(1 for v in shim_fns.values() if v == 'C')} extern \"C\", "
-          f"{sum(1 for v in shim_fns.values() if v == 'system')} extern \"system\")",
-          file=sys.stderr)
+    print(
+        f"Found {len(shim_fns)} shim functions "
+        f'({sum(1 for v in shim_fns.values() if v == "C")} extern "C", '
+        f'{sum(1 for v in shim_fns.values() if v == "system")} extern "system")',
+        file=sys.stderr,
+    )
 
     all_mismatches = []
     for rs_file in sorted(SRC_DIR.rglob("*.rs")):
@@ -316,23 +326,25 @@ def main():
     # Group by file
     by_file = {}
     for m in all_mismatches:
-        short = m['file'].replace(str(SRC_DIR) + "/", "")
+        short = m["file"].replace(str(SRC_DIR) + "/", "")
         by_file.setdefault(short, []).append(m)
 
     print(f"\nFound {len(all_mismatches)} ABI mismatches in {len(by_file)} files:\n")
     for filepath, items in sorted(by_file.items()):
         print(f"  {filepath}:")
         for item in items:
-            link = f" (link_name={item['link_name']})" if item['link_name'] else ""
-            print(f"    L{item['fn_line']+1:4d} {item['fn_name']}{link}: "
-                  f"declared extern \"{item['declared_as']}\" → should be extern \"{item['should_be']}\"")
+            link = f" (link_name={item['link_name']})" if item["link_name"] else ""
+            print(
+                f"    L{item['fn_line'] + 1:4d} {item['fn_name']}{link}: "
+                f'declared extern "{item["declared_as"]}" → should be extern "{item["should_be"]}"'
+            )
         print()
 
     # Show unique function names
-    unique_fns = sorted(set(m['lookup'] for m in all_mismatches))
+    unique_fns = sorted(set(m["lookup"] for m in all_mismatches))
     print(f"Unique mismatched functions ({len(unique_fns)}):")
     for fn in unique_fns:
-        count = sum(1 for m in all_mismatches if m['lookup'] == fn)
+        count = sum(1 for m in all_mismatches if m["lookup"] == fn)
         print(f"  {fn} ({count} sites)")
 
     if fix_mode:

@@ -16,33 +16,33 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rustconv.postprocess import drop_pseh_macro_externs  # noqa: E402
+from rustconv.postprocess import drop_pseh_macro_externs
 
 
 def test_drops_pure_seh2_block_entirely():
     code = (
         'extern "system" {\n'
-        '    fn _SEH2_TRY();\n'
-        '    fn _SEH2_EXCEPT(filter: i32) -> i32;\n'
-        '    fn _SEH2_GetExceptionCode() -> u32;\n'
-        '    fn _SEH2_END();\n'
-        '}\n'
+        "    fn _SEH2_TRY();\n"
+        "    fn _SEH2_EXCEPT(filter: i32) -> i32;\n"
+        "    fn _SEH2_GetExceptionCode() -> u32;\n"
+        "    fn _SEH2_END();\n"
+        "}\n"
     )
     out = drop_pseh_macro_externs(code)
     # No real decls survive (the comment breadcrumb names them, but there is
     # no `fn _SEH2_` decl and no extern block left).
     assert "fn _SEH2_" not in out
-    assert "extern \"system\"" not in out
+    assert 'extern "system"' not in out
     assert "drop_pseh_macro_externs" in out  # left an audit breadcrumb
 
 
 def test_mixed_block_keeps_real_fn_drops_seh2():
     code = (
         'extern "system" {\n'
-        '    fn _SEH2_TRY();\n'
-        '    fn WlStrDup(s: PCWSTR) -> PWSTR;\n'
-        '    fn _SEH2_GetExceptionInformation() -> *mut u8;\n'
-        '}\n'
+        "    fn _SEH2_TRY();\n"
+        "    fn WlStrDup(s: PCWSTR) -> PWSTR;\n"
+        "    fn _SEH2_GetExceptionInformation() -> *mut u8;\n"
+        "}\n"
     )
     out = drop_pseh_macro_externs(code)
     assert "WlStrDup" in out
@@ -53,11 +53,7 @@ def test_mixed_block_keeps_real_fn_drops_seh2():
 
 
 def test_drops_rtlgetprocessheap_macro():
-    code = (
-        'extern "system" {\n'
-        '    fn RtlGetProcessHeap() -> PVOID;\n'
-        '}\n'
-    )
+    code = 'extern "system" {\n    fn RtlGetProcessHeap() -> PVOID;\n}\n'
     out = drop_pseh_macro_externs(code)
     assert "fn RtlGetProcessHeap" not in out
     assert 'extern "system"' not in out
@@ -66,9 +62,9 @@ def test_drops_rtlgetprocessheap_macro():
 def test_preserves_unrelated_extern_block():
     code = (
         'extern "C" {\n'
-        '    fn GetProcessHeap() -> PVOID;\n'
-        '    fn HeapAlloc(h: PVOID, f: u32, n: usize) -> PVOID;\n'
-        '}\n'
+        "    fn GetProcessHeap() -> PVOID;\n"
+        "    fn HeapAlloc(h: PVOID, f: u32, n: usize) -> PVOID;\n"
+        "}\n"
     )
     out = drop_pseh_macro_externs(code)
     assert out == code  # no SEH2/macro names → untouched, byte-identical
@@ -78,9 +74,9 @@ def test_pub_fn_seh2_also_dropped():
     # rustconv sometimes marks them `pub fn`.
     code = (
         'extern "system" {\n'
-        '    pub fn _SEH2_Volatile0() -> i32;\n'
-        '    pub fn wcschr(s: PCWSTR, c: u16) -> PWSTR;\n'
-        '}\n'
+        "    pub fn _SEH2_Volatile0() -> i32;\n"
+        "    pub fn wcschr(s: PCWSTR, c: u16) -> PWSTR;\n"
+        "}\n"
     )
     out = drop_pseh_macro_externs(code)
     assert "_SEH2_Volatile0" not in out.split("// drop")[0]

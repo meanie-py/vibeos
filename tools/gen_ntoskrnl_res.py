@@ -16,6 +16,7 @@ Usage:
     python3 tools/gen_ntoskrnl_res.py --arch amd64          # Regenerate + write
     python3 tools/gen_ntoskrnl_res.py --arch i386 --check   # Verify checked-in
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,21 +37,28 @@ ARCHES = {
     "i386": {
         "triple": "i686-w64-mingw32",
         "defines": [
-            ("_M_IX86", None), ("_X86_", None), ("__i386__", None),
-            ("i386", None), ("_USE_32BIT_TIME_T", None),
+            ("_M_IX86", None),
+            ("_X86_", None),
+            ("__i386__", None),
+            ("i386", None),
+            ("_USE_32BIT_TIME_T", None),
         ],
     },
     "amd64": {
         "triple": "x86_64-w64-mingw32",
         "defines": [
-            ("_M_AMD64", None), ("_AMD64_", None), ("_WIN64", None),
+            ("_M_AMD64", None),
+            ("_AMD64_", None),
+            ("_WIN64", None),
             ("__x86_64__", None),
         ],
     },
     "arm64": {
         "triple": "aarch64-w64-mingw32",
         "defines": [
-            ("_M_ARM64", None), ("_ARM64_", None), ("_WIN64", None),
+            ("_M_ARM64", None),
+            ("_ARM64_", None),
+            ("_WIN64", None),
             ("__aarch64__", None),
         ],
     },
@@ -88,23 +96,142 @@ KERNEL_DEFINES_COMMON = [
 # Mirrors LANGUAGES in build.rs (136 LANGUAGE_* defines required by
 # common.ver to emit every language's StringFileInfo block).
 LANGUAGES = [
-    "AF_ZA", "AR_AE", "AR_BH", "AR_DZ", "AR_EG", "AR_IQ", "AR_JO", "AR_KW",
-    "AR_LB", "AR_LY", "AR_MA", "AR_OM", "AR_QA", "AR_SA", "AR_SY", "AR_TN",
-    "AR_YE", "AZ_AZ", "BE_BY", "BG_BG", "BN_BD", "BN_IN", "CA_ES", "CS_CZ",
-    "DA_DK", "DE_AT", "DE_CH", "DE_DE", "DE_LI", "DE_LU", "DV_MV", "EL_GR",
-    "EN_AU", "EN_BZ", "EN_CA", "EN_CB", "EN_GB", "EN_IE", "EN_JM", "EN_NZ",
-    "EN_PH", "EN_TT", "EN_US", "EN_ZA", "EN_ZW", "EO_AA", "ES_AR", "ES_BO",
-    "ES_CL", "ES_CO", "ES_CR", "ES_DO", "ES_EC", "ES_ES", "ES_GT", "ES_HN",
-    "ES_MX", "ES_NI", "ES_PA", "ES_PE", "ES_PR", "ES_PY", "ES_SV", "ES_UY",
-    "ES_VE", "ET_EE", "EU_ES", "FA_IR", "FI_FI", "FO_FO", "FR_BE", "FR_CA",
-    "FR_CH", "FR_FR", "FR_LU", "FR_MC", "GL_ES", "GU_IN", "HE_IL", "HI_IN",
-    "HR_HR", "HU_HU", "HY_AM", "ID_ID", "IS_IS", "IT_CH", "IT_IT", "JA_JP",
-    "KA_GE", "KK_KZ", "KN_IN", "KOK_IN", "KO_KR", "KY_KG", "LT_LT", "LV_LV",
-    "MK_MK", "MN_MN", "MR_IN", "MS_BN", "MS_MY", "MY_MM", "NL_BE", "NL_NL",
-    "NN_NO", "PA_IN", "PL_PL", "PT_BR", "PT_PT", "RM_CH", "RO_RO", "RU_RU",
-    "SA_IN", "SK_SK", "SL_SI", "SQ_AL", "SR_SP", "SV_FI", "SV_SE", "SW_KE",
-    "SYR_SY", "TA_IN", "TE_IN", "TH_TH", "TR_TR", "TT_TA", "UK_UA", "UR_PK",
-    "UZ_UZ", "VI_VN", "WA_BE", "ZH_CN", "ZH_HK", "ZH_MO", "ZH_SG", "ZH_TW",
+    "AF_ZA",
+    "AR_AE",
+    "AR_BH",
+    "AR_DZ",
+    "AR_EG",
+    "AR_IQ",
+    "AR_JO",
+    "AR_KW",
+    "AR_LB",
+    "AR_LY",
+    "AR_MA",
+    "AR_OM",
+    "AR_QA",
+    "AR_SA",
+    "AR_SY",
+    "AR_TN",
+    "AR_YE",
+    "AZ_AZ",
+    "BE_BY",
+    "BG_BG",
+    "BN_BD",
+    "BN_IN",
+    "CA_ES",
+    "CS_CZ",
+    "DA_DK",
+    "DE_AT",
+    "DE_CH",
+    "DE_DE",
+    "DE_LI",
+    "DE_LU",
+    "DV_MV",
+    "EL_GR",
+    "EN_AU",
+    "EN_BZ",
+    "EN_CA",
+    "EN_CB",
+    "EN_GB",
+    "EN_IE",
+    "EN_JM",
+    "EN_NZ",
+    "EN_PH",
+    "EN_TT",
+    "EN_US",
+    "EN_ZA",
+    "EN_ZW",
+    "EO_AA",
+    "ES_AR",
+    "ES_BO",
+    "ES_CL",
+    "ES_CO",
+    "ES_CR",
+    "ES_DO",
+    "ES_EC",
+    "ES_ES",
+    "ES_GT",
+    "ES_HN",
+    "ES_MX",
+    "ES_NI",
+    "ES_PA",
+    "ES_PE",
+    "ES_PR",
+    "ES_PY",
+    "ES_SV",
+    "ES_UY",
+    "ES_VE",
+    "ET_EE",
+    "EU_ES",
+    "FA_IR",
+    "FI_FI",
+    "FO_FO",
+    "FR_BE",
+    "FR_CA",
+    "FR_CH",
+    "FR_FR",
+    "FR_LU",
+    "FR_MC",
+    "GL_ES",
+    "GU_IN",
+    "HE_IL",
+    "HI_IN",
+    "HR_HR",
+    "HU_HU",
+    "HY_AM",
+    "ID_ID",
+    "IS_IS",
+    "IT_CH",
+    "IT_IT",
+    "JA_JP",
+    "KA_GE",
+    "KK_KZ",
+    "KN_IN",
+    "KOK_IN",
+    "KO_KR",
+    "KY_KG",
+    "LT_LT",
+    "LV_LV",
+    "MK_MK",
+    "MN_MN",
+    "MR_IN",
+    "MS_BN",
+    "MS_MY",
+    "MY_MM",
+    "NL_BE",
+    "NL_NL",
+    "NN_NO",
+    "PA_IN",
+    "PL_PL",
+    "PT_BR",
+    "PT_PT",
+    "RM_CH",
+    "RO_RO",
+    "RU_RU",
+    "SA_IN",
+    "SK_SK",
+    "SL_SI",
+    "SQ_AL",
+    "SR_SP",
+    "SV_FI",
+    "SV_SE",
+    "SW_KE",
+    "SYR_SY",
+    "TA_IN",
+    "TE_IN",
+    "TH_TH",
+    "TR_TR",
+    "TT_TA",
+    "UK_UA",
+    "UR_PK",
+    "UZ_UZ",
+    "VI_VN",
+    "WA_BE",
+    "ZH_CN",
+    "ZH_HK",
+    "ZH_MO",
+    "ZH_SG",
+    "ZH_TW",
 ]
 
 KERNEL_INCLUDES = [
@@ -116,8 +243,9 @@ KERNEL_INCLUDES = [
 ]
 
 
-def regenerate(work: Path, arch: str, triple: str, clang: Path, windres: Path,
-               bugcodes_rc: Path, defines: list) -> bytes:
+def regenerate(
+    work: Path, arch: str, triple: str, clang: Path, windres: Path, bugcodes_rc: Path, defines: list
+) -> bytes:
     # Stage the cmake-built bugcodes.rc + its .bin sidecars next to a
     # symlink/copy so windres can resolve `<bugcodes.rc>` (and the .bin
     # files referenced from it via relative paths).
@@ -133,16 +261,18 @@ def regenerate(work: Path, arch: str, triple: str, clang: Path, windres: Path,
     for inc in KERNEL_INCLUDES:
         cmd.extend(["-I", str(REPO / inc)])
     cmd.extend(["-I", str(mc_stage)])
-    cmd.extend([
-        f"--preprocessor={clang}",
-        f"--preprocessor-arg=--target={triple}",
-        "--preprocessor-arg=-E",
-        "--preprocessor-arg=-nostdinc",
-        "--preprocessor-arg=-xc-header",
-        "-DRC_INVOKED",
-        "-D__WIN32__=1",
-        "-D__FLAT__=1",
-    ])
+    cmd.extend(
+        [
+            f"--preprocessor={clang}",
+            f"--preprocessor-arg=--target={triple}",
+            "--preprocessor-arg=-E",
+            "--preprocessor-arg=-nostdinc",
+            "--preprocessor-arg=-xc-header",
+            "-DRC_INVOKED",
+            "-D__WIN32__=1",
+            "-D__FLAT__=1",
+        ]
+    )
     for lang in LANGUAGES:
         cmd.append(f"-DLANGUAGE_{lang}")
     for name, value in KERNEL_DEFINES_COMMON + defines:
@@ -158,10 +288,12 @@ def regenerate(work: Path, arch: str, triple: str, clang: Path, windres: Path,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--arch", choices=sorted(ARCHES), default="i386",
-                    help="target arch (default: i386)")
-    ap.add_argument("--check", action="store_true",
-                    help="verify checked-in file matches a fresh regen")
+    ap.add_argument(
+        "--arch", choices=sorted(ARCHES), default="i386", help="target arch (default: i386)"
+    )
+    ap.add_argument(
+        "--check", action="store_true", help="verify checked-in file matches a fresh regen"
+    )
     args = ap.parse_args()
 
     cfg = ARCHES[args.arch]
@@ -175,13 +307,12 @@ def main() -> int:
 
     for p in [windres, clang, RC_SOURCE, bugcodes_rc]:
         if not p.exists():
-            raise SystemExit(
-                f"missing {p}\n  Run `cd build-{args.arch} && ninja ntoskrnl` first."
-            )
+            raise SystemExit(f"missing {p}\n  Run `cd build-{args.arch} && ninja ntoskrnl` first.")
 
     with tempfile.TemporaryDirectory(prefix="genres-") as tmp:
-        fresh = regenerate(Path(tmp), args.arch, triple, clang, windres,
-                           bugcodes_rc, cfg["defines"])
+        fresh = regenerate(
+            Path(tmp), args.arch, triple, clang, windres, bugcodes_rc, cfg["defines"]
+        )
 
     if args.check:
         if not out_file.exists():

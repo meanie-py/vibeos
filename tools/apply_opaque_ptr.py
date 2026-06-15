@@ -18,36 +18,67 @@ SRC_DIR = Path("sdk/lib/rust/ntoskrnl-rust/src")
 # Pointer type patterns that need opaque_ptr barriers
 POINTER_TYPES = {
     # Explicit pointer types
-    r'\*mut\s+\w+',
-    r'\*const\s+\w+',
+    r"\*mut\s+\w+",
+    r"\*const\s+\w+",
     # NT kernel pointer typedefs (all are *mut Something)
-    r'PVOID', r'HANDLE', r'PHANDLE',
-    r'PEPROCESS', r'PETHREAD', r'PKTHREAD', r'PKPROCESS',
-    r'PFILE_OBJECT', r'PDEVICE_OBJECT', r'PDRIVER_OBJECT',
-    r'PIRP', r'PMDL', r'PKEVENT', r'PKMUTANT', r'PKSEMAPHORE',
-    r'PIO_STATUS_BLOCK', r'PIO_STACK_LOCATION',
-    r'POBJECT_ATTRIBUTES', r'PUNICODE_STRING', r'PANSI_STRING',
-    r'POBJECT_TYPE', r'POBJECT_HEADER',
-    r'PACCESS_STATE', r'PSECURITY_DESCRIPTOR', r'PSID', r'PACL',
-    r'PTOKEN', r'PGENERIC_MAPPING',
-    r'PLARGE_INTEGER', r'PULARGE_INTEGER',
-    r'PULONG', r'PULONG_PTR', r'PLONG', r'PUSHORT', r'PUCHAR',
-    r'PBOOLEAN', r'PSIZE_T', r'PNTSTATUS',
-    r'PLIST_ENTRY', r'PSLIST_ENTRY', r'PSINGLE_LIST_ENTRY',
-    r'PCLIENT_ID', r'POBJECT_NAME_INFORMATION',
-    r'PLUID', r'PPRIVILEGE_SET',
-    r'PVPB', r'PFAST_IO_DISPATCH',
-    r'PLOADER_PARAMETER_BLOCK',
-    r'PIOP_FILE_OBJECT_EXTENSION',
-    r'PIO_APC_ROUTINE',  # function pointer, still a pointer
-    r'PKNORMAL_ROUTINE',
+    r"PVOID",
+    r"HANDLE",
+    r"PHANDLE",
+    r"PEPROCESS",
+    r"PETHREAD",
+    r"PKTHREAD",
+    r"PKPROCESS",
+    r"PFILE_OBJECT",
+    r"PDEVICE_OBJECT",
+    r"PDRIVER_OBJECT",
+    r"PIRP",
+    r"PMDL",
+    r"PKEVENT",
+    r"PKMUTANT",
+    r"PKSEMAPHORE",
+    r"PIO_STATUS_BLOCK",
+    r"PIO_STACK_LOCATION",
+    r"POBJECT_ATTRIBUTES",
+    r"PUNICODE_STRING",
+    r"PANSI_STRING",
+    r"POBJECT_TYPE",
+    r"POBJECT_HEADER",
+    r"PACCESS_STATE",
+    r"PSECURITY_DESCRIPTOR",
+    r"PSID",
+    r"PACL",
+    r"PTOKEN",
+    r"PGENERIC_MAPPING",
+    r"PLARGE_INTEGER",
+    r"PULARGE_INTEGER",
+    r"PULONG",
+    r"PULONG_PTR",
+    r"PLONG",
+    r"PUSHORT",
+    r"PUCHAR",
+    r"PBOOLEAN",
+    r"PSIZE_T",
+    r"PNTSTATUS",
+    r"PLIST_ENTRY",
+    r"PSLIST_ENTRY",
+    r"PSINGLE_LIST_ENTRY",
+    r"PCLIENT_ID",
+    r"POBJECT_NAME_INFORMATION",
+    r"PLUID",
+    r"PPRIVILEGE_SET",
+    r"PVPB",
+    r"PFAST_IO_DISPATCH",
+    r"PLOADER_PARAMETER_BLOCK",
+    r"PIOP_FILE_OBJECT_EXTENSION",
+    r"PIO_APC_ROUTINE",  # function pointer, still a pointer
+    r"PKNORMAL_ROUTINE",
 }
 
 # Build a combined regex for matching pointer type in parameter declarations
 POINTER_RE = re.compile(
-    r'^\s*(?:mut\s+)?(\w+)\s*:\s*(' +
-    '|'.join(sorted(POINTER_TYPES, key=len, reverse=True)) +
-    r')\b',
+    r"^\s*(?:mut\s+)?(\w+)\s*:\s*("
+    + "|".join(sorted(POINTER_TYPES, key=len, reverse=True))
+    + r")\b",
 )
 
 
@@ -61,18 +92,18 @@ def parse_no_mangle_functions(source: str) -> list[dict]:
         line = lines[i].strip()
 
         # Look for #[no_mangle]
-        if line == '#[no_mangle]':
+        if line == "#[no_mangle]":
             # Scan forward for the function signature
             j = i + 1
             while j < len(lines):
                 fn_line = lines[j].strip()
-                if fn_line.startswith('pub unsafe extern') and 'fn ' in fn_line:
+                if fn_line.startswith("pub unsafe extern") and "fn " in fn_line:
                     break
-                elif fn_line.startswith('pub static') or fn_line.startswith('pub const'):
+                elif fn_line.startswith("pub static") or fn_line.startswith("pub const"):
                     # Skip statics/consts
                     j = -1
                     break
-                elif fn_line.startswith('#['):
+                elif fn_line.startswith("#["):
                     j += 1
                     continue
                 else:
@@ -89,7 +120,7 @@ def parse_no_mangle_functions(source: str) -> list[dict]:
             k = j
             while k < len(lines):
                 sig_lines.append(lines[k])
-                if '{' in lines[k]:
+                if "{" in lines[k]:
                     break
                 k += 1
 
@@ -98,10 +129,10 @@ def parse_no_mangle_functions(source: str) -> list[dict]:
                 continue
 
             brace_line = k  # line with opening '{'
-            sig = '\n'.join(sig_lines)
+            sig = "\n".join(sig_lines)
 
             # Extract function name
-            fn_match = re.search(r'fn\s+(\w+)\s*\(', sig)
+            fn_match = re.search(r"fn\s+(\w+)\s*\(", sig)
             if not fn_match:
                 i = k + 1
                 continue
@@ -110,9 +141,9 @@ def parse_no_mangle_functions(source: str) -> list[dict]:
 
             # Extract parameters
             # Get everything between ( and )
-            paren_content = re.search(r'\((.*?)\)\s*->', sig, re.DOTALL)
+            paren_content = re.search(r"\((.*?)\)\s*->", sig, re.DOTALL)
             if not paren_content:
-                paren_content = re.search(r'\((.*?)\)\s*\{', sig, re.DOTALL)
+                paren_content = re.search(r"\((.*?)\)\s*\{", sig, re.DOTALL)
             if not paren_content:
                 i = k + 1
                 continue
@@ -129,25 +160,27 @@ def parse_no_mangle_functions(source: str) -> list[dict]:
                     continue
                 # Check if this is a pointer type parameter
                 # Match: name: POINTER_TYPE or mut name: POINTER_TYPE
-                m = re.match(r'(?:mut\s+)?(\w+)\s*:\s*(.+)', param)
+                m = re.match(r"(?:mut\s+)?(\w+)\s*:\s*(.+)", param)
                 if m:
                     pname = m.group(1)
-                    ptype = m.group(2).strip().rstrip(',')
+                    ptype = m.group(2).strip().rstrip(",")
                     if is_pointer_type(ptype):
-                        is_const = ptype.startswith('*const ')
+                        is_const = ptype.startswith("*const ")
                         ptr_params.append((pname, is_const))
 
             # Check if opaque_ptr is already applied
-            next_line = lines[brace_line + 1].strip() if brace_line + 1 < len(lines) else ''
-            already_applied = 'opaque_ptr(' in next_line
+            next_line = lines[brace_line + 1].strip() if brace_line + 1 < len(lines) else ""
+            already_applied = "opaque_ptr(" in next_line
 
             if ptr_params and not already_applied:
-                functions.append({
-                    'name': fn_name,
-                    'line': brace_line,  # line with '{'
-                    'ptr_params': ptr_params,
-                    'sig_start': sig_start,
-                })
+                functions.append(
+                    {
+                        "name": fn_name,
+                        "line": brace_line,  # line with '{'
+                        "ptr_params": ptr_params,
+                        "sig_start": sig_start,
+                    }
+                )
 
             i = k + 1
         else:
@@ -162,50 +195,93 @@ def split_params(s: str) -> list[str]:
     depth = 0
     current = []
     for ch in s:
-        if ch in '<(':
+        if ch in "<(":
             depth += 1
             current.append(ch)
-        elif ch in '>)':
+        elif ch in ">)":
             depth -= 1
             current.append(ch)
-        elif ch == ',' and depth == 0:
-            params.append(''.join(current))
+        elif ch == "," and depth == 0:
+            params.append("".join(current))
             current = []
         else:
             current.append(ch)
     if current:
-        params.append(''.join(current))
+        params.append("".join(current))
     return params
 
 
 _KNOWN_POINTER_TYPEDEFS = {
-    'PVOID', 'HANDLE', 'PHANDLE',
-    'PEPROCESS', 'PETHREAD', 'PKTHREAD', 'PKPROCESS',
-    'PFILE_OBJECT', 'PDEVICE_OBJECT', 'PDRIVER_OBJECT',
-    'PIRP', 'PMDL', 'PKEVENT', 'PKMUTANT', 'PKSEMAPHORE',
-    'PIO_STATUS_BLOCK', 'PIO_STACK_LOCATION',
-    'POBJECT_ATTRIBUTES', 'PUNICODE_STRING', 'PANSI_STRING',
-    'POBJECT_TYPE', 'POBJECT_HEADER',
-    'PACCESS_STATE', 'PSECURITY_DESCRIPTOR', 'PSID', 'PACL',
-    'PTOKEN', 'PGENERIC_MAPPING',
-    'PLARGE_INTEGER', 'PULARGE_INTEGER',
-    'PULONG', 'PULONG_PTR', 'PLONG', 'PUSHORT', 'PUCHAR',
-    'PBOOLEAN', 'PSIZE_T', 'PNTSTATUS',
-    'PLIST_ENTRY', 'PSLIST_ENTRY', 'PSINGLE_LIST_ENTRY',
-    'PCLIENT_ID', 'POBJECT_NAME_INFORMATION',
-    'PLUID', 'PPRIVILEGE_SET',
-    'PVPB', 'PFAST_IO_DISPATCH',
-    'PLOADER_PARAMETER_BLOCK',
-    'PCWSTR', 'PWSTR', 'PCSTR', 'PSTR',
-    'PMMPFN', 'PMMPTE', 'PMMVAD',
-    'PPOOL_HEADER', 'PPOOL_DESCRIPTOR',
-    'PHANDLE_TABLE', 'PHANDLE_TABLE_ENTRY',
-    'POBJECT_CREATE_INFORMATION',
-    'PRTL_GENERIC_TABLE', 'PRTL_SPLAY_LINKS', 'PRTL_AVL_TABLE',
-    'PSECURITY_SUBJECT_CONTEXT', 'PAUX_ACCESS_DATA',
-    'PKINTERRUPT', 'PKDPC', 'PKTIMER',
-    'PKTHREAD_CONTROL_BLOCK',
-    'PCUNICODE_STRING',
+    "PVOID",
+    "HANDLE",
+    "PHANDLE",
+    "PEPROCESS",
+    "PETHREAD",
+    "PKTHREAD",
+    "PKPROCESS",
+    "PFILE_OBJECT",
+    "PDEVICE_OBJECT",
+    "PDRIVER_OBJECT",
+    "PIRP",
+    "PMDL",
+    "PKEVENT",
+    "PKMUTANT",
+    "PKSEMAPHORE",
+    "PIO_STATUS_BLOCK",
+    "PIO_STACK_LOCATION",
+    "POBJECT_ATTRIBUTES",
+    "PUNICODE_STRING",
+    "PANSI_STRING",
+    "POBJECT_TYPE",
+    "POBJECT_HEADER",
+    "PACCESS_STATE",
+    "PSECURITY_DESCRIPTOR",
+    "PSID",
+    "PACL",
+    "PTOKEN",
+    "PGENERIC_MAPPING",
+    "PLARGE_INTEGER",
+    "PULARGE_INTEGER",
+    "PULONG",
+    "PULONG_PTR",
+    "PLONG",
+    "PUSHORT",
+    "PUCHAR",
+    "PBOOLEAN",
+    "PSIZE_T",
+    "PNTSTATUS",
+    "PLIST_ENTRY",
+    "PSLIST_ENTRY",
+    "PSINGLE_LIST_ENTRY",
+    "PCLIENT_ID",
+    "POBJECT_NAME_INFORMATION",
+    "PLUID",
+    "PPRIVILEGE_SET",
+    "PVPB",
+    "PFAST_IO_DISPATCH",
+    "PLOADER_PARAMETER_BLOCK",
+    "PCWSTR",
+    "PWSTR",
+    "PCSTR",
+    "PSTR",
+    "PMMPFN",
+    "PMMPTE",
+    "PMMVAD",
+    "PPOOL_HEADER",
+    "PPOOL_DESCRIPTOR",
+    "PHANDLE_TABLE",
+    "PHANDLE_TABLE_ENTRY",
+    "POBJECT_CREATE_INFORMATION",
+    "PRTL_GENERIC_TABLE",
+    "PRTL_SPLAY_LINKS",
+    "PRTL_AVL_TABLE",
+    "PSECURITY_SUBJECT_CONTEXT",
+    "PAUX_ACCESS_DATA",
+    "PKINTERRUPT",
+    "PKDPC",
+    "PKTIMER",
+    "PKTHREAD_CONTROL_BLOCK",
+    "PCUNICODE_STRING",
 }
 
 
@@ -213,13 +289,11 @@ def is_pointer_type(ptype: str) -> bool:
     """Check if a type string is a pointer type."""
     ptype = ptype.strip()
     # Explicit pointer syntax
-    if ptype.startswith('*mut ') or ptype.startswith('*const '):
+    if ptype.startswith("*mut ") or ptype.startswith("*const "):
         return True
     # Strip any leading module path (e.g., ntkrnl_sys::ddk::PFILE_OBJECT)
-    base = ptype.split('::')[-1].strip()
-    if base in _KNOWN_POINTER_TYPEDEFS:
-        return True
-    return False
+    base = ptype.split("::")[-1].strip()
+    return base in _KNOWN_POINTER_TYPEDEFS
 
 
 def apply_barriers(filepath: Path, functions: list[dict]) -> str:
@@ -228,28 +302,28 @@ def apply_barriers(filepath: Path, functions: list[dict]) -> str:
     lines = source.splitlines()
 
     # Process in reverse order to preserve line numbers
-    for fn in sorted(functions, key=lambda f: f['line'], reverse=True):
-        brace_line = fn['line']
-        indent = '    '  # standard 4-space indent
+    for fn in sorted(functions, key=lambda f: f["line"], reverse=True):
+        brace_line = fn["line"]
+        indent = "    "  # standard 4-space indent
 
         # Build barrier lines
         barriers = []
-        for pname, is_const in fn['ptr_params']:
+        for pname, is_const in fn["ptr_params"]:
             if is_const:
-                barriers.append(f'{indent}let {pname} = opaque_ptr_const({pname});')
+                barriers.append(f"{indent}let {pname} = opaque_ptr_const({pname});")
             else:
-                barriers.append(f'{indent}let {pname} = opaque_ptr({pname});')
+                barriers.append(f"{indent}let {pname} = opaque_ptr({pname});")
 
         # Insert after opening brace
         for barrier in reversed(barriers):
             lines.insert(brace_line + 1, barrier)
 
-    return '\n'.join(lines) + '\n'
+    return "\n".join(lines) + "\n"
 
 
 def ensure_import(source: str) -> str:
     """Ensure the file imports opaque_ptr from ntkrnl_sys."""
-    if 'ntkrnl_sys::opaque_ptr' in source and 'ntkrnl_sys::opaque_ptr_const' in source:
+    if "ntkrnl_sys::opaque_ptr" in source and "ntkrnl_sys::opaque_ptr_const" in source:
         return source
 
     # Find a safe insertion point: after the last COMPLETE ntkrnl_sys use statement
@@ -261,38 +335,42 @@ def ensure_import(source: str) -> str:
     for i, line in enumerate(lines):
         stripped = line.strip()
         # Track multi-line use blocks
-        if stripped.startswith('use ') and '{' in stripped and ';' not in stripped:
+        if stripped.startswith("use ") and "{" in stripped and ";" not in stripped:
             in_multiline_use = True
             continue
         if in_multiline_use:
-            if '};' in stripped or (stripped == '}' and i + 1 < len(lines)):
+            if "};" in stripped or (stripped == "}" and i + 1 < len(lines)):
                 in_multiline_use = False
-                if 'ntkrnl_sys' in source.splitlines()[i - 1] or any(
-                    'ntkrnl_sys' in source.splitlines()[j]
-                    for j in range(max(0, i - 20), i)
+                if "ntkrnl_sys" in source.splitlines()[i - 1] or any(
+                    "ntkrnl_sys" in source.splitlines()[j] for j in range(max(0, i - 20), i)
                 ):
                     insert_after = i
             continue
         # Single-line complete use statement
-        if stripped.startswith('use ntkrnl_sys::') and stripped.endswith(';'):
+        if stripped.startswith("use ntkrnl_sys::") and stripped.endswith(";"):
             insert_after = i
 
     if insert_after >= 0:
-        lines.insert(insert_after + 1, 'use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};')
+        lines.insert(insert_after + 1, "use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};")
     else:
         # No ntkrnl_sys imports — add at top after any existing use statements
         last_use = -1
         for i, line in enumerate(lines):
-            if line.strip().startswith('use '):
+            if line.strip().startswith("use "):
                 last_use = i
-            elif last_use >= 0 and not line.strip().startswith('use ') and not line.strip().startswith('//') and line.strip():
+            elif (
+                last_use >= 0
+                and not line.strip().startswith("use ")
+                and not line.strip().startswith("//")
+                and line.strip()
+            ):
                 break
         if last_use >= 0:
-            lines.insert(last_use + 1, 'use ntkrnl_sys::opaque_ptr;')
+            lines.insert(last_use + 1, "use ntkrnl_sys::opaque_ptr;")
         else:
-            lines.insert(0, 'use ntkrnl_sys::opaque_ptr;')
+            lines.insert(0, "use ntkrnl_sys::opaque_ptr;")
 
-    return '\n'.join(lines) + '\n'
+    return "\n".join(lines) + "\n"
 
 
 def main():
@@ -323,16 +401,18 @@ def main():
             short = str(rs_file).replace(str(SRC_DIR) + "/", "")
             files_to_fix[rs_file] = functions
             total_functions += len(functions)
-            total_params += sum(len(f['ptr_params']) for f in functions)
+            total_params += sum(len(f["ptr_params"]) for f in functions)
 
             if scan_mode:
                 print(f"\n  {short}:")
                 for fn in functions:
-                    params = ', '.join(p[0] for p in fn['ptr_params'])
-                    print(f"    L{fn['line']+1:4d} {fn['name']}({params})")
+                    params = ", ".join(p[0] for p in fn["ptr_params"])
+                    print(f"    L{fn['line'] + 1:4d} {fn['name']}({params})")
 
-    print(f"\nTotal: {total_functions} functions, {total_params} pointer params "
-          f"across {len(files_to_fix)} files")
+    print(
+        f"\nTotal: {total_functions} functions, {total_params} pointer params "
+        f"across {len(files_to_fix)} files"
+    )
 
     if fix_mode and files_to_fix:
         print("\nApplying opaque_ptr barriers...")
@@ -343,7 +423,7 @@ def main():
             new_source = ensure_import(new_source)
             if new_source != filepath.read_text():
                 filepath.write_text(new_source)
-                n = sum(len(f['ptr_params']) for f in functions)
+                n = sum(len(f["ptr_params"]) for f in functions)
                 print(f"  {short}: {len(functions)} functions, {n} barriers")
                 fixed += 1
         print(f"\nFixed {fixed} files")

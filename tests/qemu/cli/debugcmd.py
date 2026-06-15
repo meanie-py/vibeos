@@ -5,22 +5,22 @@ toolkit (start.sh / inspect.sh / run-until.sh / wait-for.sh / tail.sh /
 status.sh / stop.sh) — porting to a Python gdb.py engine is P2. `debug diff` is
 new. `check` runs the source lints with the §20.3 baseline-diff gate.
 """
+
 from __future__ import annotations
 
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from . import lints
-from .artifacts import Run, Stage
+from .artifacts import Run
 
 # debug verb -> shell tool that implements it (run-id passthrough)
 _SHELL_VERB = {
     "start": "start.sh",
     "inspect": "inspect.sh",
     "run-until": "run-until.sh",
-    "bt": "inspect.sh",            # bt/triage are inspect.sh --command forms
+    "bt": "inspect.sh",  # bt/triage are inspect.sh --command forms
     "triage-bugcheck": "inspect.sh",
     "wait-for": "wait-for.sh",
     "tail": "tail.sh",
@@ -44,23 +44,25 @@ def _normalize(line: str) -> str:
 def debug_diff(args, repo: Path) -> int:
     """Normalized serial diff between two run-ids — surfaces arch-unique lines
     (smss-csrss #4: arch-only-bug differential)."""
+
     def serial_of(run_id: str) -> list[str]:
         p = repo / "qemu" / "runs" / run_id / "serial.log"
         if not p.is_file():
             print(f"no serial.log for run {run_id} at {p}")
             return []
         raw = p.read_text(errors="replace")
-        return [_normalize(l) for l in raw.splitlines() if l.strip()]
+        return [_normalize(line) for line in raw.splitlines() if line.strip()]
+
     a = set(serial_of(args.run_a))
     b = set(serial_of(args.run_b))
     only_a = sorted(a - b)
     only_b = sorted(b - a)
     print(f"=== only in {args.run_a} ({len(only_a)}) ===")
-    for l in only_a[:60]:
-        print("  " + l[:160])
+    for line in only_a[:60]:
+        print("  " + line[:160])
     print(f"=== only in {args.run_b} ({len(only_b)}) ===")
-    for l in only_b[:60]:
-        print("  " + l[:160])
+    for line in only_b[:60]:
+        print("  " + line[:160])
     return 0
 
 
@@ -86,8 +88,10 @@ def check(args, repo: Path) -> int:
         counts = lints.write_baselines(repo)
         for name, n in counts.items():
             print(f"  baseline {name}: {n} findings")
-        print(f"wrote {len(counts)} baselines to tools/lint-baseline/ "
-              "(review before committing — captures CURRENT known findings as accepted)")
+        print(
+            f"wrote {len(counts)} baselines to tools/lint-baseline/ "
+            "(review before committing — captures CURRENT known findings as accepted)"
+        )
         return 0
     run = Run("check", args.arch if getattr(args, "arch", None) else "all")
     strict = bool(getattr(args, "strict", False))

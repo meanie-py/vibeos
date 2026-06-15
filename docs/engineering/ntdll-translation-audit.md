@@ -1,5 +1,7 @@
 # NTDLL C→Rust Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against `dll/ntdll/CMakeLists.txt` + code — accurate: ntdll PE body 100% Rust; only active non-Rust inputs are the per-arch `dispatch/{i386,amd64,arm64}/dispatch.S` trap trampolines (asm by design), generated `ntdll_stubs.c` (spec2def syscall stubs), and the empty cohab stub TUs (`rtl_um_rust_stub.c`, `etwtrace_rust_stub.c`).
+
 Created 2026-05-24. **Status (updated 2026-06-01): the ntdll PE body is
 100% flipped to Rust and boots to `shell ready` on all 3 arches.** All
 14 planned translation steps are done, and the last two leaf C files were
@@ -168,8 +170,9 @@ nt_0600/ ....... ntdll_vista.dll — SEPARATE module (see below)
 
 - `sdk/lib/rtl/` (~59K LOC C, ntdll links `librtl.a`). Tracked under
   **`rtl-translation-audit.md`** (the `Rtl*` API bodies → `rtl-strings`
-  crate; ~20 `.c` flipped incl. the big `path.c` as of 2026-06-01;
-  `registry.c`/`heap.c`/`image.c` remain C) and
+  crate; as of 2026-06-14 essentially all of `sdk/lib/rtl/*.c` is flipped
+  — incl. `registry.c`, the `heap.c` family, and `image.c` — only the
+  variadic glue + per-arch asm floor remains C) and
   `static-libs-translation-audit.md` (the algorithm rlibs). The
   interesting exception engine — `RtlDispatchException`,
   `RtlUnwind`, `RtlRaiseException`, frame walking, `.pdata`/`.xdata` on
@@ -202,8 +205,8 @@ but they flip independently.
 | `ntdll-sys` substrate | Done in smss-csrss worktree (commits 06396c51 → 2a8d6e27) | No — reuse as-is |
 | rustconv user-mode pipeline | Done in smss-csrss (commit 8eb28d57) | No — reuse as-is |
 | User-mode `#[panic_handler]`/`rust_eh_personality` template | Done in smss-csrss (commit e0049bff) | No — copy from `smss-csrss-rust` |
-| `librtl.a` exception engine in Rust | Not done | **No** — cohabits as C via ntdll-sys FFI |
-| `librtl.a` heap (`RtlAllocateHeap`/`RtlFreeHeap`) | Not done | **No** — ntdll calls C `RtlAllocateHeap` from rtl |
+| `librtl.a` exception engine in Rust | **Done** (2026-06-11, `rtl-except`) | No — was never a blocker; ntdll FFIs it either way |
+| `librtl.a` heap (`RtlAllocateHeap`/`RtlFreeHeap`) | **Done** (`rtl-heap`/`rtl-heappage`/`rtl-heapuser`) | No — ntdll calls it via FFI either way |
 | `liblibcntpr.a` printf-family | Not done (43/X done) | **No** — same cohabitation |
 | win32k Rust | Not done (mid-flight) | **No** — only ntdll touch-point is `KiUserCallbackDispatcher`, kernel side already Rust |
 | smss/csrss/csrsrv Rust | Mid-flight | **No** — those *consume* ntdll; ntdll body is independent of consumers |
@@ -245,20 +248,21 @@ Tier 3 = the bootstrap, last.
 exist in the project, layered over one shared format primitive layer:
 
 ```
-shared format primitives — sdk/lib/rtl/image.c (C, still in librtl)
+shared format primitives — sdk/lib/rtl/image.c (now Rust: rtl-diag/src/image.rs)
   RtlImageNtHeader · RtlImageDirectoryEntryToData · RtlImageRvaTo{Section,Va}
   LdrProcessRelocationBlockLongLong · LdrRelocateImage · LdrRelocateImageWithBias
         ▲                       ▲                       ▲
         │                       │                       │
    freeldr-rust          ntoskrnl-rust            dll/ntdll/ldr/    ← THIS
-   /peloader.rs          /src/ARM3/sysldr.rs      (still C)
-   loads ntoskrnl        loads driver SYS
+   /peloader.rs          /src/ARM3/sysldr.rs      (now Rust:
+   loads ntoskrnl        loads driver SYS          ntdll-rust/src/ldr/)
    (Rust, 6a48458d)      (Rust, in tree)
 ```
 
-The relocation/import-format-parse math is **one shared C layer that
-ntdll cohabits with via FFI** (just like the rtl exception engine).
-And it's *already Rust in two independent places* — both ports are
+The relocation/import-format-parse math used to be one shared C layer
+ntdll cohabited with via FFI; as of 2026-06-14 that shared layer
+(`sdk/lib/rtl/image.c`) is itself Rust (`rtl-diag/src/image.rs`), and
+it's *already Rust in three independent places* — all ports are
 reference implementations to mine for patterns.
 
 The ntoskrnl Rust precedent is the closest structural analog:

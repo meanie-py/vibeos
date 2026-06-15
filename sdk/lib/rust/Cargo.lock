@@ -142,6 +142,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cdfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cdrom-rust"
 version = "0.1.0"
 dependencies = [
@@ -298,6 +305,14 @@ name = "dnslib-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+]
+
+[[package]]
+name = "dxg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "win32k-sys",
 ]
 
 [[package]]

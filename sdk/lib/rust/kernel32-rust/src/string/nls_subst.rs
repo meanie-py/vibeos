@@ -1755,9 +1755,11 @@ pub struct _CODEPAGE_ENTRY {
 pub type CODEPAGE_ENTRY = _CODEPAGE_ENTRY;
 pub type PCODEPAGE_ENTRY = *mut _CODEPAGE_ENTRY;
 
-// ---- japanese.h JAPANESE_ERA (winnls/string/japanese.h:9-19). japanese.c stays
-// C — JapaneseEra_* are real internal symbols (declared extern in lcformat.rs). ----
+// ---- japanese.h JAPANESE_ERA (winnls/string/japanese.h:9-19). japanese.c is now
+// Rust (japanese.rs); JapaneseEra_* are #[no_mangle] there. Copy/Clone so the
+// s_JapaneseEraTable `[JAPANESE_ERA {..}; N]` static initializer type-checks. ----
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct JAPANESE_ERA {
     pub wYear: WORD,
     pub wMonth: WORD,

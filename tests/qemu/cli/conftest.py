@@ -5,6 +5,7 @@ in the session `vm` fixture — which boots QEMU. These CLI unit tests are pure
 (no hypervisor), so shadow `restore_vm` with a no-op autouse fixture (nearer
 scope wins) to keep them fast and hermetic.
 """
+
 import pytest
 
 

@@ -44,7 +44,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .seh_inventory import KEEPSET_DIRS, _in_keepset
+from .seh_inventory import _in_keepset
 
 RE_KUMC = re.compile(r"\bKeUserModeCallback\s*\(")
 RE_CB_INDEX = re.compile(r"\bUSER32_CALLBACK_[A-Z0-9_]+\b")
@@ -168,7 +168,7 @@ def _mask_literals(text: str) -> str:
                 if i + 1 < n:
                     out[i + 1] = " "
                 i += 2
-        elif c in '"\'':
+        elif c in "\"'":
             q = c
             out[i] = " "
             i += 1
@@ -263,14 +263,14 @@ class CalloutSite:
     function: str
     func_line: int
     func_end_line: int
-    callback_index: str          # USER32_CALLBACK_*  (or "?" if not literal)
+    callback_index: str  # USER32_CALLBACK_*  (or "?" if not literal)
     kumc_line: int
-    input_arg: str               # marshal-in buffer expr
+    input_arg: str  # marshal-in buffer expr
     input_len_arg: str
-    result_ptr_arg: str          # marshal-back pointer expr
+    result_ptr_arg: str  # marshal-back pointer expr
     result_len_arg: str
-    leave_co_line: int | None    # global USER lock release before callout
-    enter_co_line: int | None    # reacquire after callout
+    leave_co_line: int | None  # global USER lock release before callout
+    enter_co_line: int | None  # reacquire after callout
     result_probe_line: int | None  # first marshal-back probe after reacquire
     signals: list[str] = field(default_factory=list)
 
@@ -360,19 +360,17 @@ def write_sidecar(path: Path, sites: list[CalloutSite]) -> Path:
 
 def print_summary(inv: dict[Path, list[CalloutSite]]) -> None:
     n = sum(len(v) for v in inv.values())
-    print(f"\n{'='*64}")
-    print(f"Win32k Pass 3 — {n} KeUserModeCallback sites across "
-          f"{len(inv)} keep-set files")
-    print(f"{'='*64}")
+    print(f"\n{'=' * 64}")
+    print(f"Win32k Pass 3 — {n} KeUserModeCallback sites across {len(inv)} keep-set files")
+    print(f"{'=' * 64}")
     for p, ss in sorted(inv.items(), key=lambda x: -len(x[1])):
         rel = p.as_posix().split("/win32ss/")[-1]
-        idxs = ", ".join(
-            sorted({s.callback_index.replace("USER32_CALLBACK_", "")
-                    for s in ss}))
+        idxs = ", ".join(sorted({s.callback_index.replace("USER32_CALLBACK_", "") for s in ss}))
         print(f"  {len(ss):>2}  {rel}")
         print(f"      {idxs}")
-    paired = sum(1 for ss in inv.values() for s in ss
-                 if "missing_leaveco_enterco_pair" not in s.signals)
+    paired = sum(
+        1 for ss in inv.values() for s in ss if "missing_leaveco_enterco_pair" not in s.signals
+    )
     print(f"\n  {paired}/{n} sites have a clean UserLeaveCo/UserEnterCo pair")
 
 
@@ -394,17 +392,22 @@ def run_oracle(callback_path: Path) -> int:
         print("  count: 17  [OK]")
 
     first = sites[0] if sites else None
-    if (first and first.function == "co_IntClientLoadLibrary"
-            and first.callback_index == "USER32_CALLBACK_CLIENTLOADLIBRARY"):
+    if (
+        first
+        and first.function == "co_IntClientLoadLibrary"
+        and first.callback_index == "USER32_CALLBACK_CLIENTLOADLIBRARY"
+    ):
         print("  site[0] = co_IntClientLoadLibrary/CLIENTLOADLIBRARY  [OK]")
     else:
-        got = (f"{first.function}/{first.callback_index}" if first else "none")
-        print(f"  site[0]: expect co_IntClientLoadLibrary/"
-              f"CLIENTLOADLIBRARY, got {got}  [MISMATCH]")
+        got = f"{first.function}/{first.callback_index}" if first else "none"
+        print(f"  site[0]: expect co_IntClientLoadLibrary/CLIENTLOADLIBRARY, got {got}  [MISMATCH]")
         ok = False
 
-    if first and (first.leave_co_line and first.enter_co_line
-                  and first.leave_co_line < first.kumc_line < first.enter_co_line):
+    if first and (
+        first.leave_co_line
+        and first.enter_co_line
+        and first.leave_co_line < first.kumc_line < first.enter_co_line
+    ):
         print("  site[0] lock straddle: Leave < KUMC < Enter  [OK]")
     else:
         print("  site[0] lock straddle  [MISMATCH]")
