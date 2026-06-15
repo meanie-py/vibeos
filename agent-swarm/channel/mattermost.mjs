@@ -78,7 +78,9 @@ async function main() {
     for (const m of r.high || []) {
       mcp.notification({
         method: 'notifications/claude/channel',
-        params: { content: m.message, meta: { from: String(m.from).replace(/[^A-Za-z0-9_]/g, '_'), post_id: m.post_id } },
+        // meta KEYS must be identifiers, but VALUES may keep hyphens etc. — only strip
+        // what would break the <channel from="..."> attribute (quotes/newlines).
+        params: { content: m.message, meta: { from: String(m.from).replace(/["\r\n]/g, ''), post_id: m.post_id } },
       })
     }
     lowCount = r.low_count || 0

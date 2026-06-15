@@ -53,6 +53,10 @@ def _conn():
             read_at    INTEGER, mention_at INTEGER, last_count INTEGER,
             PRIMARY KEY(identity, channel_id)
         );
+        CREATE TABLE IF NOT EXISTS delivered (
+            identity TEXT, post_id TEXT, ts REAL,
+            PRIMARY KEY(identity, post_id)
+        );
         """
     )
     return c
@@ -104,8 +108,19 @@ def drain(identity, name, channel_ids, mm, *, high_only=False, self_ids=None):
                             "WHERE identity=? AND channel_id=?", (identity, ch)).fetchone()
             read_at, mention_at = cur["read_at"], cur["mention_at"]
             posts = _not_self(mm.read_posts(ch, read_at), selves)
-            new_high = [p for p in posts
-                        if classify(p["message"], name) == "high" and p["create_at"] > mention_at]
+            candidates = [p for p in posts
+                          if classify(p["message"], name) == "high" and p["create_at"] > mention_at]
+            # post-id dedup: deliver each post at most ONCE per identity, even if the
+            # cursor is reset or two drains race (the mention cursor alone can't guarantee it).
+            new_high = []
+            for p in candidates:
+                row = c.execute("SELECT 1 FROM delivered WHERE identity=? AND post_id=?",
+                                (identity, p["id"])).fetchone()
+                if row:
+                    continue
+                c.execute("INSERT OR IGNORE INTO delivered(identity,post_id,ts) VALUES(?,?,?)",
+                          (identity, p["id"], time.time()))
+                new_high.append(p)
             low_count += sum(1 for p in posts if classify(p["message"], name) == "low")
             if new_high:
                 mention_at = max(mention_at, max(p["create_at"] for p in new_high))

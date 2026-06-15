@@ -247,6 +247,26 @@ def cmd_project_create(args):
     print(json.dumps(Registrar().create_project(args.title, description=args.desc), indent=2, default=str))
 
 
+# --- vikunja → MM bridge -------------------------------------------------
+
+def cmd_bridge_sync(args):
+    from .bridge import VikunjaBridge
+    VikunjaBridge().sync(verbose=True)
+
+
+def cmd_bridge_run(args):
+    import time
+    from .bridge import VikunjaBridge
+    b = VikunjaBridge()
+    print(f"bridge running (every {args.interval}s) — Ctrl-C to stop")
+    while True:
+        try:
+            b.sync(verbose=True)
+        except Exception as e:  # never let one bad poll kill the loop
+            sys.stderr.write(f"bridge: {e}\n")
+        time.sleep(args.interval)
+
+
 # --- parser --------------------------------------------------------------
 
 def build_parser():
@@ -311,6 +331,13 @@ def build_parser():
     psub = s.add_subparsers(dest="pcmd", required=True)
     ps = psub.add_parser("create"); ps.set_defaults(pfn=cmd_project_create)
     ps.add_argument("title"); ps.add_argument("--desc", default="")
+
+    s = add("bridge", lambda a: a.bfn(a), "Vikunja → Mattermost ingestion (per-agent activity).")
+    bsub = s.add_subparsers(dest="bcmd", required=True)
+    bs = bsub.add_parser("sync", help="one poll: post new agent-relevant board activity")
+    bs.set_defaults(bfn=cmd_bridge_sync); bs.add_argument("--verbose", action="store_true")
+    bs = bsub.add_parser("run", help="poll on a loop")
+    bs.set_defaults(bfn=cmd_bridge_run); bs.add_argument("--interval", type=int, default=15)
     return p
 
 

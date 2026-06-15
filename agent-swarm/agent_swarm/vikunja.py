@@ -24,11 +24,34 @@ class VikunjaClient:
 
     # --- tasks (quests) --------------------------------------------------
     def list_tasks(self, project_id=None, *, done=False, sort_by="priority", order="desc"):
+        """done=False → open only; done=None → all (open + done)."""
         pid = project_id or self.default_project
         params = {"sort_by": sort_by, "order_by": order}
-        if not done:
+        if done is False:
             params["filter"] = "done = false"
         return http.get(f"{self.api}/projects/{pid}/tasks", token=self._t(), params=params) or []
+
+    # --- assignees + labels (routing signals for the bridge) -------------
+    def assign(self, task_id, user_id):
+        return http.put(f"{self.api}/tasks/{task_id}/assignees", token=self._t(),
+                        json_body={"user_id": user_id})
+
+    def unassign(self, task_id, user_id):
+        return http.delete(f"{self.api}/tasks/{task_id}/assignees/{user_id}", token=self._t())
+
+    def ensure_label(self, title):
+        existing = http.get(f"{self.api}/labels", token=self._t()) or []
+        for l in existing:
+            if (l.get("title") or "").lower() == title.lower():
+                return l
+        return http.put(f"{self.api}/labels", token=self._t(), json_body={"title": title})
+
+    def add_label(self, task_id, label_id):
+        return http.put(f"{self.api}/tasks/{task_id}/labels", token=self._t(),
+                        json_body={"label_id": label_id})
+
+    def remove_label(self, task_id, label_id):
+        return http.delete(f"{self.api}/tasks/{task_id}/labels/{label_id}", token=self._t())
 
     def get_task(self, task_id):
         return http.get(f"{self.api}/tasks/{task_id}", token=self._t())
