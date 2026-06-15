@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd
+from . import cargoswap, debugcmd, tooling
 from . import smoke as smoke_mod
 from .archcfg import ACCEPTED_ARCHES
 
@@ -116,6 +116,14 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")
     ps.set_defaults(fn=_ps)
+
+    ct = sub.add_parser(
+        "check-tooling",
+        help="lint/type/test gate for our own Python tools (rustconv, cli, tools, agent-swarm)",
+    )
+    ct.add_argument("--no-types", action="store_true", help="skip pyright")
+    ct.add_argument("--no-tests", action="store_true", help="skip pytest")
+    ct.set_defaults(fn=tooling.check_tooling)
 
     return p
 
