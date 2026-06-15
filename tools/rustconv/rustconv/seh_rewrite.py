@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,8 +54,7 @@ RE_PROBE_STMT = re.compile(r"\bProbeFor(Read|Write)\s*\(")
 RE_PROBE_ANY = re.compile(r"\bProbeFor(Read|Write)\w*\s*\(")
 RE_GETCODE = re.compile(r"_SEH2_GetExceptionCode\s*\(\s*\)")
 RE_YIELD_OPEN = re.compile(r"_SEH2_YIELD\s*\(")
-RE_BRACELESS_GUARD = re.compile(
-    r"\b(if|for|while)\s*\([^{;]*\)\s*ProbeFor(Read|Write)\b")
+RE_BRACELESS_GUARD = re.compile(r"\b(if|for|while)\s*\([^{;]*\)\s*ProbeFor(Read|Write)\b")
 RE_INCLUDE_W32K = re.compile(r'^#include\s+[<"]win32k\.h[>"]', re.MULTILINE)
 
 
@@ -96,7 +94,7 @@ def _balanced_call_args(text: str, open_paren: int) -> tuple[str, int]:
         elif text[i] == ")":
             depth -= 1
         i += 1
-    return text[open_paren + 1:i - 1], i
+    return text[open_paren + 1 : i - 1], i
 
 
 def _find_seh_spans(text: str) -> list[SehSpan]:
@@ -105,9 +103,9 @@ def _find_seh_spans(text: str) -> list[SehSpan]:
         tb = _find_brace_matched_block(text, m.end())
         if tb is None:
             continue
-        try_body = text[tb[0] + 1:tb[1]]
+        try_body = text[tb[0] + 1 : tb[1]]
         after = tb[1] + 1
-        zone = text[after:after + 600]
+        zone = text[after : after + 600]
         em = re.search(r"_SEH2_EXCEPT\s*\(", zone)
         fm = re.search(r"_SEH2_FINALLY\b", zone)
         handler_body, is_finally, hb_end = "", False, after
@@ -115,13 +113,13 @@ def _find_seh_spans(text: str) -> list[SehSpan]:
             _, past = _balanced_call_args(text, after + em.end() - 1)
             hb = _find_brace_matched_block(text, past)
             if hb:
-                handler_body = text[hb[0] + 1:hb[1]]
+                handler_body = text[hb[0] + 1 : hb[1]]
                 hb_end = hb[1] + 1
         elif fm:
             is_finally = True
             hb = _find_brace_matched_block(text, after + fm.end())
             if hb:
-                handler_body = text[hb[0] + 1:hb[1]]
+                handler_body = text[hb[0] + 1 : hb[1]]
                 hb_end = hb[1] + 1
         # `_SEH2_END` may or may not be followed by `;` in win32k
         # (the macro ends in `}`); consume the optional semicolon so the
@@ -131,12 +129,16 @@ def _find_seh_spans(text: str) -> list[SehSpan]:
             # No _SEH2_END found where expected → span shape we don't
             # understand; skip this site rather than corrupt the source.
             continue
-        spans.append(SehSpan(
-            start=m.start(),
-            end=endm.end() if endm else hb_end,
-            try_body=try_body, handler_body=handler_body,
-            is_finally=is_finally, line=text[:m.start()].count("\n") + 1,
-        ))
+        spans.append(
+            SehSpan(
+                start=m.start(),
+                end=endm.end() if endm else hb_end,
+                try_body=try_body,
+                handler_body=handler_body,
+                is_finally=is_finally,
+                line=text[: m.start()].count("\n") + 1,
+            )
+        )
     return spans
 
 
@@ -149,8 +151,7 @@ def _dedent_to(block: str, indent: str) -> str:
     """Strip the try-body's extra nesting, re-indent to `indent`."""
     lines = block.split("\n")
     # smallest indent among non-blank lines
-    base = min((len(ln) - len(ln.lstrip())
-                for ln in lines if ln.strip()), default=0)
+    base = min((len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()), default=0)
     out = []
     for ln in lines:
         out.append(indent + ln[base:] if ln.strip() else "")
@@ -165,7 +166,7 @@ def _unwrap_yield(h: str) -> str:
         m = RE_YIELD_OPEN.search(h)
         if not m:
             return h
-        op = m.end() - 1                      # index of '('
+        op = m.end() - 1  # index of '('
         inner, past = _balanced_call_args(h, op)
         # absorb an optional trailing ';' after the _SEH2_YIELD(...)
         tail = past
@@ -174,14 +175,13 @@ def _unwrap_yield(h: str) -> str:
         if tail < len(h) and h[tail] == ";":
             tail += 1
         stmt = inner.strip().rstrip(";").strip()
-        h = h[:m.start()] + stmt + ";" + h[tail:]
+        h = h[: m.start()] + stmt + ";" + h[tail:]
 
 
 def _transform_handler(handler: str, var: str = "Status") -> str:
     h = _unwrap_yield(handler)
     h = RE_GETCODE.sub(var, h)
-    h = re.sub(rf"^\s*{re.escape(var)}\s*=\s*{re.escape(var)}\s*;\s*$",
-               "", h, flags=re.MULTILINE)
+    h = re.sub(rf"^\s*{re.escape(var)}\s*=\s*{re.escape(var)}\s*;\s*$", "", h, flags=re.MULTILINE)
     h = re.sub(r"\bNOTHING\s*;", "", h)
     return h.strip()
 
@@ -213,7 +213,7 @@ def _enclosing_func(text: str, start: int) -> str:
     m = None
     for mm in re.finditer(r"\n\}\s*\n", text[:start]):
         m = mm
-    return text[(m.end() if m else 0):start]
+    return text[(m.end() if m else 0) : start]
 
 
 def _has_status_lvalue(func_text: str) -> bool:
@@ -249,8 +249,11 @@ def _why_skip(sp: SehSpan, has_status: bool) -> str | None:
         if not _is_swallow(sp.handler_body) and not has_status:
             return "multi-probe, no Status lvalue — manual (audit risk #1)"
         return None
-    if not _is_swallow(sp.handler_body) and not has_status \
-            and not _handler_transfers(sp.handler_body):
+    if (
+        not _is_swallow(sp.handler_body)
+        and not has_status
+        and not _handler_transfers(sp.handler_body)
+    ):
         # no Status lvalue AND handler doesn't transfer control → can
         # neither carry the code nor guarantee body-skip-on-failure
         return "non-swallow, no Status, no control transfer — manual"
@@ -269,7 +272,7 @@ def _extract_all_probes(body: str):
         if len(args) != 3 or end == -1:
             return None, None
         probes.append((m.group(1), args[0], args[1], args[2]))
-        keep.append(body[pos:m.start()])
+        keep.append(body[pos : m.start()])
         pos = end + 1
     keep.append(body[pos:])
     return probes, "".join(keep)
@@ -280,16 +283,16 @@ def _safe_call(kind: str, p: str, n: str, a: str) -> str:
     return f"{fn}({p}, {n}, {a})"
 
 
-def _build_multiprobe(sp: SehSpan, indent: str, has_status: bool,
-                      probes: list, rest: str) -> str | None:
+def _build_multiprobe(
+    sp: SehSpan, indent: str, has_status: bool, probes: list, rest: str
+) -> str | None:
     """Short-circuit sequence for >1 unconditional probe. A later probe
     must never overwrite an earlier failure, so chain on NT_SUCCESS."""
     body = _dedent_to(rest, indent + "    ") if rest.strip() else ""
     calls = [_safe_call(k, p, n, a) for (k, p, n, a) in probes]
 
     if _is_swallow(sp.handler_body):
-        cond = (" &&\n" + indent + "    ").join(
-            f"NT_SUCCESS({c})" for c in calls)
+        cond = (" &&\n" + indent + "    ").join(f"NT_SUCCESS({c})" for c in calls)
         out = [f"{indent}if ({cond})", f"{indent}{{"]
         if body:
             out.append(body)
@@ -308,16 +311,14 @@ def _build_multiprobe(sp: SehSpan, indent: str, has_status: bool,
             out.append(f"{indent}    {fl.strip()}" if fl.strip() else "")
         out.append(f"{indent}}}")
     if body:
-        out += [f"{indent}if (NT_SUCCESS(Status))", f"{indent}{{",
-                body, f"{indent}}}"]
+        out += [f"{indent}if (NT_SUCCESS(Status))", f"{indent}{{", body, f"{indent}}}"]
     return "\n".join(out)
 
 
-def _build_replacement(sp: SehSpan, indent: str,
-                       has_status: bool) -> str | None:
+def _build_replacement(sp: SehSpan, indent: str, has_status: bool) -> str | None:
     body = sp.try_body
     _allp, _rest = _extract_all_probes(body)
-    if _allp is None:
+    if _allp is None or _rest is None:
         return None
     if len(_allp) > 1:
         return _build_multiprobe(sp, indent, has_status, _allp, _rest)
@@ -326,6 +327,8 @@ def _build_replacement(sp: SehSpan, indent: str,
         return None
     # locate the real probe call in the unstripped body
     real = RE_PROBE_STMT.search(body)
+    if real is None:
+        return None
     kind = real.group(1)
     open_paren = body.index("(", real.end() - 1)
     args_s, past = _balanced_call_args(body, open_paren)
@@ -336,7 +339,7 @@ def _build_replacement(sp: SehSpan, indent: str,
     stmt_end = body.find(";", past)
     if stmt_end == -1:
         return None
-    rest = (body[:real.start()] + body[stmt_end + 1:])
+    rest = body[: real.start()] + body[stmt_end + 1 :]
     rest = _dedent_to(rest, indent) if rest.strip() else ""
 
     fn = "SafeProbeForRead" if kind == "Read" else "SafeProbeForWrite"
@@ -344,8 +347,7 @@ def _build_replacement(sp: SehSpan, indent: str,
 
     if _is_swallow(sp.handler_body):
         inner = _dedent_to(rest, indent + "    ") if rest.strip() else ""
-        lines = [f"{indent}if (NT_SUCCESS({call}))",
-                 f"{indent}{{"]
+        lines = [f"{indent}if (NT_SUCCESS({call}))", f"{indent}{{"]
         if inner:
             lines.append(inner)
         lines.append(f"{indent}}}")
@@ -357,10 +359,12 @@ def _build_replacement(sp: SehSpan, indent: str,
     # the return/goto), so it needs no extra guard.
     if not has_status:
         ft = _transform_handler(sp.handler_body, "__SehStatus")
-        out = [f"{indent}{{",
-               f"{indent}    NTSTATUS __SehStatus = {call};",
-               f"{indent}    if (!NT_SUCCESS(__SehStatus))",
-               f"{indent}    {{"]
+        out = [
+            f"{indent}{{",
+            f"{indent}    NTSTATUS __SehStatus = {call};",
+            f"{indent}    if (!NT_SUCCESS(__SehStatus))",
+            f"{indent}    {{",
+        ]
         for fl in ft.split("\n"):
             out.append(f"{indent}        {fl.strip()}" if fl.strip() else "")
         out += [f"{indent}    }}", f"{indent}}}"]
@@ -379,13 +383,10 @@ def _build_replacement(sp: SehSpan, indent: str,
         # simply runs on success. Cleanest faithful form (== spike).
         out = [f"{indent}Status = {call};"]
         if body_inner:
-            out += [f"{indent}if (NT_SUCCESS(Status))",
-                    f"{indent}{{", body_inner, f"{indent}}}"]
+            out += [f"{indent}if (NT_SUCCESS(Status))", f"{indent}{{", body_inner, f"{indent}}}"]
         return "\n".join(out)
 
-    out = [f"{indent}Status = {call};",
-           f"{indent}if (!NT_SUCCESS(Status))",
-           f"{indent}{{"]
+    out = [f"{indent}Status = {call};", f"{indent}if (!NT_SUCCESS(Status))", f"{indent}{{"]
     for fl in fail.split("\n"):
         out.append(f"{indent}    {fl.strip()}" if fl.strip() else "")
     out.append(f"{indent}}}")
@@ -420,7 +421,7 @@ def rewrite_text(text: str, src_name: str) -> RewriteResult:
     if edits and "safe_user_io.h" not in new:
         m = RE_INCLUDE_W32K.search(new)
         if m:
-            new = new[:m.end()] + "\n#include <safe_user_io.h>" + new[m.end():]
+            new = new[: m.end()] + "\n#include <safe_user_io.h>" + new[m.end() :]
     return RewriteResult(new, len(edits), skipped)
 
 
@@ -432,12 +433,14 @@ def run_oracle(winsta_path: Path) -> int:
     txt = winsta_path.read_text(errors="replace")
     if "_SEH2_TRY" not in txt:
         repo = subprocess.run(
-            ["git", "-C", str(winsta_path.parent), "rev-parse",
-             "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+            ["git", "-C", str(winsta_path.parent), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
         rel = winsta_path.resolve().relative_to(repo)
         txt = subprocess.run(
-            ["git", "-C", repo, "show", f"HEAD:{rel.as_posix()}"],
-            capture_output=True, text=True).stdout
+            ["git", "-C", repo, "show", f"HEAD:{rel.as_posix()}"], capture_output=True, text=True
+        ).stdout
         print(f"(oracle: using git HEAD:{rel})")
 
     before = txt.count("_SEH2_TRY")
@@ -445,8 +448,7 @@ def run_oracle(winsta_path: Path) -> int:
     after = res.text.count("_SEH2_TRY")
     n_safe = len(re.findall(r"\bSafeProbeFor(Read|Write)\b", res.text))
     inc = "safe_user_io.h" in res.text
-    multi = any("multi-probe" in w or "conditional" in w
-                for _, w in res.skipped)
+    multi = any("multi-probe" in w or "conditional" in w for _, w in res.skipped)
     checks = [
         ("8 sites originally", before == 8),
         ("4 clean (a) rewritten", res.rewritten == 4),
@@ -457,8 +459,10 @@ def run_oracle(winsta_path: Path) -> int:
         ("brace balanced", res.text.count("{") == res.text.count("}")),
     ]
     ok = True
-    print(f"winsta.c: _SEH2_TRY {before}->{after}; rewritten={res.rewritten}; "
-          f"SafeProbeFor*={n_safe}; include={'yes' if inc else 'NO'}")
+    print(
+        f"winsta.c: _SEH2_TRY {before}->{after}; rewritten={res.rewritten}; "
+        f"SafeProbeFor*={n_safe}; include={'yes' if inc else 'NO'}"
+    )
     for name, cond in checks:
         print(f"  [{'OK' if cond else 'FAIL'}] {name}")
         ok &= cond

@@ -36,18 +36,16 @@ CLI: `python -m rustconv split-plan [path] [--min-loc N]
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .callout_annotate import _mask_literals, _line_of
+from .callout_annotate import _line_of, _mask_literals
 
 # Translation scope (win32k.sys → Rust). freetype.c is excluded by the
 # caller note, not here — it's link-against 3rd-party FFI, never
 # translated (audit), so it should not even be a split candidate.
-SCOPE_DIRS = ("gdi/ntgdi", "gdi/eng", "gdi/dib",
-              "user/ntuser", "reactx/ntddraw", "user/rtl")
+SCOPE_DIRS = ("gdi/ntgdi", "gdi/eng", "gdi/dib", "user/ntuser", "reactx/ntddraw", "user/rtl")
 NEVER_SPLIT = ("freetype.c",)  # 3rd-party FFI, not translated
 
 
@@ -62,7 +60,7 @@ class Func:
 @dataclass
 class Static:
     name: str
-    kind: str          # "fn" | "const" | "mutable"
+    kind: str  # "fn" | "const" | "mutable"
     line: int
     refs: list[int] = field(default_factory=list)  # function indices
 
@@ -72,9 +70,9 @@ class Plan:
     path: Path
     loc: int
     nfuncs: int
-    classification: str            # CLEAN_SPLIT | NEEDS_PROMOTION | LEAVE_WHOLE
+    classification: str  # CLEAN_SPLIT | NEEDS_PROMOTION | LEAVE_WHOLE
     groups: list[tuple[int, int, int]]  # (first_fn, last_fn, group_loc)
-    blocking: list[str]            # static names that block all clean cuts
+    blocking: list[str]  # static names that block all clean cuts
     note: str = ""
 
 
@@ -132,9 +130,7 @@ def _enumerate_functions(text: str, masked: str) -> list[Func]:
                                 break
                         e += 1
                     if nm:
-                        funcs.append(Func(
-                            nm.group(1), s, e,
-                            text.count("\n", s, e) + 1))
+                        funcs.append(Func(nm.group(1), s, e, text.count("\n", s, e) + 1))
                     # whole balanced body consumed → depth net unchanged
                     i = e
                     continue
@@ -148,8 +144,7 @@ def _enumerate_functions(text: str, masked: str) -> list[Func]:
 _RE_STATIC = re.compile(r"^[ \t]*static\b[^\n;{]*", re.MULTILINE)
 
 
-def _file_scope_statics(text: str, masked: str,
-                        funcs: list[Func]) -> list[Static]:
+def _file_scope_statics(text: str, masked: str, funcs: list[Func]) -> list[Static]:
     """`static` declarations at file scope (outside any function span).
     Classified fn / const / mutable — the fix path differs per kind."""
     spans = [(f.start, f.end) for f in funcs]
@@ -158,17 +153,16 @@ def _file_scope_statics(text: str, masked: str,
         pos = m.start()
         if any(a <= pos < b for a, b in spans):
             continue  # a `static` local, not file scope
-        head = masked[pos:pos + 200]
+        head = masked[pos : pos + 200]
         # identifier: `static [const] <type...> NAME ( | = | [ | ;`
-        idm = re.search(r"\bstatic\b[\w\s\*]*?\b([A-Za-z_]\w*)\s*[\(\[=;]",
-                         head)
+        idm = re.search(r"\bstatic\b[\w\s\*]*?\b([A-Za-z_]\w*)\s*[\(\[=;]", head)
         if not idm:
             continue
         name = idm.group(1)
-        after = head[idm.end() - 1:]
+        after = head[idm.end() - 1 :]
         if after.lstrip().startswith("("):
             kind = "fn"
-        elif re.search(r"\bconst\b", head[:idm.start(1)]):
+        elif re.search(r"\bconst\b", head[: idm.start(1)]):
             kind = "const"
         else:
             kind = "mutable"
@@ -176,8 +170,7 @@ def _file_scope_statics(text: str, masked: str,
     # ref graph: a func references S if \bS\b appears in its masked body
     for s in out:
         rx = re.compile(rf"\b{re.escape(s.name)}\b")
-        s.refs = [i for i, f in enumerate(funcs)
-                  if rx.search(masked[f.start:f.end])]
+        s.refs = [i for i, f in enumerate(funcs) if rx.search(masked[f.start : f.end])]
     return out
 
 
@@ -189,7 +182,7 @@ def _clean_cuts(funcs: list[Func], statics: list[Static]) -> set[int]:
         if len(s.refs) < 2:
             continue
         lo, hi = min(s.refs), max(s.refs)
-        for i in range(lo, hi):           # cuts lo..hi-1 split S's refs
+        for i in range(lo, hi):  # cuts lo..hi-1 split S's refs
             blocked.add(i)
     return set(range(len(funcs) - 1)) - blocked
 
@@ -200,8 +193,9 @@ def analyze_file(path: Path, target_loc: int = 900) -> Plan:
     funcs = _enumerate_functions(text, masked)
     loc = text.count("\n") + 1
     if len(funcs) < 2:
-        return Plan(path, loc, len(funcs), "LEAVE_WHOLE", [], [],
-                    "fewer than 2 top-level functions")
+        return Plan(
+            path, loc, len(funcs), "LEAVE_WHOLE", [], [], "fewer than 2 top-level functions"
+        )
 
     statics = _file_scope_statics(text, masked, funcs)
     clean = _clean_cuts(funcs, statics)
@@ -216,10 +210,9 @@ def analyze_file(path: Path, target_loc: int = 900) -> Plan:
     for i, f in enumerate(funcs):
         acc += f.loc
         if i == len(funcs) - 1:
-            if (groups and acc < target_loc // 3
-                    and groups[-1][2] + acc <= ceiling):
-                a, _, l = groups.pop()
-                groups.append((a, i, l + acc))
+            if groups and acc < target_loc // 3 and groups[-1][2] + acc <= ceiling:
+                a, _, loc = groups.pop()
+                groups.append((a, i, loc + acc))
             else:
                 groups.append((gstart, i, acc))
             break
@@ -229,42 +222,66 @@ def analyze_file(path: Path, target_loc: int = 900) -> Plan:
 
     oversized = [g for g in groups if g[2] > ceiling]
     if len(groups) >= 2 and not oversized:
-        return Plan(path, loc, len(funcs), "CLEAN_SPLIT", groups, [],
-                    f"{len(groups)} groups, each ≤{ceiling}L, "
-                    f"zero cross-group statics")
+        return Plan(
+            path,
+            loc,
+            len(funcs),
+            "CLEAN_SPLIT",
+            groups,
+            [],
+            f"{len(groups)} groups, each ≤{ceiling}L, zero cross-group statics",
+        )
 
     # A split exists but a static forces a still-giant chunk. Identify
     # the statics whose ref-span straddles the oversized group's range
     # (those are what block a finer cut there).
     span_lo = oversized[0][0] if oversized else 0
     span_hi = oversized[-1][1] if oversized else len(funcs) - 1
-    cross = [s for s in statics
-             if len(s.refs) >= 2
-             and min(s.refs) <= span_lo < span_hi <= max(s.refs)]
+    cross = [
+        s for s in statics if len(s.refs) >= 2 and min(s.refs) <= span_lo < span_hi <= max(s.refs)
+    ]
     mutable_wide = [s for s in cross if s.kind == "mutable"]
     promotable = [s for s in cross if s.kind in ("fn", "const")]
     if mutable_wide:
-        return Plan(path, loc, len(funcs), "LEAVE_WHOLE", groups,
-                    sorted({s.name for s in mutable_wide}),
-                    "mutable static(s) span the file — duplicating splits "
-                    "state; translate-chunk instead")
+        return Plan(
+            path,
+            loc,
+            len(funcs),
+            "LEAVE_WHOLE",
+            groups,
+            sorted({s.name for s in mutable_wide}),
+            "mutable static(s) span the file — duplicating splits state; translate-chunk instead",
+        )
     if promotable:
-        return Plan(path, loc, len(funcs), "NEEDS_PROMOTION", groups,
-                    sorted({s.name for s in promotable}),
-                    f"split leaves a >{ceiling}L chunk; blocking statics "
-                    f"are de-static-able (fn/const) → <file>_priv.h")
+        return Plan(
+            path,
+            loc,
+            len(funcs),
+            "NEEDS_PROMOTION",
+            groups,
+            sorted({s.name for s in promotable}),
+            f"split leaves a >{ceiling}L chunk; blocking statics "
+            f"are de-static-able (fn/const) → <file>_priv.h",
+        )
     if len(groups) >= 2 and not oversized:
         return Plan(path, loc, len(funcs), "CLEAN_SPLIT", groups, [], "")
-    return Plan(path, loc, len(funcs), "LEAVE_WHOLE", groups, [],
-                "no clean cut yields all-sub-giant groups; translate-chunk")
+    return Plan(
+        path,
+        loc,
+        len(funcs),
+        "LEAVE_WHOLE",
+        groups,
+        [],
+        "no clean cut yields all-sub-giant groups; translate-chunk",
+    )
 
 
 @dataclass
 class Emit:
     path: Path
     classification: str
-    fragments: list[tuple[Path, str]]   # (fragment path, content)
-    new_base: str                       # rewritten <base>.c content
+    fragments: list[tuple[Path, str]]  # (fragment path, content)
+    new_base: str  # rewritten <base>.c content
     note: str = ""
 
 
@@ -278,19 +295,18 @@ def plan_emit(path: Path, target_loc: int = 900) -> Emit:
     """
     pl = analyze_file(path, target_loc)
     if pl.classification != "CLEAN_SPLIT" or len(pl.groups) < 2:
-        return Emit(path, pl.classification, [], "",
-                    "not CLEAN_SPLIT — nothing to emit")
+        return Emit(path, pl.classification, [], "", "not CLEAN_SPLIT — nothing to emit")
     text = path.read_text(errors="replace")
     masked = _mask_literals(text)
     funcs = _enumerate_functions(text, masked)
 
     # Cut offsets at each non-final group's last-function end.
-    cuts = [funcs[b].end for (_a, b, _l) in pl.groups[:-1]]
-    bounds = cuts + [len(text)]
+    cuts = [funcs[b].end for (_a, b, _loc) in pl.groups[:-1]]
+    bounds = [*cuts, len(text)]
 
     stem = path.stem
     suffix = path.suffix
-    base_keep = text[:cuts[0]]
+    base_keep = text[: cuts[0]]
     fragments: list[tuple[Path, str]] = []
     includes: list[str] = []
     prev = cuts[0]
@@ -298,32 +314,44 @@ def plan_emit(path: Path, target_loc: int = 900) -> Emit:
         slice_ = text[prev:end]
         prev = end
         fname = f"{stem}.split{n}{suffix}"
-        hdr = (f"/* {fname} — #include fragment of {stem}{suffix}, carved "
-               f"for pretranslation so rustconv gets a small file. NOT a "
-               f"standalone TU; NOT in CMake; do not compile directly. "
-               f"The preprocessor reassembles the original {stem}{suffix} "
-               f"TU verbatim. See "
-               f"docs/engineering/win32k-pretranslation-audit.md */\n")
+        hdr = (
+            f"/* {fname} — #include fragment of {stem}{suffix}, carved "
+            f"for pretranslation so rustconv gets a small file. NOT a "
+            f"standalone TU; NOT in CMake; do not compile directly. "
+            f"The preprocessor reassembles the original {stem}{suffix} "
+            f"TU verbatim. See "
+            f"docs/engineering/win32k-pretranslation-audit.md */\n"
+        )
         fragments.append((path.with_name(fname), hdr + slice_))
         includes.append(f'#include "{fname}"')
 
-    banner = (f"\n/* --- pretranslation split: the remaining function "
-              f"groups live in {stem}.split2..{len(pl.groups)}{suffix} and "
-              f"are #included below so this stays ONE translation unit "
-              f"(zero CMake/linkage change). Reassembled verbatim by cpp. "
-              f"--- */\n")
+    banner = (
+        f"\n/* --- pretranslation split: the remaining function "
+        f"groups live in {stem}.split2..{len(pl.groups)}{suffix} and "
+        f"are #included below so this stays ONE translation unit "
+        f"(zero CMake/linkage change). Reassembled verbatim by cpp. "
+        f"--- */\n"
+    )
     new_base = base_keep + banner + "\n".join(includes) + "\n"
 
     # Oracle (by construction, asserted): stripping each fragment's added
     # header line and concatenating after base_keep == the original file.
-    recon = base_keep + "".join(
-        c.split("\n", 1)[1] for _p, c in fragments)
+    recon = base_keep + "".join(c.split("\n", 1)[1] for _p, c in fragments)
     if recon != text:
-        return Emit(path, pl.classification, [], "",
-                    "RECONSTRUCTION MISMATCH — refusing to emit "
-                    "(byte-exact reassembly check failed)")
-    return Emit(path, "CLEAN_SPLIT", fragments, new_base,
-                f"{len(pl.groups)} parts, reconstruction byte-exact")
+        return Emit(
+            path,
+            pl.classification,
+            [],
+            "",
+            "RECONSTRUCTION MISMATCH — refusing to emit (byte-exact reassembly check failed)",
+        )
+    return Emit(
+        path,
+        "CLEAN_SPLIT",
+        fragments,
+        new_base,
+        f"{len(pl.groups)} parts, reconstruction byte-exact",
+    )
 
 
 def apply_emit(em: Emit) -> None:
@@ -334,12 +362,10 @@ def apply_emit(em: Emit) -> None:
 
 def _scope(p: Path) -> bool:
     s = p.as_posix()
-    return (any(f"/win32ss/{d}/" in s for d in SCOPE_DIRS)
-            and p.name not in NEVER_SPLIT)
+    return any(f"/win32ss/{d}/" in s for d in SCOPE_DIRS) and p.name not in NEVER_SPLIT
 
 
-def analyze_scope(win32ss_root: Path, min_loc: int,
-                  target_loc: int) -> list[Plan]:
+def analyze_scope(win32ss_root: Path, min_loc: int, target_loc: int) -> list[Plan]:
     plans: list[Plan] = []
     for c in sorted(win32ss_root.rglob("*.c")):
         if not _scope(c):
@@ -351,25 +377,26 @@ def analyze_scope(win32ss_root: Path, min_loc: int,
 
 
 def print_report(plans: list[Plan]) -> None:
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print(f"Win32k giant-file split plan — {len(plans)} files ≥ threshold")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
     print(f"{'LOC':>5} {'fns':>4}  {'class':<15} file")
     for p in plans:
         rel = p.path.as_posix().split("/win32ss/")[-1]
         print(f"{p.loc:>5} {p.nfuncs:>4}  {p.classification:<15} {rel}")
         if p.classification == "CLEAN_SPLIT":
-            parts = ", ".join(f"[fn{a}-{b} ~{l}L]" for a, b, l in p.groups)
+            parts = ", ".join(f"[fn{a}-{b} ~{loc}L]" for a, b, loc in p.groups)
             print(f"      → {len(p.groups)} files: {parts}")
         elif p.blocking:
-            print(f"      blocking statics: {', '.join(p.blocking[:10])}"
-                  f"  ({p.note})")
+            print(f"      blocking statics: {', '.join(p.blocking[:10])}  ({p.note})")
         elif p.note:
             print(f"      {p.note}")
     n_clean = sum(p.classification == "CLEAN_SPLIT" for p in plans)
     n_prom = sum(p.classification == "NEEDS_PROMOTION" for p in plans)
     n_whole = sum(p.classification == "LEAVE_WHOLE" for p in plans)
     saved = sum(p.loc for p in plans if p.classification == "CLEAN_SPLIT")
-    print(f"\n  CLEAN_SPLIT {n_clean} ({saved} LOC of giants → small "
-          f"modules, free) · NEEDS_PROMOTION {n_prom} · LEAVE_WHOLE "
-          f"{n_whole} (translate-chunk)")
+    print(
+        f"\n  CLEAN_SPLIT {n_clean} ({saved} LOC of giants → small "
+        f"modules, free) · NEEDS_PROMOTION {n_prom} · LEAVE_WHOLE "
+        f"{n_whole} (translate-chunk)"
+    )

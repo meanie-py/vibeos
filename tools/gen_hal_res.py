@@ -19,6 +19,7 @@ Usage:
     python3 tools/gen_hal_res.py            # Regenerate + write to data/
     python3 tools/gen_hal_res.py --check    # Verify checked-in matches
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,16 +86,18 @@ def regenerate(work: Path) -> bytes:
     cmd = [str(WINDRES), "-O", "coff"]
     for inc in KERNEL_INCLUDES:
         cmd.extend(["-I", str(REPO / inc)])
-    cmd.extend([
-        f"--preprocessor={CLANG}",
-        "--preprocessor-arg=--target=i686-w64-mingw32",
-        "--preprocessor-arg=-E",
-        "--preprocessor-arg=-nostdinc",
-        "--preprocessor-arg=-xc-header",
-        "-DRC_INVOKED",
-        "-D__WIN32__=1",
-        "-D__FLAT__=1",
-    ])
+    cmd.extend(
+        [
+            f"--preprocessor={CLANG}",
+            "--preprocessor-arg=--target=i686-w64-mingw32",
+            "--preprocessor-arg=-E",
+            "--preprocessor-arg=-nostdinc",
+            "--preprocessor-arg=-xc-header",
+            "-DRC_INVOKED",
+            "-D__WIN32__=1",
+            "-D__FLAT__=1",
+        ]
+    )
     for name, value in RC_DEFINES:
         cmd.append(f"-D{name}={value}" if value is not None else f"-D{name}")
     cmd.extend([str(RC_SOURCE), str(out_path)])
@@ -108,8 +111,9 @@ def regenerate(work: Path) -> bytes:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--check", action="store_true",
-                    help="verify checked-in file matches a fresh regen")
+    ap.add_argument(
+        "--check", action="store_true", help="verify checked-in file matches a fresh regen"
+    )
     args = ap.parse_args()
 
     for p in (WINDRES, CLANG, RC_SOURCE):

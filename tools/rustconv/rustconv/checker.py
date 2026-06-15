@@ -1,12 +1,10 @@
 """Cargo check orchestration + structured error reporting."""
 
 import json
-import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .config import OUTPUT_CRATE, RUST_TARGETS
 
@@ -17,7 +15,7 @@ class CompileError:
     line: int
     column: int
     level: str  # "error", "warning"
-    code: Optional[str]  # e.g., "E0432"
+    code: str | None  # e.g., "E0432"
     message: str
     category: str  # "missing_import", "type_mismatch", "missing_extern", "syntax", "other"
 
@@ -30,7 +28,7 @@ class CheckResult:
     success: bool = False
 
 
-def _categorize_error(code: Optional[str], message: str) -> str:
+def _categorize_error(code: str | None, message: str) -> str:
     """Categorize a compile error for reporting."""
     if code == "E0432" or "unresolved import" in message:
         return "missing_import"
@@ -56,8 +54,10 @@ def check_target(target: str, crate_dir: Path = OUTPUT_CRATE) -> CheckResult:
     try:
         proc = subprocess.run(
             [
-                "cargo", "check",
-                "--target", target,
+                "cargo",
+                "check",
+                "--target",
+                target,
                 "--message-format=json",
             ],
             capture_output=True,
@@ -66,20 +66,30 @@ def check_target(target: str, crate_dir: Path = OUTPUT_CRATE) -> CheckResult:
             timeout=120,
         )
     except subprocess.TimeoutExpired:
-        result.errors.append(CompileError(
-            file="", line=0, column=0,
-            level="error", code=None,
-            message="cargo check timed out after 120s",
-            category="other",
-        ))
+        result.errors.append(
+            CompileError(
+                file="",
+                line=0,
+                column=0,
+                level="error",
+                code=None,
+                message="cargo check timed out after 120s",
+                category="other",
+            )
+        )
         return result
     except FileNotFoundError:
-        result.errors.append(CompileError(
-            file="", line=0, column=0,
-            level="error", code=None,
-            message="cargo not found",
-            category="other",
-        ))
+        result.errors.append(
+            CompileError(
+                file="",
+                line=0,
+                column=0,
+                level="error",
+                code=None,
+                message="cargo not found",
+                category="other",
+            )
+        )
         return result
 
     # Parse JSON messages
@@ -142,9 +152,12 @@ def check_all_targets(crate_dir: Path = OUTPUT_CRATE) -> dict[str, CheckResult]:
         result = check_target(target, crate_dir)
         results[arch] = result
         if result.success:
-            print(f"    ✓ No errors", file=sys.stderr)
+            print("    ✓ No errors", file=sys.stderr)
         else:
-            print(f"    ✗ {len(result.errors)} errors, {len(result.warnings)} warnings", file=sys.stderr)
+            print(
+                f"    ✗ {len(result.errors)} errors, {len(result.warnings)} warnings",
+                file=sys.stderr,
+            )
     return results
 
 

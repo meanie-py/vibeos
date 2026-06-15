@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .callgraph import FunctionDep
-from .catalog import Catalog, Symbol
+from .catalog import Catalog
 from .resolver import BUILTIN_NAMES, GAP_FUNCTIONS, ImportGroup, ResolveResult
 from .spec_parser import SpecEntry
 

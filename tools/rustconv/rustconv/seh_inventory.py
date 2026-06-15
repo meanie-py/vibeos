@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -40,25 +42,27 @@ from .seh_classifier import (
     FunctionSEHInfo,
     SEHBlock,
     TryBodyPattern,
-    HandlerPattern,
     classify_file,
 )
 
 
 class Category(str, Enum):
-    PROBE_LOWER = "a"       # → Pass 1
-    LOCK_CLEANUP = "b"      # → Pass 2
-    FAULT_RECOVER = "c"     # residual, no rewrite
-    BELT_SUSPENDERS = "d"   # delete after cross-site check
-    NEEDS_REVIEW = "e"      # manual triage
+    PROBE_LOWER = "a"  # → Pass 1
+    LOCK_CLEANUP = "b"  # → Pass 2
+    FAULT_RECOVER = "c"  # residual, no rewrite
+    BELT_SUSPENDERS = "d"  # delete after cross-site check
+    NEEDS_REVIEW = "e"  # manual triage
 
 
 # win32k.sys kernel-mode keep-set (audit §"What this audit doesn't cover":
 # user32/gdi32/imm32/winsrv are user-mode → out of scope).
 KEEPSET_DIRS = (
-    "gdi/ntgdi", "gdi/eng", "gdi/dib",
+    "gdi/ntgdi",
+    "gdi/eng",
+    "gdi/dib",
     "user/ntuser",
-    "reactx/ntddraw", "reactx/dxg",
+    "reactx/ntddraw",
+    "reactx/dxg",
 )
 
 # Genuine fault-then-recover APIs — these MUST keep their SEH (route to the
@@ -73,18 +77,52 @@ RE_SEH_LEAVE = re.compile(r"\b_SEH2_LEAVE\b")
 # touches: control keywords, logging, status predicates, sizeof/casts, the
 # probe/copy helpers themselves, and the SEH macros.
 _CALL_ALLOW = {
-    "if", "for", "while", "switch", "return", "sizeof", "do",
-    "NT_SUCCESS", "NT_ERROR", "NT_WARNING", "NTAPI", "APIENTRY",
-    "TRACE", "ERR", "WARN", "INFO", "DPRINT", "DPRINT1", "FIXME",
-    "UNIMPLEMENTED", "ASSERT", "NOTHING", "UNREFERENCED_PARAMETER",
-    "ProbeForRead", "ProbeForWrite",
-    "RtlCopyMemory", "RtlMoveMemory", "RtlZeroMemory", "RtlFillMemory",
-    "memcpy", "memmove", "memset",
-    "_SEH2_GetExceptionCode", "_SEH2_GetExceptionInformation",
-    "_SEH2_YIELD", "_SEH2_LEAVE", "EXCEPTION_EXECUTE_HANDLER",
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "do",
+    "NT_SUCCESS",
+    "NT_ERROR",
+    "NT_WARNING",
+    "NTAPI",
+    "APIENTRY",
+    "TRACE",
+    "ERR",
+    "WARN",
+    "INFO",
+    "DPRINT",
+    "DPRINT1",
+    "FIXME",
+    "UNIMPLEMENTED",
+    "ASSERT",
+    "NOTHING",
+    "UNREFERENCED_PARAMETER",
+    "ProbeForRead",
+    "ProbeForWrite",
+    "RtlCopyMemory",
+    "RtlMoveMemory",
+    "RtlZeroMemory",
+    "RtlFillMemory",
+    "memcpy",
+    "memmove",
+    "memset",
+    "_SEH2_GetExceptionCode",
+    "_SEH2_GetExceptionInformation",
+    "_SEH2_YIELD",
+    "_SEH2_LEAVE",
+    "EXCEPTION_EXECUTE_HANDLER",
     # SAL / analysis annotations and compile-time asserts — not real calls
-    "_Analysis_assume_", "__analysis_assume", "_Analysis_noreturn_",
-    "C_ASSERT", "static_assert", "_ASSERT", "__pragma", "RtlRaiseStatus",
+    "_Analysis_assume_",
+    "__analysis_assume",
+    "_Analysis_noreturn_",
+    "C_ASSERT",
+    "static_assert",
+    "_ASSERT",
+    "__pragma",
+    "RtlRaiseStatus",
 }
 
 # User-struct writes the bare `*ptr =` WRITE_BACK regex misses:
@@ -96,8 +134,7 @@ _RE_INDEX_WRITE = re.compile(r"\b\w+\s*\[[^\]]*\]\s*(?<![=!<>])=(?!=)\s*[^=]")
 
 
 def _has_struct_or_index_write(stripped_try: str) -> bool:
-    return bool(_RE_ARROW_WRITE.search(stripped_try)
-                or _RE_INDEX_WRITE.search(stripped_try))
+    return bool(_RE_ARROW_WRITE.search(stripped_try) or _RE_INDEX_WRITE.search(stripped_try))
 
 
 _RE_PROBE_TRY = re.compile(r"\bProbeFor(Read|Write)\b")
@@ -105,8 +142,7 @@ _RE_STAR_WRITE = re.compile(r"\*\s*\w+\s*(?<![=!<>])=(?!=)\s*[^=]")
 _RE_BULK_COPY = re.compile(r"\b(RtlCopyMemory|RtlMoveMemory|memcpy|memmove)\s*\(")
 
 
-def classify_span(try_body: str, handler_body: str,
-                   is_finally: bool) -> Category:
+def classify_span(try_body: str, handler_body: str, is_finally: bool) -> Category:
     """Pass-0 category from a single SEH span's text alone (no function
     context). Used by the Pass-1 rewriter so it doesn't depend on the
     seh_classifier block parser agreeing site-for-site. Cross-site
@@ -120,13 +156,16 @@ def classify_span(try_body: str, handler_body: str,
     if _has_nonprobe_call(try_body):
         return Category.NEEDS_REVIEW
     has_probe = bool(_RE_PROBE_TRY.search(st))
-    has_write = bool(_RE_STAR_WRITE.search(st) or _RE_BULK_COPY.search(st)
-                     or _has_struct_or_index_write(st))
+    has_write = bool(
+        _RE_STAR_WRITE.search(st) or _RE_BULK_COPY.search(st) or _has_struct_or_index_write(st)
+    )
     if has_write and not has_probe:
         return Category.BELT_SUSPENDERS
     if has_probe or has_write:
         return Category.PROBE_LOWER
     return Category.NEEDS_REVIEW
+
+
 # typed probes (ProbeForReadUlong, ProbeForWriteHandle, …) are also "probes"
 _RE_TYPED_PROBE = re.compile(r"^ProbeFor(Read|Write)\w+$")
 _RE_CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
@@ -159,7 +198,8 @@ def _has_nonprobe_call(try_body: str) -> list[str]:
 
 def _has_probe(b: SEHBlock) -> bool:
     return bool(
-        b.probe_calls or b.typed_probes
+        b.probe_calls
+        or b.typed_probes
         or TryBodyPattern.PROBE in b.try_patterns
         or TryBodyPattern.PROBE_TYPED in b.try_patterns
         or TryBodyPattern.PROBE_UNICODE in b.try_patterns
@@ -168,7 +208,8 @@ def _has_probe(b: SEHBlock) -> bool:
 
 def _has_user_write(b: SEHBlock) -> bool:
     return bool(
-        b.write_backs or b.copy_calls
+        b.write_backs
+        or b.copy_calls
         or TryBodyPattern.WRITE_BACK in b.try_patterns
         or TryBodyPattern.BULK_COPY in b.try_patterns
     )
@@ -261,18 +302,20 @@ def triage_function(fn: FunctionSEHInfo) -> list[SiteTriage]:
             for arg in re.findall(r"ProbeFor\w+\s*\(\s*&?\s*([A-Za-z_]\w*)", b.try_body):
                 probed_targets.add(arg)
 
-        out.append(SiteTriage(
-            function=fn.name,
-            line_start=base + b.line_start,
-            line_end=base + b.line_end,
-            category=cat,
-            signals=signals,
-            probe_count=pc,
-            nonprobe_calls=calls,
-            try_patterns=[p.name for p in b.try_patterns],
-            handler_patterns=[p.name for p in b.handler_patterns],
-            note=note,
-        ))
+        out.append(
+            SiteTriage(
+                function=fn.name,
+                line_start=base + b.line_start,
+                line_end=base + b.line_end,
+                category=cat,
+                signals=signals,
+                probe_count=pc,
+                nonprobe_calls=calls,
+                try_patterns=[p.name for p in b.try_patterns],
+                handler_patterns=[p.name for p in b.handler_patterns],
+                note=note,
+            )
+        )
     return out
 
 
@@ -337,14 +380,26 @@ def _counts(sites: list[SiteTriage]) -> dict[str, int]:
 # (line_start is approximate post-spike; the oracle matches by function +
 #  ordinal + expected category/signals, not exact line.)
 WINSTA_ORACLE = [
-    ("FreeUserModeWindowStationName", Category.PROBE_LOWER,   {"swallow"}),
-    ("BuildUserModeWindowStationName", Category.PROBE_LOWER,  set()),
-    ("NtUserCreateWindowStation",     Category.NEEDS_REVIEW,  {"needs_goto_lowering", "has_nonprobe_call"}),
-    ("NtUserOpenWindowStation",       Category.NEEDS_REVIEW,  {"needs_goto_lowering", "has_nonprobe_call"}),
-    ("NtUserSetObjectInformation",    Category.PROBE_LOWER,   {"multi_probe"}),   # L1242 multi-probe
-    ("NtUserSetObjectInformation",    Category.BELT_SUSPENDERS, {"relies_on_prior_probe"}),  # L1384
-    ("NtUserSetWindowStationUser",    Category.PROBE_LOWER,   set()),  # L2157 goto-on-fail handled by handler, not TRY LEAVE
-    ("NtUserSetWindowStationUser",    Category.PROBE_LOWER,   set()),  # L2190 copy-from-user
+    ("FreeUserModeWindowStationName", Category.PROBE_LOWER, {"swallow"}),
+    ("BuildUserModeWindowStationName", Category.PROBE_LOWER, set()),
+    (
+        "NtUserCreateWindowStation",
+        Category.NEEDS_REVIEW,
+        {"needs_goto_lowering", "has_nonprobe_call"},
+    ),
+    (
+        "NtUserOpenWindowStation",
+        Category.NEEDS_REVIEW,
+        {"needs_goto_lowering", "has_nonprobe_call"},
+    ),
+    ("NtUserSetObjectInformation", Category.PROBE_LOWER, {"multi_probe"}),  # L1242 multi-probe
+    ("NtUserSetObjectInformation", Category.BELT_SUSPENDERS, {"relies_on_prior_probe"}),  # L1384
+    (
+        "NtUserSetWindowStationUser",
+        Category.PROBE_LOWER,
+        set(),
+    ),  # L2157 goto-on-fail handled by handler, not TRY LEAVE
+    ("NtUserSetWindowStationUser", Category.PROBE_LOWER, set()),  # L2190 copy-from-user
 ]
 
 
@@ -360,18 +415,21 @@ def run_oracle(winsta_path: Path) -> int:
     spike output (0 `_SEH2_TRY`); the oracle needs the *pre-spike* source,
     so fall back to the `git HEAD` blob when the working copy has no SEH.
     """
-    import subprocess
-    import tempfile
-
     if "_SEH2_TRY" not in winsta_path.read_text(errors="replace"):
         try:
             repo = subprocess.run(
                 ["git", "-C", str(winsta_path.parent), "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True, check=True).stdout.strip()
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
             rel = winsta_path.resolve().relative_to(repo)
             blob = subprocess.run(
                 ["git", "-C", repo, "show", f"HEAD:{rel.as_posix()}"],
-                capture_output=True, text=True, check=True).stdout
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
             tmp = Path(tempfile.mkstemp(suffix="_winsta_orig.c")[1])
             tmp.write_text(blob)
             print(f"(oracle: working copy is SEH-free; using git HEAD:{rel})")
@@ -396,8 +454,13 @@ def run_oracle(winsta_path: Path) -> int:
             print(f"  category {forbidden}: expected 0, got {counts[forbidden]}  [MISMATCH]")
             ok = False
     allsig = {s for site in sites for s in site.signals}
-    for need in ("needs_goto_lowering", "has_nonprobe_call",
-                 "relies_on_prior_probe", "multi_probe", "swallow"):
+    for need in (
+        "needs_goto_lowering",
+        "has_nonprobe_call",
+        "relies_on_prior_probe",
+        "multi_probe",
+        "swallow",
+    ):
         present = "OK" if need in allsig else "MISSING"
         if need not in allsig:
             ok = False
@@ -414,17 +477,16 @@ def print_summary(inv: dict[Path, list[SiteTriage]]) -> None:
         for s in sites:
             total[s.category.value] = total.get(s.category.value, 0) + 1
     names = {c.value: c.name for c in Category}
-    print(f"\n{'='*64}")
+    print(f"\n{'=' * 64}")
     print(f"Win32k Pass 0 — {nsites} SEH sites across {len(inv)} keep-set files")
-    print(f"{'='*64}")
+    print(f"{'=' * 64}")
     for k in ("a", "b", "c", "d", "e"):
         n = total.get(k, 0)
         pct = (n * 100 / nsites) if nsites else 0
         print(f"  ({k}) {names[k]:<16} {n:>4}  {pct:5.1f}%")
-    e_files = [(p, [s for s in ss if s.category == Category.NEEDS_REVIEW])
-               for p, ss in inv.items()]
+    e_files = [(p, [s for s in ss if s.category == Category.NEEDS_REVIEW]) for p, ss in inv.items()]
     e_files = [(p, e) for p, e in e_files if e]
     if e_files:
-        print(f"\n(e) NEEDS_REVIEW hotspots:")
+        print("\n(e) NEEDS_REVIEW hotspots:")
         for p, e in sorted(e_files, key=lambda x: -len(x[1]))[:12]:
             print(f"  {len(e):>3}  {p.name}")

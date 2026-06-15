@@ -3,6 +3,7 @@
 Locates the repo root from this file (not cwd-dependent), dispatches to the
 command modules. No default --arch (plan principle #4).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -11,9 +12,8 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
+from . import cargoswap, debugcmd
 from . import smoke as smoke_mod
-from . import debugcmd
-from . import cargoswap
 from .archcfg import ACCEPTED_ARCHES
 
 # repo root = .../tests/qemu/cli/__main__.py -> up 3
@@ -30,13 +30,18 @@ def _ps(args, repo: Path) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="vibeos-cli",
-                                description="VibeOS build/check/smoke/debug control plane")
+    p = argparse.ArgumentParser(
+        prog="vibeos-cli", description="VibeOS build/check/smoke/debug control plane"
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def arch_arg(sp, required=True):
-        sp.add_argument("--arch", choices=ACCEPTED_ARCHES, required=required,
-                        help="target arch (i386/amd64 alias to UEFI; no default)")
+        sp.add_argument(
+            "--arch",
+            choices=ACCEPTED_ARCHES,
+            required=required,
+            help="target arch (i386/amd64 alias to UEFI; no default)",
+        )
 
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
@@ -48,8 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("check", help="source lints (baseline-diff gate)")
     c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
-    c.add_argument("--update-baseline", action="store_true",
-                   help="capture current findings as the accepted baseline")
+    c.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="capture current findings as the accepted baseline",
+    )
     c.set_defaults(fn=debugcmd.check)
 
     s = sub.add_parser("smoke", help="staleness-gated boot verdict (front door)")
@@ -71,8 +79,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("debug", help="run-id scoped debug verbs (wrap shell toolkit)")
     dsub = d.add_subparsers(dest="verb", required=True)
-    for verb in ("start", "inspect", "run-until", "bt", "triage-bugcheck",
-                 "wait-for", "tail", "status", "stop", "screenshot", "profile", "gdb"):
+    for verb in (
+        "start",
+        "inspect",
+        "run-until",
+        "bt",
+        "triage-bugcheck",
+        "wait-for",
+        "tail",
+        "status",
+        "stop",
+        "screenshot",
+        "profile",
+        "gdb",
+    ):
         dv = dsub.add_parser(verb)
         dv.add_argument("rest", nargs=argparse.REMAINDER)
         dv.set_defaults(fn=debugcmd.debug, verb=verb)
@@ -81,12 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
     dd.add_argument("run_b")
     dd.set_defaults(fn=debugcmd.debug, verb="diff")
 
-    cs = sub.add_parser("cargo-swap",
-                        help="runtime gate: boot-swap cargo-driven ntdll DLLs + ntoskrnl (x86)")
+    cs = sub.add_parser(
+        "cargo-swap", help="runtime gate: boot-swap cargo-driven ntdll DLLs + ntoskrnl (x86)"
+    )
     arch_arg(cs)
-    cs.add_argument("--module", choices=["all", "ntdll", "ntdll_vista", "ntoskrnl"],
-                    default="all",
-                    help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)")
+    cs.add_argument(
+        "--module",
+        choices=["all", "ntdll", "ntdll_vista", "ntoskrnl"],
+        default="all",
+        help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)",
+    )
     cs.set_defaults(fn=cargoswap.cargo_swap)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")

@@ -24,6 +24,7 @@ Usage:
     python3 tools/gen_ntdll_res.py [--arch i386,amd64,arm64] [--module ntdll,ntdll_vista]
     python3 tools/gen_ntdll_res.py --check     # verify checked-in matches a fresh regen
 """
+
 from __future__ import annotations
 
 import argparse
@@ -82,27 +83,38 @@ MODULES = {
         # build-<arch>/dll/ntdll, dll/ntdll, <subsys>, dll/ntdll/include, ...
         # tail, then dxsdk/pseh, apisets, crt
         "includes": (
-            [("bld", "dll/ntdll"), ("src", "dll/ntdll"),
-             ("src", "sdk/include/reactos/subsys"), ("src", "dll/ntdll/include")]
-            + _COMMON_TAIL_SRC[1:]
-            + [("src", "sdk/lib/apisets"), ("src", "sdk/include/crt")]
+            [
+                ("bld", "dll/ntdll"),
+                ("src", "dll/ntdll"),
+                ("src", "sdk/include/reactos/subsys"),
+                ("src", "dll/ntdll/include"),
+                *_COMMON_TAIL_SRC[1:],
+                ("src", "sdk/lib/apisets"),
+                ("src", "sdk/include/crt"),
+            ]
         ),
     },
     "ntdll_vista": {
         "rc": "dll/ntdll/nt_0600/ntdll_vista.rc",
         "out": "sdk/lib/rust/ntdll_vista-cargo/data/ntdll_vista-{arch}.rc.res",
         "includes": (
-            [("bld", "dll/ntdll/nt_0600"), ("src", "dll/ntdll/nt_0600"),
-             ("src", "sdk/include/reactos/subsys"), ("src", "dll/ntdll/nt_0600/include")]
-            + _COMMON_TAIL_SRC[1:]
-            + [("src", "sdk/include/crt")]
+            [
+                ("bld", "dll/ntdll/nt_0600"),
+                ("src", "dll/ntdll/nt_0600"),
+                ("src", "sdk/include/reactos/subsys"),
+                ("src", "dll/ntdll/nt_0600/include"),
+                *_COMMON_TAIL_SRC[1:],
+                ("src", "sdk/include/crt"),
+            ]
         ),
     },
 }
 
 # Defines shared by every (module, arch). Mirrors the cmake ntdll rc rule.
 COMMON_DEFINES = [
-    ("RC_INVOKED", None), ("__WIN32__", "1"), ("__FLAT__", "1"),
+    ("RC_INVOKED", None),
+    ("__WIN32__", "1"),
+    ("__FLAT__", "1"),
 ]
 TAIL_DEFINES = [
     ("CRTDLL", None),
@@ -130,23 +142,142 @@ TAIL_DEFINES = [
 
 # 136 LANGUAGE_* defines required by common.ver / version.rc.
 LANGUAGES = [
-    "AF_ZA", "AR_AE", "AR_BH", "AR_DZ", "AR_EG", "AR_IQ", "AR_JO", "AR_KW",
-    "AR_LB", "AR_LY", "AR_MA", "AR_OM", "AR_QA", "AR_SA", "AR_SY", "AR_TN",
-    "AR_YE", "AZ_AZ", "BE_BY", "BG_BG", "BN_BD", "BN_IN", "CA_ES", "CS_CZ",
-    "DA_DK", "DE_AT", "DE_CH", "DE_DE", "DE_LI", "DE_LU", "DV_MV", "EL_GR",
-    "EN_AU", "EN_BZ", "EN_CA", "EN_CB", "EN_GB", "EN_IE", "EN_JM", "EN_NZ",
-    "EN_PH", "EN_TT", "EN_US", "EN_ZA", "EN_ZW", "EO_AA", "ES_AR", "ES_BO",
-    "ES_CL", "ES_CO", "ES_CR", "ES_DO", "ES_EC", "ES_ES", "ES_GT", "ES_HN",
-    "ES_MX", "ES_NI", "ES_PA", "ES_PE", "ES_PR", "ES_PY", "ES_SV", "ES_UY",
-    "ES_VE", "ET_EE", "EU_ES", "FA_IR", "FI_FI", "FO_FO", "FR_BE", "FR_CA",
-    "FR_CH", "FR_FR", "FR_LU", "FR_MC", "GL_ES", "GU_IN", "HE_IL", "HI_IN",
-    "HR_HR", "HU_HU", "HY_AM", "ID_ID", "IS_IS", "IT_CH", "IT_IT", "JA_JP",
-    "KA_GE", "KK_KZ", "KN_IN", "KOK_IN", "KO_KR", "KY_KG", "LT_LT", "LV_LV",
-    "MK_MK", "MN_MN", "MR_IN", "MS_BN", "MS_MY", "MY_MM", "NL_BE", "NL_NL",
-    "NN_NO", "PA_IN", "PL_PL", "PT_BR", "PT_PT", "RM_CH", "RO_RO", "RU_RU",
-    "SA_IN", "SK_SK", "SL_SI", "SQ_AL", "SR_SP", "SV_FI", "SV_SE", "SW_KE",
-    "SYR_SY", "TA_IN", "TE_IN", "TH_TH", "TR_TR", "TT_TA", "UK_UA", "UR_PK",
-    "UZ_UZ", "VI_VN", "WA_BE", "ZH_CN", "ZH_HK", "ZH_MO", "ZH_SG", "ZH_TW",
+    "AF_ZA",
+    "AR_AE",
+    "AR_BH",
+    "AR_DZ",
+    "AR_EG",
+    "AR_IQ",
+    "AR_JO",
+    "AR_KW",
+    "AR_LB",
+    "AR_LY",
+    "AR_MA",
+    "AR_OM",
+    "AR_QA",
+    "AR_SA",
+    "AR_SY",
+    "AR_TN",
+    "AR_YE",
+    "AZ_AZ",
+    "BE_BY",
+    "BG_BG",
+    "BN_BD",
+    "BN_IN",
+    "CA_ES",
+    "CS_CZ",
+    "DA_DK",
+    "DE_AT",
+    "DE_CH",
+    "DE_DE",
+    "DE_LI",
+    "DE_LU",
+    "DV_MV",
+    "EL_GR",
+    "EN_AU",
+    "EN_BZ",
+    "EN_CA",
+    "EN_CB",
+    "EN_GB",
+    "EN_IE",
+    "EN_JM",
+    "EN_NZ",
+    "EN_PH",
+    "EN_TT",
+    "EN_US",
+    "EN_ZA",
+    "EN_ZW",
+    "EO_AA",
+    "ES_AR",
+    "ES_BO",
+    "ES_CL",
+    "ES_CO",
+    "ES_CR",
+    "ES_DO",
+    "ES_EC",
+    "ES_ES",
+    "ES_GT",
+    "ES_HN",
+    "ES_MX",
+    "ES_NI",
+    "ES_PA",
+    "ES_PE",
+    "ES_PR",
+    "ES_PY",
+    "ES_SV",
+    "ES_UY",
+    "ES_VE",
+    "ET_EE",
+    "EU_ES",
+    "FA_IR",
+    "FI_FI",
+    "FO_FO",
+    "FR_BE",
+    "FR_CA",
+    "FR_CH",
+    "FR_FR",
+    "FR_LU",
+    "FR_MC",
+    "GL_ES",
+    "GU_IN",
+    "HE_IL",
+    "HI_IN",
+    "HR_HR",
+    "HU_HU",
+    "HY_AM",
+    "ID_ID",
+    "IS_IS",
+    "IT_CH",
+    "IT_IT",
+    "JA_JP",
+    "KA_GE",
+    "KK_KZ",
+    "KN_IN",
+    "KOK_IN",
+    "KO_KR",
+    "KY_KG",
+    "LT_LT",
+    "LV_LV",
+    "MK_MK",
+    "MN_MN",
+    "MR_IN",
+    "MS_BN",
+    "MS_MY",
+    "MY_MM",
+    "NL_BE",
+    "NL_NL",
+    "NN_NO",
+    "PA_IN",
+    "PL_PL",
+    "PT_BR",
+    "PT_PT",
+    "RM_CH",
+    "RO_RO",
+    "RU_RU",
+    "SA_IN",
+    "SK_SK",
+    "SL_SI",
+    "SQ_AL",
+    "SR_SP",
+    "SV_FI",
+    "SV_SE",
+    "SW_KE",
+    "SYR_SY",
+    "TA_IN",
+    "TE_IN",
+    "TH_TH",
+    "TR_TR",
+    "TT_TA",
+    "UK_UA",
+    "UR_PK",
+    "UZ_UZ",
+    "VI_VN",
+    "WA_BE",
+    "ZH_CN",
+    "ZH_HK",
+    "ZH_MO",
+    "ZH_SG",
+    "ZH_TW",
 ]
 
 
@@ -166,13 +297,15 @@ def regenerate(module: str, arch: str, work: Path) -> bytes:
     cmd = [str(windres), "-O", "coff"]
     for kind, rel in mcfg["includes"]:
         cmd.extend(["-I", str(_include_path(kind, rel, arch))])
-    cmd.extend([
-        f"--preprocessor={clang}",
-        f"--preprocessor-arg=--target={triple}",
-        "--preprocessor-arg=-E",
-        "--preprocessor-arg=-nostdinc",
-        "--preprocessor-arg=-xc-header",
-    ])
+    cmd.extend(
+        [
+            f"--preprocessor={clang}",
+            f"--preprocessor-arg=--target={triple}",
+            "--preprocessor-arg=-E",
+            "--preprocessor-arg=-nostdinc",
+            "--preprocessor-arg=-xc-header",
+        ]
+    )
     for name, value in COMMON_DEFINES:
         cmd.append(f"-D{name}={value}" if value is not None else f"-D{name}")
     for lang in LANGUAGES:
@@ -192,12 +325,15 @@ def regenerate(module: str, arch: str, work: Path) -> bytes:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--arch", default="i386,amd64,arm64",
-                    help="comma-separated subset of i386,amd64,arm64")
-    ap.add_argument("--module", default="ntdll,ntdll_vista",
-                    help="comma-separated subset of ntdll,ntdll_vista")
-    ap.add_argument("--check", action="store_true",
-                    help="verify checked-in files match a fresh regen")
+    ap.add_argument(
+        "--arch", default="i386,amd64,arm64", help="comma-separated subset of i386,amd64,arm64"
+    )
+    ap.add_argument(
+        "--module", default="ntdll,ntdll_vista", help="comma-separated subset of ntdll,ntdll_vista"
+    )
+    ap.add_argument(
+        "--check", action="store_true", help="verify checked-in files match a fresh regen"
+    )
     args = ap.parse_args()
 
     arches = [a.strip() for a in args.arch.split(",") if a.strip()]
@@ -218,9 +354,7 @@ def main() -> int:
             out_file = REPO / MODULES[module]["out"].format(arch=arch)
             for p in [windres, REPO / MODULES[module]["rc"], build_dir]:
                 if not p.exists():
-                    raise SystemExit(
-                        f"missing {p}\n  Run `cd build-{arch} && ninja ntdll` first."
-                    )
+                    raise SystemExit(f"missing {p}\n  Run `cd build-{arch} && ninja ntdll` first.")
 
             with tempfile.TemporaryDirectory(prefix="genres-") as tmp:
                 fresh = regenerate(module, arch, Path(tmp))
@@ -232,9 +366,11 @@ def main() -> int:
                     continue
                 existing = out_file.read_bytes()
                 if existing != fresh:
-                    print(f"FAIL: {out_file} differs from fresh regen "
-                          f"(expected {len(fresh)} bytes, got {len(existing)})",
-                          file=sys.stderr)
+                    print(
+                        f"FAIL: {out_file} differs from fresh regen "
+                        f"(expected {len(fresh)} bytes, got {len(existing)})",
+                        file=sys.stderr,
+                    )
                     rc = rc or 1
                 else:
                     print(f"OK: {out_file.name} matches fresh regen ({len(fresh)} bytes)")

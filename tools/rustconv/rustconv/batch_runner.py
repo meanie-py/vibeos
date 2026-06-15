@@ -5,12 +5,17 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
+import anthropic
+from openai import OpenAI
 
 from .config import (
-    get_backend, DEFAULT_MODELS,
-    CLAUDE_MAX_TOKENS, GEMINI_MAX_TOKENS,
-    DEEPSEEK_BASE_URL, DEEPSEEK_MAX_TOKENS,
+    CLAUDE_MAX_TOKENS,
+    DEEPSEEK_BASE_URL,
+    DEEPSEEK_MAX_TOKENS,
+    DEFAULT_MODELS,
+    GEMINI_MAX_TOKENS,
+    get_backend,
 )
 
 
@@ -19,28 +24,33 @@ class TranslationResult:
     source_file: str
     rust_code: str
     model: str
-    input_tokens: int            # UNCACHED input tokens only (full price)
+    input_tokens: int  # UNCACHED input tokens only (full price)
     output_tokens: int
     success: bool
-    error: Optional[str] = None
-    cache_read_tokens: int = 0   # served from cache (~0.1x price)
+    error: str | None = None
+    cache_read_tokens: int = 0  # served from cache (~0.1x price)
     cache_write_tokens: int = 0  # written to cache (~1.25x price)
 
 
 # Per-1M-token USD pricing (input, output, cache_read, cache_write).
 # Cache read = 0.1x input; cache write (5-min ephemeral) = 1.25x input.
 PRICING = {
-    "claude-opus-4-8":   (5.00, 25.00, 0.50, 6.25),
-    "claude-opus-4-7":   (5.00, 25.00, 0.50, 6.25),
-    "claude-opus-4-6":   (5.00, 25.00, 0.50, 6.25),
+    "claude-opus-4-8": (5.00, 25.00, 0.50, 6.25),
+    "claude-opus-4-7": (5.00, 25.00, 0.50, 6.25),
+    "claude-opus-4-6": (5.00, 25.00, 0.50, 6.25),
     "claude-sonnet-4-5": (3.00, 15.00, 0.30, 3.75),
     "claude-sonnet-4-6": (3.00, 15.00, 0.30, 3.75),
-    "claude-haiku-4-5":  (1.00,  5.00, 0.10, 1.25),
+    "claude-haiku-4-5": (1.00, 5.00, 0.10, 1.25),
 }
 
 
-def estimate_cost(model: str, input_tokens: int, output_tokens: int,
-                  cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> Optional[float]:
+def estimate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+) -> float | None:
     """USD cost for one (or accumulated) call. None if the model isn't priced here."""
     rates = PRICING.get(model)
     if rates is None:
@@ -49,12 +59,17 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int,
     if rates is None:
         return None
     pin, pout, pread, pwrite = rates
-    return (input_tokens * pin + output_tokens * pout
-            + cache_read_tokens * pread + cache_write_tokens * pwrite) / 1_000_000
+    return (
+        input_tokens * pin
+        + output_tokens * pout
+        + cache_read_tokens * pread
+        + cache_write_tokens * pwrite
+    ) / 1_000_000
 
 
-def _submit_claude(prompt: str, model: str, system_prompt: str = "",
-                   file_context: str = "", sink=None) -> TranslationResult:
+def _submit_claude(
+    prompt: str, model: str, system_prompt: str = "", file_context: str = "", sink=None
+) -> TranslationResult:
     """Submit via Anthropic Python SDK.
 
     Two cached system blocks form the stable prefix:
@@ -70,8 +85,6 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
     disk and flushed AS IT ARRIVES, so a process kill mid-stream never discards
     output you were already billed for.
     """
-    import anthropic
-
     try:
         client = anthropic.Anthropic()  # uses ANTHROPIC_API_KEY env var
 
@@ -89,17 +102,21 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
         #      uncached (1x). Only the per-function `prompt` is full price.
         system_blocks = []
         if system_prompt:
-            system_blocks.append({
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            })
+            system_blocks.append(
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            )
         if file_context:
-            system_blocks.append({
-                "type": "text",
-                "text": file_context,
-                "cache_control": {"type": "ephemeral"},
-            })
+            system_blocks.append(
+                {
+                    "type": "text",
+                    "text": file_context,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            )
         if system_blocks:
             kwargs["system"] = system_blocks
 
@@ -114,29 +131,39 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
         try:
             with client.messages.stream(**kwargs) as stream:
                 for event in stream:
-                    if hasattr(event, 'type'):
-                        if event.type == 'content_block_delta' and hasattr(event, 'delta'):
-                            if hasattr(event.delta, 'text'):
-                                response_text += event.delta.text
+                    if hasattr(event, "type"):
+                        if event.type == "content_block_delta" and hasattr(event, "delta"):
+                            if hasattr(event.delta, "text"):
+                                # Only TextDelta carries .text; the hasattr guard above
+                                # excludes the other delta variants in the union.
+                                delta_text: str = event.delta.text  # type: ignore[union-attr]
+                                response_text += delta_text
                                 if sink is not None:
-                                    sink.write(event.delta.text)  # flush to disk now
-                        elif event.type == 'message_delta' and hasattr(event, 'usage'):
+                                    sink.write(delta_text)  # flush to disk now
+                        elif event.type == "message_delta" and hasattr(event, "usage"):
                             output_tokens = event.usage.output_tokens
-                            stop_reason = event.delta.stop_reason if hasattr(event, 'delta') else None
-                        elif event.type == 'message_start' and hasattr(event, 'message'):
+                            stop_reason = (
+                                event.delta.stop_reason if hasattr(event, "delta") else None
+                            )
+                        elif event.type == "message_start" and hasattr(event, "message"):
                             u = event.message.usage
                             input_tokens = u.input_tokens
                             # cache_*_input_tokens are billed separately from input_tokens
-                            cache_read_tokens = getattr(u, 'cache_read_input_tokens', 0) or 0
-                            cache_write_tokens = getattr(u, 'cache_creation_input_tokens', 0) or 0
+                            cache_read_tokens = getattr(u, "cache_read_input_tokens", 0) or 0
+                            cache_write_tokens = getattr(u, "cache_creation_input_tokens", 0) or 0
         except Exception as stream_err:
             # A mid-stream failure (overload, timeout, truncation) still burned
             # whatever tokens we saw before the break — surface them, don't drop them.
             return TranslationResult(
-                source_file="", rust_code=_extract_rust_code(response_text), model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
-                cache_read_tokens=cache_read_tokens, cache_write_tokens=cache_write_tokens,
-                success=False, error=f"stream interrupted: {stream_err}",
+                source_file="",
+                rust_code=_extract_rust_code(response_text),
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+                success=False,
+                error=f"stream interrupted: {stream_err}",
             )
 
         rust_code = _extract_rust_code(response_text)
@@ -145,18 +172,26 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
         # detailed note in _submit_deepseek. Same hazard applies to any backend.
         if not rust_code.strip():
             return TranslationResult(
-                source_file="", rust_code="", model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
+                source_file="",
+                rust_code="",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=False,
                 error=f"empty output (stop_reason={stop_reason}, {output_tokens} output tokens)",
             )
         if stop_reason == "max_tokens":
             return TranslationResult(
-                source_file="", rust_code=rust_code, model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
+                source_file="",
+                rust_code=rust_code,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=False,
-                error=(f"truncated output at {output_tokens} tokens "
-                       f"(stop_reason=max_tokens) — incomplete, not cached. Raise CLAUDE_MAX_TOKENS."),
+                error=(
+                    f"truncated output at {output_tokens} tokens "
+                    f"(stop_reason=max_tokens) — incomplete, not cached. Raise CLAUDE_MAX_TOKENS."
+                ),
             )
 
         return TranslationResult(
@@ -190,8 +225,9 @@ def _get_gemini_oauth_token() -> str:
 
     creds_data = json.loads(oauth_path.read_text())
 
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
+    # optional gemini extra — not installed in the base env
+    from google.auth.transport.requests import Request  # type: ignore[import-not-found]
+    from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
 
     creds = Credentials(
         token=creds_data.get("access_token"),
@@ -210,7 +246,7 @@ def _get_gemini_oauth_token() -> str:
 def _submit_gemini(prompt: str, model: str) -> TranslationResult:
     """Submit via Google GenAI Python SDK using gemini-cli OAuth credentials."""
     try:
-        from google import genai
+        from google import genai  # type: ignore[attr-defined]  # optional gemini extra
 
         access_token = _get_gemini_oauth_token()
 
@@ -240,8 +276,11 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         # note in _submit_deepseek.
         if not rust_code.strip():
             return TranslationResult(
-                source_file="", rust_code="", model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
+                source_file="",
+                rust_code="",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=False,
                 error=f"empty output ({output_tokens} output tokens)",
             )
@@ -267,8 +306,9 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         )
 
 
-def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
-                     file_context: str = "", sink=None) -> TranslationResult:
+def _submit_deepseek(
+    prompt: str, model: str, system_prompt: str = "", file_context: str = "", sink=None
+) -> TranslationResult:
     """Submit via the DeepSeek API (OpenAI-compatible).
 
     deepseek-chat = V3, deepseek-reasoner = R1. Uses the openai SDK pointed at
@@ -277,8 +317,6 @@ def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
     stable prefix per function is cheap — no explicit cache_control needed).
     Streams deltas to `sink` so a kill mid-stream never discards paid output.
     """
-    from openai import OpenAI
-
     try:
         api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
@@ -310,16 +348,18 @@ def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
             if chunk.choices:
                 choice = chunk.choices[0]
                 delta = choice.delta
-                if delta is not None and getattr(delta, "content", None):
-                    response_text += delta.content
+                content = getattr(delta, "content", None) if delta is not None else None
+                if content:
+                    response_text += content
                     if sink is not None:
-                        sink.write(delta.content)  # flush to disk now
+                        sink.write(content)  # flush to disk now
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
             # Usage arrives on the final chunk (choices empty) with include_usage.
-            if getattr(chunk, "usage", None):
-                input_tokens = chunk.usage.prompt_tokens
-                output_tokens = chunk.usage.completion_tokens
+            usage = getattr(chunk, "usage", None)
+            if usage:
+                input_tokens = usage.prompt_tokens
+                output_tokens = usage.completion_tokens
 
         rust_code = _extract_rust_code(response_text)
 
@@ -333,23 +373,33 @@ def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
         # loud and retriable instead.
         if not rust_code.strip():
             return TranslationResult(
-                source_file="", rust_code="", model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
+                source_file="",
+                rust_code="",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=False,
-                error=(f"empty output (finish_reason={finish_reason}, "
-                       f"{output_tokens} output tokens). For a reasoning model this "
-                       f"usually means reasoning consumed the {DEEPSEEK_MAX_TOKENS}-token "
-                       f"budget before any code was emitted — raise DEEPSEEK_MAX_TOKENS "
-                       f"or split the unit."),
+                error=(
+                    f"empty output (finish_reason={finish_reason}, "
+                    f"{output_tokens} output tokens). For a reasoning model this "
+                    f"usually means reasoning consumed the {DEEPSEEK_MAX_TOKENS}-token "
+                    f"budget before any code was emitted — raise DEEPSEEK_MAX_TOKENS "
+                    f"or split the unit."
+                ),
             )
         if finish_reason == "length":
             return TranslationResult(
-                source_file="", rust_code=rust_code, model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
+                source_file="",
+                rust_code=rust_code,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=False,
-                error=(f"truncated output at {output_tokens} tokens "
-                       f"(finish_reason=length) — incomplete; raise DEEPSEEK_MAX_TOKENS "
-                       f"or split the unit. Not cached."),
+                error=(
+                    f"truncated output at {output_tokens} tokens "
+                    f"(finish_reason=length) — incomplete; raise DEEPSEEK_MAX_TOKENS "
+                    f"or split the unit. Not cached."
+                ),
             )
 
         return TranslationResult(
@@ -373,8 +423,9 @@ def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
         )
 
 
-def submit_single(prompt: str, model: str = "", system_prompt: str = "",
-                  file_context: str = "", sink=None) -> TranslationResult:
+def submit_single(
+    prompt: str, model: str = "", system_prompt: str = "", file_context: str = "", sink=None
+) -> TranslationResult:
     """Submit a single translation request.
 
     Auto-detects backend from model name or ANTHROPIC_API_KEY env var.
@@ -414,7 +465,9 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "",
         return result
 
 
-def submit_batch(prompts: dict[str, str], model: str = "", system_prompt: str = "") -> dict[str, TranslationResult]:
+def submit_batch(
+    prompts: dict[str, str], model: str = "", system_prompt: str = ""
+) -> dict[str, TranslationResult]:
     """Submit multiple translation requests sequentially.
 
     Args:
@@ -438,7 +491,10 @@ def submit_batch(prompts: dict[str, str], model: str = "", system_prompt: str = 
         results[filename] = result
 
         if result.success:
-            print(f"    ✓ {result.input_tokens} in / {result.output_tokens} out tokens", file=sys.stderr)
+            print(
+                f"    ✓ {result.input_tokens} in / {result.output_tokens} out tokens",
+                file=sys.stderr,
+            )
         else:
             print(f"    ✗ {result.error}", file=sys.stderr)
 

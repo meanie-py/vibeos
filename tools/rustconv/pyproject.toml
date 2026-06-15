@@ -23,3 +23,35 @@ rustconv = ["../templates/*", "../data/*"]
 
 [project.scripts]
 rustconv = "rustconv.__main__:main"
+
+# --- dev tooling: ruff (lint+format) / pyright (types) / pytest -------------
+# Settings deliberately mirror agent-swarm/pyproject.toml so the whole
+# vibeos-cli tool surface lints under one cohesive policy.
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["."]
+extend-exclude = [".responses", ".responses-backup-pre-c2rust"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "B008",   # call in arg default — used deliberately (Path/None patterns)
+    "SIM105", # contextlib.suppress over try/except/pass — try/except reads clearer
+    "SIM108", # if-else over ternary — explicit blocks read clearer here
+    "RUF001", "RUF002", "RUF003",  # "ambiguous" unicode — we use →/—/✓ on purpose
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rustconv"]
+
+[tool.pyright]
+include = ["rustconv"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.responses", "**/.responses-backup-pre-c2rust"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

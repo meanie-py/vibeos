@@ -11,6 +11,7 @@ even on i386 where smaller types get widened to ULONG). MainSSPT is
 
 Run after editing sysfuncs.h (rare). Idempotent — overwrites the output file.
 """
+
 import re
 import sys
 from pathlib import Path
@@ -73,7 +74,7 @@ def render(entries: list[tuple[str, int]]) -> str:
     # Forward declarations grouped by argcount so we don't repeat the (`_:usize, ...`)
     # block 296 times unnecessarily — Rust still tolerates one block per fn but
     # this keeps it tidy.
-    out.append("extern \"system\" {\n")
+    out.append('extern "system" {\n')
     for name, argc in entries:
         args = ", ".join(["_: usize"] * argc) if argc > 0 else ""
         out.append(f"    pub fn Nt{name}({args});\n")
@@ -103,10 +104,7 @@ def render(entries: list[tuple[str, int]]) -> str:
         out.append(f"    ({argc} * core::mem::size_of::<usize>()) as u8,\n")
     out.append("];\n\n")
 
-    out.append(
-        "#[no_mangle]\n"
-        f"pub static mut MainNumberOfSysCalls: u32 = {n};\n"
-    )
+    out.append(f"#[no_mangle]\npub static mut MainNumberOfSysCalls: u32 = {n};\n")
     return "".join(out)
 
 

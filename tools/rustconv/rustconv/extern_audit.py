@@ -18,30 +18,32 @@ Pipeline:
 import json
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from .config import OUTPUT_CRATE, SPEC_FILE
-
+from .config import OUTPUT_CRATE
+from .spec_parser import parse_spec
 
 # ── Data structures ──────────────────────────────────────────────────────────
+
 
 @dataclass
 class ExternDecl:
     """A function declared inside an extern block."""
+
     name: str
-    convention: str   # "system" | "C" | "fastcall" | "stdcall"
-    file: str         # Relative path from src/
+    convention: str  # "system" | "C" | "fastcall" | "stdcall"
+    file: str  # Relative path from src/
     line: int
-    cfg: str = ""     # cfg guard if any (e.g., 'target_arch = "x86"')
+    cfg: str = ""  # cfg guard if any (e.g., 'target_arch = "x86"')
 
 
 @dataclass
 class FnDefinition:
     """A #[no_mangle] function definition."""
+
     name: str
-    convention: str   # "system" | "C" | "fastcall" | "stdcall"
+    convention: str  # "system" | "C" | "fastcall" | "stdcall"
     file: str
     line: int
     cfg: str = ""
@@ -50,9 +52,9 @@ class FnDefinition:
 @dataclass
 class AuditMismatch:
     decl: ExternDecl
-    defn: Optional[FnDefinition]
-    spec_convention: Optional[str]  # from ntoskrnl.spec
-    severity: str                   # "critical" | "warning" | "info"
+    defn: FnDefinition | None
+    spec_convention: str | None  # from ntoskrnl.spec
+    severity: str  # "critical" | "warning" | "info"
     detail: str
 
 
@@ -63,7 +65,7 @@ class AuditReport:
     total_blocks: int
     total_defs: int
     mismatches: list[AuditMismatch]
-    intra_crate_count: int     # extern decl for a function also defined in crate
+    intra_crate_count: int  # extern decl for a function also defined in crate
 
 
 # ── Regex patterns ───────────────────────────────────────────────────────────
@@ -73,27 +75,28 @@ class AuditReport:
 # nested braces in function signatures (e.g., fn pointers).
 
 # Match #[cfg(...)] immediately before an extern block
-RE_CFG = re.compile(r'#\[cfg\((.+?)\)\]\s*$')
+RE_CFG = re.compile(r"#\[cfg\((.+?)\)\]\s*$")
 
 # Match extern "ABI" { at line start (possibly after whitespace)
 RE_EXTERN_OPEN = re.compile(r'^\s*extern\s+"(\w+)"\s*\{')
 
 # Match fn declarations inside extern blocks: fn Name(
-RE_FN_DECL = re.compile(r'\bfn\s+(\w+)\s*\(')
+RE_FN_DECL = re.compile(r"\bfn\s+(\w+)\s*\(")
 
 # Match #[no_mangle] pub [unsafe] extern "ABI" fn Name(
 # Handles optional attributes between #[no_mangle] and fn (up to 5 lines)
 RE_NO_MANGLE_DEF = re.compile(
-    r'#\[no_mangle\]'
-    r'[\s\S]*?'
+    r"#\[no_mangle\]"
+    r"[\s\S]*?"
     r'pub\s+(?:unsafe\s+)?extern\s+"(\w+)"\s+fn\s+(\w+)',
 )
 
 # Match #[cfg(...)] on the line immediately before a #[no_mangle] definition
-RE_CFG_DEF = re.compile(r'#\[cfg\((.+?)\)\]')
+RE_CFG_DEF = re.compile(r"#\[cfg\((.+?)\)\]")
 
 
 # ── Scanning ─────────────────────────────────────────────────────────────────
+
 
 def scan_extern_decls(rs_path: Path, rel_path: str) -> tuple[list[ExternDecl], int]:
     """Parse a .rs file for extern block function declarations.
@@ -112,7 +115,7 @@ def scan_extern_decls(rs_path: Path, rel_path: str) -> tuple[list[ExternDecl], i
 
         # Track cfg guards
         cfg_m = RE_CFG.search(line.rstrip())
-        if cfg_m and 'extern' not in line:
+        if cfg_m and "extern" not in line:
             pending_cfg = cfg_m.group(1)
             i += 1
             continue
@@ -130,18 +133,20 @@ def scan_extern_decls(rs_path: Path, rel_path: str) -> tuple[list[ExternDecl], i
             i += 1
             while i < len(lines) and brace_depth > 0:
                 bline = lines[i]
-                brace_depth += bline.count('{') - bline.count('}')
+                brace_depth += bline.count("{") - bline.count("}")
                 if brace_depth <= 0:
                     break
                 # Look for fn declarations
                 for fn_m in RE_FN_DECL.finditer(bline):
-                    decls.append(ExternDecl(
-                        name=fn_m.group(1),
-                        convention=convention,
-                        file=rel_path,
-                        line=i + 1,
-                        cfg=block_cfg,
-                    ))
+                    decls.append(
+                        ExternDecl(
+                            name=fn_m.group(1),
+                            convention=convention,
+                            file=rel_path,
+                            line=i + 1,
+                            cfg=block_cfg,
+                        )
+                    )
                 i += 1
         else:
             pending_cfg = ""
@@ -160,11 +165,11 @@ def scan_fn_definitions(rs_path: Path, rel_path: str) -> list[FnDefinition]:
         convention = m.group(1)
         name = m.group(2)
         # Find line number
-        line_num = text[:m.start()].count('\n') + 1
+        line_num = text[: m.start()].count("\n") + 1
 
         # Check for cfg guard in the 3 lines before #[no_mangle]
         cfg = ""
-        no_mangle_line = text[:m.start()].count('\n')
+        no_mangle_line = text[: m.start()].count("\n")
         for look_back in range(1, 4):
             check_line = no_mangle_line - look_back
             if check_line >= 0 and check_line < len(lines):
@@ -174,21 +179,24 @@ def scan_fn_definitions(rs_path: Path, rel_path: str) -> list[FnDefinition]:
                     break
                 # Stop looking if we hit a non-attribute, non-empty line
                 stripped = lines[check_line].strip()
-                if stripped and not stripped.startswith('#[') and not stripped.startswith('//'):
+                if stripped and not stripped.startswith("#[") and not stripped.startswith("//"):
                     break
 
-        defs.append(FnDefinition(
-            name=name,
-            convention=convention,
-            file=rel_path,
-            line=line_num,
-            cfg=cfg,
-        ))
+        defs.append(
+            FnDefinition(
+                name=name,
+                convention=convention,
+                file=rel_path,
+                line=line_num,
+                cfg=cfg,
+            )
+        )
 
     return defs
 
 
 # ── Convention normalization ─────────────────────────────────────────────────
+
 
 def normalize_convention(conv: str) -> str:
     """Normalize Rust ABI string to a canonical form for comparison.
@@ -220,11 +228,9 @@ def conventions_match(decl_conv: str, def_conv: str, cfg: str = "") -> bool:
     if frozenset({a, b}) in equiv:
         return True
 
-    # On non-x86 platforms, fastcall/stdcall/system/C are all equivalent (cdecl ABI)
-    if cfg and 'not(target_arch = "x86")' in cfg:
-        return True  # All conventions collapse to cdecl on non-x86
-
-    return False
+    # On non-x86 platforms, fastcall/stdcall/system/C are all equivalent (cdecl
+    # ABI) — all conventions collapse to cdecl on non-x86.
+    return bool(cfg and 'not(target_arch = "x86")' in cfg)
 
 
 def spec_to_rust_convention(spec_conv: str) -> str:
@@ -240,10 +246,11 @@ def spec_to_rust_convention(spec_conv: str) -> str:
 
 # ── Cross-reference engine ───────────────────────────────────────────────────
 
+
 def cross_reference(
     all_decls: list[ExternDecl],
     all_defs: list[FnDefinition],
-    spec: Optional[dict] = None,
+    spec: dict | None = None,
 ) -> AuditReport:
     """Cross-reference declarations against definitions and spec."""
 
@@ -286,33 +293,36 @@ def cross_reference(
         if spec and decl.name in spec:
             spec_conv = spec_to_rust_convention(spec[decl.name].convention)
 
-        if not conventions_match(decl.convention, best_def.convention,
-                               cfg=decl.cfg):
-            # Determine the correct convention (spec > definition)
-            expected = spec_conv if spec_conv else best_def.convention
-            mismatches.append(AuditMismatch(
-                decl=decl,
-                defn=best_def,
-                spec_convention=spec_conv,
-                severity="critical",
-                detail=(
-                    f"declared \"{decl.convention}\", defined \"{best_def.convention}\""
-                    + (f", spec says \"{spec_conv}\"" if spec_conv else "")
-                ),
-            ))
+        if not conventions_match(decl.convention, best_def.convention, cfg=decl.cfg):
+            # The correct convention (spec > definition) is conveyed via
+            # spec_convention + detail on the AuditMismatch below.
+            mismatches.append(
+                AuditMismatch(
+                    decl=decl,
+                    defn=best_def,
+                    spec_convention=spec_conv,
+                    severity="critical",
+                    detail=(
+                        f'declared "{decl.convention}", defined "{best_def.convention}"'
+                        + (f', spec says "{spec_conv}"' if spec_conv else "")
+                    ),
+                )
+            )
         elif spec_conv and not conventions_match(best_def.convention, spec_conv):
             # Definition doesn't match spec — the declaration and definition agree
             # with each other but both disagree with spec
-            mismatches.append(AuditMismatch(
-                decl=decl,
-                defn=best_def,
-                spec_convention=spec_conv,
-                severity="warning",
-                detail=(
-                    f"declared \"{decl.convention}\", defined \"{best_def.convention}\", "
-                    f"but spec says \"{spec_conv}\""
-                ),
-            ))
+            mismatches.append(
+                AuditMismatch(
+                    decl=decl,
+                    defn=best_def,
+                    spec_convention=spec_conv,
+                    severity="warning",
+                    detail=(
+                        f'declared "{decl.convention}", defined "{best_def.convention}", '
+                        f'but spec says "{spec_conv}"'
+                    ),
+                )
+            )
 
     # Count unique intra-crate function names
     intra_names = set()
@@ -330,7 +340,7 @@ def cross_reference(
     )
 
 
-def _find_matching_def(decl: ExternDecl, defs: list[FnDefinition]) -> Optional[FnDefinition]:
+def _find_matching_def(decl: ExternDecl, defs: list[FnDefinition]) -> FnDefinition | None:
     """Find the definition that matches the declaration's cfg context.
 
     If decl has cfg 'target_arch = "x86"', prefer a def with the same cfg.
@@ -352,16 +362,20 @@ def _find_matching_def(decl: ExternDecl, defs: list[FnDefinition]) -> Optional[F
 
 # ── Report output ────────────────────────────────────────────────────────────
 
+
 def print_audit_report(report: AuditReport) -> None:
     """Print human-readable audit report to stderr."""
     out = sys.stderr
 
-    print(f"\nextern-audit: Cross-referencing declarations vs definitions", file=out)
+    print("\nextern-audit: Cross-referencing declarations vs definitions", file=out)
     print(f"  Files scanned: {report.total_files}", file=out)
     print(f"  Extern declarations: {report.total_decls} in {report.total_blocks} blocks", file=out)
     print(f"  #[no_mangle] definitions: {report.total_defs}", file=out)
-    print(f"  Intra-crate declarations: {report.intra_crate_count} "
-          f"(declared AND defined in same crate)", file=out)
+    print(
+        f"  Intra-crate declarations: {report.intra_crate_count} "
+        f"(declared AND defined in same crate)",
+        file=out,
+    )
     print(file=out)
 
     critical = [m for m in report.mismatches if m.severity == "critical"]
@@ -384,9 +398,11 @@ def print_audit_report(report: AuditReport) -> None:
         print(file=out)
 
     # Summary
-    print(f"Summary: {len(critical)} critical, {len(warnings)} warnings, "
-          f"{report.intra_crate_count} intra-crate declarations",
-          file=out)
+    print(
+        f"Summary: {len(critical)} critical, {len(warnings)} warnings, "
+        f"{report.intra_crate_count} intra-crate declarations",
+        file=out,
+    )
 
 
 def report_to_json(report: AuditReport) -> str:
@@ -422,6 +438,7 @@ def report_to_json(report: AuditReport) -> str:
 
 # ── Main pipeline ────────────────────────────────────────────────────────────
 
+
 def run_extern_audit(json_output: bool = False) -> AuditReport:
     """Run the full extern audit pipeline."""
     out = sys.stderr
@@ -455,14 +472,13 @@ def run_extern_audit(json_output: bool = False) -> AuditReport:
     # Load spec
     spec = None
     try:
-        from .spec_parser import parse_spec
         spec = parse_spec()
         print(f"  Loaded {len(spec)} spec entries", file=out)
     except Exception as e:
         print(f"  Warning: could not load spec: {e}", file=out)
 
     # Cross-reference
-    print(f"  Cross-referencing...", file=out, flush=True)
+    print("  Cross-referencing...", file=out, flush=True)
     report = cross_reference(all_decls, all_defs, spec)
     report.total_files = len(rs_files)
     report.total_blocks = total_blocks
@@ -478,14 +494,16 @@ def run_extern_audit(json_output: bool = False) -> AuditReport:
 
 # ── Automated fixer ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class _ExternBlock:
     """Parsed extern block with line range."""
-    convention: str    # "system" | "C" | "fastcall" | "stdcall"
-    start_line: int    # Line number of 'extern "X" {' (0-indexed)
-    end_line: int      # Line number of closing '}' (0-indexed)
-    cfg: str           # cfg guard on the line before, if any
-    fn_lines: dict     # {fn_name: line_index} for functions in this block
+
+    convention: str  # "system" | "C" | "fastcall" | "stdcall"
+    start_line: int  # Line number of 'extern "X" {' (0-indexed)
+    end_line: int  # Line number of closing '}' (0-indexed)
+    cfg: str  # cfg guard on the line before, if any
+    fn_lines: dict  # {fn_name: line_index} for functions in this block
 
 
 def _parse_extern_blocks(lines: list[str]) -> list[_ExternBlock]:
@@ -498,7 +516,7 @@ def _parse_extern_blocks(lines: list[str]) -> list[_ExternBlock]:
         # Check for cfg guard before extern
         cfg = ""
         cfg_m = RE_CFG.search(line.rstrip())
-        if cfg_m and 'extern' not in line:
+        if cfg_m and "extern" not in line:
             cfg = cfg_m.group(1)
             # Peek ahead for extern block
             if i + 1 < len(lines):
@@ -512,18 +530,20 @@ def _parse_extern_blocks(lines: list[str]) -> list[_ExternBlock]:
                     fn_lines = {}
                     j = i + 2
                     while j < len(lines) and brace_depth > 0:
-                        brace_depth += lines[j].count('{') - lines[j].count('}')
+                        brace_depth += lines[j].count("{") - lines[j].count("}")
                         if brace_depth > 0:
                             for fn_m in RE_FN_DECL.finditer(lines[j]):
                                 fn_lines[fn_m.group(1)] = j
                         j += 1
-                    blocks.append(_ExternBlock(
-                        convention=convention,
-                        start_line=start_line,
-                        end_line=j - 1,
-                        cfg=cfg,
-                        fn_lines=fn_lines,
-                    ))
+                    blocks.append(
+                        _ExternBlock(
+                            convention=convention,
+                            start_line=start_line,
+                            end_line=j - 1,
+                            cfg=cfg,
+                            fn_lines=fn_lines,
+                        )
+                    )
                     i = j
                     continue
             i += 1
@@ -538,18 +558,20 @@ def _parse_extern_blocks(lines: list[str]) -> list[_ExternBlock]:
             fn_lines = {}
             j = i + 1
             while j < len(lines) and brace_depth > 0:
-                brace_depth += lines[j].count('{') - lines[j].count('}')
+                brace_depth += lines[j].count("{") - lines[j].count("}")
                 if brace_depth > 0:
                     for fn_m in RE_FN_DECL.finditer(lines[j]):
                         fn_lines[fn_m.group(1)] = j
                 j += 1
-            blocks.append(_ExternBlock(
-                convention=convention,
-                start_line=start_line,
-                end_line=j - 1,
-                cfg="",
-                fn_lines=fn_lines,
-            ))
+            blocks.append(
+                _ExternBlock(
+                    convention=convention,
+                    start_line=start_line,
+                    end_line=j - 1,
+                    cfg="",
+                    fn_lines=fn_lines,
+                )
+            )
             i = j
             continue
 
@@ -569,15 +591,15 @@ def _extract_fn_decl(lines: list[str], fn_line: int) -> tuple[str, int, int]:
 
     # The declaration might have a comment on the preceding line
     text = lines[fn_line]
-    if ';' in text:
+    if ";" in text:
         return text, first_line, last_line
 
     # Multi-line declaration
     j = fn_line + 1
     while j < len(lines):
-        text += '\n' + lines[j]
+        text += "\n" + lines[j]
         last_line = j
-        if ';' in lines[j]:
+        if ";" in lines[j]:
             break
         j += 1
 
@@ -627,10 +649,9 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
         # Find the block containing this declaration
         found_block = None
         for block in blocks:
-            if m.decl.name in block.fn_lines:
-                if abs(block.fn_lines[m.decl.name] - decl_line) <= 2:
-                    found_block = block
-                    break
+            if m.decl.name in block.fn_lines and abs(block.fn_lines[m.decl.name] - decl_line) <= 2:
+                found_block = block
+                break
 
         if not found_block:
             continue
@@ -644,7 +665,7 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
         full_decl, first, last = _extract_fn_decl(lines, actual_line)
 
         # Determine visibility prefix: check if any function in this block has 'pub'
-        is_pub = 'pub fn' in full_decl or 'pub static' in full_decl
+        is_pub = "pub fn" in full_decl or "pub static" in full_decl  # noqa: F841  # TODO: visibility prefix is computed but never applied when rebuilding the extern block below (drops `pub`)
 
         fixes.append((m.decl.name, target, actual_line, full_decl.strip()))
 
@@ -655,7 +676,7 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
     lines_to_remove: set[int] = set()
     new_blocks: list[str] = []  # New extern blocks to append after the last extern block
 
-    for fn_name, target_conv, decl_line, full_decl in fixes:
+    for _fn_name, target_conv, decl_line, full_decl in fixes:
         # Mark lines for removal
         _, first, last = _extract_fn_decl(lines, decl_line)
         for i in range(first, last + 1):
@@ -670,19 +691,15 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
             new_blocks.append(
                 f'#[cfg(target_arch = "x86")]\n'
                 f'extern "fastcall" {{\n'
-                f'    {decl_clean}\n'
-                f'}}\n'
+                f"    {decl_clean}\n"
+                f"}}\n"
                 f'#[cfg(not(target_arch = "x86"))]\n'
                 f'extern "C" {{\n'
-                f'    {decl_clean}\n'
-                f'}}'
+                f"    {decl_clean}\n"
+                f"}}"
             )
         else:
-            new_blocks.append(
-                f'extern "{target_conv}" {{\n'
-                f'    {decl_clean}\n'
-                f'}}'
-            )
+            new_blocks.append(f'extern "{target_conv}" {{\n    {decl_clean}\n}}')
 
     # Find the insertion point: after the last extern block in the file
     last_block_end = 0
@@ -703,13 +720,13 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
                 new_lines.append(nb)
 
     # Clean up: remove empty extern blocks (blocks that now only have { })
-    result = '\n'.join(new_lines)
+    result = "\n".join(new_lines)
     # Remove empty blocks: extern "X" {\n}\n or extern "X" {\n\n}\n
-    result = re.sub(r'extern\s+"[^"]+"\s*\{\s*\}\n?', '', result)
+    result = re.sub(r'extern\s+"[^"]+"\s*\{\s*\}\n?', "", result)
     # Also clean up cfg-guarded empty blocks
-    result = re.sub(r'#\[cfg\([^\)]+\)\]\s*extern\s+"[^"]+"\s*\{\s*\}\n?', '', result)
+    result = re.sub(r'#\[cfg\([^\)]+\)\]\s*extern\s+"[^"]+"\s*\{\s*\}\n?', "", result)
     # Clean up excessive blank lines (3+ → 2)
-    result = re.sub(r'\n{3,}', '\n\n', result)
+    result = re.sub(r"\n{3,}", "\n\n", result)
 
     if not dry_run:
         file_path.write_text(result)
@@ -725,12 +742,12 @@ def run_extern_fix(dry_run: bool = False) -> int:
     out = sys.stderr
 
     # First, run the audit
-    print(f"Running extern audit...", file=out, flush=True)
+    print("Running extern audit...", file=out, flush=True)
     report = run_extern_audit(json_output=False)
 
     critical = [m for m in report.mismatches if m.severity == "critical"]
     if not critical:
-        print(f"\nNo critical mismatches to fix.", file=out)
+        print("\nNo critical mismatches to fix.", file=out)
         return 0
 
     print(f"\nFixing {len(critical)} critical mismatches...", file=out, flush=True)
@@ -759,12 +776,12 @@ def run_extern_fix(dry_run: bool = False) -> int:
 
     if not dry_run:
         # Re-run audit to verify
-        print(f"\nRe-running audit to verify...", file=out, flush=True)
+        print("\nRe-running audit to verify...", file=out, flush=True)
         report2 = run_extern_audit(json_output=False)
         remaining = sum(1 for m in report2.mismatches if m.severity == "critical")
         if remaining > 0:
             print(f"\n⚠ {remaining} critical mismatches remain (may need manual review)", file=out)
         else:
-            print(f"\nAll critical mismatches resolved.", file=out)
+            print("\nAll critical mismatches resolved.", file=out)
 
     return total_fixed

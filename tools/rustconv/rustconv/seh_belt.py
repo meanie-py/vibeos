@@ -31,12 +31,13 @@ seh_inventory.py (classify_span, _in_keepset).
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .seh_inventory import Category, classify_span, _in_keepset
-from .seh_rewrite import SehSpan, _dedent_to, _find_seh_spans, _line_indent
+from .seh_inventory import Category, _in_keepset, classify_span
+from .seh_rewrite import SehSpan, _dedent_to, _find_seh_spans
 
 
 @dataclass
@@ -90,21 +91,23 @@ def rewrite_text(text: str, src_name: str = "<text>") -> BeltResult:
     new_text = text
     for sp in reversed(targets):
         bol = new_text.rfind("\n", 0, sp.start) + 1
-        indent = new_text[bol:sp.start]
+        indent = new_text[bol : sp.start]
         body = _dedent_to(sp.try_body, indent)
-        new_text = new_text[:bol] + body + new_text[sp.end:]
+        new_text = new_text[:bol] + body + new_text[sp.end :]
 
     if not _balance_delta_preserved(text, new_text):
         # rewrite changed the brace/paren delta = corruption; refuse
-        return BeltResult(text=text, rewritten=0,
-                          skipped=[(0, f"{src_name}: brace/paren delta "
-                                       f"changed by rewrite — refusing")])
+        return BeltResult(
+            text=text,
+            rewritten=0,
+            skipped=[(0, f"{src_name}: brace/paren delta changed by rewrite — refusing")],
+        )
 
     res = BeltResult(text=new_text, rewritten=len(targets))
     for sp in targets:
-        res.sites.append({"line": sp.line,
-                          "try_len": len(sp.try_body),
-                          "handler_len": len(sp.handler_body)})
+        res.sites.append(
+            {"line": sp.line, "try_len": len(sp.try_body), "handler_len": len(sp.handler_body)}
+        )
     return res
 
 
@@ -185,12 +188,14 @@ def run_oracle() -> int:
         print(f"oracle FAIL: expected 1 rewrite, got {res.rewritten}")
         return 1
     if res.text != _ORACLE_EXPECTED:
-        import difflib
         print("oracle FAIL: text mismatch")
-        print("".join(difflib.unified_diff(
-            _ORACLE_EXPECTED.splitlines(True),
-            res.text.splitlines(True),
-            "expected", "got")))
+        print(
+            "".join(
+                difflib.unified_diff(
+                    _ORACLE_EXPECTED.splitlines(True), res.text.splitlines(True), "expected", "got"
+                )
+            )
+        )
         return 1
     # idempotency
     res2 = rewrite_text(res.text, src_name="<oracle-rerun>")
