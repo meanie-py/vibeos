@@ -22,6 +22,7 @@ Builds the name->value catalog from the kernel headers verify_constants.py uses
 PLUS every *.h under each --headers dir (driver-local flags like IRP_CONTEXT_FLAG_*,
 CCB_FLAG_*, CDFS_NTC_*). Exit 1 if any mismatch is found.
 """
+
 import re
 import sys
 from pathlib import Path
@@ -30,14 +31,18 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
 
-DEFINE_RE = re.compile(r'^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$')
+DEFINE_RE = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
 
 # A literal (hex or decimal) adjacent to a /* NAME */ or // NAME comment naming a
 # constant. Three spellings the grind emits.
 PATTERNS = [
-    re.compile(r'(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/'),
-    re.compile(r'/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/\s*(0x[0-9a-fA-F]+|\b\d+)\b'),
-    re.compile(r'(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*,?\s*//\s*([A-Za-z_][A-Za-z0-9_]*)'),
+    re.compile(
+        r"(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/"
+    ),
+    re.compile(r"/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/\s*(0x[0-9a-fA-F]+|\b\d+)\b"),
+    re.compile(
+        r"(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*,?\s*//\s*([A-Za-z_][A-Za-z0-9_]*)"
+    ),
 ]
 
 
@@ -48,7 +53,7 @@ def parse_c_value(val):
     while s.startswith("(") and s.endswith(")"):
         s = s[1:-1].strip()
     # strip a leading C cast like (NODE_TYPE_CODE) / (ULONG) / (NTSTATUS)
-    s = re.sub(r'^\(\s*[A-Za-z_][A-Za-z0-9_ ]*\)\s*', '', s).strip()
+    s = re.sub(r"^\(\s*[A-Za-z_][A-Za-z0-9_ ]*\)\s*", "", s).strip()
     s = s.rstrip("uUlL")  # trailing int suffixes
     try:
         return int(s, 16) if s.lower().startswith("0x") else int(s)
@@ -62,7 +67,7 @@ def add_headers(catalog, header_dir):
             text = hf.read_text(errors="ignore")
         except OSError:
             continue
-        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         for line in text.splitlines():
             m = DEFINE_RE.match(line.strip())
             if not m:
@@ -75,7 +80,7 @@ def add_headers(catalog, header_dir):
 
 def lit_value(s):
     # strip a Rust integer type SUFFIX (not chars — rstrip would eat 0x2 -> 0x).
-    s = re.sub(r'(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$', '', s.strip())
+    s = re.sub(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$", "", s.strip())
     try:
         return int(s, 16) if s.lower().startswith("0x") else int(s)
     except ValueError:
@@ -112,8 +117,8 @@ def main():
                 for m in pat.finditer(line):
                     g = m.groups()
                     # group order differs per pattern; find the name + literal
-                    name = next((x for x in g if x and re.match(r'^[A-Za-z_]', x)), None)
-                    lit = next((x for x in g if x and re.match(r'^(0x|\d)', x)), None)
+                    name = next((x for x in g if x and re.match(r"^[A-Za-z_]", x)), None)
+                    lit = next((x for x in g if x and re.match(r"^(0x|\d)", x)), None)
                     if not name or lit is None or name not in catalog:
                         continue
                     lv = lit_value(lit)
@@ -123,8 +128,10 @@ def main():
                     if lv != want:
                         # ignore obviously-unrelated comments (e.g. a value tagged
                         # with a function name); only flag when the value differs.
-                        print(f"{f}:{ln}: literal {lit} tagged /* {name} */ "
-                              f"but {name} = {hex(want)} ({want})")
+                        print(
+                            f"{f}:{ln}: literal {lit} tagged /* {name} */ "
+                            f"but {name} = {hex(want)} ({want})"
+                        )
                         print(f"    {line.strip()}")
                         mismatches += 1
     if mismatches:
