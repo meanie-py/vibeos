@@ -141,3 +141,20 @@ the scsiport portion as a template for the ISR-counter instrumentation in step 1
   `0f1d7ac` (field-manual §9.6b + retraction), `539d65d` (thread-walk follow-up),
   `78d6ec6` (scsiport LUNEX), `37e308e` (cdrom opcode fixes), `ddfc06d` (crp merge).
 - Boot marker the smoke waits for: `[EXPLORER] _tWinMain entered` (`tests/qemu/vm.py`).
+
+---
+
+## UPDATE 2026-06-15 — root chain pinned; the handoff hypothesis was RIGHT (storage interrupt)
+
+The original "amd64 interrupt delivery" hypothesis was correct in spirit. Full chain now nailed:
+
+### Layer 1 — the clock (SOLVED, fix parked)
+- **Pinned via QMP `info irq`:** QEMU's emulated mc146818 RTC intermittently **stops raising IRQ8** for ~2 s (IRQ8 cumulative count freezes; guest tick gap lands exactly on the freeze). amd64 clocks the system off this RTC (`rtctimer.rs`); i386 off the free-running 8254 PIT → the arch split. Not KVM delivery, not spurious, not `lost_tick_policy=slew`.
+- **Fix (WORKS, proven clean 64 Hz, zero gaps):** rewire the amd64 system clock from the RTC to the **local APIC timer** (calibrated against the TSC — APIC bus ≈992 MHz ≠ TSC 3.79 GHz, so calibration matters). Also had to **neutralize the profile-interrupt controls** (`apictimer.rs` `HalStartProfileInterrupt`/`HalStopProfileInterrupt`/`HalSetProfileInterval`) — they share the single per-CPU LAPIC timer and were masking the clock LVT (`HalStopProfileInterrupt` runs right after `HalpInitializeClock` in `halinit.rs`).
+- **Parked** in `git stash` on cdrom-port: message `amd64-lapic-clock-WIP-...` (rtctimer.rs + apictimer.rs, includes CLKINIT/CLKRATE probes). NOT committed because of Layer 2 below — `cdrom-port` stays green on codex's band-aid (`97d678e`, mm/balance NtYieldExecution).
+
+### Layer 2 — the REAL nemesis: amd64 IDE completion-interrupt delivery (OPEN)
+With a clean clock, boot advances through the whole kernel + most of userland (SMSS→CSRSS→WINLOGON→services) then **livelocks** at `rip=fffff80004603e91` (in **uniata.sys**), `TPR=0xa0` (IRQL 10), `RDX=0x170` (secondary IDE command-block port — the boot CD is `Ata(Secondary,Master)`), with **`IRR` vec `0x47` (the IDE completion IRQ) pending-but-blocked** by the raised IRQL. I.e. **uniata does an ATA PIO status-poll at IRQL 10 waiting for an IDE completion interrupt that its own IRQL masks → UP poll-at-DIRQL deadlock.**
+- This is the SAME storage-interrupt problem from the start: gappy RTC clock → reads complete ~6.3 s late (the original stall); clean LAPIC clock → hard poll deadlock. The clock was a real bug; **storage IDE IRQ delivery on amd64 APIC is the true blocker.**
+- **Note the IRQL mismatch:** uniata spins at IRQL 10 but the IDE IRQ vector 0x47 maps to IRQL 4 — worth checking uniata's SynchronizeIrql / `IoConnectInterrupt` params and the HAL vector→IRQL mapping on amd64.
+- **Next:** disassemble `fffff80004603e91` (QMP `x/i` unsupported on x86_64 in this build — use gdb or QMP `memsave`+`llvm-objdump`); chase why the IDE completion interrupt (vec 0x47) isn't delivered/serviced, and why uniata enters a poll-at-DIRQL instead of waiting interrupt-driven. Tie back to IOAPIC IRQ14/15→vector routing + EOI on amd64.
