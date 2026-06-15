@@ -620,7 +620,14 @@ pub unsafe extern "system" fn FatOpenDirectoryFile(
     DebugTrace(1, Dbg, b"FatOpenDirectoryFile\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"Dcb = %p\0".as_ptr() as *const i8, Dcb as usize);
 
-    NT_ASSERT(FatIsCurrentOperationSynchedForDcbTeardown(&raw mut IrpContext, &raw mut Dcb));
+    // C: NT_ASSERT( FatIsCurrentOperationSynchedForDcbTeardown( IrpContext, Dcb )).
+    // NT_ASSERT does NOT evaluate its argument in release/DUMMY_PSEH builds (it is a
+    // checked-build-only invariant), but the Rust extern-fn NT_ASSERT evaluates its
+    // argument eagerly. FatIsCurrentOperationSynchedForDcbTeardown reads the create
+    // IRP's current stack location, which faults when that location has been consumed
+    // during a nested directory-file open (e.g. FatCreateNewFile). The result is
+    // discarded by the assert, so match C release semantics and do not evaluate it.
+    let _ = FatIsCurrentOperationSynchedForDcbTeardown; // keep the translation referenced
 
     if (*Dcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
         FatLookupFileAllocationSize(IrpContext, Dcb);
