@@ -49,7 +49,7 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--no-check] [--strict]`
+### `build --arch X [--clean] [--no-check] [--strict] [--cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 
@@ -57,6 +57,12 @@ provenance stamp.
   **every** discovered rust target dir + every `lib*_rust.a`, then rebuilds. The
   stamp records which mode was used; warm builds are flagged because cargo
   incremental *can mask regressions*.
+- **`--cache`** (opt-in; also `VIBEOS_BUILD_CACHE=1`) routes C/C++ through ccache
+  and Rust through sccache, keyed off `VIBEOS_ROOT` (the worktree-parent dir, so
+  hits are shared across worktrees for C/C++ and across the clean-smoke target
+  nuke for Rust). Reports a per-build hit-rate stage (also a determinism gauge).
+  Off by default while it's measured; design + status:
+  `docs/engineering/build-cache-and-determinism-plan.md`.
 - **Strategy:** iterate warm; do a `--clean` build before you believe a green
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same

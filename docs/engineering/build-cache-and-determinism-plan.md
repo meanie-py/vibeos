@@ -1,7 +1,35 @@
 # Build Cache & Determinism Plan
 
-Status: **planning** (brainstormed 2026-06-14; lane = `build-cache` branch / `vibeos-wt-buildcache`).
+Status: **infra landed, opt-in** (brainstormed + implemented 2026-06-14; lane = `build-cache` branch / `vibeos-wt-buildcache`).
 Owner: build-cache lane. Prereq for nothing; unblocks faster iteration for every lane.
+
+## Implementation status (2026-06-14)
+
+Landed in `tests/qemu/cli/` (opt-in via `vibeos-cli build --cache` or `VIBEOS_BUILD_CACHE=1`;
+**off by default** so a cache bug can't wedge anyone's build):
+
+- **`cachecfg.py`** — the single owner of cache env. `VIBEOS_ROOT` (env, else repo's parent
+  dir = the worktree-parent) → `CCACHE_DIR`/`SCCACHE_DIR` + `CCACHE_BASEDIR`/`nohashdir` +
+  `RUSTC_WRAPPER`/`CARGO_INCREMENTAL=0`. Pure stats parsers (`ccache --print-stats`,
+  `sccache --show-stats --stats-format=json`).
+- **`build.py`** — `--cache` reconfigures the tree with `-DENABLE_CCACHE=1` (only if not
+  already set; ReactOS already wires `RULE_LAUNCH_COMPILE ccache` behind it), injects the
+  cache env into the ninja subprocess, zeroes counters pre-build, and reports per-build
+  hit-rate stages (the determinism gauge).
+- **8 unit tests** in `test_cli_units.py` (root resolution, env overlay incl. the
+  "never set RUSTFLAGS" safety assertion, both stats parsers).
+
+**Validated end-to-end** (real toolchain, the exact env `cachecfg` emits):
+- ccache: a second compile of the same TU from a *different worktree path* **hit** the cache
+  (cross-worktree, via `CCACHE_BASEDIR`+`nohashdir`) — the core of pain 2.
+- sccache: Rust crates **hit** after `rm -rf target` — exactly the smoke-harness nuke (pain 1).
+
+**Not yet measured on the real tree** (needs a `build-<arch>` in the lane): full-build hit
+rates (rollout §4) and the warm-fresh-worktree-build vs `cp -a` link-cost comparison (§5).
+Those gate retiring the copy recipe and flipping the default on.
+
+Tools installed on this machine: `ccache 4.5.1` (apt), `sccache 0.8.2` (release binary →
+`/usr/local/bin`).
 
 ## The problem (two pains, one root)
 
@@ -81,11 +109,19 @@ C/C++ to sccache too and accept the manual prefix-map — see Distributed.)
 Cross-worktree hits live or die here. Absolute paths leak into outputs via `-g` debug info,
 `__FILE__`, and assertion strings — a different worktree path → cache **miss**.
 
-- ccache: `CCACHE_BASEDIR=$VIBEOS_ROOT` + `hash_dir=false`.
-- Rust/sccache: `RUSTFLAGS=--remap-path-prefix=$PWD=/vibeos` — each worktree normalizes its
-  *own* root to the same `/vibeos` token, so all worktrees emit path-identical rlibs.
-  **Without this, every worktree is a 100% Rust cache miss** — it is the whole ballgame for
-  the Rust win, and it is also a genuine reproducibility improvement (path-independent build).
+- ccache: `CCACHE_BASEDIR=$VIBEOS_ROOT` + `hash_dir=false`. **Implemented** — this is the
+  automatic, safe half and it gives cross-worktree C/C++ hits today.
+- Rust/sccache: needs `--remap-path-prefix=$PWD=/vibeos` so each worktree normalizes its
+  *own* root to the same `/vibeos` token. **DEFERRED — cannot go through the `RUSTFLAGS` env
+  var here.** `sdk/lib/rust/.cargo/config.toml` carries load-bearing per-target `rustflags`
+  (the i386 `-C target-feature=-sse,-sse2` kernel guard), and cargo uses env-flags **XOR**
+  config-flags — they never merge. Setting `RUSTFLAGS` would silently *drop* the SSE guard
+  and put SSE back in the i386 kernel (a boot-breaking miscompile). So cross-*worktree* Rust
+  hits are a follow-up that must thread the remap **through `config.toml`** (per-target, so
+  the existing flags survive), not via the env. Until then sccache still wins **same-worktree
+  across the target-dir nuke** (pain 1), which is the bigger day-to-day cost. The remap is
+  also a genuine reproducibility improvement (path-independent build), so it earns its place
+  on the determinism ladder regardless.
 
 ### `vibeos-cli` owns the env (decision)
 
@@ -140,20 +176,22 @@ single-machine for now.
 
 ## Staged rollout (measure first, promise later)
 
-1. **Baseline.** Install ccache + sccache. Record a cold i386 build time + the current
-   per-worktree copy time as the reference to beat.
-2. **ccache for C/C++.** Wire `CMAKE_<LANG>_COMPILER_LAUNCHER` (opt-in via env) +
-   `CCACHE_BASEDIR` + `hash_dir=false`. **Build-twice probe:** the 2nd build's hit-rate is
-   simultaneously the speedup number *and* our first determinism reading.
-3. **sccache for Rust.** `RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0` + remap-path-prefix. Probe
-   across a target nuke (the smoke workflow) *and* across two worktrees.
-4. **Cross-worktree validation.** Build in main, then a *fresh* `cmake+ninja` in a worktree;
-   measure C/C++ + Rust hit rates. This is the gate for pain 2.
-5. **Measure the link cost.** Compiles cache; the final ~7 G link does **not**. Time
+1. ✅ **Baseline.** ccache 4.5.1 + sccache 0.8.2 installed. (Cold-build/copy reference times
+   still to be captured against a real `build-<arch>` — see §4/§5.)
+2. ✅ **ccache for C/C++.** Wired via `-DENABLE_CCACHE` (→ `RULE_LAUNCH_COMPILE ccache`) +
+   `CCACHE_BASEDIR` + `nohashdir`. Cross-dir hit **proven** on a synthetic TU. The
+   build-twice hit-rate stage is live and doubles as the determinism reading.
+3. ◑ **sccache for Rust.** `RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0` wired; across-nuke hit
+   **proven**. `--remap-path-prefix` deferred (config.toml clobber, see "path normalization")
+   so cross-*worktree* Rust hits are not in yet — same-worktree-across-nuke is.
+4. ☐ **Cross-worktree validation on the real tree.** Build in main, then a *fresh*
+   `cmake+ninja` in a worktree; measure C/C++ + Rust hit rates. Gate for pain 2. *(Needs a
+   build dir provisioned in the lane.)*
+5. ☐ **Measure the link cost.** Compiles cache; the final ~7 G link does **not**. Time
    "warm-cache fresh worktree build" end-to-end vs the `cp -a` copy. Only if the former wins
    do we rewrite the AGENTS.md copy recipe to "fresh `cmake+ninja`, cache makes it cheap"
    (keep copy as a documented fallback).
-6. **Flip default + document.** Default the cache on, set `max_size` caps, update AGENTS.md
+6. ☐ **Flip default + document.** Default the cache on, set `max_size` caps, update AGENTS.md
    (Worktree Discipline + Build Commands) and `tests/qemu/cli/README.md`.
 
 ## Risks & open items

@@ -301,3 +301,92 @@ def test_cargo_link_guard_respects_arch_filter(tmp_path, monkeypatch):
     names = {s.name for s in run.stages}
     assert "cargo_link:i386only:amd64" not in names  # filtered out on amd64
     assert "cargo_link:everywhere:amd64" in names
+
+
+# --- cachecfg: VIBEOS_ROOT resolution, env overlay, stats parsing ----------
+
+from . import cachecfg  # noqa: E402
+
+
+def test_vibeos_root_env_wins(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "custom"))
+    assert cachecfg.vibeos_root(tmp_path / "repo") == (tmp_path / "custom").resolve()
+
+
+def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    # main checkout and a sibling worktree must resolve to the SAME root → shared
+    # CCACHE_BASEDIR → cross-worktree hits.
+    parent = Path("/home/u/os-playground")
+    assert cachecfg.vibeos_root(parent / "vibeos") == parent
+    assert cachecfg.vibeos_root(parent / "vibeos-wt-x") == parent
+
+
+def test_cache_enabled_flag_and_env(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("VIBEOS_BUILD_CACHE", raising=False)
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is False  # default off
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=True)) is True
+    monkeypatch.setenv("VIBEOS_BUILD_CACHE", "1")
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=False)) is False  # --no-cache beats env
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is True  # env fallback
+
+
+def test_cache_env_overlay_shape(tmp_path):
+    ce = cachecfg.CacheEnv(
+        root=tmp_path,
+        ccache_dir=tmp_path / "ccache",
+        sccache_dir=tmp_path / "sccache",
+        ccache_bin="/usr/bin/ccache",
+        sccache_bin="/usr/local/bin/sccache",
+    )
+    e = ce.env()
+    assert e["CCACHE_BASEDIR"] == str(tmp_path)  # basedir == worktree parent
+    assert e["CCACHE_NOHASHDIR"] == "true"
+    assert e["CCACHE_DIR"] == str(tmp_path / "ccache")
+    assert e["RUSTC_WRAPPER"] == "/usr/local/bin/sccache"
+    assert e["CARGO_INCREMENTAL"] == "0"
+    assert e["SCCACHE_DIR"] == str(tmp_path / "sccache")
+    # critical safety: we never set RUSTFLAGS (would clobber config.toml's
+    # load-bearing i386 -sse,-sse2 kernel guard).
+    assert "RUSTFLAGS" not in e
+
+
+def test_cache_env_absent_tools(tmp_path):
+    ce = cachecfg.CacheEnv(tmp_path, tmp_path / "c", tmp_path / "s", None, None)
+    assert ce.env() == {}
+    assert not ce.use_ccache and not ce.use_sccache
+
+
+def test_parse_ccache_stats():
+    txt = (
+        "direct_cache_hit\t7\n"
+        "preprocessed_cache_hit\t3\n"
+        "cache_miss\t10\n"
+        "primary_storage_hit\t99\n"  # must be IGNORED (not double-counted)
+    )
+    st = cachecfg.parse_ccache_stats(txt)
+    assert st["hits"] == 10 and st["misses"] == 10
+    assert abs(st["hit_rate"] - 0.5) < 1e-9
+
+
+def test_parse_sccache_json_bucketed():
+    txt = json.dumps(
+        {
+            "stats": {
+                "compile_requests": 20,
+                "cache_hits": {"counts": {"Rust": 12}},
+                "cache_misses": {"counts": {"Rust": 8}},
+            }
+        }
+    )
+    st = cachecfg.parse_sccache_json(txt)
+    assert st["requests"] == 20 and st["hits"] == 12 and st["misses"] == 8
+    assert abs(st["hit_rate"] - 0.6) < 1e-9
+
+
+def test_parse_sccache_json_scalar_and_garbage():
+    st = cachecfg.parse_sccache_json(json.dumps({"stats": {"cache_hits": 5, "cache_misses": 0}}))
+    assert st["hits"] == 5 and st["hit_rate"] == 1.0
+    assert cachecfg.parse_sccache_json("not json") == {}

@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
     b.add_argument("--strict", action="store_true")
+    b.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="ccache(C/C++)+sccache(Rust); default off → VIBEOS_BUILD_CACHE env",
+    )
     b.set_defaults(fn=build_mod.build)
 
     c = sub.add_parser("check", help="source lints (baseline-diff gate)")
