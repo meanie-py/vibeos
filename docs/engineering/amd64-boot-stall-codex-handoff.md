@@ -1,7 +1,38 @@
 # amd64 LiveCD boot-stall — codex handoff
 
 **Worktree:** `/home/curi/Projects/os-playground/vibeos-wt-cdrom` (branch `cdrom-port`).
-Run everything here. **Date:** 2026-06-14. **Status:** OPEN, well-localized, two prior
+Run everything here. **Date:** 2026-06-14. **Status:** ✅ **RESOLVED 2026-06-15** (`c26d9a566ab`).
+
+> ## ✅ RESOLUTION (2026-06-15, `c26d9a566ab`)
+>
+> **Root cause: clock, not storage.** QEMU's emulated mc146818 RTC intermittently
+> stops *raising* its periodic IRQ8 for seconds at a time (confirmed via QMP
+> `info irq`: IRQ8 count freezes across each guest tick gap). With the amd64 system
+> clock sourced from IRQ8, every *relative* timed wait coarsens to the next RTC tick
+> that actually fires → the recurring multi-second read-IRP arrival gaps. i386 is
+> immune (free-running 8254 PIT, no ack-coupling).
+>
+> **Fix:** drive the amd64 system clock from the per-vCPU **local APIC timer**
+> (periodic, TSC-calibrated); RTC periodic off; profile-interrupt path neutralized
+> (it shared the one LAPIC timer LVT). amd64-only (`#![cfg(target_arch="x86_64")]`).
+> Files: `hal-rust/src/x86/rtctimer.rs`, `apictimer.rs`.
+>
+> **Result (clean builds, smoke ×3): amd64 OK, i386 OK, arm64 OK.** Gaps collapse
+> from 8 (up to 17.6s) to ~1 (1.7s); shell ready ~120s. Supersedes the per-site
+> band-aid `97d678e` (mm/balance NtYieldExecution patched only one wait site to clear
+> the timeout; LAPIC is systemic). Band-aid left in place, harmless.
+>
+> **Disproven en route (do NOT re-walk):**
+> - *Not* a PCI bus-master gap — `[BMDBG]` in uniata shows pciCmd=0x7 (bus-master bit
+>   0x4 SET), IsBusMaster=1, BAR4=0xc0c0, MaxTransferMode=0x22 (UDMA). pci-rust is fine.
+> - *Not* a storage-DMA bug — the CD runs PIO because scsiport never builds a DMA
+>   AdapterObject (`scsiport.c:1261 "DMA is not supported yet"; ASSERT(FALSE)`,
+>   upstream ReactOS, now in scsiport-rust cohab). PIO is fine; i386 proves it.
+> - *Not* the scsiport LUNEX busy-retry scramble (already correct via `78d6ec6`).
+>
+> Everything below is the historical investigation that led here; kept for context.
+
+**Original status (now superseded):** OPEN, well-localized, two prior
 root-causes disproven.
 
 ## The task (one sentence)
