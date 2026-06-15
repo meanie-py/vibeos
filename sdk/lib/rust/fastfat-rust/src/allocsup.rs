@@ -876,7 +876,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
     // Gap constants (unknown values; preserve names)
     const Dbg: u32 = 0; // DEBUG_TRACE_ALLOCSUP
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
-    const FcbGood: u32 = 0;
+    const FcbGood: u32 = 1;
     const FCB_STATE_FLUSH_FAT: u32 = 0x10;
 
     // Locals
@@ -1125,7 +1125,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
     const FCB_STATE_ZERO_ON_DEALLOCATION: u32 = 0x00080000;
     const FCB_STATE_FLUSH_FAT: u32 = 0x10;
-    const FcbGood: i32 = 0;
+    const FcbGood: i32 = 1;
     let _local_dbg: i32 = 0; // DEBUG_TRACE_ALLOCSUP (shadowing intentional)
 
     let Vcb: PVCB = (*FcbOrDcb).Vcb;

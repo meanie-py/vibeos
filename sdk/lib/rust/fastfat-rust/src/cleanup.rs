@@ -105,7 +105,7 @@ const TRUE: BOOLEAN = 1;
 const FALSE: BOOLEAN = 0;
 const Flush: u32 = 1; // flush type
 const FcbGood: u32 = 1; // assumed value
-const FcbBad: u32 = 0; // assumed value
+const FcbBad: u32 = 2; // assumed value
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdCleanup(

@@ -202,8 +202,8 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
     //  by definition that it is good since it is fixed in the volume
     //  structure.
     //
-    if NodeType(Fcb) == 0/*FAT_NTC_ROOT_DCB*/ {
-        FatMarkFcbCondition(IrpContext, Fcb, 0/*FcbGood*/, 0/*FALSE*/);
+    if NodeType(Fcb) == FAT_NTC_ROOT_DCB {
+        FatMarkFcbCondition(IrpContext, Fcb, FcbGood as i32, 0/*FALSE*/);
         return;
     }
 
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
     //  enclosing directory shrinking during the time it was ejected).
     //
     if DirentBcb.is_null() {
-        FatMarkFcbCondition(IrpContext, Fcb, 1/*FcbBad*/, 0/*FALSE*/);
+        FatMarkFcbCondition(IrpContext, Fcb, FcbBad as i32, 0/*FALSE*/);
         return;
     }
 
@@ -264,12 +264,12 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
             || FirstClusterOfFile != (*Fcb).FirstClusterOfFile
             || (*Dirent).Attributes != (*Fcb).DirentFatFlags
         {
-            FatMarkFcbCondition(IrpContext, Fcb, 1/*FcbBad*/, 0/*FALSE*/);
+            FatMarkFcbCondition(IrpContext, Fcb, FcbBad as i32, 0/*FALSE*/);
         } else {
             //
             //  We passed.  Get the Fcb ready to use again.
             //
-            FatMarkFcbCondition(IrpContext, Fcb, 0/*FcbGood*/, 0/*FALSE*/);
+            FatMarkFcbCondition(IrpContext, Fcb, FcbGood as i32, 0/*FALSE*/);
         }
     // } _SEH2_FINALLY {
         FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
@@ -421,9 +421,9 @@ const IO_DISK_INCREMENT: i32 = 1;
 
 // Constants needed by the function
 const FAT_NTC_FCB: u32 = 0x0502; // placeholder
-const FcbNeedsToBeVerified: i32 = 0; // placeholder
-const FcbBad: i32 = 1; // placeholder
-const FcbGood: i32 = 2; // placeholder
+const FcbNeedsToBeVerified: i32 = 3; // placeholder
+const FcbBad: i32 = 2; // placeholder
+const FcbGood: i32 = 1; // placeholder
 
 
 // Note: VCB_STATE_VPB_NOT_ON_DEVICE is assumed to be in scope (defined elsewhere).
@@ -1000,9 +1000,9 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     const FAT_NTC_FCB: i16 = 0x0502;
     const FAT_NTC_DCB: i16 = 0x0503;
     const FAT_NTC_ROOT_DCB: i16 = 0x0504;
-    const FcbNeedsToBeVerified: i32 = 0;
-    const FcbBad: i32 = 1;
-    const FcbGood: u32 = 2;
+    const FcbNeedsToBeVerified: i32 = 3;
+    const FcbBad: i32 = 2;
+    const FcbGood: u32 = 1;
     // PAGED_CODE();  -- skipped, no equivalent
 
     DebugTrace(

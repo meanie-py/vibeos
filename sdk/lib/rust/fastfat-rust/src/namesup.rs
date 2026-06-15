@@ -38,6 +38,44 @@ pub const Dbg: u32 = DEBUG_TRACE_NAMESUP;
 // Constants
 const MAX_LFN_CHARACTERS: usize = 0x0104;
 const STATUS_FILE_INVALID: i32 = 0xC0000098_u32 as i32; // NTSTATUS
+
+// FsRtlLegalAnsiCharacterArray is a kernel DATA export — raw-dylib routes the
+// reference through the __imp_ thunk (the glob `globals::*` decl lacks the link).
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    #[link_name = "FsRtlLegalAnsiCharacterArray"]
+    static FAT_LEGAL_ANSI_CHARACTER_ARRAY: *const u8;
+}
+
+//
+//  Translated from the INLINE FatIsNameLongUnicodeValid in fatprocs.h.
+//  Validates that every ASCII (<0x80) char of a long Unicode name is a legal
+//  HPFS character (per FsRtlLegalAnsiCharacterArray); non-ASCII chars are
+//  always permitted.  FSRTL_HPFS_LEGAL=0x02, FSRTL_WILD_CHARACTER=0x08.
+//
+#[no_mangle]
+pub unsafe extern "system" fn FatIsNameLongUnicodeValid(
+    _IrpContext: *mut IRP_CONTEXT,
+    Name: *mut _UNICODE_STRING,
+    CanContainWildcards: BOOLEAN,
+    _PathNameOk: BOOLEAN,
+    _LeadingBackslashOk: BOOLEAN,
+) -> BOOLEAN {
+    let mask: u8 = if CanContainWildcards != 0 { 0x02 | 0x08 } else { 0x02 };
+    let arr: *const u8 = FAT_LEGAL_ANSI_CHARACTER_ARRAY;
+    let len = (*Name).Length as usize / core::mem::size_of::<u16>();
+    let buf = (*Name).Buffer;
+    let mut i = 0usize;
+    while i < len {
+        let c = *buf.add(i);
+        if c < 0x80 && (*arr.add(c as usize)) & mask == 0 {
+            return 0 as BOOLEAN; // FALSE
+        }
+        i += 1;
+    }
+    1 as BOOLEAN // TRUE
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FatIsNameInExpression(
     IrpContext: PIRP_CONTEXT,

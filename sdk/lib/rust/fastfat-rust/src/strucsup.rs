@@ -142,7 +142,7 @@ const FSCTL_INVALIDATE_VOLUMES: u32 = 0x0009000C;
 const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
 
 // Constant definitions needed (these would be provided by the assembly step)
-const FcbGood: u32 = 0;          // Placeholder
+const FcbGood: u32 = 1;          // Placeholder
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const TAG_FCB: u32 = 0x46746146; // 'T' 'A' 'C' 'F'? placeholder
 const NonPagedPoolNx: ntkrnl_sys::mm::POOL_TYPE = 0x200;
@@ -165,7 +165,7 @@ const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
 const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
 const TAG_VPB: u32 = 0x70627661; // placeholder
-const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
+const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====
 #[no_mangle]
@@ -1138,8 +1138,8 @@ pub unsafe extern "system" fn FatCreateDcb(
 ) -> *mut DCB {
     const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
     const FAT_NTC_DCB: u32 = 0x0503;
-    const FcbGood: u32 = 0;
-    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x4000;
+    const FcbGood: u32 = 1;
+    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
     const Dbg: u32 = 0;
 
     let mut Dcb: *mut DCB = core::ptr::null_mut();

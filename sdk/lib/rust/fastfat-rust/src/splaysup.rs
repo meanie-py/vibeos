@@ -32,8 +32,8 @@ type COMPARISON = u32;
 const IsEqual: COMPARISON = 2;
 
 const FAT_FILE_SYSTEM: u32 = 0x23;
-const FcbGood: u32 = 0; // placeholder
-const FcbBad: u32 = 1;  // placeholder
+const FcbGood: u32 = 1; // placeholder
+const FcbBad: u32 = 2;  // placeholder
 #[no_mangle]
 pub unsafe extern "system" fn FatInsertName(
     IrpContext: PIRP_CONTEXT,

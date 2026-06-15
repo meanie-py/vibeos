@@ -81,7 +81,7 @@ const FAT_DIRENT_DELETED: u8 = 0xE5;
 const FAT_DIRENT_ATTR_ARCHIVE: u8 = 0x20;
 const FAT_DIRENT_ATTR_VOLUME_ID: u8 = 0x08;
 
-const FcbNeedsToBeVerified: u32 = 0; // placeholder, correct value needed
+const FcbNeedsToBeVerified: u32 = 3; // placeholder, correct value needed
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02; // placeholder, correct value needed
 const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102_u32 as i32; // placeholder, correct value needed
 const DEBUG_TRACE_DIRSUP: u32 = 0x00400000; // placeholder, correct value needed
@@ -94,12 +94,12 @@ const CCB_FLAG_MATCH_ALL: u32 = 0x00000001;
 const CCB_FLAG_MATCH_VOLUME_ID: u32 = 0x4000;
 const TAG_FILENAME_BUFFER: u32 = 0x6E746146; // 'Flfr' placeholder
 const TAG_DIRENT: u32 = 0x44746146; // 'Dirn' placeholder
-const FcbBad: u32 = 1;
+const FcbBad: u32 = 2;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
 
 // These constants are typical Windows/NT values; exact values may differ.
-const FcbGood: u32 = 0;
+const FcbGood: u32 = 1;
 const FAT_NTC_FCB: u32 = 0x0502;
 const FO_FILE_MODIFIED: u32 = 0x1000;
 const FO_FILE_SIZE_CHANGED: u32 = 0x2000;

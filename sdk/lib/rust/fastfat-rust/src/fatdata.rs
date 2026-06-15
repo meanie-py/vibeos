@@ -153,7 +153,7 @@ const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000; // placeholder value
 const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const FCB_STATE_PAGING_FILE: u32 = 0x00000004;
 const FCB_STATE_TEMPORARY: u32 = 0x20;
-const FcbGood: u32 = 0;
+const FcbGood: u32 = 1;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
 const UserDirectoryOpen: u32 = 1;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
@@ -645,10 +645,10 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     const FCB_STATE_TEMPORARY: u32 = 0x20;
     const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
     const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
-    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = 0x7FFFFFFFFFFFFFFF;
+    const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
     const FAT_NTC_FCB: u32 = 0x0502;
     const FAT_NTC_ROOT_DCB: u32 = 0x0504;
-    const FcbGood: u32 = 0;
+    const FcbGood: u32 = 1;
 
     let mut Results: i32 = 0; // FALSE
     let mut IrpContext: IRP_CONTEXT = core::mem::zeroed();
