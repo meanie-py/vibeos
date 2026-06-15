@@ -31,6 +31,12 @@ pub mod proc_create; // CreateProcessInternalW + CreateProcessW/A + WinExec
 // winnls/string/ — NLS/locale/string family (rustconv Sonnet+c2rust). locale.c first.
 pub mod string;
 
+// wine/ — Wine-derived helpers (muldiv, ...).
+pub mod wine;
+
+// client/ — the client-side Win32 API surface (version/handle/atom/environ/path/...).
+pub mod client;
+
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}

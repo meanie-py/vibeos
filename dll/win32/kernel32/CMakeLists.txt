@@ -16,19 +16,19 @@ add_dependencies(kernel32_shared psdk)
 list(APPEND SOURCE
     client/actctx.c
     client/appcache.c
-    client/atom.c
+    # client/atom.c       — replaced by Rust (kernel32-rust/src/client/atom.rs)
     client/compname.c
     client/debugger.c
     client/dosdev.c
     client/dllmain.c
-    client/environ.c
+    # client/environ.c    — replaced by Rust (kernel32-rust/src/client/environ.rs)
     client/except.c
     client/fiber.c
-    client/handle.c
+    # client/handle.c     — replaced by Rust (kernel32-rust/src/client/handle.rs)
     client/heapmem.c
     client/job.c
     client/loader.c
-    client/path.c
+    # client/path.c       — replaced by Rust (kernel32-rust/src/client/path.rs)
     client/perfcnt.c
     client/power.c
     # client/proc.c   — replaced by Rust (sdk/lib/rust/kernel32-rust/); cohab-linked
@@ -43,7 +43,7 @@ list(APPEND SOURCE
     client/utils.c
     client/thread.c
     client/vdm.c
-    client/version.c
+    # client/version.c    — replaced by Rust (kernel32-rust/src/client/version.rs)
     client/virtmem.c
     client/console/alias.c
     client/console/console.c
@@ -76,7 +76,7 @@ list(APPEND SOURCE
     wine/actctx.c
     wine/comm.c
     wine/lzexpand.c
-    wine/muldiv.c
+    # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
     wine/profile.c
     wine/res.c
     wine/timezone.c
