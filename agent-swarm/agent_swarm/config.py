@@ -145,7 +145,8 @@ class Config:
     # --- local paths ---
     @property
     def db_path(self):
-        # New platform DB (the legacy tools/swarm registry.db has an incompatible schema).
+        # Platform DB. (The retired prototype's registry.db had an incompatible schema —
+        # hence a fresh path, not a migration.)
         p = self.get("VIBEOS_SWARM_DB")
         return Path(p) if p else Path.home() / ".vibeos-swarm" / "swarm.db"
 
