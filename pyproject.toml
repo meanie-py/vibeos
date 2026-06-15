@@ -36,7 +36,6 @@ target-version = "py310"
 extend-exclude = [
     "build-*", "ntoskrnl", "sdk", "win32ss", "hal", "drivers", "dll", "base",
     "boot", "modules", "ports", "subsystems", "host-tools", "*.responses*",
-    "tools/swarm",  # deprecated, superseded by agent-swarm/
 ]
 
 [tool.ruff.lint]

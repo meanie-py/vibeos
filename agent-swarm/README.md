@@ -86,4 +86,4 @@ Built + live-tested (2026-06-14): the three service clients, the registrar (prov
 banner + teardown, verified against the live suncluster stack), the CLI, the
 priority-tiered drain, and the channel handshake. Pending per the design's build plan:
 Go roster plugin, per-agent Vikunja users, full OAuth-derived runtime creds, the unblock
-protocol. The legacy `tools/swarm/` is superseded by this — see its README.
+protocol. (The legacy `tools/swarm/` prototype this grew out of has been removed.)

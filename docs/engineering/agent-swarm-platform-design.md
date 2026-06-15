@@ -223,13 +223,12 @@ session). The MCP channel handles idle delivery; the hooks handle busy delivery 
 
 ## 14. What exists today → migration
 
-Already built (under `tools/swarm/`, to move into `agent-swarm/`): a SQLite registry +
-CLI (`register/heartbeat/offline/list/poll/read/say/touch/name`), the MCP channel
-server (priority-tiered, board-aware), and the hook set. Migration:
-- **Reorg** `tools/swarm/` → `agent-swarm/{core,cli,channel,...}`; refactor to the
-  core+front-ends shape.
+The original prototype (a SQLite registry + CLI, the MCP channel server, and the hook
+set) lived under `tools/swarm/`. It has since been reorganized into `agent-swarm/`
+(core + CLI/MCP front-ends, login-based identity) and **removed**. Remaining migration:
 - **Retire** `--by-cwd`, worktree-keyed identity, and session-id resolution in favor of
-  **login-based identity**.
+  **login-based identity**. *(done — identity resolves from `--identity`/`$SWARM_LOGIN`/
+  login file.)*
 - **Promote** roster from local SQLite → Go plugin (cross-machine).
 - **Swap** interim `config.env` tokens → login-derived M2M creds.
 
