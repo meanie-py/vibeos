@@ -349,6 +349,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** before building a separate FFI crate, check whether the parent master header already pulls the lib. If it does, FOLD the complete lib surface into the existing `-sys` crate instead: add the lib's headers to `wrapper.h` (under any required build defines like `#define FT2_BUILD_LIBRARY`), extend the allowlist (`FT_[A-Za-z0-9_]*|TT_...`), hand-add the fn-like macros bindgen drops (`FT_HAS_*`/`IS_*` → return `c_int`, callers use `!= 0`), regenerate ×3, then delete the redundant crate.
 **Source:** `project_freetype_ftsys_track.md`
 
+### Per-file hand-rolled struct view of a global reads a BITFIELD at offset 0 → feature silently disabled
+**Symptom:** A whole feature is silently off with no crash. fastfat: every long-file-name (>8.3) open returned STATUS_OBJECT_NAME_NOT_FOUND though the file was on the volume; 8.3 names worked. On arm64 this made the loader report `kernel32_vista.dll`/`advapi32_vista.dll`/`windowscodecs.dll` "missing" (c0000135), msvcrt's imports went unsnapped, and csrss jumped through an unresolved thunk (arm64 instruction abort at a raw RVA → looks like a reloc bug).
+**Root cause:** the file declared its OWN view of a shared global — `extern { static FatData: FatGlobalData; }` with a hand-rolled `struct FatGlobalData { ChicagoMode: u8 }` putting the field at offset 0. The real `FAT_DATA` has `ChicagoMode` as a packed `BOOLEAN:1` bitfield far past offset 0; offset 0 is `NodeTypeCode` (FAT_NTC_DATA_HEADER `0x0500`), whose little-endian low byte is `0x00` → `FatData.ChicagoMode != 0` is always FALSE. Two files (dirsup.rs, volinfo.rs) each had their own wrong stub; a third (strucsup.rs) correctly used the real type's `.ChicagoMode()` accessor — so the bug was invisible by grep-for-consistency.
+**Fix:** import the real generated type (`crate::types::FAT_DATA`) and read bitfields through the generated accessor (`FatData.ChicagoMode()`), never as a plain offset-0 field. Delete the hand-rolled stub struct. **Tell:** an `extern static <global>: <LocalStubStruct>` next to a `#[repr(C)] struct <LocalStubStruct> { one_field }` — the LLM fabricates a minimal view of a big global and guesses offset 0. Cross-check every such stub against the real type, especially when the field is a C bitfield.
+**Source:** fastfat-port `b2de393afb5` (2026-06-15), `project_fastfat_rust_track.md`
+
 ---
 
 ## rustconv translation-output bug catalog
@@ -670,6 +676,13 @@ Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) wh
 **Symptom:** arm64 freeldr "hangs" with frozen serial + spinning CPU, indistinguishable from an infinite loop. Misdiagnosed as a "TCG-slow loop" (the 910 iter/sec was a per-iteration UART-print artifact).
 **Root cause:** (1) `freeldr-rust` `#[panic_handler]` printed only under `cfg(any(x86,x86_64))`; on aarch64 it fell into `loop{wfe}` with zero output. (2) The hidden panic was a Rust slice-index OOB — `MemTypeDesc[MemoryType as usize]` where C silently reads adjacent garbage; QEMU virt's page table spans the MMIO hole below 0x40000000 RAM, yielding `MemoryType >= len`. Fires even when DbgPrint is disabled (Rust still bounds-checks the index expr).
 **Fix:** make the arm64 panic handler emit file:line via PL011 DR @ 0x09000000 before spinning. Guard the index to match C's tolerate-garbage: `if i < MemTypeDesc.len() {…} else {b"Unknown\0"…}`. Audit rustconv output for `[…as usize]` slice indexing of device/enum fields. Commit `6662c9a4c5c`.
+
+### arm64 "idle hang" that is really a kernel Rust panic — sample $pc, it's `rust_begin_unwind`
+**Symptom:** arm64 boot freezes; serial stops, screen black, `info registers` shows `$pc` frozen at ONE kernel address across many samples → looks exactly like the idle WFI / a blocked wait. Reached deep (csrss/winsrv win32 init) after other fixes let boot advance.
+**Root cause #1 (the tell):** the frozen PC was `__rustc::rust_begin_unwind` — a kernel **Rust panic**, not idle. The panic handler spins. A proper backtrace (`add-symbol-file ntoskrnl.exe -o <kbase - 0x400000>`, then `bt`) showed `panic_bounds_check` ← `KiDispatchException`. Read the `core::panic::Location` (the `x2`/3rd arg to `panic_bounds_check`: `file_ptr,len,line`) to get file:line for free.
+**Root cause #2 (the actual bug):** `KiDispatchException`'s kernel-mode user-AV fixup (zero the faulting load's dest reg, skip the insn — the DUMMY_PSEH safe-probe substitute) wrote `TrapFrame.X[Rd]` for `Rd < 29`. But the arm64 **KTRAP_FRAME only holds X0..X18 (19 entries)**; X19..X28 are in the **KEXCEPTION_FRAME** and X29/X30 are `Fp`/`Lr` (see `KeTrapFrameToContext`, which already splits them). A faulting load whose dest is X19..X28 indexed `X[19..28]` OOB → `panic_bounds_check(len 19)`.
+**Fix:** route the zeroed reg by range — X0..X18→`TrapFrame.X[]`, X19..X28→`KEXCEPTION_FRAME` (guard non-null), X29/X30→`Fp`/`Lr`, X31(xzr) no-op; apply to both the dest (Rd) and the STP second reg (Rt2). `ke/arm64/stubs.rs`, commit `23406d8c708`. **General tell:** any arm64 code that treats `TrapFrame.X[]` as a full 31-reg file is wrong — only X0..X18 live there.
+**Source:** `project_fastfat_rust_track.md` (2026-06-15)
 **Source:** `feedback_arm64_silent_panic_slice_oob.md`
 
 ### arm64 0xF4 winlogon death right after `[WIN32K] shell ready`
