@@ -516,7 +516,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
     Vcb = &raw mut (*VolDo).Vcb as *mut VCB;
     (*IrpContext).Vcb = Vcb;
 
-    if FlagOn((*IrpContext).Flags, 0x800 /* IRP_CONTEXT_FLAG_WAIT */) == 0 {
+    if FlagOn((*IrpContext).Flags, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) == 0 {
         DebugTrace(0, 0x2000, b"Cannot wait for verify.\n\0".as_ptr() as *const i8);
         Status = FatFsdPostRequest(IrpContext, Irp);
         DebugTrace(-1, 0x2000, b"FatVerifyVolume -> %08lx\n\0".as_ptr() as *const i8, Status);
@@ -536,12 +536,12 @@ pub unsafe extern "system" fn FatVerifyVolume(
 
     let mut try_closure = || {
         // try block
-        let AllowRawMount = BooleanFlagOn(((*IrpSp).Flags) as u32, 0x0400 /* SL_ALLOW_RAW_MOUNT */);
+        let AllowRawMount = BooleanFlagOn(((*IrpSp).Flags) as u32, 0x1 /* SL_ALLOW_RAW_MOUNT */);
 
         NT_ASSERT((*Vcb).VerifyThread.is_null() as u32);
         (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
 
-        if FlagOn((*(*Vpb).RealDevice).Flags, 0x00000080 /* DO_VERIFY_VOLUME */) == 0 {
+        if FlagOn((*(*Vpb).RealDevice).Flags, 0x2 /* DO_VERIFY_VOLUME */) == 0 {
             DebugTrace(0, 0x2000, b"RealDevice has already been verified\n\0".as_ptr() as *const i8);
             *VerifyAlreadyDone_ptr = true;
             *Status_ptr = 0; // STATUS_SUCCESS
@@ -564,7 +564,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
             );
         }
 
-        if FlagOn((*(*Vcb).TargetDeviceObject).Characteristics, 0x00000010 /* FILE_REMOVABLE_MEDIA */) != 0 {
+        if FlagOn((*(*Vcb).TargetDeviceObject).Characteristics, 0x1 /* FILE_REMOVABLE_MEDIA */) != 0 {
             Status = FatPerformDevIoCtrl(
                 IrpContext,
                 0x00070000 /* IOCTL_DISK_CHECK_VERIFY */,
@@ -579,7 +579,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
             );
             if Status < 0 {
                 if AllowRawMount {
-                    *Status_ptr = 0xC0000061_u32 as i32 /* STATUS_WRONG_VOLUME */;
+                    *Status_ptr = 0xC0000012_u32 as i32 /* STATUS_WRONG_VOLUME */;
                     return;
                 }
                 FatNormalizeAndRaiseStatus(IrpContext, Status);
@@ -626,7 +626,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
         }
 
         *BootSector_ptr = FsRtlAllocatePoolWithTag(
-            0x200 /* NonPagedPoolNxCacheAligned */,
+            0x204 /* NonPagedPoolNxCacheAligned */,
             ROUND_TO_PAGES(SectorSize as usize) as u32,
             0x46495346 /* TAG_VERIFY_BOOTSECTOR */,
         ) as *mut PACKED_BOOT_SECTOR;
@@ -745,7 +745,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
                 FatVerifyLookupFatEntry(IrpContext, Vcb, RootDirectoryCluster, &mut RootDirectoryCluster);
                 match FatInterpretClusterType(Vcb, RootDirectoryCluster) {
                     0 /* FatClusterAvailable */ | 1 /* FatClusterReserved */ | 2 /* FatClusterBad */ => {
-                        FatRaiseStatus(IrpContext, 0xC000010E_u32 as i32 /* STATUS_FILE_CORRUPT_ERROR */);
+                        FatRaiseStatus(IrpContext, 0xC0000102_u32 as i32 /* STATUS_FILE_CORRUPT_ERROR */);
                     }
                     _ => {}
                 }
@@ -1771,8 +1771,8 @@ pub unsafe extern "system" fn FatComputeMoveFileParameter(
         if (*FcbOrDcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
             FatLookupFileAllocationSize(IrpContext, FcbOrDcb);
 
-            if NodeType(FcbOrDcb as *mut c_void) == 0xc /* FAT_NTC_DCB */ ||
-                (NodeType(FcbOrDcb as *mut c_void) == 0xd /* FAT_NTC_ROOT_DCB */ && FatIsFat32((*FcbOrDcb).Vcb) != 0) {
+            if NodeType(FcbOrDcb as *mut c_void) == 0x503 /* FAT_NTC_DCB */ ||
+                (NodeType(FcbOrDcb as *mut c_void) == 0x504 /* FAT_NTC_ROOT_DCB */ && FatIsFat32((*FcbOrDcb).Vcb) != 0) {
                 (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart = (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
             }
         }
@@ -1823,7 +1823,7 @@ pub unsafe extern "system" fn FatComputeMoveFileParameter(
 
         ClusterAlignedVDL = (ValidDataLength + (ClusterSize - 1)) & !(ClusterSize - 1);
 
-        if (NodeType(FcbOrDcb as *mut c_void) == 0xe /* FAT_NTC_FCB */) &&
+        if (NodeType(FcbOrDcb as *mut c_void) == 0x502 /* FAT_NTC_FCB */) &&
             (FileOffset + *BytesToReallocate > ClusterAlignedVDL) {
             if FileOffset > ClusterAlignedVDL {
                 *BytesToWrite = 0;

@@ -1584,7 +1584,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                         (*(*Vcb).Vpb).RealDevice,
                     );
                     SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
-                    FatRaiseStatus(IrpContext, 0xC000008C_u32 as i32 /* STATUS_MEDIA_WRITE_PROTECTED */);
+                    FatRaiseStatus(IrpContext, 0xC00000A2_u32 as i32 /* STATUS_MEDIA_WRITE_PROTECTED */);
                 }
             }
 
@@ -1593,7 +1593,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
                 let mut OplockBreakStatus: i32 = 0;
                 if Iosb.__bindgen_anon_1.Status == 0xC0000043_u32 as i32 /* STATUS_SHARING_VIOLATION */
-                    && FlagOn((((*IrpSp).Flags) as u8) as u32, 0x00080000 /* FILE_COMPLETE_IF_OPLOCKED */) == 0
+                    && FlagOn((((*IrpSp).Flags) as u8) as u32, 0x100 /* FILE_COMPLETE_IF_OPLOCKED */) == 0
                 {
                     OplockBreakStatus = FsRtlOplockBreakH(
                         FatGetFcbOplock(Fcb),
@@ -1642,7 +1642,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                     (*Fcb).UncleanCount + 1,
                 );
             }
-            if Iosb.__bindgen_anon_1.Status != 0 && Iosb.__bindgen_anon_1.Status != 0xC00000B2_u32 as i32 /* STATUS_OPLOCK_BREAK_IN_PROGRESS */ {
+            if Iosb.__bindgen_anon_1.Status != 0 && Iosb.__bindgen_anon_1.Status != 0x108_u32 as i32 /* STATUS_OPLOCK_BREAK_IN_PROGRESS */ {
                 break 'try_scope_body;
             }
 
@@ -1945,7 +1945,7 @@ pub unsafe extern "system" fn FatOpenTargetDirectory(
 
         // Set status to success
         Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        Iosb.Information = if DoesNameExist != 0 { 1 /* FILE_EXISTS */ } else { 0 /* FILE_DOES_NOT_EXIST */ };
+        Iosb.Information = if DoesNameExist != 0 { 4 /* FILE_EXISTS */ } else { 5 /* FILE_DOES_NOT_EXIST */ };
 
         // If successful and name exists, set CCB flag
         if (Iosb.__bindgen_anon_1.Status & 0xC0000000_u32 as i32) == 0 && DoesNameExist != 0 {

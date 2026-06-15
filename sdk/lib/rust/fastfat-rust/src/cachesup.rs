@@ -1117,7 +1117,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         },
         IRP_MJ_WRITE => {
             let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-            NT_ASSERT(FlagOn(((*IrpContext).Flags as u8) as u32, 0 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
+            NT_ASSERT(FlagOn(((*IrpContext).Flags as u8) as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
             CcMdlWriteComplete(
                 FileObject,
                 core::ptr::addr_of_mut!((*IrpSp).Parameters.Write.ByteOffset),

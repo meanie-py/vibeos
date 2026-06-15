@@ -39,7 +39,7 @@ pub unsafe extern "system" fn FatDump(Ptr: *mut core::ffi::c_void) {
             FatDumpFcb(Ptr as *const FCB);
         }
         // case FAT_NTC_CCB:
-        0x0505 => { // FAT_NTC_CCB
+        0x0507 => { // FAT_NTC_CCB
             FatDumpCcb((Ptr).cast());
         }
         // default:

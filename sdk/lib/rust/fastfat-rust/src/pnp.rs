@@ -387,7 +387,7 @@ pub unsafe extern "system" fn FatPnpCompletionRoutine(
 ) -> NTSTATUS {
     let Event = Contxt as PKEVENT;
     KeSetEvent((Event).cast(), 0, 0);
-    return 0x0000_0103u32 as NTSTATUS; // STATUS_MORE_PROCESSING_REQUIRED
+    return 0xC0000016u32 as NTSTATUS; // STATUS_MORE_PROCESSING_REQUIRED
 
     let _ = DeviceObject;
     let _ = Contxt;

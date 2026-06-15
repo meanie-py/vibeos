@@ -1144,7 +1144,7 @@ pub unsafe extern "system" fn FatIsDirectoryEmpty(
     Dcb: *mut DCB,
 ) -> i32 {
     let mut Bcb: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut ByteOffset: u32 = if NodeType((Dcb).cast()) == 0 /* FAT_NTC_ROOT_DCB */ {
+    let mut ByteOffset: u32 = if NodeType((Dcb).cast()) == 0x504 /* FAT_NTC_ROOT_DCB */ {
         0u32
     } else {
         2u32 * core::mem::size_of::<DIRENT>() as u32

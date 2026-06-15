@@ -637,7 +637,7 @@ pub unsafe extern "system" fn FatDeleteVcb(
         ExFreePool((*Vcb).SwapVpb as *mut core::ffi::c_void);
     }
 
-    if FlagOn((*Vcb).VcbState, 0x00000020 /* VCB_STATE_FLAG_VPB_MUST_BE_FREED */) != 0 {
+    if FlagOn((*Vcb).VcbState, 0x40000 /* VCB_STATE_FLAG_VPB_MUST_BE_FREED */) != 0 {
         ExFreePool((*Vcb).Vpb as *mut core::ffi::c_void);
     }
 

@@ -1073,9 +1073,9 @@ pub unsafe extern "system" fn FatReadEaSet(
     DebugTrace(1, Dbg, (b"FatReadEaSet\n\0").as_ptr() as *const core::ffi::c_char, 0);
     DebugTrace(0, Dbg, (b"  Vcb      = %p\n\0").as_ptr() as *const core::ffi::c_char, 0, Vcb);
 
-    if EaHandle < 0 /* MIN_EA_HANDLE */ || EaHandle > 0xFFFF /* MAX_EA_HANDLE */ {
+    if EaHandle < 1 /* MIN_EA_HANDLE */ || EaHandle > 0x77FF /* MAX_EA_HANDLE */ {
         DebugTrace(-1, Dbg, (b"FatReadEaSet: Illegal handle value\n\0").as_ptr() as *const core::ffi::c_char, 0);
-        FatRaiseStatus(IrpContext, 0x80000021_u32 as i32); // STATUS_NONEXISTENT_EA_ENTRY
+        FatRaiseStatus(IrpContext, 0xC0000051_u32 as i32); // STATUS_NONEXISTENT_EA_ENTRY
     }
 
     ea_offset_vbo = core::mem::size_of::<EA_FILE_HEADER>() as u32 + ((((EaHandle as u64) >> 7) << 8) as u32);
@@ -1123,12 +1123,12 @@ pub unsafe extern "system" fn FatReadEaSet(
             EaSetRange,
             ea_set_vbo,
             bytes_per_cluster,
-            0xC000003D_u32 as i32, // STATUS_DATA_ERROR
+            0xC000003E_u32 as i32, // STATUS_DATA_ERROR
         );
 
         let ea_set: *mut EA_SET_HEADER = (*EaSetRange).Data as *mut EA_SET_HEADER;
 
-        if (*ea_set).Signature != 0x6745 /* EA_SET_SIGNATURE */ || (*ea_set).OwnEaHandle != EaHandle {
+        if (*ea_set).Signature != 0x4145 /* EA_SET_SIGNATURE */ || (*ea_set).OwnEaHandle != EaHandle {
             DebugTrace(0, Dbg, (b"FatReadEaSet: Ea set header is corrupt\n\0").as_ptr() as *const core::ffi::c_char, 0);
             FatRaiseStatus(IrpContext, 0xC000003D_u32 as i32);
         }
@@ -1136,7 +1136,7 @@ pub unsafe extern "system" fn FatReadEaSet(
         cb_list = GetcbList(ea_set);
 
         if ReturnEntireSet != 0 && cb_list > bytes_per_cluster {
-            cb_list = ((cb_list + 0 /* EA_CBLIST_OFFSET */ + bytes_per_cluster - 1) & !(bytes_per_cluster - 1));
+            cb_list = ((cb_list + 0x1a /* EA_CBLIST_OFFSET */ + bytes_per_cluster - 1) & !(bytes_per_cluster - 1));
 
             FatUnpinEaRange(IrpContext, (EaSetRange).cast());
 
