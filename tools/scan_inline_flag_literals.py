@@ -34,11 +34,28 @@ DEFINE_RE = re.compile(r'^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$')
 
 # A literal (hex or decimal) adjacent to a /* NAME */ or // NAME comment naming a
 # constant. Three spellings the grind emits.
+# A literal, and a |-joined RUN of literals (parens/suffixes tolerated). We pair a
+# `A | B | C` literal run positionally with a `NAME1 | NAME2 | NAME3` comment run, so
+# `0x40 | 0x200 // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE` checks 0x40↔CASE_INSENSITIVE
+# and 0x200↔KERNEL_HANDLE (not the cross-pair, which was the dominant false positive).
+# lookbehind: the number must NOT be part of a larger token (so the "8" in `as i8`
+# / `u8` / an identifier is not mistaken for a literal).
+_LIT = r'(?<![\w.])(?:0x[0-9a-fA-F]+|\d+)(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)?'
+_LITRUN = rf'\(?\s*{_LIT}(?:\s*\|\s*{_LIT})*\s*\)?'
+_NAME = r'[A-Za-z_][A-Za-z0-9_]*'
+_NAMERUN = rf'{_NAME}(?:\s*\|\s*{_NAME})*'
 PATTERNS = [
-    re.compile(r'(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/'),
-    re.compile(r'/\*\s*([A-Za-z_][A-Za-z0-9_]*)[^*]*\*/\s*(0x[0-9a-fA-F]+|\b\d+)\b'),
-    re.compile(r'(0x[0-9a-fA-F]+|\b\d+)\s*(?:u32|i32|u16|u8)?\s*,?\s*//\s*([A-Za-z_][A-Za-z0-9_]*)'),
+    re.compile(rf'({_LITRUN})\s*/\*\s*({_NAMERUN})[^*]*\*/'),        # lits /* names */
+    re.compile(rf'/\*\s*({_NAMERUN})[^*]*\*/\s*({_LITRUN})'),        # /* names */ lits
+    re.compile(rf'({_LITRUN})\s*,?\s*//\s*({_NAMERUN})'),            # lits ,? // names
 ]
+
+
+def _split_run(s, kind):
+    parts = [x.strip().strip("()").strip() for x in s.split("|")]
+    if kind == "lit":
+        return [lit_value(x) for x in parts]
+    return parts
 
 
 def parse_c_value(val):
@@ -97,6 +114,15 @@ def main():
         return 2
 
     catalog = build_c_catalog(REPO, include_enums=True)
+    # The curated build_c_catalog misses whole families (OBJ_, POOL_TYPE, MEM_,
+    # PAGE_, SEC_, KEY_, ...). Broaden with the kernel include trees so literals
+    # tagged with those names aren't silently skipped. setdefault in add_headers
+    # keeps the curated value on any name collision.
+    for d in ("sdk/include/xdk", "sdk/include/ndk", "sdk/include/psdk",
+              "ntoskrnl/include/internal"):
+        p = REPO / d
+        if p.exists():
+            add_headers(catalog, str(p))
     for d in header_dirs:
         add_headers(catalog, d)
 
@@ -111,22 +137,23 @@ def main():
             for pat in PATTERNS:
                 for m in pat.finditer(line):
                     g = m.groups()
-                    # group order differs per pattern; find the name + literal
-                    name = next((x for x in g if x and re.match(r'^[A-Za-z_]', x)), None)
-                    lit = next((x for x in g if x and re.match(r'^(0x|\d)', x)), None)
-                    if not name or lit is None or name not in catalog:
+                    # one group is the literal-run, the other the name-run.
+                    litrun = next((x for x in g if x and re.search(r'(0x|\d)', x.lstrip("( "))), None)
+                    namerun = next((x for x in g if x and x is not litrun and re.match(r'\s*[A-Za-z_]', x)), None)
+                    if not litrun or not namerun:
                         continue
-                    lv = lit_value(lit)
-                    if lv is None:
-                        continue
-                    want = catalog[name]
-                    if lv != want:
-                        # ignore obviously-unrelated comments (e.g. a value tagged
-                        # with a function name); only flag when the value differs.
-                        print(f"{f}:{ln}: literal {lit} tagged /* {name} */ "
-                              f"but {name} = {hex(want)} ({want})")
-                        print(f"    {line.strip()}")
-                        mismatches += 1
+                    lits = _split_run(litrun, "lit")
+                    names = _split_run(namerun, "name")
+                    # pair positionally; only as far as both runs have entries.
+                    for lv, name in zip(lits, names):
+                        if lv is None or name not in catalog:
+                            continue
+                        want = catalog[name]
+                        if lv != want:
+                            print(f"{f}:{ln}: literal {hex(lv)} tagged /* {name} */ "
+                                  f"but {name} = {hex(want)} ({want})")
+                            print(f"    {line.strip()}")
+                            mismatches += 1
     if mismatches:
         print(f"\n{mismatches} inlined-literal mismatch(es) — fix to the header value.")
         return 1
