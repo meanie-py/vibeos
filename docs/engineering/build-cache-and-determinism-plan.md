@@ -1,7 +1,9 @@
 # Build Cache & Determinism Plan
 
-Status: **infra landed, opt-in** (brainstormed + implemented 2026-06-14; lane = `build-cache` branch / `vibeos-wt-buildcache`).
-Owner: build-cache lane. Prereq for nothing; unblocks faster iteration for every lane.
+Status: **implemented + measured on i386, opt-in** (brainstormed + implemented 2026-06-14;
+real-tree measured 2026-06-15; lane = `build-cache` branch / `vibeos-wt-buildcache`).
+Headline: **sccache 100% Rust hits across the clean-smoke target nuke**, cache proven
+codegen-safe. Owner: build-cache lane. Prereq for nothing; unblocks faster iteration.
 
 ## Implementation status (2026-06-14)
 
@@ -174,6 +176,39 @@ Asked: can we write to S3 to exploit the content hashing, and how much lift to f
 tools already consume). Then local→S3 is a 4-line change, never a rewrite. We stay local
 single-machine for now.
 
+## Measurements (2026-06-15, i386, this machine)
+
+First real-tree run: a **fresh** `build-i386` cmake-configured in the build-cache worktree,
+built with `vibeos-cli build --arch i386 --cache`.
+
+- **Cache is codegen-safe — the critical result.** The Rust rlib built with sccache +
+  `CARGO_INCREMENTAL=0` has byte-identical symbol references to main's normal build
+  (`libevtlib_rust.a` undefined-refs are an exact match). sccache changes *nothing* about the
+  output; it's a transparent wrapper that runs the real rustc on a miss.
+- **Cold populate:** 6293 C/C++ compiles + 73 Rust crate compiles through the cache (0% hits,
+  as expected on a cold tree).
+- **Warm rebuild** (delete all objects + Rust targets, recompile): **ccache 73% direct / 86%
+  incl. preprocessed** (4634/6341); **sccache 100% Rust hits** across the target nuke; 6341
+  objects recompiled in **73 s** (vs ~5 min cold). The 73% ccache (vs ~100% steady-state) is
+  depressed because the cold build was *truncated* by orthogonal fresh-worktree link failures,
+  so 1707 objects got their first-ever compile during the warm pass — legit cold misses, not a
+  cache deficiency.
+- **Headline:** sccache makes the clean-smoke Rust target-dir nuke ~free (100% hits) — a direct
+  hit on pain #1 (every clean smoke currently pays a full Rust rebuild).
+
+**Fresh-worktree friction found (orthogonal to the cache, but it gates §5 "retire the copy").**
+A fresh `cmake+ninja` in a new worktree is *not* yet a clean drop-in for `cp -a`, because the
+fresh build hits issues the copied (already-built) tree never does:
+1. **Parallel-build header-generation race** — `winnt.h` etc. are generated into
+   `build-*/sdk/include/psdk/`; a `.rc` can compile before that step runs. Reproduces with
+   plain ninja (no cache). Workaround: a header pre-pass, or just re-run ninja.
+2. **Gitignored `.build-tools/llvm-mingw`** absent in fresh worktrees (cargo `build.rs` needs
+   the i686 clang) → symlink it from main.
+3. **C link failures** (`_RtlZeroMemory` &c., a fully-built-tree-only completeness issue)
+   cascade into Rust `build.rs` steps that need those libs.
+→ So the cache's proven win today is **rebuild + smoke-nuke acceleration inside an existing
+build dir**, not (yet) retiring the copy. Keep the copy recipe.
+
 ## Staged rollout (measure first, promise later)
 
 1. ✅ **Baseline.** ccache 4.5.1 + sccache 0.8.2 installed. (Cold-build/copy reference times
@@ -181,18 +216,22 @@ single-machine for now.
 2. ✅ **ccache for C/C++.** Wired via `-DENABLE_CCACHE` (→ `RULE_LAUNCH_COMPILE ccache`) +
    `CCACHE_BASEDIR` + `nohashdir`. Cross-dir hit **proven** on a synthetic TU. The
    build-twice hit-rate stage is live and doubles as the determinism reading.
-3. ◑ **sccache for Rust.** `RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0` wired; across-nuke hit
-   **proven**. `--remap-path-prefix` deferred (config.toml clobber, see "path normalization")
-   so cross-*worktree* Rust hits are not in yet — same-worktree-across-nuke is.
-4. ☐ **Cross-worktree validation on the real tree.** Build in main, then a *fresh*
-   `cmake+ninja` in a worktree; measure C/C++ + Rust hit rates. Gate for pain 2. *(Needs a
-   build dir provisioned in the lane.)*
-5. ☐ **Measure the link cost.** Compiles cache; the final ~7 G link does **not**. Time
-   "warm-cache fresh worktree build" end-to-end vs the `cp -a` copy. Only if the former wins
-   do we rewrite the AGENTS.md copy recipe to "fresh `cmake+ninja`, cache makes it cheap"
-   (keep copy as a documented fallback).
-6. ☐ **Flip default + document.** Default the cache on, set `max_size` caps, update AGENTS.md
-   (Worktree Discipline + Build Commands) and `tests/qemu/cli/README.md`.
+3. ✅ **sccache for Rust.** `RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0` wired; across-nuke hit
+   **proven on the real tree: 100% Rust hits** (see Measurements). `--remap-path-prefix`
+   deferred (config.toml clobber, see "path normalization") so cross-*worktree* Rust hits are
+   not in yet — same-worktree-across-nuke is.
+4. ✅ **Real-tree hit rates measured** (i386): ccache 73%/86%, sccache 100%, warm recompile 73 s.
+   Cross-worktree ccache is proven *mechanically* (basedir cross-dir hit) but not yet measured
+   on two full real trees — that's the remaining cross-worktree gap, lower priority now that
+   the same-worktree + smoke-nuke win is demonstrated.
+5. ✅ **Link/copy decision: KEEP the copy.** The fresh-worktree friction (Measurements §1–3)
+   means a fresh `cmake+ninja` is not a clean drop-in for `cp -a` today — the copy delivers a
+   fully-built tree, fresh-configure hits the header race + missing-lib cascade. The cache's
+   demonstrated win is **rebuild + smoke-nuke acceleration**, not copy retirement. Revisit once
+   the fresh-build issues are fixed (they're ReactOS-build bugs worth fixing independently).
+6. ◑ **Default: opt-in + recommended for now.** `--cache` stays default-off (env/flag opt-in);
+   proven safe + fast on i386. Flip default-on after amd64/arm64 validation (the cargo-driven
+   amd64 kernel relink is the interaction to check). `max_size` capped at 50 G each.
 
 ## Risks & open items
 
@@ -212,7 +251,14 @@ single-machine for now.
 - `vibeos-cli build` is the single owner that computes/exports the cache env from
   `VIBEOS_ROOT`.
 - Measure the link cost (#5) *before* declaring the copy retired — don't over-promise.
+  **Measured 2026-06-15 → KEEP the copy** (fresh-worktree friction, not link cost, is the
+  blocker; see Measurements).
 - Both tools (ccache C/C++, sccache Rust); local now; env-driven so S3 is a later config flip.
+- Use ReactOS's `-DENABLE_CCACHE` (global `RULE_LAUNCH_COMPILE ccache`) — verified it does NOT
+  break `.rc`/resource compilation once generated headers exist (the earlier `.rc` failures
+  were the header race, not ccache). `CMAKE_C/CXX_COMPILER_LAUNCHER` is the RC-only-safe
+  alternative if a future RC issue appears.
+- Keep `--cache` **opt-in** until amd64/arm64 are validated; i386 is proven safe + fast.
 
 ## Success metrics
 
