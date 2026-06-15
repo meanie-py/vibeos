@@ -351,8 +351,8 @@ pub unsafe extern "system" fn FatReadDirectoryFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
-    IrpContext: *mut PIRP_CONTEXT,
-    Dcb: *mut PDCB,
+    IrpContextArg: PIRP_CONTEXT,
+    DcbArg: PDCB,
     StartingVbo: u32,      // VBO
     ByteCount: u32,
     Bcb: *mut PBCB,
@@ -361,6 +361,16 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
     Reversible: u8,
     Status: *mut NTSTATUS,
 ) {
+    // C prototype takes single pointers (PIRP_CONTEXT, PDCB); all callers pass single
+    // pointers. This body was mistranslated with an extra indirection (*IrpContext,
+    // *Dcb, **Dcb), so a single Dcb was dereferenced as **Dcb → the DCB's first 8 bytes
+    // were used as a pointer → garbage Dcb into FatOpenDirectoryFile → BUGCHECK 0x1E.
+    // Rebind the body's double-pointer names to the addresses of the single-ptr args so
+    // the translated body is unchanged and correct. (Bcb/Buffer remain genuine outs.)
+    let mut IrpContextLocal = IrpContextArg;
+    let mut DcbLocal = DcbArg;
+    let IrpContext: *mut PIRP_CONTEXT = &mut IrpContextLocal;
+    let Dcb: *mut PDCB = &mut DcbLocal;
     // PAGED_CODE();
     DebugTrace(
         1,
