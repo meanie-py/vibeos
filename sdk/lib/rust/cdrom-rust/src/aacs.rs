@@ -1193,7 +1193,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
         );
 
         // Set up the CDB
-        cdb.REPORT_KEY.as_mut().OperationCode = 0x40; // SCSIOP_REPORT_KEY
+        cdb.REPORT_KEY.as_mut().OperationCode = 0xA4; // SCSIOP_REPORT_KEY
         let start_lba = (*input).StartLba;
         cdb.REPORT_KEY.as_mut().LogicalBlockAddress[0] = (start_lba >> (3 * 8)) as u8;
         cdb.REPORT_KEY.as_mut().LogicalBlockAddress[1] = (start_lba >> (2 * 8)) as u8;

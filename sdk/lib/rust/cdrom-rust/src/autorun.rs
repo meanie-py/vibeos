@@ -809,14 +809,14 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
             NT_ASSERT(!(*info).Gesn.Buffer.is_null() as i32);
             (*srb).TimeOutValue = 0x4; // GESN_TIMEOUT_VALUE
             (*srb).CdbLength = 10;
-            (*srb).SrbFlags |= 0x04; // SRB_FLAGS_DATA_IN
+            (*srb).SrbFlags |= 0x40; // SRB_FLAGS_DATA_IN
             (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = 0x4D014; // IOCTL_SCSI_EXECUTE_IN
             (*srb).DataBuffer = (*info).Gesn.Buffer as *mut core::ffi::c_void;
             (*srb).DataTransferLength = (*info).Gesn.BufferSize;
             (*irp).MdlAddress = (*info).Gesn.Mdl as *mut _;
 
             cdb = &raw mut (*srb).Cdb[0] as *mut CDB;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().OperationCode = 0x1A; // SCSIOP_GET_EVENT_STATUS
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().OperationCode = 0x4A; // SCSIOP_GET_EVENT_STATUS
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().set_Immediate(1);
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[0] = ((*info).Gesn.BufferSize >> 8) as u8;
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[1] = ((*info).Gesn.BufferSize & 0xff) as u8;

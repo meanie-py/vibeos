@@ -5115,7 +5115,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
             descriptorSize = core::mem::size_of::<CDROM_WRITE_SPEED_DESCRIPTOR>() as u16;
         }
 
-        cdb.GET_PERFORMANCE.as_mut().OperationCode = 0x28 /* SCSIOP_GET_PERFORMANCE */;
+        cdb.GET_PERFORMANCE.as_mut().OperationCode = 0xAC /* SCSIOP_GET_PERFORMANCE */;
 
         // calculate how many descriptors can fit into the output buffer
         if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength >=
@@ -6285,7 +6285,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
         core::ptr::write_bytes((core::ptr::addr_of_mut!(cdb)) as *mut u8, 0u8, core::mem::size_of::<CDB>());
 
         // Set up the CDB
-        cdb.PLAY_AUDIO_MSF.as_mut().OperationCode = 0xA5u8; // SCSIOP_PLAY_AUDIO_MSF
+        cdb.PLAY_AUDIO_MSF.as_mut().OperationCode = 0x47u8; // SCSIOP_PLAY_AUDIO_MSF
 
         cdb.PLAY_AUDIO_MSF.as_mut().StartingM = (*input_buffer).StartingM;
         cdb.PLAY_AUDIO_MSF.as_mut().StartingS = (*input_buffer).StartingS;
