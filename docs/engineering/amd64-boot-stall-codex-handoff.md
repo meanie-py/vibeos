@@ -158,3 +158,50 @@ With a clean clock, boot advances through the whole kernel + most of userland (S
 - This is the SAME storage-interrupt problem from the start: gappy RTC clock → reads complete ~6.3 s late (the original stall); clean LAPIC clock → hard poll deadlock. The clock was a real bug; **storage IDE IRQ delivery on amd64 APIC is the true blocker.**
 - **Note the IRQL mismatch:** uniata spins at IRQL 10 but the IDE IRQ vector 0x47 maps to IRQL 4 — worth checking uniata's SynchronizeIrql / `IoConnectInterrupt` params and the HAL vector→IRQL mapping on amd64.
 - **Next:** disassemble `fffff80004603e91` (QMP `x/i` unsupported on x86_64 in this build — use gdb or QMP `memsave`+`llvm-objdump`); chase why the IDE completion interrupt (vec 0x47) isn't delivered/serviced, and why uniata enters a poll-at-DIRQL instead of waiting interrupt-driven. Tie back to IOAPIC IRQ14/15→vector routing + EOI on amd64.
+
+---
+
+## UPDATE 2 2026-06-15 (CORRECTION) — Layer 2 is NOT a deadlock; it's PIO-not-DMA
+
+Disassembled `fffff80004603e91` (gdb): it's the `AtapiReadBuffer2` PIO `insw` loop
+(`in (%dx),%ax; mov %ax,(buf); inc; cmp; jne`). Then instrumented `interrupt_read_drq`
+(uniata `id_ata_part2.rs`, COM1 port-0x3F8 emit — DbgPrint deadlocks at DIRQL, don't use it
+in the ISR). Every read-DRQ shows **`d=0` (DmaTransfer=0), `ctl=0` (no CTRFLAGS_DMA_OPERATION),
+`a=1` (ATAPI CD), `wc==left`** (e.g. `wc=0x6000`=48 KB) while `wti=0x100` (one sector). So:
+
+- **The ATAPI boot CD runs in PIO, never DMA.** Each transfer is `insw` of the *whole*
+  remaining request (device reports a big ATAPI byte count), one `in` per word = one KVM
+  VM-exit. 48 KB ≈ 24 K exits ⇒ pathologically slow. It is **NOT a deadlock** — `wc` varies
+  read-to-read, boot *progresses* (reached `shell ready` → `[WINLOGON] GinaInit`), just far
+  too slowly to finish inside the smoke window. (The old "IDE-IRQ poll deadlock" framing in
+  UPDATE 1 was wrong — the high TPR/IRR snapshot was a transient inside the hot `insw`.)
+- This **unifies the whole saga**: the CD was always slow PIO. With the gappy RTC clock it
+  looked like "6.3 s read stalls" and *barely* completed (the codex band-aid is green). With
+  the clean LAPIC clock the timing shifts and it overruns the timeout. **The clock was a real
+  bug; slow PIO is the real perf blocker.**
+
+### Why PIO and not DMA (pinpointed to the gate, not yet the culprit)
+`uniata id_dma.rs:AtapiDmaInit` forces `TransferMode=ATA_PIO` when
+`deviceExtension.BusMaster==0`; `id_init.rs:508` sets `MaxTransferMode=PIO4` when
+`BaseIoAddressBM==0`. `BusMaster` is set to `DMA_MODE_BM` in `id_probe.rs:1272-1289` **only if**
+`IsBusMaster(&pciData)` is true — and `IsBusMaster` = `(pci.Command & PCI_ENABLE_BUS_MASTER(0x4)) != 0`.
+So **the PIIX3 IDE's PCI command-register bus-master-enable bit (0x4) is not set on amd64.**
+That bit is enabled during PCI init — **strong suspicion: the (recently Rust-translated) `pci-rust`
+bus driver isn't enabling bus-master on amd64** (and since i386 boots fast, i386 likely *does* get
+DMA → this is the amd64-specific storage bug, mirroring the amd64-specific clock bug).
+
+### To resume (probes parked in `git stash`)
+- `stash@{1}` = the proven LAPIC-clock fix (hal-rust). `stash@{0}` = uniata DMA probes
+  (`[RDRQ]` in `id_ata_part2.rs` + `[BMDBG]` in `id_probe.rs`; both COM1/DbgPrint, PASSIVE-safe
+  in id_probe). The `[BMDBG]` line logs `pciCmd / isbm / bm / bar4 / maxmode` at the gate.
+- **Next step:** boot with `[BMDBG]` (toolkit `qemu/start.sh amd64 --skip-preflight`, read
+  `qemu/runs/<id>/serial.log`) → confirm `pciCmd` bit 0x4 is clear. Then find where bus-master
+  *should* be enabled (pci-rust FDO start / `IoConnectInterrupt` resource translation /
+  `UniataEnableIoPCI`) and why amd64 skips it. Compare to i386 (boot i386 with `[RDRQ]` → expect
+  `d=1`). Fixing bus-master → CD DMA → fast reads → the LAPIC clock fix can land and amd64 boots
+  comfortably on both clocks.
+- **Tooling notes:** this session's sandbox became unreliable for VM launches (background
+  `/tmp` invisible to foreground calls; `pkill -f vibeos-cli` kills the agent's own shell;
+  `| tail`/`| head` SIGPIPE → exit 1; some `qemu/` + `/tmp` writes didn't persist between Bash
+  calls). Prefer the toolkit (`qemu/runs/` persists), capture start output to a file read in a
+  *separate* call, and avoid `pkill -f vibeos-cli`.
