@@ -551,6 +551,15 @@ extern "C" {
     fn BaseProcessStartup();
 }
 
+// arm64: BaseThreadStartup (thread.rs) / BaseProcessStartup (proc_helpers.rs) /
+// BaseFiberStartup (client/arm64/fiber.S). extern "C"==extern "system" here.
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn BaseThreadStartup();
+    fn BaseFiberStartup();
+    fn BaseProcessStartup();
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn BaseInitializeContext(
@@ -684,8 +693,10 @@ pub unsafe extern "system" fn BaseInitializeContext(
     (*Context).ContextFlags = CONTEXT_FULL as DWORD;
 }
 
-// kernel32 client/utils.c only compiles _M_IX86 / _M_AMD64 paths; on arm64 the
-// function body is effectively unimplemented (no upstream ARM64 path).
+// kernel32 client/utils.c HAS an `_M_ARM64` branch (utils.c:648) — faithfully
+// translated here. (An earlier stub left this empty, so the zeroed CONTEXT reached
+// NtCreateThread with Pc=0/X0=0 → every thread started at PspUserThreadStartup with
+// StartRoutine=0 → BUGCHECK 0xF4 when the thread belonged to a critical process.)
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub unsafe extern "system" fn BaseInitializeContext(
@@ -695,7 +706,26 @@ pub unsafe extern "system" fn BaseInitializeContext(
     StackAddress: PVOID,
     ContextType: ULONG,
 ) {
-    let _ = (Context, Parameter, StartAddress, StackAddress, ContextType);
+    core::ptr::write_bytes(Context as *mut u8, 0, core::mem::size_of::<CONTEXT>());
+
+    /* Setup the Initial Win32 Thread Context (ARM64 calling convention) */
+    (*Context).__bindgen_anon_1.__bindgen_anon_1.X0 = StartAddress as ULONG_PTR as DWORD64; /* 1st arg */
+    (*Context).__bindgen_anon_1.__bindgen_anon_1.X1 = Parameter as ULONG_PTR as DWORD64;    /* 2nd arg */
+    (*Context).Sp = (StackAddress as ULONG_PTR as DWORD64) & !15u64;                        /* 16-byte aligned */
+
+    if ContextType == 1 {
+        /* For Threads */
+        (*Context).Pc = BaseThreadStartup as ULONG_PTR as DWORD64;
+    } else if ContextType == 2 {
+        /* For Fibers */
+        (*Context).Pc = BaseFiberStartup as ULONG_PTR as DWORD64;
+    } else {
+        /* For first thread in a Process */
+        (*Context).Pc = BaseProcessStartup as ULONG_PTR as DWORD64;
+    }
+
+    /* Set the Context Flags */
+    (*Context).ContextFlags = CONTEXT_FULL as DWORD;
 }
 
 #[no_mangle]
