@@ -640,7 +640,7 @@ ULONG FatIoCallDriverCount = 0;  /* FASTFATDBG counter; real DATA, incremented b
 /* FatAreNamesEqual / FatIsNameShortOemValid -> rust_cohab_fat.c (real fatprocs.h macros) */
 /* FatIsNameLongUnicodeValid -> namesup.rs (Rust impl of the fatprocs.h INLINE) */
 BOOLEAN FatIsPathnameValid(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return FALSE; }
-BOOLEAN FatIsIoRangeValid(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; STUB_BUGCHECK(); return FALSE; }
+/* FatIsIoRangeValid -> rust_cohab_fat.c (real fatprocs.h static INLINE) */
 
 
 #pragma clang diagnostic pop

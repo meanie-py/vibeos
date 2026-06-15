@@ -64,7 +64,7 @@ extern "system" {
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PDCB);
     fn _SEH2_AbnormalTermination() -> i32;
     fn FatAcquireSharedVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
-    fn FatCompleteRequest(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP, Status: NTSTATUS);
+    fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, canWait: BOOLEAN) -> *mut PIRP_CONTEXT;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
@@ -721,7 +721,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CONTEXT, Irp: *mut PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
     let mut IrpContext = IrpContext;
     let mut Irp = Irp;
     let mut Status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -734,17 +734,17 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CON
     let Buffer: *mut core::ffi::c_void;
     let mut WeAcquiredVcb: i32 = 0;
 
-    IrpSp = IoGetCurrentIrpStackLocation(*Irp);
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DebugTrace(1, 0, b"FatCommonQueryVolumeInfo...\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, 0, b"Irp                  = %p\n\0".as_ptr() as *const i8, (*Irp as isize) as u32);
+    DebugTrace(0, 0, b"Irp                  = %p\n\0".as_ptr() as *const i8, (Irp as isize) as u32);
     DebugTrace(0, 0, b"->Length             = %08lx\n\0".as_ptr() as *const i8, ((*IrpSp).Parameters.QueryVolume.Length as isize) as u32);
     DebugTrace(0, 0, b"->FsInformationClass = %08lx\n\0".as_ptr() as *const i8, ((*IrpSp).Parameters.QueryVolume.FsInformationClass as isize) as u32);
-    DebugTrace(0, 0, b"->Buffer             = %p\n\0".as_ptr() as *const i8, ((**Irp).AssociatedIrp.SystemBuffer as isize) as u32);
+    DebugTrace(0, 0, b"->Buffer             = %p\n\0".as_ptr() as *const i8, ((*Irp).AssociatedIrp.SystemBuffer as isize) as u32);
 
     Length = (*IrpSp).Parameters.QueryVolume.Length;
     FsInformationClass = (*IrpSp).Parameters.QueryVolume.FsInformationClass;
-    Buffer = (**Irp).AssociatedIrp.SystemBuffer;
+    Buffer = (*Irp).AssociatedIrp.SystemBuffer;
 
     FatDecodeFileObject((*IrpSp).FileObject, core::ptr::addr_of_mut!(Vcb), core::ptr::addr_of_mut!(Fcb), core::ptr::addr_of_mut!(Ccb));
 
@@ -752,34 +752,34 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CON
     _Analysis_assume_((Vcb as *mut core::ffi::c_void != core::ptr::null_mut()) as i32);
 
     // _SEH2_TRY block starts here
-    FatVerifyFcb(*IrpContext, (*Vcb).RootDcb);
+    FatVerifyFcb(IrpContext, (*Vcb).RootDcb);
 
     match FsInformationClass {
         1 => { // FileFsVolumeInformation
-            if FatAcquireSharedVcb((*IrpContext).cast(), Vcb) == 0 {
+            if FatAcquireSharedVcb(IrpContext.cast(), Vcb) == 0 {
                 DebugTrace(0, 0, b"Cannot acquire Vcb\n\0".as_ptr() as *const i8, 0);
-                Status = FatFsdPostRequest(*IrpContext, *Irp);
+                Status = FatFsdPostRequest(IrpContext, Irp);
                 IrpContext = core::ptr::null_mut();
                 Irp = core::ptr::null_mut();
             } else {
                 WeAcquiredVcb = 1;
-                Status = FatQueryFsVolumeInfo(IrpContext, core::ptr::addr_of_mut!(Vcb), Buffer as *mut FILE_FS_VOLUME_INFORMATION, core::ptr::addr_of_mut!(Length));
+                Status = FatQueryFsVolumeInfo(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Vcb), Buffer as *mut FILE_FS_VOLUME_INFORMATION, core::ptr::addr_of_mut!(Length));
             }
         },
         3 => { // FileFsSizeInformation
-            Status = FatQueryFsSizeInfo(IrpContext, core::ptr::addr_of_mut!(Vcb), Buffer as *mut FILE_FS_SIZE_INFORMATION, core::ptr::addr_of_mut!(Length));
+            Status = FatQueryFsSizeInfo(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Vcb), Buffer as *mut FILE_FS_SIZE_INFORMATION, core::ptr::addr_of_mut!(Length));
         },
         4 => { // FileFsDeviceInformation
-            Status = FatQueryFsDeviceInfo(*IrpContext, Vcb, Buffer as *mut ntkrnl_sys::ddk::FILE_FS_DEVICE_INFORMATION, core::ptr::addr_of_mut!(Length));
+            Status = FatQueryFsDeviceInfo(IrpContext, Vcb, Buffer as *mut ntkrnl_sys::ddk::FILE_FS_DEVICE_INFORMATION, core::ptr::addr_of_mut!(Length));
         },
         5 => { // FileFsAttributeInformation
-            Status = FatQueryFsAttributeInfo(*IrpContext, Vcb, Buffer as *mut FILE_FS_ATTRIBUTE_INFORMATION, core::ptr::addr_of_mut!(Length));
+            Status = FatQueryFsAttributeInfo(IrpContext, Vcb, Buffer as *mut FILE_FS_ATTRIBUTE_INFORMATION, core::ptr::addr_of_mut!(Length));
         },
         7 => { // FileFsFullSizeInformation
-            Status = FatQueryFsFullSizeInfo(*IrpContext, Vcb, Buffer as *mut FILE_FS_FULL_SIZE_INFORMATION, core::ptr::addr_of_mut!(Length));
+            Status = FatQueryFsFullSizeInfo(IrpContext, Vcb, Buffer as *mut FILE_FS_FULL_SIZE_INFORMATION, core::ptr::addr_of_mut!(Length));
         },
         11 => { // FileFsSectorSizeInformation (NTDDI >= NTDDI_WIN8)
-            Status = FatQueryFsSectorSizeInfo(*IrpContext, Vcb, Buffer as *mut FatFileFsSectorSizeInformation, core::ptr::addr_of_mut!(Length));
+            Status = FatQueryFsSectorSizeInfo(IrpContext, Vcb, Buffer as *mut FatFileFsSectorSizeInformation, core::ptr::addr_of_mut!(Length));
         },
         _ => {
             Status = STATUS_INVALID_PARAMETER;
@@ -787,14 +787,14 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: *mut PIRP_CON
     }
 
     if !Irp.is_null() {
-        (**Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
+        (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
     }
 
     // _SEH2_FINALLY
     DebugUnwind(b"FatCommonQueryVolumeInfo\0".as_ptr() as *const i8);
 
     if WeAcquiredVcb != 0 {
-        FatReleaseVcb(*IrpContext, Vcb);
+        FatReleaseVcb(IrpContext, Vcb);
     }
 
     if _SEH2_AbnormalTermination() == 0 {
@@ -863,8 +863,7 @@ pub unsafe extern "system" fn FatCommonSetVolumeInfo(
     );
 
     if TypeOfOpen != UserVolumeOpen {
-        let mut irp_ctx_tmp: PIRP_CONTEXT = IrpContext;
-        FatCompleteRequest(&mut irp_ctx_tmp, &mut Irp, STATUS_ACCESS_DENIED);
+        FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
         DebugTrace((-1i32) as u32, Dbg as u32, b"FatCommonSetVolumeInfo -> STATUS_ACCESS_DENIED\n\0".as_ptr() as *const i8, 0u32);
         return STATUS_ACCESS_DENIED;
     }
@@ -906,8 +905,7 @@ pub unsafe extern "system" fn FatCommonSetVolumeInfo(
     DebugUnwind(b"FatCommonSetVolumeInfo\0".as_ptr() as *const i8);
     FatReleaseVcb(IrpContext, Vcb);
     if _SEH2_AbnormalTermination() == 0 {
-        let mut irp_ctx_fin: PIRP_CONTEXT = IrpContext;
-        FatCompleteRequest(&mut irp_ctx_fin, &mut Irp, Status);
+        FatCompleteRequest(IrpContext, Irp, Status);
     }
     DebugTrace(
         (-1i32) as u32,
@@ -2325,7 +2323,7 @@ pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
     TopLevel = FatIsIrpTopLevel(Irp);
     {
         IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
-        Status = FatCommonQueryVolumeInfo(IrpContext, &mut Irp);
+        Status = FatCommonQueryVolumeInfo(IrpContext.cast(), Irp);
     }
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }
     FsRtlExitFileSystem();

@@ -36,6 +36,7 @@
 #define KeGetCurrentProcessorNumber     __ff_inl_KeGetCurrentProcessorNumber
 #define IoGetRemainingStackSize         __ff_inl_IoGetRemainingStackSize
 #define FsRtlSetupAdvancedHeader        __ff_inl_FsRtlSetupAdvancedHeader
+#define FatIsIoRangeValid               __ff_inl_FatIsIoRangeValid
 
 #include "fatprocs.h"
 
@@ -120,6 +121,13 @@ ULONG_PTR IoGetRemainingStackSize(VOID) { return __ff_inl_IoGetRemainingStackSiz
 #undef FsRtlSetupAdvancedHeader
 VOID FsRtlSetupAdvancedHeader(PVOID AdvancedHeader, PFAST_MUTEX FastMutex)
 { __ff_inl_FsRtlSetupAdvancedHeader(AdvancedHeader, FastMutex); }
+
+/* FatIsIoRangeValid — static INLINE in fatprocs.h (AllocSup helper). Rust
+ * callers (write/create/fileinfo) reference it via extern "C". Out-of-line it
+ * with the real header's body: a FAT object's size must fit in 32 bits. */
+#undef FatIsIoRangeValid
+BOOLEAN FatIsIoRangeValid(PVCB Vcb, LARGE_INTEGER Start, ULONG Length)
+{ return __ff_inl_FatIsIoRangeValid(Vcb, Start, Length); }
 
 /* ======================================================================
  * Vista+ (0x600) APIs that fastfat references but are #if'd out at 0x502:

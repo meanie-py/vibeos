@@ -251,6 +251,21 @@ pub unsafe extern "system" fn FatFsdWrite(
         }
     }
 
+    // NT_ASSERT( !(ModWriter && TopLevel) );  — DUMMY_PSEH no-op
+    //
+    //  Restore the top level IRP and leave the FS critical region we entered
+    //  above. The original C does this unconditionally after the SEH block;
+    //  the translation had dropped it, leaking a KeEnterCriticalRegion on the
+    //  normal path -> KernelApcDisable == -1 -> BUGCHECK 0x20 on thread exit.
+    if mod_writer != 0 {
+        IoSetTopLevelIrp(FSRTL_MOD_WRITE_TOP_LEVEL_IRP as usize as *mut IRP);
+    }
+    if top_level != 0 {
+        IoSetTopLevelIrp(core::ptr::null_mut());
+    }
+
+    FsRtlExitFileSystem();
+
     return status;
 }
 
