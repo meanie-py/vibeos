@@ -4,8 +4,15 @@ use core::ffi::c_void;
 use crate::k32_externs::{
     BaseFormatObjectAttributes, RtlZeroMemory, RtlCopyMemory,
 };
-extern "system" {
+extern "C" {
+    // cdecl in C (handle.c: `HANDLE TranslateStdHandle(IN HANDLE)`, no WINAPI).
+    // Declaring it extern "system" (stdcall) here mismatched the cdecl callee:
+    // on i386 release (no frame ptr) the per-iteration stdcall/cdecl stack-cleanup
+    // mismatch drifted ESP inside WaitForMultipleObjectsEx's translate loop,
+    // corrupting the ESP-relative handle buffer → garbage handles → STATUS_INVALID_HANDLE.
     fn TranslateStdHandle(hHandle: HANDLE) -> HANDLE;
+}
+extern "system" {
     fn VerifyConsoleIoHandle(Handle: HANDLE) -> BOOL;
     fn GetConsoleInputWaitHandle() -> HANDLE;
     fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;

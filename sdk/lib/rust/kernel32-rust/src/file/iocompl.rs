@@ -5,7 +5,9 @@ use core::ffi::c_void;
 extern "system" {
     fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 }
-extern "C" {
+extern "system" {
+    // stdcall: defined `extern "system"` in client/utils.rs (matches synch.rs/debugger.rs
+    // decls). An extern "C" decl here mismatched the stdcall callee → i386 ESP corruption.
     fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
 }
 
