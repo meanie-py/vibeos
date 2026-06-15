@@ -379,7 +379,7 @@ pub unsafe extern "system" fn FatCommonWrite(
     }
 
     if PagingIo == 0 && WriteToEof == 0 && TypeOfOpen != (UserVolumeOpen) as i32 {
-        if !FatIsIoRangeValid(Vcb, StartingByte, ByteCount) != 0 {
+        if FatIsIoRangeValid(Vcb, StartingByte, ByteCount) == 0 {
             (*Irp).IoStatus.Information = 0;
             FatCompleteRequest(IrpContext, Irp, STATUS_DISK_FULL);
             return STATUS_DISK_FULL;
@@ -450,7 +450,7 @@ pub unsafe extern "system" fn FatCommonWrite(
 
         debug_assert!((FsRtlNumberOfRunsInLargeMcb(&(*Vcb).DirtyFatMcb) & 1) == 0);
 
-        if !FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, StartingVbo, &mut DirtyLbo, &mut DirtyByteCount, core::ptr::null_mut()) != 0
+        if FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, StartingVbo, &mut DirtyLbo, &mut DirtyByteCount, core::ptr::null_mut()) == 0
             || (DirtyLbo == 0 && DirtyByteCount >= ByteCount)
         {
             DebugTrace(0, 0x2, b"No dirty fat sectors in the write range.\n\0".as_ptr() as *const i8, 0);
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn FatCommonWrite(
         StartingDirtyVbo = DirtyVbo;
 
         while MoreDirtyRuns != 0 {
-            if !FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, DirtyVbo, &mut DirtyLbo, &mut DirtyByteCount, core::ptr::null_mut()) != 0 {
+            if FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, DirtyVbo, &mut DirtyLbo, &mut DirtyByteCount, core::ptr::null_mut()) == 0 {
                 DirtyVbo = DirtyLbo as VBO;
                 DebugTrace(0, Dbg, b"Last dirty fat Mcb entry was a hole: corrupt.\n\0".as_ptr() as *const i8, 0);
                 FatBugCheck(0, 0, 0);
@@ -480,7 +480,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                     DirtyByteCount = StartingVbo + ByteCount - DirtyVbo;
                     MoreDirtyRuns = 0;
                 } else {
-                    if !FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, DirtyVbo + DirtyByteCount, &mut CleanLbo, &mut CleanByteCount, core::ptr::null_mut()) != 0 {
+                    if FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, DirtyVbo + DirtyByteCount, &mut CleanLbo, &mut CleanByteCount, core::ptr::null_mut()) == 0 {
                         MoreDirtyRuns = 0;
                     } else {
                         debug_assert!(CleanLbo == 0);

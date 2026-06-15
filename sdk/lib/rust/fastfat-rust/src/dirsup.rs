@@ -480,7 +480,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
 
         Dirent = Dirent.sub(1);
 
-        if !FatIsFat32(((*FcbOrDcb).Vcb).cast()) != 0
+        if FatIsFat32(((*FcbOrDcb).Vcb).cast()) == 0
             && DeleteEa != 0
             && *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_ref() != 0
         {

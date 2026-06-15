@@ -485,7 +485,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
         DebugTrace(0, Dbg, b"Type of read is User Volume or virtual volume file\n\0".as_ptr() as *const i8, 0);
 
         if TypeOfOpen == UserVolumeOpen {
-            if !FlagOn((*Ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT | CCB_FLAG_SENT_FORMAT_UNIT) != 0 {
+            if FlagOn((*Ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT | CCB_FLAG_SENT_FORMAT_UNIT) == 0 {
                 FatQuickVerifyVcb(IrpContext, Vcb);
             }
 
@@ -493,19 +493,19 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                 SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
             }
 
-            if !FlagOn((*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE) != 0 {
+            if FlagOn((*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE) == 0 {
                 ExAcquireResourceExclusiveLite(&raw mut (*Vcb).Resource, 1);
 
                 // SEH2_TRY / SEH2_FINALLY for flush (DUMMY_PSEH: try body inline,
                 // finally (release) runs unconditionally).
-                if !FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 {
+                if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 {
                     FatFlushVolume(IrpContext, Vcb, Flush);
                 }
                 ExReleaseResourceLite(&raw mut (*Vcb).Resource);
                 SetFlag(&raw mut (*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE);
             }
 
-            if !FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) != 0 {
+            if FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) == 0 {
                 let mut VolumeSize: LBO;
                 VolumeSize = (*Vcb).Bpb.BytesPerSector as LBO *
                              (if (*Vcb).Bpb.Sectors != 0 { (*Vcb).Bpb.Sectors as LBO } else { (*Vcb).Bpb.LargeSectors as LBO });
@@ -770,7 +770,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                     DebugTrace(0, Dbg, b"Cached read.\n\0".as_ptr() as *const i8, 0);
 
-                    if !FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) != 0 {
+                    if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
                         SystemBuffer = FatMapUserBuffer(IrpContext, Irp);
 
                         // CcCopyReadEx or fallback to CcCopyRead
