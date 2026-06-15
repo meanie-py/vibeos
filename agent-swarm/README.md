@@ -36,6 +36,8 @@ It runs the package via `PYTHONPATH` — **not** pip-installed (avoids the workt
 site-packages shadowing trap).
 
 ```
+vibeos-cli swarm install [--name <id>]   # onboard THIS worktree: write .claude/settings.json
+                                  #   hooks + env SWARM_LOGIN + .mcp.json channel (idempotent)
 vibeos-cli swarm login <name>     # bind this session to an identity ($SWARM_LOGIN also works)
 vibeos-cli swarm whoami / who     # identity / roster
 vibeos-cli swarm say "<msg>"      # post chatter to #swarm
@@ -80,10 +82,25 @@ SWARM_LOGIN=<agent> claude --dangerously-load-development-channels server:matter
 Pushes high-priority `#swarm` chat into a running (even idle) session; lower-priority
 traffic arrives as a periodic digest. Requires Anthropic auth (Pro/Max/Console).
 
+## Onboarding a lane (restart rollout)
+
+Each lane worktree joins the swarm by being restarted onto the new hooks. Do it one at
+a time so a config bug burns one canary, not all of them:
+
+1. **Get agent-swarm in-tree.** Lanes that forked before the platform landed lack
+   `agent-swarm/` — merge `continue-rust-port` into the lane first.
+2. **Provision the identity** (once per lane): `vibeos-cli swarm agent create <lane> --lead <you>`.
+3. **Wire the worktree**: `vibeos-cli swarm install` — writes `.claude/settings.json` (hooks +
+   `env.SWARM_LOGIN=<lane>`) and `.mcp.json` (the channel server). Idempotent; non-destructive.
+4. **Restart that lane's Claude** at a safe checkpoint, launching with
+   `--dangerously-load-development-channels server:mattermost-swarm` for idle push.
+5. **Verify**: it appears in `vibeos-cli swarm who` (and `#swarm` presence) as a proper user,
+   the SessionStart situation report fired, and `vibeos-cli swarm drain` round-trips. Then the next.
+
 ## Status
 
 Built + live-tested (2026-06-14): the three service clients, the registrar (provision +
 banner + teardown, verified against the live suncluster stack), the CLI, the
 priority-tiered drain, and the channel handshake. Pending per the design's build plan:
 Go roster plugin, per-agent Vikunja users, full OAuth-derived runtime creds, the unblock
-protocol. The legacy `tools/swarm/` is superseded by this — see its README.
+protocol. (The legacy `tools/swarm/` prototype this grew out of has been removed.)
