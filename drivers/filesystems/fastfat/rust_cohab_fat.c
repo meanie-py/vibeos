@@ -393,13 +393,21 @@ const LONG  __c_UserVolumeOpen __asm__(FF_SYM("UserVolumeOpen")) = (LONG)(UserVo
 
 /* KeAcquireSpinLockRaiseToDpc: not a real i386 export (macro/forceinline). Provide
  * it directly — acquire raising to DISPATCH_LEVEL, returning the old IRQL. Under
- * -mrtd this emits the stdcall _KeAcquireSpinLockRaiseToDpc@4 the Rust crate wants. */
+ * -mrtd this emits the stdcall _KeAcquireSpinLockRaiseToDpc@4 the Rust crate wants.
+ *
+ * Do NOT implement this via KeAcquireSpinLock: the DDK macro KeAcquireSpinLock(l,i)
+ * expands to `*(i) = KeAcquireSpinLockRaiseToDpc(l)`, so calling it here recursed
+ * straight back into this function. The compiler folded the infinite tail-recursion
+ * to `b .` (branch-to-self), so the FIRST real fastfat spinlock acquire
+ * (FatPrepareWriteDirectoryFile during FatCreateNewFile, reached once smss starts
+ * creating files) spun forever at 100% CPU. On this UP build acquiring a spinlock is
+ * just a raise to DISPATCH_LEVEL — exactly what ntoskrnl's own arm64
+ * KeAcquireSpinLockRaiseToDpc (ke/arm64/stubs.c) does. */
 #undef KeAcquireSpinLockRaiseToDpc
 KIRQL KeAcquireSpinLockRaiseToDpc(PKSPIN_LOCK SpinLock)
 {
-    KIRQL OldIrql;
-    KeAcquireSpinLock(SpinLock, &OldIrql);
-    return OldIrql;
+    (void)SpinLock;
+    return KfRaiseIrql(DISPATCH_LEVEL);
 }
 
 /* RtlCopyMemory is a #define for memcpy; the Rust translation referenced it as a
