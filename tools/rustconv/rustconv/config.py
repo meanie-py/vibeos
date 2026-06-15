@@ -755,6 +755,8 @@ TARGETS = {
     # spec_file=None — WINAPI=stdcall(i386) handled by the user prompt + c2rust
     # anchor (mirrors ntdll). Assembler namespaces by C parent dir
     # (client/, winnls/string/, wine/) → kernel32-rust/src/<dir>/<stem>.rs.
+    # proc.c + NLS/string family (locale/lcformat/nls/casemap/collation) done.
+
     "kernel32": Target(
         name="kernel32",
         source_dir=KERNEL32_DIR,
