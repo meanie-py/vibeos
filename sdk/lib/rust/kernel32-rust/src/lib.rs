@@ -13,6 +13,39 @@
 //! translated .c commented out. Imports resolve to ntdll.dll at runtime; FFI decls from
 //! ntdll-sys. See docs/engineering/ — kernel32 translation campaign (proc.c first).
 
+// Crate-wide `w!("...")` — compile-time UTF-16, NUL-terminated wide string literal
+// (Wine/DDK idiom). All call sites pass ASCII; `.as_ptr()` yields the LPCWSTR.
+// Defined at crate root (before the mods) so every descendant module sees bare `w!`.
+#[macro_export]
+macro_rules! w {
+    ($s:literal) => {{
+        const __B: &[u8] = $s.as_bytes();
+        const __N: usize = __B.len();
+        static __W: [u16; __N + 1] = {
+            let mut out = [0u16; __N + 1];
+            let mut i = 0;
+            while i < __N {
+                out[i] = __B[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        &__W
+    }};
+}
+
+// Crate-wide const UTF-16 builder for `static FOO: [u16; N] = to_w("...");` sites.
+pub const fn to_w<const N: usize>(s: &str) -> [u16; N] {
+    let b = s.as_bytes();
+    let mut out = [0u16; N];
+    let mut i = 0;
+    while i < b.len() {
+        out[i] = b[i] as u16;
+        i += 1;
+    }
+    out
+}
+
 // Foundation: k32-internal types/constants, the cohab import surface (Base*/
 // Win32/SharedUserData/macros), proc.c's globals, and the aggregated substrate.
 pub mod k32_externs;
@@ -36,6 +69,12 @@ pub mod wine;
 
 // client/ — the client-side Win32 API surface (version/handle/atom/environ/path/...).
 pub mod client;
+
+// client/file/ — the file-I/O API family.
+pub mod file;
+
+// client/console/ — console client APIs (console.c pending).
+pub mod console;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

@@ -14,72 +14,52 @@ target_link_libraries(kernel32_shared PRIVATE pseh)
 add_dependencies(kernel32_shared psdk)
 
 list(APPEND SOURCE
-    client/actctx.c
-    client/appcache.c
+    # client/actctx.c — replaced by Rust
+    # client/appcache.c — replaced by Rust
     # client/atom.c       — replaced by Rust (kernel32-rust/src/client/atom.rs)
-    client/compname.c
-    client/debugger.c
-    client/dosdev.c
+    # client/compname.c — replaced by Rust
+    # client/debugger.c — replaced by Rust
+    # client/dosdev.c — replaced by Rust
     client/dllmain.c
     # client/environ.c    — replaced by Rust (kernel32-rust/src/client/environ.rs)
-    client/except.c
-    client/fiber.c
+    # client/except.c — replaced by Rust
+    # client/fiber.c — replaced by Rust
     # client/handle.c     — replaced by Rust (kernel32-rust/src/client/handle.rs)
-    client/heapmem.c
-    client/job.c
-    client/loader.c
+    # client/heapmem.c — replaced by Rust
+    # client/job.c — replaced by Rust
+    # client/loader.c — replaced by Rust
     # client/path.c       — replaced by Rust (kernel32-rust/src/client/path.rs)
-    client/perfcnt.c
-    client/power.c
+    # client/perfcnt.c — replaced by Rust
+    # client/power.c — replaced by Rust
     # client/proc.c   — replaced by Rust (sdk/lib/rust/kernel32-rust/); cohab-linked
     #                   via libkernel32_rust.a below. Kept on disk (never-delete rule).
-    client/resntfy.c
-    client/session.c
-    client/synch.c
-    client/sysinfo.c
-    client/time.c
-    client/timerqueue.c
-    client/toolhelp.c
-    client/utils.c
-    client/thread.c
-    client/vdm.c
+    # client/resntfy.c — replaced by Rust
+    # client/session.c — replaced by Rust
+    # client/synch.c — replaced by Rust
+    # client/sysinfo.c — replaced by Rust
+    # client/time.c — replaced by Rust
+    # client/timerqueue.c — replaced by Rust
+    # client/toolhelp.c — replaced by Rust
+    # client/utils.c — replaced by Rust
+    # client/thread.c — replaced by Rust
+    # client/vdm.c — replaced by Rust
     # client/version.c    — replaced by Rust (kernel32-rust/src/client/version.rs)
-    client/virtmem.c
-    client/console/alias.c
+    # client/virtmem.c — replaced by Rust
+    # client/console/alias.c — replaced by Rust
     client/console/console.c
-    client/console/history.c
-    client/console/init.c
-    client/console/readwrite.c
-    client/file/backup.c
-    client/file/cnotify.c
-    client/file/copy.c
-    client/file/create.c
-    client/file/delete.c
-    client/file/deviceio.c
-    client/file/dir.c
-    client/file/disk.c
-    client/file/fileinfo.c
-    client/file/filemap.c
-    client/file/filename.c
-    client/file/find.c
-    client/file/hardlink.c
-    client/file/iocompl.c
-    client/file/lfile.c
-    client/file/lock.c
-    client/file/mailslot.c
+    # client/console/history.c — replaced by Rust
+    # client/console/init.c — replaced by Rust
+    # client/console/readwrite.c — replaced by Rust
     client/file/move.c
-    client/file/mntpoint.c
-    client/file/npipe.c
-    client/file/rw.c
-    client/file/tape.c
-    client/file/volume.c
-    wine/actctx.c
-    wine/comm.c
-    wine/lzexpand.c
+    # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
+    #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,tape,volume}.c — replaced by Rust (kernel32-rust/src/file/)
+    # wine/actctx.c — replaced by Rust
+    # wine/comm.c — replaced by Rust
+    # wine/lzexpand.c — replaced by Rust
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
-    wine/profile.c
+    # wine/profile.c — replaced by Rust
     wine/res.c
-    wine/timezone.c
+    # wine/timezone.c — replaced by Rust
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
     # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)
     # winnls/string/digitmap.c   — replaced by Rust (kernel32-rust/src/string/digitmap.rs)
