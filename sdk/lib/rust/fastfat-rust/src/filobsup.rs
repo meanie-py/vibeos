@@ -38,13 +38,18 @@ extern "system" {
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_FILOBSUP;
 pub const Dbg: u32 = DEBUG_TRACE_FILOBSUP;
 
-const UnopenedFileObject: i32 = 0;
-const UserFileOpen: i32 = 1;
-const EaFile: i32 = 2;
+// _TYPE_OF_OPEN (fatprocs.h / crate::types) is 1-based: UnopenedFileObject = 1.
+// These were mistranslated as a 0-based enum (UnopenedFileObject=0, UserFileOpen=1,
+// EaFile=2...), so FatDecodeFileObject RETURNED filobsup's UserFileOpen(1) for a real
+// file while every consumer (read/write/cleanup, using crate::types) reads 1 as
+// UnopenedFileObject → "Illegal TypeOfOpen" FatBugCheck 0x23 on the first paging read.
+const UnopenedFileObject: i32 = 1;
+const UserFileOpen: i32 = 2;
 const UserDirectoryOpen: i32 = 3;
 const UserVolumeOpen: i32 = 4;
 const VirtualVolumeFile: i32 = 5;
 const DirectoryFile: i32 = 6;
+const EaFile: i32 = 7;
 
 const FAT_NTC_VCB: u32 = 0x0501;
 const FAT_NTC_FCB: u32 = 0x0502;

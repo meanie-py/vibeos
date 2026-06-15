@@ -706,7 +706,11 @@ pub unsafe extern "system" fn FatLocateDirent(
 
             if (*(*Dirent)).FileName[0] == FAT_DIRENT_DELETED {
                 LfnInProgress = 0;
-                // goto GetNextDirent -> continue
+                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                // `continue` jumps to the loop header and skips the increment at
+                // the bottom (lines below), pinning ByteOffset on one dirent forever.
+                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *Dirent = (*Dirent).add(1);
                 continue;
             }
 
@@ -804,7 +808,11 @@ pub unsafe extern "system" fn FatLocateDirent(
                     }
                 }
 
-                // goto GetNextDirent -> continue
+                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                // `continue` jumps to the loop header and skips the increment at
+                // the bottom (lines below), pinning ByteOffset on one dirent forever.
+                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *Dirent = (*Dirent).add(1);
                 continue;
             }
 
@@ -812,7 +820,11 @@ pub unsafe extern "system" fn FatLocateDirent(
                 if FlagOn((*Ccb).Flags, CCB_FLAG_MATCH_VOLUME_ID) != 0 {
                     break;
                 }
-                // goto GetNextDirent -> continue
+                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                // `continue` jumps to the loop header and skips the increment at
+                // the bottom (lines below), pinning ByteOffset on one dirent forever.
+                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *Dirent = (*Dirent).add(1);
                 continue;
             }
 
@@ -894,7 +906,10 @@ pub unsafe extern "system" fn FatLocateDirent(
                     if ARGUMENT_PRESENT(OrigLongFileName) {
                         (*OrigLongFileName).Length = 0;
                     }
-                    // goto GetNextDirent -> continue
+                    // goto GetNextDirent: advance offset+pointer THEN loop (a bare
+                    // `continue` would skip the bottom-of-loop increment).
+                    (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                    *Dirent = (*Dirent).add(1);
                     continue;
                 }
 
