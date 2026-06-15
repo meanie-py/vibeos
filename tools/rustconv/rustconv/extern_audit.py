@@ -660,12 +660,12 @@ def fix_file(file_path: Path, mismatches: list[AuditMismatch], dry_run: bool = F
         if conventions_match(found_block.convention, target):
             continue
 
-        # Extract the full declaration text
+        # Extract the full declaration text. This is the verbatim source line,
+        # so any visibility prefix (`pub fn`/`pub static`) rides along into the
+        # rebuilt block via decl_clean below — no separate handling needed.
+        # (test_extern_audit_preserves_pub pins this guarantee.)
         actual_line = found_block.fn_lines[m.decl.name]
         full_decl, first, last = _extract_fn_decl(lines, actual_line)
-
-        # Determine visibility prefix: check if any function in this block has 'pub'
-        is_pub = "pub fn" in full_decl or "pub static" in full_decl  # noqa: F841  # TODO: visibility prefix is computed but never applied when rebuilding the extern block below (drops `pub`)
 
         fixes.append((m.decl.name, target, actual_line, full_decl.strip()))
 
