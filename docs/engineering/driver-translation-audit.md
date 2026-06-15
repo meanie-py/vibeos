@@ -1,5 +1,7 @@
 # Driver Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against each driver's `CMakeLists.txt` + `sdk/lib/rust/*` crates. Corrections this pass: **uniata.sys is DONE** (uniata-rust, first C++→Rust translation, landed on crp — moved out of "candidate targets"); **btrfs/ext2/ntfs drivers were DELETED entirely** (commit 14a0563b291, 2026-06-09 — removed from the "NOT recommended / imported C" table; ~16 dead `baseaddress_{ubtrfs,uext2,untfs,shellbtrfs}` constants linger harmlessly in `sdk/cmake/baseaddress*.cmake`); classpnp/cdfs/cdrom remain IN-FLIGHT on their own branches (not landed).
+
 Status of the `drivers/` fleet C→Rust translation (peer to `rtl-` / `ntdll-` /
 `win32k-translation-audit.md`). Covers the kernel-mode `.sys` drivers under
 `drivers/` plus the ARM64 custom drivers. The `sdk/lib/drivers/` *helper static
@@ -30,7 +32,7 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **disk.sys** | drivers/storage/class/disk | ✅ LANDED (crp) | disk-rust | SCSI disk class driver (12.6K LOC), WDM. Full C→Rust via DeepSeek+c2rust. Cohab. Cold smoke ×3. Merged f4900f16109. |
 | **partmgr.sys** | drivers/storage/partmgr | ✅ LANDED (crp) | partmgr-rust | WDM, boot-loaded. Full C→Rust via DeepSeek+c2rust (~$0.20, 39 fns). Cohab (guid.c stays C). cargo-clean ×3, links ×3, **smoke i386+amd64+arm64 all GREEN**. Review: 0 CRITICAL/HIGH. Added as a rustconv target + gen_driver_types.sh case. Cherry-pick a78e0bba00e. |
 | **pciidex.sys** | drivers/storage/ide/pciidex | ✅ LANDED (crp) | pciidex-rust | PCI IDE bus extension, WDM **export driver** (PciIdeXInitialize/GetBusData/SetBusData/DebugPrint). Full C→Rust (fdo/miniport/pciidex/pdo/power.c, ~1.9K) via DeepSeek+c2rust (~$0.22). Cohab (rust_cohab_stub.c, spec2def kept). cargo-clean ×3, links ×3 (4 exports verified), **cold smoke i386+amd64 ✓ boot (desktop, PnP-exercised); arm64 cold-link ✓** (not on arm64 boot path — no PCI IDE). Caught match-on-const binding hazard (7 IRP_MN_*) + OB_OPEN_REASON mistranslation. Link traps: HalGetInterruptTranslator=HALDISPATCH-> macro, vDbgPrintEx=@stdcall, ExAllocatePoolZero/Ke/Ex FORCEINLINEs. |
-| **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT | classpnp-rust | WDM. Branch `classpnp-port`, ~landing. Building a storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). See `classpnp-cohab-link-gap.md` (branch-local). |
+| **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT (wiring on disk) | classpnp-rust | WDM, ~166K lines translated. On this tree the cmake already drives the cargo link (`add_cargo_module(classpnp classpnp-cargo classpnp.sys KIND kerneldll BODY_CRATE classpnp-rust)`) and `classpnp-rust` is present — but smoke-green ×3 / merge-to-crp not confirmed here. Storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). <!-- VERIFY: cmake is cargo-wired and crate exists on disk; confirm whether this landed on crp (cold smoke ×3 green) or is branch-local in-flight before marking LANDED. --> |
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
 | **cdrom.sys** | drivers/storage/class/cdrom | 🟡 IN-FLIGHT | cdrom-rust | **KMDF** — `kmdf-sys` WDF-dispatch substrate BUILT on `cdrom-port`; links clean amd64 + loads + enumerates. No longer blocked — active lane. |
 | **mountmgr.sys** | drivers/storage/mountmgr | ✅ LANDED (crp) | mountmgr-rust | Mount manager (9.4K, DeepSeek+c2rust, $0.87). Boot-start WDM, cohab, **cold smoke ×3 ✓ boot**. 4 runtime bugs fixed (empty RTL_CONSTANT_STRINGs, PWSTR/UNICODE_STRING, AllocatePool width, element-vs-byte overflow). |
@@ -38,6 +40,7 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **fs_rec.sys** | drivers/filesystems/fs_rec | ✅ LANDED (crp) | fs_rec-rust | FS recognizer (~2.8K LOC, 11 modular files), **boot-loaded** → smoke-exercised. WDM, imports ntoskrnl+hal only. DeepSeek+c2rust (~$0.12). cold smoke ×3 ✓ boot. Merged 1ac0c71839d. |
 | **atapi.sys** | drivers/storage/ide/atapi | ✅ LANDED (crp) | atapi-rust | NT4-DDK ATAPI IDE SCSIPORT miniport (6.5K LOC, single TU, ~30 fns). NOT in txtsetup (live IDE path is uniata.sys) → **link-clean ×3 is the bar**. HAND-translated (link-only-verified ⇒ hand > DeepSeek) via **5-way parallel Claude subagents** over a shared signature-manifest contract — see [[feedback_parallel_subagent_translation]]. cargo-clean ×3 + links ×3 (i386 `_DriverEntry@8`, amd64/arm64 `DriverEntry`). Cohab (atapi.c kept on disk). New gen_driver_types.sh `atapi` case (+`BUILD_ROOT` override). Merged ab471845959. |
 | **mup.sys** | drivers/filesystems/mup | ✅ LANDED (crp) | mup-rust | Multiple UNC Provider (~2.6K, mup.c + dfs.c). WDM, imports ntoskrnl+hal only. **HAND translation** ($0 API), not LLM — every const header-harvested, every union field path from the ntkrnl-sys bindgen substrate. Private node structs (MUP_VCB/FCB/CCB/MIC/UNC/PFX/MQC) in-crate (types.rs). PSEH→DUMMY_PSEH lowering: TRY inline / FINALLY-always-runs (labeled block) / EXCEPT dropped / `ExRaiseStatus -> !`. cargo-clean ×3, links ×3 (45 KB), **cold smoke ×3 ✓ boot** (loads as builtin driver on i386/amd64, boot continues clean to desktop). 3 cross-arch link traps catalogued in field manual (ExRaiseStatus→RtlRaiseStatus link-name, amd64 SharedUserData shim, arm64 KeGetCurrentPrcb forward). |
+| **uniata.sys** | drivers/storage/ide/uniata | ✅ LANDED (crp) | uniata-rust | The live PNP0600 IDE/ATAPI miniport — first **C++→Rust** translation (tree-sitter L2 track). Cmake builds uniata-rust; C/C++ bodies kept on disk (never-delete). `ros_glue.cpp` stays as the C++ TU glue. On the LiveCD IDE read-stack → boot-exercised. Post-merge cold ×3 green. |
 | fastfat.sys | drivers/filesystems/fastfat | ⚪ not started (active on fastfat-port) | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe
@@ -73,9 +76,9 @@ duplicate SRB/sense harvesting.
 
 ## Candidate targets (not yet started)
 
-- **ide / atapi** (drivers/storage/ide) — ATA/ATAPI class stack. pciide + **pciidex +
-  atapi.c miniport now Rust** (all in the LANDED table). Remaining: only **uniata**
-  (C++, the live PNP0600 driver — L2 tree-sitter track, not a C-translate).
+- **ide / atapi** (drivers/storage/ide) — ATA/ATAPI class stack **fully Rust now**:
+  pciide + pciidex + atapi.c miniport + **uniata** (the live PNP0600 C++ driver,
+  done — see the LANDED table). Nothing remaining in this stack.
 - **fastfat.sys** (drivers/filesystems/fastfat, 34 files / 68.8K) — FAT FS, boot
   media. Classic kernel-bug surface; well-specified. Multi-session.
 
@@ -84,9 +87,13 @@ duplicate SRB/sense harvesting.
 | Driver | Reason |
 |---|---|
 | drivers/network/tcpip (lwIP) | 115K lines of imported lwIP — upstream C; replace via smoltcp rewrite ([[project_smoltcp_netstack_design]]), not C-translate |
-| drivers/bus/acpi (ACPICA core) | The Intel ACPICA library (177 files) stays C; only the ReactOS glue was translated (acpi-rust, done) |
-| drivers/filesystems/btrfs | 54 files — imported from WinBtrfs |
-| drivers/filesystems/ext2 | 81 files — imported from Ext2Fsd |
+| drivers/bus/acpi (ACPICA core) | The Intel ACPICA C library (`acpica/**`, 164 files → libacpica.a) is **vendored by policy** — NOT a translation target; only the ReactOS glue (osl/bus/pnp/power…) is Rust (acpi-rust + acpica-sys bindgen, done) |
+
+> **btrfs / ext2 / ntfs filesystem drivers were DELETED** (commit `14a0563b291`,
+> 2026-06-09) — they were imported 3rd-party trees (WinBtrfs / Ext2Fsd) and are no
+> longer on disk, so they are neither remaining-C nor translation targets. ~16 dead
+> `baseaddress_{ubtrfs,uext2,untfs,shellbtrfs}` constants still linger in
+> `sdk/cmake/baseaddress*.cmake` (harmless dead refs, no module consumes them).
 
 ## Patterns & infra
 

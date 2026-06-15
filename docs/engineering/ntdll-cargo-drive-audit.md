@@ -1,5 +1,7 @@
 # ntdll cargo-driven build — C/asm header-dependency audit
 
+> **Ground-truth re-verified 2026-06-14** against `dll/ntdll/CMakeLists.txt` + code — still accurate: ntdll's own C/asm surface is exactly `dispatch/{i386,amd64,arm64}/dispatch.S` (asm, pre-expand/assemble-direct), generated `ntdll_stubs.c` (self-host spec2def), and the empty cohab stub TUs; everything heavy (librtl/libcntpr) is still reused as cmake-built `.a`.
+
 **Goal:** make cargo drive the `ntdll.dll` / `ntdll_vista.dll` build (mirroring
 the `ntoskrnl-cargo` PoC), compiling the remaining C + asm from cargo and
 removing cmake from the *ntdll link flow*. This doc audits every non-Rust input

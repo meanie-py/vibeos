@@ -1,6 +1,8 @@
 # Win32k Pre-Translation (C-Side Rewrite) Audit
 
-> **HISTORICAL — pre-translation C-side rewrite phase (2026-05-16). The win32k C→Rust translation it enabled has since landed ~38 ntuser waves on continue-rust-port; see win32k-translation-audit + project_win32k_ntuser_directdraw_banked.**
+> **Ground-truth re-verified 2026-06-14** against `win32ss/CMakeLists.txt`: this pre-phase is fully spent — the C→Rust translation it enabled is now COMPLETE for the win32k.sys kernel-mode body (both GDI and USER halves 100% flipped; all 59 ntuser .c cohabitation-commented, only irreducible glue stays C). See [win32k-translation-audit.md](win32k-translation-audit.md) for the landed status.
+
+> **HISTORICAL — pre-translation C-side rewrite phase (2026-05-16). The win32k C→Rust translation it enabled has since COMPLETED (all GDI + all 59 ntuser files flipped on continue-rust-port, re-verified 2026-06-14); see win32k-translation-audit + project_win32k_ntuser_directdraw_banked.**
 
 Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
 `worktree-win32k-translation`, uncommitted).** The inventory/classifier
