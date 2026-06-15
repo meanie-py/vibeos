@@ -70,9 +70,12 @@ async function main() {
       instructions:
         'Events tagged <channel source="mattermost-swarm"> are chat from the vibeos swarm. ' +
         'High-priority ones (an @-mention of you, @here/@channel, or a high board priority) ' +
-        'arrive immediately; lower-priority traffic arrives as a periodic count. Read and act ' +
-        'on them; coordinate. Use swarm_post to reply/announce, swarm_read for the full backlog, ' +
-        'mm_search / quest_search to look things up, and quest_* to work the board.',
+        'arrive immediately — read and act on those, coordinate. Lower-priority traffic arrives ' +
+        'as a periodic count and is FYI only: do NOT let it interrupt your current task — finish ' +
+        'what you are doing, then catch up with swarm_read at a natural stopping point. If you ' +
+        'are paused or awaiting the user, do NOT act on low-priority items without asking the ' +
+        'user first (avoid rabbitholing). Use swarm_post to reply/announce, swarm_read for the ' +
+        'full backlog, mm_search / quest_search to look things up, and quest_* to work the board.',
     },
   )
 
@@ -94,6 +97,7 @@ async function main() {
   let ticks = 0
   let lastDigested = 0
   let lowCount = 0
+  let outstanding = false   // a low-priority nudge is already in front of the agent, unread
   setInterval(() => {
     if (ticks++ % 10 === 0) swarm(['heartbeat'])
     const r = swarm(['drain', '--json'], { json: true })
@@ -109,17 +113,28 @@ async function main() {
     lowCount = r.low_count || 0
   }, POLL_MS)
 
-  // Batched low-priority digest: a single nudge when the lower-priority backlog has grown.
+  // Batched low-priority digest: emit AT MOST ONE outstanding nudge. Re-nudging every tick
+  // as the backlog grows is what made digests pile up (12, 13, 15 …) on a paused session.
+  // Once nudged, stay silent — even as more arrives — until the agent actually reads
+  // (low_count drops), which re-arms the next digest.
   setInterval(() => {
-    if (lowCount > lastDigested) {
+    if (lowCount < lastDigested) {   // agent read/drained → reset baseline, re-arm
+      lastDigested = lowCount
+      outstanding = false
+    }
+    if (!outstanding && lowCount > lastDigested) {
       mcp.notification({
         method: 'notifications/claude/channel',
         params: {
-          content: `${lowCount} lower-priority #swarm update(s) — run \`swarm read\` for full text.`,
+          content:
+            `${lowCount} lower-priority #swarm update(s) — FYI only, don't let this interrupt ` +
+            `your current task. Catch up with \`swarm read\` at a natural stopping point. If ` +
+            `you're paused or awaiting the user, don't act on these without asking them first.`,
           meta: { priority: 'low', count: String(lowCount) },
         },
       })
       lastDigested = lowCount
+      outstanding = true
     }
   }, BATCH_MS)
 }
