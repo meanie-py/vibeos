@@ -4,10 +4,14 @@ Privileged (uses the *_REGISTRAR_TOKEN credentials); run by a human lead, not an
 Every step is idempotent (find-then-create) so a half-provisioned agent re-runs cleanly.
 `teardown_agent` exists for tests and de-provisioning.
 """
+
 from __future__ import annotations
 
+from typing import Any
+
 from .authentik import AuthentikClient
-from .config import Config, config as default_config
+from .config import Config
+from .config import config as default_config
 from .errors import HttpError
 from .mattermost import MattermostClient
 from .vikunja import VikunjaClient
@@ -26,25 +30,35 @@ class Registrar:
         parent = self.authentik.find_group(self.cfg.authentik_group)
         if not parent:
             raise HttpError(404, "authentik", f"group {self.cfg.authentik_group} not found")
-        sub = self.authentik.ensure_group(f"swarm-{lead}", parent=parent["pk"],
-                                          attributes={"swarm_lead": lead})
+        sub = self.authentik.ensure_group(
+            f"swarm-{lead}", parent=parent["pk"], attributes={"swarm_lead": lead}
+        )
         return {"lead": lead, "group_pk": sub["pk"], "parent_pk": parent["pk"]}
 
     # --- agent ----------------------------------------------------------
     def register_agent(self, name: str, lead: str, *, charter: str | None = None) -> dict:
-        bundle = {"identity": name, "lead": lead}
+        bundle: dict[str, Any] = {"identity": name, "lead": lead}
 
         # 1. Authentik service account (M2M)
         existing = self.authentik.find_user(name)
         if existing:
-            bundle["authentik"] = {"user_pk": existing["pk"], "username": existing["username"],
-                                   "created": False}
+            bundle["authentik"] = {
+                "user_pk": existing["pk"],
+                "username": existing["username"],
+                "created": False,
+            }
         else:
             sa = self.authentik.create_service_account(name)
-            bundle["authentik"] = {"user_pk": sa.get("user_pk"), "username": sa.get("username"),
-                                   "token": sa.get("token"), "created": True}
+            bundle["authentik"] = {
+                "user_pk": sa.get("user_pk"),
+                "username": sa.get("username"),
+                "token": sa.get("token"),
+                "created": True,
+            }
         # group + owner attribute
-        grp = self.authentik.find_group(f"swarm-{lead}") or self.authentik.find_group(self.cfg.authentik_group)
+        grp = self.authentik.find_group(f"swarm-{lead}") or self.authentik.find_group(
+            self.cfg.authentik_group
+        )
         upk = bundle["authentik"]["user_pk"]
         if grp and upk:
             try:
@@ -59,13 +73,15 @@ class Registrar:
         # 2. Mattermost REGULAR user (not a bot → no "BOT" badge) + personal-access token,
         #    added to the team, #swarm, and its own channel; posts use its own token.
         import time as _time
+
         u = self.mm.find_user(name)
         if u:
             uid = u["id"]
             bundle["mattermost"] = {"user_id": uid, "created": False}
         else:
-            created = self.mm.create_user(name, f"{name}@swarm.local",
-                                          f"Sw@rm-{name}-{int(_time.time())}")
+            created = self.mm.create_user(
+                name, f"{name}@swarm.local", f"Sw@rm-{name}-{int(_time.time())}"
+            )
             uid = created["id"]
             bundle["mattermost"] = {"user_id": uid, "created": True}
         agent_token = None
@@ -76,11 +92,10 @@ class Registrar:
         except HttpError:
             pass
         team_id = self.mm.team_id()
-        for cid in (None,):  # add to team first
-            try:
-                self.mm.add_to_team(team_id, uid)
-            except HttpError:
-                pass
+        try:
+            self.mm.add_to_team(team_id, uid)
+        except HttpError:
+            pass
         try:
             self.mm.add_to_channel(self.cfg.mm_swarm_channel_id, uid)  # so it can post to #swarm
         except HttpError:
@@ -99,8 +114,10 @@ class Registrar:
         # persist runtime creds locally (interim; OAuth-derived later)
         if agent_token:
             from . import identity
-            identity.save_agent_creds(name, {"identity": name, "mm_user_id": uid,
-                                             "mm_token": agent_token})
+
+            identity.save_agent_creds(
+                name, {"identity": name, "mm_user_id": uid, "mm_token": agent_token}
+            )
         # pinned banner (charter) — post as the agent itself (it's a member of its own
         # channel; the shared registrar/bot is not, so its post would 403).
         banner = charter or f"# {name}\n\n(Charter not set — edit this pinned banner.)"
@@ -123,7 +140,9 @@ class Registrar:
         out = {"project_id": proj.get("id"), "title": proj.get("title")}
         # per-project Mattermost channel (bridge bot fills it)
         team_id = self.mm.team_id()
-        slug = "proj-" + "".join(ch if ch.isalnum() else "-" for ch in title.lower())[:40].strip("-")
+        slug = "proj-" + "".join(ch if ch.isalnum() else "-" for ch in title.lower())[:40].strip(
+            "-"
+        )
         ch_id = self.mm.find_channel(slug)
         if not ch_id:
             ch = self.mm.create_channel(team_id, slug, f"{title} (project)")
@@ -149,6 +168,7 @@ class Registrar:
             except HttpError as e:
                 result["mm_user"] = f"err {e.status}"
         from . import identity
+
         try:
             (identity._agents_dir() / f"{name}.json").unlink()
         except OSError:

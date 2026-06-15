@@ -11,13 +11,12 @@ full runtime path derives short-lived M2M creds from the human lead's OAuth via 
 until that Application is live, the shared service tokens from Config are used and the
 binding is just the name (posts use the per-message username override).
 """
+
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
-
-from .config import config
 
 
 def _sessions_dir() -> Path:
@@ -118,5 +117,3 @@ def creds_for(name: str) -> dict:
             except (ValueError, OSError):
                 pass
     return load_agent_creds(name)
-
-

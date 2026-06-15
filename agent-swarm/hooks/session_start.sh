@@ -4,21 +4,21 @@
 set +e
 IN="$(cat)"
 DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
-SWARM="$DIR/bin/swarm"; [ -x "$SWARM" ] || SWARM="$(command -v swarm)"
-[ -z "$SWARM" ] && exit 0
+CLI="$DIR/vibeos-cli"
+[ -x "$CLI" ] || exit 0
 
-[ -n "$SWARM_LOGIN" ] && bash "$SWARM" login "$SWARM_LOGIN" >/dev/null 2>&1
-bash "$SWARM" register --branch "$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)" >/dev/null 2>&1
+[ -n "$SWARM_LOGIN" ] && bash "$CLI" swarm login "$SWARM_LOGIN" >/dev/null 2>&1
+bash "$CLI" swarm register --branch "$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)" >/dev/null 2>&1
 
-ROSTER="$(bash "$SWARM" who 2>/dev/null)"
-WHO="$(bash "$SWARM" whoami 2>/dev/null)"
+ROSTER="$(bash "$CLI" swarm who 2>/dev/null)"
+WHO="$(bash "$CLI" swarm whoami 2>/dev/null)"
 if [ -n "$ROSTER" ]; then
   python3 - "$WHO" "$ROSTER" <<'EOF'
 import json, sys
 who, roster = sys.argv[1], sys.argv[2]
 ctx = f"Swarm situation report — you are **{who}**.\nLive agents:\n{roster}\n" \
-      "(Coordinate via #swarm: `swarm read` to view, `swarm say \"...\"` to post; " \
-      "`swarm quest list` for the board.)"
+      "(Coordinate via #swarm — MCP tools: swarm_read / swarm_post / quest_* / mm_search; " \
+      "or the CLI `vibeos-cli swarm <cmd>`.)"
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
 EOF
 fi

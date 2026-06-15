@@ -9,6 +9,7 @@ PID-liveness: each state record carries the owning process id. If that process i
 when we evaluate, we auto-flip to idle (and the roster treats it offline) — a crashed or
 closed session never gets stuck 'busy'.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,9 +39,15 @@ def _pid_alive(pid) -> bool:
 def set_state(identity: str, state: str, *, pid: int | None = None) -> None:
     d = config().state_dir
     d.mkdir(parents=True, exist_ok=True)
-    (_state_path(identity)).write_text(json.dumps({
-        "state": state, "pid": pid or os.getpid(), "ts": time.time(),
-    }))
+    (_state_path(identity)).write_text(
+        json.dumps(
+            {
+                "state": state,
+                "pid": pid or os.getpid(),
+                "ts": time.time(),
+            }
+        )
+    )
 
 
 def get_state(identity: str) -> dict:

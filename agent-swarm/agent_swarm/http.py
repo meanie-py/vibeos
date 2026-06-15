@@ -3,6 +3,7 @@
 One function, `request()`, with bearer/basic auth and JSON in/out. Backends (Mattermost,
 Vikunja, Authentik) are thin wrappers over this.
 """
+
 from __future__ import annotations
 
 import base64
@@ -33,6 +34,7 @@ def request(
     """
     if params:
         from urllib.parse import urlencode
+
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}{urlencode(params)}"
 

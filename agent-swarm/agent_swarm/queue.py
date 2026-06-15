@@ -8,6 +8,7 @@ Priority: high → deliver immediately (wakes an idle agent); low → counted fo
 High = @-mention of this agent / @here|@channel|@all, OR a high board priority
 (Vikunja High/Urgent/DO NOW).
 """
+
 from __future__ import annotations
 
 import re
@@ -15,6 +16,7 @@ import sqlite3
 import time
 
 from .config import config
+from .types import DrainResult, HighMessage, Post, Priority
 
 _BOARD_HIGH = re.compile(r"\bpriority\s*[:\-]?\s*(do\s*now|urgent|high)\b", re.I)
 _DO_NOW = re.compile(r"\bDO\s*NOW\b", re.I)
@@ -31,8 +33,8 @@ def is_mention(msg: str, name: str | None) -> bool:
     return bool(name) and ("@" + name.lower()) in m
 
 
-def classify(msg: str, name: str | None) -> str:
-    return "high" if (is_mention(msg, name) or is_board_high(msg)) else "low"
+def classify(msg: str, name: str | None) -> Priority:
+    return Priority.HIGH if (is_mention(msg, name) or is_board_high(msg)) else Priority.LOW
 
 
 def now_ms() -> int:
@@ -63,16 +65,20 @@ def _conn():
 
 
 def _init_cursor(c, identity, channel_id, mm):
-    row = c.execute("SELECT 1 FROM cursors WHERE identity=? AND channel_id=?",
-                    (identity, channel_id)).fetchone()
+    row = c.execute(
+        "SELECT 1 FROM cursors WHERE identity=? AND channel_id=?", (identity, channel_id)
+    ).fetchone()
     if row:
         return
     at = None
     if mm:
         at = mm.latest_create_at(channel_id)  # server clock — skew-immune
     at = at or now_ms()
-    c.execute("INSERT OR IGNORE INTO cursors(identity,channel_id,read_at,mention_at,last_count)"
-              " VALUES(?,?,?,?,0)", (identity, channel_id, at, at))
+    c.execute(
+        "INSERT OR IGNORE INTO cursors(identity,channel_id,read_at,mention_at,last_count)"
+        " VALUES(?,?,?,?,0)",
+        (identity, channel_id, at, at),
+    )
 
 
 def seed(identity, channel_ids, mm):
@@ -83,73 +89,94 @@ def seed(identity, channel_ids, mm):
                 _init_cursor(c, identity, ch, mm)
 
 
-def _not_self(posts, selves):
+def _self_set(name: str | None, self_ids) -> set[str]:
+    selves = {name} | set(self_ids or ())
+    selves.discard(None)
+    return selves  # type: ignore[return-value]
+
+
+def _not_self(posts: list[Post], selves: set[str]) -> list[Post]:
     # An agent's own posts show as its username (webhook) OR its user_id (REST) — drop both.
-    return [p for p in posts if str(p["user"]).split(" @ ")[0] not in selves]
+    return [p for p in posts if str(p.user).split(" @ ")[0] not in selves]
 
 
-def drain(identity, name, channel_ids, mm, *, high_only=False, self_ids=None):
+def drain(identity, name, channel_ids, mm, *, high_only=False, self_ids=None) -> DrainResult:
     """Read new posts across channels, classify, advance the mention cursor.
 
-    Returns {"high": [{from, message, post_id, channel}], "low_count": N}.
-    Does NOT advance the read cursor (that's mark_read / an explicit `read`).
-    `self_ids` (e.g. the agent's mm_user_id) are dropped alongside `name` so the agent is
-    never notified of its own posts.
+    Does NOT advance the read cursor (that's `unread`). `self_ids` (e.g. the agent's
+    mm_user_id) are dropped alongside `name` so the agent is never notified of its own posts.
     """
-    selves = {name} | set(self_ids or ())
-    selves.discard(None)
-    high, low_count = [], 0
+    selves = _self_set(name, self_ids)
+    result = DrainResult()
     with _conn() as c:
         for ch in channel_ids:
             if not ch:
                 continue
             _init_cursor(c, identity, ch, mm)
-            cur = c.execute("SELECT read_at, mention_at, last_count FROM cursors "
-                            "WHERE identity=? AND channel_id=?", (identity, ch)).fetchone()
-            read_at, mention_at = cur["read_at"], cur["mention_at"]
-            posts = _not_self(mm.read_posts(ch, read_at), selves)
-            candidates = [p for p in posts
-                          if classify(p["message"], name) == "high" and p["create_at"] > mention_at]
-            # post-id dedup: deliver each post at most ONCE per identity, even if the
-            # cursor is reset or two drains race (the mention cursor alone can't guarantee it).
-            new_high = []
-            for p in candidates:
-                row = c.execute("SELECT 1 FROM delivered WHERE identity=? AND post_id=?",
-                                (identity, p["id"])).fetchone()
-                if row:
-                    continue
-                c.execute("INSERT OR IGNORE INTO delivered(identity,post_id,ts) VALUES(?,?,?)",
-                          (identity, p["id"], time.time()))
-                new_high.append(p)
-            low_count += sum(1 for p in posts if classify(p["message"], name) == "low")
-            if new_high:
-                mention_at = max(mention_at, max(p["create_at"] for p in new_high))
-            c.execute("UPDATE cursors SET mention_at=?, last_count=? WHERE identity=? AND channel_id=?",
-                      (mention_at, low_count, identity, ch))
-            for p in new_high:
-                high.append({"from": str(p["user"]).split(" @ ")[0], "message": p["message"],
-                             "post_id": p["id"], "channel": ch})
-    return {"high": high, "low_count": 0 if high_only else low_count}
-
-
-def unread(identity, name, channel_ids, mm, *, self_ids=None):
-    """All unread posts across channels (for `read`), then advance the read cursor."""
-    selves = {name} | set(self_ids or ())
-    selves.discard(None)
-    out = []
-    with _conn() as c:
-        for ch in channel_ids:
-            if not ch:
-                continue
-            _init_cursor(c, identity, ch, mm)
-            cur = c.execute("SELECT read_at FROM cursors WHERE identity=? AND channel_id=?",
-                            (identity, ch)).fetchone()
+            cur = c.execute(
+                "SELECT read_at, mention_at FROM cursors WHERE identity=? AND channel_id=?",
+                (identity, ch),
+            ).fetchone()
+            mention_at = cur["mention_at"]
             posts = _not_self(mm.read_posts(ch, cur["read_at"]), selves)
-            hi = max([p["create_at"] for p in posts], default=cur["read_at"])
-            c.execute("UPDATE cursors SET read_at=?, mention_at=?, last_count=0 "
-                      "WHERE identity=? AND channel_id=?", (hi, hi, identity, ch))
-            for p in posts:
-                out.append({**p, "channel": ch,
-                            "priority": classify(p["message"], name)})
-    out.sort(key=lambda p: p["create_at"])
+            candidates = [
+                p
+                for p in posts
+                if classify(p.message, name) is Priority.HIGH and p.create_at > mention_at
+            ]
+            # post-id dedup: deliver each post at most ONCE per identity, even if the cursor
+            # is reset or two drains race (the mention cursor alone can't guarantee it).
+            new_high: list[Post] = []
+            for p in candidates:
+                if c.execute(
+                    "SELECT 1 FROM delivered WHERE identity=? AND post_id=?", (identity, p.id)
+                ).fetchone():
+                    continue
+                c.execute(
+                    "INSERT OR IGNORE INTO delivered(identity,post_id,ts) VALUES(?,?,?)",
+                    (identity, p.id, time.time()),
+                )
+                new_high.append(p)
+            result.low_count += sum(1 for p in posts if classify(p.message, name) is Priority.LOW)
+            if new_high:
+                mention_at = max(mention_at, max(p.create_at for p in new_high))
+            c.execute(
+                "UPDATE cursors SET mention_at=?, last_count=? WHERE identity=? AND channel_id=?",
+                (mention_at, result.low_count, identity, ch),
+            )
+            for p in new_high:
+                result.high.append(
+                    HighMessage(
+                        sender=str(p.user).split(" @ ")[0],
+                        message=p.message,
+                        post_id=p.id,
+                        channel=ch,
+                    )
+                )
+    if high_only:
+        result.low_count = 0
+    return result
+
+
+def unread(identity, name, channel_ids, mm, *, self_ids=None) -> list[Post]:
+    """All unread posts across channels (for `read`), then advance the read cursor."""
+    selves = _self_set(name, self_ids)
+    out: list[Post] = []
+    with _conn() as c:
+        for ch in channel_ids:
+            if not ch:
+                continue
+            _init_cursor(c, identity, ch, mm)
+            cur = c.execute(
+                "SELECT read_at FROM cursors WHERE identity=? AND channel_id=?", (identity, ch)
+            ).fetchone()
+            posts = _not_self(mm.read_posts(ch, cur["read_at"]), selves)
+            hi = max((p.create_at for p in posts), default=cur["read_at"])
+            c.execute(
+                "UPDATE cursors SET read_at=?, mention_at=?, last_count=0 "
+                "WHERE identity=? AND channel_id=?",
+                (hi, hi, identity, ch),
+            )
+            out.extend(posts)
+    out.sort(key=lambda p: p.create_at)
     return out

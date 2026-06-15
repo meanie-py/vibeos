@@ -4,16 +4,24 @@ Deliberately small and dependency-light so *any* component reuses it (the channe
 server's reply tool, the merge announcer, the Vikunja bridge, the CLI). One credential
 model (Config), one code path.
 """
+
 from __future__ import annotations
 
 from . import identity as ident
-from .config import Config, config as default_config
+from .config import Config
+from .config import config as default_config
 from .errors import HttpError
 from .mattermost import MattermostClient
 
 
-def send(text: str, *, channel: str, as_identity: str | None = None,
-         icon_emoji: str | None = None, cfg: Config | None = None) -> bool:
+def send(
+    text: str,
+    *,
+    channel: str,
+    as_identity: str | None = None,
+    icon_emoji: str | None = None,
+    cfg: Config | None = None,
+) -> bool:
     """Post `text` to `channel` (name) as `as_identity`.
 
     Preferred path: the agent's OWN personal-access token via REST → posts as a proper

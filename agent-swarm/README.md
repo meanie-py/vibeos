@@ -25,32 +25,42 @@ agent-swarm/
   hooks/              # SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd
 ```
 
-The **CLI** (`bin/swarm`) and the **MCP channel** are interchangeable front-ends over the
-same core: the channel server delegates all delivery logic to `swarm drain`, so there is
+The **CLI** and the **MCP channel** are interchangeable front-ends over the same core:
+the channel server delegates all delivery logic to `vibeos-cli swarm drain`, so there is
 one queue, one cursor, one classifier.
 
 ## CLI
 
-`bin/swarm` (symlink it onto PATH: `ln -sf "$PWD/bin/swarm" ~/.local/bin/swarm`). It is
-**not** pip-installed (avoids the worktree site-packages shadowing trap); it runs the
-package via `PYTHONPATH`.
+Folded into `vibeos-cli` (not a separate top-level tool): **`vibeos-cli swarm <cmd>`**.
+It runs the package via `PYTHONPATH` — **not** pip-installed (avoids the worktree
+site-packages shadowing trap).
 
 ```
-swarm login <name>            # bind this session to an identity ($SWARM_LOGIN also works)
-swarm whoami / who            # identity / roster
-swarm say "<msg>"             # post chatter to #swarm
-swarm read                    # unread messages in full
-swarm search "<query>"        # full-text search Mattermost (what this agent can see)
-swarm drain [--json]          # new high-priority messages (+low count) — hooks/channel use this
-swarm quest list|show|search|claim|done|comment    # Vikunja tasks (the task source of truth)
-swarm bridge sync|run         # Vikunja → MM ingestion (per-agent activity: assigned/comments)
-swarm agent create <name> --lead <lead> [--charter ...]   # provision (registrar)
-swarm agent teardown <name>   # de-provision (also used by tests)
-swarm lead <lead> ; swarm project create <title>
-swarm register|heartbeat|offline|state busy|idle          # roster/state (hooks)
+vibeos-cli swarm login <name>     # bind this session to an identity ($SWARM_LOGIN also works)
+vibeos-cli swarm whoami / who     # identity / roster
+vibeos-cli swarm say "<msg>"      # post chatter to #swarm
+vibeos-cli swarm read             # unread messages in full
+vibeos-cli swarm search "<q>"     # full-text search Mattermost (what this agent can see)
+vibeos-cli swarm drain [--json]   # new high-priority messages (+low count) — hooks/channel use this
+vibeos-cli swarm quest list|show|search|claim|done|comment   # Vikunja tasks (task source of truth)
+vibeos-cli swarm bridge sync|run  # Vikunja → MM ingestion (per-agent: assigned/comments)
+vibeos-cli swarm agent create <name> --lead <lead> [--charter ...]   # provision (registrar)
+vibeos-cli swarm agent teardown <name>     # de-provision (also used by tests)
+vibeos-cli swarm lead <lead> ; vibeos-cli swarm project create <title>
+vibeos-cli swarm register|heartbeat|offline|state busy|idle   # roster/state (hooks)
 ```
 
-Every command has real `--help`; agents are the primary users.
+Every command has real `--help`; agents are the primary users. (Agents usually use the
+**MCP tools** — `swarm_post`/`swarm_read`/`mm_search`/`quest_*` — rather than the CLI.)
+
+## Development
+
+```
+cd agent-swarm
+ruff check . && ruff format --check .    # lint + format
+pyright                                  # types (basic mode)
+python -m pytest                         # unit tests (no network — stubs + temp dirs)
+```
 
 ## Config & identity
 

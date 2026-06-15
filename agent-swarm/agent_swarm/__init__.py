@@ -14,6 +14,5 @@ front-ends. Modules:
   send        — the shared `send` primitive
   registrar   — provisioning fan-out across the three services
 """
-__all__ = ["config", "http", "mattermost", "vikunja", "authentik", "identity",
-           "roster", "state", "queue", "send", "registrar"]
+
 __version__ = "0.1.0"

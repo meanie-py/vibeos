@@ -15,17 +15,18 @@ Routing — who owns a task:
 
 State (cursor + per-task last-comment marker) lives in ~/.vibeos-swarm/bridge.json.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from .config import Config, config as default_config
+from .config import Config
+from .config import config as default_config
 from .mattermost import MattermostClient
 from .send import send
+from .types import VikunjaPriority
 from .vikunja import VikunjaClient
-
-_PR = {0: "-", 1: "low", 2: "medium", 3: "High", 4: "Urgent", 5: "DO NOW"}
 
 
 class VikunjaBridge:
@@ -83,7 +84,7 @@ class VikunjaBridge:
         for t in tasks:
             tid = str(t["id"])
             now_agents = self._agents_for(t)
-            pr = _PR.get(t.get("priority", 0), "?")
+            pr = VikunjaPriority.parse(t.get("priority")).label
             status = "✅ done" if t.get("done") else "open"
             comments = self.vik.list_comments(t["id"]) or []
             comment_max = max([c.get("id", 0) for c in comments], default=0)
@@ -91,22 +92,31 @@ class VikunjaBridge:
             p = prev.get(tid)
             if p is None:
                 # first sight of this task — baseline only, never replay history
-                prev[tid] = {"updated": t.get("updated"), "agents": sorted(now_agents),
-                             "comment_max": comment_max}
+                prev[tid] = {
+                    "updated": t.get("updated"),
+                    "agents": sorted(now_agents),
+                    "comment_max": comment_max,
+                }
                 continue
 
             prev_agents = set(p.get("agents") or [])
 
             # (a) newly assigned → "assigned to you"
             for ag in now_agents - prev_agents:
-                self._post(ag, f"@{ag} 🆕 you've been assigned quest #{t['id']} — "
-                               f"*{t['title']}* · priority {pr} · {status}")
+                self._post(
+                    ag,
+                    f"@{ag} 🆕 you've been assigned quest #{t['id']} — "
+                    f"*{t['title']}* · priority {pr} · {status}",
+                )
                 posted += 1
             # (b) status/priority/title change on an already-owned quest
             if t.get("updated") != p.get("updated"):
-                for ag in (now_agents & prev_agents):
-                    self._post(ag, f"@{ag} 📋 quest #{t['id']} updated — "
-                                   f"*{t['title']}* · priority {pr} · {status}")
+                for ag in now_agents & prev_agents:
+                    self._post(
+                        ag,
+                        f"@{ag} 📋 quest #{t['id']} updated — "
+                        f"*{t['title']}* · priority {pr} · {status}",
+                    )
                     posted += 1
             # (c) new comments on an owned quest (skip the commenter's own)
             last_max = p.get("comment_max", 0)
@@ -116,12 +126,16 @@ class VikunjaBridge:
                     body = (c.get("comment") or "").strip()
                     for ag in now_agents:
                         if author != ag:
-                            self._post(ag, f"@{ag} 💬 #{t['id']} *{t['title']}* — "
-                                           f"{author}: {body[:200]}")
+                            self._post(
+                                ag, f"@{ag} 💬 #{t['id']} *{t['title']}* — {author}: {body[:200]}"
+                            )
                             posted += 1
 
-            prev[tid] = {"updated": t.get("updated"), "agents": sorted(now_agents),
-                         "comment_max": comment_max}
+            prev[tid] = {
+                "updated": t.get("updated"),
+                "agents": sorted(now_agents),
+                "comment_max": comment_max,
+            }
 
         self._save(st)
         if verbose:

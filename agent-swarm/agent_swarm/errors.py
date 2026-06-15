@@ -1,4 +1,5 @@
 """Exception hierarchy for the agent-swarm platform."""
+
 from __future__ import annotations
 
 

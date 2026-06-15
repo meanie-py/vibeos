@@ -4,8 +4,8 @@
 set +e
 IN="$(cat)"
 DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
-SWARM="$DIR/bin/swarm"; [ -x "$SWARM" ] || SWARM="$(command -v swarm)"
-[ -z "$SWARM" ] && exit 0
+CLI="$DIR/vibeos-cli"
+[ -x "$CLI" ] || exit 0
 INTERVAL="${VIBEOS_SWARM_HB_INTERVAL:-30}"
 
 SID="$(printf '%s' "$IN" | python3 -c "import sys,json;print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null)"
@@ -18,9 +18,9 @@ if [ -f "$STAMP" ]; then
 fi
 echo "$NOW" > "$STAMP" 2>/dev/null
 
-bash "$SWARM" state busy >/dev/null 2>&1
-bash "$SWARM" heartbeat >/dev/null 2>&1
-MSG="$(bash "$SWARM" drain 2>/dev/null)"
+bash "$CLI" swarm state busy >/dev/null 2>&1
+bash "$CLI" swarm heartbeat >/dev/null 2>&1
+MSG="$(bash "$CLI" swarm drain 2>/dev/null)"
 if [ -n "$MSG" ]; then
   python3 - "$MSG" <<'EOF'
 import json, sys

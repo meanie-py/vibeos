@@ -18,13 +18,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))            // .../agent-swarm/channel
-const SWARM = join(HERE, '..', '..', 'bin', 'swarm')           // the CLI wrapper
+const CLI = join(HERE, '..', '..', 'vibeos-cli')               // repo-root vibeos-cli
 const POLL_MS = Number(process.env.VIBEOS_SWARM_CHANNEL_POLL_MS || 3000)
 const BATCH_MS = Number(process.env.VIBEOS_SWARM_BATCH_MS || 180000)
 
 function swarm(args, { json = false } = {}) {
   try {
-    const out = execFileSync('bash', [SWARM, ...args], { encoding: 'utf8', timeout: 8000 })
+    const out = execFileSync('bash', [CLI, 'swarm', ...args], { encoding: 'utf8', timeout: 8000 })
     return json ? JSON.parse(out || 'null') : out.trim()
   } catch {
     return json ? null : ''

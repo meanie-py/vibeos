@@ -9,6 +9,7 @@ Hooks don't reliably inherit a shell .env, so we read the files ourselves. Acces
 expose canonical names and fall back to legacy aliases, so callers never branch on which
 key a value came from.
 """
+
 from __future__ import annotations
 
 import os
