@@ -24,7 +24,14 @@ fn main() {
         "x86" => (
             "i686-kernel.json",
             "ntdll-i386.rc.res",
-            0x7c92_0000,
+            // Moved up from 0x7c92_0000 to widen kernel32's preferred slot: the
+            // kernel32-rust cohab grows kernel32.dll past its old 0x440000 slot
+            // (kernel32@0x7c4e0000 .. ntdll@0x7c920000), and kernel32 overrunning
+            // ntdll tripped STATUS_ILLEGAL_DLL_RELOCATION. ntdll is the only DLL
+            // based above 0x7c4e0000 and 0x7c92..0x7ffe is free, so placing it high
+            // gives kernel32 ~27MB of headroom for the rest of the campaign.
+            // (amd64/arm64 ntdll sit at 0x7ffb_7000_0000 — no 32-bit crunch there.)
+            0x7e00_0000,
             "___ImageBase",
         ),
         "x86_64" => (

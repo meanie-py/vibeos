@@ -31,7 +31,8 @@ list(APPEND SOURCE
     client/path.c
     client/perfcnt.c
     client/power.c
-    client/proc.c
+    # client/proc.c   — replaced by Rust (sdk/lib/rust/kernel32-rust/); cohab-linked
+    #                   via libkernel32_rust.a below. Kept on disk (never-delete rule).
     client/resntfy.c
     client/session.c
     client/synch.c
@@ -79,17 +80,17 @@ list(APPEND SOURCE
     wine/profile.c
     wine/res.c
     wine/timezone.c
-    winnls/string/casemap.c
-    winnls/string/collation.c
-    winnls/string/digitmap.c
-    winnls/string/fold.c
-    winnls/string/format_msg.c
-    winnls/string/japanese.c
-    winnls/string/locale.c
-    winnls/string/lcformat.c
-    winnls/string/lstring.c
-    winnls/string/nls.c
-    winnls/string/sortkey.c
+    # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
+    # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)
+    # winnls/string/digitmap.c   — replaced by Rust (kernel32-rust/src/string/digitmap.rs)
+    # winnls/string/fold.c       — replaced by Rust (kernel32-rust/src/string/fold.rs)
+    # winnls/string/format_msg.c — replaced by Rust (kernel32-rust/src/string/format_msg.rs)
+    # winnls/string/japanese.c   — replaced by Rust (kernel32-rust/src/string/japanese.rs)
+    # winnls/string/locale.c   — replaced by Rust (kernel32-rust/src/string/locale.rs)
+    # winnls/string/lcformat.c — replaced by Rust (kernel32-rust/src/string/lcformat.rs)
+    # winnls/string/lstring.c    — replaced by Rust (kernel32-rust/src/string/lstring.rs)
+    # winnls/string/nls.c      — replaced by Rust (kernel32-rust/src/string/nls.rs)
+    # winnls/string/sortkey.c    — replaced by Rust (kernel32-rust/src/string/sortkey.rs)
     k32.h)
 
 if(MSVC)
@@ -115,6 +116,45 @@ elseif(ARCH STREQUAL "arm64")
         client/arm64/fiber.S)
 endif()
 
+#
+# kernel32-rust cohab: client/proc.c (the CreateProcessInternalW path) → Rust.
+# Builds libkernel32_rust.a from the workspace crate (STANDARD user-mode per-arch
+# targets; i386 gets -sse,-sse2 via sdk/lib/rust/.cargo/config.toml — the user-mode
+# no-SSE rule). The crate's #[no_mangle] symbols are the sole providers of proc.c's
+# functions+globals now that the C TU is commented out (conutils-style cohab; no
+# --allow-multiple-definition needed since every proc.c symbol was removed).
+#
+set(KERNEL32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(KERNEL32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-target")
+set(KERNEL32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_rust.a")
+if(ARCH STREQUAL "i386")
+    set(KERNEL32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(KERNEL32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(KERNEL32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+# GLOB_RECURSE so .rs under src/<subdir>/ (e.g. src/string/locale.rs) also retrigger
+# the libkernel32_rust.a rebuild — a non-recursive src/*.rs glob silently used a stale
+# archive when only subdir files changed.
+file(GLOB_RECURSE KERNEL32_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${KERNEL32_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${KERNEL32_RUST_TARGET_DIR}
+        cargo build --release --target ${KERNEL32_RUST_TARGET}
+            -p kernel32-rust
+            --manifest-path ${KERNEL32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${KERNEL32_RUST_TARGET_DIR}/${KERNEL32_RUST_TARGET}/release/libkernel32_rust.a
+        ${KERNEL32_RUST_LIB}
+    DEPENDS ${KERNEL32_RUST_SRCS}
+            ${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-rust/Cargo.toml
+    WORKING_DIRECTORY ${KERNEL32_RUST_WORKSPACE_DIR}
+    COMMENT "Building kernel32-rust (${KERNEL32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_kernel32 DEPENDS ${KERNEL32_RUST_LIB})
+
 add_asm_files(kernel32_asm ${ASM_SOURCE})
 add_library(kernel32 MODULE
     ${SOURCE}
@@ -129,8 +169,8 @@ set_module_type(kernel32 win32dll ENTRYPOINT DllMain 12)
 set_subsystem(kernel32 console)
 ################# END  HACK #################
 
-target_link_libraries(kernel32 psapi_static kernel32_vista_static kernel32_shared wine chkstk ${PSEH_LIB})
+target_link_libraries(kernel32 psapi_static kernel32_vista_static kernel32_shared wine chkstk ${PSEH_LIB} ${KERNEL32_RUST_LIB})
 add_importlibs(kernel32 ntdll)
 add_pch(kernel32 k32.h SOURCE)
-add_dependencies(kernel32 psdk errcodes asm)
+add_dependencies(kernel32 psdk errcodes asm rust_kernel32)
 add_cd_file(TARGET kernel32 DESTINATION reactos/system32 FOR all)

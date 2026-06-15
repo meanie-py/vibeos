@@ -1,0 +1,22 @@
+# uniata-rust — Rust translation of drivers/storage/ide/uniata (UniATA IDE/SATA/AHCI
+# driver, 10 .cpp / 24K LOC, C-in-.cpp). uniata.sys is BOOT-LOADED (txtsetup.sif
+# uniata.sys=1, PNP0600 + PCI CC_010[456]) — the live IDE/ATAPI reader on the LiveCD,
+# so SMOKE ×3 is the verification bar (boot-blocking). First C++-tier proof, riding the
+# new rustconv C++ front-end (tree-sitter-cpp + partial preprocessor).
+#
+# Driver-private structs (HW_DEVICE_EXTENSION/HW_CHANNEL/HW_LU_EXTENSION/ATA_REQ/IORES +
+# the SCSI SRB/CDB/ATA register layouts) come from the gen_driver_types.sh uniata case
+# (src/types_*.rs, per-arch). crate-type=staticlib → libuniata_rust.a, cohab-linked into
+# the cmake uniata.sys. Depends on ntkrnl-sys. Built for all 3 arches.
+[package]
+name = "uniata-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "uniata_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

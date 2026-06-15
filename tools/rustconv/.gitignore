@@ -3,3 +3,9 @@
 # committed — but DO NOT delete a run dir while its translation is in progress
 # or unintegrated; it is the only copy of work you paid for.
 .responses/
+
+# semdiff report/cache output (rustconv/semdiff.py) — durable, in-repo, local-only.
+.semdiff/
+
+# Local manual backups (e.g. pre-c2rust response snapshots). Never committed.
+.responses-backup*/

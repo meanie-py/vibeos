@@ -1,6 +1,8 @@
 # FreeLDR + Boot DLLs C→Rust Translation Audit
 
 Last updated 2026-06-02. **Status: FreeLDR + all boot-DLLs flipped.**
+
+> **Ground-truth re-verified 2026-06-14** against `boot/freeldr/` + `sdk/lib/rust/freeldr-rust` + the `-cargo` crates — FreeLDR (now 89 `.rs` modules) + kdcom/bootvid/uefildr/rosload cargo-driven links all present; the only non-Rust left is `lib/strsafe_shim.c` (variadic shell, floor) and `boot/freeldr/bootsect/{fat.S,fat32.S}` (boot-sector asm reused to stamp the UEFI FAT image, floor — the pure-BIOS sectors were git-rm'd).
 This doc started (2026-05-08) as a pre-translation plan; it is now a
 *state* audit. The headline change since: **FreeLDR is translated and
 integrated** (86 Rust modules, cohabitation, all 3 arches boot green),

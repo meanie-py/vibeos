@@ -149,6 +149,20 @@ fn main() {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
 
+    // Rust-flipped cohab archives — ARM64 ONLY (same rationale as ntoskrnl-cargo):
+    // arm64's clean stub-only C archives need them; i386/amd64 resolve from the
+    // cmake C `libX.a` and adding these shifts the link layout, tipping a latent
+    // cmlib Hv* hive-write miscompile (cold amd64 hivewrt HANG). Gate to arm64.
+    if arch == "aarch64" {
+        static_libs.extend_from_slice(&[
+            "sdk/lib/cportlib/libcport_rust.a",
+            "sdk/lib/drivers/csq/libcsq_rust.a",
+            "sdk/lib/drivers/arbiter/libarbiter_rust.a",
+            "sdk/lib/lsalib/liblsalib_rust.a",
+            "sdk/lib/rossym/librossym_rust.a",
+        ]);
+    }
+
     // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
     // (enumerated by a drop-test against liblibcntpr.a). Compiled in-cargo via
     // c_from_compile_db (replays compile_commands.json, symbol-identical to the

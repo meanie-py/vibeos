@@ -1,5 +1,7 @@
 # ntoskrnl C→Rust Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against CMakeLists/code — body confirmed 100% Rust at link (zero active body `.c` in `ntos.cmake`); **`cmdata.c` is FLIPPED** (commented out, `config/cmdata.rs` active — the "Phase-B holdout ~150 LOC still C" claim was STALE); deep-C cohab libs (cport/csq/arbiter/lsalib/rossym) are Rust-flipped **arm64-only** in `ntoskrnl-cargo/build.rs` — i386/amd64 still link the bundled cmake C `.a` (ungate gated by a layout-sensitive BUGCHECK 0x50 in the storage path, validated 2026-06-14).
+
 ## 2026-06-13 — MILESTONE: the ntoskrnl body is 100% Rust at link time
 
 The shipping `ntoskrnl.exe` (and `ntkrnlmp.exe`) links **zero** ntoskrnl C
@@ -12,6 +14,18 @@ objects for its body. Verified mechanically:
   placeholders or genuine non-ntoskrnl-body libs — plus the irreducible
   CRT/SEH/asm floor compiled in-cargo (`c_from_compile_db` printf/scanf
   shells + i386 x87 `_CIxxx` math + amd64 SEH personality, `c_shims`).
+- **Deep-C cohab nuance (re-verified 2026-06-14).** Five of those helper libs —
+  `cportlib`/`csq`/`arbiter`/`lsalib`/`rossym` — have committed Rust translations
+  (`libcport_rust.a` etc.), but `ntoskrnl-cargo/build.rs` only adds the
+  `libX_rust.a` archives **when `arch == "aarch64"`**. On i386/amd64 the kernel
+  still links the **bundled cmake C `libX.a`** — the ungate is deliberately gated
+  to arm64 because adding the redundant rust archives on x86 shifts the kernel
+  link layout and tips a latent layout-sensitive miscompile (cold amd64 → BUGCHECK
+  0x50 in the scsiport/uniata storage path; validated 2026-06-14, see field manual
+  "Incomplete Rust cohab flip"). So these libs are **Rust-bodied at link on arm64
+  only; still C-bodied on i386/amd64.** (`cmlib`: a `cmlib-rust` crate exists but
+  is NOT in even the arm64 flip set here — the kernel links the C `libcmlib.a` on
+  all three arches.)
 - Every core kernel symbol resolves to Rust: `NtCreateFile`/`IopParseDevice`
   → `iomgr/file.rs`, `MmCreateProcessAddressSpace` → `ARM3/procsup.rs`,
   `KeBugCheckEx` → `ps/psmgr.rs`, `KdpSafeReadMemory` → `kdbg/i386_dis.rs`.
@@ -392,7 +406,7 @@ touching ANY source-tree kernel header.
 | Bucket | LOC | Notes |
 |---|---:|---|
 | 8 shim files in `PCH_SKIP_SOURCE` | 1,037 | All header-free. See table above. |
-| `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
+| ~~`cmdata.c` Phase B holdouts~~ | ~~~150~~ | **CORRECTED 2026-06-14 — NO LONGER C.** `cmdata.c` is now commented out in `ntos.cmake` (line 37) and `config/cmdata.rs` (the full ~995-LOC translation incl. `MmConsumedPoolPercentage` + the registry-structure tables) is active in the build. The Phase-B holdout is closed. *(NB: the source-tree comment at `ntos.cmake:31` "cmdata.c kept in C" is itself now stale.)* |
 
 **Translation candidates with no Rust translation in tree: zero.**
 Every C file the default i386/amd64 build pulls in either has its Rust

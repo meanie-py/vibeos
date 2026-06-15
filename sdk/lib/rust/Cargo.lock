@@ -540,6 +540,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "largeint"
 version = "0.1.0"
 
@@ -1290,6 +1297,13 @@ name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "uniata-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

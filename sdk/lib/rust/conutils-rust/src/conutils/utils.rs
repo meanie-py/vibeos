@@ -10,7 +10,23 @@ extern "system" {
     fn GetProcAddress(hModule: *mut c_void, lpProcName: *const i8) -> *mut c_void;
     fn GetFileType(hFile: *mut c_void) -> u32;
     fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: *mut u32) -> i32;
-    fn InterlockedCompareExchangePointer(Destination: *mut *mut c_void, Exchange: *mut c_void, Comperand: *mut c_void) -> *mut c_void;
+}
+
+// InterlockedCompareExchangePointer is a compiler intrinsic on x86 (lowered to an
+// inline cmpxchg, no symbol), so the original extern decl resolved there but had no
+// provider on arm64 → undefined at link. A pointer-width atomic CAS is the portable
+// equivalent and keeps the call site below unchanged.
+#[inline]
+unsafe fn InterlockedCompareExchangePointer(
+    Destination: *mut *mut c_void,
+    Exchange: *mut c_void,
+    Comperand: *mut c_void,
+) -> *mut c_void {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    let atomic = &*(Destination as *const AtomicPtr<c_void>);
+    match atomic.compare_exchange(Comperand, Exchange, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(prev) | Err(prev) => prev,
+    }
 }
 
 const RT_STRING: u32 = 6;
