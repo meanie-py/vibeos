@@ -293,6 +293,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "win32k-sys",
+]
+
+[[package]]
 name = "encode"
 version = "0.1.0"
 

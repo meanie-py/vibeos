@@ -143,6 +143,7 @@ members = [
     "mup-rust",
     "kernel32-rust",
     "uniata-rust",
+    "dxg-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
