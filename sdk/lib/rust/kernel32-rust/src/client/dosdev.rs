@@ -1,4 +1,5 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // `L"..."` wide-string literals from the C source. DeepSeek emitted them either as

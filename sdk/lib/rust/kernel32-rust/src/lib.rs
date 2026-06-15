@@ -52,6 +52,7 @@ pub mod k32_externs;
 pub mod k32_globals;
 pub mod k32_inlines; // #[no_mangle] RTL FORCEINLINE bodies; NOT globbed by substrate
 pub mod k32_types;
+pub mod prelude;
 pub mod substrate;
 
 // client/proc.c — CreateProcessInternalW + the process-creation path (first flip).
@@ -73,8 +74,11 @@ pub mod client;
 // client/file/ — the file-I/O API family.
 pub mod file;
 
-// client/console/ — console client APIs (console.c pending).
-pub mod console;
+// client/console/ — console client APIs. DEFERRED: the CSR CONSOLE_API_MESSAGE type
+// hierarchy (~80 message structs) isn't in the FFI layer yet; .rs translations are
+// preserved on disk + the .c files remain active C in CMakeLists. Re-enable once the
+// console CSR message types are defined. See kernel32 translation audit.
+// pub mod console;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

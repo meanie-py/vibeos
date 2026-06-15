@@ -21,5 +21,6 @@ pub mod mntpoint;
 pub mod move_;
 pub mod npipe;
 pub mod rw;
-pub mod tape;
 pub mod volume;
+// DEFERRED (IOCTL_TAPE_* type hierarchy not yet defined; .rs preserved, tape.c stays C):
+// pub mod tape;

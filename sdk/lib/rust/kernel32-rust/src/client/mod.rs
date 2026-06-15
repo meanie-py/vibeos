@@ -22,8 +22,10 @@ pub mod synch;
 pub mod sysinfo;
 pub mod time;
 pub mod timerqueue;
-pub mod toolhelp;
 pub mod utils;
+// DEFERRED (tlhelp32 PROCESSENTRY32W/MODULEENTRY32W/HEAPLIST32 types not yet defined;
+// .rs preserved on disk, toolhelp.c stays C):
+// pub mod toolhelp;
 pub mod thread;
 pub mod vdm;
 pub mod virtmem;

@@ -1,4 +1,5 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 use crate::k32_externs::{
     BaseSetLastNTError, SetLastError, RtlGetProcessHeap, RtlCopyMemory,

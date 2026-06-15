@@ -1,4 +1,5 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // Substrate-provided helpers (BaseSetLastNTError/SetLastError, the CSR_CREATE_API_NUMBER

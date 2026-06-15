@@ -39,25 +39,28 @@ list(APPEND SOURCE
     # client/sysinfo.c — replaced by Rust
     # client/time.c — replaced by Rust
     # client/timerqueue.c — replaced by Rust
-    # client/toolhelp.c — replaced by Rust
+    client/toolhelp.c # DEFERRED back to C (tlhelp32 types not yet in FFI; toolhelp.rs on disk)
     # client/utils.c — replaced by Rust
     # client/thread.c — replaced by Rust
     # client/vdm.c — replaced by Rust
     # client/version.c    — replaced by Rust (kernel32-rust/src/client/version.rs)
     # client/virtmem.c — replaced by Rust
-    # client/console/alias.c — replaced by Rust
+    # client/console/* — DEFERRED back to C (CSR CONSOLE_API_MESSAGE types not yet in FFI;
+    #   console/*.rs translations preserved on disk):
+    client/console/alias.c
     client/console/console.c
-    # client/console/history.c — replaced by Rust
-    # client/console/init.c — replaced by Rust
-    # client/console/readwrite.c — replaced by Rust
+    client/console/history.c
+    client/console/init.c
+    client/console/readwrite.c
     client/file/move.c
+    client/file/tape.c # DEFERRED back to C (IOCTL_TAPE_* types not yet in FFI; tape.rs on disk)
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
-    #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,tape,volume}.c — replaced by Rust (kernel32-rust/src/file/)
+    #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,volume}.c — replaced by Rust (kernel32-rust/src/file/)
     # wine/actctx.c — replaced by Rust
-    # wine/comm.c — replaced by Rust
-    # wine/lzexpand.c — replaced by Rust
+    wine/comm.c # DEFERRED back to C (SERIAL_*/IOCTL_SERIAL_* types not yet in FFI; comm.rs on disk)
+    wine/lzexpand.c # DEFERRED back to C (LZ* APIs; lzexpand.rs on disk)
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
-    # wine/profile.c — replaced by Rust
+    wine/profile.c # DEFERRED back to C (INI + CurProfile state; profile.rs on disk)
     wine/res.c
     # wine/timezone.c — replaced by Rust
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
