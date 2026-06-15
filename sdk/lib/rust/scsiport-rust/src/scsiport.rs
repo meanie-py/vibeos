@@ -2112,12 +2112,12 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
                 .offset(-(core::mem::offset_of!(SCSI_PORT_LUN_EXTENSION, LunEntry) as isize))
                 as *mut SCSI_PORT_LUN_EXTENSION;
 
-            if ((*LunExtension).Flags & 0x1 /* LUNEX_BUSY */) != 0 {
-                if ((*LunExtension).Flags & (0x2 | 0x4) /* LUNEX_NEED_REQUEST_SENSE | LUNEX_FROZEN_QUEUE */) == 0 {
+            if ((*LunExtension).Flags & 0x8 /* LUNEX_BUSY */) != 0 {
+                if ((*LunExtension).Flags & (0x4 | 0x1) /* LUNEX_NEED_REQUEST_SENSE | LUNEX_FROZEN_QUEUE */) == 0 {
                     crate::glue::dprint_noop(b"Retrying busy request\n\0".as_ptr() as *const i8);
 
                     // Clear flags, and retry busy request
-                    (*LunExtension).Flags &= !(0x1 | 0x10 /* LUNEX_BUSY | LUNEX_FULL_QUEUE */);
+                    (*LunExtension).Flags &= !(0x8 | 0x10 /* LUNEX_BUSY | LUNEX_FULL_QUEUE */);
                     let Irp = (*LunExtension).BusyRequest;
 
                     // Clearing busy request
