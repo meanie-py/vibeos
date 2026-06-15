@@ -145,6 +145,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     ):
         t = repo / "tools" / rel
         specs.append((tool, [py, str(t)] if t.is_file() else ["MISSING"], "stdout"))
+    # Inlined flag/constant-literal lint (AST/tree-sitter). verify_constants only
+    # checks named `const` defs; this catches bare `0x2 /* TOP_LEVEL */` literals.
+    # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.
+    sif = repo / "tools" / "scan_inline_flag_literals.py"
+    specs.append(
+        ("scan_inline_flag_literals",
+         [py, str(sif), "--lint"] if sif.is_file() else ["MISSING"], "stdout"))
     return specs
 
 
