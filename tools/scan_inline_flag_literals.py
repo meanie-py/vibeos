@@ -18,10 +18,17 @@ Usage:
     python3 tools/scan_inline_flag_literals.py <file.rs ...> [--headers DIR ...]
     python3 tools/scan_inline_flag_literals.py sdk/lib/rust/cdfs-rust/src/*.rs \
         --headers drivers/filesystems/cdfs
+    python3 tools/scan_inline_flag_literals.py            # no paths -> sweep all rust
+    python3 tools/scan_inline_flag_literals.py --lint     # terse (CLI baseline gate)
 
 Catalog = kernel headers verify_constants.py uses + sdk/include/{xdk,ndk,psdk} +
 ntoskrnl/include/internal + every *.h under each --headers dir (driver-local flags).
-Exit 1 if any mismatch is found.
+Exit 1 if any mismatch is found. Wired into `vibeos-cli check` (baseline-diff gate).
+
+Suppress a verified false positive at the source with a `nolint` comment on the line:
+    PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)  // nolint: inline-literal (why)
+Bare `// nolint` or `// nolint: inline-literal` suppress; a `nolint` scoped to another
+tool does not. Prefer this (local, reviewable, refactor-stable) over the baseline.
 """
 import re
 import sys
@@ -40,6 +47,18 @@ _SUFFIX_RE = re.compile(r'(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$')
 # optionally followed by a short parenthetical / punctuation — NOT prose. This keeps
 # `/* NAME */`, `// NAME (grind had 0x2)` but rejects `// NULL / no '=' => -1`.
 _NAME_SEG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(.*\))?\s*$")
+# Per-line suppression an agent adds after verifying a FP, e.g.
+#   PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)  // nolint: inline-literal (checked)
+# Bare `nolint` (no id) or scoped to this lint's ids both suppress; a `nolint` scoped to
+# some OTHER tool does not. Reason text after the id is encouraged but not required.
+_NOLINT_RE = re.compile(r"\bnolint\b\s*[:(\[]?\s*([a-z0-9_-]*)", re.I)
+_NOLINT_IDS = {"", "inline_literal", "inline-literal", "inline_flag_literal",
+               "inline-flag-literal", "scan_inline_flag_literals", "all"}
+
+
+def suppressed(line_text):
+    m = _NOLINT_RE.search(line_text)
+    return m is not None and m.group(1).lower() in _NOLINT_IDS
 
 
 def parse_c_value(val):
@@ -117,6 +136,7 @@ def scan_file(path, catalog):
     lits, comments = [], []
     collect(root, lits, comments)
     txt = lambda n: src[n.start_byte:n.end_byte].decode("utf8", "replace")
+    lines = src.split(b"\n")
 
     out = []  # (line, litval, name, want, linetext)
     for c in comments:
@@ -124,7 +144,7 @@ def scan_file(path, catalog):
         if not names:
             continue
         cline = c.start_point[0]
-        line_src = src.split(b"\n")[cline].decode("utf8", "replace").strip()
+        line_src = lines[cline].decode("utf8", "replace").strip()
         if len(names) >= 2:
             # |-list: pair positionally with the literals on the comment's line,
             # in source order, that sit before the comment (e.g. `A | B // N1 | N2`).
@@ -167,23 +187,30 @@ def scan_file(path, catalog):
             # The comment names which SLOT the value fills, not value==constant.
             if lv > 0xFFFF and want <= 0xFF:
                 continue
+            # Per-line `// nolint` an agent added after verifying this is a FP.
+            lit_line = lines[lit.start_point[0]].decode("utf8", "replace")
+            if suppressed(lit_line) or suppressed(line_src):
+                continue
             out.append((lit.start_point[0] + 1, lv, name, want, line_src))
     return out
 
 
 def main():
     args = sys.argv[1:]
-    files, header_dirs, i = [], [], 0
+    files, header_dirs, lint, i = [], [], False, 0
     while i < len(args):
         if args[i] == "--headers":
             i += 1
             header_dirs.append(args[i])
+        elif args[i] == "--lint":
+            lint = True  # terse: only `file:line:` finding lines (for the CLI baseline gate)
         else:
             files.append(args[i])
         i += 1
     if not files:
-        print("usage: scan_inline_flag_literals.py <file.rs ...> [--headers DIR ...]")
-        return 2
+        # No paths given → sweep the whole Rust workspace (broad catalog, no
+        # driver --headers). This is how the CLI lint gate invokes it.
+        files = [str(p) for p in (REPO / "sdk" / "lib" / "rust").rglob("*.rs")]
 
     catalog = build_c_catalog(REPO, include_enums=True)
     for d in ("sdk/include/xdk", "sdk/include/ndk", "sdk/include/psdk",
@@ -207,8 +234,11 @@ def main():
         for ln, lv, name, want, line_src in hits:
             print(f"{f}:{ln}: literal {hex(lv)} tagged /* {name} */ "
                   f"but {name} = {hex(want)} ({want})")
-            print(f"    {line_src}")
+            if not lint:  # terse mode emits ONLY finding lines (baseline-friendly)
+                print(f"    {line_src}")
             mismatches += 1
+    if lint:
+        return 1 if mismatches else 0
     if mismatches:
         print(f"\n{mismatches} inlined-literal mismatch(es) — fix to the header value.")
         return 1
