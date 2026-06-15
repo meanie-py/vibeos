@@ -29,9 +29,10 @@ TYPE_MAP = {
     "unsigned int": ("u32", 0xFFFFFFFF),
 }
 
-# const <TYPE> <name>[<LEN>] = {   (TYPE may be multi-word like "unsigned int")
+# const <TYPE> [DECLSPEC_HIDDEN] <name>[<LEN>] = {   (TYPE may be multi-word
+# like "unsigned int"; digitmap.c interposes a DECLSPEC_HIDDEN storage qualifier)
 DECL_RE = re.compile(
-    r"const\s+(unsigned\s+int|WCHAR)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*=\s*\{",
+    r"const\s+(unsigned\s+int|WCHAR)\s+(?:DECLSPEC_HIDDEN\s+)?(\w+)\s*\[\s*(\d+)\s*\]\s*=\s*\{",
 )
 COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 NUM_RE = re.compile(r"0[xX][0-9a-fA-F]+|\d+")
@@ -111,6 +112,7 @@ def convert(c_path: Path, rs_path: Path) -> None:
 def main() -> None:
     convert(SRC / "casemap.c", OUT / "casemap.rs")
     convert(SRC / "collation.c", OUT / "collation.rs")
+    convert(SRC / "digitmap.c", OUT / "digitmap.rs")
     print("done.")
 
 
