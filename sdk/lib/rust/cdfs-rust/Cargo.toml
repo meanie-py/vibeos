@@ -1,0 +1,20 @@
+# cdfs-rust — Rust translation of drivers/filesystems/cdfs (ISO9660 filesystem .sys).
+# DeepSeek mechanical translate, deepdrive-ground. ntkrnl-sys + driver_ddk substrate.
+[package]
+name = "cdfs-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+name = "cdfs_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+[features]
+# This is a ReactOS build: the C source's `#ifdef __REACTOS__` paths (e.g. using
+# IoGetStackLimits instead of the unexported IoWithinStackLimits, and creating the
+# \CdfsHdd device) are the correct ones, so `reactos` is on by default. Unify all
+# the grind's `__REACTOS__`/`reactos`/bare-`reactos` cfgs onto this single feature.
+default = ["reactos"]
+reactos = []
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

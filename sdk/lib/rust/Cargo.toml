@@ -8,6 +8,7 @@ members = [
     "skiplist-rust",
     "rtl-heappage",
     "rtl-heapuser",
+    "cdfs-rust",
     "access",
     "avltable",
     "bitmap",
