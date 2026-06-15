@@ -1,0 +1,30 @@
+# agent-swarm — tooling config only (the package is NOT pip-installed; it runs via
+# PYTHONPATH to stay worktree-shadow-safe). ruff = lint+format, pyright = types, pytest.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "B008",   # function call in arg default — we use it deliberately (Config/None patterns)
+    "SIM105", # contextlib.suppress over try/except/pass — try/except reads clearer here
+    "RUF001", "RUF002", "RUF003",  # "ambiguous" unicode — we use →/—/✓/emoji on purpose
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent_swarm"]
+
+[tool.pyright]
+include = ["agent_swarm"]
+exclude = ["**/node_modules", "**/__pycache__"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

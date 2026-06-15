@@ -1,18 +1,14 @@
 """Build ntkrnl-sys type/function/constant lookup from .rs files."""
 
-import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .config import (
-    NTKRNL_SYS_DIR,
-    BINDGEN_FILES,
-    HAL_BINDGEN_FILES,
     HAND_WRITTEN_MODULES,
-    Target,
+    NTKRNL_SYS_DIR,
     TARGETS,
+    Target,
 )
 
 
@@ -21,13 +17,14 @@ class Symbol:
     name: str
     kind: str  # "struct", "type", "fn", "const", "static"
     module: str  # source module: "bindgen_arm64", "base", "ex", etc.
-    calling_convention: Optional[str] = None  # for fn: "C", "system", "stdcall", "fastcall"
+    calling_convention: str | None = None  # for fn: "C", "system", "stdcall", "fastcall"
 
 
 @dataclass
 class Catalog:
     """Index of all symbols available in ntkrnl-sys."""
-    types: dict[str, Symbol] = field(default_factory=dict)     # struct + type alias
+
+    types: dict[str, Symbol] = field(default_factory=dict)  # struct + type alias
     functions: dict[str, Symbol] = field(default_factory=dict)  # fn declarations
     constants: dict[str, Symbol] = field(default_factory=dict)  # const + static
 
@@ -35,29 +32,31 @@ class Catalog:
     def all_names(self) -> set[str]:
         return set(self.types) | set(self.functions) | set(self.constants)
 
-    def lookup(self, name: str) -> Optional[Symbol]:
+    def lookup(self, name: str) -> Symbol | None:
         return self.types.get(name) or self.functions.get(name) or self.constants.get(name)
 
 
 # Regex patterns for hand-written modules
-RE_PUB_STRUCT = re.compile(r'^pub struct (\w+)')
-RE_PUB_TYPE = re.compile(r'^pub type (\w+)')
-RE_PUB_CONST = re.compile(r'^pub const (\w+)')
+RE_PUB_STRUCT = re.compile(r"^pub struct (\w+)")
+RE_PUB_TYPE = re.compile(r"^pub type (\w+)")
+RE_PUB_CONST = re.compile(r"^pub const (\w+)")
 # bindgen renders tagged-enum members as `pub const <EnumType>_<C_NAME>:
 # <EnumType> = N;` — the C source uses the bare <C_NAME>. Capture both.
-RE_PUB_CONST_TYPED = re.compile(r'^pub const (\w+)\s*:\s*(\w+)')
-RE_PUB_STATIC = re.compile(r'^pub static (?:mut )?(\w+)')
-RE_PUB_FN_DECL = re.compile(r'^\s+pub fn (\w+)\(')  # inside extern block
-RE_PUB_FN_IMPL = re.compile(r'^pub (?:unsafe )?fn (\w+)')
+RE_PUB_CONST_TYPED = re.compile(r"^pub const (\w+)\s*:\s*(\w+)")
+RE_PUB_STATIC = re.compile(r"^pub static (?:mut )?(\w+)")
+RE_PUB_FN_DECL = re.compile(r"^\s+pub fn (\w+)\(")  # inside extern block
+RE_PUB_FN_IMPL = re.compile(r"^pub (?:unsafe )?fn (\w+)")
 RE_EXTERN_BLOCK = re.compile(r'^extern "(\w+)"')
 RE_UNSAFE_EXTERN_BLOCK = re.compile(r'^unsafe extern "(\w+)"')
 
 # For bindgen files (each fn is in its own `unsafe extern "C" { pub fn ... }`)
-RE_BINDGEN_FN = re.compile(r'^\s+pub fn (\w+)\(')
+RE_BINDGEN_FN = re.compile(r"^\s+pub fn (\w+)\(")
 RE_BINDGEN_EXTERN = re.compile(r'^unsafe extern "(\w+)"')
 
 
-def _scan_hand_written(path: Path, module_name: str) -> tuple[list[Symbol], list[Symbol], list[Symbol]]:
+def _scan_hand_written(
+    path: Path, module_name: str
+) -> tuple[list[Symbol], list[Symbol], list[Symbol]]:
     """Scan a hand-written .rs file for symbols."""
     types, functions, constants = [], [], []
     current_extern_cc = None
@@ -72,12 +71,12 @@ def _scan_hand_written(path: Path, module_name: str) -> tuple[list[Symbol], list
         if m:
             current_extern_cc = m.group(1)
             in_extern_block = True
-            if '{' in stripped:
-                brace_depth += stripped.count('{') - stripped.count('}')
+            if "{" in stripped:
+                brace_depth += stripped.count("{") - stripped.count("}")
             continue
 
         if in_extern_block:
-            brace_depth += stripped.count('{') - stripped.count('}')
+            brace_depth += stripped.count("{") - stripped.count("}")
             if brace_depth <= 0:
                 in_extern_block = False
                 current_extern_cc = None
@@ -87,7 +86,7 @@ def _scan_hand_written(path: Path, module_name: str) -> tuple[list[Symbol], list
             if m:
                 name = m.group(1)
                 # Skip bitfield accessors (lowercase start)
-                if name[0].isupper() or name.startswith('_'):
+                if name[0].isupper() or name.startswith("_"):
                     functions.append(Symbol(name, "fn", module_name, current_extern_cc))
                 continue
 
@@ -138,7 +137,7 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
         m = RE_PUB_STRUCT.match(stripped)
         if m:
             name = m.group(1)
-            if not name.startswith('__'):  # skip __BindgenUnionField etc.
+            if not name.startswith("__"):  # skip __BindgenUnionField etc.
                 types.append(Symbol(name, "struct", module_name))
             continue
 
@@ -161,8 +160,7 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
                 etype = mt.group(2)
                 pfx = etype + "_"
                 if cname.startswith(pfx) and len(cname) > len(pfx):
-                    constants.append(
-                        Symbol(cname[len(pfx):], "const", module_name))
+                    constants.append(Symbol(cname[len(pfx) :], "const", module_name))
             continue
 
         # Extern static data — bindgen emits `pub static mut NAME: TYPE;`
@@ -183,7 +181,7 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
             name = m.group(1)
             # Skip bitfield accessor methods (start lowercase, inside impl blocks)
             # Real extern fns start with uppercase or _
-            if name[0].isupper() or name.startswith('_'):
+            if name[0].isupper() or name.startswith("_"):
                 functions.append(Symbol(name, "fn", module_name, current_extern_cc))
 
     return types, functions, constants
@@ -208,7 +206,7 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
         path = NTKRNL_SYS_DIR / filename
         if not path.exists():
             continue
-        module_name = filename.replace('.rs', '')
+        module_name = filename.replace(".rs", "")
         types, functions, constants = _scan_hand_written(path, module_name)
         for s in types:
             catalog.types[s.name] = s
@@ -289,7 +287,6 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s
 
-
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"
     if common_path.exists():
@@ -303,11 +300,18 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
 
 def print_catalog_stats(catalog: Catalog) -> None:
     """Print summary statistics."""
-    print(f"Catalog: {len(catalog.types)} types, {len(catalog.functions)} functions, {len(catalog.constants)} constants")
+    print(
+        f"Catalog: {len(catalog.types)} types, {len(catalog.functions)} functions, "
+        f"{len(catalog.constants)} constants"
+    )
 
     # Group by module
     modules: dict[str, int] = {}
-    for sym in list(catalog.types.values()) + list(catalog.functions.values()) + list(catalog.constants.values()):
+    for sym in (
+        list(catalog.types.values())
+        + list(catalog.functions.values())
+        + list(catalog.constants.values())
+    ):
         modules[sym.module] = modules.get(sym.module, 0) + 1
 
     for mod_name, count in sorted(modules.items()):

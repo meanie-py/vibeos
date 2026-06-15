@@ -17,6 +17,7 @@ on the mingw cross `command` (multi-job), but the *direct-source* form works:
     c2rust transpile --output-dir DIR SOURCE.c -- <--target + -D + -I from the db entry>
 Output lands at DIR/src/<stem>.rs.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,8 @@ def _find_db_entry(c_file: Path) -> tuple[dict, Path] | None:
         if not db_path.exists():
             continue
         try:
-            db = json.load(open(db_path))
+            with open(db_path) as f:
+                db = json.load(f)
         except Exception:
             continue
         for e in db:
@@ -64,11 +66,10 @@ def _extract_clang_flags(entry: dict) -> list[str]:
         t = toks[i]
         if t.startswith("-D") or t.startswith("-I") or t.startswith("--target"):
             keep.append(t)
-        elif t in ("-isystem", "-include", "-imacros"):
-            if i + 1 < len(toks):
-                keep.append(t)
-                keep.append(toks[i + 1])
-                i += 1
+        elif t in ("-isystem", "-include", "-imacros") and i + 1 < len(toks):
+            keep.append(t)
+            keep.append(toks[i + 1])
+            i += 1
         i += 1
     return keep
 
@@ -93,6 +94,7 @@ def _parse_functions(rs_text: str) -> dict[str, str]:
             line.lstrip().startswith(("fn ", "pub ", "unsafe ", "extern ", "pub("))
         )
         if is_item:
+            assert m is not None  # is_item is True only when m matched
             name = m.group(1)
             start = i
             # walk to the line that opens the body `{`, then to the matching `}`
@@ -140,19 +142,27 @@ def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> s
     found = _find_db_entry(c_file)
     if found is None:
         if verbose:
-            print(f"  [c2rust] no compile_commands entry for {c_file.name} — skipping",
-                  file=sys.stderr)
+            print(
+                f"  [c2rust] no compile_commands entry for {c_file.name} — skipping",
+                file=sys.stderr,
+            )
         _TRANSPILE_CACHE[key] = None
         return None
     entry, build_dir = found
     flags = _extract_clang_flags(entry)
     out_dir = Path(tempfile.mkdtemp(prefix="c2rust_anchor_"))
     try:
-        cmd = ["c2rust", "transpile", "--output-dir", str(out_dir),
-               str(c_file.resolve()), "--"] + flags
+        cmd = [
+            "c2rust",
+            "transpile",
+            "--output-dir",
+            str(out_dir),
+            str(c_file.resolve()),
+            "--",
+            *flags,
+        ]
         try:
-            subprocess.run(cmd, cwd=str(build_dir), capture_output=True,
-                           text=True, timeout=timeout)
+            subprocess.run(cmd, cwd=str(build_dir), capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             if verbose:
                 print(f"  [c2rust] timeout on {c_file.name}", file=sys.stderr)
@@ -162,21 +172,21 @@ def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> s
         # we don't care about exit code, only whether it produced output for our file.
         rs = out_dir / "src" / f"{c_file.stem}.rs"
         if not rs.exists():
-            alt = out_dir / f"{c_file.stem}.rs"   # some layouts drop it at the top level
+            alt = out_dir / f"{c_file.stem}.rs"  # some layouts drop it at the top level
             rs = alt if alt.exists() else rs
         if rs.exists():
             result = rs.read_text(errors="replace")
         elif verbose:
-            print(f"  [c2rust] no .rs produced for {c_file.name} (AST unsupported)",
-                  file=sys.stderr)
+            print(
+                f"  [c2rust] no .rs produced for {c_file.name} (AST unsupported)", file=sys.stderr
+            )
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
     _TRANSPILE_CACHE[key] = result
     return result
 
 
-def build_anchor_map(c_file: Path, timeout: int = 180,
-                     verbose: bool = True) -> dict[str, str]:
+def build_anchor_map(c_file: Path, timeout: int = 180, verbose: bool = True) -> dict[str, str]:
     """Transpile c_file with c2rust and return {fn_name: rust_body}. Best-effort:
     returns {} on any failure (anchor is optional context, never a hard dep)."""
     text = _transpile_text(c_file, timeout=timeout, verbose=verbose)
@@ -224,7 +234,7 @@ def build_preamble(c_file: Path, timeout: int = 180, verbose: bool = True) -> st
                 if depth <= 0 and lines[j].rstrip().endswith(";"):
                     break
                 j += 1
-            block = "\n".join(lines[start:j + 1])
+            block = "\n".join(lines[start : j + 1])
             # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
             # never a bare scalar enum-variant const.
             if m.group(1).startswith("static") or ("[" in block or "{" in block):
@@ -233,6 +243,5 @@ def build_preamble(c_file: Path, timeout: int = 180, verbose: bool = True) -> st
             continue
         i += 1
     if verbose:
-        print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}",
-              file=sys.stderr)
+        print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
     return "\n\n".join(out)

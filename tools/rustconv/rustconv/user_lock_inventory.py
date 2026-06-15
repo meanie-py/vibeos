@@ -56,12 +56,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .seh_inventory import _in_keepset
 from .callout_annotate import (
-    _mask_literals,
     _enclosing_func_span,
     _line_of,
+    _mask_literals,
 )
+from .seh_inventory import _in_keepset
 
 RE_ENTER_EXCL = re.compile(r"\bUserEnterExclusive\s*\(")
 RE_ENTER_SHARED = re.compile(r"\bUserEnterShared\s*\(")
@@ -82,14 +82,14 @@ class UserLockSite:
     function: str
     func_line: int
     func_end_line: int
-    mode: str                    # exclusive | shared | mixed
-    enter_line: int              # first acquire
-    enter_at_top: bool           # unconditional, prologue-level acquire
+    mode: str  # exclusive | shared | mixed
+    enter_line: int  # first acquire
+    enter_at_top: bool  # unconditional, prologue-level acquire
     n_enters: int
-    leave_lines: list[int]       # every UserLeave() in the fn body
-    n_returns: int               # exit paths in the fn body
-    shape: str                   # CLEAN_BRACKET | MULTI_LEAVE |
-                                 # REENTRANT | BORROWED | REVIEW
+    leave_lines: list[int]  # every UserLeave() in the fn body
+    n_returns: int  # exit paths in the fn body
+    shape: str  # CLEAN_BRACKET | MULTI_LEAVE |
+    # REENTRANT | BORROWED | REVIEW
     signals: list[str] = field(default_factory=list)
 
 
@@ -111,8 +111,7 @@ def extract_file(path: Path) -> list[UserLockSite]:
     # even with multiple enters (re-entrant straddle).
     seen_fns: set[tuple[str, int]] = set()
 
-    for m in list(RE_ENTER_EXCL.finditer(masked)) + \
-            list(RE_ENTER_SHARED.finditer(masked)):
+    for m in list(RE_ENTER_EXCL.finditer(masked)) + list(RE_ENTER_SHARED.finditer(masked)):
         fn_name, fn_lo, fn_hi = _enclosing_func_span(text, m.start())
         if fn_name in _PRIMITIVES:
             continue  # the UserEnter*/UserLeave definition itself
@@ -125,28 +124,27 @@ def extract_file(path: Path) -> list[UserLockSite]:
         hi_off = loff[min(fn_hi + 1, len(loff) - 1)]
         body = masked[lo_off:hi_off]
 
-        excl = [lo_off + x.start()
-                for x in RE_ENTER_EXCL.finditer(body)]
-        shrd = [lo_off + x.start()
-                for x in RE_ENTER_SHARED.finditer(body)]
+        excl = [lo_off + x.start() for x in RE_ENTER_EXCL.finditer(body)]
+        shrd = [lo_off + x.start() for x in RE_ENTER_SHARED.finditer(body)]
         enters = sorted(excl + shrd)
         leaves = [lo_off + x.start() for x in RE_LEAVE.finditer(body)]
         returns = [lo_off + x.start() for x in RE_RETURN.finditer(body)]
 
         if not enters:
             continue
-        mode = ("mixed" if excl and shrd
-                else "exclusive" if excl else "shared")
+        mode = "mixed" if excl and shrd else "exclusive" if excl else "shared"
         first_enter = enters[0]
 
         # enter_at_top: between the function body's `{` and the first
         # enter there is no branching keyword and no nested `{` — i.e.
         # the acquire is an unconditional prologue statement.
         body_open = body.find("{")
-        prologue = body[body_open + 1: first_enter - lo_off] \
-            if body_open >= 0 else body[: first_enter - lo_off]
-        enter_at_top = (RE_BRANCH.search(prologue) is None
-                        and "{" not in prologue)
+        prologue = (
+            body[body_open + 1 : first_enter - lo_off]
+            if body_open >= 0
+            else body[: first_enter - lo_off]
+        )
+        enter_at_top = RE_BRANCH.search(prologue) is None and "{" not in prologue
 
         leave_lines = [_line_of(text, o) for o in leaves]
         signals: list[str] = []
@@ -169,8 +167,7 @@ def extract_file(path: Path) -> list[UserLockSite]:
             # returns that sit *after* the acquire but *before* the first
             # release are lock-leak paths the translator must close.
             first_leave = leaves[0]
-            leak = [r for r in returns
-                    if first_enter < r < first_leave]
+            leak = [r for r in returns if first_enter < r < first_leave]
             if leak:
                 shape = "REVIEW"
                 signals.append("return_before_first_leave")
@@ -235,12 +232,10 @@ def _shape_counts(inv: dict[Path, list[UserLockSite]]) -> dict[str, int]:
 
 def print_summary(inv: dict[Path, list[UserLockSite]]) -> None:
     n = sum(len(v) for v in inv.values())
-    print(f"\n{'='*64}")
-    print(f"Win32k Pass 2b — {n} USER critsec brackets across "
-          f"{len(inv)} keep-set files")
-    print(f"{'='*64}")
-    for shape in ("CLEAN_BRACKET", "MULTI_LEAVE", "REENTRANT",
-                  "BORROWED", "REVIEW"):
+    print(f"\n{'=' * 64}")
+    print(f"Win32k Pass 2b — {n} USER critsec brackets across {len(inv)} keep-set files")
+    print(f"{'=' * 64}")
+    for shape in ("CLEAN_BRACKET", "MULTI_LEAVE", "REENTRANT", "BORROWED", "REVIEW"):
         k = _shape_counts(inv).get(shape, 0)
         pct = (k * 100 / n) if n else 0
         print(f"  {shape:<14} {k:>4}  {pct:5.1f}%")
@@ -271,24 +266,19 @@ def run_oracle(simplecall_path: Path) -> int:
     by = {s.function: s for s in sites}
 
     nop = by.get("NtUserCallNoParam")
-    if nop and nop.mode == "exclusive" and nop.enter_at_top \
-            and nop.shape == "CLEAN_BRACKET":
+    if nop and nop.mode == "exclusive" and nop.enter_at_top and nop.shape == "CLEAN_BRACKET":
         print("  NtUserCallNoParam = CLEAN_BRACKET(excl, top)  [OK]")
     else:
-        got = (f"{nop.mode}/{nop.enter_at_top}/{nop.shape}"
-               if nop else "absent")
-        print(f"  NtUserCallNoParam: expect exclusive/True/CLEAN_BRACKET, "
-              f"got {got}  [MISMATCH]")
+        got = f"{nop.mode}/{nop.enter_at_top}/{nop.shape}" if nop else "absent"
+        print(f"  NtUserCallNoParam: expect exclusive/True/CLEAN_BRACKET, got {got}  [MISMATCH]")
         ok = False
 
     hwnd = by.get("NtUserCallHwnd")
     if hwnd and not hwnd.enter_at_top and hwnd.shape == "REVIEW":
         print("  NtUserCallHwnd = REVIEW (conditional enter)  [OK]")
     else:
-        got = (f"{hwnd.enter_at_top}/{hwnd.shape}"
-               if hwnd else "absent")
-        print(f"  NtUserCallHwnd: expect False/REVIEW, got {got}  "
-              f"[MISMATCH]")
+        got = f"{hwnd.enter_at_top}/{hwnd.shape}" if hwnd else "absent"
+        print(f"  NtUserCallHwnd: expect False/REVIEW, got {got}  [MISMATCH]")
         ok = False
 
     if len(sites) >= 4:
@@ -299,8 +289,7 @@ def run_oracle(simplecall_path: Path) -> int:
 
     selfdef = [s for s in sites if s.function in _PRIMITIVES]
     if selfdef:
-        print(f"  {len(selfdef)} primitive-definition false positives  "
-              f"[MISMATCH]")
+        print(f"  {len(selfdef)} primitive-definition false positives  [MISMATCH]")
         ok = False
     else:
         print("  no primitive-definition false positives  [OK]")

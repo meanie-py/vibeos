@@ -22,3 +22,34 @@ include = ["tests*"]
 [tool.pytest.ini_options]
 testpaths = ["tests/qemu"]
 timeout = 300
+
+# --- dev tooling for the vibeos-cli tool surface ---------------------------
+# Covers the cli package (tests/qemu/cli) + the standalone tools/*.py scripts.
+# tools/rustconv and agent-swarm carry their OWN [tool.ruff]/[tool.pyright]
+# (installable sub-packages); ruff/pyright discover the nearest config per file,
+# so this block does NOT govern them. Policy is kept identical across all three
+# so `vibeos-cli check-tooling` lints the whole surface under one standard.
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Keep a stray repo-root `ruff check .` from sweeping the build trees / source.
+extend-exclude = [
+    "build-*", "ntoskrnl", "sdk", "win32ss", "hal", "drivers", "dll", "base",
+    "boot", "modules", "ports", "subsystems", "host-tools", "*.responses*",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "B008",   # call in arg default — used deliberately (Path/None patterns)
+    "SIM105", # contextlib.suppress over try/except/pass — try/except reads clearer
+    "SIM108", # if-else over ternary — explicit blocks read clearer here
+    "RUF001", "RUF002", "RUF003",  # "ambiguous" unicode — we use →/—/✓ on purpose
+]
+
+[tool.pyright]
+include = ["tests/qemu/cli"]
+exclude = ["**/node_modules", "**/__pycache__"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = true

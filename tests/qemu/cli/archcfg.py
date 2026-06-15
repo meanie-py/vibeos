@@ -6,12 +6,12 @@ Keeping this here, not scattered through shell, is what prevents the
 "x86 is ninja-livecd but arm64 needs mkramdisk --refresh" footgun and the
 q35-vs-pc class of divergence.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
-ARCHES = ("i386", "amd64", "arm64")          # base arches (build side)
+ARCHES = ("i386", "amd64", "arm64")  # base arches (build side)
 
 # CLI --arch choices. BIOS x86 is dead; smoke registers only the -uefi configs,
 # so plain i386/amd64 are accepted as ALIASES that resolve to the UEFI config.

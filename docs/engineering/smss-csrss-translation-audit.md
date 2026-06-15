@@ -1,28 +1,46 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against build.rs/CMakeLists/code — the
+> 5 spine PEs (smss/csrss/csrsrv/basesrv/winsrv) are 100% Rust at link AND now
+> reach **ZERO cmake `.a`** (the cargo-drive cutover: `csrss-cargo`/`smss-cargo`/
+> `csrsrv-cargo`/`basesrv-cargo`/`winsrv-cargo` build.rs; `libnt.a` and `libsmlib.a`
+> dropped — see static-libs audit). **smlib/csrlib are NOT remaining C debt on the
+> *server* side**: `smclient.rs` is a Rust port compiled into the body (`pub mod smlib`),
+> and csrlib is translated in `smss-csrss-rust/src/csrlib/`. **What is still owed on
+> `continue-rust-port`** is the *client-side* cohab flip (csrlib→ntdll.dll, smlib→
+> ntdll_vista.dll). That flip is implemented but lives on the UNMERGED branch
+> `smlib-csrlib-client-flip` (verified: not in `git branch --merged continue-rust-port`),
+> so on crp the C client libs still link into ntdll/ntdll_vista. The 2026-06-02 "DONE
+> GREEN ×3" note below was that branch's work — it is real but not yet on crp.
+
 > **UPDATE 2026-06-09 — the deferral gate has CLEARED: `ntdll-rust-port` has merged to `continue-rust-port` (b3252b81c5a, c1cf116f38c) and the spine is now cargo-driven (ba1be3f93ca). The smlib/csrlib cohab-flip described below as "deferred until ntdll-rust-port merges" can proceed — re-verify the flip against current CMakeLists. Beyond the spine: winlogon.exe is now 100% Rust (1443c4a94d8) and services.exe/SCM is 100% Rust (no longer "not started").**
 
 **Last updated 2026-06-01.** Branch `continue-rust-port` (worktree
 `worktree-smss-csrss`, in sync at `a52dce70629`).
 
-## Current state (2026-06-01) — the spine is essentially flipped
+## Current state (re-verified 2026-06-14) — the spine is flipped and `.a`-free
 
-**6 of the 7 PE/DLL targets are FULLY translated, integrated, and
-smoke-green; only the two static *client* libraries (smlib, csrlib)
-remain C — and both are already translated, just not yet cohab-flipped.**
-This is the inverse of the audit's original leaf→root plan (which put
-the protocol client libs in Phase 1): in practice the servers and EXEs
-flipped first, and the client libs are the deferred tail.
+**All 5 PE/DLL targets are FULLY translated, integrated, smoke-green, AND now
+reach ZERO cmake `.a` (cargo-drive cutover).** The two static *client* libraries
+(smlib, csrlib) are also already translated; their **server-side** consumers
+(smss.exe/csrsrv.dll) use the Rust ports compiled into the body — `libsmlib.a`
+was dropped from `smss-cargo`/`csrsrv-cargo` build.rs (commit `cf7a6caa082`,
+inert per residue probe). The only remaining C is the **client-side** link of
+csrlib/smlib into ntdll/ntdll_vista — implemented on the UNMERGED
+`smlib-csrlib-client-flip` branch, still owed on `continue-rust-port`.
+This is the inverse of the audit's original leaf→root plan (which put the
+protocol client libs in Phase 1): in practice the servers and EXEs flipped
+first, and the client-side link is the deferred tail.
 
 | Component | Artifact | Rust crate | State |
 |---|---|---|---|
-| **smss.exe** (10 .c) | `smss.exe` | `smss-csrss-rust/smss` | ✅ FULL flip, integrated, smoke-green (`9013fdab`, `eeb04b6`) |
-| **csrss.exe** (1 .c) | `csrss.exe` | `smss-csrss-rust/csrss.rs` | ✅ FULL flip, integrated, smoke-green (`e0049bf`) |
-| **csrsrv.dll** (7 .c) | `csrsrv.dll` | `smss-csrss-rust/csrsrv` | ✅ FULL flip, integrated, smoke-green |
-| **basesrv.dll** (~8 .c) | `basesrv.dll` | `smss-csrss-rust/basesrv` | ✅ FULL flip ("100% Rust"), integrated, smoke-green (`8fdbf8a`) |
-| **winsrv.dll** (38 .c) | `winsrv.dll` | `winsrv-rust` (consrv+usersrv+init) + `concfg-rust` | ✅ FULL flip, integrated, smoke-green (`068f05f`…`f4a6dee`). Only cohab stubs/shims remain as `.c` |
-| **smlib** (917 LOC) | static `smlib` | `smss-csrss-rust/smlib` (701 LOC, `pub mod smlib`) | ⚠ TRANSLATED, cohab-flip **deferred** — C still compiles |
-| **csrlib** (974 LOC) | static `csrlib` | `smss-csrss-rust/csrlib` (1,800 LOC, `pub mod csrlib`) | ⚠ TRANSLATED, cohab-flip **deferred** (lands in ntdll.dll) — C still compiles |
+| **smss.exe** (10 .c) | `smss.exe` | `smss-csrss-rust/smss` | ✅ FULL flip, integrated, smoke-green; **ZERO cmake .a** (`smss-cargo`, `cf7a6caa082`) |
+| **csrss.exe** (1 .c) | `csrss.exe` | `smss-csrss-rust/csrss.rs` | ✅ FULL flip, integrated, smoke-green; **ZERO cmake .a** (`csrss-cargo`; `libnt.a` dropped → `entry_point`, 2026-06-13) |
+| **csrsrv.dll** (7 .c) | `csrsrv.dll` | `smss-csrss-rust/csrsrv` | ✅ FULL flip, integrated, smoke-green; **ZERO cmake .a** (`csrsrv-cargo`, `cf7a6caa082`) |
+| **basesrv.dll** (~8 .c) | `basesrv.dll` | `smss-csrss-rust/basesrv` | ✅ FULL flip ("100% Rust"), integrated, smoke-green (`8fdbf8a`); **ZERO cmake .a** (`basesrv-cargo`, 2026-06-13) |
+| **winsrv.dll** (38 .c) | `winsrv.dll` | `winsrv-rust` (consrv+usersrv+init) + `concfg-rust` | ✅ FULL flip, integrated, smoke-green (`068f05f`…`f4a6dee`). Cargo-driven (`winsrv-cargo`); still reuses win32k C-residue `.a`s (own track) |
+| **smlib** (917 LOC) | static `smlib` | `smss-csrss-rust/smlib` (`smclient.rs`, `pub mod smlib`) | ✅ server-side Rust (body-defined, `libsmlib.a` dropped). ⚠ **client-side flip** (→ ntdll_vista.dll) on UNMERGED branch — C still links there on crp |
+| **csrlib** (974 LOC) | static `csrlib` | `smss-csrss-rust/csrlib` (`api/capture/connect.rs`, `pub mod csrlib`) | ✅ translated. ⚠ **client-side flip** (→ ntdll.dll) on UNMERGED branch — C still links there on crp |
 
 **Adjacent (downstream of the spine, same kernel→desktop track):**
 - **userinit.exe** (userinit.c + livecd.c) → `userinit-rust` — ✅ FULL
@@ -98,8 +116,13 @@ translated+integrated, broken-but-visible 239→84 (`e5228058`); Phase 0
 + P1a COMPLETE; csrss.exe fully Rust. (The phase-by-phase learnings
 below remain valid and are kept as durable reference.)
 
+> **⚠ Client flip done on branch `smlib-csrlib-client-flip` — NOT merged to
+> `continue-rust-port` (re-verified 2026-06-14: absent from `git branch --merged
+> continue-rust-port`). So on crp the C client libs STILL link into ntdll/ntdll_vista;
+> this is genuine owed work, not done-on-crp.** Branch detail follows:**
 > **Client flip DONE 2026-06-02** (worktree `vibeos-wt-ntdll`, branch
-> `smlib-csrlib-client-flip`, UNCOMMITTED): the last two C client pieces of
+> `smlib-csrlib-client-flip`, then UNCOMMITTED, now a committed-but-unmerged branch):
+> the last two C client pieces of
 > the spine — **csrlib** (16 `Csr*` → ntdll.dll) and **smlib** (7 `Sm*` →
 > ntdll_vista.dll) — are now flipped to the existing Rust translations via lean
 > `csrlib_only` / `smlib_only` cargo features (one client module each, no
@@ -711,8 +734,10 @@ symbol is present at the expected i386/amd64 decoration.
   entire stack). Cold-green ×3 confirmed 2026-06-01.
 - ✅ The winsrv ownership conflict is resolved (this track owns it; see
   Open Question 1).
-- ⬜ **smlib + csrlib cohab-flip** (the last C in the spine; both
-  already translated — see Open Question 5).
+- ⬜ **smlib + csrlib CLIENT-side cohab-flip** (the last C in the spine on crp;
+  both already translated, server-side already Rust + `.a`-free). The flip is
+  implemented on branch `smlib-csrlib-client-flip` but NOT merged to crp — owed
+  work is the merge/re-validation, not the translation. See Open Question 5.
 - ⬜ `scan_ud2.py --check`, `verify_abi.py`, `verify_constants.py`,
   `lint_kernel.py` clean pass re-run after the smlib/csrlib flip (note
   the benign `KNOWN_CGU_UD2` / baselined-constant WARN noise from the

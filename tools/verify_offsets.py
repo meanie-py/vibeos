@@ -51,6 +51,7 @@ def _find_build_repo() -> Path:
     a sibling checkout that has them. Includes/build dirs/toolchain are resolved
     against this repo; the Rust src we read/write stays in REACTOS (the worktree).
     """
+
     def has_builds(p: Path) -> bool:
         return any((p / f"build-{a}").is_dir() for a in ("amd64", "i386", "arm64"))
 
@@ -83,8 +84,7 @@ def _find_toolchain() -> Path:
         if (c / "bin" / "clang").exists():
             return c
     raise RuntimeError(
-        "Cannot find llvm-mingw toolchain (looked in "
-        + ", ".join(str(c) for c in candidates) + ")"
+        "Cannot find llvm-mingw toolchain (looked in " + ", ".join(str(c) for c in candidates) + ")"
     )
 
 
@@ -153,7 +153,7 @@ HAND_WRITTEN = [
 # Same skips verify_sizes uses for bindgen extraction.
 SKIP_TYPES = {
     "_GENERAL_LOOKASIDE_POOL",  # complex union, bindgen disagrees with C
-    "_LONGDOUBLE",              # x87 long double, platform padding
+    "_LONGDOUBLE",  # x87 long double, platform padding
 }
 
 
@@ -161,7 +161,7 @@ SKIP_TYPES = {
 # Rust struct parsing
 # =============================================================================
 
-FIELD_RE = re.compile(r'^\s*pub\s+(\w+)\s*:\s*(.+?)\s*,?\s*$')
+FIELD_RE = re.compile(r"^\s*pub\s+(\w+)\s*:\s*(.+?)\s*,?\s*$")
 
 
 def parse_rust_structs(content: str) -> dict[str, list[tuple[str, str, list[str]]]]:
@@ -173,11 +173,11 @@ def parse_rust_structs(content: str) -> dict[str, list[tuple[str, str, list[str]
     variants).
     """
     structs: dict[str, list[tuple[str, str, list[str]]]] = {}
-    lines = content.split('\n')
+    lines = content.split("\n")
     i = 0
     n = len(lines)
     while i < n:
-        m = re.match(r'^pub struct (\w+)\s*\{', lines[i])
+        m = re.match(r"^pub struct (\w+)\s*\{", lines[i])
         if not m:
             i += 1
             continue
@@ -188,16 +188,16 @@ def parse_rust_structs(content: str) -> dict[str, list[tuple[str, str, list[str]
         depth = 1
         while i < n and depth > 0:
             line = lines[i]
-            depth += line.count('{') - line.count('}')
+            depth += line.count("{") - line.count("}")
             if depth <= 0:
                 break
             stripped = line.strip()
-            cm = re.match(r'#\[cfg\((.+)\)\]', stripped)
+            cm = re.match(r"#\[cfg\((.+)\)\]", stripped)
             if cm:
                 pending_cfgs.append(cm.group(1))
                 i += 1
                 continue
-            if stripped.startswith('#['):
+            if stripped.startswith("#["):
                 # other attribute (doc, etc.) — ignore, keep cfgs
                 i += 1
                 continue
@@ -205,7 +205,7 @@ def parse_rust_structs(content: str) -> dict[str, list[tuple[str, str, list[str]
             if fm:
                 fields.append((fm.group(1), fm.group(2), list(pending_cfgs)))
                 pending_cfgs = []
-            elif stripped and not stripped.startswith('//') and not stripped.startswith('///'):
+            elif stripped and not stripped.startswith("//") and not stripped.startswith("///"):
                 # non-field content (rare) — reset pending cfgs
                 pending_cfgs = []
             i += 1
@@ -213,19 +213,19 @@ def parse_rust_structs(content: str) -> dict[str, list[tuple[str, str, list[str]
     return structs
 
 
-ARRAY_RE = re.compile(r'^\[\s*(.+?)\s*;\s*(\w+)\s*(?:usize)?\s*\]$')
+ARRAY_RE = re.compile(r"^\[\s*(.+?)\s*;\s*(\w+)\s*(?:usize)?\s*\]$")
 
 
 def is_array_type(rust_type: str) -> bool:
-    return rust_type.strip().startswith('[')
+    return rust_type.strip().startswith("[")
 
 
 def is_bitfield_field(field_name: str) -> bool:
-    return field_name.startswith('_bitfield_')
+    return field_name.startswith("_bitfield_")
 
 
 def is_anon_field(field_name: str) -> bool:
-    return field_name.startswith('__bindgen_anon_') or field_name.startswith('__bindgen_padding')
+    return field_name.startswith("__bindgen_anon_") or field_name.startswith("__bindgen_padding")
 
 
 def collect_fields(
@@ -253,10 +253,17 @@ def collect_fields(
             continue
         if is_anon_field(fname):
             # recurse into the nested anon struct type (strip generics/pointers)
-            base = re.sub(r'<.*', '', ftype).strip().lstrip('*').replace('mut ', '').replace('const ', '').strip()
+            base = (
+                re.sub(r"<.*", "", ftype)
+                .strip()
+                .lstrip("*")
+                .replace("mut ", "")
+                .replace("const ", "")
+                .strip()
+            )
             base = base.split()[0] if base else base
             if base in structs:
-                out.extend(collect_fields(base, structs, prefix + fname + '.', merged_cfgs, seen))
+                out.extend(collect_fields(base, structs, prefix + fname + ".", merged_cfgs, seen))
             continue
         path = prefix + fname
         out.append((fname, path, merged_cfgs, is_array_type(ftype)))
@@ -267,61 +274,90 @@ def collect_fields(
 # C generation + clang
 # =============================================================================
 
+
 def get_include_flags(arch_name: str) -> list[str]:
     # Resolve includes against BUILD_REPO — it holds both the source headers and
     # the generated build-<arch>/sdk/include headers (ntdef.h etc.).
     R = BUILD_REPO
     build_dir = R / f"build-{arch_name}"
     return [
-        '-I', str(build_dir / "ntoskrnl"),
-        '-I', str(R / "ntoskrnl"),
-        '-I', str(R / "sdk/include"),
-        '-I', str(R / "sdk/include/ddk"),
-        '-I', str(R / "sdk/include/ndk"),
-        '-I', str(R / "sdk/include/psdk"),
-        '-I', str(R / "sdk/include/xdk"),
-        '-I', str(R / "sdk/include/reactos"),
-        '-I', str(R / "sdk/include/reactos/libs"),
-        '-I', str(R / "sdk/include/reactos/drivers"),
-        '-I', str(R / "sdk/include/vcruntime"),
-        '-I', str(R / "sdk/include/winrt"),
-        '-I', str(R / "sdk/lib/pseh/include"),
-        '-I', str(R),
-        '-I', str(R / "sdk/lib/drivers/arbiter"),
-        '-I', str(R / "sdk/lib/cmlib"),
-        '-I', str(R / "ntoskrnl/include"),
-        '-I', str(build_dir / "ntoskrnl/include"),
-        '-I', str(build_dir / "ntoskrnl/include/internal"),
-        '-I', str(build_dir / "sdk/include"),
-        '-I', str(build_dir / "sdk/include/psdk"),
-        '-I', str(build_dir / "sdk/include/ddk"),
-        '-I', str(build_dir / "sdk/include/dxsdk"),
-        '-I', str(build_dir / "sdk/include/reactos"),
-        '-I', str(build_dir / "sdk/include/reactos/mc"),
-        '-I', str(R / "sdk/include/dxsdk"),
-        '-isystem', str(R / "sdk/include/crt"),
-        '-isystem', _clang_include(),
+        "-I",
+        str(build_dir / "ntoskrnl"),
+        "-I",
+        str(R / "ntoskrnl"),
+        "-I",
+        str(R / "sdk/include"),
+        "-I",
+        str(R / "sdk/include/ddk"),
+        "-I",
+        str(R / "sdk/include/ndk"),
+        "-I",
+        str(R / "sdk/include/psdk"),
+        "-I",
+        str(R / "sdk/include/xdk"),
+        "-I",
+        str(R / "sdk/include/reactos"),
+        "-I",
+        str(R / "sdk/include/reactos/libs"),
+        "-I",
+        str(R / "sdk/include/reactos/drivers"),
+        "-I",
+        str(R / "sdk/include/vcruntime"),
+        "-I",
+        str(R / "sdk/include/winrt"),
+        "-I",
+        str(R / "sdk/lib/pseh/include"),
+        "-I",
+        str(R),
+        "-I",
+        str(R / "sdk/lib/drivers/arbiter"),
+        "-I",
+        str(R / "sdk/lib/cmlib"),
+        "-I",
+        str(R / "ntoskrnl/include"),
+        "-I",
+        str(build_dir / "ntoskrnl/include"),
+        "-I",
+        str(build_dir / "ntoskrnl/include/internal"),
+        "-I",
+        str(build_dir / "sdk/include"),
+        "-I",
+        str(build_dir / "sdk/include/psdk"),
+        "-I",
+        str(build_dir / "sdk/include/ddk"),
+        "-I",
+        str(build_dir / "sdk/include/dxsdk"),
+        "-I",
+        str(build_dir / "sdk/include/reactos"),
+        "-I",
+        str(build_dir / "sdk/include/reactos/mc"),
+        "-I",
+        str(R / "sdk/include/dxsdk"),
+        "-isystem",
+        str(R / "sdk/include/crt"),
+        "-isystem",
+        _clang_include(),
     ]
 
 
 C_PREAMBLE = [
-    '/* Auto-generated by tools/verify_offsets.py */',
-    '#define _NTOSKRNL_',
-    '#define _NTSYSTEM_',
-    '#define _USE_DUMMY_PSEH 1',
-    '#define __REACTOS__',
-    '#define _INTRIN_H_',
-    '#define _INTRIN_X86_H_',
-    '#ifndef __int64',
-    '#define __int64 long long',
-    '#endif',
-    '#define __wfi() ((void)0)',
-    '#define __yield() ((void)0)',
-    '#undef FORCEINLINE',
-    '#define FORCEINLINE',
-    '#include <ntoskrnl.h>',
+    "/* Auto-generated by tools/verify_offsets.py */",
+    "#define _NTOSKRNL_",
+    "#define _NTSYSTEM_",
+    "#define _USE_DUMMY_PSEH 1",
+    "#define __REACTOS__",
+    "#define _INTRIN_H_",
+    "#define _INTRIN_X86_H_",
+    "#ifndef __int64",
+    "#define __int64 long long",
+    "#endif",
+    "#define __wfi() ((void)0)",
+    "#define __yield() ((void)0)",
+    "#undef FORCEINLINE",
+    "#define FORCEINLINE",
+    "#include <ntoskrnl.h>",
     '#include "mm/ARM3/miarm.h"',
-    '',
+    "",
 ]
 
 
@@ -333,38 +369,48 @@ def compile_to_ir(c_source: str, arch: dict, tmpdir: Path) -> str | None:
 
     def run() -> subprocess.CompletedProcess:
         cmd = [
-            str(clang), '-emit-llvm', '-S', '-O0',
-            '-std=gnu89', '-nostdlibinc',
-            '-target', arch["clang_target"],
+            str(clang),
+            "-emit-llvm",
+            "-S",
+            "-O0",
+            "-std=gnu89",
+            "-nostdlibinc",
+            "-target",
+            arch["clang_target"],
             *arch["defs"],
-            '-DDBG=1', '-DWINVER=0x502', '-D_WIN32_WINNT=0x502',
+            "-DDBG=1",
+            "-DWINVER=0x502",
+            "-D_WIN32_WINNT=0x502",
             *get_include_flags(arch["name"]),
-            '-ferror-limit=0', '-Wno-everything',
-            str(c_path), '-o', str(ll_path),
+            "-ferror-limit=0",
+            "-Wno-everything",
+            str(c_path),
+            "-o",
+            str(ll_path),
         ]
         return subprocess.run(cmd, capture_output=True, text=True)
 
     # Iteratively blank lines that error (field/type missing on this arch).
-    for attempt in range(20):
+    for _attempt in range(20):
         result = run()
         if result.returncode == 0:
             return ll_path.read_text()
         error_lines: set[int] = set()
-        for line in result.stderr.split('\n'):
-            m = re.search(rf'{re.escape(c_path.name)}:(\d+):\d+: error:', line)
+        for line in result.stderr.split("\n"):
+            m = re.search(rf"{re.escape(c_path.name)}:(\d+):\d+: error:", line)
             if m:
                 error_lines.add(int(m.group(1)))
         if not error_lines:
             print(f"  ERROR: unrecoverable clang failure for {arch['name']}")
-            for line in result.stderr.split('\n')[:6]:
+            for line in result.stderr.split("\n")[:6]:
                 print(f"    {line}")
             return None
-        src = c_path.read_text().split('\n')
+        src = c_path.read_text().split("\n")
         for ln in sorted(error_lines, reverse=True):
             idx = ln - 1
-            if 0 <= idx < len(src) and src[idx].lstrip().startswith('volatile'):
-                src[idx] = ''
-        c_path.write_text('\n'.join(src))
+            if 0 <= idx < len(src) and src[idx].lstrip().startswith("volatile"):
+                src[idx] = ""
+        c_path.write_text("\n".join(src))
     print(f"  ERROR: failed after max clang retries for {arch['name']}")
     return None
 
@@ -372,7 +418,7 @@ def compile_to_ir(c_source: str, arch: dict, tmpdir: Path) -> str | None:
 def parse_ir(ir: str) -> dict[str, int]:
     """Return {tag: value} for every `@<tag> = ... i32 VALUE`."""
     vals: dict[str, int] = {}
-    for m in re.finditer(r'@(off|asz)_(\d+)\s*=\s*.*?\bi32\s+(\d+)', ir):
+    for m in re.finditer(r"@(off|asz)_(\d+)\s*=\s*.*?\bi32\s+(\d+)", ir):
         vals[f"{m.group(1)}_{m.group(2)}"] = int(m.group(3))
     return vals
 
@@ -381,15 +427,16 @@ def parse_ir(ir: str) -> dict[str, int]:
 # Driver
 # =============================================================================
 
+
 def bindgen_struct_set(structs: dict) -> dict[str, str]:
     """Mirror verify_sizes.extract_types selection: pub struct names -> shortest
     non-pointer typedef alias (used as the C type in offsetof)."""
     content_names = set(structs.keys())
     selected = set()
     for name in content_names:
-        if name.startswith('__Bindgen') or name.startswith('__Incomplete'):
+        if name.startswith("__Bindgen") or name.startswith("__Incomplete"):
             continue
-        if '__bindgen_ty_' in name:
+        if "__bindgen_ty_" in name:
             continue
         if name in SKIP_TYPES:
             continue
@@ -399,11 +446,11 @@ def bindgen_struct_set(structs: dict) -> dict[str, str]:
 
 def alias_map(content: str, selected: set[str]) -> dict[str, str]:
     struct_to_alias: dict[str, str] = {}
-    for m in re.finditer(r'^pub type (\w+)\s*=\s*(\w+)\s*;', content, re.MULTILINE):
+    for m in re.finditer(r"^pub type (\w+)\s*=\s*(\w+)\s*;", content, re.MULTILINE):
         alias, target = m.group(1), m.group(2)
         if target not in selected:
             continue
-        if f'pub type {alias} = *' in content:
+        if f"pub type {alias} = *" in content:
             continue
         if target not in struct_to_alias or len(alias) < len(struct_to_alias[target]):
             struct_to_alias[target] = alias
@@ -437,22 +484,26 @@ def build_for_arch(arch: dict, tmpdir: Path) -> tuple[str, int, int] | None:
         if not fields:
             continue
         c_type = aliases.get(sname, sname)
-        work.append({
-            "c_type": c_type,
-            "rust_type": f"super::ddk::{sname}",
-            "fields": fields,
-        })
+        work.append(
+            {
+                "c_type": c_type,
+                "rust_type": f"super::ddk::{sname}",
+                "fields": fields,
+            }
+        )
 
     # 2. hand-written structs
     for rust_name, c_type, mod in HAND_WRITTEN:
         fields = collect_fields(rust_name, module_structs.get(mod, {}))
         if not fields:
             continue
-        work.append({
-            "c_type": c_type,
-            "rust_type": f"super::{mod}::{rust_name}",
-            "fields": fields,
-        })
+        work.append(
+            {
+                "c_type": c_type,
+                "rust_type": f"super::{mod}::{rust_name}",
+                "fields": fields,
+            }
+        )
 
     # Build C source. Each (struct,field) gets an off_N tag; arrays also get asz_N.
     c_lines = list(C_PREAMBLE)
@@ -463,39 +514,39 @@ def build_for_arch(arch: dict, tmpdir: Path) -> tuple[str, int, int] | None:
         ct = item["c_type"]
         for fi, (c_field, _path, _cfgs, is_arr) in enumerate(item["fields"]):
             c_lines.append(
-                f'volatile unsigned int off_{tag} = '
-                f'__builtin_offsetof({ct}, {c_field}); /* {ct}.{c_field} */'
+                f"volatile unsigned int off_{tag} = "
+                f"__builtin_offsetof({ct}, {c_field}); /* {ct}.{c_field} */"
             )
             entries.append((tag, wi, fi, "off"))
             tag += 1
             if is_arr:
                 c_lines.append(
-                    f'volatile unsigned int asz_{tag} = '
-                    f'(unsigned int)sizeof((({ct}*)0)->{c_field}); /* {ct}.{c_field} arrsz */'
+                    f"volatile unsigned int asz_{tag} = "
+                    f"(unsigned int)sizeof((({ct}*)0)->{c_field}); /* {ct}.{c_field} arrsz */"
                 )
                 entries.append((tag, wi, fi, "asz"))
                 tag += 1
-    c_lines.append('')
+    c_lines.append("")
 
-    ir = compile_to_ir('\n'.join(c_lines), arch, tmpdir)
+    ir = compile_to_ir("\n".join(c_lines), arch, tmpdir)
     if ir is None:
         return None
     vals = parse_ir(ir)
 
     # Generate Rust asserts.
     out = [
-        f'//! Compile-time struct FIELD-OFFSET assertions for {arch["name"]}.',
-        '//!',
-        '//! Auto-generated by `tools/verify_offsets.py` — do not edit manually.',
-        '//! Complements size_check_<arch>.rs (sizeof) with per-field offsets,',
-        '//! catching right-size/wrong-offset layout drift.',
-        '//!',
-        '//! Regenerate: `python3 tools/verify_offsets.py`',
-        '',
-        '#![allow(dead_code)]',
-        '',
-        'use core::mem::offset_of;',
-        '',
+        f"//! Compile-time struct FIELD-OFFSET assertions for {arch['name']}.",
+        "//!",
+        "//! Auto-generated by `tools/verify_offsets.py` — do not edit manually.",
+        "//! Complements size_check_<arch>.rs (sizeof) with per-field offsets,",
+        "//! catching right-size/wrong-offset layout drift.",
+        "//!",
+        "//! Regenerate: `python3 tools/verify_offsets.py`",
+        "",
+        "#![allow(dead_code)]",
+        "",
+        "use core::mem::offset_of;",
+        "",
     ]
     struct_count = 0
     field_count = 0
@@ -510,21 +561,21 @@ def build_for_arch(arch: dict, tmpdir: Path) -> tuple[str, int, int] | None:
         c_field, rust_path, cfgs, _is_arr = item["fields"][fi]
         offset = vals[key]
         for c in cfgs:
-            out.append(f'#[cfg({c})]')
+            out.append(f"#[cfg({c})]")
         out.append(
-            f'const _: () = assert!(offset_of!({item["rust_type"]}, {rust_path}) == {offset}); '
-            f'// {item["c_type"]}.{c_field}'
+            f"const _: () = assert!(offset_of!({item['rust_type']}, {rust_path}) == {offset}); "
+            f"// {item['c_type']}.{c_field}"
         )
         field_count += 1
         if wi not in seen_structs:
             seen_structs.add(wi)
             struct_count += 1
-    out.append('')
-    return '\n'.join(out), struct_count, field_count
+    out.append("")
+    return "\n".join(out), struct_count, field_count
 
 
 def main():
-    check_mode = '--check' in sys.argv
+    check_mode = "--check" in sys.argv
     print("=== ntkrnl-sys struct field-OFFSET verification ===")
     print(f"ReactOS root: {REACTOS}")
     print(f"Build repo:   {BUILD_REPO}")
@@ -558,8 +609,10 @@ def main():
         print("FAILED — offset assertions need regeneration")
         sys.exit(1)
     if not check_mode:
-        print("Done. Ensure offset_check_<arch> modules are declared in lib.rs, "
-              "then cargo check -p ntkrnl-sys.")
+        print(
+            "Done. Ensure offset_check_<arch> modules are declared in lib.rs, "
+            "then cargo check -p ntkrnl-sys."
+        )
 
 
 if __name__ == "__main__":

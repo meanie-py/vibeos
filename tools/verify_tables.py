@@ -66,12 +66,43 @@ C_SOURCE_ROOTS = [
 ]
 
 INT_ELEM_TYPES = {
-    "u8", "u16", "u32", "u64", "u128", "usize",
-    "i8", "i16", "i32", "i64", "i128", "isize",
-    "UCHAR", "USHORT", "ULONG", "ULONG64", "ULONG_PTR", "ULONGLONG",
-    "CHAR", "SHORT", "LONG", "LONG64", "LONGLONG", "BYTE", "WORD", "DWORD",
-    "WCHAR", "wchar_t", "UINT8", "UINT16", "UINT32", "UINT64",
-    "INT8", "INT16", "INT32", "INT64", "SIZE_T",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "UCHAR",
+    "USHORT",
+    "ULONG",
+    "ULONG64",
+    "ULONG_PTR",
+    "ULONGLONG",
+    "CHAR",
+    "SHORT",
+    "LONG",
+    "LONG64",
+    "LONGLONG",
+    "BYTE",
+    "WORD",
+    "DWORD",
+    "WCHAR",
+    "wchar_t",
+    "UINT8",
+    "UINT16",
+    "UINT32",
+    "UINT64",
+    "INT8",
+    "INT16",
+    "INT32",
+    "INT64",
+    "SIZE_T",
 }
 # C element types we accept (superset; same as above plus a few C spellings)
 C_INT_ELEM_TYPES = INT_ELEM_TYPES | {"unsigned", "int", "char", "short", "long"}
@@ -81,9 +112,7 @@ C_INT_ELEM_TYPES = INT_ELEM_TYPES | {"unsigned", "int", "char", "short", "long"}
 # #define harvesting (for resolving named constants like PAGE_NOACCESS)
 # ----------------------------------------------------------------------------
 
-_DEFINE_RE = re.compile(
-    r'^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*(?:/\*.*)?$'
-)
+_DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*(?:/\*.*)?$")
 
 
 def harvest_defines(roots):
@@ -102,14 +131,16 @@ def harvest_defines(roots):
                     continue
                 path = os.path.join(dirpath, fn)
                 try:
-                    with open(path, "r", errors="replace") as f:
+                    with open(path, errors="replace") as f:
                         for line in f:
                             m = _DEFINE_RE.match(line)
                             if not m:
                                 continue
                             name, val = m.group(1), m.group(2)
                             # skip function-like macros
-                            if name.endswith("(") or re.match(r'^[A-Za-z_]\w*\(', line.strip()[len("#define"):].strip()):
+                            if name.endswith("(") or re.match(
+                                r"^[A-Za-z_]\w*\(", line.strip()[len("#define") :].strip()
+                            ):
                                 pass
                             # better function-like detection: char right after name in the raw line
                             after = line.split(name, 1)[1] if name in line else ""
@@ -126,13 +157,19 @@ def harvest_defines(roots):
 # Integer-expression evaluation (shared by both sides)
 # ----------------------------------------------------------------------------
 
+
 class Unresolvable(Exception):
     pass
 
 
 _CHAR_ESCAPES = {
-    "\\0": 0, "\\n": 10, "\\r": 13, "\\t": 9, "\\\\": 92,
-    "\\'": 39, "\\\"": 34, "\\0": 0,
+    "\\0": 0,
+    "\\n": 10,
+    "\\r": 13,
+    "\\t": 9,
+    "\\\\": 92,
+    "\\'": 39,
+    '\\"': 34,
 }
 
 
@@ -154,7 +191,7 @@ def _parse_char_literal(s):
         try:
             return int(body[2:], 16)
         except ValueError:
-            raise Unresolvable(s)
+            raise Unresolvable(s) from None
     if body in _CHAR_ESCAPES:
         return _CHAR_ESCAPES[body]
     # generic single backslash escape
@@ -171,11 +208,11 @@ def _strip_int_suffix(tok):
     # 0x10u8, 123ULONG-no... handle rust suffixes & C UL/L suffixes
     tok = tok.strip()
     # rust suffixes
-    tok = re.sub(r'(?<=[0-9a-fA-F])(_?(u|i)(8|16|32|64|128|size))$', '', tok)
+    tok = re.sub(r"(?<=[0-9a-fA-F])(_?(u|i)(8|16|32|64|128|size))$", "", tok)
     # underscores in rust int literals
     tok2 = tok.replace("_", "")
     # C suffixes
-    tok2 = re.sub(r'(?i)(u|l)+$', '', tok2)
+    tok2 = re.sub(r"(?i)(u|l)+$", "", tok2)
     return tok2
 
 
@@ -193,16 +230,16 @@ def eval_int_expr(expr, defines, depth=0):
         raise Unresolvable(expr)
 
     # strip trailing line comments
-    e = re.sub(r'/\*.*?\*/', ' ', e).strip()
-    e = re.sub(r'//.*$', '', e).strip()
+    e = re.sub(r"/\*.*?\*/", " ", e).strip()
+    e = re.sub(r"//.*$", "", e).strip()
 
     # Rust cast: `EXPR as TYPE`  -> evaluate EXPR
-    m = re.match(r'^(.*)\bas\s+[A-Za-z_]\w*\s*$', e, re.DOTALL)
+    m = re.match(r"^(.*)\bas\s+[A-Za-z_]\w*\s*$", e, re.DOTALL)
     if m:
         return eval_int_expr(m.group(1), defines, depth + 1)
 
     # C cast: `(TYPE)EXPR`
-    m = re.match(r'^\(\s*(?:unsigned\s+|signed\s+|const\s+)*[A-Za-z_]\w*\s*\*?\s*\)\s*(.+)$', e)
+    m = re.match(r"^\(\s*(?:unsigned\s+|signed\s+|const\s+)*[A-Za-z_]\w*\s*\*?\s*\)\s*(.+)$", e)
     if m and m.group(1).strip():
         # only treat as cast if the inner thing isn't itself a paren group we need
         try:
@@ -230,7 +267,9 @@ def eval_int_expr(expr, defines, depth=0):
     # Left shift A << B
     parts = _split_top_level(e, "<<")
     if len(parts) == 2:
-        return eval_int_expr(parts[0], defines, depth + 1) << eval_int_expr(parts[1], defines, depth + 1)
+        return eval_int_expr(parts[0], defines, depth + 1) << eval_int_expr(
+            parts[1], defines, depth + 1
+        )
 
     # Multiplication A * B (e.g. quantum tables: `1 * 6`). Skip '*'-as-deref:
     # only treat as multiply when both sides parse as integer exprs.
@@ -256,15 +295,15 @@ def eval_int_expr(expr, defines, depth=0):
 
     # numeric literal
     cleaned = _strip_int_suffix(e)
-    if re.match(r'^0[xX][0-9a-fA-F]+$', cleaned):
+    if re.match(r"^0[xX][0-9a-fA-F]+$", cleaned):
         return int(cleaned, 16)
-    if re.match(r'^0[bB][01]+$', cleaned):
+    if re.match(r"^0[bB][01]+$", cleaned):
         return int(cleaned, 2)
-    if re.match(r'^[+-]?[0-9]+$', cleaned):
+    if re.match(r"^[+-]?[0-9]+$", cleaned):
         return int(cleaned, 10)
 
     # named constant -> resolve via defines
-    m = re.match(r'^[A-Za-z_]\w*$', e)
+    m = re.match(r"^[A-Za-z_]\w*$", e)
     if m:
         if e in defines:
             return eval_int_expr(defines[e], defines, depth + 1)
@@ -293,10 +332,10 @@ def _split_top_level(s, op):
             cur.append(c)
             i += 1
             continue
-        if depth == 0 and s[i:i + L] == op:
+        if depth == 0 and s[i : i + L] == op:
             # guard against '||' when op is '|'
-            if op == "|" and (s[i:i + 2] == "||"):
-                cur.append(s[i:i + 2])
+            if op == "|" and (s[i : i + 2] == "||"):
+                cur.append(s[i : i + 2])
                 i += 2
                 continue
             out.append("".join(cur))
@@ -325,6 +364,7 @@ def _balanced(s):
 # Initializer list splitting (comma-separated, paren/bracket aware)
 # ----------------------------------------------------------------------------
 
+
 def split_initializer(body):
     """Split a `{...}` / `[...]` body (without the brackets) into element exprs.
 
@@ -332,8 +372,8 @@ def split_initializer(body):
     element (from a trailing comma) is dropped.
     """
     # remove block + line comments
-    body = re.sub(r'/\*.*?\*/', ' ', body, flags=re.DOTALL)
-    body = re.sub(r'//[^\n]*', ' ', body)
+    body = re.sub(r"/\*.*?\*/", " ", body, flags=re.DOTALL)
+    body = re.sub(r"//[^\n]*", " ", body)
     elems = []
     depth = 0
     cur = []
@@ -362,9 +402,9 @@ def split_initializer(body):
 
 # matches:  [pub] static|const NAME : [ ELEM ; N ] = [
 _RUST_DECL_RE = re.compile(
-    r'\b(?:pub\s+)?(?:static|const)\s+(?:mut\s+)?'
-    r'([A-Za-z_]\w*)\s*:\s*'
-    r'\[\s*([A-Za-z_]\w*)\s*;\s*([0-9A-Za-z_]+)\s*\]\s*=\s*\['
+    r"\b(?:pub\s+)?(?:static|const)\s+(?:mut\s+)?"
+    r"([A-Za-z_]\w*)\s*:\s*"
+    r"\[\s*([A-Za-z_]\w*)\s*;\s*([0-9A-Za-z_]+)\s*\]\s*=\s*\["
 )
 
 
@@ -372,7 +412,7 @@ def extract_rust_tables(path):
     """Yield dicts: {name, elem_type, decl_len(str), values|None, unresolved,
     file, line} for each module/fn-local fixed integer array with a literal list."""
     try:
-        with open(path, "r", errors="replace") as f:
+        with open(path, errors="replace") as f:
             text = f.read()
     except OSError:
         return
@@ -383,22 +423,24 @@ def extract_rust_tables(path):
             continue
         # find matching closing ']' for the initializer
         start = m.end() - 1  # position of '['
-        body, end = _extract_bracket_body(text, start, "[", "]")
+        body, _end = _extract_bracket_body(text, start, "[", "]")
         if body is None:
             continue
         line = text.count("\n", 0, m.start()) + 1
         elems = split_initializer(body)
         values, unresolved = _resolve_elems(elems)
-        results.append({
-            "name": name,
-            "elem_type": elem,
-            "decl_len": declN,
-            "raw_count": len(elems),
-            "values": values,
-            "unresolved": unresolved,
-            "file": path,
-            "line": line,
-        })
+        results.append(
+            {
+                "name": name,
+                "elem_type": elem,
+                "decl_len": declN,
+                "raw_count": len(elems),
+                "values": values,
+                "unresolved": unresolved,
+                "file": path,
+                "line": line,
+            }
+        )
     return results
 
 
@@ -414,7 +456,7 @@ def _extract_bracket_body(text, open_idx, open_ch, close_ch):
         elif c == close_ch:
             depth -= 1
             if depth == 0:
-                return text[open_idx + 1:i], i + 1
+                return text[open_idx + 1 : i], i + 1
         i += 1
     return None, None
 
@@ -445,12 +487,12 @@ def _resolve_elems(elems, defines=None):
 # matches a C array definition with an initializer:  TYPE NAME[...] = {
 # allows leading qualifiers (const/static/extern/volatile/unsigned/signed)
 _C_DECL_RE = re.compile(
-    r'(?:^|[\n;}])\s*'
-    r'(?:(?:const|static|extern|volatile|unsigned|signed)\s+)*'
-    r'([A-Za-z_]\w*)\s+'          # base type
-    r'([A-Za-z_]\w*)\s*'          # name
-    r'\[[^\];=]*\]\s*'            # [N] or []
-    r'=\s*\{',
+    r"(?:^|[\n;}])\s*"
+    r"(?:(?:const|static|extern|volatile|unsigned|signed)\s+)*"
+    r"([A-Za-z_]\w*)\s+"  # base type
+    r"([A-Za-z_]\w*)\s*"  # name
+    r"\[[^\];=]*\]\s*"  # [N] or []
+    r"=\s*\{",
     re.MULTILINE,
 )
 
@@ -468,7 +510,7 @@ def build_c_array_index(roots):
                     continue
                 path = os.path.join(dirpath, fn)
                 try:
-                    with open(path, "r", errors="replace") as f:
+                    with open(path, errors="replace") as f:
                         text = f.read()
                 except OSError:
                     continue
@@ -481,13 +523,15 @@ def build_c_array_index(roots):
                     if body is None:
                         continue
                     line = text.count("\n", 0, m.start()) + 1
-                    index.setdefault(name, []).append({
-                        "name": name,
-                        "base_type": base_type,
-                        "body": body,
-                        "file": path,
-                        "line": line,
-                    })
+                    index.setdefault(name, []).append(
+                        {
+                            "name": name,
+                            "base_type": base_type,
+                            "body": body,
+                            "file": path,
+                            "line": line,
+                        }
+                    )
     return index
 
 
@@ -507,7 +551,7 @@ def _arch_of(path):
     cross-arch false positive we must diff the arm64 Rust file against the
     arm64 C file, not the i386 one.
     """
-    parts = re.split(r'[\\/]', path)
+    parts = re.split(r"[\\/]", path)
     for p in parts:
         if p in ARCH_TOKENS:
             return p
@@ -521,9 +565,9 @@ def _rank_c_entry(rust_file, ce):
     score = 0
     if rust_arch is not None and c_arch is not None:
         if rust_arch != c_arch:
-            score += 100          # cross-arch: strongly deprioritize
+            score += 100  # cross-arch: strongly deprioritize
     elif rust_arch is not None and c_arch is None:
-        score += 10               # rust is arch-specific, C is generic
+        score += 10  # rust is arch-specific, C is generic
     elif rust_arch is None and c_arch is not None:
         score += 10
     # directory basename affinity (ke/, mm/, fsrtl/ ...)
@@ -562,6 +606,7 @@ def _is_case_flip(a, b):
 # Main diff driver
 # ----------------------------------------------------------------------------
 
+
 def gather_rust_files(paths):
     files = []
     for p in paths:
@@ -592,8 +637,11 @@ def main():
     rust_paths = args.paths or [DEFAULT_RUST_ROOT]
     rust_files = gather_rust_files(rust_paths)
 
-    print(f"[*] Scanning {len(rust_files)} Rust files under: "
-          + ", ".join(rel(p) for p in rust_paths), file=sys.stderr)
+    print(
+        f"[*] Scanning {len(rust_files)} Rust files under: "
+        + ", ".join(rel(p) for p in rust_paths),
+        file=sys.stderr,
+    )
 
     # 1. Rust tables
     rust_tables = []
@@ -602,15 +650,16 @@ def main():
             continue
         rust_tables.extend(extract_rust_tables(rf))
 
-    print(f"[*] Building C array index + #define table (this scans ntoskrnl/ + sdk/) ...",
-          file=sys.stderr)
+    print(
+        "[*] Building C array index + #define table (this scans ntoskrnl/ + sdk/) ...",
+        file=sys.stderr,
+    )
     c_index = build_c_array_index(C_SOURCE_ROOTS)
     c_norm_index = {}
     for nm, entries in c_index.items():
         c_norm_index.setdefault(_norm(nm), []).extend(entries)
     defines = harvest_defines(C_SOURCE_ROOTS)
-    print(f"[*] C arrays indexed: {len(c_index)} names; #defines: {len(defines)}",
-          file=sys.stderr)
+    print(f"[*] C arrays indexed: {len(c_index)} names; #defines: {len(defines)}", file=sys.stderr)
 
     matched = 0
     mismatched = []
@@ -673,13 +722,20 @@ def main():
             # certainly two DIFFERENT strings that normalize to the same name
             # (e.g. Rust "Control" matched to an unrelated C "CONTROL"), not a
             # fabrication. Reclassify as unverifiable rather than cry wolf.
-            if (not exact_match
-                    and len(rust_vals) == len(best_vals)
-                    and diffs
-                    and all(_is_case_flip(a, b) for _i, a, b in diffs)):
+            if (
+                not exact_match
+                and len(rust_vals) == len(best_vals)
+                and diffs
+                and all(_is_case_flip(a, b) for _i, a, b in diffs)
+            ):
                 unverifiable.append(
-                    (rt, ce, f"fuzzy name-match + diffs are pure case-flips "
-                             f"(likely UNRELATED C array '{ce['name']}')"))
+                    (
+                        rt,
+                        ce,
+                        f"fuzzy name-match + diffs are pure case-flips "
+                        f"(likely UNRELATED C array '{ce['name']}')",
+                    )
+                )
                 continue
             mismatched.append((rt, ce, rust_vals, best_vals, diffs, exact_match))
         else:
@@ -707,11 +763,13 @@ def main():
             match_kind = "exact-name" if exact else "fuzzy-name"
             print(f"  TABLE: {rt['name']}   (elem {rt['elem_type']})   [{match_kind} match]")
             print(f"    Rust: {rel(rt['file'])}:{rt['line']}   len={len(rv)}")
-            print(f"    C   : {rel(ce['file'])}:{ce['line']}   len={len(cv)}  (C name: {ce['name']})")
+            print(
+                f"    C   : {rel(ce['file'])}:{ce['line']}   len={len(cv)}  (C name: {ce['name']})"
+            )
             if len(rv) != len(cv):
                 print(f"    !! LENGTH MISMATCH: rust={len(rv)} c={len(cv)}")
             print(f"    differing elements: {len(diffs)}")
-            for i, a, b in diffs[:args.max_diffs]:
+            for i, a, b in diffs[: args.max_diffs]:
                 sa = "MISSING" if a is None else f"{a}(0x{a:x})"
                 sb = "MISSING" if b is None else f"{b}(0x{b:x})"
                 print(f"      [{i}] rust={sa}  c={sb}")
@@ -724,12 +782,14 @@ def main():
             print("-" * 60)
             print(f"CLEAN ({len(clean)}):")
             for rt, ce in clean:
-                print(f"  OK {rt['name']:<32} {rel(rt['file'])}:{rt['line']}"
-                      f"  == {rel(ce['file'])}:{ce['line']}")
+                print(
+                    f"  OK {rt['name']:<32} {rel(rt['file'])}:{rt['line']}"
+                    f"  == {rel(ce['file'])}:{ce['line']}"
+                )
         if unverifiable:
             print("-" * 60)
             print(f"UNVERIFIABLE ({len(unverifiable)}):")
-            for rt, ce, reason in unverifiable:
+            for rt, _ce, reason in unverifiable:
                 print(f"  ?? {rt['name']:<32} {rel(rt['file'])}:{rt['line']}  [{reason}]")
     else:
         if unverifiable:
@@ -741,7 +801,7 @@ def main():
 def _reparse_rust_elems(rt):
     """Re-extract the raw element exprs for a rust table dict."""
     try:
-        with open(rt["file"], "r", errors="replace") as f:
+        with open(rt["file"], errors="replace") as f:
             text = f.read()
     except OSError:
         return []
