@@ -259,7 +259,7 @@ pub unsafe extern "system" fn BaseUpdateVDMEntry(
 
     if UpdateIndex == VdmEntryUndo {
         (*UpdateVdmEntry).iTask = HandleToUlong(*WaitHandle);
-        (*UpdateVdmEntry).VDMCreationState = IndexInfo;
+        (*UpdateVdmEntry).VDMCreationState = IndexInfo as USHORT;
     } else if UpdateIndex == VdmEntryUpdateProcess {
         (*UpdateVdmEntry).VDMProcessHandle = *WaitHandle;
         (*UpdateVdmEntry).iTask = IndexInfo;
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn BaseUpdateVDMEntry(
         (*UpdateVdmEntry).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     }
 
-    (*UpdateVdmEntry).EntryIndex = UpdateIndex;
+    (*UpdateVdmEntry).EntryIndex = UpdateIndex as USHORT;
     (*UpdateVdmEntry).BinaryType = BinaryType;
 
     CsrClientCallServer(
@@ -344,8 +344,8 @@ pub unsafe extern "system" fn BaseGetVdmConfigInfo(
     CmdLineString: PUNICODE_STRING,
     VdmSize: PULONG,
 ) -> BOOL {
-    let mut Buffer: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut CommandLine: [WCHAR; MAX_PATH * 2] = [0; MAX_PATH * 2];
+    let mut Buffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut CommandLine: [WCHAR; MAX_PATH as usize * 2] = [0; MAX_PATH as usize * 2];
     let Length: ULONG;
 
     /* Clear the buffer in case we fail */
@@ -371,7 +371,7 @@ pub unsafe extern "system" fn BaseGetVdmConfigInfo(
          */
         _snwprintf(
             CommandLine.as_mut_ptr(),
-            core::mem::size_of::<[WCHAR; MAX_PATH * 2]>() / core::mem::size_of::<WCHAR>(),
+            core::mem::size_of::<[WCHAR; MAX_PATH as usize * 2]>() / core::mem::size_of::<WCHAR>(),
             w!("\"%s\\ntvdm.exe\" -i%lx %s%c\0").as_ptr(),
             Buffer.as_ptr(),
             DosSeqId,
@@ -381,9 +381,9 @@ pub unsafe extern "system" fn BaseGetVdmConfigInfo(
                 w!("-w\0").as_ptr()
             },
             if BinaryType == BINARY_TYPE_SEPARATE_WOW {
-                b's' as u16
+                b's' as core::ffi::c_int
             } else {
-                b' ' as u16
+                b' ' as core::ffi::c_int
             },
         );
     } else {
@@ -393,7 +393,7 @@ pub unsafe extern "system" fn BaseGetVdmConfigInfo(
          */
         _snwprintf(
             CommandLine.as_mut_ptr(),
-            core::mem::size_of::<[WCHAR; MAX_PATH * 2]>() / core::mem::size_of::<WCHAR>(),
+            core::mem::size_of::<[WCHAR; MAX_PATH as usize * 2]>() / core::mem::size_of::<WCHAR>(),
             w!("\"%s\\ntvdm.exe\" %s%c\0").as_ptr(),
             Buffer.as_ptr(),
             if BinaryType == BINARY_TYPE_DOS {
@@ -402,9 +402,9 @@ pub unsafe extern "system" fn BaseGetVdmConfigInfo(
                 w!("-w\0").as_ptr()
             },
             if BinaryType == BINARY_TYPE_SEPARATE_WOW {
-                b's' as u16
+                b's' as core::ffi::c_int
             } else {
-                b' ' as u16
+                b' ' as core::ffi::c_int
             },
         );
     }
@@ -424,10 +424,10 @@ pub unsafe extern "system" fn BaseGetEnvNameType_U(
     NameType = EnvNameNotAPath;
 
     i = 0;
-    while i < ARRAYSIZE(BasepEnvNameType) {
+    while i < ARRAYSIZE!(BasepEnvNameType) {
         EnvInfo = &BasepEnvNameType[i as usize] as *const _ as PENV_INFO;
 
-        if (*EnvInfo).NameLength == NameLength && _wcsnicmp((*EnvInfo).Name, Name, NameLength) == 0
+        if (*EnvInfo).NameLength == NameLength && _wcsnicmp((*EnvInfo).Name, Name, NameLength as usize) == 0
         {
             NameType = (*EnvInfo).NameType;
             break;
@@ -559,13 +559,13 @@ pub unsafe extern "system" fn BaseCreateVDMEnvironment(
                 SourcePtr = SourcePtr.offset(1);
             }
         } else if NameType == EnvNameSinglePath {
-            NameLength = wcslen(SourcePtr);
+            NameLength = wcslen(SourcePtr) as ULONG;
             NumChars = GetShortPathNameW(SourcePtr, DestPtr, NameLength + 1 + Remaining);
             if NumChars == 0 || NumChars > NameLength + Remaining {
                 RtlCopyMemory(
                     DestPtr as *mut core::ffi::c_void,
                     SourcePtr as *const core::ffi::c_void,
-                    (NameLength as usize) * core::mem::size_of::<WCHAR>(),
+                    (NameLength as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T,
                 );
                 NumChars = NameLength;
             }
@@ -611,7 +611,7 @@ pub unsafe extern "system" fn BaseCreateVDMEnvironment(
                         RtlCopyMemory(
                             DestPtr as *mut core::ffi::c_void,
                             StartPtr as *const core::ffi::c_void,
-                            (NameLength as usize) * core::mem::size_of::<WCHAR>(),
+                            (NameLength as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T,
                         );
                         NumChars = NameLength;
                     }
@@ -717,7 +717,7 @@ unsafe fn InternalIsOS2OrOldWin(
     let mut CurPos: DWORD;
     let mut modtab: LPWORD = core::ptr::null_mut();
     let mut nametab: LPSTR = core::ptr::null_mut();
-    let mut Read: DWORD;
+    let mut Read: DWORD = 0;
     let mut Ret: DWORD;
     let mut i: i32;
 
@@ -954,7 +954,7 @@ pub unsafe extern "system" fn GetBinaryTypeW(
         core::ptr::null_mut(),
         OPEN_EXISTING,
         0,
-        0,
+        core::ptr::null_mut(),
     );
     if hFile == INVALID_HANDLE_VALUE {
         return 0;
@@ -1068,7 +1068,7 @@ pub unsafe extern "system" fn GetBinaryTypeA(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmdBatNotification(
-    Unknown: DWORD,
+    Unknown_: DWORD,
 ) -> BOOL {
     // STUB; (DPRINT1 unimplemented marker - debug no-op)
     return 0i32;
@@ -1150,7 +1150,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
     'cleanup: {
     RtlZeroMemory(
         GetNextVdmCommand as *mut core::ffi::c_void,
-        core::mem::size_of::<BASE_GET_NEXT_VDM_COMMAND>(),
+        core::mem::size_of::<BASE_GET_NEXT_VDM_COMMAND>() as SIZE_T,
     );
 
     (*GetNextVdmCommand).iTask = (*CommandData).TaskId;
@@ -1211,14 +1211,14 @@ pub unsafe extern "system" fn GetNextVDMCommand(
     CsrAllocateMessagePointer(
         CaptureBuffer,
         core::mem::size_of::<STARTUPINFOW>() as ULONG,
-        &mut (*GetNextVdmCommand).StartupInfo as *mut PVOID,
+        &mut (*GetNextVdmCommand).StartupInfo as *mut _ as *mut PVOID,
     );
 
     if (*CommandData).CmdLen != 0 {
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).CmdLen as ULONG,
-            &mut (*GetNextVdmCommand).CmdLine as *mut PVOID,
+            &mut (*GetNextVdmCommand).CmdLine as *mut _ as *mut PVOID,
         );
     }
 
@@ -1226,7 +1226,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).AppLen as ULONG,
-            &mut (*GetNextVdmCommand).AppName as *mut PVOID,
+            &mut (*GetNextVdmCommand).AppName as *mut _ as *mut PVOID,
         );
     }
 
@@ -1234,7 +1234,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).PifLen as ULONG,
-            &mut (*GetNextVdmCommand).PifFile as *mut PVOID,
+            &mut (*GetNextVdmCommand).PifFile as *mut _ as *mut PVOID,
         );
     }
 
@@ -1242,7 +1242,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).CurDirectoryLen as ULONG,
-            &mut (*GetNextVdmCommand).CurDirectory as *mut PVOID,
+            &mut (*GetNextVdmCommand).CurDirectory as *mut _ as *mut PVOID,
         );
     }
 
@@ -1250,7 +1250,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).EnvLen,
-            &mut (*GetNextVdmCommand).Env as *mut PVOID,
+            &mut (*GetNextVdmCommand).Env as *mut _ as *mut PVOID,
         );
     }
 
@@ -1258,7 +1258,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).DesktopLen,
-            &mut (*GetNextVdmCommand).Desktop as *mut PVOID,
+            &mut (*GetNextVdmCommand).Desktop as *mut _ as *mut PVOID,
         );
     }
 
@@ -1266,7 +1266,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).TitleLen,
-            &mut (*GetNextVdmCommand).Title as *mut PVOID,
+            &mut (*GetNextVdmCommand).Title as *mut _ as *mut PVOID,
         );
     }
 
@@ -1274,7 +1274,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             (*CommandData).ReservedLen,
-            &mut (*GetNextVdmCommand).Reserved as *mut PVOID,
+            &mut (*GetNextVdmCommand).Reserved as *mut _ as *mut PVOID,
         );
     }
 
@@ -1417,7 +1417,7 @@ pub unsafe extern "system" fn GetNextVDMCommand(
     (*CommandData).ExitCode = (*GetNextVdmCommand).ExitCode;
     (*CommandData).CurrentDrive = (*GetNextVdmCommand).CurrentDrive;
     (*CommandData).VDMState = (*GetNextVdmCommand).VDMState;
-    (*CommandData).ComingFromBat = (*GetNextVdmCommand).fComingFromBat;
+    (*CommandData).ComingFromBat = (*GetNextVdmCommand).fComingFromBat as BOOLEAN;
 
     Success = 1;
     } // end 'cleanup
@@ -1495,7 +1495,7 @@ pub unsafe extern "system" fn RegisterConsoleVDM(
     lpVDMBuffer: *mut PVOID,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let RegisterVDMRequest: PCONSOLE_REGISTERVDM = &mut ApiMessage.Data.RegisterVDMRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 

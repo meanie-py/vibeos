@@ -1,12 +1,31 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
+use crate::k32_externs::{RtlCopyMemory, LoadLibraryW, GetProcAddress};
+use crate::client::loader::FreeLibrary;
+use crate::string::lstring::lstrlenA;
 use core::ffi::c_void;
 
+extern "system" {
+    fn RtlStringCchLengthW(psz: *const u16, cchMax: usize, pcch: *mut usize) -> NTSTATUS;
+    fn RtlStringCchCopyNW(pszDest: *mut u16, cchDest: usize, pszSrc: *const u16, cchSrc: usize) -> NTSTATUS;
+}
+
+// windns.h: DNS_NAME_FORMAT enum
+pub type DNS_NAME_FORMAT = core::ffi::c_int;
+pub const DnsNameDomain: DNS_NAME_FORMAT = 0;
+pub const DnsNameDomainLabel: DNS_NAME_FORMAT = 1;
+pub const DnsNameHostnameFull: DNS_NAME_FORMAT = 2;
+pub const DnsNameHostnameLabel: DNS_NAME_FORMAT = 3;
+pub const DnsNameWildcard: DNS_NAME_FORMAT = 4;
+pub const DnsNameSrvRecord: DNS_NAME_FORMAT = 5;
+pub const DnsNameValidateTld: DNS_NAME_FORMAT = 6;
+
 // ---- file-scope preamble (translated) ----
-pub type FN_DnsValidateName_W = unsafe extern "system" fn(LPCWSTR, DNS_NAME_FORMAT) -> NTSTATUS;
+pub type FN_DnsValidateName_W = Option<unsafe extern "system" fn(LPCWSTR, DNS_NAME_FORMAT) -> NTSTATUS>;
 unsafe fn GetComputerNameFromRegistry(
-    RegistryKey: LPWSTR,
-    ValueNameStr: LPWSTR,
+    RegistryKey: LPCWSTR,
+    ValueNameStr: LPCWSTR,
     lpBuffer: LPWSTR,
     nSize: LPDWORD,
 ) -> BOOL {
@@ -32,7 +51,7 @@ unsafe fn GetComputerNameFromRegistry(
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtOpenKey(&mut KeyHandle, KEY_READ, &ObjectAttributes);
+    Status = NtOpenKey(&mut KeyHandle, KEY_READ, &mut ObjectAttributes);
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         return FALSE;
@@ -54,7 +73,7 @@ unsafe fn GetComputerNameFromRegistry(
 
     Status = NtQueryValueKey(
         KeyHandle,
-        &ValueName,
+        &mut ValueName,
         KeyValuePartialInformation,
         KeyInfo as PVOID,
         KeyInfoSize,
@@ -84,7 +103,7 @@ unsafe fn GetComputerNameFromRegistry(
         RtlCopyMemory(
             lpBuffer as *mut core::ffi::c_void,
             &raw mut (*KeyInfo).Data as *const core::ffi::c_void,
-            (*KeyInfo).DataLength as usize,
+            (*KeyInfo).DataLength as SIZE_T,
         );
         *lpBuffer.offset(*nSize as isize) = 0;
         RtlFreeHeap(RtlGetProcessHeap(), 0, KeyInfo as PVOID);
@@ -111,7 +130,7 @@ unsafe fn SetActiveComputerNameToRegistry(
     let mut Status: NTSTATUS;
 
     StringLength = wcslen(lpBuffer) as SIZE_T;
-    if StringLength > ((MAXULONG as usize).wrapping_div(core::mem::size_of::<WCHAR>())).wrapping_sub(1) {
+    if (StringLength as usize) > ((MAXULONG as usize).wrapping_div(core::mem::size_of::<WCHAR>())).wrapping_sub(1) {
         return FALSE;
     }
 
@@ -390,7 +409,7 @@ pub unsafe extern "system" fn GetComputerNameExA(
         TempBuffer = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (*nSize as usize).wrapping_mul(core::mem::size_of::<WCHAR>()),
+            (*nSize as SIZE_T).wrapping_mul(core::mem::size_of::<WCHAR>() as SIZE_T),
         ) as PWCHAR;
         if TempBuffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -555,8 +574,8 @@ unsafe fn SetComputerNameToRegistry(
     let mut StringLength: SIZE_T;
     let mut Status: NTSTATUS;
 
-    StringLength = wcslen(lpBuffer);
-    if StringLength > (MAXULONG as usize).wrapping_div(core::mem::size_of::<WCHAR>()).wrapping_sub(1) {
+    StringLength = wcslen(lpBuffer) as SIZE_T;
+    if (StringLength as usize) > (MAXULONG as usize).wrapping_div(core::mem::size_of::<WCHAR>()).wrapping_sub(1) {
         return FALSE;
     }
 
@@ -568,7 +587,7 @@ unsafe fn SetComputerNameToRegistry(
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtOpenKey(&mut KeyHandle, KEY_WRITE, &ObjectAttributes);
+    Status = NtOpenKey(&mut KeyHandle, KEY_WRITE, &mut ObjectAttributes);
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         return FALSE;
@@ -578,11 +597,11 @@ unsafe fn SetComputerNameToRegistry(
 
     Status = NtSetValueKey(
         KeyHandle,
-        &ValueName,
+        &mut ValueName,
         0,
         REG_SZ,
         lpBuffer as PVOID,
-        (StringLength + 1) * core::mem::size_of::<WCHAR>() as ULONG,
+        ((StringLength + 1) * core::mem::size_of::<WCHAR>() as SIZE_T) as ULONG,
     );
     if !NT_SUCCESS(Status) {
         NtClose(KeyHandle);
@@ -788,7 +807,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameA(
             765i32,
         );
     }
-    return 0i32;
+    return 0;
 }
 #[no_mangle]
 pub unsafe extern "system" fn AddLocalAlternateComputerNameW(
@@ -811,7 +830,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameW(
             773i32,
         );
     }
-    return 0i32;
+    return 0;
 }
 
 #[no_mangle]
@@ -869,7 +888,7 @@ pub unsafe extern "system" fn EnumerateLocalComputerNamesW(
 #[no_mangle]
 pub unsafe extern "system" fn RemoveLocalAlternateComputerNameA(
     lpName: LPSTR,
-    Unknown: DWORD,
+    _Unknown: DWORD,
 ) -> DWORD {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
@@ -893,7 +912,7 @@ pub unsafe extern "system" fn RemoveLocalAlternateComputerNameA(
 #[no_mangle]
 pub unsafe extern "system" fn RemoveLocalAlternateComputerNameW(
     lpName: LPWSTR,
-    Unknown: DWORD,
+    _Unknown: DWORD,
 ) -> DWORD {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
@@ -1053,7 +1072,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameW(
 //     RtlInitUnicodeString(&ValueName, ValueNameStr);
 //
 //     Status = NtQueryValueKey(KeyHandle,
-//                              &ValueName,
+//                              &mut ValueName,
 //                              KeyValuePartialInformation,
 //                              KeyInfo,
 //                              KeyInfoSize,
@@ -1156,7 +1175,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameW(
 //     RtlInitUnicodeString(&ValueName, ValueNameStr);
 //
 //     Status = NtSetValueKey(SubKeyHandle,
-//                            &ValueName,
+//                            &mut ValueName,
 //                            0,
 //                            REG_SZ,
 //                            (PVOID)lpBuffer,
@@ -1546,7 +1565,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameW(
 //     RtlInitUnicodeString(&ValueName, ValueNameStr);
 //
 //     Status = NtSetValueKey(KeyHandle,
-//                            &ValueName,
+//                            &mut ValueName,
 //                            0,
 //                            REG_SZ,
 //                            (PVOID)lpBuffer,

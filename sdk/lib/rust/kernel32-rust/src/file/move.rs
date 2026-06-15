@@ -1,14 +1,61 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{InitializeObjectAttributes, RtlCopyMemory, CloseHandle};
 
 extern "system" {
     fn Basep8BitStringToDynamicUnicodeString( DestinationString: *mut _UNICODE_STRING, Source: LPCSTR, ) -> BOOLEAN;
+    // sibling kernel32 modules (cohab-resolved at link)
+    fn QueryDosDeviceW(lpDeviceName: LPCWSTR, lpTargetPath: LPWSTR, ucchMax: DWORD) -> DWORD;
+    fn GetComputerNameW(lpBuffer: LPWSTR, lpnSize: LPDWORD) -> BOOL;
+    fn FlushFileBuffers(hFile: HANDLE) -> BOOL;
+    fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL;
+    fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
+    fn CopyFileW(lpExistingFileName: LPCWSTR, lpNewFileName: LPCWSTR, bFailIfExists: BOOL) -> BOOL;
+    fn SetEndOfFile(hFile: HANDLE) -> BOOL;
+    fn GetProcessHeap() -> HANDLE;
 }
 
 extern "C" {
     fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+    fn BasepCopyFileExW(
+        lpExistingFileName: LPCWSTR,
+        lpNewFileName: LPCWSTR,
+        lpProgressRoutine: LPPROGRESS_ROUTINE,
+        lpData: LPVOID,
+        pbCancel: LPBOOL,
+        dwCopyFlags: DWORD,
+        dwBasepFlags: DWORD,
+        lpExistingHandle: LPHANDLE,
+        lpNewHandle: LPHANDLE,
+    ) -> BOOL;
 }
+
+// dll/win32/kernel32/include/kernel32.h
+const PRIV_DELETE_ON_SUCCESS: DWORD = 0x1;
+const PRIV_ALLOW_NON_TRACKABLE: DWORD = 0x2;
+// ntstatus.h
+const STATUS_NOT_SAME_DEVICE: NTSTATUS = 0xC000_00D4u32 as NTSTATUS;
+
+// RTL_CONSTANT_STRING builds a UNICODE_STRING from a wide literal. The translation
+// passed a NUL-terminated UTF-16 byte buffer cast to *const i8; reinterpret as wide.
+unsafe fn RTL_CONSTANT_STRING(s: *const i8) -> _UNICODE_STRING {
+    let p = s as *const u16;
+    let mut len: USHORT = 0;
+    while *p.add((len as usize) / 2) != 0 {
+        len += core::mem::size_of::<WCHAR>() as USHORT;
+    }
+    _UNICODE_STRING {
+        Length: len,
+        MaximumLength: len + core::mem::size_of::<WCHAR>() as USHORT,
+        Buffer: p as PWSTR,
+    }
+}
+
+// NDEBUG: Wine/ReactOS debug shims compile out. Macros swallow mixed args.
+macro_rules! FIXME { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
+macro_rules! TRACE { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
+#[inline] unsafe fn UNIMPLEMENTED_DBGBREAK(_msg: *const i8) {}
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -29,17 +76,17 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
 ) -> NTSTATUS {
     const STRING_LENGTH: ULONG = 0x400;
     let mut Status: NTSTATUS;
-    let mut KeyHandle: HANDLE;
+    let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Buffer: PVOID;
     let mut BufferBegin: PVOID;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut PendingOperations: PWSTR;
     let mut BufferWrite: PWSTR;
-    let mut DataSize: ULONG;
+    let mut DataSize: ULONG = 0;
     let mut BufferLength: ULONG;
     let mut StringLength: ULONG = STRING_LENGTH;
-    let mut SessionManagerString: _UNICODE_STRING;
-    let mut PendingOperationsString: _UNICODE_STRING;
+    let mut SessionManagerString: _UNICODE_STRING = core::mem::zeroed();
+    let mut PendingOperationsString: _UNICODE_STRING = core::mem::zeroed();
     let mut PendingOperationsBuffer: [WCHAR; (core::mem::size_of::<WCHAR>() * 32) / core::mem::size_of::<WCHAR>() + 6] = [0; (core::mem::size_of::<WCHAR>() * 32) / core::mem::size_of::<WCHAR>() + 6];
 
     RtlInitUnicodeString(
@@ -93,10 +140,10 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
         return Status;
     }
 
-    BufferLength = NewPath.Length + ExistingPath.Length + STRING_LENGTH + 3 * core::mem::size_of::<WCHAR>() as u32;
+    BufferLength = (*NewPath).Length as u32 + (*ExistingPath).Length as u32 + STRING_LENGTH + 3 * core::mem::size_of::<WCHAR>() as u32;
 
     loop {
-        Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength);
+        Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength as SIZE_T);
         if Buffer.is_null() {
             NtClose(KeyHandle);
             return STATUS_NO_MEMORY;
@@ -116,7 +163,7 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
 
         StringLength = DataSize;
         RtlFreeHeap(RtlGetProcessHeap(), 0, Buffer);
-        BufferLength = ExistingPath.Length + StringLength + NewPath.Length + 3 * core::mem::size_of::<WCHAR>() as u32;
+        BufferLength = (*ExistingPath).Length as u32 + StringLength + (*NewPath).Length as u32 + 3 * core::mem::size_of::<WCHAR>() as u32;
         if BufferLength < StringLength {
             NtClose(KeyHandle);
             return STATUS_BUFFER_TOO_SMALL;
@@ -135,26 +182,26 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
     } else {
         let PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION = Buffer as PKEY_VALUE_PARTIAL_INFORMATION;
 
-        BufferBegin = PartialInfo.Data;
-        BufferWrite = ((PartialInfo.Data as ULONG_PTR) + PartialInfo.DataLength - core::mem::size_of::<WCHAR>() as u32) as PWSTR;
+        BufferBegin = (*PartialInfo).Data.as_ptr() as PVOID;
+        BufferWrite = (((*PartialInfo).Data.as_ptr() as ULONG_PTR) + (*PartialInfo).DataLength as ULONG_PTR - core::mem::size_of::<WCHAR>() as ULONG_PTR) as PWSTR;
     }
 
     RtlCopyMemory(
         BufferWrite as PVOID,
-        ExistingPath.Buffer as PVOID,
-        ExistingPath.Length,
+        (*ExistingPath).Buffer as *const c_void,
+        (*ExistingPath).Length as SIZE_T,
     );
-    BufferWrite = (BufferWrite as ULONG_PTR).add((ExistingPath.Length / core::mem::size_of::<WCHAR>() as u32) as usize) as PWSTR;
+    BufferWrite = BufferWrite.add(((*ExistingPath).Length as u32 / core::mem::size_of::<WCHAR>() as u32) as usize);
     *BufferWrite = UNICODE_NULL;
-    BufferWrite = (BufferWrite as ULONG_PTR).add(1) as PWSTR;
+    BufferWrite = BufferWrite.add(1);
     RtlCopyMemory(
         BufferWrite as PVOID,
-        NewPath.Buffer as PVOID,
-        NewPath.Length,
+        (*NewPath).Buffer as *const c_void,
+        (*NewPath).Length as SIZE_T,
     );
-    BufferWrite = (BufferWrite as ULONG_PTR).add((NewPath.Length / core::mem::size_of::<WCHAR>() as u32) as usize) as PWSTR;
+    BufferWrite = BufferWrite.add(((*NewPath).Length as u32 / core::mem::size_of::<WCHAR>() as u32) as usize);
     *BufferWrite = UNICODE_NULL;
-    BufferWrite = (BufferWrite as ULONG_PTR).add(1) as PWSTR;
+    BufferWrite = BufferWrite.add(1);
     *BufferWrite = UNICODE_NULL;
 
     Status = NtSetValueKey(
@@ -163,7 +210,7 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
         0,
         REG_MULTI_SZ,
         BufferBegin,
-        (BufferWrite as ULONG_PTR).wrapping_sub(BufferBegin as ULONG_PTR) + core::mem::size_of::<WCHAR>() as u32,
+        ((BufferWrite as ULONG_PTR).wrapping_sub(BufferBegin as ULONG_PTR) + core::mem::size_of::<WCHAR>() as ULONG_PTR) as ULONG,
     );
 
     NtClose(KeyHandle);
@@ -181,9 +228,9 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
 ) -> DWORD {
     let mut Query: BOOL = 0;
     let mut Letter: WCHAR;
-    let mut AbsolutePath: PWSTR;
+    let mut AbsolutePath: PWSTR = core::ptr::null_mut();
     let mut EndOfName: PWSTR;
-    let mut AbsolutePathLength: USHORT;
+    let mut AbsolutePathLength: USHORT = 0;
     let mut NameLength: USHORT;
     let mut TargetDevice: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
     let mut DeviceName: [WCHAR; 3] = ['A' as WCHAR, ':' as WCHAR, '\0' as WCHAR];
@@ -213,7 +260,7 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
         if QueryDosDeviceW(
             DeviceName.as_ptr(),
             TargetDevice.as_mut_ptr(),
-            ARRAYSIZE(&TargetDevice as *const [WCHAR; MAX_PATH as usize + 1]) as u32,
+            TargetDevice.len() as u32,
         ) == 0
         {
             return GetLastError();
@@ -234,7 +281,7 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
 
                 AbsolutePath = Path.offset(1);
                 AbsolutePathLength = (core::mem::size_of::<WCHAR>() as u16)
-                    * ((ARRAYSIZE(&TargetDevice as *const [WCHAR; MAX_PATH as usize + 1]) as isize
+                    * ((TargetDevice.len() as isize
                         - (AbsolutePath as isize - TargetDevice.as_ptr() as isize) as isize)
                         as u16);
             } else {
@@ -304,7 +351,7 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
     RtlCopyMemory(
         ComputerName as *mut core::ffi::c_void,
         AbsolutePath as *const core::ffi::c_void,
-        NameLength as usize,
+        NameLength as SIZE_T,
     );
     *ComputerNameLength = (NameLength / core::mem::size_of::<WCHAR>() as u16) as u32;
     *ComputerName.offset((NameLength / core::mem::size_of::<WCHAR>() as u16) as isize) = UNICODE_NULL;
@@ -322,17 +369,17 @@ pub unsafe extern "system" fn BasepNotifyTrackingService(
     let mut Status: NTSTATUS;
     let mut ComputerNameLength: ULONG;
     let mut FileAttributes: ULONG;
-    let mut ComputerName: [WCHAR; MAX_COMPUTERNAME_LENGTH as usize + 1];
-    let mut ComputerNameStringA: OEM_STRING;
-    let mut ComputerNameStringBuffer: [CHAR; MAX_PATH as usize + 1];
-    let mut ComputerNameStringW: _UNICODE_STRING;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut BasicInfo: FILE_BASIC_INFORMATION;
-    let mut hFullWrite: HANDLE;
-    let mut FileTrackingInfo: FILE_TRACKING_INFORMATION;
+    let mut ComputerName: [WCHAR; MAX_COMPUTERNAME_LENGTH as usize + 1] = [0; MAX_COMPUTERNAME_LENGTH as usize + 1];
+    let mut ComputerNameStringA: OEM_STRING = core::mem::zeroed();
+    let mut ComputerNameStringBuffer: [CHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
+    let mut ComputerNameStringW: _UNICODE_STRING = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut BasicInfo: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    let mut hFullWrite: HANDLE = core::ptr::null_mut();
+    let mut FileTrackingInfo: FILE_TRACKING_INFORMATION = core::mem::zeroed();
 
     Status = STATUS_SUCCESS;
-    ComputerNameLength = ARRAYSIZE(ComputerName);
+    ComputerNameLength = ComputerName.len() as ULONG;
 
     if BasepGetComputerNameFromNtPath(NewPath, NewHandle, ComputerName.as_mut_ptr(), &mut ComputerNameLength) != 0
     {
@@ -341,7 +388,7 @@ pub unsafe extern "system" fn BasepNotifyTrackingService(
         RtlInitEmptyAnsiString(
             &mut ComputerNameStringA,
             ComputerNameStringBuffer.as_mut_ptr(),
-            core::mem::size_of::<[CHAR; MAX_PATH as usize + 1]>(),
+            core::mem::size_of::<[CHAR; MAX_PATH as usize + 1]>() as USHORT,
         );
 
         RtlInitUnicodeString(&mut ComputerNameStringW, ComputerName.as_ptr());
@@ -356,7 +403,7 @@ pub unsafe extern "system" fn BasepNotifyTrackingService(
             ComputerNameStringA.Length as usize,
         );
         *FileTrackingInfo.ObjectInformation.as_mut_ptr().add(ComputerNameStringA.Length as usize) = 0i8;
-        FileTrackingInfo.ObjectInformationLength = ComputerNameStringA.Length + 1;
+        FileTrackingInfo.ObjectInformationLength = ComputerNameStringA.Length as ULONG + 1;
     }
 
     FileTrackingInfo.DestinationFile = NewHandle;
@@ -377,7 +424,7 @@ pub unsafe extern "system" fn BasepNotifyTrackingService(
     Status = NtOpenFile(
         ExistingHandle,
         SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-        ObjectAttributes,
+        ObjectAttributes as POBJECT_ATTRIBUTES,
         &mut IoStatusBlock,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_SYNCHRONOUS_IO_NONALERT,
@@ -416,7 +463,7 @@ pub unsafe extern "system" fn BasepNotifyTrackingService(
     Status = NtOpenFile(
         &mut hFullWrite,
         GENERIC_WRITE | SYNCHRONIZE,
-        ObjectAttributes,
+        ObjectAttributes as POBJECT_ATTRIBUTES,
         &mut IoStatusBlock,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_SYNCHRONOUS_IO_NONALERT,
@@ -458,7 +505,7 @@ pub unsafe extern "system" fn BasepOpenFileForMove(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     DesiredAccess: ACCESS_MASK,
     ShareAccess: ULONG,
-    OpenOptions: ULONG,
+    mut OpenOptions: ULONG,
 ) -> NTSTATUS {
     let mut RelativeName: RTL_RELATIVE_NAME_U = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -515,7 +562,7 @@ pub unsafe extern "system" fn BasepOpenFileForMove(
                 IntShareAccess,
                 OpenOptions | FILE_OPEN_REPARSE_POINT,
             );
-            if NT_SUCCESS(Status) != 0 {
+            if NT_SUCCESS(Status) {
                 // Attempt the read
                 Status = NtQueryInformationFile(
                     *FileHandle,
@@ -526,13 +573,13 @@ pub unsafe extern "system" fn BasepOpenFileForMove(
                 );
 
                 // Return if failure with a status that wouldn't mean the FSD cannot support reparse points
-                if NT_SUCCESS(Status) == 0
+                if !NT_SUCCESS(Status)
                     && (Status != STATUS_NOT_IMPLEMENTED && Status != STATUS_INVALID_PARAMETER)
                 {
                     // _SEH2_LEAVE
                     // goto cleanup
                 } else {
-                    if NT_SUCCESS(Status) != 0 {
+                    if NT_SUCCESS(Status) {
                         // This cannot happen on mount points
                         if (TagInfo.FileAttributes & FILE_ATTRIBUTE_DEVICE) != 0
                             || TagInfo.ReparseTag == IO_REPARSE_TAG_MOUNT_POINT
@@ -630,13 +677,13 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
 ) -> BOOL {
     let mut Status: NTSTATUS;
     let mut NewBuffer: PWSTR;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut CopyContext: COPY_PROGRESS_CONTEXT;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut CopyContext: COPY_PROGRESS_CONTEXT = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut RenameInfo: *mut FILE_RENAME_INFORMATION;
-    let mut NewPathU: _UNICODE_STRING;
-    let mut ExistingPathU: _UNICODE_STRING;
-    let mut TagInfo: FILE_ATTRIBUTE_TAG_INFORMATION;
+    let mut NewPathU: _UNICODE_STRING = core::mem::zeroed();
+    let mut ExistingPathU: _UNICODE_STRING = core::mem::zeroed();
+    let mut TagInfo: FILE_ATTRIBUTE_TAG_INFORMATION = core::mem::zeroed();
     let mut SourceHandle: HANDLE = INVALID_HANDLE_VALUE;
     let mut NewHandle: HANDLE;
     let mut ExistingHandle: HANDLE;
@@ -680,7 +727,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
         AttemptReopenWithoutReparse = 1;
         InitializeObjectAttributes(
             &mut ObjectAttributes,
-            &ExistingPathU,
+            &mut ExistingPathU,
             OBJ_CASE_INSENSITIVE,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -689,7 +736,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
         Status = NtOpenFile(
             &mut SourceHandle,
             FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
-            &ObjectAttributes,
+            &mut ObjectAttributes,
             &mut IoStatusBlock,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_OPEN_FOR_BACKUP_INTENT
@@ -699,7 +746,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                     0
                 },
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             /* If we failed and the file doesn't exist, don't attempt to reopen without reparse */
             if DelayUntilReboot != 0
                 && (Status == STATUS_SHARING_VIOLATION
@@ -726,7 +773,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                 core::mem::size_of::<FILE_ATTRIBUTE_TAG_INFORMATION>() as u32,
                 FileAttributeTagInformation,
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 /* Do not tolerate any other error than something related to not supported operation */
                 if Status != STATUS_NOT_IMPLEMENTED && Status != STATUS_INVALID_PARAMETER {
                     BaseSetLastNTError(Status);
@@ -754,7 +801,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
             Status = NtOpenFile(
                 &mut SourceHandle,
                 DELETE | SYNCHRONIZE,
-                &ObjectAttributes,
+                &mut ObjectAttributes,
                 &mut IoStatusBlock,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 if (dwFlags & MOVEFILE_WRITE_THROUGH) != 0 {
@@ -763,7 +810,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                     0
                 },
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 BaseSetLastNTError(Status);
                 /* _SEH2_LEAVE */
                 break 'leave;
@@ -788,7 +835,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                 NewBuffer = RtlAllocateHeap(
                     RtlGetProcessHeap(),
                     0,
-                    (NewPathU.Length as usize + core::mem::size_of::<u16>() as u16) as usize,
+                    (NewPathU.Length as SIZE_T + core::mem::size_of::<u16>() as SIZE_T) as SIZE_T,
                 ) as PWSTR;
                 if NewBuffer.is_null() {
                     BaseSetLastNTError(STATUS_NO_MEMORY);
@@ -800,7 +847,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                 RtlCopyMemory(
                     NewBuffer.offset(1) as *mut core::ffi::c_void,
                     NewPathU.Buffer as *const core::ffi::c_void,
-                    NewPathU.Length as usize,
+                    NewPathU.Length as SIZE_T,
                 );
                 NewPathU.Length += core::mem::size_of::<u16>() as u16;
                 NewPathU.MaximumLength += core::mem::size_of::<u16>() as u16;
@@ -815,19 +862,19 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                 Status = STATUS_INVALID_PARAMETER;
             } else {
                 /* First, probe 2nd key to see whether it exists - if so, it will be appended there */
-                Status = BasepMoveFileDelayed(&ExistingPathU, &NewPathU, 2, 0);
+                Status = BasepMoveFileDelayed(&mut ExistingPathU, &mut NewPathU, 2, 0);
                 if Status == STATUS_OBJECT_NAME_NOT_FOUND {
                     /* If doesn't exist, append to first key first, creating it if it doesn't exist */
-                    Status = BasepMoveFileDelayed(&ExistingPathU, &NewPathU, 1, 1);
+                    Status = BasepMoveFileDelayed(&mut ExistingPathU, &mut NewPathU, 1, 1);
                     if Status == STATUS_INSUFFICIENT_RESOURCES {
                         /* If it failed because it's too big, then create 2nd key and put it there */
-                        Status = BasepMoveFileDelayed(&ExistingPathU, &NewPathU, 2, 1);
+                        Status = BasepMoveFileDelayed(&mut ExistingPathU, &mut NewPathU, 2, 1);
                     }
                 }
             }
 
             /* If we failed at some point, return the error */
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 BaseSetLastNTError(Status);
                 /* _SEH2_LEAVE */
                 break 'leave;
@@ -845,7 +892,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
         RenameInfo = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            NewPathU.Length as usize + core::mem::size_of::<FILE_RENAME_INFORMATION>(),
+            NewPathU.Length as SIZE_T + core::mem::size_of::<FILE_RENAME_INFORMATION>() as SIZE_T,
         ) as *mut FILE_RENAME_INFORMATION;
         if RenameInfo.is_null() {
             BaseSetLastNTError(STATUS_NO_MEMORY);
@@ -854,20 +901,20 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
         }
 
         RtlCopyMemory(
-            &mut (*RenameInfo).FileName as *mut u16 as *mut core::ffi::c_void,
+            (*RenameInfo).FileName.as_mut_ptr() as *mut core::ffi::c_void,
             NewPathU.Buffer as *const core::ffi::c_void,
-            NewPathU.Length as usize,
+            NewPathU.Length as SIZE_T,
         );
         (*RenameInfo).ReplaceIfExists = if ReplaceIfExists != 0 { 1 } else { 0 };
         (*RenameInfo).RootDirectory = core::ptr::null_mut();
-        (*RenameInfo).FileNameLength = NewPathU.Length;
+        (*RenameInfo).FileNameLength = NewPathU.Length as ULONG;
 
         /* Attempt to rename the file */
         Status = NtSetInformationFile(
             SourceHandle,
             &mut IoStatusBlock,
             RenameInfo as *mut core::ffi::c_void,
-            NewPathU.Length + core::mem::size_of::<FILE_RENAME_INFORMATION>() as u16,
+            NewPathU.Length as ULONG + core::mem::size_of::<FILE_RENAME_INFORMATION>() as ULONG,
             if (dwFlags & MOVEFILE_CREATE_HARDLINK) != 0 {
                 FileLinkInformation
             } else {
@@ -875,7 +922,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
             },
         );
         RtlFreeHeap(RtlGetProcessHeap(), 0, RenameInfo as *mut core::ffi::c_void);
-        if NT_SUCCESS(Status) != 0 {
+        if NT_SUCCESS(Status) {
             /* If it succeed, all fine, quit */
             Ret = 1;
             /* _SEH2_LEAVE */
@@ -910,7 +957,14 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
         Ret = BasepCopyFileExW(
             lpExistingFileName,
             lpNewFileName,
-            Some(BasepMoveFileCopyProgress),
+            // extern "system" == extern "stdcall" ABI here; bridge the nominal fn-ptr type.
+            core::mem::transmute::<
+                unsafe extern "system" fn(
+                    LARGE_INTEGER, LARGE_INTEGER, LARGE_INTEGER, LARGE_INTEGER,
+                    DWORD, DWORD, HANDLE, HANDLE, LPVOID,
+                ) -> DWORD,
+                LPPROGRESS_ROUTINE,
+            >(BasepMoveFileCopyProgress),
             &mut CopyContext as *mut COPY_PROGRESS_CONTEXT as *mut core::ffi::c_void,
             core::ptr::null_mut(),
             (if ReplaceIfExists != 0 { 0 } else { COPY_FILE_FAIL_IF_EXISTS })
@@ -934,7 +988,7 @@ pub unsafe extern "system" fn MoveFileWithProgressW(
                     NewHandle,
                     &NewPathU,
                 );
-                if NT_SUCCESS(Status) == 0 {
+                if !NT_SUCCESS(Status) {
                     /* Fail in case it had to succeed */
                     if (dwFlags & MOVEFILE_FAIL_IF_NOT_TRACKABLE) != 0 {
                         if NewHandle != INVALID_HANDLE_VALUE {
@@ -1089,9 +1143,9 @@ pub unsafe extern "system" fn ReplaceFileA(
     lpReserved: LPVOID,
 ) -> BOOL {
     let mut Ret: BOOL;
-    let mut ReplacedFileNameW: _UNICODE_STRING;
-    let mut ReplacementFileNameW: _UNICODE_STRING;
-    let mut BackupFileNameW: _UNICODE_STRING;
+    let mut ReplacedFileNameW: _UNICODE_STRING = core::mem::zeroed();
+    let mut ReplacementFileNameW: _UNICODE_STRING = core::mem::zeroed();
+    let mut BackupFileNameW: _UNICODE_STRING = core::mem::zeroed();
 
     if lpReplacedFileName.is_null()
         || lpReplacementFileName.is_null()
@@ -1169,7 +1223,7 @@ pub unsafe extern "system" fn ReplaceFileW(
     let mut Buffer: PVOID = core::ptr::null_mut();
 
     if dwReplaceFlags != 0 {
-        FIXME(b"Ignoring flags %x\n\0".as_ptr() as LPCSTR, dwReplaceFlags);
+        FIXME!(b"Ignoring flags %x\n\0".as_ptr() as LPCSTR, dwReplaceFlags);
     }
 
     if lpReplacedFileName.is_null() || lpReplacementFileName.is_null() {
@@ -1192,7 +1246,7 @@ pub unsafe extern "system" fn ReplaceFileW(
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &NtReplacedName,
+        &mut NtReplacedName,
         OBJ_CASE_INSENSITIVE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -1201,13 +1255,13 @@ pub unsafe extern "system" fn ReplaceFileW(
     Status = NtOpenFile(
         &mut hReplaced,
         GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE | WRITE_DAC,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         &mut IoStatusBlock,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE,
     );
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         if Status == STATUS_OBJECT_NAME_NOT_FOUND {
             Error = ERROR_FILE_NOT_FOUND;
         } else {
@@ -1225,7 +1279,7 @@ pub unsafe extern "system" fn ReplaceFileW(
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &NtReplacementName,
+        &mut NtReplacementName,
         OBJ_CASE_INSENSITIVE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -1234,13 +1288,13 @@ pub unsafe extern "system" fn ReplaceFileW(
     Status = NtOpenFile(
         &mut hReplacement,
         GENERIC_READ | DELETE | SYNCHRONIZE,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         &mut IoStatusBlock,
         0,
         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE,
     );
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         Error = RtlNtStatusToDosError(Status);
         break 'cleanup;
     }
@@ -1263,7 +1317,7 @@ pub unsafe extern "system" fn ReplaceFileW(
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         );
-        if NT_SUCCESS(Status) != 0 {
+        if NT_SUCCESS(Status) {
             Status = NtWriteFile(
                 hReplaced,
                 core::ptr::null_mut(),
@@ -1271,11 +1325,11 @@ pub unsafe extern "system" fn ReplaceFileW(
                 core::ptr::null_mut(),
                 &mut IoStatusBlock,
                 Buffer,
-                IoStatusBlock.Information,
+                IoStatusBlock.Information as ULONG,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 Error = RtlNtStatusToDosError(Status);
                 break 'cleanup;
             }
@@ -1300,14 +1354,14 @@ pub unsafe extern "system" fn ReplaceFileW(
     }
 
     if !NtReplacementName.Buffer.is_null() {
-        RtlFreeHeap(GetProcessHeap(), 0, NtReplacementName.Buffer);
+        RtlFreeHeap(GetProcessHeap(), 0, NtReplacementName.Buffer as *mut c_void);
     }
     if !NtReplacedName.Buffer.is_null() {
-        RtlFreeHeap(GetProcessHeap(), 0, NtReplacedName.Buffer);
+        RtlFreeHeap(GetProcessHeap(), 0, NtReplacedName.Buffer as *mut c_void);
     }
 
     if Ret == 0 {
-        TRACE(b"ReplaceFileW failed (error=%lu)\n\0".as_ptr() as LPCSTR, Error);
+        TRACE!(b"ReplaceFileW failed (error=%lu)\n\0".as_ptr() as LPCSTR, Error);
         SetLastError(Error);
     }
     Ret
@@ -1320,21 +1374,21 @@ pub unsafe extern "system" fn PrivMoveFileIdentityW(
     dwFlags: DWORD,
 ) -> BOOL {
     let mut SourceAccess: ACCESS_MASK;
-    let mut NtSource: _UNICODE_STRING;
-    let mut NtDestination: _UNICODE_STRING;
+    let mut NtSource: _UNICODE_STRING = core::mem::zeroed();
+    let mut NtDestination: _UNICODE_STRING = core::mem::zeroed();
     let mut RelativeSource: LPWSTR;
     let mut RelativeDestination: LPWSTR;
     let mut SourceHandle: HANDLE;
     let mut DestinationHandle: HANDLE;
-    let mut ObjectAttributesSource: _OBJECT_ATTRIBUTES;
-    let mut ObjectAttributesDestination: _OBJECT_ATTRIBUTES;
+    let mut ObjectAttributesSource: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributesDestination: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut OldStatus: NTSTATUS = STATUS_SUCCESS;
     let mut DestAccess: ACCESS_MASK;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut SourceInformation: FILE_BASIC_INFORMATION;
-    let mut DestinationInformation: FILE_BASIC_INFORMATION;
-    let mut DispositionInfo: FILE_DISPOSITION_INFORMATION;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut SourceInformation: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    let mut DestinationInformation: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    let mut DispositionInfo: FILE_DISPOSITION_INFORMATION = core::mem::zeroed();
 
     // DPRINT("PrivMoveFileIdentityW(%S, %S, %x)\n", lpSource, lpDestination, dwFlags);
 
@@ -1524,7 +1578,7 @@ pub unsafe extern "system" fn PrivMoveFileIdentityW(
 
     /* If caller asked for source deletion, if everything succeed, proceed */
     if NT_SUCCESS(Status) && (dwFlags & PRIV_DELETE_ON_SUCCESS) != 0 {
-        DispositionInfo.DeleteFile = 1; // TRUE
+        DispositionInfo.DeleteFileA = 1; // TRUE
 
         Status = NtSetInformationFile(
             SourceHandle,

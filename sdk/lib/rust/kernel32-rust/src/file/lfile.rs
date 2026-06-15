@@ -8,6 +8,9 @@ extern "system" {
     fn CloseHandle(hObject: HANDLE) -> BOOL;
     fn LongToHandle(lLong: i32) -> HANDLE;
     fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: DWORD, ) -> DWORD;
+    fn ReadFile( hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
+    fn WriteFile( hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
+    fn SetEndOfFile(hFile: HANDLE) -> BOOL;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -66,12 +69,12 @@ pub unsafe extern "system" fn _lopen(
     let mut dwSharing: u32;
     let mut dwCreation: u32;
 
-    if iReadWrite & OF_CREATE != 0 {
+    if iReadWrite as u32 & OF_CREATE != 0 {
         dwCreation = CREATE_ALWAYS;
         dwAccess = GENERIC_READ | GENERIC_WRITE;
     } else {
         dwCreation = OPEN_EXISTING;
-        match iReadWrite & 0x03 {
+        match iReadWrite as u32 & 0x03 {
             OF_READ => {
                 dwAccess = GENERIC_READ;
             }
@@ -87,7 +90,7 @@ pub unsafe extern "system" fn _lopen(
         }
     }
 
-    match iReadWrite & 0x70 {
+    match iReadWrite as u32 & 0x70 {
         OF_SHARE_EXCLUSIVE => {
             dwSharing = 0;
         }
@@ -120,7 +123,7 @@ pub unsafe extern "system" fn _lcreat(
 ) -> HFILE {
 
     let mut hFile: *mut core::ffi::c_void = core::ptr::null_mut();
-    iAttribute &= FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+    iAttribute &= (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) as i32;
     hFile = CreateFileA(
         lpPathName,
         (GENERIC_READ | GENERIC_WRITE) as u32,
@@ -129,7 +132,7 @@ pub unsafe extern "system" fn _lcreat(
         CREATE_ALWAYS as u32,
         iAttribute as u32,
         core::ptr::null_mut(),
-    );
+    ) as *mut core::ffi::c_void;
     return HandleToLong(hFile) as HFILE;
 }
 #[no_mangle]

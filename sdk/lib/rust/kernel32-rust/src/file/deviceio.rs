@@ -1,6 +1,29 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{CSR_CREATE_API_NUMBER, InitializeObjectAttributes};
+
+// ntddbeep.h
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BEEP_SET_PARAMETERS {
+    pub Frequency: ULONG,
+    pub Duration: ULONG,
+}
+
+// IOCTL_BEEP_SET = CTL_CODE(FILE_DEVICE_BEEP, 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
+pub const IOCTL_BEEP_SET: ULONG = (FILE_DEVICE_BEEP << 16) | (0 << 14) | (0 << 2) | 0;
+
+// NT_ERROR(Status) == ((ULONG)(Status) >> 30) == 3
+#[inline]
+pub fn NT_ERROR(status: NTSTATUS) -> bool {
+    ((status as ULONG) >> 30) == 3
+}
+
+extern "system" {
+    fn GetConsoleDisplayMode(lpModeFlags: LPDWORD) -> BOOL;
+    fn SleepEx(dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;
+}
 
 // ---- file-scope preamble (translated) ----
 
@@ -20,7 +43,7 @@ pub unsafe extern "system" fn NotifySoundSentry() {
             &mut ApiMessage as *mut BASE_API_MESSAGE as PCSR_API_MESSAGE,
             core::ptr::null_mut(),
             CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepSoundSentryNotification),
-            core::mem::size_of::<BASE_SOUND_SENTRY>(),
+            core::mem::size_of::<BASE_SOUND_SENTRY>() as ULONG,
         );
     }
 }
@@ -30,14 +53,18 @@ pub unsafe extern "system" fn Beep(
     dwFreq: DWORD,
     dwDuration: DWORD,
 ) -> BOOL {
-    let mut hBeep: HANDLE;
-    let mut BeepDevice: _UNICODE_STRING;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut BeepSetParameters: BEEP_SET_PARAMETERS;
+    let mut hBeep: HANDLE = core::ptr::null_mut();
+    let mut BeepDevice: _UNICODE_STRING = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut BeepSetParameters: BEEP_SET_PARAMETERS = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut BeepDevice, b"\\Device\\Beep\0".as_ptr() as *const i8);
+    static BEEP_DEVICE_NAME: [u16; 13] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
+        b'e' as u16, b'\\' as u16, b'B' as u16, b'e' as u16, b'e' as u16, b'p' as u16, 0,
+    ];
+    RtlInitUnicodeString(&mut BeepDevice, BEEP_DEVICE_NAME.as_ptr());
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut BeepDevice,
@@ -111,14 +138,14 @@ pub unsafe extern "system" fn DeviceIoControl(
     lpOverlapped: LPOVERLAPPED,
 ) -> BOOL {
     let FsIoCtl: BOOL;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let ApcContext: PVOID;
-    let Iosb: _IO_STATUS_BLOCK;
+    let Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     FsIoCtl = ((dwIoControlCode >> 16) == FILE_DEVICE_FILE_SYSTEM) as BOOL;
 
     if lpOverlapped != core::ptr::null_mut() {
-        (*lpOverlapped).Internal = STATUS_PENDING;
+        (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
 
         ApcContext = if (((*lpOverlapped).hEvent as ULONG_PTR) & 0x1) != 0 {
             core::ptr::null_mut()
@@ -130,7 +157,7 @@ pub unsafe extern "system" fn DeviceIoControl(
             Status = NtFsControlFile(
                 hDevice,
                 (*lpOverlapped).hEvent,
-                core::ptr::null_mut(),
+                None,
                 ApcContext,
                 lpOverlapped as PIO_STATUS_BLOCK,
                 dwIoControlCode,
@@ -143,7 +170,7 @@ pub unsafe extern "system" fn DeviceIoControl(
             Status = NtDeviceIoControlFile(
                 hDevice,
                 (*lpOverlapped).hEvent,
-                core::ptr::null_mut(),
+                None,
                 ApcContext,
                 lpOverlapped as PIO_STATUS_BLOCK,
                 dwIoControlCode,
@@ -155,22 +182,9 @@ pub unsafe extern "system" fn DeviceIoControl(
         }
 
         if !(NT_ERROR(Status)) && !lpBytesReturned.is_null() {
-            loop {
-                // _SEH2_TRY
-                let __try_result = {
-                    *lpBytesReturned = (*lpOverlapped).InternalHigh;
-                    0i32
-                };
-                // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                let __except_val = EXCEPTION_EXECUTE_HANDLER;
-                let __exception_code;
-                // Inline SEH: if exception occurred, execute handler
-                // For mechanical translation, we assume no exception and use try result
-                // Actually we need to handle the exception properly
-                // Since we can't do SEH in Rust, we'll just do the try block
-                *lpBytesReturned = (*lpOverlapped).InternalHigh;
-                break;
-            }
+            // _SEH2_TRY { *lpBytesReturned = lpOverlapped->InternalHigh; }
+            // (DUMMY_PSEH: handler is dead code)
+            *lpBytesReturned = (*lpOverlapped).InternalHigh as DWORD;
             // _SEH2_END
         }
 
@@ -183,7 +197,7 @@ pub unsafe extern "system" fn DeviceIoControl(
             Status = NtFsControlFile(
                 hDevice,
                 core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                None,
                 core::ptr::null_mut(),
                 &Iosb as *const _IO_STATUS_BLOCK as *mut _IO_STATUS_BLOCK,
                 dwIoControlCode,
@@ -196,7 +210,7 @@ pub unsafe extern "system" fn DeviceIoControl(
             Status = NtDeviceIoControlFile(
                 hDevice,
                 core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                None,
                 core::ptr::null_mut(),
                 &Iosb as *const _IO_STATUS_BLOCK as *mut _IO_STATUS_BLOCK,
                 dwIoControlCode,
@@ -208,17 +222,17 @@ pub unsafe extern "system" fn DeviceIoControl(
         }
 
         if Status == STATUS_PENDING {
-            Status = NtWaitForSingleObject(hDevice, 0i32, core::ptr::null_mut());
+            Status = NtWaitForSingleObject(hDevice, 0u8, core::ptr::null_mut());
             if NT_SUCCESS(Status) {
                 Status = Iosb.__bindgen_anon_1.Status;
             }
         }
 
         if NT_SUCCESS(Status) {
-            *lpBytesReturned = Iosb.Information;
+            *lpBytesReturned = Iosb.Information as DWORD;
         } else {
             if !NT_ERROR(Status) {
-                *lpBytesReturned = Iosb.Information;
+                *lpBytesReturned = Iosb.Information as DWORD;
             }
             BaseSetLastNTError(Status);
             return 0i32;

@@ -1,8 +1,14 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
+}
+
+// STATUS_IO_REPARSE_TAG_NOT_HANDLED — sdk/include/ndk/ntstatus.h
+const STATUS_IO_REPARSE_TAG_NOT_HANDLED: NTSTATUS = 0xC000_0279u32 as NTSTATUS;
 
 #[no_mangle]
 pub unsafe extern "system" fn DeleteFileA(lpFileName: LPCSTR) -> BOOL {
@@ -53,7 +59,7 @@ pub unsafe extern "system" fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL {
 
     Status = NtOpenFile(
         &mut FileHandle,
-        (DELETE | FILE_READ_ATTRIBUTES as i32) as ACCESS_MASK,
+        (DELETE | FILE_READ_ATTRIBUTES) as ACCESS_MASK,
         &mut ObjectAttributes,
         &mut IoStatusBlock,
         (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) as ULONG,
@@ -158,7 +164,7 @@ pub unsafe extern "system" fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL {
     RtlReleaseRelativeName(&mut RelativeName);
     RtlFreeHeap(RtlGetProcessHeap(), 0, PathBuffer as PVOID);
 
-    FileDispInfo.DeleteFile = 1;
+    FileDispInfo.DeleteFileA = 1;
     Status = NtSetInformationFile(
         FileHandle,
         &mut IoStatusBlock,

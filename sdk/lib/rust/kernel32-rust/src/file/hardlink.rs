@@ -1,6 +1,21 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::InitializeObjectAttributes;
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
+    fn Basep8BitStringToDynamicUnicodeString(
+        UnicodeString: *mut _UNICODE_STRING,
+        AnsiString: LPCSTR,
+    ) -> BOOLEAN;
+}
+
+// RtlMoveMemory is a macro for memmove (overlap-safe) in the C headers.
+#[inline]
+unsafe fn RtlMoveMemory(dst: *mut c_void, src: *const c_void, len: usize) {
+    memmove(dst, src, len);
+}
 
 // ---- file-scope preamble (translated) ----
 
@@ -13,12 +28,12 @@ pub unsafe extern "system" fn CreateHardLinkW(
     let mut Status: NTSTATUS;
     let mut Ret: BOOL = 0;
     let mut NeededSize: ULONG;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut hTarget: HANDLE = INVALID_HANDLE_VALUE;
     let mut LinkInformation: PFILE_LINK_INFORMATION = core::ptr::null_mut();
-    let mut LinkTarget: _UNICODE_STRING;
-    let mut LinkName: _UNICODE_STRING;
+    let mut LinkTarget: _UNICODE_STRING = core::mem::zeroed();
+    let mut LinkName: _UNICODE_STRING = core::mem::zeroed();
 
     /* Initialize */
     LinkTarget.Buffer = core::ptr::null_mut();
@@ -48,7 +63,7 @@ pub unsafe extern "system" fn CreateHardLinkW(
             /* Open target */
             InitializeObjectAttributes(
                 &mut ObjectAttributes,
-                &LinkTarget,
+                &mut LinkTarget,
                 OBJ_CASE_INSENSITIVE,
                 core::ptr::null_mut(),
                 if !lpSecurityAttributes.is_null() {
@@ -60,12 +75,12 @@ pub unsafe extern "system" fn CreateHardLinkW(
             Status = NtOpenFile(
                 &mut hTarget,
                 SYNCHRONIZE | FILE_WRITE_ATTRIBUTES,
-                &ObjectAttributes,
+                &mut ObjectAttributes,
                 &mut IoStatusBlock,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 /* Convert the error and fail */
                 BaseSetLastNTError(Status);
                 /* _SEH2_LEAVE */
@@ -85,9 +100,9 @@ pub unsafe extern "system" fn CreateHardLinkW(
                     /* goto cleanup */
                 } else {
                     /* Allocate data for link */
-                    NeededSize =
-                        (core::mem::size_of::<FILE_LINK_INFORMATION>() as ULONG) + LinkName.Length;
-                    LinkInformation = RtlAllocateHeap(RtlGetProcessHeap(), 0, NeededSize)
+                    NeededSize = (core::mem::size_of::<FILE_LINK_INFORMATION>() as ULONG)
+                        + LinkName.Length as ULONG;
+                    LinkInformation = RtlAllocateHeap(RtlGetProcessHeap(), 0, NeededSize as SIZE_T)
                         as PFILE_LINK_INFORMATION;
                     if LinkInformation.is_null() {
                         /* We're out of memory */
@@ -102,8 +117,8 @@ pub unsafe extern "system" fn CreateHardLinkW(
                             LinkName.Length as usize,
                         );
                         (*LinkInformation).ReplaceIfExists = 0;
-                        (*LinkInformation).RootDirectory = 0;
-                        (*LinkInformation).FileNameLength = LinkName.Length;
+                        (*LinkInformation).RootDirectory = core::ptr::null_mut();
+                        (*LinkInformation).FileNameLength = LinkName.Length as ULONG;
                         Status = NtSetInformationFile(
                             hTarget,
                             &mut IoStatusBlock,
@@ -111,7 +126,7 @@ pub unsafe extern "system" fn CreateHardLinkW(
                             NeededSize,
                             FileLinkInformation,
                         );
-                        if NT_SUCCESS(Status) != 0 {
+                        if NT_SUCCESS(Status) {
                             /* Set success code */
                             Ret = 1;
                         } else {
@@ -128,13 +143,13 @@ pub unsafe extern "system" fn CreateHardLinkW(
     {
         /* Cleanup all allocations */
         if !LinkTarget.Buffer.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, LinkTarget.Buffer);
+            RtlFreeHeap(RtlGetProcessHeap(), 0, LinkTarget.Buffer as *mut c_void);
         }
         if hTarget != INVALID_HANDLE_VALUE {
             NtClose(hTarget);
         }
         if !LinkName.Buffer.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, LinkName.Buffer);
+            RtlFreeHeap(RtlGetProcessHeap(), 0, LinkName.Buffer as *mut c_void);
         }
         if !LinkInformation.is_null() {
             RtlFreeHeap(RtlGetProcessHeap(), 0, LinkInformation as *mut core::ffi::c_void);
@@ -152,7 +167,7 @@ pub unsafe extern "system" fn CreateHardLinkA(
 ) -> BOOL {
     let Ret: BOOL;
     let lpFileNameW: PUNICODE_STRING;
-    let mut ExistingFileNameW: _UNICODE_STRING;
+    let mut ExistingFileNameW: _UNICODE_STRING = core::mem::zeroed();
 
     /* Convert the filename to unicode, using MAX_PATH limitations */
     lpFileNameW = Basep8BitStringToStaticUnicodeString(lpFileName);

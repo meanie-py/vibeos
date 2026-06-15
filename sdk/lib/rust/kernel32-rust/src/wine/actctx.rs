@@ -1,6 +1,9 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::string::nls::MultiByteToWideChar;
+use crate::string::nls_subst::{HeapAlloc, HeapFree};
+use crate::client::heapmem::GetProcessHeap;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -47,16 +50,11 @@ pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
 pub const ERROR_INVALID_PARAMETER: DWORD = 87;
 
-#[repr(C)]
-pub struct GUID {
-    pub Data1: ULONG,
-    pub Data2: USHORT,
-    pub Data3: USHORT,
-    pub Data4: [UCHAR; 8],
-}
+// GUID comes from ntdll_sys::nt (= _GUID); local shadow removed so the Rtl
+// activation-context-section fns (which take *const _GUID) type-check.
 
 #[repr(C)]
-pub struct PACTCTX_SECTION_KEYED_DATA {
+pub struct ACTCTX_SECTION_KEYED_DATA {
     pub cbSize: ULONG,
     pub ulDataFormatVersion: ULONG,
     pub lpData: PVOID,
@@ -69,12 +67,7 @@ pub struct PACTCTX_SECTION_KEYED_DATA {
     pub ulRoopCount: ULONG,
 }
 
-#[repr(C)]
-pub struct _UNICODE_STRING {
-    pub Length: USHORT,
-    pub MaximumLength: USHORT,
-    pub Buffer: PWSTR,
-}
+pub type PACTCTX_SECTION_KEYED_DATA = *mut ACTCTX_SECTION_KEYED_DATA;
 
 #[no_mangle]
 pub unsafe extern "system" fn CreateActCtxA(pActCtx: PCACTCTXA) -> HANDLE {
@@ -96,7 +89,7 @@ pub unsafe extern "system" fn CreateActCtxA(pActCtx: PCACTCTXA) -> HANDLE {
 
     if !(*pActCtx).lpSource.is_null() {
         len = MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpSource, -1, core::ptr::null_mut(), 0) as SIZE_T;
-        src = HeapAlloc(GetProcessHeap(), 0, len * core::mem::size_of::<WCHAR>()) as LPWSTR;
+        src = HeapAlloc(GetProcessHeap(), 0, len as usize * core::mem::size_of::<WCHAR>()) as LPWSTR;
         if src.is_null() {
             return INVALID_HANDLE_VALUE;
         }
@@ -112,7 +105,7 @@ pub unsafe extern "system" fn CreateActCtxA(pActCtx: PCACTCTXA) -> HANDLE {
     }
     if actw.dwFlags & ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID != 0 {
         len = MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpAssemblyDirectory, -1, core::ptr::null_mut(), 0) as SIZE_T;
-        assdir = HeapAlloc(GetProcessHeap(), 0, len * core::mem::size_of::<WCHAR>()) as LPWSTR;
+        assdir = HeapAlloc(GetProcessHeap(), 0, len as usize * core::mem::size_of::<WCHAR>()) as LPWSTR;
         if !assdir.is_null() {
             MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpAssemblyDirectory, -1, assdir, len as i32);
             actw.lpAssemblyDirectory = assdir as LPCWSTR;
@@ -121,7 +114,7 @@ pub unsafe extern "system" fn CreateActCtxA(pActCtx: PCACTCTXA) -> HANDLE {
     if actw.dwFlags & ACTCTX_FLAG_RESOURCE_NAME_VALID != 0 {
         if ((*pActCtx).lpResourceName as ULONG_PTR) >> 16 != 0 {
             len = MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpResourceName, -1, core::ptr::null_mut(), 0) as SIZE_T;
-            resname = HeapAlloc(GetProcessHeap(), 0, len * core::mem::size_of::<WCHAR>()) as LPWSTR;
+            resname = HeapAlloc(GetProcessHeap(), 0, len as usize * core::mem::size_of::<WCHAR>()) as LPWSTR;
             if !resname.is_null() {
                 MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpResourceName, -1, resname, len as i32);
                 actw.lpResourceName = resname as LPCWSTR;
@@ -132,7 +125,7 @@ pub unsafe extern "system" fn CreateActCtxA(pActCtx: PCACTCTXA) -> HANDLE {
     }
     if actw.dwFlags & ACTCTX_FLAG_APPLICATION_NAME_VALID != 0 {
         len = MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpApplicationName, -1, core::ptr::null_mut(), 0) as SIZE_T;
-        appname = HeapAlloc(GetProcessHeap(), 0, len * core::mem::size_of::<WCHAR>()) as LPWSTR;
+        appname = HeapAlloc(GetProcessHeap(), 0, len as usize * core::mem::size_of::<WCHAR>()) as LPWSTR;
         if !appname.is_null() {
             MultiByteToWideChar(CP_ACP, 0, (*pActCtx).lpApplicationName, -1, appname, len as i32);
             actw.lpApplicationName = appname as LPCWSTR;
@@ -158,19 +151,13 @@ pub unsafe extern "system" fn CreateActCtxW(pActCtx: PCACTCTXW) -> HANDLE {
     let _ = status;
     let _ = hActCtx;
 
-    TRACE(
-        b"%p %08x\n\0".as_ptr() as LPCSTR,
-        pActCtx,
-        if !pActCtx.is_null() {
-            (*pActCtx).dwFlags
-        } else {
-            0
-        },
-    );
+    // TRACE("%p %08x\n", pActCtx, pActCtx ? pActCtx->dwFlags : 0) — debug print,
+    // no-op under NDEBUG. Elided; keep a read of pActCtx to mirror the C arg eval.
+    let _ = pActCtx;
 
     status = RtlCreateActivationContext(
         0,
-        pActCtx as PVOID,
+        pActCtx as PACTIVATION_CONTEXT_DATA,
         0,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -273,7 +260,7 @@ pub unsafe extern "system" fn FindActCtxSectionStringW(
     lpSearchStr: LPCWSTR,
     pInfo: PACTCTX_SECTION_KEYED_DATA,
 ) -> BOOL {
-    let mut us: _UNICODE_STRING = _UNICODE_STRING {
+    let mut us: UNICODE_STRING = UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),

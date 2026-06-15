@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -22,7 +23,7 @@ pub unsafe extern "system" fn BasepCreateDefaultTimerQueue() -> BOOL {
 
 #[no_mangle]
 pub unsafe extern "system" fn CancelTimerQueueTimer(
-    TimerQueue: HANDLE,
+    mut TimerQueue: HANDLE,
     Timer: HANDLE,
 ) -> BOOL {
     let mut Status: NTSTATUS = 0;
@@ -88,7 +89,7 @@ pub unsafe extern "system" fn CreateTimerQueue() -> HANDLE {
 #[no_mangle]
 pub unsafe extern "system" fn CreateTimerQueueTimer(
     phNewTimer: PHANDLE,
-    TimerQueue: HANDLE,
+    mut TimerQueue: HANDLE,
     Callback: WAITORTIMERCALLBACK,
     Parameter: PVOID,
     DueTime: DWORD,
@@ -201,7 +202,7 @@ pub unsafe extern "system" fn DeleteTimerQueueTimer(
 
 #[no_mangle]
 pub unsafe extern "system" fn SetTimerQueueTimer(
-    TimerQueue: HANDLE,
+    mut TimerQueue: HANDLE,
     Callback: WAITORTIMERCALLBACK,
     Parameter: PVOID,
     DueTime: DWORD,

@@ -1,8 +1,29 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+#[allow(unused_imports)]
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+
+// kernel32-internal helpers + cross-file Win32 exports this file calls.
+use crate::k32_externs::{
+    RtlCopyMemory, CreateFileW, GetFileAttributesW, IsConsoleHandle,
+    CSR_CREATE_API_NUMBER, Basep8BitStringToDynamicUnicodeString,
+};
+use crate::client::utils::bIsFileApiAnsi;
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
+    fn BasepUnicodeStringTo8BitString(
+        DestinationString: PANSI_STRING,
+        SourceString: PCUNICODE_STRING,
+        AllocateDestinationString: BOOLEAN,
+    ) -> NTSTATUS;
+    fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
+}
+
+// ntstatus.h
+pub const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
 
 #[no_mangle]
 pub unsafe extern "system" fn GetTempFileNameA(
@@ -43,7 +64,7 @@ pub unsafe extern "system" fn GetTempFileNameA(
     lpTempFileNameW = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (MAX_PATH as usize).wrapping_mul(core::mem::size_of::<WCHAR>()),
+        (MAX_PATH as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as LPWSTR;
     if lpTempFileNameW.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY as u32);
@@ -243,7 +264,7 @@ pub unsafe extern "system" fn GetTempFileNameW(
                 || LastError == ERROR_NO_INHERITANCE
                 || LastError == ERROR_DISK_CORRUPT
                 || (LastError == ERROR_ACCESS_DENIED
-                    && (*NtCurrentTeb()).LastStatusValue != STATUS_FILE_IS_A_DIRECTORY)
+                    && (*NtCurrentTeb()).LastStatusValue != STATUS_FILE_IS_A_DIRECTORY as u32)
             {
                 break;
             }
@@ -269,20 +290,17 @@ pub unsafe extern "system" fn SetFileShortNameW(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        Status: 0,
-        Information: 0,
-    };
-    let mut FileNameInfo: PFILE_NAME_INFORMATION = core::ptr::null_mut();
+    let mut IoStatusBlock: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut FileNameInfoBuf: PFILE_NAME_INFORMATION = core::ptr::null_mut();
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE as DWORD);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     if lpShortName.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     RtlInitUnicodeString(&raw mut ShortName, lpShortName);
@@ -291,28 +309,28 @@ pub unsafe extern "system" fn SetFileShortNameW(
         .wrapping_add(ShortName.Length as ULONG)
         .wrapping_add(core::mem::size_of::<WCHAR>() as ULONG);
 
-    FileNameInfo = RtlAllocateHeap(
+    FileNameInfoBuf = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY as ULONG,
         NeededSize as SIZE_T,
     ) as PFILE_NAME_INFORMATION;
 
-    if FileNameInfo.is_null() {
+    if FileNameInfoBuf.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY as DWORD);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
-    (*FileNameInfo).FileNameLength = ShortName.Length as ULONG;
+    (*FileNameInfoBuf).FileNameLength = ShortName.Length as ULONG;
     RtlCopyMemory(
-        &raw mut (*FileNameInfo).FileName as *mut ::core::ffi::c_void,
+        &raw mut (*FileNameInfoBuf).FileName as *mut ::core::ffi::c_void,
         ShortName.Buffer as *const ::core::ffi::c_void,
-        ShortName.Length as usize,
+        ShortName.Length as SIZE_T,
     );
 
     Status = NtSetInformationFile(
         hFile,
         &raw mut IoStatusBlock,
-        FileNameInfo as PVOID,
+        FileNameInfoBuf as PVOID,
         NeededSize,
         FileShortNameInformation,
     );
@@ -320,15 +338,15 @@ pub unsafe extern "system" fn SetFileShortNameW(
     RtlFreeHeap(
         RtlGetProcessHeap(),
         0 as ULONG,
-        FileNameInfo as PVOID,
+        FileNameInfoBuf as PVOID,
     );
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]

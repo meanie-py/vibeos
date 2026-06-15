@@ -1,6 +1,21 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{CSR_CREATE_API_NUMBER, InitializeObjectAttributes};
+
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+
+// NDEBUG build: Wine TRACE/WARN compile to nothing (printf-style format +
+// varargs), so model them as macros that discard their arguments.
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+
+extern "system" {
+    fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
+    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
+    fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
+}
 
 // `L"..."` wide-string literals from the C source. DeepSeek emitted them either as
 // the invalid Rust token `L"..."` or as `b"...".as_ptr() as *const u16` (8-bit bytes
@@ -43,12 +58,12 @@ pub unsafe extern "C" fn IsGlobalDeviceMap(
     IsGlobal: PBOOLEAN,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ReturnLength: DWORD;
-    let mut GlobalString: _UNICODE_STRING;
-    let mut NameInfo: OBJECT_NAME_INFORMATION;
+    let mut ReturnLength: DWORD = 0;
+    let mut GlobalString: _UNICODE_STRING = core::mem::zeroed();
+    let mut NameInfo: OBJECT_NAME_INFORMATION = core::mem::zeroed();
     let mut PNameInfo: *mut OBJECT_NAME_INFORMATION;
 
-    if DirectoryHandle == 0 || IsGlobal.is_null() {
+    if DirectoryHandle.is_null() || IsGlobal.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -66,7 +81,7 @@ pub unsafe extern "C" fn IsGlobalDeviceMap(
             PNameInfo = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 0,
-                ReturnLength as usize,
+                ReturnLength as SIZE_T,
             ) as *mut OBJECT_NAME_INFORMATION;
 
             if PNameInfo.is_null() {
@@ -173,15 +188,15 @@ pub unsafe extern "system" fn DefineDosDeviceA(
 ) -> BOOL {
     let mut Result: BOOL;
     let mut Status: NTSTATUS;
-    let mut AnsiString: ANSI_STRING;
+    let mut AnsiString: ANSI_STRING = core::mem::zeroed();
     let mut TargetPathBuffer: PWSTR;
-    let mut TargetPathU: _UNICODE_STRING;
+    let mut TargetPathU: _UNICODE_STRING = core::mem::zeroed();
     let DeviceNameU: PUNICODE_STRING;
 
     /* Convert DeviceName using static unicode string */
     RtlInitAnsiString(&mut AnsiString, lpDeviceName);
     DeviceNameU = &mut (*NtCurrentTeb()).StaticUnicodeString;
-    Status = RtlAnsiStringToUnicodeString(DeviceNameU, &AnsiString, FALSE);
+    Status = RtlAnsiStringToUnicodeString(DeviceNameU, &mut AnsiString, FALSE as BOOLEAN);
     if !NT_SUCCESS(Status) {
         /*
          * If the static unicode string is too small,
@@ -200,7 +215,7 @@ pub unsafe extern "system" fn DefineDosDeviceA(
     /* Convert target path if existing */
     if !lpTargetPath.is_null() {
         RtlInitAnsiString(&mut AnsiString, lpTargetPath);
-        Status = RtlAnsiStringToUnicodeString(&mut TargetPathU, &AnsiString, TRUE);
+        Status = RtlAnsiStringToUnicodeString(&mut TargetPathU, &mut AnsiString, TRUE as BOOLEAN);
         if !NT_SUCCESS(Status) {
             BaseSetLastNTError(Status);
             return FALSE;
@@ -230,13 +245,13 @@ pub unsafe extern "system" fn DefineDosDeviceW(
 ) -> BOOL {
     let mut ArgumentCount: ULONG;
     let mut BufferSize: ULONG;
-    let mut ApiMessage: BASE_API_MESSAGE;
+    let mut ApiMessage: BASE_API_MESSAGE = core::mem::zeroed();
     let DefineDosDeviceRequest: PBASE_DEFINE_DOS_DEVICE = &mut ApiMessage.Data.DefineDosDeviceRequest;
     let CaptureBuffer: PCSR_CAPTURE_BUFFER;
-    let mut NtTargetPathU: _UNICODE_STRING;
-    let mut DeviceNameU: _UNICODE_STRING;
-    let mut hUser32: HANDLE;
-    let mut dbcv: DEV_BROADCAST_VOLUME;
+    let mut NtTargetPathU: _UNICODE_STRING = core::mem::zeroed();
+    let mut DeviceNameU: _UNICODE_STRING = core::mem::zeroed();
+    let mut hUser32: HMODULE;
+    let mut dbcv: DEV_BROADCAST_VOLUME = core::mem::zeroed();
     let mut dwRecipients: DWORD;
     type BSM_type = unsafe extern "system" fn(DWORD, LPDWORD, UINT, WPARAM, LPARAM) -> LONG;
     let BSM_ptr: BSM_type;
@@ -271,7 +286,7 @@ pub unsafe extern "system" fn DefineDosDeviceW(
     RtlInitUnicodeString(&mut DeviceNameU, lpDeviceName);
 
     /* The buffer for CSR call will contain it */
-    BufferSize = DeviceNameU.MaximumLength;
+    BufferSize = DeviceNameU.MaximumLength as ULONG;
     ArgumentCount = 1;
 
     /* If we don't have target path, use empty string */
@@ -290,7 +305,7 @@ pub unsafe extern "system" fn DefineDosDeviceW(
                 core::ptr::null_mut(),
             ) == 0
             {
-                WARN("RtlDosPathNameToNtPathName_U() failed\n");
+                WARN!("RtlDosPathNameToNtPathName_U() failed\n");
                 BaseSetLastNTError(STATUS_OBJECT_NAME_INVALID);
                 return 0;
             }
@@ -298,7 +313,7 @@ pub unsafe extern "system" fn DefineDosDeviceW(
 
         /* This target path will be the second arg */
         ArgumentCount = 2;
-        BufferSize += NtTargetPathU.MaximumLength;
+        BufferSize += NtTargetPathU.MaximumLength as ULONG;
     }
 
     /* Allocate the capture buffer for our strings */
@@ -318,9 +333,9 @@ pub unsafe extern "system" fn DefineDosDeviceW(
     /* Allocate a buffer for the device name */
     (*DefineDosDeviceRequest).DeviceName.MaximumLength = CsrAllocateMessagePointer(
         CaptureBuffer,
-        DeviceNameU.MaximumLength,
+        DeviceNameU.MaximumLength as ULONG,
         &mut (*DefineDosDeviceRequest).DeviceName.Buffer as *mut *mut u16 as *mut *mut core::ffi::c_void,
-    );
+    ) as USHORT;
     /* And copy it while upcasing it */
     RtlUpcaseUnicodeString(
         &mut (*DefineDosDeviceRequest).DeviceName,
@@ -332,9 +347,9 @@ pub unsafe extern "system" fn DefineDosDeviceW(
     if NtTargetPathU.Length != 0 {
         (*DefineDosDeviceRequest).TargetPath.MaximumLength = CsrAllocateMessagePointer(
             CaptureBuffer,
-            NtTargetPathU.MaximumLength,
+            NtTargetPathU.MaximumLength as ULONG,
             &mut (*DefineDosDeviceRequest).TargetPath.Buffer as *mut *mut u16 as *mut *mut core::ffi::c_void,
-        );
+        ) as USHORT;
         RtlCopyUnicodeString(
             &mut (*DefineDosDeviceRequest).TargetPath,
             &NtTargetPathU,
@@ -353,15 +368,15 @@ pub unsafe extern "system" fn DefineDosDeviceW(
     CsrClientCallServer(
         &mut ApiMessage as *mut BASE_API_MESSAGE as PCSR_API_MESSAGE,
         CaptureBuffer,
-        CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepDefineDosDevice),
+        CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX, _BASESRV_API_NUMBER_BasepDefineDosDevice as ULONG),
         core::mem::size_of::<BASE_DEFINE_DOS_DEVICE>() as u32,
     );
     CsrFreeCaptureBuffer(CaptureBuffer);
 
     /* Return failure if any */
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-        WARN("CsrClientCallServer() failed (Status %lx)\n", ApiMessage.__bindgen_anon_1.Status);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        WARN!("CsrClientCallServer() failed (Status %lx)\n", ApiMessage.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -369,7 +384,7 @@ pub unsafe extern "system" fn DefineDosDeviceW(
 
     /* Should broadcast the event? Only do if not denied and if drive letter */
     if (dwFlags & DDD_NO_BROADCAST_SYSTEM) == 0
-        && DeviceNameU.Length == 2 * core::mem::size_of::<WCHAR>() as u16
+        && DeviceNameU.Length == (2 * core::mem::size_of::<WCHAR>()) as u16
         && *DeviceNameU.Buffer.offset(1) as u16 == ':' as u16
     {
         /* Make sure letter is valid and there are no local device mappings */
@@ -377,9 +392,9 @@ pub unsafe extern "system" fn DefineDosDeviceW(
         if Letter < 26 && LUIDDeviceMapsEnabled == 0 {
             /* Rely on user32 for broadcasting */
             hUser32 = LoadLibraryW(USER32_DLL_W.as_ptr() as *const u16);
-            if hUser32 != 0 {
+            if !hUser32.is_null() {
                 /* Get the function pointer */
-                BSM_ptr = core::mem::transmute::<*mut core::ffi::c_void, BSM_type>(
+                BSM_ptr = core::mem::transmute::<FARPROC, BSM_type>(
                     GetProcAddress(hUser32, "BroadcastSystemMessageW\0".as_ptr() as *const i8),
                 );
                 if BSM_ptr as usize != 0 {
@@ -393,13 +408,13 @@ pub unsafe extern "system" fn DefineDosDeviceW(
 
                     /* Set the volume which had the event */
                     dbcv.dbcv_unitmask = 1u32 << (Letter as u32);
-                    dbcv.dbcv_flags = DBTF_NET;
+                    dbcv.dbcv_flags = DBTF_NET as u16;
 
                     /* And properly set the event (removal or arrival?) */
                     wParam = if (dwFlags & DDD_REMOVE_DEFINITION) != 0 {
-                        DBT_DEVICEREMOVECOMPLETE
+                        DBT_DEVICEREMOVECOMPLETE as WPARAM
                     } else {
-                        DBT_DEVICEARRIVAL
+                        DBT_DEVICEARRIVAL as WPARAM
                     };
 
                     /* And broadcast! */
@@ -429,8 +444,8 @@ pub unsafe extern "system" fn QueryDosDeviceA(
 ) -> DWORD {
     let mut Status: NTSTATUS;
     let mut CurrentPosition: USHORT;
-    let mut AnsiString: ANSI_STRING;
-    let mut TargetPathU: _UNICODE_STRING;
+    let mut AnsiString: ANSI_STRING = core::mem::zeroed();
+    let mut TargetPathU: _UNICODE_STRING = core::mem::zeroed();
     let mut DeviceNameU: PUNICODE_STRING;
     let mut RetLength: DWORD;
     let mut CurrentLength: DWORD;
@@ -443,7 +458,7 @@ pub unsafe extern "system" fn QueryDosDeviceA(
         /* Convert DeviceName using static unicode string */
         RtlInitAnsiString(&mut AnsiString, lpDeviceName);
         DeviceNameU = &mut (*NtCurrentTeb()).StaticUnicodeString;
-        Status = RtlAnsiStringToUnicodeString(DeviceNameU, &AnsiString, 0);
+        Status = RtlAnsiStringToUnicodeString(DeviceNameU, &mut AnsiString, 0);
         if !NT_SUCCESS(Status) {
             /*
              * If the static unicode string is too small,
@@ -468,7 +483,7 @@ pub unsafe extern "system" fn QueryDosDeviceA(
     TargetPathBuffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (ucchMax as usize).wrapping_mul(core::mem::size_of::<u16>()),
+        ((ucchMax as usize).wrapping_mul(core::mem::size_of::<u16>())) as SIZE_T,
     ) as PWSTR;
     if TargetPathBuffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -546,13 +561,13 @@ pub unsafe extern "system" fn QueryDosDeviceW(
     let mut Status: NTSTATUS;
     let mut i: USHORT;
     let mut TotalEntries: USHORT;
-    let mut UnicodeString: _UNICODE_STRING;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut DirectoryHandle: HANDLE;
-    let mut DeviceHandle: HANDLE;
+    let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut DirectoryHandle: HANDLE = core::ptr::null_mut();
+    let mut DeviceHandle: HANDLE = core::ptr::null_mut();
     let mut IsGlobal: BOOLEAN;
     let mut GlobalNeeded: BOOLEAN;
-    let mut Found: BOOLEAN;
+    let mut Found: BOOLEAN = 0;
     let mut DirInfo: POBJECT_DIRECTORY_INFORMATION;
     let NullEntry: OBJECT_DIRECTORY_INFORMATION = OBJECT_DIRECTORY_INFORMATION {
         Name: _UNICODE_STRING {
@@ -566,9 +581,9 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             Buffer: core::ptr::null_mut(),
         },
     };
-    let mut ReturnLength: ULONG;
+    let mut ReturnLength: ULONG = 0;
     let mut NameLength: ULONG;
-    let mut Length: ULONG;
+    let mut Length: ULONG = 0;
     let mut Context: ULONG;
     let mut BufferLength: ULONG;
 
@@ -576,7 +591,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
     RtlInitUnicodeString(&mut UnicodeString, QQ_W.as_ptr() as LPCWSTR);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &UnicodeString,
+        &mut UnicodeString,
         OBJ_CASE_INSENSITIVE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -584,10 +599,10 @@ pub unsafe extern "system" fn QueryDosDeviceW(
     Status = NtOpenDirectoryObject(
         &mut DirectoryHandle,
         DIRECTORY_QUERY,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
     );
     if !NT_SUCCESS(Status) {
-        WARN(
+        WARN!(
             "NtOpenDirectoryObject() failed (Status %lx)\n\0".as_ptr() as LPCSTR,
             Status,
         );
@@ -605,7 +620,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             RtlInitUnicodeString(&mut UnicodeString, lpDeviceName);
             InitializeObjectAttributes(
                 &mut ObjectAttributes,
-                &UnicodeString,
+                &mut UnicodeString,
                 OBJ_CASE_INSENSITIVE,
                 DirectoryHandle,
                 core::ptr::null_mut(),
@@ -613,10 +628,10 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             Status = NtOpenSymbolicLinkObject(
                 &mut DeviceHandle,
                 SYMBOLIC_LINK_QUERY,
-                &ObjectAttributes,
+                &mut ObjectAttributes,
             );
             if !NT_SUCCESS(Status) {
-                WARN(
+                WARN!(
                     "NtOpenSymbolicLinkObject() failed (Status %lx)\n\0".as_ptr() as LPCSTR,
                     Status,
                 );
@@ -639,7 +654,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             UnicodeString.MaximumLength = if Length <= MAXUSHORT as ULONG {
                 Length as USHORT
             } else {
-                MAXUSHORT
+                MAXUSHORT as USHORT
             };
             UnicodeString.Buffer = lpTargetPath;
 
@@ -651,7 +666,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             );
             NtClose(DeviceHandle);
             if !NT_SUCCESS(Status) {
-                WARN(
+                WARN!(
                     "NtQuerySymbolicLinkObject() failed (Status %lx)\n\0".as_ptr() as LPCSTR,
                     Status,
                 );
@@ -659,24 +674,24 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                 break;
             }
 
-            TRACE(
+            TRACE!(
                 "ReturnLength: %lu\n\0".as_ptr() as LPCSTR,
                 ReturnLength,
             );
-            TRACE(
+            TRACE!(
                 "TargetLength: %hu\n\0".as_ptr() as LPCSTR,
                 UnicodeString.Length,
             );
-            TRACE(
+            TRACE!(
                 "Target: '%wZ'\n\0".as_ptr() as LPCSTR,
-                &UnicodeString,
+                &mut UnicodeString,
             );
 
             Length = ReturnLength / core::mem::size_of::<WCHAR>() as ULONG;
             /* Make sure we null terminate output buffer */
             if Length == 0 || *lpTargetPath.offset(Length as isize - 1) != 0 {
                 if Length >= ucchMax {
-                    TRACE(
+                    TRACE!(
                         "Buffer is too small\n\0".as_ptr() as LPCSTR,
                     );
                     Status = STATUS_BUFFER_TOO_SMALL;
@@ -741,7 +756,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
         i = 0;
         while i < 3 {
             /* Allocate the query buffer */
-            Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength);
+            Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength as SIZE_T);
             if Buffer.is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 __finally_leave = 1;
@@ -784,8 +799,8 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                     if RtlCompareMemory(
                         &NullEntry as *const OBJECT_DIRECTORY_INFORMATION as *const core::ffi::c_void,
                         DirInfo as *const core::ffi::c_void,
-                        core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>(),
-                    ) == core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>()
+                        core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() as SIZE_T,
+                    ) == core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() as SIZE_T
                     {
                         break;
                     }
@@ -796,7 +811,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                         SYMBOLIC_LINK_W.as_ptr() as LPCWSTR,
                     ) == 0
                     {
-                        TRACE(
+                        TRACE!(
                             "Name: '%wZ'\n\0".as_ptr() as LPCSTR,
                             &(*DirInfo).Name,
                         );
@@ -889,7 +904,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             RtlInitUnicodeString(&mut UnicodeString, GLOBAL_QQ_W.as_ptr() as LPCWSTR);
             InitializeObjectAttributes(
                 &mut ObjectAttributes,
-                &UnicodeString,
+                &mut UnicodeString,
                 OBJ_CASE_INSENSITIVE,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
@@ -897,10 +912,10 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             Status = NtOpenDirectoryObject(
                 &mut DirectoryHandle,
                 DIRECTORY_QUERY,
-                &ObjectAttributes,
+                &mut ObjectAttributes,
             );
             if !NT_SUCCESS(Status) {
-                WARN(
+                WARN!(
                     "NtOpenDirectoryObject() failed (Status %lx)\n\0".as_ptr() as LPCSTR,
                     Status,
                 );
@@ -917,7 +932,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
             while i < 3 {
                 /* If we had no buffer from previous attempt, allocate one */
                 if Buffer.is_null() {
-                    Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength);
+                    Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength as SIZE_T);
                     if Buffer.is_null() {
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         __finally_leave = 1;
@@ -961,8 +976,8 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                         if RtlCompareMemory(
                             &NullEntry as *const OBJECT_DIRECTORY_INFORMATION as *const core::ffi::c_void,
                             DirInfo as *const core::ffi::c_void,
-                            core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>(),
-                        ) == core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>()
+                            core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() as SIZE_T,
+                        ) == core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() as SIZE_T
                         {
                             break;
                         }
@@ -973,7 +988,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                             SYMBOLIC_LINK_W.as_ptr() as LPCWSTR,
                         ) == 0
                         {
-                            TRACE(
+                            TRACE!(
                                 "Name: '%wZ'\n\0".as_ptr() as LPCSTR,
                                 &(*DirInfo).Name,
                             );
@@ -988,7 +1003,7 @@ pub unsafe extern "system" fn QueryDosDeviceW(
                             if FindSymbolicLinkEntry(
                                 (*DirInfo).Name.Buffer,
                                 lpTargetPath,
-                                TotalEntries,
+                                TotalEntries as DWORD,
                                 &mut Found,
                             ) == ERROR_SUCCESS
                                 && Found == 0

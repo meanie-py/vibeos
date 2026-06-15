@@ -1,5 +1,7 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
+use crate::k32_externs::RtlZeroMemory;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -27,7 +29,7 @@ pub unsafe extern "system" fn GetSystemPowerStatus(
 
     RtlZeroMemory(
         PowerStatus as *mut core::ffi::c_void,
-        core::mem::size_of::<SYSTEM_POWER_STATUS>(),
+        core::mem::size_of::<SYSTEM_POWER_STATUS>() as SIZE_T,
     );
 
     (*PowerStatus).BatteryLifeTime = BATTERY_LIFE_UNKNOWN as DWORD;
@@ -49,28 +51,28 @@ pub unsafe extern "system" fn GetSystemPowerStatus(
 
         if ((*PowerStatus).BatteryLifePercent as i32) <= 4 {
             (*PowerStatus).BatteryFlag =
-                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_CRITICAL) as BYTE;
+                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_CRITICAL as i32) as BYTE;
         }
 
         if ((*PowerStatus).BatteryLifePercent as i32) <= 32 {
             (*PowerStatus).BatteryFlag =
-                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_LOW) as BYTE;
+                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_LOW as i32) as BYTE;
         }
 
         if ((*PowerStatus).BatteryLifePercent as i32) >= 67 {
             (*PowerStatus).BatteryFlag =
-                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_HIGH) as BYTE;
+                ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_HIGH as i32) as BYTE;
         }
     }
 
     if BattState.BatteryPresent == 0 {
         (*PowerStatus).BatteryFlag =
-            ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_NO_BATTERY) as BYTE;
+            ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_NO_BATTERY as i32) as BYTE;
     }
 
     if BattState.Charging != 0 {
         (*PowerStatus).BatteryFlag =
-            ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_CHARGING) as BYTE;
+            ((*PowerStatus).BatteryFlag as i32 | BATTERY_FLAG_CHARGING as i32) as BYTE;
     }
 
     if BattState.AcOnLine == 0 && BattState.BatteryPresent != 0 {
@@ -177,7 +179,7 @@ pub unsafe extern "system" fn SetMessageWaitingIndicator(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SetThreadExecutionState(esFlags: EXECUTION_STATE) -> EXECUTION_STATE {
+pub unsafe extern "system" fn SetThreadExecutionState(mut esFlags: EXECUTION_STATE) -> EXECUTION_STATE {
     let mut Status: NTSTATUS = 0;
     Status = NtSetThreadExecutionState(esFlags, &raw mut esFlags);
     if !NT_SUCCESS(Status) {

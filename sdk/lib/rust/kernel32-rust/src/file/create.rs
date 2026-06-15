@@ -1,6 +1,25 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
-use core::ffi::c_void;
+use crate::k32_externs::{InitializeObjectAttributes, SearchPathW};
+
+// ---- no-op Wine debug shims (NDEBUG: TRACE/WARN/ERR/FIXME compile out) ----
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+
+const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
+
+extern "system" {
+    static bIsFileApiAnsi: BOOL;
+    fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
+    fn IntCheckForConsoleFileName(pszName: LPCWSTR, dwDesiredAccess: DWORD) -> LPCWSTR;
+    fn OpenConsoleW(wsName: LPCWSTR, dwDesiredAccess: DWORD, bInheritHandle: BOOL,
+        dwShareMode: DWORD) -> HANDLE;
+    fn GetFullPathNameA(lpFileName: LPCSTR, nBufferLength: DWORD, lpBuffer: LPSTR,
+        lpFilePart: *mut LPSTR) -> DWORD;
+    fn GetDriveTypeA(lpRootPathName: LPCSTR) -> UINT;
+    fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
+    fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL;
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -11,6 +30,7 @@ pub struct _DEBUG_CHANNEL {
     pub name: *const u8,
     pub level: u32,
 }
+unsafe impl Sync for _DEBUG_CHANNEL {}
 
 pub static kernel32file: _DEBUG_CHANNEL = _DEBUG_CHANNEL {
     name: b"kernel32file\0".as_ptr(),
@@ -30,9 +50,9 @@ pub unsafe extern "system" fn CreateFileA(
     let FileNameW: PWCHAR;
     let FileHandle: HANDLE;
 
-    TRACE("CreateFileA(lpFileName %s)\n", lpFileName);
+    TRACE!("CreateFileA(lpFileName %s)\n", lpFileName);
 
-    FileNameW = FilenameA2W(lpFileName, FALSE);
+    FileNameW = FilenameA2W(lpFileName, FALSE as BOOL);
     if FileNameW.is_null() {
         return INVALID_HANDLE_VALUE;
     }
@@ -53,10 +73,10 @@ pub unsafe extern "system" fn CreateFileA(
 #[no_mangle]
 pub unsafe extern "system" fn CreateFileW(
     lpFileName: LPCWSTR,
-    dwDesiredAccess: DWORD,
+    mut dwDesiredAccess: DWORD,
     dwShareMode: DWORD,
     lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
-    dwCreationDisposition: DWORD,
+    mut dwCreationDisposition: DWORD,
     dwFlagsAndAttributes: DWORD,
     hTemplateFile: HANDLE,
 ) -> HANDLE {
@@ -77,7 +97,7 @@ pub unsafe extern "system" fn CreateFileW(
         return INVALID_HANDLE_VALUE;
     }
 
-    TRACE(b"CreateFileW(lpFileName %S)\n\0" as *const u8 as LPCSTR, lpFileName);
+    TRACE!(b"CreateFileW(lpFileName %S)\n\0" as *const u8 as LPCSTR, lpFileName);
 
     match dwCreationDisposition {
         1 => { dwCreationDisposition = FILE_CREATE; }
@@ -164,12 +184,12 @@ pub unsafe extern "system" fn CreateFileW(
         core::ptr::null_mut(),
     ) == 0
     {
-        WARN(b"Invalid path\n\0" as *const u8 as LPCSTR);
+        WARN!(b"Invalid path\n\0" as *const u8 as LPCSTR);
         SetLastError(ERROR_FILE_NOT_FOUND);
         return INVALID_HANDLE_VALUE;
     }
 
-    TRACE(b"NtPathU '%wZ'\n\0" as *const u8 as LPCSTR, &NtPathU);
+    TRACE!(b"NtPathU '%wZ'\n\0" as *const u8 as LPCSTR, &NtPathU);
 
     TrailingBackslash = 0;
     if NtPathU.Length as usize >= core::mem::size_of::<WCHAR>()
@@ -196,7 +216,7 @@ pub unsafe extern "system" fn CreateFileW(
                 EaBuffer = RtlAllocateHeap(
                     RtlGetProcessHeap(),
                     0,
-                    EaInformation.EaSize,
+                    EaInformation.EaSize as SIZE_T,
                 );
 
                 if EaBuffer.is_null() {
@@ -244,7 +264,7 @@ pub unsafe extern "system" fn CreateFileW(
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &NtPathU,
+        &mut NtPathU,
         0,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -325,7 +345,7 @@ pub unsafe extern "system" fn CreateFileW(
 
 #[no_mangle]
 pub unsafe extern "system" fn OpenFile(
-    lpFileName: LPCSTR,
+    mut lpFileName: LPCSTR,
     lpReOpenBuff: LPOFSTRUCT,
     uStyle: UINT,
 ) -> HFILE {
@@ -334,13 +354,13 @@ pub unsafe extern "system" fn OpenFile(
     let mut FileNameString: _UNICODE_STRING = core::mem::zeroed();
     let mut FileNameU: _UNICODE_STRING = core::mem::zeroed();
     let mut FileName: ANSI_STRING = core::mem::zeroed();
-    let mut PathNameW: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut PathNameW: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut FileHandle: HANDLE = core::ptr::null_mut();
     let mut errCode: NTSTATUS = 0;
     let mut FilePart: PWCHAR = core::ptr::null_mut();
     let mut Len: ULONG = 0;
 
-    TRACE(
+    TRACE!(
         b"OpenFile('%s', lpReOpenBuff %p, uStyle %x)\n\0".as_ptr() as LPCSTR,
         lpFileName,
         lpReOpenBuff,
@@ -376,7 +396,7 @@ pub unsafe extern "system" fn OpenFile(
         (*lpReOpenBuff).fFixedDisk = (GetDriveTypeA(
             (*lpReOpenBuff).szPathName.as_ptr() as LPCSTR,
         ) != DRIVE_REMOVABLE) as BYTE;
-        TRACE(
+        TRACE!(
             b"(%s): OF_PARSE, res = '%s'\n\0".as_ptr() as LPCSTR,
             lpFileName,
             (*lpReOpenBuff).szPathName.as_ptr() as LPCSTR,
@@ -439,9 +459,9 @@ pub unsafe extern "system" fn OpenFile(
     RtlInitAnsiString(&mut FileName, lpFileName as LPSTR);
 
     if bIsFileApiAnsi != 0 {
-        RtlAnsiStringToUnicodeString(&mut FileNameU, &FileName, TRUE);
+        RtlAnsiStringToUnicodeString(&mut FileNameU, &mut FileName, TRUE as BOOLEAN);
     } else {
-        RtlOemStringToUnicodeString(&mut FileNameU, &FileName, TRUE);
+        RtlOemStringToUnicodeString(&mut FileNameU, &mut FileName, TRUE as BOOLEAN);
     }
 
     Len = SearchPathW(
@@ -465,11 +485,11 @@ pub unsafe extern "system" fn OpenFile(
             (*lpReOpenBuff).nErrCode = GetLastError() as WORD;
             return HFILE_ERROR;
         }
-        TRACE(
+        TRACE!(
             b"(%s): OF_DELETE return = OK\n\0".as_ptr() as LPCSTR,
             lpFileName,
         );
-        return TRUE;
+        return TRUE as HFILE;
     }
 
     FileName.Buffer = (*lpReOpenBuff).szPathName.as_mut_ptr();
@@ -479,9 +499,9 @@ pub unsafe extern "system" fn OpenFile(
     RtlInitUnicodeString(&mut FileNameU, PathNameW.as_ptr());
 
     if bIsFileApiAnsi != 0 {
-        RtlUnicodeStringToAnsiString(&mut FileName, &FileNameU, FALSE);
+        RtlUnicodeStringToAnsiString(&mut FileName, &mut FileNameU, FALSE as BOOLEAN);
     } else {
-        RtlUnicodeStringToOemString(&mut FileName, &FileNameU, FALSE);
+        RtlUnicodeStringToOemString(&mut FileName, &mut FileNameU, FALSE as BOOLEAN);
     }
 
     if RtlDosPathNameToNtPathName_U(
@@ -504,7 +524,7 @@ pub unsafe extern "system" fn OpenFile(
     errCode = NtOpenFile(
         &mut FileHandle,
         GENERIC_READ | SYNCHRONIZE,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         &mut IoStatusBlock,
         FILE_SHARE_READ,
         FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
@@ -623,7 +643,7 @@ pub unsafe extern "system" fn ReOpenFile(
 //    PWCHAR FileNameW;
 //    HANDLE FileHandle;
 //
-//    TRACE("CreateFileA(lpFileName %s)\n",lpFileName);
+//    TRACE!("CreateFileA(lpFileName %s)\n",lpFileName);
 //
 //    if (!(FileNameW = FilenameA2W(lpFileName, FALSE)))
 //       return INVALID_HANDLE_VALUE;
@@ -668,7 +688,7 @@ pub unsafe extern "system" fn ReOpenFile(
 //        return INVALID_HANDLE_VALUE;
 //    }
 //
-//    TRACE("CreateFileW(lpFileName %S)\n",lpFileName);
+//    TRACE!("CreateFileW(lpFileName %S)\n",lpFileName);
 //
 //    /* validate & translate the creation disposition */
 //    switch (dwCreationDisposition)
@@ -771,12 +791,12 @@ pub unsafe extern "system" fn ReOpenFile(
 // 				      NULL,
 // 				      NULL))
 //    {
-//      WARN("Invalid path\n");
+//      WARN!("Invalid path\n");
 //      SetLastError(ERROR_FILE_NOT_FOUND);
 //      return INVALID_HANDLE_VALUE;
 //    }
 //
-//    TRACE("NtPathU \'%wZ\'\n", &NtPathU);
+//    TRACE!("NtPathU \'%wZ\'\n", &NtPathU);
 //
 //    TrailingBackslash = FALSE;
 //    if (NtPathU.Length >= sizeof(WCHAR) &&
@@ -966,7 +986,7 @@ pub unsafe extern "system" fn ReOpenFile(
 // 	PWCHAR FilePart;
 // 	ULONG Len;
 //
-// 	TRACE("OpenFile('%s', lpReOpenBuff %p, uStyle %x)\n", lpFileName, lpReOpenBuff, uStyle);
+// 	TRACE!("OpenFile('%s', lpReOpenBuff %p, uStyle %x)\n", lpFileName, lpReOpenBuff, uStyle);
 //
 // 	if (lpReOpenBuff == NULL)
 // 	{
@@ -994,7 +1014,7 @@ pub unsafe extern "system" fn ReOpenFile(
 //     if (uStyle & OF_PARSE)
 //     {
 //         lpReOpenBuff->fFixedDisk = (GetDriveTypeA(lpReOpenBuff->szPathName) != DRIVE_REMOVABLE);
-//         TRACE("(%s): OF_PARSE, res = '%s'\n", lpFileName, lpReOpenBuff->szPathName);
+//         TRACE!("(%s): OF_PARSE, res = '%s'\n", lpFileName, lpReOpenBuff->szPathName);
 //         return 0;
 //     }
 //
@@ -1072,7 +1092,7 @@ pub unsafe extern "system" fn ReOpenFile(
 // 			lpReOpenBuff->nErrCode = (WORD)GetLastError();
 // 			return HFILE_ERROR;
 // 		}
-//         TRACE("(%s): OF_DELETE return = OK\n", lpFileName);
+//         TRACE!("(%s): OF_DELETE return = OK\n", lpFileName);
 //         return TRUE;
 //     }
 //

@@ -1,16 +1,39 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::k32_externs::{RtlCopyMemory, RtlZeroMemory, InitializeObjectAttributes};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
+#[derive(PartialEq)]
 pub enum _FIND_DATA_TYPE {
     FindFile = 1,
     FindStream = 2,
 }
 pub type FIND_DATA_TYPE = _FIND_DATA_TYPE;
+use _FIND_DATA_TYPE::{FindFile, FindStream};
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
+    fn BasepUnicodeStringTo8BitString(
+        DestinationString: PANSI_STRING,
+        SourceString: PCUNICODE_STRING,
+        AllocateDestinationString: BOOLEAN,
+    ) -> NTSTATUS;
+}
+
+// RtlStringCbCopyNW — ntstrsafe (cdecl/NTAPI). Faithful signature from strsafe.h.
+extern "system" {
+    fn RtlStringCbCopyNW(
+        pszDest: PWSTR,
+        cbDest: usize,
+        pszSrc: PCWSTR,
+        cbToCopy: usize,
+    ) -> NTSTATUS;
+}
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub union _DIR_INFORMATION {
     pub DirInfo: PVOID,
     pub FullDirInfo: PFILE_FULL_DIR_INFORMATION,
@@ -70,13 +93,13 @@ unsafe fn CopyDeviceFindData(
         DeviceName = ((lpFileName as ULONG_PTR) + ((DeviceNameInfo >> 16) & 0xFFFF) as ULONG_PTR) as LPCWSTR;
 
         /* Return the data */
-        RtlZeroMemory(lpFindFileData as *mut _, core::mem::size_of::<WIN32_FIND_DATAW>());
+        RtlZeroMemory(lpFindFileData as *mut _, core::mem::size_of::<WIN32_FIND_DATAW>() as SIZE_T);
         (*lpFindFileData).dwFileAttributes = FILE_ATTRIBUTE_ARCHIVE;
         RtlStringCbCopyNW(
             (*lpFindFileData).cFileName.as_mut_ptr(),
             core::mem::size_of_val(&(*lpFindFileData).cFileName),
             DeviceName,
-            Length,
+            Length as usize,
         );
     }
     // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -95,8 +118,8 @@ unsafe fn CopyFindData(
     // ULARGE_INTEGER_2_FILETIME macro expanded inline
     macro_rules! ULARGE_INTEGER_2_FILETIME {
         ($ft:expr, $ul:expr) => {
-            ($ft).dwHighDateTime = ($ul).u.__bindgen_anon_1.HighPart;
-            ($ft).dwLowDateTime = ($ul).u.__bindgen_anon_1.LowPart;
+            ($ft).dwHighDateTime = ($ul).u.HighPart as DWORD;
+            ($ft).dwLowDateTime = ($ul).u.LowPart;
         };
     }
 
@@ -104,7 +127,7 @@ unsafe fn CopyFindData(
     {
         RtlZeroMemory(
             lpFindFileData as *mut _,
-            core::mem::size_of::<WIN32_FIND_DATAW>(),
+            core::mem::size_of::<WIN32_FIND_DATAW>() as SIZE_T,
         );
 
         (*lpFindFileData).dwFileAttributes = (*DirInfo.FullDirInfo).FileAttributes;
@@ -122,8 +145,8 @@ unsafe fn CopyFindData(
             (*DirInfo.FullDirInfo).LastWriteTime
         );
 
-        (*lpFindFileData).nFileSizeHigh = (*DirInfo.FullDirInfo).EndOfFile.u.__bindgen_anon_1.HighPart;
-        (*lpFindFileData).nFileSizeLow = (*DirInfo.FullDirInfo).EndOfFile.u.__bindgen_anon_1.LowPart;
+        (*lpFindFileData).nFileSizeHigh = (*DirInfo.FullDirInfo).EndOfFile.u.HighPart as DWORD;
+        (*lpFindFileData).nFileSizeLow = (*DirInfo.FullDirInfo).EndOfFile.u.LowPart;
 
         if (*DirInfo.FullDirInfo).FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             (*lpFindFileData).dwReserved0 = (*DirInfo.FullDirInfo).EaSize;
@@ -138,21 +161,21 @@ unsafe fn CopyFindData(
                 (*lpFindFileData).cFileName.as_mut_ptr(),
                 core::mem::size_of_val(&(*lpFindFileData).cFileName),
                 (*DirInfo.BothDirInfo).FileName.as_ptr(),
-                (*DirInfo.BothDirInfo).FileNameLength,
+                (*DirInfo.BothDirInfo).FileNameLength as usize,
             );
 
             RtlStringCbCopyNW(
                 (*lpFindFileData).cAlternateFileName.as_mut_ptr(),
                 core::mem::size_of_val(&(*lpFindFileData).cAlternateFileName),
                 (*DirInfo.BothDirInfo).ShortName.as_ptr(),
-                (*DirInfo.BothDirInfo).ShortNameLength,
+                (*DirInfo.BothDirInfo).ShortNameLength as usize,
             );
         } else if fInfoLevelId == FindExInfoBasic {
             RtlStringCbCopyNW(
                 (*lpFindFileData).cFileName.as_mut_ptr(),
                 core::mem::size_of_val(&(*lpFindFileData).cFileName),
                 (*DirInfo.FullDirInfo).FileName.as_ptr(),
-                (*DirInfo.FullDirInfo).FileNameLength,
+                (*DirInfo.FullDirInfo).FileNameLength as usize,
             );
 
             (*lpFindFileData).cAlternateFileName[0] = 0u16; // UNICODE_NULL
@@ -178,7 +201,7 @@ unsafe fn CopyStreamData(
 
                 RtlZeroMemory(
                     lpFindStreamData as *mut _,
-                    core::mem::size_of::<WIN32_FIND_STREAM_DATA>(),
+                    core::mem::size_of::<WIN32_FIND_STREAM_DATA>() as SIZE_T,
                 );
 
                 (*lpFindStreamData).StreamSize.QuadPart =
@@ -186,7 +209,7 @@ unsafe fn CopyStreamData(
                 RtlCopyMemory(
                     (*lpFindStreamData).cStreamName.as_mut_ptr() as *mut _,
                     (*FindStreamData).CurrentInfo.as_ref().unwrap().StreamName.as_ptr() as *const _,
-                    StreamNameLen as usize,
+                    StreamNameLen as SIZE_T,
                 );
                 (*lpFindStreamData).cStreamName[(StreamNameLen / core::mem::size_of::<WCHAR>() as ULONG) as usize] = UNICODE_NULL;
             }
@@ -209,11 +232,11 @@ pub unsafe extern "system" fn FindFirstFileA(
     lpFindFileData: LPWIN32_FIND_DATAA,
 ) -> HANDLE {
     let hSearch: HANDLE;
-    let Status: NTSTATUS;
-    let Ansi: ANSI_STRING;
-    let UTF8: _UNICODE_STRING;
+    let mut Status: NTSTATUS;
+    let mut Ansi: ANSI_STRING = core::mem::zeroed();
+    let mut UTF8: _UNICODE_STRING = core::mem::zeroed();
     let lpFileNameW: PUNICODE_STRING;
-    let FindFileDataW: WIN32_FIND_DATAW;
+    let mut FindFileDataW: WIN32_FIND_DATAW = core::mem::zeroed();
 
     lpFileNameW = Basep8BitStringToStaticUnicodeString(lpFileName);
     if lpFileNameW.is_null() {
@@ -235,7 +258,7 @@ pub unsafe extern "system" fn FindFirstFileA(
     RtlCopyMemory(
         lpFindFileData as *mut c_void,
         &FindFileDataW as *const WIN32_FIND_DATAW as *const c_void,
-        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as usize,
+        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as SIZE_T,
     );
 
     RtlInitUnicodeString(&mut UTF8, FindFileDataW.cFileName.as_ptr());
@@ -284,9 +307,9 @@ pub unsafe extern "system" fn FindNextFileA(
     lpFindFileData: LPWIN32_FIND_DATAA,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut Ansi: ANSI_STRING;
-    let mut UTF8: _UNICODE_STRING;
-    let mut FindFileDataW: WIN32_FIND_DATAW;
+    let mut Ansi: ANSI_STRING = core::mem::zeroed();
+    let mut UTF8: _UNICODE_STRING = core::mem::zeroed();
+    let mut FindFileDataW: WIN32_FIND_DATAW = core::mem::zeroed();
 
     if FindNextFileW(hFindFile, &mut FindFileDataW) == 0 {
         return 0;
@@ -295,25 +318,25 @@ pub unsafe extern "system" fn FindNextFileA(
     RtlCopyMemory(
         lpFindFileData as *mut core::ffi::c_void,
         &FindFileDataW as *const WIN32_FIND_DATAW as *const core::ffi::c_void,
-        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as usize,
+        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as SIZE_T,
     );
 
     RtlInitUnicodeString(&mut UTF8, FindFileDataW.cFileName.as_ptr());
-    Ansi.Buffer = lpFindFileData.cFileName.as_mut_ptr();
+    Ansi.Buffer = (*lpFindFileData).cFileName.as_mut_ptr();
     Ansi.Length = 0;
     Ansi.MaximumLength = core::mem::size_of::<[u8; 260]>() as u16; // sizeof(lpFindFileData->cFileName)
     Status = BasepUnicodeStringTo8BitString(&mut Ansi, &UTF8, 0);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         return 0;
     }
 
     RtlInitUnicodeString(&mut UTF8, FindFileDataW.cAlternateFileName.as_ptr());
-    Ansi.Buffer = lpFindFileData.cAlternateFileName.as_mut_ptr();
+    Ansi.Buffer = (*lpFindFileData).cAlternateFileName.as_mut_ptr();
     Ansi.Length = 0;
     Ansi.MaximumLength = core::mem::size_of::<[u8; 14]>() as u16; // sizeof(lpFindFileData->cAlternateFileName)
     Status = BasepUnicodeStringTo8BitString(&mut Ansi, &UTF8, 0);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         return 0;
     }
@@ -335,7 +358,7 @@ pub unsafe extern "system" fn FindNextFileW(
         let FindDataHandle: PFIND_DATA_HANDLE = hFindFile as PFIND_DATA_HANDLE;
         let FindFileData: PFIND_FILE_DATA;
         let InfoLevel: FINDEX_INFO_LEVELS;
-        let IoStatusBlock: _IO_STATUS_BLOCK;
+        let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
         let mut DirInfo: DIR_INFORMATION = DIR_INFORMATION { DirInfo: core::ptr::null_mut() };
         let mut NextDirInfo: DIR_INFORMATION = DIR_INFORMATION { DirInfo: core::ptr::null_mut() };
 
@@ -358,10 +381,10 @@ pub unsafe extern "system" fn FindNextFileW(
                     (*FindFileData).Handle,
                     core::ptr::null_mut(),
                     None,
-                    None,
+                    core::ptr::null_mut(),
                     &mut IoStatusBlock,
                     (*FindFileData).Buffer.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&(*FindFileData).Buffer),
+                    core::mem::size_of_val(&(*FindFileData).Buffer) as ULONG,
                     if InfoLevel == FindExInfoStandard {
                         FileBothDirectoryInformation
                     } else {
@@ -372,13 +395,13 @@ pub unsafe extern "system" fn FindNextFileW(
                     0,
                 );
                 if Status == STATUS_BUFFER_OVERFLOW {
-                    (*FindFileData).HasMoreData = 1i8;
+                    (*FindFileData).HasMoreData = 1u8;
                     Status = STATUS_SUCCESS;
                 } else {
                     if !NT_SUCCESS(Status) {
                         break;
                     }
-                    (*FindFileData).HasMoreData = 0i8;
+                    (*FindFileData).HasMoreData = 0u8;
                 }
 
                 (*FindFileData).NextDirInfo.DirInfo = (*FindFileData).Buffer.as_mut_ptr() as *mut core::ffi::c_void;
@@ -453,6 +476,7 @@ pub unsafe extern "system" fn FindNextFileW(
     return 1;
 }
 #[no_mangle]
+#[allow(unreachable_patterns)] // faithful to C: defensive `default:` arm on FindDataHandle->Type
 pub unsafe extern "system" fn FindClose(hFindFile: HANDLE) -> BOOL {
     // TRACE("FindClose(hFindFile %p)\n", hFindFile);
 
@@ -467,7 +491,7 @@ pub unsafe extern "system" fn FindClose(hFindFile: HANDLE) -> BOOL {
 
     /* Protect with SEH against closing attempts on invalid handles. */
     let mut __try_result: i32 = 0;
-    let mut __except_code: u32 = 0;
+    let mut __except_code: NTSTATUS = 0;
     let mut __try_entered: bool = false;
     let mut __except_entered: bool = false;
 
@@ -486,11 +510,11 @@ pub unsafe extern "system" fn FindClose(hFindFile: HANDLE) -> BOOL {
 
             FindStream => {
                 RtlEnterCriticalSection(&mut (*FindDataHandle).Lock);
-                if !(*FindDataHandle).u.FindStreamData.FileStreamInfo.is_null() {
+                if !(*(*FindDataHandle).u.FindStreamData).FileStreamInfo.is_null() {
                     RtlFreeHeap(
                         RtlGetProcessHeap(),
                         0,
-                        (*FindDataHandle).u.FindStreamData.FileStreamInfo as PVOID,
+                        (*(*FindDataHandle).u.FindStreamData).FileStreamInfo as PVOID,
                     );
                 }
                 RtlLeaveCriticalSection(&mut (*FindDataHandle).Lock);
@@ -535,11 +559,11 @@ pub unsafe extern "system" fn FindFirstFileExA(
     dwAdditionalFlags: DWORD,
 ) -> HANDLE {
     let hSearch: HANDLE;
-    let Status: NTSTATUS;
-    let Ansi: ANSI_STRING;
-    let UTF8: _UNICODE_STRING;
+    let mut Status: NTSTATUS;
+    let mut Ansi: ANSI_STRING = core::mem::zeroed();
+    let mut UTF8: _UNICODE_STRING = core::mem::zeroed();
     let lpFileNameW: PUNICODE_STRING;
-    let FindFileDataW: WIN32_FIND_DATAW;
+    let mut FindFileDataW: WIN32_FIND_DATAW = core::mem::zeroed();
     let lpFindFileDataA: LPWIN32_FIND_DATAA = lpFindFileData as LPWIN32_FIND_DATAA;
 
     if (fInfoLevelId != FindExInfoStandard && fInfoLevelId != FindExInfoBasic)
@@ -576,11 +600,11 @@ pub unsafe extern "system" fn FindFirstFileExA(
     RtlCopyMemory(
         lpFindFileDataA as *mut core::ffi::c_void,
         &FindFileDataW as *const WIN32_FIND_DATAW as *const core::ffi::c_void,
-        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as usize,
+        core::mem::offset_of!(WIN32_FIND_DATAA, cFileName) as SIZE_T,
     );
 
     RtlInitUnicodeString(&mut UTF8, FindFileDataW.cFileName.as_ptr());
-    Ansi.Buffer = lpFindFileDataA.cFileName.as_mut_ptr();
+    Ansi.Buffer = (*lpFindFileDataA).cFileName.as_mut_ptr();
     Ansi.Length = 0;
     Ansi.MaximumLength = core::mem::size_of::<[CHAR; 260]>() as u16;
     Status = BasepUnicodeStringTo8BitString(&mut Ansi, &UTF8, 0);
@@ -592,7 +616,7 @@ pub unsafe extern "system" fn FindFirstFileExA(
 
     if fInfoLevelId != FindExInfoBasic {
         RtlInitUnicodeString(&mut UTF8, FindFileDataW.cAlternateFileName.as_ptr());
-        Ansi.Buffer = lpFindFileDataA.cAlternateFileName.as_mut_ptr();
+        Ansi.Buffer = (*lpFindFileDataA).cAlternateFileName.as_mut_ptr();
         Ansi.Length = 0;
         Ansi.MaximumLength = core::mem::size_of::<[CHAR; 14]>() as u16;
         Status = BasepUnicodeStringTo8BitString(&mut Ansi, &UTF8, 0);
@@ -602,7 +626,7 @@ pub unsafe extern "system" fn FindFirstFileExA(
             return INVALID_HANDLE_VALUE;
         }
     } else {
-        lpFindFileDataA.cAlternateFileName[0] = 0i8;
+        (*lpFindFileDataA).cAlternateFileName[0] = 0i8;
     }
 
     hSearch
@@ -637,16 +661,16 @@ pub unsafe extern "system" fn FindFirstFileExW(
         let FindDataHandle: PFIND_DATA_HANDLE;
         let FindFileData: PFIND_FILE_DATA;
 
-        let mut NtPath: _UNICODE_STRING;
-        let mut FilePattern: _UNICODE_STRING;
-        let mut FileName: _UNICODE_STRING;
+        let mut NtPath: _UNICODE_STRING = core::mem::zeroed();
+        let mut FilePattern: _UNICODE_STRING = core::mem::zeroed();
+        let mut FileName: _UNICODE_STRING = core::mem::zeroed();
         let NtPathBuffer: PWSTR;
-        let mut RelativePath: RTL_RELATIVE_NAME_U;
+        let mut RelativePath: RTL_RELATIVE_NAME_U = core::mem::zeroed();
         let mut DeviceNameInfo: ULONG = 0;
 
         let mut Status: NTSTATUS;
-        let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-        let mut IoStatusBlock: _IO_STATUS_BLOCK;
+        let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+        let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
         let mut hDirectory: HANDLE = core::ptr::null_mut();
 
         let mut HadADot: BOOLEAN = 0;
@@ -666,7 +690,7 @@ pub unsafe extern "system" fn FindFirstFileExW(
         if RtlDosPathNameToNtPathName_U(
             lpFileName,
             &mut NtPath,
-            &mut (FilePattern.Buffer as *mut PCWSTR as *mut PWSTR),
+            &mut FilePattern.Buffer as *mut PWSTR as *mut PCWSTR,
             &mut RelativePath,
         ) == 0
         {
@@ -705,17 +729,19 @@ pub unsafe extern "system" fn FindFirstFileExW(
             && RelativePath.RelativeName.Buffer != FilePattern.Buffer
         {
             if !FilePattern.Buffer.is_null() {
-                NtPath.Length = NtPath.MaximumLength = ((FilePattern.Buffer as ULONG_PTR)
+                NtPath.MaximumLength = ((FilePattern.Buffer as ULONG_PTR)
                     .wrapping_sub(RelativePath.RelativeName.Buffer as ULONG_PTR))
                     as USHORT;
+                NtPath.Length = NtPath.MaximumLength;
                 NtPath.Buffer = RelativePath.RelativeName.Buffer;
             }
         } else {
             RelativePath.ContainingDirectory = core::ptr::null_mut();
             if !FilePattern.Buffer.is_null() {
-                NtPath.Length = NtPath.MaximumLength = ((FilePattern.Buffer as ULONG_PTR)
+                NtPath.MaximumLength = ((FilePattern.Buffer as ULONG_PTR)
                     .wrapping_sub(NtPath.Buffer as ULONG_PTR))
                     as USHORT;
+                NtPath.Length = NtPath.MaximumLength;
             }
         }
 
@@ -725,7 +751,7 @@ pub unsafe extern "system" fn FindFirstFileExW(
 
         InitializeObjectAttributes(
             &mut ObjectAttributes,
-            &NtPath,
+            &mut NtPath,
             if (dwAdditionalFlags & FIND_FIRST_EX_CASE_SENSITIVE) != 0 {
                 0
             } else {
@@ -738,13 +764,13 @@ pub unsafe extern "system" fn FindFirstFileExW(
         Status = NtOpenFile(
             &mut hDirectory,
             FILE_LIST_DIRECTORY | SYNCHRONIZE,
-            &ObjectAttributes,
+            &mut ObjectAttributes,
             &mut IoStatusBlock,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
         );
 
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             RtlReleaseRelativeName(&mut RelativePath);
             RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathBuffer as PVOID);
 
@@ -823,7 +849,7 @@ pub unsafe extern "system" fn FindFirstFileExW(
             hDirectory,
             core::ptr::null_mut(),
             None,
-            None,
+            core::ptr::null_mut(),
             &mut IoStatusBlock,
             DirInfo.DirInfo,
             core::mem::size_of_val(&DirectoryInfo) as ULONG,
@@ -833,14 +859,14 @@ pub unsafe extern "system" fn FindFirstFileExW(
                 FileFullDirectoryInformation
             },
             1,
-            &FilePattern,
+            &mut FilePattern,
             1,
         );
 
         RtlReleaseRelativeName(&mut RelativePath);
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathBuffer as PVOID);
 
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             NtClose(hDirectory);
             BaseSetLastNTError(Status);
             return INVALID_HANDLE_VALUE;
@@ -853,7 +879,7 @@ pub unsafe extern "system" fn FindFirstFileExW(
         FindDataHandle = RtlAllocateHeap(
             RtlGetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            (core::mem::size_of::<FIND_DATA_HANDLE>() + core::mem::size_of::<FIND_FILE_DATA>()) as ULONG,
+            (core::mem::size_of::<FIND_DATA_HANDLE>() + core::mem::size_of::<FIND_FILE_DATA>()) as SIZE_T,
         ) as PFIND_DATA_HANDLE;
         if FindDataHandle.is_null() {
             NtClose(hDirectory);
@@ -873,7 +899,7 @@ pub unsafe extern "system" fn FindFirstFileExW(
         (*FindFileData).NextDirInfo.DirInfo = core::ptr::null_mut();
 
         Status = RtlInitializeCriticalSection(&mut (*FindDataHandle).Lock);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             NtClose(hDirectory);
             RtlFreeHeap(RtlGetProcessHeap(), 0, FindDataHandle as PVOID);
 
@@ -897,9 +923,9 @@ pub unsafe extern "system" fn FindFirstStreamW(
 ) -> HANDLE {
     let mut FindDataHandle: *mut FIND_DATA_HANDLE = core::ptr::null_mut();
     let FindStreamData: *mut FIND_STREAM_DATA;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut NtFilePath: _UNICODE_STRING;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut NtFilePath: _UNICODE_STRING = core::mem::zeroed();
     let mut FileHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut BufferSize: ULONG = 0;
@@ -943,7 +969,7 @@ pub unsafe extern "system" fn FindFirstStreamW(
     FindDataHandle = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<FIND_DATA_HANDLE>() + core::mem::size_of::<FIND_STREAM_DATA>(),
+        (core::mem::size_of::<FIND_DATA_HANDLE>() + core::mem::size_of::<FIND_STREAM_DATA>()) as SIZE_T,
     ) as *mut FIND_DATA_HANDLE;
     if FindDataHandle.is_null() {
         Status = STATUS_NO_MEMORY;
@@ -971,7 +997,7 @@ pub unsafe extern "system" fn FindFirstStreamW(
             (*FindStreamData).FileStreamInfo = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                BufferSize as usize,
+                BufferSize as SIZE_T,
             ) as *mut FILE_STREAM_INFORMATION;
             if (*FindStreamData).FileStreamInfo.is_null() {
                 Status = STATUS_NO_MEMORY;
@@ -984,7 +1010,7 @@ pub unsafe extern "system" fn FindFirstStreamW(
                 RtlGetProcessHeap(),
                 0,
                 (*FindStreamData).FileStreamInfo as *mut _,
-                BufferSize as usize,
+                BufferSize as SIZE_T,
             ) as *mut FILE_STREAM_INFORMATION;
             if pfsi.is_null() {
                 Status = STATUS_NO_MEMORY;

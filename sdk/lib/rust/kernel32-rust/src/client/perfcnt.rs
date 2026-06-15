@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

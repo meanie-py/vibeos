@@ -1,6 +1,26 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
+use crate::string::nls_subst::MAKELANGID;
 use core::ffi::c_void;
+
+// kernel32.h local struct: _BASEP_ACTCTX_BLOCK
+#[repr(C)]
+pub struct BASEP_ACTCTX_BLOCK {
+    pub Flags: ULONG,
+    pub ActivationContext: PVOID,
+    pub CompletionContext: PVOID,
+    pub CompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
+}
+pub type PBASEP_ACTCTX_BLOCK = *mut BASEP_ACTCTX_BLOCK;
+
+// winuser.h / winnt.h
+pub const RT_MANIFEST: ULONG = 24;
+pub const ISOLATIONAWARE_MANIFEST_RESOURCE_ID: ULONG = 2;
+
+// ntstatus.h
+pub const STATUS_SXS_INVALID_ACTCTXDATA_FORMAT: NTSTATUS = 0xC0150003u32 as NTSTATUS;
+pub const STATUS_RESOURCE_DATA_NOT_FOUND: NTSTATUS = 0xC0000089u32 as NTSTATUS;
 
 // ---- file-scope preamble (translated) ----
 pub const QUERY_ACTCTX_FLAG_VALID: u32 = QUERY_ACTCTX_FLAG_USE_ACTIVE_ACTCTX |
@@ -29,7 +49,7 @@ pub unsafe extern "system" fn BasepAllocateActivationContextActivationBlock(
     ActivationBlock: *mut PBASEP_ACTCTX_BLOCK,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ContextInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION;
+    let mut ContextInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Clear the info structure */
     ContextInfo.dwFlags = 0;
@@ -88,7 +108,7 @@ pub unsafe extern "system" fn BasepAllocateActivationContextActivationBlock(
                     if (Flags & 1) != 0 {
                         (**ActivationBlock).Flags |= 1;
                     }
-                    (**ActivationBlock).CompletionRoutine = CompletionRoutine;
+                    (**ActivationBlock).CompletionRoutine = core::mem::transmute::<PVOID, LPOVERLAPPED_COMPLETION_ROUTINE>(CompletionRoutine);
                     (**ActivationBlock).CompletionContext = CompletionContext;
 
                     /* Tell Quickie below not to free anything, since this is success */
@@ -143,7 +163,7 @@ pub unsafe extern "system" fn BasepProbeForDllManifest(
 
         Status = RtlCreateActivationContext(
             0,
-            &mut Context as *mut ACTCTXW as PVOID,
+            &mut Context as *mut ACTCTXW as PACTIVATION_CONTEXT_DATA,
             0,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -267,7 +287,7 @@ pub unsafe extern "system" fn GetCurrentActCtx(phActCtx: PHANDLE) -> BOOL {
 
 #[no_mangle]
 pub unsafe extern "system" fn QueryActCtxW(
-    dwFlags: DWORD,
+    mut dwFlags: DWORD,
     hActCtx: HANDLE,
     pvSubInstance: PVOID,
     ulInfoClass: ULONG,

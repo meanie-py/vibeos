@@ -3,228 +3,138 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// All NT/Win32 record types (LIST_ENTRY, UNICODE_STRING, ANSI_STRING,
+// LDR_DATA_TABLE_ENTRY, PEB/TEB, PROCESS_INFORMATION, IMAGE_NT_HEADERS, FARPROC,
+// the integer typedefs) come from the bindgen `ntdll_sys::nt::*` glob so the
+// Rtl*/Ldr*/Nt* calls bind against the real C layouts. Only the symbols the C
+// file references that bindgen does NOT provide are declared here.
+
+// STATUS_* codes missing from ntdll-sys (ntstatus.h cast-macros not bindgen-able).
+pub const STATUS_INVALID_IMAGE_FORMAT: NTSTATUS = 0xC000007Bu32 as NTSTATUS;
+pub const STATUS_DLL_NOT_FOUND: NTSTATUS = 0xC0000135u32 as NTSTATUS;
+pub const STATUS_ORDINAL_NOT_FOUND: NTSTATUS = 0xC0000138u32 as NTSTATUS;
+pub const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC0000139u32 as NTSTATUS;
+
+// kernel32.h: BasepGetModuleHandleExParameterValidation return codes.
+pub const BASEP_GET_MODULE_HANDLE_EX_PARAMETER_VALIDATION_ERROR: DWORD = 1;
+pub const BASEP_GET_MODULE_HANDLE_EX_PARAMETER_VALIDATION_SUCCESS: DWORD = 2;
+pub const BASEP_GET_MODULE_HANDLE_EX_PARAMETER_VALIDATION_CONTINUE: DWORD = 3;
+
+// kernel32.h: tagLOADPARMS32 (LoadModule parameter block).
 #[repr(C)]
-pub struct _LIST_ENTRY {
-    pub Flink: *mut _LIST_ENTRY,
-    pub Blink: *mut _LIST_ENTRY,
+pub struct LOADPARMS32 {
+    pub lpEnvAddress: LPSTR,
+    pub lpCmdLine: LPSTR,
+    pub wMagicValue: WORD,
+    pub wCmdShow: WORD,
+    pub dwReserved: DWORD,
 }
 
-pub type PLIST_ENTRY = *mut _LIST_ENTRY;
-
-#[repr(C)]
-pub struct _UNICODE_STRING {
-    pub Length: u16,
-    pub MaximumLength: u16,
-    pub Buffer: PWSTR,
+// ldrtypes.h: LDR_IS_DATAFILE(handle) = ((ULONG_PTR)handle) & 1
+#[inline]
+pub fn LDR_IS_DATAFILE<T>(handle: *mut T) -> ULONG_PTR {
+    (handle as ULONG_PTR) & 1
 }
 
-pub type PUNICODE_STRING = *mut _UNICODE_STRING;
-
-#[repr(C)]
-pub struct _ANSI_STRING {
-    pub Length: u16,
-    pub MaximumLength: u16,
-    pub Buffer: LPSTR,
+// CONTAINING_RECORD(addr, type, field): recover the struct base from a member ptr.
+macro_rules! CONTAINING_RECORD {
+    ($addr:expr, $ty:ty, $field:ident) => {
+        ($addr as *mut u8).offset(-(core::mem::offset_of!($ty, $field) as isize)) as *mut $ty
+    };
 }
 
-pub type PANSI_STRING = *mut _ANSI_STRING;
-
-#[repr(C)]
-pub struct _LDR_DATA_TABLE_ENTRY {
-    pub InLoadOrderLinks: _LIST_ENTRY,
-    pub InMemoryOrderLinks: _LIST_ENTRY,
-    pub InInitializationOrderLinks: _LIST_ENTRY,
-    pub DllBase: *mut core::ffi::c_void,
-    pub EntryPoint: *mut core::ffi::c_void,
-    pub SizeOfImage: u32,
-    pub FullDllName: _UNICODE_STRING,
-    pub BaseDllName: _UNICODE_STRING,
-    pub Flags: u32,
-    pub LoadCount: u16,
-    pub TlsIndex: u16,
-    pub HashLinks: _LIST_ENTRY,
-    pub TimeDateStamp: u32,
-    pub Parent: *mut _LDR_DATA_TABLE_ENTRY,
-    pub OriginalBase: *mut core::ffi::c_void,
-    pub EntryPointActivationContext: *mut core::ffi::c_void,
-    pub Spare: *mut core::ffi::c_void,
+// winnt.h scalar helpers.
+#[inline]
+pub fn HIWORD(l: usize) -> u16 {
+    ((l >> 16) & 0xFFFF) as u16
+}
+#[inline]
+pub unsafe fn PtrToUlong(p: *mut c_void) -> ULONG {
+    (p as usize) as ULONG
 }
 
-pub type PLDR_DATA_TABLE_ENTRY = *mut _LDR_DATA_TABLE_ENTRY;
+// RtlMoveMemory(dest, src, len) = memmove (overlap-safe). RtlZeroMemory/RtlCopyMemory
+// live in k32_externs.
+#[inline]
+pub unsafe fn RtlMoveMemory(Destination: PVOID, Source: PVOID, Length: SIZE_T) {
+    memmove(Destination, Source, Length as usize);
+}
+pub use crate::k32_externs::{RtlZeroMemory, RtlCopyMemory};
 
-pub type HMODULE = *mut core::ffi::c_void;
-pub type HINSTANCE = *mut core::ffi::c_void;
-pub type FARPROC = Option<unsafe extern "system" fn() -> isize>;
-pub type LPCSTR = *const u8;
-pub type LPSTR = *mut u8;
-pub type LPCWSTR = *const u16;
-pub type LPWSTR = *mut u16;
-pub type LPVOID = *mut core::ffi::c_void;
-pub type BOOL = i32;
-pub type DWORD = u32;
-pub type WORD = u16;
-pub type HANDLE = *mut core::ffi::c_void;
-pub type HFILE = isize;
-pub type NTSTATUS = i32;
+// PRTL_CONVERT_STRINGA: NTAPI fn-ptr typedef (kernel32.h).
+pub type PRTL_CONVERT_STRINGA = Option<
+    unsafe extern "system" fn(
+        AnsiString: PANSI_STRING,
+        UnicodeString: PCUNICODE_STRING,
+        AllocateMemory: BOOLEAN,
+    ) -> NTSTATUS,
+>;
 
-pub const STATUS_SUCCESS: NTSTATUS = 0x00000000;
-pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002;
-pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017;
-pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D;
-pub const STATUS_INVALID_PARAMETER_1: NTSTATUS = 0xC00000EF;
-pub const STATUS_INVALID_PARAMETER_2: NTSTATUS = 0xC00000F0;
+// proc.c's globals (cross-file). BasepExeLdrEntry + UserWaitForInputIdleRoutine are
+// owned by k32_globals; BasepUnicodeStringTo8BitString is a fn-ptr global in utils.c.
+pub use crate::k32_globals::{BasepExeLdrEntry, UserWaitForInputIdleRoutine};
 
-pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x00000080;
-pub const FILE_SHARE_READ: DWORD = 0x00000001;
-pub const FILE_SHARE_WRITE: DWORD = 0x00000002;
-pub const FILE_SHARE_DELETE: DWORD = 0x00000004;
-pub const GENERIC_READ: DWORD = 0x80000000;
-pub const OPEN_EXISTING: DWORD = 3;
-pub const INVALID_HANDLE_VALUE: HANDLE = !0 as HANDLE;
-
-pub const HEAP_ZERO_MEMORY: DWORD = 0x00000008;
-pub const MAXUSHORT: u16 = 0xFFFF;
-pub const MAX_PATH: usize = 260;
-
-pub const PAGE_READONLY: DWORD = 0x02;
-
-pub const IMAGE_FILE_EXECUTABLE_IMAGE: u16 = 0x0002;
-
-pub const LOAD_LIBRARY_AS_DATAFILE: DWORD = 0x00000002;
-pub const LOAD_WITH_ALTERED_SEARCH_PATH: DWORD = 0x00000008;
-pub const DONT_RESOLVE_DLL_REFERENCES: DWORD = 0x00000001;
-
-pub const GET_MODULE_HANDLE_EX_FLAG_PIN: DWORD = 0x00000001;
-pub const GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT: DWORD = 0x00000002;
-pub const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: DWORD = 0x00000004;
-
-pub const LDR_ADDREF_DLL_PIN: u32 = 0x00000001;
-
-pub const LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS: u32 = 0x00000001;
-pub const LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS: u32 = 0x00000001;
-
-pub const EXCEPTION_EXECUTE_HANDLER: i32 = 1;
-
-pub const ERROR_FILE_NOT_FOUND: DWORD = 2;
-pub const ERROR_PATH_NOT_FOUND: DWORD = 3;
-pub const ERROR_BAD_FORMAT: DWORD = 11;
-pub const ERROR_BAD_EXE_FORMAT: DWORD = 193;
-
-pub type PIMAGE_NT_HEADERS = *mut IMAGE_NT_HEADERS;
-
-#[repr(C)]
-pub struct IMAGE_NT_HEADERS {
-    pub Signature: u32,
-    pub FileHeader: IMAGE_FILE_HEADER,
-    pub OptionalHeader: IMAGE_OPTIONAL_HEADER,
+extern "C" {
+    pub static mut BasepUnicodeStringTo8BitString: PRTL_CONVERT_STRINGA;
 }
 
-#[repr(C)]
-pub struct IMAGE_FILE_HEADER {
-    pub Machine: u16,
-    pub NumberOfSections: u16,
-    pub TimeDateStamp: u32,
-    pub PointerToSymbolTable: u32,
-    pub NumberOfSymbols: u32,
-    pub SizeOfOptionalHeader: u16,
-    pub Characteristics: u16,
+extern "system" {
+    // Base* helpers defined in still-C TUs (utils.c / path.c / appcache.c).
+    pub fn Basep8BitStringToStaticUnicodeString(AnsiString: LPCSTR) -> PUNICODE_STRING;
+    pub fn BaseComputeProcessDllPath(FullPath: LPWSTR, Environment: PVOID) -> LPWSTR;
+    pub fn BasepLocateExeLdrEntry(
+        Entry: PLDR_DATA_TABLE_ENTRY,
+        Context: PVOID,
+        StopEnumeration: *mut BOOLEAN,
+    );
+
+    // Cross-file Win32 exports defined in other kernel32 .c TUs.
+    pub fn GetWindowsDirectoryA(lpBuffer: LPSTR, uSize: UINT) -> UINT;
+    pub fn SearchPathA(
+        lpPath: LPCSTR,
+        lpFileName: LPCSTR,
+        lpExtension: LPCSTR,
+        nBufferLength: DWORD,
+        lpBuffer: LPSTR,
+        lpFilePart: *mut LPSTR,
+    ) -> DWORD;
+    pub fn CreateFileMappingW(
+        hFile: HANDLE,
+        lpFileMappingAttributes: LPSECURITY_ATTRIBUTES,
+        flProtect: DWORD,
+        dwMaximumSizeHigh: DWORD,
+        dwMaximumSizeLow: DWORD,
+        lpName: LPCWSTR,
+    ) -> HANDLE;
+    pub fn UnmapViewOfFile(lpBaseAddress: LPCVOID) -> BOOL;
+    pub fn CreateProcessA(
+        lpApplicationName: LPCSTR,
+        lpCommandLine: LPSTR,
+        lpProcessAttributes: LPSECURITY_ATTRIBUTES,
+        lpThreadAttributes: LPSECURITY_ATTRIBUTES,
+        bInheritHandles: BOOL,
+        dwCreationFlags: DWORD,
+        lpEnvironment: LPVOID,
+        lpCurrentDirectory: LPCSTR,
+        lpStartupInfo: LPSTARTUPINFOA,
+        lpProcessInformation: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+    // CreateFile == CreateFileA in the C (ANSI A-suffix elided by the macro).
+    #[link_name = "CreateFileA"]
+    pub fn CreateFile(
+        lpFileName: LPCSTR,
+        dwDesiredAccess: DWORD,
+        dwShareMode: DWORD,
+        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
+        dwCreationDisposition: DWORD,
+        dwFlagsAndAttributes: DWORD,
+        hTemplateFile: HANDLE,
+    ) -> HANDLE;
 }
-
-#[repr(C)]
-pub struct IMAGE_OPTIONAL_HEADER {
-    pub Magic: u16,
-    pub MajorLinkerVersion: u8,
-    pub MinorLinkerVersion: u8,
-    pub SizeOfCode: u32,
-    pub SizeOfInitializedData: u32,
-    pub SizeOfUninitializedData: u32,
-    pub AddressOfEntryPoint: u32,
-    pub BaseOfCode: u32,
-    pub BaseOfData: u32,
-    pub ImageBase: usize,
-    pub SectionAlignment: u32,
-    pub FileAlignment: u32,
-    pub MajorOperatingSystemVersion: u16,
-    pub MinorOperatingSystemVersion: u16,
-    pub MajorImageVersion: u16,
-    pub MinorImageVersion: u16,
-    pub MajorSubsystemVersion: u16,
-    pub MinorSubsystemVersion: u16,
-    pub Win32VersionValue: u32,
-    pub SizeOfImage: u32,
-    pub SizeOfHeaders: u32,
-    pub CheckSum: u32,
-    pub Subsystem: u16,
-    pub DllCharacteristics: u16,
-    pub SizeOfStackReserve: usize,
-    pub SizeOfStackCommit: usize,
-    pub SizeOfHeapReserve: usize,
-    pub SizeOfHeapCommit: usize,
-    pub LoaderFlags: u32,
-    pub NumberOfRvaAndSizes: u32,
-    pub DataDirectory: [IMAGE_DATA_DIRECTORY; 16],
-}
-
-#[repr(C)]
-pub struct IMAGE_DATA_DIRECTORY {
-    pub VirtualAddress: u32,
-    pub Size: u32,
-}
-
-pub type PPEB = *mut _PEB;
-pub type PTEB = *mut _TEB;
-
-#[repr(C)]
-pub struct _PEB {
-    pub Reserved1: [u8; 2],
-    pub BeingDebugged: u8,
-    pub Reserved2: [u8; 1],
-    pub Reserved3: [*mut core::ffi::c_void; 2],
-    pub Ldr: *mut _PEB_LDR_DATA,
-    pub ProcessParameters: *mut _RTL_USER_PROCESS_PARAMETERS,
-    pub Reserved4: [u8; 104],
-    pub Reserved5: [*mut core::ffi::c_void; 52],
-    pub PostProcessInitRoutine: Option<unsafe extern "system" fn()>,
-    pub Reserved6: [u8; 128],
-    pub Reserved7: [*mut core::ffi::c_void; 1],
-    pub SessionId: u32,
-}
-
-#[repr(C)]
-pub struct _TEB {
-    pub Reserved1: [u8; 12],
-    pub ProcessEnvironmentBlock: *mut _PEB,
-    pub Reserved2: [u8; 392],
-    pub Reserved3: [u8; 520],
-    pub Reserved4: [u8; 512],
-}
-
-#[repr(C)]
-pub struct _PEB_LDR_DATA {
-    pub Reserved1: [u8; 8],
-    pub Reserved2: [*mut core::ffi::c_void; 3],
-    pub InLoadOrderModuleList: _LIST_ENTRY,
-    pub InMemoryOrderModuleList: _LIST_ENTRY,
-    pub InInitializationOrderModuleList: _LIST_ENTRY,
-}
-
-#[repr(C)]
-pub struct _RTL_USER_PROCESS_PARAMETERS {
-    pub Reserved1: [u8; 16],
-    pub Reserved2: [*mut core::ffi::c_void; 10],
-    pub ImagePathName: _UNICODE_STRING,
-    pub CommandLine: _UNICODE_STRING,
-}
-
-pub type PROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
-
-#[repr(C)]
-pub struct _PROCESS_INFORMATION {
-    pub hProcess: HANDLE,
-    pub hThread: HANDLE,
-    pub dwProcessId: DWORD,
-    pub dwThreadId: DWORD,
-}
+pub use crate::k32_externs::{
+    BaseSetLastNTError, SetLastError, GetLastError, RtlGetProcessHeap,
+    CloseHandle, CreateFileW, ExitThread, SearchPathW, INVALID_HANDLE_VALUE,
+};
 
 #[no_mangle]
 pub unsafe extern "system" fn BasepInitializeTermsrvFpns() -> NTSTATUS {
@@ -280,7 +190,7 @@ pub unsafe extern "system" fn BasepMapModuleHandle(
     if hModule.is_null() {
         return (*NtCurrentPeb()).ImageBaseAddress;
     }
-    if LDR_IS_DATAFILE(hModule) && AsDataFile == 0 {
+    if LDR_IS_DATAFILE(hModule) != 0 && AsDataFile == 0 {
         return core::ptr::null_mut();
     }
     hModule as PVOID
@@ -309,7 +219,7 @@ pub unsafe extern "system" fn DisableThreadLibraryCalls(
 pub unsafe extern "system" fn LoadLibraryA(
     lpLibFileName: LPCSTR,
 ) -> HINSTANCE {
-    static TwainDllName: [i8; 13] = *b"twain_32.dll\0";
+    static TwainDllName: [i8; 13] = unsafe { core::mem::transmute(*b"twain_32.dll\0") };
     let mut PathBuffer: LPSTR;
     let mut Len: UINT;
     let mut Result: HINSTANCE;
@@ -320,7 +230,7 @@ pub unsafe extern "system" fn LoadLibraryA(
         PathBuffer = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (MAX_PATH as UINT + core::mem::size_of::<i8>() as UINT) as usize,
+            (MAX_PATH as UINT + core::mem::size_of::<i8>() as UINT) as SIZE_T,
         ) as LPSTR;
         if !PathBuffer.is_null() {
             /* Get windows dir in this buffer */
@@ -386,25 +296,25 @@ unsafe fn BasepLoadLibraryAsDatafile(
     Name: LPCWSTR,
     hModule: *mut HMODULE,
 ) -> NTSTATUS {
-    let mut FilenameW: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut FilenameW: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
     let mut hMapping: HANDLE;
     let mut Status: NTSTATUS;
     let mut lpBaseAddress: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut ViewSize: SIZE_T = 0;
 
-    *hModule = 0;
+    *hModule = core::ptr::null_mut();
 
     if SearchPathW(
         Path,
         Name,
         crate::w!(".DLL\0").as_ptr() as LPCWSTR,
-        (core::mem::size_of::<[u16; MAX_PATH]>() / core::mem::size_of::<u16>()) as u32,
+        (core::mem::size_of::<[u16; MAX_PATH as usize]>() / core::mem::size_of::<u16>()) as u32,
         FilenameW.as_mut_ptr(),
         core::ptr::null_mut(),
     ) == 0
     {
-        return (*NtCurrentTeb()).LastStatusValue;
+        return (*NtCurrentTeb()).LastStatusValue as NTSTATUS;
     }
 
     hFile = CreateFileW(
@@ -414,11 +324,11 @@ unsafe fn BasepLoadLibraryAsDatafile(
         core::ptr::null_mut(),
         OPEN_EXISTING,
         0,
-        0,
+        core::ptr::null_mut(),
     );
 
     if hFile == INVALID_HANDLE_VALUE {
-        return (*NtCurrentTeb()).LastStatusValue;
+        return (*NtCurrentTeb()).LastStatusValue as NTSTATUS;
     }
 
     hMapping = CreateFileMappingW(
@@ -433,7 +343,7 @@ unsafe fn BasepLoadLibraryAsDatafile(
     CloseHandle(hFile);
 
     if hMapping.is_null() {
-        return (*NtCurrentTeb()).LastStatusValue;
+        return (*NtCurrentTeb()).LastStatusValue as NTSTATUS;
     }
 
     Status = NtMapViewOfSection(
@@ -452,7 +362,7 @@ unsafe fn BasepLoadLibraryAsDatafile(
     CloseHandle(hMapping);
 
     if !NT_SUCCESS(Status) {
-        return (*NtCurrentTeb()).LastStatusValue;
+        return (*NtCurrentTeb()).LastStatusValue as NTSTATUS;
     }
 
     if RtlImageNtHeader(lpBaseAddress).is_null() {
@@ -471,8 +381,8 @@ pub unsafe extern "system" fn LoadLibraryExW(
     hFile: HANDLE,
     dwFlags: DWORD,
 ) -> HINSTANCE {
-    let mut DllName: _UNICODE_STRING;
-    let mut hInst: HINSTANCE;
+    let mut DllName: UNICODE_STRING = core::mem::zeroed();
+    let mut hInst: HINSTANCE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut SearchPath: PWSTR;
     let mut DllCharacteristics: ULONG = 0;
@@ -481,7 +391,7 @@ pub unsafe extern "system" fn LoadLibraryExW(
     /* Check for any flags LdrLoadDll might be interested in */
     if (dwFlags & DONT_RESOLVE_DLL_REFERENCES) != 0 {
         /* Tell LDR to treat it as an EXE */
-        DllCharacteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
+        DllCharacteristics = IMAGE_FILE_EXECUTABLE_IMAGE as ULONG;
     }
 
     /* Build up a unicode dll name from null-terminated string */
@@ -489,7 +399,10 @@ pub unsafe extern "system" fn LoadLibraryExW(
 
     /* Lazy-initialize BasepExeLdrEntry */
     if BasepExeLdrEntry.is_null() {
-        LdrEnumerateLoadedModules(0, Some(BasepLocateExeLdrEntry), NtCurrentPeb().ImageBaseAddress);
+        // BasepLocateExeLdrEntry has the NTAPI ABI (== PLDR_ENUM_CALLBACK), but a
+        // nominally distinct extern type — transmute the fn-ptr to the callback type.
+        let cb: PLDR_ENUM_CALLBACK = core::mem::transmute(BasepLocateExeLdrEntry as *const ());
+        LdrEnumerateLoadedModules(0, cb, (*NtCurrentPeb()).ImageBaseAddress);
     }
 
     /* Check if that module is our exe*/
@@ -539,7 +452,7 @@ pub unsafe extern "system" fn LoadLibraryExW(
     'done: {
         if (dwFlags & LOAD_LIBRARY_AS_DATAFILE) != 0 {
             /* If the image is loaded as a datafile, try to get its handle */
-            Status = LdrGetDllHandleEx(0, SearchPath, core::ptr::null_mut(), &DllName, &mut hInst as *mut HINSTANCE as *mut PVOID);
+            Status = LdrGetDllHandleEx(0, SearchPath, core::ptr::null_mut(), &mut DllName, &mut hInst as *mut HINSTANCE as *mut PVOID);
             if !NT_SUCCESS(Status) {
                 /* It's not loaded yet - so load it up */
                 Status = BasepLoadLibraryAsDatafile(SearchPath, DllName.Buffer, &mut hInst);
@@ -588,7 +501,7 @@ pub unsafe extern "system" fn GetProcAddress(
 ) -> FARPROC {
     let mut ProcedureName: ANSI_STRING = core::mem::zeroed();
     let mut ProcNamePtr: *mut ANSI_STRING = core::ptr::null_mut();
-    let mut fnExp: FARPROC = core::ptr::null_mut();
+    let mut fnExp: FARPROC = None;
     let mut Status: NTSTATUS;
     let mut hMapped: PVOID;
     let mut Ordinal: ULONG = 0;
@@ -615,12 +528,12 @@ pub unsafe extern "system" fn GetProcAddress(
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return core::ptr::null_mut();
+        return None;
     }
 
     /* Check for a special case when returned pointer is
        the same as image's base address */
-    if fnExp == hMapped as FARPROC {
+    if fnExp.map_or(core::ptr::null_mut(), |f| f as *mut c_void) == hMapped {
         /* Set correct error code */
         if HIWORD(lpProcName as usize) != 0 {
             BaseSetLastNTError(STATUS_ENTRYPOINT_NOT_FOUND);
@@ -628,7 +541,7 @@ pub unsafe extern "system" fn GetProcAddress(
             BaseSetLastNTError(STATUS_ORDINAL_NOT_FOUND);
         }
 
-        return core::ptr::null_mut();
+        return None;
     }
 
     /* All good, return procedure pointer */
@@ -649,7 +562,7 @@ pub unsafe extern "system" fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL {
             Status = NtUnmapViewOfSection(NtCurrentProcess(), (hLibModule as ULONG_PTR & !1) as *mut core::ffi::c_void);
 
             /* Unload alternate resource module */
-            LdrUnloadAlternateResourceModule(hLibModule);
+            LdrUnloadAlternateResourceModule(hLibModule as PVOID);
         } else {
             Status = STATUS_INVALID_IMAGE_FORMAT;
         }
@@ -659,7 +572,7 @@ pub unsafe extern "system" fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL {
     }
 
     /* Check what kind of status we got */
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         /* Set last error */
         BaseSetLastNTError(Status);
 
@@ -676,7 +589,7 @@ pub unsafe extern "system" fn FreeLibraryAndExitThread(
     hLibModule: HMODULE,
     dwExitCode: DWORD,
 ) {
-    if LDR_IS_DATAFILE(hLibModule) {
+    if LDR_IS_DATAFILE(hLibModule) != 0 {
         /* This is a LOAD_LIBRARY_AS_DATAFILE module */
         if !RtlImageNtHeader((hLibModule as usize & !1) as *mut core::ffi::c_void).is_null() {
             /* Unmap view */
@@ -686,7 +599,7 @@ pub unsafe extern "system" fn FreeLibraryAndExitThread(
             );
 
             /* Unload alternate resource module */
-            LdrUnloadAlternateResourceModule(hLibModule);
+            LdrUnloadAlternateResourceModule(hLibModule as PVOID);
         }
     } else {
         /* Just unload it */
@@ -703,8 +616,8 @@ pub unsafe extern "system" fn GetModuleFileNameA(
     lpFilename: LPSTR,
     nSize: DWORD,
 ) -> DWORD {
-    let mut FilenameW: _UNICODE_STRING;
-    let mut FilenameA: ANSI_STRING;
+    let mut FilenameW: UNICODE_STRING = core::mem::zeroed();
+    let mut FilenameA: ANSI_STRING = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut Length: DWORD = 0;
     let mut LengthToCopy: DWORD;
@@ -713,7 +626,7 @@ pub unsafe extern "system" fn GetModuleFileNameA(
     FilenameW.Buffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        nSize * core::mem::size_of::<WCHAR>() as DWORD,
+        (nSize as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T,
     ) as PWSTR;
     if FilenameW.Buffer.is_null() {
         BaseSetLastNTError(STATUS_NO_MEMORY);
@@ -727,7 +640,7 @@ pub unsafe extern "system" fn GetModuleFileNameA(
 
     if FilenameW.Length != 0 {
         /* Convert to ansi string */
-        Status = BasepUnicodeStringTo8BitString(&mut FilenameA, &FilenameW, 1);
+        Status = (BasepUnicodeStringTo8BitString.unwrap())(&mut FilenameA, &FilenameW, 1);
         if !NT_SUCCESS(Status) {
             /* Set last error, free string and return failure */
             BaseSetLastNTError(Status);
@@ -777,7 +690,7 @@ pub unsafe extern "system" fn GetModuleFileNameW(
     let mut Entry: PLIST_ENTRY;
     let mut Module: PLDR_DATA_TABLE_ENTRY;
     let mut Length: ULONG = 0;
-    let mut Cookie: ULONG_PTR;
+    let mut Cookie: ULONG_PTR = 0;
     let Peb: PPEB;
 
     let hModule = BasepMapModuleHandle(hModule, 0);
@@ -803,29 +716,29 @@ pub unsafe extern "system" fn GetModuleFileNameW(
         ModuleListHead = &mut (*((*Peb).Ldr)).InLoadOrderModuleList;
         Entry = (*ModuleListHead).Flink;
         while Entry != ModuleListHead {
-            Module = CONTAINING_RECORD(
+            Module = CONTAINING_RECORD!(
                 Entry,
                 LDR_DATA_TABLE_ENTRY,
-                InLoadOrderLinks,
+                InLoadOrderLinks
             );
 
             /* Check if this is the requested module */
-            if (*Module).DllBase as HINSTANCE == hModule {
+            if (*Module).DllBase == hModule {
                 /* Calculate size to copy */
                 Length = min(
                     nSize,
-                    (*Module).FullDllName.MaximumLength,
+                    (*Module).FullDllName.MaximumLength as ULONG,
                 );
 
                 /* Copy contents */
                 RtlMoveMemory(
                     lpFilename as *mut core::ffi::c_void,
-                    (*Module).FullDllName.Buffer as *const core::ffi::c_void,
-                    Length as usize,
+                    (*Module).FullDllName.Buffer as *mut core::ffi::c_void,
+                    Length as SIZE_T,
                 );
 
                 /* Subtract a terminating zero */
-                if Length == (*Module).FullDllName.MaximumLength {
+                if Length == (*Module).FullDllName.MaximumLength as ULONG {
                     Length -= core::mem::size_of::<WCHAR>() as ULONG;
                 }
 
@@ -852,14 +765,14 @@ pub unsafe extern "system" fn GetModuleHandleForUnicodeString(
     ModuleName: PUNICODE_STRING,
 ) -> HMODULE {
     let mut Status: NTSTATUS;
-    let mut Module: PVOID;
+    let mut Module: PVOID = core::ptr::null_mut();
     let DllPath: LPWSTR;
 
     /* Try to get a handle with a magic value of 1 for DllPath */
     Status = LdrGetDllHandle(1 as LPWSTR, core::ptr::null_mut(), ModuleName, &mut Module);
 
     /* If that succeeded - we're done */
-    if NT_SUCCESS(Status) != 0 {
+    if NT_SUCCESS(Status) {
         return Module as HMODULE;
     }
 
@@ -896,7 +809,7 @@ pub unsafe extern "system" fn BasepGetModuleHandleExW(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut Status2: NTSTATUS = STATUS_SUCCESS;
     let mut hModule: HANDLE = core::ptr::null_mut();
-    let mut ModuleNameU: _UNICODE_STRING = core::mem::zeroed();
+    let mut ModuleNameU: UNICODE_STRING = core::mem::zeroed();
     let mut dwValid: DWORD = 0;
     let Redirected: BOOLEAN = 0; // FIXME
 
@@ -930,7 +843,7 @@ pub unsafe extern "system" fn BasepGetModuleHandleExW(
         }
 
         if hModule.is_null() {
-            hModule = GetModuleHandleForUnicodeString(&ModuleNameU);
+            hModule = GetModuleHandleForUnicodeString(&mut ModuleNameU) as HANDLE;
             if hModule.is_null() {
                 /* Last error is already set, so just return failure by setting status */
                 Status = STATUS_DLL_NOT_FOUND;
@@ -978,7 +891,7 @@ pub unsafe extern "system" fn BasepGetModuleHandleExW(
 
         /* Set the module handle to the caller */
         if !phModule.is_null() {
-            *phModule = hModule;
+            *phModule = hModule as HMODULE;
         }
 
         /* Return TRUE on success and FALSE otherwise */
@@ -1010,7 +923,7 @@ pub unsafe extern "system" fn GetModuleHandleA(lpModuleName: LPCSTR) -> HMODULE 
 
 #[no_mangle]
 pub unsafe extern "system" fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE {
-    let hModule: HMODULE;
+    let mut hModule: HMODULE = core::ptr::null_mut();
     let Success: BOOLEAN;
 
     /* If current module is requested - return it right away */
@@ -1054,7 +967,7 @@ pub unsafe extern "system" fn GetModuleHandleExW(
         return 1;
     }
 
-    Ret = BasepGetModuleHandleExW(0, dwFlags, lpwModuleName, phModule);
+    Ret = BasepGetModuleHandleExW(0, dwFlags, lpwModuleName, phModule) as BOOL;
 
     return Ret;
 }
@@ -1065,7 +978,7 @@ pub unsafe extern "system" fn GetModuleHandleExA(
     lpModuleName: LPCSTR,
     phModule: *mut HMODULE,
 ) -> BOOL {
-    let lpModuleNameW: *mut _UNICODE_STRING;
+    let lpModuleNameW: PUNICODE_STRING;
     let dwValid: DWORD;
     let Ret: BOOL;
 
@@ -1090,7 +1003,7 @@ pub unsafe extern "system" fn GetModuleHandleExA(
             dwFlags,
             lpModuleName as LPCWSTR,
             phModule,
-        );
+        ) as BOOL;
     } else {
         /* Convert module name to unicode */
         lpModuleNameW = Basep8BitStringToStaticUnicodeString(lpModuleName);
@@ -1106,7 +1019,7 @@ pub unsafe extern "system" fn GetModuleHandleExA(
             dwFlags,
             (*lpModuleNameW).Buffer,
             phModule,
-        );
+        ) as BOOL;
     }
 
     /* Return result */
@@ -1118,16 +1031,16 @@ pub unsafe extern "system" fn LoadModule(
     lpModuleName: LPCSTR,
     lpParameterBlock: LPVOID,
 ) -> DWORD {
-    let mut StartupInfo: STARTUPINFOA;
-    let mut ProcessInformation: PROCESS_INFORMATION;
+    let mut StartupInfo: STARTUPINFOA = core::mem::zeroed();
+    let mut ProcessInformation: PROCESS_INFORMATION = core::mem::zeroed();
     let LoadParams: *mut LOADPARMS32;
-    let mut FileName: [i8; MAX_PATH as usize];
+    let mut FileName: [i8; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let CommandLine: LPSTR;
     let mut Length: DWORD;
     let mut Error: DWORD;
     let mut ProcessStatus: BOOL;
-    let mut AnsiStr: ANSI_STRING;
-    let mut UnicStr: _UNICODE_STRING;
+    let mut AnsiStr: ANSI_STRING = core::mem::zeroed();
+    let mut UnicStr: UNICODE_STRING = core::mem::zeroed();
     let mut PathType: RTL_PATH_TYPE;
     let mut Handle: HANDLE;
 
@@ -1155,7 +1068,7 @@ pub unsafe extern "system" fn LoadModule(
         /* Build StartupInfo */
         RtlZeroMemory(
             &mut StartupInfo as *mut STARTUPINFOA as *mut core::ffi::c_void,
-            core::mem::size_of::<STARTUPINFOA>(),
+            core::mem::size_of::<STARTUPINFOA>() as SIZE_T,
         );
 
         StartupInfo.cb = core::mem::size_of::<STARTUPINFOA>() as DWORD;
@@ -1166,7 +1079,7 @@ pub unsafe extern "system" fn LoadModule(
         CommandLine = RtlAllocateHeap(
             RtlGetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            ((*LoadParams).lpCmdLine[0] as DWORD + Length + 2) as ULONG,
+            ((*(*LoadParams).lpCmdLine) as DWORD + Length + 2) as SIZE_T,
         ) as LPSTR;
 
         /* Put module name there, then a space, and then copy provided command line,
@@ -1174,15 +1087,15 @@ pub unsafe extern "system" fn LoadModule(
         RtlCopyMemory(
             CommandLine as *mut core::ffi::c_void,
             FileName.as_ptr() as *const core::ffi::c_void,
-            Length as usize,
+            Length as SIZE_T,
         );
         *CommandLine.offset(Length as isize) = ' ' as i8;
         RtlCopyMemory(
-            &mut *CommandLine.offset(Length as isize + 1) as *mut i8 as *mut core::ffi::c_void,
-            &(*LoadParams).lpCmdLine[1] as *const i8 as *const core::ffi::c_void,
-            (*LoadParams).lpCmdLine[0] as usize,
+            CommandLine.offset(Length as isize + 1) as *mut core::ffi::c_void,
+            (*LoadParams).lpCmdLine.offset(1) as *const core::ffi::c_void,
+            (*(*LoadParams).lpCmdLine) as SIZE_T,
         );
-        *CommandLine.offset(Length as isize + 1 + (*LoadParams).lpCmdLine[0] as isize) = 0;
+        *CommandLine.offset(Length as isize + 1 + (*(*LoadParams).lpCmdLine) as isize) = 0;
 
         /* Create the process */
         ProcessStatus = CreateProcessA(
@@ -1192,7 +1105,7 @@ pub unsafe extern "system" fn LoadModule(
             core::ptr::null_mut(),
             0,
             0,
-            (*LoadParams).lpEnvAddress,
+            (*LoadParams).lpEnvAddress as LPVOID,
             core::ptr::null_mut(),
             &mut StartupInfo,
             &mut ProcessInformation,
@@ -1219,8 +1132,8 @@ pub unsafe extern "system" fn LoadModule(
         }
 
         /* Wait up to 30 seconds for the process to become idle */
-        if !UserWaitForInputIdleRoutine.is_null() {
-            UserWaitForInputIdleRoutine(ProcessInformation.hProcess, 30000);
+        if UserWaitForInputIdleRoutine.is_some() {
+            (UserWaitForInputIdleRoutine.unwrap())(ProcessInformation.hProcess, 30000);
         }
 
         /* Close handles */
@@ -1234,7 +1147,7 @@ pub unsafe extern "system" fn LoadModule(
     /* The path was not found, create an ansi string from
         the module name and convert it to unicode */
     RtlInitAnsiString(&mut AnsiStr, lpModuleName);
-    if NT_SUCCESS(RtlAnsiStringToUnicodeString(&mut UnicStr, &mut AnsiStr, 1)) == 0 {
+    if !NT_SUCCESS(RtlAnsiStringToUnicodeString(&mut UnicStr, &mut AnsiStr, 1)) {
         return ERROR_FILE_NOT_FOUND;
     }
 
@@ -1276,7 +1189,7 @@ pub unsafe extern "system" fn DelayLoadFailureHook(
     pszProcName: LPCSTR,
 ) -> FARPROC {
     // STUB;
-    core::ptr::null_mut()
+    None
 }
 
 #[no_mangle]
@@ -1301,7 +1214,7 @@ pub unsafe extern "system" fn UTUnRegister(hModule: HMODULE) {
 #[no_mangle]
 pub unsafe extern "system" fn BaseQueryModuleData(
     ModuleName: LPSTR,
-    Unknown: LPSTR,
+    Unknown_: LPSTR,
     Unknown2: PVOID,
     Unknown3: PVOID,
     Unknown4: PVOID,
@@ -1320,7 +1233,7 @@ pub unsafe extern "system" fn BaseProcessInitPostImport() -> NTSTATUS {
     // DPRINT("Post-init called\n");
 
     /* Check if this is a terminal server */
-    if SharedUserData.SuiteMask & 0x00000010 != 0 {
+    if (*SharedUserData).SuiteMask & 0x00000010 != 0 {
         /* Initialize TS pointers */
         return BasepInitializeTermsrvFpns();
     }
@@ -1809,7 +1722,7 @@ pub unsafe extern "system" fn BaseProcessInitPostImport() -> NTSTATUS {
 //             Status = NtUnmapViewOfSection(NtCurrentProcess(), (PVOID)((ULONG_PTR)hLibModule & ~1));
 //
 //             /* Unload alternate resource module */
-//             LdrUnloadAlternateResourceModule(hLibModule);
+//             LdrUnloadAlternateResourceModule(hLibModule as PVOID);
 //         }
 //         else
 //             Status = STATUS_INVALID_IMAGE_FORMAT;
@@ -1853,7 +1766,7 @@ pub unsafe extern "system" fn BaseProcessInitPostImport() -> NTSTATUS {
 //             NtUnmapViewOfSection(NtCurrentProcess(), (PVOID)((ULONG_PTR)hLibModule & ~1));
 //
 //             /* Unload alternate resource module */
-//             LdrUnloadAlternateResourceModule(hLibModule);
+//             LdrUnloadAlternateResourceModule(hLibModule as PVOID);
 //         }
 //     }
 //     else

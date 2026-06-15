@@ -5,6 +5,19 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
 pub const MAX_DOS_DRIVES: u32 = 26;
+const GetDiskFreeSpace2GB: ULONG = 0x8;
+const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(AnsiString: LPCSTR) -> PUNICODE_STRING;
+    fn BasepGetVolumeNameFromReparsePoint(
+        lpszMountPoint: LPCWSTR,
+        lpszVolumeName: LPWSTR,
+        cchBufferLength: DWORD,
+        IsAMountPoint: LPBOOL,
+    ) -> BOOL;
+    fn IsThisARootDirectory(VolumeHandle: HANDLE, NtPathName: PUNICODE_STRING) -> BOOL;
+}
 
 // c2rust named the anonymous Query struct of PROCESS_DEVICEMAP_INFORMATION
 // `C2RustUnnamed_11`; map it to the bindgen inner type.
@@ -113,7 +126,7 @@ pub unsafe extern "system" fn GetLogicalDrives() -> u32 {
     status = NtQueryInformationProcess(
         -1isize as *mut core::ffi::c_void,
         ProcessDeviceMap,
-        &mut process_device_map_info.Query as *mut _ as *mut core::ffi::c_void,
+        &mut process_device_map_info.__bindgen_anon_1.Query as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<C2RustUnnamed_11>() as u32,
         core::ptr::null_mut(),
     );
@@ -123,11 +136,11 @@ pub unsafe extern "system" fn GetLogicalDrives() -> u32 {
         return 0;
     }
 
-    if process_device_map_info.Query.DriveMap == 0 {
+    if process_device_map_info.__bindgen_anon_1.Query.DriveMap == 0 {
         SetLastError(0);
     }
 
-    return process_device_map_info.Query.DriveMap;
+    return process_device_map_info.__bindgen_anon_1.Query.DriveMap;
 }
 
 #[no_mangle]
@@ -148,7 +161,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceA(
 
     RootPathU = Basep8BitStringToStaticUnicodeString(RootPath);
     if RootPathU.is_null() {
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     return GetDiskFreeSpaceW(
@@ -171,11 +184,11 @@ pub unsafe extern "system" fn GetDiskFreeSpaceW(
     let mut Below2GB: BOOL;
     let mut RootPath: PCWSTR;
     let mut Status: NTSTATUS;
-    let mut RootHandle: HANDLE;
-    let mut FileName: _UNICODE_STRING;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut FileFsSize: FILE_FS_SIZE_INFORMATION;
+    let mut RootHandle: HANDLE = core::ptr::null_mut();
+    let mut FileName: _UNICODE_STRING = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut FileFsSize: FILE_FS_SIZE_INFORMATION = core::mem::zeroed();
 
     /* If no path provided, get root path */
     RootPath = lpRootPathName;
@@ -186,7 +199,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceW(
     /* Convert the path to NT path */
     if RtlDosPathNameToNtPathName_U(RootPath, &mut FileName, core::ptr::null_mut(), core::ptr::null_mut()) == 0 {
         SetLastError(ERROR_PATH_NOT_FOUND);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Open it for disk space query! */
@@ -210,7 +223,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceW(
         if !lpBytesPerSector.is_null() {
             *lpBytesPerSector = 0;
         }
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* We don't need the name any longer */
@@ -227,11 +240,11 @@ pub unsafe extern "system" fn GetDiskFreeSpaceW(
     NtClose(RootHandle);
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Are we in some compatibility mode where size must be below 2GB? */
-    Below2GB = ((NtCurrentPeb()).AppCompatFlags.__bindgen_anon_1.LowPart & GetDiskFreeSpace2GB) == GetDiskFreeSpace2GB;
+    Below2GB = (((*NtCurrentPeb()).AppCompatFlags.__bindgen_anon_1.LowPart & GetDiskFreeSpace2GB) == GetDiskFreeSpace2GB) as BOOL;
 
     /* If we're to overflow output, make sure we return the maximum */
     if FileFsSize.TotalAllocationUnits.__bindgen_anon_1.HighPart != 0 {
@@ -293,7 +306,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceW(
         }
     }
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -333,12 +346,12 @@ pub unsafe extern "system" fn GetDiskFreeSpaceExW(
 ) -> BOOL {
     let mut RootPath: PCWSTR;
     let mut Status: NTSTATUS;
-    let mut RootHandle: HANDLE;
-    let mut FileName: _UNICODE_STRING;
+    let mut RootHandle: HANDLE = core::ptr::null_mut();
+    let mut FileName: _UNICODE_STRING = core::mem::zeroed();
     let mut BytesPerAllocationUnit: DWORD;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut FileFsSize: FILE_FS_SIZE_INFORMATION;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut FileFsSize: FILE_FS_SIZE_INFORMATION = core::mem::zeroed();
 
     RootPath = lpDirectoryName;
     if lpDirectoryName.is_null() {
@@ -384,7 +397,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceExW(
     RtlFreeHeap(RtlGetProcessHeap(), 0, FileName.Buffer as PVOID);
 
     if !lpTotalNumberOfFreeBytes.is_null() {
-        let mut FileFsFullSize: FILE_FS_FULL_SIZE_INFORMATION;
+        let mut FileFsFullSize: FILE_FS_FULL_SIZE_INFORMATION = core::mem::zeroed();
 
         Status = NtQueryVolumeInformationFile(
             RootHandle,
@@ -401,21 +414,21 @@ pub unsafe extern "system" fn GetDiskFreeSpaceExW(
                 * FileFsFullSize.BytesPerSector;
 
             if !lpFreeBytesAvailableToCaller.is_null() {
-                (*lpFreeBytesAvailableToCaller).QuadPart = FileFsFullSize
+                (*lpFreeBytesAvailableToCaller).QuadPart = (FileFsFullSize
                     .CallerAvailableAllocationUnits
                     .QuadPart as i64
-                    * BytesPerAllocationUnit as i64;
+                    * BytesPerAllocationUnit as i64) as u64;
             }
 
             if !lpTotalNumberOfBytes.is_null() {
-                (*lpTotalNumberOfBytes).QuadPart = FileFsFullSize.TotalAllocationUnits.QuadPart as i64
-                    * BytesPerAllocationUnit as i64;
+                (*lpTotalNumberOfBytes).QuadPart = (FileFsFullSize.TotalAllocationUnits.QuadPart as i64
+                    * BytesPerAllocationUnit as i64) as u64;
             }
 
-            (*lpTotalNumberOfFreeBytes).QuadPart = FileFsFullSize
+            (*lpTotalNumberOfFreeBytes).QuadPart = (FileFsFullSize
                 .ActualAvailableAllocationUnits
                 .QuadPart as i64
-                * BytesPerAllocationUnit as i64;
+                * BytesPerAllocationUnit as i64) as u64;
 
             return 1;
         }
@@ -440,17 +453,17 @@ pub unsafe extern "system" fn GetDiskFreeSpaceExW(
 
     if !lpFreeBytesAvailableToCaller.is_null() {
         (*lpFreeBytesAvailableToCaller).QuadPart =
-            FileFsSize.AvailableAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64;
+            (FileFsSize.AvailableAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64) as u64;
     }
 
     if !lpTotalNumberOfBytes.is_null() {
         (*lpTotalNumberOfBytes).QuadPart =
-            FileFsSize.TotalAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64;
+            (FileFsSize.TotalAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64) as u64;
     }
 
     if !lpTotalNumberOfFreeBytes.is_null() {
         (*lpTotalNumberOfFreeBytes).QuadPart =
-            FileFsSize.AvailableAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64;
+            (FileFsSize.AvailableAllocationUnits.QuadPart as i64 * BytesPerAllocationUnit as i64) as u64;
     }
 
     return 1;
@@ -479,10 +492,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
     let mut Status: NTSTATUS = 0;
     let mut DriveLetter: WCHAR = 0;
     let mut RootHandle: HANDLE = core::ptr::null_mut();
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        Status: 0,
-        Information: 0,
-    };
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES {
         Length: 0,
         RootDirectory: core::ptr::null_mut(),
@@ -505,13 +515,13 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
         DeviceType: 0,
         Characteristics: 0,
     };
-    let mut Buffer: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut VolumeName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut Buffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut VolumeName: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if lpRootPathName.is_null() {
         RootPath = Buffer.as_mut_ptr() as PCWSTR;
         if RtlGetCurrentDirectory_U(
-            core::mem::size_of::<[WCHAR; MAX_PATH]>() as ULONG,
+            core::mem::size_of::<[WCHAR; MAX_PATH as usize]>() as ULONG,
             Buffer.as_mut_ptr() as PWSTR,
         ) as usize > (3 as usize).wrapping_mul(core::mem::size_of::<WCHAR>() as usize)
         {
@@ -546,17 +556,16 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
         && *RootPath.offset(3) as i32 == UNICODE_NULL as i32
     {
         let mut Index: USHORT = 0;
-        let mut DeviceMap: PROCESS_DEVICEMAP_INFORMATION = PROCESS_DEVICEMAP_INFORMATION {
-            Query: C2RustUnnamed_11 {
-                DriveMap: 0,
-                DriveType: [0; 26],
-            },
+        let mut DeviceMap: PROCESS_DEVICEMAP_INFORMATION = core::mem::zeroed();
+        DeviceMap.__bindgen_anon_1.Query = C2RustUnnamed_11 {
+            DriveMap: 0,
+            DriveType: [0; 32],
         };
 
         Status = NtQueryInformationProcess(
             -1 as LONG_PTR as HANDLE,
             ProcessDeviceMap,
-            &mut DeviceMap.Query as *mut _ as PVOID,
+            &mut DeviceMap.__bindgen_anon_1.Query as *mut _ as PVOID,
             core::mem::size_of::<C2RustUnnamed_11>() as ULONG,
             core::ptr::null_mut(),
         );
@@ -570,11 +579,11 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
         }
 
         Index = (DriveLetter as i32 - 'A' as i32) as USHORT;
-        if ((1 as ULONG) << Index as i32) & DeviceMap.Query.DriveMap != 0 {
-            if DeviceMap.Query.DriveType[Index as usize] as i32 >= DRIVE_REMOVABLE
-                && DeviceMap.Query.DriveType[Index as usize] as i32 <= DRIVE_RAMDISK
+        if ((1 as ULONG) << Index as i32) & DeviceMap.__bindgen_anon_1.Query.DriveMap != 0 {
+            if DeviceMap.__bindgen_anon_1.Query.DriveType[Index as usize] as i32 >= DRIVE_REMOVABLE as i32
+                && DeviceMap.__bindgen_anon_1.Query.DriveType[Index as usize] as i32 <= DRIVE_RAMDISK as i32
             {
-                return DeviceMap.Query.DriveType[Index as usize] as UINT;
+                return DeviceMap.__bindgen_anon_1.Query.DriveType[Index as usize] as UINT;
             } else {
                 return DRIVE_UNKNOWN as UINT;
             }
@@ -582,10 +591,8 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
     }
 
     if lpRootPathName.is_null() {
-        RootPath = &raw const {
-            let mut s: [WCHAR; 2] = ['\\' as WCHAR, UNICODE_NULL];
-            s
-        } as *const WCHAR as PCWSTR;
+        static BACKSLASH: [WCHAR; 2] = ['\\' as WCHAR, UNICODE_NULL];
+        RootPath = BACKSLASH.as_ptr() as PCWSTR;
     }
 
     if RtlDosPathNameToNtPathName_U(
@@ -856,8 +863,8 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     /* Get the Device Map for this Process */
 //     Status = NtQueryInformationProcess(NtCurrentProcess(),
 //                                        ProcessDeviceMap,
-//                                        &ProcessDeviceMapInfo.Query,
-//                                        sizeof(ProcessDeviceMapInfo.Query),
+//                                        &ProcessDeviceMapInfo.__bindgen_anon_1.Query,
+//                                        sizeof(ProcessDeviceMapInfo.__bindgen_anon_1.Query),
 //                                        NULL);
 //
 //     /* Return the Drive Map */
@@ -867,12 +874,12 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //         return 0;
 //     }
 //
-//     if (ProcessDeviceMapInfo.Query.DriveMap == 0)
+//     if (ProcessDeviceMapInfo.__bindgen_anon_1.Query.DriveMap == 0)
 //     {
 //         SetLastError(ERROR_SUCCESS);
 //     }
 //
-//     return ProcessDeviceMapInfo.Query.DriveMap;
+//     return ProcessDeviceMapInfo.__bindgen_anon_1.Query.DriveMap;
 // }
 //
 // /*
@@ -898,7 +905,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     RootPathU = Basep8BitStringToStaticUnicodeString(RootPath);
 //     if (RootPathU == NULL)
 //     {
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     return GetDiskFreeSpaceW(RootPathU->Buffer, lpSectorsPerCluster,
@@ -937,7 +944,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     if (!RtlDosPathNameToNtPathName_U(RootPath, &FileName, NULL, NULL))
 //     {
 //         SetLastError(ERROR_PATH_NOT_FOUND);
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     /* Open it for disk space query! */
@@ -955,7 +962,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //             *lpBytesPerSector = 0;
 //         }
 //
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     /* We don't need the name any longer */
@@ -969,7 +976,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     if (!NT_SUCCESS(Status))
 //     {
 //         BaseSetLastNTError(Status);
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     /* Are we in some compatibility mode where size must be below 2GB? */
@@ -1068,7 +1075,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     RootPathU = Basep8BitStringToStaticUnicodeString(RootPath);
 //     if (RootPathU == NULL)
 //     {
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     return GetDiskFreeSpaceExW(RootPathU->Buffer, lpFreeBytesAvailableToCaller,
@@ -1105,7 +1112,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     if (!RtlDosPathNameToNtPathName_U(RootPath, &FileName, NULL, NULL))
 //     {
 //         SetLastError(ERROR_PATH_NOT_FOUND);
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     /* Open it for disk space query! */
@@ -1127,7 +1134,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //
 //         RtlFreeHeap(RtlGetProcessHeap(), 0, FileName.Buffer);
 //
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     RtlFreeHeap(RtlGetProcessHeap(), 0, FileName.Buffer);
@@ -1176,7 +1183,7 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //     if (!NT_SUCCESS(Status))
 //     {
 //         BaseSetLastNTError(Status);
-//         return FALSE;
+//         return FALSE as BOOL;
 //     }
 //
 //     /* Compute the size of an AU */
@@ -1300,8 +1307,8 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //         /* Query the device map */
 //         Status = NtQueryInformationProcess(NtCurrentProcess(),
 //                                            ProcessDeviceMap,
-//                                            &DeviceMap.Query,
-//                                            sizeof(DeviceMap.Query),
+//                                            &DeviceMap.__bindgen_anon_1.Query,
+//                                            sizeof(DeviceMap.__bindgen_anon_1.Query),
 //                                            NULL);
 //         /* Zero output if we failed */
 //         if (!NT_SUCCESS(Status))
@@ -1312,13 +1319,13 @@ pub unsafe extern "system" fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT {
 //         /* Get our index in the device map */
 //         Index = DriveLetter - L'A';
 //         /* Check we're in the device map (bit set) */
-//         if (((1 << Index) & DeviceMap.Query.DriveMap) != 0)
+//         if (((1 << Index) & DeviceMap.__bindgen_anon_1.Query.DriveMap) != 0)
 //         {
 //             /* Validate device type and return it */
-//             if (DeviceMap.Query.DriveType[Index] >= DRIVE_REMOVABLE &&
-//                 DeviceMap.Query.DriveType[Index] <= DRIVE_RAMDISK)
+//             if (DeviceMap.__bindgen_anon_1.Query.DriveType[Index] >= DRIVE_REMOVABLE &&
+//                 DeviceMap.__bindgen_anon_1.Query.DriveType[Index] <= DRIVE_RAMDISK)
 //             {
-//                 return DeviceMap.Query.DriveType[Index];
+//                 return DeviceMap.__bindgen_anon_1.Query.DriveType[Index];
 //             }
 //             /* Otherwise, return we don't know the type */
 //             else

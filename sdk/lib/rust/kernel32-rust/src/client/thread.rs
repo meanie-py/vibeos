@@ -2,6 +2,30 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+use crate::k32_externs::{
+    BaseCreateStack, BaseInitializeContext, BaseFormatObjectAttributes,
+    HandleToUlong, UlongToHandle, CSR_CREATE_API_NUMBER, BaseRunningInServerProcess,
+    GetProcAddress,
+};
+// ExitProcess (process.c, still C) / GetModuleHandleA / ERROR_FATAL helpers:
+extern "system" {
+    fn ExitProcess(uExitCode: DWORD) -> !;
+    fn GetModuleHandleA(lpModuleName: LPCSTR) -> HMODULE;
+    fn BaseFreeThreadStack(hProcess: HANDLE, InitialTeb: PINITIAL_TEB);
+}
+
+type PCSR_CREATE_REMOTE_THREAD =
+    Option<unsafe extern "system" fn(HANDLE, PCLIENT_ID) -> NTSTATUS>;
+
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1FFFFF;
+const STATUS_NO_YIELD_PERFORMED: NTSTATUS = 0x40000024u32 as NTSTATUS;
+const INVALID_ACTIVATION_CONTEXT: PACTIVATION_CONTEXT = -1isize as PACTIVATION_CONTEXT;
+
+#[inline]
+fn LANGIDFROMLCID(lcid: LCID) -> DWORD {
+    (lcid & 0xFFFF) as DWORD
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn BasepNotifyCsrOfThread(
     ThreadHandle: HANDLE,
@@ -18,12 +42,12 @@ pub unsafe extern "system" fn BasepNotifyCsrOfThread(
     CsrClientCallServer(
         &mut ApiMessage as *mut BASE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
-        CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateThread),
-        core::mem::size_of::<*mut _>() as u32, // sizeof(*CreateThreadRequest)
+        CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX as ULONG, BasepCreateThread as ULONG),
+        core::mem::size_of::<BASE_CREATE_THREAD>() as u32, // sizeof(*CreateThreadRequest)
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        /* DPRINT1("Failed to tell CSRSS about new thread: %lx\n", ApiMessage.__bindgen_anon_1.Status); */
-        return ApiMessage.__bindgen_anon_1.Status;
+    if !NT_SUCCESS(ApiMessage.Status) {
+        /* DPRINT1("Failed to tell CSRSS about new thread: %lx\n", ApiMessage.Status); */
+        return ApiMessage.Status;
     }
 
     /* Return Success */
@@ -46,10 +70,10 @@ pub unsafe extern "system" fn BaseThreadStartup(
     __exception_info = core::ptr::null_mut();
 
     // Try block
-    'try_block: {
+    {
         // Attempt to call the Thread Start Address
         // Legacy check which is still used today for Win32 threads
-        if (*NtCurrentTeb()).NtTib.Version == (30 << 8) {
+        if (*NtCurrentTeb()).NtTib.__bindgen_anon_1.Version == (30 << 8) {
             // This registers the termination port with CSRSS
             if BaseRunningInServerProcess == 0 {
                 CsrNewThread();
@@ -57,7 +81,7 @@ pub unsafe extern "system" fn BaseThreadStartup(
         }
 
         // Get the exit code from the Thread Start
-        ExitThread(lpStartAddress(lpParameter));
+        ExitThread(lpStartAddress.expect("non-null function pointer")(lpParameter));
     }
 
     // Except block - UnhandledExceptionFilter
@@ -85,14 +109,14 @@ pub unsafe extern "system" fn BaseDispatchApc(
     let mut ActivationFrame: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME = core::mem::zeroed();
 
     /* Setup the activation context */
-    ActivationFrame.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as u32;
+    ActivationFrame.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as SIZE_T;
     ActivationFrame.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER;
 
     /* Check if caller wanted one */
     if ActivationContext == INVALID_ACTIVATION_CONTEXT
     {
         /* Do the APC directly */
-        ApcRoutine(Data as ULONG_PTR);
+        ApcRoutine.expect("non-null function pointer")(Data as ULONG_PTR);
         return;
     }
 
@@ -102,7 +126,7 @@ pub unsafe extern "system" fn BaseDispatchApc(
     /* Call the routine under SEH */
     // _SEH2_TRY
     {
-        ApcRoutine(Data as ULONG_PTR);
+        ApcRoutine.expect("non-null function pointer")(Data as ULONG_PTR);
     }
     // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -146,20 +170,20 @@ pub unsafe extern "system" fn CreateRemoteThread(
     lpThreadId: LPDWORD,
 ) -> HANDLE {
     let mut Status: NTSTATUS;
-    let mut InitialTeb: INITIAL_TEB;
-    let mut Context: CONTEXT;
-    let mut ClientId: _CLIENT_ID;
-    let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut InitialTeb: INITIAL_TEB = core::mem::zeroed();
+    let mut Context: CONTEXT = core::mem::zeroed();
+    let mut ClientId: _CLIENT_ID = core::mem::zeroed();
+    let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let ObjectAttributes: POBJECT_ATTRIBUTES;
-    let mut hThread: HANDLE;
-    let mut Dummy: ULONG;
+    let mut hThread: HANDLE = core::ptr::null_mut();
+    let mut Dummy: ULONG = 0;
     let mut Teb: PTEB;
-    let mut ThreadBasicInfo: THREAD_BASIC_INFORMATION;
+    let mut ThreadBasicInfo: THREAD_BASIC_INFORMATION = core::mem::zeroed();
     let mut ActivationContextStack: PACTIVATION_CONTEXT_STACK = core::ptr::null_mut();
-    let mut ActCtxInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION;
-    let mut Cookie: ULONG_PTR;
-    let mut ReturnLength: ULONG;
-    let mut ReturnSize: SIZE_T;
+    let mut ActCtxInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION = core::mem::zeroed();
+    let mut Cookie: ULONG_PTR = 0;
+    let mut ReturnLength: ULONG = 0;
+    let mut ReturnSize: SIZE_T = 0;
 
     /* Clear the Context */
     core::ptr::write_bytes(&mut Context as *mut CONTEXT as *mut u8, 0, core::mem::size_of::<CONTEXT>());
@@ -173,10 +197,10 @@ pub unsafe extern "system" fn CreateRemoteThread(
         if (dwCreationFlags & STACK_SIZE_PARAM_IS_A_RESERVATION) != 0 {
             0
         } else {
-            dwStackSize
+            dwStackSize as SIZE_T
         },
         if (dwCreationFlags & STACK_SIZE_PARAM_IS_A_RESERVATION) != 0 {
-            dwStackSize
+            dwStackSize as SIZE_T
         } else {
             0
         },
@@ -191,7 +215,7 @@ pub unsafe extern "system" fn CreateRemoteThread(
     BaseInitializeContext(
         &mut Context,
         lpParameter,
-        lpStartAddress,
+        core::mem::transmute::<LPTHREAD_START_ROUTINE, PVOID>(lpStartAddress),
         InitialTeb.StackBase,
         1,
     );
@@ -212,7 +236,7 @@ pub unsafe extern "system" fn CreateRemoteThread(
         &mut ClientId,
         &mut Context,
         &mut InitialTeb,
-        1i32,
+        1u8,
     );
     if !NT_SUCCESS(Status) {
         /* Fail the kernel create */
@@ -247,17 +271,17 @@ pub unsafe extern "system" fn CreateRemoteThread(
         }
 
         /* Save it */
-        Teb = ThreadBasicInfo.TebBaseAddress;
+        Teb = ThreadBasicInfo.TebBaseAddress as PTEB;
         (*Teb).ActivationContextStackPointer = ActivationContextStack;
 
         /* Query the Context */
         Status = RtlQueryInformationActivationContext(
             RTL_QUERY_ACTIVATION_CONTEXT_FLAG_USE_ACTIVE_ACTIVATION_CONTEXT,
             core::ptr::null_mut(),
-            0,
-            ActivationContextBasicInformation,
+            core::ptr::null_mut(),
+            ActivationContextBasicInformation as ULONG,
             &mut ActCtxInfo as *mut ACTIVATION_CONTEXT_BASIC_INFORMATION as *mut core::ffi::c_void,
-            core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>() as ULONG,
+            core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>() as SIZE_T,
             &mut ReturnSize,
         );
         if !NT_SUCCESS(Status) {
@@ -292,15 +316,15 @@ pub unsafe extern "system" fn CreateRemoteThread(
             let CsrCreateRemoteThread: PCSR_CREATE_REMOTE_THREAD;
 
             /* Get the direct CSRSRV export */
-            CsrCreateRemoteThread = core::mem::transmute::<*mut core::ffi::c_void, PCSR_CREATE_REMOTE_THREAD>(
+            CsrCreateRemoteThread = core::mem::transmute::<FARPROC, PCSR_CREATE_REMOTE_THREAD>(
                 GetProcAddress(
                     GetModuleHandleA(b"csrsrv\0".as_ptr() as *const i8),
                     b"CsrCreateRemoteThread\0".as_ptr() as *const i8,
                 ),
             );
-            if CsrCreateRemoteThread != core::ptr::null_mut() {
+            if CsrCreateRemoteThread.is_some() {
                 /* Call it instead of going through LPC */
-                Status = CsrCreateRemoteThread(hThread, &mut ClientId);
+                Status = CsrCreateRemoteThread.unwrap()(hThread, &mut ClientId);
             }
         }
     }
@@ -343,7 +367,7 @@ pub unsafe extern "system" fn CreateRemoteThread(
 #[no_mangle]
 pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) {
     let mut Status: NTSTATUS;
-    let mut LastThread: ULONG;
+    let mut LastThread: ULONG = 0;
     let LoaderLock: PRTL_CRITICAL_SECTION;
 
     /* Make sure loader lock isn't held */
@@ -363,7 +387,7 @@ pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) {
         core::mem::size_of::<ULONG>() as u32,
         core::ptr::null_mut(),
     );
-    if (NT_SUCCESS(Status) != 0) && (LastThread != 0) {
+    if NT_SUCCESS(Status) && (LastThread != 0) {
         ExitProcess(uExitCode);
     }
 
@@ -371,11 +395,11 @@ pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) {
     LdrShutdownThread();
 
     /* Tell the Kernel to free the Stack */
-    (*NtCurrentTeb()).FreeStackOnTermination = 1i32;
-    NtTerminateThread(core::ptr::null_mut(), uExitCode);
+    (*NtCurrentTeb()).FreeStackOnTermination = 1u8;
+    NtTerminateThread(core::ptr::null_mut(), uExitCode as NTSTATUS);
 
     /* We should never reach this place */
-    ERROR_FATAL(b"It should not happen\0".as_ptr() as *const i8);
+    // ERROR_FATAL("It should not happen")
     loop {
         /* 'noreturn' function */
     }
@@ -388,12 +412,12 @@ pub unsafe extern "system" fn OpenThread(
     dwThreadId: DWORD,
 ) -> HANDLE {
     let Status: NTSTATUS;
-    let ThreadHandle: HANDLE;
-    let ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let ClientId: _CLIENT_ID;
+    let mut ThreadHandle: HANDLE = core::ptr::null_mut();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ClientId: _CLIENT_ID = core::mem::zeroed();
 
-    ClientId.UniqueProcess = 0;
-    ClientId.UniqueThread = ULongToHandle(dwThreadId);
+    ClientId.UniqueProcess = core::ptr::null_mut();
+    ClientId.UniqueThread = UlongToHandle(dwThreadId);
 
     // InitializeObjectAttributes inline expansion
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -406,8 +430,8 @@ pub unsafe extern "system" fn OpenThread(
     Status = NtOpenThread(
         &mut ThreadHandle,
         dwDesiredAccess,
-        &ObjectAttributes,
-        &ClientId,
+        &mut ObjectAttributes,
+        &mut ClientId,
     );
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
@@ -439,7 +463,7 @@ pub unsafe extern "system" fn GetThreadTimes(
     lpKernelTime: LPFILETIME,
     lpUserTime: LPFILETIME,
 ) -> BOOL {
-    let mut KernelUserTimes: KERNEL_USER_TIMES;
+    let mut KernelUserTimes: KERNEL_USER_TIMES = core::mem::zeroed();
     let Status: NTSTATUS;
 
     Status = NtQueryInformationThread(
@@ -511,7 +535,7 @@ pub unsafe extern "system" fn GetExitCodeThread(
         return 0;
     }
 
-    *lpExitCode = ThreadBasic.ExitStatus;
+    *lpExitCode = ThreadBasic.ExitStatus as DWORD;
     return 1;
 }
 
@@ -536,7 +560,7 @@ pub unsafe extern "system" fn TerminateThread(
 ) -> BOOL {
     let mut Status: NTSTATUS;
     let LoaderLock: PRTL_CRITICAL_SECTION;
-    let mut ThreadInfo: THREAD_BASIC_INFORMATION;
+    let mut ThreadInfo: THREAD_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Check for invalid thread handle */
     if hThread.is_null() {
@@ -565,7 +589,7 @@ pub unsafe extern "system" fn TerminateThread(
     }
 
     /* Now terminate the thread */
-    Status = NtTerminateThread(hThread, dwExitCode);
+    Status = NtTerminateThread(hThread, dwExitCode as NTSTATUS);
     if !NT_SUCCESS(Status) {
         /* Fail */
         BaseSetLastNTError(Status);
@@ -578,7 +602,7 @@ pub unsafe extern "system" fn TerminateThread(
 
 #[no_mangle]
 pub unsafe extern "system" fn SuspendThread(hThread: HANDLE) -> DWORD {
-    let mut PreviousSuspendCount: ULONG;
+    let mut PreviousSuspendCount: ULONG = 0;
     let Status: NTSTATUS;
 
     Status = NtSuspendThread(hThread, &mut PreviousSuspendCount);
@@ -595,9 +619,9 @@ pub unsafe extern "system" fn SetThreadAffinityMask(
     hThread: HANDLE,
     dwThreadAffinityMask: DWORD_PTR,
 ) -> DWORD_PTR {
-    let mut ThreadBasic: THREAD_BASIC_INFORMATION;
+    let mut ThreadBasic: THREAD_BASIC_INFORMATION = core::mem::zeroed();
     let mut AffinityMask: KAFFINITY;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     AffinityMask = dwThreadAffinityMask as KAFFINITY;
 
@@ -635,10 +659,10 @@ pub unsafe extern "system" fn SetThreadPriority(
     let mut Prio: LONG = nPriority;
     let Status: NTSTATUS;
 
-    if Prio == THREAD_PRIORITY_TIME_CRITICAL {
-        Prio = (HIGH_PRIORITY + 1) / 2;
+    if Prio == THREAD_PRIORITY_TIME_CRITICAL as i32 {
+        Prio = ((HIGH_PRIORITY as i32) + 1) / 2;
     } else if Prio == THREAD_PRIORITY_IDLE {
-        Prio = -((HIGH_PRIORITY + 1) / 2);
+        Prio = -(((HIGH_PRIORITY as i32) + 1) / 2);
     }
 
     Status = NtSetInformationThread(
@@ -669,12 +693,12 @@ pub unsafe extern "system" fn GetThreadPriority(hThread: HANDLE) -> i32 {
     );
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return THREAD_PRIORITY_ERROR_RETURN;
+        return THREAD_PRIORITY_ERROR_RETURN as i32;
     }
 
-    if ThreadBasic.BasePriority == ((HIGH_PRIORITY + 1) / 2) as i32 {
-        ThreadBasic.BasePriority = THREAD_PRIORITY_TIME_CRITICAL;
-    } else if ThreadBasic.BasePriority == -((HIGH_PRIORITY + 1) / 2) as i32 {
+    if ThreadBasic.BasePriority == ((HIGH_PRIORITY as i32) + 1) / 2 {
+        ThreadBasic.BasePriority = THREAD_PRIORITY_TIME_CRITICAL as i32;
+    } else if ThreadBasic.BasePriority == -(((HIGH_PRIORITY as i32) + 1) / 2) {
         ThreadBasic.BasePriority = THREAD_PRIORITY_IDLE;
     }
 
@@ -686,14 +710,14 @@ pub unsafe extern "system" fn GetThreadPriorityBoost(
     hThread: HANDLE,
     pDisablePriorityBoost: PBOOL,
 ) -> BOOL {
-    let mut PriorityBoost: ULONG;
+    let mut PriorityBoost: ULONG = 0;
     let Status: NTSTATUS;
 
     Status = NtQueryInformationThread(
         hThread,
         ThreadPriorityBoost,
         &mut PriorityBoost as *mut ULONG as *mut core::ffi::c_void,
-        core::mem::size_of::<ULONG>(),
+        core::mem::size_of::<ULONG>() as u32,
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
@@ -701,7 +725,7 @@ pub unsafe extern "system" fn GetThreadPriorityBoost(
         return 0;
     }
 
-    *pDisablePriorityBoost = PriorityBoost;
+    *pDisablePriorityBoost = PriorityBoost as BOOL;
     return 1;
 }
 
@@ -719,7 +743,7 @@ pub unsafe extern "system" fn SetThreadPriorityBoost(
         hThread,
         ThreadPriorityBoost,
         &mut PriorityBoost as *mut ULONG as *mut core::ffi::c_void,
-        core::mem::size_of::<ULONG>(),
+        core::mem::size_of::<ULONG>() as u32,
     );
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
@@ -805,14 +829,14 @@ pub unsafe extern "system" fn GetProcessIdOfThread(Thread: HANDLE) -> DWORD {
 
 #[no_mangle]
 pub unsafe extern "system" fn GetThreadId(Thread: HANDLE) -> DWORD {
-    let mut ThreadBasic: THREAD_BASIC_INFORMATION;
+    let mut ThreadBasic: THREAD_BASIC_INFORMATION = core::mem::zeroed();
     let Status: NTSTATUS;
 
     Status = NtQueryInformationThread(
         Thread,
         ThreadBasicInformation,
-        &mut ThreadBasic as *mut THREAD_BASIC_INFORMATION,
-        core::mem::size_of::<THREAD_BASIC_INFORMATION>(),
+        &mut ThreadBasic as *mut THREAD_BASIC_INFORMATION as *mut core::ffi::c_void,
+        core::mem::size_of::<THREAD_BASIC_INFORMATION>() as u32,
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
@@ -845,17 +869,17 @@ pub unsafe extern "system" fn QueueUserAPC(
     dwData: ULONG_PTR,
 ) -> DWORD {
     let mut Status: NTSTATUS;
-    let mut ActCtxInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION;
+    let mut ActCtxInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Zero the activation context and query information on it */
     core::ptr::write_bytes(&mut ActCtxInfo as *mut _, 0, core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>());
     Status = RtlQueryInformationActivationContext(
         RTL_QUERY_ACTIVATION_CONTEXT_FLAG_USE_ACTIVE_ACTIVATION_CONTEXT,
         core::ptr::null_mut(),
-        0,
-        ActivationContextBasicInformation,
+        core::ptr::null_mut(),
+        ActivationContextBasicInformation as ULONG,
         &mut ActCtxInfo as *mut _ as *mut core::ffi::c_void,
-        core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>(),
+        core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>() as SIZE_T,
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
@@ -873,9 +897,9 @@ pub unsafe extern "system" fn QueueUserAPC(
     /* Queue the APC */
     Status = NtQueueApcThread(
         hThread,
-        Some(BaseDispatchApc as PKNORMAL_ROUTINE),
-        pfnAPC,
-        dwData as *mut core::ffi::c_void,
+        core::mem::transmute::<usize, PKNORMAL_ROUTINE>(BaseDispatchApc as usize),
+        core::mem::transmute::<PAPCFUNC, PVOID>(pfnAPC),
+        dwData as PVOID,
         if (ActCtxInfo.dwFlags & 1) != 0 {
             INVALID_ACTIVATION_CONTEXT
         } else {
@@ -895,7 +919,7 @@ pub unsafe extern "system" fn QueueUserAPC(
 pub unsafe extern "system" fn SetThreadStackGuarantee(
     StackSizeInBytes: *mut u32,
 ) -> i32 {
-    let Teb: *mut PTEB = NtCurrentTeb();
+    let Teb: PTEB = NtCurrentTeb();
     let GuaranteedStackBytes: u32;
     let AllocationSize: u32;
 
@@ -960,7 +984,11 @@ pub unsafe extern "system" fn QueueUserWorkItem(
     let Status: NTSTATUS;
 
     /* NOTE: Rtl needs to safely call the function using a trampoline */
-    Status = RtlQueueWorkItem(Function as WORKERCALLBACKFUNC, Context, Flags);
+    Status = RtlQueueWorkItem(
+        core::mem::transmute::<LPTHREAD_START_ROUTINE, WORKERCALLBACKFUNC>(Function),
+        Context,
+        Flags,
+    );
     if !NT_SUCCESS(Status) {
         /* Failed */
         BaseSetLastNTError(Status);
@@ -972,7 +1000,7 @@ pub unsafe extern "system" fn QueueUserWorkItem(
 }
 #[no_mangle]
 pub unsafe extern "system" fn TlsAlloc() -> DWORD {
-    let Index: ULONG;
+    let mut Index: ULONG;
     let Teb: PTEB;
     let Peb: PPEB;
 
@@ -982,17 +1010,17 @@ pub unsafe extern "system" fn TlsAlloc() -> DWORD {
     RtlAcquirePebLock();
 
     /* Try to get regular TEB slot */
-    Index = RtlFindClearBitsAndSet((*Peb).TlsBitmap, 1, 0);
+    Index = RtlFindClearBitsAndSet((*Peb).TlsBitmap as PRTL_BITMAP, 1, 0);
     if Index != 0xFFFFFFFF
     {
         /* Clear the value. */
-        (*Teb).TlsSlots[Index as usize] = 0;
+        (*Teb).TlsSlots[Index as usize] = core::ptr::null_mut();
         RtlReleasePebLock();
         return Index;
     }
 
     /* If it fails, try to find expansion TEB slot. */
-    Index = RtlFindClearBitsAndSet((*Peb).TlsExpansionBitmap, 1, 0);
+    Index = RtlFindClearBitsAndSet((*Peb).TlsExpansionBitmap as PRTL_BITMAP, 1, 0);
     if Index != 0xFFFFFFFF
     {
         /* Is there no expansion slot yet? */
@@ -1001,22 +1029,22 @@ pub unsafe extern "system" fn TlsAlloc() -> DWORD {
             /* Allocate an array */
             (*Teb).TlsExpansionSlots = RtlAllocateHeap(RtlGetProcessHeap(),
                                                        HEAP_ZERO_MEMORY,
-                                                       (TLS_EXPANSION_SLOTS as ULONG) *
-                                                       core::mem::size_of::<PVOID>() as ULONG) as PVOID;
+                                                       (TLS_EXPANSION_SLOTS as SIZE_T) *
+                                                       core::mem::size_of::<PVOID>() as SIZE_T) as *mut PVOID;
         }
 
         /* Did we get an array? */
         if (*Teb).TlsExpansionSlots.is_null()
         {
             /* Fail */
-            RtlClearBits((*Peb).TlsExpansionBitmap, Index, 1);
+            RtlClearBits((*Peb).TlsExpansionBitmap as PRTL_BITMAP, Index, 1);
             Index = 0xFFFFFFFF;
             BaseSetLastNTError(STATUS_NO_MEMORY);
         }
         else
         {
             /* Clear the value. */
-            (*(*Teb).TlsExpansionSlots as *mut PVOID).offset(Index as isize).write(0);
+            (*Teb).TlsExpansionSlots.offset(Index as isize).write(core::ptr::null_mut());
             Index += TLS_MINIMUM_AVAILABLE;
         }
     }
@@ -1032,7 +1060,7 @@ pub unsafe extern "system" fn TlsAlloc() -> DWORD {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TlsFree(Index: DWORD) -> BOOL {
+pub unsafe extern "system" fn TlsFree(mut Index: DWORD) -> BOOL {
     let mut BitSet: BOOL;
     let Peb: PPEB;
     let mut TlsIndex: ULONG;
@@ -1063,23 +1091,23 @@ pub unsafe extern "system" fn TlsFree(Index: DWORD) -> BOOL {
     }
 
     /* Check if the index was set */
-    BitSet = RtlAreBitsSet(TlsBitmap, Index, 1);
+    BitSet = RtlAreBitsSet(TlsBitmap as PRTL_BITMAP, Index, 1) as BOOL;
     if BitSet != 0 {
         /* Tell the kernel to free the TLS cells */
         Status = NtSetInformationThread(
             NtCurrentThread(),
             ThreadZeroTlsCell,
-            &Index as *const _ as *mut _,
-            core::mem::size_of::<DWORD>(),
+            &Index as *const _ as *mut core::ffi::c_void,
+            core::mem::size_of::<DWORD>() as u32,
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             BaseSetLastNTError(STATUS_INVALID_PARAMETER);
             RtlReleasePebLock();
             return 0;
         }
 
         /* Clear the bit */
-        RtlClearBits(TlsBitmap, Index, 1);
+        RtlClearBits(TlsBitmap as PRTL_BITMAP, Index, 1);
     } else {
         /* Fail */
         BaseSetLastNTError(STATUS_INVALID_PARAMETER);
@@ -1120,7 +1148,7 @@ pub unsafe extern "system" fn TlsGetValue(Index: DWORD) -> LPVOID {
     }
 
     /* Return the value from the expansion slots */
-    return (*Teb).TlsExpansionSlots[(Index - TLS_MINIMUM_AVAILABLE) as usize];
+    return *(*Teb).TlsExpansionSlots.add((Index - TLS_MINIMUM_AVAILABLE) as usize);
 }
 
 #[no_mangle]
@@ -1155,7 +1183,7 @@ pub unsafe extern "system" fn TlsSetValue(
             (*Teb).TlsExpansionSlots = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                (TLS_EXPANSION_SLOTS * core::mem::size_of::<PVOID>()) as SIZE_T,
+                (TLS_EXPANSION_SLOTS as usize * core::mem::size_of::<PVOID>()) as SIZE_T,
             ) as *mut PVOID;
             if (*Teb).TlsExpansionSlots.is_null() {
                 /* Fail */

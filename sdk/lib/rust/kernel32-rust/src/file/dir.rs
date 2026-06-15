@@ -2,14 +2,66 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// kernel32-internal helpers + cross-file Win32 exports this file calls.
+use crate::k32_externs::{
+    GetFullPathNameW, CloseHandle, InitializeObjectAttributes, RtlCopyMemory,
+};
+
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(LpStr: LPCSTR) -> PUNICODE_STRING;
     fn Basep8BitStringToDynamicUnicodeString(DestinationString: &mut _UNICODE_STRING, LpStr: LPCSTR) -> BOOL;
+    fn GetProcessHeap() -> HANDLE;
+    fn DeviceIoControl(
+        hDevice: HANDLE,
+        dwIoControlCode: DWORD,
+        lpInBuffer: LPVOID,
+        nInBufferSize: DWORD,
+        lpOutBuffer: LPVOID,
+        nOutBufferSize: DWORD,
+        lpBytesReturned: LPDWORD,
+        lpOverlapped: LPOVERLAPPED,
+    ) -> BOOL;
+    fn SetVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR, lpszVolumeName: LPCWSTR) -> BOOL;
+    fn DeleteVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR) -> BOOL;
+    fn BaseMarkFileForDelete(FileHandle: HANDLE, FileAttributes: ULONG);
 }
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
 pub const SFN_LENGTH: u32 = 12;
+
+// ntstatus.h
+pub const STATUS_NOT_A_DIRECTORY: NTSTATUS = 0xC0000103u32 as NTSTATUS;
+pub const STATUS_IO_REPARSE_TAG_NOT_HANDLED: NTSTATUS = 0xC0000279u32 as NTSTATUS;
+
+// winioctl.h: CTL_CODE(FILE_DEVICE_FILE_SYSTEM=0x9, fn, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
+pub const FSCTL_GET_REPARSE_POINT: ULONG = 0x000900A8; // fn 42
+pub const FSCTL_SET_REPARSE_POINT: ULONG = 0x000900A4; // fn 41
+
+// ntifs.h IS_VOLUME_NAME(s, l): s is a *const WCHAR, l a USHORT byte length.
+macro_rules! IS_VOLUME_NAME {
+    ($s:expr, $l:expr $(,)?) => {{
+        let s = $s;
+        let l = $l;
+        (l == 96 || (l == 98 && *s.offset(48) == '\\' as u16))
+            && *s.offset(0) == '\\' as u16
+            && (*s.offset(1) == '?' as u16 || *s.offset(1) == '\\' as u16)
+            && *s.offset(2) == '?' as u16
+            && *s.offset(3) == '\\' as u16
+            && *s.offset(4) == 'V' as u16
+            && *s.offset(5) == 'o' as u16
+            && *s.offset(6) == 'l' as u16
+            && *s.offset(7) == 'u' as u16
+            && *s.offset(8) == 'm' as u16
+            && *s.offset(9) == 'e' as u16
+            && *s.offset(10) == '{' as u16
+            && *s.offset(19) == '-' as u16
+            && *s.offset(24) == '-' as u16
+            && *s.offset(29) == '-' as u16
+            && *s.offset(34) == '-' as u16
+            && *s.offset(47) == '}' as u16
+    }};
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn CreateDirectoryA(
@@ -65,13 +117,13 @@ pub unsafe extern "system" fn CreateDirectoryW(
 ) -> BOOL {
     let mut Length: DWORD;
     let mut Status: NTSTATUS;
-    let mut DirectoryHandle: HANDLE;
-    let mut NtPathU: _UNICODE_STRING;
-    let mut PathUBuffer: PWSTR;
-    let mut FilePart: PWSTR;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut RelativeName: RTL_RELATIVE_NAME_U;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut DirectoryHandle: HANDLE = core::mem::zeroed();
+    let mut NtPathU: _UNICODE_STRING = core::mem::zeroed();
+    let PathUBuffer: PWSTR;
+    let mut FilePart: PWSTR = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut RelativeName: RTL_RELATIVE_NAME_U = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     /* Get relative name */
     if RtlDosPathNameToRelativeNtPathName_U(
@@ -225,7 +277,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &NtTemplatePathU,
+        &mut NtTemplatePathU,
         OBJ_CASE_INSENSITIVE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -235,7 +287,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
     Status = NtOpenFile(
         &mut TemplateHandle,
         (FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_READ_EA) as ACCESS_MASK,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         &mut IoStatusBlock,
         (FILE_SHARE_READ | FILE_SHARE_WRITE) as ULONG,
         (FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT) as ULONG,
@@ -253,7 +305,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
         Status = NtOpenFile(
             &mut TemplateHandle,
             (FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_READ_EA) as ACCESS_MASK,
-            &ObjectAttributes,
+            &mut ObjectAttributes,
             &mut IoStatusBlock,
             (FILE_SHARE_READ | FILE_SHARE_WRITE) as ULONG,
             (FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT) as ULONG,
@@ -324,7 +376,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
                 Status = NtOpenFile(
                     &mut TemplateHandle,
                     (FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_READ_EA) as ACCESS_MASK,
-                    &ObjectAttributes,
+                    &mut ObjectAttributes,
                     &mut IoStatusBlock,
                     (FILE_SHARE_READ | FILE_SHARE_WRITE) as ULONG,
                     (FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT) as ULONG,
@@ -491,7 +543,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &NtPathU,
+        &mut NtPathU,
         OBJ_CASE_INSENSITIVE,
         RelativeName.ContainingDirectory,
         if !lpSecurityAttributes.is_null() {
@@ -516,7 +568,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
             } else {
                 0
             })) as ACCESS_MASK,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         &mut IoStatusBlock,
         core::ptr::null_mut(),
         BasicInfo.FileAttributes,
@@ -539,7 +591,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
                     &mut DirectoryHandle,
                     (FILE_LIST_DIRECTORY | SYNCHRONIZE | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES)
                         as ACCESS_MASK,
-                    &ObjectAttributes,
+                    &mut ObjectAttributes,
                     &mut IoStatusBlock,
                     core::ptr::null_mut(),
                     BasicInfo.FileAttributes,
@@ -589,7 +641,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
         if ReparseDataBuffer.is_null() {
             NtClose(TemplateHandle);
             NtClose(DirectoryHandle);
-            SetLastError(STATUS_NO_MEMORY);
+            SetLastError(STATUS_NO_MEMORY as DWORD);
             return 0;
         }
 
@@ -619,22 +671,22 @@ pub unsafe extern "system" fn CreateDirectoryExW(
             RtlFreeHeap(RtlGetProcessHeap(), 0, ReparseDataBuffer as PVOID);
             NtClose(TemplateHandle);
             NtClose(DirectoryHandle);
-            SetLastError(STATUS_OBJECT_NAME_INVALID);
+            SetLastError(STATUS_OBJECT_NAME_INVALID as DWORD);
             return 0;
         }
 
         /* Get volume name */
-        SubstituteName = ((&raw mut (*ReparseDataBuffer).MountPointReparseBuffer.PathBuffer
+        SubstituteName = ((&raw mut (*ReparseDataBuffer).__bindgen_anon_1.MountPointReparseBuffer.PathBuffer
             as *mut WCHAR) as usize)
             .wrapping_add(
                 (*ReparseDataBuffer)
-                    .MountPointReparseBuffer
+                    .__bindgen_anon_1.MountPointReparseBuffer
                     .SubstituteNameOffset as usize,
             ) as PWSTR;
 
-        if IS_VOLUME_NAME(
+        if IS_VOLUME_NAME!(
             SubstituteName,
-            (*ReparseDataBuffer).MountPointReparseBuffer.SubstituteNameLength,
+            (*ReparseDataBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength,
         ) {
             /* Prepare to define a new mount point for that volume */
             RtlInitUnicodeString(&mut NewDirectory, lpNewDirectory);
@@ -656,7 +708,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
             RtlCopyMemory(
                 NewDirectory.Buffer as PVOID,
                 lpNewDirectory as PVOID,
-                NewDirectory.Length as usize,
+                NewDirectory.Length as SIZE_T,
             );
             if *NewDirectory
                 .Buffer
@@ -694,7 +746,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
             FSCTL_SET_REPARSE_POINT as ULONG,
             ReparseDataBuffer as PVOID,
             ((*ReparseDataBuffer).ReparseDataLength as ULONG)
-                .wrapping_add(core::mem::offset_of!(REPARSE_DATA_BUFFER, MountPointReparseBuffer.PathBuffer) as ULONG),
+                .wrapping_add(core::mem::offset_of!(REPARSE_DATA_BUFFER, __bindgen_anon_1.MountPointReparseBuffer.PathBuffer) as ULONG),
             core::ptr::null_mut(),
             0,
         );
@@ -721,7 +773,7 @@ pub unsafe extern "system" fn CreateDirectoryExW(
             ) as PFILE_STREAM_INFORMATION;
             if StreamInfo.is_null() {
                 BaseMarkFileForDelete(DirectoryHandle, BasicInfo.FileAttributes);
-                SetLastError(STATUS_NO_MEMORY);
+                SetLastError(STATUS_NO_MEMORY as DWORD);
                 break;
             }
 
@@ -781,10 +833,7 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     let mut Status: NTSTATUS;
     let mut BytesReturned: DWORD = 0;
     let mut DirectoryHandle: HANDLE = core::ptr::null_mut();
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        u: IO_STATUS_BLOCK_u { Status: 0 },
-        Information: 0,
-    };
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut NtPathU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -816,7 +865,7 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     };
     let mut ReparseDataBuffer: PREPARSE_DATA_BUFFER = core::ptr::null_mut();
     let mut FileDispInfo: FILE_DISPOSITION_INFORMATION = FILE_DISPOSITION_INFORMATION {
-        DeleteFile: 0,
+        DeleteFileA: 0,
     };
     let mut FileTagInfo: FILE_ATTRIBUTE_TAG_INFORMATION = FILE_ATTRIBUTE_TAG_INFORMATION {
         FileAttributes: 0,
@@ -897,7 +946,7 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     Status = NtQueryInformationFile(
         DirectoryHandle,
         &mut IoStatusBlock,
-        &mut FileTagInfo as PVOID,
+        &mut FileTagInfo as *mut _ as PVOID,
         core::mem::size_of::<FILE_ATTRIBUTE_TAG_INFORMATION>() as ULONG,
         FileAttributeTagInformation,
     );
@@ -971,7 +1020,7 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     ReparseDataBuffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+        MAXIMUM_REPARSE_DATA_BUFFER_SIZE as SIZE_T,
     ) as PREPARSE_DATA_BUFFER;
     if ReparseDataBuffer.is_null() {
         RtlReleaseRelativeName(&mut RelativeName);
@@ -998,11 +1047,11 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     }
 
     /* Get volume name */
-    SubstituteName = ((&raw mut (*ReparseDataBuffer).MountPointReparseBuffer.PathBuffer) as *mut WCHAR as ULONG_PTR)
-        .wrapping_add((*ReparseDataBuffer).MountPointReparseBuffer.SubstituteNameOffset as ULONG_PTR) as PWSTR;
-    if !IS_VOLUME_NAME(
+    SubstituteName = ((&raw mut (*ReparseDataBuffer).__bindgen_anon_1.MountPointReparseBuffer.PathBuffer) as *mut WCHAR as ULONG_PTR)
+        .wrapping_add((*ReparseDataBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameOffset as ULONG_PTR) as PWSTR;
+    if !IS_VOLUME_NAME!(
         SubstituteName,
-        (*ReparseDataBuffer).MountPointReparseBuffer.SubstituteNameLength,
+        (*ReparseDataBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength,
     ) {
         /* This is not a volume, we can safely delete */
         RtlFreeHeap(RtlGetProcessHeap(), 0, ReparseDataBuffer as PVOID);
@@ -1027,7 +1076,7 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     RtlCopyMemory(
         PathName.Buffer as PVOID,
         lpPathName as PVOID,
-        PathName.Length as usize,
+        PathName.Length as SIZE_T,
     );
     if *PathName.Buffer.offset((PathName.Length as usize / core::mem::size_of::<WCHAR>()).wrapping_sub(1) as isize) != '\\' as u16
     {
@@ -1046,11 +1095,11 @@ pub unsafe extern "system" fn RemoveDirectoryW(lpPathName: LPCWSTR) -> BOOL {
     RtlFreeHeap(RtlGetProcessHeap(), 0, PathUBuffer as PVOID);
 
     /* Mark & set */
-    FileDispInfo.DeleteFile = 1;
+    FileDispInfo.DeleteFileA = 1;
     Status = NtSetInformationFile(
         DirectoryHandle,
         &mut IoStatusBlock,
-        &mut FileDispInfo as PVOID,
+        &mut FileDispInfo as *mut _ as PVOID,
         core::mem::size_of::<FILE_DISPOSITION_INFORMATION>() as ULONG,
         FileDispositionInformation,
     );

@@ -1,10 +1,14 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::k32_externs::{RtlZeroMemory, RtlCopyMemory};
+use crate::proc_getters::GetProcessVersion;
 use core::ffi::c_void;
 
 extern "system" {
     fn GetFirmwareEnvironmentVariableExW( lpName: LPCWSTR, lpGuid: LPCWSTR, pBuffer: PVOID, nSize: DWORD, pdwAttribubutes: PDWORD, ) -> DWORD;
     fn GetFirmwareEnvironmentVariableExA( lpName: LPCSTR, lpGuid: LPCSTR, pBuffer: PVOID, nSize: DWORD, pdwAttribubutes: PDWORD, ) -> DWORD;
+    fn SetFirmwareEnvironmentVariableExW( lpName: LPCWSTR, lpGuid: LPCWSTR, pValue: PVOID, nSize: DWORD, dwAttributes: DWORD, ) -> BOOL;
+    fn SetFirmwareEnvironmentVariableExA( lpName: LPCSTR, lpGuid: LPCSTR, pValue: PVOID, nSize: DWORD, dwAttributes: DWORD, ) -> BOOL;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -41,8 +45,8 @@ pub const PROCESSOR_FEATURE_MAX: u32 = 64;
 
 pub const MAXIMUM_PROCESSORS: u32 = 32;
 
-pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023;
-pub const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004;
+pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023u32 as i32;
+pub const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004u32 as i32;
 
 pub const ERROR_INVALID_PARAMETER: u32 = 87;
 pub const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
@@ -51,23 +55,24 @@ pub const HEAP_ZERO_MEMORY: u32 = 0x00000008;
 
 pub const VARIABLE_ATTRIBUTE_NON_VOLATILE: u32 = 0x00000001;
 
-pub const SystemBasicInformation: u32 = 0;
-pub const SystemProcessorInformation: u32 = 1;
-pub const SystemNumaProcessorMap: u32 = 8;
-pub const SystemNumaAvailableMemory: u32 = 9;
-pub const SystemLogicalProcessorInformation: u32 = 75;
-pub const SystemRegistryQuotaInformation: u32 = 26;
-pub const SystemFirmwareTableInformation: u32 = 76;
+// SYSTEM_INFORMATION_CLASS values come from ntdll_sys::nt (enum-typed); local
+// shadows removed so the NtQuerySystemInformation enum param type-checks.
 pub const SystemFirmwareTable_Enumerate: u32 = 0;
 pub const SystemFirmwareTable_Get: u32 = 1;
 
 #[repr(C)]
 pub struct _SYSTEM_BASIC_INFORMATION {
-    pub Reserved1: u32,
-    pub Reserved2: u32,
-    pub Reserved3: u32,
-    pub Reserved4: u32,
-    pub Reserved5: u32,
+    pub Reserved: ULONG,
+    pub TimerResolution: ULONG,
+    pub PageSize: ULONG,
+    pub NumberOfPhysicalPages: ULONG,
+    pub LowestPhysicalPageNumber: ULONG,
+    pub HighestPhysicalPageNumber: ULONG,
+    pub AllocationGranularity: ULONG,
+    pub MinimumUserModeAddress: ULONG_PTR,
+    pub MaximumUserModeAddress: ULONG_PTR,
+    pub ActiveProcessorsAffinityMask: ULONG_PTR,
+    pub NumberOfProcessors: CCHAR,
 }
 
 pub type PSYSTEM_BASIC_INFORMATION = *mut _SYSTEM_BASIC_INFORMATION;
@@ -134,14 +139,14 @@ pub unsafe extern "system" fn GetSystemInfoInternal(
     ProcInfo: PSYSTEM_PROCESSOR_INFORMATION,
     SystemInfo: LPSYSTEM_INFO,
 ) {
-    RtlZeroMemory(SystemInfo as *mut _, core::mem::size_of::<SYSTEM_INFO>());
+    RtlZeroMemory(SystemInfo as *mut _, core::mem::size_of::<SYSTEM_INFO>() as SIZE_T);
     (*SystemInfo).wProcessorArchitecture = (*ProcInfo).ProcessorArchitecture;
     (*SystemInfo).wReserved = 0;
     (*SystemInfo).dwPageSize = (*BasicInfo).PageSize;
     (*SystemInfo).lpMinimumApplicationAddress = (*BasicInfo).MinimumUserModeAddress as *mut _;
     (*SystemInfo).lpMaximumApplicationAddress = (*BasicInfo).MaximumUserModeAddress as *mut _;
-    (*SystemInfo).dwActiveProcessorMask = (*BasicInfo).ActiveProcessorsAffinityMask;
-    (*SystemInfo).dwNumberOfProcessors = (*BasicInfo).NumberOfProcessors;
+    (*SystemInfo).dwActiveProcessorMask = (*BasicInfo).ActiveProcessorsAffinityMask as usize;
+    (*SystemInfo).dwNumberOfProcessors = (*BasicInfo).NumberOfProcessors as u32;
     (*SystemInfo).wProcessorLevel = (*ProcInfo).ProcessorLevel;
     (*SystemInfo).wProcessorRevision = (*ProcInfo).ProcessorRevision;
     (*SystemInfo).dwAllocationGranularity = (*BasicInfo).AllocationGranularity;
@@ -185,11 +190,11 @@ unsafe fn BaseQuerySystemFirmware(
 ) -> UINT {
     let SysFirmwareInfo: *mut SYSTEM_FIRMWARE_TABLE_INFORMATION;
     let mut Result: ULONG = 0;
-    let ReturnedSize: ULONG;
+    let mut ReturnedSize: ULONG = 0;
     let TotalSize: ULONG = BufferSize + core::mem::size_of::<SYSTEM_FIRMWARE_TABLE_INFORMATION>() as ULONG;
     let Status: NTSTATUS;
 
-    SysFirmwareInfo = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, TotalSize) as *mut SYSTEM_FIRMWARE_TABLE_INFORMATION;
+    SysFirmwareInfo = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, TotalSize as SIZE_T) as *mut SYSTEM_FIRMWARE_TABLE_INFORMATION;
     if SysFirmwareInfo.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -217,7 +222,7 @@ unsafe fn BaseQuerySystemFirmware(
             RtlCopyMemory(
                 pFirmwareTableBuffer,
                 (*SysFirmwareInfo).TableBuffer.as_ptr() as *const core::ffi::c_void,
-                (*SysFirmwareInfo).TableBufferLength as usize,
+                (*SysFirmwareInfo).TableBufferLength as SIZE_T,
             );
         }
     }
@@ -234,7 +239,7 @@ unsafe fn BaseQuerySystemFirmware(
 
 #[no_mangle]
 pub unsafe extern "system" fn GetLargePageMinimum() -> SIZE_T {
-    return SharedUserData.LargePageMinimum;
+    return (*SharedUserData).LargePageMinimum as SIZE_T;
 }
 
 #[no_mangle]
@@ -249,7 +254,7 @@ pub unsafe extern "system" fn GetSystemInfo(
         SystemBasicInformation,
         &mut BasicInfo as *mut SYSTEM_BASIC_INFORMATION as *mut core::ffi::c_void,
         core::mem::size_of::<SYSTEM_BASIC_INFORMATION>() as u32,
-        0,
+        core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
         return;
@@ -259,15 +264,15 @@ pub unsafe extern "system" fn GetSystemInfo(
         SystemProcessorInformation,
         &mut ProcInfo as *mut SYSTEM_PROCESSOR_INFORMATION as *mut core::ffi::c_void,
         core::mem::size_of::<SYSTEM_PROCESSOR_INFORMATION>() as u32,
-        0,
+        core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
         return;
     }
 
     GetSystemInfoInternal(
-        &mut BasicInfo as *mut SYSTEM_BASIC_INFORMATION,
-        &mut ProcInfo as *mut SYSTEM_PROCESSOR_INFORMATION,
+        &mut BasicInfo as *mut _ as PSYSTEM_BASIC_INFORMATION,
+        &mut ProcInfo as *mut _ as PSYSTEM_PROCESSOR_INFORMATION,
         lpSystemInfo,
     );
 }
@@ -317,13 +322,13 @@ pub unsafe extern "system" fn GetNativeSystemInfo(
 ) {
     let mut BasicInfo: SYSTEM_BASIC_INFORMATION = core::mem::zeroed();
     let mut ProcInfo: SYSTEM_PROCESSOR_INFORMATION = core::mem::zeroed();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     Status = RtlGetNativeSystemInformation(
         SystemBasicInformation,
-        &mut BasicInfo as *mut SYSTEM_BASIC_INFORMATION,
-        core::mem::size_of::<SYSTEM_BASIC_INFORMATION>(),
-        0,
+        &mut BasicInfo as *mut SYSTEM_BASIC_INFORMATION as PVOID,
+        core::mem::size_of::<SYSTEM_BASIC_INFORMATION>() as ULONG,
+        core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
         return;
@@ -331,17 +336,17 @@ pub unsafe extern "system" fn GetNativeSystemInfo(
 
     Status = RtlGetNativeSystemInformation(
         SystemProcessorInformation,
-        &mut ProcInfo as *mut SYSTEM_PROCESSOR_INFORMATION,
-        core::mem::size_of::<SYSTEM_PROCESSOR_INFORMATION>(),
-        0,
+        &mut ProcInfo as *mut SYSTEM_PROCESSOR_INFORMATION as PVOID,
+        core::mem::size_of::<SYSTEM_PROCESSOR_INFORMATION>() as ULONG,
+        core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
         return;
     }
 
     GetSystemInfoInternal(
-        &mut BasicInfo as *mut SYSTEM_BASIC_INFORMATION,
-        &mut ProcInfo as *mut SYSTEM_PROCESSOR_INFORMATION,
+        &mut BasicInfo as *mut _ as PSYSTEM_BASIC_INFORMATION,
+        &mut ProcInfo as *mut _ as PSYSTEM_PROCESSOR_INFORMATION,
         lpSystemInfo,
     );
 }
@@ -351,7 +356,7 @@ pub unsafe extern "system" fn GetLogicalProcessorInformation(
     Buffer: PSYSTEM_LOGICAL_PROCESSOR_INFORMATION,
     ReturnLength: PDWORD,
 ) -> BOOL {
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     if ReturnLength.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -382,7 +387,7 @@ pub unsafe extern "system" fn GetNumaHighestNodeNumber(
     HighestNodeNumber: PULONG,
 ) -> BOOL {
     let Status: NTSTATUS;
-    let Length: ULONG;
+    let mut Length: ULONG = 0;
     let mut PartialInfo: [ULONG; 2] = [0; 2];
 
     Status = NtQuerySystemInformation(
@@ -411,8 +416,8 @@ pub unsafe extern "system" fn GetNumaNodeProcessorMask(
     ProcessorMask: PULONGLONG,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut NumaInformation: SYSTEM_NUMA_INFORMATION;
-    let mut Length: ULONG;
+    let mut NumaInformation: SYSTEM_NUMA_INFORMATION = core::mem::zeroed();
+    let mut Length: ULONG = 0;
 
     Status = NtQuerySystemInformation(
         SystemNumaProcessorMap,
@@ -425,12 +430,12 @@ pub unsafe extern "system" fn GetNumaNodeProcessorMask(
         return 0;
     }
 
-    if Node > NumaInformation.HighestNodeNumber {
+    if Node as ULONG > NumaInformation.HighestNodeNumber {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    *ProcessorMask = NumaInformation.ActiveProcessorsAffinityMask[Node as usize];
+    *ProcessorMask = NumaInformation.__bindgen_anon_1.ActiveProcessorsAffinityMask[Node as usize];
     return 1;
 }
 
@@ -440,9 +445,9 @@ pub unsafe extern "system" fn GetNumaProcessorNode(
     NodeNumber: PUCHAR,
 ) -> BOOL {
     let Status: NTSTATUS;
-    let mut NumaInformation: SYSTEM_NUMA_INFORMATION;
-    let Length: ULONG;
-    let Node: ULONG;
+    let mut NumaInformation: SYSTEM_NUMA_INFORMATION = core::mem::zeroed();
+    let Length: ULONG = 0;
+    let mut Node: ULONG;
     let Proc: ULONGLONG;
 
     /* Can't handle processor number >= 32 */
@@ -468,10 +473,10 @@ pub unsafe extern "system" fn GetNumaProcessorNode(
     /* Find ourselves */
     Node = 0;
     Proc = (1u64 as ULONGLONG) << Processor;
-    while (Proc & NumaInformation.ActiveProcessorsAffinityMask[Node as usize]) == 0u64 {
+    while (Proc & NumaInformation.__bindgen_anon_1.ActiveProcessorsAffinityMask[Node as usize]) == 0u64 {
         Node += 1;
         /* Out of options */
-        if Node > NumaInformation.HighestNodeNumber {
+        if Node as ULONG > NumaInformation.HighestNodeNumber {
             *NodeNumber = !0u8;
             SetLastError(ERROR_INVALID_PARAMETER);
             return 0;
@@ -489,8 +494,8 @@ pub unsafe extern "system" fn GetNumaAvailableMemoryNode(
     AvailableBytes: PULONGLONG,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut NumaInformation: SYSTEM_NUMA_INFORMATION;
-    let mut Length: ULONG;
+    let mut NumaInformation: SYSTEM_NUMA_INFORMATION = core::mem::zeroed();
+    let mut Length: ULONG = 0;
 
     Status = NtQuerySystemInformation(
         SystemNumaAvailableMemory,
@@ -503,12 +508,12 @@ pub unsafe extern "system" fn GetNumaAvailableMemoryNode(
         return 0;
     }
 
-    if Node > NumaInformation.HighestNodeNumber {
+    if Node as ULONG > NumaInformation.HighestNodeNumber {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    *AvailableBytes = NumaInformation.AvailableMemory[Node as usize];
+    *AvailableBytes = NumaInformation.__bindgen_anon_1.AvailableMemory[Node as usize];
     return 1;
 }
 
@@ -621,7 +626,7 @@ pub unsafe extern "system" fn GetCurrentPackageId(
     Buffer: *mut BYTE,
 ) -> LONG {
     // STUB;
-    return APPMODEL_ERROR_NO_PACKAGE;
+    return APPMODEL_ERROR_NO_PACKAGE as LONG;
 }
 
 

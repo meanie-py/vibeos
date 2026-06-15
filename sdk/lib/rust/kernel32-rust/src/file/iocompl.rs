@@ -2,19 +2,28 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+extern "system" {
+    fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+}
+extern "C" {
+    fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
+}
+
 // ---- file-scope preamble (translated) ----
 pub const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS: u32 = 0x1;
 pub const FILE_SKIP_SET_EVENT_ON_HANDLE: u32 = 0x2;
+// IO_COMPLETION_ALL_ACCESS = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3
+pub const IO_COMPLETION_ALL_ACCESS: u32 = 0x000F_0000 | 0x0010_0000 | 0x3;
 #[no_mangle]
 pub unsafe extern "system" fn SetFileCompletionNotificationModes(
     FileHandle: HANDLE,
     Flags: UCHAR,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut FileInformation: FILE_IO_COMPLETION_NOTIFICATION_INFORMATION;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut FileInformation: FILE_IO_COMPLETION_NOTIFICATION_INFORMATION = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
-    if (Flags as i32) & !(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) != 0
+    if (Flags as u32) & !(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) != 0
     {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
         return 0;
@@ -46,8 +55,8 @@ pub unsafe extern "system" fn CreateIoCompletionPort(
 ) -> HANDLE {
     let mut Status: NTSTATUS;
     let mut NewPort: HANDLE;
-    let mut CompletionInformation: FILE_COMPLETION_INFORMATION;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut CompletionInformation: FILE_COMPLETION_INFORMATION = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     /* Check if this is a new port */
     NewPort = ExistingCompletionPort;
@@ -107,10 +116,10 @@ pub unsafe extern "system" fn GetQueuedCompletionStatus(
     dwMilliseconds: DWORD,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut IoStatus: _IO_STATUS_BLOCK;
-    let mut CompletionKey: ULONG_PTR;
-    let mut Time: LARGE_INTEGER;
-    let mut TimePtr: PLARGE_INTEGER;
+    let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut CompletionKey: ULONG_PTR = 0;
+    let mut Time: LARGE_INTEGER = core::mem::zeroed();
+    let TimePtr: PLARGE_INTEGER;
 
     /* Convert the timeout and then call the native API */
     TimePtr = BaseFormatTimeOut(&mut Time, dwMilliseconds);
@@ -135,7 +144,7 @@ pub unsafe extern "system" fn GetQueuedCompletionStatus(
         }
 
         /* This is a failure case */
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Write back the output parameters */
@@ -146,11 +155,11 @@ pub unsafe extern "system" fn GetQueuedCompletionStatus(
     if !(NT_SUCCESS(IoStatus.__bindgen_anon_1.Status)) {
         /* Convert and fail */
         BaseSetLastNTError(IoStatus.__bindgen_anon_1.Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Return success */
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -170,9 +179,9 @@ pub unsafe extern "system" fn PostQueuedCompletionStatus(
     );
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
-    return TRUE;
+    return TRUE as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetOverlappedResult(
@@ -184,7 +193,7 @@ pub unsafe extern "system" fn GetOverlappedResult(
     let mut WaitStatus: DWORD;
     let mut hObject: HANDLE;
 
-    if (*lpOverlapped).Internal == STATUS_PENDING as u64 {
+    if (*lpOverlapped).Internal == STATUS_PENDING as ULONG_PTR {
         if bWait == 0 {
             WaitStatus = WAIT_TIMEOUT as DWORD;
         } else {

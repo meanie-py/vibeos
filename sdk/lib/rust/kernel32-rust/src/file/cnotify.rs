@@ -1,13 +1,39 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
-use core::ffi::c_void;
+use crate::k32_externs::{CloseHandle, RtlZeroMemory};
+
+// ---- NT_ERROR helper (ntdef.h: NTSTATUS severity == 3) ----
+#[inline]
+fn NT_ERROR(Status: NTSTATUS) -> bool {
+    ((Status as u32) >> 30) == 3
+}
+
+// _BASEP_ACTCTX_BLOCK (dll/win32/kernel32/include/kernel32.h)
+#[repr(C)]
+pub struct _BASEP_ACTCTX_BLOCK {
+    pub Flags: ULONG,
+    pub ActivationContext: PVOID,
+    pub CompletionContext: PVOID,
+    pub CompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
+}
+pub type PBASEP_ACTCTX_BLOCK = *mut _BASEP_ACTCTX_BLOCK;
+
+extern "system" {
+    fn BasepFreeActivationContextActivationBlock(ActivationBlock: PBASEP_ACTCTX_BLOCK);
+    fn BasepAllocateActivationContextActivationBlock(
+        Flags: DWORD,
+        CompletionRoutine: PVOID,
+        CompletionContext: PVOID,
+        ActivationBlock: *mut PBASEP_ACTCTX_BLOCK,
+    ) -> NTSTATUS;
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub static mut staticchangebuff: [CHAR; 32] = [0; 32];
 
 pub static mut staticIoStatusBlock: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-    c2rust_unnamed: C2RustUnnamed_12 { Status: 0 },
+    __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: 0 },
     Information: 0,
 };
 
@@ -21,16 +47,16 @@ pub unsafe extern "system" fn BasepIoCompletion(
     let CompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE;
     let BytesTransfered: DWORD;
     let Result: DWORD;
-    let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME;
+    let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME = core::mem::zeroed();
     let ActivationContext: PVOID;
 
     /* Setup the activation frame */
-    RtlZeroMemory(&mut ActCtx as *mut _ as PVOID, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>());
+    RtlZeroMemory(&mut ActCtx as *mut _ as PVOID, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as SIZE_T);
     ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as SIZE_T;
     ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as ULONG;
 
     /* Check if the routine returned an error */
-    if NT_ERROR((*IoStatusBlock).__bindgen_anon_1.Status) != 0 {
+    if NT_ERROR((*IoStatusBlock).__bindgen_anon_1.Status) {
         /* Convert the error code and don't copy anything */
         Result = RtlNtStatusToDosError((*IoStatusBlock).__bindgen_anon_1.Status) as DWORD;
         BytesTransfered = 0;
@@ -74,7 +100,7 @@ pub unsafe extern "system" fn BasepIoCompletionSimple(
         BytesTransfered = (*IoStatusBlock).Information as DWORD;
     }
 
-    CompletionRoutine(Result, BytesTransfered, IoStatusBlock as LPOVERLAPPED);
+    CompletionRoutine.expect("non-null function pointer")(Result, BytesTransfered, IoStatusBlock as LPOVERLAPPED);
 }
 
 #[no_mangle]
@@ -87,12 +113,22 @@ pub unsafe extern "system" fn FindFirstChangeNotificationA(
     bWatchSubtree: BOOL,
     dwNotifyFilter: DWORD,
 ) -> HANDLE {
-    ConvertWin32AnsiChangeApiToUnicodeApi(
-        FindFirstChangeNotification,
-        lpPathName,
-        bWatchSubtree,
-        dwNotifyFilter,
-    )
+    // Expansion of ConvertWin32AnsiChangeApiToUnicodeApi(FindFirstChangeNotification, ...)
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    UnicodeCache = &mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&mut AnsiName, lpPathName as LPSTR);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &mut AnsiName, FALSE as BOOLEAN);
+    if NT_SUCCESS(Status) {
+        return FindFirstChangeNotificationW((*UnicodeCache).Buffer, bWatchSubtree, dwNotifyFilter);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    INVALID_HANDLE_VALUE
 }
 
 #[no_mangle]
@@ -210,10 +246,7 @@ pub unsafe extern "system" fn ReadDirectoryChangesW(
     let mut ApcRoutine: PIO_APC_ROUTINE;
     let mut ActivationContext: PBASEP_ACTCTX_BLOCK = core::ptr::null_mut();
     let mut Result: BOOL = 1;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        c2rust_unnamed: C2RustUnnamed_12 { Status: 0 },
-        Information: 0,
-    };
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if lpOverlapped.is_null() {
         Status = NtNotifyChangeDirectoryFile(
@@ -233,7 +266,7 @@ pub unsafe extern "system" fn ReadDirectoryChangesW(
                 BaseSetLastNTError(Status);
                 return 0;
             }
-            Status = IoStatusBlock.c2rust_unnamed.__bindgen_anon_1.Status;
+            Status = IoStatusBlock.__bindgen_anon_1.Status;
         }
         if NT_SUCCESS(Status) {
             *lpBytesReturned = IoStatusBlock.Information as DWORD;
@@ -257,16 +290,14 @@ pub unsafe extern "system" fn ReadDirectoryChangesW(
         }
         ApcContext = ActivationContext as PVOID;
         if !ActivationContext.is_null() {
-            ApcRoutine = Some(
-                BasepIoCompletion
-                    as unsafe extern "system" fn(PVOID, PIO_STATUS_BLOCK, DWORD) -> (),
+            ApcRoutine = core::mem::transmute::<PVOID, PIO_APC_ROUTINE>(
+                BasepIoCompletion as *mut core::ffi::c_void,
             );
         } else {
             ApcContext =
                 core::mem::transmute::<LPOVERLAPPED_COMPLETION_ROUTINE, PVOID>(lpCompletionRoutine);
-            ApcRoutine = Some(
-                BasepIoCompletionSimple
-                    as unsafe extern "system" fn(PVOID, PIO_STATUS_BLOCK, DWORD) -> (),
+            ApcRoutine = core::mem::transmute::<PVOID, PIO_APC_ROUTINE>(
+                BasepIoCompletionSimple as *mut core::ffi::c_void,
             );
         }
     } else {

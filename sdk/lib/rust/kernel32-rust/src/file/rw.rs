@@ -1,53 +1,49 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+#[allow(unused_imports)]
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut gDebugChannel: ULONG = 200 as ULONG;
 
-#[repr(C)]
-pub struct _FILE_SEGMENT_ELEMENT {
-    pub Buffer: *mut core::ffi::c_void,
-    pub Alignment: usize,
-}
+// DEBUG_CHANNEL TRACE is a no-op here (NDEBUG), matching wine/res.rs + fileinfo.rs.
+macro_rules! TRACE { ($($arg:tt)*) => {} }
 
-pub type PFILE_SEGMENT_ELEMENT = *mut _FILE_SEGMENT_ELEMENT;
-
-#[repr(C)]
-pub struct _IO_STATUS_BLOCK {
-    pub Status: i32,
-    pub Information: usize,
-}
-
-pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
-
-#[repr(C)]
-pub struct _LARGE_INTEGER {
-    pub QuadPart: i64,
-}
-
-pub type PLARGE_INTEGER = *mut _LARGE_INTEGER;
-
+// Use the bindgen kernel FFI types directly (the C uses the SDK types).
 pub type LPCVOID = *const core::ffi::c_void;
 pub type LPVOID = *mut core::ffi::c_void;
 pub type LPDWORD = *mut u32;
-pub type LPOVERLAPPED = *mut _OVERLAPPED;
-pub type LPOVERLAPPED_COMPLETION_ROUTINE = Option<unsafe extern "system" fn(dwErrorCode: u32, dwNumberOfBytesTransfered: u32, lpOverlapped: LPOVERLAPPED)>;
 
-#[repr(C)]
-pub struct _OVERLAPPED {
-    pub Internal: usize,
-    pub InternalHigh: usize,
-    pub Offset: u32,
-    pub Reserved: u32,
-    pub hEvent: *mut core::ffi::c_void,
+// kernel32-internal helper + console exports this file calls.
+use crate::k32_externs::IsConsoleHandle;
+
+extern "C" {
+    fn TranslateStdHandle(hHandle: HANDLE) -> HANDLE;
+}
+extern "system" {
+    fn WriteConsoleA(
+        hConsoleOutput: HANDLE,
+        lpBuffer: LPCVOID,
+        nNumberOfCharsToWrite: DWORD,
+        lpNumberOfCharsWritten: LPDWORD,
+        lpReserved: LPVOID,
+    ) -> BOOL;
+    fn ReadConsoleA(
+        hConsoleInput: HANDLE,
+        lpBuffer: LPVOID,
+        nNumberOfCharsToRead: DWORD,
+        lpNumberOfCharsRead: LPDWORD,
+        pInputControl: LPVOID,
+    ) -> BOOL;
+    fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: LPDWORD) -> BOOL;
 }
 
-pub const STATUS_END_OF_FILE: i32 = 0x8000001D;
-pub const STATUS_PENDING: i32 = 0x00000103;
+// wincon.h
+pub const ENABLE_PROCESSED_INPUT: DWORD = 0x0001;
 
-pub const NDEBUG: i32 = 1;
+pub const STATUS_END_OF_FILE: NTSTATUS = 0x8000001Du32 as NTSTATUS;
+pub const STATUS_PENDING: NTSTATUS = 0x00000103;
 
 #[no_mangle]
 pub unsafe extern "system" fn WriteFile(
@@ -60,7 +56,7 @@ pub unsafe extern "system" fn WriteFile(
     let mut Status: NTSTATUS;
     let mut hFile = hFile;
 
-    TRACE(b"WriteFile(hFile %p)\n\0".as_ptr() as *const i8, hFile);
+    TRACE!(b"WriteFile(hFile %p)\n\0".as_ptr() as *const i8, hFile);
 
     if !lpNumberOfBytesWritten.is_null() {
         *lpNumberOfBytesWritten = 0;
@@ -68,23 +64,23 @@ pub unsafe extern "system" fn WriteFile(
 
     hFile = TranslateStdHandle(hFile);
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         return WriteConsoleA(
             hFile,
             lpBuffer,
             nNumberOfBytesToWrite,
             lpNumberOfBytesWritten,
-            lpOverlapped,
+            core::ptr::null_mut(),
         );
     }
 
     if !lpOverlapped.is_null() {
-        let mut Offset: LARGE_INTEGER;
-        let mut ApcContext: PVOID;
+        let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+        let ApcContext: PVOID;
 
-        Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-        Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh;
-        (*lpOverlapped).Internal = STATUS_PENDING;
+        Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+        Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
+        (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
         ApcContext = if ((*lpOverlapped).hEvent as usize) & 0x1 != 0 {
             core::ptr::null_mut()
         } else {
@@ -112,7 +108,7 @@ pub unsafe extern "system" fn WriteFile(
             *lpNumberOfBytesWritten = (*lpOverlapped).InternalHigh as DWORD;
         }
     } else {
-        let mut Iosb: _IO_STATUS_BLOCK;
+        let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
 
         Status = NtWriteFile(
             hFile,
@@ -141,7 +137,7 @@ pub unsafe extern "system" fn WriteFile(
         }
     }
 
-    TRACE(b"WriteFile() succeeded\n\0".as_ptr() as *const i8);
+    TRACE!(b"WriteFile() succeeded\n\0".as_ptr() as *const i8);
     return 1;
 }
 
@@ -158,7 +154,7 @@ pub unsafe extern "system" fn ReadFile(
     let mut lpNumberOfBytesRead = lpNumberOfBytesRead;
     let mut lpOverlapped = lpOverlapped;
 
-    TRACE(b"ReadFile(hFile %p)\n\0".as_ptr() as *const i8, hFile);
+    TRACE!(b"ReadFile(hFile %p)\n\0".as_ptr() as *const i8, hFile);
 
     if !lpNumberOfBytesRead.is_null() {
         *lpNumberOfBytesRead = 0;
@@ -166,7 +162,7 @@ pub unsafe extern "system" fn ReadFile(
 
     hFile = TranslateStdHandle(hFile);
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         if ReadConsoleA(
             hFile,
             lpBuffer,
@@ -188,12 +184,12 @@ pub unsafe extern "system" fn ReadFile(
     }
 
     if !lpOverlapped.is_null() {
-        let mut Offset: LARGE_INTEGER = LARGE_INTEGER { u: Offset { LowPart: 0, HighPart: 0 } };
-        let mut ApcContext: PVOID;
+        let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+        let ApcContext: PVOID;
 
-        Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-        Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh;
-        (*lpOverlapped).Internal = STATUS_PENDING;
+        Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+        Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
+        (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
         ApcContext = if ((*lpOverlapped).hEvent as usize) & 0x1 != 0 {
             core::ptr::null_mut()
         } else {
@@ -224,17 +220,14 @@ pub unsafe extern "system" fn ReadFile(
             *lpNumberOfBytesRead = (*lpOverlapped).InternalHigh as DWORD;
         }
     } else {
-        let mut Iosb: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-            Status: 0,
-            Information: 0,
-        };
+        let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
 
         Status = NtReadFile(
             hFile,
             core::ptr::null_mut(),
             None,
             core::ptr::null_mut(),
-            &mut Iosb as *mut _IO_STATUS_BLOCK,
+            &mut Iosb,
             lpBuffer,
             nNumberOfBytesToRead,
             core::ptr::null_mut(),
@@ -265,7 +258,7 @@ pub unsafe extern "system" fn ReadFile(
         }
     }
 
-    TRACE(b"ReadFile() succeeded\n\0".as_ptr() as *const i8);
+    TRACE!(b"ReadFile() succeeded\n\0".as_ptr() as *const i8);
     return 1;
 }
 #[no_mangle]
@@ -279,9 +272,9 @@ pub unsafe extern "system" fn ApcRoutine(
         core::mem::transmute::<LPVOID, LPOVERLAPPED_COMPLETION_ROUTINE>(ApcContext);
 
     dwErrorCode = RtlNtStatusToDosError((*IoStatusBlock).__bindgen_anon_1.Status);
-    lpCompletionRoutine(
+    (lpCompletionRoutine.unwrap())(
         dwErrorCode,
-        (*IoStatusBlock).Information,
+        (*IoStatusBlock).Information as DWORD,
         IoStatusBlock as LPOVERLAPPED,
     );
 }
@@ -296,14 +289,14 @@ pub unsafe extern "system" fn WriteFileEx(
     let mut Offset: LARGE_INTEGER = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-    Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh as LONG;
+    Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
     (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
 
     Status = NtWriteFile(
         hFile,
         core::ptr::null_mut(),
-        Some(ApcRoutine as unsafe extern "system" fn(PVOID, PIO_STATUS_BLOCK, ULONG) -> ()),
+        core::mem::transmute::<_, PIO_APC_ROUTINE>(ApcRoutine as usize),
         core::mem::transmute::<LPOVERLAPPED_COMPLETION_ROUTINE, PVOID>(lpCompletionRoutine),
         lpOverlapped as PIO_STATUS_BLOCK,
         lpBuffer as PVOID,
@@ -330,14 +323,14 @@ pub unsafe extern "system" fn ReadFileEx(
     let mut Offset: LARGE_INTEGER = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-    Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh;
+    Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
     (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
 
     Status = NtReadFile(
         hFile,
         core::ptr::null_mut(),
-        Some(ApcRoutine as unsafe extern "system" fn(PVOID, PIO_STATUS_BLOCK, ULONG) -> ()),
+        core::mem::transmute::<_, PIO_APC_ROUTINE>(ApcRoutine as usize),
         core::mem::transmute::<LPOVERLAPPED_COMPLETION_ROUTINE, PVOID>(lpCompletionRoutine),
         lpOverlapped as PIO_STATUS_BLOCK,
         lpBuffer as PVOID,
@@ -361,12 +354,12 @@ pub unsafe extern "system" fn ReadFileScatter(
     lpReserved: LPDWORD,
     lpOverlapped: LPOVERLAPPED,
 ) -> BOOL {
-    let mut pIOStatus: PIO_STATUS_BLOCK = core::ptr::null_mut();
-    let mut Offset: LARGE_INTEGER = LARGE_INTEGER { u: __LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
-    let mut Status: NTSTATUS = 0;
+    let pIOStatus: PIO_STATUS_BLOCK;
+    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+    let Status: NTSTATUS;
 
-    Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-    Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh;
+    Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
     pIOStatus = lpOverlapped as PIO_STATUS_BLOCK;
     (*pIOStatus).__bindgen_anon_1.Status = STATUS_PENDING;
     (*pIOStatus).Information = 0;
@@ -399,13 +392,13 @@ pub unsafe extern "system" fn WriteFileGather(
     lpOverlapped: LPOVERLAPPED,
 ) -> BOOL {
     let IOStatus: PIO_STATUS_BLOCK;
-    let mut Offset: LARGE_INTEGER;
+    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
     let Status: NTSTATUS;
 
-    Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).u.s.Offset;
-    Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).u.s.OffsetHigh as LONG;
+    Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
     IOStatus = lpOverlapped as PIO_STATUS_BLOCK;
-    (*IOStatus).u.__bindgen_anon_1.Status = STATUS_PENDING;
+    (*IOStatus).__bindgen_anon_1.Status = STATUS_PENDING;
     (*IOStatus).Information = 0;
 
     Status = NtWriteFileGather(

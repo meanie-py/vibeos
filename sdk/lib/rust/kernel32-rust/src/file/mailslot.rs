@@ -2,6 +2,17 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+extern "system" {
+    fn RtlExtendedLargeIntegerDivide(
+        dividend: LARGE_INTEGER,
+        divisor: ULONG,
+        remainder: *mut ULONG,
+    ) -> LARGE_INTEGER;
+}
+
+// winbase.h
+const MAILSLOT_WAIT_FOREVER: DWORD = 0xFFFF_FFFF;
+
 // ---- file-scope preamble (translated) ----
 
 #[no_mangle]
@@ -11,7 +22,35 @@ pub unsafe extern "system" fn CreateMailslotA(
     lReadTimeout: DWORD,
     lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi2(Mailslot, lpName, nMaxMessageSize, lReadTimeout, lpSecurityAttributes)
+    // ConvertWin32AnsiObjectApiToUnicodeApi2(Mailslot, lpName, ...) — expanded.
+    if lpName.is_null() {
+        return CreateMailslotW(
+            core::ptr::null(),
+            nMaxMessageSize,
+            lReadTimeout,
+            lpSecurityAttributes,
+        );
+    }
+
+    let UnicodeCache: PUNICODE_STRING = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    RtlInitAnsiString(&mut AnsiName, lpName);
+    let Status: NTSTATUS = RtlAnsiStringToUnicodeString(UnicodeCache, &mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateMailslotW(
+            (*UnicodeCache).Buffer,
+            nMaxMessageSize,
+            lReadTimeout,
+            lpSecurityAttributes,
+        );
+    }
+
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    INVALID_HANDLE_VALUE
 }
 
 #[no_mangle]
@@ -57,7 +96,7 @@ pub unsafe extern "system" fn CreateMailslotW(
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     if lReadTimeout == MAILSLOT_WAIT_FOREVER {
-        DefaultTimeOut.QuadPart = 0xFFFFFFFFFFFFFFFFi64;
+        DefaultTimeOut.QuadPart = 0xFFFFFFFFFFFFFFFFu64 as i64;
     } else {
         DefaultTimeOut.QuadPart = (lReadTimeout as i64) * -10000i64;
     }
@@ -128,13 +167,13 @@ pub unsafe extern "system" fn GetMailslotInfo(
     }
 
     if !lpReadTimeout.is_null() {
-        if Buffer.ReadTimeout.QuadPart == -1i64 as u64 {
+        if Buffer.ReadTimeout.QuadPart == -1i64 {
             *lpReadTimeout = 0xFFFFFFFF;
         } else {
             Timeout.QuadPart = -(Buffer.ReadTimeout.QuadPart);
             Timeout = RtlExtendedLargeIntegerDivide(Timeout, 10000, core::ptr::null_mut());
-            if Timeout.u.__bindgen_anon_1.HighPart == 0 {
-                *lpReadTimeout = Timeout.u.__bindgen_anon_1.LowPart;
+            if Timeout.u.HighPart == 0 {
+                *lpReadTimeout = Timeout.u.LowPart;
             } else {
                 *lpReadTimeout = 0xFFFFFFFE;
             }
@@ -155,14 +194,11 @@ pub unsafe extern "system" fn SetMailslotInfo(
     let mut Timeout: LARGE_INTEGER = LARGE_INTEGER {
         QuadPart: 0,
     };
-    let mut Iosb: _IO_STATUS_BLOCK = _IO_STATUS_BLOCK {
-        Status: 0,
-        Information: 0,
-    };
+    let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
 
     if lReadTimeout == MAILSLOT_WAIT_FOREVER {
-        Timeout.QuadPart = 0xFFFFFFFFFFFFFFFFi64;
+        Timeout.QuadPart = 0xFFFFFFFFFFFFFFFFu64 as i64;
     } else {
         Timeout.QuadPart = (lReadTimeout as i64) * -10000i64;
     }
@@ -179,10 +215,10 @@ pub unsafe extern "system" fn SetMailslotInfo(
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return 0;
     }
 
-    return TRUE;
+    return 1;
 }
 
 

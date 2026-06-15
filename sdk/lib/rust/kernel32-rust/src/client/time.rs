@@ -1,6 +1,10 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
-use core::ffi::c_void;
+use core::ffi::c_long;
+
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC000_0235u32 as NTSTATUS;
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
@@ -14,7 +18,7 @@ pub unsafe extern "system" fn FileTimeToDosDateTime(
     lpFatDate: LPWORD,
     lpFatTime: LPWORD,
 ) -> BOOL {
-    let mut FileTime: LARGE_INTEGER = LARGE_INTEGER { u: std::mem::zeroed() };
+    let mut FileTime: LARGE_INTEGER = core::mem::zeroed();
     let mut TimeFields: TIME_FIELDS = TIME_FIELDS {
         Year: 0,
         Month: 0,
@@ -26,8 +30,8 @@ pub unsafe extern "system" fn FileTimeToDosDateTime(
         Weekday: 0,
     };
 
-    FileTime.u.__bindgen_anon_1.HighPart = (*lpFileTime).dwHighDateTime;
-    FileTime.u.__bindgen_anon_1.LowPart = (*lpFileTime).dwLowDateTime;
+    FileTime.u.HighPart = (*lpFileTime).dwHighDateTime as LONG;
+    FileTime.u.LowPart = (*lpFileTime).dwLowDateTime;
 
     if FileTime.QuadPart < 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -69,8 +73,8 @@ pub unsafe extern "system" fn DosDateTimeToFileTime(
     TimeFields.Milliseconds = 0;
 
     if RtlTimeFieldsToTime(&mut TimeFields, &mut SystemTime) != 0 {
-        (*lpFileTime).dwLowDateTime = unsafe { SystemTime.u.__bindgen_anon_1.LowPart };
-        (*lpFileTime).dwHighDateTime = unsafe { SystemTime.u.__bindgen_anon_1.HighPart };
+        (*lpFileTime).dwLowDateTime = unsafe { SystemTime.u.LowPart };
+        (*lpFileTime).dwHighDateTime = unsafe { SystemTime.u.HighPart as DWORD };
         return 1;
     }
 
@@ -87,14 +91,14 @@ pub unsafe extern "system" fn CompareFileTime(
     let mut Time2: LARGE_INTEGER = core::mem::zeroed();
     let mut Diff: LARGE_INTEGER = core::mem::zeroed();
 
-    Time1.u.__bindgen_anon_1.LowPart = (*lpFileTime1).dwLowDateTime;
-    Time2.u.__bindgen_anon_1.LowPart = (*lpFileTime2).dwLowDateTime;
-    Time1.u.__bindgen_anon_1.HighPart = (*lpFileTime1).dwHighDateTime as LONG;
-    Time2.u.__bindgen_anon_1.HighPart = (*lpFileTime2).dwHighDateTime as LONG;
+    Time1.u.LowPart = (*lpFileTime1).dwLowDateTime;
+    Time2.u.LowPart = (*lpFileTime2).dwLowDateTime;
+    Time1.u.HighPart = (*lpFileTime1).dwHighDateTime as LONG;
+    Time2.u.HighPart = (*lpFileTime2).dwHighDateTime as LONG;
 
     Diff.QuadPart = Time1.QuadPart - Time2.QuadPart;
 
-    if Diff.u.__bindgen_anon_1.HighPart < 0 {
+    if Diff.u.HighPart < 0 {
         return -1;
     }
     if Diff.QuadPart == 0 {
@@ -108,15 +112,15 @@ pub unsafe extern "system" fn GetSystemTimeAsFileTime(lpFileTime: PFILETIME) {
     let mut SystemTime: LARGE_INTEGER = core::mem::zeroed();
 
     loop {
-        SystemTime.u.__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.__bindgen_anon_1.LowPart;
-        if !(SystemTime.u.__bindgen_anon_1.HighPart != (*SharedUserData).SystemTime.High2Time) {
+        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
+        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
+        if !(SystemTime.u.HighPart != (*SharedUserData).SystemTime.High2Time) {
             break;
         }
     }
 
-    (*lpFileTime).dwLowDateTime = SystemTime.u.__bindgen_anon_1.LowPart;
-    (*lpFileTime).dwHighDateTime = SystemTime.u.__bindgen_anon_1.HighPart as DWORD;
+    (*lpFileTime).dwLowDateTime = SystemTime.u.LowPart;
+    (*lpFileTime).dwHighDateTime = SystemTime.u.HighPart as DWORD;
 }
 
 #[no_mangle]
@@ -158,8 +162,8 @@ pub unsafe extern "system" fn SystemTimeToFileTime(
     TimeFields.Milliseconds = (*lpSystemTime).wMilliseconds as CSHORT;
 
     if RtlTimeFieldsToTime(&mut TimeFields, &mut liTime) != 0 {
-        (*lpFileTime).dwLowDateTime = liTime.u.__bindgen_anon_1.LowPart;
-        (*lpFileTime).dwHighDateTime = liTime.u.__bindgen_anon_1.HighPart;
+        (*lpFileTime).dwLowDateTime = liTime.u.LowPart;
+        (*lpFileTime).dwHighDateTime = liTime.u.HighPart as DWORD;
         return 1;
     }
 
@@ -175,8 +179,8 @@ pub unsafe extern "system" fn FileTimeToSystemTime(
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
     let mut liTime: LARGE_INTEGER = core::mem::zeroed();
 
-    liTime.u.__bindgen_anon_1.LowPart = (*lpFileTime).dwLowDateTime;
-    liTime.u.__bindgen_anon_1.HighPart = (*lpFileTime).dwHighDateTime as LONG;
+    liTime.u.LowPart = (*lpFileTime).dwLowDateTime;
+    liTime.u.HighPart = (*lpFileTime).dwHighDateTime as LONG;
     if liTime.QuadPart < 0i64 {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
         return FALSE;
@@ -212,19 +216,19 @@ pub unsafe extern "system" fn FileTimeToLocalFileTime(
     };
 
     loop {
-        TimeZoneBias.u.__bindgen_anon_1.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.__bindgen_anon_1.LowPart = (*TimePtr).__bindgen_anon_1.LowPart;
-        if !(TimeZoneBias.u.__bindgen_anon_1.HighPart != (*TimePtr).High2Time) {
+        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
+        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
+        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
             break;
         }
     }
 
-    FileTime.u.__bindgen_anon_1.LowPart = (*lpFileTime).dwLowDateTime;
-    FileTime.u.__bindgen_anon_1.HighPart = (*lpFileTime).dwHighDateTime as i32;
+    FileTime.u.LowPart = (*lpFileTime).dwLowDateTime;
+    FileTime.u.HighPart = (*lpFileTime).dwHighDateTime as i32;
     FileTime.QuadPart -= TimeZoneBias.QuadPart as i64;
 
-    (*lpLocalFileTime).dwLowDateTime = FileTime.u.__bindgen_anon_1.LowPart;
-    (*lpLocalFileTime).dwHighDateTime = FileTime.u.__bindgen_anon_1.HighPart as u32;
+    (*lpLocalFileTime).dwLowDateTime = FileTime.u.LowPart;
+    (*lpLocalFileTime).dwHighDateTime = FileTime.u.HighPart as u32;
 
     return 1;
 }
@@ -245,20 +249,20 @@ pub unsafe extern "system" fn LocalFileTimeToFileTime(
     };
 
     loop {
-        TimeZoneBias.u.__bindgen_anon_1.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.__bindgen_anon_1.LowPart = (*TimePtr).__bindgen_anon_1.LowPart;
-        if !(TimeZoneBias.u.__bindgen_anon_1.HighPart != (*TimePtr).High2Time) {
+        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
+        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
+        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
             break;
         }
     }
 
-    FileTime.u.__bindgen_anon_1.LowPart = (*lpLocalFileTime).dwLowDateTime;
-    FileTime.u.__bindgen_anon_1.HighPart = (*lpLocalFileTime).dwHighDateTime as LONG;
+    FileTime.u.LowPart = (*lpLocalFileTime).dwLowDateTime;
+    FileTime.u.HighPart = (*lpLocalFileTime).dwHighDateTime as LONG;
 
     FileTime.QuadPart += TimeZoneBias.QuadPart;
 
-    (*lpFileTime).dwLowDateTime = FileTime.u.__bindgen_anon_1.LowPart;
-    (*lpFileTime).dwHighDateTime = FileTime.u.__bindgen_anon_1.HighPart as DWORD;
+    (*lpFileTime).dwLowDateTime = FileTime.u.LowPart;
+    (*lpFileTime).dwHighDateTime = FileTime.u.HighPart as DWORD;
 
     return TRUE;
 }
@@ -270,9 +274,9 @@ pub unsafe extern "system" fn GetLocalTime(lpSystemTime: LPSYSTEMTIME) {
     let mut TimePtr: *mut KSYSTEM_TIME = core::ptr::null_mut();
 
     loop {
-        SystemTime.u.__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.__bindgen_anon_1.LowPart;
-        if SystemTime.u.__bindgen_anon_1.HighPart == (*SharedUserData).SystemTime.High2Time {
+        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
+        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
+        if SystemTime.u.HighPart == (*SharedUserData).SystemTime.High2Time {
             break;
         }
     }
@@ -284,9 +288,9 @@ pub unsafe extern "system" fn GetLocalTime(lpSystemTime: LPSYSTEMTIME) {
     };
 
     loop {
-        TimeZoneBias.u.__bindgen_anon_1.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.__bindgen_anon_1.LowPart = (*TimePtr).__bindgen_anon_1.LowPart;
-        if TimeZoneBias.u.__bindgen_anon_1.HighPart == (*TimePtr).High2Time {
+        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
+        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
+        if TimeZoneBias.u.HighPart == (*TimePtr).High2Time {
             break;
         }
     }
@@ -310,9 +314,9 @@ pub unsafe extern "system" fn GetSystemTime(lpSystemTime: LPSYSTEMTIME) {
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
 
     loop {
-        SystemTime.u.__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.__bindgen_anon_1.LowPart;
-        if !(SystemTime.u.__bindgen_anon_1.HighPart != (*SharedUserData).SystemTime.High2Time) {
+        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
+        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
+        if !(SystemTime.u.HighPart != (*SharedUserData).SystemTime.High2Time) {
             break;
         }
     }
@@ -331,8 +335,8 @@ pub unsafe extern "system" fn GetSystemTime(lpSystemTime: LPSYSTEMTIME) {
 
 #[no_mangle]
 pub unsafe extern "system" fn SetLocalTime(lpSystemTime: *const SYSTEMTIME) -> BOOL {
-    let mut NewSystemTime: LARGE_INTEGER = LARGE_INTEGER { u: LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
-    let mut TimeZoneBias: LARGE_INTEGER = LARGE_INTEGER { u: LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
+    let mut NewSystemTime: LARGE_INTEGER = core::mem::zeroed();
+    let mut TimeZoneBias: LARGE_INTEGER = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut Privilege: ULONG = SE_SYSTEMTIME_PRIVILEGE as ULONG;
     let mut TimeFields: TIME_FIELDS = TIME_FIELDS {
@@ -355,9 +359,9 @@ pub unsafe extern "system" fn SetLocalTime(lpSystemTime: *const SYSTEMTIME) -> B
     };
 
     loop {
-        TimeZoneBias.u.__bindgen_anon_1.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.__bindgen_anon_1.LowPart = (*TimePtr).__bindgen_anon_1.LowPart as DWORD;
-        if !(TimeZoneBias.u.__bindgen_anon_1.HighPart != (*TimePtr).High2Time) {
+        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
+        TimeZoneBias.u.LowPart = (*TimePtr).LowPart as DWORD;
+        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
             break;
         }
     }
@@ -393,7 +397,7 @@ pub unsafe extern "system" fn SetLocalTime(lpSystemTime: *const SYSTEMTIME) -> B
 
 #[no_mangle]
 pub unsafe extern "system" fn SetSystemTime(lpSystemTime: *const SYSTEMTIME) -> BOOL {
-    let mut NewSystemTime: LARGE_INTEGER = LARGE_INTEGER { u: __LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
+    let mut NewSystemTime: LARGE_INTEGER = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut Privilege: ULONG = SE_SYSTEMTIME_PRIVILEGE as ULONG;
     let mut TimeFields: TIME_FIELDS = TIME_FIELDS {
@@ -440,17 +444,17 @@ pub unsafe extern "system" fn GetTickCount() -> DWORD {
     let mut TickCount: ULARGE_INTEGER = core::mem::zeroed();
 
     // _WIN64 path
-    TickCount.QuadPart = *((&raw mut (*SharedUserData).TickCount) as *mut ULONG64) as ULONGLONG;
+    TickCount.QuadPart = *((&raw mut (*SharedUserData).__bindgen_anon_2.TickCount) as *mut ULONG64) as ULONGLONG;
 
     // Note: The _WIN64 path is always taken in the anchor; the while loop is not present.
     // The anchor shows the 64-bit path directly.
 
     return ((TickCount.__bindgen_anon_1.LowPart as u64)
-        .wrapping_mul(SharedUserData.TickCountMultiplier as u64)
+        .wrapping_mul((*SharedUserData).TickCountMultiplier as u64)
         >> 24)
         .wrapping_add(
             (((TickCount.__bindgen_anon_1.HighPart as u32) << 8 & 0xFFFFFFFF) as u64)
-                .wrapping_mul(SharedUserData.TickCountMultiplier as u64),
+                .wrapping_mul((*SharedUserData).TickCountMultiplier as u64),
         ) as DWORD;
 }
 
@@ -492,7 +496,7 @@ pub unsafe extern "system" fn SetSystemTimeAdjustment(
     bTimeAdjustmentDisabled: BOOL,
 ) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut TimeInfo: SYSTEM_SET_TIME_ADJUST_INFORMATION;
+    let mut TimeInfo: SYSTEM_SET_TIME_ADJUST_INFORMATION = core::mem::zeroed();
 
     TimeInfo.TimeAdjustment = dwTimeAdjustment;
     TimeInfo.Enable = bTimeAdjustmentDisabled as BOOLEAN;
@@ -536,7 +540,7 @@ pub unsafe extern "system" fn GetSystemTimes(
     ProcPerfInfo = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        BufferSize,
+        BufferSize as SIZE_T,
     ) as PSYSTEM_PROCESSOR_PERFORMANCE_INFORMATION;
 
     if ProcPerfInfo.is_null() {

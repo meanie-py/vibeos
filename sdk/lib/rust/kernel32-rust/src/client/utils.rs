@@ -1,6 +1,54 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::k32_globals::BasepExeLdrEntry;
+use crate::k32_externs::STATUS_INVALID_IMAGE_FORMAT;
 use core::ffi::c_void;
+
+// BaseNamedObjectDirectory is owned by another C TU (basesrv/dllmain).
+extern "C" {
+    static mut BaseNamedObjectDirectory: HANDLE;
+}
+
+// ntdll Rtl*Size macros — not exports; declare them.
+extern "system" {
+    fn RtlUnicodeStringToAnsiSize(UnicodeString: PUNICODE_STRING) -> ULONG;
+    fn RtlAnsiStringToUnicodeSize(AnsiString: PANSI_STRING) -> ULONG;
+    fn RtlUnicodeStringToOemSize(UnicodeString: PCUNICODE_STRING) -> ULONG;
+    fn RtlOemStringToUnicodeSize(OemString: PANSI_STRING) -> ULONG;
+}
+
+// ROUND_UP(n, align) == (((n)+(align)-1) & ~((align)-1))
+#[inline]
+fn ROUND_UP(n: SIZE_T, align: SIZE_T) -> SIZE_T {
+    (n.wrapping_add(align).wrapping_sub(1)) & !(align.wrapping_sub(1))
+}
+
+// Function-pointer typedefs (NTAPI). The bindgen Rtl* fn items spell the literal
+// per-arch ABI ("stdcall" on i386, "C" on amd64/arm64); Rust will not coerce a
+// "stdcall"/"C" fn item into a "system" fn pointer even when the convention is
+// identical, so spell the typedef ABI to match bindgen per-arch. The file's own
+// Basep*Size fns below use the matching ABI too.
+#[cfg(target_arch = "x86")]
+pub type PRTL_CONVERT_STRING =
+    Option<unsafe extern "stdcall" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS>;
+#[cfg(target_arch = "x86")]
+pub type PRTL_CONVERT_STRINGA =
+    Option<unsafe extern "stdcall" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS>;
+#[cfg(target_arch = "x86")]
+pub type PRTL_COUNT_STRING = Option<unsafe extern "stdcall" fn(PUNICODE_STRING) -> ULONG>;
+#[cfg(target_arch = "x86")]
+pub type PRTL_COUNT_STRINGA = Option<unsafe extern "stdcall" fn(PANSI_STRING) -> ULONG>;
+
+#[cfg(not(target_arch = "x86"))]
+pub type PRTL_CONVERT_STRING =
+    Option<unsafe extern "C" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS>;
+#[cfg(not(target_arch = "x86"))]
+pub type PRTL_CONVERT_STRINGA =
+    Option<unsafe extern "C" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS>;
+#[cfg(not(target_arch = "x86"))]
+pub type PRTL_COUNT_STRING = Option<unsafe extern "C" fn(PUNICODE_STRING) -> ULONG>;
+#[cfg(not(target_arch = "x86"))]
+pub type PRTL_COUNT_STRINGA = Option<unsafe extern "C" fn(PANSI_STRING) -> ULONG>;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -10,67 +58,46 @@ pub static mut Restricted: _UNICODE_STRING = _UNICODE_STRING {
     Buffer: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
 };
 
-pub static mut bIsFileApiAnsi: BOOL = TRUE;
+pub static mut bIsFileApiAnsi: BOOL = 1; // TRUE
 
-pub static mut Basep8BitStringToUnicodeString: PRTL_CONVERT_STRING = unsafe {
-    Some(
-        RtlAnsiStringToUnicodeString
-            as unsafe extern "C" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS,
-    )
-};
+pub static mut Basep8BitStringToUnicodeString: PRTL_CONVERT_STRING =
+    Some(RtlAnsiStringToUnicodeString);
 
-pub static mut BasepUnicodeStringTo8BitString: PRTL_CONVERT_STRINGA = unsafe {
-    Some(
-        RtlUnicodeStringToAnsiString
-            as unsafe extern "C" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS,
-    )
-};
+pub static mut BasepUnicodeStringTo8BitString: PRTL_CONVERT_STRINGA =
+    Some(RtlUnicodeStringToAnsiString);
 
 pub static mut BasepUnicodeStringTo8BitSize: PRTL_COUNT_STRING =
-    unsafe { Some(BasepUnicodeStringToAnsiSize as unsafe extern "C" fn(PUNICODE_STRING) -> ULONG) };
+    Some(BasepUnicodeStringToAnsiSize);
 
 pub static mut Basep8BitStringToUnicodeSize: PRTL_COUNT_STRINGA =
-    unsafe { Some(BasepAnsiStringToUnicodeSize as unsafe extern "C" fn(PANSI_STRING) -> ULONG) };
-
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
-
-pub type PRTL_CONVERT_STRING = unsafe extern "system" fn(
-    DestinationString: PUNICODE_STRING,
-    SourceString: PANSI_STRING,
-    AllocateDestinationString: BOOLEAN,
-) -> NTSTATUS;
-
-pub type PRTL_CONVERT_STRINGA = unsafe extern "system" fn(
-    DestinationString: PANSI_STRING,
-    SourceString: PUNICODE_STRING,
-    AllocateDestinationString: BOOLEAN,
-) -> NTSTATUS;
-
-pub type PRTL_COUNT_STRING = unsafe extern "system" fn(
-    DestinationString: PUNICODE_STRING,
-    SourceString: PANSI_STRING,
-) -> ULONG;
-
-pub type PRTL_COUNT_STRINGA = unsafe extern "system" fn(
-    DestinationString: PANSI_STRING,
-    SourceString: PUNICODE_STRING,
-) -> ULONG;
-#[no_mangle]
-pub unsafe extern "system" fn BasepUnicodeStringToOemSize(String: PUNICODE_STRING) -> ULONG {
-    return RtlUnicodeStringToOemSize(String as PCUNICODE_STRING);
+    Some(BasepAnsiStringToUnicodeSize);
+// NTAPI ABI spelled to match the PRTL_COUNT_STRING* typedefs above so these
+// coerce into the fn-pointer statics without a cross-ABI cast. ABI strings can't
+// come from a macro, so cfg-duplicate (i386 stdcall vs amd64/arm64 C).
+macro_rules! count_size_fns {
+    ($abi:literal) => {
+        #[no_mangle]
+        pub unsafe extern $abi fn BasepUnicodeStringToOemSize(String: PUNICODE_STRING) -> ULONG {
+            return RtlUnicodeStringToOemSize(String as PCUNICODE_STRING);
+        }
+        #[no_mangle]
+        pub unsafe extern $abi fn BasepOemStringToUnicodeSize(String: PANSI_STRING) -> ULONG {
+            RtlOemStringToUnicodeSize(String)
+        }
+        #[no_mangle]
+        pub unsafe extern $abi fn BasepUnicodeStringToAnsiSize(String: PUNICODE_STRING) -> ULONG {
+            RtlUnicodeStringToAnsiSize(String)
+        }
+        #[no_mangle]
+        pub unsafe extern $abi fn BasepAnsiStringToUnicodeSize(String: PANSI_STRING) -> u32 {
+            RtlAnsiStringToUnicodeSize(String)
+        }
+    };
 }
-#[no_mangle]
-pub unsafe extern "system" fn BasepOemStringToUnicodeSize(String: PANSI_STRING) -> ULONG {
-    RtlOemStringToUnicodeSize(String)
-}
-#[no_mangle]
-pub unsafe extern "system" fn BasepUnicodeStringToAnsiSize(String: PUNICODE_STRING) -> ULONG {
-    RtlUnicodeStringToAnsiSize(String)
-}
-#[no_mangle]
-pub unsafe extern "system" fn BasepAnsiStringToUnicodeSize(String: PANSI_STRING) -> u32 {
-    RtlAnsiStringToUnicodeSize(String)
-}
+#[cfg(target_arch = "x86")]
+count_size_fns!("stdcall");
+#[cfg(not(target_arch = "x86"))]
+count_size_fns!("C");
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
@@ -124,13 +151,13 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
         Status = NtOpenDirectoryObject(
             &mut BnoHandle,
             DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY,
-            &ObjectAttributes,
+            &mut ObjectAttributes,
         );
         if !NT_SUCCESS(Status) {
             Status = NtOpenDirectoryObject(
                 &mut DirHandle,
                 DIRECTORY_TRAVERSE,
-                &ObjectAttributes,
+                &mut ObjectAttributes,
             );
             if NT_SUCCESS(Status) {
                 // InitializeObjectAttributes inline
@@ -144,7 +171,7 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
                 Status = NtOpenDirectoryObject(
                     &mut BnoHandle,
                     DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY,
-                    &ObjectAttributes,
+                    &mut ObjectAttributes,
                 );
                 NtClose(DirHandle);
             }
@@ -232,7 +259,7 @@ pub unsafe extern "system" fn Basep8BitStringToStaticUnicodeString(
     if !NT_SUCCESS(Status) {
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
-        Status = Basep8BitStringToUnicodeString(StaticString, &raw mut AnsiString, 0);
+        Status = (Basep8BitStringToUnicodeString.unwrap())(StaticString, &raw mut AnsiString, 0);
     }
 
     if NT_SUCCESS(Status) {
@@ -259,7 +286,7 @@ pub unsafe extern "system" fn Basep8BitStringToDynamicUnicodeString(
     if !NT_SUCCESS(Status) {
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
-        Status = Basep8BitStringToUnicodeString(UnicodeString, &mut AnsiString, 1);
+        Status = (Basep8BitStringToUnicodeString.unwrap())(UnicodeString, &mut AnsiString, 1);
     }
 
     if NT_SUCCESS(Status) {
@@ -286,8 +313,8 @@ pub unsafe extern "system" fn BasepAnsiStringToHeapUnicodeString(
 
     if NT_SUCCESS(RtlAnsiStringToUnicodeString(
         &mut UnicodeTemp,
-        &AnsiTemp,
-        TRUE,
+        &mut AnsiTemp,
+        1, // TRUE
     )) {
         *UnicodeString = UnicodeTemp.Buffer;
     } else {
@@ -362,7 +389,7 @@ pub unsafe extern "system" fn BaseCreateStack(
     let mut UseGuard: BOOLEAN;
     let PageSize: ULONG;
     let AllocationGranularity: ULONG;
-    let mut Dummy: ULONG;
+    let mut Dummy: ULONG = 0;
     let mut MinimumStackCommit: SIZE_T;
     let mut GuardPageSize: SIZE_T;
 
@@ -502,6 +529,21 @@ pub unsafe extern "system" fn BaseFreeThreadStack(
     );
 }
 
+#[cfg(target_arch = "x86")]
+extern "C" {
+    fn BaseThreadStartupThunk();
+    fn BaseProcessStartThunk();
+    fn BaseFiberStartup();
+}
+
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    fn BaseThreadStartup();
+    fn BaseFiberStartup();
+    fn BaseProcessStartup();
+}
+
+#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn BaseInitializeContext(
     Context: PCONTEXT,
@@ -510,13 +552,93 @@ pub unsafe extern "system" fn BaseInitializeContext(
     StackAddress: PVOID,
     ContextType: ULONG,
 ) {
-    // x86 path is not compiled on x64, so we only have the amd64 path
+    const KGDT_R3_CODE: WORD = 0x18;
+    const KGDT_R3_DATA: WORD = 0x20;
+    const KGDT_R3_TEB: WORD = 0x38;
+
+    let ContextFlags: ULONG;
+
+    /* Setup the Initial Win32 Thread Context */
+    (*Context).Eax = StartAddress as ULONG_PTR as DWORD;
+    (*Context).Ebx = Parameter as ULONG_PTR as DWORD;
+    (*Context).Esp = StackAddress as ULONG_PTR as DWORD;
+    /* The other registers are undefined */
+
+    /* Setup the Segments */
+    (*Context).SegFs = KGDT_R3_TEB as DWORD;
+    (*Context).SegEs = KGDT_R3_DATA as DWORD;
+    (*Context).SegDs = KGDT_R3_DATA as DWORD;
+    (*Context).SegCs = KGDT_R3_CODE as DWORD;
+    (*Context).SegSs = KGDT_R3_DATA as DWORD;
+    (*Context).SegGs = 0;
+
+    /* Set the Context Flags */
+    ContextFlags = (*Context).ContextFlags;
+    (*Context).ContextFlags = CONTEXT_FULL as DWORD;
+
+    /* Give it some room for the Parameter */
+    (*Context).Esp = (*Context).Esp
+        .wrapping_sub(core::mem::size_of::<PVOID>() as DWORD);
+
+    /* Set the EFLAGS */
+    (*Context).EFlags = 0x3000; /* IOPL 3 */
+
+    /* What kind of context is being created? */
+    if ContextType == 1 {
+        /* For Threads */
+        (*Context).Eip = BaseThreadStartupThunk as ULONG_PTR as DWORD;
+    } else if ContextType == 2 {
+        /* This is a fiber: make space for the return address */
+        (*Context).Esp = (*Context).Esp
+            .wrapping_sub(core::mem::size_of::<PVOID>() as DWORD);
+        *((*Context).Esp as *mut PVOID) = BaseFiberStartup as PVOID;
+
+        /* Is FPU state required? */
+        (*Context).ContextFlags |= ContextFlags;
+        if (ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT {
+            /* Set an initial state */
+            (*Context).FloatSave.ControlWord = 0x27F;
+            (*Context).FloatSave.StatusWord = 0;
+            (*Context).FloatSave.TagWord = 0xFFFF;
+            (*Context).FloatSave.ErrorOffset = 0;
+            (*Context).FloatSave.ErrorSelector = 0;
+            (*Context).FloatSave.DataOffset = 0;
+            (*Context).FloatSave.DataSelector = 0;
+            if (*SharedUserData).ProcessorFeatures
+                [PF_XMMI_INSTRUCTIONS_AVAILABLE as usize]
+                != 0
+            {
+                (*Context).Dr6 = 0x1F80;
+            }
+        }
+    } else {
+        /* For first thread in a Process */
+        (*Context).Eip = BaseProcessStartThunk as ULONG_PTR as DWORD;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "system" fn BaseInitializeContext(
+    Context: PCONTEXT,
+    Parameter: PVOID,
+    StartAddress: PVOID,
+    StackAddress: PVOID,
+    ContextType: ULONG,
+) {
+    const RPL_MASK: WORD = 0x3;
+    const KGDT64_R3_DATA: WORD = 0x28;
+    const KGDT64_R3_CODE: WORD = 0x30;
+    const KGDT64_R3_CMTEB: WORD = 0x50;
+    const EFLAGS_INTERRUPT_MASK: u32 = 0x200;
+    const INITIAL_MXCSR: u32 = 0x1f80;
+
     // ASSERT(((ULONG_PTR)StackAddress & 15) == 0);
     if (StackAddress as usize) & 15 != 0 {
         DbgBreakPoint();
     }
 
-    RtlZeroMemory(Context as *mut _, core::mem::size_of::<CONTEXT>());
+    core::ptr::write_bytes(Context as *mut u8, 0, core::mem::size_of::<CONTEXT>());
 
     /* Setup the Initial Win32 Thread Context */
     (*Context).Rcx = StartAddress as ULONG_PTR as DWORD64;
@@ -526,15 +648,15 @@ pub unsafe extern "system" fn BaseInitializeContext(
         as DWORD64;
 
     /* Setup the Segments */
-    (*Context).SegGs = (KGDT64_R3_DATA | RPL_MASK) as WORD;
-    (*Context).SegEs = (KGDT64_R3_DATA | RPL_MASK) as WORD;
-    (*Context).SegDs = (KGDT64_R3_DATA | RPL_MASK) as WORD;
-    (*Context).SegCs = (KGDT64_R3_CODE | RPL_MASK) as WORD;
-    (*Context).SegSs = (KGDT64_R3_DATA | RPL_MASK) as WORD;
-    (*Context).SegFs = (KGDT64_R3_CMTEB | RPL_MASK) as WORD;
+    (*Context).SegGs = KGDT64_R3_DATA | RPL_MASK;
+    (*Context).SegEs = KGDT64_R3_DATA | RPL_MASK;
+    (*Context).SegDs = KGDT64_R3_DATA | RPL_MASK;
+    (*Context).SegCs = KGDT64_R3_CODE | RPL_MASK;
+    (*Context).SegSs = KGDT64_R3_DATA | RPL_MASK;
+    (*Context).SegFs = KGDT64_R3_CMTEB | RPL_MASK;
 
     /* Set the EFLAGS */
-    (*Context).EFlags = (0x3000i32 | EFLAGS_INTERRUPT_MASK) as DWORD;
+    (*Context).EFlags = (0x3000u32 | EFLAGS_INTERRUPT_MASK) as DWORD;
 
     /* Set MXCSR */
     (*Context).MxCsr = INITIAL_MXCSR as DWORD;
@@ -552,6 +674,20 @@ pub unsafe extern "system" fn BaseInitializeContext(
 
     /* Set the Context Flags */
     (*Context).ContextFlags = CONTEXT_FULL as DWORD;
+}
+
+// kernel32 client/utils.c only compiles _M_IX86 / _M_AMD64 paths; on arm64 the
+// function body is effectively unimplemented (no upstream ARM64 path).
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "system" fn BaseInitializeContext(
+    Context: PCONTEXT,
+    Parameter: PVOID,
+    StartAddress: PVOID,
+    StackAddress: PVOID,
+    ContextType: ULONG,
+) {
+    let _ = (Context, Parameter, StartAddress, StackAddress, ContextType);
 }
 
 #[no_mangle]
@@ -576,6 +712,7 @@ pub unsafe extern "system" fn BasepMapFile(
     hSection: PHANDLE,
     ApplicationName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let mut ApplicationName = ApplicationName;
     let mut RelativeName: RTL_RELATIVE_NAME_U = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
@@ -595,7 +732,7 @@ pub unsafe extern "system" fn BasepMapFile(
     }
 
     if RelativeName.RelativeName.Length != 0 {
-        *(&mut ApplicationName as *mut PUNICODE_STRING) = &mut RelativeName.RelativeName;
+        ApplicationName = &mut RelativeName.RelativeName;
     }
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -639,7 +776,7 @@ pub unsafe extern "system" fn Wow64EnableWow64FsRedirection(
     Wow64EnableWow64FsRedirection: BOOLEAN,
 ) -> BOOLEAN {
     let Status: NTSTATUS;
-    let Result: BOOL;
+    let Result: BOOLEAN;
 
     Status = RtlWow64EnableFsRedirection(Wow64EnableWow64FsRedirection);
     if NT_SUCCESS(Status) {
@@ -685,52 +822,44 @@ pub unsafe extern "system" fn Wow64RevertWow64FsRedirection(mut OldValue: PVOID)
 
 #[no_mangle]
 pub unsafe extern "system" fn SetFileApisToOEM() {
-    Basep8BitStringToUnicodeString = ::core::mem::transmute::<
-        Option<unsafe extern "C" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>,
-        PRTL_CONVERT_STRING,
-    >(Some(
-        RtlOemStringToUnicodeString
-            as unsafe extern "C" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS,
-    ));
-    BasepUnicodeStringTo8BitString = Some(
-        RtlUnicodeStringToOemString
-            as unsafe extern "C" fn(POEM_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS,
-    ) as PRTL_CONVERT_STRINGA;
-    BasepUnicodeStringTo8BitSize =
-        Some(BasepUnicodeStringToOemSize as unsafe extern "C" fn(PUNICODE_STRING) -> ULONG)
-            as PRTL_COUNT_STRING;
-    Basep8BitStringToUnicodeSize =
-        Some(BasepOemStringToUnicodeSize as unsafe extern "C" fn(PANSI_STRING) -> ULONG)
-            as PRTL_COUNT_STRINGA;
-    bIsFileApiAnsi = 0i32;
+    /* Set the correct Base Api */
+    // C: Basep8BitStringToUnicodeString = (PRTL_CONVERT_STRING)RtlOemStringToUnicodeString;
+    // RtlOemStringToUnicodeString's SourceString is PCOEM_STRING (*const STRING), while
+    // PRTL_CONVERT_STRING expects PCANSI_STRING (*mut STRING); the C cast erases that, so
+    // transmute the differing fn-pointer type here.
+    #[cfg(target_arch = "x86")]
+    type OemConvert =
+        Option<unsafe extern "stdcall" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>;
+    #[cfg(not(target_arch = "x86"))]
+    type OemConvert =
+        Option<unsafe extern "C" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>;
+    Basep8BitStringToUnicodeString =
+        ::core::mem::transmute::<OemConvert, PRTL_CONVERT_STRING>(Some(RtlOemStringToUnicodeString));
+    // RtlUnicodeStringToOemString: (POEM_STRING, PCUNICODE_STRING, BOOLEAN); POEM_STRING ==
+    // PANSI_STRING == PSTRING, so this coerces to PRTL_CONVERT_STRINGA directly.
+    BasepUnicodeStringTo8BitString = Some(RtlUnicodeStringToOemString);
+    BasepUnicodeStringTo8BitSize = Some(BasepUnicodeStringToOemSize);
+    Basep8BitStringToUnicodeSize = Some(BasepOemStringToUnicodeSize);
+
+    /* FIXME: Old, deprecated way */
+    bIsFileApiAnsi = 0; // FALSE
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SetFileApisToANSI() {
-    Basep8BitStringToUnicodeString = Some(
-        RtlAnsiStringToUnicodeString
-            as unsafe extern "system" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS,
-    ) as PRTL_CONVERT_STRING;
-    BasepUnicodeStringTo8BitString = Some(
-        RtlUnicodeStringToAnsiString
-            as unsafe extern "system" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS,
-    ) as PRTL_CONVERT_STRINGA;
-    BasepUnicodeStringTo8BitSize =
-        Some(BasepUnicodeStringToAnsiSize as unsafe extern "system" fn(PUNICODE_STRING) -> ULONG)
-            as PRTL_COUNT_STRING;
-    Basep8BitStringToUnicodeSize =
-        Some(BasepAnsiStringToUnicodeSize as unsafe extern "system" fn(PANSI_STRING) -> ULONG)
-            as PRTL_COUNT_STRINGA;
-    bIsFileApiAnsi = 1i32;
+    /* Set the correct Base Api */
+    Basep8BitStringToUnicodeString = Some(RtlAnsiStringToUnicodeString);
+    BasepUnicodeStringTo8BitString = Some(RtlUnicodeStringToAnsiString);
+    BasepUnicodeStringTo8BitSize = Some(BasepUnicodeStringToAnsiSize);
+    Basep8BitStringToUnicodeSize = Some(BasepAnsiStringToUnicodeSize);
+
+    /* FIXME: Old, deprecated way */
+    bIsFileApiAnsi = 1; // TRUE
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn AreFileApisANSI() -> BOOL {
-    (Basep8BitStringToUnicodeString
-        == Some(
-            RtlAnsiStringToUnicodeString
-                as unsafe extern "system" fn(PUNICODE_STRING, PANSI_STRING, BOOLEAN) -> NTSTATUS,
-        )) as i32
+    (Basep8BitStringToUnicodeString == Some(RtlAnsiStringToUnicodeString)) as BOOL
 }
 
 #[no_mangle]
@@ -739,43 +868,43 @@ pub unsafe extern "system" fn BaseMarkFileForDelete(
     FileAttributes: ULONG,
 ) {
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut FileBasicInfo: FILE_BASIC_INFORMATION = core::mem::zeroed();
-    let mut FileDispositionInfo: FILE_DISPOSITION_INFORMATION = core::mem::zeroed();
+    let mut FileBasicInfoData: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    let mut FileDispositionInfoData: FILE_DISPOSITION_INFORMATION = core::mem::zeroed();
     let mut FileAttributes = FileAttributes;
 
     if FileAttributes == 0 {
-        FileBasicInfo.FileAttributes = 0;
+        FileBasicInfoData.FileAttributes = 0;
         NtQueryInformationFile(
             FileHandle,
             &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
-            &mut FileBasicInfo as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
+            &mut FileBasicInfoData as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
             core::mem::size_of::<FILE_BASIC_INFORMATION>() as ULONG,
             FileBasicInformation,
         );
-        FileAttributes = FileBasicInfo.FileAttributes;
+        FileAttributes = FileBasicInfoData.FileAttributes;
     }
 
     if FileAttributes & FILE_ATTRIBUTE_READONLY != 0 {
         core::ptr::write_bytes(
-            &mut FileBasicInfo as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
+            &mut FileBasicInfoData as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
             0,
             core::mem::size_of::<FILE_BASIC_INFORMATION>(),
         );
-        FileBasicInfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+        FileBasicInfoData.FileAttributes = FILE_ATTRIBUTE_NORMAL;
         NtSetInformationFile(
             FileHandle,
             &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
-            &mut FileBasicInfo as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
+            &mut FileBasicInfoData as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
             core::mem::size_of::<FILE_BASIC_INFORMATION>() as ULONG,
             FileBasicInformation,
         );
     }
 
-    FileDispositionInfo.DeleteFile = 1; // TRUE
+    FileDispositionInfoData.DeleteFileA = 1u8; // TRUE
     NtSetInformationFile(
         FileHandle,
         &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
-        &mut FileDispositionInfo as *mut FILE_DISPOSITION_INFORMATION as *mut core::ffi::c_void,
+        &mut FileDispositionInfoData as *mut FILE_DISPOSITION_INFORMATION as *mut core::ffi::c_void,
         core::mem::size_of::<FILE_DISPOSITION_INFORMATION>() as ULONG,
         FileDispositionInformation,
     );

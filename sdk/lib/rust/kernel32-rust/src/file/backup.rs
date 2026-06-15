@@ -14,8 +14,8 @@ pub unsafe extern "system" fn BackupRead(
     bProcessSecurity: BOOL,
     lpContext: *mut LPVOID,
 ) -> BOOL {
-    SetLastError(ERROR_NOT_SUPPORTED);
-    return 0;
+    SetLastError(ERROR_NOT_SUPPORTED as DWORD);
+    return FALSE as BOOL;
 }
 
 #[no_mangle]
@@ -28,7 +28,7 @@ pub unsafe extern "system" fn BackupSeek(
     lpContext: *mut LPVOID,
 ) -> BOOL {
     SetLastError(ERROR_NOT_SUPPORTED as DWORD);
-    return FALSE;
+    return FALSE as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "system" fn BackupWrite(
@@ -40,8 +40,8 @@ pub unsafe extern "system" fn BackupWrite(
     bProcessSecurity: BOOL,
     lpContext: *mut LPVOID,
 ) -> BOOL {
-    SetLastError(ERROR_NOT_SUPPORTED);
-    return 0;
+    SetLastError(ERROR_NOT_SUPPORTED as DWORD);
+    return FALSE as BOOL;
 }
 
 

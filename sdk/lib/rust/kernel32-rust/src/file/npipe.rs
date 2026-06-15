@@ -123,7 +123,7 @@ unsafe fn NpGetUserNamep(
     );
 
     if pRevertToSelf.is_none() || pGetUserNameW.is_none() || pImpersonateNamedPipeClient.is_none() {
-        FreeLibrary(hAdvapi as *mut c_void);
+        FreeLibrary(hAdvapi);
         return 0;
     }
 
@@ -141,7 +141,7 @@ unsafe fn NpGetUserNamep(
 
         if !NT_SUCCESS(Status) {
             pRevertToSelf.expect("non-null function pointer")();
-            FreeLibrary(hAdvapi as *mut c_void);
+            FreeLibrary(hAdvapi);
             return Ret;
         }
 
@@ -174,7 +174,7 @@ unsafe fn NpGetUserNamep(
         Ret = 0;
     }
 
-    FreeLibrary(hAdvapi as *mut c_void);
+    FreeLibrary(hAdvapi);
     Ret
 }
 
@@ -609,7 +609,7 @@ pub unsafe extern "system" fn SetNamedPipeHandleState(
             );
             if !NT_SUCCESS(Status) {
                 BaseSetLastNTError(Status);
-                return FALSE;
+                return FALSE as BOOL;
             }
         }
 
@@ -636,11 +636,11 @@ pub unsafe extern "system" fn SetNamedPipeHandleState(
         );
         if !NT_SUCCESS(Status) {
             BaseSetLastNTError(Status);
-            return FALSE;
+            return FALSE as BOOL;
         }
     }
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -716,7 +716,7 @@ pub unsafe extern "system" fn CallNamedPipeW(
     );
     if bError == 0 {
         CloseHandle(hPipe);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     bError = TransactNamedPipe(
@@ -1160,11 +1160,11 @@ pub unsafe extern "system" fn TransactNamedPipe(
             *lpBytesRead = Iosb.Information as DWORD;
         } else {
             BaseSetLastNTError(Status);
-            return FALSE;
+            return FALSE as BOOL;
         }
     }
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn TransactNamedPipe(
 //     /* If any couldn't be found, fail */
 //     if (pRevertToSelf == NULL || pGetUserNameW == NULL || pImpersonateNamedPipeClient == NULL)
 //     {
-//         FreeLibrary(hAdvapi as *mut c_void);
+//         FreeLibrary(hAdvapi);
 //         return FALSE;
 //     }
 //
@@ -1244,7 +1244,7 @@ pub unsafe extern "system" fn TransactNamedPipe(
 //         {
 //             pRevertToSelf();
 //
-//             FreeLibrary(hAdvapi as *mut c_void);
+//             FreeLibrary(hAdvapi);
 //             return Ret;
 //         }
 //
@@ -1278,7 +1278,7 @@ pub unsafe extern "system" fn TransactNamedPipe(
 //         Ret = FALSE;
 //     }
 //
-//     FreeLibrary(hAdvapi as *mut c_void);
+//     FreeLibrary(hAdvapi);
 //     return Ret;
 // }
 //

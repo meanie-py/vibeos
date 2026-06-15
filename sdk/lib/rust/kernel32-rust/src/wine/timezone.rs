@@ -1,6 +1,13 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
+use crate::client::time::GetSystemTimeAsFileTime;
 use core::ffi::c_void;
+
+extern "system" {
+    fn FileTimeToSystemTime(lpFileTime: *const FILETIME, lpSystemTime: LPSYSTEMTIME) -> BOOL;
+    fn SystemTimeToFileTime(lpSystemTime: *const SYSTEMTIME, lpFileTime: LPFILETIME) -> BOOL;
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -93,7 +100,7 @@ unsafe fn TIME_DayLightCompareDate(
 }
 unsafe fn TIME_CompTimeZoneID(
     pTZinfo: *const TIME_ZONE_INFORMATION,
-    lpFileTime: *mut FILETIME,
+    mut lpFileTime: *mut FILETIME,
     islocal: BOOL,
 ) -> DWORD {
     let mut ret: i32 = 0;

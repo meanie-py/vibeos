@@ -1,6 +1,18 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{
+    BaseFormatObjectAttributes, RtlZeroMemory, RtlCopyMemory,
+};
+extern "system" {
+    fn TranslateStdHandle(hHandle: HANDLE) -> HANDLE;
+    fn VerifyConsoleIoHandle(Handle: HANDLE) -> BOOL;
+    fn GetConsoleInputWaitHandle() -> HANDLE;
+    fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
+    fn BaseGetNamedObjectDirectory() -> HANDLE;
+}
+#[inline]
+unsafe fn IsConsoleHandle(h: HANDLE) -> BOOL { ((h as usize & 0x1000_0003) == 0x3) as BOOL }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -72,8 +84,6 @@ pub type BOOLEAN = u8;
 pub type PBOOLEAN = *mut u8;
 pub type VOID = core::ffi::c_void;
 pub type PVOID = *mut core::ffi::c_void;
-pub type LARGE_INTEGER = i64;
-pub type PLARGE_INTEGER = *mut i64;
 pub type ULONG = u32;
 pub type PULONG = *mut u32;
 pub type USHORT = u16;
@@ -121,15 +131,6 @@ pub const MUTEX_ALL_ACCESS: DWORD = 0x001F0001;
 pub const SEMAPHORE_ALL_ACCESS: DWORD = 0x001F0003;
 pub const TIMER_ALL_ACCESS: DWORD = 0x001F0003;
 
-pub const NotificationEvent: u32 = 0;
-pub const SynchronizationEvent: u32 = 1;
-
-pub const NotificationTimer: u32 = 0;
-pub const SynchronizationTimer: u32 = 1;
-
-pub const WaitAll: BOOLEAN = 0;
-pub const WaitAny: BOOLEAN = 1;
-
 pub const ERROR_INVALID_HANDLE: DWORD = 6;
 pub const ERROR_NOT_ENOUGH_MEMORY: DWORD = 8;
 pub const ERROR_ALREADY_EXISTS: DWORD = 183;
@@ -138,9 +139,6 @@ pub const ERROR_SUCCESS: DWORD = 0;
 pub type WAITORTIMERCALLBACK = Option<unsafe extern "system" fn(PVOID, BOOLEAN)>;
 pub type PTIMERAPCROUTINE = Option<unsafe extern "system" fn(PVOID, LARGE_INTEGER, LARGE_INTEGER)>;
 pub type PTIMER_APC_ROUTINE = PTIMERAPCROUTINE;
-
-pub const RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME: u32 = 0x00000001;
-pub const RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER: u32 = 0x00000002;
 
 #[no_mangle]
 pub unsafe extern "system" fn WaitForSingleObject(
@@ -157,16 +155,16 @@ pub unsafe extern "system" fn WaitForSingleObjectEx(
     bAlertable: BOOL,
 ) -> DWORD {
     let mut TimePtr: PLARGE_INTEGER = core::ptr::null_mut();
-    let mut Time: LARGE_INTEGER = LARGE_INTEGER { u: 0i64 as u64, /* placeholder */ };
-    let mut Status: NTSTATUS = 0;
-    let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME;
+    let mut Time: LARGE_INTEGER = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME = core::mem::zeroed();
 
     /* APCs must execute with the default activation context */
     if bAlertable != 0 {
         /* Setup the frame */
-        RtlZeroMemory(&mut ActCtx as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>());
-        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>();
-        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER;
+        RtlZeroMemory(&mut ActCtx as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _);
+        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _;
+        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as _;
         RtlActivateActivationContextUnsafeFast(&mut ActCtx, core::ptr::null_mut());
     }
 
@@ -186,7 +184,7 @@ pub unsafe extern "system" fn WaitForSingleObjectEx(
     loop {
         /* Do the wait */
         Status = NtWaitForSingleObject(hHandle, bAlertable as BOOLEAN, TimePtr);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             /* The wait failed */
             BaseSetLastNTError(Status);
             Status = WAIT_FAILED as NTSTATUS;
@@ -224,8 +222,8 @@ pub unsafe extern "system" fn WaitForMultipleObjectsEx(
     bAlertable: BOOL,
 ) -> DWORD {
     let mut TimePtr: PLARGE_INTEGER = core::ptr::null_mut();
-    let mut Time: LARGE_INTEGER = LARGE_INTEGER { u: 0i64 as u64, QuadPart: 0 };
-    let mut HandleBuffer: PHANDLE = core::ptr::null_mut();
+    let mut Time: LARGE_INTEGER = core::mem::zeroed();
+    let mut HandleBuffer: PHANDLE;
     let mut Handle: [HANDLE; 8] = [core::ptr::null_mut(); 8];
     let mut i: DWORD = 0;
     let mut Status: NTSTATUS = 0;
@@ -234,10 +232,10 @@ pub unsafe extern "system" fn WaitForMultipleObjectsEx(
     if bAlertable != 0 {
         RtlZeroMemory(
             &mut ActCtx as *mut _ as *mut core::ffi::c_void,
-            core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>(),
+            core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _,
         );
-        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as SIZE_T;
-        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as ULONG;
+        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _;
+        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as _;
         RtlActivateActivationContextUnsafeFast(&mut ActCtx, core::ptr::null_mut());
     }
 
@@ -245,7 +243,7 @@ pub unsafe extern "system" fn WaitForMultipleObjectsEx(
         HandleBuffer = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (nCount as SIZE_T).wrapping_mul(core::mem::size_of::<HANDLE>() as SIZE_T),
+            (nCount as SIZE_T).wrapping_mul(core::mem::size_of::<HANDLE>() as SIZE_T) as _,
         ) as PHANDLE;
         if HandleBuffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY as DWORD);
@@ -261,7 +259,7 @@ pub unsafe extern "system" fn WaitForMultipleObjectsEx(
     RtlCopyMemory(
         HandleBuffer as *mut core::ffi::c_void,
         lpHandles as *const core::ffi::c_void,
-        (nCount as SIZE_T).wrapping_mul(core::mem::size_of::<HANDLE>() as SIZE_T),
+        (nCount as SIZE_T).wrapping_mul(core::mem::size_of::<HANDLE>() as SIZE_T) as _,
     );
 
     i = 0;
@@ -318,15 +316,15 @@ pub unsafe extern "system" fn SignalObjectAndWait(
 ) -> DWORD {
     let mut TimePtr: PLARGE_INTEGER = core::ptr::null_mut();
     let mut Time: LARGE_INTEGER = core::mem::zeroed();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME = core::mem::zeroed();
 
     /* APCs must execute with the default activation context */
     if bAlertable != 0 {
         /* Setup the frame */
-        RtlZeroMemory(&mut ActCtx as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>());
-        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>();
-        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER;
+        RtlZeroMemory(&mut ActCtx as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _);
+        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _;
+        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as _;
         RtlActivateActivationContextUnsafeFast(&mut ActCtx, core::ptr::null_mut());
     }
 
@@ -353,7 +351,7 @@ pub unsafe extern "system" fn SignalObjectAndWait(
             bAlertable as BOOLEAN,
             TimePtr,
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             /* The wait failed */
             BaseSetLastNTError(Status);
             Status = WAIT_FAILED as NTSTATUS;
@@ -377,18 +375,35 @@ pub unsafe extern "system" fn CreateWaitableTimerW(
     bManualReset: BOOL,
     lpTimerName: LPCWSTR,
 ) -> HANDLE {
-    CreateNtObjectFromWin32Api(
-        WaitableTimer,
-        Timer,
-        TIMER_ALL_ACCESS,
-        lpTimerAttributes,
-        lpTimerName,
-        if bManualReset != 0 {
-            NotificationTimer
+    let Status: NTSTATUS;
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
+    let mut LocalAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributes: POBJECT_ATTRIBUTES = &raw mut LocalAttributes;
+    if !lpTimerName.is_null() {
+        RtlInitUnicodeString(&raw mut ObjectName, lpTimerName as PCWSTR);
+    }
+    ObjectAttributes = BaseFormatObjectAttributes(
+        &raw mut LocalAttributes,
+        lpTimerAttributes as ntdll_sys::nt::LPSECURITY_ATTRIBUTES,
+        if !lpTimerName.is_null() { &raw mut ObjectName } else { core::ptr::null_mut() },
+    );
+    Status = NtCreateTimer(
+        &raw mut Handle,
+        TIMER_ALL_ACCESS as ACCESS_MASK,
+        ObjectAttributes,
+        if bManualReset != 0 { NotificationTimer } else { SynchronizationTimer } as TIMER_TYPE,
+    );
+    if NT_SUCCESS(Status) {
+        if Status == STATUS_OBJECT_NAME_EXISTS {
+            SetLastError(ERROR_ALREADY_EXISTS as DWORD);
         } else {
-            SynchronizationTimer
-        },
-    )
+            SetLastError(ERROR_SUCCESS as DWORD);
+        }
+        return Handle;
+    }
+    BaseSetLastNTError(Status);
+    core::ptr::null_mut()
 }
 #[no_mangle]
 pub unsafe extern "system" fn CreateWaitableTimerA(
@@ -396,7 +411,24 @@ pub unsafe extern "system" fn CreateWaitableTimerA(
     bManualReset: BOOL,
     lpTimerName: LPCSTR,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi(WaitableTimer, lpTimerName, lpTimerAttributes, bManualReset);
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpTimerName.is_null() {
+        return CreateWaitableTimerW(lpTimerAttributes, bManualReset, core::ptr::null());
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpTimerName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateWaitableTimerW(lpTimerAttributes, bManualReset, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 #[no_mangle]
 pub unsafe extern "system" fn OpenWaitableTimerW(
@@ -469,7 +501,7 @@ pub unsafe extern "system" fn OpenWaitableTimerA(
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
         return core::ptr::null_mut();
     }
-    UnicodeCache = &raw mut (*(NtCurrentTeb as unsafe extern "C" fn() -> *mut _TEB)())
+    UnicodeCache = &raw mut (*NtCurrentTeb())
         .StaticUnicodeString as PUNICODE_STRING;
     RtlInitAnsiString(&raw mut AnsiName, lpTimerName as PCSZ);
     Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, FALSE as BOOLEAN);
@@ -502,7 +534,7 @@ pub unsafe extern "system" fn SetWaitableTimer(
     Status = NtSetTimer(
         hTimer,
         pDueTime as PLARGE_INTEGER,
-        core::mem::transmute::<PTIMERAPCROUTINE, PTIMER_APC_ROUTINE>(pfnCompletionRoutine),
+        core::mem::transmute::<PTIMERAPCROUTINE, ntdll_sys::nt::PTIMER_APC_ROUTINE>(pfnCompletionRoutine),
         lpArgToCompletionRoutine,
         fResume as BOOLEAN,
         lPeriod,
@@ -533,7 +565,23 @@ pub unsafe extern "system" fn CreateSemaphoreA(
     lMaximumCount: LONG,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi(Semaphore, lpName, lpSemaphoreAttributes, lInitialCount, lMaximumCount);
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        return CreateSemaphoreW(lpSemaphoreAttributes, lInitialCount, lMaximumCount, core::ptr::null());
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateSemaphoreW(lpSemaphoreAttributes, lInitialCount, lMaximumCount, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
     core::ptr::null_mut()
 }
 #[no_mangle]
@@ -543,15 +591,36 @@ pub unsafe extern "system" fn CreateSemaphoreW(
     lMaximumCount: LONG,
     lpName: LPCWSTR,
 ) -> HANDLE {
-    CreateNtObjectFromWin32Api(
-        Semaphore,
-        Semaphore,
-        SEMAPHORE_ALL_ACCESS,
-        lpSemaphoreAttributes,
-        lpName,
+    let Status: NTSTATUS;
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
+    let mut LocalAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributes: POBJECT_ATTRIBUTES = &raw mut LocalAttributes;
+    if !lpName.is_null() {
+        RtlInitUnicodeString(&raw mut ObjectName, lpName as PCWSTR);
+    }
+    ObjectAttributes = BaseFormatObjectAttributes(
+        &raw mut LocalAttributes,
+        lpSemaphoreAttributes as ntdll_sys::nt::LPSECURITY_ATTRIBUTES,
+        if !lpName.is_null() { &raw mut ObjectName } else { core::ptr::null_mut() },
+    );
+    Status = NtCreateSemaphore(
+        &raw mut Handle,
+        SEMAPHORE_ALL_ACCESS as ACCESS_MASK,
+        ObjectAttributes,
         lInitialCount,
         lMaximumCount,
-    )
+    );
+    if NT_SUCCESS(Status) {
+        if Status == STATUS_OBJECT_NAME_EXISTS {
+            SetLastError(ERROR_ALREADY_EXISTS as DWORD);
+        } else {
+            SetLastError(ERROR_SUCCESS as DWORD);
+        }
+        return Handle;
+    }
+    BaseSetLastNTError(Status);
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -563,15 +632,37 @@ pub unsafe extern "system" fn CreateSemaphoreExW(
     dwFlags: DWORD,
     dwDesiredAccess: DWORD,
 ) -> HANDLE {
-    CreateNtObjectFromWin32Api(
-        Semaphore,
-        Semaphore,
-        dwDesiredAccess,
-        lpSemaphoreAttributes,
-        lpName,
+    let _ = dwFlags;
+    let Status: NTSTATUS;
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
+    let mut LocalAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributes: POBJECT_ATTRIBUTES = &raw mut LocalAttributes;
+    if !lpName.is_null() {
+        RtlInitUnicodeString(&raw mut ObjectName, lpName as PCWSTR);
+    }
+    ObjectAttributes = BaseFormatObjectAttributes(
+        &raw mut LocalAttributes,
+        lpSemaphoreAttributes as ntdll_sys::nt::LPSECURITY_ATTRIBUTES,
+        if !lpName.is_null() { &raw mut ObjectName } else { core::ptr::null_mut() },
+    );
+    Status = NtCreateSemaphore(
+        &raw mut Handle,
+        dwDesiredAccess as ACCESS_MASK,
+        ObjectAttributes,
         lInitialCount,
         lMaximumCount,
-    )
+    );
+    if NT_SUCCESS(Status) {
+        if Status == STATUS_OBJECT_NAME_EXISTS {
+            SetLastError(ERROR_ALREADY_EXISTS as DWORD);
+        } else {
+            SetLastError(ERROR_SUCCESS as DWORD);
+        }
+        return Handle;
+    }
+    BaseSetLastNTError(Status);
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -630,7 +721,25 @@ pub unsafe extern "system" fn OpenSemaphoreA(
     bInheritHandle: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertOpenWin32AnsiObjectApiToUnicodeApi(Semaphore, dwDesiredAccess, bInheritHandle, lpName);
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return core::ptr::null_mut();
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return OpenSemaphoreW(dwDesiredAccess, bInheritHandle, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 #[no_mangle]
 pub unsafe extern "system" fn OpenSemaphoreW(
@@ -707,8 +816,24 @@ pub unsafe extern "system" fn CreateMutexA(
     bInitialOwner: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi(Mutex, lpName, lpMutexAttributes, bInitialOwner);
-    return 0 as HANDLE;
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        return CreateMutexW(lpMutexAttributes, bInitialOwner, core::ptr::null());
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateMutexW(lpMutexAttributes, bInitialOwner, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -738,7 +863,7 @@ pub unsafe extern "system" fn CreateMutexW(
     }
     ObjectAttributes = BaseFormatObjectAttributes(
         &raw mut LocalAttributes,
-        lpMutexAttributes as PSECURITY_ATTRIBUTES,
+        lpMutexAttributes as ntdll_sys::nt::LPSECURITY_ATTRIBUTES,
         if !lpName.is_null() {
             &raw mut ObjectName
         } else {
@@ -768,7 +893,25 @@ pub unsafe extern "system" fn OpenMutexA(
     bInheritHandle: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertOpenWin32AnsiObjectApiToUnicodeApi(Mutex, dwDesiredAccess, bInheritHandle, lpName);
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return core::ptr::null_mut();
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return OpenMutexW(dwDesiredAccess, bInheritHandle, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 #[no_mangle]
 pub unsafe extern "system" fn OpenMutexW(
@@ -841,7 +984,23 @@ pub unsafe extern "system" fn CreateEventA(
     bInitialState: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi(Event, lpName, lpEventAttributes, bManualReset, bInitialState);
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        return CreateEventW(lpEventAttributes, bManualReset, bInitialState, core::ptr::null());
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateEventW(lpEventAttributes, bManualReset, bInitialState, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
     core::ptr::null_mut()
 }
 
@@ -873,7 +1032,7 @@ pub unsafe extern "system" fn CreateEventW(
     }
     ObjectAttributes = BaseFormatObjectAttributes(
         &raw mut LocalAttributes,
-        lpEventAttributes as PSECURITY_ATTRIBUTES,
+        lpEventAttributes as ntdll_sys::nt::LPSECURITY_ATTRIBUTES,
         if !lpName.is_null() {
             &raw mut ObjectName
         } else {
@@ -908,8 +1067,25 @@ pub unsafe extern "system" fn OpenEventA(
     bInheritHandle: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertOpenWin32AnsiObjectApiToUnicodeApi(Event, dwDesiredAccess, bInheritHandle, lpName);
-    return 0 as HANDLE;
+    let Status: NTSTATUS;
+    let UnicodeCache: PUNICODE_STRING;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    if lpName.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return core::ptr::null_mut();
+    }
+    UnicodeCache = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
+    Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return OpenEventW(dwDesiredAccess, bInheritHandle, (*UnicodeCache).Buffer as LPCWSTR);
+    }
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -918,7 +1094,28 @@ pub unsafe extern "system" fn OpenEventW(
     bInheritHandle: BOOL,
     lpName: LPCWSTR,
 ) -> HANDLE {
-    OpenNtObjectFromWin32Api(Event, dwDesiredAccess, bInheritHandle, lpName)
+    let Status: NTSTATUS;
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
+    let mut LocalAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let ObjectAttributes: POBJECT_ATTRIBUTES = &raw mut LocalAttributes;
+    if lpName.is_null() {
+        BaseSetLastNTError(STATUS_INVALID_PARAMETER);
+        return core::ptr::null_mut();
+    }
+    RtlInitUnicodeString(&raw mut ObjectName, lpName as PCWSTR);
+    (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).Attributes = if bInheritHandle != 0 { OBJ_INHERIT } else { 0 };
+    (*ObjectAttributes).ObjectName = &raw mut ObjectName as PUNICODE_STRING;
+    (*ObjectAttributes).SecurityDescriptor = core::ptr::null_mut();
+    (*ObjectAttributes).SecurityQualityOfService = core::ptr::null_mut();
+    Status = NtOpenEvent(&raw mut Handle, dwDesiredAccess as ACCESS_MASK, ObjectAttributes);
+    if !NT_SUCCESS(Status) {
+        BaseSetLastNTError(Status);
+        return core::ptr::null_mut();
+    }
+    Handle
 }
 
 #[no_mangle]
@@ -959,7 +1156,7 @@ pub unsafe extern "system" fn SetEvent(hEvent: HANDLE) -> BOOL {
 #[no_mangle]
 pub unsafe extern "system" fn InitializeCriticalSection(lpCriticalSection: LPCRITICAL_SECTION) {
     let mut Status: NTSTATUS = 0;
-    Status = RtlInitializeCriticalSection(lpCriticalSection as *mut core::ffi::c_void as PRTL_CRITICAL_SECTION);
+    Status = RtlInitializeCriticalSection(lpCriticalSection as *mut ntdll_sys::nt::_RTL_CRITICAL_SECTION);
     if !NT_SUCCESS(Status) {
         RtlRaiseStatus(Status);
     }
@@ -971,7 +1168,7 @@ pub unsafe extern "system" fn InitializeCriticalSectionAndSpinCount(
 ) -> BOOL {
     let mut Status: NTSTATUS = 0;
     Status = RtlInitializeCriticalSectionAndSpinCount(
-        lpCriticalSection as PVOID,
+        lpCriticalSection as *mut ntdll_sys::nt::_RTL_CRITICAL_SECTION,
         dwSpinCount,
     );
     if !NT_SUCCESS(Status) {
@@ -1003,10 +1200,10 @@ pub unsafe extern "system" fn SleepEx(
         /* Setup the frame */
         RtlZeroMemory(
             &mut ActCtx as *mut _ as *mut core::ffi::c_void,
-            core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>(),
+            core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _,
         );
-        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>();
-        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER;
+        ActCtx.Size = core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME>() as _;
+        ActCtx.Format = RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER as _;
         RtlActivateActivationContextUnsafeFast(&mut ActCtx, core::ptr::null_mut());
     }
 
@@ -1015,7 +1212,7 @@ pub unsafe extern "system" fn SleepEx(
     if TimePtr.is_null() {
         /* Turn an infinite wait into a really long wait */
         Time.__bindgen_anon_1.LowPart = 0;
-        Time.__bindgen_anon_1.HighPart = 0x80000000i64 as LONG;
+        Time.__bindgen_anon_1.HighPart = 0x80000000u32 as i32;
         TimePtr = &mut Time;
     }
 
@@ -1065,7 +1262,7 @@ pub unsafe extern "system" fn RegisterWaitForSingleObject(
     Status = RtlRegisterWait(
         phNewWaitObject,
         hObject,
-        Callback,
+        core::mem::transmute::<WAITORTIMERCALLBACK, ntdll_sys::nt::WAITORTIMERCALLBACKFUNC>(Callback),
         Context,
         dwMilliseconds,
         dwFlags,
@@ -1089,7 +1286,7 @@ pub unsafe extern "system" fn RegisterWaitForSingleObjectEx(
     dwFlags: ULONG,
 ) -> HANDLE {
     let mut Status: NTSTATUS;
-    let mut hNewWaitObject: HANDLE;
+    let mut hNewWaitObject: HANDLE = core::ptr::null_mut();
 
     /* Get real handle */
     let mut hObject = TranslateStdHandle(hObject);
@@ -1104,7 +1301,7 @@ pub unsafe extern "system" fn RegisterWaitForSingleObjectEx(
     Status = RtlRegisterWait(
         &mut hNewWaitObject,
         hObject,
-        Callback,
+        core::mem::transmute::<WAITORTIMERCALLBACK, ntdll_sys::nt::WAITORTIMERCALLBACKFUNC>(Callback),
         Context,
         dwMilliseconds,
         dwFlags,

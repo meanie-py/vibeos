@@ -80,14 +80,14 @@ pub unsafe extern "system" fn SetFilePointer(
         dwMoveMethod,
     );
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE);
         return INVALID_SET_FILE_POINTER;
     }
 
     if !lpDistanceToMoveHigh.is_null() {
-        Distance.u.__bindgen_anon_1.HighPart = *lpDistanceToMoveHigh;
-        Distance.u.__bindgen_anon_1.LowPart = lDistanceToMove as DWORD;
+        Distance.u.HighPart = *lpDistanceToMoveHigh;
+        Distance.u.LowPart = lDistanceToMove as DWORD;
     } else {
         Distance.QuadPart = lDistanceToMove as LONGLONG;
     }
@@ -142,7 +142,7 @@ pub unsafe extern "system" fn SetFilePointer(
         return INVALID_SET_FILE_POINTER;
     }
 
-    if lpDistanceToMoveHigh.is_null() && FilePosition.CurrentByteOffset.u.__bindgen_anon_1.HighPart != 0 {
+    if lpDistanceToMoveHigh.is_null() && FilePosition.CurrentByteOffset.u.HighPart != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_SET_FILE_POINTER;
     }
@@ -163,14 +163,14 @@ pub unsafe extern "system" fn SetFilePointer(
     }
 
     if !lpDistanceToMoveHigh.is_null() {
-        *lpDistanceToMoveHigh = FilePosition.CurrentByteOffset.u.__bindgen_anon_1.HighPart;
+        *lpDistanceToMoveHigh = FilePosition.CurrentByteOffset.u.HighPart;
     }
 
-    if FilePosition.CurrentByteOffset.u.__bindgen_anon_1.LowPart == MAXDWORD {
+    if FilePosition.CurrentByteOffset.u.LowPart == MAXDWORD {
         SetLastError(ERROR_SUCCESS);
     }
 
-    FilePosition.CurrentByteOffset.u.__bindgen_anon_1.LowPart
+    FilePosition.CurrentByteOffset.u.LowPart
 }
 
 #[no_mangle]
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn SetFilePointerEx(
     let mut FilePosition: FILE_POSITION_INFORMATION = core::mem::zeroed();
     let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
         return 0;
     }
@@ -261,7 +261,7 @@ pub unsafe extern "system" fn GetFileType(mut hFile: HANDLE) -> DWORD {
 
     hFile = TranslateStdHandle(hFile);
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         if VerifyConsoleIoHandle(hFile) != 0 {
             return FILE_TYPE_CHAR as DWORD;
         }
@@ -296,8 +296,8 @@ pub unsafe extern "system" fn GetFileSize(
     lpFileSizeHigh: LPDWORD,
 ) -> DWORD {
     let mut errCode: NTSTATUS;
-    let mut FileStandard: FILE_STANDARD_INFORMATION;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     errCode = NtQueryInformationFile(
         hFile,
@@ -315,9 +315,9 @@ pub unsafe extern "system" fn GetFileSize(
         }
     }
     if !lpFileSizeHigh.is_null() {
-        *lpFileSizeHigh = FileStandard.EndOfFile.u.__bindgen_anon_1.HighPart;
+        *lpFileSizeHigh = FileStandard.EndOfFile.u.HighPart as DWORD;
     }
-    return FileStandard.EndOfFile.u.__bindgen_anon_1.LowPart;
+    return FileStandard.EndOfFile.u.LowPart;
 }
 
 #[no_mangle]
@@ -401,11 +401,11 @@ pub unsafe extern "system" fn GetCompressedFileSizeW(
     }
 
     if !lpFileSizeHigh.is_null() {
-        *lpFileSizeHigh = FileCompression.CompressedFileSize.u.__bindgen_anon_1.HighPart;
+        *lpFileSizeHigh = FileCompression.CompressedFileSize.u.HighPart as DWORD;
     }
 
     SetLastError(NO_ERROR);
-    FileCompression.CompressedFileSize.u.__bindgen_anon_1.LowPart
+    FileCompression.CompressedFileSize.u.LowPart
 }
 
 #[no_mangle]
@@ -421,9 +421,9 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     let mut errCode: NTSTATUS = 0;
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE as DWORD);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     errCode = NtQueryInformationFile(
@@ -435,19 +435,19 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     );
     if !NT_SUCCESS(errCode) {
         BaseSetLastNTError(errCode);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     (*lpFileInformation).dwFileAttributes = FileBasic.FileAttributes as DWORD;
 
-    (*lpFileInformation).ftCreationTime.dwHighDateTime = FileBasic.CreationTime.u.__bindgen_anon_1.HighPart as DWORD;
-    (*lpFileInformation).ftCreationTime.dwLowDateTime = FileBasic.CreationTime.u.__bindgen_anon_1.LowPart;
+    (*lpFileInformation).ftCreationTime.dwHighDateTime = FileBasic.CreationTime.u.HighPart as DWORD;
+    (*lpFileInformation).ftCreationTime.dwLowDateTime = FileBasic.CreationTime.u.LowPart;
 
-    (*lpFileInformation).ftLastAccessTime.dwHighDateTime = FileBasic.LastAccessTime.u.__bindgen_anon_1.HighPart as DWORD;
-    (*lpFileInformation).ftLastAccessTime.dwLowDateTime = FileBasic.LastAccessTime.u.__bindgen_anon_1.LowPart;
+    (*lpFileInformation).ftLastAccessTime.dwHighDateTime = FileBasic.LastAccessTime.u.HighPart as DWORD;
+    (*lpFileInformation).ftLastAccessTime.dwLowDateTime = FileBasic.LastAccessTime.u.LowPart;
 
-    (*lpFileInformation).ftLastWriteTime.dwHighDateTime = FileBasic.LastWriteTime.u.__bindgen_anon_1.HighPart as DWORD;
-    (*lpFileInformation).ftLastWriteTime.dwLowDateTime = FileBasic.LastWriteTime.u.__bindgen_anon_1.LowPart;
+    (*lpFileInformation).ftLastWriteTime.dwHighDateTime = FileBasic.LastWriteTime.u.HighPart as DWORD;
+    (*lpFileInformation).ftLastWriteTime.dwLowDateTime = FileBasic.LastWriteTime.u.LowPart;
 
     errCode = NtQueryInformationFile(
         hFile,
@@ -458,11 +458,11 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     );
     if !NT_SUCCESS(errCode) {
         BaseSetLastNTError(errCode);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
-    (*lpFileInformation).nFileIndexHigh = FileInternal.IndexNumber.u.__bindgen_anon_1.HighPart as DWORD;
-    (*lpFileInformation).nFileIndexLow = FileInternal.IndexNumber.u.__bindgen_anon_1.LowPart;
+    (*lpFileInformation).nFileIndexHigh = FileInternal.IndexNumber.u.HighPart as DWORD;
+    (*lpFileInformation).nFileIndexLow = FileInternal.IndexNumber.u.LowPart;
 
     errCode = NtQueryVolumeInformationFile(
         hFile,
@@ -473,7 +473,7 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     );
     if !NT_SUCCESS(errCode) {
         BaseSetLastNTError(errCode);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     (*lpFileInformation).dwVolumeSerialNumber = FileFsVolume.VolumeSerialNumber as DWORD;
@@ -487,14 +487,14 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     );
     if !NT_SUCCESS(errCode) {
         BaseSetLastNTError(errCode);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     (*lpFileInformation).nNumberOfLinks = FileStandard.NumberOfLinks as DWORD;
-    (*lpFileInformation).nFileSizeHigh = FileStandard.EndOfFile.u.__bindgen_anon_1.HighPart as DWORD;
-    (*lpFileInformation).nFileSizeLow = FileStandard.EndOfFile.u.__bindgen_anon_1.LowPart;
+    (*lpFileInformation).nFileSizeHigh = FileStandard.EndOfFile.u.HighPart as DWORD;
+    (*lpFileInformation).nFileSizeLow = FileStandard.EndOfFile.u.LowPart;
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -517,7 +517,7 @@ pub unsafe extern "system" fn GetFileAttributesExW(
 
     if fInfoLevelId != GetFileExInfoStandard || lpFileInformation.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     if RtlDosPathNameToNtPathName_U(
@@ -532,7 +532,7 @@ pub unsafe extern "system" fn GetFileAttributesExW(
             lpFileName,
         );
         SetLastError(ERROR_BAD_PATHNAME);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -552,21 +552,21 @@ pub unsafe extern "system" fn GetFileAttributesExW(
             Status,
         );
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     FileAttributeData = lpFileInformation as *mut WIN32_FILE_ATTRIBUTE_DATA;
     (*FileAttributeData).dwFileAttributes = FileInformation.FileAttributes;
-    (*FileAttributeData).ftCreationTime.dwLowDateTime = FileInformation.CreationTime.u.__bindgen_anon_1.LowPart;
-    (*FileAttributeData).ftCreationTime.dwHighDateTime = FileInformation.CreationTime.u.__bindgen_anon_1.HighPart;
-    (*FileAttributeData).ftLastAccessTime.dwLowDateTime = FileInformation.LastAccessTime.u.__bindgen_anon_1.LowPart;
-    (*FileAttributeData).ftLastAccessTime.dwHighDateTime = FileInformation.LastAccessTime.u.__bindgen_anon_1.HighPart;
-    (*FileAttributeData).ftLastWriteTime.dwLowDateTime = FileInformation.LastWriteTime.u.__bindgen_anon_1.LowPart;
-    (*FileAttributeData).ftLastWriteTime.dwHighDateTime = FileInformation.LastWriteTime.u.__bindgen_anon_1.HighPart;
-    (*FileAttributeData).nFileSizeLow = FileInformation.EndOfFile.u.__bindgen_anon_1.LowPart;
-    (*FileAttributeData).nFileSizeHigh = FileInformation.EndOfFile.u.__bindgen_anon_1.HighPart;
+    (*FileAttributeData).ftCreationTime.dwLowDateTime = FileInformation.CreationTime.u.LowPart;
+    (*FileAttributeData).ftCreationTime.dwHighDateTime = FileInformation.CreationTime.u.HighPart as DWORD;
+    (*FileAttributeData).ftLastAccessTime.dwLowDateTime = FileInformation.LastAccessTime.u.LowPart;
+    (*FileAttributeData).ftLastAccessTime.dwHighDateTime = FileInformation.LastAccessTime.u.HighPart as DWORD;
+    (*FileAttributeData).ftLastWriteTime.dwLowDateTime = FileInformation.LastWriteTime.u.LowPart;
+    (*FileAttributeData).ftLastWriteTime.dwHighDateTime = FileInformation.LastWriteTime.u.HighPart as DWORD;
+    (*FileAttributeData).nFileSizeLow = FileInformation.EndOfFile.u.LowPart;
+    (*FileAttributeData).nFileSizeHigh = FileInformation.EndOfFile.u.HighPart as DWORD;
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -575,9 +575,9 @@ pub unsafe extern "system" fn GetFileAttributesExA(
     fInfoLevelId: GET_FILEEX_INFO_LEVELS,
     lpFileInformation: LPVOID,
 ) -> BOOL {
-    let FileNameW: PWCHAR = FilenameA2W(lpFileName, FALSE);
+    let FileNameW: PWCHAR = FilenameA2W(lpFileName, FALSE as BOOL);
     if FileNameW.is_null() {
-        return FALSE;
+        return FALSE as BOOL;
     }
     return GetFileAttributesExW(FileNameW as LPCWSTR, fInfoLevelId, lpFileInformation);
 }
@@ -612,13 +612,7 @@ pub unsafe extern "system" fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD {
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
     };
-    let mut FileInformation: FILE_BASIC_INFORMATION = FILE_BASIC_INFORMATION {
-        CreationTime: LARGE_INTEGER::default(),
-        LastAccessTime: LARGE_INTEGER::default(),
-        LastWriteTime: LARGE_INTEGER::default(),
-        ChangeTime: LARGE_INTEGER::default(),
-        FileAttributes: 0,
-    };
+    let mut FileInformation: FILE_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Get the NT path name */
     if RtlDosPathNameToNtPathName_U(
@@ -670,7 +664,7 @@ pub unsafe extern "system" fn GetFileAttributesByHandle(
     // UNREFERENCED_PARAMETER(dwFlags);
     let _ = dwFlags;
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE);
         return 0;
     }
@@ -704,7 +698,7 @@ pub unsafe extern "system" fn SetFileAttributesByHandle(
     // UNREFERENCED_PARAMETER(dwFlags);
     let _ = dwFlags;
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE as DWORD);
         return 0; // FALSE
     }
@@ -756,12 +750,12 @@ pub unsafe extern "system" fn SetFileAttributesW(
 ) -> BOOL {
     let mut Status: NTSTATUS;
     let mut PathUBuffer: PWSTR;
-    let mut FileHandle: HANDLE;
-    let mut NtPathU: _UNICODE_STRING;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut RelativeName: RTL_RELATIVE_NAME_U;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut FileInformation: FILE_BASIC_INFORMATION;
+    let mut FileHandle: HANDLE = core::ptr::null_mut();
+    let mut NtPathU: _UNICODE_STRING = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut RelativeName: RTL_RELATIVE_NAME_U = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut FileInformation: FILE_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Get relative name */
     if RtlDosPathNameToRelativeNtPathName_U(
@@ -847,7 +841,7 @@ pub unsafe extern "system" fn SetFileAttributesW(
     Status = NtSetInformationFile(
         FileHandle,
         &mut IoStatusBlock,
-        &mut FileInformation as PVOID,
+        &mut FileInformation as *mut _ as PVOID,
         core::mem::size_of::<FILE_BASIC_INFORMATION>() as ULONG,
         FileBasicInformation,
     );
@@ -875,7 +869,7 @@ pub unsafe extern "system" fn GetFileTime(
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut FileBasic: FILE_BASIC_INFORMATION = core::mem::zeroed();
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
         return 0;
     }
@@ -893,18 +887,18 @@ pub unsafe extern "system" fn GetFileTime(
     }
 
     if !lpCreationTime.is_null() {
-        (*lpCreationTime).dwLowDateTime = FileBasic.CreationTime.u.__bindgen_anon_1.LowPart;
-        (*lpCreationTime).dwHighDateTime = FileBasic.CreationTime.u.__bindgen_anon_1.HighPart;
+        (*lpCreationTime).dwLowDateTime = FileBasic.CreationTime.u.LowPart;
+        (*lpCreationTime).dwHighDateTime = FileBasic.CreationTime.u.HighPart as DWORD;
     }
 
     if !lpLastAccessTime.is_null() {
-        (*lpLastAccessTime).dwLowDateTime = FileBasic.LastAccessTime.u.__bindgen_anon_1.LowPart;
-        (*lpLastAccessTime).dwHighDateTime = FileBasic.LastAccessTime.u.__bindgen_anon_1.HighPart;
+        (*lpLastAccessTime).dwLowDateTime = FileBasic.LastAccessTime.u.LowPart;
+        (*lpLastAccessTime).dwHighDateTime = FileBasic.LastAccessTime.u.HighPart as DWORD;
     }
 
     if !lpLastWriteTime.is_null() {
-        (*lpLastWriteTime).dwLowDateTime = FileBasic.LastWriteTime.u.__bindgen_anon_1.LowPart;
-        (*lpLastWriteTime).dwHighDateTime = FileBasic.LastWriteTime.u.__bindgen_anon_1.HighPart;
+        (*lpLastWriteTime).dwLowDateTime = FileBasic.LastWriteTime.u.LowPart;
+        (*lpLastWriteTime).dwHighDateTime = FileBasic.LastWriteTime.u.HighPart as DWORD;
     }
 
     return 1;
@@ -921,7 +915,7 @@ pub unsafe extern "system" fn SetFileTime(
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut FileBasic: FILE_BASIC_INFORMATION = core::mem::zeroed();
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
         return 0;
     }
@@ -929,18 +923,18 @@ pub unsafe extern "system" fn SetFileTime(
     core::ptr::write_bytes(&mut FileBasic as *mut FILE_BASIC_INFORMATION as *mut u8, 0, core::mem::size_of::<FILE_BASIC_INFORMATION>());
 
     if !lpCreationTime.is_null() {
-        FileBasic.CreationTime.u.__bindgen_anon_1.LowPart = (*lpCreationTime).dwLowDateTime;
-        FileBasic.CreationTime.u.__bindgen_anon_1.HighPart = (*lpCreationTime).dwHighDateTime as i32;
+        FileBasic.CreationTime.u.LowPart = (*lpCreationTime).dwLowDateTime;
+        FileBasic.CreationTime.u.HighPart = (*lpCreationTime).dwHighDateTime as i32;
     }
 
     if !lpLastAccessTime.is_null() {
-        FileBasic.LastAccessTime.u.__bindgen_anon_1.LowPart = (*lpLastAccessTime).dwLowDateTime;
-        FileBasic.LastAccessTime.u.__bindgen_anon_1.HighPart = (*lpLastAccessTime).dwHighDateTime as i32;
+        FileBasic.LastAccessTime.u.LowPart = (*lpLastAccessTime).dwLowDateTime;
+        FileBasic.LastAccessTime.u.HighPart = (*lpLastAccessTime).dwHighDateTime as i32;
     }
 
     if !lpLastWriteTime.is_null() {
-        FileBasic.LastWriteTime.u.__bindgen_anon_1.LowPart = (*lpLastWriteTime).dwLowDateTime;
-        FileBasic.LastWriteTime.u.__bindgen_anon_1.HighPart = (*lpLastWriteTime).dwHighDateTime as i32;
+        FileBasic.LastWriteTime.u.LowPart = (*lpLastWriteTime).dwLowDateTime;
+        FileBasic.LastWriteTime.u.HighPart = (*lpLastWriteTime).dwHighDateTime as i32;
     }
 
     Status = NtSetInformationFile(
@@ -967,9 +961,9 @@ pub unsafe extern "system" fn SetEndOfFile(hFile: HANDLE) -> BOOL {
     let mut FilePosInfo: FILE_POSITION_INFORMATION = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         SetLastError(ERROR_INVALID_HANDLE as DWORD);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     Status = NtQueryInformationFile(
@@ -982,7 +976,7 @@ pub unsafe extern "system" fn SetEndOfFile(hFile: HANDLE) -> BOOL {
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     EndOfFileInfo.EndOfFile.QuadPart = FilePosInfo.CurrentByteOffset.QuadPart;
@@ -997,7 +991,7 @@ pub unsafe extern "system" fn SetEndOfFile(hFile: HANDLE) -> BOOL {
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     FileAllocationInfo_local.AllocationSize.QuadPart = FilePosInfo.CurrentByteOffset.QuadPart;
@@ -1012,10 +1006,10 @@ pub unsafe extern "system" fn SetEndOfFile(hFile: HANDLE) -> BOOL {
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]

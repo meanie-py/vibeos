@@ -2,9 +2,30 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+use crate::substrate::{TRUE, FALSE};
+use crate::client::utils::Basep8BitStringToUnicodeString;
+use crate::client::except::GlobalTopLevelExceptionFilter;
+use crate::client::actctx::BasepProbeForDllManifest;
+use crate::client::path::{
+    BaseWindowsDirectory, BaseWindowsSystemDirectory, BaseDefaultPath, BaseDefaultPathAppend,
+};
+use crate::client::heapmem::BaseDllInitializeMemoryManager;
+use crate::proc_helpers::InitCommandLines;
+use crate::string::nls::{NlsInit, NlsUninit};
+use crate::k32_globals::{BasepAppCertDllsList, gcsAppCert};
+
 extern "system" {
     fn CreateRemoteThread( hProcess: HANDLE, lpThreadAttributes: *mut _SECURITY_ATTRIBUTES, dwStackSize: u32, lpStartAddress: PTHREAD_START_ROUTINE, lpParameter: PVOID, dwCreationFlags: u32, lpThreadId: *mut u32, ) -> HANDLE;
     fn ExitThread(dwExitCode: u32);
+}
+
+extern "C" {
+    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> core::ffi::c_int;
+    fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+}
+
+extern "system" {
+    fn ConDllInitialize(dwReason: DWORD, lpReserved: PVOID) -> BOOL;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -93,10 +114,7 @@ pub unsafe extern "system" fn DllMain(
     let mut ConnectInfoSize: ULONG = core::mem::size_of::<BASESRV_API_CONNECTINFO>() as ULONG;
     let mut SessionDir: [WCHAR; 256] = [0; 256];
 
-    Basep8BitStringToUnicodeString = Some(
-        RtlAnsiStringToUnicodeString
-            as unsafe extern "system" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS,
-    );
+    Basep8BitStringToUnicodeString = Some(RtlAnsiStringToUnicodeString);
 
     Peb = NtCurrentPeb();
     SessionId = (*Peb).SessionId;
@@ -108,21 +126,16 @@ pub unsafe extern "system" fn DllMain(
                 (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
             );
 
-            GlobalTopLevelExceptionFilter = core::mem::transmute::<PVOID, LPTOP_LEVEL_EXCEPTION_FILTER>(
+            GlobalTopLevelExceptionFilter = core::mem::transmute::<PVOID, crate::client::except::LPTOP_LEVEL_EXCEPTION_FILTER>(
                 RtlEncodePointer(core::ptr::null_mut()),
             );
 
             RtlSetThreadPoolStartFunc(
-                Some(BaseCreateThreadPoolThread
-                    as unsafe extern "system" fn(PTHREAD_START_ROUTINE, PVOID, PHANDLE) -> NTSTATUS),
-                Some(BaseExitThreadPoolThread
-                    as unsafe extern "system" fn(NTSTATUS) -> NTSTATUS),
+                core::mem::transmute::<_, PRTL_START_POOL_THREAD>(Some(BaseCreateThreadPoolThread as unsafe extern "system" fn(_, _, _) -> _)),
+                core::mem::transmute::<_, PRTL_EXIT_POOL_THREAD>(Some(BaseExitThreadPoolThread as unsafe extern "system" fn(_) -> _)),
             );
 
-            LdrSetDllManifestProber(Some(
-                BasepProbeForDllManifest
-                    as unsafe extern "system" fn(PVOID, PCWSTR, *mut PVOID) -> NTSTATUS,
-            ));
+            LdrSetDllManifestProber(core::mem::transmute::<_, PLDR_MANIFEST_PROBER_ROUTINE>(Some(BasepProbeForDllManifest as unsafe extern "system" fn(_, _, _) -> _)));
 
             LdrDisableThreadCalloutsForDll(hDll as PVOID);
 
@@ -241,7 +254,7 @@ pub unsafe extern "system" fn DllMain(
                 return FALSE;
             }
 
-            if ConDllInitialize(dwReason, SessionDir.as_mut_ptr()) == 0 {
+            if ConDllInitialize(dwReason, SessionDir.as_mut_ptr() as PVOID) == 0 {
                 DbgPrint(
                     b"(%s:%d) Failed to set up console\n\0".as_ptr() as *const i8,
                     b"dllmain.c\0".as_ptr() as *const i8,

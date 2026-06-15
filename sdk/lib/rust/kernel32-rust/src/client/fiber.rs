@@ -1,74 +1,37 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
-use core::ffi::c_void;
+use crate::k32_externs::{BaseCreateStack, BaseInitializeContext, ExitThread, RtlZeroMemory};
 
-// ---- file-scope preamble (translated) ----
-#[repr(C)]
-pub struct FIBER {
-    pub ExceptionList: *mut core::ffi::c_void,
-    pub StackBase: *mut core::ffi::c_void,
-    pub StackLimit: *mut core::ffi::c_void,
-    pub DeallocationStack: *mut core::ffi::c_void,
-    pub FiberContext: *mut core::ffi::c_void,
-    pub GuaranteedStackBytes: u32,
-    pub FlsData: *mut core::ffi::c_void,
-    pub ActivationContextStackPointer: *mut core::ffi::c_void,
+extern "system" {
+    fn GetProcessHeap() -> HANDLE;
 }
 
-pub type PFIBER = *mut FIBER;
+// FIBER, PFIBER, RTL_FLS_DATA, PRTL_FLS_DATA, LIST_ENTRY, PLIST_ENTRY,
+// PFLS_CALLBACK_FUNCTION, LPFIBER_START_ROUTINE, LPVOID, PTEB, PPEB,
+// PACTIVATION_CONTEXT_STACK, and all the FLS_*/FIBER_*/CONTEXT_*/ERROR_*/HEAP_*/
+// MEM_* constants come from ntdll_sys::nt::* (bindgen) — do not redefine.
 
-pub const FLS_MAXIMUM_AVAILABLE: u32 = 128;
-pub const RTL_FLS_MAXIMUM_AVAILABLE: u32 = FLS_MAXIMUM_AVAILABLE;
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
 
-pub const FIBER_FLAG_FLOAT_SWITCH: u32 = 0x00000001;
+// EXCEPTION_CHAIN_END is `((PEXCEPTION_REGISTRATION_RECORD)-1)` (winnt.h) — not
+// bindgen-evaluable.
+const EXCEPTION_CHAIN_END: *mut _EXCEPTION_REGISTRATION_RECORD =
+    !0usize as *mut _EXCEPTION_REGISTRATION_RECORD;
 
-pub const ERROR_SUCCESS: u32 = 0;
-pub const ERROR_INVALID_PARAMETER: u32 = 87;
-pub const ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
-pub const ERROR_ALREADY_FIBER: u32 = 589;
-pub const ERROR_ALREADY_THREAD: u32 = 590;
-pub const ERROR_NO_MORE_ITEMS: u32 = 259;
-
-pub const HEAP_ZERO_MEMORY: u32 = 0x00000008;
-pub const MEM_RELEASE: u32 = 0x00008000;
-
-pub const CONTEXT_FULL: u32 = 0x00010007;
-pub const CONTEXT_FLOATING_POINT: u32 = 0x00000008;
-
-pub type LPVOID = *mut core::ffi::c_void;
-pub type LPFIBER_START_ROUTINE = Option<unsafe extern "system" fn(LPVOID) -> u32>;
-
-pub type PLIST_ENTRY = *mut LIST_ENTRY;
-
-#[repr(C)]
-pub struct LIST_ENTRY {
-    pub Flink: PLIST_ENTRY,
-    pub Blink: PLIST_ENTRY,
+// PEB.FlsCallback is typed `*mut PVOID` by bindgen, but the slots hold
+// PFLS_CALLBACK_FUNCTION values (C indexes it as such). View it that way.
+#[inline]
+unsafe fn fls_callbacks(Peb: PPEB) -> *mut PFLS_CALLBACK_FUNCTION {
+    (*Peb).FlsCallback as *mut PFLS_CALLBACK_FUNCTION
 }
-
-pub type PTEB = *mut TEB;
-pub type PPEB = *mut PEB;
-pub type PACTIVATION_CONTEXT_STACK = *mut ACTIVATION_CONTEXT_STACK;
-
-#[repr(C)]
-pub struct RTL_FLS_DATA {
-    pub Flink: PLIST_ENTRY,
-    pub Blink: PLIST_ENTRY,
-    pub Callback: PFLS_CALLBACK_FUNCTION,
-    pub Reserved: *mut core::ffi::c_void,
-}
-
-pub type PRTL_FLS_DATA = *mut RTL_FLS_DATA;
-pub type PFLS_CALLBACK_FUNCTION = Option<unsafe extern "system" fn(LPVOID, LPVOID)>;
-
-pub const FLS_OUT_OF_INDEXES: u32 = 0xFFFFFFFF;
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseRundownFls(FlsData: PVOID) {
-    let n: u32;
+    let mut n: u32;
     let FlsHighIndex: u32;
     let pFlsData: PRTL_FLS_DATA;
-    let lpCallback: PFLS_CALLBACK_FUNCTION;
+    let mut lpCallback: PFLS_CALLBACK_FUNCTION;
 
     pFlsData = FlsData as PRTL_FLS_DATA;
 
@@ -79,9 +42,9 @@ pub unsafe extern "system" fn BaseRundownFls(FlsData: PVOID) {
 
     n = 1;
     while n <= FlsHighIndex {
-        lpCallback = (*NtCurrentPeb()).FlsCallback[n as usize];
-        if !lpCallback.is_null() && !(*pFlsData).Data[n as usize].is_null() {
-            lpCallback((*pFlsData).Data[n as usize]);
+        lpCallback = *fls_callbacks(NtCurrentPeb()).add(n as usize);
+        if lpCallback.is_some() && !(*pFlsData).Data[n as usize].is_null() {
+            (lpCallback.unwrap())((*pFlsData).Data[n as usize]);
         }
         n += 1;
     }
@@ -100,9 +63,9 @@ pub unsafe extern "system" fn ConvertFiberToThread() -> BOOL {
         return 0i32;
     }
 
-    (*Teb).HasFiberData = 0i32;
-    FiberData = (*Teb).NtTib.FiberData;
-    (*Teb).NtTib.FiberData = core::ptr::null_mut();
+    (*Teb).HasFiberData = FALSE as BOOLEAN;
+    FiberData = (*Teb).NtTib.__bindgen_anon_1.FiberData as PFIBER;
+    (*Teb).NtTib.__bindgen_anon_1.FiberData = core::ptr::null_mut();
 
     RtlFreeHeap(RtlGetProcessHeap(), 0, FiberData as LPVOID);
 
@@ -136,7 +99,7 @@ pub unsafe extern "system" fn ConvertThreadToFiberEx(
     Fiber = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<FIBER>(),
+        core::mem::size_of::<FIBER>() as SIZE_T,
     ) as PFIBER;
     if Fiber.is_null() {
         /* Fail */
@@ -162,8 +125,8 @@ pub unsafe extern "system" fn ConvertThreadToFiberEx(
     };
 
     /* Associate the fiber to the current thread */
-    (*Teb).NtTib.FiberData = Fiber as LPVOID;
-    (*Teb).HasFiberData = 1i32 as u8;
+    (*Teb).NtTib.__bindgen_anon_1.FiberData = Fiber as LPVOID;
+    (*Teb).HasFiberData = TRUE as BOOLEAN;
 
     /* Return opaque fiber data */
     return Fiber as LPVOID;
@@ -194,9 +157,9 @@ pub unsafe extern "system" fn CreateFiberEx(
     lpParameter: LPVOID,
 ) -> LPVOID {
     let Fiber: PFIBER;
-    let Status: NTSTATUS;
-    let InitialTeb: INITIAL_TEB;
-    let ActivationContextStackPointer: PACTIVATION_CONTEXT_STACK;
+    let mut Status: NTSTATUS;
+    let mut InitialTeb: INITIAL_TEB = core::mem::zeroed();
+    let mut ActivationContextStackPointer: PACTIVATION_CONTEXT_STACK;
 
     /* Check for invalid flags */
     if (dwFlags & !FIBER_FLAG_FLOAT_SWITCH) != 0 {
@@ -218,7 +181,7 @@ pub unsafe extern "system" fn CreateFiberEx(
     Fiber = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<FIBER>(),
+        core::mem::size_of::<FIBER>() as SIZE_T,
     ) as PFIBER;
     if Fiber.is_null() {
         /* Free the activation context stack */
@@ -255,7 +218,7 @@ pub unsafe extern "system" fn CreateFiberEx(
     /* Clear the context */
     RtlZeroMemory(
         &mut (*Fiber).FiberContext as *mut _ as *mut core::ffi::c_void,
-        core::mem::size_of::<CONTEXT>(),
+        core::mem::size_of::<CONTEXT>() as SIZE_T,
     );
 
     /* Copy the data into the fiber */
@@ -279,7 +242,7 @@ pub unsafe extern "system" fn CreateFiberEx(
     BaseInitializeContext(
         &mut (*Fiber).FiberContext,
         lpParameter,
-        lpStartAddress,
+        lpStartAddress.map_or(core::ptr::null_mut(), |f| f as PVOID),
         InitialTeb.StackBase,
         2,
     );
@@ -289,13 +252,13 @@ pub unsafe extern "system" fn CreateFiberEx(
 }
 #[no_mangle]
 pub unsafe extern "system" fn DeleteFiber(lpFiber: LPVOID) {
-    let Size: SIZE_T;
+    let mut Size: SIZE_T;
     let Fiber: PFIBER;
     let Teb: PTEB;
 
     Teb = NtCurrentTeb();
     Fiber = lpFiber as PFIBER;
-    if (*Teb).HasFiberData != 0 && (*Teb).NtTib.FiberData == Fiber as *mut _ {
+    if (*Teb).HasFiberData != 0 && (*Teb).NtTib.__bindgen_anon_1.FiberData == Fiber as PVOID {
         ExitThread(1);
     }
 
@@ -318,7 +281,7 @@ pub unsafe extern "system" fn DeleteFiber(lpFiber: LPVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IsThreadAFiber() -> BOOL {
-    (*NtCurrentTeb()).HasFiberData
+    (*NtCurrentTeb()).HasFiberData as BOOL
 }
 
 #[no_mangle]
@@ -329,14 +292,14 @@ pub unsafe extern "system" fn FlsAlloc(lpCallback: PFLS_CALLBACK_FUNCTION) -> DW
 
     RtlAcquirePebLock();
 
-    pFlsData = (*NtCurrentTeb()).FlsData;
+    pFlsData = (*NtCurrentTeb()).FlsData as PRTL_FLS_DATA;
 
     if (*Peb).FlsCallback == core::ptr::null_mut()
         && {
             (*Peb).FlsCallback = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                (FLS_MAXIMUM_AVAILABLE as usize) * core::mem::size_of::<LPVOID>(),
+                ((FLS_MAXIMUM_AVAILABLE as usize) * core::mem::size_of::<LPVOID>()) as SIZE_T,
             ) as *mut _;
             (*Peb).FlsCallback.is_null()
         }
@@ -344,29 +307,29 @@ pub unsafe extern "system" fn FlsAlloc(lpCallback: PFLS_CALLBACK_FUNCTION) -> DW
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         dwFlsIndex = FLS_OUT_OF_INDEXES;
     } else {
-        dwFlsIndex = RtlFindClearBitsAndSet((*Peb).FlsBitmap, 1, 1);
+        dwFlsIndex = RtlFindClearBitsAndSet(((*Peb).FlsBitmap as PRTL_BITMAP), 1, 1);
         if dwFlsIndex != FLS_OUT_OF_INDEXES {
             if pFlsData.is_null()
                 && {
                     pFlsData = RtlAllocateHeap(
                         RtlGetProcessHeap(),
                         HEAP_ZERO_MEMORY,
-                        core::mem::size_of::<RTL_FLS_DATA>(),
+                        core::mem::size_of::<RTL_FLS_DATA>() as SIZE_T,
                     ) as PRTL_FLS_DATA;
                     pFlsData.is_null()
                 }
             {
-                RtlClearBits((*Peb).FlsBitmap, dwFlsIndex, 1);
+                RtlClearBits(((*Peb).FlsBitmap as PRTL_BITMAP), dwFlsIndex, 1);
                 dwFlsIndex = FLS_OUT_OF_INDEXES;
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             } else {
                 if (*NtCurrentTeb()).FlsData.is_null() {
-                    (*NtCurrentTeb()).FlsData = pFlsData;
+                    (*NtCurrentTeb()).FlsData = pFlsData as PVOID;
                     InsertTailList(&mut (*Peb).FlsListHead, &mut (*pFlsData).ListEntry);
                 }
 
                 (*pFlsData).Data[dwFlsIndex as usize] = core::ptr::null_mut();
-                (*Peb).FlsCallback[dwFlsIndex as usize] = lpCallback;
+                *fls_callbacks(Peb).add(dwFlsIndex as usize) = lpCallback;
 
                 if dwFlsIndex > (*Peb).FlsHighIndex {
                     (*Peb).FlsHighIndex = dwFlsIndex;
@@ -394,13 +357,13 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
 
     // _SEH2_TRY
     {
-        ret = if RtlAreBitsSet((*Peb).FlsBitmap, dwFlsIndex, 1) != 0 { 1 } else { 0 };
+        ret = if RtlAreBitsSet(((*Peb).FlsBitmap as PRTL_BITMAP), dwFlsIndex, 1) != 0 { 1 } else { 0 };
         if ret != 0 {
-            let Entry: PLIST_ENTRY;
+            let mut Entry: PLIST_ENTRY;
             let lpCallback: PFLS_CALLBACK_FUNCTION;
 
-            RtlClearBits((*Peb).FlsBitmap, dwFlsIndex, 1);
-            lpCallback = (*Peb).FlsCallback[dwFlsIndex as usize];
+            RtlClearBits(((*Peb).FlsBitmap as PRTL_BITMAP), dwFlsIndex, 1);
+            lpCallback = *fls_callbacks(Peb).add(dwFlsIndex as usize);
 
             Entry = (*Peb).FlsListHead.Flink;
             while Entry != &mut (*Peb).FlsListHead as *mut _ as PLIST_ENTRY {
@@ -410,14 +373,14 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
                     _addr.offset(-_offset) as *mut RTL_FLS_DATA
                 };
                 if (*pFlsData).Data[dwFlsIndex as usize] != core::ptr::null_mut() {
-                    if !lpCallback.is_null() {
-                        lpCallback((*pFlsData).Data[dwFlsIndex as usize]);
+                    if let Some(cb) = lpCallback {
+                        cb((*pFlsData).Data[dwFlsIndex as usize]);
                     }
                     (*pFlsData).Data[dwFlsIndex as usize] = core::ptr::null_mut();
                 }
                 Entry = (*Entry).Flink;
             }
-            (*Peb).FlsCallback[dwFlsIndex as usize] = core::ptr::null_mut();
+            *fls_callbacks(Peb).add(dwFlsIndex as usize) = None;
         } else {
             SetLastError(ERROR_INVALID_PARAMETER);
         }
@@ -435,7 +398,7 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
 #[no_mangle]
 pub unsafe extern "system" fn FlsGetValue(dwFlsIndex: DWORD) -> LPVOID {
     let pFlsData: PRTL_FLS_DATA;
-    pFlsData = (*NtCurrentTeb()).FlsData;
+    pFlsData = (*NtCurrentTeb()).FlsData as PRTL_FLS_DATA;
     if dwFlsIndex == 0 || dwFlsIndex >= FLS_MAXIMUM_AVAILABLE || pFlsData.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return core::ptr::null_mut();
@@ -449,21 +412,21 @@ pub unsafe extern "system" fn FlsSetValue(
     dwFlsIndex: DWORD,
     lpFlsData: PVOID,
 ) -> BOOL {
-    let pFlsData: PRTL_FLS_DATA;
+    let mut pFlsData: PRTL_FLS_DATA;
 
     if dwFlsIndex == 0 || dwFlsIndex >= FLS_MAXIMUM_AVAILABLE {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    pFlsData = (*NtCurrentTeb()).FlsData;
+    pFlsData = (*NtCurrentTeb()).FlsData as PRTL_FLS_DATA;
 
     if (*NtCurrentTeb()).FlsData.is_null()
         && {
             (*NtCurrentTeb()).FlsData = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<RTL_FLS_DATA>(),
+                core::mem::size_of::<RTL_FLS_DATA>() as SIZE_T,
             );
             (*NtCurrentTeb()).FlsData.is_null()
         }
@@ -472,11 +435,11 @@ pub unsafe extern "system" fn FlsSetValue(
         return 0;
     }
     if pFlsData.is_null() {
-        pFlsData = (*NtCurrentTeb()).FlsData;
+        pFlsData = (*NtCurrentTeb()).FlsData as PRTL_FLS_DATA;
         RtlAcquirePebLock();
         InsertTailList(
             &mut (*NtCurrentPeb()).FlsListHead,
-            &mut pFlsData.ListEntry,
+            &mut (*pFlsData).ListEntry,
         );
         RtlReleasePebLock();
     }

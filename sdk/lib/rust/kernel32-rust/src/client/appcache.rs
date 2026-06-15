@@ -1,5 +1,8 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::substrate::{TRUE, FALSE};
+use crate::k32_externs::InterlockedCompareExchangePointer;
+use crate::client::path::BaseWindowsDirectory;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -314,11 +317,13 @@ unsafe fn BaseInitApphelp() {
         Buffer.as_mut_ptr(),
         core::mem::size_of::<[WCHAR; MAX_PATH as usize * 2]>() as USHORT,
     );
-    RtlCopyUnicodeString(&mut DllPath, &BaseWindowsDirectory);
-    RtlAppendUnicodeToString(
-        &mut DllPath,
-        "\\system32\\apphelp.dll\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as PCWSTR,
-    );
+    RtlCopyUnicodeString(&mut DllPath, &raw const BaseWindowsDirectory);
+    // L"\\system32\\apphelp.dll\0"
+    static APPHELP_SUFFIX: [u16; 22] = [
+        0x5C, 0x73, 0x79, 0x73, 0x74, 0x65, 0x6D, 0x33, 0x32, 0x5C,
+        0x61, 0x70, 0x70, 0x68, 0x65, 0x6C, 0x70, 0x2E, 0x64, 0x6C, 0x6C, 0x00,
+    ];
+    RtlAppendUnicodeToString(&mut DllPath, APPHELP_SUFFIX.as_ptr() as PCWSTR);
 
     if NT_SUCCESS(LdrLoadDll(
         core::ptr::null_mut(),
@@ -416,7 +421,7 @@ pub unsafe extern "system" fn BaseCheckRunApp(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         ApplicationName,
-        Environment,
+        Environment as PVOID,
         ExeType,
         &raw mut Reason,
         &raw mut QueryResult,

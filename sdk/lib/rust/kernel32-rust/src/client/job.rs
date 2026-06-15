@@ -1,6 +1,11 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
+use crate::k32_externs::{BaseFormatObjectAttributes, RtlCopyMemory};
 use core::ffi::c_void;
+
+extern "system" {
+    fn BaseGetNamedObjectDirectory() -> HANDLE;
+}
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
@@ -18,7 +23,7 @@ pub unsafe extern "system" fn CreateJobObjectA(
     if lpName.is_null() {
         return CreateJobObjectW(lpJobAttributes, core::ptr::null());
     }
-    UnicodeCache = &raw mut (*(NtCurrentTeb as unsafe extern "system" fn() -> *mut _TEB)())
+    UnicodeCache = &raw mut (*NtCurrentTeb())
         .StaticUnicodeString as PUNICODE_STRING;
     RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
     Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, 0);
@@ -153,7 +158,7 @@ pub unsafe extern "system" fn OpenJobObjectA(
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
         return core::ptr::null_mut();
     }
-    UnicodeCache = &raw mut (*(NtCurrentTeb as unsafe extern "C" fn() -> *mut _TEB)())
+    UnicodeCache = &raw mut (*NtCurrentTeb())
         .StaticUnicodeString as PUNICODE_STRING;
     RtlInitAnsiString(&raw mut AnsiName, lpName as PCSZ);
     Status = RtlAnsiStringToUnicodeString(UnicodeCache, &raw mut AnsiName, FALSE as BOOLEAN);
@@ -212,7 +217,7 @@ pub unsafe extern "system" fn QueryInformationJobObject(
 ) -> BOOL {
     let mut Status: NTSTATUS;
     let mut JobInfo: PVOID;
-    let mut LocalInfo: JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
+    let mut LocalInfo: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = core::mem::zeroed();
     let mut ExpectedSize: ULONG;
 
     if JobObjectInformationClass == JobObjectBasicLimitInformation {
@@ -270,7 +275,7 @@ pub unsafe extern "system" fn QueryInformationJobObject(
         RtlCopyMemory(
             lpJobObjectInformation,
             core::ptr::addr_of!(LocalInfo) as *const _,
-            ExpectedSize as usize,
+            ExpectedSize as SIZE_T,
         );
         return 1;
     }

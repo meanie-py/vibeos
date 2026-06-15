@@ -1,6 +1,7 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{IsConsoleHandle, GetLastError};
 
 // ---- file-scope preamble (translated) ----
 
@@ -18,17 +19,17 @@ pub unsafe extern "system" fn LockFile(
     let mut Offset: LARGE_INTEGER = core::mem::zeroed();
 
     /* Is this a console handle? */
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         /* Can't "lock" a console! */
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
         return 0; /* FALSE */
     }
 
     /* Setup the parameters in NT style and call the native API */
-    BytesToLock.u.__bindgen_anon_1.LowPart = nNumberOfBytesToLockLow;
-    BytesToLock.u.__bindgen_anon_1.HighPart = nNumberOfBytesToLockHigh as LONG;
-    Offset.u.__bindgen_anon_1.LowPart = dwFileOffsetLow;
-    Offset.u.__bindgen_anon_1.HighPart = dwFileOffsetHigh as LONG;
+    BytesToLock.u.LowPart = nNumberOfBytesToLockLow;
+    BytesToLock.u.HighPart = nNumberOfBytesToLockHigh as LONG;
+    Offset.u.LowPart = dwFileOffsetLow;
+    Offset.u.HighPart = dwFileOffsetHigh as LONG;
     Status = NtLockFile(
         hFile,
         core::ptr::null_mut(),
@@ -72,52 +73,52 @@ pub unsafe extern "system" fn LockFileEx(
     nNumberOfBytesToLockHigh: DWORD,
     lpOverlapped: LPOVERLAPPED,
 ) -> BOOL {
-    let mut BytesToLock: LARGE_INTEGER = LARGE_INTEGER { u: __LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
-    let mut Offset: LARGE_INTEGER = LARGE_INTEGER { u: __LARGE_INTEGER_u { LowPart: 0, HighPart: 0 } };
+    let mut BytesToLock: LARGE_INTEGER = LARGE_INTEGER { u: _LARGE_INTEGER__bindgen_ty_2 { LowPart: 0, HighPart: 0 } };
+    let mut Offset: LARGE_INTEGER = LARGE_INTEGER { u: _LARGE_INTEGER__bindgen_ty_2 { LowPart: 0, HighPart: 0 } };
     let mut Status: NTSTATUS;
 
     /* Is this a console handle? */
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         /* Can't "lock" a console! */
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* This parameter should be zero */
     if dwReserved != 0 {
         /* Fail since it isn't */
         SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Set the initial status in the _IO_STATUS_BLOCK to pending... */
-    (*lpOverlapped).Internal = STATUS_PENDING;
+    (*lpOverlapped).Internal = STATUS_PENDING as ULONG_PTR;
 
     /* Convert the parameters to NT format and call the native API */
-    Offset.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-    Offset.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh;
-    BytesToLock.u.__bindgen_anon_1.LowPart = nNumberOfBytesToLockLow;
-    BytesToLock.u.__bindgen_anon_1.HighPart = nNumberOfBytesToLockHigh;
+    Offset.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    Offset.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
+    BytesToLock.u.LowPart = nNumberOfBytesToLockLow;
+    BytesToLock.u.HighPart = nNumberOfBytesToLockHigh as LONG;
     Status = NtLockFile(
         hFile,
         (*lpOverlapped).hEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         lpOverlapped as PIO_STATUS_BLOCK,
         &mut Offset as *mut LARGE_INTEGER,
         &mut BytesToLock as *mut LARGE_INTEGER,
         0,
-        if (dwFlags & LOCKFILE_FAIL_IMMEDIATELY) != 0 { TRUE } else { FALSE },
-        if (dwFlags & LOCKFILE_EXCLUSIVE_LOCK) != 0 { TRUE } else { FALSE },
+        if (dwFlags & LOCKFILE_FAIL_IMMEDIATELY) != 0 { TRUE as BOOLEAN } else { FALSE as BOOLEAN },
+        if (dwFlags & LOCKFILE_EXCLUSIVE_LOCK) != 0 { TRUE as BOOLEAN } else { FALSE as BOOLEAN },
     );
-    if (NT_SUCCESS(Status) != 0) && (Status != STATUS_PENDING) {
+    if NT_SUCCESS(Status) && (Status != STATUS_PENDING) {
         /* Pending status is *not* allowed in the Ex API */
-        return TRUE;
+        return TRUE as BOOL;
     }
 
     /* Convert the error code and fail */
     BaseSetLastNTError(Status);
-    return FALSE;
+    return FALSE as BOOL;
 }
 
 #[no_mangle]
@@ -132,8 +133,8 @@ pub unsafe extern "system" fn UnlockFile(
     let mut Status: NTSTATUS = 0;
     let mut Result: BOOLEAN = 0;
 
-    Overlapped.Offset = dwFileOffsetLow;
-    Overlapped.OffsetHigh = dwFileOffsetHigh;
+    Overlapped.__bindgen_anon_1.__bindgen_anon_1.Offset = dwFileOffsetLow;
+    Overlapped.__bindgen_anon_1.__bindgen_anon_1.OffsetHigh = dwFileOffsetHigh;
     Result = UnlockFileEx(
         hFile,
         0,
@@ -145,17 +146,17 @@ pub unsafe extern "system" fn UnlockFile(
     if Result == 0 && GetLastError() == ERROR_IO_PENDING {
         Status = NtWaitForSingleObject(
             hFile,
-            FALSE,
+            FALSE as BOOLEAN,
             core::ptr::null_mut(),
         );
         if NT_SUCCESS(Status) {
             Status = Overlapped.Internal as NTSTATUS;
         }
         if !NT_SUCCESS(Status) {
-            return TRUE;
+            return TRUE as BOOL;
         }
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     return Result as BOOL;
@@ -169,29 +170,29 @@ pub unsafe extern "system" fn UnlockFileEx(
     nNumberOfBytesToUnLockHigh: DWORD,
     lpOverlapped: LPOVERLAPPED,
 ) -> BOOL {
-    let mut BytesToUnLock: LARGE_INTEGER = LARGE_INTEGER { u: LARGE_INTEGER_0 { LowPart: 0, HighPart: 0 } };
-    let mut StartAddress: LARGE_INTEGER = LARGE_INTEGER { u: LARGE_INTEGER_0 { LowPart: 0, HighPart: 0 } };
+    let mut BytesToUnLock: LARGE_INTEGER = LARGE_INTEGER { u: _LARGE_INTEGER__bindgen_ty_2 { LowPart: 0, HighPart: 0 } };
+    let mut StartAddress: LARGE_INTEGER = LARGE_INTEGER { u: _LARGE_INTEGER__bindgen_ty_2 { LowPart: 0, HighPart: 0 } };
     let mut Status: NTSTATUS = 0;
 
     /* Is this a console handle? */
-    if IsConsoleHandle(hFile) != 0 {
+    if IsConsoleHandle(hFile) {
         /* Can't "unlock" a console! */
         BaseSetLastNTError(STATUS_INVALID_HANDLE);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* This parameter should be zero */
     if dwReserved != 0 {
         /* Fail since it isn't */
         SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* Convert to NT format and call the native function */
-    BytesToUnLock.u.__bindgen_anon_1.LowPart = nNumberOfBytesToUnLockLow;
-    BytesToUnLock.u.__bindgen_anon_1.HighPart = nNumberOfBytesToUnLockHigh as LONG;
-    StartAddress.u.__bindgen_anon_1.LowPart = (*lpOverlapped).Offset;
-    StartAddress.u.__bindgen_anon_1.HighPart = (*lpOverlapped).OffsetHigh as LONG;
+    BytesToUnLock.u.LowPart = nNumberOfBytesToUnLockLow;
+    BytesToUnLock.u.HighPart = nNumberOfBytesToUnLockHigh as LONG;
+    StartAddress.u.LowPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.Offset;
+    StartAddress.u.HighPart = (*lpOverlapped).__bindgen_anon_1.__bindgen_anon_1.OffsetHigh as LONG;
     Status = NtUnlockFile(
         hFile,
         lpOverlapped as PIO_STATUS_BLOCK,
@@ -202,11 +203,11 @@ pub unsafe extern "system" fn UnlockFileEx(
     if !NT_SUCCESS(Status) {
         /* Convert the error and fail */
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     /* All good */
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 

@@ -68,18 +68,18 @@ unsafe fn GetVolumeNameForRoot(
 ) -> BOOL {
     let mut Ret: BOOL;
     let mut Status: NTSTATUS;
-    let mut FoundVolume: PWSTR;
-    let mut BytesReturned: DWORD;
-    let mut NtPathName: _UNICODE_STRING;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut FoundVolume: PWSTR = core::ptr::null_mut();
+    let mut BytesReturned: DWORD = 0;
+    let mut NtPathName: _UNICODE_STRING = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut MountPoint: PMOUNTMGR_MOUNT_POINT;
     let mut CurrentMntPt: ULONG;
-    let mut FoundVolumeLen: ULONG;
+    let mut FoundVolumeLen: ULONG = 0;
     let mut MountPoints: PMOUNTMGR_MOUNT_POINTS;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut VolumeHandle: HANDLE;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut VolumeHandle: HANDLE = core::ptr::null_mut();
     let mut MountMgrHandle: HANDLE;
-    let mut MountDevName: MountDevName;
+    let mut MountDevName: MountDevName = core::mem::zeroed();
 
     /* It makes no sense on a non-local drive */
     if GetDriveTypeW(lpszRootPath) == DRIVE_REMOTE {
@@ -94,15 +94,15 @@ unsafe fn GetVolumeNameForRoot(
     }
 
     /* If it's a root path - likely - drop backslash to open volume */
-    if *(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) == '\\' as u16 {
-        *(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) = 0u16;
+    if *NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) == '\\' as u16 {
+        *NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) = 0u16;
         NtPathName.Length = NtPathName.Length.wrapping_sub(core::mem::size_of::<WCHAR>() as u16);
     }
 
     /* If that's a DOS volume, upper case the letter */
     if NtPathName.Length >= (2 * core::mem::size_of::<WCHAR>()) as u16 {
-        if *(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) == ':' as u16 {
-            *(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(2) as isize) = towupper(*(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(2) as isize));
+        if *NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(1) as isize) == ':' as u16 {
+            *NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(2) as isize) = towupper(*NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16).wrapping_sub(2) as isize));
         }
     }
 
@@ -122,7 +122,7 @@ unsafe fn GetVolumeNameForRoot(
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         FILE_SYNCHRONOUS_IO_ALERT,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
         BaseSetLastNTError(Status);
         return 0;
@@ -152,7 +152,7 @@ unsafe fn GetVolumeNameForRoot(
     /* We'll keep the device name for later usage */
     NtPathName.Length = MountDevName.NameLength;
     NtPathName.MaximumLength = MountDevName.NameLength + core::mem::size_of::<WCHAR>() as u16;
-    NtPathName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, NtPathName.MaximumLength as usize) as PWSTR;
+    NtPathName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, NtPathName.MaximumLength as SIZE_T) as PWSTR;
     if NtPathName.Buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
@@ -161,15 +161,15 @@ unsafe fn GetVolumeNameForRoot(
     RtlCopyMemory(
         NtPathName.Buffer as *mut core::ffi::c_void,
         &MountDevName.Name as *const _ as *const core::ffi::c_void,
-        NtPathName.Length as usize,
+        NtPathName.Length as SIZE_T,
     );
-    *(*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16) as isize) = 0u16;
+    *NtPathName.Buffer.offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16) as isize) = 0u16;
 
     /* Allocate the structure for querying the mount mgr */
     MountPoint = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (NtPathName.Length as usize) + core::mem::size_of::<MOUNTMGR_MOUNT_POINT>(),
+        (NtPathName.Length as usize) as SIZE_T + core::mem::size_of::<MOUNTMGR_MOUNT_POINT>() as SIZE_T,
     ) as PMOUNTMGR_MOUNT_POINT;
     if MountPoint.is_null() {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
@@ -178,17 +178,17 @@ unsafe fn GetVolumeNameForRoot(
     }
 
     /* 0 everything, we provide a device name */
-    RtlZeroMemory(MountPoint as *mut core::ffi::c_void, core::mem::size_of::<MOUNTMGR_MOUNT_POINT>());
-    (*MountPoint).DeviceNameOffset = core::mem::size_of::<MOUNTMGR_MOUNT_POINT>() as u16;
+    RtlZeroMemory(MountPoint as *mut core::ffi::c_void, core::mem::size_of::<MOUNTMGR_MOUNT_POINT>() as SIZE_T);
+    (*MountPoint).DeviceNameOffset = core::mem::size_of::<MOUNTMGR_MOUNT_POINT>() as u32;
     (*MountPoint).DeviceNameLength = NtPathName.Length;
     RtlCopyMemory(
         (MountPoint as usize + core::mem::size_of::<MOUNTMGR_MOUNT_POINT>()) as *mut core::ffi::c_void,
         NtPathName.Buffer as *const core::ffi::c_void,
-        NtPathName.Length as usize,
+        NtPathName.Length as SIZE_T,
     );
 
     /* Allocate a dummy output buffer to probe for size */
-    MountPoints = RtlAllocateHeap(RtlGetProcessHeap(), 0, core::mem::size_of::<MOUNTMGR_MOUNT_POINTS>()) as PMOUNTMGR_MOUNT_POINTS;
+    MountPoints = RtlAllocateHeap(RtlGetProcessHeap(), 0, core::mem::size_of::<MOUNTMGR_MOUNT_POINTS>() as SIZE_T) as PMOUNTMGR_MOUNT_POINTS;
     if MountPoints.is_null() {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
         RtlFreeHeap(RtlGetProcessHeap(), 0, MountPoint as *mut core::ffi::c_void);
@@ -232,7 +232,7 @@ unsafe fn GetVolumeNameForRoot(
         BufferSize = (*MountPoints).Size;
         /* Reallocate the buffer with enough room */
         RtlFreeHeap(RtlGetProcessHeap(), 0, MountPoints as *mut core::ffi::c_void);
-        MountPoints = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferSize as usize) as PMOUNTMGR_MOUNT_POINTS;
+        MountPoints = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferSize as SIZE_T) as PMOUNTMGR_MOUNT_POINTS;
         if MountPoints.is_null() {
             CloseHandle(MountMgrHandle);
             RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
@@ -271,12 +271,12 @@ unsafe fn GetVolumeNameForRoot(
     /* If there were no associated mount points, we'll return the device name */
     if (*MountPoints).NumberOfMountPoints == 0 {
         FoundVolume = NtPathName.Buffer;
-        FoundVolumeLen = NtPathName.Length;
+        FoundVolumeLen = NtPathName.Length as ULONG;
     }
     /* Otherwise, find one which is matching */
     else {
         while CurrentMntPt < (*MountPoints).NumberOfMountPoints {
-            let mut SymbolicLink: _UNICODE_STRING;
+            let mut SymbolicLink: _UNICODE_STRING = core::mem::zeroed();
 
             /* Make a string of it, to easy the checks */
             SymbolicLink.Length = (*MountPoints).MountPoints[CurrentMntPt as usize].SymbolicLinkNameLength;
@@ -285,7 +285,7 @@ unsafe fn GetVolumeNameForRoot(
             /* If that's a NT volume name (GUID form), keep it! */
             if MOUNTMGR_IS_NT_VOLUME_NAME(&mut SymbolicLink) != 0 {
                 FoundVolume = SymbolicLink.Buffer;
-                FoundVolumeLen = SymbolicLink.Length;
+                FoundVolumeLen = SymbolicLink.Length as ULONG;
 
                 break;
             }
@@ -314,13 +314,13 @@ unsafe fn GetVolumeNameForRoot(
     RtlCopyMemory(
         lpszVolumeName as *mut core::ffi::c_void,
         FoundVolume as *const core::ffi::c_void,
-        FoundVolumeLen as usize,
+        FoundVolumeLen as SIZE_T,
     );
     /* Make it compliant */
-    *(*lpszVolumeName).offset(1) = '\\' as u16;
+    *lpszVolumeName.offset(1) = '\\' as u16;
     /* And transform it as root path */
-    *(*lpszVolumeName).offset((FoundVolumeLen as usize / core::mem::size_of::<WCHAR>()) as isize) = '\\' as u16;
-    *(*lpszVolumeName).offset((FoundVolumeLen as usize / core::mem::size_of::<WCHAR>()).wrapping_add(1) as isize) = 0u16;
+    *lpszVolumeName.offset((FoundVolumeLen as usize / core::mem::size_of::<WCHAR>()) as isize) = '\\' as u16;
+    *lpszVolumeName.offset((FoundVolumeLen as usize / core::mem::size_of::<WCHAR>()).wrapping_add(1) as isize) = 0u16;
 
     /* We're done! */
     RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
@@ -335,9 +335,9 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     IsAMountPoint: LPBOOL,
 ) -> BOOL {
     let mut Old: WCHAR;
-    let mut BytesReturned: DWORD;
+    let mut BytesReturned: DWORD = 0;
     let mut ReparseHandle: HANDLE;
-    let mut SubstituteName: _UNICODE_STRING;
+    let mut SubstituteName: _UNICODE_STRING = core::mem::zeroed();
     let mut ReparseBuffer: PREPARSE_DATA_BUFFER;
 
     /* Try to open the reparse point */
@@ -374,7 +374,7 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     ReparseBuffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+        MAXIMUM_REPARSE_DATA_BUFFER_SIZE as SIZE_T,
     ) as PREPARSE_DATA_BUFFER;
     if ReparseBuffer.is_null() {
         CloseHandle(ReparseHandle);
@@ -427,7 +427,7 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     }
 
     /* Do we have enough room for copying substitue name? */
-    if ((*ReparseBuffer).MountPointReparseBuffer.SubstituteNameLength
+    if ((*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength
         + core::mem::size_of::<WCHAR>() as u16)
         > cchBufferLength as u16 * core::mem::size_of::<WCHAR>() as u16
     {
@@ -445,10 +445,10 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     /* Copy the link target */
     RtlCopyMemory(
         lpszVolumeName as PVOID,
-        &(*ReparseBuffer).MountPointReparseBuffer.PathBuffer
-            [(*ReparseBuffer).MountPointReparseBuffer.SubstituteNameOffset as usize
+        &(*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.PathBuffer
+            [(*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameOffset as usize
                 / core::mem::size_of::<WCHAR>()] as *const WCHAR as PVOID,
-        (*ReparseBuffer).MountPointReparseBuffer.SubstituteNameLength as usize,
+        (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength as SIZE_T,
     );
     /* Make it DOS valid */
     Old = *lpszVolumeName.offset(1);
@@ -456,12 +456,12 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     *lpszVolumeName.offset(1) = '\\' as u16;
     /* And null terminate obviously */
     *lpszVolumeName.offset(
-        (*ReparseBuffer).MountPointReparseBuffer.SubstituteNameLength as isize
+        (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength as isize
             / core::mem::size_of::<WCHAR>() as isize,
     ) = 0u16;
 
     /* Make it a string to easily check it */
-    SubstituteName.Length = (*ReparseBuffer).MountPointReparseBuffer.SubstituteNameLength;
+    SubstituteName.Length = (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength;
     SubstituteName.MaximumLength = SubstituteName.Length;
     SubstituteName.Buffer = lpszVolumeName;
 
@@ -469,7 +469,7 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     RtlFreeHeap(RtlGetProcessHeap(), 0, ReparseBuffer as PVOID);
 
     /* Is that a dos volume name with backslash? */
-    if MOUNTMGR_IS_DOS_VOLUME_NAME_WB(&SubstituteName) != 0 {
+    if MOUNTMGR_IS_DOS_VOLUME_NAME_WB(&mut SubstituteName) != 0 {
         return 1;
     }
 
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn BasepGetVolumeNameForVolumeMountPoint(
     IsAMountPoint: LPBOOL,
 ) -> BOOL {
     let mut Ret: BOOL;
-    let mut MountPoint: _UNICODE_STRING;
+    let mut MountPoint: _UNICODE_STRING = core::mem::zeroed();
 
     /* Assume it's a mount point (likely for non reparse points) */
     if !IsAMountPoint.is_null() {
@@ -583,8 +583,8 @@ pub unsafe extern "system" fn GetVolumeNameForVolumeMountPointA(
     cchBufferLength: DWORD,
 ) -> BOOL {
     let mut Ret: BOOL;
-    let mut VolumeName: ANSI_STRING;
-    let mut VolumeNameU: _UNICODE_STRING;
+    let mut VolumeName: ANSI_STRING = core::mem::zeroed();
+    let mut VolumeNameU: _UNICODE_STRING = core::mem::zeroed();
     let VolumeMountPointU: PUNICODE_STRING;
 
     /* Convert mount point to unicode */
@@ -601,7 +601,7 @@ pub unsafe extern "system" fn GetVolumeNameForVolumeMountPointA(
     VolumeNameU.Length = 0;
     VolumeNameU.MaximumLength = ((cchBufferLength - 1) as usize * core::mem::size_of::<WCHAR>() + core::mem::size_of::<WCHAR>()) as u16;
     /* Allocate a buffer big enough to contain the returned name */
-    VolumeNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeNameU.MaximumLength as usize) as PWSTR;
+    VolumeNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeNameU.MaximumLength as SIZE_T) as PWSTR;
     if VolumeNameU.Buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;

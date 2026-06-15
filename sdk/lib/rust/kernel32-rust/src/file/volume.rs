@@ -2,6 +2,22 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+/// `RtlCopyMemory(Destination, Source, Length)` — memcpy (non-overlapping).
+#[inline]
+unsafe fn RtlCopyMemory(Destination: PVOID, Source: *const core::ffi::c_void, Length: usize) {
+    memcpy(Destination, Source, Length);
+}
+/// `RtlZeroMemory(Destination, Length)` — memset 0.
+#[inline]
+unsafe fn RtlZeroMemory(Destination: PVOID, Length: usize) {
+    memset(Destination, 0, Length);
+}
+/// `RtlMoveMemory(Destination, Source, Length)` — memmove (overlapping-safe).
+#[inline]
+unsafe fn RtlMoveMemory(Destination: PVOID, Source: *const core::ffi::c_void, Length: usize) {
+    memmove(Destination, Source, Length);
+}
+
 extern "system" {
     fn BaseSetLastNTError(Status: NTSTATUS);
     fn CloseHandle(hObject: HANDLE);
@@ -12,6 +28,50 @@ extern "system" {
     fn SetLastError(dwErrCode: DWORD);
     fn Basep8BitStringToStaticUnicodeString(lpString: LPCSTR) -> PUNICODE_STRING;
     fn Basep8BitStringToDynamicUnicodeString( DestinationString: PUNICODE_STRING, lpString: LPCSTR, ) -> BOOL;
+    fn GetVolumeNameForVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR, lpszVolumeName: LPWSTR, cchBufferLength: DWORD) -> BOOL;
+    fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: c_int, lpMultiByteStr: LPSTR, cbMultiByte: c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL) -> c_int;
+    fn GetDriveTypeA(lpRootPathName: LPCSTR) -> UINT;
+    fn GetFullPathNameW(lpFileName: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
+}
+extern "C" {
+    fn BasepGetVolumeNameForVolumeMountPoint(VolumeMountPoint: LPCWSTR, VolumeName: LPWSTR, VolumeNameLength: ULONG, MountPoint: PBOOL) -> BOOL;
+}
+
+// ---- MOUNTMGR types/consts/IOCTLs (sdk/include/ddk/mountmgr.h) ----
+pub const MOUNTMGR_DOS_DEVICE_NAME: &[u16] = &[
+    0x5C, 0x5C, 0x2E, 0x5C, b'M' as u16, b'o' as u16, b'u' as u16, b'n' as u16, b't' as u16,
+    b'P' as u16, b'o' as u16, b'i' as u16, b'n' as u16, b't' as u16, b'M' as u16, b'a' as u16,
+    b'n' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'r' as u16, 0,
+]; // L"\\\\.\\MountPointManager"
+// CTL_CODE(MOUNTMGRCONTROLTYPE='m', func, METHOD_BUFFERED, FILE_ANY_ACCESS)
+//   = ('m' << 16) | (access << 14) | (func << 2) | method
+pub const IOCTL_MOUNTMGR_QUERY_POINTS: DWORD = (0x6D << 16) | (2 << 2);
+pub const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATHS: DWORD = (0x6D << 16) | (13 << 2);
+
+#[repr(C)]
+pub struct MOUNTMGR_MOUNT_POINT {
+    pub SymbolicLinkNameOffset: ULONG,
+    pub SymbolicLinkNameLength: USHORT,
+    pub UniqueIdOffset: ULONG,
+    pub UniqueIdLength: USHORT,
+    pub DeviceNameOffset: ULONG,
+    pub DeviceNameLength: USHORT,
+}
+#[repr(C)]
+pub struct MOUNTMGR_MOUNT_POINTS {
+    pub Size: ULONG,
+    pub NumberOfMountPoints: ULONG,
+    pub MountPoints: [MOUNTMGR_MOUNT_POINT; 1],
+}
+#[repr(C)]
+pub struct MOUNTMGR_TARGET_NAME {
+    pub DeviceNameLength: USHORT,
+    pub DeviceName: [WCHAR; 1],
+}
+#[repr(C)]
+pub struct MOUNTMGR_VOLUME_PATHS {
+    pub MultiSzLength: ULONG,
+    pub MultiSz: [WCHAR; 1],
 }
 
 // ---- file-scope preamble (translated) ----
@@ -30,10 +90,10 @@ pub unsafe extern "system" fn GetVolumeInformationA(
     let mut Ret: BOOL;
     let mut Status: NTSTATUS;
     let RootPathNameU: PUNICODE_STRING;
-    let mut VolumeName: ANSI_STRING;
-    let mut FileSystemName: ANSI_STRING;
-    let mut VolumeNameU: _UNICODE_STRING;
-    let mut FileSystemNameU: _UNICODE_STRING;
+    let mut VolumeName: ANSI_STRING = core::mem::zeroed();
+    let mut FileSystemName: ANSI_STRING = core::mem::zeroed();
+    let mut VolumeNameU: _UNICODE_STRING = core::mem::zeroed();
+    let mut FileSystemNameU: _UNICODE_STRING = core::mem::zeroed();
 
     /* If no root path provided, default to \ */
     let lpRootPathName: LPCSTR = if lpRootPathName.is_null() {
@@ -65,8 +125,8 @@ pub unsafe extern "system" fn GetVolumeInformationA(
     'CleanAndQuit: {
         /* If caller wants volume name, allocate a buffer to receive it */
         if !lpVolumeNameBuffer.is_null() {
-            VolumeNameU.MaximumLength = (core::mem::size_of::<WCHAR>() as DWORD) * (nVolumeNameSize + 1);
-            VolumeNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeNameU.MaximumLength as usize) as PWSTR;
+            VolumeNameU.MaximumLength = ((core::mem::size_of::<WCHAR>() as DWORD) * (nVolumeNameSize + 1)) as u16;
+            VolumeNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeNameU.MaximumLength as SIZE_T) as PWSTR;
             if VolumeNameU.Buffer.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                 break 'CleanAndQuit;
@@ -75,8 +135,8 @@ pub unsafe extern "system" fn GetVolumeInformationA(
 
         /* If caller wants file system name, allocate a buffer to receive it */
         if !lpFileSystemNameBuffer.is_null() {
-            FileSystemNameU.MaximumLength = (core::mem::size_of::<WCHAR>() as DWORD) * (nFileSystemNameSize + 1);
-            FileSystemNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, FileSystemNameU.MaximumLength as usize) as PWSTR;
+            FileSystemNameU.MaximumLength = ((core::mem::size_of::<WCHAR>() as DWORD) * (nFileSystemNameSize + 1)) as u16;
+            FileSystemNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, FileSystemNameU.MaximumLength as SIZE_T) as PWSTR;
             if FileSystemNameU.Buffer.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                 break 'CleanAndQuit;
@@ -100,7 +160,7 @@ pub unsafe extern "system" fn GetVolumeInformationA(
             if !lpVolumeNameBuffer.is_null() {
                 RtlInitUnicodeString(&mut VolumeNameU, VolumeNameU.Buffer);
                 Status = RtlUnicodeStringToAnsiString(&mut VolumeName, &VolumeNameU, 0);
-                if NT_SUCCESS(Status) == 0 {
+                if !NT_SUCCESS(Status) {
                     BaseSetLastNTError(Status);
                     Ret = 0;
                     break 'CleanAndQuit;
@@ -110,7 +170,7 @@ pub unsafe extern "system" fn GetVolumeInformationA(
             if !lpFileSystemNameBuffer.is_null() {
                 RtlInitUnicodeString(&mut FileSystemNameU, FileSystemNameU.Buffer);
                 Status = RtlUnicodeStringToAnsiString(&mut FileSystemName, &FileSystemNameU, 0);
-                if NT_SUCCESS(Status) == 0 {
+                if !NT_SUCCESS(Status) {
                     BaseSetLastNTError(Status);
                     Ret = 0;
                     break 'CleanAndQuit;
@@ -140,7 +200,7 @@ pub unsafe extern "C" fn IsThisARootDirectory(
     let mut FileNameInfoData: FileNameInfoBuffer = core::mem::zeroed();
 
     /* If we have a handle, query the name */
-    if VolumeHandle != 0 {
+    if !VolumeHandle.is_null() {
         Status = NtQueryInformationFile(
             VolumeHandle,
             &mut IoStatusBlock,
@@ -148,12 +208,12 @@ pub unsafe extern "C" fn IsThisARootDirectory(
             core::mem::size_of::<FileNameInfoBuffer>() as u32,
             FileNameInformation,
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             return 0;
         }
 
         /* Check we properly end with a \ */
-        if FileNameInfoData.FileName[(FileNameInfoData.FileNameLength / core::mem::size_of::<WCHAR>() as u16) as usize - 1] != '\\' as u16
+        if FileNameInfoData.FileName[FileNameInfoData.FileNameLength as usize / core::mem::size_of::<WCHAR>() - 1] != '\\' as u16
         {
             return 0;
         }
@@ -161,7 +221,7 @@ pub unsafe extern "C" fn IsThisARootDirectory(
 
     /* If we have a path */
     if !NtPathName.is_null() {
-        let mut LinkHandle: HANDLE;
+        let mut LinkHandle: HANDLE = core::ptr::null_mut();
         let mut Buffer: [WCHAR; 512] = [0; 512];
         let mut ReturnedLength: ULONG = 0;
         let mut LinkTarget: _UNICODE_STRING = core::mem::zeroed();
@@ -181,10 +241,10 @@ pub unsafe extern "C" fn IsThisARootDirectory(
         Status = NtOpenSymbolicLinkObject(
             &mut LinkHandle,
             SYMBOLIC_LINK_QUERY,
-            &ObjectAttributes,
+            &mut ObjectAttributes,
         );
         (*NtPathName).Length += core::mem::size_of::<WCHAR>() as u16;
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             return 0;
         }
 
@@ -196,7 +256,7 @@ pub unsafe extern "C" fn IsThisARootDirectory(
         Status = NtQuerySymbolicLinkObject(LinkHandle, &mut LinkTarget, &mut ReturnedLength);
         NtClose(LinkHandle);
         /* A root directory (NtName) is a symbolic link */
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             return 0;
         }
     }
@@ -204,11 +264,14 @@ pub unsafe extern "C" fn IsThisARootDirectory(
     return 1;
 }
 
-// Helper struct for the anonymous struct in C
+// Helper struct for the anonymous struct in C:
+//   struct { FILE_NAME_INFORMATION; WCHAR Buffer[MAX_PATH]; }
+// FILE_NAME_INFORMATION = { ULONG FileNameLength; WCHAR FileName[1]; }, so the
+// trailing Buffer just extends FileName. Flatten so .FileNameLength/.FileName work.
 #[repr(C)]
 struct FileNameInfoBuffer {
-    info: FILE_NAME_INFORMATION,
-    Buffer: [WCHAR; MAX_PATH as usize],
+    FileNameLength: ULONG,
+    FileName: [WCHAR; MAX_PATH as usize + 1],
 }
 
 // Helper function to expand InitializeObjectAttributes macro
@@ -231,23 +294,23 @@ unsafe fn InitializeObjectAttributes(
 pub unsafe extern "system" fn GetVolumeInformationW(
     lpRootPathName: LPCWSTR,
     lpVolumeNameBuffer: LPWSTR,
-    nVolumeNameSize: DWORD,
+    mut nVolumeNameSize: DWORD,
     lpVolumeSerialNumber: LPDWORD,
     lpMaximumComponentLength: LPDWORD,
     lpFileSystemFlags: LPDWORD,
     lpFileSystemNameBuffer: LPWSTR,
-    nFileSystemNameSize: DWORD,
+    mut nFileSystemNameSize: DWORD,
 ) -> BOOL {
     let mut Ret: BOOL;
     let mut Status: NTSTATUS;
-    let mut VolumeHandle: HANDLE;
+    let mut VolumeHandle: HANDLE = core::ptr::null_mut();
     let mut RootPathName: LPCWSTR;
-    let mut NtPathName: _UNICODE_STRING;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut NtPathName: _UNICODE_STRING = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut VolumeInfo: PFILE_FS_VOLUME_INFORMATION;
     let mut VolumeAttr: PFILE_FS_ATTRIBUTE_INFORMATION;
-    let mut OldMode: ULONG;
+    let mut OldMode: ULONG = 0;
     let mut VolumeInfoSize: ULONG;
     let mut VolumeAttrSize: ULONG;
 
@@ -269,7 +332,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
     }
 
     /* Check we really end with a backslash */
-    if *((*NtPathName.Buffer).offset((NtPathName.Length / core::mem::size_of::<WCHAR>() as u16) as isize - 1)) != '\\' as u16 {
+    if *(NtPathName.Buffer.offset((NtPathName.Length as usize / core::mem::size_of::<WCHAR>()) as isize - 1)) != '\\' as u16 {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
         BaseSetLastNTError(STATUS_OBJECT_NAME_INVALID);
         return 0;
@@ -295,7 +358,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
         FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT,
     );
     RtlSetThreadErrorMode(OldMode, core::ptr::null_mut());
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtPathName.Buffer as *mut core::ffi::c_void);
         BaseSetLastNTError(Status);
         return 0;
@@ -328,7 +391,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
 
     /* If we're to query, allocate a big enough buffer */
     if VolumeInfoSize != 0 {
-        VolumeInfo = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeInfoSize) as PFILE_FS_VOLUME_INFORMATION;
+        VolumeInfo = RtlAllocateHeap(RtlGetProcessHeap(), 0, (VolumeInfoSize) as SIZE_T) as PFILE_FS_VOLUME_INFORMATION;
         if VolumeInfo.is_null() {
             NtClose(VolumeHandle);
             BaseSetLastNTError(STATUS_NO_MEMORY);
@@ -351,7 +414,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
 
     /* If we're to query, allocate a big enough buffer */
     if VolumeAttrSize != 0 {
-        VolumeAttr = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumeAttrSize) as PFILE_FS_ATTRIBUTE_INFORMATION;
+        VolumeAttr = RtlAllocateHeap(RtlGetProcessHeap(), 0, (VolumeAttrSize) as SIZE_T) as PFILE_FS_ATTRIBUTE_INFORMATION;
         if VolumeAttr.is_null() {
             if !VolumeInfo.is_null() {
                 RtlFreeHeap(RtlGetProcessHeap(), 0, VolumeInfo as *mut core::ffi::c_void);
@@ -376,7 +439,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
                 VolumeInfoSize,
                 FileFsVolumeInformation,
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 BaseSetLastNTError(Status);
                 break 'CleanAndQuit;
             }
@@ -391,7 +454,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
                 VolumeAttrSize,
                 FileFsAttributeInformation,
             );
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 BaseSetLastNTError(Status);
                 break 'CleanAndQuit;
             }
@@ -468,7 +531,7 @@ pub unsafe extern "C" fn SetVolumeLabelA(
     lpVolumeName: LPCSTR,
 ) -> BOOL {
     let mut Ret: BOOL;
-    let mut VolumeNameU: _UNICODE_STRING;
+    let mut VolumeNameU: _UNICODE_STRING = core::mem::zeroed();
     let RootPathNameU: PUNICODE_STRING;
 
     let lpRootPathName: LPCSTR = if lpRootPathName.is_null() {
@@ -502,13 +565,13 @@ pub unsafe extern "C" fn SetVolumeLabelW(
     let mut Ret: BOOL;
     let mut Status: NTSTATUS;
     let mut VolumeRoot: PWSTR;
-    let mut VolumeHandle: HANDLE;
-    let mut VolumeGuid: [WCHAR; MAX_PATH as usize];
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut VolumeHandle: HANDLE = core::ptr::null_mut();
+    let mut VolumeGuid: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut FsLabelInfo: PFILE_FS_LABEL_INFORMATION;
-    let mut VolumeName: _UNICODE_STRING;
-    let mut NtVolumeName: _UNICODE_STRING;
+    let mut VolumeName: _UNICODE_STRING = core::mem::zeroed();
+    let mut NtVolumeName: _UNICODE_STRING = core::mem::zeroed();
 
     VolumeRoot = w!("\\").as_ptr() as PWSTR;
 
@@ -562,7 +625,7 @@ pub unsafe extern "C" fn SetVolumeLabelW(
         FILE_SYNCHRONOUS_IO_NONALERT,
     );
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, NtVolumeName.Buffer as PVOID);
         BaseSetLastNTError(Status);
         return 0;
@@ -598,7 +661,7 @@ pub unsafe extern "C" fn SetVolumeLabelW(
 
     RtlFreeHeap(RtlGetProcessHeap(), 0, NtVolumeName.Buffer as PVOID);
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         return 0;
     }
@@ -608,7 +671,7 @@ pub unsafe extern "C" fn SetVolumeLabelW(
     FsLabelInfo = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (core::mem::size_of::<FILE_FS_LABEL_INFORMATION>() + VolumeName.Length as usize) as usize,
+        (core::mem::size_of::<FILE_FS_LABEL_INFORMATION>() + VolumeName.Length as usize) as SIZE_T,
     ) as PFILE_FS_LABEL_INFORMATION;
 
     if !FsLabelInfo.is_null() {
@@ -617,7 +680,7 @@ pub unsafe extern "C" fn SetVolumeLabelW(
             VolumeName.Buffer as PVOID,
             VolumeName.Length as usize,
         );
-        (*FsLabelInfo).VolumeLabelLength = VolumeName.Length;
+        (*FsLabelInfo).VolumeLabelLength = VolumeName.Length as u32;
 
         Status = NtSetVolumeInformationFile(
             VolumeHandle,
@@ -630,7 +693,7 @@ pub unsafe extern "C" fn SetVolumeLabelW(
         Status = STATUS_NO_MEMORY;
     }
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         Ret = 0;
     }
@@ -650,7 +713,7 @@ pub unsafe extern "system" fn FindFirstVolumeW(
     len: DWORD,
 ) -> HANDLE {
     let mut size: DWORD = 1024;
-    let mut br: DWORD;
+    let mut br: DWORD = 0;
     let mgr: HANDLE = CreateFileW(
         MOUNTMGR_DOS_DEVICE_NAME.as_ptr(),
         0,
@@ -665,10 +728,10 @@ pub unsafe extern "system" fn FindFirstVolumeW(
     }
 
     loop {
-        let mut input: MOUNTMGR_MOUNT_POINT;
+        let mut input: MOUNTMGR_MOUNT_POINT = core::mem::zeroed();
         let output: *mut MOUNTMGR_MOUNT_POINTS;
 
-        output = RtlAllocateHeap(RtlGetProcessHeap(), 0, size as usize) as *mut MOUNTMGR_MOUNT_POINTS;
+        output = RtlAllocateHeap(RtlGetProcessHeap(), 0, size as SIZE_T) as *mut MOUNTMGR_MOUNT_POINTS;
         if output.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             break;
@@ -712,9 +775,9 @@ pub unsafe extern "system" fn FindFirstVolumeA(
     len: DWORD,
 ) -> HANDLE {
     let buffer: *mut WCHAR;
-    let handle: HANDLE;
+    let mut handle: HANDLE;
 
-    buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, len * core::mem::size_of::<WCHAR>() as u32) as *mut WCHAR;
+    buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, (len as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
 
     if buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -744,7 +807,7 @@ pub unsafe extern "system" fn FindFirstVolumeA(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FindVolumeClose(hFindVolume: HANDLE) -> BOOL {
-    return RtlFreeHeap(RtlGetProcessHeap(), 0, hFindVolume);
+    return RtlFreeHeap(RtlGetProcessHeap(), 0, hFindVolume) as BOOL;
 }
 
 #[no_mangle]
@@ -755,8 +818,8 @@ pub unsafe extern "system" fn GetVolumePathNameA(
 ) -> BOOL {
     let mut Ret: BOOL;
     let FileNameU: PUNICODE_STRING;
-    let mut VolumePathName: ANSI_STRING;
-    let mut VolumePathNameU: _UNICODE_STRING;
+    let mut VolumePathName: ANSI_STRING = core::mem::zeroed();
+    let mut VolumePathNameU: _UNICODE_STRING = core::mem::zeroed();
 
     /* Convert file name to unicode */
     FileNameU = Basep8BitStringToStaticUnicodeString(lpszFileName);
@@ -767,19 +830,19 @@ pub unsafe extern "system" fn GetVolumePathNameA(
     /* Initialize all the strings we'll need */
     VolumePathName.Buffer = lpszVolumePathName;
     VolumePathName.Length = 0;
-    VolumePathName.MaximumLength = cchBufferLength - 1;
+    VolumePathName.MaximumLength = (cchBufferLength - 1) as u16;
 
     VolumePathNameU.Length = 0;
-    VolumePathNameU.MaximumLength = (cchBufferLength - 1) * core::mem::size_of::<WCHAR>() + core::mem::size_of::<UNICODE_NULL>();
+    VolumePathNameU.MaximumLength = ((cchBufferLength - 1) as usize * core::mem::size_of::<WCHAR>() + core::mem::size_of::<WCHAR>()) as u16;
     /* Allocate a buffer for calling the -W */
-    VolumePathNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumePathNameU.MaximumLength as usize) as PWSTR;
+    VolumePathNameU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumePathNameU.MaximumLength as SIZE_T) as PWSTR;
     if VolumePathNameU.Buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
     }
 
     /* Call the -W implementation */
-    Ret = GetVolumePathNameW(FileNameU.as_ref().unwrap().Buffer, VolumePathNameU.Buffer, cchBufferLength);
+    Ret = GetVolumePathNameW((*FileNameU).Buffer, VolumePathNameU.Buffer, cchBufferLength);
     /* If it succeed */
     if Ret != 0 {
         let Status: NTSTATUS;
@@ -809,12 +872,12 @@ pub unsafe extern "system" fn GetVolumePathNameW(
     lpszVolumePathName: LPWSTR,
     cchBufferLength: DWORD,
 ) -> BOOL {
-    let mut MountPoint: BOOL;
+    let mut MountPoint: BOOL = 0;
     let mut FullPathLen: DWORD;
     let mut OldFilePart: WCHAR;
-    let mut FullPath: _UNICODE_STRING;
+    let mut FullPath: _UNICODE_STRING = core::mem::zeroed();
     let mut FullPathBuf: PWSTR;
-    let mut FilePart: PWSTR;
+    let mut FilePart: PWSTR = core::ptr::null_mut();
     let mut VolumeNameBuf: PWSTR;
 
     /* Probe for full path len */
@@ -824,7 +887,7 @@ pub unsafe extern "system" fn GetVolumePathNameW(
     }
 
     /* Allocate a big enough buffer to receive it */
-    FullPathBuf = RtlAllocateHeap(RtlGetProcessHeap(), 0, (FullPathLen + 10) * core::mem::size_of::<WCHAR>()) as PWSTR;
+    FullPathBuf = RtlAllocateHeap(RtlGetProcessHeap(), 0, ((FullPathLen as usize + 10) * core::mem::size_of::<WCHAR>()) as SIZE_T) as PWSTR;
     if FullPathBuf.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
@@ -839,14 +902,14 @@ pub unsafe extern "system" fn GetVolumePathNameW(
     /* Make a string out of it */
     RtlInitUnicodeString(&mut FullPath, FullPathBuf);
     /* We will finish our string with '\', for ease of the parsing after */
-    if FullPath.Buffer.as_ref().unwrap()[(FullPath.Length / core::mem::size_of::<WCHAR>()) - 1] != '\\' as u16 {
+    if *FullPath.Buffer.offset(((FullPath.Length as usize / core::mem::size_of::<WCHAR>()) - 1) as isize) != '\\' as u16 {
         FullPath.Length += core::mem::size_of::<WCHAR>() as u16;
-        *FullPath.Buffer.as_mut().unwrap()[(FullPath.Length / core::mem::size_of::<WCHAR>()) - 1] = '\\' as u16;
-        *FullPath.Buffer.as_mut().unwrap()[FullPath.Length / core::mem::size_of::<WCHAR>()] = 0;
+        *FullPath.Buffer.offset(((FullPath.Length as usize / core::mem::size_of::<WCHAR>()) - 1) as isize) = '\\' as u16;
+        *FullPath.Buffer.offset((FullPath.Length as usize / core::mem::size_of::<WCHAR>()) as isize) = 0;
     }
 
     /* Allocate a buffer big enough to receive our volume name */
-    VolumeNameBuf = RtlAllocateHeap(RtlGetProcessHeap(), 0, 0x2000 * core::mem::size_of::<WCHAR>()) as PWSTR;
+    VolumeNameBuf = RtlAllocateHeap(RtlGetProcessHeap(), 0, (0x2000 * core::mem::size_of::<WCHAR>()) as SIZE_T) as PWSTR;
     if VolumeNameBuf.is_null() {
         RtlFreeHeap(RtlGetProcessHeap(), 0, FullPathBuf as PVOID);
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -876,11 +939,11 @@ pub unsafe extern "system" fn GetVolumePathNameW(
          * volume name which is not a valid DOS volume
          * A valid DOS name always starts with \\
          */
-        if *VolumeNameBuf.offset(0) != 0 && (*FullPath.Buffer.as_ref().unwrap().offset(0) != '\\' as u16 || *FullPath.Buffer.as_ref().unwrap().offset(1) != '\\' as u16) {
-            let mut RootPathName: [CHAR; 4];
+        if *VolumeNameBuf.offset(0) != 0 && (*FullPath.Buffer.offset(0) != '\\' as u16 || *FullPath.Buffer.offset(1) != '\\' as u16) {
+            let mut RootPathName: [CHAR; 4] = [0; 4];
 
             /* Construct a simple <letter>:\ string to get drive type */
-            RootPathName[0] = *FullPath.Buffer.as_ref().unwrap().offset(0) as CHAR;
+            RootPathName[0] = *FullPath.Buffer.offset(0) as CHAR;
             RootPathName[1] = ':' as CHAR;
             RootPathName[2] = '\\' as CHAR;
             RootPathName[3] = 0;
@@ -888,7 +951,7 @@ pub unsafe extern "system" fn GetVolumePathNameW(
             /* If we weren't given a drive letter actually, or if that's not a remote drive
              * Note: in this code path, we're recursive and stop fail loop
              */
-            if *FullPath.Buffer.as_ref().unwrap().offset(1) != ':' as u16 || GetDriveTypeA(RootPathName.as_ptr()) != DRIVE_REMOTE {
+            if *FullPath.Buffer.offset(1) != ':' as u16 || GetDriveTypeA(RootPathName.as_ptr()) != DRIVE_REMOTE {
                 let Ret: BOOL;
 
                 /* We won't need the full path, we'll now work with the returned volume name */
@@ -897,14 +960,14 @@ pub unsafe extern "system" fn GetVolumePathNameW(
                 if *VolumeNameBuf.offset(0) != '\\' as u16 || *VolumeNameBuf.offset(1) != '?' as u16 ||
                     *VolumeNameBuf.offset(2) != '?' as u16 || *VolumeNameBuf.offset(3) != '\\' as u16 {
                     let GlobalPath: PWSTR;
-                    let mut GlobalRoot: _UNICODE_STRING;
+                    let mut GlobalRoot: _UNICODE_STRING = core::mem::zeroed();
 
                     /* Create a new name in the NT namespace (from Win32) */
                     RtlInitUnicodeString(&mut FullPath, VolumeNameBuf);
                     RtlInitUnicodeString(&mut GlobalRoot, "\\\\?\\GLOBALROOT\0".as_ptr() as LPCWSTR);
 
                     /* We allocate a buffer than can contain both the namespace and the volume name */
-                    GlobalPath = RtlAllocateHeap(RtlGetProcessHeap(), 0, (FullPath.Length + GlobalRoot.Length) as usize) as PWSTR;
+                    GlobalPath = RtlAllocateHeap(RtlGetProcessHeap(), 0, (FullPath.Length + GlobalRoot.Length) as SIZE_T) as PWSTR;
                     if GlobalPath.is_null() {
                         RtlFreeHeap(RtlGetProcessHeap(), 0, VolumeNameBuf as PVOID);
                         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -964,7 +1027,7 @@ pub unsafe extern "system" fn GetVolumePathNameW(
         LastSlash = (FullPath.Length / core::mem::size_of::<WCHAR>() as u16) - 2;
         if FullPath.Length / core::mem::size_of::<WCHAR>() as u16 != 2 {
             loop {
-                if *FullPath.Buffer.as_ref().unwrap().offset(LastSlash as isize) == '\\' as u16 {
+                if *FullPath.Buffer.offset(LastSlash as isize) == '\\' as u16 {
                     break;
                 }
 
@@ -982,14 +1045,14 @@ pub unsafe extern "system" fn GetVolumePathNameW(
 
         /* If that's a mount point, keep track of the directory name */
         if MountPoint != 0 {
-            FilePart = FullPath.Buffer.as_mut().unwrap().offset(LastSlash as isize + 1);
+            FilePart = FullPath.Buffer.offset(LastSlash as isize + 1);
             OldFilePart = *FilePart.offset(0);
             /* And null terminate the string */
             *FilePart.offset(0) = 0;
         }
         /* Otherwise, just null terminate the string */
         else {
-            *FullPath.Buffer.as_mut().unwrap().offset(LastSlash as isize + 1) = 0;
+            *FullPath.Buffer.offset(LastSlash as isize + 1) = 0;
         }
 
         /* We went down a bit in the path, fix the string and retry */
@@ -1030,8 +1093,8 @@ pub unsafe extern "system" fn FindNextVolumeA(
     volume: LPSTR,
     len: DWORD,
 ) -> BOOL {
-    let buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, len as usize * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
-    let ret: BOOL;
+    let buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, (len as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
+    let mut ret: BOOL;
 
     if buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1084,7 +1147,7 @@ pub unsafe extern "system" fn FindNextVolumeW(
         let link: *mut WCHAR = (data as *mut u8)
             .offset((*data).MountPoints[(*data).Size as usize].SymbolicLinkNameOffset as isize)
             as *mut WCHAR;
-        let size: DWORD = (*data).MountPoints[(*data).Size as usize].SymbolicLinkNameLength;
+        let size: DWORD = (*data).MountPoints[(*data).Size as usize].SymbolicLinkNameLength as DWORD;
         (*data).Size += 1;
         /* skip non-volumes */
         if size < core::mem::size_of::<[WCHAR; 11]>() as DWORD
@@ -1124,10 +1187,10 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameA(
 ) -> BOOL {
     let mut Ret: BOOL;
     let Status: NTSTATUS;
-    let mut cchReturnLength: DWORD;
-    let mut VolumePathName: ANSI_STRING;
+    let mut cchReturnLength: DWORD = 0;
+    let mut VolumePathName: ANSI_STRING = core::mem::zeroed();
     let VolumeNameU: PUNICODE_STRING;
-    let mut VolumePathNamesU: _UNICODE_STRING;
+    let mut VolumePathNamesU: _UNICODE_STRING = core::mem::zeroed();
 
     /* Convert volume name to unicode */
     VolumeNameU = Basep8BitStringToStaticUnicodeString(lpszVolumeName);
@@ -1137,14 +1200,14 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameA(
 
     /* Initialize the strings we'll use later on */
     VolumePathName.Length = 0;
-    VolumePathName.MaximumLength = cchBufferLength;
+    VolumePathName.MaximumLength = cchBufferLength as u16;
     VolumePathName.Buffer = lpszVolumePathNames;
 
     VolumePathNamesU.Length = 0;
-    VolumePathNamesU.MaximumLength = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchBufferLength);
+    VolumePathNamesU.MaximumLength = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchBufferLength) as u16;
     /* If caller provided a non 0 sized string, allocate a buffer for our unicode string */
     if VolumePathNamesU.MaximumLength != 0 {
-        VolumePathNamesU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumePathNamesU.MaximumLength as usize) as *mut WCHAR;
+        VolumePathNamesU.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, VolumePathNamesU.MaximumLength as SIZE_T) as *mut WCHAR;
         if VolumePathNamesU.Buffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return 0;
@@ -1162,7 +1225,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameA(
     );
     /* Call succeed, we'll return the total length */
     if Ret != 0 {
-        VolumePathNamesU.Length = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchReturnLength);
+        VolumePathNamesU.Length = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchReturnLength) as u16;
     } else {
         /* Else, if we fail for anything else than too small buffer, quit */
         if GetLastError() != ERROR_MORE_DATA {
@@ -1174,12 +1237,12 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameA(
         }
 
         /* Otherwise, we'll just copy as much as we can */
-        VolumePathNamesU.Length = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchBufferLength);
+        VolumePathNamesU.Length = (core::mem::size_of::<WCHAR>() as DWORD).wrapping_mul(cchBufferLength) as u16;
     }
 
     /* Convert our output string back to ANSI */
     Status = RtlUnicodeStringToAnsiString(&mut VolumePathName, &VolumePathNamesU, 0);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
 
         if !VolumePathNamesU.Buffer.is_null() {
@@ -1193,7 +1256,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameA(
     if !lpcchReturnLength.is_null() {
         /* We succeed: return the copied length */
         if Ret != 0 {
-            *lpcchReturnLength = VolumePathName.Length;
+            *lpcchReturnLength = VolumePathName.Length as DWORD;
         }
         /* We failed, return the size we would have loved having! */
         else {
@@ -1219,9 +1282,9 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
 
     let mut Ret: BOOL;
     let mut MultiSz: PWSTR;
-    let mut BytesReturned: DWORD;
+    let mut BytesReturned: DWORD = 0;
     let mut MountMgrHandle: HANDLE;
-    let mut VolumeName: _UNICODE_STRING;
+    let mut VolumeName: _UNICODE_STRING = core::mem::zeroed();
     let mut TargetName: *mut MOUNTMGR_TARGET_NAME;
     let mut VolumePaths: *mut MOUNTMGR_VOLUME_PATHS;
     let mut BufferSize: ULONG;
@@ -1230,12 +1293,12 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
     let mut Paths: ULONG;
 
     RtlInitUnicodeString(&mut VolumeName, lpszVolumeName);
-    if (*VolumeName.Buffer).offset((VolumeName.Length / core::mem::size_of::<WCHAR>() as u16) as isize - 1) as u16 != 0x5C_u16 {
+    if *(VolumeName.Buffer.offset((VolumeName.Length as usize / core::mem::size_of::<WCHAR>()) as isize - 1)) != 0x5C_u16 {
         BaseSetLastNTError(STATUS_OBJECT_NAME_INVALID);
         return 0;
     }
 
-    if MOUNTMGR_IS_DOS_VOLUME_NAME_WB(&VolumeName) == 0 {
+    if MOUNTMGR_IS_DOS_VOLUME_NAME_WB(&mut VolumeName) == 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -1243,7 +1306,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
     TargetName = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (MAX_PATH as ULONG) * core::mem::size_of::<WCHAR>() as ULONG + core::mem::size_of::<USHORT>() as ULONG,
+        ((MAX_PATH as ULONG) * core::mem::size_of::<WCHAR>() as ULONG + core::mem::size_of::<USHORT>() as ULONG) as SIZE_T,
     ) as *mut MOUNTMGR_TARGET_NAME;
     if TargetName.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1252,7 +1315,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
 
     RtlZeroMemory(
         TargetName as *mut core::ffi::c_void,
-        (MAX_PATH as ULONG) * core::mem::size_of::<WCHAR>() as ULONG + core::mem::size_of::<USHORT>() as ULONG,
+        ((MAX_PATH as ULONG) * core::mem::size_of::<WCHAR>() as ULONG + core::mem::size_of::<USHORT>() as ULONG) as usize,
     );
     (*TargetName).DeviceNameLength = VolumeName.Length - core::mem::size_of::<WCHAR>() as u16;
     RtlCopyMemory(
@@ -1263,7 +1326,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
     *((*TargetName).DeviceName.as_mut_ptr()).offset(1) = 0x3F_u16;
 
     MountMgrHandle = CreateFileW(
-        MOUNTMGR_DOS_DEVICE_NAME,
+        MOUNTMGR_DOS_DEVICE_NAME.as_ptr(),
         0,
         (FILE_SHARE_READ | FILE_SHARE_WRITE) as DWORD,
         core::ptr::null_mut(),
@@ -1279,7 +1342,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
     VolumePaths = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<MOUNTMGR_VOLUME_PATHS>() as ULONG,
+        core::mem::size_of::<MOUNTMGR_VOLUME_PATHS>() as SIZE_T,
     ) as *mut MOUNTMGR_VOLUME_PATHS;
     if VolumePaths.is_null() {
         CloseHandle(MountMgrHandle);
@@ -1309,7 +1372,7 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
         BufferSize = (*VolumePaths).MultiSzLength + core::mem::size_of::<MOUNTMGR_VOLUME_PATHS>() as ULONG;
 
         RtlFreeHeap(RtlGetProcessHeap(), 0, VolumePaths as *mut core::ffi::c_void);
-        VolumePaths = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferSize) as *mut MOUNTMGR_VOLUME_PATHS;
+        VolumePaths = RtlAllocateHeap(RtlGetProcessHeap(), 0, (BufferSize) as SIZE_T) as *mut MOUNTMGR_VOLUME_PATHS;
         if VolumePaths.is_null() {
             CloseHandle(MountMgrHandle);
             RtlFreeHeap(RtlGetProcessHeap(), 0, TargetName as *mut core::ffi::c_void);

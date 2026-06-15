@@ -1,6 +1,24 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{CreateFileW, CloseHandle, GetLastError, SetLastError, Basep8BitStringToDynamicUnicodeString};
+
+pub const STATUS_REQUEST_ABORTED: NTSTATUS = 0xC000_0240u32 as NTSTATUS;
+
+// DEBUG_CHANNEL TRACE/WARN are no-ops here (NDEBUG).
+macro_rules! TRACE { ($($arg:tt)*) => {} }
+macro_rules! WARN  { ($($arg:tt)*) => {} }
+
+// kernel32.h flags for PrivCopyFileExW && BasepCopyFileExW
+pub const BASEP_COPY_REPLACE: DWORD = 0x200;
+pub const BASEP_COPY_PUBLIC_MASK: DWORD = 0xF;
+pub const BASEP_COPY_BASEP_MASK: DWORD = 0xFFFFFFF0;
+
+extern "system" {
+    fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
+    fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
+    fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL;
+}
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -20,16 +38,16 @@ unsafe fn CopyLoop(
     FileHandleSource: HANDLE,
     FileHandleDest: HANDLE,
     SourceFileSize: LARGE_INTEGER,
-    lpProgressRoutine: LPPROGRESS_ROUTINE,
+    mut lpProgressRoutine: LPPROGRESS_ROUTINE,
     lpData: LPVOID,
     pbCancel: *mut BOOL,
     KeepDest: *mut BOOL,
 ) -> NTSTATUS {
     let mut errCode: NTSTATUS;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut lpBuffer: *mut UCHAR = core::ptr::null_mut();
     let mut RegionSize: SIZE_T = 0x10000;
-    let mut BytesCopied: LARGE_INTEGER;
+    let mut BytesCopied: LARGE_INTEGER = core::mem::zeroed();
     let mut CallbackReason: DWORD;
     let mut ProgressResult: DWORD;
     let mut EndOfFileFound: BOOL;
@@ -44,16 +62,16 @@ unsafe fn CopyLoop(
         PAGE_READWRITE,
     );
 
-    if NT_SUCCESS(errCode) != 0 {
+    if NT_SUCCESS(errCode) {
         BytesCopied.QuadPart = 0;
         EndOfFileFound = 0;
         CallbackReason = CALLBACK_STREAM_SWITCH;
         while EndOfFileFound == 0
-            && NT_SUCCESS(errCode) != 0
+            && NT_SUCCESS(errCode)
             && (pbCancel.is_null() || *pbCancel == 0)
         {
-            if !lpProgressRoutine.is_null() {
-                ProgressResult = (*lpProgressRoutine)(
+            if lpProgressRoutine.is_some() {
+                ProgressResult = (lpProgressRoutine.unwrap_unchecked())(
                     SourceFileSize,
                     BytesCopied,
                     SourceFileSize,
@@ -66,62 +84,62 @@ unsafe fn CopyLoop(
                 );
                 match ProgressResult {
                     PROGRESS_CANCEL => {
-                        TRACE(b"Progress callback requested cancel\0".as_ptr() as *const i8);
+                        TRACE!(b"Progress callback requested cancel\0".as_ptr() as *const i8);
                         errCode = STATUS_REQUEST_ABORTED;
                     }
                     PROGRESS_STOP => {
-                        TRACE(b"Progress callback requested stop\0".as_ptr() as *const i8);
+                        TRACE!(b"Progress callback requested stop\0".as_ptr() as *const i8);
                         errCode = STATUS_REQUEST_ABORTED;
                         *KeepDest = 1;
                     }
                     PROGRESS_QUIET => {
-                        lpProgressRoutine = core::ptr::null_mut();
+                        lpProgressRoutine = None;
                     }
                     PROGRESS_CONTINUE | _ => {}
                 }
                 CallbackReason = CALLBACK_CHUNK_FINISHED;
             }
-            if NT_SUCCESS(errCode) != 0 {
+            if NT_SUCCESS(errCode) {
                 errCode = NtReadFile(
                     FileHandleSource,
                     core::ptr::null_mut(),
-                    core::ptr::null_mut(),
+                    None,
                     core::ptr::null_mut(),
                     &mut IoStatusBlock as *mut _IO_STATUS_BLOCK as PIO_STATUS_BLOCK,
                     lpBuffer as *mut core::ffi::c_void,
-                    RegionSize,
+                    RegionSize as ULONG,
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                 );
-                if NT_SUCCESS(errCode) != 0 && IoStatusBlock.Information == 0 {
+                if NT_SUCCESS(errCode) && IoStatusBlock.Information == 0 {
                     errCode = STATUS_END_OF_FILE;
                 }
-                if NT_SUCCESS(errCode) != 0 && (pbCancel.is_null() || *pbCancel == 0) {
+                if NT_SUCCESS(errCode) && (pbCancel.is_null() || *pbCancel == 0) {
                     errCode = NtWriteFile(
                         FileHandleDest,
                         core::ptr::null_mut(),
-                        core::ptr::null_mut(),
+                        None,
                         core::ptr::null_mut(),
                         &mut IoStatusBlock as *mut _IO_STATUS_BLOCK as PIO_STATUS_BLOCK,
                         lpBuffer as *mut core::ffi::c_void,
-                        IoStatusBlock.Information,
+                        IoStatusBlock.Information as ULONG,
                         core::ptr::null_mut(),
                         core::ptr::null_mut(),
                     );
-                    if NT_SUCCESS(errCode) != 0 {
+                    if NT_SUCCESS(errCode) {
                         BytesCopied.QuadPart += IoStatusBlock.Information as i64;
                     } else {
-                        WARN(
+                        WARN!(
                             b"Error 0x%08x reading writing to dest\0".as_ptr() as *const i8,
                             errCode,
                         );
                     }
-                } else if NT_SUCCESS(errCode) == 0 {
+                } else if !NT_SUCCESS(errCode) {
                     if STATUS_END_OF_FILE == errCode {
                         EndOfFileFound = 1;
                         errCode = STATUS_SUCCESS;
                     } else {
-                        WARN(
+                        WARN!(
                             b"Error 0x%08x reading from source\0".as_ptr() as *const i8,
                             errCode,
                         );
@@ -131,7 +149,7 @@ unsafe fn CopyLoop(
         }
 
         if EndOfFileFound == 0 && (!pbCancel.is_null() && *pbCancel != 0) {
-            TRACE(b"User requested cancel\0".as_ptr() as *const i8);
+            TRACE!(b"User requested cancel\0".as_ptr() as *const i8);
             errCode = STATUS_REQUEST_ABORTED;
         }
 
@@ -142,7 +160,7 @@ unsafe fn CopyLoop(
             MEM_RELEASE,
         );
     } else {
-        TRACE(
+        TRACE!(
             b"Error 0x%08x allocating buffer of %lu bytes\0".as_ptr() as *const i8,
             errCode,
             RegionSize,
@@ -163,11 +181,11 @@ unsafe fn SetLastWriteTime(
         FileHandle,
         &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
         &mut FileBasic as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
-        core::mem::size_of::<FILE_BASIC_INFORMATION>(),
+        core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32,
         FileBasicInformation,
     );
     if !NT_SUCCESS(errCode) {
-        WARN(
+        WARN!(
             b"Error 0x%08x obtaining FileBasicInformation\n\0".as_ptr() as *const i8,
             errCode,
         );
@@ -177,11 +195,11 @@ unsafe fn SetLastWriteTime(
             FileHandle,
             &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
             &mut FileBasic as *mut FILE_BASIC_INFORMATION as *mut core::ffi::c_void,
-            core::mem::size_of::<FILE_BASIC_INFORMATION>(),
+            core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32,
             FileBasicInformation,
         );
         if !NT_SUCCESS(errCode) {
-            WARN(
+            WARN!(
                 b"Error 0x%0x setting LastWriteTime\n\0".as_ptr() as *const i8,
                 errCode,
             );
@@ -205,9 +223,9 @@ pub unsafe extern "C" fn BasepCopyFileExW(
     let mut errCode: NTSTATUS;
     let mut FileHandleSource: HANDLE;
     let mut FileHandleDest: HANDLE;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let mut FileStandard: FILE_STANDARD_INFORMATION;
-    let mut FileBasic: FILE_BASIC_INFORMATION;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let mut FileBasic: FILE_BASIC_INFORMATION = core::mem::zeroed();
     let mut RC: BOOL = 0;
     let mut KeepDestOnError: BOOL = 0;
     let mut SystemError: DWORD;
@@ -230,7 +248,7 @@ pub unsafe extern "C" fn BasepCopyFileExW(
             FileStandardInformation,
         );
         if !NT_SUCCESS(errCode) {
-            TRACE(
+            TRACE!(
                 b"Status 0x%08x obtaining FileStandardInformation for source\n\0".as_ptr() as *const i8,
                 errCode,
             );
@@ -244,7 +262,7 @@ pub unsafe extern "C" fn BasepCopyFileExW(
                 FileBasicInformation,
             );
             if !NT_SUCCESS(errCode) {
-                TRACE(
+                TRACE!(
                     b"Status 0x%08x obtaining FileBasicInformation for source\n\0".as_ptr() as *const i8,
                     errCode,
                 );
@@ -272,7 +290,7 @@ pub unsafe extern "C" fn BasepCopyFileExW(
                     if !NT_SUCCESS(errCode) {
                         BaseSetLastNTError(errCode);
                     } else {
-                        let mut t: LARGE_INTEGER;
+                        let mut t: LARGE_INTEGER = core::mem::zeroed();
                         t.QuadPart = FileBasic.LastWriteTime.QuadPart;
                         errCode = SetLastWriteTime(FileHandleDest, t);
                         if !NT_SUCCESS(errCode) {
@@ -289,7 +307,7 @@ pub unsafe extern "C" fn BasepCopyFileExW(
                         SetLastError(SystemError);
                     }
                 } else {
-                    WARN(
+                    WARN!(
                         b"Error %lu during opening of dest file\n\0".as_ptr() as *const i8,
                         GetLastError(),
                     );
@@ -298,7 +316,7 @@ pub unsafe extern "C" fn BasepCopyFileExW(
         }
         NtClose(FileHandleSource);
     } else {
-        WARN(
+        WARN!(
             b"Error %lu during opening of source file\n\0".as_ptr() as *const i8,
             GetLastError(),
         );
@@ -393,7 +411,7 @@ pub unsafe extern "system" fn CopyFileA(
     bFailIfExists: BOOL,
 ) -> BOOL {
     let mut Result: BOOL = 0;
-    let mut lpNewFileNameW: _UNICODE_STRING;
+    let mut lpNewFileNameW: _UNICODE_STRING = core::mem::zeroed();
     let lpExistingFileNameW: PUNICODE_STRING;
 
     lpExistingFileNameW = Basep8BitStringToStaticUnicodeString(lpExistingFileName);
@@ -405,7 +423,7 @@ pub unsafe extern "system" fn CopyFileA(
         Result = CopyFileExW(
             (*lpExistingFileNameW).Buffer,
             lpNewFileNameW.Buffer,
-            core::ptr::null_mut(),
+            None,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             if bFailIfExists != 0 { COPY_FILE_FAIL_IF_EXISTS } else { 0 },
@@ -426,7 +444,7 @@ pub unsafe extern "system" fn CopyFileW(
     return CopyFileExW(
         lpExistingFileName,
         lpNewFileName,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         if bFailIfExists != 0 { COPY_FILE_FAIL_IF_EXISTS } else { 0 },

@@ -1,6 +1,14 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use crate::k32_externs::{BaseFormatObjectAttributes, SetLastError};
+
+pub const STATUS_INVALID_PAGE_PROTECTION: NTSTATUS = 0xC000_0045u32 as NTSTATUS;
+pub const STATUS_NOT_MAPPED_DATA: NTSTATUS = 0xC000_0088u32 as NTSTATUS;
+
+extern "system" {
+    fn BaseGetNamedObjectDirectory() -> HANDLE;
+}
 
 // ---- file-scope preamble (translated) ----
 
@@ -13,33 +21,57 @@ pub unsafe extern "system" fn CreateFileMappingA(
     dwMaximumSizeLow: DWORD,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertWin32AnsiObjectApiToUnicodeApi(
-        FileMapping,
-        lpName,
-        hFile,
-        lpFileMappingAttributes,
-        flProtect,
-        dwMaximumSizeHigh,
-        dwMaximumSizeLow,
-    )
+    // ConvertWin32AnsiObjectApiToUnicodeApi(FileMapping, lpName, ...) — expanded.
+    if lpName.is_null() {
+        return CreateFileMappingW(
+            hFile,
+            lpFileMappingAttributes,
+            flProtect,
+            dwMaximumSizeHigh,
+            dwMaximumSizeLow,
+            core::ptr::null(),
+        );
+    }
+
+    let UnicodeCache: PUNICODE_STRING = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    RtlInitAnsiString(&mut AnsiName, lpName);
+    let Status: NTSTATUS = RtlAnsiStringToUnicodeString(UnicodeCache, &mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return CreateFileMappingW(
+            hFile,
+            lpFileMappingAttributes,
+            flProtect,
+            dwMaximumSizeHigh,
+            dwMaximumSizeLow,
+            (*UnicodeCache).Buffer,
+        );
+    }
+
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CreateFileMappingW(
     hFile: HANDLE,
     lpFileMappingAttributes: LPSECURITY_ATTRIBUTES,
-    flProtect: DWORD,
+    mut flProtect: DWORD,
     dwMaximumSizeHigh: DWORD,
     dwMaximumSizeLow: DWORD,
     lpName: LPCWSTR,
 ) -> HANDLE {
     let mut Status: NTSTATUS;
-    let mut SectionHandle: HANDLE;
-    let mut LocalAttributes: _OBJECT_ATTRIBUTES;
-    let mut ObjectAttributes: POBJECT_ATTRIBUTES;
-    let mut SectionName: _UNICODE_STRING;
+    let mut SectionHandle: HANDLE = core::ptr::null_mut();
+    let mut LocalAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let ObjectAttributes: POBJECT_ATTRIBUTES;
+    let mut SectionName: _UNICODE_STRING = core::mem::zeroed();
     let mut DesiredAccess: ACCESS_MASK;
-    let mut LocalSize: LARGE_INTEGER;
+    let mut LocalSize: LARGE_INTEGER = core::mem::zeroed();
     let mut SectionSize: PLARGE_INTEGER;
     let mut Attributes: ULONG;
 
@@ -66,7 +98,7 @@ pub unsafe extern "system" fn CreateFileMappingW(
         /* Give it */
         DesiredAccess |= SECTION_MAP_EXECUTE as ACCESS_MASK;
     } else if (flProtect == PAGE_EXECUTE_WRITECOPY as DWORD) &&
-              ((*(*NtCurrentPeb())).OSMajorVersion >= 6)
+              ((*NtCurrentPeb()).OSMajorVersion >= 6)
     {
         /* Give it */
         DesiredAccess |= SECTION_MAP_EXECUTE as ACCESS_MASK;
@@ -141,14 +173,14 @@ pub unsafe extern "system" fn MapViewOfFileEx(
     lpBaseAddress: LPVOID,
 ) -> LPVOID {
     let mut Status: NTSTATUS;
-    let mut SectionOffset: LARGE_INTEGER;
+    let mut SectionOffset: LARGE_INTEGER = core::mem::zeroed();
     let mut ViewSize: SIZE_T;
     let mut Protect: ULONG;
     let mut ViewBase: LPVOID;
 
     /* Convert the offset */
-    SectionOffset.u.__bindgen_anon_1.LowPart = dwFileOffsetLow;
-    SectionOffset.u.__bindgen_anon_1.HighPart = dwFileOffsetHigh as LONG;
+    SectionOffset.u.LowPart = dwFileOffsetLow;
+    SectionOffset.u.HighPart = dwFileOffsetHigh as LONG;
 
     /* Save the size and base */
     ViewBase = lpBaseAddress;
@@ -237,14 +269,14 @@ pub unsafe extern "system" fn UnmapViewOfFile(lpBaseAddress: LPCVOID) -> BOOL {
             if RtlFlushSecureMemoryCache(lpBaseAddress as PVOID, 0) != 0 {
                 Status = NtUnmapViewOfSection(NtCurrentProcess(), lpBaseAddress as PVOID);
                 if NT_SUCCESS(Status) {
-                    return TRUE;
+                    return TRUE as BOOL;
                 }
             }
         }
         BaseSetLastNTError(Status);
-        return FALSE;
+        return FALSE as BOOL;
     }
-    return TRUE;
+    return TRUE as BOOL;
 }
 
 #[no_mangle]
@@ -253,20 +285,38 @@ pub unsafe extern "system" fn OpenFileMappingA(
     bInheritHandle: BOOL,
     lpName: LPCSTR,
 ) -> HANDLE {
-    ConvertOpenWin32AnsiObjectApiToUnicodeApi(FileMapping, dwDesiredAccess, bInheritHandle, lpName);
-    return core::ptr::null_mut();
+    // ConvertOpenWin32AnsiObjectApiToUnicodeApi(FileMapping, dwDesiredAccess, bInheritHandle, lpName) — expanded.
+    if lpName.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return core::ptr::null_mut();
+    }
+
+    let UnicodeCache: PUNICODE_STRING = &raw mut (*NtCurrentTeb()).StaticUnicodeString;
+    let mut AnsiName: ANSI_STRING = core::mem::zeroed();
+    RtlInitAnsiString(&mut AnsiName, lpName);
+    let Status: NTSTATUS = RtlAnsiStringToUnicodeString(UnicodeCache, &mut AnsiName, 0);
+    if NT_SUCCESS(Status) {
+        return OpenFileMappingW(dwDesiredAccess, bInheritHandle, (*UnicodeCache).Buffer);
+    }
+
+    if Status == STATUS_BUFFER_OVERFLOW {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+    } else {
+        BaseSetLastNTError(Status);
+    }
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn OpenFileMappingW(
-    dwDesiredAccess: DWORD,
+    mut dwDesiredAccess: DWORD,
     bInheritHandle: BOOL,
     lpName: LPCWSTR,
 ) -> HANDLE {
     let mut Status: NTSTATUS;
-    let mut SectionHandle: HANDLE;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut UnicodeName: _UNICODE_STRING;
+    let mut SectionHandle: HANDLE = core::ptr::null_mut();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut UnicodeName: _UNICODE_STRING = core::mem::zeroed();
 
     if lpName.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);

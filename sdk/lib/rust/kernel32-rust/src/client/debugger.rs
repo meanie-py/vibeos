@@ -3,10 +3,60 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 use crate::string::nls_subst::NT_SUCCESS;
-use crate::k32_externs::{BaseSetLastNTError, RtlGetProcessHeap, SetLastError, GetLastError};
+use crate::k32_externs::{BaseSetLastNTError, RtlGetProcessHeap, SetLastError, GetLastError, UlongToHandle, InitializeObjectAttributes};
+
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+
+// SID_IDENTIFIER_AUTHORITY initializers (setypes.h).
+const SECURITY_NT_AUTHORITY: [BYTE; 6] = [0, 0, 0, 0, 0, 5];
+const SECURITY_WORLD_SID_AUTHORITY: [BYTE; 6] = [0, 0, 0, 0, 0, 1];
+
+// MUTANT_ALL_ACCESS = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|MUTANT_QUERY_STATE.
+const STANDARD_RIGHTS_REQUIRED: u32 = 0x000F_0000;
+const MUTANT_ALL_ACCESS: u32 = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | MUTANT_QUERY_STATE;
+
+// ntstatus.h codes not bindgen-evaluable.
+const STATUS_USER_APC: NTSTATUS = 0x0000_00C0;
+const DBG_PRINTEXCEPTION_C: DWORD = 0x4001_0006;
+const DBG_UNABLE_TO_PROVIDE_HANDLE: NTSTATUS = 0x4001_0002;
+
+// Local mirror of the anonymous DBWIN shared-buffer struct in debugger.c.
+#[repr(C)]
+struct DBWIN_BUFFER {
+    ProcessId: DWORD,
+    Buffer: [i8; 1],
+}
+
+// DbgSsReserved[0] holds the head of the per-thread debug data list (k32 macros).
+#[inline]
+unsafe fn DbgSsGetThreadData() -> PDBGSS_THREAD_DATA {
+    (*NtCurrentTeb()).DbgSsReserved[0] as PDBGSS_THREAD_DATA
+}
+#[inline]
+unsafe fn DbgSsSetThreadData(d: PDBGSS_THREAD_DATA) {
+    (*NtCurrentTeb()).DbgSsReserved[0] = d as PVOID;
+}
 
 extern "system" {
     fn CloseHandle(hObject: HANDLE) -> BOOL;
+    fn OpenMutexW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
+    fn CreateMutexW(lpAttrs: LPSECURITY_ATTRIBUTES, bInitialOwner: BOOL, lpName: LPCWSTR) -> HANDLE;
+    fn ReleaseMutex(hMutex: HANDLE) -> BOOL;
+    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HANDLE;
+    fn GlobalFree(hMem: HANDLE) -> HANDLE;
+    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
+    fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
+    fn GetProcessHeap() -> HANDLE;
+    fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+    fn OpenFileMappingW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
+    fn MapViewOfFile(hFileMappingObject: HANDLE, dwDesiredAccess: DWORD, dwFileOffsetHigh: DWORD, dwFileOffsetLow: DWORD, dwNumberOfBytesToMap: SIZE_T) -> LPVOID;
+    fn UnmapViewOfFile(lpBaseAddress: LPCVOID) -> BOOL;
+    fn OpenEventW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
+    fn SetEvent(hEvent: HANDLE) -> BOOL;
+    fn GetCurrentProcessId() -> DWORD;
+    fn RaiseException(dwExceptionCode: DWORD, dwExceptionFlags: DWORD, nNumberOfArguments: DWORD, lpArguments: *const ULONG_PTR);
+    fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -23,10 +73,10 @@ pub type DBGSS_THREAD_DATA = _DBGSS_THREAD_DATA;
 pub type PDBGSS_THREAD_DATA = *mut _DBGSS_THREAD_DATA;
 unsafe fn K32CreateDBMonMutex() -> HANDLE {
     static siaNTAuth: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
-        Value: [SECURITY_NT_AUTHORITY],
+        Value: SECURITY_NT_AUTHORITY,
     };
     static siaWorldAuth: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
-        Value: [SECURITY_WORLD_SID_AUTHORITY],
+        Value: SECURITY_WORLD_SID_AUTHORITY,
     };
     let mut hMutex: HANDLE;
     let mut Status: NTSTATUS;
@@ -38,9 +88,9 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     let mut pDaclBuf: PVOID = core::ptr::null_mut();
 
     let mut nDaclBufSize: SIZE_T =
-        core::mem::size_of::<ACL>() + 3 * core::mem::offset_of!(ACCESS_ALLOWED_ACE, SidStart);
+        (core::mem::size_of::<ACL>() + 3 * core::mem::offset_of!(ACCESS_ALLOWED_ACE, SidStart)) as SIZE_T;
 
-    let mut sdMutexSecurity: _SECURITY_DESCRIPTOR;
+    let mut sdMutexSecurity: _SECURITY_DESCRIPTOR = core::mem::zeroed();
     let mut saMutexAttribs: SECURITY_ATTRIBUTES = SECURITY_ATTRIBUTES {
         nLength: core::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: core::ptr::addr_of_mut!(sdMutexSecurity) as *mut c_void,
@@ -60,7 +110,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
 
     'cleanup: {
     Status = RtlAllocateAndInitializeSid(
-        core::ptr::addr_of!(siaNTAuth),
+        core::ptr::addr_of!(siaNTAuth) as PSID_IDENTIFIER_AUTHORITY,
         1,
         SECURITY_LOCAL_SYSTEM_RID,
         0, 0, 0, 0, 0, 0, 0,
@@ -71,7 +121,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlAllocateAndInitializeSid(
-        core::ptr::addr_of!(siaNTAuth),
+        core::ptr::addr_of!(siaNTAuth) as PSID_IDENTIFIER_AUTHORITY,
         2,
         SECURITY_BUILTIN_DOMAIN_RID,
         DOMAIN_ALIAS_RID_ADMINS,
@@ -83,7 +133,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlAllocateAndInitializeSid(
-        core::ptr::addr_of!(siaWorldAuth),
+        core::ptr::addr_of!(siaWorldAuth) as PSID_IDENTIFIER_AUTHORITY,
         1,
         SECURITY_WORLD_RID,
         0, 0, 0, 0, 0, 0, 0,
@@ -102,13 +152,13 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
         break 'cleanup;
     }
 
-    Status = RtlCreateAcl(pDaclBuf, nDaclBufSize as u32, ACL_REVISION);
+    Status = RtlCreateAcl(pDaclBuf as PACL, nDaclBufSize as u32, ACL_REVISION);
     if !NT_SUCCESS(Status) {
         break 'cleanup;
     }
 
     Status = RtlAddAccessAllowedAce(
-        pDaclBuf,
+        pDaclBuf as PACL,
         ACL_REVISION,
         SYNCHRONIZE | READ_CONTROL | MUTANT_QUERY_STATE,
         psidEveryone,
@@ -118,7 +168,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlAddAccessAllowedAce(
-        pDaclBuf,
+        pDaclBuf as PACL,
         ACL_REVISION,
         MUTANT_ALL_ACCESS,
         psidAdministrators,
@@ -128,7 +178,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlAddAccessAllowedAce(
-        pDaclBuf,
+        pDaclBuf as PACL,
         ACL_REVISION,
         MUTANT_ALL_ACCESS,
         psidSystem,
@@ -138,7 +188,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlCreateSecurityDescriptor(
-        core::ptr::addr_of_mut!(sdMutexSecurity),
+        core::ptr::addr_of_mut!(sdMutexSecurity) as PSECURITY_DESCRIPTOR,
         SECURITY_DESCRIPTOR_REVISION,
     );
     if !NT_SUCCESS(Status) {
@@ -146,9 +196,9 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     }
 
     Status = RtlSetDaclSecurityDescriptor(
-        core::ptr::addr_of_mut!(sdMutexSecurity),
+        core::ptr::addr_of_mut!(sdMutexSecurity) as PSECURITY_DESCRIPTOR,
         1,
-        pDaclBuf,
+        pDaclBuf as PACL,
         0,
     );
     if !NT_SUCCESS(Status) {
@@ -191,7 +241,7 @@ pub unsafe extern "system" fn SaveThreadHandle(
     ThreadData = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<DBGSS_THREAD_DATA>(),
+        core::mem::size_of::<DBGSS_THREAD_DATA>() as SIZE_T,
     ) as PDBGSS_THREAD_DATA;
     if ThreadData.is_null() {
         return;
@@ -217,7 +267,7 @@ pub unsafe extern "system" fn SaveProcessHandle(
     let ThreadData: PDBGSS_THREAD_DATA = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<DBGSS_THREAD_DATA>(),
+        core::mem::size_of::<DBGSS_THREAD_DATA>() as SIZE_T,
     ) as PDBGSS_THREAD_DATA;
     if ThreadData.is_null() {
         return;
@@ -305,7 +355,7 @@ pub unsafe extern "system" fn CloseAllProcessHandles(dwProcessId: DWORD) {
     let mut ThisData: PDBGSS_THREAD_DATA;
 
     /* Loop all thread data events */
-    ThreadData = NtCurrentTeb().DbgSsReserved.as_mut_ptr() as *mut PDBGSS_THREAD_DATA;
+    ThreadData = (*NtCurrentTeb()).DbgSsReserved.as_mut_ptr() as *mut PDBGSS_THREAD_DATA;
     ThisData = *ThreadData;
     while ThisData != 0 as *mut _ {
         /* Check if this one matches */
@@ -334,9 +384,9 @@ pub unsafe extern "system" fn CloseAllProcessHandles(dwProcessId: DWORD) {
 #[no_mangle]
 pub unsafe extern "system" fn ProcessIdToHandle(dwProcessId: DWORD) -> HANDLE {
     let Status: NTSTATUS;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut Handle: HANDLE;
-    let mut ClientId: _CLIENT_ID;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut ClientId: _CLIENT_ID = core::mem::zeroed();
 
     /* If we don't have a PID, look it up */
     let mut dwProcessId = dwProcessId;
@@ -380,7 +430,7 @@ pub unsafe extern "system" fn CheckRemoteDebuggerPresent(
     hProcess: HANDLE,
     pbDebuggerPresent: PBOOL,
 ) -> BOOL {
-    let mut DebugPort: HANDLE;
+    let mut DebugPort: HANDLE = core::ptr::null_mut();
     let Status: NTSTATUS;
 
     /* Make sure we have an output and process*/
@@ -395,7 +445,7 @@ pub unsafe extern "system" fn CheckRemoteDebuggerPresent(
         hProcess,
         ProcessDebugPort,
         &mut DebugPort as *mut HANDLE as *mut core::ffi::c_void,
-        core::mem::size_of::<HANDLE>(),
+        core::mem::size_of::<HANDLE>() as ULONG,
         core::ptr::null_mut(),
     );
     if NT_SUCCESS(Status) {
@@ -415,7 +465,7 @@ pub unsafe extern "system" fn ContinueDebugEvent(
     dwThreadId: DWORD,
     dwContinueStatus: DWORD,
 ) -> BOOL {
-    let mut ClientId: _CLIENT_ID;
+    let mut ClientId: _CLIENT_ID = core::mem::zeroed();
     let Status: NTSTATUS;
 
     /* Set the Client ID */
@@ -423,7 +473,7 @@ pub unsafe extern "system" fn ContinueDebugEvent(
     ClientId.UniqueThread = UlongToHandle(dwThreadId);
 
     /* Continue debugging */
-    Status = DbgUiContinue(&mut ClientId, dwContinueStatus);
+    Status = DbgUiContinue(&mut ClientId, dwContinueStatus as NTSTATUS);
     if !NT_SUCCESS(Status) {
         /* Fail */
         BaseSetLastNTError(Status);
@@ -521,7 +571,7 @@ pub unsafe extern "system" fn DebugBreakProcess(Process: HANDLE) -> BOOL {
 pub unsafe extern "system" fn DebugSetProcessKillOnExit(KillOnExit: BOOL) -> BOOL {
     let Handle: HANDLE;
     let Status: NTSTATUS;
-    let State: ULONG;
+    let mut State: ULONG;
 
     /* Get the debug object */
     Handle = DbgUiGetThreadDebugObject();
@@ -537,7 +587,7 @@ pub unsafe extern "system" fn DebugSetProcessKillOnExit(KillOnExit: BOOL) -> BOO
         Handle,
         DebugObjectKillProcessOnExitInformation,
         &mut State as *mut ULONG as *mut core::ffi::c_void,
-        core::mem::size_of::<ULONG>(),
+        core::mem::size_of::<ULONG>() as ULONG,
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
@@ -552,7 +602,7 @@ pub unsafe extern "system" fn DebugSetProcessKillOnExit(KillOnExit: BOOL) -> BOO
 
 #[no_mangle]
 pub unsafe extern "system" fn IsDebuggerPresent() -> BOOL {
-    (NtCurrentPeb()).BeingDebugged as BOOL
+    (*NtCurrentPeb()).BeingDebugged as BOOL
 }
 
 #[no_mangle]
@@ -560,10 +610,10 @@ pub unsafe extern "system" fn WaitForDebugEvent(
     lpDebugEvent: LPDEBUG_EVENT,
     dwMilliseconds: DWORD,
 ) -> BOOL {
-    let mut WaitTime: LARGE_INTEGER;
+    let mut WaitTime: LARGE_INTEGER = core::mem::zeroed();
     let Timeout: PLARGE_INTEGER;
-    let mut WaitStateChange: DBGUI_WAIT_STATE_CHANGE;
-    let Status: NTSTATUS;
+    let mut WaitStateChange: DBGUI_WAIT_STATE_CHANGE = core::mem::zeroed();
+    let mut Status: NTSTATUS;
 
     /* Convert to NT Timeout */
     Timeout = BaseFormatTimeOut(&mut WaitTime, dwMilliseconds);
@@ -592,7 +642,7 @@ pub unsafe extern "system" fn WaitForDebugEvent(
     }
 
     /* Convert the structure */
-    Status = DbgUiConvertStateChangeStructure(&mut WaitStateChange, lpDebugEvent);
+    Status = DbgUiConvertStateChangeStructure(&mut WaitStateChange, lpDebugEvent as *mut c_void);
     if !NT_SUCCESS(Status) {
         /* Set the error code and quit */
         BaseSetLastNTError(Status);
@@ -655,14 +705,15 @@ pub unsafe extern "system" fn WaitForDebugEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
-    if !(*NtCurrentPeb()).BeingDebugged {
+    let mut _OutputString = _OutputString;
+    if (*NtCurrentPeb()).BeingDebugged == 0 {
         DbgPrint("%s\0".as_ptr() as *const i8, _OutputString);
         return;
     }
     // _SEH2_TRY
     {
         let mut a_nArgs: [ULONG_PTR; 2] = [0; 2];
-        a_nArgs[0] = strlen(_OutputString) + 1;
+        a_nArgs[0] = (strlen(_OutputString) + 1) as ULONG_PTR;
         a_nArgs[1] = _OutputString as ULONG_PTR;
         RaiseException(DBG_PRINTEXCEPTION_C, 0, 2, a_nArgs.as_ptr());
     }
@@ -732,7 +783,7 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
             {
                 let mut nRoundLen: SIZE_T;
                 let mut nOutputStringLen: SIZE_T;
-                nOutputStringLen = strlen(_OutputString);
+                nOutputStringLen = strlen(_OutputString) as SIZE_T;
 
                 loop {
                     if !hDBMonDataReady.is_null() {
@@ -740,17 +791,17 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                             break;
                         }
                         (*pDBMonBuffer).ProcessId = GetCurrentProcessId();
-                        if nOutputStringLen > (PAGE_SIZE - core::mem::size_of::<DWORD>() - 1) {
-                            nRoundLen = PAGE_SIZE - core::mem::size_of::<DWORD>() - 1;
+                        if nOutputStringLen > (PAGE_SIZE as SIZE_T - core::mem::size_of::<DWORD>() as SIZE_T - 1) {
+                            nRoundLen = PAGE_SIZE as SIZE_T - core::mem::size_of::<DWORD>() as SIZE_T - 1;
                         } else {
                             nRoundLen = nOutputStringLen;
                         }
                         core::ptr::copy_nonoverlapping(
                             _OutputString as *const u8,
-                            (*pDBMonBuffer).Buffer.as_mut_ptr(),
-                            nRoundLen,
+                            (*pDBMonBuffer).Buffer.as_mut_ptr() as *mut u8,
+                            nRoundLen as usize,
                         );
-                        *((*pDBMonBuffer).Buffer.as_mut_ptr().add(nRoundLen)) = 0;
+                        *((*pDBMonBuffer).Buffer.as_mut_ptr().add(nRoundLen as usize)) = 0;
                         SetEvent(hDBMonDataReady);
                     } else {
                         a_cBuffer = HeapAlloc(GetProcessHeap(), 0, 512) as *mut i8;
@@ -768,16 +819,16 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                         core::ptr::copy_nonoverlapping(
                             _OutputString as *const u8,
                             a_cBuffer as *mut u8,
-                            nRoundLen,
+                            nRoundLen as usize,
                         );
-                        *a_cBuffer.add(nRoundLen) = 0;
+                        *a_cBuffer.add(nRoundLen as usize) = 0;
                         DbgPrint("%s\0".as_ptr() as *const i8, a_cBuffer);
                         if !a_cBuffer.is_null() {
                             HeapFree(GetProcessHeap(), 0, a_cBuffer as *mut core::ffi::c_void);
                             a_cBuffer = core::ptr::null_mut();
                         }
                     }
-                    _OutputString = _OutputString.add(nRoundLen);
+                    _OutputString = _OutputString.add(nRoundLen as usize);
                     nOutputStringLen -= nRoundLen;
                     if nOutputStringLen == 0 {
                         break;
@@ -1655,7 +1706,7 @@ pub unsafe extern "system" fn OutputDebugStringW(OutputString: LPCWSTR) {
 //                 volatile SIZE_T nOutputStringLen;
 //
 //                 /* output the whole string */
-//                 nOutputStringLen = strlen(_OutputString);
+//                 nOutputStringLen = strlen(_OutputString) as SIZE_T;
 //
 //                 do
 //                 {
