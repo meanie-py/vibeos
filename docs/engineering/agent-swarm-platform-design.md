@@ -153,8 +153,12 @@ interchangeable drains, chosen by the agent's busy/idle state:
   hooks writing `~/.vibeos-swarm/state/<identity>.state` = `{state, pid, ts}`:
   - `UserPromptSubmit` → `busy`; `Stop` → `idle`; `Notification:idle_prompt` confirms
     idle-entered.
-  - **PID liveness:** the state records the owning process; at evaluation, **if the PID
-    is dead, auto-flip to `idle` (and roster `offline`)** — robust crash/close catch.
+  - **PID liveness (state-file only, NOT the roster):** the state record carries the
+    owning process; a dead PID flips the *state* to `idle`. ⚠️ **Do not use PID-death to
+    reap the roster.** Verified 2026-06-15: Claude Code hooks run as short-lived
+    subprocesses, so the PID a hook records (`os.getpid()`) is dead moments later — every
+    live agent's stored PID reads as dead. A roster reap keyed on `pid_alive()` offlines
+    the entire live swarm. **Roster liveness is `last_seen`/heartbeat-based only** (see §10).
 - **Priority tiers** (already built): **high → immediate** (`@me`, `@here/@channel`,
   or high board priority — Vikunja High/Urgent/DO NOW); **low → batched** into one
   digest every ~180s. Board "DO NOW" wakes immediately; chatter batches.
@@ -174,8 +178,11 @@ scratch underneath.
 
 Because agents are cross-machine, the **roster of record is the Go Mattermost plugin**
 (server-side KV) — *not* local SQLite. Fields: identity, lead, current project/quest,
-status (online/idle/offline), last_seen, machine/pid. Liveness = heartbeat + the §8
-state machine (PID-death → offline). Local SQLite demotes to an offline cache, or
+status (online/idle/offline), last_seen, machine/pid. **Liveness = `last_seen`/heartbeat
+only** — an `online` row past `stale_secs` (300s) shows `stale`; `prune` offlines it past
+~900s of silence. PID is recorded for reference but is **not** a reap signal (it's a dead
+hook-subprocess PID; see §8). `teardown` removes the local roster row + state file so a
+de-provisioned agent doesn't linger. Local SQLite demotes to an offline cache, or
 drops. **The Go plugin is a spike** (it's a new Go toolchain for the repo); the roster
 abstracts behind an interface so the client doesn't care whether it's local or plugin.
 
