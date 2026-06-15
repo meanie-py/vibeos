@@ -316,7 +316,7 @@ pub unsafe extern "system" fn GetVolumeInformationW(
 
     /* If no root path provided, default to \ */
     if lpRootPathName.is_null() {
-        RootPathName = b"\\\0".as_ptr() as LPCWSTR;
+        RootPathName = w!("\\\0").as_ptr() as LPCWSTR;
     } else {
         RootPathName = lpRootPathName;
     }
@@ -964,7 +964,7 @@ pub unsafe extern "system" fn GetVolumePathNameW(
 
                     /* Create a new name in the NT namespace (from Win32) */
                     RtlInitUnicodeString(&mut FullPath, VolumeNameBuf);
-                    RtlInitUnicodeString(&mut GlobalRoot, "\\\\?\\GLOBALROOT\0".as_ptr() as LPCWSTR);
+                    RtlInitUnicodeString(&mut GlobalRoot, w!("\\\\?\\GLOBALROOT\0").as_ptr() as LPCWSTR);
 
                     /* We allocate a buffer than can contain both the namespace and the volume name */
                     GlobalPath = RtlAllocateHeap(RtlGetProcessHeap(), 0, (FullPath.Length + GlobalRoot.Length) as SIZE_T) as PWSTR;

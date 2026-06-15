@@ -149,7 +149,7 @@ pub unsafe extern "system" fn DllMain(
             } else {
                 swprintf(
                     SessionDir.as_mut_ptr(),
-                    b"%ws\\%ld%ws\0".as_ptr() as *const u16,
+                    w!("%ws\\%ld%ws\0").as_ptr() as *const u16,
                     SESSION_DIR.as_ptr(),
                     SessionId,
                     WIN_OBJ_DIR.as_ptr(),
@@ -212,7 +212,7 @@ pub unsafe extern "system" fn DllMain(
             Status = RtlStringCbPrintfW(
                 BaseDefaultPathBuffer.as_mut_ptr(),
                 core::mem::size_of::<[WCHAR; 6140]>(),
-                b"%wZ;%wZ\\system;%wZ;\0".as_ptr() as *const u16,
+                w!("%wZ;%wZ\\system;%wZ;\0").as_ptr() as *const u16,
                 &mut BaseWindowsSystemDirectory,
                 &mut BaseWindowsDirectory,
                 &mut BaseWindowsDirectory,

@@ -130,7 +130,7 @@ unsafe fn NpGetUserNamep(
     let mut pGetUserNameW: Option<unsafe extern "system" fn(LPWSTR, LPDWORD) -> BOOL> = None;
     let mut pImpersonateNamedPipeClient: Option<unsafe extern "system" fn(HANDLE) -> BOOL> = None;
 
-    hAdvapi = LoadLibraryW(b"advapi32.dll\0".as_ptr() as LPCWSTR) as HMODULE;
+    hAdvapi = LoadLibraryW(w!("advapi32.dll\0").as_ptr() as LPCWSTR) as HMODULE;
     if hAdvapi.is_null() {
         return 0;
     }
@@ -243,7 +243,7 @@ pub unsafe extern "system" fn CreatePipe(
 
     swprintf(
         Buffer.as_mut_ptr(),
-        b"\\Device\\NamedPipe\\Win32Pipes.%p.%08x\0".as_ptr() as *const u16,
+        w!("\\Device\\NamedPipe\\Win32Pipes.%p.%08x\0").as_ptr() as *const u16,
         (*NtCurrentTeb()).ClientId.UniqueProcess,
         PipeId,
     );

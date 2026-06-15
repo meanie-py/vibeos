@@ -666,15 +666,15 @@ pub unsafe extern "system" fn SetComputerNameExW(
     match NameType as u32 {
         6 => {
             return SetComputerNameToRegistry(
-                b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\0".as_ptr() as LPCWSTR,
-                b"NV Domain\0".as_ptr() as LPCWSTR,
+                w!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\0").as_ptr() as LPCWSTR,
+                w!("NV Domain\0").as_ptr() as LPCWSTR,
                 lpBuffer,
             );
         }
         5 => {
             ret1 = SetComputerNameToRegistry(
-                b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\0".as_ptr() as LPCWSTR,
-                b"NV Hostname\0".as_ptr() as LPCWSTR,
+                w!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\0").as_ptr() as LPCWSTR,
+                w!("NV Hostname\0").as_ptr() as LPCWSTR,
                 lpBuffer,
             );
 
@@ -686,8 +686,8 @@ pub unsafe extern "system" fn SetComputerNameExW(
                 MAX_COMPUTERNAME_LENGTH as size_t,
             );
             ret2 = SetComputerNameToRegistry(
-                b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ComputerName\\ComputerName\0".as_ptr() as LPCWSTR,
-                b"ComputerName\0".as_ptr() as LPCWSTR,
+                w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ComputerName\\ComputerName\0").as_ptr() as LPCWSTR,
+                w!("ComputerName\0").as_ptr() as LPCWSTR,
                 &raw mut szShortName as *mut WCHAR as LPCWSTR,
             );
             return (ret1 != 0 && ret2 != 0) as BOOL;
@@ -701,8 +701,8 @@ pub unsafe extern "system" fn SetComputerNameExW(
                 MAX_COMPUTERNAME_LENGTH as size_t,
             );
             return SetComputerNameToRegistry(
-                b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ComputerName\\ComputerName\0".as_ptr() as LPCWSTR,
-                b"ComputerName\0".as_ptr() as LPCWSTR,
+                w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ComputerName\\ComputerName\0").as_ptr() as LPCWSTR,
+                w!("ComputerName\0").as_ptr() as LPCWSTR,
                 &raw mut szShortName as *mut WCHAR as LPCWSTR,
             );
         }

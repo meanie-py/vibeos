@@ -360,7 +360,7 @@ pub unsafe extern "system" fn GetDiskFreeSpaceExW(
 
     RootPath = lpDirectoryName;
     if lpDirectoryName.is_null() {
-        RootPath = b"\\\0".as_ptr() as PCWSTR;
+        RootPath = w!("\\\0").as_ptr() as PCWSTR;
     }
 
     if RtlDosPathNameToNtPathName_U(

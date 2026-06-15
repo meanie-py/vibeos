@@ -102,7 +102,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     hMutex = OpenMutexW(
         SYNCHRONIZE | READ_CONTROL | MUTANT_QUERY_STATE,
         1,
-        b"DBWinMutex\0".as_ptr() as LPCWSTR,
+        w!("DBWinMutex\0").as_ptr() as LPCWSTR,
     );
     if hMutex != core::ptr::null_mut() {
         return hMutex;
@@ -210,7 +210,7 @@ unsafe fn K32CreateDBMonMutex() -> HANDLE {
     hMutex = CreateMutexW(
         core::ptr::addr_of_mut!(saMutexAttribs),
         0,
-        b"DBWinMutex\0".as_ptr() as LPCWSTR,
+        w!("DBWinMutex\0").as_ptr() as LPCWSTR,
     );
     } // 'cleanup
 
@@ -746,7 +746,7 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                     hDBMonBuffer = OpenFileMappingW(
                         SECTION_MAP_WRITE,
                         0,
-                        "DBWIN_BUFFER\0".as_ptr() as LPCWSTR,
+                        w!("DBWIN_BUFFER\0").as_ptr() as LPCWSTR,
                     );
                     if hDBMonBuffer.is_null() {
                         break;
@@ -764,7 +764,7 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                     hDBMonBufferReady = OpenEventW(
                         SYNCHRONIZE,
                         0,
-                        "DBWIN_BUFFER_READY\0".as_ptr() as LPCWSTR,
+                        w!("DBWIN_BUFFER_READY\0").as_ptr() as LPCWSTR,
                     );
                     if hDBMonBufferReady.is_null() {
                         break;
@@ -772,7 +772,7 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                     hDBMonDataReady = OpenEventW(
                         EVENT_MODIFY_STATE,
                         0,
-                        "DBWIN_DATA_READY\0".as_ptr() as LPCWSTR,
+                        w!("DBWIN_DATA_READY\0").as_ptr() as LPCWSTR,
                     );
                     break;
                 }
