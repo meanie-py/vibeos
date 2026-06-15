@@ -1,0 +1,26 @@
+# dxg-rust — Rust translation of win32ss/reactx/dxg (dxg.sys, the legacy DirectDraw/
+# Direct3D kernel-mode thunk layer, 9 .c / ~1884 LOC). dxg.sys is a kernelmodedriver
+# MODULE that thunks DdXxx/D3dXxx calls into win32k's dxeng (gpEngFuncs table, already
+# Rust in win32k-rust). crate-type=staticlib → libdxg_rust.a, cohab-linked into the
+# cmake dxg.sys (uniata pattern). DirectDraw types (DD_SURFACE_LOCAL/EDD_SURFACE/
+# DDRAWI_*) come from win32k-sys; dxg-private bits (DdHmgLock handle table, ObjType_*
+# tags) live in this crate. Built for all 3 arches; depends on win32k-sys + ntkrnl-sys.
+[package]
+name = "dxg-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dxg_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[features]
+# Let a future umbrella crate that already supplies a #[panic_handler] link
+# dxg-rust without a duplicate. Default build (and the standalone staticlib)
+# owns the handler.
+no_panic_handler = []
+
+[dependencies]
+win32k-sys = { path = "../win32k-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

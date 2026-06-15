@@ -81,8 +81,10 @@ def _find_toolchain() -> tuple[Path, Path]:
             clang = cand
             break
     if clang is None:
-        sys.exit("FATAL: could not find .build-tools/llvm-mingw/bin/clang in this "
-                 "repo or any sibling vibeos checkout")
+        sys.exit(
+            "FATAL: could not find .build-tools/llvm-mingw/bin/clang in this "
+            "repo or any sibling vibeos checkout"
+        )
     # Pick a repo that has build-<arch> dirs (for generated headers).
     build_repo = None
     for c in candidates:
@@ -103,54 +105,88 @@ ARCHS = {
     "amd64": {
         "target": "x86_64-pc-windows-gnu",
         "defs": ["-D_WIN64", "-D_M_AMD64", "-D__x86_64__", "-D_AMD64_", "-mxsave"],
-        "ptr": 8, "long": 4, "model": "llp64",
+        "ptr": 8,
+        "long": 4,
+        "model": "llp64",
     },
     "i386": {
         "target": "i686-pc-windows-gnu",
         "defs": ["-D_M_IX86", "-D__i386__", "-D_X86_"],
-        "ptr": 4, "long": 4, "model": "ilp32",
+        "ptr": 4,
+        "long": 4,
+        "model": "ilp32",
     },
     "arm64": {
         "target": "aarch64-pc-windows-gnu",
         "defs": ["-D_WIN64", "-D_M_ARM64", "-D__aarch64__", "-D__arm64__", "-D_ARM64_"],
-        "ptr": 8, "long": 4, "model": "llp64",
+        "ptr": 8,
+        "long": 4,
+        "model": "llp64",
     },
 }
 
 
 # ── C include flags (mirrors verify_sizes.py get_include_flags) ──────────
 
+
 def get_include_flags(arch_name: str) -> list[str]:
     R = BUILD_REPO
     build_dir = R / f"build-{arch_name}"
     flags = [
-        "-I", str(build_dir / "ntoskrnl"),
-        "-I", str(R / "ntoskrnl"),
-        "-I", str(R / "sdk/include"),
-        "-I", str(R / "sdk/include/ddk"),
-        "-I", str(R / "sdk/include/ndk"),
-        "-I", str(R / "sdk/include/psdk"),
-        "-I", str(R / "sdk/include/xdk"),
-        "-I", str(R / "sdk/include/reactos"),
-        "-I", str(R / "sdk/include/reactos/libs"),
-        "-I", str(R / "sdk/include/reactos/drivers"),
-        "-I", str(R / "sdk/include/vcruntime"),
-        "-I", str(R / "sdk/include/winrt"),
-        "-I", str(R / "sdk/lib/pseh/include"),
-        "-I", str(R),
-        "-I", str(R / "sdk/lib/drivers/arbiter"),
-        "-I", str(R / "sdk/lib/cmlib"),
-        "-I", str(R / "ntoskrnl/include"),
-        "-I", str(build_dir / "ntoskrnl/include"),
-        "-I", str(build_dir / "ntoskrnl/include/internal"),
-        "-I", str(build_dir / "sdk/include"),
-        "-I", str(build_dir / "sdk/include/psdk"),
-        "-I", str(build_dir / "sdk/include/ddk"),
-        "-I", str(build_dir / "sdk/include/dxsdk"),
-        "-I", str(build_dir / "sdk/include/reactos"),
-        "-I", str(build_dir / "sdk/include/reactos/mc"),
-        "-I", str(R / "sdk/include/dxsdk"),
-        "-isystem", str(R / "sdk/include/crt"),
+        "-I",
+        str(build_dir / "ntoskrnl"),
+        "-I",
+        str(R / "ntoskrnl"),
+        "-I",
+        str(R / "sdk/include"),
+        "-I",
+        str(R / "sdk/include/ddk"),
+        "-I",
+        str(R / "sdk/include/ndk"),
+        "-I",
+        str(R / "sdk/include/psdk"),
+        "-I",
+        str(R / "sdk/include/xdk"),
+        "-I",
+        str(R / "sdk/include/reactos"),
+        "-I",
+        str(R / "sdk/include/reactos/libs"),
+        "-I",
+        str(R / "sdk/include/reactos/drivers"),
+        "-I",
+        str(R / "sdk/include/vcruntime"),
+        "-I",
+        str(R / "sdk/include/winrt"),
+        "-I",
+        str(R / "sdk/lib/pseh/include"),
+        "-I",
+        str(R),
+        "-I",
+        str(R / "sdk/lib/drivers/arbiter"),
+        "-I",
+        str(R / "sdk/lib/cmlib"),
+        "-I",
+        str(R / "ntoskrnl/include"),
+        "-I",
+        str(build_dir / "ntoskrnl/include"),
+        "-I",
+        str(build_dir / "ntoskrnl/include/internal"),
+        "-I",
+        str(build_dir / "sdk/include"),
+        "-I",
+        str(build_dir / "sdk/include/psdk"),
+        "-I",
+        str(build_dir / "sdk/include/ddk"),
+        "-I",
+        str(build_dir / "sdk/include/dxsdk"),
+        "-I",
+        str(build_dir / "sdk/include/reactos"),
+        "-I",
+        str(build_dir / "sdk/include/reactos/mc"),
+        "-I",
+        str(R / "sdk/include/dxsdk"),
+        "-isystem",
+        str(R / "sdk/include/crt"),
     ]
     if CLANG_BUILTIN_INC:
         flags += ["-isystem", str(CLANG_BUILTIN_INC)]
@@ -182,12 +218,22 @@ def dump_c_ast(arch_name: str) -> dict:
         wrap = td / "wrap.c"
         wrap.write_text(WRAPPER_C)
         cmd = [
-            str(CLANG), "-Xclang", "-ast-dump=json", "-fsyntax-only",
+            str(CLANG),
+            "-Xclang",
+            "-ast-dump=json",
+            "-fsyntax-only",
             "-nostdlibinc",
-            f"--target={arch['target']}", *arch["defs"],
-            "-D_NTOSKRNL_", "-D_NTSYSTEM_", "-D_USE_DUMMY_PSEH=1", "-D__REACTOS__",
-            "-DDBG=1", "-DWINVER=0x502", "-D_WIN32_WINNT=0x502",
-            "-ferror-limit=0", "-Wno-everything",
+            f"--target={arch['target']}",
+            *arch["defs"],
+            "-D_NTOSKRNL_",
+            "-D_NTSYSTEM_",
+            "-D_USE_DUMMY_PSEH=1",
+            "-D__REACTOS__",
+            "-DDBG=1",
+            "-DWINVER=0x502",
+            "-D_WIN32_WINNT=0x502",
+            "-ferror-limit=0",
+            "-Wno-everything",
             *get_include_flags(arch_name),
             str(wrap),
         ]
@@ -199,6 +245,7 @@ def dump_c_ast(arch_name: str) -> dict:
 
 
 # ── C prototype extraction from AST ─────────────────────────────────────
+
 
 def extract_c_prototypes(ast: dict) -> tuple[dict[str, dict], dict[str, tuple[str, str]]]:
     """Returns (protos, typedefs).
@@ -250,10 +297,9 @@ def _return_from_fn_qualtype(qt: str) -> tuple[str, str]:
     We only get the sugared spelling here; desugaring of the return happens via
     the shape classifier which knows the typedefs. Strip trailing attrs."""
     # cut at first '(' that starts the param list
-    depth = 0
     i = 0
     # find the '(' that opens the parameter list (top-level)
-    for i, ch in enumerate(qt):
+    for i, ch in enumerate(qt):  # noqa: B007  # `i` is consumed after the loop
         if ch == "(":
             break
     ret = qt[:i].strip() if i else qt.strip()
@@ -301,7 +347,6 @@ _C_BASE = {
 def classify_c(desugar: str, qual: str, arch: dict) -> tuple[str, int | None, bool, str]:
     """Return (category, size, signed, note). size None = unknown."""
     d = desugar.strip()
-    q = qual.strip()
     # pointers (incl. function pointers, arrays-as-params decay)
     if "*" in d or d.endswith("]") or "(*" in d:
         return ("ptr", arch["ptr"], False, "")
@@ -325,14 +370,21 @@ def classify_c(desugar: str, qual: str, arch: dict) -> tuple[str, int | None, bo
 # Anything ending in pointer syntax is a pointer; otherwise alias table; else
 # Rust primitives.
 _RUST_PRIM = {
-    "u8": ("int", 1, False), "i8": ("int", 1, True),
-    "u16": ("int", 2, False), "i16": ("int", 2, True),
-    "u32": ("int", 4, False), "i32": ("int", 4, True),
-    "u64": ("int", 8, False), "i64": ("int", 8, True),
-    "usize": ("int", "P", False), "isize": ("int", "P", True),
+    "u8": ("int", 1, False),
+    "i8": ("int", 1, True),
+    "u16": ("int", 2, False),
+    "i16": ("int", 2, True),
+    "u32": ("int", 4, False),
+    "i32": ("int", 4, True),
+    "u64": ("int", 8, False),
+    "i64": ("int", 8, True),
+    "usize": ("int", "P", False),
+    "isize": ("int", "P", True),
     "bool": ("int", 1, False),
-    "f32": ("float", 4, True), "f64": ("float", 8, True),
-    "c_void": ("void", 0, False), "()": ("void", 0, False),
+    "f32": ("float", 4, True),
+    "f64": ("float", 8, True),
+    "c_void": ("void", 0, False),
+    "()": ("void", 0, False),
     "core::ffi::c_void": ("void", 0, False),
 }
 
@@ -340,51 +392,87 @@ _RUST_PRIM = {
 # (category, size, signed) where size 'L'=platform long(4), 'P'=pointer.
 _RUST_ALIAS = {
     # fixed-width unsigned/signed
-    "ULONG": ("int", 4, False), "LONG": ("int", 4, True),
-    "DWORD": ("int", 4, False), "UINT": ("int", 4, False), "INT": ("int", 4, True),
-    "ULONG32": ("int", 4, False), "LONG32": ("int", 4, True),
-    "USHORT": ("int", 2, False), "SHORT": ("int", 2, True), "WORD": ("int", 2, False),
-    "UCHAR": ("int", 1, False), "CHAR": ("int", 1, True), "BYTE": ("int", 1, False),
+    "ULONG": ("int", 4, False),
+    "LONG": ("int", 4, True),
+    "DWORD": ("int", 4, False),
+    "UINT": ("int", 4, False),
+    "INT": ("int", 4, True),
+    "ULONG32": ("int", 4, False),
+    "LONG32": ("int", 4, True),
+    "USHORT": ("int", 2, False),
+    "SHORT": ("int", 2, True),
+    "WORD": ("int", 2, False),
+    "UCHAR": ("int", 1, False),
+    "CHAR": ("int", 1, True),
+    "BYTE": ("int", 1, False),
     "BOOLEAN": ("int", 1, False),
-    "ULONGLONG": ("int", 8, False), "LONGLONG": ("int", 8, True),
-    "ULONG64": ("int", 8, False), "LONG64": ("int", 8, True),
-    "DWORD64": ("int", 8, False), "QWORD": ("int", 8, False),
-    "NTSTATUS": ("int", 4, True), "HRESULT": ("int", 4, True),
-    "KPRIORITY": ("int", 4, True), "KIRQL": ("int", 1, False),
+    "ULONGLONG": ("int", 8, False),
+    "LONGLONG": ("int", 8, True),
+    "ULONG64": ("int", 8, False),
+    "LONG64": ("int", 8, True),
+    "DWORD64": ("int", 8, False),
+    "QWORD": ("int", 8, False),
+    "NTSTATUS": ("int", 4, True),
+    "HRESULT": ("int", 4, True),
+    "KPRIORITY": ("int", 4, True),
+    "KIRQL": ("int", 1, False),
     "BOOL": ("int", 4, True),
     "WCHAR": ("int", 2, False),
-    "LCID": ("int", 4, False), "LANGID": ("int", 2, False),
+    "LCID": ("int", 4, False),
+    "LANGID": ("int", 2, False),
     "ACCESS_MASK": ("int", 4, False),
     # pointer-width integers
-    "SIZE_T": ("int", "P", False), "SSIZE_T": ("int", "P", True),
-    "ULONG_PTR": ("int", "P", False), "LONG_PTR": ("int", "P", True),
-    "DWORD_PTR": ("int", "P", False), "INT_PTR": ("int", "P", True),
+    "SIZE_T": ("int", "P", False),
+    "SSIZE_T": ("int", "P", True),
+    "ULONG_PTR": ("int", "P", False),
+    "LONG_PTR": ("int", "P", True),
+    "DWORD_PTR": ("int", "P", False),
+    "INT_PTR": ("int", "P", True),
     "UINT_PTR": ("int", "P", False),
     "KAFFINITY": ("int", "P", False),
-    "WPARAM": ("int", "P", False), "LPARAM": ("int", "P", True),
+    "WPARAM": ("int", "P", False),
+    "LPARAM": ("int", "P", True),
     "LRESULT": ("int", "P", True),
     # handles & raw pointers (pointer-shaped)
-    "HANDLE": ("ptr", "P", False), "HWND": ("ptr", "P", False),
-    "HKEY": ("ptr", "P", False), "HDC": ("ptr", "P", False),
-    "HMODULE": ("ptr", "P", False), "HINSTANCE": ("ptr", "P", False),
-    "HICON": ("ptr", "P", False), "HMENU": ("ptr", "P", False),
-    "HGDIOBJ": ("ptr", "P", False), "HBRUSH": ("ptr", "P", False),
-    "HBITMAP": ("ptr", "P", False), "HPALETTE": ("ptr", "P", False),
-    "HFONT": ("ptr", "P", False), "HRGN": ("ptr", "P", False),
+    "HANDLE": ("ptr", "P", False),
+    "HWND": ("ptr", "P", False),
+    "HKEY": ("ptr", "P", False),
+    "HDC": ("ptr", "P", False),
+    "HMODULE": ("ptr", "P", False),
+    "HINSTANCE": ("ptr", "P", False),
+    "HICON": ("ptr", "P", False),
+    "HMENU": ("ptr", "P", False),
+    "HGDIOBJ": ("ptr", "P", False),
+    "HBRUSH": ("ptr", "P", False),
+    "HBITMAP": ("ptr", "P", False),
+    "HPALETTE": ("ptr", "P", False),
+    "HFONT": ("ptr", "P", False),
+    "HRGN": ("ptr", "P", False),
     "SC_HANDLE": ("ptr", "P", False),
-    "PVOID": ("ptr", "P", False), "LPVOID": ("ptr", "P", False),
+    "PVOID": ("ptr", "P", False),
+    "LPVOID": ("ptr", "P", False),
     "PVOID64": ("ptr", 8, False),
-    "PWSTR": ("ptr", "P", False), "PCWSTR": ("ptr", "P", False),
-    "LPWSTR": ("ptr", "P", False), "LPCWSTR": ("ptr", "P", False),
-    "PSTR": ("ptr", "P", False), "PCSTR": ("ptr", "P", False),
-    "LPSTR": ("ptr", "P", False), "LPCSTR": ("ptr", "P", False),
-    "PCHAR": ("ptr", "P", False), "PUCHAR": ("ptr", "P", False),
+    "PWSTR": ("ptr", "P", False),
+    "PCWSTR": ("ptr", "P", False),
+    "LPWSTR": ("ptr", "P", False),
+    "LPCWSTR": ("ptr", "P", False),
+    "PSTR": ("ptr", "P", False),
+    "PCSTR": ("ptr", "P", False),
+    "LPSTR": ("ptr", "P", False),
+    "LPCSTR": ("ptr", "P", False),
+    "PCHAR": ("ptr", "P", False),
+    "PUCHAR": ("ptr", "P", False),
     "PWCHAR": ("ptr", "P", False),
-    "PULONG": ("ptr", "P", False), "PLONG": ("ptr", "P", False),
-    "PUSHORT": ("ptr", "P", False), "PSHORT": ("ptr", "P", False),
-    "PBOOLEAN": ("ptr", "P", False), "PSIZE_T": ("ptr", "P", False),
-    "PULONG_PTR": ("ptr", "P", False), "PLONG_PTR": ("ptr", "P", False),
-    "PHANDLE": ("ptr", "P", False), "PLARGE_INTEGER": ("ptr", "P", False),
+    "PULONG": ("ptr", "P", False),
+    "PLONG": ("ptr", "P", False),
+    "PUSHORT": ("ptr", "P", False),
+    "PSHORT": ("ptr", "P", False),
+    "PBOOLEAN": ("ptr", "P", False),
+    "PSIZE_T": ("ptr", "P", False),
+    "PULONG_PTR": ("ptr", "P", False),
+    "PLONG_PTR": ("ptr", "P", False),
+    "PHANDLE": ("ptr", "P", False),
+    "PLARGE_INTEGER": ("ptr", "P", False),
     "PLUID": ("ptr", "P", False),
     "PFILE_OBJECT": ("ptr", "P", False),
 }
@@ -392,12 +480,12 @@ _RUST_ALIAS = {
 
 def classify_rust(t: str, arch: dict, c_typedefs: dict[str, tuple[str, str]]):
     """Classify a Rust-spelled type. Authority order:
-       1. raw pointer / reference / fn-pointer syntax -> ptr
-       2. Rust primitive (u32/usize/...)
-       3. the *C typedef table* (alias name shared with C, e.g. POOL_TYPE,
-          SIZE_T) — resolved via clang's per-arch desugaring, so no guessing
-       4. fallback hand table _RUST_ALIAS for names C doesn't have
-       5. P-prefix pointer heuristic (last resort)"""
+    1. raw pointer / reference / fn-pointer syntax -> ptr
+    2. Rust primitive (u32/usize/...)
+    3. the *C typedef table* (alias name shared with C, e.g. POOL_TYPE,
+       SIZE_T) — resolved via clang's per-arch desugaring, so no guessing
+    4. fallback hand table _RUST_ALIAS for names C doesn't have
+    5. P-prefix pointer heuristic (last resort)"""
     t = t.strip()
     if t.startswith("*const") or t.startswith("*mut") or t.startswith("&"):
         return ("ptr", arch["ptr"], False, "")
@@ -428,6 +516,7 @@ def classify_rust(t: str, arch: dict, c_typedefs: dict[str, tuple[str, str]]):
 
 
 # ── Rust exported-fn scanner ────────────────────────────────────────────
+
 
 # Strip a balanced-paren param list out of a fn signature starting just after '('
 def _split_params(s: str) -> list[str]:
@@ -462,14 +551,12 @@ def _param_type(p: str) -> str | None:
         elif ch in ">)]":
             depth -= 1
         elif ch == ":" and depth == 0:
-            return p[i + 1:].strip()
+            return p[i + 1 :].strip()
     return p  # unnamed (rare)
 
 
 EXPORT_ATTR = re.compile(r"#\[\s*(no_mangle|export_name\s*=\s*\"([^\"]+)\")")
-FN_SIG = re.compile(
-    r'(?:pub\s+)?(?:unsafe\s+)?extern\s+"([^"]+)"\s+fn\s+(\w+)\s*\('
-)
+FN_SIG = re.compile(r'(?:pub\s+)?(?:unsafe\s+)?extern\s+"([^"]+)"\s+fn\s+(\w+)\s*\(')
 
 
 def scan_rust_crate(src: Path) -> list[dict]:
@@ -479,7 +566,6 @@ def scan_rust_crate(src: Path) -> list[dict]:
     seen = set()
     for rs in sorted(src.rglob("*.rs")):
         text = rs.read_text(errors="replace")
-        lines = text.splitlines()
         # find export attributes, then the next fn sig within a small window
         for m in EXPORT_ATTR.finditer(text):
             link = m.group(2)  # export_name value or None
@@ -502,9 +588,9 @@ def scan_rust_crate(src: Path) -> list[dict]:
                     depth -= 1
                     if depth == 0:
                         break
-            params_str = text[popen + 1:j]
+            params_str = text[popen + 1 : j]
             # return type: between ')' and '{' or ';' or 'where'
-            rest = text[j + 1:j + 400]
+            rest = text[j + 1 : j + 400]
             ret = "()"
             rm = re.match(r"\s*->\s*(.+?)\s*(\{|;|where\b)", rest, re.S)
             if rm:
@@ -519,15 +605,23 @@ def scan_rust_crate(src: Path) -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
-            results.append({
-                "name": name, "link_name": link, "rust_ident": rust_ident,
-                "conv": conv, "params": params, "ret": ret,
-                "file": str(rs), "line": line,
-            })
+            results.append(
+                {
+                    "name": name,
+                    "link_name": link,
+                    "rust_ident": rust_ident,
+                    "conv": conv,
+                    "params": params,
+                    "ret": ret,
+                    "file": str(rs),
+                    "line": line,
+                }
+            )
     return results
 
 
 # ── Comparison ───────────────────────────────────────────────────────────
+
 
 def shapes_compatible(a, b) -> tuple[bool, str]:
     """a,b = (cat, size, signed, note). Return (ok, reason-if-not)."""
@@ -535,8 +629,6 @@ def shapes_compatible(a, b) -> tuple[bool, str]:
     cb, sb, gb, _ = b
     if "unknown" in (ca, cb) or "aggregate" in (ca, cb):
         return (True, "")  # can't judge -> don't flag here
-    # pointer vs pointer-width-int: both occupy a pointer slot; treat as OK-ish
-    ptr_like_a = ca == "ptr" or (ca == "int" and sa == None)
     # category mismatch (ptr vs int of different width, int vs float)
     if ca != cb:
         # allow ptr <-> pointer-width int (common & ABI-identical)
@@ -582,7 +674,9 @@ def compare(rust_fns, c_protos, arch, include_low, c_typedefs):
         if cp["variadic"]:
             # variadic: only check the fixed prefix
             if len(rf["params"]) < len(cp["params"]):
-                issues.append(f"arity (variadic): rust {len(rf['params'])} < C fixed {len(cp['params'])}")
+                issues.append(
+                    f"arity (variadic): rust {len(rf['params'])} < C fixed {len(cp['params'])}"
+                )
                 confidence = "HIGH"
         elif len(rf["params"]) != len(cp["params"]):
             issues.append(f"ARITY: rust {len(rf['params'])} params vs C {len(cp['params'])}")
@@ -597,7 +691,10 @@ def compare(rust_fns, c_protos, arch, include_low, c_typedefs):
                 ok, why = shapes_compatible(rs, cs_)
                 if not ok:
                     sev = "LOW" if why.startswith("sign") else "MEDIUM"
-                    issues.append(f"param#{i+1} {rf['params'][i]} vs {cp['params'][i][0]}({cp['params'][i][1]}): {why} [{sev}]")
+                    issues.append(
+                        f"param#{i + 1} {rf['params'][i]} vs "
+                        f"{cp['params'][i][0]}({cp['params'][i][1]}): {why} [{sev}]"
+                    )
                     confidence = _max_conf(confidence, sev)
             # RETURN — we only have the sugared prefix spelling for the C return;
             # resolve it through the typedef table.
@@ -633,20 +730,29 @@ def _finding(rf, cp, issues, conf):
     if cp["variadic"]:
         csig = csig[:-1] + ", ...)"
     return {
-        "name": rf["name"], "confidence": conf,
-        "file": rf["file"], "line": rf["line"],
-        "rust": rsig, "c": csig, "issues": issues,
+        "name": rf["name"],
+        "confidence": conf,
+        "file": rf["file"],
+        "line": rf["line"],
+        "rust": rsig,
+        "c": csig,
+        "issues": issues,
     }
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
+
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--arch", default="amd64", choices=list(ARCHS))
-    ap.add_argument("--crate", default="sdk/lib/rust/ntoskrnl-rust/src",
-                    help="Rust source dir to scan (relative to repo root or absolute)")
+    ap.add_argument(
+        "--crate",
+        default="sdk/lib/rust/ntoskrnl-rust/src",
+        help="Rust source dir to scan (relative to repo root or absolute)",
+    )
     ap.add_argument("--low", action="store_true", help="include LOW-confidence findings")
     ap.add_argument("--only", help="check only this fn name (debug)")
     ap.add_argument("--json", help="write full findings to JSON file")
@@ -684,9 +790,11 @@ def main():
     print(f"  matched to a C proto : {stats['matched_c']}")
     print(f"  no C proto (internal): {stats['no_c']}")
     print(f"  signature OK         : {stats['ok']}")
-    print(f"  mismatches           : {stats['mismatch']}"
-          f"  ({sum(1 for f in findings if not f.get('_suppressed'))} shown,"
-          f" {sum(1 for f in findings if f.get('_suppressed'))} LOW-suppressed)")
+    print(
+        f"  mismatches           : {stats['mismatch']}"
+        f"  ({sum(1 for f in findings if not f.get('_suppressed'))} shown,"
+        f" {sum(1 for f in findings if f.get('_suppressed'))} LOW-suppressed)"
+    )
     print()
 
     shown = [f for f in findings if not f.get("_suppressed")]
@@ -702,8 +810,9 @@ def main():
         print()
 
     if args.json:
-        Path(args.json).write_text(json.dumps(
-            {"arch": args.arch, "stats": stats, "findings": findings}, indent=2))
+        Path(args.json).write_text(
+            json.dumps({"arch": args.arch, "stats": stats, "findings": findings}, indent=2)
+        )
         print(f"wrote {args.json}")
 
     # exit nonzero only on HIGH/MEDIUM (LOW is advisory)

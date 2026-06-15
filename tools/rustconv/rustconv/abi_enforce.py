@@ -45,7 +45,6 @@ from pathlib import Path
 
 from .scanner import scan_file
 
-
 # C calling-convention macro → normalized convention.
 _CONV_NORM = {
     "NTAPI": "system",
@@ -60,11 +59,13 @@ _CONV_NORM = {
 
 
 # Convention macros as they appear in the C text. Order = lookup priority.
-_CONV_KEYWORDS = ("NTAPI", "WINAPI", "APIENTRY", "STDMETHODCALLTYPE",
-                  "FASTCALL", "CDECL")
+_CONV_KEYWORDS = ("NTAPI", "WINAPI", "APIENTRY", "STDMETHODCALLTYPE", "FASTCALL", "CDECL")
 _KW_TO_CONV = {
-    "NTAPI": "system", "WINAPI": "system", "APIENTRY": "system",
-    "STDMETHODCALLTYPE": "system", "STDCALL": "system",
+    "NTAPI": "system",
+    "WINAPI": "system",
+    "APIENTRY": "system",
+    "STDMETHODCALLTYPE": "system",
+    "STDCALL": "system",
     "FASTCALL": "fastcall",
     "CDECL": "cdecl",
 }
@@ -82,39 +83,39 @@ def _derive_convention(c_text: str, name: str) -> str | None:
     name's definition site can't be located (caller defaults to cdecl).
     """
     # Definition site: the `name(` whose matching ')' is followed by '{'.
-    for m in re.finditer(rf'\b{re.escape(name)}\s*\(', c_text):
-        paren_open = c_text.index('(', m.end() - 1)
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\(", c_text):
+        paren_open = c_text.index("(", m.end() - 1)
         depth, i = 0, paren_open
         while i < len(c_text):
-            if c_text[i] == '(':
+            if c_text[i] == "(":
                 depth += 1
-            elif c_text[i] == ')':
+            elif c_text[i] == ")":
                 depth -= 1
                 if depth == 0:
                     break
             i += 1
         # Skip whitespace; a definition has '{' next (a call/decl has ';' or ',').
         j = i + 1
-        while j < len(c_text) and c_text[j] in ' \t\r\n':
+        while j < len(c_text) and c_text[j] in " \t\r\n":
             j += 1
-        if j >= len(c_text) or c_text[j] != '{':
+        if j >= len(c_text) or c_text[j] != "{":
             continue
 
         # Bound the qualifier window: back to prev '}' / ';' / blank line.
         win_start = m.start()
         lo = max(0, win_start - 400)
         seg = c_text[lo:win_start]
-        for sep in ('}', ';'):
+        for sep in ("}", ";"):
             k = seg.rfind(sep)
             if k != -1:
-                seg = seg[k + 1:]
+                seg = seg[k + 1 :]
         # also cut at a blank line
-        bl = seg.rfind('\n\n')
+        bl = seg.rfind("\n\n")
         if bl != -1:
-            seg = seg[bl + 2:]
+            seg = seg[bl + 2 :]
 
         for kw in _CONV_KEYWORDS:
-            if re.search(rf'\b{kw}\b', seg):
+            if re.search(rf"\b{kw}\b", seg):
                 return _KW_TO_CONV[kw]
         return "cdecl"
     return None
@@ -157,7 +158,7 @@ def _match(s: str, open_idx: int, opc: str, clc: str) -> int:
     return -1
 
 
-_ATTR_OR_BLANK = re.compile(r'^[ \t]*(#\[[^\n]*\])?[ \t]*$')
+_ATTR_OR_BLANK = re.compile(r"^[ \t]*(#\[[^\n]*\])?[ \t]*$")
 
 
 def _find_defs(code: str, name: str):
@@ -169,30 +170,30 @@ def _find_defs(code: str, name: str):
     )
     for hm in head_re.finditer(code):
         try:
-            paren_open = code.index('(', hm.end() - 1)
+            paren_open = code.index("(", hm.end() - 1)
         except ValueError:
             continue
-        paren_end = _match(code, paren_open, '(', ')')
+        paren_end = _match(code, paren_open, "(", ")")
         if paren_end < 0:
             continue
         try:
-            brace_open = code.index('{', paren_end)
+            brace_open = code.index("{", paren_end)
         except ValueError:
             continue
-        body_end = _match(code, brace_open, '{', '}')
+        body_end = _match(code, brace_open, "{", "}")
         if body_end < 0:
             continue
         params = code[paren_open:paren_end]
         ret = code[paren_end:brace_open].strip()
-        ret_suffix = f' {ret}' if ret else ''
+        ret_suffix = f" {ret}" if ret else ""
         body = code[brace_open:body_end]
 
-        line_start = code.rfind('\n', 0, hm.start()) + 1
-        indent = code[line_start:hm.start()]
+        line_start = code.rfind("\n", 0, hm.start()) + 1
+        indent = code[line_start : hm.start()]
         span_start = line_start
         while span_start > 0:
             prev_nl = span_start - 1
-            prev_start = code.rfind('\n', 0, prev_nl) + 1
+            prev_start = code.rfind("\n", 0, prev_nl) + 1
             prev_line = code[prev_start:prev_nl]
             if _ATTR_OR_BLANK.match(prev_line):
                 span_start = prev_start
@@ -201,24 +202,25 @@ def _find_defs(code: str, name: str):
         yield (span_start, body_end, params, ret_suffix, body, indent)
 
 
-def _canonical_block(name: str, conv: str, params: str, ret_suffix: str,
-                     body: str, indent: str, is_static: bool) -> str:
+def _canonical_block(
+    name: str, conv: str, params: str, ret_suffix: str, body: str, indent: str, is_static: bool
+) -> str:
     """Render the canonical definition for one function."""
     if is_static:
         # Internal linkage in C — keep file-private, no export, no extern.
-        return f'{indent}unsafe fn {name}{params}{ret_suffix} {body}'
+        return f"{indent}unsafe fn {name}{params}{ret_suffix} {body}"
     if conv == "fastcall":
         return (
             f'{indent}#[cfg(target_arch = "x86")]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "fastcall" fn {name}{params}{ret_suffix} {body}\n\n'
             f'{indent}#[cfg(not(target_arch = "x86"))]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "C" fn {name}{params}{ret_suffix} {body}'
         )
     extern = "system" if conv == "system" else "C"
     return (
-        f'{indent}#[no_mangle]\n'
+        f"{indent}#[no_mangle]\n"
         f'{indent}pub unsafe extern "{extern}" fn {name}{params}{ret_suffix} {body}'
     )
 

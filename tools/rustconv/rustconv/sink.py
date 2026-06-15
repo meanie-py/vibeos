@@ -31,7 +31,6 @@ import signal
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .config import RUSTCONV_RESPONSES_DIR, cost_usd, model_pricing
 
@@ -46,7 +45,7 @@ def _is_under_tmp(p: Path) -> bool:
     return any(t and (rp == t or rp.startswith(t.rstrip("/") + "/")) for t in tmp_roots)
 
 
-def warn_if_tmp_output(output: Optional[str]) -> None:
+def warn_if_tmp_output(output: str | None) -> None:
     """Loudly flag `-o /tmp/...` — the durable archive already holds the output,
     so a /tmp path is at best redundant and at worst the only (ephemeral) copy."""
     if not output:
@@ -68,12 +67,12 @@ class ResponseSink:
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh = open(self.path, "w", encoding="utf-8")
+        self._fh = open(self.path, "w", encoding="utf-8")  # noqa: SIM115  # long-lived streaming handle, closed via close()
         self.bytes_written = 0
 
     def write(self, text: str) -> None:
         self._fh.write(text)
-        self._fh.flush()          # land on disk now — a kill after this keeps it
+        self._fh.flush()  # land on disk now — a kill after this keeps it
         try:
             os.fsync(self._fh.fileno())
         except (OSError, ValueError):
@@ -97,10 +96,13 @@ class RunArchive:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.model = model
         self.label = label
-        self.committed: list[str] = []      # human-facing list of saved files
+        self.committed: list[str] = []  # human-facing list of saved files
         self._meta = {
-            "label": label, "model": model, "target": target,
-            "started": ts, "calls": [],
+            "label": label,
+            "model": model,
+            "target": target,
+            "started": ts,
+            "calls": [],
         }
         self._flush_meta()
 
@@ -111,23 +113,27 @@ class RunArchive:
         """Live partial-stream file for an in-flight call (kept on kill)."""
         return self.dir / f"{idx:02d}_{_slug(name)}.partial"
 
-    def commit(self, idx: int, name: str, code: str,
-               input_tokens: int, output_tokens: int) -> Path:
+    def commit(self, idx: int, name: str, code: str, input_tokens: int, output_tokens: int) -> Path:
         """Persist a completed unit's final Rust + record token usage."""
         final = self.dir / f"{idx:02d}_{_slug(name)}.rs"
         final.write_text(code, encoding="utf-8")
         partial = self.stream_path(idx, name)
         if partial.exists():
             try:
-                partial.unlink()      # superseded by the committed .rs
+                partial.unlink()  # superseded by the committed .rs
             except OSError:
                 pass
         self.committed.append(final.name)
-        self._meta["calls"].append({
-            "idx": idx, "name": name, "file": final.name,
-            "input_tokens": input_tokens, "output_tokens": output_tokens,
-            "cost_usd": round(cost_usd(self.model, input_tokens, output_tokens), 4),
-        })
+        self._meta["calls"].append(
+            {
+                "idx": idx,
+                "name": name,
+                "file": final.name,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": round(cost_usd(self.model, input_tokens, output_tokens), 4),
+            }
+        )
         self._flush_meta()
         return final
 
@@ -137,8 +143,9 @@ class RunArchive:
 _GUARD_INSTALLED = False
 
 
-def paid_invocation_banner(model: str, n_calls: int, est_input_tokens: int,
-                           archive: RunArchive) -> None:
+def paid_invocation_banner(
+    model: str, n_calls: int, est_input_tokens: int, archive: RunArchive
+) -> None:
     """Print the up-front cost warning. n_calls is the number of paid API calls
     this command will make (one per function for `translate`)."""
     pin, pout = model_pricing(model)
@@ -157,8 +164,7 @@ def paid_invocation_banner(model: str, n_calls: int, est_input_tokens: int,
         "\n"
         "  ⛔  Do NOT Ctrl-C mid-call. Output streams to disk as it generates;\n"
         "      a kill still BILLS you but partial work IS preserved here:\n"
-        f"      {archive.dir}\n"
-        + "═" * 68 + "\n",
+        f"      {archive.dir}\n" + "═" * 68 + "\n",
         file=sys.stderr,
     )
 
@@ -180,8 +186,7 @@ def install_kill_guard(archive: RunArchive) -> None:
             f"      in-flight partial stream — under:\n"
             f"      {archive.dir}\n"
             "      Re-run the SAME command to resume; already-saved units are reused\n"
-            "      and are NOT re-billed. Do not delete that dir.\n"
-            + "─" * 68 + "\n",
+            "      and are NOT re-billed. Do not delete that dir.\n" + "─" * 68 + "\n",
             file=sys.stderr,
         )
         sys.exit(130)
@@ -190,4 +195,4 @@ def install_kill_guard(archive: RunArchive) -> None:
         try:
             signal.signal(sig, _handler)
         except (ValueError, OSError):
-            pass    # not on the main thread; best-effort
+            pass  # not on the main thread; best-effort

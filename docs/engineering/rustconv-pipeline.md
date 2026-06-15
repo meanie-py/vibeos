@@ -158,3 +158,32 @@ codex exec --full-auto "$(cat prompt.md)"
 8. Run `python3 tools/lint_kernel.py` to find unprotected output pointer writes
 9. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
 10. Build all 3 arches + run smoke tests (use `--skip-clean-build` for fast iteration, omit for final verification)
+
+## Developing the pipeline itself (lint / types / tests)
+
+`rustconv` is a maintained Python package, not a scratch script — it carries its
+own dev tooling in `tools/rustconv/pyproject.toml`:
+
+- **ruff** (`[tool.ruff]`): lint (`E/F/I/UP/B/SIM/RUF`) + format. Same ruleset as
+  the cli and `agent-swarm` so the whole tool surface lints under one standard.
+- **pyright** (`[tool.pyright]`, basic mode): run it pointed at the venv
+  interpreter so deps resolve — `pyright --pythonpath .venv/bin/python rustconv`.
+- **pytest** (`tests/`): pure, no-network unit tests. `test_semdiff_pure` pins the
+  semdiff Rust-function/JSON extraction; `test_config_cost` the cost/model math;
+  `test_cli_invariants` guards the import hygiene (every submodule imports,
+  `__main__` has zero inline imports, and the analysis subcommands that share
+  symbol names — `run_oracle`, `extract_file`, `print_summary`, … — stay
+  module-qualified so they can't collide on a naive re-hoist).
+
+Run the whole surface (rustconv + cli + `tools/*.py` + agent-swarm) in one shot:
+
+```bash
+./vibeos-cli check-tooling            # ruff + ruff format --check + pyright + pytest
+./vibeos-cli check-tooling --no-tests # fast lint+types only
+```
+
+**Import policy:** hoist imports to module top. The only imports kept inside
+functions / guarded by `try/except` are *genuinely optional* third-party deps —
+`google.genai` (the `gemini` extra), `PIL`, `shellcheck_py`, and the
+`tomllib`→`tomli` 3.10 backport — where a top-level import would break
+`pip install` without the extra. That guard is the correct idiom, not a smell.

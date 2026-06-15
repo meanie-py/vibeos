@@ -5,16 +5,16 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from .config import TEMPLATES_DIR, NTOSKRNL_DIR, Target, TARGETS
+from .config import NTOSKRNL_DIR, TARGETS, TEMPLATES_DIR, Target
 from .resolver import ResolveResult
 from .scanner import ScanResult
 from .spec_parser import rust_calling_convention
-
 
 # --- win32k pretranslation sidecar consumption ------------------------------
 # Pass 0/2/3 wrote machine-generated maps next to each keep-set .c. They are
 # inert until the prompt builder feeds them to the translator. This is that
 # consumer (see docs/engineering/win32k-pretranslation-audit.md).
+
 
 @lru_cache(maxsize=1)
 def load_win32k_rules() -> str:
@@ -27,8 +27,8 @@ def load_win32k_sidecars(c_path: Path) -> dict:
     nothing (ntoskrnl/hal prompts are unaffected)."""
     out: dict[str, dict] = {}
     for suffix, key in (
-        (".win32k_meta.json", "seh"),       # Pass 0 SEH triage
-        (".win32k_gdilocks.json", "gdi"),   # Pass 2 GDI lock brackets
+        (".win32k_meta.json", "seh"),  # Pass 0 SEH triage
+        (".win32k_gdilocks.json", "gdi"),  # Pass 2 GDI lock brackets
         (".win32k_userlocks.json", "userlocks"),  # Pass 2b USER critsec
         (".win32k_callouts.json", "callouts"),  # Pass 3 USER callouts
     ):
@@ -51,24 +51,25 @@ def render_win32k_context(sidecars: dict) -> str:
     if gdi:
         L.append("**GDI lock handles** (var · lock→unlock · shape — §2):")
         for s in gdi:
-            L.append(f"- `{s['function']}`: `{s['var']}` = "
-                     f"`{s['lock_fn']}`→`{s['unlock_fn']}` "
-                     f"[{s['shape']}]"
-                     + (f" ⚠ {','.join(s['signals'])}" if s.get("signals") else ""))
+            L.append(
+                f"- `{s['function']}`: `{s['var']}` = "
+                f"`{s['lock_fn']}`→`{s['unlock_fn']}` "
+                f"[{s['shape']}]" + (f" ⚠ {','.join(s['signals'])}" if s.get("signals") else "")
+            )
         L.append("")
 
     ul = sidecars.get("userlocks", {}).get("sites", [])
     if ul:
-        L.append("**USER critsec brackets** "
-                 "(UserEnter*/UserLeave · mode · shape — §2.5):")
+        L.append("**USER critsec brackets** (UserEnter*/UserLeave · mode · shape — §2.5):")
         for s in ul:
             top = "@top" if s.get("enter_at_top") else "@cond"
-            sig = (f" ⚠ {','.join(s['signals'])}"
-                   if s.get("signals") else "")
-            L.append(f"- `{s['function']}`: {s['mode']} "
-                     f"enter L{s['enter_line']}{top} → "
-                     f"leave L{s.get('leave_lines')} "
-                     f"[{s['shape']}]{sig}")
+            sig = f" ⚠ {','.join(s['signals'])}" if s.get("signals") else ""
+            L.append(
+                f"- `{s['function']}`: {s['mode']} "
+                f"enter L{s['enter_line']}{top} → "
+                f"leave L{s.get('leave_lines')} "
+                f"[{s['shape']}]{sig}"
+            )
         L.append("")
 
     co = sidecars.get("callouts", {}).get("sites", [])
@@ -77,30 +78,38 @@ def render_win32k_context(sidecars: dict) -> str:
         for s in co:
             warn = [x for x in s.get("signals", []) if x != "co_prefixed"]
             sig = f" ⚠ {','.join(warn)}" if warn else ""
-            L.append(f"- `{s['function']}`: {s['callback_index']} "
-                     f"@L{s['kumc_line']} "
-                     f"[Leave L{s['leave_co_line']} / Enter "
-                     f"L{s['enter_co_line']} / probe L{s['result_probe_line']}]"
-                     f"{sig}")
+            L.append(
+                f"- `{s['function']}`: {s['callback_index']} "
+                f"@L{s['kumc_line']} "
+                f"[Leave L{s['leave_co_line']} / Enter "
+                f"L{s['enter_co_line']} / probe L{s['result_probe_line']}]"
+                f"{sig}"
+            )
         L.append("")
 
     seh = sidecars.get("seh", {}).get("sites", [])
     resid = [s for s in seh if s.get("category") != "a"]
     if resid:
-        names = {"c": "FAULT_RECOVER (keep SEH — §4)",
-                 "d": "BELT_SUSPENDERS (drop SEH, translate body — §4)",
-                 "e": "NEEDS_REVIEW (faithful + TODO — §4)",
-                 "b": "LOCK_CLEANUP"}
+        names = {
+            "c": "FAULT_RECOVER (keep SEH — §4)",
+            "d": "BELT_SUSPENDERS (drop SEH, translate body — §4)",
+            "e": "NEEDS_REVIEW (faithful + TODO — §4)",
+            "b": "LOCK_CLEANUP",
+        }
         L.append("**Residual SEH** (probes already lowered; these remain):")
         for s in resid:
             cat = s.get("category", "?")
-            L.append(f"- `{s.get('function','?')}` "
-                     f"L{s.get('line_start','?')}: ({cat}) "
-                     f"{names.get(cat, cat)}")
+            L.append(
+                f"- `{s.get('function', '?')}` "
+                f"L{s.get('line_start', '?')}: ({cat}) "
+                f"{names.get(cat, cat)}"
+            )
         L.append("")
     elif seh:
-        L.append("**Residual SEH**: none — every SEH site in this file was "
-                 "an `(a)` probe and is already lowered to `SafeProbeFor*`.\n")
+        L.append(
+            "**Residual SEH**: none — every SEH site in this file was "
+            "an `(a)` probe and is already lowered to `SafeProbeFor*`.\n"
+        )
 
     return "\n".join(L)
 
@@ -138,14 +147,14 @@ def load_shim_signatures(subsystem: str) -> dict[str, str]:
 
     # Match function definitions: ReturnType [NTAPI] FuncName(params)
     for m in re.finditer(
-        r'^(\w[\w\s\*]*?)\s+(?:NTAPI\s+)?(\w+)\s*\(([^)]*)\)\s*\{',
+        r"^(\w[\w\s\*]*?)\s+(?:NTAPI\s+)?(\w+)\s*\(([^)]*)\)\s*\{",
         phase5_text,
         re.MULTILINE,
     ):
         ret_type = m.group(1).strip()
         name = m.group(2)
         params = m.group(3).strip()
-        if name.startswith('_tramp_') or name.startswith('_fi_'):
+        if name.startswith("_tramp_") or name.startswith("_fi_"):
             continue
         sigs[name] = f"{ret_type} {name}({params})"
 
@@ -166,15 +175,20 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
     # Section 2: Exports from ntoskrnl.spec
     if resolve.exports:
         parts.append("### Exported Functions (from ntoskrnl.spec)")
-        parts.append("These functions are exported from ntoskrnl.exe and MUST be `#[no_mangle] pub unsafe`:\n")
+        parts.append(
+            "These functions are exported from ntoskrnl.exe and MUST be "
+            "`#[no_mangle] pub unsafe`:\n"
+        )
         for name, entry in sorted(resolve.exports.items()):
             fwd = f" (forwards to {entry.forward_target})" if entry.forward_target else ""
             arch = f" [arch: {','.join(entry.arch_filter)}]" if entry.arch_filter else ""
             conv = rust_calling_convention(entry)
             if entry.convention == "fastcall":
-                parts.append(f"- `#[no_mangle] pub unsafe {conv} fn {name}(...)` — "
-                             f"Use `extern \"fastcall\"` on `#[cfg(target_arch = \"x86\")]` "
-                             f"and `extern \"C\"` on other arches{fwd}{arch}")
+                parts.append(
+                    f"- `#[no_mangle] pub unsafe {conv} fn {name}(...)` — "
+                    f'Use `extern "fastcall"` on `#[cfg(target_arch = "x86")]` '
+                    f'and `extern "C"` on other arches{fwd}{arch}'
+                )
             else:
                 parts.append(f"- `#[no_mangle] pub unsafe {conv} fn {name}(...)`{fwd}{arch}")
         parts.append("")
@@ -196,7 +210,9 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
 
     if resolve.imports:
         parts.append("### Available Imports")
-        parts.append("These types and functions are available. Use them in your `use` declarations:\n")
+        parts.append(
+            "These types and functions are available. Use them in your `use` declarations:\n"
+        )
         for module, group in sorted(resolve.imports.items()):
             names = sorted(s.name for s in group.symbols)
             path = _crate_path(module)
@@ -211,8 +227,14 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
     # Section 4: Gap functions
     if resolve.gap_functions:
         parts.append("### Gap Functions (macros/FORCEINLINE — not importable)")
-        parts.append("These C macros/inline functions must be expanded or replaced per the system prompt rules.")
-        parts.append("They are provided as real symbols via the shim file. Declare them in `extern \"system\" { ... }` blocks:\n")
+        parts.append(
+            "These C macros/inline functions must be expanded or replaced "
+            "per the system prompt rules."
+        )
+        parts.append(
+            "They are provided as real symbols via the shim file. Declare them in "
+            '`extern "system" { ... }` blocks:\n'
+        )
 
         shim_sigs = load_shim_signatures(subsystem)
 

@@ -27,22 +27,23 @@ bounded summary to stdout.
 
 from __future__ import annotations
 
+import concurrent.futures as _cf
 import hashlib
 import json
 import os
 import re
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+
+import anthropic
+from openai import OpenAI
 
 from . import config
-from .scanner import scan_file, CFunction
+from .scanner import CFunction, scan_file
 
-SEMDIFF_DIR = Path(
-    os.environ.get("RUSTCONV_SEMDIFF_DIR", str(config.TOOLS_DIR / ".semdiff"))
-)
+SEMDIFF_DIR = Path(os.environ.get("RUSTCONV_SEMDIFF_DIR", str(config.TOOLS_DIR / ".semdiff")))
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
@@ -50,6 +51,7 @@ SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 # --------------------------------------------------------------------------
 # Rust function extraction (brace-matching; no tree-sitter-rust dependency)
 # --------------------------------------------------------------------------
+
 
 @dataclass
 class RustFunction:
@@ -78,11 +80,15 @@ def extract_rust_functions(text: str) -> dict[str, RustFunction]:
         # Walk back over preceding attribute / doc-comment lines.
         probe = item_start
         while probe > 0:
-            prev_end = probe - 1                      # the '\n' before this line
+            prev_end = probe - 1  # the '\n' before this line
             prev_start = text.rfind("\n", 0, prev_end) + 1
             prev_line = text[prev_start:prev_end].strip()
-            if prev_line.startswith("#[") or prev_line.startswith("#!") \
-                    or prev_line.startswith("///") or prev_line.endswith("]"):
+            if (
+                prev_line.startswith("#[")
+                or prev_line.startswith("#!")
+                or prev_line.startswith("///")
+                or prev_line.endswith("]")
+            ):
                 probe = prev_start
             else:
                 break
@@ -131,7 +137,7 @@ def extract_rust_functions(text: str) -> dict[str, RustFunction]:
     return out
 
 
-def locate_rust_file(c_path: Path) -> Optional[Path]:
+def locate_rust_file(c_path: Path) -> Path | None:
     """Best-effort: find a .rs with the same stem under known crate src dirs."""
     stem = c_path.stem
     roots = [
@@ -143,8 +149,9 @@ def locate_rust_file(c_path: Path) -> Optional[Path]:
             continue
         hits.extend(root.rglob(f"{stem}.rs"))
     # Prefer paths that mention the c file's parent driver name.
-    hits = [h for h in hits if "/target/" not in h.as_posix()
-            and "old_translations" not in h.as_posix()]
+    hits = [
+        h for h in hits if "/target/" not in h.as_posix() and "old_translations" not in h.as_posix()
+    ]
     if not hits:
         return None
     # Heuristic: shortest path / one whose crate dir name overlaps the c parent.
@@ -228,12 +235,13 @@ Report behavioral divergences as strict JSON.
 # Model call (DeepSeek / Claude, JSON-mode)
 # --------------------------------------------------------------------------
 
+
 @dataclass
 class PairResult:
     name: str
     verdict: str = "error"
     divergences: list = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     cached: bool = False
@@ -261,7 +269,6 @@ def _resolve_model(model: str) -> tuple[str, str]:
 
 
 def _call_deepseek(model: str, system: str, user: str) -> tuple[str, int, int]:
-    from openai import OpenAI
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY not set (add it to .env)")
@@ -283,7 +290,6 @@ def _call_deepseek(model: str, system: str, user: str) -> tuple[str, int, int]:
 
 
 def _call_claude(model: str, system: str, user: str) -> tuple[str, int, int]:
-    import anthropic
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model=model,
@@ -292,11 +298,11 @@ def _call_claude(model: str, system: str, user: str) -> tuple[str, int, int]:
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+    text = "".join(b.text for b in msg.content if isinstance(b, anthropic.types.TextBlock))
     return text, msg.usage.input_tokens, msg.usage.output_tokens
 
 
-def _parse_json(text: str) -> Optional[dict]:
+def _parse_json(text: str) -> dict | None:
     """Extract the first JSON object from the response (tolerates ```json fences
     and leading prose)."""
     t = text.strip()
@@ -316,7 +322,7 @@ def _parse_json(text: str) -> Optional[dict]:
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(t[start:i + 1])
+                    return json.loads(t[start : i + 1])
                 except json.JSONDecodeError:
                     return None
     return None
@@ -325,6 +331,7 @@ def _parse_json(text: str) -> Optional[dict]:
 # --------------------------------------------------------------------------
 # Cache (per C-body+Rust-body+model hash)
 # --------------------------------------------------------------------------
+
 
 def _cache_key(name: str, c_src: str, rust_src: str, model: str) -> str:
     h = hashlib.sha256()
@@ -342,16 +349,20 @@ def _cache_dir() -> Path:
     return d
 
 
-def diff_pair(name: str, c_src: str, rust_src: str, model: str,
-              use_cache: bool = True) -> PairResult:
+def diff_pair(
+    name: str, c_src: str, rust_src: str, model: str, use_cache: bool = True
+) -> PairResult:
     key = _cache_key(name, c_src, rust_src, model)
     cache_path = _cache_dir() / f"{key}.json"
     if use_cache and cache_path.exists():
         try:
             data = json.loads(cache_path.read_text())
-            return PairResult(name=name, verdict=data.get("verdict", "error"),
-                              divergences=data.get("divergences", []),
-                              cached=True)
+            return PairResult(
+                name=name,
+                verdict=data.get("verdict", "error"),
+                divergences=data.get("divergences", []),
+                cached=True,
+            )
         except Exception:
             pass
 
@@ -362,19 +373,25 @@ def diff_pair(name: str, c_src: str, rust_src: str, model: str,
             text, it, ot = _call_deepseek(api_model, SYSTEM_PROMPT, user)
         else:
             text, it, ot = _call_claude(api_model, SYSTEM_PROMPT, user)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return PairResult(name=name, error=f"{type(e).__name__}: {e}")
 
     data = _parse_json(text)
     if data is None:
-        return PairResult(name=name, error="unparseable JSON response",
-                          input_tokens=it, output_tokens=ot)
-    res = PairResult(name=name, verdict=data.get("verdict", "diverges"),
-                     divergences=data.get("divergences", []),
-                     input_tokens=it, output_tokens=ot)
+        return PairResult(
+            name=name, error="unparseable JSON response", input_tokens=it, output_tokens=ot
+        )
+    res = PairResult(
+        name=name,
+        verdict=data.get("verdict", "diverges"),
+        divergences=data.get("divergences", []),
+        input_tokens=it,
+        output_tokens=ot,
+    )
     # Cache only well-formed results.
-    cache_path.write_text(json.dumps(
-        {"verdict": res.verdict, "divergences": res.divergences}, indent=2))
+    cache_path.write_text(
+        json.dumps({"verdict": res.verdict, "divergences": res.divergences}, indent=2)
+    )
     return res
 
 
@@ -382,10 +399,16 @@ def diff_pair(name: str, c_src: str, rust_src: str, model: str,
 # Driver
 # --------------------------------------------------------------------------
 
-def run(c_file: str, rust_file: Optional[str] = None,
-        model: str = "deepseek-reasoner", only: Optional[list[str]] = None,
-        max_fns: Optional[int] = None, use_cache: bool = True,
-        workers: int = 6) -> int:
+
+def run(
+    c_file: str,
+    rust_file: str | None = None,
+    model: str = "deepseek-reasoner",
+    only: list[str] | None = None,
+    max_fns: int | None = None,
+    use_cache: bool = True,
+    workers: int = 6,
+) -> int:
     c_path = Path(c_file).resolve()
     if not c_path.exists():
         print(f"[semdiff] C file not found: {c_path}", file=sys.stderr)
@@ -393,8 +416,10 @@ def run(c_file: str, rust_file: Optional[str] = None,
 
     rs_path = Path(rust_file).resolve() if rust_file else locate_rust_file(c_path)
     if rs_path is None or not rs_path.exists():
-        print(f"[semdiff] could not locate Rust file for {c_path.name} "
-              f"(pass --rust <path>)", file=sys.stderr)
+        print(
+            f"[semdiff] could not locate Rust file for {c_path.name} (pass --rust <path>)",
+            file=sys.stderr,
+        )
         return 2
 
     scan = scan_file(c_path)
@@ -409,15 +434,17 @@ def run(c_file: str, rust_file: Optional[str] = None,
     if max_fns:
         names = names[:max_fns]
 
-    print(f"[semdiff] C={c_path.name} ({len(c_funcs)} fns)  "
-          f"Rust={rs_path.name} ({len(rust_funcs)} fns)")
-    print(f"[semdiff] paired={len(names)}  c-only(no rust match)={len(missing_rust)}  "
-          f"model={model}  cache={'on' if use_cache else 'off'}")
+    print(
+        f"[semdiff] C={c_path.name} ({len(c_funcs)} fns)  "
+        f"Rust={rs_path.name} ({len(rust_funcs)} fns)"
+    )
+    print(
+        f"[semdiff] paired={len(names)}  c-only(no rust match)={len(missing_rust)}  "
+        f"model={model}  cache={'on' if use_cache else 'off'}"
+    )
     if not names:
         print("[semdiff] no paired functions to diff.")
         return 1
-
-    import concurrent.futures as _cf
 
     results: list[PairResult] = []
     tot_in = tot_out = 0
@@ -425,8 +452,9 @@ def run(c_file: str, rust_file: Optional[str] = None,
     total = len(names)
 
     def _work(name: str) -> PairResult:
-        return diff_pair(name, c_funcs[name].body_text,
-                         rust_funcs[name].body_text, model, use_cache)
+        return diff_pair(
+            name, c_funcs[name].body_text, rust_funcs[name].body_text, model, use_cache
+        )
 
     with _cf.ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         futs = {ex.submit(_work, n): n for n in names}
@@ -437,14 +465,14 @@ def run(c_file: str, rust_file: Optional[str] = None,
             tot_out += res.output_tokens
             done += 1
             ndiv = len(res.divergences)
-            tag = ("ERR" if res.error else
-                   "  ok" if res.verdict == "equivalent" else
-                   f"DIV×{ndiv}")
+            tag = "ERR" if res.error else "  ok" if res.verdict == "equivalent" else f"DIV×{ndiv}"
             flag = " [cache]" if res.cached else ""
             cost = config.cost_usd(_resolve_model(model)[1], tot_in, tot_out)
-            print(f"  [{done}/{total}] {tag:>7}  {res.name}{flag}"
-                  + (f"  ({res.error})" if res.error else "")
-                  + (f"   [running ${cost:.2f}]" if not res.cached else ""))
+            print(
+                f"  [{done}/{total}] {tag:>7}  {res.name}{flag}"
+                + (f"  ({res.error})" if res.error else "")
+                + (f"   [running ${cost:.2f}]" if not res.cached else "")
+            )
 
     # Rank findings.
     findings = []
@@ -456,14 +484,23 @@ def run(c_file: str, rust_file: Optional[str] = None,
     ts = time.strftime("%Y%m%d-%H%M%S")
     out_dir = SEMDIFF_DIR / f"{ts}-{c_path.stem}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "report.json").write_text(json.dumps({
-        "c_file": str(c_path), "rust_file": str(rs_path), "model": model,
-        "paired": len(names), "c_only": missing_rust,
-        "input_tokens": tot_in, "output_tokens": tot_out,
-        "cost_usd": config.cost_usd(_resolve_model(model)[1], tot_in, tot_out),
-        "results": [asdict(r) for r in results],
-        "findings_ranked": findings,
-    }, indent=2))
+    (out_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "c_file": str(c_path),
+                "rust_file": str(rs_path),
+                "model": model,
+                "paired": len(names),
+                "c_only": missing_rust,
+                "input_tokens": tot_in,
+                "output_tokens": tot_out,
+                "cost_usd": config.cost_usd(_resolve_model(model)[1], tot_in, tot_out),
+                "results": [asdict(r) for r in results],
+                "findings_ranked": findings,
+            },
+            indent=2,
+        )
+    )
 
     md = _render_md(c_path, rs_path, model, names, findings, results, missing_rust)
     (out_dir / "report.md").write_text(md)
@@ -473,12 +510,16 @@ def run(c_file: str, rust_file: Optional[str] = None,
     high = sum(1 for d in findings if d.get("severity") == "high")
     med = sum(1 for d in findings if d.get("severity") == "medium")
     low = sum(1 for d in findings if d.get("severity") == "low")
-    print(f"\n[semdiff] findings: {crit} critical, {high} high, {med} medium, {low} low"
-          f"  (in={tot_in} out={tot_out} tok, "
-          f"${config.cost_usd(_resolve_model(model)[1], tot_in, tot_out):.2f})")
+    print(
+        f"\n[semdiff] findings: {crit} critical, {high} high, {med} medium, {low} low"
+        f"  (in={tot_in} out={tot_out} tok, "
+        f"${config.cost_usd(_resolve_model(model)[1], tot_in, tot_out):.2f})"
+    )
     for d in findings[:12]:
-        print(f"  {d.get('severity','?'):>8}  {d['function']}: "
-              f"{d.get('category','')} — {d.get('impact','')[:90]}")
+        print(
+            f"  {d.get('severity', '?'):>8}  {d['function']}: "
+            f"{d.get('category', '')} — {d.get('impact', '')[:90]}"
+        )
     print(f"[semdiff] full report: {out_dir / 'report.md'}")
     return 0
 
@@ -499,10 +540,10 @@ def _render_md(c_path, rs_path, model, names, findings, results, missing_rust) -
         lines.append(f"## {sev.upper()} ({len(ds)})")
         lines.append("")
         for d in ds:
-            lines.append(f"### `{d['function']}` — {d.get('category','')}")
-            lines.append(f"- **C:** {d.get('c_behavior','')}")
-            lines.append(f"- **Rust:** {d.get('rust_behavior','')}")
-            lines.append(f"- **Impact:** {d.get('impact','')}")
+            lines.append(f"### `{d['function']}` — {d.get('category', '')}")
+            lines.append(f"- **C:** {d.get('c_behavior', '')}")
+            lines.append(f"- **Rust:** {d.get('rust_behavior', '')}")
+            lines.append(f"- **Impact:** {d.get('impact', '')}")
             lines.append("")
     errs = [r for r in results if r.error]
     if errs:

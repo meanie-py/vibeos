@@ -17,9 +17,8 @@ Usage:
 
 import re
 import sys
-from pathlib import Path
 from collections import defaultdict
-
+from pathlib import Path
 
 SRC_DIR = Path("sdk/lib/rust/ntoskrnl-rust/src")
 SKIP_DIRS = {"old_translations"}
@@ -49,7 +48,7 @@ def find_definitions(src_dir: Path) -> dict[str, str]:
         # Match: #[no_mangle] ... pub unsafe extern "..." fn FunctionName(
         # The #[no_mangle] might be several lines before the fn
         for match in re.finditer(
-            r'#\[no_mangle\]\s*(?:#\[.*?\]\s*)*'
+            r"#\[no_mangle\]\s*(?:#\[.*?\]\s*)*"
             r'pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+(\w+)',
             source,
             re.DOTALL,
@@ -59,21 +58,55 @@ def find_definitions(src_dir: Path) -> dict[str, str]:
             rel = rs_file.relative_to(src_dir)
             parts = list(rel.parts)
             # Remove .rs extension from last part
-            parts[-1] = parts[-1].replace('.rs', '')
+            parts[-1] = parts[-1].replace(".rs", "")
             # Handle mod.rs → parent module
-            if parts[-1] == 'mod':
+            if parts[-1] == "mod":
                 parts = parts[:-1]
             # Handle lib.rs → crate root
-            if parts[-1] == 'lib':
+            if parts[-1] == "lib":
                 parts = parts[:-1]
 
             # Handle Rust reserved keywords in module names
-            RESERVED = {"virtual", "type", "fn", "mod", "use", "self", "super",
-                        "crate", "as", "break", "const", "continue", "else",
-                        "enum", "extern", "false", "for", "if", "impl", "in",
-                        "let", "loop", "match", "move", "mut", "pub", "ref",
-                        "return", "static", "struct", "trait", "true", "unsafe",
-                        "where", "while", "async", "await", "dyn"}
+            RESERVED = {
+                "virtual",
+                "type",
+                "fn",
+                "mod",
+                "use",
+                "self",
+                "super",
+                "crate",
+                "as",
+                "break",
+                "const",
+                "continue",
+                "else",
+                "enum",
+                "extern",
+                "false",
+                "for",
+                "if",
+                "impl",
+                "in",
+                "let",
+                "loop",
+                "match",
+                "move",
+                "mut",
+                "pub",
+                "ref",
+                "return",
+                "static",
+                "struct",
+                "trait",
+                "true",
+                "unsafe",
+                "where",
+                "while",
+                "async",
+                "await",
+                "dyn",
+            }
             parts = [f"r#{p}" if p in RESERVED else p for p in parts]
 
             module_path = "crate::" + "::".join(parts) + "::" + fn_name
@@ -103,35 +136,39 @@ def find_extern_declarations(rs_file: Path) -> list[dict]:
         if extern_match:
             convention = extern_match.group(1)
             block_start = i
-            brace_count = line.count('{') - line.count('}')
+            brace_count = line.count("{") - line.count("}")
 
             j = i + 1
             while j < len(lines) and brace_count > 0:
-                brace_count += lines[j].count('{') - lines[j].count('}')
+                brace_count += lines[j].count("{") - lines[j].count("}")
 
                 fn_line = lines[j].strip()
                 # Match function declaration: fn FunctionName(...)
-                fn_match = re.match(r'(?:#\[link_name\s*=\s*"(\w+)"\]\s*)?(?:pub\s+)?fn\s+(\w+)\s*\(', fn_line)
+                fn_match = re.match(
+                    r'(?:#\[link_name\s*=\s*"(\w+)"\]\s*)?(?:pub\s+)?fn\s+(\w+)\s*\(', fn_line
+                )
                 if fn_match:
                     link_name = fn_match.group(1)  # might be None
                     fn_name = fn_match.group(2)
                     # Skip variadic functions (can't be imported via use)
-                    if '...' not in fn_line:
-                        declarations.append({
-                            'name': fn_name,
-                            'link_name': link_name,
-                            'line': j + 1,
-                            'block_start': block_start + 1,
-                            'block_end': None,  # filled in when block closes
-                            'convention': convention,
-                        })
+                    if "..." not in fn_line:
+                        declarations.append(
+                            {
+                                "name": fn_name,
+                                "link_name": link_name,
+                                "line": j + 1,
+                                "block_start": block_start + 1,
+                                "block_end": None,  # filled in when block closes
+                                "convention": convention,
+                            }
+                        )
 
                 j += 1
 
             # Set block_end for all declarations in this block
             for d in declarations:
-                if d['block_end'] is None:
-                    d['block_end'] = j + 1
+                if d["block_end"] is None:
+                    d["block_end"] = j + 1
 
         i += 1
 
@@ -146,22 +183,23 @@ def scan_file(rs_file: Path, definitions: dict[str, str]) -> list[dict]:
     for d in decls:
         # Check if this function has a Rust definition
         # Use link_name if present, otherwise function name
-        lookup_name = d['link_name'] or d['name']
+        lookup_name = d["link_name"] or d["name"]
         if lookup_name in definitions:
             # Also check the declared name (in case link_name maps to a different name)
-            d['import_path'] = definitions[lookup_name]
-            d['file'] = str(rs_file)
+            d["import_path"] = definitions[lookup_name]
+            d["file"] = str(rs_file)
             replaceable.append(d)
-        elif d['name'] in definitions:
-            d['import_path'] = definitions[d['name']]
-            d['file'] = str(rs_file)
+        elif d["name"] in definitions:
+            d["import_path"] = definitions[d["name"]]
+            d["file"] = str(rs_file)
             replaceable.append(d)
 
     return replaceable
 
 
-def scan_all(src_dir: Path, definitions: dict[str, str],
-             target_file: str = None) -> list[dict]:
+def scan_all(
+    src_dir: Path, definitions: dict[str, str], target_file: str | None = None
+) -> list[dict]:
     """Scan all files for replaceable extern declarations."""
     all_replaceable = []
 
@@ -187,14 +225,15 @@ def load_ddk_functions(src_dir: Path) -> set[str]:
     fns = set()
     if bindgen.exists():
         for line in bindgen.read_text().splitlines():
-            m = re.match(r'\s+pub fn (\w+)', line)
+            m = re.match(r"\s+pub fn (\w+)", line)
             if m:
                 fns.add(m.group(1))
     return fns
 
 
-def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
-                ddk_functions: set[str] = None) -> None:
+def apply_fixes(
+    src_dir: Path, by_file: dict[str, list[dict]], ddk_functions: set[str] | None = None
+) -> None:
     """Apply fixes: remove extern fn declarations, add use imports."""
     fixed_files = 0
     fixed_decls = 0
@@ -207,22 +246,22 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
         # Collect line numbers to remove (the fn declaration lines + parameters)
         lines_to_remove = set()
         for item in items:
-            fn_line_idx = item['line'] - 1  # 0-indexed
+            fn_line_idx = item["line"] - 1  # 0-indexed
             lines_to_remove.add(fn_line_idx)
 
             # Check if the line above is a #[link_name = ...] attribute
             if fn_line_idx > 0:
                 prev = lines[fn_line_idx - 1].strip()
-                if prev.startswith('#[link_name'):
+                if prev.startswith("#[link_name"):
                     lines_to_remove.add(fn_line_idx - 1)
 
             # If this is a multi-line fn declaration, remove continuation lines
             # until we find the closing `;` or `-> ... ;`
-            if ';' not in lines[fn_line_idx]:
+            if ";" not in lines[fn_line_idx]:
                 j = fn_line_idx + 1
                 while j < len(lines):
                     lines_to_remove.add(j)
-                    if ';' in lines[j]:
+                    if ";" in lines[j]:
                         break
                     j += 1
 
@@ -232,13 +271,12 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
         # For internal-only functions, add use crate::... import.
         imports = set()
         for item in items:
-            fn_name = item['name']
+            fn_name = item["name"]
 
             # Check if this function exists in ddk (bindgen) AND the file
             # has use ntkrnl_sys::ddk::*
             has_ddk_wildcard = any(
-                'ntkrnl_sys::ddk::*' in line or 'ddk::*' in line
-                for line in lines
+                "ntkrnl_sys::ddk::*" in line or "ddk::*" in line for line in lines
             )
             in_ddk = fn_name in ddk_functions if ddk_functions else False
 
@@ -247,10 +285,17 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
                 continue
 
             # Skip arch-specific modules not available on all targets
-            import_path = item['import_path']
+            import_path = item["import_path"]
             skip = False
-            for mod_name in ['kd64', 'ke::amd64', 'ke::arm64', 'ke::i386',
-                             'amd64::', 'arm64::', 'i386::']:
+            for mod_name in [
+                "kd64",
+                "ke::amd64",
+                "ke::arm64",
+                "ke::i386",
+                "amd64::",
+                "arm64::",
+                "i386::",
+            ]:
                 if mod_name in import_path:
                     # Would need cfg guard — skip for now
                     skip = True
@@ -258,8 +303,8 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
             if skip:
                 continue
 
-            if item['link_name'] and item['link_name'] != item['name']:
-                real_path = item['import_path']
+            if item["link_name"] and item["link_name"] != item["name"]:
+                real_path = item["import_path"]
                 imports.add(f"use {real_path} as {item['name']};")
             else:
                 imports.add(f"use {import_path};")
@@ -282,13 +327,13 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
             if extern_match:
                 # Look ahead for closing brace (possibly with blank lines)
                 j = i + 1
-                while j < len(new_lines) and new_lines[j].strip() == '':
+                while j < len(new_lines) and new_lines[j].strip() == "":
                     j += 1
-                if j < len(new_lines) and new_lines[j].strip() == '}':
+                if j < len(new_lines) and new_lines[j].strip() == "}":
                     # Empty extern block — skip it entirely
                     i = j + 1
                     # Also skip trailing blank line if present
-                    if i < len(new_lines) and new_lines[i].strip() == '':
+                    if i < len(new_lines) and new_lines[i].strip() == "":
                         i += 1
                     continue
             cleaned.append(new_lines[i])
@@ -300,23 +345,23 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
         in_use_block = False
         for i, line in enumerate(cleaned):
             stripped = line.strip()
-            if stripped.startswith('use ') or stripped.startswith('pub use '):
-                if '{' in stripped and '}' not in stripped:
+            if stripped.startswith("use ") or stripped.startswith("pub use "):
+                if "{" in stripped and "}" not in stripped:
                     # Multi-line use block — find the closing }
                     in_use_block = True
                 else:
                     insert_pos = i + 1
             elif in_use_block:
-                if '}' in stripped:
+                if "}" in stripped:
                     in_use_block = False
                     insert_pos = i + 1
-            elif stripped.startswith('extern crate'):
+            elif stripped.startswith("extern crate"):
                 insert_pos = i + 1
 
         # If no use statements found, insert after the first blank line
         if insert_pos == 0:
             for i, line in enumerate(cleaned):
-                if line.strip() == '' and i > 0:
+                if line.strip() == "" and i > 0:
                     insert_pos = i
                     break
 
@@ -325,7 +370,7 @@ def apply_fixes(src_dir: Path, by_file: dict[str, list[dict]],
             cleaned.insert(insert_pos, imp)
 
         # Write back
-        full_path.write_text('\n'.join(cleaned) + '\n')
+        full_path.write_text("\n".join(cleaned) + "\n")
         fixed_files += 1
         fixed_decls += len(items)
         print(f"  Fixed {filepath}: {len(items)} declarations → use imports")
@@ -359,24 +404,26 @@ def main():
     # Group by file
     by_file = defaultdict(list)
     for r in replaceable:
-        short = r['file'].replace(str(SRC_DIR) + "/", "")
+        short = r["file"].replace(str(SRC_DIR) + "/", "")
         by_file[short].append(r)
 
     if not replaceable:
         print("No replaceable extern declarations found.")
         return
 
-    print(f"\n{'Would fix' if fix_mode else 'Found'} {len(replaceable)} "
-          f"Rust-to-Rust extern declarations in {len(by_file)} files:\n")
+    print(
+        f"\n{'Would fix' if fix_mode else 'Found'} {len(replaceable)} "
+        f"Rust-to-Rust extern declarations in {len(by_file)} files:\n"
+    )
 
     for filepath, items in sorted(by_file.items()):
         print(f"  {filepath}:")
         for item in items:
-            conv = item['convention']
-            name = item['name']
-            link = f" (link_name={item['link_name']})" if item['link_name'] else ""
-            path = item['import_path']
-            print(f"    L{item['line']:4d} extern \"{conv}\" fn {name}{link}")
+            conv = item["convention"]
+            name = item["name"]
+            link = f" (link_name={item['link_name']})" if item["link_name"] else ""
+            path = item["import_path"]
+            print(f'    L{item["line"]:4d} extern "{conv}" fn {name}{link}')
             print(f"           → use {path};")
         print()
 

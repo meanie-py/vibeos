@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .batch_runner import TranslationResult
-from .config import OUTPUT_CRATE, Target, TARGETS, hal_cmake_for_c
+from .config import OUTPUT_CRATE, TARGETS, Target, hal_cmake_for_c
 from .postprocess import postprocess
 
 if TYPE_CHECKING:
@@ -58,7 +58,9 @@ def assemble_file(
         # Fixed flat/subdir routing (hal → src/x86; kdcom/bootvid → src).
         sub_dir = target.output_crate / target.src_subdir
     else:
-        sub_dir = (target.output_crate if target.name != "ntoskrnl" else output_dir) / "src" / subsystem
+        sub_dir = (
+            (target.output_crate if target.name != "ntoskrnl" else output_dir) / "src" / subsystem
+        )
 
     sub_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,6 +111,7 @@ def assemble_file(
 
 def _hal_register_mod(target: Target, stem: str) -> None:
     """Append `pub mod {stem};` to hal-rust/src/x86/mod.rs if absent."""
+    assert target.src_subdir is not None  # always set for the hal target (caller invariant)
     mod_path = target.output_crate / target.src_subdir / "mod.rs"
     if not mod_path.exists():
         return  # don't create — manual review wanted
@@ -121,10 +124,14 @@ def _hal_register_mod(target: Target, stem: str) -> None:
     lines = text.splitlines()
     insert_line = f"pub mod {stem};"
     # Find run of `pub mod X;` lines and insert in alphabetical order.
-    mod_lines = [(i, l) for i, l in enumerate(lines) if re.match(r"pub mod \w+;", l.strip())]
+    mod_lines = [
+        (i, line_text)
+        for i, line_text in enumerate(lines)
+        if re.match(r"pub mod \w+;", line_text.strip())
+    ]
     inserted = False
-    for i, l in mod_lines:
-        existing_name = l.strip().split()[2].rstrip(";")
+    for i, line_text in mod_lines:
+        existing_name = line_text.strip().split()[2].rstrip(";")
         if stem < existing_name:
             lines.insert(i, insert_line)
             inserted = True
@@ -163,14 +170,16 @@ def _hal_register_cmake_deps(target: Target, stem: str) -> None:
         return  # block not found — bail rather than corrupt CMakeLists
     # Collect existing entries inside the block, insert new one alphabetically.
     block_text = m.group(0)
-    entry_pat = re.compile(r"^            \$\{HAL_RUST_WORKSPACE_DIR\}/hal-rust/src/x86/(\w+)\.rs$", re.MULTILINE)
+    entry_pat = re.compile(
+        r"^            \$\{HAL_RUST_WORKSPACE_DIR\}/hal-rust/src/x86/(\w+)\.rs$", re.MULTILINE
+    )
     existing = [(em.group(1), em.group(0)) for em in entry_pat.finditer(block_text)]
     if any(name == stem for name, _ in existing):
         return
     existing.append((stem, new_line))
     existing.sort(key=lambda p: p[0])
     new_block = "\n".join(line for _, line in existing) + "\n"
-    new_text = text[:m.start()] + new_block + text[m.end():]
+    new_text = text[: m.start()] + new_block + text[m.end() :]
     target.cmake_deps_file.write_text(new_text)
 
 
@@ -178,7 +187,8 @@ def _hal_comment_out_c_in_cmake(c_source_path: Path, stem: str) -> None:
     """Comment out the .c entry in the matching subsystem .cmake.
 
     Pattern looks like:
-        generic/dma.c    →    # generic/dma.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/dma.rs)
+        generic/dma.c
+        → # generic/dma.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/dma.rs)
     """
     cmake_path = hal_cmake_for_c(c_source_path)
     if cmake_path is None or not cmake_path.exists():
@@ -187,10 +197,7 @@ def _hal_comment_out_c_in_cmake(c_source_path: Path, stem: str) -> None:
     # subsystem dir name relative to halx86/ (e.g. "generic" from hal/halx86/generic/dma.c)
     subsys = c_source_path.parent.name
     c_rel = f"{subsys}/{stem}.c"
-    replacement_comment = (
-        f"# {c_rel} — replaced by Rust "
-        f"(sdk/lib/rust/hal-rust/src/x86/{stem}.rs)"
-    )
+    replacement_comment = f"# {c_rel} — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/{stem}.rs)"
     # If already commented out by us, leave alone.
     if replacement_comment in text:
         return
@@ -202,15 +209,19 @@ def _hal_comment_out_c_in_cmake(c_source_path: Path, stem: str) -> None:
     )
     if not pat.search(text):
         return
+
     def _sub(m):
         indent = m.group(1)
         paren = m.group(2)
         return f"{indent}{replacement_comment}{paren}"
+
     text = pat.sub(_sub, text, count=1)
     cmake_path.write_text(text)
 
 
-def generate_mod_rs(subsystem: str, module_names: list[str], output_dir: Path = OUTPUT_CRATE) -> Path:
+def generate_mod_rs(
+    subsystem: str, module_names: list[str], output_dir: Path = OUTPUT_CRATE
+) -> Path:
     """Generate or update mod.rs for a subsystem, merging with existing modules."""
     sub_dir = output_dir / "src" / subsystem
     sub_dir.mkdir(parents=True, exist_ok=True)
@@ -220,9 +231,8 @@ def generate_mod_rs(subsystem: str, module_names: list[str], output_dir: Path = 
     # Parse existing modules from mod.rs if it exists
     existing_modules = set()
     if mod_path.exists():
-        import re
         for line in mod_path.read_text().splitlines():
-            m = re.match(r'pub mod (\w+);', line)
+            m = re.match(r"pub mod (\w+);", line)
             if m:
                 existing_modules.add(m.group(1))
 
@@ -251,11 +261,10 @@ def generate_lib_rs(subsystems: list[str], output_dir: Path = OUTPUT_CRATE) -> P
 
     # If lib.rs exists, parse existing subsystem modules and preserve content
     if lib_path.exists():
-        import re
         existing_text = lib_path.read_text()
         existing_subs = set()
         for line in existing_text.splitlines():
-            m = re.match(r'pub mod (\w+);', line)
+            m = re.match(r"pub mod (\w+);", line)
             if m:
                 existing_subs.add(m.group(1))
 
@@ -265,18 +274,18 @@ def generate_lib_rs(subsystems: list[str], output_dir: Path = OUTPUT_CRATE) -> P
         # Remove old pub mod lines, then append merged list
         new_lines = []
         for line in existing_text.splitlines():
-            if re.match(r'pub mod \w+;', line):
+            if re.match(r"pub mod \w+;", line):
                 continue
             new_lines.append(line)
 
         # Remove trailing blank lines
-        while new_lines and new_lines[-1] == '':
+        while new_lines and new_lines[-1] == "":
             new_lines.pop()
-        new_lines.append('')
+        new_lines.append("")
 
         for sub in all_subs:
             new_lines.append(f"pub mod {sub};")
-        new_lines.append('')
+        new_lines.append("")
 
         lib_path.write_text("\n".join(new_lines))
     else:

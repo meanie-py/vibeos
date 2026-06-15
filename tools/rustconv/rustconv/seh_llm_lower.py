@@ -32,15 +32,17 @@ CLI: `python -m rustconv seh-llm-lower [--apply] [--model M]
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import REACTOS_ROOT, TOOLS_DIR
-from .seh_rewrite import _find_seh_spans, RE_TRY, RE_INCLUDE_W32K
+from .batch_runner import submit_single
 from .callout_annotate import _mask_literals
+from .config import REACTOS_ROOT, TOOLS_DIR
+from .seh_rewrite import RE_INCLUDE_W32K, RE_TRY, _find_seh_spans
 
 LEDGER = REACTOS_ROOT / "win32ss/win32k_pass1_manual_followup.json"
 CACHE = TOOLS_DIR / "out" / "seh_llm_lower_cache.json"
@@ -128,8 +130,8 @@ Return the WHOLE function, every line, lowered, in one ```c block.
 class Unit:
     file: Path
     func: str
-    start: int            # char offset of function start in file text
-    end: int              # char offset just past function close `}`
+    start: int  # char offset of function start in file text
+    end: int  # char offset just past function close `}`
     reasons: list[str] = field(default_factory=list)
     span_lines: list[int] = field(default_factory=list)
 
@@ -259,8 +261,7 @@ def _extract_c(resp: str) -> str | None:
     seen = False
     for ln in lines:
         st = ln.strip()
-        if not infence and (st.startswith("```c") or st == "```C"
-                            or st.startswith("```cpp")):
+        if not infence and (st.startswith("```c") or st == "```C" or st.startswith("```cpp")):
             infence = True
             seen = True
             continue
@@ -278,9 +279,19 @@ def _balanced(src: str) -> bool:
     return m.count("{") == m.count("}") and m.count("(") == m.count(")")
 
 
-_STUB_MARKERS = ("/* ... */", "/*...*/", "// ...", "TODO", "FIXME",
-                 "unimplemented", "UNIMPLEMENTED", "<rest of",
-                 "remaining code", "rest of the function", "elided")
+_STUB_MARKERS = (
+    "/* ... */",
+    "/*...*/",
+    "// ...",
+    "TODO",
+    "FIXME",
+    "unimplemented",
+    "UNIMPLEMENTED",
+    "<rest of",
+    "remaining code",
+    "rest of the function",
+    "elided",
+)
 
 
 def validate(orig: str, new: str, unit: Unit) -> str | None:
@@ -300,20 +311,30 @@ def validate(orig: str, new: str, unit: Unit) -> str | None:
     # token-superset: every identifier used in the ORIGINAL (minus the
     # SEH macros) must still appear in the rewrite (catches dropped
     # calls / silently stubbed bodies).
-    SEH = {"_SEH2_TRY", "_SEH2_EXCEPT", "_SEH2_FINALLY", "_SEH2_END",
-           "_SEH2_LEAVE", "_SEH2_YIELD", "_SEH2_GetExceptionCode",
-           "_SEH2_GetExceptionInformation", "ProbeForRead",
-           "ProbeForWrite", "EXCEPTION_EXECUTE_HANDLER"}
-    ids = lambda s: set(re.findall(r"\b[A-Za-z_]\w+\b",
-                                   _mask_literals(s)))
+    SEH = {
+        "_SEH2_TRY",
+        "_SEH2_EXCEPT",
+        "_SEH2_FINALLY",
+        "_SEH2_END",
+        "_SEH2_LEAVE",
+        "_SEH2_YIELD",
+        "_SEH2_GetExceptionCode",
+        "_SEH2_GetExceptionInformation",
+        "ProbeForRead",
+        "ProbeForWrite",
+        "EXCEPTION_EXECUTE_HANDLER",
+    }
+
+    def ids(s: str) -> set[str]:
+        return set(re.findall(r"\b[A-Za-z_]\w+\b", _mask_literals(s)))
+
     missing = (ids(orig) - SEH) - ids(new)
     # allow typed-probe expansion (ProbeForReadUlong family) to vanish
     missing = {m for m in missing if not m.startswith("ProbeFor")}
     if missing:
         return f"dropped identifiers: {sorted(missing)[:8]}"
     # the targeted SEH must be gone (we only flag if NOTHING was lowered)
-    if RE_TRY.search(_mask_literals(new)) and not RE_TRY.search(
-            _mask_literals(orig)):
+    if RE_TRY.search(_mask_literals(new)) and not RE_TRY.search(_mask_literals(orig)):
         return "introduced _SEH2_TRY"
     return None
 
@@ -326,11 +347,9 @@ class Outcome:
     diff: str = ""
 
 
-def run(apply: bool = False, model: str = "", only: str | None = None,
-        units: list[Unit] | None = None) -> list[Outcome]:
-    import difflib
-    from .batch_runner import submit_single
-
+def run(
+    apply: bool = False, model: str = "", only: str | None = None, units: list[Unit] | None = None
+) -> list[Outcome]:
     units = units if units is not None else load_units(only)
     cache = _load_cache()
     outcomes: list[Outcome] = []
@@ -343,7 +362,7 @@ def run(apply: bool = False, model: str = "", only: str | None = None,
         text = path.read_text(errors="replace")
         edits: list[tuple[int, int, str]] = []
         for u in us:
-            orig = text[u.start:u.end]
+            orig = text[u.start : u.end]
             rel = str(path.relative_to(REACTOS_ROOT / "win32ss"))
             ck = _ckey(rel, u.func, orig)
             resp = cache.get(ck)
@@ -357,11 +376,9 @@ def run(apply: bool = False, model: str = "", only: str | None = None,
                     f"the WHOLE function in one ```c block.\n\n"
                     f"```c\n{orig}\n```\n"
                 )
-                r = submit_single(prompt, model=model,
-                                  system_prompt=SYSTEM_PROMPT)
+                r = submit_single(prompt, model=model, system_prompt=SYSTEM_PROMPT)
                 if not r.success:
-                    outcomes.append(Outcome(u, False,
-                                            f"API error: {r.error}"))
+                    outcomes.append(Outcome(u, False, f"API error: {r.error}"))
                     continue
                 resp = r.rust_code
                 cache[ck] = resp
@@ -374,9 +391,14 @@ def run(apply: bool = False, model: str = "", only: str | None = None,
             if why:
                 outcomes.append(Outcome(u, False, f"rejected: {why}"))
                 continue
-            diff = "".join(difflib.unified_diff(
-                orig.splitlines(True), new.splitlines(True),
-                f"a/{rel}:{u.func}", f"b/{rel}:{u.func}"))
+            diff = "".join(
+                difflib.unified_diff(
+                    orig.splitlines(True),
+                    new.splitlines(True),
+                    f"a/{rel}:{u.func}",
+                    f"b/{rel}:{u.func}",
+                )
+            )
             edits.append((u.start, u.end, new))
             outcomes.append(Outcome(u, True, "ok", diff))
 
@@ -387,8 +409,7 @@ def run(apply: bool = False, model: str = "", only: str | None = None,
             if "safe_user_io.h" not in text and "SafeProbeFor" in text:
                 m = RE_INCLUDE_W32K.search(text)
                 if m:
-                    text = (text[:m.end()] + "\n#include <safe_user_io.h>"
-                            + text[m.end():])
+                    text = text[: m.end()] + "\n#include <safe_user_io.h>" + text[m.end() :]
             path.write_text(text)
 
     return outcomes
@@ -397,13 +418,14 @@ def run(apply: bool = False, model: str = "", only: str | None = None,
 def print_report(outcomes: list[Outcome], apply: bool) -> int:
     ok = [o for o in outcomes if o.applied]
     bad = [o for o in outcomes if not o.applied]
-    print(f"\n{'='*64}")
-    print(f"Pass 1b LLM probe-lowering — {len(ok)} ready, "
-          f"{len(bad)} held back  ({'APPLIED' if apply else 'DRY-RUN'})")
-    print(f"{'='*64}")
+    print(f"\n{'=' * 64}")
+    print(
+        f"Pass 1b LLM probe-lowering — {len(ok)} ready, "
+        f"{len(bad)} held back  ({'APPLIED' if apply else 'DRY-RUN'})"
+    )
+    print(f"{'=' * 64}")
     for o in ok:
-        print(f"  ✓ {o.unit.file.name}:{o.unit.func} "
-              f"(lines {sorted(set(o.unit.span_lines))})")
+        print(f"  ✓ {o.unit.file.name}:{o.unit.func} (lines {sorted(set(o.unit.span_lines))})")
     if bad:
         print("\n  held back (left in ledger, never applied):")
         for o in bad:
@@ -417,21 +439,28 @@ def run_oracle() -> int:
     if not units:
         print("oracle: ledger produced no units  [MISMATCH]")
         return 1
-    print(f"oracle: ledger → {len(units)} dedup'd functions across "
-          f"{len({u.file for u in units})} files")
+    print(
+        f"oracle: ledger → {len(units)} dedup'd functions across "
+        f"{len({u.file for u in units})} files"
+    )
     ok = True
     # every unit must resolve a real function span containing its spans
     for u in units:
         txt = u.file.read_text(errors="replace")
-        seg = txt[u.start:u.end]
-        if not (u.func != "?" and seg.startswith(tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"))
-                and seg.rstrip().endswith("}") and u.func in seg):
+        seg = txt[u.start : u.end]
+        if not (
+            u.func != "?"
+            and seg.startswith(tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"))
+            and seg.rstrip().endswith("}")
+            and u.func in seg
+        ):
             print(f"  bad span: {u.file.name}:{u.func}  [MISMATCH]")
             ok = False
             break
     else:
-        print(f"  all {len(units)} units have a well-formed function span "
-              f"containing their name  [OK]")
+        print(
+            f"  all {len(units)} units have a well-formed function span containing their name  [OK]"
+        )
     total = sum(len(u.reasons) for u in units)
     if total == 64:
         print("  ledger site coverage: 64/64  [OK]")

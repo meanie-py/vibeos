@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Root paths
 REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 
@@ -13,11 +15,7 @@ REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 # here so `python -m rustconv ...` Just Works from a clean shell. Existing
 # environment values win (override=False) so an explicit export still takes
 # precedence.
-try:
-    from dotenv import load_dotenv as _load_dotenv
-    _load_dotenv(REACTOS_ROOT / ".env", override=False)
-except Exception:
-    pass
+load_dotenv(REACTOS_ROOT / ".env", override=False)
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
 # On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
@@ -163,15 +161,22 @@ WINLOGON_BINDGEN_FILES = {
 }
 
 HAND_WRITTEN_MODULES = [
-    "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
-    "rtl.rs", "interlocked.rs",
+    "base.rs",
+    "ke.rs",
+    "mm.rs",
+    "ex.rs",
+    "ps.rs",
+    "ob.rs",
+    "rtl.rs",
+    "interlocked.rs",
     # constants.rs (~685 STATUS_*/OBJ_*/ACCESS_* consts) and driver_ddk.rs
     # (plain-driver DDK surface: DO_*/IRP_MJ_*/FILE_DEVICE_*/RTL_REGISTRY_* +
     # IoCompleteRequest/IoCallDriver/DbgPrint wrappers) were previously
     # invisible to the catalog, so the resolver flagged every driver DDK
     # symbol as unresolved and each translated .rs needed a hand-written shim.
     # Scanning them here lets resolve() route those symbols to the right glob.
-    "constants.rs", "driver_ddk.rs",
+    "constants.rs",
+    "driver_ddk.rs",
 ]
 
 # ntoskrnl.spec
@@ -186,6 +191,7 @@ OUTPUT_CRATE = RUST_DIR / "ntoskrnl-rust"
 # bindgen scope, etc.  See docs/engineering/rustconv-hal-target.md.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Target:
     """Describes one C source root + corresponding Rust output crate.
@@ -194,15 +200,16 @@ class Target:
     hooks (auto-editing CMakeLists.txt, choosing src/x86 vs src/{subsystem},
     etc.).
     """
-    name: str                              # "ntoskrnl" or "hal"
-    source_dir: Path                       # NTOSKRNL_DIR or HAL_DIR
-    output_crate: Path                     # ntoskrnl-rust or hal-rust
-    bindgen_files: dict                    # arch → bindgen .rs (mandatory kernel bindings)
-    hal_bindgen_files: dict                # arch → hal_bindgen .rs (empty for ntoskrnl)
-    spec_file: Path | None                 # ntoskrnl.spec (None for HAL — no spec exports)
-    system_prompt: Path                    # templates/system_prompt.md or *_hal.md
-    src_subdir: Path | None                # "src/x86" for hal-rust, None for ntoskrnl
-    cmake_deps_file: Path | None           # hal/halx86/CMakeLists.txt (DEPENDS list to append)
+
+    name: str  # "ntoskrnl" or "hal"
+    source_dir: Path  # NTOSKRNL_DIR or HAL_DIR
+    output_crate: Path  # ntoskrnl-rust or hal-rust
+    bindgen_files: dict  # arch → bindgen .rs (mandatory kernel bindings)
+    hal_bindgen_files: dict  # arch → hal_bindgen .rs (empty for ntoskrnl)
+    spec_file: Path | None  # ntoskrnl.spec (None for HAL — no spec exports)
+    system_prompt: Path  # templates/system_prompt.md or *_hal.md
+    src_subdir: Path | None  # "src/x86" for hal-rust, None for ntoskrnl
+    cmake_deps_file: Path | None  # hal/halx86/CMakeLists.txt (DEPENDS list to append)
     cmake_source_files: list = field(default_factory=list)  # generic.cmake etc. to edit
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
     win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
@@ -420,25 +427,43 @@ TARGETS = {
     # LiveCD read-stack drivers (kernel-mode .sys on the ntkrnl-sys/driver_ddk
     # substrate, same shape as i8042prt): ISO9660 boot path cdrom→classpnp→cdfs.
     "classpnp": Target(
-        name="classpnp", source_dir=CLASSPNP_DIR,
+        name="classpnp",
+        source_dir=CLASSPNP_DIR,
         output_crate=RUST_DIR / "classpnp-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     "cdrom": Target(
-        name="cdrom", source_dir=CDROM_DIR,
+        name="cdrom",
+        source_dir=CDROM_DIR,
         output_crate=RUST_DIR / "cdrom-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     "cdfs": Target(
-        name="cdfs", source_dir=CDFS_DIR,
+        name="cdfs",
+        source_dir=CDFS_DIR,
         output_crate=RUST_DIR / "cdfs-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # pcix.sys — the full MS-architecture PCI bus driver (drivers/bus/pcix, 11K LOC,
     # arb/intrface/pci subdirs). NOT loaded at boot (pci.sys is the live PNP0A03
@@ -446,11 +471,17 @@ TARGETS = {
     # structs from gen_driver_types.sh substrate (crate::types); kernel/PnP types
     # from ntkrnl-sys ddk. Links arbiter (Rust) + pciclass.
     "pcix": Target(
-        name="pcix", source_dir=PCIX_DIR,
+        name="pcix",
+        source_dir=PCIX_DIR,
         output_crate=RUST_DIR / "pcix-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # disk.sys — the SCSI disk class driver (drivers/storage/class/disk, 12.6K
     # LOC: data/disk/diskwmi/geometry/pnp.c). WDM class driver built on classpnp
@@ -459,11 +490,17 @@ TARGETS = {
     # structs from gen_driver_types.sh substrate (crate::types); kernel/PnP/SCSI
     # types from ntkrnl-sys ddk.
     "disk": Target(
-        name="disk", source_dir=DISK_DIR,
+        name="disk",
+        source_dir=DISK_DIR,
         output_crate=RUST_DIR / "disk-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # partmgr.sys — the partition manager (drivers/storage/partmgr, ~2.9K LOC, WDM
     # kernelmodedriver). BOOT-loaded storage infra (drive-letter/partition enum),
@@ -473,11 +510,17 @@ TARGETS = {
     # ioevent / disk-geometry / volume types come from the same allowlisted driver
     # headers; kernel/PnP types from ntkrnl-sys ddk.
     "partmgr": Target(
-        name="partmgr", source_dir=PARTMGR_DIR,
+        name="partmgr",
+        source_dir=PARTMGR_DIR,
         output_crate=RUST_DIR / "partmgr-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # fs_rec.sys — the filesystem recognizer (drivers/filesystems/fs_rec, ~2.8K LOC,
     # 11 modular files: one sniffer per FS type + blockdev + fs_rec main). WDM
@@ -489,11 +532,17 @@ TARGETS = {
     # → gen_driver_types.sh substrate (crate::types). Kernel/FsRtl/Io types from
     # ntkrnl-sys ddk. Imports ntoskrnl+hal only.
     "fs_rec": Target(
-        name="fs_rec", source_dir=FS_REC_DIR,
+        name="fs_rec",
+        source_dir=FS_REC_DIR,
         output_crate=RUST_DIR / "fs_rec-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # mountmgr.sys — the mount manager (drivers/storage/mountmgr, 9.4K LOC, 7
     # files: database/device/mountmgr/notify/point/symlink/uniqueid). Boot-start
@@ -502,11 +551,17 @@ TARGETS = {
     # mntmgr.h (gen_driver_types substrate, crate::types); MOUNTMGR_*/MOUNTDEV_*
     # from the mountmgr/mountdev headers. Sibling of partmgr/disk.
     "mountmgr": Target(
-        name="mountmgr", source_dir=MOUNTMGR_DIR,
+        name="mountmgr",
+        source_dir=MOUNTMGR_DIR,
         output_crate=RUST_DIR / "mountmgr-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # pciidex.sys — the PCI IDE bus extension (drivers/storage/ide/pciidex, ~1.9K LOC,
     # 5 .c: fdo/pdo/pciidex/miniport/power). WDM kernelmodedriver + EXPORT driver
@@ -518,12 +573,17 @@ TARGETS = {
     # types.sh substrate (crate::types). The 4 exports must survive (spec2def stays in
     # the cohab CMake; Rust provides them #[no_mangle]).
     "pciidex": Target(
-        name="pciidex", source_dir=PCIIDEX_DIR,
+        name="pciidex",
+        source_dir=PCIIDEX_DIR,
         output_crate=RUST_DIR / "pciidex-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={},
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
         spec_file=PCIIDEX_DIR / "pciidex.spec",
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # scsiport.sys — the SCSI port driver (drivers/storage/port/scsiport, ~8.4K LOC,
     # 8 .c: fdo/ioctl/pdo/power/registry/scsi/scsiport/stubs; guid.c stays C = GUID data
@@ -536,12 +596,17 @@ TARGETS = {
     # gen_driver_types.sh substrate (crate::types). Links sptilib + PSEH_LIB. The ~45
     # exports must survive (spec2def stays in the cohab CMake; Rust provides #[no_mangle]).
     "scsiport": Target(
-        name="scsiport", source_dir=SCSIPORT_DIR,
+        name="scsiport",
+        source_dir=SCSIPORT_DIR,
         output_crate=RUST_DIR / "scsiport-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={},
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
         spec_file=SCSIPORT_DIR / "scsiport.spec",
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
@@ -740,7 +805,6 @@ TARGETS = {
     # anchor (mirrors ntdll). Assembler namespaces by C parent dir
     # (client/, winnls/string/, wine/) → kernel32-rust/src/<dir>/<stem>.rs.
     # proc.c + NLS/string family (locale/lcformat/nls/casemap/collation) done.
-
     "kernel32": Target(
         name="kernel32",
         source_dir=KERNEL32_DIR,
@@ -853,9 +917,12 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["freeldr"]
     # SMSS→CSRSS user-mode spine. winsrv (under /win32ss/) is NOT here
     # — it stays win32k until the Phase-5 ownership gate is resolved.
-    if ("/base/system/smss" in posix or "/subsystems/csr" in posix
-            or "/subsystems/win/basesrv" in posix
-            or "/sdk/lib/smlib" in posix):
+    if (
+        "/base/system/smss" in posix
+        or "/subsystems/csr" in posix
+        or "/subsystems/win/basesrv" in posix
+        or "/sdk/lib/smlib" in posix
+    ):
         return TARGETS["smss-csrss"]
     # userinit.exe (post-login shell launcher). Own userinit-rust crate on the
     # winsrv-sys substrate. Keep before any generic base/system fallthrough.
@@ -945,7 +1012,7 @@ def _dll_crate_from_path(posix: str):
     parts = posix.split("/")
     if "dll" not in parts:
         return None
-    rest = parts[parts.index("dll") + 1:]
+    rest = parts[parts.index("dll") + 1 :]
     if not rest:
         return None
     if rest[0] == "win32" and len(rest) >= 2:
@@ -1018,11 +1085,13 @@ def hal_cmake_for_c(c_path: Path) -> Path | None:
         p = p.parent
     return None
 
+
 # Backend selection: "claude" (default if ANTHROPIC_API_KEY set), "gemini"
 def get_backend() -> str:
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "claude"
     return "gemini"
+
 
 # Claude models
 CLAUDE_MODEL_SONNET = "claude-sonnet-4-5-20250929"
@@ -1063,24 +1132,24 @@ DEFAULT_MODELS = {
 # estimate turned into $15. Keep these current via the claude-api skill.
 # Verified 2026-06-06 against the claude-api skill model table.
 MODEL_PRICING = {
-    "claude-opus-4-8":             (5.00, 25.00),
-    "claude-opus-4-7":             (5.00, 25.00),
-    "claude-opus-4-6":             (5.00, 25.00),
-    "claude-opus-4-5-20251101":    (5.00, 25.00),
-    "claude-sonnet-4-6":           (3.00, 15.00),
-    "claude-sonnet-4-5-20250929":  (3.00, 15.00),
-    "claude-haiku-4-5-20251001":   (1.00,  5.00),
-    "gemini-2.5-pro":              (1.25, 10.00),
-    "gemini-2.5-flash":            (0.30,  2.50),
+    "claude-opus-4-8": (5.00, 25.00),
+    "claude-opus-4-7": (5.00, 25.00),
+    "claude-opus-4-6": (5.00, 25.00),
+    "claude-opus-4-5-20251101": (5.00, 25.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-sonnet-4-5-20250929": (3.00, 15.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-2.5-flash": (0.30, 2.50),
     # DeepSeek list prices (USD/1M, cache-miss). Server-side context caching
     # makes repeated prefixes far cheaper (cache-hit input ~$0.07/1M), so these
     # are a ceiling for the per-function re-send cost, not the typical bill.
-    "deepseek-chat":               (0.27,  1.10),
-    "deepseek-reasoner":           (0.55,  2.19),
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek-reasoner": (0.55, 2.19),
     # v4 tier (cache-miss list prices; server-side caching makes the real bill far
     # lower on agentic re-sends — ~99% cache hit). Approximate; dashboard is truth.
-    "deepseek-v4-pro":             (0.28,  1.10),
-    "deepseek-v4-flash":           (0.14,  0.55),
+    "deepseek-v4-pro": (0.28, 1.10),
+    "deepseek-v4-flash": (0.14, 0.55),
 }
 # Anthropic Message Batches API runs at 50% of the list prices above. The
 # synchronous `translate`/`submit` path does NOT get this discount.
@@ -1094,12 +1163,12 @@ def model_pricing(model: str) -> tuple[float, float]:
     return MODEL_PRICING.get(model, MODEL_PRICING["claude-opus-4-8"])
 
 
-def cost_usd(model: str, input_tokens: int, output_tokens: int,
-             batch: bool = False) -> float:
+def cost_usd(model: str, input_tokens: int, output_tokens: int, batch: bool = False) -> float:
     """USD cost for a single call. batch=True applies the 50% batch discount."""
     pin, pout = model_pricing(model)
     cost = input_tokens * pin / 1_000_000 + output_tokens * pout / 1_000_000
     return cost * (BATCH_DISCOUNT if batch else 1.0)
+
 
 # Arch mappings
 ARCH_MAP = {
