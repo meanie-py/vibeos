@@ -198,7 +198,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const BugCheckFileId: u32 = 0x0D; // CDFS_BUG_CHECK_CACHESUP
+pub const BugCheckFileId: u32 = 0x00030000; // CDFS_BUG_CHECK_CACHESUP
 
 const CDFS_NTC_FCB_DATA: u32 = 0x0305; // nodetype.h
 #[no_mangle]
