@@ -169,10 +169,16 @@ case "$ARCH" in
         [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE — apt install ovmf"
         OVMF_VARS="$RUN_DIR/ovmf_vars.fd"
         cp /usr/share/OVMF/OVMF_VARS_4M.fd "$OVMF_VARS"
+        # Scratch virtio-blk disk — mirror vm.py/smoke so the storage stack sees the
+        # same device set (without it, a storage driver faults → deterministic 0x50).
+        SCRATCH_IMG="$RUN_DIR/scratch.img"
+        dd if=/dev/zero of="$SCRATCH_IMG" bs=1M count=64 2>/dev/null
         QEMU_CMD=(
             qemu-system-x86_64 -M pc -accel kvm -cpu host -m 512M
             -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
             -drive "if=pflash,format=raw,file=$OVMF_VARS"
+            -drive "if=none,id=scratch,format=raw,file=$SCRATCH_IMG"
+            -device virtio-blk-pci,drive=scratch
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
             -device ide-cd,drive=cd0,bootindex=0
             -vga std -no-reboot

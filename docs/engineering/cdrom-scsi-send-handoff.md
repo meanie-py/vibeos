@@ -233,3 +233,89 @@ The fix belongs in the IDE/ATAPI port path (uniata / scsiport-rust / atapi-rust)
 3. Verify i386 + arm64 build/boot of the async path.
 
 **State:** all uncommitted on `cdrom-port`. Async read path active; perf instrumentation + normal cdrom traces live.
+
+---
+
+## UPDATE 2026-06-14 — the ~6.4s stall is SCSIPORT PIO-fallback, NOT cdrom (uniata hypothesis DISPROVEN)
+
+The "bank until uniata" conclusion above was a **red herring**. Reinstrumented the read path end-to-end
+(probes in `scratch.rs`/`cdrom.rs`, all tagged `TEMP task#79`, uncommitted on `cdrom-port`):
+
+**What the 6.4s actually is — measured, not guessed:**
+- `[IDLE]` (complete→next-queue-entry) = **38× ~6.37s**; `[SGAP]` (cdrom send→send) = **38× ~6.4s contiguous**.
+  So the 6.4s is a single contiguous window where **cdrom issues no SRB at all** — it is *idle*, waiting on
+  the upper layer, NOT stuck in a read.
+- The reads themselves are **fast**: `[IOLAT]` (send→complete) ≤250ms, mostly <100ms; `asynccompl == reads`
+  (every read completes via `ScratchBuffer_ReadWriteCompletionRoutine`). dtl = 16KB (`0x4000`).
+- **NOT a retry** (`[RTYF]`=0 — no sense-error/retry-timer path taken), **NOT a missed completion**
+  (send→complete fast), **NOT a blocking cdrom IOCTL** (`[SYNCQ]`/`[CHKVER]`/`[CDBEX]`=0).
+- Phase: the stalls bracket **boot driver loads** (`[SYSDRV] loading #N`), reads advancing through different
+  `.sys`/file offsets (never repeating → not a retry).
+
+**Root divergence found:** serial prints **`"DMA is not supported yet"`** (from `scsiport-rust/scsiport.rs:1102`)
+**2× on amd64, 0× on i386**. Condition: `AdapterObject == NULL && (PortConfig.DmaChannel set || .Master != 0)`.
+So on amd64 the ATAPI adapter advertises bus-master DMA but scsiport never obtained a DMA `AdapterObject`
+→ falls back to **MapBuffers/PIO**; i386 doesn't hit this. **amd64 storage = PIO, i386 = DMA.** That is the
+arch-specific boot-speed divergence — and it lives in **scsiport-rust / HAL `IoGetDmaAdapter`**, not cdrom,
+not uniata. (uniata C→Rust swap tested: stalls unchanged.)
+
+**GDB sampling (2026-06-14, smoke-equivalent config):** during the 6.4s window the CPU PC is pinned at
+`0xfffff80000202f86` (no function symbol = the idle/HLT loop), 100% of samples. So the consumer thread is
+**BLOCKED (CPU idle), not spinning** → the 6.4s is a genuine blocking wait (lost-wakeup or a ~6.4s-timeout
+wait) in the driver-image-load path, **above** the storage stack. This *demotes* the PIO/DMA finding to a
+secondary concern (PIO only affects the <100ms transfer time, not the 6.4s idle).
+- **Harness fix (kept, uncommitted):** `qemu/start.sh` amd64 `--gdb` deterministically BUGCHECK-0x50'd at
+  driver-load because it lacked the **virtio-blk scratch disk** that `vm.py`/smoke provides (a storage driver
+  faults on the missing device). Added the scratch disk to start.sh's amd64 block → boot now progresses under
+  gdb. Worth committing to the toolkit.
+- **Blocked-thread stack still needed:** `inspect.sh list-threads` requires Rust DWARF (release build has
+  none → "DWARF struct offsets unavailable", and `find-kbase` mis-detects kbase). **Next: rebuild Rust with
+  `[profile.release] debug = true` (or `RUSTFLAGS=-Cdebuginfo=2`), then `list-threads` + `bt` the blocked
+  System-process loader thread during a stall** → that backtrace names the exact wait object/timeout = root.
+
+## UPDATE 2026-06-15 — ROOT CAUSE FOUND: `MmMakeSegmentResident` collided-fault wait (ntoskrnl Mm, not cdrom/scsiport)
+
+GDB backtrace (after fixing the toolkit — see below) at the stall:
+```
+#0 KeDelayExecutionThread
+#1 ntoskrnl_rust::mm::section::MmMakeSegmentResident      <-- sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs
+#2 (caller frames)
+```
+The 6.4s is **`MmMakeSegmentResident`'s collided-fault wait loop** (`section.rs:911`):
+```rust
+while MM_IS_WAIT_PTE(Entry) {                 // page is being paged-in by another thread
+    MmUnlockSectionSegment(...);
+    KeDelayExecutionThread(0, 0, &TinyTime);  // TinyTime = -1 (100ns) — interval is CORRECT
+    MmLockSectionSegment(...);
+    Entry = MmGetPageEntrySectionSegment(...);
+}
+```
+A thread sets `MM_WAIT_ENTRY` on the pages it's about to `IoPageRead` (line 925), reads the chunk
+(`IoPageRead`, line 1003, synchronous), then writes the real PTEs. A *second* thread that faults the same
+page spins in the loop above until the PTE clears. On amd64 that clear takes ~6.4s per collision; the same
+Rust runs on i386 with **zero** such stalls. So the page-in side is slow/stuck on amd64 (or the PTE-clear
+isn't visible to the spinner). **This is an ntoskrnl-rust Mm-section bug, not cdrom, scsiport, or uniata**
+(cdrom reads round-trip <100ms; storage is innocent — the earlier PIO/DMA finding is a separate, secondary
+scsiport issue).
+
+**Next (ntoskrnl Mm lane):** find why the page-in/PTE-clear is slow on amd64 — likely candidates: the
+`IoPageRead` page-in completion path, a leaked/late `MM_WAIT_ENTRY` clear in an error/CacheFriendly branch,
+or a clock-tick-granularity interaction with the collided-fault spin. Get the *other* thread's stack
+(the one holding the WAIT_PTE) once `list-threads` works — it needs bindgen-DWO struct offsets (still
+missing; `find-kbase` itself is now fixed). Break on `IoPageRead` + time it vs `KeWaitForSingleObject`.
+
+### Toolkit fixes made to get here (both kept, uncommitted, commit-worthy)
+1. **`qemu/gdb-helpers/find-kbase.py` — PE32+ bug.** It parsed the export DataDirectory at optional-header
+   `+0x60` (PE32), but amd64/arm64 ntoskrnl is **PE32+** (export dir at `+0x70`). So on amd64 it read a
+   garbage export name, never matched "ntoskrnl", and relocated symbols to the wrong PE → every `bt`/break
+   resolved to junk. Fixed by reading the Magic (`0x20B`=PE32+) and using `+0x70`. **This was why amd64/arm64
+   kernel GDB never worked** (i386/PE32 was fine). Now `bt`/`run-until --break`/symbolication all work on amd64.
+2. **`qemu/start.sh` amd64 `--gdb`** lacked the virtio-blk scratch disk that `vm.py`/smoke provides → a storage
+   driver deterministically BUGCHECK-0x50'd at driver load. Added the scratch disk.
+
+**Still open (secondary, scsiport lane — not the boot-killer):** (a) why `AdapterObject` is NULL on amd64
+(HAL `HalGetAdapter`/`IoGetDmaAdapter` returning null, or scsiport not requesting it) — fixing that to enable
+DMA should restore boot speed; (b) the exact mechanism of the 6.4s *consumer-side* wait between read bursts
+(needs a GDB backtrace of the loader/Cc thread during a stall — `start.sh --gdb` currently bugchecks 0x50 at
+driver-load #3 under its config, so match smoke's QEMU config or break before the fault). i386 + arm64 are
+GREEN; the cdrom i386 ud2 is fixed+committed (`65e95bb`). This stall does not block the cdrom translation.
