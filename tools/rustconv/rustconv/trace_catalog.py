@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 # Project paths
@@ -21,17 +21,19 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Regex for: core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'X', ...)
 # Matches literal byte chars like b'@', b'1', b'\\' (escaped backslash)
 RE_TRACE_LITERAL = re.compile(
-    r'''core::arch::asm!\(\s*"out dx, al"\s*,\s*in\("dx"\)\s*0xe9u16\s*,\s*in\("al"\)\s*b'(\\?.)'.*\)'''
+    r"""core::arch::asm!\(\s*"out dx, al"\s*,\s*in\("dx"\)\s*0xe9u16\s*,\s*"""
+    r"""in\("al"\)\s*b'(\\?.)'.*\)"""
 )
 
 # Regex for: core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") <expr>, ...)
 # Matches computed expressions (hex dump data bytes)
 RE_TRACE_COMPUTED = re.compile(
-    r'''core::arch::asm!\(\s*"out dx, al"\s*,\s*in\("dx"\)\s*0xe9u16\s*,\s*in\("al"\)\s*(?!b')(.*?)\s*,\s*options'''
+    r"""core::arch::asm!\(\s*"out dx, al"\s*,\s*in\("dx"\)\s*0xe9u16\s*,\s*"""
+    r"""in\("al"\)\s*(?!b')(.*?)\s*,\s*options"""
 )
 
 # Regex for dbg(b'X') calls (used in KiVerifyCpuFeatures)
-RE_DBG_CALL = re.compile(r'''dbg\(b'(\\?.)'\)''')
+RE_DBG_CALL = re.compile(r"""dbg\(b'(\\?.)'\)""")
 
 # Regex for function declarations
 RE_FN = re.compile(r'(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)\s*\(')
@@ -118,27 +120,31 @@ def scan_file(path: Path, rel_prefix: str = "") -> list[dict]:
         if m:
             raw = m.group(1)
             ch = raw.replace("\\\\", "\\")  # unescape Rust \\
-            results.append({
-                "char": ch,
-                "function": current_fn,
-                "file": rel_path,
-                "line": i,
-                "is_literal": True,
-                "is_dbg": False,
-            })
+            results.append(
+                {
+                    "char": ch,
+                    "function": current_fn,
+                    "file": rel_path,
+                    "line": i,
+                    "is_literal": True,
+                    "is_dbg": False,
+                }
+            )
             continue
 
         # Check for computed trace (hex dump data)
         m = RE_TRACE_COMPUTED.search(line)
         if m:
-            results.append({
-                "char": None,  # computed — not a milestone
-                "function": current_fn,
-                "file": rel_path,
-                "line": i,
-                "is_literal": False,
-                "is_dbg": False,
-            })
+            results.append(
+                {
+                    "char": None,  # computed — not a milestone
+                    "function": current_fn,
+                    "file": rel_path,
+                    "line": i,
+                    "is_literal": False,
+                    "is_dbg": False,
+                }
+            )
             continue
 
         # Check for dbg(b'X') calls
@@ -146,14 +152,16 @@ def scan_file(path: Path, rel_prefix: str = "") -> list[dict]:
         if m:
             raw = m.group(1)
             ch = raw.replace("\\\\", "\\")
-            results.append({
-                "char": ch,
-                "function": current_fn,
-                "file": rel_path,
-                "line": i,
-                "is_literal": True,
-                "is_dbg": True,
-            })
+            results.append(
+                {
+                    "char": ch,
+                    "function": current_fn,
+                    "file": rel_path,
+                    "line": i,
+                    "is_literal": True,
+                    "is_dbg": True,
+                }
+            )
 
     return results
 
@@ -203,7 +211,8 @@ def build_catalog(arch: str = "i386") -> TraceCatalog:
 
     for fn_name, min_line, max_line in EXECUTION_SEGMENTS_I386:
         segment_traces = [
-            t for t in milestones
+            t
+            for t in milestones
             if t["function"] == fn_name
             and min_line <= t["line"] <= max_line
             and (t["function"], t["line"]) not in used
@@ -224,13 +233,15 @@ def build_catalog(arch: str = "i386") -> TraceCatalog:
 
     for t in ordered:
         desc = _describe_trace(t)
-        catalog.trace_points.append(TracePoint(
-            char=t["char"],
-            function=t["function"],
-            file=t["file"],
-            line=t["line"],
-            description=desc,
-        ))
+        catalog.trace_points.append(
+            TracePoint(
+                char=t["char"],
+                function=t["function"],
+                file=t["file"],
+                line=t["line"],
+                description=desc,
+            )
+        )
 
     # Identify hex dump delimiters by looking for paired open/close chars
     _find_hex_dump_delimiters(catalog, all_traces)
@@ -270,16 +281,17 @@ def _find_hex_dump_delimiters(catalog: TraceCatalog, all_traces: list[dict]) -> 
         if has_open and has_close:
             # Find which function they're in
             fn = next(
-                (t["function"] for t in all_traces
-                 if t["char"] == open_ch and t["is_literal"]),
+                (t["function"] for t in all_traces if t["char"] == open_ch and t["is_literal"]),
                 "<unknown>",
             )
-            catalog.hex_dump_delimiters.append(HexDumpDelimiter(
-                open=open_ch,
-                close=close_ch,
-                function=fn,
-                description=desc,
-            ))
+            catalog.hex_dump_delimiters.append(
+                HexDumpDelimiter(
+                    open=open_ch,
+                    close=close_ch,
+                    function=fn,
+                    description=desc,
+                )
+            )
 
 
 def generate_catalog(arch: str = "i386") -> Path:

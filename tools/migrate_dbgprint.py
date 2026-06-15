@@ -16,23 +16,27 @@ Usage:
   tools/migrate_dbgprint.py --apply-default     # all known callers
   tools/migrate_dbgprint.py --dry-run <file.rs> # show stats, don't write
 """
+
 import argparse
 import re
-import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
 # Function -> (macro path, accepted cast-target types).
 TARGETS = {
-    "KdbpPrint":  ("crate::kdbp_print",  ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
-    "KdbPrintf":  ("crate::kdb_printf",  ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
+    "KdbpPrint": ("crate::kdbp_print", ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
+    "KdbPrintf": ("crate::kdb_printf", ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
     "KdpDprintf": ("crate::kdp_dprintf", ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
-    "DbgPrint":   ("crate::dbg_print",   ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8", "*const u8", "*mut u8"]),
+    "DbgPrint": (
+        "crate::dbg_print",
+        ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8", "*const u8", "*mut u8"],
+    ),
 }
 
 # Skip files that *implement* the migration (their docstrings show old patterns).
 SKIP = {"dbgprint.rs"}
+
 
 # Default file set: every Rust file declaring an extern for one of TARGETS.
 def find_default_files() -> list[Path]:
@@ -53,8 +57,8 @@ def find_default_files() -> list[Path]:
 def _has_active_call(src: str, fname: str) -> bool:
     """True if `src` contains a call site for `fname` that is *not* a comment
     and *not* the extern decl line itself."""
-    decl_re = re.compile(rf'\bfn\s+{re.escape(fname)}\s*\(')
-    call_re = re.compile(rf'\b{re.escape(fname)}\s*\(')
+    decl_re = re.compile(rf"\bfn\s+{re.escape(fname)}\s*\(")
+    call_re = re.compile(rf"\b{re.escape(fname)}\s*\(")
     for line in src.splitlines():
         stripped = line.lstrip()
         if stripped.startswith("//"):
@@ -66,7 +70,7 @@ def _has_active_call(src: str, fname: str) -> bool:
     return False
 
 
-def migrate_file(path: Path, dry_run: bool=False) -> tuple[int, int]:
+def migrate_file(path: Path, dry_run: bool = False) -> tuple[int, int]:
     """Return (rewrites, remaining_extern_lines_dropped)."""
     src = path.read_text()
     original = src
@@ -78,19 +82,21 @@ def migrate_file(path: Path, dry_run: bool=False) -> tuple[int, int]:
         # have raw `.as_ptr()` returning *const u8).
         cast_alts = "|".join(re.escape(c) for c in cast_types)
         pattern = re.compile(
-            rf'\b{re.escape(fname)}\(\s*'
-            rf'(b?"(?:[^"\\]|\\.)*")'                            # fmt literal
-            rf'\s*\.as_ptr\(\)'                                  # .as_ptr()
-            rf'(?:\s+as\s+(?:{cast_alts}))?'                     # optional cast
-            rf'(\s*[,)])',                                       # terminator
+            rf"\b{re.escape(fname)}\(\s*"
+            rf'(b?"(?:[^"\\]|\\.)*")'  # fmt literal
+            rf"\s*\.as_ptr\(\)"  # .as_ptr()
+            rf"(?:\s+as\s+(?:{cast_alts}))?"  # optional cast
+            rf"(\s*[,)])",  # terminator
             re.DOTALL,
         )
+
         # The regex captures the trailing `,` or `)`. Either way it acts as
         # the macro call's matching token: `,` keeps the args flowing in, `)`
         # closes the call. Emit the captured punctuation verbatim — adding a
         # second `)` here would yield `macro!(...))` (the bug from v0).
-        def repl(m):
-            return f'{macro}!({m.group(1)}{m.group(2)}'
+        def repl(m, macro=macro):
+            return f"{macro}!({m.group(1)}{m.group(2)}"
+
         src, n = pattern.subn(repl, src)
         total_rewrites += n
 
@@ -101,10 +107,10 @@ def migrate_file(path: Path, dry_run: bool=False) -> tuple[int, int]:
             # Allow `pub` prefix and any cast type by being permissive on the
             # arg type.
             line_pat = re.compile(
-                rf'^\s*(?:pub\s+)?fn\s+{re.escape(fname)}\s*\([^)]*\.\.\.\s*\)\s*;\s*\n',
+                rf"^\s*(?:pub\s+)?fn\s+{re.escape(fname)}\s*\([^)]*\.\.\.\s*\)\s*;\s*\n",
                 re.MULTILINE,
             )
-            src, _ = line_pat.subn('', src)
+            src, _ = line_pat.subn("", src)
 
     if src != original and not dry_run:
         path.write_text(src)
@@ -114,10 +120,12 @@ def migrate_file(path: Path, dry_run: bool=False) -> tuple[int, int]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="*", help=".rs files to migrate")
-    ap.add_argument("--apply-default", action="store_true",
-                    help="apply to all kernel files referencing a target FFI")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="report changes without writing")
+    ap.add_argument(
+        "--apply-default",
+        action="store_true",
+        help="apply to all kernel files referencing a target FFI",
+    )
+    ap.add_argument("--dry-run", action="store_true", help="report changes without writing")
     args = ap.parse_args()
 
     if args.apply_default:
@@ -130,12 +138,15 @@ def main():
     total = 0
     touched = 0
     for f in files:
-        n, changed = migrate_file(f, args.dry_run)
+        n, _ = migrate_file(f, args.dry_run)
         if n:
             print(f"  {f.relative_to(REPO)}: {n} rewrites" + (" (dry)" if args.dry_run else ""))
             total += n
             touched += 1
-    print(f"-- {total} call sites rewritten across {touched} files" + (" (dry)" if args.dry_run else ""))
+    print(
+        f"-- {total} call sites rewritten across {touched} files"
+        + (" (dry)" if args.dry_run else "")
+    )
 
 
 if __name__ == "__main__":

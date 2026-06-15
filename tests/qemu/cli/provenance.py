@@ -5,6 +5,7 @@ the gaps — warm/cold, rust-source state, contributing-binary hashes. Staleness
 is tiered cheap-first: a git-fingerprint match means FRESH with no further I/O.
 git fingerprints (not mtime) so branch/worktree switches don't churn the verdict.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -20,8 +21,7 @@ STAMP_NAME = ".vibeos-build-stamp.json"
 
 def _run(cmd: list[str], cwd: Path) -> str:
     try:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                              timeout=120).stdout
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
 
@@ -84,18 +84,18 @@ class Stamp:
     boot_media: str
     boot_media_sha: str
     cold: bool
-    contributing: dict = field(default_factory=dict)   # rel path -> sha256
+    contributing: dict = field(default_factory=dict)  # rel path -> sha256
     rust_targets: list = field(default_factory=list)
 
     def write(self, build_dir: Path) -> Path:
         path = build_dir / STAMP_NAME
         tmp = build_dir / (STAMP_NAME + ".tmp")
         tmp.write_text(json.dumps(self.__dict__, indent=2))
-        tmp.replace(path)   # atomic
+        tmp.replace(path)  # atomic
         return path
 
     @staticmethod
-    def read(build_dir: Path) -> "Stamp | None":
+    def read(build_dir: Path) -> Stamp | None:
         path = build_dir / STAMP_NAME
         try:
             d = json.loads(path.read_text())
@@ -122,8 +122,11 @@ def contributing_hashes(repo: Path, arch: str) -> dict:
     # x86: hash the key binaries the iso carries even though ninja tracks the
     # iso DAG — catches a warm-cached contributor whose content differs cold.
     if archcfg.base_arch(arch) in ("i386", "amd64"):
-        for rel in ("ntoskrnl/ntoskrnl.exe", "hal/halx86/hal.dll",
-                    "boot/freeldr/freeldr/freeldr.sys"):
+        for rel in (
+            "ntoskrnl/ntoskrnl.exe",
+            "hal/halx86/hal.dll",
+            "boot/freeldr/freeldr/freeldr.sys",
+        ):
             f = build_dir / rel
             if f.is_file():
                 out[rel] = _sha256_file(f)
@@ -136,7 +139,8 @@ def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
     media = repo / cfg.boot_media_rel
     targets = [str(p.relative_to(repo)) for p in discover_rust_targets(build_dir)]
     return Stamp(
-        arch=archcfg.base_arch(arch), ts=ts,
+        arch=archcfg.base_arch(arch),
+        ts=ts,
         git_fingerprint=git_fingerprint(repo),
         rust_src_hash=rust_src_hash(repo),
         boot_media=cfg.boot_media_rel,
@@ -150,13 +154,13 @@ def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
 @dataclass
 class Staleness:
     fresh: bool
-    reasons: list           # human strings, e.g. ["rust source changed", ...]
-    warm: bool              # cold==False on the stamp (advisory)
+    reasons: list  # human strings, e.g. ["rust source changed", ...]
+    warm: bool  # cold==False on the stamp (advisory)
     media_missing: bool
 
     @property
     def stale(self) -> bool:
-        return not self.fresh and not self.media_missing or self.media_missing
+        return (not self.fresh and not self.media_missing) or self.media_missing
 
 
 def _ninja_has_work(build_dir: Path, target: str) -> bool:
@@ -189,12 +193,16 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
     stamp = Stamp.read(build_dir)
 
     if not media.is_file():
-        return Staleness(fresh=False, reasons=["boot media absent — run `build`"],
-                         warm=False, media_missing=True)
+        return Staleness(
+            fresh=False, reasons=["boot media absent — run `build`"], warm=False, media_missing=True
+        )
     if stamp is None:
-        return Staleness(fresh=False,
-                         reasons=["no build stamp — never built via vibeos-cli"],
-                         warm=False, media_missing=False)
+        return Staleness(
+            fresh=False,
+            reasons=["no build stamp — never built via vibeos-cli"],
+            warm=False,
+            media_missing=False,
+        )
 
     warm = not stamp.cold
     # Tier 1: cheap fingerprint compare → FRESH, done.
@@ -204,8 +212,9 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
     # Tier 2: source changed — escalate to authoritative per-layer checks.
     reasons = []
     if rust_src_hash(repo) != stamp.rust_src_hash:
-        reasons.append("rust source changed since build"
-                       + (" (last build WARM — may mask)" if warm else ""))
+        reasons.append(
+            "rust source changed since build" + (" (last build WARM — may mask)" if warm else "")
+        )
     if _ninja_has_work(build_dir, cfg.ninja_targets[0]):
         reasons.append(f"ninja reports work for `{cfg.ninja_targets[0]}`")
     # arm64 re-stage trap: a contributing binary newer than boot.img.
@@ -222,6 +231,7 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
 
     if not reasons:
         # Source changed but nothing build-relevant (docs, this plan).
-        return Staleness(fresh=True, reasons=["clean-diff (non-build change)"],
-                         warm=warm, media_missing=False)
+        return Staleness(
+            fresh=True, reasons=["clean-diff (non-build change)"], warm=warm, media_missing=False
+        )
     return Staleness(fresh=False, reasons=reasons, warm=warm, media_missing=False)

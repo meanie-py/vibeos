@@ -21,20 +21,43 @@ from pathlib import Path
 # These are the types where *param = value writes are vulnerable
 OUTPUT_PTR_TYPES = {
     # Explicit pointer-to-scalar types
-    "*mut HANDLE", "*mut PVOID", "*mut BOOLEAN", "*mut NTSTATUS",
-    "*mut KIRQL", "*mut ULONG", "*mut ULONG_PTR", "*mut LONG",
-    "*mut SIZE_T", "*mut LARGE_INTEGER", "*mut ULONGLONG",
-    "*mut ACCESS_MASK", "*mut DEVICE_TYPE",
+    "*mut HANDLE",
+    "*mut PVOID",
+    "*mut BOOLEAN",
+    "*mut NTSTATUS",
+    "*mut KIRQL",
+    "*mut ULONG",
+    "*mut ULONG_PTR",
+    "*mut LONG",
+    "*mut SIZE_T",
+    "*mut LARGE_INTEGER",
+    "*mut ULONGLONG",
+    "*mut ACCESS_MASK",
+    "*mut DEVICE_TYPE",
     # Typedef pointer types (P-prefix = pointer to)
-    "PHANDLE", "PBOOLEAN", "PKIRQL", "PULONG", "PULONG_PTR",
-    "PLONG", "PSIZE_T", "PVOID",  # when used as output
+    "PHANDLE",
+    "PBOOLEAN",
+    "PKIRQL",
+    "PULONG",
+    "PULONG_PTR",
+    "PLONG",
+    "PSIZE_T",
+    "PVOID",  # when used as output
     # Pointer-to-pointer types (output object pointers)
-    "*mut PDEVICE_OBJECT", "*mut PFILE_OBJECT", "*mut PDRIVER_OBJECT",
-    "*mut POBJECT_TYPE", "*mut PACCESS_TOKEN", "*mut PSID",
-    "*mut PACL", "*mut PSECURITY_DESCRIPTOR",
-    "*mut PEPROCESS", "*mut PETHREAD", "*mut PKTHREAD",
-    "*mut PKEVENT", "*mut PMDL",
-    "*mut PVOID",  # generic output object pointer
+    "*mut PDEVICE_OBJECT",
+    "*mut PFILE_OBJECT",
+    "*mut PDRIVER_OBJECT",
+    "*mut POBJECT_TYPE",
+    "*mut PACCESS_TOKEN",
+    "*mut PSID",
+    "*mut PACL",
+    "*mut PSECURITY_DESCRIPTOR",
+    "*mut PEPROCESS",
+    "*mut PETHREAD",
+    "*mut PKTHREAD",
+    "*mut PKEVENT",
+    "*mut PMDL",
+    # ("*mut PVOID" generic output object pointer already listed above)
     # NT-specific output types
     "POBJECT_HANDLE_INFORMATION",
     "*mut NT_PRODUCT_TYPE",
@@ -42,15 +65,15 @@ OUTPUT_PTR_TYPES = {
 
 # Parameter name patterns that indicate output (heuristic)
 OUTPUT_PARAM_NAMES = re.compile(
-    r'^(Out|Result|Return|Output|New|Created|Returned|Found|'
-    r'.*Handle$|.*Object$|.*Token$|.*Sid$|.*Acl$|.*Descriptor$|'
-    r'.*Length$|.*Size$|.*Count$|.*Status$|.*Info$|.*Information$|'
-    r'.*Buffer$|.*Address$|.*Base$|.*Entry$|.*Extension$|'
-    r'LockFailed|WasDirty|Page|SwapEntry|ConflictDetected|'
-    r'DeviceMap|PortId|PreviousFlags|Event|Interfaces|'
-    r'SymbolicLinkList|AllocatedResources|ModuleObject|DriverName|'
-    r'.*Irql$|.*Type$|.*Level$|.*State$|.*Flags$)',
-    re.IGNORECASE
+    r"^(Out|Result|Return|Output|New|Created|Returned|Found|"
+    r".*Handle$|.*Object$|.*Token$|.*Sid$|.*Acl$|.*Descriptor$|"
+    r".*Length$|.*Size$|.*Count$|.*Status$|.*Info$|.*Information$|"
+    r".*Buffer$|.*Address$|.*Base$|.*Entry$|.*Extension$|"
+    r"LockFailed|WasDirty|Page|SwapEntry|ConflictDetected|"
+    r"DeviceMap|PortId|PreviousFlags|Event|Interfaces|"
+    r"SymbolicLinkList|AllocatedResources|ModuleObject|DriverName|"
+    r".*Irql$|.*Type$|.*Level$|.*State$|.*Flags$)",
+    re.IGNORECASE,
 )
 
 # Files/patterns to skip
@@ -94,8 +117,8 @@ def find_exported_functions(source: str) -> list[dict]:
                     break
 
             if found_fn and fn_lines:
-                fn_text = " ".join(l.strip() for l in fn_lines)
-                fn_match = re.search(r'fn\s+(\w+)\s*\((.*?)\)', fn_text, re.DOTALL)
+                fn_text = " ".join(line.strip() for line in fn_lines)
+                fn_match = re.search(r"fn\s+(\w+)\s*\((.*?)\)", fn_text, re.DOTALL)
                 if fn_match:
                     fn_name = fn_match.group(1)
                     params_text = fn_match.group(2)
@@ -107,15 +130,17 @@ def find_exported_functions(source: str) -> list[dict]:
                         if not param:
                             continue
                         # Match "ParamName: *mut Type" or "ParamName: PTYPE"
-                        pm = re.match(r'(\w+)\s*:\s*(.*)', param)
+                        pm = re.match(r"(\w+)\s*:\s*(.*)", param)
                         if pm:
                             pname = pm.group(1)
                             ptype = pm.group(2).strip()
-                            if "*mut" in ptype or ptype.startswith("P") and ptype[1:2].isupper():
-                                mut_params.append({
-                                    "name": pname,
-                                    "type": ptype,
-                                })
+                            if "*mut" in ptype or (ptype.startswith("P") and ptype[1:2].isupper()):
+                                mut_params.append(
+                                    {
+                                        "name": pname,
+                                        "type": ptype,
+                                    }
+                                )
 
                     if mut_params:
                         # Find function body (from opening brace to matching close)
@@ -127,16 +152,18 @@ def find_exported_functions(source: str) -> list[dict]:
                             if brace_count <= 0:
                                 body_end = k
                                 break
-                        body = "\n".join(lines[body_start:body_end + 1])
+                        body = "\n".join(lines[body_start : body_end + 1])
 
-                        functions.append({
-                            "name": fn_name,
-                            "line": i + 1,
-                            "params": mut_params,
-                            "body": body,
-                            "body_start": body_start,
-                            "body_end": body_end,
-                        })
+                        functions.append(
+                            {
+                                "name": fn_name,
+                                "line": i + 1,
+                                "params": mut_params,
+                                "body": body,
+                                "body_start": body_start,
+                                "body_end": body_end,
+                            }
+                        )
         i += 1
 
     return functions
@@ -160,7 +187,7 @@ def check_volatile_writes(fn: dict) -> list[dict]:
             # Look for *ParamName = value (direct write)
             # Match patterns like: *ParamName = expr;
             pattern = re.compile(
-                r'^\s*\*' + re.escape(pname) + r'\s*=\s*',
+                r"^\s*\*" + re.escape(pname) + r"\s*=\s*",
             )
             if pattern.search(line):
                 # Check it's not already write_volatile
@@ -169,13 +196,15 @@ def check_volatile_writes(fn: dict) -> list[dict]:
                 # Check it's not in a comment
                 code_part = line.split("//")[0]
                 if pattern.search(code_part):
-                    violations.append({
-                        "param": pname,
-                        "type": param["type"],
-                        "line": fn["body_start"] + line_idx + 1,
-                        "code": stripped,
-                        "function": fn["name"],
-                    })
+                    violations.append(
+                        {
+                            "param": pname,
+                            "type": param["type"],
+                            "line": fn["body_start"] + line_idx + 1,
+                            "code": stripped,
+                            "function": fn["name"],
+                        }
+                    )
 
     return violations
 
@@ -232,8 +261,9 @@ def main():
     for v in all_violations:
         by_file.setdefault(v["file"], []).append(v)
 
-    print(f"Found {len(all_violations)} unprotected output pointer writes "
-          f"in {len(by_file)} files:\n")
+    print(
+        f"Found {len(all_violations)} unprotected output pointer writes in {len(by_file)} files:\n"
+    )
 
     for filepath, violations in sorted(by_file.items()):
         short = filepath.replace("sdk/lib/rust/ntoskrnl-rust/src/", "")
@@ -244,8 +274,7 @@ def main():
             if show_fix:
                 # Suggest fix
                 fixed = v["code"].replace(
-                    f"*{v['param']} =",
-                    f"core::ptr::write_volatile({v['param']},"
+                    f"*{v['param']} =", f"core::ptr::write_volatile({v['param']},"
                 )
                 if fixed != v["code"]:
                     fixed = fixed.rstrip(";") + ");"

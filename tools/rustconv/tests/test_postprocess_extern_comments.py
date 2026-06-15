@@ -18,7 +18,7 @@ from pathlib import Path
 # Make the package importable when tests run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rustconv.postprocess import (  # noqa: E402
+from rustconv.postprocess import (
     _split_extern_decls,
     fix_duplicate_extern_decls,
     fix_extern_vs_local_dups,
@@ -53,11 +53,7 @@ def test_split_joins_multi_line_decl():
 
 def test_dedup_does_not_eat_comments():
     code = (
-        'extern "system" {\n'
-        "    // standalone comment between decls\n"
-        "    fn A();\n"
-        "    fn B();\n"
-        "}\n"
+        'extern "system" {\n    // standalone comment between decls\n    fn A();\n    fn B();\n}\n'
     )
     out = fix_duplicate_extern_decls(code)
     assert "fn A()" in out, "fn A was eaten by the comment merge"
@@ -86,7 +82,7 @@ def test_dedup_drops_real_duplicates_across_blocks():
 def test_extern_vs_local_dup_does_not_eat_comments():
     code = (
         'pub unsafe extern "system" fn LocalImpl() -> NTSTATUS { 0 }\n'
-        '\n'
+        "\n"
         'extern "system" {\n'
         "    // shared with rmap.rs\n"
         "    fn Other(p: PVOID);\n"
@@ -96,9 +92,7 @@ def test_extern_vs_local_dup_does_not_eat_comments():
     out = fix_extern_vs_local_dups(code)
     # The locally-defined `LocalImpl` extern decl is removed (correct), but the
     # standalone comment must survive and `Other` must still be declared.
-    assert "fn LocalImpl() -> NTSTATUS;" not in out, (
-        "Local-duplicate extern decl was not removed"
-    )
+    assert "fn LocalImpl() -> NTSTATUS;" not in out, "Local-duplicate extern decl was not removed"
     assert "fn Other(" in out, "Comment merge ate fn Other"
     assert "// shared with rmap.rs" in out
 
@@ -109,14 +103,14 @@ def test_extern_vs_local_dup_drops_block_with_only_comments():
     # carcass with just a comment inside).
     code = (
         'pub unsafe extern "system" fn LocalImpl() -> NTSTATUS { 0 }\n'
-        '\n'
+        "\n"
         'extern "system" {\n'
         "    // only this — and the dup below\n"
         "    fn LocalImpl() -> NTSTATUS;\n"
         "}\n"
     )
     out = fix_extern_vs_local_dups(code)
-    assert "extern \"system\" {" not in out
+    assert 'extern "system" {' not in out
 
 
 if __name__ == "__main__":

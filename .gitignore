@@ -70,3 +70,6 @@ cmake_install.cmake
 qemu/manual-arm64-*/
 ~*.md
 .cargo-wt-target/
+tools/swarm/MATTERMOST_HANDOFF.md
+tools/swarm/channel/node_modules/
+agent-swarm/channel/node_modules/

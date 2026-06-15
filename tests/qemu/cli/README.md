@@ -160,6 +160,19 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
+### `check-tooling [--no-types] [--no-tests]`
+The lint/type/test gate for **our own Python** — distinct from `check`, which
+lints the *kernel* source. Runs, over the whole vibeos-cli tool surface
+(`tools/rustconv` incl. semdiff, this `cli` package, the standalone `tools/*.py`
+scripts, and `agent-swarm`): **ruff** (lint, `E/F/I/UP/B/SIM/RUF`), **ruff
+format --check**, **pyright** (basic), and **pytest**. One line per check, tails
+the failing output, nonzero on any failure. `--no-types`/`--no-tests` for a fast
+lint-only pass. Run it before handing off a change to the tooling. Config lives
+per-package: `tools/rustconv/pyproject.toml` + `agent-swarm/pyproject.toml`
+(installable sub-pkgs) carry their own `[tool.ruff]`/`[tool.pyright]`; the cli +
+`tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
+four so the surface lints under one standard.
+
 ---
 
 ## The artifact contract (how to read results without flooding context)

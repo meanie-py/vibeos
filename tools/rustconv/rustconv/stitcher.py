@@ -6,18 +6,27 @@ import re
 from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
-from .config import Target, TARGETS
+from .config import TARGETS, Target
 from .resolver import ResolveResult
 
 if TYPE_CHECKING:
-    from .scanner import ScanResult, CGlobal
+    from .scanner import ScanResult
 
 
 # For HAL target, collapse these hand-written-module symbols into `ddk` —
 # they are all re-exported from ddk and HAL files (dma.rs, usage.rs, kdpci.rs)
 # consistently import via ddk + hal_ddk only.
 _HAL_KERNEL_API_MODULES = {
-    "ke", "ex", "mm", "rtl", "ob", "ps", "interlocked", "base", "macros", "constants",
+    "ke",
+    "ex",
+    "mm",
+    "rtl",
+    "ob",
+    "ps",
+    "interlocked",
+    "base",
+    "macros",
+    "constants",
 }
 
 # Modules whose `use ntkrnl_sys::X::*` imports must be DROPPED for HAL targets,
@@ -41,21 +50,53 @@ _HAL_FORBIDDEN_USE_PATHS = (
 # HAL system prompt teaches the LLM to inline these locally.  Strip from
 # generated imports.
 _HAL_FORBIDDEN_IMPORT_NAMES = {
-    "InitializeListHead", "InsertTailList", "InsertHeadList",
-    "RemoveEntryList", "RemoveHeadList", "RemoveTailList", "IsListEmpty",
-    "KeAcquireSpinLock", "KeReleaseSpinLock", "KeInitializeSpinLock",
-    "RtlCopyMemory", "RtlMoveMemory", "RtlZeroMemory", "RtlFillMemory",
+    "InitializeListHead",
+    "InsertTailList",
+    "InsertHeadList",
+    "RemoveEntryList",
+    "RemoveHeadList",
+    "RemoveTailList",
+    "IsListEmpty",
+    "KeAcquireSpinLock",
+    "KeReleaseSpinLock",
+    "KeInitializeSpinLock",
+    "RtlCopyMemory",
+    "RtlMoveMemory",
+    "RtlZeroMemory",
+    "RtlFillMemory",
     "RtlCompareMemory",
-    "FIELD_OFFSET", "PAGE_ROUND_UP", "PAGE_ROUND_DOWN", "BYTES_TO_PAGES",
-    "PAGE_ALIGN", "BYTE_OFFSET", "UlongToPtr", "PtrToUlong",
-    "NT_SUCCESS", "NT_ERROR", "NT_WARNING", "NT_INFORMATION",
-    "WRITE_PORT_UCHAR", "READ_PORT_UCHAR", "WRITE_PORT_USHORT", "READ_PORT_USHORT",
-    "WRITE_PORT_ULONG", "READ_PORT_ULONG",
-    "ASSERT", "ASSERTMSG", "DPRINT", "DPRINT1", "PAGED_CODE",
-    "CONTAINING_RECORD", "RTL_CONSTANT_STRING",
-    "RtlInitEmptyUnicodeString", "RtlInitUnicodeString",
-    "MmGetMdlPfnArray", "MmGetMdlVirtualAddress", "MmGetMdlByteCount",
-    "MmGetMdlByteOffset", "MmGetSystemAddressForMdlSafe",
+    "FIELD_OFFSET",
+    "PAGE_ROUND_UP",
+    "PAGE_ROUND_DOWN",
+    "BYTES_TO_PAGES",
+    "PAGE_ALIGN",
+    "BYTE_OFFSET",
+    "UlongToPtr",
+    "PtrToUlong",
+    "NT_SUCCESS",
+    "NT_ERROR",
+    "NT_WARNING",
+    "NT_INFORMATION",
+    "WRITE_PORT_UCHAR",
+    "READ_PORT_UCHAR",
+    "WRITE_PORT_USHORT",
+    "READ_PORT_USHORT",
+    "WRITE_PORT_ULONG",
+    "READ_PORT_ULONG",
+    "ASSERT",
+    "ASSERTMSG",
+    "DPRINT",
+    "DPRINT1",
+    "PAGED_CODE",
+    "CONTAINING_RECORD",
+    "RTL_CONSTANT_STRING",
+    "RtlInitEmptyUnicodeString",
+    "RtlInitUnicodeString",
+    "MmGetMdlPfnArray",
+    "MmGetMdlVirtualAddress",
+    "MmGetMdlByteCount",
+    "MmGetMdlByteOffset",
+    "MmGetSystemAddressForMdlSafe",
     "InitializeObjectAttributes",
 }
 
@@ -70,13 +111,13 @@ def _strip_forbidden_hal_imports(use_stmt: str) -> str | None:
 
     Returns the cleaned statement, or None if the statement becomes empty.
     """
-    m = re.match(r'^(use ntkrnl_sys::(ddk|hal_ddk)::)\{([^}]*)\};?$', use_stmt.strip())
+    m = re.match(r"^(use ntkrnl_sys::(ddk|hal_ddk)::)\{([^}]*)\};?$", use_stmt.strip())
     if not m:
         return use_stmt
     prefix, _module, body = m.group(1), m.group(2), m.group(3)
-    items = [s.strip() for s in body.split(',') if s.strip()]
+    items = [s.strip() for s in body.split(",") if s.strip()]
     # Drop literal-like junk (anything not starting with letter/underscore)
-    items = [s for s in items if re.match(r'^[A-Za-z_]\w*$', s)]
+    items = [s for s in items if re.match(r"^[A-Za-z_]\w*$", s)]
     items = [s for s in items if s not in _HAL_FORBIDDEN_IMPORT_NAMES]
     if not items:
         return None
@@ -109,16 +150,16 @@ def _extract_use_statements(code: str) -> tuple[list[str], str]:
             # Accumulate until we see a `;` terminator with balanced braces.
             buf = [line]
             joined = stripped
-            brace = stripped.count('{') - stripped.count('}')
+            brace = stripped.count("{") - stripped.count("}")
             i += 1
-            while not (joined.endswith(';') and brace == 0) and i < len(lines):
+            while not (joined.endswith(";") and brace == 0) and i < len(lines):
                 nxt = lines[i]
                 buf.append(nxt)
-                joined = (joined + ' ' + nxt.strip()).strip()
-                brace += nxt.count('{') - nxt.count('}')
+                joined = (joined + " " + nxt.strip()).strip()
+                brace += nxt.count("{") - nxt.count("}")
                 i += 1
             # Collapse to single-line representation for downstream dedup.
-            uses.append(re.sub(r'\s+', ' ', joined))
+            uses.append(re.sub(r"\s+", " ", joined))
         else:
             remaining_lines.append(line)
             i += 1
@@ -137,15 +178,8 @@ def _extract_extern_blocks(code: str) -> tuple[list[str], str]:
     Returns (list of extern block strings, code with blocks removed).
     """
     extern_blocks = []
-    remaining = code
 
-    # Match extern "X" { ... } blocks (possibly multiline)
-    pattern = re.compile(
-        r'^(extern\s+"[^"]+"\s*\{[^}]*\})',
-        re.MULTILINE | re.DOTALL,
-    )
-
-    # Simpler approach: find extern blocks line by line
+    # Find extern blocks line by line
     lines = code.splitlines()
     result_lines = []
     i = 0
@@ -156,11 +190,11 @@ def _extract_extern_blocks(code: str) -> tuple[list[str], str]:
         # Detect start of extern block
         if re.match(r'extern\s+"[^"]*"\s*\{', stripped):
             block_lines = [line]
-            brace_count = stripped.count('{') - stripped.count('}')
+            brace_count = stripped.count("{") - stripped.count("}")
             i += 1
             while i < len(lines) and brace_count > 0:
                 block_lines.append(lines[i])
-                brace_count += lines[i].count('{') - lines[i].count('}')
+                brace_count += lines[i].count("{") - lines[i].count("}")
                 i += 1
             extern_blocks.append("\n".join(block_lines))
         else:
@@ -177,33 +211,33 @@ def _dedup_uses(use_statements: list[str]) -> list[str]:
     # `use ...::{A, B, 0i32, C};` list; keeping it yields
     # `error: expected identifier, found 0i32`. A real entry is an
     # identifier (optionally `as alias`), `self`, or `*`.
-    _valid_item = re.compile(r'^(?:[A-Za-z_]\w*(?:\s+as\s+[A-Za-z_]\w*)?|self|\*)$')
+    _valid_item = re.compile(r"^(?:[A-Za-z_]\w*(?:\s+as\s+[A-Za-z_]\w*)?|self|\*)$")
 
     def _sanitize_use(stmt: str) -> str:
-        m = re.search(r'\{([^{}]*)\}', stmt)
+        m = re.search(r"\{([^{}]*)\}", stmt)
         if not m:
             return stmt
-        items = [x.strip() for x in m.group(1).split(',') if x.strip()]
+        items = [x.strip() for x in m.group(1).split(",") if x.strip()]
         kept = [x for x in items if _valid_item.match(x)]
-        return stmt[:m.start(1)] + ', '.join(kept) + stmt[m.end(1):]
+        return stmt[: m.start(1)] + ", ".join(kept) + stmt[m.end(1) :]
 
     # Normalize: remove trailing semicolons for comparison, re-add
     seen = set()
     deduped = []
     for stmt in use_statements:
         stmt = _sanitize_use(stmt)
-        normalized = stmt.strip().rstrip(';') + ';'
+        normalized = stmt.strip().rstrip(";") + ";"
         if normalized not in seen:
             seen.add(normalized)
             deduped.append(normalized)
 
     # Sort: hand-written modules first, then ddk, then core
     def sort_key(s):
-        if 'ntkrnl_sys::ddk' in s:
+        if "ntkrnl_sys::ddk" in s:
             return (1, s)
-        elif 'ntkrnl_sys::' in s:
+        elif "ntkrnl_sys::" in s:
             return (0, s)
-        elif 'core::' in s:
+        elif "core::" in s:
             return (2, s)
         return (3, s)
 
@@ -218,11 +252,11 @@ def _extract_decl_name(decl: str) -> str | None:
           'static CcZeroPage: usize;' → 'CcZeroPage'
     """
     # Match fn declarations
-    m = re.match(r'fn\s+(\w+)\s*\(', decl.strip())
+    m = re.match(r"fn\s+(\w+)\s*\(", decl.strip())
     if m:
         return m.group(1)
     # Match static declarations
-    m = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', decl.strip())
+    m = re.match(r"static\s+(?:mut\s+)?(\w+)\s*:", decl.strip())
     if m:
         return m.group(1)
     return None
@@ -254,7 +288,7 @@ def _merge_extern_blocks(blocks: list[str], defined_fns: set[str] | None = None)
         linkage = m.group(1)
 
         # Extract inner declarations
-        inner = re.search(r'\{(.*)\}', block, re.DOTALL)
+        inner = re.search(r"\{(.*)\}", block, re.DOTALL)
         if not inner:
             continue
 
@@ -273,7 +307,7 @@ def _merge_extern_blocks(blocks: list[str], defined_fns: set[str] | None = None)
                 if not stripped:
                     continue
                 current = (current + " " + stripped).strip() if current else stripped
-                if current.endswith(';'):
+                if current.endswith(";"):
                     joined_decls.append(current)
                     current = ""
             if current:  # Leftover without semicolon
@@ -282,7 +316,7 @@ def _merge_extern_blocks(blocks: list[str], defined_fns: set[str] | None = None)
             for decl in joined_decls:
                 # Only clean foreign decls survive: must terminate with ';' and
                 # carry no body braces (a stray '}' or a leaked definition is junk).
-                if '{' in decl or '}' in decl or not decl.rstrip().endswith(';'):
+                if "{" in decl or "}" in decl or not decl.rstrip().endswith(";"):
                     continue
                 name = _extract_decl_name(decl)
                 if name:
@@ -415,8 +449,9 @@ def stitch_file(
         for i, line in enumerate(fn_lines):
             stripped = line.strip()
             # Detect function definition start
-            if (re.match(r'(#\[no_mangle\]|#\[cfg\(|pub\s+unsafe|unsafe\s+fn|pub\s+fn)', stripped)
-                    or re.match(r'// CODE_SEG', stripped)):
+            if re.match(
+                r"(#\[no_mangle\]|#\[cfg\(|pub\s+unsafe|unsafe\s+fn|pub\s+fn)", stripped
+            ) or re.match(r"// CODE_SEG", stripped):
                 fn_start_idx = i
                 break
 
@@ -502,7 +537,7 @@ def stitch_file(
             parts.append("")
 
     # 5. Functions in source order
-    for line_start, name, code in function_bodies:
+    for _line_start, _name, code in function_bodies:
         parts.append(code)
         parts.append("")
 
