@@ -82,15 +82,15 @@ list(APPEND SOURCE
     wine/timezone.c
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
     # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)
-    winnls/string/digitmap.c
-    winnls/string/fold.c
-    winnls/string/format_msg.c
-    winnls/string/japanese.c
+    # winnls/string/digitmap.c   — replaced by Rust (kernel32-rust/src/string/digitmap.rs)
+    # winnls/string/fold.c       — replaced by Rust (kernel32-rust/src/string/fold.rs)
+    # winnls/string/format_msg.c — replaced by Rust (kernel32-rust/src/string/format_msg.rs)
+    # winnls/string/japanese.c   — replaced by Rust (kernel32-rust/src/string/japanese.rs)
     # winnls/string/locale.c   — replaced by Rust (kernel32-rust/src/string/locale.rs)
     # winnls/string/lcformat.c — replaced by Rust (kernel32-rust/src/string/lcformat.rs)
-    winnls/string/lstring.c
+    # winnls/string/lstring.c    — replaced by Rust (kernel32-rust/src/string/lstring.rs)
     # winnls/string/nls.c      — replaced by Rust (kernel32-rust/src/string/nls.rs)
-    winnls/string/sortkey.c
+    # winnls/string/sortkey.c    — replaced by Rust (kernel32-rust/src/string/sortkey.rs)
     k32.h)
 
 if(MSVC)

@@ -15,6 +15,7 @@ i686-gnu, `name` on amd64/arm64) matches the C extern references on every arch.
 Usage:  python3 tools/gen_nls_data_tables.py
 Writes: sdk/lib/rust/kernel32-rust/src/string/{casemap,collation}.rs
 """
+
 import re
 import sys
 from pathlib import Path
@@ -29,9 +30,10 @@ TYPE_MAP = {
     "unsigned int": ("u32", 0xFFFFFFFF),
 }
 
-# const <TYPE> <name>[<LEN>] = {   (TYPE may be multi-word like "unsigned int")
+# const <TYPE> [DECLSPEC_HIDDEN] <name>[<LEN>] = {   (TYPE may be multi-word
+# like "unsigned int"; digitmap.c interposes a DECLSPEC_HIDDEN storage qualifier)
 DECL_RE = re.compile(
-    r"const\s+(unsigned\s+int|WCHAR)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*=\s*\{",
+    r"const\s+(unsigned\s+int|WCHAR)\s+(?:DECLSPEC_HIDDEN\s+)?(\w+)\s*\[\s*(\d+)\s*\]\s*=\s*\{",
 )
 COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 NUM_RE = re.compile(r"0[xX][0-9a-fA-F]+|\d+")
@@ -82,10 +84,8 @@ def convert(c_path: Path, rs_path: Path) -> None:
     lines = [
         f"//! Auto-generated from winnls/string/{c_path.name} by "
         "tools/gen_nls_data_tables.py — DO NOT EDIT.",
-        f"//! Pure Unicode data tables ({c_path.name} is generated, zero logic). The "
-        "C consumers",
-        "//! (sortkey.c / k32.h tolowerW/toupperW) link these #[no_mangle] symbols "
-        "directly.",
+        f"//! Pure Unicode data tables ({c_path.name} is generated, zero logic). The C consumers",
+        "//! (sortkey.c / k32.h tolowerW/toupperW) link these #[no_mangle] symbols directly.",
         "#![allow(non_upper_case_globals)]",
         "",
     ]
@@ -98,8 +98,9 @@ def convert(c_path: Path, rs_path: Path) -> None:
         # 12 values per row for readability
         per_row = 12
         for i in range(0, n, per_row):
-            row = ", ".join(f"0x{v:04x}" if rust_ty == "u16" else f"0x{v:08x}"
-                            for v in vals[i : i + per_row])
+            row = ", ".join(
+                f"0x{v:04x}" if rust_ty == "u16" else f"0x{v:08x}" for v in vals[i : i + per_row]
+            )
             lines.append(f"    {row},")
         lines.append("];")
         lines.append("")
@@ -111,6 +112,7 @@ def convert(c_path: Path, rs_path: Path) -> None:
 def main() -> None:
     convert(SRC / "casemap.c", OUT / "casemap.rs")
     convert(SRC / "collation.c", OUT / "collation.rs")
+    convert(SRC / "digitmap.c", OUT / "digitmap.rs")
     print("done.")
 
 

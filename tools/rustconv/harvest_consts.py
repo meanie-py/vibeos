@@ -30,6 +30,7 @@ HEADER_DIRS += [f"{SRC}/drivers/storage/class/classpnp",
                 f"{SRC}/drivers/bus/pcix",
                 f"{SRC}/drivers/storage/partmgr",
                 f"{SRC}/drivers/storage/mountmgr",
+                f"{SRC}/drivers/filesystems/cdfs",
                 f"{SRC}/drivers/filesystems/fastfat"]
 HEADERS = []
 for d in HEADER_DIRS:

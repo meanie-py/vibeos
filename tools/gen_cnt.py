@@ -16,6 +16,7 @@ Usage:
     python3 tools/gen_cnt.py
     python3 tools/gen_cnt.py --check     # fail if regen would differ
 """
+
 from __future__ import annotations
 
 import argparse
@@ -107,15 +108,15 @@ def ret_ty(sig: str) -> str:
 # (its own param-validation / ERANGE-backfill / byte-count contract),
 # so it bypasses the generic slice-reconstruct + return-collapse path.
 INT2STR = {
-    "int_to_str",   # unchecked narrow: memcpy digits+NUL, no NULL guard
+    "int_to_str",  # unchecked narrow: memcpy digits+NUL, no NULL guard
     "int_to_wstr",  # unchecked wide:   NULL-guarded, returns dst (even NULL)
-    "s_erange_n",   # _s narrow: bad-param→str[0]=0,EINVAL; too-small→
-                    #            reverse-backfill+str[0]=0,ERANGE
-    "s_einval_n",   # _ui64toa_s: bad-param→EINVAL (no zero); too-small→
-                    #             EINVAL (no fill)
-    "s_erange_w",   # _s wide: as s_erange_n, u16 elements
-    "s_einval_w",   # _ui64tow_s: as s_einval_n + the *byte-count* bug
-                    #             (memcpy ndigits+1 BYTES, not *2)
+    "s_erange_n",  # _s narrow: bad-param→str[0]=0,EINVAL; too-small→
+    #            reverse-backfill+str[0]=0,ERANGE
+    "s_einval_n",  # _ui64toa_s: bad-param→EINVAL (no zero); too-small→
+    #             EINVAL (no fill)
+    "s_erange_w",  # _s wide: as s_erange_n, u16 elements
+    "s_einval_w",  # _ui64tow_s: as s_einval_n + the *byte-count* bug
+    #             (memcpy ndigits+1 BYTES, not *2)
 }
 
 
@@ -198,9 +199,7 @@ def _strfam_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -261,9 +260,7 @@ def _mbcp_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -288,9 +285,7 @@ def _casemap_shim(name: str, m: dict, params, rt: str) -> str:
         rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
         cf = m["core_fn"]  # casemap::lower_ascii | casemap::upper_ascii
         if m.get("null_guard", False):
-            b.append(
-                f"    if {p}.is_null() {{ return core::ptr::null_mut(); }}"
-            )
+            b.append(f"    if {p}.is_null() {{ return core::ptr::null_mut(); }}")
         b += [
             f"    let n = {cstr}({p} as *const {el}).len();",
             f"    let s = {rawm}({p}, n);",
@@ -310,9 +305,7 @@ def _casemap_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -356,8 +349,7 @@ def _strmut_shim(name: str, m: dict, params, rt: str) -> str:
             f"    let __n = {cstr}({p} as *const {el}).len();",
             # C: `i < (int)sizeMaxFill` — signed-int cast of size_t.
             f"    let __lim = {mx} as i32;",
-            "    let __take = if __lim <= 0 { 0 }"
-            " else { core::cmp::min(__n, __lim as usize) };",
+            "    let __take = if __lim <= 0 { 0 } else { core::cmp::min(__n, __lim as usize) };",
             f"    let __buf = {rawm}({p}, __take);",
             f"    crate::core_rs::strmut::fill(__buf, {fill} as {el});",
             f"    {p}",
@@ -369,9 +361,7 @@ def _strmut_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -406,8 +396,8 @@ def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
             f"    if !{dir_}.is_null() {{ *{dir_} = {nul}; }}",
             f"    if !{fname}.is_null() {{ *{fname} = {nul}; }}",
             f"    if !{ext}.is_null() {{ *{ext} = {nul}; }}",
-            f"    if p.is_empty() {{ return; }}",  # C line 91 early ret
-            f"    let r = crate::core_rs::path::split(p);",
+            "    if p.is_empty() { return; }",  # C line 91 early ret
+            "    let r = crate::core_rs::path::split(p);",
             # drive synthesized [p[0], ':', NUL] iff drive != NULL
             # (C writes the 3 unconditionally given drive!=NULL; the
             # path+=2 is folded into split's dir_start).
@@ -415,17 +405,17 @@ def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
             f"        *{drive} = p[0];",
             f"        *{drive}.add(1) = {colon};",
             f"        *{drive}.add(2) = {nul};",
-            f"    }}",
-            f"    for (out, (a, e)) in [",
+            "    }",
+            "    for (out, (a, e)) in [",
             f"        ({dir_}, r.dir), ({fname}, r.fname), ({ext}, r.ext),",
-            f"    ] {{",
-            f"        if !out.is_null() {{",
+            "    ] {",
+            "        if !out.is_null() {",
             f"            let d = {rawm}(out, e - a + 1);",
-            f"            let mut k = 0usize;",
-            f"            while k < e - a {{ d[k] = p[a + k]; k += 1; }}",
+            "            let mut k = 0usize;",
+            "            while k < e - a { d[k] = p[a + k]; k += 1; }",
             f"            d[e - a] = {nul};",
-            f"        }}",
-            f"    }}",
+            "        }",
+            "    }",
         ]
     elif sp == "makepath":
         path, drive, dir_, fname, ext = pn
@@ -437,9 +427,9 @@ def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
             f"    let ex = {cstr}({ext} as *const {el});",
             # worst case: drive(2) + dir + sep(1) + fname + dot(1) + ext
             #             + NUL(1)  →  +5 slack
-            f"    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;",
+            "    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;",
             f"    let out = {rawm}({path}, cap);",
-            f"    crate::core_rs::path::make(out, dr, di, fl, ex);",
+            "    crate::core_rs::path::make(out, dr, di, fl, ex);",
         ]
     else:
         raise SystemExit(f"{name}: unhandled pathfam pattern {sp}")
@@ -448,9 +438,7 @@ def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -482,20 +470,19 @@ def _strtok_shim(name: str, m: dict, params, rt: str) -> str:
             f"    static SAVED: AtomicPtr<{el}> = AtomicPtr::new({null});",
             f"    if {delim}.is_null() {{ return {null}; }}",
             f"    let base = if {s_}.is_null() {{",
-            f"        let p = SAVED.load(Ordering::Relaxed);",
+            "        let p = SAVED.load(Ordering::Relaxed);",
             f"        if p.is_null() {{ return {null}; }}",
-            f"        p",
+            "        p",
             f"    }} else {{ {s_} }};",
             f"    let n = {cstr}(base as *const {el}).len();",
-            f"    let s = core::slice::from_raw_parts_mut(base, n);",
-            f"    match crate::core_rs::strtok::next_token("
-            f"s, {cstr}({delim})) {{",
+            "    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token(s, {cstr}({delim})) {{",
             f"        crate::core_rs::strtok::Tok::Empty {{ .. }} => {null},",
-            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
-            f"            SAVED.store(base.add(next), Ordering::Relaxed);",
-            f"            base.add(start)",
-            f"        }}",
-            f"    }}",
+            "        crate::core_rs::strtok::Tok::Found { start, next } => {",
+            "            SAVED.store(base.add(next), Ordering::Relaxed);",
+            "            base.add(start)",
+            "        }",
+            "    }",
         ]
     else:  # tok_ctx / wtok_ctx — explicit context pointer
         s_, delim, ctx = pn
@@ -515,24 +502,21 @@ def _strtok_shim(name: str, m: dict, params, rt: str) -> str:
             f"        *{ctx}",
             f"    }} else {{ {s_} }};",
             f"    let n = {cstr}(base as *const {el}).len();",
-            f"    let s = core::slice::from_raw_parts_mut(base, n);",
-            f"    match crate::core_rs::strtok::next_token("
-            f"s, {cstr}({delim})) {{",
+            "    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token(s, {cstr}({delim})) {{",
             f"        {empty_arm}",
-            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
+            "        crate::core_rs::strtok::Tok::Found { start, next } => {",
             f"            *{ctx} = base.add(next);",
-            f"            base.add(start)",
-            f"        }}",
-            f"    }}",
+            "            base.add(start)",
+            "        }",
+            "    }",
         ]
     misf = m.get("preserved_misfeature", "")
     return (
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -641,9 +625,7 @@ def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -670,9 +652,7 @@ def _memccpy_shim(name: str, m: dict, params, rt: str) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -697,17 +677,14 @@ def _rand_shim(name: str, m: dict, params, rt: str) -> str:
         seed = params[0][1]
         b = [
             "    use core::sync::atomic::Ordering;",
-            f"    super::RAND_STATE.store("
-            f"crate::core_rs::rng::seed({seed}), Ordering::Relaxed);",
+            f"    super::RAND_STATE.store(crate::core_rs::rng::seed({seed}), Ordering::Relaxed);",
         ]
     misf = m.get("preserved_misfeature", "")
     return (
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
-        + "\n".join(b)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n' + "\n".join(b) + "\n}\n"
     )
 
 
@@ -762,8 +739,7 @@ def shim(name: str, m: dict) -> str:
     # delegate with locale unused) — emit it underscore-prefixed so it
     # doesn't trip unused_variables.
     decl_params = ", ".join(
-        f"{'_' + n if t.replace(' ', '') == '_locale_t' else n}: {rs_ty(t)}"
-        for t, n in params
+        f"{'_' + n if t.replace(' ', '') == '_locale_t' else n}: {rs_ty(t)}" for t, n in params
     )
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]
@@ -771,11 +747,7 @@ def shim(name: str, m: dict) -> str:
     # non-ptr non-size scalars (the `c`/`val` arg): i32 narrow, but
     # u16 for the wide `wcschr(.., wchar_t c)` — pass as i32 to the
     # core (find_char takes a C `int`; widening is value-preserving).
-    scal = [
-        n
-        for t, n in params
-        if not rs_ty(t).startswith("*") and rs_ty(t) != "usize"
-    ]
+    scal = [n for t, n in params if not rs_ty(t).startswith("*") and rs_ty(t) != "usize"]
     body: list[str] = []
     cf = m["core_fn"]
 
@@ -804,9 +776,7 @@ def shim(name: str, m: dict) -> str:
         # param (textbook strnlen must not read beyond maxlen).
         body.append(f"    let {ptrs[0]}_s = cstr_slice_bounded({ptrs[0]}, {szp});")
     elif sp == "wnul_in_maxlen":  # wcsnlen
-        body.append(
-            f"    let {ptrs[0]}_s = wcstr_slice_bounded({ptrs[0]}, {szp});"
-        )
+        body.append(f"    let {ptrs[0]}_s = wcstr_slice_bounded({ptrs[0]}, {szp});")
     elif sp == "dst_fixed_n":
         d, s, _ = pnames
         body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
@@ -899,9 +869,7 @@ def shim(name: str, m: dict) -> str:
         np = next(n for t, n in params if rs_ty(t) == "*const u8")
         ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u8")
         bs = next(n for t, n in params if rs_ty(t) == "i32")
-        body.append(
-            f"    let r = crate::core_rs::radix::parse_i64_clamped({np}_s, {bs});"
-        )
+        body.append(f"    let r = crate::core_rs::radix::parse_i64_clamped({np}_s, {bs});")
         body.append(f"    if r.base_ok && !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut u8;")
         body.append("    }")
@@ -918,9 +886,7 @@ def shim(name: str, m: dict) -> str:
         np = next(n for t, n in params if rs_ty(t) == "*const u16")
         ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u16")
         bs = next(n for t, n in params if rs_ty(t) == "i32")
-        body.append(
-            f"    let r = crate::core_rs::radix::parse_ulong_wide({np}_s, {bs});"
-        )
+        body.append(f"    let r = crate::core_rs::radix::parse_ulong_wide({np}_s, {bs});")
         body.append(f"    if !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut u16;")
         body.append("    }")
@@ -931,14 +897,8 @@ def shim(name: str, m: dict) -> str:
         # generic over Cu so the slice type drives it. `as *mut _`
         # lets the endptr cast infer the right inner pointer width.
         core = "parse_long_bsd" if rc == "long_bsd" else "parse_u64_bsd"
-        np = next(
-            n for t, n in params if rs_ty(t) in ("*const u8", "*const u16")
-        )
-        ep = next(
-            n
-            for t, n in params
-            if rs_ty(t) in ("*mut *mut u8", "*mut *mut u16")
-        )
+        np = next(n for t, n in params if rs_ty(t) in ("*const u8", "*const u16"))
+        ep = next(n for t, n in params if rs_ty(t) in ("*mut *mut u8", "*mut *mut u16"))
         bs = next(n for t, n in params if rs_ty(t) == "i32")
         body.append(f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});")
         body.append(f"    if !{ep}.is_null() {{")
@@ -951,36 +911,25 @@ def shim(name: str, m: dict) -> str:
         # `v as {rt}` is (int) truncation for _wtoi (rt=i32) and a
         # no-op for the __int64 forms.
         np = next(n for t, n in params if rs_ty(t) == "*const u16")
-        body.append(
-            f"    let (v, _of) = crate::core_rs::radix::"
-            f"parse_i64_wrapping_cu({np}_s);"
-        )
+        body.append(f"    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu({np}_s);")
         body.append(f"    v as {rt}")
     elif rc == "wtol_w":
         # Wave G2: _wtol — wide decimal u32 wrapping, bit-reinterpreted
         # to `long` (rt=i32). NULL→0 via wcstr_slice empty.
         np = next(n for t, n in params if rs_ty(t) == "*const u16")
-        body.append(
-            f"    crate::core_rs::radix::parse_u32_dec_w({np}_s) as {rt}"
-        )
+        body.append(f"    crate::core_rs::radix::parse_u32_dec_w({np}_s) as {rt}")
     elif rc in ("wcstoi64_w", "wcstoui64_w"):
         # Wave G2: _wcstoi64{,_l} / _wcstoui64{,_l}. NULL nptr → return
         # 0 with NO endptr write (C's MSVCRT_CHECK_PMT under _LIBCNT_).
         # Invalid base → base_ok=false → return 0, no endptr write.
         # Otherwise *endptr = nptr + final-index (written even with no
         # digits — the wide endptr contract). locale ignored.
-        core = (
-            "parse_i64_clamped_w"
-            if rc == "wcstoi64_w"
-            else "parse_u64_clamped_w"
-        )
+        core = "parse_i64_clamped_w" if rc == "wcstoi64_w" else "parse_u64_clamped_w"
         np = next(n for t, n in params if rs_ty(t) == "*const u16")
         ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u16")
         bs = next(n for t, n in params if rs_ty(t) == "i32")
         body.append(f"    if {np}.is_null() {{ return 0 as {rt}; }}")
-        body.append(
-            f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});"
-        )
+        body.append(f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});")
         body.append(f"    if r.base_ok && !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
         body.append("    }")
@@ -993,13 +942,11 @@ def shim(name: str, m: dict) -> str:
         f"/// `{m['c_signature']}`\n"
         f"/// preserved misfeature: {misf}\n"
         f"#[no_mangle]\n"
-        f"pub unsafe extern \"C\" fn {name}({decl_params}) -> {rt} {{\n"
-        + "\n".join(body)
-        + "\n}\n"
+        f'pub unsafe extern "C" fn {name}({decl_params}) -> {rt} {{\n' + "\n".join(body) + "\n}\n"
     )
 
 
-HELPERS = '''//! Hand-written unsafe primitives the generated shims compose. Kept
+HELPERS = """//! Hand-written unsafe primitives the generated shims compose. Kept
 //! tiny + audited; everything symbol-specific is generated.
 
 /// Hidden LCG state shared by the generated `rand`/`srand` shims —
@@ -1286,7 +1233,7 @@ pub(crate) unsafe fn qsort_rs(
         return;
     }
 }
-'''
+"""
 
 
 def main() -> int:
@@ -1326,12 +1273,8 @@ def main() -> int:
         # RAND_STATE, ...) via `super::`. Nesting each shim one level deeper
         # (generated::mX) makes cabi `super::super::`, so retarget those paths.
         body = body.replace("super::", "super::super::")
-        indented = "\n".join(("    " + ln if ln.strip() else ln)
-                             for ln in body.split("\n"))
-        shims.append(
-            f"mod m{nm} {{\n{helper_use}\n{indented}\n}}\n"
-            f"pub use m{nm}::*;\n"
-        )
+        indented = "\n".join(("    " + ln if ln.strip() else ln) for ln in body.split("\n"))
+        shims.append(f"mod m{nm} {{\n{helper_use}\n{indented}\n}}\npub use m{nm}::*;\n")
     generated_rs = "\n".join(shims)
 
     mod_rs = (

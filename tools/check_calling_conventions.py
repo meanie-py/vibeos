@@ -13,13 +13,14 @@ Mismatches cause linker errors or runtime stack corruption.
 """
 
 import re
-import os
 import sys
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 NTOSKRNL_RUST_DIR = Path("/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src")
-BINDGEN_I386 = Path("/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntkrnl-sys/src/bindgen_i386.rs")
+BINDGEN_I386 = Path(
+    "/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntkrnl-sys/src/bindgen_i386.rs"
+)
 NTKRNL_SYS_SRC = Path("/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntkrnl-sys/src")
 
 
@@ -48,18 +49,24 @@ def is_excluded_by_cfg(lines: list, fn_line_idx: int) -> bool:
         if prev.startswith("#[cfg(") or prev.startswith("#[cfg_attr("):
             cfg_lines.append(prev)
             j -= 1
-        elif prev.startswith("#["):
-            j -= 1
-        elif prev == "" or prev.startswith("//"):
+        elif prev.startswith("#[") or prev == "" or prev.startswith("//"):
             j -= 1
         else:
             break
 
     for cfg in cfg_lines:
         # Positive arch gate for non-i386 only
-        if 'target_arch = "aarch64"' in cfg and 'target_arch = "x86"' not in cfg and "not(" not in cfg:
+        if (
+            'target_arch = "aarch64"' in cfg
+            and 'target_arch = "x86"' not in cfg
+            and "not(" not in cfg
+        ):
             return True
-        if 'target_arch = "x86_64"' in cfg and 'target_arch = "x86"' not in cfg and "not(" not in cfg:
+        if (
+            'target_arch = "x86_64"' in cfg
+            and 'target_arch = "x86"' not in cfg
+            and "not(" not in cfg
+        ):
             return True
         if 'not(target_arch = "x86")' in cfg:
             return True
@@ -100,7 +107,6 @@ def extract_definitions(src_dir: Path):
 
     for rs_file in sorted(src_dir.rglob("*.rs")):
         rel_path = rs_file.relative_to(src_dir)
-        rel_str = str(rel_path)
 
         # Skip files in arch-specific directories that are NOT i386
         parts = rel_path.parts
@@ -128,7 +134,7 @@ def extract_definitions(src_dir: Path):
         while i < len(lines):
             line = lines[i].strip()
 
-            is_no_mangle = (line == "#[no_mangle]")
+            is_no_mangle = line == "#[no_mangle]"
             is_export_name = line.startswith("#[export_name")
 
             if is_no_mangle or is_export_name:
@@ -144,9 +150,7 @@ def extract_definitions(src_dir: Path):
                 k = i + 1
                 while k < len(lines):
                     next_line = lines[k].strip()
-                    if next_line.startswith("#["):
-                        k += 1
-                    elif next_line == "" or next_line.startswith("//"):
+                    if next_line.startswith("#[") or next_line == "" or next_line.startswith("//"):
                         k += 1
                     elif "fn " in next_line:
                         break
@@ -169,7 +173,7 @@ def extract_definitions(src_dir: Path):
                         convention = conv_match.group(1)
                         func_name = conv_match.group(2)
                     else:
-                        fn_match = re.search(r'fn\s+(\w+)', fn_line)
+                        fn_match = re.search(r"fn\s+(\w+)", fn_line)
                         if fn_match:
                             func_name = fn_match.group(1)
                             convention = "Rust"
@@ -180,12 +184,14 @@ def extract_definitions(src_dir: Path):
                     if export_name:
                         func_name = export_name
 
-                    results.append({
-                        "file": str(rel_path),
-                        "func_name": func_name,
-                        "convention": normalize_convention(convention),
-                        "line": k + 1,
-                    })
+                    results.append(
+                        {
+                            "file": str(rel_path),
+                            "func_name": func_name,
+                            "convention": normalize_convention(convention),
+                            "line": k + 1,
+                        }
+                    )
 
                 i = k + 1 if k > i else i + 1
             else:
@@ -214,7 +220,7 @@ def extract_bindgen_declarations(bindgen_file: Path):
         if extern_match:
             current_conv = normalize_convention(extern_match.group(1))
             brace_depth = 1
-            fn_match = re.search(r'pub\s+fn\s+(\w+)', stripped)
+            fn_match = re.search(r"pub\s+fn\s+(\w+)", stripped)
             if fn_match:
                 declarations[fn_match.group(1)] = (current_conv, i + 1)
             continue
@@ -227,7 +233,7 @@ def extract_bindgen_declarations(bindgen_file: Path):
                 brace_depth = 0
                 continue
 
-            fn_match = re.search(r'pub\s+fn\s+(\w+)', stripped)
+            fn_match = re.search(r"pub\s+fn\s+(\w+)", stripped)
             if fn_match:
                 declarations[fn_match.group(1)] = (current_conv, i + 1)
 
@@ -272,15 +278,19 @@ def extract_handwritten_declarations(ntkrnl_sys_dir: Path):
 
                 # Determine if this extern block applies to i386
                 applies_to_i386 = True
-                if current_cfg:
-                    if 'not(target_arch = "x86")' in current_cfg:
-                        applies_to_i386 = False
-                    elif 'target_arch = "x86_64"' in current_cfg and 'target_arch = "x86"' not in current_cfg:
-                        applies_to_i386 = False
-                    elif 'target_arch = "aarch64"' in current_cfg and 'target_arch = "x86"' not in current_cfg:
-                        applies_to_i386 = False
-                    elif 'target_pointer_width = "64"' in current_cfg:
-                        applies_to_i386 = False
+                if current_cfg and (
+                    'not(target_arch = "x86")' in current_cfg
+                    or (
+                        'target_arch = "x86_64"' in current_cfg
+                        and 'target_arch = "x86"' not in current_cfg
+                    )
+                    or (
+                        'target_arch = "aarch64"' in current_cfg
+                        and 'target_arch = "x86"' not in current_cfg
+                    )
+                    or 'target_pointer_width = "64"' in current_cfg
+                ):
+                    applies_to_i386 = False
 
                 if applies_to_i386:
                     current_conv = raw_conv
@@ -289,7 +299,7 @@ def extract_handwritten_declarations(ntkrnl_sys_dir: Path):
 
                 current_cfg = None  # Reset cfg tracker
 
-                fn_match = re.search(r'pub\s+fn\s+(\w+)', stripped)
+                fn_match = re.search(r"pub\s+fn\s+(\w+)", stripped)
                 if fn_match and current_conv:
                     declarations[fn_match.group(1)] = (current_conv, i + 1, fname)
                 continue
@@ -303,12 +313,16 @@ def extract_handwritten_declarations(ntkrnl_sys_dir: Path):
                     current_cfg = None
                     continue
 
-                fn_match = re.search(r'pub\s+fn\s+(\w+)', stripped)
+                fn_match = re.search(r"pub\s+fn\s+(\w+)", stripped)
                 if fn_match and current_conv:
                     declarations[fn_match.group(1)] = (current_conv, i + 1, fname)
             else:
                 # Reset cfg if we see something that isn't an extern block
-                if not stripped.startswith("#[") and not stripped.startswith("//") and stripped != "":
+                if (
+                    not stripped.startswith("#[")
+                    and not stripped.startswith("//")
+                    and stripped != ""
+                ):
                     current_cfg = None
 
     return declarations
@@ -338,23 +352,23 @@ def main():
     for conv, count in sorted(conv_counts.items()):
         print(f"     {conv}: {count}")
 
-    print(f"\n2. Extracting declarations from bindgen_i386.rs...")
+    print("\n2. Extracting declarations from bindgen_i386.rs...")
     bindgen_decls = extract_bindgen_declarations(BINDGEN_I386)
     print(f"   Found {len(bindgen_decls)} extern function declarations")
 
     conv_counts = defaultdict(int)
-    for name, (conv, _) in bindgen_decls.items():
+    for _name, (conv, _) in bindgen_decls.items():
         conv_counts[conv] += 1
     for conv, count in sorted(conv_counts.items()):
         print(f"     {conv}: {count}")
 
-    print(f"\n3. Extracting declarations from hand-written ntkrnl-sys modules...")
+    print("\n3. Extracting declarations from hand-written ntkrnl-sys modules...")
     handwritten_decls = extract_handwritten_declarations(NTKRNL_SYS_SRC)
     print(f"   Found {len(handwritten_decls)} extern function declarations (i386-applicable)")
 
     # Show handwritten modules found
     hw_files = defaultdict(int)
-    for name, (conv, line, fname) in handwritten_decls.items():
+    for _name, (_conv, _line, fname) in handwritten_decls.items():
         hw_files[fname] += 1
     for fname, count in sorted(hw_files.items()):
         print(f"     {fname}: {count}")
@@ -379,15 +393,17 @@ def main():
             matched_bindgen += 1
 
             if def_conv != decl_conv:
-                mismatches.append({
-                    "file": defn["file"],
-                    "func_name": func_name,
-                    "def_conv": def_conv,
-                    "decl_conv": decl_conv,
-                    "def_line": defn["line"],
-                    "decl_source": "bindgen_i386.rs",
-                    "decl_line": decl_line,
-                })
+                mismatches.append(
+                    {
+                        "file": defn["file"],
+                        "func_name": func_name,
+                        "def_conv": def_conv,
+                        "decl_conv": decl_conv,
+                        "def_line": defn["line"],
+                        "decl_source": "bindgen_i386.rs",
+                        "decl_line": decl_line,
+                    }
+                )
             else:
                 matched_correct += 1
 
@@ -402,15 +418,17 @@ def main():
                 # Only add if not already mismatched via bindgen
                 already_added = any(m["func_name"] == func_name for m in mismatches)
                 if not already_added:
-                    mismatches.append({
-                        "file": defn["file"],
-                        "func_name": func_name,
-                        "def_conv": def_conv,
-                        "decl_conv": decl_conv,
-                        "def_line": defn["line"],
-                        "decl_source": decl_file,
-                        "decl_line": decl_line,
-                    })
+                    mismatches.append(
+                        {
+                            "file": defn["file"],
+                            "func_name": func_name,
+                            "def_conv": def_conv,
+                            "decl_conv": decl_conv,
+                            "def_line": defn["line"],
+                            "decl_source": decl_file,
+                            "decl_line": decl_line,
+                        }
+                    )
             else:
                 # If handwritten matches but bindgen didn't, remove the bindgen mismatch
                 # since hand-written is the override
@@ -420,7 +438,7 @@ def main():
         if not found:
             not_found += 1
 
-    print(f"\n4. Cross-reference results:")
+    print("\n4. Cross-reference results:")
     print(f"   Matched in bindgen:      {matched_bindgen}")
     print(f"   Matched in handwritten:  {matched_handwritten}")
     print(f"   Convention matches:      {matched_correct}")
@@ -431,7 +449,9 @@ def main():
         # Categorize mismatches
         cat1 = [m for m in mismatches if m["def_conv"] == "stdcall" and m["decl_conv"] == "C"]
         cat2 = [m for m in mismatches if m["def_conv"] == "C" and m["decl_conv"] == "stdcall"]
-        cat3 = [m for m in mismatches if m["def_conv"] == "fastcall" or m["decl_conv"] == "fastcall"]
+        cat3 = [
+            m for m in mismatches if m["def_conv"] == "fastcall" or m["decl_conv"] == "fastcall"
+        ]
         cat4 = [m for m in mismatches if m not in cat1 and m not in cat2 and m not in cat3]
 
         print("\n" + "=" * 130)
@@ -440,19 +460,22 @@ def main():
         print(f"\n{'File':<50} {'Function':<50} {'Definition':<12} {'Bindgen':<12} {'Source':<20}")
         print("-" * 130)
         for m in sorted(mismatches, key=lambda x: (x["file"], x["func_name"])):
-            print(f"{m['file']:<50} {m['func_name']:<50} {m['def_conv']:<12} {m['decl_conv']:<12} {m['decl_source']:<20}")
+            print(
+                f"{m['file']:<50} {m['func_name']:<50} {m['def_conv']:<12} "
+                f"{m['decl_conv']:<12} {m['decl_source']:<20}"
+            )
 
         if cat1:
             print(f"\n--- Category 1: Definition=stdcall, Bindgen=C ({len(cat1)} functions) ---")
             print("    Rust defines _Name@N but C expects _Name")
-            print("    FIX: Change definition to extern \"C\"")
+            print('    FIX: Change definition to extern "C"')
             for m in sorted(cat1, key=lambda x: x["func_name"]):
                 print(f"      {m['func_name']:<50} ({m['file']}:{m['def_line']})")
 
         if cat2:
             print(f"\n--- Category 2: Definition=C, Bindgen=stdcall ({len(cat2)} functions) ---")
             print("    Rust defines _Name but C expects _Name@N")
-            print("    FIX: Change definition to extern \"system\"")
+            print('    FIX: Change definition to extern "system"')
             for m in sorted(cat2, key=lambda x: x["func_name"]):
                 print(f"      {m['func_name']:<50} ({m['file']}:{m['def_line']})")
 
@@ -460,12 +483,18 @@ def main():
             print(f"\n--- Category 3: Fastcall mismatch ({len(cat3)} functions) ---")
             print("    FIX: Verify original C calling convention")
             for m in sorted(cat3, key=lambda x: x["func_name"]):
-                print(f"      {m['func_name']:<50} def={m['def_conv']}, decl={m['decl_conv']} ({m['file']}:{m['def_line']})")
+                print(
+                    f"      {m['func_name']:<50} def={m['def_conv']}, "
+                    f"decl={m['decl_conv']} ({m['file']}:{m['def_line']})"
+                )
 
         if cat4:
             print(f"\n--- Category 4: Other ({len(cat4)} functions) ---")
             for m in sorted(cat4, key=lambda x: x["func_name"]):
-                print(f"      {m['func_name']:<50} def={m['def_conv']}, decl={m['decl_conv']} ({m['file']}:{m['def_line']})")
+                print(
+                    f"      {m['func_name']:<50} def={m['def_conv']}, "
+                    f"decl={m['decl_conv']} ({m['file']}:{m['def_line']})"
+                )
 
     else:
         print("\n  No mismatches found! All calling conventions are consistent.")
@@ -476,8 +505,11 @@ def main():
         print("(Internal Sep*/Obp*/Psp*/Ki* functions - no C extern needed)")
         print("=" * 130)
         for defn in sorted(definitions, key=lambda x: (x["file"], x["func_name"])):
-            if defn["func_name"] not in bindgen_decls and defn["func_name"] not in handwritten_decls:
-                print(f"  {defn['file']:<50} {defn['func_name']:<50} extern \"{defn['convention']}\"")
+            if (
+                defn["func_name"] not in bindgen_decls
+                and defn["func_name"] not in handwritten_decls
+            ):
+                print(f'  {defn["file"]:<50} {defn["func_name"]:<50} extern "{defn["convention"]}"')
 
     return len(mismatches)
 

@@ -25,7 +25,6 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Optional
 
 # tools/rustconv/.responses/  (parent.parent = the rustconv package's parent dir)
 RESPONSES_DIR = Path(__file__).resolve().parent.parent / ".responses"
@@ -55,7 +54,7 @@ class ResponseCache:
             except (OSError, ValueError):
                 self._manifest = {}
 
-    def get(self, name: str, body_text: str) -> Optional[str]:
+    def get(self, name: str, body_text: str) -> str | None:
         """Cached Rust for ``name`` IFF the C body hash still matches, else None.
 
         An EMPTY (or whitespace-only) cached file is treated as a MISS so that a

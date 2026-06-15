@@ -71,6 +71,7 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 ./vibeos-cli build  --arch i386 [--clean]   # warm by default; --clean = cold (nukes rust targets, proves cold-link)
 ./vibeos-cli smoke  --arch i386             # THE verdict — refuses to boot stale media (build first, or --allow-stale)
 ./vibeos-cli check                          # source lints, baseline-diff gate (0 NEW vs tools/lint-baseline/)
+./vibeos-cli check-tooling                  # ruff+pyright+pytest gate for OUR python (rustconv/cli/tools/agent-swarm)
 ./vibeos-cli debug  start amd64 --gdb       # wraps qemu/*.sh (POSITIONAL arch); GDB over the real (UEFI) boot
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
 ```

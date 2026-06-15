@@ -13,8 +13,12 @@ universal enough to fix mechanically:
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .abi_enforce import enforce_abi_from_c
+from .abi_map import build_win32k_abi_map
 
 if TYPE_CHECKING:
     from .scanner import CGlobal
@@ -55,15 +59,28 @@ UNDERSCORE_PREFIX_TYPES = {
 
 # Pointer type aliases that DON'T need prefix
 POINTER_TYPE_KEEP = {
-    "POBJECT_HEADER", "POBJECT_TYPE", "POBJECT_CREATE_INFORMATION",
-    "POBJECT_HEADER_HANDLE_INFO", "POBJECT_HEADER_QUOTA_INFO",
-    "POBJECT_HEADER_NAME_INFO", "POBJECT_HEADER_CREATOR_INFO",
-    "POBJECT_HANDLE_COUNT_DATABASE", "POBJECT_HANDLE_COUNT_ENTRY",
-    "PHANDLE_TABLE", "PHANDLE_TABLE_ENTRY",
-    "PACCESS_STATE", "PAUX_ACCESS_DATA", "PGENERIC_MAPPING",
-    "PISECURITY_DESCRIPTOR", "PSECURITY_DESCRIPTOR",
-    "PUNICODE_STRING", "PCHAR",
-    "PEPROCESS", "PETHREAD", "PVOID", "PCVOID",
+    "POBJECT_HEADER",
+    "POBJECT_TYPE",
+    "POBJECT_CREATE_INFORMATION",
+    "POBJECT_HEADER_HANDLE_INFO",
+    "POBJECT_HEADER_QUOTA_INFO",
+    "POBJECT_HEADER_NAME_INFO",
+    "POBJECT_HEADER_CREATOR_INFO",
+    "POBJECT_HANDLE_COUNT_DATABASE",
+    "POBJECT_HANDLE_COUNT_ENTRY",
+    "PHANDLE_TABLE",
+    "PHANDLE_TABLE_ENTRY",
+    "PACCESS_STATE",
+    "PAUX_ACCESS_DATA",
+    "PGENERIC_MAPPING",
+    "PISECURITY_DESCRIPTOR",
+    "PSECURITY_DESCRIPTOR",
+    "PUNICODE_STRING",
+    "PCHAR",
+    "PEPROCESS",
+    "PETHREAD",
+    "PVOID",
+    "PCVOID",
 }
 
 
@@ -75,7 +92,7 @@ def fix_type_names(code: str) -> str:
     """
     for c_name, bindgen_name in UNDERSCORE_PREFIX_TYPES.items():
         code = re.sub(
-            rf'(?<![A-Za-z_])(?<!P){re.escape(c_name)}(?![A-Za-z0-9_])',
+            rf"(?<![A-Za-z_])(?<!P){re.escape(c_name)}(?![A-Za-z0-9_])",
             bindgen_name,
             code,
         )
@@ -85,6 +102,7 @@ def fix_type_names(code: str) -> str:
 # ============================================================================
 # Import fixes
 # ============================================================================
+
 
 def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
     """Fix common import issues.
@@ -98,7 +116,7 @@ def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
         code = code.replace(
             "use ntkrnl_sys::ddk::*;",
             "// TODO: Replace ddk::* with selective imports (conflicts with base::*)\n"
-            "// use ntkrnl_sys::ddk::{...};"
+            "// use ntkrnl_sys::ddk::{...};",
         )
 
     if target_name == "hal":
@@ -109,7 +127,7 @@ def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
             "use ntkrnl_sys::base::*;",
             "use ntkrnl_sys::macros::*;",
         ):
-            code = re.sub(rf'^{re.escape(forbidden)}\s*\n', '', code, flags=re.MULTILINE)
+            code = re.sub(rf"^{re.escape(forbidden)}\s*\n", "", code, flags=re.MULTILINE)
     else:
         # Remove NonPagedPool/PagedPool from ddk imports (ntoskrnl: they're in mm::*)
         code = code.replace("ntkrnl_sys::ddk::NonPagedPool, ", "")
@@ -120,8 +138,8 @@ def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
     # Ensure core::ffi::c_void is imported
     if "c_void" in code and "core::ffi::c_void" not in code:
         code = re.sub(
-            r'(use core::ptr::\{[^}]+\};)',
-            r'\1\nuse core::ffi::c_void;',
+            r"(use core::ptr::\{[^}]+\};)",
+            r"\1\nuse core::ffi::c_void;",
             code,
         )
 
@@ -129,21 +147,33 @@ def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
         # Ensure base::* is imported (provides NTSTATUS, BOOLEAN, ULONG etc.)
         if "use ntkrnl_sys::base::*;" not in code and "ntkrnl_sys::ddk::" in code:
             # Insert at top of file (before first use statement)
-            first_use = re.search(r'^use ', code, re.MULTILINE)
+            first_use = re.search(r"^use ", code, re.MULTILINE)
             if first_use:
-                code = code[:first_use.start()] + "use ntkrnl_sys::base::*;\n" + code[first_use.start():]
+                code = (
+                    code[: first_use.start()]
+                    + "use ntkrnl_sys::base::*;\n"
+                    + code[first_use.start() :]
+                )
 
         # Ensure constants::* is imported (provides STATUS_*, IO_*, TAG_*, etc.)
         if "use ntkrnl_sys::constants::*;" not in code and "ntkrnl_sys::ddk::" in code:
-            first_use = re.search(r'^use ', code, re.MULTILINE)
+            first_use = re.search(r"^use ", code, re.MULTILINE)
             if first_use:
-                code = code[:first_use.start()] + "use ntkrnl_sys::constants::*;\n" + code[first_use.start():]
+                code = (
+                    code[: first_use.start()]
+                    + "use ntkrnl_sys::constants::*;\n"
+                    + code[first_use.start() :]
+                )
 
         # Ensure globals::* is imported (provides extern global declarations)
         if "use ntkrnl_sys::globals::*;" not in code and "ntkrnl_sys::ddk::" in code:
-            first_use = re.search(r'^use ', code, re.MULTILINE)
+            first_use = re.search(r"^use ", code, re.MULTILINE)
             if first_use:
-                code = code[:first_use.start()] + "use ntkrnl_sys::globals::*;\n" + code[first_use.start():]
+                code = (
+                    code[: first_use.start()]
+                    + "use ntkrnl_sys::globals::*;\n"
+                    + code[first_use.start() :]
+                )
 
     return code
 
@@ -158,16 +188,37 @@ def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
 # start with lowercase or are very short single-word identifiers.
 KNOWN_BOGUS_DDK_IMPORTS = {
     # Struct field names commonly confused with types
-    "FileOffset", "Owner", "Locked", "Flags", "NextEntry", "Pinned",
-    "Allocated", "Offset", "Reserved", "Index", "WatchTree", "Version",
-    "Output", "ReadAhead", "RetryForceCheckPerFile",
+    "FileOffset",
+    "Owner",
+    "Locked",
+    "Flags",
+    "NextEntry",
+    "Pinned",
+    "Allocated",
+    "Offset",
+    "Reserved",
+    "Index",
+    "WatchTree",
+    "Version",
+    "Output",
+    "ReadAhead",
+    "RetryForceCheckPerFile",
     # FORCEINLINE functions not in bindgen
-    "KeGetCurrentThread", "KeGetCurrentIrql",
+    "KeGetCurrentThread",
+    "KeGetCurrentIrql",
     # Parameter names
-    "Context1", "Context2", "LogHandle", "DirtyPageRoutine",
-    "FileObject", "OldestLsn", "Bcb", "iBcb",
+    "Context1",
+    "Context2",
+    "LogHandle",
+    "DirtyPageRoutine",
+    "FileObject",
+    "OldestLsn",
+    "Bcb",
+    "iBcb",
     # C macros / constants that don't exist as ddk symbols
-    "BooleanFlagOn", "min", "max",
+    "BooleanFlagOn",
+    "min",
+    "max",
 }
 
 
@@ -182,48 +233,52 @@ def fix_debug_macros(code: str) -> str:
     # Replace entire lines containing DPRINT1!( or DPRINT!( with a no-op comment.
     # The LLM generates complex macro calls with nested parens, format strings etc.
     # that are hard to regex-match. Simplest safe fix: replace the entire statement.
-    lines = code.split('\n')
+    lines = code.split("\n")
     result_lines = []
     skip_until_semicolon = False
     for line in lines:
         stripped = line.strip()
         if skip_until_semicolon:
-            if stripped.endswith(';') or stripped.endswith(');'):
+            if stripped.endswith(";") or stripped.endswith(");"):
                 skip_until_semicolon = False
             continue
 
-        if re.match(r'DPRINT1?\!?\(', stripped) or stripped.startswith('DPRINT1!(') or stripped.startswith('DPRINT!('):
+        if (
+            re.match(r"DPRINT1?\!?\(", stripped)
+            or stripped.startswith("DPRINT1!(")
+            or stripped.startswith("DPRINT!(")
+        ):
             # Single-line case
-            if stripped.endswith(';') or stripped.endswith(');'):
-                indent = line[:len(line) - len(line.lstrip())]
-                result_lines.append(f'{indent}// DPRINT removed')
+            if stripped.endswith(";") or stripped.endswith(");"):
+                indent = line[: len(line) - len(line.lstrip())]
+                result_lines.append(f"{indent}// DPRINT removed")
             else:
                 # Multi-line: skip until semicolon
-                indent = line[:len(line) - len(line.lstrip())]
-                result_lines.append(f'{indent}// DPRINT removed')
+                indent = line[: len(line) - len(line.lstrip())]
+                result_lines.append(f"{indent}// DPRINT removed")
                 skip_until_semicolon = True
-        elif '/* DPRINT1 */' in stripped or '/* DPRINT */' in stripped:
+        elif "/* DPRINT1 */" in stripped or "/* DPRINT */" in stripped:
             # Previously partially mangled by old regex — replace entire line
             # but only if it contains leftover garbage
-            if stripped == '/* DPRINT1 */' or stripped == '/* DPRINT */':
+            if stripped == "/* DPRINT1 */" or stripped == "/* DPRINT */":
                 result_lines.append(line)
             else:
-                indent = line[:len(line) - len(line.lstrip())]
-                result_lines.append(f'{indent}// DPRINT removed')
+                indent = line[: len(line) - len(line.lstrip())]
+                result_lines.append(f"{indent}// DPRINT removed")
         else:
             result_lines.append(line)
 
-    code = '\n'.join(result_lines)
+    code = "\n".join(result_lines)
 
     # UNIMPLEMENTED! → unimplemented!()
-    code = code.replace('UNIMPLEMENTED!();', 'unimplemented!();')
-    code = code.replace('UNIMPLEMENTED!()', 'unimplemented!()')
-    code = code.replace('UNIMPLEMENTED!', 'unimplemented!()')
+    code = code.replace("UNIMPLEMENTED!();", "unimplemented!();")
+    code = code.replace("UNIMPLEMENTED!()", "unimplemented!()")
+    code = code.replace("UNIMPLEMENTED!", "unimplemented!()")
 
     # offset_of! → core::mem::offset_of! (stabilized in Rust 1.77)
-    code = code.replace('offset_of!(', 'core::mem::offset_of!(')
+    code = code.replace("offset_of!(", "core::mem::offset_of!(")
     # Avoid double-qualifying
-    code = code.replace('core::mem::core::mem::offset_of!', 'core::mem::offset_of!')
+    code = code.replace("core::mem::core::mem::offset_of!", "core::mem::offset_of!")
 
     return code
 
@@ -234,12 +289,13 @@ def fix_bogus_ddk_imports(code: str) -> str:
     The LLM sometimes generates `use ntkrnl_sys::ddk::FileOffset;` when
     FileOffset is actually a struct field name or parameter name, not a type.
     """
+
     def clean_ddk_import(match: re.Match) -> str:
         prefix = match.group(1)
         body = match.group(2)
         suffix = match.group(3)
 
-        items = [item.strip() for item in body.split(',')]
+        items = [item.strip() for item in body.split(",")]
         items = [item for item in items if item]
 
         filtered = [item for item in items if item not in KNOWN_BOGUS_DDK_IMPORTS]
@@ -250,14 +306,14 @@ def fix_bogus_ddk_imports(code: str) -> str:
         if not filtered:
             return ""
 
-        new_body = ', '.join(filtered)
-        if '\n' in body:
-            new_body = '\n    ' + ',\n    '.join(filtered) + ',\n'
+        new_body = ", ".join(filtered)
+        if "\n" in body:
+            new_body = "\n    " + ",\n    ".join(filtered) + ",\n"
 
-        return f'{prefix}{new_body}{suffix}'
+        return f"{prefix}{new_body}{suffix}"
 
     code = re.sub(
-        r'(use ntkrnl_sys::ddk::\{)(.*?)(\};)',
+        r"(use ntkrnl_sys::ddk::\{)(.*?)(\};)",
         clean_ddk_import,
         code,
         flags=re.DOTALL,
@@ -266,14 +322,14 @@ def fix_bogus_ddk_imports(code: str) -> str:
     # Also handle single-item imports: use ntkrnl_sys::ddk::FileOffset;
     for bogus in KNOWN_BOGUS_DDK_IMPORTS:
         code = re.sub(
-            rf'^use ntkrnl_sys::ddk::{re.escape(bogus)};\n?',
-            '',
+            rf"^use ntkrnl_sys::ddk::{re.escape(bogus)};\n?",
+            "",
             code,
             flags=re.MULTILINE,
         )
 
     # Remove any resulting blank lines from removed imports
-    code = re.sub(r'\n{3,}', '\n\n', code)
+    code = re.sub(r"\n{3,}", "\n\n", code)
 
     return code
 
@@ -289,36 +345,79 @@ def fix_bogus_ddk_imports(code: str) -> str:
 # short-name constants from ntkrnl_sys::mm::* and should stay as-is.
 ENUM_VARIANTS: dict[str, list[str]] = {
     "OB_OPEN_REASON": [
-        "ObCreateHandle", "ObOpenHandle", "ObDuplicateHandle", "ObInheritHandle",
+        "ObCreateHandle",
+        "ObOpenHandle",
+        "ObDuplicateHandle",
+        "ObInheritHandle",
     ],
     "OBJECT_INFORMATION_CLASS": [
-        "ObjectBasicInformation", "ObjectNameInformation", "ObjectTypeInformation",
-        "ObjectTypesInformation", "ObjectHandleFlagInformation",
-        "ObjectSessionInformation", "MaxObjectInfoClass",
+        "ObjectBasicInformation",
+        "ObjectNameInformation",
+        "ObjectTypeInformation",
+        "ObjectTypesInformation",
+        "ObjectHandleFlagInformation",
+        "ObjectSessionInformation",
+        "MaxObjectInfoClass",
     ],
     "SECURITY_OPERATION_CODE": [
-        "SetSecurityDescriptor", "QuerySecurityDescriptor",
-        "DeleteSecurityDescriptor", "AssignSecurityDescriptor",
+        "SetSecurityDescriptor",
+        "QuerySecurityDescriptor",
+        "DeleteSecurityDescriptor",
+        "AssignSecurityDescriptor",
     ],
     "EVENT_TYPE": [
-        "NotificationEvent", "SynchronizationEvent",
+        "NotificationEvent",
+        "SynchronizationEvent",
     ],
     "KWAIT_REASON": [
-        "Executive", "FreePage", "PageIn", "PoolAllocation", "DelayExecution",
-        "Suspended", "UserRequest", "WrExecutive", "WrFreePage", "WrPageIn",
-        "WrPoolAllocation", "WrDelayExecution", "WrSuspended", "WrUserRequest",
-        "WrEventPair", "WrQueue", "WrLpcReceive", "WrLpcReply",
-        "WrVirtualMemory", "WrPageOut", "WrRendezvous", "WrKeyedEvent",
-        "WrTerminated", "WrProcessInSwap", "WrCpuRateControl",
-        "WrCalloutStack", "WrKernel", "WrResource", "WrPushLock",
-        "WrMutex", "WrQuantumEnd", "WrDispatchInt", "WrPreempted",
-        "WrYieldExecution", "WrFastMutex", "WrGuardedMutex", "WrRundown",
+        "Executive",
+        "FreePage",
+        "PageIn",
+        "PoolAllocation",
+        "DelayExecution",
+        "Suspended",
+        "UserRequest",
+        "WrExecutive",
+        "WrFreePage",
+        "WrPageIn",
+        "WrPoolAllocation",
+        "WrDelayExecution",
+        "WrSuspended",
+        "WrUserRequest",
+        "WrEventPair",
+        "WrQueue",
+        "WrLpcReceive",
+        "WrLpcReply",
+        "WrVirtualMemory",
+        "WrPageOut",
+        "WrRendezvous",
+        "WrKeyedEvent",
+        "WrTerminated",
+        "WrProcessInSwap",
+        "WrCpuRateControl",
+        "WrCalloutStack",
+        "WrKernel",
+        "WrResource",
+        "WrPushLock",
+        "WrMutex",
+        "WrQuantumEnd",
+        "WrDispatchInt",
+        "WrPreempted",
+        "WrYieldExecution",
+        "WrFastMutex",
+        "WrGuardedMutex",
+        "WrRundown",
         "MaximumWaitReason",
     ],
     "PP_NPAGED_LOOKASIDE_NUMBER": [
-        "LookasideSmallIrpList", "LookasideLargeIrpList", "LookasideMdlList",
-        "LookasideCreateInfoList", "LookasideNameBufferList",
-        "LookasideTwilightList", "LookasideCompletionList", "LookasideMaximumList",
+        "LookasideSmallIrpList",
+        "LookasideLargeIrpList",
+        "LookasideMdlList",
+        "LookasideCreateInfoList",
+        "LookasideNameBufferList",
+        "LookasideTwilightList",
+        "LookasideCompletionList",
+        "LookasideMaximumList",
     ],
 }
 
@@ -351,25 +450,26 @@ def fix_enum_variants(code: str) -> str:
             # - already prefixed with _ENUM_NAME_
             # - preceded by `const ` (const alias declaration)
             # - inside // comments
-            def replace_variant(m: re.Match) -> str:
+            def replace_variant(
+                m: re.Match, *, code: str = code, prefixed: str = prefixed, variant: str = variant
+            ) -> str:
                 # Check if this line is a comment
-                line_start = code.rfind('\n', 0, m.start()) + 1
-                line_text = code[line_start:m.start()]
-                if '//' in line_text:
+                line_start = code.rfind("\n", 0, m.start()) + 1
+                line_text = code[line_start : m.start()]
+                if "//" in line_text:
                     return m.group(0)
                 # Check if preceded by `const ` on the same line
-                if re.search(r'\bconst\s+$', line_text):
+                if re.search(r"\bconst\s+$", line_text):
                     return m.group(0)
-                return f'{prefixed}{variant}'
+                return f"{prefixed}{variant}"
 
             code = re.sub(
-                rf'(?<!{re.escape(prefixed)})(?<![A-Za-z_]){re.escape(variant)}(?![A-Za-z0-9_])',
+                rf"(?<!{re.escape(prefixed)})(?<![A-Za-z_]){re.escape(variant)}(?![A-Za-z0-9_])",
                 replace_variant,
                 code,
             )
             # Fix double-application
-            code = code.replace(f'{prefixed}{prefixed}{variant}',
-                                f'{prefixed}{variant}')
+            code = code.replace(f"{prefixed}{prefixed}{variant}", f"{prefixed}{variant}")
 
     return code
 
@@ -377,6 +477,7 @@ def fix_enum_variants(code: str) -> str:
 # ============================================================================
 # Portable type width fixes (ULONG_PTR is u32 on i386, u64 on 64-bit)
 # ============================================================================
+
 
 def fix_portable_types(code: str) -> str:
     """Fix hardcoded u64 casts on OBJ_* constants.
@@ -388,18 +489,19 @@ def fix_portable_types(code: str) -> str:
     the same as bindgen's ULONG_PTR (c_ulonglong on 64-bit, c_ulong on i386).
     """
     # On lines containing ObAttributes, replace OBJ_* as u64 with OBJ_* as _
-    lines = code.split('\n')
+    lines = code.split("\n")
     new_lines = []
     for line in lines:
-        if 'ObAttributes' in line:
-            line = re.sub(r'(OBJ_\w+(?:\))?)\s+as\s+u64', r'\1 as _', line)
+        if "ObAttributes" in line:
+            line = re.sub(r"(OBJ_\w+(?:\))?)\s+as\s+u64", r"\1 as _", line)
         new_lines.append(line)
-    return '\n'.join(new_lines)
+    return "\n".join(new_lines)
 
 
 # ============================================================================
 # Bindgen anonymous union field access fixes
 # ============================================================================
+
 
 def fix_bindgen_anon_field_access(code: str) -> str:
     """Fix field access on well-known unions that need .__bindgen_anon_1.
@@ -418,12 +520,12 @@ def fix_bindgen_anon_field_access(code: str) -> str:
     (starting with //) are skipped entirely.  Already-correct patterns
     (.__bindgen_anon_1.Field) are left alone (idempotent).
     """
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
     for line in lines:
         stripped = line.lstrip()
         # Skip comment lines
-        if stripped.startswith('//'):
+        if stripped.startswith("//"):
             result.append(line)
             continue
 
@@ -431,8 +533,8 @@ def fix_bindgen_anon_field_access(code: str) -> str:
         # Match: (word-char or ')') + .LowPart/.HighPart, NOT already preceded
         # by __bindgen_anon_1.  Use negative lookbehind on __bindgen_anon_1.
         line = re.sub(
-            r'(?<!__bindgen_anon_1)(?<=[)\w])\.(LowPart|HighPart)(?![A-Za-z0-9_])',
-            r'.__bindgen_anon_1.\1',
+            r"(?<!__bindgen_anon_1)(?<=[)\w])\.(LowPart|HighPart)(?![A-Za-z0-9_])",
+            r".__bindgen_anon_1.\1",
             line,
         )
 
@@ -440,18 +542,19 @@ def fix_bindgen_anon_field_access(code: str) -> str:
         # Match: .Status that is NOT .StatusBlock, .StatusPointer, etc.
         # and NOT already inside __bindgen_anon_1.Status
         line = re.sub(
-            r'(?<!__bindgen_anon_1)(?<=[)\w])\.Status(?![A-Za-z0-9_])',
-            '.__bindgen_anon_1.Status',
+            r"(?<!__bindgen_anon_1)(?<=[)\w])\.Status(?![A-Za-z0-9_])",
+            ".__bindgen_anon_1.Status",
             line,
         )
 
         result.append(line)
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 # ============================================================================
 # Enum literal replacements
 # ============================================================================
+
 
 def fix_enum_literal_replacements(code: str) -> str:
     """Replace bare enum variant names with their integer literals.
@@ -465,11 +568,11 @@ def fix_enum_literal_replacements(code: str) -> str:
     """
     for name, literal in ENUM_LITERAL_REPLACEMENTS.items():
         # Replace standalone uses, skip comments and already-qualified names
-        def replace_literal(m: re.Match) -> str:
+        def replace_literal(m: re.Match, *, code: str = code, literal: str = literal) -> str:
             # Check if this is inside a comment
-            line_start = code.rfind('\n', 0, m.start()) + 1
-            line_prefix = code[line_start:m.start()]
-            if '//' in line_prefix:
+            line_start = code.rfind("\n", 0, m.start()) + 1
+            line_prefix = code[line_start : m.start()]
+            if "//" in line_prefix:
                 return m.group(0)
             # Don't replace in string literals (rough check)
             if '"' in line_prefix and line_prefix.count('"') % 2 == 1:
@@ -477,7 +580,7 @@ def fix_enum_literal_replacements(code: str) -> str:
             return literal
 
         code = re.sub(
-            rf'(?<![A-Za-z_]){re.escape(name)}(?![A-Za-z0-9_])',
+            rf"(?<![A-Za-z_]){re.escape(name)}(?![A-Za-z0-9_])",
             replace_literal,
             code,
         )
@@ -488,6 +591,7 @@ def fix_enum_literal_replacements(code: str) -> str:
 # ============================================================================
 # Export #[no_mangle] fixes
 # ============================================================================
+
 
 def fix_exports(code: str, exports: dict[str, SpecEntry]) -> str:
     """Add #[no_mangle] to spec-exported function definitions that lack it.
@@ -505,16 +609,16 @@ def fix_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         for m in pattern.finditer(code):
             start = m.start()
             # Check if #[no_mangle] is already on the preceding line(s)
-            preceding = code[max(0, start - 80):start]
-            if '#[no_mangle]' in preceding.split('\n')[-2:]:
+            preceding = code[max(0, start - 80) : start]
+            if "#[no_mangle]" in preceding.split("\n")[-2:]:
                 continue
             # Also check if there's a #[cfg(...)] + #[no_mangle] block
-            lines_before = preceding.rstrip().rsplit('\n', 3)
-            if any('#[no_mangle]' in lb for lb in lines_before):
+            lines_before = preceding.rstrip().rsplit("\n", 3)
+            if any("#[no_mangle]" in lb for lb in lines_before):
                 continue
             # Insert #[no_mangle] before the function
             indent = m.group(1)
-            code = code[:start] + f'{indent}#[no_mangle]\n' + code[start:]
+            code = code[:start] + f"{indent}#[no_mangle]\n" + code[start:]
             break  # re-find after mutation (only one match per name expected)
 
     return code
@@ -529,16 +633,16 @@ def fix_global_exports(code: str, globals: list[CGlobal]) -> str:
     for g in globals:
         name = g.name
         pattern = re.compile(
-            rf'^([ \t]*)(pub\s+static\s+mut\s+{re.escape(name)}\s*:)',
+            rf"^([ \t]*)(pub\s+static\s+mut\s+{re.escape(name)}\s*:)",
             re.MULTILINE,
         )
         for m in pattern.finditer(code):
             start = m.start()
-            preceding = code[max(0, start - 80):start]
-            if any('#[no_mangle]' in lb for lb in preceding.split('\n')[-3:]):
+            preceding = code[max(0, start - 80) : start]
+            if any("#[no_mangle]" in lb for lb in preceding.split("\n")[-3:]):
                 continue
             indent = m.group(1)
-            code = code[:start] + f'{indent}#[no_mangle]\n' + code[start:]
+            code = code[:start] + f"{indent}#[no_mangle]\n" + code[start:]
             break
     return code
 
@@ -550,8 +654,7 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
     conventions on i386 (extern "fastcall") vs amd64/arm64 (extern "C").
     The LLM generates a single extern "system" version.
     """
-    fastcall_names = [name for name, entry in exports.items()
-                      if entry.convention == "fastcall"]
+    fastcall_names = [name for name, entry in exports.items() if entry.convention == "fastcall"]
     if not fastcall_names:
         return code
 
@@ -559,7 +662,7 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         # Find the function definition — may have #[no_mangle] above it
         # Match pattern: optional #[no_mangle]\n pub unsafe extern "..." fn Name(...) { body }
         pattern = re.compile(
-            rf'^([ \t]*#\[no_mangle\]\n)?'
+            rf"^([ \t]*#\[no_mangle\]\n)?"
             rf'([ \t]*)(pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\([^)]*\))',
             re.MULTILINE,
         )
@@ -570,13 +673,13 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         # Find the complete function body by matching braces
         fn_start = m.start()
         # Find the opening brace
-        brace_pos = code.index('{', m.end())
+        brace_pos = code.index("{", m.end())
         depth = 1
         pos = brace_pos + 1
         while depth > 0 and pos < len(code):
-            if code[pos] == '{':
+            if code[pos] == "{":
                 depth += 1
-            elif code[pos] == '}':
+            elif code[pos] == "}":
                 depth -= 1
             pos += 1
         fn_end = pos
@@ -585,8 +688,8 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         # Extract just the params and return type
         # Re-parse the signature to get params
         sig_match = re.search(
-            rf'fn\s+{re.escape(name)}\s*(\([^)]*\)(?:\s*->\s*\S+)?)',
-            code[m.start():brace_pos],
+            rf"fn\s+{re.escape(name)}\s*(\([^)]*\)(?:\s*->\s*\S+)?)",
+            code[m.start() : brace_pos],
         )
         if not sig_match:
             continue
@@ -596,12 +699,12 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         # Build the dual-cfg version
         x86_block = (
             f'{indent}#[cfg(target_arch = "x86")]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "fastcall" fn {name}{params_and_ret} {body}'
         )
         other_block = (
             f'\n\n{indent}#[cfg(not(target_arch = "x86"))]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "C" fn {name}{params_and_ret} {body}'
         )
 
@@ -620,7 +723,7 @@ def fix_win32k_crate_path(code: str) -> str:
     context-free, always-correct safety net: `ntkrnl_sys::win32k` does
     not exist anywhere, so substituting it can never be wrong.
     """
-    return re.sub(r'\bntkrnl_sys::win32k\b', 'win32k_sys::win32k', code)
+    return re.sub(r"\bntkrnl_sys::win32k\b", "win32k_sys::win32k", code)
 
 
 # ntkrnl_sys submodules whose glob `use` clashes with `win32k_sys::win32k`.
@@ -633,13 +736,26 @@ def fix_win32k_crate_path(code: str) -> str:
 # any *named* `use ntkrnl_sys::<m>::{A, B}` (kernel APIs not in win32k
 # headers) untouched.
 _NTKRNL_CLASH_MODS = (
-    "base", "globals", "constants", "ddk", "ke", "mm", "ex", "ob", "ps",
-    "se", "io", "rtl", "interlocked", "kd", "po", "cc", "fsrtl",
+    "base",
+    "globals",
+    "constants",
+    "ddk",
+    "ke",
+    "mm",
+    "ex",
+    "ob",
+    "ps",
+    "se",
+    "io",
+    "rtl",
+    "interlocked",
+    "kd",
+    "po",
+    "cc",
+    "fsrtl",
 )
 _RE_NTKRNL_GLOB = re.compile(
-    r'^[ \t]*use[ \t]+ntkrnl_sys::(?:'
-    + "|".join(_NTKRNL_CLASH_MODS)
-    + r')::\*[ \t]*;[ \t]*\n',
+    r"^[ \t]*use[ \t]+ntkrnl_sys::(?:" + "|".join(_NTKRNL_CLASH_MODS) + r")::\*[ \t]*;[ \t]*\n",
     re.MULTILINE,
 )
 
@@ -685,8 +801,6 @@ def enforce_win32k_abi(code: str) -> str:
     block. Idempotent only on its *own exact* prior output (both the x86
     `extern "<conv>"` and non-x86 `extern "C"` blocks already present).
     """
-    from .abi_map import build_win32k_abi_map
-
     abi = build_win32k_abi_map()
 
     # Candidate exported fn names defined in this file (any extern).
@@ -719,7 +833,7 @@ def enforce_win32k_abi(code: str) -> str:
             i += 1
         return -1
 
-    attr_line = re.compile(r'^[ \t]*(#\[[^\n]*\])?[ \t]*$')
+    attr_line = re.compile(r"^[ \t]*(#\[[^\n]*\])?[ \t]*$")
 
     for name, conv in names:
         # Idempotency: already in *our* canonical dual-cfg form? skip.
@@ -739,33 +853,33 @@ def enforce_win32k_abi(code: str) -> str:
         head_re = re.compile(
             rf'pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\(',
         )
-        spans = []           # (span_start, body_end)
-        canonical = None     # (params, ret_suffix, body, indent)
+        spans = []  # (span_start, body_end)
+        canonical = None  # (params, ret_suffix, body, indent)
         for hm in head_re.finditer(code):
-            paren_open = code.index('(', hm.end() - 1)
-            paren_end = _match(code, paren_open, '(', ')')
+            paren_open = code.index("(", hm.end() - 1)
+            paren_end = _match(code, paren_open, "(", ")")
             if paren_end < 0:
                 continue
             try:
-                brace_open = code.index('{', paren_end)
+                brace_open = code.index("{", paren_end)
             except ValueError:
                 continue
-            body_end = _match(code, brace_open, '{', '}')
+            body_end = _match(code, brace_open, "{", "}")
             if body_end < 0:
                 continue
             params = code[paren_open:paren_end]
             ret = code[paren_end:brace_open].strip()
-            ret_suffix = f' {ret}' if ret else ''
+            ret_suffix = f" {ret}" if ret else ""
             body = code[brace_open:body_end]
 
-            line_start = code.rfind('\n', 0, hm.start()) + 1
-            indent = code[line_start:hm.start()]
+            line_start = code.rfind("\n", 0, hm.start()) + 1
+            indent = code[line_start : hm.start()]
             # Absorb contiguous preceding attribute / blank lines (the
             # LLM's mangled cfg scaffolding).
             span_start = line_start
             while span_start > 0:
-                prev_nl = span_start - 1                       # the '\n'
-                prev_start = code.rfind('\n', 0, prev_nl) + 1
+                prev_nl = span_start - 1  # the '\n'
+                prev_start = code.rfind("\n", 0, prev_nl) + 1
                 prev_line = code[prev_start:prev_nl]
                 if attr_line.match(prev_line):
                     span_start = prev_start
@@ -782,10 +896,10 @@ def enforce_win32k_abi(code: str) -> str:
         params, ret_suffix, body, indent = canonical
         block = (
             f'{indent}#[cfg(target_arch = "x86")]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "{conv}" fn {name}{params}{ret_suffix} {body}\n\n'
             f'{indent}#[cfg(not(target_arch = "x86"))]\n'
-            f'{indent}#[no_mangle]\n'
+            f"{indent}#[no_mangle]\n"
             f'{indent}pub unsafe extern "C" fn {name}{params}{ret_suffix} {body}'
         )
         spans.sort()
@@ -806,27 +920,28 @@ def fix_self_imports(code: str) -> str:
     """
     # Collect locally-defined function names (with or without #[no_mangle])
     local_names = set()
-    for m in re.finditer(r'#\[no_mangle\]\s*\n\s*pub\s+(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)',
-                         code):
+    for m in re.finditer(
+        r'#\[no_mangle\]\s*\n\s*pub\s+(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)', code
+    ):
         local_names.add(m.group(1))
 
     # Also catch pub unsafe extern fn without #[no_mangle] (LLM sometimes omits it)
-    for m in re.finditer(r'^pub\s+(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)',
-                         code, re.MULTILINE):
+    for m in re.finditer(
+        r'^pub\s+(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)', code, re.MULTILINE
+    ):
         local_names.add(m.group(1))
 
     # Also collect #[no_mangle] pub static mut names
-    for m in re.finditer(r'#\[no_mangle\]\s*\n\s*pub\s+static\s+mut\s+(\w+)',
-                         code):
+    for m in re.finditer(r"#\[no_mangle\]\s*\n\s*pub\s+static\s+mut\s+(\w+)", code):
         local_names.add(m.group(1))
 
     # Also collect names declared in extern blocks (extern "C" { fn X(); })
     # These also conflict with ddk imports
     for m in re.finditer(r'extern\s+"[^"]+"\s*\{(.*?)\}', code, re.DOTALL):
         block_body = m.group(1)
-        for fn_match in re.finditer(r'fn\s+(\w+)\s*\(', block_body):
+        for fn_match in re.finditer(r"fn\s+(\w+)\s*\(", block_body):
             local_names.add(fn_match.group(1))
-        for static_match in re.finditer(r'static\s+(?:mut\s+)?(\w+)\s*:', block_body):
+        for static_match in re.finditer(r"static\s+(?:mut\s+)?(\w+)\s*:", block_body):
             local_names.add(static_match.group(1))
 
     if not local_names:
@@ -836,11 +951,11 @@ def fix_self_imports(code: str) -> str:
     def clean_import_block(match: re.Match) -> str:
         full = match.group(0)
         prefix = match.group(1)  # "use ntkrnl_sys::ddk::{"
-        body = match.group(2)    # the imports between { }
+        body = match.group(2)  # the imports between { }
         suffix = match.group(3)  # "};"
 
         # Parse individual imports
-        items = [item.strip() for item in body.split(',')]
+        items = [item.strip() for item in body.split(",")]
         items = [item for item in items if item]  # remove empty
         # Filter out locally-defined names
         filtered = [item for item in items if item not in local_names]
@@ -850,18 +965,18 @@ def fix_self_imports(code: str) -> str:
             return full
 
         if not filtered:
-            return f"// (all imports from ddk moved to local definitions)"
+            return "// (all imports from ddk moved to local definitions)"
 
-        new_body = ', '.join(filtered)
+        new_body = ", ".join(filtered)
         # Re-wrap if multi-line original
-        if '\n' in body:
-            new_body = '\n    ' + ',\n    '.join(filtered) + ',\n'
+        if "\n" in body:
+            new_body = "\n    " + ",\n    ".join(filtered) + ",\n"
 
-        return f'{prefix}{new_body}{suffix}'
+        return f"{prefix}{new_body}{suffix}"
 
     # Match use ntkrnl_sys::ddk::{...};  (potentially multi-line)
     code = re.sub(
-        r'(use ntkrnl_sys::ddk::\{)(.*?)(\};)',
+        r"(use ntkrnl_sys::ddk::\{)(.*?)(\};)",
         clean_import_block,
         code,
         flags=re.DOTALL,
@@ -873,6 +988,7 @@ def fix_self_imports(code: str) -> str:
 # ============================================================================
 # Callback calling convention fixes
 # ============================================================================
+
 
 def _split_extern_decls(inner_lines: list[str]) -> list[tuple[str, str]]:
     """Split the inner lines of an `extern "..." { ... }` block into a list of
@@ -896,15 +1012,15 @@ def _split_extern_decls(inner_lines: list[str]) -> list[tuple[str, str]]:
             continue
         # A `//` line that appears between declarations (i.e. not while we are
         # mid-way through accumulating a declaration) is a standalone comment.
-        if s.startswith('//') and not current:
-            out.append(('comment', s))
+        if s.startswith("//") and not current:
+            out.append(("comment", s))
             continue
         current = (current + " " + s).strip() if current else s
-        if current.endswith(';'):
-            out.append(('decl', current))
+        if current.endswith(";"):
+            out.append(("decl", current))
             current = ""
     if current:
-        out.append(('decl', current))
+        out.append(("decl", current))
     return out
 
 
@@ -922,9 +1038,10 @@ def fix_extern_vs_local_static_dups(code: str) -> str:
     # Locally-defined static names (have an `=` initializer, top-level).
     local_static_names = set()
     for m in re.finditer(
-        r'^(?:[ \t]*#\[no_mangle\][ \t]*\n)?[ \t]*pub\s+static\s+(?:mut\s+)?'
-        r'(\w+)\s*:[^;=]+=',
-        code, re.MULTILINE,
+        r"^(?:[ \t]*#\[no_mangle\][ \t]*\n)?[ \t]*pub\s+static\s+(?:mut\s+)?"
+        r"(\w+)\s*:[^;=]+=",
+        code,
+        re.MULTILINE,
     ):
         local_static_names.add(m.group(1))
 
@@ -934,26 +1051,24 @@ def fix_extern_vs_local_static_dups(code: str) -> str:
     def clean_block(match: re.Match) -> str:
         block = match.group(0)
         header_m = re.match(r'(extern\s+"[^"]+"\s*\{)', block)
-        inner = re.search(r'\{(.*)\}', block, re.DOTALL)
+        inner = re.search(r"\{(.*)\}", block, re.DOTALL)
         if not header_m or not inner:
             return block
         entries = _split_extern_decls(inner.group(1).splitlines())
         filtered: list[tuple[str, str]] = []
         for kind, text in entries:
-            if kind == 'decl':
-                sm = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', text)
+            if kind == "decl":
+                sm = re.match(r"static\s+(?:mut\s+)?(\w+)\s*:", text)
                 if sm and sm.group(1) in local_static_names:
                     continue  # defined locally — drop the extern decl
             filtered.append((kind, text))
-        if not any(k == 'decl' for k, _ in filtered):
+        if not any(k == "decl" for k, _ in filtered):
             return ""
         if len(filtered) == len(entries):
             return block
-        return header_m.group(1) + "\n" + "".join(
-            f"    {t}\n" for _, t in filtered) + "}"
+        return header_m.group(1) + "\n" + "".join(f"    {t}\n" for _, t in filtered) + "}"
 
-    return re.sub(r'extern\s+"[^"]+"\s*\{[^}]*\}', clean_block, code,
-                  flags=re.DOTALL)
+    return re.sub(r'extern\s+"[^"]+"\s*\{[^}]*\}', clean_block, code, flags=re.DOTALL)
 
 
 def fix_extern_vs_local_dups(code: str) -> str:
@@ -973,9 +1088,9 @@ def fix_extern_vs_local_dups(code: str) -> str:
         brace_depth = 1
         pos = m.end()
         while pos < len(code) and brace_depth > 0:
-            if code[pos] == '{':
+            if code[pos] == "{":
                 brace_depth += 1
-            elif code[pos] == '}':
+            elif code[pos] == "}":
                 brace_depth -= 1
             pos += 1
         extern_ranges.append((start, pos))
@@ -992,17 +1107,17 @@ def fix_extern_vs_local_dups(code: str) -> str:
 
         # Verify it has a body (opening '{' after params)
         name = m.group(1)
-        after = code[m.end():]
+        after = code[m.end() :]
         paren_depth = 1
         pos = 0
         while pos < len(after) and paren_depth > 0:
-            if after[pos] == '(':
+            if after[pos] == "(":
                 paren_depth += 1
-            elif after[pos] == ')':
+            elif after[pos] == ")":
                 paren_depth -= 1
             pos += 1
-        rest = after[pos:pos+80].strip()
-        if rest.startswith('{') or rest.startswith('->'):
+        rest = after[pos : pos + 80].strip()
+        if rest.startswith("{") or rest.startswith("->"):
             local_fn_names.add(name)
 
     if not local_fn_names:
@@ -1016,7 +1131,7 @@ def fix_extern_vs_local_dups(code: str) -> str:
             return block
 
         header = header_match.group(1)
-        inner = re.search(r'\{(.*)\}', block, re.DOTALL)
+        inner = re.search(r"\{(.*)\}", block, re.DOTALL)
         if not inner:
             return block
 
@@ -1026,14 +1141,14 @@ def fix_extern_vs_local_dups(code: str) -> str:
         # Filter out declarations matching local function names; keep comments.
         filtered: list[tuple[str, str]] = []
         for kind, text in entries:
-            if kind == 'decl':
-                fn_m = re.match(r'fn\s+(\w+)\s*\(', text)
+            if kind == "decl":
+                fn_m = re.match(r"fn\s+(\w+)\s*\(", text)
                 if fn_m and fn_m.group(1) in local_fn_names:
                     continue  # Remove this extern decl — defined locally
             filtered.append((kind, text))
 
         # Drop the block entirely if nothing but comments would remain.
-        if not any(k == 'decl' for k, _ in filtered):
+        if not any(k == "decl" for k, _ in filtered):
             return ""
         if len(filtered) == len(entries):
             return block  # Nothing changed
@@ -1051,7 +1166,7 @@ def fix_extern_vs_local_dups(code: str) -> str:
         flags=re.DOTALL,
     )
     # Clean up blank lines from removed blocks
-    code = re.sub(r'\n{3,}', '\n\n', code)
+    code = re.sub(r"\n{3,}", "\n\n", code)
     return code
 
 
@@ -1067,7 +1182,7 @@ def fix_duplicate_fn_defs(code: str) -> str:
     """
     # Match only top-level function definitions: #[no_mangle]\npub unsafe extern "..." fn Name(
     fn_pattern = re.compile(
-        r'^#\[no_mangle\]\s*\n'
+        r"^#\[no_mangle\]\s*\n"
         r'^(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)\s*\(',
         re.MULTILINE,
     )
@@ -1081,12 +1196,12 @@ def fix_duplicate_fn_defs(code: str) -> str:
     # collapses the dual-cfg ABI block and silently reintroduces the
     # #1 i386 crash cause. Only same-(name, guard) pairs are real dups.
     def _cfg_guard_above(pos: int) -> str:
-        prev_end = code.rfind('\n', 0, pos)
+        prev_end = code.rfind("\n", 0, pos)
         if prev_end <= 0:
-            return ''
-        prev_start = code.rfind('\n', 0, prev_end) + 1
+            return ""
+        prev_start = code.rfind("\n", 0, prev_end) + 1
         prev_line = code[prev_start:prev_end].strip()
-        return prev_line if prev_line.startswith('#[cfg(') else ''
+        return prev_line if prev_line.startswith("#[cfg(") else ""
 
     fn_positions: dict[tuple[str, str], list[int]] = {}
     for m in fn_pattern.finditer(code):
@@ -1094,35 +1209,34 @@ def fix_duplicate_fn_defs(code: str) -> str:
         fn_positions.setdefault(key, []).append(m.start())
 
     # Find functions defined more than once under the *same* guard.
-    dups = {key: positions for key, positions in fn_positions.items()
-            if len(positions) > 1}
+    dups = {key: positions for key, positions in fn_positions.items() if len(positions) > 1}
     if not dups:
         return code
 
     # Second pass: remove all but the last occurrence of each dup.
     to_remove = []
-    for key, positions in dups.items():
+    for positions in dups.values():
         for pos in positions[:-1]:
             fn_start = pos
             # Absorb an immediately-preceding `#[cfg(...)]` line so a
             # real-dup removal doesn't leave a dangling cfg attribute.
-            prev_end = code.rfind('\n', 0, pos)
+            prev_end = code.rfind("\n", 0, pos)
             if prev_end > 0:
-                prev_start = code.rfind('\n', 0, prev_end) + 1
-                if code[prev_start:prev_end].strip().startswith('#[cfg('):
+                prev_start = code.rfind("\n", 0, prev_end) + 1
+                if code[prev_start:prev_end].strip().startswith("#[cfg("):
                     fn_start = prev_start
 
             # Find the opening brace after the fn signature
             try:
-                brace_start = code.index('{', pos)
+                brace_start = code.index("{", pos)
             except ValueError:
                 continue
             depth = 1
             end = brace_start + 1
             while depth > 0 and end < len(code):
-                if code[end] == '{':
+                if code[end] == "{":
                     depth += 1
-                elif code[end] == '}':
+                elif code[end] == "}":
                     depth -= 1
                 end += 1
             to_remove.append((fn_start, end))
@@ -1132,7 +1246,7 @@ def fix_duplicate_fn_defs(code: str) -> str:
     for start, end in to_remove:
         code = code[:start] + code[end:]
 
-    code = re.sub(r'\n{3,}', '\n\n', code)
+    code = re.sub(r"\n{3,}", "\n\n", code)
     return code
 
 
@@ -1147,20 +1261,19 @@ def fix_extern_const(code: str) -> str:
     The LLM sometimes puts `const NAME: type;` inside extern blocks.
     These should be standalone `const` declarations outside the block.
     """
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
-    extracted_consts = []
     in_extern = 0
 
     for line in lines:
         stripped = line.strip()
         if re.match(r'extern\s+"[^"]*"\s*\{', stripped):
-            in_extern += stripped.count('{') - stripped.count('}')
+            in_extern += stripped.count("{") - stripped.count("}")
             result.append(line)
         elif in_extern > 0:
-            in_extern += stripped.count('{') - stripped.count('}')
+            in_extern += stripped.count("{") - stripped.count("}")
             # Check if this is a const declaration
-            if stripped.startswith('const ') and stripped.endswith(';'):
+            if stripped.startswith("const ") and stripped.endswith(";"):
                 # Extract it — will be placed outside the extern block
                 # But we can't give it a value here, so just remove it
                 # (these are typically C #defines that need manual handling)
@@ -1170,7 +1283,7 @@ def fix_extern_const(code: str) -> str:
         else:
             result.append(line)
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 def fix_variadic_extern_system(code: str) -> str:
@@ -1180,7 +1293,7 @@ def fix_variadic_extern_system(code: str) -> str:
     Variadic functions must use extern "C".
     """
     # Find extern "system" blocks containing variadic declarations (...)
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
     i = 0
     while i < len(lines):
@@ -1191,16 +1304,16 @@ def fix_variadic_extern_system(code: str) -> str:
         if re.match(r'extern\s+"system"\s*\{', stripped):
             # Collect the entire block
             block_lines = [line]
-            brace_count = stripped.count('{') - stripped.count('}')
+            brace_count = stripped.count("{") - stripped.count("}")
             i += 1
             while i < len(lines) and brace_count > 0:
                 block_lines.append(lines[i])
-                brace_count += lines[i].count('{') - lines[i].count('}')
+                brace_count += lines[i].count("{") - lines[i].count("}")
                 i += 1
 
-            block_text = '\n'.join(block_lines)
+            block_text = "\n".join(block_lines)
             # If block contains variadic fn (...), change to extern "C"
-            if '...' in block_text:
+            if "..." in block_text:
                 block_text = re.sub(
                     r'extern\s+"system"\s*\{',
                     'extern "C" {',
@@ -1212,28 +1325,75 @@ def fix_variadic_extern_system(code: str) -> str:
             result.append(line)
             i += 1
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 _GDIOBJ_MACRO_FAMILIES = (
-    "DRIVEROBJ", "BRUSHOBJ", "DC", "PATH", "REGION", "SURFACE",
-    "PALETTE", "XLATEOBJ", "LFONT", "TEXTOBJ", "COLORSPACEOBJ", "ICMLCS",
+    "DRIVEROBJ",
+    "BRUSHOBJ",
+    "DC",
+    "PATH",
+    "REGION",
+    "SURFACE",
+    "PALETTE",
+    "XLATEOBJ",
+    "LFONT",
+    "TEXTOBJ",
+    "COLORSPACEOBJ",
+    "ICMLCS",
 )
 
 _GDIOBJ_MACRO_VERBS = (
     # exact suffix patterns the headers use
-    "AllocObject", "AllocObjectWithHandle", "AllocPath", "AllocPathWithHandle",
-    "AllocCS", "AllocCSWithHandle", "AllocFont", "AllocFontWithHandle",
-    "AllocBrush", "AllocBrushWithHandle", "AllocPalette", "AllocPaletteWithHandle",
-    "AllocSurface", "AllocSurfaceWithHandle", "AllocRgn", "AllocRgnWithHandle",
-    "AllocText", "AllocTextWithHandle",
-    "LockObject", "LockBrush", "LockDc", "LockPath", "LockRgn", "LockSurface",
-    "LockPalette", "LockFont", "LockText", "LockCS",
-    "UnlockObject", "UnlockBrush", "UnlockDc", "UnlockPath", "UnlockRgn",
-    "UnlockSurface", "UnlockPalette", "UnlockFont", "UnlockText", "UnlockCS",
-    "TryLockObject", "ShareLockObject", "ShareLockSurface", "ShareLockPalette",
-    "ShareLockFont", "ShareUnlockObject", "ShareUnlockSurface",
-    "ShareUnlockPalette", "ShareUnlockFont", "vUnlockObject", "vReleaseObj",
+    "AllocObject",
+    "AllocObjectWithHandle",
+    "AllocPath",
+    "AllocPathWithHandle",
+    "AllocCS",
+    "AllocCSWithHandle",
+    "AllocFont",
+    "AllocFontWithHandle",
+    "AllocBrush",
+    "AllocBrushWithHandle",
+    "AllocPalette",
+    "AllocPaletteWithHandle",
+    "AllocSurface",
+    "AllocSurfaceWithHandle",
+    "AllocRgn",
+    "AllocRgnWithHandle",
+    "AllocText",
+    "AllocTextWithHandle",
+    "LockObject",
+    "LockBrush",
+    "LockDc",
+    "LockPath",
+    "LockRgn",
+    "LockSurface",
+    "LockPalette",
+    "LockFont",
+    "LockText",
+    "LockCS",
+    "UnlockObject",
+    "UnlockBrush",
+    "UnlockDc",
+    "UnlockPath",
+    "UnlockRgn",
+    "UnlockSurface",
+    "UnlockPalette",
+    "UnlockFont",
+    "UnlockText",
+    "UnlockCS",
+    "TryLockObject",
+    "ShareLockObject",
+    "ShareLockSurface",
+    "ShareLockPalette",
+    "ShareLockFont",
+    "ShareUnlockObject",
+    "ShareUnlockSurface",
+    "ShareUnlockPalette",
+    "ShareUnlockFont",
+    "vUnlockObject",
+    "vReleaseObj",
 )
 
 
@@ -1250,9 +1410,9 @@ def drop_gdiobj_macro_externs(code: str) -> str:
     """
     pat = re.compile(
         r'^extern\s+"(?:C|system|stdcall|fastcall)"\s*\{\s*\n'
-        r'((?:[ \t]+(?:#\[[^\]]+\]\s*\n[ \t]+)?fn\s+[A-Za-z_]\w*\b'
-        r'(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)'
-        r'\}\s*\n?',
+        r"((?:[ \t]+(?:#\[[^\]]+\]\s*\n[ \t]+)?fn\s+[A-Za-z_]\w*\b"
+        r"(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)"
+        r"\}\s*\n?",
         re.MULTILINE,
     )
 
@@ -1261,7 +1421,7 @@ def drop_gdiobj_macro_externs(code: str) -> str:
         kept_fns: list[str] = []
         dropped: list[str] = []
         for line in body.splitlines(keepends=False):
-            fn_m = re.match(r'^\s*fn\s+([A-Za-z_]\w*)\b', line)
+            fn_m = re.match(r"^\s*fn\s+([A-Za-z_]\w*)\b", line)
             if not fn_m:
                 kept_fns.append(line)
                 continue
@@ -1276,20 +1436,20 @@ def drop_gdiobj_macro_externs(code: str) -> str:
         out = ""
         if any(ln.strip() for ln in kept_fns):
             out += 'extern "C" {\n' + "\n".join(kept_fns) + "\n}\n"
-        out += (f"// drop_gdiobj_macro_externs: dropped {len(dropped)} bogus "
-                f"extern decl(s) for GDI-object macro(s): "
-                f"{', '.join(dropped)} — these are macros in "
-                f"gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. "
-                f"Inline-expand via GDIOBJ_* primitives per "
-                f"win32k_translation_prompt.md §6.\n")
+        out += (
+            f"// drop_gdiobj_macro_externs: dropped {len(dropped)} bogus "
+            f"extern decl(s) for GDI-object macro(s): "
+            f"{', '.join(dropped)} — these are macros in "
+            f"gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. "
+            f"Inline-expand via GDIOBJ_* primitives per "
+            f"win32k_translation_prompt.md §6.\n"
+        )
         return out
 
     return pat.sub(rewrite_block, code)
 
 
-_PSEH_MACRO_EXTERN_NAMES_RE = re.compile(
-    r'^(?:_SEH2_\w+|RtlGetProcessHeap)$'
-)
+_PSEH_MACRO_EXTERN_NAMES_RE = re.compile(r"^(?:_SEH2_\w+|RtlGetProcessHeap)$")
 
 
 def drop_pseh_macro_externs(code: str) -> str:
@@ -1312,9 +1472,9 @@ def drop_pseh_macro_externs(code: str) -> str:
     """
     pat = re.compile(
         r'extern\s+"([^"]+)"\s*\{\s*\n'
-        r'((?:[ \t]*(?:#\[[^\]]+\]\s*\n[ \t]*)?(?:pub\s+)?fn\s+[A-Za-z_]\w*\b'
-        r'(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)'
-        r'[ \t]*\}\s*\n?',
+        r"((?:[ \t]*(?:#\[[^\]]+\]\s*\n[ \t]*)?(?:pub\s+)?fn\s+[A-Za-z_]\w*\b"
+        r"(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)"
+        r"[ \t]*\}\s*\n?",
         re.MULTILINE,
     )
 
@@ -1324,7 +1484,7 @@ def drop_pseh_macro_externs(code: str) -> str:
         kept: list[str] = []
         dropped: list[str] = []
         for line in body.splitlines(keepends=False):
-            fn_m = re.match(r'^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b', line)
+            fn_m = re.match(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b", line)
             if fn_m and _PSEH_MACRO_EXTERN_NAMES_RE.match(fn_m.group(1)):
                 dropped.append(fn_m.group(1))
                 continue
@@ -1334,11 +1494,13 @@ def drop_pseh_macro_externs(code: str) -> str:
         out = ""
         if any(ln.strip() for ln in kept):
             out += f'extern "{abi}" {{\n' + "\n".join(kept) + "\n}\n"
-        out += (f"// drop_pseh_macro_externs: dropped {len(dropped)} bogus "
-                f"extern decl(s): {', '.join(dropped)} — PSEH _SEH2_* "
-                f"(and RtlGetProcessHeap) are macros, not symbols. Under "
-                f"USE_DUMMY_PSEH the SEH path is dead; translate the body "
-                f"directly. RtlGetProcessHeap → GetProcessHeap().\n")
+        out += (
+            f"// drop_pseh_macro_externs: dropped {len(dropped)} bogus "
+            f"extern decl(s): {', '.join(dropped)} — PSEH _SEH2_* "
+            f"(and RtlGetProcessHeap) are macros, not symbols. Under "
+            f"USE_DUMMY_PSEH the SEH path is dead; translate the body "
+            f"directly. RtlGetProcessHeap → GetProcessHeap().\n"
+        )
         return out
 
     return pat.sub(rewrite_block, code)
@@ -1370,7 +1532,7 @@ def fix_duplicate_extern_decls(code: str) -> str:
     declare the same extern with different parameter names or linkage.
     This causes E0428 (duplicate definitions) errors.
     """
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
     i = 0
     # Track all extern declarations across all blocks
@@ -1384,16 +1546,15 @@ def fix_duplicate_extern_decls(code: str) -> str:
         # Detect extern block start
         if re.match(r'extern\s+"[^"]*"\s*\{', stripped):
             block_lines = [line]
-            brace_count = stripped.count('{') - stripped.count('}')
+            brace_count = stripped.count("{") - stripped.count("}")
             i += 1
             while i < len(lines) and brace_count > 0:
                 block_lines.append(lines[i])
-                brace_count += lines[i].count('{') - lines[i].count('}')
+                brace_count += lines[i].count("{") - lines[i].count("}")
                 i += 1
 
             # Parse declarations within the block, deduplicate
             header = block_lines[0]
-            footer = block_lines[-1] if len(block_lines) > 1 else ""
             inner_lines = block_lines[1:-1] if len(block_lines) > 2 else []
 
             entries = _split_extern_decls(inner_lines)
@@ -1401,9 +1562,9 @@ def fix_duplicate_extern_decls(code: str) -> str:
             # Filter duplicates by symbol name; pass comments through unchanged.
             deduped: list[tuple[str, str]] = []
             for kind, text in entries:
-                if kind == 'decl':
-                    fn_m = re.match(r'fn\s+(\w+)\s*\(', text)
-                    static_m = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', text)
+                if kind == "decl":
+                    fn_m = re.match(r"fn\s+(\w+)\s*\(", text)
+                    static_m = re.match(r"static\s+(?:mut\s+)?(\w+)\s*:", text)
                     if fn_m:
                         name = fn_m.group(1)
                         if name in seen_extern_fns:
@@ -1418,7 +1579,7 @@ def fix_duplicate_extern_decls(code: str) -> str:
 
             # Emit only if there is at least one real declaration left;
             # an extern block of just comments would be useless and odd.
-            if any(k == 'decl' for k, _ in deduped):
+            if any(k == "decl" for k, _ in deduped):
                 result.append(header)
                 for _, text in deduped:
                     result.append(f"    {text}")
@@ -1428,7 +1589,7 @@ def fix_duplicate_extern_decls(code: str) -> str:
             result.append(line)
             i += 1
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 # ============================================================================
@@ -1439,8 +1600,14 @@ def fix_duplicate_extern_decls(code: str) -> str:
 # umbrella module). The LLM sometimes imports the wrong sibling; postprocess
 # retargets it onto the configured one (see collapse_sys_crate).
 _KNOWN_USER_SYS_CRATES = {
-    "ntdll_sys", "win32k_sys", "winsrv_sys", "winlogon_sys",
-    "userinit_sys", "csrsrv_sys", "smss_sys", "basesrv_sys",
+    "ntdll_sys",
+    "win32k_sys",
+    "winsrv_sys",
+    "winlogon_sys",
+    "userinit_sys",
+    "csrsrv_sys",
+    "smss_sys",
+    "basesrv_sys",
 }
 
 
@@ -1457,7 +1624,7 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     """
     pfx = f"{sys_crate}::{sys_umbrella}::"
     # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
-    code = re.sub(r'\bntkrnl_sys::\w+::', pfx, code)
+    code = re.sub(r"\bntkrnl_sys::\w+::", pfx, code)
     # 1b. Sibling user-mode substrate crates the LLM may have guessed wrong
     #     (the user-mode prompt names ntdll-sys, so it often imports
     #     `ntdll_sys::nt::*` even for a winlogon/winsrv/etc. target). Retarget
@@ -1466,33 +1633,37 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     for other in _KNOWN_USER_SYS_CRATES:
         if other == sys_crate:
             continue
-        code = re.sub(rf'\b{re.escape(other)}::\w+::', pfx, code)
+        code = re.sub(rf"\b{re.escape(other)}::\w+::", pfx, code)
     # 2. Drop every `use <crate>::<umbrella>::(* | {…} | Name);` line
     #    (single- or multi-line braced list) — replaced by one glob.
     use_pat = re.compile(
-        rf'^[ \t]*use\s+{re.escape(sys_crate)}::{re.escape(sys_umbrella)}::'
-        r'(?:\*|\{[^}]*\}|\w+)\s*;[ \t]*\n',
+        rf"^[ \t]*use\s+{re.escape(sys_crate)}::{re.escape(sys_umbrella)}::"
+        r"(?:\*|\{[^}]*\}|\w+)\s*;[ \t]*\n",
         re.MULTILINE | re.DOTALL,
     )
-    code = use_pat.sub('', code)
+    code = use_pat.sub("", code)
     # 3. Prepend a single glob use after the leading //! doc / comments.
-    lines = code.split('\n')
+    lines = code.split("\n")
     insert_at = 0
     for i, ln in enumerate(lines):
         s = ln.strip()
-        if s.startswith('//!') or s.startswith('//') or s == '':
+        if s.startswith("//!") or s.startswith("//") or s == "":
             insert_at = i + 1
         else:
             break
-    glob = f'use {sys_crate}::{sys_umbrella}::*;'
+    glob = f"use {sys_crate}::{sys_umbrella}::*;"
     if glob not in code:
         lines.insert(insert_at, glob)
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 _USER_INLINE_NAMES = {
-    "NtCurrentPeb", "NtCurrentTeb", "NtCurrentProcess", "NtCurrentThread",
-    "ZwCurrentProcess", "ZwCurrentThread",
+    "NtCurrentPeb",
+    "NtCurrentTeb",
+    "NtCurrentProcess",
+    "NtCurrentThread",
+    "ZwCurrentProcess",
+    "ZwCurrentThread",
 }
 
 
@@ -1507,29 +1678,34 @@ def strip_user_inline_redeclarations(code: str) -> str:
     guessed offset). The real ones come from `ntdll_sys::nt::*`. This
     is target-scoped (only called when sys_umbrella is set).
     """
+
     # 1. Remove extern blocks whose every `fn NAME` is a known inline.
     def drop_extern(m: re.Match) -> str:
         body = m.group(2)
-        fns = re.findall(r'\bfn\s+(\w+)', body)
+        fns = re.findall(r"\bfn\s+(\w+)", body)
         if fns and all(f in _USER_INLINE_NAMES for f in fns):
-            return ''
+            return ""
         return m.group(0)
 
     code = re.sub(
         r'(extern\s+"[^"]+"\s*\{)(.*?)(\})',
-        drop_extern, code, flags=re.DOTALL,
+        drop_extern,
+        code,
+        flags=re.DOTALL,
     )
     # 2. Remove a bogus local `struct PEB|TEB { … _padding … }` (with
     #    or without a #[repr(C)] / #[derive(...)] attr line above it).
     code = re.sub(
-        r'(?:#\[[^\]]*\]\s*)*'
-        r'(?:pub\s+)?struct\s+(?:PEB|TEB)\s*\{[^}]*?_padding[^}]*?\}\s*',
-        '', code, flags=re.DOTALL,
+        r"(?:#\[[^\]]*\]\s*)*"
+        r"(?:pub\s+)?struct\s+(?:PEB|TEB)\s*\{[^}]*?_padding[^}]*?\}\s*",
+        "",
+        code,
+        flags=re.DOTALL,
     )
     # 3. Retarget casts that referenced those local structs onto the
     #    genuine bindgen layouts (in scope via the nt glob).
-    code = re.sub(r'\bas\s+(\*\s*(?:const|mut)\s*)PEB\b', r'as \1_PEB', code)
-    code = re.sub(r'\bas\s+(\*\s*(?:const|mut)\s*)TEB\b', r'as \1_TEB', code)
+    code = re.sub(r"\bas\s+(\*\s*(?:const|mut)\s*)PEB\b", r"as \1_PEB", code)
+    code = re.sub(r"\bas\s+(\*\s*(?:const|mut)\s*)TEB\b", r"as \1_TEB", code)
     return code
 
 
@@ -1540,7 +1716,7 @@ def postprocess(
     target_name: str = "ntoskrnl",
     sys_crate: str = "ntkrnl_sys",
     sys_umbrella: str | None = None,
-    c_source_path: "Path | None" = None,
+    c_source_path: Path | None = None,
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -1595,10 +1771,8 @@ def postprocess(
     # own bindgen/spec-fused enforcer above; this covers every other target.)
     if c_source_path is not None and target_name != "win32k":
         try:
-            from .abi_enforce import enforce_abi_from_c
             code = enforce_abi_from_c(code, c_source_path)
         except Exception as e:
-            import sys
             print(f"  [abi_enforce] skipped ({e})", file=sys.stderr)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)

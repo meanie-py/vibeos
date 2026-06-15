@@ -16,6 +16,7 @@ Usage:
     python3 tools/gen_ks386_inc.py --check    # Verify checked-in matches
     python3 tools/gen_ks386_inc.py --stdout   # Print to stdout (debug)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -116,18 +117,31 @@ def compile_genincdata(work: Path) -> Path:
     cmd = [
         str(CLANG),
         "--target=i686-w64-mingw32",
-        "-pipe", "-fms-extensions", "-fno-strict-aliasing", "-fno-common",
-        "-mlong-double-64", "-Wno-microsoft", "-Wno-pragma-pack",
-        "-fno-associative-math", "-fno-builtin-stpcpy",
-        "-gdwarf-2", "-gstrict-dwarf",
-        "-march=pentium", "-mtune=generic", "-O1",
-        "-fno-optimize-sibling-calls", "-fno-omit-frame-pointer",
-        "-mstackrealign", "-mxsave",
+        "-pipe",
+        "-fms-extensions",
+        "-fno-strict-aliasing",
+        "-fno-common",
+        "-mlong-double-64",
+        "-Wno-microsoft",
+        "-Wno-pragma-pack",
+        "-fno-associative-math",
+        "-fno-builtin-stpcpy",
+        "-gdwarf-2",
+        "-gstrict-dwarf",
+        "-march=pentium",
+        "-mtune=generic",
+        "-O1",
+        "-fno-optimize-sibling-calls",
+        "-fno-omit-frame-pointer",
+        "-mstackrealign",
+        "-mxsave",
         "-Wno-unknown-warning-option",
         "-std=gnu2x",
         "-nostdinc",
-        "-isystem", str(REPO / "sdk/include/crt"),
-        "-isystem", str(LLVM_MINGW / "lib/clang/19/include"),
+        "-isystem",
+        str(REPO / "sdk/include/crt"),
+        "-isystem",
+        str(LLVM_MINGW / "lib/clang/19/include"),
     ]
     for name, value in KERNEL_DEFINES:
         cmd.append(f"-D{name}={value}" if value is not None else f"-D{name}")
@@ -163,17 +177,17 @@ def read_coff_section(obj: Path, section_name: str) -> bytes:
     sec_table = 20 + opt_header_size
     for i in range(num_sections):
         off = sec_table + i * 40
-        nb = raw[off:off + 8]
+        nb = raw[off : off + 8]
         nul = nb.find(b"\x00")
         if nul < 0:
             nul = 8
         name = nb[:nul].decode("ascii", "replace")
         if name == section_name:
-            raw_size = int.from_bytes(raw[off + 16:off + 20], "little")
-            raw_addr = int.from_bytes(raw[off + 20:off + 24], "little")
+            raw_size = int.from_bytes(raw[off + 16 : off + 20], "little")
+            raw_addr = int.from_bytes(raw[off + 20 : off + 24], "little")
             if raw_addr == 0 or raw_size == 0:
                 raise RuntimeError(f"section {section_name!r} has no raw data")
-            return raw[raw_addr:raw_addr + raw_size]
+            return raw[raw_addr : raw_addr + raw_size]
     raise RuntimeError(f"section {section_name!r} not found in {obj}")
 
 
@@ -188,14 +202,14 @@ def emit_ks386_inc(asmdef: bytes) -> str:
     """
     out: list[str] = []
     for off in range(0, len(asmdef), 64):
-        chunk = asmdef[off:off + 64]
+        chunk = asmdef[off : off + 64]
         if len(chunk) < 64:
             break
         ty = chunk[0]
         nul = chunk[1:56].find(b"\x00")
         if nul < 0:
             nul = 55
-        name = chunk[1:1 + nul].decode("utf-8")
+        name = chunk[1 : 1 + nul].decode("utf-8")
         (value,) = struct.unpack_from("<Q", chunk, 56)
         if ty == 0:
             break
@@ -217,7 +231,7 @@ def regenerate() -> str:
         )
     if not GENINCDATA.exists():
         raise SystemExit(f"missing {GENINCDATA}")
-    for d in list(GENERATED_INCLUDES) + [BUGCODES_H]:
+    for d in [*GENERATED_INCLUDES, BUGCODES_H]:
         if not d.exists():
             raise SystemExit(
                 f"missing cmake-generated artifact {d}\n"
@@ -231,7 +245,9 @@ def regenerate() -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--check", action="store_true", help="verify checked-in file matches a fresh regen")
+    ap.add_argument(
+        "--check", action="store_true", help="verify checked-in file matches a fresh regen"
+    )
     ap.add_argument("--stdout", action="store_true", help="print to stdout instead of writing")
     args = ap.parse_args()
 

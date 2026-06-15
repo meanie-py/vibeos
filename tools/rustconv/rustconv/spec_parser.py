@@ -3,7 +3,6 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .config import SPEC_FILE
 
@@ -15,24 +14,24 @@ from .config import SPEC_FILE
 #   @ extern CcFastMdlReadWait
 #   @ varargs DbgPrint(str)
 RE_SPEC_LINE = re.compile(
-    r'^@\s+'
-    r'(\w+)'                          # convention: stdcall, fastcall, cdecl, varargs, extern
-    r'(?:\s+-arch=([\w,]+))?'         # optional arch filter
-    r'\s+(\w+)'                       # export name
-    r'(?:\(([^)]*)\))?'               # optional param list
-    r'(?:\s+(\w+))?'                  # optional forward target
-    r'\s*$'
+    r"^@\s+"
+    r"(\w+)"  # convention: stdcall, fastcall, cdecl, varargs, extern
+    r"(?:\s+-arch=([\w,]+))?"  # optional arch filter
+    r"\s+(\w+)"  # export name
+    r"(?:\(([^)]*)\))?"  # optional param list
+    r"(?:\s+(\w+))?"  # optional forward target
+    r"\s*$"
 )
 
 
 @dataclass
 class SpecEntry:
     name: str
-    convention: str      # "stdcall", "fastcall", "cdecl", "varargs", "extern"
-    params: list[str]    # ["ptr", "long", "str", ...]
-    arch_filter: Optional[list[str]]  # None = all arches, or ["i386"], ["x86_64", "arm64"], etc.
-    forward_target: Optional[str]     # forwarded to another symbol name
-    is_variable: bool    # True for "@ extern" entries (data exports)
+    convention: str  # "stdcall", "fastcall", "cdecl", "varargs", "extern"
+    params: list[str]  # ["ptr", "long", "str", ...]
+    arch_filter: list[str] | None  # None = all arches, or ["i386"], ["x86_64", "arm64"], etc.
+    forward_target: str | None  # forwarded to another symbol name
+    is_variable: bool  # True for "@ extern" entries (data exports)
 
 
 def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
@@ -41,7 +40,7 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
 
     for line in path.read_text().splitlines():
         line = line.strip()
-        if not line or line.startswith('#'):
+        if not line or line.startswith("#"):
             continue
 
         m = RE_SPEC_LINE.match(line)
@@ -56,13 +55,13 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
 
         arch_filter = None
         if arch_str:
-            arch_filter = arch_str.split(',')
+            arch_filter = arch_str.split(",")
 
         params = []
         if params_str:
             params = [p.strip() for p in params_str.split() if p.strip()]
 
-        is_variable = (convention == "extern")
+        is_variable = convention == "extern"
 
         entries[name] = SpecEntry(
             name=name,
@@ -76,7 +75,9 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
     return entries
 
 
-def get_exports_for_file(spec: dict[str, SpecEntry], function_names: list[str]) -> dict[str, SpecEntry]:
+def get_exports_for_file(
+    spec: dict[str, SpecEntry], function_names: list[str]
+) -> dict[str, SpecEntry]:
     """Filter spec entries to only those matching the given function names."""
     return {name: spec[name] for name in function_names if name in spec}
 
@@ -88,9 +89,7 @@ def rust_calling_convention(entry: SpecEntry) -> str:
     elif entry.convention == "fastcall":
         # fastcall is arch-specific; on x86 it's fastcall, on x64/arm64 it's "C"
         return 'extern "fastcall"'  # caller should use cfg for i386 vs others
-    elif entry.convention == "cdecl":
-        return 'extern "C"'
-    elif entry.convention == "varargs":
+    elif entry.convention == "cdecl" or entry.convention == "varargs":
         return 'extern "C"'
     else:
         return 'extern "C"'
@@ -107,6 +106,9 @@ def print_spec_stats(spec: dict[str, SpecEntry]) -> None:
     for e in spec.values():
         conventions[e.convention] = conventions.get(e.convention, 0) + 1
 
-    print(f"Spec: {funcs} functions, {vars_} variables, {forwarded} forwarded, {arch_specific} arch-specific")
+    print(
+        f"Spec: {funcs} functions, {vars_} variables, "
+        f"{forwarded} forwarded, {arch_specific} arch-specific"
+    )
     for conv, count in sorted(conventions.items()):
         print(f"  {conv}: {count}")

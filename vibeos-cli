@@ -35,5 +35,12 @@ pick_python() {
 PY="$(pick_python)"
 [ -n "$PY" ] || { echo "vibeos-cli: no python found (set VIBEOS_PYTHON)" >&2; exit 127; }
 
+# `vibeos-cli swarm ...` → the agent-swarm CLI (folded in here, not a separate top-level
+# tool). Routed directly (no tests.qemu.cli load) so the hooks/channel stay lightweight.
+if [ "${1:-}" = "swarm" ]; then
+    shift
+    exec env PYTHONPATH="$REPO/agent-swarm${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m agent_swarm "$@"
+fi
+
 # PYTHONPATH=repo so `tests.qemu.cli` imports regardless of cwd.
 exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m tests.qemu.cli "$@"

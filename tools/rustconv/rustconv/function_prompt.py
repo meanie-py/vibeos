@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
-from .config import TEMPLATES_DIR, NTOSKRNL_DIR, OUTPUT_CRATE, Target, TARGETS
-from .resolver import ResolveResult, GAP_FUNCTIONS
+from .config import NTOSKRNL_DIR, OUTPUT_CRATE, TARGETS, TEMPLATES_DIR, Target
+from .resolver import GAP_FUNCTIONS, ResolveResult
 from .spec_parser import rust_calling_convention
 
 if TYPE_CHECKING:
-    from .scanner import ScanResult, CGlobal
+    from .scanner import CGlobal, ScanResult
 
 
 _FUNCTION_MODE_HAL_CODA = """
@@ -44,8 +43,7 @@ as if they were already in scope. Don't put `ntkrnl_sys::ddk::` or
 """
 
 
-def load_function_system_prompt(target: Target | None = None,
-                                mode: str = "idiomatic") -> str:
+def load_function_system_prompt(target: Target | None = None, mode: str = "idiomatic") -> str:
     """Load the system prompt for per-function translation.
 
     mode="mechanical" loads function_prompt_mechanical.md instead — a faithful-
@@ -85,7 +83,18 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
 
     is_hal = target is not None and target.name == "hal"
     # Hand-written module names that should be folded into `ddk` for HAL.
-    _kernel_api_modules = {"ke", "ex", "mm", "rtl", "ob", "ps", "interlocked", "base", "macros", "constants"}
+    _kernel_api_modules = {
+        "ke",
+        "ex",
+        "mm",
+        "rtl",
+        "ob",
+        "ps",
+        "interlocked",
+        "base",
+        "macros",
+        "constants",
+    }
 
     # Build a merged view: module → set of names
     merged: dict[str, set[str]] = {}
@@ -144,14 +153,14 @@ def _load_shim_signatures(subsystem: str) -> dict[str, str]:
     phase5_text = text[phase5_start:]
 
     for m in re.finditer(
-        r'^(\w[\w\s\*]*?)\s+(?:NTAPI\s+)?(\w+)\s*\(([^)]*)\)\s*\{',
+        r"^(\w[\w\s\*]*?)\s+(?:NTAPI\s+)?(\w+)\s*\(([^)]*)\)\s*\{",
         phase5_text,
         re.MULTILINE,
     ):
         ret_type = m.group(1).strip()
         name = m.group(2)
         params = m.group(3).strip()
-        if name.startswith('_tramp_') or name.startswith('_fi_'):
+        if name.startswith("_tramp_") or name.startswith("_fi_"):
             continue
         sigs[name] = f"{ret_type} {name}({params})"
 
@@ -218,7 +227,9 @@ def _format_callee_context(
             # Local function not yet translated — show only the C signature.
             dep = by_name[callee_name]
             params_str = ", ".join(f"{t} {n}" for t, n in dep.params)
-            sig = f"{dep.return_type} {dep.calling_convention or ''} {dep.name}({params_str})".strip()
+            sig = (
+                f"{dep.return_type} {dep.calling_convention or ''} {dep.name}({params_str})".strip()
+            )
             parts.append(f"### `{callee_name}` (local C function, not yet translated)")
             parts.append(f"```c\n{sig};\n```\n")
 
@@ -233,7 +244,9 @@ def _format_callee_context(
                 parts.append(f"### `{callee_name}` (from another Rust module)")
                 parts.append(f"```rust\n{rust_sig}\n```\n")
             else:
-                parts.append(f"- `{callee_name}` — unknown extern (declare in extern block if needed)")
+                parts.append(
+                    f"- `{callee_name}` — unknown extern (declare in extern block if needed)"
+                )
 
     if len(parts) <= 2:
         return ""  # No meaningful callee context
@@ -302,17 +315,21 @@ def _format_export_info(func: FunctionDep, spec_exports: dict) -> str:
     parts.append("\n## Export Info")
     if entry.convention == "fastcall":
         parts.append(f"This function is EXPORTED as `{func.name}`. Use `#[no_mangle] pub unsafe`.")
-        parts.append(f"Use `extern \"fastcall\"` on `#[cfg(target_arch = \"x86\")]` "
-                      f"and `extern \"C\"` on other arches.{fwd}{arch}")
+        parts.append(
+            f'Use `extern "fastcall"` on `#[cfg(target_arch = "x86")]` '
+            f'and `extern "C"` on other arches.{fwd}{arch}'
+        )
     else:
-        parts.append(f"This function is EXPORTED as `{func.name}`. "
-                      f"Use `#[no_mangle] pub unsafe {conv} fn {func.name}(...)`{fwd}{arch}")
+        parts.append(
+            f"This function is EXPORTED as `{func.name}`. "
+            f"Use `#[no_mangle] pub unsafe {conv} fn {func.name}(...)`{fwd}{arch}"
+        )
 
     return "\n".join(parts)
 
 
 def build_preamble_prompt(
-    scan: "ScanResult",
+    scan: ScanResult,
     resolve: ResolveResult,
     target: Target | None = None,
 ) -> str:
@@ -350,7 +367,7 @@ def build_preamble_prompt(
         "  `PVOID`) as if already in scope. Do NOT add `ntkrnl_sys::` path\n"
         "  prefixes inline.\n\n"
         "**Output ONLY the Rust declarations.** Do NOT emit: `use`\n"
-        "statements, `extern \"..\" {}` blocks, ANY `fn` definitions, or\n"
+        'statements, `extern ".." {}` blocks, ANY `fn` definitions, or\n'
         "prose. The caller assembles imports and function bodies separately."
     )
     parts.append("\n## C File-Scope Preamble\n")
@@ -362,7 +379,7 @@ def build_preamble_prompt(
 
 def build_file_context(
     file_res: ResolveResult,
-    scan: "ScanResult",
+    scan: ScanResult,
     subsystem: str,
     target: Target | None = None,
 ) -> str:
@@ -385,9 +402,7 @@ def build_file_context(
     gap_info = _format_gap_functions(file_res.gap_functions, subsystem)
     if gap_info:
         parts.append(gap_info)
-    globals_info = _format_globals_context(
-        scan.globals, scan.globals_text or scan.preamble_text
-    )
+    globals_info = _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
     if globals_info:
         parts.append(globals_info)
     return "\n".join(parts)

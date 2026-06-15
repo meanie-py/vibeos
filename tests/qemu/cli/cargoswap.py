@@ -13,6 +13,7 @@ Covers the cargo-deep ntdll DLLs (x86) AND the cargo-driven ntoskrnl.exe kernel
 the build / swap / cmp-assert / restore-on-exit mechanics and boots through
 `vibeos-cli smoke`), and aggregates one verdict + summary.json.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,9 +25,17 @@ from .artifacts import Run, Stage
 #   arg_style "arch_module" → `script <arch> <module>` (ntdll DLLs share one
 #   script keyed by both); "arch" → `script <arch>` (ntoskrnl kernel boot-swap).
 _SWAPS = {
-    "ntdll":       ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
-    "ntdll_vista": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
-    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", "arch",        ("i386", "amd64", "arm64")),
+    "ntdll": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh", "arch_module", ("i386", "amd64")),
+    "ntdll_vista": (
+        "sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",
+        "arch_module",
+        ("i386", "amd64"),
+    ),
+    "ntoskrnl": (
+        "sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh",
+        "arch",
+        ("i386", "amd64", "arm64"),
+    ),
 }
 _ORDER = ("ntdll", "ntdll_vista", "ntoskrnl")
 
@@ -55,8 +64,7 @@ def cargo_swap(args, repo: Path) -> int:
         script_rel, arg_style, arches = _SWAPS[mod]
         stage = f"boot-swap:{mod}"
         if arch not in arches:
-            run.add(Stage(stage, status="skip",
-                          detail=f"{mod} is {'/'.join(arches)}-only"))
+            run.add(Stage(stage, status="skip", detail=f"{mod} is {'/'.join(arches)}-only"))
             continue
         script = repo / script_rel
         if not script.is_file():
@@ -71,11 +79,18 @@ def cargo_swap(args, repo: Path) -> int:
         cp = run.run(cmd, cwd=repo, stage=stage, timeout=1800)
         salient = _salient(cp.stdout, cp.stderr)
         if cp.returncode == 0:
-            run.add(Stage(stage, exit=0, status="ok",
-                          detail="booted to smoke marker", salient=salient))
+            run.add(
+                Stage(stage, exit=0, status="ok", detail="booted to smoke marker", salient=salient)
+            )
         else:
-            run.add(Stage(stage, exit=cp.returncode, status="fail",
-                          detail="relinked clean but failed RUNTIME boot",
-                          salient=salient))
+            run.add(
+                Stage(
+                    stage,
+                    exit=cp.returncode,
+                    status="fail",
+                    detail="relinked clean but failed RUNTIME boot",
+                    salient=salient,
+                )
+            )
 
     return run.finalize(repo)

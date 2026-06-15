@@ -35,13 +35,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .seh_inventory import _in_keepset
 from .callout_annotate import (
-    _mask_literals,
     _enclosing_func_span,
     _line_of,
-    _balanced_args,
+    _mask_literals,
 )
+from .seh_inventory import _in_keepset
 
 # <Prefix>_Lock<Suffix>(  — DC_LockDc, REGION_LockRgn, PATH_LockPath,
 # TEXTOBJ_LockText, GDIOBJ_LockObject, COLORSPACEOBJ_LockCS, …
@@ -60,29 +59,27 @@ class GdiLockSite:
     function: str
     func_line: int
     func_end_line: int
-    lock_fn: str                 # e.g. DC_LockDc
-    unlock_fn: str               # inferred release symbol
+    lock_fn: str  # e.g. DC_LockDc
+    unlock_fn: str  # inferred release symbol
     lock_line: int
-    var: str                     # variable the locked object is bound to
-    null_guarded: bool           # acquire is NULL-checked before use
-    unlock_lines: list[int]      # release sites for `var` within the fn
-    shape: str                   # CLEAN_BRACKET | MULTI_UNLOCK |
-                                 # BORROWED | NESTED | REVIEW
+    var: str  # variable the locked object is bound to
+    null_guarded: bool  # acquire is NULL-checked before use
+    unlock_lines: list[int]  # release sites for `var` within the fn
+    shape: str  # CLEAN_BRACKET | MULTI_UNLOCK |
+    # BORROWED | NESTED | REVIEW
     signals: list[str] = field(default_factory=list)
 
 
 def _stmt_lo(masked: str, at: int) -> int:
     """Offset of the start of the statement containing `at` (just past the
     previous `;`/`{`/`}`)."""
-    return max(masked.rfind(";", 0, at),
-               masked.rfind("{", 0, at),
-               masked.rfind("}", 0, at)) + 1
+    return max(masked.rfind(";", 0, at), masked.rfind("{", 0, at), masked.rfind("}", 0, at)) + 1
 
 
 def _stmt_before(masked: str, at: int) -> str:
     """The statement the lock call sits in (for `var = Lock(...)` /
     `if (!(var = Lock(...)))`)."""
-    return masked[_stmt_lo(masked, at):at]
+    return masked[_stmt_lo(masked, at) : at]
 
 
 def extract_file(path: Path) -> list[GdiLockSite]:
@@ -120,28 +117,28 @@ def extract_file(path: Path) -> list[GdiLockSite]:
         #      NULL before first use.
         guard = False
         if var != "?":
-            pre = masked[_stmt_lo(masked, m.start()):m.start()]
+            pre = masked[_stmt_lo(masked, m.start()) : m.start()]
             if re.search(r"\bif\s*\(", pre):
                 guard = True
             else:
-                after = masked[open_paren: open_paren + 240]
-                if re.search(rf"\bif\s*\([^)]*\b{re.escape(var)}\b[^)]*\)", after) \
-                   and re.search(rf"(!\s*{re.escape(var)}\b|"
-                                 rf"\b{re.escape(var)}\s*==\s*NULL|"
-                                 rf"\bNULL\s*==\s*{re.escape(var)}\b)", after):
+                after = masked[open_paren : open_paren + 240]
+                if re.search(rf"\bif\s*\([^)]*\b{re.escape(var)}\b[^)]*\)", after) and re.search(
+                    rf"(!\s*{re.escape(var)}\b|"
+                    rf"\b{re.escape(var)}\s*==\s*NULL|"
+                    rf"\bNULL\s*==\s*{re.escape(var)}\b)",
+                    after,
+                ):
                     guard = True
 
         # Release sites for this var inside the enclosing function body.
         fn_text = masked
         # bound the search to [fn_lo line .. fn_hi line] via char offsets
-        lo_off = sum(len(l) + 1 for l in text.splitlines()[: fn_lo - 1])
-        hi_off = sum(len(l) + 1 for l in text.splitlines()[: fn_hi])
+        lo_off = sum(len(ln) + 1 for ln in text.splitlines()[: fn_lo - 1])
+        hi_off = sum(len(ln) + 1 for ln in text.splitlines()[:fn_hi])
         body = fn_text[lo_off:hi_off]
         unlock_lines: list[int] = []
         if var != "?":
-            for um in re.finditer(
-                rf"\b{re.escape(unlock_fn)}\s*\(\s*{re.escape(var)}\b", body
-            ):
+            for um in re.finditer(rf"\b{re.escape(unlock_fn)}\s*\(\s*{re.escape(var)}\b", body):
                 unlock_lines.append(_line_of(text, lo_off + um.start()))
 
         signals: list[str] = []
@@ -212,11 +209,10 @@ def _shape_counts(inv: dict[Path, list[GdiLockSite]]) -> dict[str, int]:
 
 def print_summary(inv: dict[Path, list[GdiLockSite]]) -> None:
     n = sum(len(v) for v in inv.values())
-    print(f"\n{'='*64}")
+    print(f"\n{'=' * 64}")
     print(f"Win32k Pass 2 — {n} GDI lock sites across {len(inv)} keep-set files")
-    print(f"{'='*64}")
-    for shape in ("CLEAN_BRACKET", "MULTI_UNLOCK", "BORROWED",
-                  "NESTED", "REVIEW"):
+    print(f"{'=' * 64}")
+    for shape in ("CLEAN_BRACKET", "MULTI_UNLOCK", "BORROWED", "NESTED", "REVIEW"):
         k = _shape_counts(inv).get(shape, 0)
         pct = (k * 100 / n) if n else 0
         print(f"  {shape:<14} {k:>4}  {pct:5.1f}%")
@@ -257,14 +253,11 @@ def run_oracle(dcutil_path: Path) -> int:
         ok = False
 
     bk = [s for s in sites if s.function == "IntGdiSetBkColor"]
-    if bk and bk[0].var == "dc" and bk[0].null_guarded \
-            and bk[0].shape == "CLEAN_BRACKET":
+    if bk and bk[0].var == "dc" and bk[0].null_guarded and bk[0].shape == "CLEAN_BRACKET":
         print("  IntGdiSetBkColor = CLEAN_BRACKET(dc, guarded)  [OK]")
     else:
-        got = (f"{bk[0].var}/{bk[0].null_guarded}/{bk[0].shape}"
-               if bk else "absent")
-        print(f"  IntGdiSetBkColor: expect dc/True/CLEAN_BRACKET, "
-              f"got {got}  [MISMATCH]")
+        got = f"{bk[0].var}/{bk[0].null_guarded}/{bk[0].shape}" if bk else "absent"
+        print(f"  IntGdiSetBkColor: expect dc/True/CLEAN_BRACKET, got {got}  [MISMATCH]")
         ok = False
 
     # No site should resolve its enclosing function to the lock symbol

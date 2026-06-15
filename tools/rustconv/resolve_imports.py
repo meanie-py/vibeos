@@ -30,6 +30,10 @@ arch = {"i686-pc-windows-gnu": "i386", "x86_64-pc-windows-gnu": "amd64",
 
 SOURCES = [("crate::types", os.path.join(CRATE_SRC, f"types_{arch}.rs")),
            ("crate::glue", os.path.join(CRATE_SRC, "glue.rs")),
+           # FsRtl*/macro shims (ntifs.h exports + FORCEINLINEs) live here; the `pub fn`
+           # decls inside its extern block match the (unanchored) DECL regex below, so they
+           # resolve as `use crate::ddk_shims::FsRtlXxx`. FS drivers (fastfat/cdfs) lean on this.
+           ("crate::ddk_shims", os.path.join(CRATE_SRC, "ddk_shims.rs")),
            # crate-local pure-data modules (file-scope statics/GUID tables) some drivers
            # carry — module bodies reference these globals but don't import them.
            ("crate::data", os.path.join(CRATE_SRC, "data.rs")),
@@ -54,6 +58,9 @@ FN_SOURCES = [(f"crate::{os.path.basename(p)[:-3]}", p)
               if os.path.basename(p) not in _SKIP and not os.path.basename(p).startswith("types_")]
 FN_TEXT = {p: open(p).read() for _, p in FN_SOURCES if os.path.exists(p)}
 FN_DEF = r"(?m)^(?:#\[no_mangle\]\s*)?pub (?:unsafe )?(?:extern \"[A-Za-z]+\" )?fn "
+# Column-0 cross-module data items (file-scope statics / consts a sibling module owns,
+# e.g. cdfs CdData / CdFastIoDispatch in cddata.rs). Same column-0 rule as FN_DEF.
+STATIC_DEF = r"(?m)^(?:#\[no_mangle\]\s*)?pub (?:static(?: mut)?|const) "
 
 DECL = r"\bpub (?:type|struct|enum|union|const|static(?: mut)?|fn) "
 def resolve(name, cur_file=None):
@@ -74,6 +81,11 @@ def resolve(name, cur_file=None):
         if os.path.basename(p) == cur_file:      # don't self-import
             continue
         if re.search(FN_DEF + re.escape(name) + r"\b", FN_TEXT.get(p, "")):
+            return mod, name
+    for mod, p in FN_SOURCES:                    # cross-module pub static / const
+        if os.path.basename(p) == cur_file:
+            continue
+        if re.search(STATIC_DEF + re.escape(name) + r"\b", FN_TEXT.get(p, "")):
             return mod, name
     return None
 
