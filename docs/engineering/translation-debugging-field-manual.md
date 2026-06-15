@@ -1071,6 +1071,35 @@ touch sdk/lib/rust/ntdll-cargo/build.rs
 ```
 See `feedback_stale_fat_librtl_masks_rust` + §6 (cohab/cold-link) for the general thin-archive trap.
 
+### 9.6b ⚠️ The amd64 (cargo-driven) kernel does NOT relink on a `.rs` edit — `ninja livecd` silently ships a STALE kernel
+
+The single most dangerous staleness trap, and it **invalidates any amd64 kernel-Rust
+debugging done without checking for it.** `ntoskrnl.exe`/`ntkrnlmp.exe` are built by a
+ninja **CUSTOM_COMMAND** that shells out to `cargo build` (target dir
+`build-amd64/ntoskrnl/rust-kernel-target`, crate `ntkrnlmp-cargo`). Ninja's dep graph
+for that command does **not** list the `.rs` source files — so editing
+`ntoskrnl-rust/src/**.rs` and running `./vibeos-cli build --arch amd64` (even
+**`--clean`**) **does not rerun the command** → the kernel on the ISO is whatever it
+was last forced to. A 2026-06-14 session burned multiple smoke cycles (and a prior
+session reached a *wrong root cause*) analysing a 5-hour-stale kernel whose `mtime`
+never moved.
+
+- **Detect:** `stat -c %y build-amd64/ntoskrnl/ntoskrnl.exe` vs your edit's mtime; or
+  put a unique string in your edit and `strings ntoskrnl.exe | grep` for it **before
+  smoking**. If absent, the kernel is stale.
+- **Force a relink:** delete the outputs so ninja must regenerate (this reruns cargo,
+  which *does* see the `.rs` change):
+  ```bash
+  rm -f build-amd64/ntoskrnl/{ntoskrnl.exe,libkernel_rust.a,ntkrnlmp/ntkrnlmp.exe}
+  ninja -C build-amd64 livecd
+  strings build-amd64/ntoskrnl/ntoskrnl.exe | grep '<your-marker>'   # verify BEFORE smoke
+  ```
+- **NOT affected:** driver/usermode cohab crates (e.g. `scsiport-rust`, `conutils-rust`)
+  link via the **main-workspace** cargo step which *does* rerun on `.rs` edits — only
+  the **kernel** (separate `rust-kernel-target`) has the missing edge. (Smoke's
+  `--clean` nukes `rust-kernel-target` but the staleness is in the *ninja relink trigger*,
+  not the cargo cache, so even clean can skip it.) Always verify-by-marker for kernel work.
+
 ### 9.7 Reliable-repro timing — slow ≠ hung
 
 - A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
