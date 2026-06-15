@@ -7,7 +7,7 @@ use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION,
 use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsLabelInformation as FileFsLabelInformation};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, DIRENT, FCB, PCCB, PDCB, PFCB, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
+use crate::types::{CCB, DIRENT, FAT_DATA, FCB, PCCB, PDCB, PFCB, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
 use ntkrnl_sys::ddk::{FS_INFORMATION_CLASS, IO_STACK_LOCATION, PFILE_OBJECT, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_VOLINFO};
@@ -34,7 +34,7 @@ pub struct FatFileFsSectorSizeInformation {
 }
 
 extern "system" {
-    static mut FatData: FatDataStruct;
+    static mut FatData: FAT_DATA;
 }
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
@@ -213,10 +213,9 @@ extern "system" {
 extern "system" {
 }
 
-#[repr(C)]
-struct FatDataStruct {
-    pub ChicagoMode: u8,
-}
+// (FatData is the real global FAT_DATA; ChicagoMode is a packed bitfield read
+//  via FatData.ChicagoMode() — see the dirsup.rs note. The old FatDataStruct
+//  stub read offset 0 (NodeTypeCode low byte == 0) and wrongly reported 8.3.)
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryFsAttributeInfo(
@@ -250,7 +249,7 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
         );
     }
 
-    (*Buffer).MaximumComponentNameLength = if FatData.ChicagoMode != 0 { 255 } else { 12 };
+    (*Buffer).MaximumComponentNameLength = if FatData.ChicagoMode() != 0 { 255 } else { 12 };
 
     if FatIsFat32(Vcb) != 0 {
         let offset_field = core::mem::offset_of!(FILE_FS_ATTRIBUTE_INFORMATION, FileSystemName) as u32;
@@ -1782,7 +1781,7 @@ pub unsafe extern "system" fn FatCommonSetVolumeInfo(
 //     }
 //
 //
-//     Buffer->MaximumComponentNameLength = FatData.ChicagoMode ? 255 : 12;
+//     Buffer->MaximumComponentNameLength = FatData.ChicagoMode() ? 255 : 12;
 //
 //     if (FatIsFat32(Vcb)) {
 //

@@ -6,7 +6,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIRSUP, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, IRP_CONTEXT, LFN_DIRENT, PFCB, VCB};
+use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIRSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, IRP_CONTEXT, LFN_DIRENT, PFCB, VCB};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP, OPLOCK, _PUBLIC_BCB as BCB, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FAT_NTC_DCB, STATUS_CANNOT_MAKE};
@@ -23,7 +23,7 @@ extern "system" {
     } extern "C" { fn DebugTrace(level: i32, flag: u32, fmt: *const i8, ...); } extern "system" {
     fn FatStringTo8dot3( IrpContext: PIRP_CONTEXT, FileName: OEM_STRING, OutputString: *mut OEM_STRING, );
     static Dbg: u32;
-    static FatData: FatGlobalData;
+    static FatData: FAT_DATA;
     static FatOneDay: LARGE_INTEGER;
 }
 extern "system" {
@@ -125,11 +125,12 @@ struct FAT_TIME_STAMP {
     // ... likely more fields, but zero-init works for this translation
 }
 
-#[repr(C)]
-struct FatGlobalData {
-    ChicagoMode: u8,
-    // ... other fields not used
-}
+// NOTE: FatData is the real global FAT_DATA (imported from crate::types).
+// ChicagoMode is a packed bitfield in that struct — it MUST be read via the
+// generated accessor FatData.ChicagoMode(), NOT as a plain offset-0 field. A
+// prior hand-rolled `FatGlobalData { ChicagoMode: u8 }` stub put it at offset
+// 0, which actually read the low byte of NodeTypeCode (0x0500 -> 0x00 == FALSE)
+// and silently disabled ALL long-file-name matching (only 8.3 names resolved).
 
 // Forward declarations for unknown external functions
 
@@ -714,7 +715,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 continue;
             }
 
-            if FatData.ChicagoMode != 0 && ARGUMENT_PRESENT(LongFileName) && (*(*Dirent)).Attributes == FAT_DIRENT_ATTR_LFN {
+            if FatData.ChicagoMode() != 0 && ARGUMENT_PRESENT(LongFileName) && (*(*Dirent)).Attributes == FAT_DIRENT_ATTR_LFN {
                 let Lfn: PLFN_DIRENT = *Dirent as PLFN_DIRENT;
                 if LfnInProgress != 0 {
                     if ((*Lfn).Ordinal & FAT_LAST_LONG_ENTRY) != 0
@@ -1260,7 +1261,7 @@ pub unsafe extern "system" fn FatConstructDirent(
 
         KeQuerySystemTime(&mut Time as *mut i64 as *mut LARGE_INTEGER);
 
-        if FatData.ChicagoMode != 0 {
+        if FatData.ChicagoMode() != 0 {
             if SetCreationTime.is_null()
                 || FatNtTimeToFatTime(
                     IrpContext,
@@ -1303,7 +1304,7 @@ pub unsafe extern "system" fn FatConstructDirent(
                     core::mem::size_of::<FAT_TIME_STAMP>(),
                 );
             }
-            if FatData.ChicagoMode != 0 {
+            if FatData.ChicagoMode() != 0 {
                 (*Dirent).LastAccessDate = core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime.Date));
             }
         }
@@ -1332,7 +1333,7 @@ pub unsafe extern "system" fn FatConstructDirent(
         let mut LfnBuffer: *const u16; // PWCHAR
         let mut LfnDirent: *mut LFN_DIRENT;
 
-        NT_ASSERT((FatData.ChicagoMode as u32) as i32);
+        NT_ASSERT((FatData.ChicagoMode() as u32) as i32);
 
         DirentChecksum = FatComputeLfnChecksum(Dirent);
         LfnOrdinal = FAT_LFN_DIRENTS_NEEDED(Lfn as *mut _UNICODE_STRING) as u8;
@@ -1531,7 +1532,7 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
         (NodeType(FcbOrDcb as *mut core::ffi::c_void) == FAT_NTC_FCB
             && BooleanFlagOn((*FileObject).Flags, FO_FILE_SIZE_CHANGED) != 0) as u8;
 
-    if FatData.ChicagoMode != 0
+    if FatData.ChicagoMode() != 0
         && (UpdateLastWriteTime != 0
             || FlagOn((*FileObject).Flags, FO_FILE_FAST_IO_READ) != 0)
         && FlagOn((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_ACCESS) == 0
@@ -2376,7 +2377,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //     RtlCopyMemory( (PUCHAR)(DIRENT), ".          ", 11 );                \
 //     (DIRENT)->Attributes = FAT_DIRENT_ATTR_DIRECTORY;                    \
 //     (DIRENT)->LastWriteTime = (PARENT)->LastWriteTime;                   \
-//     if (FatData.ChicagoMode) {                                           \
+//     if (FatData.ChicagoMode()) {                                           \
 //         (DIRENT)->CreationTime = (PARENT)->CreationTime;                 \
 //         (DIRENT)->CreationMSec = (PARENT)->CreationMSec;                 \
 //         (DIRENT)->LastAccessDate = (PARENT)->LastAccessDate;             \
@@ -2407,7 +2408,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //     RtlCopyMemory( (PUCHAR)(DIRENT), "..         ", 11 );    \
 //     (DIRENT)->Attributes = FAT_DIRENT_ATTR_DIRECTORY;        \
 //     (DIRENT)->LastWriteTime = (PARENT)->LastWriteTime;       \
-//     if (FatData.ChicagoMode) {                               \
+//     if (FatData.ChicagoMode()) {                               \
 //         (DIRENT)->CreationTime = (PARENT)->CreationTime;     \
 //         (DIRENT)->CreationMSec = (PARENT)->CreationMSec;     \
 //         (DIRENT)->LastAccessDate = (PARENT)->LastAccessDate; \
@@ -2759,7 +2760,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //
 //     Bcb = NULL;
 //
-//     if (FatData.ChicagoMode &&
+//     if (FatData.ChicagoMode() &&
 //         (DirentsNeeded == 1) &&
 //         (ByteOffset > (NodeType(ParentDirectory) == FAT_NTC_ROOT_DCB ?
 //                        0 : 2 * sizeof(DIRENT)))) {
@@ -3633,7 +3634,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //             //  If we have wandered onto an LFN entry, try to interpret it.
 //             //
 //
-//             if (FatData.ChicagoMode &&
+//             if (FatData.ChicagoMode() &&
 //                 ARGUMENT_PRESENT(LongFileName) &&
 //                 ((*Dirent)->Attributes == FAT_DIRENT_ATTR_LFN)) {
 //
@@ -4566,7 +4567,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //
 //         KeQuerySystemTime( &Time );
 //
-//         if (FatData.ChicagoMode) {
+//         if (FatData.ChicagoMode()) {
 //
 //             if (!SetCreationTime || !FatNtTimeToFatTime( IrpContext,
 //                                                          SetCreationTime,
@@ -4617,7 +4618,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //                 RtlZeroMemory( &Dirent->LastWriteTime, sizeof(FAT_TIME_STAMP) );
 //             }
 //
-//             if (FatData.ChicagoMode) {
+//             if (FatData.ChicagoMode()) {
 //
 //                 Dirent->LastAccessDate = Dirent->LastWriteTime.Date;
 //             }
@@ -4659,7 +4660,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //         PWCHAR LfnBuffer;
 //         PLFN_DIRENT LfnDirent;
 //
-//         NT_ASSERT( FatData.ChicagoMode );
+//         NT_ASSERT( FatData.ChicagoMode() );
 //
 //         DirentChecksum = FatComputeLfnChecksum( Dirent );
 //
@@ -5005,7 +5006,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
 //     //  time, so just see if the current time is on the same day.
 //     //
 //
-//     if (FatData.ChicagoMode &&
+//     if (FatData.ChicagoMode() &&
 //         (UpdateLastWriteTime ||
 //          FlagOn(FileObject->Flags, FO_FILE_FAST_IO_READ)) &&
 //         !FlagOn(Ccb->Flags, CCB_FLAG_USER_SET_LAST_ACCESS)) {
