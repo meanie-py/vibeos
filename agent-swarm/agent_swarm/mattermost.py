@@ -22,6 +22,7 @@ class MattermostClient:
         self.webhook_basic = webhook_basic
         self.team = team
         self.icon_emoji = icon_emoji
+        self._uname_cache = {}   # user_id -> username (resolved lazily for REST posts)
 
     @classmethod
     def from_config(cls, cfg):
@@ -68,10 +69,35 @@ class MattermostClient:
             out.append({
                 "id": pid,
                 "create_at": p.get("create_at", 0),
-                "user": (p.get("props") or {}).get("override_username") or p.get("user_id", "?"),
+                # webhook posts carry override_username; real REST users (humans) don't,
+                # so fall back to resolving the raw user_id -> @handle (see _resolve_users).
+                "user": (p.get("props") or {}).get("override_username"),
+                "user_id": p.get("user_id", "?"),
                 "message": p.get("message", ""),
             })
+        self._resolve_users(out, token=token)
         return out
+
+    def usernames(self, ids, *, token=None):
+        """Batch-resolve user_ids -> usernames via POST /users/ids, memoized."""
+        miss = [i for i in dict.fromkeys(ids) if i and i not in self._uname_cache]
+        if miss:
+            try:
+                users = http.post(f"{self.api}/users/ids", token=token or self.bot_token,
+                                  json_body=miss) or []
+            except HttpError:
+                users = []
+            for u in users:
+                self._uname_cache[u["id"]] = u.get("username") or u["id"]
+        return {i: self._uname_cache.get(i, i) for i in ids if i}
+
+    def _resolve_users(self, posts, *, token=None):
+        """Fill each post's 'user' from its user_id when no override_username was present."""
+        need = [p["user_id"] for p in posts if not p.get("user")]
+        names = self.usernames(need, token=token) if need else {}
+        for p in posts:
+            if not p.get("user"):
+                p["user"] = names.get(p["user_id"], p["user_id"])
 
     def latest_create_at(self, channel_id, *, token=None):
         """Newest post's create_at (server clock) — seed cursors with this, not local time."""
