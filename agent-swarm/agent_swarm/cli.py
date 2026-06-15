@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+from pathlib import Path
 
 from . import identity as ident
 from . import queue as q
@@ -337,6 +339,135 @@ def cmd_bridge_run(args):
         time.sleep(args.interval)
 
 
+# --- onboarding installer ------------------------------------------------
+
+# (event, hook script, PostToolUse-style matcher). Paths use $CLAUDE_PROJECT_DIR so
+# one settings block is correct in whichever worktree it lives.
+_HOOK_EVENTS = [
+    ("SessionStart", "session_start.sh", None),
+    ("UserPromptSubmit", "user_prompt_submit.sh", None),
+    ("PostToolUse", "post_tool_use.sh", "*"),
+    ("Stop", "stop.sh", None),
+    ("SessionEnd", "session_end.sh", None),
+]
+
+
+def _hook_block() -> dict:
+    out = {}
+    for evt, script, matcher in _HOOK_EVENTS:
+        entry = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f'bash "$CLAUDE_PROJECT_DIR/agent-swarm/hooks/{script}"',
+                }
+            ]
+        }
+        out[evt] = [{"matcher": matcher, **entry} if matcher else entry]
+    return out
+
+
+def render_settings(existing: dict, identity: str) -> dict:
+    """Merge swarm hooks + a per-worktree SWARM_LOGIN into a settings.json dict.
+
+    Non-destructive: preserves unrelated keys, other hooks, and existing env. The
+    `env.SWARM_LOGIN` binding is what gives each worktree its own identity without
+    anyone having to remember to export it at launch.
+    """
+    s = dict(existing)
+    s["hooks"] = {**s.get("hooks", {}), **_hook_block()}
+    s["env"] = {**s.get("env", {}), "SWARM_LOGIN": identity}
+    return s
+
+
+def render_mcp(existing: dict, repo: str) -> dict:
+    """Merge the mattermost-swarm MCP channel server into a .mcp.json dict (non-destructive)."""
+    m = dict(existing)
+    servers = dict(m.get("mcpServers", {}))
+    servers["mattermost-swarm"] = {
+        "command": "node",
+        "args": [f"{repo}/agent-swarm/channel/mattermost.mjs"],
+    }
+    m["mcpServers"] = servers
+    return m
+
+
+def _repo_root(args) -> Path:
+    cand = getattr(args, "dir", None) or os.environ.get("CLAUDE_PROJECT_DIR")
+    if not cand:
+        try:
+            cand = subprocess.check_output(
+                ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            cand = "."
+    return Path(cand).resolve()
+
+
+def _default_identity(repo: Path) -> str:
+    """Lane identity = the branch name, sanitized (e.g. fastfat-port -> fastfat-port)."""
+    try:
+        branch = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        branch = repo.name
+    # strip a leading wt-/worktree- prefix and a trailing -port/-translation suffix for a
+    # clean handle; fall back to the raw branch if that empties it.
+    name = branch.removeprefix("worktree-").removeprefix("wt-")
+    name = name.removesuffix("-translation").removesuffix("-port")
+    return name or branch
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def cmd_install(args):
+    """Wire this worktree onto the swarm: hooks + identity (settings.json) + the
+    mattermost-swarm channel (.mcp.json). Idempotent; preserves existing config."""
+    repo = _repo_root(args)
+    if not (repo / "agent-swarm" / "hooks" / "session_start.sh").exists():
+        raise SwarmError(
+            f"agent-swarm/ not present under {repo} — merge continue-rust-port into this "
+            "lane first so the hooks exist in-tree, then re-run install."
+        )
+    identity = getattr(args, "identity_name", None) or _default_identity(repo)
+
+    settings_path = repo / ".claude" / "settings.json"
+    existing = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    _write_json(settings_path, render_settings(existing, identity))
+
+    mcp_path = repo / ".mcp.json"
+    mexisting = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
+    _write_json(mcp_path, render_mcp(mexisting, str(repo)))
+
+    have_creds = bool(ident.load_agent_creds(identity))
+    node_modules = repo / "agent-swarm" / "channel" / "node_modules"
+
+    print(f"✓ {settings_path.relative_to(repo)} — hooks + SWARM_LOGIN={identity}")
+    print(f"✓ {mcp_path.relative_to(repo)} — mattermost-swarm channel server")
+    if not have_creds:
+        print(
+            f"⚠ identity '{identity}' is not provisioned yet — run:\n"
+            f"    vibeos-cli swarm agent create {identity} --lead <you>"
+        )
+    if not node_modules.exists():
+        print(
+            "⚠ channel deps missing — run once:\n"
+            f"    (cd {repo}/agent-swarm/channel && npm install)"
+        )
+    print(
+        "\nNext: relaunch this session to pick up the hooks. For idle push delivery,\n"
+        "launch with:\n"
+        "    claude --dangerously-load-development-channels server:mattermost-swarm\n"
+        "(SWARM_LOGIN is set via settings env; the channel push needs the dev flag at launch.)"
+    )
+
+
 # --- parser --------------------------------------------------------------
 
 
@@ -361,6 +492,14 @@ def build_parser():
     )
     add("logout", cmd_logout, "Unbind this session's identity.")
     add("whoami", cmd_whoami, "Print the current identity.")
+
+    s = add(
+        "install",
+        cmd_install,
+        "Wire this worktree onto the swarm (hooks + identity + channel). Idempotent.",
+    )
+    s.add_argument("--name", dest="identity_name", help="identity name (default: lane branch)")
+    s.add_argument("--dir", help="worktree root (default: $CLAUDE_PROJECT_DIR or git toplevel)")
 
     s = add(
         "register", cmd_register, "Register/refresh this identity in the roster (SessionStart)."

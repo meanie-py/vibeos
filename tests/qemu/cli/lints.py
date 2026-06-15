@@ -150,8 +150,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.
     sif = repo / "tools" / "scan_inline_flag_literals.py"
     specs.append(
-        ("scan_inline_flag_literals",
-         [py, str(sif), "--lint"] if sif.is_file() else ["MISSING"], "stdout"))
+        (
+            "scan_inline_flag_literals",
+            [py, str(sif), "--lint"] if sif.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     return specs
 
 

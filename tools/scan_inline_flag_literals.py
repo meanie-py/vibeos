@@ -30,19 +30,19 @@ Suppress a verified false positive at the source with a `nolint` comment on the 
 Bare `// nolint` or `// nolint: inline-literal` suppress; a `nolint` scoped to another
 tool does not. Prefer this (local, reviewable, refactor-stable) over the baseline.
 """
+
 import re
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
-from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
-
 import tree_sitter_rust as tsr  # noqa: E402
+from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
-DEFINE_RE = re.compile(r'^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$')
-_SUFFIX_RE = re.compile(r'(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$')
+DEFINE_RE = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
+_SUFFIX_RE = re.compile(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
 # A comment segment that "looks like a flag annotation": just an UPPER_CASE name,
 # optionally followed by a short parenthetical / punctuation — NOT prose. This keeps
 # `/* NAME */`, `// NAME (grind had 0x2)` but rejects `// NULL / no '=' => -1`.
@@ -52,8 +52,15 @@ _NAME_SEG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(.*\))?\s*$")
 # Bare `nolint` (no id) or scoped to this lint's ids both suppress; a `nolint` scoped to
 # some OTHER tool does not. Reason text after the id is encouraged but not required.
 _NOLINT_RE = re.compile(r"\bnolint\b\s*[:(\[]?\s*([a-z0-9_-]*)", re.I)
-_NOLINT_IDS = {"", "inline_literal", "inline-literal", "inline_flag_literal",
-               "inline-flag-literal", "scan_inline_flag_literals", "all"}
+_NOLINT_IDS = {
+    "",
+    "inline_literal",
+    "inline-literal",
+    "inline_flag_literal",
+    "inline-flag-literal",
+    "scan_inline_flag_literals",
+    "all",
+}
 
 
 def suppressed(line_text):
@@ -66,8 +73,8 @@ def parse_c_value(val):
     s = val.strip()
     while s.startswith("(") and s.endswith(")"):
         s = s[1:-1].strip()
-    s = re.sub(r'^\(\s*[A-Za-z_][A-Za-z0-9_ ]*\)\s*', '', s).strip()
-    s = _SUFFIX_RE.sub('', s).rstrip("uUlL")
+    s = re.sub(r"^\(\s*[A-Za-z_][A-Za-z0-9_ ]*\)\s*", "", s).strip()
+    s = _SUFFIX_RE.sub("", s).rstrip("uUlL")
     try:
         return int(s, 16) if s.lower().startswith("0x") else int(s)
     except ValueError:
@@ -76,7 +83,7 @@ def parse_c_value(val):
 
 def lit_value(s):
     """Value of a Rust integer_literal node's text (0x2, 0u8, 512, 0x00000040)."""
-    s = _SUFFIX_RE.sub('', s.strip().replace("_", ""))
+    s = _SUFFIX_RE.sub("", s.strip().replace("_", ""))
     try:
         return int(s, 16) if s.lower().startswith("0x") else int(s)
     except ValueError:
@@ -89,7 +96,7 @@ def add_headers(catalog, header_dir):
             text = hf.read_text(errors="ignore")
         except OSError:
             continue
-        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         for line in text.splitlines():
             m = DEFINE_RE.match(line.strip())
             if m:
@@ -135,7 +142,10 @@ def scan_file(path, catalog):
     root = _PARSER.parse(src).root_node
     lits, comments = [], []
     collect(root, lits, comments)
-    txt = lambda n: src[n.start_byte:n.end_byte].decode("utf8", "replace")
+
+    def txt(n):
+        return src[n.start_byte : n.end_byte].decode("utf8", "replace")
+
     lines = src.split(b"\n")
 
     out = []  # (line, litval, name, want, linetext)
@@ -148,17 +158,19 @@ def scan_file(path, catalog):
         if len(names) >= 2:
             # |-list: pair positionally with the literals on the comment's line,
             # in source order, that sit before the comment (e.g. `A | B // N1 | N2`).
-            row = sorted((L for L in lits if L.start_point[0] == cline
-                          and L.start_byte < c.start_byte), key=lambda n: n.start_byte)
-            pairs = list(zip(row, names))
+            row = sorted(
+                (L for L in lits if L.start_point[0] == cline and L.start_byte < c.start_byte),
+                key=lambda n: n.start_byte,
+            )
+            pairs = list(zip(row, names, strict=False))
         else:
             # single name: the adjacent literal — the closest one touching the comment
             # (trailing `0x4 /* N */`, or leading `/* N */ 0x4`), same line only.
             name = names[0]
-            before = [L for L in lits if L.end_byte <= c.start_byte
-                      and L.start_point[0] == cline]
-            after = [L for L in lits if L.start_byte >= c.end_byte
-                     and L.start_point[0] == c.end_point[0]]
+            before = [L for L in lits if L.end_byte <= c.start_byte and L.start_point[0] == cline]
+            after = [
+                L for L in lits if L.start_byte >= c.end_byte and L.start_point[0] == c.end_point[0]
+            ]
             side = before or after
             # If the correct value appears ANYWHERE among the line's candidates, the
             # flag is present and correct — don't be fooled by a nearer `0` in
@@ -166,9 +178,9 @@ def scan_file(path, catalog):
             if name in catalog and catalog[name] in [lit_value(txt(L)) for L in side]:
                 pairs = []
             elif before:
-                pairs = [(max(before, key=lambda n: n.end_byte), name)]    # closest preceding
+                pairs = [(max(before, key=lambda n: n.end_byte), name)]  # closest preceding
             elif after:
-                pairs = [(min(after, key=lambda n: n.start_byte), name)]   # closest following
+                pairs = [(min(after, key=lambda n: n.start_byte), name)]  # closest following
             else:
                 pairs = []
         for lit, name in pairs:
@@ -213,8 +225,12 @@ def main():
         files = [str(p) for p in (REPO / "sdk" / "lib" / "rust").rglob("*.rs")]
 
     catalog = build_c_catalog(REPO, include_enums=True)
-    for d in ("sdk/include/xdk", "sdk/include/ndk", "sdk/include/psdk",
-              "ntoskrnl/include/internal"):
+    for d in (
+        "sdk/include/xdk",
+        "sdk/include/ndk",
+        "sdk/include/psdk",
+        "ntoskrnl/include/internal",
+    ):
         p = REPO / d
         if p.exists():
             add_headers(catalog, str(p))
@@ -228,12 +244,13 @@ def main():
             continue  # test fixtures use intentional non-canonical values
         try:
             hits = scan_file(p, catalog)
-        except Exception as e:  # noqa: BLE001 — never let one file abort the sweep
+        except Exception as e:
             print(f"{f}: parse error: {e}", file=sys.stderr)
             continue
         for ln, lv, name, want, line_src in hits:
-            print(f"{f}:{ln}: literal {hex(lv)} tagged /* {name} */ "
-                  f"but {name} = {hex(want)} ({want})")
+            print(
+                f"{f}:{ln}: literal {hex(lv)} tagged /* {name} */ but {name} = {hex(want)} ({want})"
+            )
             if not lint:  # terse mode emits ONLY finding lines (baseline-friendly)
                 print(f"    {line_src}")
             mismatches += 1

@@ -279,7 +279,7 @@ pub unsafe extern "C" fn CdInitializeGlobalData(
         core::ptr::addr_of_mut!(CdData).cast(),
         core::mem::size_of::<CD_DATA>(),
     );
-    CdData.NodeTypeCode = 0x2603u16; // CDFS_NTC_DATA_HEADER (NODE_TYPE_CODE = USHORT)
+    CdData.NodeTypeCode = 0x0301u16; // CDFS_NTC_DATA_HEADER (NODE_TYPE_CODE = USHORT)
     CdData.NodeByteSize = core::mem::size_of::<CD_DATA>() as i16; // NODE_BYTE_SIZE = CSHORT
     CdData.DriverObject = DriverObject;
     CdData.FileSystemDeviceObject = FileSystemDeviceObject;
