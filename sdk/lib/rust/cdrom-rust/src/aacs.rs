@@ -151,7 +151,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                         c"AACS: Device is reporting zero total packs (invalid)\n".as_ptr() as *const i8,
                     );
                     *DataLength = 0;
-                    status = -1073741175; // STATUS_IO_DEVICE_ERROR
+                    status = STATUS_IO_DEVICE_ERROR;
                 } else {
                     otherPacks -= 1;
 
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                                         + core::mem::size_of::<u16>() as u16)
                             {
                                 *DataLength = 0;
-                                status = -1073741175; // STATUS_IO_DEVICE_ERROR
+                                status = STATUS_IO_DEVICE_ERROR;
                             } else {
                                 let mut totalSize: u32 = (*header).Length as u32;
                                 totalSize -= core::mem::size_of::<DVD_DESCRIPTOR_HEADER>() as u32
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                                     + core::mem::size_of::<u16>() as u16)
                         {
                             *DataLength = 0;
-                            status = -1073741175; // STATUS_IO_DEVICE_ERROR
+                            status = STATUS_IO_DEVICE_ERROR;
                         } else {
                             let mut totalSize: u32 = (*header).Length as u32;
                             totalSize -= core::mem::size_of::<DVD_DESCRIPTOR_HEADER>() as u32
