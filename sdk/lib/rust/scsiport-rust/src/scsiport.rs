@@ -1060,7 +1060,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     ExFreePoolWithTag(ResourceList as *mut c_void, TAG_SCSIPORT);
                 }
 
-                if (*PortConfig).MaximumNumberOfTargets > 8 /* SCSI_MAXIMUM_TARGETS_PER_BUS */ {
+                if (*PortConfig).MaximumNumberOfTargets > 0x80 /* SCSI_MAXIMUM_TARGETS_PER_BUS */ {
                     (*DeviceExtension).MaxTargetIds = 8;
                 } else {
                     (*DeviceExtension).MaxTargetIds = ((*PortConfig).MaximumNumberOfTargets) as u32;

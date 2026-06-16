@@ -1,0 +1,86 @@
+//! Harvested #define constants (gen by harvest_consts.py during repair).
+#![allow(non_upper_case_globals, dead_code)]
+
+// harvested:
+pub const DEBUG_TRACE_ACCHKSUP: u32 = 0x00100000;
+pub const DEBUG_TRACE_ALLOCSUP: u32 = 0x00200000;
+pub const DEBUG_TRACE_CATCH_EXCEPTIONS: u32 = 0x00000004;
+pub const DEBUG_TRACE_CLEANUP: u32 = 0x00000010;
+pub const DEBUG_TRACE_CREATE: u32 = 0x00000040;
+pub const DEBUG_TRACE_DEVIOSUP: u32 = 0x10000000;
+pub const DEBUG_TRACE_FILEINFO: u32 = 0x00000200;
+pub const DEBUG_TRACE_FILOBSUP: u32 = 0x00800000;
+pub const DEBUG_TRACE_FLUSH: u32 = 0x00008000;
+pub const DEBUG_TRACE_FSP_DISPATCHER: u32 = 0x40000000;
+pub const DEBUG_TRACE_NAMESUP: u32 = 0x01000000;
+pub const DEBUG_TRACE_PNP: u32 = 0x00080000;
+pub const DEBUG_TRACE_READ: u32 = 0x00001000;
+pub const DEBUG_TRACE_SHUTDOWN: u32 = 0x00020000;
+pub const DEBUG_TRACE_SPLAYSUP: u32 = 0x08000000;
+pub const DEBUG_TRACE_VOLINFO: u32 = 0x00002000;
+pub const DEBUG_TRACE_WRITE: u32 = 0x00004000;
+pub const DO_VERIFY_VOLUME: u32 = 0x00000002;
+pub const DPFLTR_INFO_LEVEL: u32 = 3;
+pub const FAT_MAX_DELAYED_CLOSES: i32 = 16u32 as i32;
+pub const FAT_NTC_DATA_HEADER: u32 = 0x0500;
+pub const FAT_NTC_DCB: u32 = 0x0503;
+pub const FAT_NTC_FCB: u32 = 0x0502;
+pub const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
+pub const FAT_NTC_ROOT_DCB: u32 = 0x0504;
+pub const FILE_ACTION_REMOVED: u32 = 0x00000002;
+pub const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x00000020;
+pub const FILE_DELETE_CHILD: u32 = 0x00000040;
+pub const FILE_DEVICE_DISK: u32 = 7;
+pub const FILE_NOTIFY_CHANGE_DIR_NAME: u32 = 0x00000002;
+pub const FILE_NOTIFY_CHANGE_FILE_NAME: u32 = 0x00000001;
+pub const FO_CACHE_SUPPORTED: u32 = 0x00000040;
+pub const FO_CLEANUP_COMPLETE: u32 = 0x00004000;
+pub const FO_FILE_MODIFIED: u32 = 0x00001000;
+pub const FO_FILE_FAST_IO_READ: u32 = 0x00080000;
+pub const IRP_PAGING_IO: u32 = 0x00000002;
+pub const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
+pub const FSRTL_FLAG2_IS_PAGING_FILE: u32 = 0x08;
+pub const FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS: u32 = 0x02;
+pub const FSRTL_VOLUME_UNLOCK: u32 = 5;
+pub const IO_REMOUNT: u32 = 0x1;
+pub const IRP_MJ_DIRECTORY_CONTROL: u32 = 0x0c;
+pub const IRP_MJ_QUERY_EA: u32 = 0x07;
+pub const IRP_MJ_QUERY_VOLUME_INFORMATION: u32 = 0x0a;
+pub const IRP_MJ_SET_EA: u32 = 0x08;
+pub const IRP_MJ_SET_VOLUME_INFORMATION: u32 = 0x0b;
+pub const IRP_MN_MOUNT_VOLUME: u32 = 0x01;
+pub const MDL_MAPPED_TO_SYSTEM_VA: u32 = 0x0001;
+pub const MDL_SOURCE_IS_NONPAGED_POOL: u32 = 0x0004;
+pub const SL_FORCE_DIRECT_WRITE: u32 = 0x10;
+pub const SL_INDEX_SPECIFIED: u32 = 0x04;
+pub const SL_RESTART_SCAN: u32 = 0x01;
+pub const SL_RETURN_SINGLE_ENTRY: u32 = 0x02;
+pub const SL_WATCH_TREE: u32 = 0x01;
+pub const SL_WRITE_THROUGH: u32 = 0x04;
+pub const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005_u32 as i32;
+pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023_u32 as i32;
+pub const STATUS_CANNOT_MAKE: i32 = 0xC00002EA_u32 as i32;
+pub const STATUS_INVALID_EA_NAME: i32 = 0x80000013_u32 as i32;
+pub const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052_u32 as i32;
+pub const STATUS_NO_MORE_EAS: i32 = 0x80000012_u32 as i32;
+pub const STATUS_NONEXISTENT_EA_ENTRY: i32 = 0xC0000051_u32 as i32;
+pub const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
+pub const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102_u32 as i32;
+pub const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
+pub const STATUS_UNMAPPABLE_CHARACTER: i32 = 0xC0000162_u32 as i32;
+pub const TAG_CCB: u32 = 0x43746146;  // 'CtaF'
+pub const TAG_EA_DATA: u32 = 0x64746146;  // 'dtaF'
+pub const TAG_ERESOURCE: u32 = 0x45746146;  // 'EtaF'
+pub const TAG_FCB_NONPAGED: u32 = 0x4e746146;  // 'NtaF'
+pub const TAG_FILENAME_BUFFER: u32 = 0x6e746146;  // 'ntaF'
+pub const TAG_IRP_CONTEXT: u32 = 0x49746146;  // 'ItaF'
+pub const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
+pub const VPB_LOCKED: u32 = 0x0002;
+
+/// Crate-local NT_SUCCESS returning i32 (1=success, 0=failure) to match C macro semantics.
+/// Shadows ntkrnl_sys::base::NT_SUCCESS which returns bool.
+#[allow(non_snake_case)]
+#[inline(always)]
+pub fn NT_SUCCESS(status: i32) -> i32 {
+    if status >= 0 { 1 } else { 0 }
+}

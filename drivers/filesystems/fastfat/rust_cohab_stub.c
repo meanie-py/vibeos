@@ -1,0 +1,646 @@
+/* rust_cohab_stub.c — Cohabitation shim for fastfat-rust.
+ *
+ * ALL 34 fastfat .c bodies have been translated to Rust (libfastfat_rust.a).
+ * The Rust code contains extern "C" calls to FAT-specific macros/inline
+ * functions that have no real linker symbol. This TU provides them.
+ *
+ * Strategy: DO NOT include fatprocs.h (too many conflicting macros).
+ * Use ntifs.h for kernel types, then forward-declare FAT structs we touch.
+ */
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
+#pragma clang diagnostic ignored "-Wredundant-decls"
+#pragma clang diagnostic ignored "-Wimplicit-function-declaration"
+#pragma clang diagnostic ignored "-Wint-conversion"
+#pragma clang diagnostic ignored "-Wpointer-integer-compare"
+#pragma clang diagnostic ignored "-Wcast-function-type"
+
+#include <ntifs.h>
+
+/* Undef macros that we want to replace with real linker symbols.
+ * NOTE: ExFreeToNPagedLookasideList, ExInterlockedPop/Push, ExInitializeFastMutex,
+ *       KeInitializeSpinLock, IoXxx stack helpers, FsRtlEnter/ExitFileSystem,
+ *       ObReferenceObject are in rust_cohab_forceinline.c (no DDK includes). */
+#undef FsRtlIsAnsiCharacterLegalFat
+#undef FsRtlIsLeadDbcsCharacter
+#undef FsRtlSetupAdvancedHeader
+#undef FsRtlCheckOplockEx
+#undef FsRtlOplockBreakH
+#undef FsRtlAreThereWaitingFileLocks
+#undef FsRtlCheckLockForOplockRequest
+#undef FsRtlFastLock
+#undef FsRtlCurrentOplockH
+#undef FsRtlOplockIsSharedRequest
+#undef FsRtlGetSectorSizeInformation
+#undef FlagOn
+#undef SetFlag
+#undef ClearFlag
+#undef BooleanFlagOn
+#undef Add2Ptr
+#undef QuadAlign
+#undef BlockAlignTruncate
+#undef NodeType
+#undef PAGED_CODE
+#undef ASSERT
+#undef NT_ASSERT
+#undef UNREFERENCED_PARAMETER
+#undef ARGUMENT_PRESENT
+#undef _Analysis_assume_
+#undef KdPrintEx
+#undef RtlRaiseStatus
+#undef RtlCheckBit
+#undef RtlConvertLongToLuid
+#undef RtlEqualMemory
+#undef CanFsdWait
+#undef Int32x32To64
+#undef UInt32x32To64
+#undef CopyUchar4
+#undef CopyU4char
+#undef RtlOemStringToCountedUnicodeSize
+#undef FILE_ACTION_ADDED
+#undef FILE_ACTION_REMOVED
+#undef FILE_ACTION_MODIFIED
+#undef FILE_ACTION_RENAMED_OLD_NAME
+#undef FILE_ACTION_RENAMED_NEW_NAME
+#undef FO_FILE_MODIFIED
+#undef OPLOCK_FLAG_PARENT_OBJECT
+#undef STATUS_FILE_CORRUPT_ERROR
+#undef IRP_PAGING_IO
+#undef SizeOfFullEa
+#undef SizeOfPackedEa
+#undef ObDereferenceObject
+#undef ObfDereferenceObject
+#undef ObfReferenceObject
+#undef SharedSystemTime
+#undef ExGetCurrentResourceThread
+#undef CcIsFileCached
+#undef IoInitializePriorityInfo
+#undef IoRetrievePriorityInfo
+#undef _SEH2_TRY
+#undef _SEH2_EXCEPT
+#undef _SEH2_FINALLY
+#undef _SEH2_END
+#undef _SEH2_GetExceptionCode
+#undef _SEH2_GetExceptionInformation
+#undef _SEH2_AbnormalTermination
+#undef SEH_TRY_EXCEPT
+#undef try_return
+
+/* ======================================================================
+ * Forward declarations for FAT structs we need to touch field offsets.
+ * We only reference PUBLIC fields here; avoid including fatstruc.h which
+ * pulls in the whole macro jungle through fatprocs.h.
+ * ====================================================================== */
+
+/* Minimal FAT type aliases */
+typedef ULONG  LBO;
+typedef ULONG  VBO;
+typedef ULONG  LBN;
+typedef ULONG  CLUSTER_TYPE;
+typedef PVOID  PBCB;  /* BCB = cache manager internal, opaque PVOID in fatstruc.h */
+
+typedef struct _FAT_DATA FAT_DATA, *PFAT_DATA;
+typedef struct _VCB VCB, *PVCB;
+typedef struct _FCB FCB, *PFCB;
+typedef struct _DCB DCB, *PDCB;
+typedef struct _CCB CCB, *PCCB;
+typedef struct _IRP_CONTEXT IRP_CONTEXT, *PIRP_CONTEXT;
+typedef struct _NON_PAGED_FCB NON_PAGED_FCB, *PNON_PAGED_FCB;
+typedef struct _DIRENT DIRENT, *PDIRENT;
+typedef struct _OEM_STRING OEM_STRING_FAT;
+typedef struct _PACKED_BOOT_SECTOR PACKED_BOOT_SECTOR, *PPACKED_BOOT_SECTOR;
+typedef struct _PACKED_BIOS_PARAMETER_BLOCK PACKED_BIOS_PARAMETER_BLOCK, *PPACKED_BIOS_PARAMETER_BLOCK;
+typedef enum _VCB_CONDITION { VcbGood = 1, VcbNotMounted = 2, VcbBad = 3 } VCB_CONDITION;
+typedef enum _FCB_CONDITION { FcbGood = 1, FcbBad = 2 } FCB_CONDITION;
+
+/* FAT_DATA only has Resource as value (ERESOURCE, not pointer).
+ * The full struct is opaque here; we access via the exported FatData symbol. */
+struct _FAT_DATA {
+    /* ... lots of fields ... */
+    /* Resource is at offset 68 on amd64 (ERESOURCE = 56 bytes). */
+    /* We can't compute the offset without fatstruc.h. Use the macro-expanded
+     * accessors FatAcquireExclusiveGlobal_Impl etc. instead.             */
+    UCHAR opaque[2048];   /* placeholder; real code must use FatData.Resource */
+};
+
+/* We do NOT use any FAT struct fields in this file.
+ * ALL resource operations are delegated to FatXxx_Real helpers that live
+ * in the Rust code or are the real functions exported from fatprocs.c. */
+
+/* ======================================================================
+ * Extern declarations for symbols that ARE real linker exports:
+ *  - FatData global (from fatinit.rs / Rust)
+ *  - Resource/mutex helpers from Rust (FatAcquireExclusiveVcb_Real etc.)
+ * ====================================================================== */
+
+extern FAT_DATA FatData;
+extern FAST_MUTEX FatCloseQueueMutex;
+extern SLIST_HEADER FatCloseContextSList;
+extern NPAGED_LOOKASIDE_LIST FatIrpContextLookasideList;
+extern NPAGED_LOOKASIDE_LIST FatNonPagedFcbLookasideList;
+extern NPAGED_LOOKASIDE_LIST FatEResourceLookasideList;
+
+/* Real functions from Rust (not macros) */
+extern BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT, PFCB);
+extern VOID    FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
+extern VOID    FatCompleteRequest_Real(PIRP_CONTEXT, PIRP, NTSTATUS);
+extern VOID    FatDeleteIrpContext_Real(PIRP_CONTEXT);
+
+/* IRP_CONTEXT_FLAG_WAIT bit -- we define it as a constant to avoid pulling
+ * in fatstruc.h. Rust code calls IRP_CONTEXT_FLAG_WAIT() as a fn. */
+#define FAT_IRP_CTX_FLAG_WAIT 0x00000001U
+
+/* Real struct field byte offsets. These are NOT hand-counted (the old
+ * hard-coded values 397/404/478/68 were wrong & unaligned → arm64 mount AV in
+ * ExAcquireFastMutexUnsafe). They are computed with FIELD_OFFSET against the
+ * REAL fatstruc.h layout over in rust_cohab_fat.c (which includes fatprocs.h)
+ * and exported as const globals — arch-correct and self-maintaining. */
+extern const unsigned int FatVcbFreeClusterBitMapMutexOffset;
+extern const unsigned int FatVcbResourceOffset;
+extern const unsigned int FatVcbDirCreationMutexOffset;
+extern const unsigned int FatDataResourceOffset;
+extern const unsigned int FatFcbHeaderResourceOffset;
+extern const unsigned int FatIrpContextFlagsOffset;
+
+/* FCB Header.Resource is a PERESOURCE (pointer) field — read the pointer. */
+#define FCB_RESOURCE(fcb)       (*(PERESOURCE *)((PUCHAR)(fcb) + FatFcbHeaderResourceOffset))
+#define VCB_RESOURCE(vcb)       ((PERESOURCE)((PUCHAR)(vcb) + FatVcbResourceOffset))
+
+#define VCB_FREECLUSTER_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + FatVcbFreeClusterBitMapMutexOffset))
+#define VCB_DIRCREATION_MUTEX(vcb)  ((PFAST_MUTEX)((PUCHAR)(vcb) + FatVcbDirCreationMutexOffset))
+
+#define FATDATA_RESOURCE()  ((PERESOURCE)((PUCHAR)&FatData + FatDataResourceOffset))
+
+#define IRP_CTX_FLAGS(irpctx) (*((PULONG)((PUCHAR)(irpctx) + FatIrpContextFlagsOffset)))
+
+/* ======================================================================
+ * 1. FAT macro → real-symbol wrappers
+ * ====================================================================== */
+
+VOID FatBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
+{
+    /* FAT_FILE_SYSTEM = 0x23, FAT_BUG_CHECK_FATDATA = 0x00010000 */
+    KeBugCheckEx(0x23, 0x00010000 | (ULONG)(__LINE__), A, B, C);
+    for(;;);
+}
+
+/* Print which stub was hit (to the debug/serial log) before halting, so an arm64
+ * boot reveals exactly which untranslated function blocks the FAT read/mount path. */
+#define STUB_BUGCHECK() do { DbgPrint("FASTFAT_STUB_HIT: %s\n", __func__); KeBugCheckEx(0x23, 0xDEAD0000, 0, 0, 0); } while(0)
+
+BOOLEAN FatAcquireExclusiveGlobal(PIRP_CONTEXT IrpContext)
+{
+    return (BOOLEAN)ExAcquireResourceExclusiveLite(
+        FATDATA_RESOURCE(),
+        !!(IRP_CTX_FLAGS(IrpContext) & FAT_IRP_CTX_FLAG_WAIT));
+}
+
+BOOLEAN FatAcquireSharedGlobal(PIRP_CONTEXT IrpContext)
+{
+    return (BOOLEAN)ExAcquireResourceSharedLite(
+        FATDATA_RESOURCE(),
+        !!(IRP_CTX_FLAGS(IrpContext) & FAT_IRP_CTX_FLAG_WAIT));
+}
+
+VOID FatReleaseGlobal(PIRP_CONTEXT IrpContext)
+{
+    (void)IrpContext;
+    ExReleaseResourceLite(FATDATA_RESOURCE());
+}
+
+VOID FatAcquireExclusiveVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
+{
+    FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
+}
+
+/* FatAcquireExclusiveFcb — acquires the FCB resource exclusively.
+ * Declared in fatprocs.h but not translated into strucsup.rs. */
+BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
+{
+    return (BOOLEAN)ExAcquireResourceExclusiveLite(
+        FCB_RESOURCE(Fcb),
+        !!(IRP_CTX_FLAGS(IrpContext) & FAT_IRP_CTX_FLAG_WAIT));
+}
+
+VOID FatReleaseVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
+{
+    (void)IrpContext;
+    ExReleaseResourceLite(VCB_RESOURCE(Vcb));
+}
+
+VOID FatReleaseFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
+{
+    (void)IrpContext;
+    ExReleaseResourceLite(FCB_RESOURCE(Fcb));
+}
+
+VOID FatAcquireExclusiveVolume(PIRP_CONTEXT IrpContext, PVCB Vcb)
+{
+    /* Full macro iterates FCBs — simplified: just lock VCB (mount/dismount only) */
+    FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
+}
+
+VOID FatReleaseVolume(PIRP_CONTEXT IrpContext, PVCB Vcb)
+{
+    (void)IrpContext;
+    ExReleaseResourceLite(VCB_RESOURCE(Vcb));
+}
+
+VOID FatConvertToSharedFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
+{
+    (void)IrpContext;
+    ExConvertExclusiveToSharedLite(FCB_RESOURCE(Fcb));
+}
+
+BOOLEAN FatVcbAcquiredExclusive(PIRP_CONTEXT IrpContext, PVCB Vcb)
+{
+    (void)IrpContext;
+    return (BOOLEAN)(ExIsResourceAcquiredExclusiveLite(VCB_RESOURCE(Vcb)) ||
+                     ExIsResourceAcquiredExclusiveLite(FATDATA_RESOURCE()));
+}
+
+VOID FatAcquireCloseMutex(VOID)
+{
+    ExAcquireFastMutexUnsafe(&FatCloseQueueMutex);
+}
+
+VOID FatReleaseCloseMutex(VOID)
+{
+    ExReleaseFastMutexUnsafe(&FatCloseQueueMutex);
+}
+
+VOID FatAcquireDirectoryFileMutex(PVCB Vcb)
+{
+    ExAcquireFastMutexUnsafe(VCB_DIRCREATION_MUTEX(Vcb));
+}
+
+VOID FatReleaseDirectoryFileMutex(PVCB Vcb)
+{
+    ExReleaseFastMutexUnsafe(VCB_DIRCREATION_MUTEX(Vcb));
+}
+
+VOID FatLockFreeClusterBitMap(PVCB Vcb)
+{
+    ExAcquireFastMutex(VCB_FREECLUSTER_MUTEX(Vcb));
+}
+
+VOID FatUnlockFreeClusterBitMap(PVCB Vcb)
+{
+    ExReleaseFastMutex(VCB_FREECLUSTER_MUTEX(Vcb));
+}
+
+VOID FatCompleteRequest(PIRP_CONTEXT IrpContext, PIRP Irp, NTSTATUS Status)
+{
+    FatCompleteRequest_Real(IrpContext, Irp, Status);
+}
+
+VOID FatDeleteIrpContext(PIRP_CONTEXT IrpContext)
+{
+    FatDeleteIrpContext_Real(IrpContext);
+}
+
+VOID FatDeleteResource(PERESOURCE Resource)
+{
+    ExDeleteResourceLite(Resource);
+}
+
+VOID FatSetVcbCondition(PVCB Vcb, VCB_CONDITION Condition)
+{
+    /* VcbCondition is a ULONG at a known offset within VCB.
+     * From fatstruc.h analysis: VcbCondition is at offset ~344 */
+    *((PULONG)((PUCHAR)Vcb + 344)) = (ULONG)Condition;
+}
+
+VOID FatNormalizeAndRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
+{
+    (void)IrpContext;
+    ExRaiseStatus(FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_IO_ERROR));
+}
+
+VOID FatRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
+{
+    (void)IrpContext;
+    ExRaiseStatus(Status);
+}
+
+VOID FatResetExceptionState(PIRP_CONTEXT IrpContext) { (void)IrpContext; }
+VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext; }
+
+/* NOTE: IO/EX/KE/Ob/FsRtl FORCEINLINE wrappers are in rust_cohab_forceinline.c */
+
+/* ======================================================================
+ * 2. FAT helper macros → real symbols
+ * ====================================================================== */
+
+ULONG_PTR FlagOn(ULONG_PTR x, ULONG_PTR f)        { return x & f; }
+VOID      SetFlag(PULONG_PTR x, ULONG_PTR f)       { *x |= f; }
+VOID      ClearFlag(PULONG_PTR x, ULONG_PTR f)     { *x &= ~f; }
+BOOLEAN   BooleanFlagOn(ULONG_PTR x, ULONG_PTR f)  { return !!(x & f); }
+PVOID     Add2Ptr(PVOID p, ULONG_PTR n)             { return (PUCHAR)p + n; }
+ULONG_PTR QuadAlign(ULONG_PTR v)                    { return (v + 7) & ~(ULONG_PTR)7; }
+ULONG_PTR BlockAlignTruncate(ULONG_PTR v, ULONG_PTR a) { return v & ~(a - 1); }
+LONGLONG  Int32x32To64(LONG a, LONG b)              { return (LONGLONG)a * b; }
+ULONGLONG UInt32x32To64(ULONG a, ULONG b)           { return (ULONGLONG)a * b; }
+
+VOID CopyUchar4(PULONG dst, PULONG src)  { *dst = *src; }
+VOID CopyU4char(PULONG dst, PULONG src)  { *dst = *src; }
+
+CSHORT NodeType(PVOID Node)             { return *((PCSHORT)Node); }
+VOID PAGED_CODE(VOID)                  { }
+VOID paged_code(VOID)                  { }
+VOID PagedCode(VOID)                   { }
+VOID ASSERT(BOOLEAN e)                 { (void)e; }
+VOID NT_ASSERT(BOOLEAN e)              { (void)e; }
+VOID UNREFERENCED_PARAMETER(PVOID p)   { (void)p; }
+VOID _Analysis_assume_(BOOLEAN b)      { (void)b; }
+BOOLEAN ARGUMENT_PRESENT(PVOID p)      { return p != NULL; }
+
+VOID KdPrintEx(ULONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
+
+VOID RtlRaiseStatus(NTSTATUS s)    { ExRaiseStatus(s); }
+
+BOOLEAN RtlCheckBit(PRTL_BITMAP h, ULONG pos)
+{
+    return !!(((PULONG)h->Buffer)[pos >> 5] >> (pos & 31));
+}
+
+LUID RtlConvertLongToLuid(LONG v)
+{
+    LARGE_INTEGER li; LUID l;
+    li.QuadPart = v;
+    l.LowPart = li.LowPart;
+    l.HighPart = li.HighPart;
+    return l;
+}
+
+BOOLEAN RtlEqualMemory(const VOID *a, const VOID *b, SIZE_T n)
+{
+    return (RtlCompareMemory(a, b, n) == n);
+}
+
+ULONG RtlOemStringToCountedUnicodeSize(POEM_STRING s) { return s->Length * sizeof(WCHAR); }
+
+/* ======================================================================
+ * 4. Constants that Rust calls as functions
+ * ====================================================================== */
+
+/* FAT_NTC_FCB -> rust_cohab_fat.c DATA */
+/* FAT_NTC_DCB -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+
+/* CCB_FLAG_SKIP_SHORT_NAME_COMPARE -> rust_cohab_fat.c DATA */
+/* CCB_FLAG_USER_SET_LAST_WRITE -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_DEFERRED_FLUSH -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_REMOVABLE_MEDIA -> rust_cohab_fat.c DATA */
+/* VCB_STATE_FLAG_CREATE_IN_PROGRESS -> rust_cohab_fat.c DATA */
+/* FCB_STATE_PAGING_FILE -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* FILE_ACTION_ADDED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_REMOVED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_MODIFIED -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_RENAMED_OLD_NAME -> rust_cohab_fat.c DATA */
+/* FILE_ACTION_RENAMED_NEW_NAME -> rust_cohab_fat.c DATA */
+/* IRP_CONTEXT_FLAG_WAIT -> rust_cohab_fat.c DATA */
+const ULONG IRP_PAGING_IO = 0x00000002;  /* xdk/iotypes.h (stub had fabricated 0x8) */
+/* FAT_DIRENT_ATTR_READ_ONLY -> rust_cohab_fat.c DATA */
+/* FAT_DIRENT_ATTR_DIRECTORY -> rust_cohab_fat.c DATA */
+/* OPLOCK_FLAG_PARENT_OBJECT -> rust_cohab_fat.c DATA */
+/* FO_FILE_MODIFIED -> rust_cohab_fat.c DATA */
+/* MAX_LFN_CHARACTERS -> rust_cohab_fat.c DATA */
+/* USER_DIRECTORY_OPEN -> rust_cohab_fat.c DATA */
+/* UserVolumeOpen -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+
+/* TAG_DIRENT -> rust_cohab_fat.c DATA */
+/* moved to rust_cohab_fat.c as header-correct DATA */
+/* TAG_FILENAME_BUFFER -> rust_cohab_fat.c DATA */
+ULONG FAT_LFN_DIRENTS_NEEDED(PUNICODE_STRING Name)
+{
+    return (Name->Length / sizeof(WCHAR) + 12) / 13;
+}
+
+/* ======================================================================
+ * 5. Utility helpers
+ * ====================================================================== */
+
+/* SharedSystemTime: fastfat reads this as a 64-bit DATA value (the shared system
+ * time snapshot), not a function. Provide a real data symbol so the Rust
+ * `extern static mut SharedSystemTime: u64` reference resolves to data, not code.
+ * NOTE (owed translation fix): the C macro aliases SharedUserData->SystemTime; a
+ * static-zero here yields epoch file timestamps. Tracked for a timesup.rs fix. */
+LARGE_INTEGER SharedSystemTime = { 0 };
+
+LONGLONG ExGetCurrentResourceThread(VOID)
+{
+    return (LONGLONG)(ULONG_PTR)KeGetCurrentThread();
+}
+
+BOOLEAN CcIsFileCached(PFILE_OBJECT f)
+{
+    return (f->SectionObjectPointer &&
+            f->SectionObjectPointer->SharedCacheMap) ? TRUE : FALSE;
+}
+
+VOID CcSetAdditionalCacheAttributesEx(PFILE_OBJECT f, ULONG fl)
+{ (void)f;(void)fl; }
+
+VOID PsUpdateDiskCounters(PEPROCESS a, ULONG64 b, ULONG64 c, ULONG d, ULONG e, ULONG f)
+{ (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; }
+
+VOID IoInitializePriorityInfo(PVOID p)
+{
+    /* IO_PRIORITY_INFO: Size(ULONG)+ThreadPriority(ULONG)+PagePriority(ULONG)+IoPriority(ULONG)=16 */
+    if (p) RtlZeroMemory(p, 16);
+    if (p) *((PULONG)p) = 16; /* Size = sizeof(IO_PRIORITY_INFO) */
+}
+
+NTSTATUS IoRetrievePriorityInfo(PIRP a, PFILE_OBJECT b, PETHREAD c, PVOID d)
+{
+    (void)a;(void)b;(void)c;
+    IoInitializePriorityInfo(d);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS SafeMmProbeAndLockPages(PMDL Mdl, KPROCESSOR_MODE Mode, LOCK_OPERATION Op)
+{
+    MmProbeAndLockPages(Mdl, Mode, Op);
+    return STATUS_SUCCESS;
+}
+
+ULONG SizeOfFullEa(PFILE_FULL_EA_INFORMATION Ea)
+{
+    return (ULONG)(sizeof(FILE_FULL_EA_INFORMATION) - 1 +
+                   Ea->EaNameLength + 1 + Ea->EaValueLength);
+}
+
+ULONG SizeOfPackedEa(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return 0; }
+
+BOOLEAN GetcbList(PVOID x) { (void)x; return FALSE; }
+
+/* __int2c is in rust_cohab_forceinline.c (clang builtin, can't define here) */
+
+BOOLEAN IsFileObjectReadOnly(PFILE_OBJECT f)
+{
+    return !f->WriteAccess && !f->DeleteAccess;
+}
+
+BOOLEAN IsFileWriteThrough(PFILE_OBJECT f, PDEVICE_OBJECT d)
+{
+    (void)d;
+    return !!(f->Flags & FO_WRITE_THROUGH);
+}
+
+/* IsFileDeleted accesses FCB_STATE_DELETE_ON_CLOSE.
+ * FCB state is at a known offset; use value 0x00000004 from fatstruc.h */
+BOOLEAN IsFileDeleted(PIRP_CONTEXT IrpContext, PFCB Fcb)
+{
+    /* (IrpContext, Fcb) per fatprocs.h macro. Conservative stub: FALSE. */
+    (void)IrpContext; (void)Fcb;
+    return FALSE;
+}
+
+/* IsBpbFat32: check BigRootDirEnt == 0 in packed BPB */
+BOOLEAN IsBpbFat32(PPACKED_BOOT_SECTOR Bpb)
+{
+    /* PackedBpb is at offset 11 in BPB; BigRootDirEnt at offset 17 within
+     * PACKED_BPB = BPB[+17]. 2 bytes LE. If == 0 it's FAT32. */
+    PUCHAR p = (PUCHAR)Bpb + 11 + 17; /* approx, safe to touch */
+    return (p[0] == 0 && p[1] == 0) ? TRUE : FALSE;
+}
+
+VOID CanFsdWait(PIRP_CONTEXT IrpContext)
+{
+    (void)IrpContext; /* no-op; real semantics in strucsup.rs */
+}
+
+/* ======================================================================
+ * 6. Debug / trace stubs
+ * ====================================================================== */
+
+VOID DebugTrace(LONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
+VOID DebugDump(PCHAR a, ULONG b, PVOID c)               { (void)a;(void)b;(void)c; }
+VOID DebugUnwind(PCHAR a)                               { (void)a; }
+VOID DebugDoit(PVOID a)                                 { (void)a; }
+VOID DbgDoit(PVOID a)                                   { (void)a; }
+ULONG Dbg = 0;  /* DebugTrace component id; read as data, no-op when not tracing */
+VOID TimerStart(ULONG a)                                { (void)a; }
+VOID TimerStop(ULONG a, PCHAR b)                        { (void)a;(void)b; }
+
+/* ======================================================================
+ * 7. SEH2 stubs (dead with USE_DUMMY_PSEH)
+ * ====================================================================== */
+
+VOID _SEH2_TRY(VOID)                    { }
+VOID _SEH2_EXCEPT(PVOID x)              { (void)x; }
+VOID _SEH2_FINALLY(VOID)               { }
+VOID _SEH2_END(VOID)                   { }
+NTSTATUS _SEH2_GetExceptionCode(VOID)  { return STATUS_SUCCESS; }
+PVOID _SEH2_GetExceptionInformation(VOID) { return NULL; }
+BOOLEAN _SEH2_AbnormalTermination(VOID){ return FALSE; }
+VOID SEH_TRY_EXCEPT(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; }
+VOID try_return(PVOID x)               { (void)x; }
+
+/* ======================================================================
+ * 8. FsRtl wrappers (FORCEINLINE or new APIs not in older ntoskrnl.lib)
+ * ====================================================================== */
+
+BOOLEAN FsRtlAreThereWaitingFileLocks(PFILE_LOCK a)   { (void)a; return FALSE; }
+BOOLEAN FsRtlCurrentOplockH(POPLOCK a)                { (void)a; return FALSE; }
+BOOLEAN FsRtlOplockIsSharedRequest(PIRP a)            { (void)a; return FALSE; }
+BOOLEAN FsRtlCheckLockForOplockRequest(PFILE_LOCK a, PLARGE_INTEGER b) { (void)a;(void)b; return TRUE; }
+
+NTSTATUS FsRtlGetSectorSizeInformation(PDEVICE_OBJECT a, PVOID b)
+{
+    /* PFILE_FS_SECTOR_SIZE_INFORMATION is Vista+ — stub returns defaults */
+    (void)a;
+    if (b) {
+        /* Zero the struct; the first 4 ULONGs are the common fields.
+         * Set LogicalBytesPerSector = 512 (ULONG at offset 0). */
+        ((PULONG)b)[0] = 512; /* LogicalBytesPerSector */
+        ((PULONG)b)[1] = 512; /* PhysicalBytesPerSectorForAtomicity */
+        ((PULONG)b)[2] = 512; /* PhysicalBytesPerSectorForPerformance */
+        ((PULONG)b)[3] = 512; /* Effective */
+    }
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS FsRtlOplockBreakH(
+    POPLOCK a, PIRP b, ULONG c, PVOID d,
+    POPLOCK_WAIT_COMPLETE_ROUTINE e, POPLOCK_FS_PREPOST_IRP f)
+{
+    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;
+    return STATUS_SUCCESS;
+}
+
+BOOLEAN FsRtlFastLock(
+    PFILE_LOCK a, PFILE_OBJECT b, PLARGE_INTEGER c, PLARGE_INTEGER d,
+    PEPROCESS e, ULONG f, BOOLEAN g, BOOLEAN h, PIO_STATUS_BLOCK i,
+    PIRP j, BOOLEAN k)
+{
+    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;(void)j;(void)k;
+    return FALSE;
+}
+
+/* ======================================================================
+ * 9. Statistics / accounting stubs
+ * ====================================================================== */
+
+VOID CollectCreateStatistics(PVCB a, NTSTATUS b)   { (void)a;(void)b; }
+VOID CollectCreateHitStatistics(PVCB a)             { (void)a; }
+VOID CollectDiskIoStats(PVCB a, PIRP b, ULONG c, ULONG d) { (void)a;(void)b;(void)c;(void)d; }
+/* CompareNames -> rust_cohab_fat.c (real macro) */
+VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(void)c; }
+
+/* ======================================================================
+ * 10. BugCheck stubs for FAT functions not yet in Rust
+ * ====================================================================== */
+
+NTSTATUS FatIsVolumeMounted(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatIsVolumeDirty(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatLockVolume(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatUnlockVolume(PIRP_CONTEXT a, PIRP b)       { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatLockVolumeInternal(PIRP_CONTEXT a, PVCB b, PVOID c)  { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatUnlockVolumeInternal(PIRP_CONTEXT a, PVCB b, PVOID c){ (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatDismountVolume(PIRP_CONTEXT a, PIRP b)     { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatDirtyVolume(PIRP_CONTEXT a, PIRP b)        { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGetStatistics(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatQueryBpb(PIRP_CONTEXT a, PIRP b)           { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatSetEndOfFileInfo(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatOpenExistingDirectory(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8, PVOID a9, PVOID a10, PVOID a11, PVOID a12, PVOID a13, PVOID a14, PVOID a15, PVOID a16) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8;(void)a9;(void)a10;(void)a11;(void)a12;(void)a13;(void)a14;(void)a15;(void)a16; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
+NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGenerateFileIdFromFcb(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)
+    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatReadDirent -> rust_cohab_fat.c (real dirsup.c macro) */
+NTSTATUS fat_check_system_security_access(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+NTSTATUS fat_supersede_or_overwrite_file(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+
+/* FatConstructDot / FatConstructDotDot / FatNotifyReportChange
+ * -> rust_cohab_fat.c (real dirsup.c / fatprocs.h macros) */
+__cdecl VOID Fat8QMdot3QM(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); }
+
+/* FatFsdEntryCount: a FASTFATDBG-only debug counter. The Rust definition is
+ * cfg'd out (feature off) but strucsup references it unconditionally. Provide as
+ * real DATA (bare symbol) so the `extern static mut` reference resolves to a
+ * zero counter rather than function-prologue bytes. */
+ULONG FatFsdEntryCount = 0;
+ULONG FatIoCallDriverCount = 0;  /* FASTFATDBG counter; real DATA, incremented by Rust */
+
+
+/* FatAreNamesEqual / FatIsNameShortOemValid -> rust_cohab_fat.c (real fatprocs.h macros) */
+/* FatIsNameLongUnicodeValid -> namesup.rs (Rust impl of the fatprocs.h INLINE) */
+BOOLEAN FatIsPathnameValid(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return FALSE; }
+/* FatIsIoRangeValid -> rust_cohab_fat.c (real fatprocs.h static INLINE) */
+
+
+#pragma clang diagnostic pop

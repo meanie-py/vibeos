@@ -2374,10 +2374,17 @@ pub fn MI_IS_INSTRUCTION_FETCH(fault_code: ULONG_PTR) -> bool {
     (fault_code & 0x10) != 0
 }
 
-/// MM_IS_WAIT_PTE — check if a PTE is a wait entry
+/// MM_IS_WAIT_PTE — check if a section-segment entry (SSE) is a wait entry.
+/// C macro (ntoskrnl/include/internal/mm.h):
+///   `(IS_SWAP_FROM_SSE(E) && SWAPENTRY_FROM_SSE(E) == MM_WAIT_ENTRY)`
+///   = `((E) & 0x1) && ((E) >> 1) == MM_WAIT_ENTRY`
+/// A wait SSE is written as `MAKE_SWAP_SSE(MM_WAIT_ENTRY) = (MM_WAIT_ENTRY << 1) | 1`,
+/// NOT `MM_WAIT_ENTRY` raw — the prior `pte_long == MM_WAIT_ENTRY` never matched a
+/// real wait SSE, so MmMakeSegmentResident's collided-fault wait loops never
+/// recognized an in-flight page-in → section page-in livelock (arm64 fastfat).
 #[inline]
 pub fn MM_IS_WAIT_PTE(pte_long: ULONG_PTR) -> bool {
-    pte_long == MM_WAIT_ENTRY
+    (pte_long & 0x1) != 0 && (pte_long >> 1) == MM_WAIT_ENTRY
 }
 
 /// MI_MAKE_HARDWARE_PTE_KERNEL — create a valid kernel PTE
