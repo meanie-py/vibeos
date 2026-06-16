@@ -18,6 +18,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <stdio.h>
+#include <string.h>
 
 #define TCP_ECHO_IP   "10.0.2.100"
 #define TCP_ECHO_PORT 9999
@@ -136,6 +137,142 @@ static int test_udp(void)
     return 0;
 }
 
+/* Skip one DNS name (label sequence or compression pointer); return next offset. */
+static int dns_skip_name(const unsigned char *buf, int len, int off)
+{
+    while (off >= 0 && off < len)
+    {
+        unsigned char b = buf[off];
+        if ((b & 0xC0) == 0xC0) return off + 2; /* compression pointer */
+        if (b == 0) return off + 1;             /* root label */
+        off += 1 + b;                           /* normal label */
+    }
+    return -1;
+}
+
+/* Pull the first A record out of a DNS response. Returns 1 + fills ip[4]. */
+static int dns_get_a(const unsigned char *buf, int len, unsigned char ip[4])
+{
+    int ancount, off, i;
+    if (len < 12) return 0;
+    ancount = (buf[6] << 8) | buf[7];
+    off = dns_skip_name(buf, len, 12); /* question name */
+    if (off < 0 || off + 4 > len) return 0;
+    off += 4; /* QTYPE + QCLASS */
+    for (i = 0; i < ancount; i++)
+    {
+        int type, rdlen;
+        off = dns_skip_name(buf, len, off);
+        if (off < 0 || off + 10 > len) return 0;
+        type  = (buf[off] << 8) | buf[off + 1];
+        rdlen = (buf[off + 8] << 8) | buf[off + 9];
+        off += 10;
+        if (off + rdlen > len) return 0;
+        if (type == 1 && rdlen == 4)
+        {
+            ip[0] = buf[off]; ip[1] = buf[off + 1];
+            ip[2] = buf[off + 2]; ip[3] = buf[off + 3];
+            return 1;
+        }
+        off += rdlen;
+    }
+    return 0;
+}
+
+/* The real deal: resolve example.com through slirp's DNS forwarder (real
+ * recursive DNS), then open a real TCP connection to it on port 80 and pull an
+ * actual HTTP response back from the public internet — every byte travelling
+ * ws2_32 -> msafd -> AFD -> netstack -> smoltcp -> slirp NAT -> the internet. */
+static int test_internet(void)
+{
+    SOCKET s;
+    struct sockaddr_in sa, from;
+    int fromlen, n;
+    unsigned char rx[1500];
+    unsigned char ip[4];
+    char buf[256];
+    const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n";
+    DWORD tmo = 5000;
+
+    /* 1. Resolve example.com (UDP DNS to the slirp forwarder at 10.0.2.3). */
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+    {
+        markf("[NETTEST] INET dns socket() failed %d\n", WSAGetLastError());
+        return 0;
+    }
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(DNS_PORT);
+    sa.sin_addr.s_addr = inet_addr(DNS_IP);
+    if (sendto(s, (const char *)DNS_QUERY, sizeof(DNS_QUERY), 0,
+               (struct sockaddr *)&sa, sizeof(sa)) <= 0)
+    {
+        markf("[NETTEST] INET dns sendto failed %d\n", WSAGetLastError());
+        closesocket(s);
+        return 0;
+    }
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tmo, sizeof(tmo));
+    fromlen = sizeof(from);
+    n = recvfrom(s, (char *)rx, sizeof(rx), 0, (struct sockaddr *)&from, &fromlen);
+    closesocket(s);
+    if (n <= 0 || !dns_get_a(rx, n, ip))
+    {
+        mark("[NETTEST] INET could not resolve example.com\n");
+        return 0;
+    }
+    sprintf(buf, "[NETTEST] INET resolved example.com -> %d.%d.%d.%d\n",
+            ip[0], ip[1], ip[2], ip[3]);
+    mark(buf);
+
+    /* 2. Real TCP connect to the resolved public host + HTTP GET. */
+    s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == INVALID_SOCKET)
+    {
+        markf("[NETTEST] INET tcp socket() failed %d\n", WSAGetLastError());
+        return 0;
+    }
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(80);
+    memcpy(&sa.sin_addr, ip, 4);
+    if (connect(s, (struct sockaddr *)&sa, sizeof(sa)) != 0)
+    {
+        markf("[NETTEST] INET connect to internet failed %d\n", WSAGetLastError());
+        closesocket(s);
+        return 0;
+    }
+    mark("[NETTEST] INET TCP connected to the public internet :80\n");
+    if (send(s, req, (int)strlen(req), 0) <= 0)
+    {
+        markf("[NETTEST] INET send failed %d\n", WSAGetLastError());
+        closesocket(s);
+        return 0;
+    }
+    n = recv(s, buf, sizeof(buf) - 1, 0);
+    closesocket(s);
+    if (n <= 0)
+    {
+        mark("[NETTEST] INET no HTTP response\n");
+        return 0;
+    }
+    buf[n] = 0;
+    if (buf[0] == 'H' && buf[1] == 'T' && buf[2] == 'T' && buf[3] == 'P')
+    {
+        char line[96];
+        int i;
+        for (i = 0; i < n && i < 95 && buf[i] != '\r' && buf[i] != '\n'; i++)
+            line[i] = buf[i];
+        line[i] = 0;
+        markf("[NETTEST] REAL INTERNET HTTP OK (%d bytes), status: ", n);
+        mark(line);
+        mark("\n");
+        return 1;
+    }
+    mark("[NETTEST] INET got bytes but not an HTTP response\n");
+    return 0;
+}
+
 int main(void)
 {
     WSADATA wsd;
@@ -150,6 +287,7 @@ int main(void)
 
     test_tcp();
     test_udp();
+    test_internet();
 
     mark("[NETTEST] usermode winsock proof done\n");
     WSACleanup();
