@@ -318,6 +318,14 @@ add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe
         ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
         ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
         hal kdcom bootvid
+        # The cargo link (reactos-link) consumes kdcom/bootvid's *import libs*
+        # (CMakeFiles/lib{kdcom,bootvid}.dir/lib*.a) by path. The DLL targets
+        # above do NOT build their own import libs (only consumers do), and
+        # nothing else in the kernel's closure pulls them — so a from-scratch
+        # `ninja -t clean` build leaves them missing and the cargo link panics
+        # ("missing static lib … run ninja first"). Depend on the implib custom
+        # targets explicitly so a cold build always produces them first.
+        libkdcom_implib_target libbootvid_implib_target
         psdk asm rust_kernel)
 
 add_subdirectory(ntkrnlmp)

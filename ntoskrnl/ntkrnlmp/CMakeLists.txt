@@ -53,4 +53,9 @@ add_cargo_module(ntkrnlmp ntkrnlmp-cargo ntkrnlmp.exe
         ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
         ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
         hal kdcom bootvid
+        # See ntoskrnl/CMakeLists.txt: the cargo link consumes kdcom/bootvid's
+        # import libs by path, which nothing else in the closure builds — wire
+        # the implib custom targets so a cold `ninja -t clean` build can't race
+        # a missing lib*.a ("missing static lib … run ninja first").
+        libkdcom_implib_target libbootvid_implib_target
         psdk asm rust_kernel)
