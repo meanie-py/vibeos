@@ -1210,6 +1210,32 @@ image, not the code.
 - **Corollary:** when an arm64 smoke flips red, reproduce on a **freshly-regenerated**
   ramdisk before reporting a regression — a stale/bad boot image is a false signal.
 
+### 9.6e ⚠️ A *reconstructed* build-arm64 dir → perpetual CMake reconfigure → permanent false `STALE_MEDIA`
+
+Seen 2026-06-16 landing cdrom-rust. Symptom: `vibeos-cli smoke --arch arm64` hard-fails the
+**staleness gate** (`verdict: FAIL, classification: STALE_MEDIA`) with salient
+`"ninja reports work for ntoskrnl"` *even on genuinely-fresh media you just rebuilt*. Root:
+in a build-arm64 that was reconstructed by hand (stale-dir cleanup, winnt.h-race fixes, etc.)
+a `file(GLOB … CONFIGURE_DEPENDS)` enters a **perpetual reconfigure loop** — every `ninja -n`
+prints `Re-checking globbed directories` → `Re-running CMake`, and a real `ninja` settles to
+`no work to do` yet the *next* `ninja -n` still wants to reconfigure. The smoke staleness
+check keys on `ninja -n <kernel>` being clean, so it can **never** pass for that build dir.
+
+- **It is NOT a code/branch signal.** A fresh `git clone` + fresh `build-arm64` configures
+  clean; the loop is local build-dir cruft. Don't chase it as a regression.
+- **Get the real verdict:** verify the media is current by hand (ramdisk.img mtime newer than
+  `ntoskrnl.exe`/`win32k.sys` etc.), then boot with `vibeos-cli smoke --arch arm64
+  --allow-stale` and read the serial for `[WIN32K] shell ready` / `[KERNEL] SwitchDesktop OK`
+  / `[EXPLORER] _tWinMain entered`. That bypasses the (false) gate, not a real check.
+- **Media-tree prerequisite (related, same session):** `mkramdisk.sh --refresh` checks a long
+  `REQUIRED_FILES` list under `build-arm64/{media,boot/bootdata}`. A reconstructed build dir
+  often hasn't populated it (the SYSTEM hive `boot/bootdata/system`, the NLS files
+  `media/nls/c_437.nls`/`c_1252.nls`). vibeos-cli's arm64 staged set (`ntoskrnl hal uefildr`)
+  **assumes those already exist from a prior full build**. Populate once with `ninja livecd`
+  (stages the bootdata hives + cd files) **plus** `ninja gen_nls` (the txt2nls outputs —
+  these are NOT in the arm64 livecd DAG), then `mkramdisk --refresh` succeeds. (Do not pass
+  `media/nls/l_intl.nls` to ninja — it's not a target; mkramdisk has a source-dir fallback.)
+
 ### 9.7 Reliable-repro timing — slow ≠ hung
 
 - A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
