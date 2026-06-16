@@ -1945,7 +1945,7 @@ pub unsafe extern "system" fn SpiAdapterControl(
     // Schedule an active request
     InterlockedIncrement(core::ptr::addr_of_mut!((*device_extension).ActiveRequestCounter) as *mut i32);
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*device_extension).SpinLock)).cast(), core::ptr::addr_of_mut!(current_irql));
-    crate::glue::sync_exec(
+    KeSynchronizeExecution(
         (*device_extension).Interrupt[0],
         Some(core::mem::transmute(ScsiPortStartPacket as *const ())),
         DeviceObject as PVOID,
@@ -2086,7 +2086,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
 
         if (*DeviceExtension).TimerCount == 0 {
             // Timeout, process it
-            if crate::glue::sync_exec(
+            if KeSynchronizeExecution(
                 (*DeviceExtension).Interrupt[0],
                 Some(core::mem::transmute(SpiProcessTimeout as *const ())),
                 (*DeviceExtension).Common.DeviceObject as *mut core::ffi::c_void,
@@ -2140,7 +2140,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
                 ResetParams.PathId = (*LunExtension).PathId as u32;
                 ResetParams.DeviceExtension = DeviceExtension;
 
-                if crate::glue::sync_exec(
+                if KeSynchronizeExecution(
                     (*DeviceExtension).Interrupt[0],
                     Some(core::mem::transmute(SpiResetBus as *const ())),
                     core::ptr::addr_of_mut!(ResetParams) as *mut core::ffi::c_void,
@@ -2587,7 +2587,7 @@ pub unsafe extern "system" fn ScsiPortAllocateAdapterChannel(
     let device_extension = (*device_object).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*device_extension).SpinLock)).cast(), core::ptr::addr_of_mut!(irql));
     (*device_extension).MapRegisterBase = map_register_base;
-    crate::glue::sync_exec(
+    KeSynchronizeExecution(
         (*device_extension).Interrupt[0],
         Some(core::mem::transmute(ScsiPortStartPacket as *const ())),
         device_object as *mut core::ffi::c_void,
