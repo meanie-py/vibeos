@@ -217,7 +217,7 @@ pub unsafe extern "C" fn DeviceGetZPODDEnabledFromRegistry() -> u32 {
 
     status = WdfDriverOpenParametersRegistryKey(
         WdfGetDriver(),
-        0x10019, // KEY_READ
+        0x20019, // KEY_READ
         core::ptr::null_mut(),
         &mut registryKey as *mut WDFKEY,
     );

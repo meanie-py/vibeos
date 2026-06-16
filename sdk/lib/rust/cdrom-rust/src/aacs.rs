@@ -78,7 +78,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
         }
 
         if transferSize > (*(DeviceExtension)).ScratchContext.ScratchBufferSize as u32 {
-            status = -1073741823; // STATUS_INTERNAL_ERROR
+            status = (0xC00000E5u32 as i32); // STATUS_INTERNAL_ERROR
         }
     }
 

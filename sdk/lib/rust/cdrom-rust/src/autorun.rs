@@ -770,7 +770,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
 
         nextIrpStack = IoGetNextIrpStackLocation(irp);
 
-        (*nextIrpStack).Flags = 0x01; // SL_OVERRIDE_VERIFY_VOLUME
+        (*nextIrpStack).Flags = 0x02; // SL_OVERRIDE_VERIFY_VOLUME
         (*nextIrpStack).MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL;
         (*nextIrpStack).Parameters.Scsi.Srb = &raw mut (*info).MediaChangeSrb as *mut _;
 

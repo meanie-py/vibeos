@@ -412,7 +412,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     } // end autosense valid block
 
     // Post media change workitem queue
-    if mediaChange != 0 && *Status != 0x40000005 /* STATUS_MEDIA_CHANGED */ {
+    if mediaChange != 0 && *Status != (0x8000001Cu32 as i32) /* STATUS_MEDIA_CHANGED */ {
         if (*DeviceExtension).DeviceAdditionalData.RestoreDefaults != 0 {
             let mut status: NTSTATUS = STATUS_SUCCESS;
             let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();

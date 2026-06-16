@@ -2834,12 +2834,12 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
     if status >= 0 {
         if KeGetCurrentIrql() >= 2u8 /* DISPATCH_LEVEL */ {
             NT_ASSERT(0i32);
-            status = (0xC0000054u32 as i32); // STATUS_INVALID_LEVEL
+            status = STATUS_INVALID_LEVEL;
         } else if (*query).QueryType == 0 /* PropertyExistsQuery */ {
             information = 0;
             status = 0; // STATUS_SUCCESS
         } else if (*query).QueryType != 1 /* PropertyStandardQuery */ {
-            status = (0xC0000000u32 as i32); // STATUS_NOT_SUPPORTED
+            status = STATUS_NOT_SUPPORTED;
         }
     }
 
@@ -5158,7 +5158,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
                 < core::mem::size_of::<CDROM_PERFORMANCE_HEADER>() as u32
             {
                 *DataLength = 0;
-                status = (0xC000000Du32 as i32) /* STATUS_INVALID_DEVICE_REQUEST */;
+                status = STATUS_INVALID_DEVICE_REQUEST;
             } else {
                 let srb_len = (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as size_t;
                 let out_len = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
