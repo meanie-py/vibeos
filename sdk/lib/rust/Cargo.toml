@@ -134,6 +134,8 @@ members = [
     "rtl-sync",
     "rtl-vista-rust",
     "acpica-sys",
+    "kmdf-sys",
+    "cdrom-rust",
     "acpi-rust",
     "pci-rust",
     "pcix-rust",

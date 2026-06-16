@@ -106,7 +106,7 @@ unsafe fn _InsertElementSkiplistWithInformation(
 // ============================================================================
 
 #[no_mangle]
-pub unsafe extern "system" fn DeleteElementSkiplist(
+pub unsafe extern "C" fn DeleteElementSkiplist(
     Skiplist: *mut SKIPLIST,
     Element: PVOID,
 ) -> PVOID {
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn DeleteElementSkiplist(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn InitializeSkiplist(
+pub unsafe extern "C" fn InitializeSkiplist(
     Skiplist: *mut SKIPLIST,
     AllocateRoutine: PSKIPLIST_ALLOCATE_ROUTINE,
     CompareRoutine: PSKIPLIST_COMPARE_ROUTINE,
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn InitializeSkiplist(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn InsertElementSkiplist(
+pub unsafe extern "C" fn InsertElementSkiplist(
     Skiplist: *mut SKIPLIST,
     Element: PVOID,
 ) -> BOOL {
@@ -224,7 +224,7 @@ pub unsafe extern "system" fn InsertElementSkiplist(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn InsertTailElementSkiplist(
+pub unsafe extern "C" fn InsertTailElementSkiplist(
     Skiplist: *mut SKIPLIST,
     Element: PVOID,
 ) -> BOOL {
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn InsertTailElementSkiplist(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LookupElementSkiplist(
+pub unsafe extern "C" fn LookupElementSkiplist(
     Skiplist: *mut SKIPLIST,
     Element: PVOID,
     ElementIndex: *mut DWORD,
@@ -303,7 +303,7 @@ pub unsafe extern "system" fn LookupElementSkiplist(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LookupNodeByIndexSkiplist(
+pub unsafe extern "C" fn LookupNodeByIndexSkiplist(
     Skiplist: *mut SKIPLIST,
     ElementIndex: DWORD,
 ) -> *mut SKIPLIST_NODE {

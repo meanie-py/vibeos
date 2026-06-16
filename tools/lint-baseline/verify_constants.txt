@@ -1,4 +1,4 @@
   MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/i386/psldt.rs:9: TAG_KERNEL: Rust=0x6E72654B → C=0x2020654B
   MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/rtl/path.rs:597: TAG_USTR: Rust=0x53545255 → C=0x52545355
 2 mismatches found across 405 files
-C catalog: 4633 constants from headers
+C catalog: 4636 constants from headers

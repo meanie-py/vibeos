@@ -73,7 +73,7 @@ static BOOL sse2_enabled;
 
 void msvcrt_init_math( void *module )
 {
-    sse2_supported = IsProcessorFeaturePresent( PF_XMMI64_INSTRUCTIONS_AVAILABLE );
+    sse2_supported = ((volatile const BYTE *)(ULONG_PTR)0x7FFE0274)[PF_XMMI64_INSTRUCTIONS_AVAILABLE];
 #if _MSVCR_VER <=71
     sse2_enabled = FALSE;
 #else

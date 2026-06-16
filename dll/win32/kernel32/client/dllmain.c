@@ -108,7 +108,6 @@ DllMain(HANDLE hDll,
     {
         case DLL_PROCESS_ATTACH:
         {
-            DbgPrint("[kernel32] DllMain PROCESS_ATTACH PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             /* Set no filter initially */
             GlobalTopLevelExceptionFilter = RtlEncodePointer(NULL);
 
@@ -254,7 +253,6 @@ DllMain(HANDLE hDll,
 
             /* Insert more dll attach stuff here! */
             DllInitialized = TRUE;
-            DbgPrint("[kernel32] DllMain PROCESS_ATTACH done OK PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             break;
         }
 

@@ -99,6 +99,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ex.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ob.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/iomgr/arcname.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/obhandle.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/mod.rs

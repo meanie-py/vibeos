@@ -25,7 +25,6 @@ DllMain(
     switch (dwReason)
     {
         case DLL_PROCESS_ATTACH:
-            DbgPrint("[advapi32] DllMain PROCESS_ATTACH PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             DisableThreadLibraryCalls(hinstDll);
             RegInitialize();
             break;

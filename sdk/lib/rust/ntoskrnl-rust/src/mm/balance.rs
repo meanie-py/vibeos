@@ -354,11 +354,15 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
     AllocatedPage: PPFN_NUMBER,
 ) -> NTSTATUS {
     static mut I: i32 = 0;
+    #[cfg(target_arch = "x86")]
     static mut TINY_TIME: LARGE_INTEGER = unsafe { core::mem::transmute(-1i64) };
 
     I += 1;
     if I >= 100 {
+        #[cfg(target_arch = "x86")]
         KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of_mut!(TINY_TIME));
+        #[cfg(not(target_arch = "x86"))]
+        ntkrnl_sys::ddk::NtYieldExecution();
         I = 0;
     }
 

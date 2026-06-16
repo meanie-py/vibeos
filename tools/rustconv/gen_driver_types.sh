@@ -114,11 +114,29 @@ case "$DRIVER" in
   cdrom)
     # KMDF driver (set_module_type cdrom kmdfdriver) — needs the WDF 1.17 headers.
     DRIVER_DIR="${SRC}/drivers/storage/class/cdrom"
-    WRAPPER_INC=$'#include <ntddk.h>\n#include "cdrom.h"'
-    ALLOW_FILES=( --allowlist-file '.*cdrom\.h' --allowlist-file '.*cdromp\.h' --allowlist-file '.*ioctl\.h' --allowlist-file '.*mmc\.h' --allowlist-file '.*scratch\.h' )
+    # Pull the storage/SCSI/CD headers explicitly so bindgen PARSES (and, with the
+    # allowlist below, EMITS) the SCSI/DVD/CD/AACS structs the modules use — CDB,
+    # INQUIRYDATA, MODE_PARAMETER_*, DVD_*/CDVD_*/AACS_* (ntddcdvd.h), RAW_READ_INFO/
+    # SUB_Q_* (ntddcdrm.h), STORAGE_*/MOUNTDEV_* — none of which are in the ntkrnl-sys
+    # kernel bindgen. (classpnp profile does the same for its storage surface.)
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "cdrom.h"\n#include <scsi.h>\n#include <ntddstor.h>\n#include <ntddscsi.h>\n#include <ntddcdrm.h>\n#include <ntddcdvd.h>\n#include <ntddmmc.h>\n#include <ntdddisk.h>\n#include <mountdev.h>'
+    ALLOW_FILES=( --allowlist-file '.*cdrom\.h' --allowlist-file '.*cdromp\.h' --allowlist-file '.*ioctl\.h' --allowlist-file '.*mmc\.h' --allowlist-file '.*scratch\.h'
+                  --allowlist-file '.*scsi\.h' --allowlist-file '.*srb\.h' --allowlist-file '.*srbhelper\.h'
+                  --allowlist-file '.*ntddstor\.h' --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*ntddcdrm\.h'
+                  --allowlist-file '.*ntddcdvd\.h' --allowlist-file '.*ntddmmc\.h' --allowlist-file '.*ntdddisk\.h'
+                  --allowlist-file '.*mountdev\.h' --allowlist-file '.*storduid\.h' --allowlist-file '.*ioevent\.h' )
+    # SCSI_REQUEST_BLOCK is opaque ({_address:u8}) in ntkrnl-sys but cdrom uses its
+    # fields ~197x (.SrbStatus/.CdbLength/.Cdb/...). Re-allow it so cdrom's own bindgen
+    # (which includes scsi.h) emits the full local layout.
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DDEBUG_USE_KDPRINT -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
     EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    # WDF types (WDFDEVICE/WDFREQUEST/WDF_REQUEST_PARAMETERS/...) get a SINGLE identity on
+    # the kmdf-sys substrate — blocklist them here + re-export from kmdf_sys, so cdrom's
+    # private structs (CDROM_DEVICE_EXTENSION.Device: WDFDEVICE) and kmdf-sys's dispatch
+    # fns agree on the type. kmdf-sys is itself a gen_driver_types output → stem "types".
+    SYS_CRATES=( "kmdf-sys:kmdf-sys/src:types" )
     ;;
   cdfs)
     DRIVER_DIR="${SRC}/drivers/filesystems/cdfs"
@@ -239,6 +257,26 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
     ;;
+  kmdf)
+    # The WDF *client-binding* API surface (NOT a driver) → the kmdf-sys substrate.
+    # cdrom is the fleet's only KMDF driver; its 109 Wdf* calls dispatch through the
+    # WdfFunctions[] table (see kmdf-sys/src/lib.rs). Allowlist EVERYTHING under a
+    # .../wdf/... path so bindgen emits the full WDF 1.17 surface: the WDF handle
+    # types (WDFDEVICE/WDFREQUEST/WDFKEY/...), the value structs (WDF_OBJECT_ATTRIBUTES,
+    # WDF_IO_QUEUE_CONFIG, WDF_REQUEST_PARAMETERS, ...), the PFN_WDFXXX dispatch-pointer
+    # typedefs, WDFFUNC, WDF_DRIVER_GLOBALS/WDF_BIND_INFO, and the 444-entry
+    # _WDFFUNCENUM (the WdfXxxTableIndex constants). Kernel types referenced by WDF
+    # structs (PDRIVER_OBJECT, NTSTATUS, UNICODE_STRING, ...) stay blocklisted → the
+    # single ntkrnl-sys ddk identity. Output → kmdf-sys/src (OUT_CRATE_DIR override);
+    # gen_kmdf_dispatch.py then turns the PFN typedefs + indices into src/dispatch.rs.
+    # KMDF 1.17 / NTDDI Win8.1 — matches cdrom's CMakeLists.
+    DRIVER_DIR="${SRC}/sdk/include/wdf/kmdf/1.17"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <wdf.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]wdf[/\\].*' )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
+    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    ;;
   fastfat)
     # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
     # 35 .c / 68.8K LOC). Driver-PRIVATE structs (VCB, FCB, DCB, CCB, IRP_CONTEXT,
@@ -319,7 +357,11 @@ WRAPPER="/tmp/${DRIVER}_types_wrapper.h"
 printf '%s\n' "$WRAPPER_INC" > "$WRAPPER"
 
 run_arch() {
-  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_ROOT:-${SRC}}/build-${1}"
+  # BUILD_DIR supplies the configure-time-GENERATED headers (xdk/ddk/mc). A worktree
+  # without its own build dirs can borrow another tree's via BUILD_ROOT (or legacy
+  # BUILD_DIR_BASE); source headers under $SRC are identical git content, only
+  # build-*/sdk/include is generated.
+  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_ROOT:-${BUILD_DIR_BASE:-${SRC}}}/build-${1}"
   local NTK="${NTKRNL_SYS}/bindgen_${ARCH}.rs"
   local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="
@@ -354,8 +396,12 @@ run_arch() {
   local SYS_USE=()
   for spec in "${SYS_CRATES[@]:-}"; do
     [ -z "$spec" ] && continue
-    local crate="${spec%%:*}" subdir="${spec##*:}"
-    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/bindgen_${ARCH}.rs"
+    # spec = crate:subdir[:stem]  (stem defaults to "bindgen"; kmdf-sys uses "types"
+    # because it's itself a gen_driver_types output, not an acpica-style bindgen crate).
+    local crate subdir stem
+    IFS=: read -r crate subdir stem <<< "$spec"
+    stem="${stem:-bindgen}"
+    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/${stem}_${ARCH}.rs"
     local SYSNAMES="/tmp/${DRIVER}_${crate}_names_${ARCH}.txt"
     grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$SYSBG" | awk '{print $3}' | sort -u > "$SYSNAMES"
     # Unique = in sys crate but NOT already an ntkrnl-sys type (TYPELIST still ntkrnl-only here).

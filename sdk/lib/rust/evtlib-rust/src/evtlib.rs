@@ -31,21 +31,11 @@ use core::ffi::{c_char, c_void};
 // External kernel functions
 // ============================================================================
 
-/// Inline NT helper (no exported symbol): set up an empty UNICODE_STRING.
-/// Mirrors the FORCEINLINE in the SDK headers — Length=0, MaximumLength=cap, Buffer=buf.
-#[inline]
-unsafe fn RtlInitEmptyUnicodeString(
-    DestinationString: *mut UNICODE_STRING,
-    Buffer: *mut u16,
-    MaximumLength: u16,
-) {
-    (*DestinationString).Length = 0;
-    (*DestinationString).MaximumLength = MaximumLength;
-    (*DestinationString).Buffer = Buffer;
-}
-
 extern "C" {
     fn DbgPrint(format: *const c_char, ...) -> u32;
+}
+
+extern "system" {
     fn RtlFillMemoryUlong(Destination: *mut c_void, Length: usize, Fill: u32);
     fn RtlCopyMemory(Destination: *mut c_void, Source: *const c_void, Length: usize);
     fn RtlZeroMemory(Destination: *mut c_void, Length: usize);
@@ -64,6 +54,17 @@ extern "C" {
         LineNumber: u32,
         Message: *mut c_char,
     );
+}
+
+#[inline]
+unsafe fn RtlInitEmptyUnicodeString(
+    DestinationString: *mut UNICODE_STRING,
+    Buffer: *mut u16,
+    MaximumLength: u16,
+) {
+    (*DestinationString).Length = 0;
+    (*DestinationString).MaximumLength = MaximumLength;
+    (*DestinationString).Buffer = Buffer;
 }
 
 // ============================================================================
