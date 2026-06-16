@@ -2183,14 +2183,19 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     const TRACE_FLAG_IOCTL: u32 = 0x00000001;
     const TRACE_LEVEL_INFORMATION: u32 = 0x00000004;
     const TRACE_LEVEL_WARNING: u32 = 0x00000003;
-    const IOCTL_DVD_READ_KEY: u32 = 0; // value TBD
-    const DVD_TAG_DVD_REGION: u32 = 0; // placeholder
+    // CTL_CODE(IOCTL_DVD_BASE=FILE_DEVICE_DVD=0x33, 0x401, METHOD_BUFFERED, FILE_READ_ACCESS)
+    const IOCTL_DVD_READ_KEY: u32 = 0x0033_5004;
+    // pool tag 'vCcS' (displays "ScCv") — cdrom.h DVD_TAG_DVD_REGION
+    const DVD_TAG_DVD_REGION: u32 = 0x7643_6353;
     const DVD_MAX_REGION: u32 = 8;
-    const DvdCopyrightDescriptor: u8 = 0; // replace with correct value
-    const DvdGetRpcKey: u8 = 0;
-    const DvdSetRpcKey: u8 = 0;
-    const DVD_RPC_KEY_LENGTH: usize = 8; // guess
-    const DVD_SET_RPC_KEY_LENGTH: usize = 8; // guess
+    // DvdCopyrightDescriptor (=1), DvdGetRpcKey (=0x8), DvdSetRpcKey (=0x6) come
+    // from the real ntddcdvd.h enums imported at the top of this file — do NOT
+    // shadow them with =0 placeholders (that disabled region selection entirely).
+    // DVD_RPC_KEY_LENGTH / DVD_SET_RPC_KEY_LENGTH = sizeof(key) + sizeof(DVD_COPY_PROTECT_KEY)
+    const DVD_RPC_KEY_LENGTH: usize =
+        core::mem::size_of::<DVD_RPC_KEY>() + core::mem::size_of::<DVD_COPY_PROTECT_KEY>();
+    const DVD_SET_RPC_KEY_LENGTH: usize =
+        core::mem::size_of::<DVD_SET_RPC_KEY>() + core::mem::size_of::<DVD_COPY_PROTECT_KEY>();
 
     // DVD_DEFAULT_REGION wide string constant used for registry value name
     // We expand DECLARE_CONST_UNICODE_STRING manually using RtlInitUnicodeString.
@@ -2236,6 +2241,12 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         return;
     }
 
+    // Single labeled block models the C `goto getout` cleanup jump: every
+    // `break 'getout` exits here and falls through to the FREE_POOL + final
+    // InterlockedExchange below. (Each goto was previously mis-lowered as a
+    // no-op `'getout: { break 'getout; }`, so failure paths fell THROUGH
+    // instead of cleaning up.)
+    'getout: {
     let copy_protect_key = dvd_read_structure as *mut DVD_COPY_PROTECT_KEY;
 
     // dvdCopyRight = (PDVD_COPYRIGHT_DESCRIPTOR)((PDVD_DESCRIPTOR_HEADER)dvdReadStructure)->Data;
@@ -2292,11 +2303,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             b"DevicePickDvdRegion (%p): failed to auto-choose a region due to status %x getting copyright descriptor\n\0"
                 .as_ptr() as *const i8,
         );
-        // goto getout
-        // We use a labeled block to simulate the C goto.
-        'getout: {
-            break 'getout;
-        }
+        break 'getout; // goto getout
     }
 
     // get the device region
@@ -2333,10 +2340,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): failed to get RpcKey from a DVD Device\n\0".as_ptr() as *const i8,
         );
-        // goto getout
-        'getout: {
-            break 'getout;
-        }
+        break 'getout; // goto getout
     }
 
     // rpcKey = (PDVD_RPC_KEY)copyProtectKey->KeyData
@@ -2351,10 +2355,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             b"DevicePickDvdRegion (%p): not picking a region since \
               it is already chosen\n\0".as_ptr() as *const i8,
         );
-        // goto getout
-        'getout: {
-            break 'getout;
-        }
+        break 'getout; // goto getout
     }
 
     if (*rpc_key).UserResetsAvailable() <= 1 {
@@ -2364,10 +2365,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             b"DevicePickDvdRegion (%p): not picking a region since \
               only one change remains\n\0".as_ptr() as *const i8,
         );
-        // goto getout
-        'getout: {
-            break 'getout;
-        }
+        break 'getout; // goto getout
     }
 
     // OOBE sets this key based upon the system locale
@@ -2449,10 +2447,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             b"DevicePickDvdRegion (%p): Choice #4: failed to choose \
               a media region\n\0".as_ptr() as *const i8,
         );
-        // goto getout
-        'getout: {
-            break 'getout;
-        }
+        break 'getout; // goto getout
     }
 
     // Now set the region
@@ -2501,6 +2496,8 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         );
         pick_dvd_region = 0;
     }
+
+    } // end 'getout — fall through to cleanup
 
     // cleanup (from getout:)
     if !dvd_read_structure.is_null() {
