@@ -1167,6 +1167,30 @@ never moved.
   `--clean` nukes `rust-kernel-target` but the staleness is in the *ninja relink trigger*,
   not the cargo cache, so even clean can skip it.) Always verify-by-marker for kernel work.
 
+### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
+
+Sibling of §9.6b, different mechanism. When a commit changes a **kernel ABI that
+drivers depend on** (e.g. the arm64 `IRP`/`IO_STACK_LOCATION` layout —
+`IoGetCurrentIrpStackLocation` math), *every* driver must be recompiled against the new
+layout. But `./vibeos-cli build --arch arm64` (and the smoke harness) build only the
+**staged set** (`ntoskrnl`/`hal`/`uefildr`) + `mkramdisk` — they do **not** rebuild
+drivers (`fastfat.sys`, `scsiport.sys`, the storage stack, etc.). So after pulling such a
+change you get a ramdisk with a **new-ABI ntoskrnl + old-ABI drivers** → the mismatch
+manifests as: **boot reaches the desktop, then idle-detection times out** (win32k/user32
+come up, apps launch, but the box never settles — looks exactly like a hang/livelock, not
+a crash).
+
+- **Detect:** arm64 smoke `HANG_TIMEOUT` whose serial shows the desktop reached
+  (`PspUserThreadStartup` for explorer/notepad/cmd, `NtUserProcessConnect`) — i.e. it got
+  *far*, didn't BugCheck. Pair that with a recent kernel-ABI commit.
+- **Fix:** a **full** `ninja -C build-arm64` (not the staged set) to rebuild all `.sys`
+  against the new ABI, then `bash qemu/mkramdisk.sh --refresh`, then re-smoke. Cleared an
+  arm64 idle-timeout to green in one shot (2026-06-15, fastfat cohab-flip merge: the merge
+  carried the arm64 IRP-stack-location ABI fix).
+- **i386/amd64 unaffected** when the ABI fix is arch-cfg-gated (`cfg(target_arch)`), and
+  they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
+  anyway — only arm64's staged-ramdisk path has the gap.
+
 ### 9.7 Reliable-repro timing — slow ≠ hung
 
 - A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
