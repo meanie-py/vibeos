@@ -18,18 +18,16 @@ add_registry_inf(netstack_reg.inf)
 #   (1) the Winsock2 protocol catalog (msafd providers) — ws2_32 finds a provider;
 #   (2) the Winsock-v1 transport map (wshtcpip + Mapping) — msafd!SockGetTdiName
 #       resolves (af,type,proto) -> \Device\Tcp|Udp|RawIp (which netstack owns).
-# On amd64 this gives a full ws2_32 -> msafd -> AFD -> netstack -> smoltcp -> slirp
+# This gives a full ws2_32 -> msafd -> AFD -> netstack -> smoltcp -> slirp
 # round-trip (tests/qemu/test_net.py::test_usermode_winsock_roundtrip, GREEN).
 #
-# amd64-ONLY for now: enabling it on i386 advances boot far enough to reach a
-# KNOWN PRE-EXISTING ntoskrnl Mm bug — a BUGCHECK 0x1E (0xc0000005) at services.exe
-# creation, an unmapped i386 session-space pointer read (0xf6xxxxxx) during
-# MmSessionCreate-family code. That bug is NOT in netstack (catalog-only i386
-# boots green; the netstack TDI/query code is identical across arches) — it is the
-# same i386 session-space Mm fault the kernel32-wave/Mm-0x1E lane is fixing, just
-# newly *reached* because working winsock lets boot get to service startup. Re-
-# enable for i386/arm64 once that ntoskrnl Mm 0x1E lands fixed.
+# All 3 arches: this was amd64-only while working winsock advanced i386 boot to
+# services.exe and hit a BUGCHECK 0x1E. That 0x1E was NOT in netstack and NOT an
+# Mm bug — it was kernel32 FindFirstFileExW cast-before-offset pointer arith
+# (`(p as PFIND_FILE_DATA).offset(1)` advances by sizeof(FIND_FILE_DATA) ~16KB
+# instead of the handle size, overrunning the FindFileData buffer into reserved-
+# uncommitted process heap; the dir-fill memset then AVs at the page boundary).
+# Fixed in the kernel32 wave, landed on continue-rust-port (15176738c02). With
+# that fix present, winsock is enabled on i386/amd64/arm64 alike.
 # See docs/engineering/translation-debugging-field-manual.md and task 77.
-if(ARCH STREQUAL "amd64")
-    add_registry_inf(netstack_winsock.inf)
-endif()
+add_registry_inf(netstack_winsock.inf)
