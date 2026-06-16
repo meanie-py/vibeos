@@ -26,6 +26,7 @@ use crate::tditrans;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC000_0002u32 as NTSTATUS;
 const STATUS_OBJECT_NAME_COLLISION: NTSTATUS = 0xC000_0035u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000_000Du32 as NTSTATUS;
 
 const FILE_DEVICE_NETWORK: u32 = 0x0000_0012;
 
@@ -233,6 +234,125 @@ unsafe fn handle_close(stack: PIO_STACK_LOCATION) {
     }
 }
 
+// ---- TDI query-information-ex (IOCTL_TCP_QUERY_INFORMATION_EX) ----
+// A METHOD_NEITHER IOCTL (IRP_MJ_DEVICE_CONTROL, MinorFunction 0) — distinct from
+// the TdiBuildXxx INTERNAL_DEVICE_CONTROL path. afd/wshtcpip/iphlpapi enumerate
+// the transport's TDI entities through it on a control-channel handle. The one
+// that gates usermode connect(): wshtcpip!WSHNotify(WSH_NOTIFY_BIND)
+// (dll/win32/wshtcpip/wshtcpip.c) opens \Device\Tcp and calls tdiGetEntityIDSet;
+// if that fails the helper returns WSAEINVAL and the auto-bind inside connect()
+// fails with WSAEINVAL (10022) before any TDI_CONNECT is ever issued.
+const IOCTL_TCP_QUERY_INFORMATION_EX: u32 = 0x0012_0003;
+
+const GENERIC_ENTITY: u32 = 0;
+const ENTITY_LIST_ID: u32 = 0;
+const ENTITY_TYPE_ID: u32 = 1;
+const INFO_CLASS_GENERIC: u32 = 0x100;
+
+const IF_ENTITY: u32 = 0x200;
+const CL_NL_ENTITY: u32 = 0x301;
+const CO_TL_ENTITY: u32 = 0x400;
+const CL_TL_ENTITY: u32 = 0x401;
+const IF_GENERIC: u32 = 0x200;
+const CL_NL_IP: u32 = 0x303;
+const CO_TL_TCP: u32 = 0x404;
+const CL_TL_UDP: u32 = 0x403;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct TdiEntityId {
+    tei_entity: u32,
+    tei_instance: u32,
+}
+
+#[repr(C)]
+struct TdiObjectId {
+    toi_entity: TdiEntityId,
+    toi_class: u32,
+    toi_type: u32,
+    toi_id: u32,
+}
+
+/// The TDI entities netstack advertises: TCP (connection-oriented transport),
+/// UDP (connectionless transport), IP (connectionless network) and one
+/// interface — all instance 0 (single smoltcp interface).
+const ENTITIES: [TdiEntityId; 4] = [
+    TdiEntityId { tei_entity: CO_TL_ENTITY, tei_instance: 0 },
+    TdiEntityId { tei_entity: CL_TL_ENTITY, tei_instance: 0 },
+    TdiEntityId { tei_entity: CL_NL_ENTITY, tei_instance: 0 },
+    TdiEntityId { tei_entity: IF_ENTITY, tei_instance: 0 },
+];
+
+/// Handle IOCTL_TCP_QUERY_INFORMATION_EX (METHOD_NEITHER): input is a
+/// TCP_REQUEST_QUERY_INFORMATION_EX in Type3InputBuffer, output goes to
+/// Irp->UserBuffer, and the byte count rides back in IoStatus.Information.
+/// Runs synchronously in the caller's thread context, so the usermode buffers
+/// are valid here.
+unsafe fn handle_query_info_ex(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
+    let dic = &(*stack).Parameters.DeviceIoControl;
+    let in_buf = dic.Type3InputBuffer as *const TdiObjectId;
+    let in_len = dic.InputBufferLength as usize;
+    let out_buf = (*irp).UserBuffer as *mut u8;
+    let out_len = dic.OutputBufferLength as usize;
+
+    // Only the query selector (TDIObjectID) is required as input. The output may
+    // legitimately be NULL/0: sdk/lib/tdilib/enum.c queries with a zero-length
+    // output FIRST purely to learn the size (Iosb.Information), then allocates
+    // and re-queries. So a NULL output is a size-probe, NOT an error.
+    if in_buf.is_null() || in_len < core::mem::size_of::<TdiObjectId>() {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let id = core::ptr::read_unaligned(in_buf);
+    let ent = id.toi_entity.tei_entity;
+
+    // ENTITY_LIST — the full entity-id array (what wshtcpip's bind path needs).
+    if id.toi_class == INFO_CLASS_GENERIC && id.toi_id == ENTITY_LIST_ID && ent == GENERIC_ENTITY {
+        let bytes = core::slice::from_raw_parts(
+            ENTITIES.as_ptr() as *const u8,
+            core::mem::size_of::<TdiEntityId>() * ENTITIES.len(),
+        );
+        return complete_query(irp, out_buf, out_len, bytes);
+    }
+
+    // ENTITY_TYPE — the concrete protocol type for a given entity.
+    if id.toi_class == INFO_CLASS_GENERIC && id.toi_id == ENTITY_TYPE_ID {
+        let ty: u32 = match ent {
+            CO_TL_ENTITY => CO_TL_TCP,
+            CL_TL_ENTITY => CL_TL_UDP,
+            CL_NL_ENTITY => CL_NL_IP,
+            IF_ENTITY => IF_GENERIC,
+            _ => 0,
+        };
+        return complete_query(irp, out_buf, out_len, &ty.to_ne_bytes());
+    }
+
+    // IP MIB stats / address table / per-protocol classes — not yet implemented.
+    // Logged so the next blocker (if any) surfaces during boot.
+    nsprint!(
+        "[NETSTACK] QUERY_INFO_EX unhandled ent={:#x} class={:#x} type={:#x} id={:#x}\n",
+        ent, id.toi_class, id.toi_type, id.toi_id
+    );
+    complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+    STATUS_NOT_IMPLEMENTED
+}
+
+/// Complete an IOCTL_TCP_QUERY_INFORMATION_EX query. On a size-probe (output
+/// too small or NULL) report the required byte count via IoStatus.Information
+/// with STATUS_SUCCESS — tdilib's enum.c needs NT_SUCCESS to read the size and
+/// re-query. When the buffer fits, copy the payload. Both the probe and the
+/// real call report the same `need`, which is how tdilib's stabilization loop
+/// detects it got everything.
+unsafe fn complete_query(irp: PIRP, out_buf: *mut u8, out_len: usize, data: &[u8]) -> NTSTATUS {
+    let need = data.len();
+    if !out_buf.is_null() && out_len >= need {
+        core::ptr::copy_nonoverlapping(data.as_ptr(), out_buf, need);
+    }
+    complete_now(irp, STATUS_SUCCESS, need);
+    STATUS_SUCCESS
+}
+
 /// Route a TDI request (IRP_MJ_INTERNAL_DEVICE_CONTROL, MinorFunction) into the
 /// data path. Connect/Send/Receive/Disconnect pend (worker completes); the rest
 /// complete synchronously.
@@ -241,6 +361,14 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
     let id = if fo.is_null() { 0 } else { (*fo).FsContext as usize as u64 };
     let minor = (*stack).MinorFunction;
     let params = &(*stack).Parameters as *const _ as *const u8;
+
+    // IRP_MJ_DEVICE_CONTROL carries TDI IOCTLs (METHOD_NEITHER), where the
+    // operation rides in IoControlCode and MinorFunction is 0 — not a TDI minor.
+    if (*stack).MajorFunction == IRP_MJ_DEVICE_CONTROL
+        && (*stack).Parameters.DeviceIoControl.IoControlCode == IOCTL_TCP_QUERY_INFORMATION_EX
+    {
+        return handle_query_info_ex(irp, stack);
+    }
 
     match minor {
         tdi::TDI_SET_EVENT_HANDLER => {
@@ -258,6 +386,13 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
             let p = params as *const tdi::TDI_REQUEST_KERNEL_ASSOCIATE;
             let addr_id = resolve_addr_handle((*p).AddressHandle);
             tditrans::post(tditrans::Cmd::Associate { conn_id: id, addr_id });
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        tdi::TDI_DISASSOCIATE_ADDRESS => {
+            // AFD issues this when tearing a connection down; the connection
+            // object's own CLOSE (CloseConn) already releases worker state, so
+            // just acknowledge it cleanly rather than failing the cleanup path.
             complete_now(irp, STATUS_SUCCESS, 0);
             STATUS_SUCCESS
         }
@@ -345,7 +480,15 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
             STATUS_PENDING
         }
         _ => {
-            nsprint!("[NETSTACK] TDI {} (minor {:#04x}) unhandled\n", tdi::minor_name(minor), minor);
+            // For an unhandled IRP_MJ_DEVICE_CONTROL, surface the IOCTL code so the
+            // next missing TDI IOCTL (if any) is visible in the boot log.
+            let major = (*stack).MajorFunction;
+            if major == IRP_MJ_DEVICE_CONTROL {
+                let ioctl = (*stack).Parameters.DeviceIoControl.IoControlCode;
+                nsprint!("[NETSTACK] TDI device-control ioctl {:#010x} unhandled\n", ioctl);
+            } else {
+                nsprint!("[NETSTACK] TDI {} (minor {:#04x}) unhandled\n", tdi::minor_name(minor), minor);
+            }
             complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
             STATUS_NOT_IMPLEMENTED
         }

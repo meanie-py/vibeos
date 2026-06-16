@@ -1,8 +1,29 @@
-; Winsock2 protocol catalog for the netstack (smoltcp) transport.
+; Winsock catalog + transport mapping for the netstack (smoltcp) transport.
 ; Normally written by network setup from media/inf/nettcpip.inf, which the
-; LiveCD never runs. Without these msafd provider entries, usermode ws2_32
-; socket() finds no provider and fails before AFD/netstack is ever contacted.
-; Extracted verbatim from media/inf/nettcpip.inf (Winsock2 catalog block).
+; LiveCD never runs. Two registry halves are required and BOTH must be present
+; or usermode socket() fails:
+;
+;   (1) Winsock2 protocol catalog  — ws2_32 finds the msafd provider here.
+;   (2) Winsock (v1) transport map — msafd!SockGetTdiName reads this to resolve
+;       (af,type,protocol) -> TDI device via the wshtcpip helper DLL.
+;
+; With only (1), ws2_32 reaches msafd, but msafd!SockGetTdiName ->
+; SockLoadTransportList reads SYSTEM\...\Services\Winsock\Parameters\Transports,
+; finds nothing, and returns WSAEINVAL (10022) — socket() fails before AFD is
+; ever contacted. The transport "Tcpip" + wshtcpip.dll mapping below returns the
+; TDI names \Device\Tcp \Device\Udp \Device\RawIp, which netstack.sys owns
+; (sdk/lib/rust/netstack-rust/src/tdidev.rs). All lines extracted verbatim from
+; media/inf/nettcpip.inf.
+
+; --- (2) Winsock (v1) transport mapping: msafd -> wshtcpip -> \Device\Tcp/Udp/RawIp ---
+HKLM,"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\WinSock","UseDelayedAcceptance",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\WinSock","MaxSockAddrLength",0x00010001,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\WinSock","MinSockAddrLength",0x00010001,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\WinSock","HelperDllName",0x00000000,"%SystemRoot%\System32\wshtcpip.dll"
+HKLM,"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\WinSock","Mapping",0x00000001,0e,00,00,00,03,00,00,00,02,00,00,00,01,00,00,00,06,00,00,00,02,00,00,00,01,00,00,00,00,00,00,00,02,00,00,00,00,00,00,00,06,00,00,00,00,00,00,00,00,00,00,00,06,00,00,00,00,00,00,00,01,00,00,00,06,00,00,00,02,00,00,00,02,00,00,00,11,00,00,00,02,00,00,00,02,00,00,00,00,00,00,00,02,00,00,00,00,00,00,00,11,00,00,00,00,00,00,00,00,00,00,00,11,00,00,00,00,00,00,00,02,00,00,00,11,00,00,00,02,00,00,00,03,00,00,00,00,00,00,00,02,00,00,00,03,00,00,00,01,00,00,00,02,00,00,00,03,00,00,00,ff,00,00,00,02,00,00,00,03,00,00,00,06,00,00,00
+HKLM,"SYSTEM\CurrentControlSet\Services\Winsock\Parameters","Transports",0x00010000,"Tcpip"
+
+; --- (1) Winsock2 protocol catalog block ---
 HKLM,"SYSTEM\CurrentControlSet\Services\Winsock2\Parameters","AutodialDLL",0x00000000,"rasadhlp.dll"
 HKLM,"SYSTEM\CurrentControlSet\Services\Winsock2\Parameters","Current_NameSpace_Catalog",0x00000000,"NameSpace_Catalog5"
 HKLM,"SYSTEM\CurrentControlSet\Services\Winsock2\Parameters","Current_Protocol_Catalog",0x00000000,"Protocol_Catalog9"

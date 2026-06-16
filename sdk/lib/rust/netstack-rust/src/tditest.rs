@@ -49,23 +49,21 @@ const fn wdev<const N: usize>(s: &[u8]) -> [u16; N] {
 }
 static TCP_NAME: [u16; 11] = wdev(b"\\Device\\Tcp");
 
-/// TRANSPORT_ADDRESS + TA_ADDRESS + TDI_ADDRESS_IP, matching the kernel's
-/// NATURALLY-ALIGNED (`#[repr(C)]`) layout — the same one netstack's
-/// parse_remote_ip and real AFD use. The critical subtlety: `TDI_ADDRESS_IP`
-/// is `{ USHORT sin_port; ULONG in_addr; ... }`, and the ULONG forces 4-byte
-/// alignment, so there are 2 bytes of padding AFTER sin_port. Declaring this
-/// `packed` (no _pad) puts in_addr 2 bytes early — the transport then reads
-/// the wrong octets (e.g. 10.0.2.100 → 2.100.0.0) and the connect never
-/// establishes. Keep the explicit `_pad`.
+/// TRANSPORT_ADDRESS + TA_ADDRESS + TDI_ADDRESS_IP, matching the kernel's wire
+/// layout — the same one netstack's parse_remote_ip and real AFD use. The
+/// critical subtlety: the C `TDI_ADDRESS_IP` lives under `#include <pshpack1.h>`
+/// (sdk/include/psdk/tdi.h), so it is BYTE-PACKED — in_addr sits at offset 2
+/// (right after sin_port), NOT 4. Adding alignment padding before in_addr would
+/// make AFD read the wrong octets (e.g. 10.0.2.100 → 2.100.0.0) and the connect
+/// never establishes. So: fully packed, no _pad.
 #[repr(C, packed)]
 struct TaIp {
     count: i32,        // @0  TAAddressCount
     addr_len: u16,     // @4  TA_ADDRESS.AddressLength
     addr_type: u16,    // @6  TA_ADDRESS.AddressType
     sin_port: u16,     // @8  TDI_ADDRESS_IP.sin_port
-    _pad: u16,         // @10 ULONG alignment padding before in_addr
-    in_addr: u32,      // @12 TDI_ADDRESS_IP.in_addr
-    sin_zero: [u8; 8], // @16
+    in_addr: u32,      // @10 TDI_ADDRESS_IP.in_addr (packed — no padding)
+    sin_zero: [u8; 8], // @14
 }
 
 impl TaIp {
@@ -75,7 +73,6 @@ impl TaIp {
             addr_len: 14, // TDI_ADDRESS_LENGTH_IP (sin_port + in_addr + sin_zero)
             addr_type: tdi::TDI_ADDRESS_TYPE_IP,
             sin_port: port.to_be(),
-            _pad: 0,
             in_addr: u32::from_ne_bytes(ip), // memory bytes == network octets
             sin_zero: [0; 8],
         }

@@ -157,7 +157,13 @@ pub struct TDI_REQUEST_KERNEL_RECEIVEDG {
     pub ReceiveFlags: u32,
 }
 
-#[repr(C)]
+// The C TDI_ADDRESS_IP lives under `#include <pshpack1.h>` (sdk/include/psdk/tdi.h)
+// — it is BYTE-PACKED, so in_addr sits at offset 2 (right after sin_port), NOT 4,
+// and sizeof == TDI_ADDRESS_LENGTH_IP (14). Real AFD/msafd hand us this packed
+// layout; a non-packed `#[repr(C)]` here would read in_addr 2 bytes late and
+// mangle the destination (e.g. 10.0.2.100 -> 2.100.0.0), so the connect/datagram
+// would target the wrong host.
+#[repr(C, packed)]
 pub struct TDI_ADDRESS_IP {
     pub sin_port: u16, // network byte order
     pub in_addr: u32,  // network byte order (octets a.b.c.d in memory)
@@ -177,13 +183,13 @@ pub struct TRANSPORT_ADDRESS {
     // followed by TA_ADDRESS[TAAddressCount]
 }
 
-/// A complete, NATURALLY-ALIGNED TA_IP_ADDRESS on the wire: TRANSPORT_ADDRESS
-/// (count) + one TA_ADDRESS (len/type) + TDI_ADDRESS_IP. `#[repr(C)]` (NOT
-/// packed) reproduces the kernel's layout — the ULONG in_addr inside
-/// TDI_ADDRESS_IP forces 4-byte alignment, so in_addr lands at offset 12, not
-/// 10. This is what we hand to AFD as the SourceAddress of a datagram
-/// indication; AFD parses it with the same alignment.
-#[repr(C)]
+/// A complete TA_IP_ADDRESS on the wire: TRANSPORT_ADDRESS (count) + one
+/// TA_ADDRESS (len/type) + the BYTE-PACKED TDI_ADDRESS_IP. We hand this to AFD as
+/// the SourceAddress of a datagram indication and use it to build CONNECT
+/// addresses; AFD's TDI structs are packed, so in_addr lands at offset 10
+/// (count@0, addr_len@4, addr_type@6, sin_port@8, in_addr@10, sin_zero@14),
+/// giving sizeof == 22. Must stay packed and in lock-step with parse_ta below.
+#[repr(C, packed)]
 pub struct TaIpFull {
     pub count: i32,
     pub addr_len: u16,
@@ -220,11 +226,14 @@ pub unsafe fn parse_ta(ta: *const u8) -> Option<([u8; 4], u16)> {
     if (*addr).AddressType != TDI_ADDRESS_TYPE_IP {
         return None;
     }
-    let ip = (addr as *const u8).add(core::mem::size_of::<TA_ADDRESS>()) as *const TDI_ADDRESS_IP;
-    let port = u16::from_be((*ip).sin_port);
-    // in_addr's 4 memory bytes are the network-order octets a.b.c.d.
-    let raw = &(*ip).in_addr as *const u32 as *const u8;
-    let octets = [*raw, *raw.add(1), *raw.add(2), *raw.add(3)];
+    // The TDI_ADDRESS_IP that follows the TA_ADDRESS header is BYTE-PACKED:
+    // sin_port @0, in_addr @2 (NOT @4 — no alignment padding). Read it by byte
+    // offset so the layout can't drift, and so we never take a reference to a
+    // misaligned packed field.
+    let ip = (addr as *const u8).add(core::mem::size_of::<TA_ADDRESS>());
+    let port = u16::from_be(core::ptr::read_unaligned(ip as *const u16));
+    // in_addr's 4 bytes (at packed offset 2) are the network-order octets a.b.c.d.
+    let octets = [*ip.add(2), *ip.add(3), *ip.add(4), *ip.add(5)];
     Some((octets, port))
 }
 

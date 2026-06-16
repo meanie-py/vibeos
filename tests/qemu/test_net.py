@@ -225,21 +225,6 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     )
 
 
-@pytest.mark.skip(
-    reason="UNBLOCKED at the boot layer, now blocked on catalog *content*. The "
-    "amd64 boot 0x50 that the Winsock2 catalog deterministically tripped is FIXED "
-    "(scsiport SpiCreatePortConfig left PortConfig->AdapterInterfaceType / "
-    "AtdiskClaimed as uninitialized pool garbage on non-first find-loop iterations; "
-    "garbage==Internal reset BusNumber=0 and the legacy uniata find loop never "
-    "terminated). With netstack_winsock.inf enabled, all 3 arches now boot to the "
-    "desktop. BUT the usermode round-trip still fails: nettest.exe runs, WSAStartup "
-    "OK, and socket() STILL returns WSAEINVAL (10022) even though the msafd protocol "
-    "catalog entries are present in the SYSTEM hive (registry.inf -> livecd_hives). "
-    "So ws2_32/msafd is not consuming the catalog correctly for the netstack "
-    "transport — a separate M5 catalog-loading issue, no longer a boot bug. The "
-    "netstack TRANSPORT itself is proven by test_tdi_selftest_roundtrip + "
-    "test_tdi_datagram_roundtrip. Re-enable once socket() succeeds."
-)
 def test_usermode_winsock_roundtrip(vm: QemuVM) -> None:
     r"""M5 capstone (BLOCKED — see skip reason): a REAL usermode winsock process
     (nettest.exe, spawned by winlogon at desktop) drives the full stack from the

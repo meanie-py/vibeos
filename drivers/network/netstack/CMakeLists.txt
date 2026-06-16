@@ -10,24 +10,26 @@ add_cargo_module(netstack netstack-cargo netstack.sys KIND kerneldll
     BODY_CRATE netstack-rust DESTINATION reactos/system32/drivers)
 
 # netstack_reg.inf: the netstack.sys service (Start=1).
-add_registry_inf(netstack_reg.inf netstack_winsock.inf)
+add_registry_inf(netstack_reg.inf)
 
-# netstack_winsock.inf (PRESERVED BUT NOT REGISTERED): the Winsock2 protocol
-# catalog (msafd providers for TCP/UDP/RAW). This is REQUIRED for usermode ws2_32
-# socket() to find a provider and reach AFD/netstack (without it socket() returns
-# WSAEINVAL). It is normally written by network setup (media/inf/nettcpip.inf),
-# which the LiveCD never runs. HOWEVER: baking it into the shared system hive
-# deterministically trips a BUGCHECK 0x50 during boot — but the bug is NOT in
-# netstack. ROOT-CAUSED 2026-06-13 (still survives the crp merge): the hive-size
-# shift moves a LATENT STORAGE-DRIVER bug onto an unmapped page. It is an async
-# read-fault of paged pool (0xfffff8a0...) at a STABLE PC (0xfffff880055cd0x0)
-# that fires right AFTER the uniata/scsiport IDE adapter-init completes (the
-# adapter-init's IoConnectInterrupt fails ~33×, then an async callback faults).
-# The PC does NOT move when scsiport-rust is rebuilt → the faulting code is in
-# uniata.sys (C miniport) or a scsiport function linked before the init path,
-# reached via the failed-interrupt adapter; ScsiPortIoTimer was RULED OUT (its
-# entry instrumentation never fired). To finish: GDB-break at the faulting PC,
-# read the register holding 0xfffff8a0..., confirm module (uniata vs scsiport),
-# fix the bad pointer / pool-type / NULL-Interrupt[0] deref; THEN re-enable the
-# catalog (add netstack_winsock.inf back above) + flip the usermode winsock test.
-# See docs/engineering/translation-debugging-field-manual.md §9.9 and task 79.
+# netstack_winsock.inf: the usermode winsock enablement that network setup would
+# normally write from media/inf/nettcpip.inf (the LiveCD never runs setup). Two
+# halves, both required, or usermode socket() fails:
+#   (1) the Winsock2 protocol catalog (msafd providers) — ws2_32 finds a provider;
+#   (2) the Winsock-v1 transport map (wshtcpip + Mapping) — msafd!SockGetTdiName
+#       resolves (af,type,proto) -> \Device\Tcp|Udp|RawIp (which netstack owns).
+# On amd64 this gives a full ws2_32 -> msafd -> AFD -> netstack -> smoltcp -> slirp
+# round-trip (tests/qemu/test_net.py::test_usermode_winsock_roundtrip, GREEN).
+#
+# amd64-ONLY for now: enabling it on i386 advances boot far enough to reach a
+# KNOWN PRE-EXISTING ntoskrnl Mm bug — a BUGCHECK 0x1E (0xc0000005) at services.exe
+# creation, an unmapped i386 session-space pointer read (0xf6xxxxxx) during
+# MmSessionCreate-family code. That bug is NOT in netstack (catalog-only i386
+# boots green; the netstack TDI/query code is identical across arches) — it is the
+# same i386 session-space Mm fault the kernel32-wave/Mm-0x1E lane is fixing, just
+# newly *reached* because working winsock lets boot get to service startup. Re-
+# enable for i386/arm64 once that ntoskrnl Mm 0x1E lands fixed.
+# See docs/engineering/translation-debugging-field-manual.md and task 77.
+if(ARCH STREQUAL "amd64")
+    add_registry_inf(netstack_winsock.inf)
+endif()
