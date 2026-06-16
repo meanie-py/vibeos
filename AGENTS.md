@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (Claude Code, Codex CLI, etc.) w
 
 ## Project Overview
 
-This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. Originally forked from `github.com/reactos/reactos` to add ARM64. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU. The active development branch is `continue-rust-port`; mainline is `master`.
+This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. Originally forked from `github.com/reactos/reactos` to add ARM64. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU. The active development branch is `continue-rust-port`; mainline is `master`. **2026-06-15: `master` was promoted from its long-frozen arm64-port ancestor to the full rust port — fast-forwarded from `continue-rust-port` (commit `10dc6b9`, all 3 arches smoke-green) and pushed to `origin/master`. The two are now kept in sync: new work still lands on `continue-rust-port`, and `master` is periodically fast-forwarded to track it.**
 
 ## Translation Philosophy — Rust Is The Goal
 
