@@ -1,0 +1,334 @@
+use ntdll_sys::nt::*;
+use crate::prelude::*;
+use core::ffi::c_void;
+
+// HandleToLong / LongToHandle are FORCEINLINE intrinsics in winnt.h (no exported
+// symbol) — just truncating pointer<->LONG casts. Provide them locally.
+#[inline]
+unsafe fn HandleToLong(h: *mut core::ffi::c_void) -> i32 {
+    h as isize as i32
+}
+#[inline]
+unsafe fn LongToHandle(l_long: i32) -> HANDLE {
+    l_long as isize as HANDLE
+}
+
+extern "system" {
+    fn CreateFileA( lpFileName: LPCSTR, dwDesiredAccess: u32, dwShareMode: u32, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: u32, dwFlagsAndAttributes: u32, hTemplateFile: *mut core::ffi::c_void, ) -> isize;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+    fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: DWORD, ) -> DWORD;
+    fn ReadFile( hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
+    fn WriteFile( hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
+    fn SetEndOfFile(hFile: HANDLE) -> BOOL;
+}
+
+// ---- file-scope preamble (translated) ----
+
+#[no_mangle]
+pub unsafe extern "system" fn _hread(
+    hFile: HFILE,
+    lpBuffer: LPVOID,
+    lBytes: i32,
+) -> i32 {
+    let mut NumberOfBytesRead: u32 = 0;
+    if ReadFile(
+        LongToHandle(hFile as i32) as *mut core::ffi::c_void,
+        lpBuffer as *mut core::ffi::c_void,
+        lBytes as u32,
+        &mut NumberOfBytesRead as *mut u32,
+        core::ptr::null_mut(),
+    ) == 0
+    {
+        return HFILE_ERROR as i32;
+    }
+    return NumberOfBytesRead as i32;
+}
+#[no_mangle]
+pub unsafe extern "system" fn _hwrite(
+    hFile: HFILE,
+    lpBuffer: LPCSTR,
+    lBytes: i32,
+) -> i32 {
+    let mut NumberOfBytesWritten: u32 = 0;
+    if lBytes == 0 {
+        if SetEndOfFile(hFile as *mut core::ffi::c_void) == 0 {
+            return -1; // HFILE_ERROR
+        }
+        return 0;
+    }
+    if WriteFile(
+        LongToHandle(hFile as i32) as *mut core::ffi::c_void,
+        lpBuffer as *const core::ffi::c_void,
+        lBytes as u32,
+        &mut NumberOfBytesWritten as *mut u32,
+        core::ptr::null_mut(),
+    ) == 0
+    {
+        return -1; // HFILE_ERROR
+    }
+    return NumberOfBytesWritten as i32;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn _lopen(
+    lpPathName: LPCSTR,
+    iReadWrite: i32,
+) -> HFILE {
+    let mut dwAccess: u32;
+    let mut dwSharing: u32;
+    let mut dwCreation: u32;
+
+    if iReadWrite as u32 & OF_CREATE != 0 {
+        dwCreation = CREATE_ALWAYS;
+        dwAccess = GENERIC_READ | GENERIC_WRITE;
+    } else {
+        dwCreation = OPEN_EXISTING;
+        match iReadWrite as u32 & 0x03 {
+            OF_READ => {
+                dwAccess = GENERIC_READ;
+            }
+            OF_WRITE => {
+                dwAccess = GENERIC_WRITE;
+            }
+            OF_READWRITE => {
+                dwAccess = GENERIC_READ | GENERIC_WRITE;
+            }
+            _ => {
+                dwAccess = 0;
+            }
+        }
+    }
+
+    match iReadWrite as u32 & 0x70 {
+        OF_SHARE_EXCLUSIVE => {
+            dwSharing = 0;
+        }
+        OF_SHARE_DENY_WRITE => {
+            dwSharing = FILE_SHARE_READ;
+        }
+        OF_SHARE_DENY_READ => {
+            dwSharing = FILE_SHARE_WRITE;
+        }
+        OF_SHARE_DENY_NONE | OF_SHARE_COMPAT | _ => {
+            dwSharing = FILE_SHARE_READ | FILE_SHARE_WRITE;
+        }
+    }
+
+    CreateFileA(
+        lpPathName,
+        dwAccess,
+        dwSharing,
+        core::ptr::null_mut(),
+        dwCreation,
+        FILE_ATTRIBUTE_NORMAL,
+        core::ptr::null_mut(),
+    ) as HFILE
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn _lcreat(
+    lpPathName: LPCSTR,
+    mut iAttribute: i32,
+) -> HFILE {
+
+    let mut hFile: *mut core::ffi::c_void = core::ptr::null_mut();
+    iAttribute &= (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) as i32;
+    hFile = CreateFileA(
+        lpPathName,
+        (GENERIC_READ | GENERIC_WRITE) as u32,
+        (FILE_SHARE_READ | FILE_SHARE_WRITE) as u32,
+        core::ptr::null_mut(),
+        CREATE_ALWAYS as u32,
+        iAttribute as u32,
+        core::ptr::null_mut(),
+    ) as *mut core::ffi::c_void;
+    return HandleToLong(hFile) as HFILE;
+}
+#[no_mangle]
+pub unsafe extern "system" fn _lclose(hFile: HFILE) -> i32 {
+    return if CloseHandle(LongToHandle(hFile as i32)) != 0 {
+        0
+    } else {
+        HFILE_ERROR
+    };
+}
+#[no_mangle]
+pub unsafe extern "system" fn _llseek(
+    hFile: HFILE,
+    lOffset: LONG,
+    iOrigin: ::core::ffi::c_int,
+) -> LONG {
+    return SetFilePointer(
+        LongToHandle(hFile as LONG),
+        lOffset,
+        core::ptr::null_mut::<LONG>(),
+        iOrigin as DWORD,
+    ) as LONG;
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * COPYRIGHT:       See COPYING in the top level directory
+//  * PROJECT:         ReactOS system libraries
+//  * FILE:            dll/win32/kernel32/client/file/lfile.c
+//  * PURPOSE:         Find functions
+//  * PROGRAMMER:      Ariadne ( ariadne@xs4all.nl)
+//  * UPDATE HISTORY:
+//  *                  Created 01/11/98
+//  */
+//
+// #include <k32.h>
+// #define NDEBUG
+// #include <debug.h>
+//
+// /*
+//  * @implemented
+//  */
+// long
+// WINAPI
+// _hread(HFILE hFile, LPVOID lpBuffer, long lBytes)
+// {
+//     DWORD NumberOfBytesRead;
+//
+//     if (!ReadFile(LongToHandle(hFile),
+//                   lpBuffer,
+//                   (DWORD) lBytes,
+//                   &NumberOfBytesRead,
+//                   NULL))
+//     {
+//         return HFILE_ERROR;
+//     }
+//     return NumberOfBytesRead;
+// }
+//
+//
+// /*
+//  * @implemented
+//  */
+// long
+// WINAPI
+// _hwrite(HFILE hFile, LPCSTR lpBuffer, long lBytes)
+// {
+//     DWORD NumberOfBytesWritten;
+//
+//     if (lBytes == 0)
+//     {
+//         if (!SetEndOfFile((HANDLE)(ULONG_PTR) hFile))
+//         {
+//             return HFILE_ERROR;
+//         }
+//         return 0;
+//     }
+//     if (!WriteFile(LongToHandle(hFile),
+//                    (LPVOID) lpBuffer,
+//                    (DWORD) lBytes,
+//                    &NumberOfBytesWritten,
+//                    NULL))
+//     {
+//         return HFILE_ERROR;
+//     }
+//     return NumberOfBytesWritten;
+// }
+//
+//
+// /*
+//  * @implemented
+//  */
+// HFILE
+// WINAPI
+// _lopen(LPCSTR lpPathName, int iReadWrite)
+// {
+//     DWORD dwAccess, dwSharing, dwCreation;
+//
+//     if (iReadWrite & OF_CREATE)
+//     {
+//         dwCreation = CREATE_ALWAYS;
+//         dwAccess = GENERIC_READ | GENERIC_WRITE;
+//     }
+//     else
+//     {
+//         dwCreation = OPEN_EXISTING;
+//         switch(iReadWrite & 0x03)
+//         {
+//             case OF_READ:      dwAccess = GENERIC_READ; break;
+//             case OF_WRITE:     dwAccess = GENERIC_WRITE; break;
+//             case OF_READWRITE: dwAccess = GENERIC_READ | GENERIC_WRITE; break;
+//             default:           dwAccess = 0; break;
+//         }
+//     }
+//
+//     switch(iReadWrite & 0x70)
+//     {
+//         case OF_SHARE_EXCLUSIVE:  dwSharing = 0; break;
+//         case OF_SHARE_DENY_WRITE: dwSharing = FILE_SHARE_READ; break;
+//         case OF_SHARE_DENY_READ:  dwSharing = FILE_SHARE_WRITE; break;
+//         case OF_SHARE_DENY_NONE:
+//         case OF_SHARE_COMPAT:
+//         default:                  dwSharing = FILE_SHARE_READ | FILE_SHARE_WRITE; break;
+//     }
+//
+//     return (HFILE)(ULONG_PTR) CreateFileA(lpPathName,
+//                                dwAccess,
+//                                dwSharing,
+//                                NULL,
+//                                dwCreation,
+//                                FILE_ATTRIBUTE_NORMAL,
+//                                NULL);
+// }
+//
+//
+// /*
+//  * @implemented
+//  */
+// HFILE
+// WINAPI
+// _lcreat(LPCSTR lpPathName, int iAttribute)
+// {
+//     HANDLE hFile;
+//
+//     iAttribute &= FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+//     hFile = CreateFileA(lpPathName,
+//                         GENERIC_READ | GENERIC_WRITE,
+//                         (FILE_SHARE_READ | FILE_SHARE_WRITE),
+//                         NULL,
+//                         CREATE_ALWAYS,
+//                         iAttribute,
+//                         NULL);
+//
+//     return HandleToLong(hFile);
+// }
+//
+//
+// /*
+//  * @implemented
+//  */
+// int
+// WINAPI
+// _lclose(HFILE hFile)
+// {
+//     return CloseHandle(LongToHandle(hFile)) ? 0 : HFILE_ERROR;
+// }
+//
+//
+// /*
+//  * @implemented
+//  */
+// LONG
+// WINAPI
+// _llseek(HFILE hFile, LONG lOffset, int iOrigin)
+// {
+//     return SetFilePointer(LongToHandle(hFile),
+//                           lOffset,
+//                           NULL,
+//                           (DWORD) iOrigin);
+// }
+//
+// /* EOF */
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

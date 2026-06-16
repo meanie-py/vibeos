@@ -5,18 +5,18 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 (independent cold boots for flake rate), --until <marker>, --fail-on <regex>
 (abort at first hard-failure marker), and auto-triage on failure.
 """
+
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+from ..vm import QemuVM, get_arch_config
 from . import archcfg, provenance, triage
 from .artifacts import Run, Stage
-from ..vm import QemuVM, get_arch_config
 
 
 def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
@@ -66,6 +66,7 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     png = work / "screen.png"
     try:
         from PIL import Image
+
         img = Image.open(ppm)
         img.save(png, "PNG")
     except Exception:
@@ -78,8 +79,9 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     return str(png)
 
 
-def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None,
-              idx: int, total: int) -> dict:
+def _one_boot(
+    run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None, idx: int, total: int
+) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
     (i386 → i386-uefi) since x86 boots UEFI now."""
@@ -88,13 +90,17 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
     vm = QemuVM(config, work)
-    label = f"boot {idx+1}/{total}" if total > 1 else "boot"
+    label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
     try:
         vm.start()
-    except Exception as e:  # noqa: BLE001 — surface any launch failure
+    except Exception as e:  # surface any launch failure
         run.log(f"{label}: start failed: {e}", header=label)
-        return {"ok": False, "outcome": "launch_fail", "classification": "LAUNCH_FAIL",
-                "salient": [str(e).splitlines()[0][:140]]}
+        return {
+            "ok": False,
+            "outcome": "launch_fail",
+            "classification": "LAUNCH_FAIL",
+            "salient": [str(e).splitlines()[0][:140]],
+        }
     try:
         outcome, text = _watch(vm, marker, fail_on, config.boot_timeout)
         run.log(text[-8000:], header=f"{label} serial tail")
@@ -102,8 +108,7 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
         # marker) so the canonical screenshot shows the real shell. On failure,
         # screenshot immediately to capture the broken state.
         if outcome == "reached" and config.desktop_settle_seconds > 0:
-            run.log(f"settling {config.desktop_settle_seconds:.0f}s for desktop",
-                    header=label)
+            run.log(f"settling {config.desktop_settle_seconds:.0f}s for desktop", header=label)
             _settle(vm, config.desktop_settle_seconds)
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch)
@@ -118,9 +123,12 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
             dbg = vm.debugcon_report()
         except Exception:
             pass
-        tri = triage.classify(text, reached=False,
-                              fail_marker=(marker if outcome == "failmarker" and fail_on else None),
-                              debugcon=dbg)
+        tri = triage.classify(
+            text,
+            reached=False,
+            fail_marker=(marker if outcome == "failmarker" and fail_on else None),
+            debugcon=dbg,
+        )
         sym = triage.symbolicate_pc(repo, arch, text)
         if sym:
             tri["salient"].append(sym)
@@ -164,21 +172,30 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
 
 
 def smoke(args, repo: Path) -> int:
-    arch = archcfg.base_arch(args.arch)   # base for staleness/build dir; boot resolves vm_arch
+    arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
 
     # --- staleness preflight (hard boundary) ---
     st = provenance.check_staleness(repo, arch)
     if st.stale and not args.allow_stale:
         run.classification = "STALE_MEDIA"
-        run.add(Stage("staleness", status="fail", detail="stale",
-                      salient=st.reasons + ["run `vibeos-cli build` (or --allow-stale)"]))
+        run.add(
+            Stage(
+                "staleness",
+                status="fail",
+                detail="stale",
+                salient=[*st.reasons, "run `vibeos-cli build` (or --allow-stale)"],
+            )
+        )
         return run.finalize(repo)
     if st.warm:
         run.add(Stage("staleness", status="warn", detail="WARM build"))
     elif st.stale and args.allow_stale:
-        run.add(Stage("staleness", status="warn", detail="stale (--allow-stale)",
-                      salient=st.reasons[:2]))
+        run.add(
+            Stage(
+                "staleness", status="warn", detail="stale (--allow-stale)", salient=st.reasons[:2]
+            )
+        )
     else:
         run.add(Stage("staleness", status="ok", detail="current"))
 
@@ -192,8 +209,14 @@ def smoke(args, repo: Path) -> int:
         results.append(r)
         status = "ok" if r["ok"] else "fail"
         detail = "reached" if r["ok"] else r.get("classification", r["outcome"])
-        run.add(Stage(f"run{i+1}" if total > 1 else "boot", status=status,
-                      detail=detail, salient=r.get("salient", [])))
+        run.add(
+            Stage(
+                f"run{i + 1}" if total > 1 else "boot",
+                status=status,
+                detail=detail,
+                salient=r.get("salient", []),
+            )
+        )
         # carry first failure's evidence to the top-level verdict
         if not r["ok"] and not run.classification:
             run.classification = r.get("classification", "FAIL")
@@ -214,7 +237,7 @@ def smoke(args, repo: Path) -> int:
     npass = sum(1 for r in results if r["ok"])
     run.extra["passes"] = npass
     run.extra["runs"] = total
-    run.extra["live_log"] = str((repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"))
+    run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
 
     # M6: fold the netstack net-suite into the verdict. Only when boot is green
     # (no point net-testing a broken boot) and only on amd64 (the virtio-net
@@ -238,12 +261,24 @@ def boot(args, repo: Path) -> int:
     (smss-csrss #3: q35-vs-pc misdiagnosis). Writes artifacts, decodes debugcon."""
     arch = archcfg.base_arch(args.arch)
     run = Run("boot", arch)
-    r = _one_boot(run, repo, arch, until=(args.until or ""),
-                  fail_on=getattr(args, "fail_on", None), idx=0, total=1)
-    run.add(Stage("boot", status="ok" if r["ok"] else "fail",
-                  detail="reached" if r["ok"] else r.get("classification", r["outcome"]),
-                  salient=r.get("salient", [])))
+    r = _one_boot(
+        run,
+        repo,
+        arch,
+        until=(args.until or ""),
+        fail_on=getattr(args, "fail_on", None),
+        idx=0,
+        total=1,
+    )
+    run.add(
+        Stage(
+            "boot",
+            status="ok" if r["ok"] else "fail",
+            detail="reached" if r["ok"] else r.get("classification", r["outcome"]),
+            salient=r.get("salient", []),
+        )
+    )
     if not r["ok"]:
         run.classification = r.get("classification", "FAIL")
-    run.extra["live_log"] = str((repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"))
+    run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
     return run.finalize(repo)

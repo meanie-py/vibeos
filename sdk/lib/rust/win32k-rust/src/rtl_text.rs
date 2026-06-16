@@ -5,6 +5,8 @@ use ntkrnl_sys::base::NT_SUCCESS;
 use core::ffi::c_void;
 
 extern "C" {
+    // strlenW is `#define strlenW(s) wcslen(s)` (wine/unicode.h) — not a real symbol.
+    #[link_name = "wcslen"]
     fn strlenW(s: LPCWSTR) -> usize;
     fn wcsrchr(s: *const u16, c: i32) -> *mut u16;
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
@@ -13,12 +15,28 @@ extern "C" {
     fn GreGetTextExtentExW( hdc: HDC, lpwsz: LPCWSTR, cwc: i32, dxMax: i32, pcCh: *mut u32, pdxOut: *mut i32, psize: *mut SIZE, fl: u32, ) -> i32;
 }
 extern "C" {
-    fn ExitProcess(uExitCode: u32);
+    // RtlStringCchCopyNW is a header-only ntstrsafe inline (no exported symbol);
+    // call the existing cdecl re-export shim (freetype_rust_shims.c, in residue).
+    #[link_name = "w32r_RtlStringCchCopyNW"]
     fn RtlStringCchCopyNW( pszDest: LPWSTR, cchDest: usize, pszSrc: LPCWSTR, cchToCopy: usize, ) -> NTSTATUS;
-    fn UserEnterCo();
-    fn UserLeaveCo();
     fn ERR(fmt: *const i8, ...);
     fn GetTextExtentExPointW( hdc: HDC, lpszString: LPCWSTR, cchString: i32, nMaxExtent: i32, lpnFit: *mut i32, lpnDx: *mut i32, lpSize: *mut SIZE, ) -> i32;
+}
+// UserEnterCo/UserLeaveCo are C macros for UserEnterExclusive()/UserLeave()
+// (ntuser.rs, #[no_mangle], FASTCALL on i386). Match callback.rs/dde.rs.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    #[link_name = "UserEnterExclusive"]
+    fn UserEnterCo();
+    #[link_name = "UserLeave"]
+    fn UserLeaveCo();
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    #[link_name = "UserEnterExclusive"]
+    fn UserEnterCo();
+    #[link_name = "UserLeave"]
+    fn UserLeaveCo();
 }
 
 // C `assert(e)` macro (DBG) → `_font_assert`; no-op here (debug aid, not load-
@@ -68,15 +86,12 @@ pub const MAX_BUFFER: usize = 1024;
 #[no_mangle]
 pub unsafe extern "C" fn _font_assert(msg: *const i8, file: *const i8, line: i32) {
     DbgPrint(b"Assertion failed at %s line %d: %s\n\0".as_ptr() as *const i8, file, line, msg);
-    #[cfg(feature = "_WIN32K_")]
-    {
-        core::debug_assert!(false);
-    }
-    #[cfg(not(feature = "_WIN32K_"))]
-    {
-        ExitProcess(3);
-        loop {}
-    }
+    // Debug aid only (mirrors the no-op `assert<T>` above): never abort the kernel.
+    // The C `assert` is a no-op in release; in DBG this prints + breaks. The old
+    // `cfg(not(_WIN32K_))` arm called the USER-MODE `ExitProcess` — which doesn't
+    // exist in kernel mode and broke the arm64 win32k.sys link with an undefined
+    // symbol once _font_assert wasn't dead-code-eliminated (amd64 DCE'd it).
+    core::debug_assert!(false);
 }
 
 unsafe fn TEXT_Ellipsify(
@@ -369,10 +384,9 @@ unsafe fn TEXT_WordBreak(
         }
     }
 
-    #[cfg(_WIN32K_)]
+    // win32k is always _WIN32K_ → the kernel Gre path (the `_WIN32K_` cfg flag is
+    // not set in this build, which wrongly selected the usermode GetTextExtentExPointW).
     GreGetTextExtentExW(hdc, str, *len_str as i32, 0, core::ptr::null_mut(), core::ptr::null_mut(), size, 0);
-    #[cfg(not(_WIN32K_))]
-    GetTextExtentExPointW(hdc, str, *len_str as i32, 0, core::ptr::null_mut(), core::ptr::null_mut(), size);
 }
 
 unsafe fn TEXT_SkipChars(

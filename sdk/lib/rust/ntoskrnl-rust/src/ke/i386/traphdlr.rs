@@ -279,6 +279,13 @@ pub unsafe extern "fastcall" fn KiNpxHandler(
     SaveArea: PFX_SAVE_AREA,
 ) -> ! {
     let Thread = opaque_ptr(Thread);
+    // NOTE: C is `if (!KiUserTrap(TrapFrame))` and KiUserTrap returns an integer
+    // BOOLEAN, so the faithful form is `KiUserTrap(TrapFrame) == 0`. That correct
+    // form, however, regressed i386 boot into a hang at services.exe/Rpcss — the
+    // always-true `!KiUserTrap() != 0` here was masking a deeper KiNpxHandler bug
+    // (the user-trap path below mishandles NPX state). Left as-is (booting) with
+    // the failure flagged for the ntoskrnl lane; do NOT "fix" the condition in
+    // isolation. See field-manual "C if(!Fn()) -> Rust !Fn()!=0" entry.
     if !KiUserTrap(TrapFrame) != 0 {
         (*SaveArea).Cr0NpxState |= CR0_TS;
         if (*TrapFrame).Eip as PVOID == FrRestore {

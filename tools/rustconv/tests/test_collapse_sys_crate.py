@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rustconv.postprocess import collapse_sys_crate  # noqa: E402
+from rustconv.postprocess import collapse_sys_crate
 
 
 def test_retargets_wrong_sibling_sys_crate_glob():

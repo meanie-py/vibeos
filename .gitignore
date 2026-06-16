@@ -70,3 +70,4 @@ cmake_install.cmake
 qemu/manual-arm64-*/
 ~*.md
 .cargo-wt-target/
+agent-swarm/channel/node_modules/

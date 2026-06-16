@@ -70,7 +70,15 @@ def _pe_info(inferior, base: int) -> tuple[str | None, int | None]:
     if size_b is None:
         return None, None
     size = _u32(size_b)
-    exp_rva_b = _rd(inferior, opt + 0x60, 4)
+    # The export DataDirectory sits at a different optional-header offset for
+    # PE32 (0x60) vs PE32+ (0x70): PE32+ widens ImageBase/SizeOf*Reserve/Commit
+    # to 8 bytes (and drops BaseOfData), shifting NumberOfRvaAndSizes+the data
+    # directories by 0x10. amd64/arm64 ntoskrnl is PE32+; i386 is PE32. Using the
+    # PE32 offset on amd64 read a garbage export name → ntoskrnl never matched.
+    magic_b = _rd(inferior, opt, 2)
+    magic = _u16(magic_b) if magic_b is not None else 0
+    dd_off = 0x70 if magic == 0x20B else 0x60
+    exp_rva_b = _rd(inferior, opt + dd_off, 4)
     if exp_rva_b is None:
         return None, size
     exp_rva = _u32(exp_rva_b)

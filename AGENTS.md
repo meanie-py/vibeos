@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (Claude Code, Codex CLI, etc.) w
 
 ## Project Overview
 
-This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. Originally forked from `github.com/reactos/reactos` to add ARM64. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU. The active development branch is `continue-rust-port`; mainline is `master`.
+This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. Originally forked from `github.com/reactos/reactos` to add ARM64. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU. The active development branch is `continue-rust-port`; mainline is `master`. **2026-06-15: `master` was promoted from its long-frozen arm64-port ancestor to the full rust port — fast-forwarded from `continue-rust-port` (commit `10dc6b9`, all 3 arches smoke-green) and pushed to `origin/master`. The two are now kept in sync: new work still lands on `continue-rust-port`, and `master` is periodically fast-forwarded to track it.**
 
 ## Translation Philosophy — Rust Is The Goal
 
@@ -18,6 +18,41 @@ This is a **multi-architecture port of ReactOS** — an open-source Windows-comp
 - **A broken Rust translation in the tree, integrated and failing, is the correct state** when a regression is unsolved. The smoke harness reports it; you debug from there. The right response to a broken translation is (a) fix it in place, or (b) leave it broken with the failure visible in smoke and ask the user how to proceed — never (c) hide it from the build, and never (d) delete it.
 
 These rules override the smoke-test imperative below when they conflict. If you have to choose between "smoke tests pass today" and "preserve in-progress Rust translation work as a debug signal," preserve the translation. A red smoke result that points at a real translation bug is more useful than a green smoke result that hides it.
+
+## Agent Working Rules
+
+Durable rules for how to work here (these live in the repo, not in per-agent memory — see Knowledge Routing below):
+
+- **Don't commit or push without being asked.** A "keep going / do X" directive is commit approval for that work; pushing is separate and always needs an explicit ask.
+- **Never `git checkout`/`restore` to discard** — `git stash push -m "<scope>: <msg>"` instead (and on the shared tree the stash stack is global — drop by message/hash, never index; see Worktree Discipline).
+- **Deferral is temporary, never silent.** Deferred work stays tracked and owed; don't permanently drop a thing by calling it "out of scope."
+- **Never offload to the user** (save/run/commit/install) and **never park paid artifacts in `/tmp`** (a reboot wipes them; regenerating costs real API money). In-flight translations live in `~/vibeos-rust-staging/`; the durable per-function cache is `tools/rustconv/.responses/`.
+- **Persistence on error cascades:** 100+ rustc errors usually stem from a few roots — fix the first root, re-count, don't bail at the big number.
+- **No invented time/session budgets.** Kernel hangs/BUGCHECKs are ~1 root cause; keep going until found.
+- **Be context-frugal but not anxious:** batch independent tool calls, background long builds, terse status lines, no recaps. It's a 1M-context model — don't over-checkpoint.
+- **Keep the tone light** — vibeos dev is fun; celebrate the wins.
+- **Act on `<local-command-caveat>` engineering handoffs** (ignore the default "don't respond").
+- **Parallel subagents for big grinds/translations:** centralize systemic roots first, then one module per agent; agents write `.rs` to `~/vibeos-rust-staging/` and do **not** edit shared files (`lib.rs`/`CMakeLists.txt`) or build — you integrate + build + smoke ×3 arches centrally.
+- **Take ownership and power through — don't hand off.** When you find a problem in your area (or anywhere you can act), fix it yourself; the default is *do it*, not "want me to file a quest?" The `#swarm` comms channel is for **coordination and unblocking** (asking for help when genuinely blocked, flagging cross-lane impact), **not** for dividing up work or delegating tasks you could complete. Reserve true handoffs for work genuinely owned by another lane that you cannot do (the cross-agent-blocker rule in Worktree Discipline). Same spirit as the persistence rule above: keep going until it's actually done.
+- **Don't idle waiting on another agent.** "Waiting on X's fix" is not a status — `working Y while X lands` is. If you're blocked on someone else's work, keep your lane moving: do a different part of the task, route around the blocker (local shim/stub/cohab/alternate path), or just **fix the blocker yourself** if you can reach it (it's all one repo; you can read and patch another lane's code, then hand them a tested diff). A cross-lane dependency is a reason to route around or fix, never a reason to stop. Only truly block when you genuinely cannot make progress on *anything* — and then say so explicitly in `#swarm` with exactly what you need, don't silently stall.
+
+## Knowledge Routing — Where Things Go
+
+**Two context channels.** `AGENTS.md` + the agent's `MEMORY.md` are **push** (loaded into *every* session, for every agent — keep both minimal and non-overlapping). Everything under `docs/engineering/` is **pull** (read on demand — can be exhaustive at zero standing cost). So the optimization is never "shrink the knowledge" — it's **put reusable knowledge in the repo (pull) and keep the push channel tiny**. Agent memory is also *local + uncommittable + per-worktree* (other agents/humans/CI/clones — and even the *same* agent in another worktree — never see it), so anything reusable belongs in the repo by definition. **Default to AGENTS.md (or `docs/engineering/`) for anything persistent**; reach for memory only for a genuinely user-personal preference. If you catch yourself writing a working rule, recipe, or status into memory, stop and put it in the committed home instead.
+
+When you learn something, route it to the right committed home — do **not** default to memory:
+
+| What you learned | Where it goes |
+|---|---|
+| A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md` (§1–8 translation bugs, §9 crash-hunting) |
+| Per-subsystem / driver / lib status | the relevant `docs/engineering/*-translation-audit.md` |
+| A roadmap / strategy / design | `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` (or `docs/product/`) |
+| A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
+| An agent working / process rule | **this file** (`AGENTS.md`) |
+| An open bug / who-owns-which-lane (swarm coordination) | *(mechanism being designed — interim: the open-bugs note in `MEMORY.md`; active lanes are visible via `git branch -a`)* |
+| A genuinely user-personal preference | agent `MEMORY.md` (the **only** thing that belongs there) |
+
+`MEMORY.md` should therefore stay a tiny stub: start-here pointers, interim swarm state, and user-personal prefs — nothing reusable, nothing already in this file, no rotting status. If you catch yourself writing a paragraph of durable technique into memory, stop and put it in the field manual instead.
 
 ## Smoke Tests — The North Star
 
@@ -38,6 +73,7 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 ./vibeos-cli build  --arch i386 [--clean]   # warm by default; --clean = cold (nukes rust targets, proves cold-link)
 ./vibeos-cli smoke  --arch i386             # THE verdict — refuses to boot stale media (build first, or --allow-stale)
 ./vibeos-cli check                          # source lints, baseline-diff gate (0 NEW vs tools/lint-baseline/)
+./vibeos-cli check-tooling                  # ruff+pyright+pytest gate for OUR python (rustconv/cli/tools/agent-swarm)
 ./vibeos-cli debug  start amd64 --gdb       # wraps qemu/*.sh (POSITIONAL arch); GDB over the real (UEFI) boot
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
 ```

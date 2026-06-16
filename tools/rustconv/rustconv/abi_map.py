@@ -20,7 +20,6 @@ Consumed by `postprocess.enforce_win32k_abi` (rewrites the LLM's
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 from .config import WIN32K_SYS_DIR, WIN32SS_DIR
 from .verify_abi import parse_bindgen_conventions, parse_spec
@@ -29,7 +28,7 @@ from .verify_abi import parse_bindgen_conventions, parse_spec
 _NORM = {
     "C": "cdecl",
     "cdecl": "cdecl",
-    "system": "stdcall",   # extern "system" == stdcall on i386 (NTAPI)
+    "system": "stdcall",  # extern "system" == stdcall on i386 (NTAPI)
     "stdcall": "stdcall",
     "fastcall": "fastcall",
 }

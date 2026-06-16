@@ -4,9 +4,11 @@ Gate = zero NEW findings vs a checked-in baseline (tools/lint-baseline/<tool>.tx
 never absolute zero — the tree carries known pre-existing findings. Advisory
 (warn) in `build`'s auto-check; blocking-on-NEW only under `check --strict`.
 """
+
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,9 +28,11 @@ def _shellcheck_bin() -> str | None:
         return str(cand)
     try:
         import shellcheck_py  # type: ignore
-        cand = Path(shellcheck_py.__file__).parent / "resources" / "shellcheck"
-        if cand.exists():
-            return str(cand)
+
+        if shellcheck_py.__file__:
+            cand = Path(shellcheck_py.__file__).parent / "resources" / "shellcheck"
+            if cand.exists():
+                return str(cand)
     except Exception:
         pass
     return None
@@ -54,9 +58,16 @@ def _rel(text: str, repo: Path) -> str:
     return text.replace(str(repo) + "/", "").replace(str(repo), "")
 
 
-def _lint_stage(run: Run, repo: Path, name: str, cmd: list[str], *,
-                cwd: Path | None = None, strict: bool,
-                findings_from: str = "stdout") -> Stage:
+def _lint_stage(
+    run: Run,
+    repo: Path,
+    name: str,
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    strict: bool,
+    findings_from: str = "stdout",
+) -> Stage:
     """Run one lint; classify NEW-vs-baseline. Advisory unless strict."""
     if cmd[0] == "MISSING":
         return run.add(Stage(name, status="skip", detail="tool unavailable"))
@@ -71,17 +82,29 @@ def _lint_stage(run: Run, repo: Path, name: str, cmd: list[str], *,
     # are baselined/accepted; only new ones matter.
     if new:
         st = "fail" if strict else "warn"
-        return run.add(Stage(name, exit=cp.returncode, status=st,
-                             detail=f"{len(new)} new", salient=sorted(new)[:3]))
+        return run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status=st,
+                detail=f"{len(new)} new",
+                salient=sorted(new)[:3],
+            )
+        )
     if cur:
         # findings exist but all are in the baseline → accepted
         return run.add(Stage(name, exit=cp.returncode, status="ok", detail="baselined"))
     if cp.returncode != 0:
         # no parseable findings yet nonzero exit → the tool itself failed to run
-        return run.add(Stage(name, exit=cp.returncode,
-                             status=("fail" if strict else "warn"),
-                             detail=f"exit {cp.returncode}",
-                             salient=[ln for ln in text.splitlines()[:3]]))
+        return run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status=("fail" if strict else "warn"),
+                detail=f"exit {cp.returncode}",
+                salient=[ln for ln in text.splitlines()[:3]],
+            )
+        )
     return run.add(Stage(name, exit=0, status="ok"))
 
 
@@ -95,24 +118,44 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     rc = repo / "tools" / "rustconv" / "rustconv"
     lk = repo / "tools" / "lint_kernel.py"
     specs = [
-        ("shellcheck", [sc, "-S", "warning", "-f", "gcc", *sh_files]
-            if sc != "MISSING" and sh_files else ["MISSING"], "stdout"),
+        (
+            "shellcheck",
+            [sc, "-S", "warning", "-f", "gcc", *sh_files]
+            if sc != "MISSING" and sh_files
+            else ["MISSING"],
+            "stdout",
+        ),
         ("py-syntax", [py, "-m", "compileall", "-q", "tests/qemu", "tools"], "both"),
     ]
-    for tool, rel in (("verify_abi", "verify_abi.py"),
-                      ("verify_ffi", "verify_ffi.py"),
-                      ("verify_constants", "verify_constants.py")):
+    for tool, rel in (
+        ("verify_abi", "verify_abi.py"),
+        ("verify_ffi", "verify_ffi.py"),
+        ("verify_constants", "verify_constants.py"),
+    ):
         f = rc / rel
         specs.append((tool, [py, str(f)] if f.is_file() else ["MISSING"], "both"))
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
     # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.
-    for tool, rel in (("verify_tables", "verify_tables.py"),
-                      ("verify_match_consts", "verify_match_consts.py"),
-                      ("verify_signatures", "verify_signatures.py")):
+    for tool, rel in (
+        ("verify_tables", "verify_tables.py"),
+        ("verify_match_consts", "verify_match_consts.py"),
+        ("verify_signatures", "verify_signatures.py"),
+    ):
         t = repo / "tools" / rel
         specs.append((tool, [py, str(t)] if t.is_file() else ["MISSING"], "stdout"))
+    # Inlined flag/constant-literal lint (AST/tree-sitter). verify_constants only
+    # checks named `const` defs; this catches bare `0x2 /* TOP_LEVEL */` literals.
+    # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.
+    sif = repo / "tools" / "scan_inline_flag_literals.py"
+    specs.append(
+        (
+            "scan_inline_flag_literals",
+            [py, str(sif), "--lint"] if sif.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     return specs
 
 
@@ -124,7 +167,6 @@ def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
 def write_baselines(repo: Path) -> dict:
     """Capture current findings into tools/lint-baseline/<name>.txt so the gate
     becomes 'zero NEW vs baseline' (plan §20.3). Returns {name: count}."""
-    import subprocess
     out = {}
     bdir = repo / BASELINE_DIR
     bdir.mkdir(parents=True, exist_ok=True)
@@ -152,14 +194,14 @@ def write_baselines(repo: Path) -> dict:
 _CARGO_LINK_POCS = [
     ("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl", ("i386", "amd64", "arm64"), 1_000_000),
     ("ntdll", "ntdll-cargo", "ntdll", ("i386", "amd64", "arm64"), 1_000_000),
-    ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista",
-     ("i386", "amd64", "arm64"), 200_000),
+    ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista", ("i386", "amd64", "arm64"), 200_000),
 ]
 _ARCH_TARGET = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
 
 
-def _one_cargo_link(run: Run, repo: Path, rust_ws: Path, label: str,
-                    crate: str, binname: str, arch: str, floor: int) -> None:
+def _one_cargo_link(
+    run: Run, repo: Path, rust_ws: Path, label: str, crate: str, binname: str, arch: str, floor: int
+) -> None:
     """Re-run one cargo-driven link and assert it still produces a valid PE,
     WITHOUT booting. Skips cleanly when prerequisites are absent."""
     stage = f"cargo_link:{label}:{arch}"
@@ -177,26 +219,47 @@ def _one_cargo_link(run: Run, repo: Path, rust_ws: Path, label: str,
         return
 
     cp = run.run(
-        ["cargo", "+nightly", "build", "--release",
-         "--target", f"{crate}/{target}.json",
-         "-Z", "build-std=core,alloc,compiler_builtins",
-         "-Z", "build-std-features=compiler-builtins-mem",
-         "-p", crate, "--bin", binname],
-        cwd=rust_ws, stage=stage, timeout=900,
+        [
+            "cargo",
+            "+nightly",
+            "build",
+            "--release",
+            "--target",
+            f"{crate}/{target}.json",
+            "-Z",
+            "build-std=core,alloc,compiler_builtins",
+            "-Z",
+            "build-std-features=compiler-builtins-mem",
+            "-p",
+            crate,
+            "--bin",
+            binname,
+        ],
+        cwd=rust_ws,
+        stage=stage,
+        timeout=900,
     )
     out = rust_ws / "target" / target / "release" / f"{binname}.exe"
     if cp.returncode != 0:
         tail = [ln for ln in (cp.stderr or "").splitlines() if ln.strip()][-3:]
-        run.add(Stage(stage, exit=cp.returncode, status="fail",
-                      detail="link FAILED — cmake→cargo PoC bit-rotted", salient=tail))
+        run.add(
+            Stage(
+                stage,
+                exit=cp.returncode,
+                status="fail",
+                detail="link FAILED — cmake→cargo PoC bit-rotted",
+                salient=tail,
+            )
+        )
         return
     if not out.is_file():
         run.add(Stage(stage, status="fail", detail="reported success but no output PE"))
         return
     size = out.stat().st_size
     if size < floor:
-        run.add(Stage(stage, status="fail",
-                      detail=f"{binname}.exe implausibly small ({size} bytes)"))
+        run.add(
+            Stage(stage, status="fail", detail=f"{binname}.exe implausibly small ({size} bytes)")
+        )
         return
     with open(out, "rb") as f:
         if f.read(2) != b"MZ":
@@ -245,10 +308,20 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         return
     ud2 = repo / "tools" / "scan_ud2.py"
-    _lint_stage(run, repo, "scan_ud2",
-                [py, str(ud2), "--check", str(build_dir)] if ud2.is_file() else ["MISSING"],
-                strict=strict, findings_from="both")
+    _lint_stage(
+        run,
+        repo,
+        "scan_ud2",
+        [py, str(ud2), "--check", str(build_dir)] if ud2.is_file() else ["MISSING"],
+        strict=strict,
+        findings_from="both",
+    )
     sp = repo / "tools" / "verify_sacred_primitives.sh"
-    _lint_stage(run, repo, "sacred_primitives",
-                ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
-                strict=strict, findings_from="both")
+    _lint_stage(
+        run,
+        repo,
+        "sacred_primitives",
+        ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
+        strict=strict,
+        findings_from="both",
+    )

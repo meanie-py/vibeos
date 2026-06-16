@@ -1,5 +1,7 @@
 # RTL (sdk/lib/rtl) C→Rust Translation Audit
 
+> **Ground-truth re-verified 2026-06-14** against `sdk/lib/rtl/CMakeLists.txt` + the `sdk/lib/rust/` crates — **the whole `sdk/lib/rtl/*.c` surface is now flipped to Rust**, including the previously-"deferred" `registry.c` (→ `rtl-misc`), the entire `heap.c` family (`heap.c`/`heapdbg.c` → `rtl-heap`, `heappage.c` → `rtl-heappage`, `heapuser.c` → `rtl-heapuser`), `image.c` (→ `rtl-diag`), and the per-arch exception/unwind tail (→ `rtl-except`). The **only active (uncommented) C/asm left in `librtl.a`** is the irreducible floor: `dbgprint_variadic.c` (C-variadic FFI glue), `rtl_vista_stub.c` (placeholder), and the per-arch asm `*/debug_asm.S`, `i386/{except_asm.s,rtlmem.s,rtlswap.S}`, `amd64/{except_asm.S,unwind-asm.s}`. The "Still C" / "deferred" claims below are SUPERSEDED — corrected inline.
+
 **Surface:** `sdk/lib/rtl/*.c` — the NT `Rtl*` run-time library that compiles
 into the single `librtl.a`, which links into **both** `ntoskrnl.exe` (kernel,
 `-D_NTOSKRNL_`) **and** `ntdll.dll` (user mode). One archive, two consumers.
@@ -28,7 +30,9 @@ HEAD `b77c87e0840` + uncommitted PATH-wave work (see §4).
   (already-committed) process-creation / env path. amd64 now reaches
   `[WIN32K] shell ready`; the current blocker is a **services.exe init hang**
   (post-`shell ready`), still under investigation.
-- `registry.c`, `heap.c` (family), `image.c`, and a few misc files remain C.
+- **UPDATE 2026-06-14:** `registry.c`, the `heap.c` family, `image.c`, and the
+  misc remainder are **all flipped now** — see the Ground-truth marker at the
+  top. The TL;DR below is preserved as a point-in-time (2026-06-01) record.
 
 ---
 
@@ -91,7 +95,18 @@ core, but they are separate tracks.
 | thread.c | THR | translate-only | **RtlCreateUserThread** lives here |
 | process.c | PRC | translate-only | **RtlCreateUserProcess / RtlpInitEnvironment** |
 | atom.c | ATM | layout-mirror | `d54a073a4bf` (was the deferred "rabbit hole", now done) |
-| **path.c** | **PATH** | **translate + smoke** | **THIS SESSION — 27/27 fns. Uncommitted.** |
+| **path.c** | **PATH** | **translate + smoke** | 27/27 fns — **committed; flip is live in CMakeLists** |
+
+> **2026-06-14:** the table above is the 2026-06-01 wave snapshot. Since then the
+> flip completed across the *entire* `sdk/lib/rtl/*.c` surface — additional Rust
+> homes now live in CMakeLists: `rtl-misc` (registry/res/memstream), `rtl-heap`
+> + `rtl-heappage` + `rtl-heapuser` (the heap family), `rtl-diag` (image/debug/
+> assert/trace/wine_debug/… — variadic shims kept in `dbgprint_variadic.c`),
+> `rtl-except` (per-arch exception/unwind tail), `rtl-sync` (critical/wait/srw/
+> condvar/runonce/locale), `rtl-threadpool`, `rtl-actctx`, `rtl-error`,
+> `rtl-rangelist`, `rtl-propvar`, `rtl-ppb`, `rtl-rxact`, `rtl-sysvol`,
+> `rtl-version`, `rtl-bootdata`, `network`. Authoritative list = grep the
+> `# <file>.c — replaced by Rust (...)` comments in `sdk/lib/rtl/CMakeLists.txt`.
 
 (Algorithm crates — bitmap/bitmap64, avltable, splaytree, unicodeprefix,
 crc32, compress, encode, largeint, time, random, luid, handle, interlck,
@@ -100,6 +115,14 @@ tracked in `static-libs-translation-audit.md`.)
 
 ### Still C in sdk/lib/rtl
 
+> **SUPERSEDED AGAIN 2026-06-14 — NOTHING in the table below is C anymore.**
+> registry.c → `rtl-misc`, heap.c+heapdbg.c → `rtl-heap`, heappage.c →
+> `rtl-heappage`, heapuser.c → `rtl-heapuser`, image.c → `rtl-diag`, and the
+> misc remainder are all flipped + active in `sdk/lib/rtl/CMakeLists.txt`. The
+> only active C/asm left is the irreducible floor (see the Ground-truth marker
+> at the top of this file). The table at the end of this subsection is kept for
+> history only — every row is now Rust.
+>
 > **SUPERSEDED 2026-06-09 — rtl is ~fully Rust now: registry.c (fc4563c30ba), image.c (rtl-diag), heap.c+heapdbg (rtl-heap), heappage/heapuser translated; only heappage/heapuser/arch-asm remain active C in CMakeLists.**
 >
 > **SUPERSEDED AGAIN 2026-06-11 — the per-arch exception/unwind tail is now Rust
@@ -119,12 +142,14 @@ tracked in `static-libs-translation-audit.md`.)
 > inline NtCurrentTeb, mem crate RtlFillMemoryUlong enabled on amd64,
 > ntdll-cargo compiles `_swprintf.c`.
 
-| File | LOC | Why still C |
+> *(Historical table — every row below is now FLIPPED to Rust as of 2026-06-14. "Why still C" reflects the 2026-06-01 state, with the current Rust home appended.)*
+
+| File | LOC | 2026-06-01 rationale → **NOW** |
 |---|---|---|
-| **registry.c** | 1351 | RtlQueryRegistryValues etc. Translate-only candidate. **Calls the Rust RtlExpandEnvironmentStrings_U — see §4 bug #3.** |
-| heap.c (+ heapdbg/heappage/heapuser) | large | stateful allocator (locks/VM/free-lists) — **DEFERRED to the behavioral/Kani track**, never byte-diff. |
-| image.c | — | shared PE format primitives (`RtlImageNtHeader`, …); still in librtl. |
-| misc remainder | — | bootdata, generic small files. |
+| **registry.c** | 1351 | RtlQueryRegistryValues etc. **NOW Rust → `rtl-misc/src/registry.rs`** (Wave MISC). |
+| heap.c (+ heapdbg/heappage/heapuser) | large | stateful allocator (locks/VM/free-lists), was deferred to behavioral/Kani track. **NOW Rust → `rtl-heap` (heap.c+heapdbg.c), `rtl-heappage`, `rtl-heapuser`.** |
+| image.c | — | shared PE format primitives (`RtlImageNtHeader`, …). **NOW Rust → `rtl-diag/src/image.rs`** (C-variadic shims in `dbgprint_variadic.c`). |
+| misc remainder | — | bootdata, generic small files. **NOW Rust** (`rtl-bootdata`, `rtl-misc`, etc.). |
 
 ### Boot state (amd64, with the PATH flip + this session's 3 fixes)
 
@@ -216,7 +241,10 @@ are all-arch:
   needs `--timeout 600`; extend `mk_relative_sd`/`mk_absolute_sd`.
 - **i386 idle-cpu regression** on continue-rust-port HEAD — pre-existing,
   bisect-owed, **unrelated** to any rtl wave (verified via stash revert).
-- `registry.c`, `image.c`, `heap.c` family remain C (see §4 table).
+- ~~`registry.c`, `image.c`, `heap.c` family remain C~~ — **RESOLVED 2026-06-14:
+  all flipped to Rust** (registry → `rtl-misc`, image → `rtl-diag`, heap family
+  → `rtl-heap`/`rtl-heappage`/`rtl-heapuser`). Only the irreducible
+  variadic-glue + per-arch asm floor is C now (see top marker).
 
 ---
 

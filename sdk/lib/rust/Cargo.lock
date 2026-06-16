@@ -160,6 +160,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cdfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "cdrom-rust"
+version = "0.1.0"
+dependencies = [
+ "kmdf-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -352,6 +367,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "win32k-sys",
+]
+
+[[package]]
 name = "encode"
 version = "0.1.0"
 
@@ -368,6 +391,13 @@ dependencies = [
 
 [[package]]
 name = "evtlib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "fastfat-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -619,6 +649,20 @@ dependencies = [
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
+]
+
+[[package]]
+name = "kernel32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
+name = "kmdf-sys"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

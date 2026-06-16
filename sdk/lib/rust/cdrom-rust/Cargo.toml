@@ -1,0 +1,22 @@
+# cdrom-rust — Rust translation of the CD-ROM class driver (drivers/storage/class/cdrom,
+# ~76K LOC of c2rust output across 11 modules + private types). The fleet's only KMDF
+# driver: all Wdf* calls dispatch through the kmdf-sys substrate (WdfFunctions[] table),
+# NOT direct exports. WDF types share a single identity with kmdf-sys (types_*.rs
+# re-export them via the gen_driver_types.sh SYS_CRATES mechanism). Driver-private
+# structs (CDROM_DEVICE_EXTENSION, CDROM_REQUEST_CONTEXT, ...) come from the bindgen
+# substrate (src/types.rs); kernel types resolve to the single ntkrnl-sys ddk identity.
+# crate-type=staticlib -> libcdrom_rust.a, cohab-linked into the cmake-built cdrom.sys
+# with the translated .c commented out (pci-rust/pcix-style). cdrom IS boot-loaded on the
+# LiveCD -> i386/amd64 smoke-exercised; arm64 = link-clean only (ramdisk boot).
+
+[package]
+name = "cdrom-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }
+kmdf-sys = { path = "../kmdf-sys" }

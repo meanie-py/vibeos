@@ -346,27 +346,20 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 
     switch (fdwReason) {
 	case DLL_PROCESS_ATTACH:
-            DbgPrint("[comctl32] DllMain PROCESS_ATTACH\n");
             DisableThreadLibraryCalls(hinstDLL);
 
             COMCTL32_hModule = hinstDLL;
 
             /* add global subclassing atom (used by 'tooltip' and 'updown') */
-            DbgPrint("[comctl32] before GlobalAddAtomW\n");
             COMCTL32_wSubclass = (LPWSTR)(DWORD_PTR)GlobalAddAtomW (strCC32SubclassInfo);
-            DbgPrint("[comctl32] after GlobalAddAtomW\n");
             TRACE("Subclassing atom added: %p\n", COMCTL32_wSubclass);
 
             /* create local pattern brush */
-            DbgPrint("[comctl32] before CreateBitmap\n");
             COMCTL32_hPattern55AABitmap = CreateBitmap (8, 8, 1, 1, wPattern55AA);
-            DbgPrint("[comctl32] before CreatePatternBrush\n");
             COMCTL32_hPattern55AABrush = CreatePatternBrush (COMCTL32_hPattern55AABitmap);
-            DbgPrint("[comctl32] before RefreshSysColors\n");
 
 	    /* Get all the colors at DLL load */
 	    COMCTL32_RefreshSysColors();
-            DbgPrint("[comctl32] before InitializeClasses\n");
 
 #ifndef __REACTOS__
             /* like comctl32 5.82+ register all the common control classes */

@@ -165,6 +165,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
         CdRomCount,
         core::ptr::addr_of_mut!(EnabledDisks),
     );
+    crate::dbg_print!(b"[CDARC] fetch st=%x links=%p enabled=%d count=%d\r\n\0", Status, SymbolicLinkList, EnabledDisks, CdRomCount);
     if Status < 0 {
         NotEnabledPresent = 1u8;
     }
@@ -243,82 +244,112 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
                 core::ptr::addr_of_mut!(FileObject),
                 core::ptr::addr_of_mut!(DeviceObject),
             );
+            crate::dbg_print!(b"[CDARC] enabled disk %d getdev st=%x f=%p dev=%p\r\n\0", DiskNumber, Status, FileObject, DeviceObject);
             if Status < 0 {
-                core::mem::forget(Status);
-                if !PartitionBuffer.is_null() {
-                    ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
-                }
-                if !SymbolicLinkList.is_null() {
-                    ExFreePool(SymbolicLinkList as PVOID);
-                }
-                return Status;
-            }
-
-            Irp = IoBuildDeviceIoControlRequest(
-                IOCTL_STORAGE_GET_DEVICE_NUMBER,
-                DeviceObject,
-                core::ptr::null_mut(),
-                0,
-                core::ptr::addr_of_mut!(DeviceNumber) as PVOID,
-                core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG,
-                0u8,
-                core::ptr::addr_of_mut!(Event),
-                core::ptr::addr_of_mut!(IoStatusBlock),
-            );
-            if Irp.is_null() {
-                ObDereferenceObject(FileObject as PVOID);
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                core::mem::forget(Status);
-                if !PartitionBuffer.is_null() {
-                    ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
-                }
-                if !SymbolicLinkList.is_null() {
-                    ExFreePool(SymbolicLinkList as PVOID);
-                }
-                return Status;
-            }
-
-            KeInitializeEvent(core::ptr::addr_of_mut!(Event), _EVENT_TYPE_NotificationEvent, 0u8);
-            Status = IoCallDriver(DeviceObject, Irp);
-            if Status == STATUS_PENDING {
-                KeWaitForSingleObject(
-                    core::ptr::addr_of_mut!(Event) as PVOID,
-                    _KWAIT_REASON_Executive,
-                    0i8,
-                    0u8,
-                    core::ptr::null_mut(),
+                sprintf(
+                    Buffer.as_mut_ptr(),
+                    b"\\Device\\CdRom%lu\0".as_ptr() as *const i8,
+                    DiskNumber,
                 );
-                Status = IoStatusBlock.__bindgen_anon_1.Status;
-            }
-            if Status < 0 {
-                ObDereferenceObject(FileObject as PVOID);
-                core::mem::forget(Status);
-                if !PartitionBuffer.is_null() {
-                    ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
+                Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(DeviceStringW), core::ptr::addr_of_mut!(DeviceStringA), 1u8);
+                if Status < 0 {
+                    core::mem::forget(Status);
+                    if !PartitionBuffer.is_null() {
+                        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                    }
+                    if !SymbolicLinkList.is_null() {
+                        ExFreePool(SymbolicLinkList as PVOID);
+                    }
+                    return Status;
                 }
-                if !SymbolicLinkList.is_null() {
-                    ExFreePool(SymbolicLinkList as PVOID);
-                }
-                return Status;
-            }
 
-            sprintf(
-                Buffer.as_mut_ptr(),
-                b"\\Device\\CdRom%lu\0".as_ptr() as *const i8,
-                DeviceNumber.DeviceNumber,
-            );
-            RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
-            Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(DeviceStringW), core::ptr::addr_of_mut!(DeviceStringA), 1u8);
-            if Status < 0 {
-                ObDereferenceObject(FileObject as PVOID);
-                core::mem::forget(Status);
-                if !PartitionBuffer.is_null() {
-                    ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                Status = IoGetDeviceObjectPointer(
+                    core::ptr::addr_of_mut!(DeviceStringW),
+                    FILE_READ_ATTRIBUTES,
+                    core::ptr::addr_of_mut!(FileObject),
+                    core::ptr::addr_of_mut!(DeviceObject),
+                );
+                crate::dbg_print!(b"[CDARC] enabled disk %d legacy getdev st=%x f=%p dev=%p\r\n\0", DiskNumber, Status, FileObject, DeviceObject);
+                if Status < 0 {
+                    RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+                    core::mem::forget(Status);
+                    if !PartitionBuffer.is_null() {
+                        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                    }
+                    if !SymbolicLinkList.is_null() {
+                        ExFreePool(SymbolicLinkList as PVOID);
+                    }
+                    return Status;
                 }
-                if !SymbolicLinkList.is_null() {
-                    ExFreePool(SymbolicLinkList as PVOID);
+            } else {
+                Irp = IoBuildDeviceIoControlRequest(
+                    IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                    DeviceObject,
+                    core::ptr::null_mut(),
+                    0,
+                    core::ptr::addr_of_mut!(DeviceNumber) as PVOID,
+                    core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG,
+                    0u8,
+                    core::ptr::addr_of_mut!(Event),
+                    core::ptr::addr_of_mut!(IoStatusBlock),
+                );
+                if Irp.is_null() {
+                    ObDereferenceObject(FileObject as PVOID);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    core::mem::forget(Status);
+                    if !PartitionBuffer.is_null() {
+                        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                    }
+                    if !SymbolicLinkList.is_null() {
+                        ExFreePool(SymbolicLinkList as PVOID);
+                    }
+                    return Status;
                 }
-                return Status;
+
+                KeInitializeEvent(core::ptr::addr_of_mut!(Event), _EVENT_TYPE_NotificationEvent, 0u8);
+                Status = IoCallDriver(DeviceObject, Irp);
+                if Status == STATUS_PENDING {
+                    KeWaitForSingleObject(
+                        core::ptr::addr_of_mut!(Event) as PVOID,
+                        _KWAIT_REASON_Executive,
+                        0i8,
+                        0u8,
+                        core::ptr::null_mut(),
+                    );
+                    Status = IoStatusBlock.__bindgen_anon_1.Status;
+                }
+                crate::dbg_print!(b"[CDARC] enabled disk %d getnum st=%x iosb=%x devnum=%d\r\n\0", DiskNumber, Status, IoStatusBlock.__bindgen_anon_1.Status, DeviceNumber.DeviceNumber);
+                if Status < 0 {
+                    ObDereferenceObject(FileObject as PVOID);
+                    core::mem::forget(Status);
+                    if !PartitionBuffer.is_null() {
+                        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                    }
+                    if !SymbolicLinkList.is_null() {
+                        ExFreePool(SymbolicLinkList as PVOID);
+                    }
+                    return Status;
+                }
+
+                sprintf(
+                    Buffer.as_mut_ptr(),
+                    b"\\Device\\CdRom%lu\0".as_ptr() as *const i8,
+                    DeviceNumber.DeviceNumber,
+                );
+                RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
+                Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(DeviceStringW), core::ptr::addr_of_mut!(DeviceStringA), 1u8);
+                if Status < 0 {
+                    ObDereferenceObject(FileObject as PVOID);
+                    core::mem::forget(Status);
+                    if !PartitionBuffer.is_null() {
+                        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+                    }
+                    if !SymbolicLinkList.is_null() {
+                        ExFreePool(SymbolicLinkList as PVOID);
+                    }
+                    return Status;
+                }
             }
         } else {
             sprintf(
@@ -348,6 +379,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
             );
             if Status < 0 {
                 RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+                crate::dbg_print!(b"[CDARC] fallback disk %d getdev st=%x\r\n\0", DiskNumber, Status);
                 core::mem::forget(Status);
                 if !PartitionBuffer.is_null() {
                     ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
@@ -384,6 +416,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
                 Status = IoStatusBlock.__bindgen_anon_1.Status;
             }
 
+            crate::dbg_print!(b"[CDARC] disk %d read st=%x iosb=%x irp=%p\r\n\0", DiskNumber, Status, IoStatusBlock.__bindgen_anon_1.Status, Irp);
             if Status >= 0 {
                 i = 0;
                 while i < 2048 / core::mem::size_of::<ULONG>() as u32 {
@@ -396,8 +429,10 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
         ObDereferenceObject(FileObject as PVOID);
 
         crate::dbg_print!(b"[CDARC] disk %d checksum=%x expected=%x\r\n\0", DiskNumber, CheckSum, (*ArcDiskSignature).CheckSum);
-        if CheckSum.wrapping_add((*ArcDiskSignature).CheckSum) == 0 {
-            crate::dbg_print!(b"[CDARC] checksum match, creating ArcName\r\n\0");
+        if CheckSum.wrapping_add((*ArcDiskSignature).CheckSum) == 0
+            || strcmp((*LoaderBlock).ArcBootDeviceName, (*ArcDiskSignature).ArcName) == 0
+        {
+            crate::dbg_print!(b"[CDARC] checksum/loader match, creating ArcName\r\n\0");
             sprintf(
                 ArcBuffer.as_mut_ptr(),
                 b"\\ArcName\\%s\0".as_ptr() as *const i8,

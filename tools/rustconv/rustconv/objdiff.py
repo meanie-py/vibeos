@@ -20,9 +20,8 @@ import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .config import (
     BUILD_DIRS,
@@ -33,68 +32,77 @@ from .config import (
     OUTPUT_CRATE,
     REACTOS_ROOT,
     RUST_TARGETS,
-    SPEC_FILE,
 )
+from .spec_parser import parse_spec
 
 # ── Data structures ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class Symbol:
-    name: str                      # Undecorated (e.g., "NtAddAtom")
-    decorated_name: str            # As-is from nm (e.g., "_NtAddAtom@12")
-    symbol_type: str               # "function" | "data"
-    size: int                      # Bytes (0 if unknown)
-    section: str                   # ".text", "INIT", "PAGE", etc.
-    calling_convention: str        # "stdcall" | "fastcall" | "cdecl" | "unknown"
-    param_bytes: int               # From @N decoration (i386) or ret N instruction (-1 = unknown)
-    ret_instruction: str           # "ret" | "ret N" (from disassembly)
+    name: str  # Undecorated (e.g., "NtAddAtom")
+    decorated_name: str  # As-is from nm (e.g., "_NtAddAtom@12")
+    symbol_type: str  # "function" | "data"
+    size: int  # Bytes (0 if unknown)
+    section: str  # ".text", "INIT", "PAGE", etc.
+    calling_convention: str  # "stdcall" | "fastcall" | "cdecl" | "unknown"
+    param_bytes: int  # From @N decoration (i386) or ret N instruction (-1 = unknown)
+    ret_instruction: str  # "ret" | "ret N" (from disassembly)
     # Deep prologue info (filled by analyze_prologues)
-    stack_frame_size: int = -1     # sub esp/rsp, N → N bytes (-1 = unknown)
-    callee_saved_regs: int = -1    # Number of push instructions in prologue (-1 = unknown)
+    stack_frame_size: int = -1  # sub esp/rsp, N → N bytes (-1 = unknown)
+    callee_saved_regs: int = -1  # Number of push instructions in prologue (-1 = unknown)
     has_frame_pointer: bool = False  # push ebp; mov ebp, esp
+
 
 @dataclass
 class Difference:
-    kind: str                      # "calling_conv_mismatch", "missing_in_rust", etc.
-    severity: str                  # "critical" | "warning" | "info"
+    kind: str  # "calling_conv_mismatch", "missing_in_rust", etc.
+    severity: str  # "critical" | "warning" | "info"
     symbol_name: str
     c_value: str
     rust_value: str
     detail: str
-    file: str                      # "ex/atom"
+    file: str  # "ex/atom"
+
 
 @dataclass
 class FilePair:
     """A C file and its Rust counterpart."""
-    subsystem: str                 # "ex", "ke/i386", "mm/ARM3"
-    stem: str                      # "atom", "pushlock"
-    c_path: Path                   # ntoskrnl/ex/atom.c
-    rs_path: Path                  # ntoskrnl-rust/src/ex/atom.rs
-    label: str                     # "ex/atom" for display
+
+    subsystem: str  # "ex", "ke/i386", "mm/ARM3"
+    stem: str  # "atom", "pushlock"
+    c_path: Path  # ntoskrnl/ex/atom.c
+    rs_path: Path  # ntoskrnl-rust/src/ex/atom.rs
+    label: str  # "ex/atom" for display
+
 
 @dataclass
 class CompileFlags:
     """Extracted compilation flags from build.ninja."""
+
     defines: list[str]
     flags: list[str]
     includes: list[str]
-    clang: str                     # Full path to clang binary
+    clang: str  # Full path to clang binary
+
 
 @dataclass
 class ObjdiffReport:
     """Full report from objdiff run."""
+
     arch: str
     file_pairs: list[FilePair]
     differences: list[Difference]
     compile_failures: list[tuple[str, str]]  # (label, error)
     c_symbols_count: int
     rust_symbols_count: int
-    baseline: Optional[str] = None  # git commit hash if using baseline
+    baseline: str | None = None  # git commit hash if using baseline
 
 
 # ── Stage 1: Flag extraction from build.ninja ────────────────────────────────
 
 _flag_cache: dict[str, CompileFlags] = {}
+
 
 def extract_compile_flags(arch: str) -> CompileFlags:
     """Parse build.ninja to extract DEFINES, FLAGS, INCLUDES for ntkrnlmp C files."""
@@ -119,27 +127,27 @@ def extract_compile_flags(arch: str) -> CompileFlags:
     # Read build.ninja and find a ntkrnlmp build block for an actual .c.obj
     # (Skip .pch build statements — they have different flags)
     found = False
-    with open(ninja_file, 'r') as f:
+    with open(ninja_file) as f:
         for line in f:
-            if 'C_COMPILER__ntkrnlmp' in line and line.startswith('build '):
+            if "C_COMPILER__ntkrnlmp" in line and line.startswith("build "):
                 # Only match actual .c.obj builds, not .pch generation
-                if '.c.obj' not in line:
+                if ".c.obj" not in line:
                     # Skip variable lines for this build statement
                     for var_line in f:
-                        if not var_line.startswith('  '):
+                        if not var_line.startswith("  "):
                             break
                     continue
                 # Found a real C compilation; read its variable assignments
                 for var_line in f:
                     stripped = var_line.strip()
-                    if not stripped or not var_line.startswith('  '):
+                    if not stripped or not var_line.startswith("  "):
                         break
-                    if stripped.startswith('DEFINES = '):
-                        defines = _split_flags(stripped[len('DEFINES = '):])
-                    elif stripped.startswith('FLAGS = '):
-                        flags_list = _split_flags(stripped[len('FLAGS = '):])
-                    elif stripped.startswith('INCLUDES = '):
-                        includes = _split_flags(stripped[len('INCLUDES = '):])
+                    if stripped.startswith("DEFINES = "):
+                        defines = _split_flags(stripped[len("DEFINES = ") :])
+                    elif stripped.startswith("FLAGS = "):
+                        flags_list = _split_flags(stripped[len("FLAGS = ") :])
+                    elif stripped.startswith("INCLUDES = "):
+                        includes = _split_flags(stripped[len("INCLUDES = ") :])
                 found = True
                 break
 
@@ -150,11 +158,11 @@ def extract_compile_flags(arch: str) -> CompileFlags:
     # 1. Strip PCH flags (we'll include the master header directly)
     # 2. Strip debug flags (we only need symbols for nm)
     flags_list = _strip_pch_flags(flags_list)
-    flags_list = [f for f in flags_list if f not in ('-gdwarf-2', '-gstrict-dwarf')]
+    flags_list = [f for f in flags_list if f not in ("-gdwarf-2", "-gstrict-dwarf")]
 
     # Add the master ntoskrnl header include
     master_header = str(NTOSKRNL_DIR / "include" / "ntoskrnl.h")
-    flags_list.extend(['-include', master_header])
+    flags_list.extend(["-include", master_header])
 
     result = CompileFlags(
         defines=defines,
@@ -184,22 +192,28 @@ def _strip_pch_flags(flags: list[str]) -> list[str]:
         f = flags[i]
 
         # -Xclang -include-pch -Xclang <path.pch> (4 tokens)
-        if (f == '-Xclang' and i + 3 < len(flags)
-                and flags[i + 1] == '-include-pch'
-                and flags[i + 2] == '-Xclang'):
+        if (
+            f == "-Xclang"
+            and i + 3 < len(flags)
+            and flags[i + 1] == "-include-pch"
+            and flags[i + 2] == "-Xclang"
+        ):
             i += 4  # skip all 4
             continue
 
         # -Xclang -include -Xclang <cmake_pch.h> (4 tokens)
-        if (f == '-Xclang' and i + 3 < len(flags)
-                and flags[i + 1] == '-include'
-                and flags[i + 2] == '-Xclang'
-                and 'cmake_pch' in flags[i + 3]):
+        if (
+            f == "-Xclang"
+            and i + 3 < len(flags)
+            and flags[i + 1] == "-include"
+            and flags[i + 2] == "-Xclang"
+            and "cmake_pch" in flags[i + 3]
+        ):
             i += 4
             continue
 
         # -Winvalid-pch
-        if f == '-Winvalid-pch':
+        if f == "-Winvalid-pch":
             i += 1
             continue
 
@@ -210,8 +224,10 @@ def _strip_pch_flags(flags: list[str]) -> list[str]:
 
 # ── Baseline extraction ──────────────────────────────────────────────────────
 
-def extract_baseline_c_files(file_pairs: list[FilePair], commit: str,
-                              output_dir: Path) -> dict[str, Path]:
+
+def extract_baseline_c_files(
+    file_pairs: list[FilePair], commit: str, output_dir: Path
+) -> dict[str, Path]:
     """Extract C files at a given git commit to a temp directory.
 
     Returns {label: extracted_c_path}.  Files that don't exist at that commit
@@ -234,7 +250,8 @@ def extract_baseline_c_files(file_pairs: list[FilePair], commit: str,
         try:
             result = subprocess.run(
                 ["git", "-C", str(REACTOS_ROOT), "show", f"{commit}:{git_path}"],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 dest_file.write_bytes(result.stdout)
@@ -247,9 +264,14 @@ def extract_baseline_c_files(file_pairs: list[FilePair], commit: str,
 
 # ── Stage 2: C compilation ───────────────────────────────────────────────────
 
-def compile_c_file(c_path: Path, arch: str, output_dir: Path,
-                   compile_flags: CompileFlags,
-                   label_override: Optional[str] = None) -> tuple[str, Optional[Path], str]:
+
+def compile_c_file(
+    c_path: Path,
+    arch: str,
+    output_dir: Path,
+    compile_flags: CompileFlags,
+    label_override: str | None = None,
+) -> tuple[str, Path | None, str]:
     """Compile a single C file. Returns (label, obj_path_or_None, error_msg)."""
     label = label_override or _c_path_to_label(c_path)
     obj_name = f"{c_path.parent.name}_{c_path.stem}.obj"
@@ -259,20 +281,27 @@ def compile_c_file(c_path: Path, arch: str, output_dir: Path,
 
     # Adjust flags for C++ files
     flags = compile_flags.flags
-    if c_path.suffix in ('.cpp', '.cxx', '.cc'):
-        flags = [f for f in flags if f != '-std=gnu99']
+    if c_path.suffix in (".cpp", ".cxx", ".cc"):
+        flags = [f for f in flags if f != "-std=gnu99"]
 
     cmd = [
         compile_flags.clang,
         f"--target={triplet}",
-    ] + compile_flags.defines + compile_flags.includes + flags + [
-        '-c', str(c_path),
-        '-o', str(obj_path),
+        *compile_flags.defines,
+        *compile_flags.includes,
+        *flags,
+        "-c",
+        str(c_path),
+        "-o",
+        str(obj_path),
     ]
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if result.returncode != 0:
             return label, None, result.stderr[:500]
@@ -283,10 +312,14 @@ def compile_c_file(c_path: Path, arch: str, output_dir: Path,
         return label, obj_path, str(e)
 
 
-def compile_c_files(file_pairs: list[FilePair], arch: str, output_dir: Path,
-                    compile_flags: CompileFlags, max_workers: int = 8,
-                    path_overrides: Optional[dict[str, Path]] = None,
-                    ) -> tuple[dict[str, Path], list[tuple[str, str]]]:
+def compile_c_files(
+    file_pairs: list[FilePair],
+    arch: str,
+    output_dir: Path,
+    compile_flags: CompileFlags,
+    max_workers: int = 8,
+    path_overrides: dict[str, Path] | None = None,
+) -> tuple[dict[str, Path], list[tuple[str, str]]]:
     """Compile all C files in parallel. Returns ({label: obj_path}, failures).
 
     If path_overrides is set, use those paths instead of the file pair's c_path.
@@ -304,10 +337,16 @@ def compile_c_files(file_pairs: list[FilePair], arch: str, output_dir: Path,
                 c_path = path_overrides[fp.label]
             else:
                 c_path = fp.c_path
-            futures[executor.submit(
-                compile_c_file, c_path, arch, output_dir, compile_flags,
-                label_override=fp.label,
-            )] = fp
+            futures[
+                executor.submit(
+                    compile_c_file,
+                    c_path,
+                    arch,
+                    output_dir,
+                    compile_flags,
+                    label_override=fp.label,
+                )
+            ] = fp
         for future in as_completed(futures):
             label, obj_path, error = future.result()
             if obj_path and not error:
@@ -320,14 +359,17 @@ def compile_c_files(file_pairs: list[FilePair], arch: str, output_dir: Path,
 
 # ── Stage 3: Rust symbol extraction ──────────────────────────────────────────
 
-def _find_rust_lib(arch: str) -> Optional[Path]:
+
+def _find_rust_lib(arch: str) -> Path | None:
     """Find the libkernel_rust.a path for an architecture."""
     build_dir = BUILD_DIRS[arch]
     lib_path = build_dir / "ntoskrnl" / "libkernel_rust.a"
     if lib_path.exists():
         return lib_path
     rust_target = RUST_TARGETS[arch]
-    lib_path = build_dir / "ntoskrnl" / "rust-kernel-target" / rust_target / "release" / "libkernel_rust.a"
+    lib_path = (
+        build_dir / "ntoskrnl" / "rust-kernel-target" / rust_target / "release" / "libkernel_rust.a"
+    )
     if lib_path.exists():
         return lib_path
     return None
@@ -341,7 +383,7 @@ def extract_rust_symbols(arch: str) -> dict[str, Symbol]:
         raise FileNotFoundError(f"libkernel_rust.a not found for {arch}")
 
     nm = str(LLVM_MINGW / "bin" / "llvm-nm")
-    cmd = [nm, '--defined-only', '--print-size', str(lib_path)]
+    cmd = [nm, "--defined-only", "--print-size", str(lib_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
@@ -353,7 +395,7 @@ def extract_rust_symbols(arch: str) -> dict[str, Symbol]:
 def extract_c_symbols(obj_path: Path, arch: str) -> dict[str, Symbol]:
     """Extract symbols from a single C .obj file using llvm-nm."""
     nm = str(LLVM_MINGW / "bin" / "llvm-nm")
-    cmd = [nm, '--defined-only', '--print-size', str(obj_path)]
+    cmd = [nm, "--defined-only", "--print-size", str(obj_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
@@ -399,9 +441,9 @@ def _parse_nm_output(output: str, arch: str) -> dict[str, Symbol]:
             continue
 
         # Classify: T/t = text (function), D/d/B/b = data, R/r = rodata
-        if sym_type_char in ('T',):
+        if sym_type_char in ("T",):
             symbol_type = "function"
-        elif sym_type_char in ('D', 'B', 'R'):
+        elif sym_type_char in ("D", "B", "R"):
             symbol_type = "data"
         else:
             continue  # skip other types (A, C, etc.)
@@ -415,15 +457,15 @@ def _parse_nm_output(output: str, arch: str) -> dict[str, Symbol]:
             param_bytes = -1
 
         # Skip compiler-internal symbols
-        if undecorated.startswith('__') or undecorated.startswith('_$'):
+        if undecorated.startswith("__") or undecorated.startswith("_$"):
             continue
-        if undecorated in ('DllMainCRTStartup', '_DllMainCRTStartup'):
+        if undecorated in ("DllMainCRTStartup", "_DllMainCRTStartup"):
             continue
         # Skip .refptr.* stubs (compiler-generated reference pointers on i386/amd64)
-        if decorated_name.startswith('.refptr.') or undecorated.startswith('.refptr.'):
+        if decorated_name.startswith(".refptr.") or undecorated.startswith(".refptr."):
             continue
         # Skip SEH-related symbols
-        if '_SEH2_' in undecorated or '_SEH2_' in decorated_name:
+        if "_SEH2_" in undecorated or "_SEH2_" in decorated_name:
             continue
 
         sym = Symbol(
@@ -443,6 +485,7 @@ def _parse_nm_output(output: str, arch: str) -> dict[str, Symbol]:
 
 # ── Stage 4: i386 calling convention analysis ────────────────────────────────
 
+
 def analyze_calling_conventions(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> None:
     """Run llvm-objdump -d to find ret/ret N instructions for each function.
     Mutates the symbols dict in place.
@@ -452,7 +495,7 @@ def analyze_calling_conventions(obj_path: Path, symbols: dict[str, Symbol], arch
         return
 
     objdump = str(LLVM_MINGW / "bin" / "llvm-objdump")
-    cmd = [objdump, '-d', '--no-show-raw-insn', str(obj_path)]
+    cmd = [objdump, "-d", "--no-show-raw-insn", str(obj_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
@@ -464,7 +507,7 @@ def analyze_calling_conventions(obj_path: Path, symbols: dict[str, Symbol], arch
 
     for line in result.stdout.splitlines():
         # Function label: "00000000 <_NtAddAtom@12>:"
-        m = re.match(r'^[0-9a-f]+\s+<(.+?)>:', line)
+        m = re.match(r"^[0-9a-f]+\s+<(.+?)>:", line)
         if m:
             # Save the last ret for the previous function
             if current_func and last_ret is not None:
@@ -480,13 +523,13 @@ def analyze_calling_conventions(obj_path: Path, symbols: dict[str, Symbol], arch
 
         # Match ret instructions
         # "retl" (cdecl) or "retl $0xN" (stdcall/fastcall)
-        if '\tret' in stripped:
+        if "\tret" in stripped:
             # Extract the full instruction
             # Format: "addr: retl" or "addr: retl $0x10"
-            parts = stripped.split('\t')
+            parts = stripped.split("\t")
             if len(parts) >= 2:
                 insn = parts[-1].strip()
-                if insn.startswith('ret'):
+                if insn.startswith("ret"):
                     last_ret = insn
 
     # Don't forget the last function
@@ -494,8 +537,7 @@ def analyze_calling_conventions(obj_path: Path, symbols: dict[str, Symbol], arch
         _apply_ret_info(symbols, current_func, last_ret, arch)
 
 
-def _apply_ret_info(symbols: dict[str, Symbol], func_label: str,
-                    ret_insn: str, arch: str) -> None:
+def _apply_ret_info(symbols: dict[str, Symbol], func_label: str, ret_insn: str, arch: str) -> None:
     """Apply ret instruction info to the matching symbol."""
     # Undecorate the label from objdump
     if arch == "i386":
@@ -510,7 +552,7 @@ def _apply_ret_info(symbols: dict[str, Symbol], func_label: str,
     sym.ret_instruction = ret_insn
 
     # Parse ret N to get param bytes from actual instruction
-    m = re.match(r'retl?\s+\$(?:0x)?([0-9a-fA-F]+)', ret_insn)
+    m = re.match(r"retl?\s+\$(?:0x)?([0-9a-fA-F]+)", ret_insn)
     if m:
         ret_bytes = int(m.group(1), 16)
         # ret $N means callee pops N bytes → stdcall or fastcall
@@ -519,7 +561,7 @@ def _apply_ret_info(symbols: dict[str, Symbol], func_label: str,
         sym.param_bytes = ret_bytes
     else:
         # Plain ret → cdecl (caller cleans stack)
-        if ret_insn.startswith('ret'):
+        if ret_insn.startswith("ret"):
             if sym.calling_convention == "unknown":
                 sym.calling_convention = "cdecl"
             if sym.param_bytes == -1:
@@ -528,13 +570,14 @@ def _apply_ret_info(symbols: dict[str, Symbol], func_label: str,
 
 # ── Stage 4b: Deep prologue analysis ─────────────────────────────────────────
 
+
 def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> None:
     """Parse function prologues to extract stack frame sizes and callee-saved registers.
 
     Mutates the symbols dict in place. Works on all architectures.
     """
     objdump = str(LLVM_MINGW / "bin" / "llvm-objdump")
-    cmd = [objdump, '-d', '--no-show-raw-insn', str(obj_path)]
+    cmd = [objdump, "-d", "--no-show-raw-insn", str(obj_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
@@ -543,23 +586,23 @@ def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> 
     # Architecture-specific patterns
     if arch == "i386":
         # sub esp, N
-        re_sub_sp = re.compile(r'subl?\s+\$(?:0x)?([0-9a-fA-F]+),\s+%esp')
+        re_sub_sp = re.compile(r"subl?\s+\$(?:0x)?([0-9a-fA-F]+),\s+%esp")
         # push <reg>
-        re_push = re.compile(r'pushl?\s+%(\w+)')
+        re_push = re.compile(r"pushl?\s+%(\w+)")
         # mov ebp, esp (frame pointer setup)
-        re_frame_ptr = re.compile(r'movl?\s+%esp,\s+%ebp')
-        callee_saved = {'ebx', 'esi', 'edi', 'ebp'}
+        re_frame_ptr = re.compile(r"movl?\s+%esp,\s+%ebp")
+        callee_saved = {"ebx", "esi", "edi", "ebp"}
     elif arch == "amd64":
         # sub rsp, N
-        re_sub_sp = re.compile(r'subq?\s+\$(?:0x)?([0-9a-fA-F]+),\s+%rsp')
-        re_push = re.compile(r'pushq?\s+%(\w+)')
-        re_frame_ptr = re.compile(r'movq?\s+%rsp,\s+%rbp')
-        callee_saved = {'rbx', 'rbp', 'r12', 'r13', 'r14', 'r15', 'rsi', 'rdi'}
+        re_sub_sp = re.compile(r"subq?\s+\$(?:0x)?([0-9a-fA-F]+),\s+%rsp")
+        re_push = re.compile(r"pushq?\s+%(\w+)")
+        re_frame_ptr = re.compile(r"movq?\s+%rsp,\s+%rbp")
+        callee_saved = {"rbx", "rbp", "r12", "r13", "r14", "r15", "rsi", "rdi"}
     elif arch == "arm64":
         # sub sp, sp, #N or stp with pre-index [sp, #-N]!
-        re_sub_sp = re.compile(r'sub\s+sp,\s+sp,\s+#(\d+)')
-        re_push = re.compile(r'stp\s+(\w+),\s+(\w+),\s+\[sp')  # stp pair = 2 regs
-        re_frame_ptr = re.compile(r'mov\s+x29,\s+sp')
+        re_sub_sp = re.compile(r"sub\s+sp,\s+sp,\s+#(\d+)")
+        re_push = re.compile(r"stp\s+(\w+),\s+(\w+),\s+\[sp")  # stp pair = 2 regs
+        re_frame_ptr = re.compile(r"mov\s+x29,\s+sp")
         callee_saved = set()  # ARM64 uses stp pairs
     else:
         return
@@ -587,7 +630,7 @@ def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> 
 
     for line in result.stdout.splitlines():
         # Function label
-        m = re.match(r'^[0-9a-f]+\s+<(.+?)>:', line)
+        m = re.match(r"^[0-9a-f]+\s+<(.+?)>:", line)
         if m:
             _save_prologue()
             current_func = m.group(1)
@@ -613,16 +656,18 @@ def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> 
 
         # Extract instruction (after addr: prefix)
         # Format: "addr:\tmnemonic\toperands" or "addr: \tmnemonic\toperands"
-        parts = stripped.split('\t')
+        parts = stripped.split("\t")
         if len(parts) < 2:
             continue
         # Join all parts after the address into a single instruction string
-        insn = ' '.join(p.strip() for p in parts[1:] if p.strip())
+        insn = " ".join(p.strip() for p in parts[1:] if p.strip())
 
         # Check for sub sp, N
         m = re_sub_sp.search(insn)
         if m:
-            frame_size = int(m.group(1), 16) if '0x' in insn or not insn[-1].isdigit() else int(m.group(1))
+            frame_size = (
+                int(m.group(1), 16) if "0x" in insn or not insn[-1].isdigit() else int(m.group(1))
+            )
             # sub esp/rsp often ends the prologue
             if arch != "arm64":
                 in_prologue = False
@@ -648,7 +693,7 @@ def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> 
         # Stop looking at prologue
         if arch == "i386" or arch == "amd64":
             # Allow some non-push/sub instructions in prologue (like mov, lea for args)
-            if insn.startswith(('mov', 'lea', 'xor', 'and', 'nop')):
+            if insn.startswith(("mov", "lea", "xor", "and", "nop")):
                 continue
             in_prologue = False
 
@@ -657,10 +702,15 @@ def analyze_prologues(obj_path: Path, symbols: dict[str, Symbol], arch: str) -> 
 
 # ── Stage 5: Comparison engine ───────────────────────────────────────────────
 
-def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
-                    label: str, arch: str,
-                    spec: Optional[dict] = None,
-                    deep: bool = False) -> list[Difference]:
+
+def compare_symbols(
+    c_syms: dict[str, Symbol],
+    rust_syms: dict[str, Symbol],
+    label: str,
+    arch: str,
+    spec: dict | None = None,
+    deep: bool = False,
+) -> list[Difference]:
     """Compare C and Rust symbols for a single file pair."""
     diffs: list[Difference] = []
 
@@ -668,28 +718,32 @@ def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
     for name, c_sym in c_syms.items():
         if c_sym.symbol_type == "function":
             if name not in rust_syms:
-                diffs.append(Difference(
-                    kind="missing_in_rust",
-                    severity="warning",
-                    symbol_name=name,
-                    c_value=c_sym.decorated_name,
-                    rust_value="",
-                    detail=f"Function present in C .obj but not in Rust .a",
-                    file=label,
-                ))
+                diffs.append(
+                    Difference(
+                        kind="missing_in_rust",
+                        severity="warning",
+                        symbol_name=name,
+                        c_value=c_sym.decorated_name,
+                        rust_value="",
+                        detail="Function present in C .obj but not in Rust .a",
+                        file=label,
+                    )
+                )
                 continue
 
             r_sym = rust_syms[name]
             if r_sym.symbol_type != "function":
-                diffs.append(Difference(
-                    kind="type_mismatch",
-                    severity="critical",
-                    symbol_name=name,
-                    c_value=f"function ({c_sym.decorated_name})",
-                    rust_value=f"data ({r_sym.decorated_name})",
-                    detail="C has function, Rust has data symbol",
-                    file=label,
-                ))
+                diffs.append(
+                    Difference(
+                        kind="type_mismatch",
+                        severity="critical",
+                        symbol_name=name,
+                        c_value=f"function ({c_sym.decorated_name})",
+                        rust_value=f"data ({r_sym.decorated_name})",
+                        detail="C has function, Rust has data symbol",
+                        file=label,
+                    )
+                )
                 continue
 
             # i386: calling convention check
@@ -700,15 +754,17 @@ def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
             if c_sym.size > 0 and r_sym.size > 0:
                 ratio = r_sym.size / c_sym.size if c_sym.size > 0 else 0
                 if ratio < 0.25 or ratio > 5.0:
-                    diffs.append(Difference(
-                        kind="size_outlier",
-                        severity="info",
-                        symbol_name=name,
-                        c_value=f"{c_sym.size} bytes",
-                        rust_value=f"{r_sym.size} bytes",
-                        detail=f"Size ratio: {ratio:.1f}x",
-                        file=label,
-                    ))
+                    diffs.append(
+                        Difference(
+                            kind="size_outlier",
+                            severity="info",
+                            symbol_name=name,
+                            c_value=f"{c_sym.size} bytes",
+                            rust_value=f"{r_sym.size} bytes",
+                            detail=f"Size ratio: {ratio:.1f}x",
+                            file=label,
+                        )
+                    )
 
             # Deep prologue comparison
             if deep:
@@ -716,15 +772,17 @@ def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
 
         elif c_sym.symbol_type == "data":
             if name not in rust_syms:
-                diffs.append(Difference(
-                    kind="missing_global_in_rust",
-                    severity="warning",
-                    symbol_name=name,
-                    c_value=c_sym.decorated_name,
-                    rust_value="",
-                    detail="Global variable present in C but not in Rust",
-                    file=label,
-                ))
+                diffs.append(
+                    Difference(
+                        kind="missing_global_in_rust",
+                        severity="warning",
+                        symbol_name=name,
+                        c_value=c_sym.decorated_name,
+                        rust_value="",
+                        detail="Global variable present in C but not in Rust",
+                        file=label,
+                    )
+                )
                 continue
 
             r_sym = rust_syms[name]
@@ -733,15 +791,17 @@ def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
 
             # Global size check
             if c_sym.size > 0 and r_sym.size > 0 and c_sym.size != r_sym.size:
-                diffs.append(Difference(
-                    kind="global_size_mismatch",
-                    severity="warning",
-                    symbol_name=name,
-                    c_value=f"{c_sym.size} bytes",
-                    rust_value=f"{r_sym.size} bytes",
-                    detail="Global variable size differs",
-                    file=label,
-                ))
+                diffs.append(
+                    Difference(
+                        kind="global_size_mismatch",
+                        severity="warning",
+                        symbol_name=name,
+                        c_value=f"{c_sym.size} bytes",
+                        rust_value=f"{r_sym.size} bytes",
+                        detail="Global variable size differs",
+                        file=label,
+                    )
+                )
 
     # Check for symbols in Rust but not C (info only)
     for name, r_sym in rust_syms.items():
@@ -753,8 +813,9 @@ def compare_symbols(c_syms: dict[str, Symbol], rust_syms: dict[str, Symbol],
     return diffs
 
 
-def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
-                           spec: Optional[dict] = None) -> list[Difference]:
+def _check_i386_convention(
+    c_sym: Symbol, r_sym: Symbol, label: str, spec: dict | None = None
+) -> list[Difference]:
     """Check i386 calling convention and param byte count between C and Rust."""
     diffs: list[Difference] = []
 
@@ -763,9 +824,13 @@ def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
     r_dec = r_sym.decorated_name
 
     # Compare conventions inferred from decoration
-    if c_sym.calling_convention != "unknown" and r_sym.calling_convention != "unknown":
-        if c_sym.calling_convention != r_sym.calling_convention:
-            diffs.append(Difference(
+    if (
+        c_sym.calling_convention != "unknown"
+        and r_sym.calling_convention != "unknown"
+        and c_sym.calling_convention != r_sym.calling_convention
+    ):
+        diffs.append(
+            Difference(
                 kind="calling_conv_mismatch",
                 severity="critical",
                 symbol_name=c_sym.name,
@@ -773,15 +838,16 @@ def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
                 rust_value=f"{r_sym.calling_convention} ({r_dec})",
                 detail="Calling convention mismatch — will cause stack corruption",
                 file=label,
-            ))
-            return diffs  # Don't double-report param bytes
+            )
+        )
+        return diffs  # Don't double-report param bytes
 
     # Decoration mismatch (even if convention is the same)
-    if c_dec != r_dec:
-        # On i386, _Name@N decorations must match exactly
-        # But some names may differ just by leading underscore (cdecl)
-        if _normalize_decoration(c_dec) != _normalize_decoration(r_dec):
-            diffs.append(Difference(
+    # On i386, _Name@N decorations must match exactly
+    # But some names may differ just by leading underscore (cdecl)
+    if c_dec != r_dec and _normalize_decoration(c_dec) != _normalize_decoration(r_dec):
+        diffs.append(
+            Difference(
                 kind="decoration_mismatch",
                 severity="critical",
                 symbol_name=c_sym.name,
@@ -789,7 +855,8 @@ def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
                 rust_value=r_dec,
                 detail="Symbol decoration differs — linker will not match",
                 file=label,
-            ))
+            )
+        )
 
     # Param bytes check (from decoration @N and/or ret N)
     c_bytes = c_sym.param_bytes
@@ -799,9 +866,9 @@ def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
     if c_sym.ret_instruction and r_sym.ret_instruction:
         c_ret_bytes = _parse_ret_bytes(c_sym.ret_instruction)
         r_ret_bytes = _parse_ret_bytes(r_sym.ret_instruction)
-        if c_ret_bytes is not None and r_ret_bytes is not None:
-            if c_ret_bytes != r_ret_bytes:
-                diffs.append(Difference(
+        if c_ret_bytes is not None and r_ret_bytes is not None and c_ret_bytes != r_ret_bytes:
+            diffs.append(
+                Difference(
                     kind="param_bytes_mismatch",
                     severity="critical",
                     symbol_name=c_sym.name,
@@ -809,44 +876,50 @@ def _check_i386_convention(c_sym: Symbol, r_sym: Symbol, label: str,
                     rust_value=f"ret ${r_ret_bytes:#x} ({r_ret_bytes} bytes)",
                     detail="Stack cleanup size mismatch — will corrupt stack",
                     file=label,
-                ))
+                )
+            )
     elif c_bytes >= 0 and r_bytes >= 0 and c_bytes != r_bytes:
-        diffs.append(Difference(
-            kind="param_bytes_mismatch",
-            severity="critical",
-            symbol_name=c_sym.name,
-            c_value=f"@{c_bytes}",
-            rust_value=f"@{r_bytes}",
-            detail="Parameter byte count from decoration differs",
-            file=label,
-        ))
+        diffs.append(
+            Difference(
+                kind="param_bytes_mismatch",
+                severity="critical",
+                symbol_name=c_sym.name,
+                c_value=f"@{c_bytes}",
+                rust_value=f"@{r_bytes}",
+                detail="Parameter byte count from decoration differs",
+                file=label,
+            )
+        )
 
     # Cross-reference with spec if available
     if spec and c_sym.name in spec:
         entry = spec[c_sym.name]
         expected_conv = entry.convention
         # Check Rust against spec
-        if expected_conv in ('stdcall', 'fastcall'):
-            if r_sym.calling_convention == 'cdecl':
-                diffs.append(Difference(
+        if expected_conv in ("stdcall", "fastcall") and r_sym.calling_convention == "cdecl":
+            diffs.append(
+                Difference(
                     kind="spec_conv_mismatch",
                     severity="critical",
                     symbol_name=c_sym.name,
                     c_value=f"spec: {expected_conv}",
                     rust_value=f"actual: {r_sym.calling_convention}",
-                    detail=f"ntoskrnl.spec says {expected_conv}, Rust uses {r_sym.calling_convention}",
+                    detail=(
+                        f"ntoskrnl.spec says {expected_conv}, Rust uses {r_sym.calling_convention}"
+                    ),
                     file=label,
-                ))
+                )
+            )
 
     return diffs
 
 
-def _parse_ret_bytes(ret_insn: str) -> Optional[int]:
+def _parse_ret_bytes(ret_insn: str) -> int | None:
     """Parse 'ret $0xN' or 'retl $0xN' to get N. Returns None for plain ret."""
-    m = re.match(r'retl?\s+\$(?:0x)?([0-9a-fA-F]+)', ret_insn)
+    m = re.match(r"retl?\s+\$(?:0x)?([0-9a-fA-F]+)", ret_insn)
     if m:
         return int(m.group(1), 16)
-    if ret_insn.strip().rstrip('l') == 'ret':
+    if ret_insn.strip().rstrip("l") == "ret":
         return 0
     return None
 
@@ -873,47 +946,54 @@ def _check_prologue(c_sym: Symbol, r_sym: Symbol, label: str) -> list[Difference
             diff_bytes = abs(r_frame - c_frame)
             # Only report if the difference is significant (>= 64 bytes or 4x ratio)
             if diff_bytes >= 64 or (c_frame > 0 and r_frame / c_frame > 4.0):
-                diffs.append(Difference(
-                    kind="frame_size_diff",
-                    severity="warning",
-                    symbol_name=c_sym.name,
-                    c_value=f"{c_frame} bytes",
-                    rust_value=f"{r_frame} bytes",
-                    detail=f"Stack frame size differs by {diff_bytes} bytes",
-                    file=label,
-                ))
+                diffs.append(
+                    Difference(
+                        kind="frame_size_diff",
+                        severity="warning",
+                        symbol_name=c_sym.name,
+                        c_value=f"{c_frame} bytes",
+                        rust_value=f"{r_frame} bytes",
+                        detail=f"Stack frame size differs by {diff_bytes} bytes",
+                        file=label,
+                    )
+                )
 
     # Callee-saved register count comparison
     if c_sym.callee_saved_regs >= 0 and r_sym.callee_saved_regs >= 0:
         c_regs = c_sym.callee_saved_regs
         r_regs = r_sym.callee_saved_regs
         if abs(c_regs - r_regs) >= 3:
-            diffs.append(Difference(
-                kind="callee_saved_diff",
-                severity="info",
-                symbol_name=c_sym.name,
-                c_value=f"{c_regs} regs",
-                rust_value=f"{r_regs} regs",
-                detail=f"Callee-saved register count differs (C: {c_regs}, Rust: {r_regs})",
-                file=label,
-            ))
+            diffs.append(
+                Difference(
+                    kind="callee_saved_diff",
+                    severity="info",
+                    symbol_name=c_sym.name,
+                    c_value=f"{c_regs} regs",
+                    rust_value=f"{r_regs} regs",
+                    detail=f"Callee-saved register count differs (C: {c_regs}, Rust: {r_regs})",
+                    file=label,
+                )
+            )
 
     # Frame pointer usage
     if c_sym.has_frame_pointer != r_sym.has_frame_pointer:
-        diffs.append(Difference(
-            kind="frame_pointer_diff",
-            severity="info",
-            symbol_name=c_sym.name,
-            c_value="yes" if c_sym.has_frame_pointer else "no",
-            rust_value="yes" if r_sym.has_frame_pointer else "no",
-            detail="Frame pointer usage differs",
-            file=label,
-        ))
+        diffs.append(
+            Difference(
+                kind="frame_pointer_diff",
+                severity="info",
+                symbol_name=c_sym.name,
+                c_value="yes" if c_sym.has_frame_pointer else "no",
+                rust_value="yes" if r_sym.has_frame_pointer else "no",
+                detail="Frame pointer usage differs",
+                file=label,
+            )
+        )
 
     return diffs
 
 
 # ── i386 symbol undecoration ─────────────────────────────────────────────────
+
 
 def undecorate_i386(name: str) -> tuple[str, str, int]:
     """Returns (undecorated, convention, param_bytes).
@@ -923,33 +1003,29 @@ def undecorate_i386(name: str) -> tuple[str, str, int]:
       _Name@N  → stdcall, N param bytes
       _Name    → cdecl
     """
-    if name.startswith('@') and '@' in name[1:]:
+    if name.startswith("@") and "@" in name[1:]:
         # @Name@N → fastcall
-        parts = name[1:].rsplit('@', 1)
+        parts = name[1:].rsplit("@", 1)
         if len(parts) == 2 and parts[1].isdigit():
-            return parts[0], 'fastcall', int(parts[1])
-    if name.startswith('_') and '@' in name[1:]:
+            return parts[0], "fastcall", int(parts[1])
+    if name.startswith("_") and "@" in name[1:]:
         # _Name@N → stdcall
-        parts = name[1:].rsplit('@', 1)
+        parts = name[1:].rsplit("@", 1)
         if len(parts) == 2 and parts[1].isdigit():
-            return parts[0], 'stdcall', int(parts[1])
-    if name.startswith('_'):
+            return parts[0], "stdcall", int(parts[1])
+    if name.startswith("_"):
         # _Name → cdecl
-        return name[1:], 'cdecl', -1
-    return name, 'unknown', -1
+        return name[1:], "cdecl", -1
+    return name, "unknown", -1
 
 
 # ── File pair discovery ──────────────────────────────────────────────────────
 
 # Regex patterns for commented-out C files in ntos.cmake
 # Pattern 1: #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/atom.c
-RE_COMMENTED_1 = re.compile(
-    r'#\s*\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/(.+?)\.c'
-)
+RE_COMMENTED_1 = re.compile(r"#\s*\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/(.+?)\.c")
 # Pattern 2: # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c (Rust)
-RE_COMMENTED_2 = re.compile(
-    r'#\s*\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/(.+?)\.c\b'
-)
+RE_COMMENTED_2 = re.compile(r"#\s*\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/(.+?)\.c\b")
 
 # Arch-specific directory mapping
 ARCH_DIRS = {
@@ -961,14 +1037,14 @@ ARCH_DIRS = {
 # Map C directory paths to Rust module paths
 C_TO_RUST_DIR = {
     "mm/ARM3": "ARM3",
-    "mm/ARM3/i386": "ARM3",   # i386/init.c → ARM3/init.rs
+    "mm/ARM3/i386": "ARM3",  # i386/init.c → ARM3/init.rs
     "mm/ARM3/amd64": "ARM3",  # amd64/init.c → ARM3/init.rs
     "mm/ARM3/arm64": "ARM3",  # arm64/init.c → ARM3/init.rs
     "mm/ARM3/arm": "ARM3",
 }
 
 
-def discover_file_pairs(arch: str, target: Optional[str] = None) -> list[FilePair]:
+def discover_file_pairs(arch: str, target: str | None = None) -> list[FilePair]:
     """Scan ntos.cmake for commented-out C files and find their Rust counterparts.
 
     Args:
@@ -987,12 +1063,12 @@ def discover_file_pairs(arch: str, target: Optional[str] = None) -> list[FilePai
             continue
 
         rel_path = m.group(1)  # e.g., "ex/atom", "mm/ARM3/contmem", "ke/i386/cpu"
-        parts = rel_path.rsplit('/', 1)
+        parts = rel_path.rsplit("/", 1)
         if len(parts) != 2:
             continue
 
-        dir_part = parts[0]   # "ex", "mm/ARM3", "ke/i386"
-        stem = parts[1]       # "atom", "contmem", "cpu"
+        dir_part = parts[0]  # "ex", "mm/ARM3", "ke/i386"
+        stem = parts[1]  # "atom", "contmem", "cpu"
 
         # Skip duplicates
         if rel_path in seen:
@@ -1040,8 +1116,8 @@ def discover_file_pairs(arch: str, target: Optional[str] = None) -> list[FilePai
 
         # Apply target filter
         if target:
-            target_normalized = target.rstrip('/')
-            if '/' in target_normalized:
+            target_normalized = target.rstrip("/")
+            if "/" in target_normalized:
                 # Exact file match
                 if label != target_normalized:
                     continue
@@ -1050,13 +1126,15 @@ def discover_file_pairs(arch: str, target: Optional[str] = None) -> list[FilePai
                 if not dir_part.startswith(target_normalized):
                     continue
 
-        pairs.append(FilePair(
-            subsystem=subsystem,
-            stem=stem,
-            c_path=c_path,
-            rs_path=rs_path,
-            label=label,
-        ))
+        pairs.append(
+            FilePair(
+                subsystem=subsystem,
+                stem=stem,
+                c_path=c_path,
+                rs_path=rs_path,
+                label=label,
+            )
+        )
 
     return sorted(pairs, key=lambda fp: fp.label)
 
@@ -1065,15 +1143,17 @@ def _c_path_to_label(c_path: Path) -> str:
     """Convert a C file path to a display label like 'ex/atom'."""
     try:
         rel = c_path.relative_to(NTOSKRNL_DIR)
-        return str(rel.with_suffix(''))
+        return str(rel.with_suffix(""))
     except ValueError:
         return c_path.stem
 
 
 # ── Rust symbol attribution ──────────────────────────────────────────────────
 
-def attribute_rust_symbols(rust_all_syms: dict[str, Symbol],
-                           file_pairs: list[FilePair]) -> dict[str, dict[str, Symbol]]:
+
+def attribute_rust_symbols(
+    rust_all_syms: dict[str, Symbol], file_pairs: list[FilePair]
+) -> dict[str, dict[str, Symbol]]:
     """Attribute Rust symbols to source files by scanning .rs for #[no_mangle].
 
     Returns {label: {sym_name: Symbol}}.
@@ -1086,7 +1166,7 @@ def attribute_rust_symbols(rust_all_syms: dict[str, Symbol],
         re.DOTALL,
     )
     re_no_mangle_static = re.compile(
-        r'#\[no_mangle\]\s*pub\s+static\s+(?:mut\s+)?(\w+)',
+        r"#\[no_mangle\]\s*pub\s+static\s+(?:mut\s+)?(\w+)",
     )
     re_export_name = re.compile(
         r'#\[export_name\s*=\s*"([^"]+)"\]',
@@ -1106,15 +1186,13 @@ def attribute_rust_symbols(rust_all_syms: dict[str, Symbol],
             # export_name gives the decorated name; undecorate for matching
             export = m.group(1)
             # Try to undecorate i386 names
-            if export.startswith('_') and '@' in export:
-                parts = export[1:].rsplit('@', 1)
+            if (export.startswith("_") and "@" in export) or (
+                export.startswith("@") and "@" in export[1:]
+            ):
+                parts = export[1:].rsplit("@", 1)
                 if parts[1].isdigit():
                     names.add(parts[0])
-            elif export.startswith('@') and '@' in export[1:]:
-                parts = export[1:].rsplit('@', 1)
-                if parts[1].isdigit():
-                    names.add(parts[0])
-            elif export.startswith('_'):
+            elif export.startswith("_"):
                 names.add(export[1:])
             else:
                 names.add(export)
@@ -1136,13 +1214,17 @@ def attribute_rust_symbols(rust_all_syms: dict[str, Symbol],
 
 # ── Report generation ────────────────────────────────────────────────────────
 
-def print_report(report: ObjdiffReport, verbose: bool = False,
-                 critical_only: bool = False) -> None:
+
+def print_report(report: ObjdiffReport, verbose: bool = False, critical_only: bool = False) -> None:
     """Print human-readable report to stderr."""
     out = sys.stderr
 
     if report.baseline:
-        print(f"\nobjdiff: Comparing Rust (current) vs C (baseline: {report.baseline[:10]}) [{report.arch}]", file=out)
+        print(
+            f"\nobjdiff: Comparing Rust (current) vs C "
+            f"(baseline: {report.baseline[:10]}) [{report.arch}]",
+            file=out,
+        )
     else:
         print(f"\nobjdiff: Comparing C vs Rust object files ({report.arch})", file=out)
     print(f"  File pairs: {len(report.file_pairs)}", file=out)
@@ -1190,10 +1272,11 @@ def print_report(report: ObjdiffReport, verbose: bool = False,
         print(file=out)
 
     # Summary
-    total = len(report.differences)
-    print(f"Summary: {len(report.file_pairs)} files, "
-          f"{len(critical)} critical, {len(warnings)} warnings, {len(infos)} info",
-          file=out)
+    print(
+        f"Summary: {len(report.file_pairs)} files, "
+        f"{len(critical)} critical, {len(warnings)} warnings, {len(infos)} info",
+        file=out,
+    )
 
 
 def report_to_json(report: ObjdiffReport) -> str:
@@ -1205,8 +1288,7 @@ def report_to_json(report: ObjdiffReport) -> str:
         "c_symbols": report.c_symbols_count,
         "rust_symbols": report.rust_symbols_count,
         "compile_failures": [
-            {"file": label, "error": error}
-            for label, error in report.compile_failures
+            {"file": label, "error": error} for label, error in report.compile_failures
         ],
         "differences": [
             {
@@ -1231,11 +1313,16 @@ def report_to_json(report: ObjdiffReport) -> str:
 
 # ── Main pipeline ────────────────────────────────────────────────────────────
 
-def run_objdiff(arch: str = "i386", target: Optional[str] = None,
-                verbose: bool = False, critical_only: bool = False,
-                json_output: bool = False,
-                baseline: Optional[str] = None,
-                deep: bool = False) -> ObjdiffReport:
+
+def run_objdiff(
+    arch: str = "i386",
+    target: str | None = None,
+    verbose: bool = False,
+    critical_only: bool = False,
+    json_output: bool = False,
+    baseline: str | None = None,
+    deep: bool = False,
+) -> ObjdiffReport:
     """Run the full objdiff pipeline.
 
     Args:
@@ -1250,15 +1337,19 @@ def run_objdiff(arch: str = "i386", target: Optional[str] = None,
     print(f"Discovering C→Rust file pairs for {arch}...", file=out, flush=True)
     file_pairs = discover_file_pairs(arch, target)
     if not file_pairs:
-        print(f"No file pairs found.", file=out)
+        print("No file pairs found.", file=out)
         return ObjdiffReport(
-            arch=arch, file_pairs=[], differences=[],
-            compile_failures=[], c_symbols_count=0, rust_symbols_count=0,
+            arch=arch,
+            file_pairs=[],
+            differences=[],
+            compile_failures=[],
+            c_symbols_count=0,
+            rust_symbols_count=0,
         )
     print(f"  Found {len(file_pairs)} file pairs", file=out, flush=True)
 
     # Step 1: Extract compile flags
-    print(f"Extracting compile flags from build.ninja...", file=out, flush=True)
+    print("Extracting compile flags from build.ninja...", file=out, flush=True)
     compile_flags = extract_compile_flags(arch)
 
     # Step 2: Compile C files (optionally from baseline commit)
@@ -1267,7 +1358,9 @@ def run_objdiff(arch: str = "i386", target: Optional[str] = None,
 
         path_overrides = None
         if baseline:
-            print(f"Extracting C files at baseline {baseline[:10]}...", file=out, end=" ", flush=True)
+            print(
+                f"Extracting C files at baseline {baseline[:10]}...", file=out, end=" ", flush=True
+            )
             baseline_dir = tmp_path / "baseline"
             baseline_dir.mkdir()
             path_overrides = extract_baseline_c_files(file_pairs, baseline, baseline_dir)
@@ -1275,21 +1368,28 @@ def run_objdiff(arch: str = "i386", target: Optional[str] = None,
             if not path_overrides:
                 print(f"Error: no C files found at commit {baseline}", file=out)
                 return ObjdiffReport(
-                    arch=arch, file_pairs=file_pairs, differences=[],
-                    compile_failures=[], c_symbols_count=0, rust_symbols_count=0,
+                    arch=arch,
+                    file_pairs=file_pairs,
+                    differences=[],
+                    compile_failures=[],
+                    c_symbols_count=0,
+                    rust_symbols_count=0,
                 )
 
         compile_count = len(path_overrides) if path_overrides else len(file_pairs)
         label = f"baseline {baseline[:10]}" if baseline else "current"
         print(f"Compiling {compile_count} C files ({label})...", file=out, end=" ", flush=True)
         c_obj_map, compile_failures = compile_c_files(
-            file_pairs, arch, tmp_path, compile_flags,
+            file_pairs,
+            arch,
+            tmp_path,
+            compile_flags,
             path_overrides=path_overrides,
         )
         print(f"done ({len(c_obj_map)} ok, {len(compile_failures)} failed)", file=out, flush=True)
 
         # Step 3: Extract Rust symbols
-        print(f"Extracting Rust symbols from libkernel_rust.a...", file=out, end=" ", flush=True)
+        print("Extracting Rust symbols from libkernel_rust.a...", file=out, end=" ", flush=True)
         rust_all_syms = extract_rust_symbols(arch)
         print(f"{len(rust_all_syms)} symbols", file=out, flush=True)
 
@@ -1298,14 +1398,14 @@ def run_objdiff(arch: str = "i386", target: Optional[str] = None,
 
         # Deep analysis: analyze Rust prologues from the .a file
         if deep:
-            print(f"Analyzing Rust prologues...", file=out, end=" ", flush=True)
+            print("Analyzing Rust prologues...", file=out, end=" ", flush=True)
             rust_lib = _find_rust_lib(arch)
             if rust_lib:
                 analyze_prologues(rust_lib, rust_all_syms, arch)
                 analyzed = sum(1 for s in rust_all_syms.values() if s.stack_frame_size >= 0)
                 print(f"{analyzed} prologues parsed", file=out, flush=True)
             else:
-                print(f"skipped (lib not found)", file=out, flush=True)
+                print("skipped (lib not found)", file=out, flush=True)
 
         # Step 4: Extract C symbols + Step 5: Calling convention analysis
         print(f"Analyzing {len(c_obj_map)} C object files...", file=out, flush=True)
@@ -1315,7 +1415,6 @@ def run_objdiff(arch: str = "i386", target: Optional[str] = None,
         # Load spec for cross-reference
         spec = None
         try:
-            from .spec_parser import parse_spec
             spec = parse_spec()
         except Exception:
             pass

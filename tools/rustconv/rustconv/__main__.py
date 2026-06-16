@@ -1,11 +1,85 @@
 """CLI entry point for rustconv."""
 
 import argparse
+import collections
+import difflib
+import json
+import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .config import (NTOSKRNL_DIR, REACTOS_ROOT, get_backend, DEFAULT_MODELS,
-                     detect_target, make_user_dll_target, TARGETS)
+from . import (
+    callout_annotate,
+    file_splitter,
+    gdi_lock_inventory,
+    seh_belt,
+    seh_inventory,
+    seh_llm_lower,
+    seh_rewrite,
+    semdiff,
+    switch_extract,
+    user_lock_inventory,
+)
+from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
+from .batch_runner import TranslationResult, submit_batch, submit_single
+from .c2rust_anchor import build_anchor_map, build_preamble
+from .callgraph import extract_call_graph, topological_sort
+from .catalog import build_catalog, print_catalog_stats
+from .checker import check_all_targets, print_check_report
+from .config import (
+    BATCH_DISCOUNT,
+    DEFAULT_MODELS,
+    HAL_DIR,
+    MODEL_PRICING,
+    NTOSKRNL_DIR,
+    OUTPUT_CRATE,
+    REACTOS_ROOT,
+    TARGETS,
+    cost_usd,
+    detect_target,
+    get_backend,
+    make_user_dll_target,
+)
+from .extern_audit import run_extern_audit, run_extern_fix
+from .function_prompt import (
+    build_file_context,
+    build_function_prompt,
+    build_preamble_prompt,
+    load_function_system_prompt,
+)
+from .function_resolver import resolve_function
+from .objdiff import run_objdiff
+from .postprocess import postprocess
+from .probe_migrate import (
+    build_probe_file_prompt,
+    load_probe_system_prompt,
+    run_probe_migration,
+    scan_rust_file,
+)
+from .prompt_builder import (
+    build_file_prompt,
+    build_full_prompt,
+    estimate_tokens,
+    load_system_prompt,
+)
+from .resolver import print_resolve_result, resolve
+from .resolver import resolve as file_resolve
+from .response_cache import PREAMBLE_KEY, ResponseCache
+from .scanner import print_scan_result, scan_file
+from .seh_classifier import classify_directory, classify_file, print_classification, to_json
+from .shim_generator import check_shims, generate_shims
+from .sink import (
+    ResponseSink,
+    RunArchive,
+    install_kill_guard,
+    paid_invocation_banner,
+    warn_if_tmp_output,
+)
+from .spec_parser import parse_spec
+from .stitcher import stitch_file
+from .trace_catalog import generate_catalog, print_catalog
 
 
 def resolve_target(args, path):
@@ -27,6 +101,7 @@ def resolve_target(args, path):
         return make_user_dll_target(name, src)
     return detect_target(path)
 
+
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
     "sonnet": "claude-sonnet-4-5-20250929",
@@ -36,12 +111,12 @@ MODEL_ALIASES = {
     "gemini-pro": "gemini-2.5-pro",
     "gemini-flash": "gemini-2.5-flash",
     # The provisioned key serves the v4 tier (deepseek-v4-pro / deepseek-v4-flash).
-    "deepseek": "deepseek-v4-pro",        # default to pro for translation quality
+    "deepseek": "deepseek-v4-pro",  # default to pro for translation quality
     "deepseek-pro": "deepseek-v4-pro",
     "deepseek-flash": "deepseek-v4-flash",
     "deepseek-v4-pro": "deepseek-v4-pro",
     "deepseek-v4-flash": "deepseek-v4-flash",
-    "deepseek-chat": "deepseek-chat",     # legacy aliases (route server-side)
+    "deepseek-chat": "deepseek-chat",  # legacy aliases (route server-side)
     "deepseek-r1": "deepseek-reasoner",
     "deepseek-reasoner": "deepseek-reasoner",
 }
@@ -64,15 +139,15 @@ def resolve_c_path(path_str: str) -> Path:
     if candidate.exists():
         return candidate.resolve()
     # Try as relative to hal/ (HAL target)
-    from .config import HAL_DIR
+
     hal_candidate = HAL_DIR / path_str
     if hal_candidate.exists():
         return hal_candidate.resolve()
     # Try with .c extension
-    candidate_c = NTOSKRNL_DIR / (path_str + ".c") if not path_str.endswith('.c') else candidate
+    candidate_c = NTOSKRNL_DIR / (path_str + ".c") if not path_str.endswith(".c") else candidate
     if candidate_c.exists():
         return candidate_c.resolve()
-    hal_candidate_c = HAL_DIR / (path_str + ".c") if not path_str.endswith('.c') else hal_candidate
+    hal_candidate_c = HAL_DIR / (path_str + ".c") if not path_str.endswith(".c") else hal_candidate
     if hal_candidate_c.exists():
         return hal_candidate_c.resolve()
     print(f"Error: file not found: {path_str}", file=sys.stderr)
@@ -81,56 +156,57 @@ def resolve_c_path(path_str: str) -> Path:
 
 
 def cmd_scan(args):
-    from .scanner import scan_file, print_scan_result
+
     path = resolve_c_path(args.file)
     result = scan_file(path)
     print_scan_result(result)
 
 
 def cmd_semdiff(args):
-    from .semdiff import run
+
     only = [s.strip() for s in args.only.split(",")] if args.only else None
-    rc = run(args.file, rust_file=args.rust, model=args.model, only=only,
-             max_fns=args.max_fns, use_cache=not args.no_cache,
-             workers=args.workers)
+    rc = semdiff.run(
+        args.file,
+        rust_file=args.rust,
+        model=args.model,
+        only=only,
+        max_fns=args.max_fns,
+        use_cache=not args.no_cache,
+        workers=args.workers,
+    )
     sys.exit(rc)
 
 
 def cmd_resolve(args):
-    from .scanner import scan_file
-    from .catalog import build_catalog, print_catalog_stats
-    from .spec_parser import parse_spec
-    from .resolver import resolve, print_resolve_result
 
     path = resolve_c_path(args.file)
-    target = resolve_target(args,path)
+    target = resolve_target(args, path)
 
     print(f"Building catalog... (target={target.name})", file=sys.stderr)
     catalog = build_catalog(arch=args.arch, target=target)
     print_catalog_stats(catalog)
     print()
 
-    spec = (parse_spec(target.spec_file)
-            if target.spec_file and target.spec_file.exists()
-            else parse_spec())
+    spec = (
+        parse_spec(target.spec_file)
+        if target.spec_file and target.spec_file.exists()
+        else parse_spec()
+    )
     scan = scan_file(path)
     result = resolve(scan, catalog, spec)
     print_resolve_result(result)
 
 
 def cmd_prompt(args):
-    from .scanner import scan_file
-    from .catalog import build_catalog
-    from .spec_parser import parse_spec
-    from .resolver import resolve
-    from .prompt_builder import build_full_prompt, build_file_prompt, load_system_prompt, estimate_tokens
 
     path = resolve_c_path(args.file)
-    target = resolve_target(args,path)
+    target = resolve_target(args, path)
     catalog = build_catalog(arch=args.arch, target=target)
-    spec = (parse_spec(target.spec_file)
-            if target.spec_file and target.spec_file.exists()
-            else parse_spec())
+    spec = (
+        parse_spec(target.spec_file)
+        if target.spec_file and target.spec_file.exists()
+        else parse_spec()
+    )
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 
@@ -144,25 +220,15 @@ def cmd_prompt(args):
 
 
 def cmd_submit(args):
-    from .scanner import scan_file
-    from .catalog import build_catalog
-    from .spec_parser import parse_spec
-    from .resolver import resolve
-    from .prompt_builder import build_file_prompt, load_system_prompt, build_full_prompt
-    from .batch_runner import submit_single
-    from .assembler import assemble_file
-    from .postprocess import postprocess
-    from .sink import (RunArchive, ResponseSink, install_kill_guard,
-                       paid_invocation_banner, warn_if_tmp_output)
-    from .prompt_builder import estimate_tokens
-    from .config import cost_usd
 
     path = resolve_c_path(args.file)
-    target = resolve_target(args,path)
+    target = resolve_target(args, path)
     catalog = build_catalog(arch=args.arch, target=target)
-    spec = (parse_spec(target.spec_file)
-            if target.spec_file and target.spec_file.exists()
-            else parse_spec())
+    spec = (
+        parse_spec(target.spec_file)
+        if target.spec_file and target.spec_file.exists()
+        else parse_spec()
+    )
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 
@@ -181,23 +247,24 @@ def cmd_submit(args):
     warn_if_tmp_output(getattr(args, "output", None))
     archive = RunArchive(label=path.name, model=model, target=target.name)
     install_kill_guard(archive)
-    paid_invocation_banner(model, 1,
-                           estimate_tokens(file_prompt) + estimate_tokens(system_prompt),
-                           archive)
+    paid_invocation_banner(
+        model, 1, estimate_tokens(file_prompt) + estimate_tokens(system_prompt), archive
+    )
     sink = ResponseSink(archive.stream_path(0, path.stem))
 
     print(f"Submitting to {model}...", file=sys.stderr)
     try:
-        result = submit_single(file_prompt, model=model,
-                               system_prompt=system_prompt, sink=sink)
+        result = submit_single(file_prompt, model=model, system_prompt=system_prompt, sink=sink)
     finally:
         sink.close()
     result.source_file = path.name
     if result.success:
-        archive.commit(0, path.stem, result.rust_code,
-                       result.input_tokens, result.output_tokens)
-        print(f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
-              f"| archived: {archive.dir}", file=sys.stderr)
+        archive.commit(0, path.stem, result.rust_code, result.input_tokens, result.output_tokens)
+        print(
+            f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
+            f"| archived: {archive.dir}",
+            file=sys.stderr,
+        )
 
     if not result.success:
         print(f"Error: {result.error}", file=sys.stderr)
@@ -210,32 +277,41 @@ def cmd_submit(args):
 
     if args.output:
         # Post-process before writing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name,
-                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
+        code = postprocess(
+            result.rust_code,
+            exports=res.exports,
+            globals=scan.globals,
+            target_name=target.name,
+            sys_crate=target.sys_crate,
+            sys_umbrella=target.sys_umbrella,
+        )
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
-        out_path = assemble_file(result, subsystem, scan.raw_source,
-                                 exports=res.exports, scan=scan,
-                                 target=target, c_source_path=path)
+        out_path = assemble_file(
+            result,
+            subsystem,
+            scan.raw_source,
+            exports=res.exports,
+            scan=scan,
+            target=target,
+            c_source_path=path,
+        )
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
         # Post-process before printing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name,
-                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
+        code = postprocess(
+            result.rust_code,
+            exports=res.exports,
+            globals=scan.globals,
+            target_name=target.name,
+            sys_crate=target.sys_crate,
+            sys_umbrella=target.sys_umbrella,
+        )
         print(code)
 
 
 def cmd_batch(args):
-    from .scanner import scan_file
-    from .catalog import build_catalog
-    from .spec_parser import parse_spec
-    from .resolver import resolve
-    from .prompt_builder import build_file_prompt, load_system_prompt, build_full_prompt
-    from .batch_runner import submit_batch
-    from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
 
     dir_path = Path(args.directory)
     if not dir_path.is_absolute():
@@ -286,16 +362,18 @@ def cmd_batch(args):
         if result.success:
             c_source = scans[filename].raw_source
             res = resolves[filename]
-            assemble_file(result, subsystem, c_source,
-                          exports=res.exports, scan=scans[filename])
+            assemble_file(result, subsystem, c_source, exports=res.exports, scan=scans[filename])
             module_names.append(Path(filename).stem)
 
     if module_names:
         generate_mod_rs(subsystem, module_names)
         # Only update lib.rs for top-level subsystems (not nested like ke/i386)
-        if '/' not in subsystem:
+        if "/" not in subsystem:
             generate_lib_rs([subsystem])
-        print(f"\nAssembled {len(module_names)} modules into ntoskrnl-rust/src/{subsystem}/", file=sys.stderr)
+        print(
+            f"\nAssembled {len(module_names)} modules into ntoskrnl-rust/src/{subsystem}/",
+            file=sys.stderr,
+        )
 
     # Report failures
     failures = [f for f, r in results.items() if not r.success]
@@ -306,13 +384,12 @@ def cmd_batch(args):
 
 
 def cmd_check(args):
-    from .checker import check_all_targets, print_check_report
+
     results = check_all_targets()
     print_check_report(results)
 
 
 def cmd_shims(args):
-    from .shim_generator import generate_shims, check_shims
 
     subsystem = args.subsystem
 
@@ -329,7 +406,6 @@ def cmd_shims(args):
             Path(args.output).write_text(output)
             print(f"Written to {args.output}", file=sys.stderr)
         elif args.write:
-            from .config import NTOSKRNL_DIR
             out_path = NTOSKRNL_DIR / subsystem / f"{subsystem}_rust_shims.c"
             out_path.write_text(output)
             print(f"Written to {out_path}", file=sys.stderr)
@@ -338,7 +414,6 @@ def cmd_shims(args):
 
 
 def cmd_seh_classify(args):
-    from .seh_classifier import classify_file, classify_directory, print_classification, to_json
 
     target = Path(args.path)
     if not target.is_absolute():
@@ -359,56 +434,54 @@ def cmd_seh_classify(args):
 
 
 def cmd_seh_inventory(args):
-    from .seh_inventory import (
-        inventory_file, inventory_keepset, write_sidecar,
-        print_summary, run_oracle,
-    )
-    from .config import REACTOS_ROOT
 
     if args.oracle:
         winsta = REACTOS_ROOT / "win32ss/user/ntuser/winsta.c"
-        sys.exit(run_oracle(winsta))
+        sys.exit(seh_inventory.run_oracle(winsta))
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
 
     if target.is_file():
-        sites = inventory_file(target)
+        sites = seh_inventory.inventory_file(target)
         if args.write_sidecars:
-            print(f"wrote {write_sidecar(target, sites)}")
+            print(f"wrote {seh_inventory.write_sidecar(target, sites)}")
         if args.json:
-            print(json.dumps(
-                {"source": str(target),
-                 "sites": [s.__dict__ | {"category": s.category.value}
-                           for s in sites]},
-                indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "source": str(target),
+                        "sites": [s.__dict__ | {"category": s.category.value} for s in sites],
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             for s in sites:
                 sig = (" " + ",".join(s.signals)) if s.signals else ""
-                print(f"  ({s.category.value}) {s.function} "
-                      f"L{s.line_start}-{s.line_end}{sig}"
-                      f"{('  — ' + s.note) if s.note else ''}")
+                print(
+                    f"  ({s.category.value}) {s.function} "
+                    f"L{s.line_start}-{s.line_end}{sig}"
+                    f"{('  — ' + s.note) if s.note else ''}"
+                )
     elif target.is_dir():
-        inv = inventory_keepset(target)
+        inv = seh_inventory.inventory_keepset(target)
         if args.write_sidecars:
             for p, ss in inv.items():
-                write_sidecar(p, ss)
+                seh_inventory.write_sidecar(p, ss)
             print(f"wrote {len(inv)} sidecars")
-        print_summary(inv)
+        seh_inventory.print_summary(inv)
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
 
 def cmd_seh_rewrite(args):
-    import difflib
-    from .seh_rewrite import rewrite_file, run_oracle
-    from .config import REACTOS_ROOT
-    from .seh_inventory import inventory_keepset, Category
 
     if args.oracle:
-        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/winsta.c"))
+        sys.exit(seh_rewrite.run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/winsta.c"))
 
     target = Path(args.path)
     if not target.is_absolute():
@@ -416,26 +489,26 @@ def cmd_seh_rewrite(args):
 
     def do_one(p: Path):
         orig = p.read_text(errors="replace")
-        res = rewrite_file(p)
+        res = seh_rewrite.rewrite_file(p)
         if args.apply and res.rewritten:
             p.write_text(res.text)
         if not args.apply:
             diff = difflib.unified_diff(
-                orig.splitlines(True), res.text.splitlines(True),
-                f"a/{p.name}", f"b/{p.name}")
+                orig.splitlines(True), res.text.splitlines(True), f"a/{p.name}", f"b/{p.name}"
+            )
             sys.stdout.writelines(diff)
         return res
 
     if target.is_file():
         res = do_one(target)
-        print(f"\n{target.name}: rewritten={res.rewritten} "
-              f"skipped={len(res.skipped)}", file=sys.stderr)
+        print(
+            f"\n{target.name}: rewritten={res.rewritten} skipped={len(res.skipped)}",
+            file=sys.stderr,
+        )
         for ln, why in res.skipped:
             print(f"  skip L{ln}: {why}", file=sys.stderr)
     elif target.is_dir():
-        import json as _json
-        import collections
-        inv = inventory_keepset(target)
+        inv = seh_inventory.inventory_keepset(target)
         tot_rw = tot_sk = 0
         hist: dict[str, int] = collections.Counter()
         manifest = []
@@ -445,17 +518,19 @@ def cmd_seh_rewrite(args):
             tot_sk += len(r.skipped)
             for ln, why in r.skipped:
                 hist[why] += 1
-                manifest.append({"file": str(p.relative_to(target)),
-                                 "line": ln, "reason": why})
+                manifest.append({"file": str(p.relative_to(target)), "line": ln, "reason": why})
         if args.apply:
             mpath = target / "win32k_pass1_manual_followup.json"
-            mpath.write_text(_json.dumps(
-                {"rewritten": tot_rw, "skipped": tot_sk,
-                 "sites": manifest}, indent=2))
+            mpath.write_text(
+                json.dumps({"rewritten": tot_rw, "skipped": tot_sk, "sites": manifest}, indent=2)
+            )
             print(f"manual-followup ledger: {mpath}", file=sys.stderr)
-        print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
-              f"{tot_rw} sites rewritten, {tot_sk} skipped across "
-              f"{len(inv)} files", file=sys.stderr)
+        print(
+            f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+            f"{tot_rw} sites rewritten, {tot_sk} skipped across "
+            f"{len(inv)} files",
+            file=sys.stderr,
+        )
         print("skip reasons:", file=sys.stderr)
         for why, n in sorted(hist.items(), key=lambda x: -x[1]):
             print(f"  {n:>4}  {why}", file=sys.stderr)
@@ -466,12 +541,9 @@ def cmd_seh_rewrite(args):
 
 def cmd_seh_belt(args):
     """Pass 1c: delete (d) BELT_SUSPENDERS SEH wrappers (live re-classify)."""
-    import difflib
-    from .seh_belt import rewrite_file, iter_keepset, run_oracle
-    from .config import REACTOS_ROOT
 
     if args.oracle:
-        sys.exit(run_oracle())
+        sys.exit(seh_belt.run_oracle())
 
     target = Path(args.path)
     if not target.is_absolute():
@@ -479,26 +551,28 @@ def cmd_seh_belt(args):
 
     def do_one(p: Path):
         orig = p.read_text(errors="replace")
-        res = rewrite_file(p)
+        res = seh_belt.rewrite_file(p)
         if args.apply and res.rewritten:
             p.write_text(res.text)
         if not args.apply and res.text != orig:
             diff = difflib.unified_diff(
-                orig.splitlines(True), res.text.splitlines(True),
-                f"a/{p.name}", f"b/{p.name}")
+                orig.splitlines(True), res.text.splitlines(True), f"a/{p.name}", f"b/{p.name}"
+            )
             sys.stdout.writelines(diff)
         return res
 
     if target.is_file():
         res = do_one(target)
-        print(f"\n{target.name}: rewritten={res.rewritten} "
-              f"skipped={len(res.skipped)}", file=sys.stderr)
+        print(
+            f"\n{target.name}: rewritten={res.rewritten} skipped={len(res.skipped)}",
+            file=sys.stderr,
+        )
         for ln, why in res.skipped:
             print(f"  skip L{ln}: {why}", file=sys.stderr)
     elif target.is_dir():
         tot_rw = tot_sk = files_touched = 0
         skip_reasons: list[tuple[str, int, str]] = []
-        for p in iter_keepset(target):
+        for p in seh_belt.iter_keepset(target):
             r = do_one(p)
             if r.rewritten or r.skipped:
                 if r.rewritten:
@@ -507,10 +581,12 @@ def cmd_seh_belt(args):
                 tot_sk += len(r.skipped)
                 for ln, why in r.skipped:
                     skip_reasons.append((str(p.relative_to(target)), ln, why))
-        print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
-              f"{tot_rw} BELT_SUSPENDERS sites deleted across "
-              f"{files_touched} files; {tot_sk} skipped",
-              file=sys.stderr)
+        print(
+            f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+            f"{tot_rw} BELT_SUSPENDERS sites deleted across "
+            f"{files_touched} files; {tot_sk} skipped",
+            file=sys.stderr,
+        )
         for f, ln, why in skip_reasons:
             print(f"  skip {f}:L{ln} — {why}", file=sys.stderr)
     else:
@@ -519,119 +595,125 @@ def cmd_seh_belt(args):
 
 
 def cmd_callout_annotate(args):
-    from .callout_annotate import (
-        extract_file, extract_keepset, write_sidecar,
-        print_summary, run_oracle,
-    )
-    from .config import REACTOS_ROOT
 
     if args.oracle:
-        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/callback.c"))
+        sys.exit(callout_annotate.run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/callback.c"))
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
 
     if target.is_file():
-        sites = extract_file(target)
+        sites = callout_annotate.extract_file(target)
         if args.write_sidecars:
-            print(f"wrote {write_sidecar(target, sites)}")
+            print(f"wrote {callout_annotate.write_sidecar(target, sites)}")
         if args.json:
-            print(json.dumps(
-                {"source": str(target),
-                 "sites": [s.__dict__ for s in sites]},
-                indent=2, default=str))
+            print(
+                json.dumps(
+                    {"source": str(target), "sites": [s.__dict__ for s in sites]},
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             for s in sites:
                 sig = (" " + ",".join(s.signals)) if s.signals else ""
-                print(f"  {s.function} L{s.func_line} "
-                      f"{s.callback_index} @KUMC L{s.kumc_line} "
-                      f"[Leave L{s.leave_co_line} / Enter L{s.enter_co_line} "
-                      f"/ probe L{s.result_probe_line}]{sig}")
+                print(
+                    f"  {s.function} L{s.func_line} "
+                    f"{s.callback_index} @KUMC L{s.kumc_line} "
+                    f"[Leave L{s.leave_co_line} / Enter L{s.enter_co_line} "
+                    f"/ probe L{s.result_probe_line}]{sig}"
+                )
     elif target.is_dir():
-        inv = extract_keepset(target)
+        inv = callout_annotate.extract_keepset(target)
         if args.write_sidecars:
             for p, ss in inv.items():
-                write_sidecar(p, ss)
+                callout_annotate.write_sidecar(p, ss)
             print(f"wrote {len(inv)} sidecars")
-        print_summary(inv)
+        callout_annotate.print_summary(inv)
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
 
 def cmd_seh_llm_lower(args):
-    from .seh_llm_lower import run, print_report, run_oracle, load_units
 
     if args.oracle:
-        sys.exit(run_oracle())
+        sys.exit(seh_llm_lower.run_oracle())
 
-    units = load_units(args.only)
-    print(f"{len(units)} dedup'd functions "
-          f"({sum(len(u.reasons) for u in units)} ledger sites) "
-          f"{'[--only ' + args.only + ']' if args.only else ''}",
-          file=sys.stderr)
-    outcomes = run(apply=args.apply, model=args.model,
-                   only=args.only, units=units)
+    units = seh_llm_lower.load_units(args.only)
+    print(
+        f"{len(units)} dedup'd functions "
+        f"({sum(len(u.reasons) for u in units)} ledger sites) "
+        f"{'[--only ' + args.only + ']' if args.only else ''}",
+        file=sys.stderr,
+    )
+    outcomes = seh_llm_lower.run(apply=args.apply, model=args.model, only=args.only, units=units)
     if args.diff:
         for o in outcomes:
             if o.applied and o.diff:
                 sys.stdout.write(o.diff)
-    sys.exit(print_report(outcomes, args.apply))
+    sys.exit(seh_llm_lower.print_report(outcomes, args.apply))
 
 
 def cmd_split_plan(args):
-    from .file_splitter import analyze_file, analyze_scope, print_report
-    from .config import REACTOS_ROOT
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
 
     if target.is_file():
-        plans = [analyze_file(target, args.target_loc)]
+        plans = [file_splitter.analyze_file(target, args.target_loc)]
     else:
-        plans = analyze_scope(target, args.min_loc, args.target_loc)
+        plans = file_splitter.analyze_scope(target, args.min_loc, args.target_loc)
 
     if args.json:
-        print(json.dumps([{
-            "file": str(p.path), "loc": p.loc, "nfuncs": p.nfuncs,
-            "classification": p.classification, "groups": p.groups,
-            "blocking": p.blocking, "note": p.note} for p in plans],
-            indent=2, default=str))
+        print(
+            json.dumps(
+                [
+                    {
+                        "file": str(p.path),
+                        "loc": p.loc,
+                        "nfuncs": p.nfuncs,
+                        "classification": p.classification,
+                        "groups": p.groups,
+                        "blocking": p.blocking,
+                        "note": p.note,
+                    }
+                    for p in plans
+                ],
+                indent=2,
+                default=str,
+            )
+        )
     else:
-        print_report(plans)
+        file_splitter.print_report(plans)
 
 
 def cmd_switch_extract(args):
-    from .switch_extract import analyze, run_oracle
-    from .config import REACTOS_ROOT
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
     if args.oracle:
-        sys.exit(run_oracle(target, args.function))
+        sys.exit(switch_extract.run_oracle(target, args.function))
 
-    r = analyze(target, args.function)
-    print(f"{target.as_posix().split('/win32ss/')[-1]}:{args.function} — "
-          f"{r.note}", file=sys.stderr)
+    r = switch_extract.analyze(target, args.function)
+    print(f"{target.as_posix().split('/win32ss/')[-1]}:{args.function} — {r.note}", file=sys.stderr)
     for g in r.groups:
         tag = ("SAFE→" + g.tag) if g.safe else "inline"
-        print(f"  [{tag}] {'/'.join(g.labels[:3])}"
-              f"{'…' if len(g.labels) > 3 else ''}  {g.reason}",
-              file=sys.stderr)
+        print(
+            f"  [{tag}] {'/'.join(g.labels[:3])}{'…' if len(g.labels) > 3 else ''}  {g.reason}",
+            file=sys.stderr,
+        )
     if args.apply and r.new_text:
         target.write_text(r.new_text)
         print(f"APPLIED → {target}", file=sys.stderr)
     elif not r.new_text:
-        print("nothing applied (no safe arms / oracle fail)",
-              file=sys.stderr)
+        print("nothing applied (no safe arms / oracle fail)", file=sys.stderr)
 
 
 def cmd_split_apply(args):
-    from .file_splitter import (analyze_scope, plan_emit, apply_emit)
-    from .config import REACTOS_ROOT
 
     targets: list[Path] = []
     if args.path:
@@ -640,114 +722,111 @@ def cmd_split_apply(args):
             t = REACTOS_ROOT / args.path
         targets = [t]
     else:
-        for pl in analyze_scope(REACTOS_ROOT / "win32ss",
-                                args.min_loc, args.target_loc):
+        for pl in file_splitter.analyze_scope(
+            REACTOS_ROOT / "win32ss", args.min_loc, args.target_loc
+        ):
             if pl.classification == "CLEAN_SPLIT":
                 targets.append(pl.path)
 
     for t in targets:
-        em = plan_emit(t, args.target_loc)
+        em = file_splitter.plan_emit(t, args.target_loc)
         rel = t.as_posix().split("/win32ss/")[-1]
         if not em.fragments:
             print(f"  skip {rel}: {em.note}")
             continue
         names = ", ".join(p.name for p, _ in em.fragments)
-        print(f"  {'APPLY' if args.apply else 'plan'} {rel} → "
-              f"{rel.rsplit('/',1)[-1]} + [{names}]  ({em.note})")
+        print(
+            f"  {'APPLY' if args.apply else 'plan'} {rel} → "
+            f"{rel.rsplit('/', 1)[-1]} + [{names}]  ({em.note})"
+        )
         if args.apply:
-            apply_emit(em)
+            file_splitter.apply_emit(em)
 
 
 def cmd_gdi_locks(args):
-    from .gdi_lock_inventory import (
-        extract_file, extract_keepset, write_sidecar,
-        print_summary, run_oracle,
-    )
-    from .config import REACTOS_ROOT
 
     if args.oracle:
-        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/gdi/ntgdi/dcutil.c"))
+        sys.exit(gdi_lock_inventory.run_oracle(REACTOS_ROOT / "win32ss/gdi/ntgdi/dcutil.c"))
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
 
     if target.is_file():
-        sites = extract_file(target)
+        sites = gdi_lock_inventory.extract_file(target)
         if args.write_sidecars:
-            print(f"wrote {write_sidecar(target, sites)}")
+            print(f"wrote {gdi_lock_inventory.write_sidecar(target, sites)}")
         if args.json:
-            print(json.dumps(
-                {"source": str(target),
-                 "sites": [s.__dict__ for s in sites]},
-                indent=2, default=str))
+            print(
+                json.dumps(
+                    {"source": str(target), "sites": [s.__dict__ for s in sites]},
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             for s in sites:
                 sig = (" " + ",".join(s.signals)) if s.signals else ""
-                print(f"  {s.function} L{s.func_line} "
-                      f"{s.lock_fn}→{s.unlock_fn} {s.var}@L{s.lock_line} "
-                      f"[{s.shape}] unlock@{s.unlock_lines}{sig}")
+                print(
+                    f"  {s.function} L{s.func_line} "
+                    f"{s.lock_fn}→{s.unlock_fn} {s.var}@L{s.lock_line} "
+                    f"[{s.shape}] unlock@{s.unlock_lines}{sig}"
+                )
     elif target.is_dir():
-        inv = extract_keepset(target)
+        inv = gdi_lock_inventory.extract_keepset(target)
         if args.write_sidecars:
             for p, ss in inv.items():
-                write_sidecar(p, ss)
+                gdi_lock_inventory.write_sidecar(p, ss)
             print(f"wrote {len(inv)} sidecars")
-        print_summary(inv)
+        gdi_lock_inventory.print_summary(inv)
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
 
 def cmd_user_locks(args):
-    from .user_lock_inventory import (
-        extract_file, extract_keepset, write_sidecar,
-        print_summary, run_oracle,
-    )
-    from .config import REACTOS_ROOT
 
     if args.oracle:
-        sys.exit(run_oracle(
-            REACTOS_ROOT / "win32ss/user/ntuser/simplecall.c"))
+        sys.exit(user_lock_inventory.run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/simplecall.c"))
 
     target = Path(args.path)
     if not target.is_absolute():
         target = REACTOS_ROOT / args.path
 
     if target.is_file():
-        sites = extract_file(target)
+        sites = user_lock_inventory.extract_file(target)
         if args.write_sidecars:
-            print(f"wrote {write_sidecar(target, sites)}")
+            print(f"wrote {user_lock_inventory.write_sidecar(target, sites)}")
         if args.json:
-            print(json.dumps(
-                {"source": str(target),
-                 "sites": [s.__dict__ for s in sites]},
-                indent=2, default=str))
+            print(
+                json.dumps(
+                    {"source": str(target), "sites": [s.__dict__ for s in sites]},
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             for s in sites:
                 sig = (" " + ",".join(s.signals)) if s.signals else ""
-                print(f"  {s.function} L{s.func_line} {s.mode} "
-                      f"enter@L{s.enter_line}"
-                      f"{'(top)' if s.enter_at_top else ''} "
-                      f"[{s.shape}] leave@{s.leave_lines}{sig}")
+                print(
+                    f"  {s.function} L{s.func_line} {s.mode} "
+                    f"enter@L{s.enter_line}"
+                    f"{'(top)' if s.enter_at_top else ''} "
+                    f"[{s.shape}] leave@{s.leave_lines}{sig}"
+                )
     elif target.is_dir():
-        inv = extract_keepset(target)
+        inv = user_lock_inventory.extract_keepset(target)
         if args.write_sidecars:
             for p, ss in inv.items():
-                write_sidecar(p, ss)
+                user_lock_inventory.write_sidecar(p, ss)
             print(f"wrote {len(inv)} sidecars")
-        print_summary(inv)
+        user_lock_inventory.print_summary(inv)
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
 
 def cmd_probe_migrate(args):
-    from .probe_migrate import (
-        scan_rust_file, find_rust_files, run_probe_migration,
-        load_probe_system_prompt, build_probe_file_prompt,
-    )
-    from .config import OUTPUT_CRATE
 
     # Resolve paths
     target = Path(args.path)
@@ -815,28 +894,12 @@ def cmd_probe_migrate(args):
 
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
-    from .scanner import scan_file
-    from .catalog import build_catalog
-    from .spec_parser import parse_spec
-    from .resolver import resolve as file_resolve
-    from .callgraph import extract_call_graph, topological_sort, print_call_graph
-    from .function_resolver import resolve_function
-    from .function_prompt import build_function_prompt, build_file_context, build_preamble_prompt, load_function_system_prompt
-    from .response_cache import ResponseCache, PREAMBLE_KEY
-    from .stitcher import stitch_file
-    from .batch_runner import submit_single, TranslationResult
-    from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
-    from .postprocess import postprocess
-    from .prompt_builder import estimate_tokens
-    from .sink import (RunArchive, ResponseSink, install_kill_guard,
-                       paid_invocation_banner, warn_if_tmp_output)
-    from .config import cost_usd
 
     # Resolve target: single file or directory
     target_path = Path(args.path)
     if not target_path.is_absolute():
         # Try repo-root-relative, ntoskrnl-relative, hal-relative.
-        from .config import REACTOS_ROOT, HAL_DIR
+
         candidates = [
             REACTOS_ROOT / args.path,
             NTOSKRNL_DIR / args.path,
@@ -845,7 +908,7 @@ def cmd_translate(args):
         target_path = next((c for c in candidates if c.exists()), candidates[0])
 
     # Detect target (ntoskrnl vs hal) from the path
-    rustconv_target = resolve_target(args,target_path)
+    rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
     if target_path.is_file():
@@ -865,10 +928,13 @@ def cmd_translate(args):
 
     # HAL doesn't currently support arm64 catalog/translation.
     if rustconv_target.name == "hal" and args.arch not in rustconv_target.arches:
-        print(f"HAL target does not support arch={args.arch}; supported: {rustconv_target.arches}", file=sys.stderr)
+        print(
+            f"HAL target does not support arch={args.arch}; supported: {rustconv_target.arches}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    print(f"Building catalog...", file=sys.stderr)
+    print("Building catalog...", file=sys.stderr)
     catalog = build_catalog(arch=args.arch, target=rustconv_target)
     # HAL has no .spec file — exports come from C source headers + Cargo no_mangle.
     if rustconv_target.spec_file is not None:
@@ -891,8 +957,10 @@ def cmd_translate(args):
     # way Claude could. Claude/Gemini/idiomatic stay strictly sequential by policy.
     conc = max(1, getattr(args, "concurrency", 1) or 1)
     if conc > 1 and not (mode == "mechanical" and model.startswith("deepseek-")):
-        print(f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
-              file=sys.stderr)
+        print(
+            f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
+            file=sys.stderr,
+        )
         conc = 1
 
     # Durable archive + kill guard for this paid invocation. Every streamed
@@ -906,15 +974,14 @@ def cmd_translate(args):
     no_resume = getattr(args, "no_resume", False)
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
-        archive = RunArchive(label=target_path.name, model=model,
-                             target=rustconv_target.name)
+        archive = RunArchive(label=target_path.name, model=model, target=rustconv_target.name)
         install_kill_guard(archive)
 
     total_files = len(c_files)
     for file_idx, c_file in enumerate(c_files, 1):
-        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
-        print(f"{'='*60}", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
@@ -942,7 +1009,6 @@ def cmd_translate(args):
         c2rust_anchors: dict[str, str] = {}
         c2rust_preamble = ""
         if getattr(args, "c2rust", False):
-            from .c2rust_anchor import build_anchor_map, build_preamble
             c2rust_anchors = build_anchor_map(c_file)
             # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended to
             # the preamble so the LLM never has to (mis)transcribe a lookup table.
@@ -950,14 +1016,16 @@ def cmd_translate(args):
 
         if args.dry_run:
             # Just show the plan
-            print(f"\n  Translation order:", file=sys.stderr)
+            print("\n  Translation order:", file=sys.stderr)
             all_deps = extract_call_graph(scan, spec_exports=file_res.exports)
             local_names = {d.name for d in all_deps}
             for i, dep in enumerate(sorted_deps, 1):
                 exported = " [EXPORTED]" if dep.is_exported else ""
                 static = " [static]" if dep.is_static else ""
                 local_callees = dep.callees & local_names
-                callee_info = f" → calls: {', '.join(sorted(local_callees))}" if local_callees else ""
+                callee_info = (
+                    f" → calls: {', '.join(sorted(local_callees))}" if local_callees else ""
+                )
                 seh = f" (SEH×{dep.seh_count})" if dep.seh_count else ""
                 print(f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}", file=sys.stderr)
 
@@ -965,7 +1033,13 @@ def cmd_translate(args):
             if sorted_deps:
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
+                    sorted_deps[0],
+                    func_res,
+                    {},
+                    all_deps,
+                    scan,
+                    catalog_fn_names,
+                    file_res.exports,
                     target=rustconv_target,
                 )
                 if not use_claude:
@@ -977,8 +1051,15 @@ def cmd_translate(args):
                 # Print full prompt for first function
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
-                    target=rustconv_target, c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
+                    sorted_deps[0],
+                    func_res,
+                    {},
+                    all_deps,
+                    scan,
+                    catalog_fn_names,
+                    file_res.exports,
+                    target=rustconv_target,
+                    c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1004,17 +1085,26 @@ def cmd_translate(args):
         cache = ResponseCache(f"{subsystem}__{c_file.stem}")
         resumed = 0
         if cache.count() and not no_resume:
-            print(f"  Resume cache: {cache.count()} prior unit(s) on disk "
-                  f"(unchanged → $0)", file=sys.stderr)
+            print(
+                f"  Resume cache: {cache.count()} prior unit(s) on disk (unchanged → $0)",
+                file=sys.stderr,
+            )
 
         # One paid banner per file: n calls = functions + preamble. Rough input
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
         if archive is not None and sorted_deps:
             _fr0 = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
-            _p0 = build_function_prompt(sorted_deps[0], _fr0, {}, all_deps_for_context,
-                                        scan, catalog_fn_names, file_res.exports,
-                                        target=rustconv_target)
+            _p0 = build_function_prompt(
+                sorted_deps[0],
+                _fr0,
+                {},
+                all_deps_for_context,
+                scan,
+                catalog_fn_names,
+                file_res.exports,
+                target=rustconv_target,
+            )
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(sorted_deps)
             paid_invocation_banner(model, len(sorted_deps) + 1, _est_in, archive)
 
@@ -1025,8 +1115,6 @@ def cmd_translate(args):
         # collected first (free). Cost-cap sets a stop Event that blocks new submits
         # (in-flight calls — at most `conc` — may still land).
         if conc > 1:
-            import threading
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             todo = []
             for func_idx, dep in enumerate(sorted_deps, 1):
                 if not no_resume:
@@ -1036,56 +1124,97 @@ def cmd_translate(args):
                         resumed += 1
                         continue
                 todo.append((func_idx, dep))
-            ctx = dict(translated)   # static callee context (mechanical fns are independent)
+            ctx = dict(translated)  # static callee context (mechanical fns are independent)
             stop = threading.Event()
 
-            def _work(item):
+            # Bind the per-file loop vars as defaults so the closure captures this
+            # iteration's values (B023): the executor joins within the iteration, so
+            # these never change under it, but the explicit binding makes that provable.
+            def _work(
+                item,
+                *,
+                stop=stop,
+                ctx=ctx,
+                file_res=file_res,
+                scan=scan,
+                all_deps_for_context=all_deps_for_context,
+                c2rust_anchors=c2rust_anchors,
+                file_context=file_context,
+            ):
                 fi, dp = item
                 if stop.is_set():
                     return (fi, dp, None)
                 fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
-                up = build_function_prompt(dp, fres, ctx, all_deps_for_context, scan,
-                                           catalog_fn_names, file_res.exports,
-                                           target=rustconv_target, include_shared=False,
-                                           c2rust_anchor=c2rust_anchors.get(dp.name))
+                up = build_function_prompt(
+                    dp,
+                    fres,
+                    ctx,
+                    all_deps_for_context,
+                    scan,
+                    catalog_fn_names,
+                    file_res.exports,
+                    target=rustconv_target,
+                    include_shared=False,
+                    c2rust_anchor=c2rust_anchors.get(dp.name),
+                )
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
                 try:
-                    r = submit_single(up, model=model, system_prompt=system_prompt,
-                                      file_context=file_context, sink=sk)
+                    r = submit_single(
+                        up,
+                        model=model,
+                        system_prompt=system_prompt,
+                        file_context=file_context,
+                        sink=sk,
+                    )
                 finally:
                     if sk is not None:
                         sk.close()
                 return (fi, dp, r)
 
-            print(f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} "
-                  f"({resumed} cached)", file=sys.stderr)
+            print(
+                f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} ({resumed} cached)",
+                file=sys.stderr,
+            )
             with ThreadPoolExecutor(max_workers=conc) as ex:
                 for fut in as_completed([ex.submit(_work, it) for it in todo]):
                     fi, dp, r = fut.result()
                     if r is None:
-                        continue   # skipped after cost cap
+                        continue  # skipped after cost cap
                     if r.success:
                         translated[dp.name] = r.rust_code
                         cache.put(dp.name, dp.body_text, r.rust_code)
                         total_in += r.input_tokens
                         total_out += r.output_tokens
                         if archive is not None:
-                            archive.commit(fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens)
+                            archive.commit(
+                                fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens
+                            )
                             running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
-                        print(f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
-                              f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                        print(
+                            f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
+                            f"  [running ${running_cost:.2f}]",
+                            file=sys.stderr,
+                        )
                         if cost_cap is not None and running_cost >= cost_cap:
                             stop.set()
                             capped = True
-                            print(f"  ⛔ COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} "
-                                  f"— halting new calls", file=sys.stderr)
+                            print(
+                                f"  ⛔ COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} "
+                                f"— halting new calls",
+                                file=sys.stderr,
+                            )
                     else:
                         print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
 
         for func_idx, dep in enumerate(sorted_deps, 1):
             if conc > 1:
-                break   # already handled by the parallel path above
-            print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
+                break  # already handled by the parallel path above
+            print(
+                f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...",
+                file=sys.stderr,
+                end=" ",
+                flush=True,
+            )
 
             # Resume: reuse a prior unchanged-body translation for free. It still
             # feeds `translated` (callee context for later functions).
@@ -1105,9 +1234,15 @@ def cmd_translate(args):
             # (file_context), so include_shared=False keeps it out of the
             # full-price per-function user message.
             user_prompt = build_function_prompt(
-                dep, func_res, translated, all_deps_for_context,
-                scan, catalog_fn_names, file_res.exports,
-                target=rustconv_target, include_shared=False,
+                dep,
+                func_res,
+                translated,
+                all_deps_for_context,
+                scan,
+                catalog_fn_names,
+                file_res.exports,
+                target=rustconv_target,
+                include_shared=False,
                 c2rust_anchor=c2rust_anchors.get(dep.name),
             )
 
@@ -1117,9 +1252,13 @@ def cmd_translate(args):
                 sink = ResponseSink(archive.stream_path(func_idx, dep.name))
             try:
                 if use_claude:
-                    result = submit_single(user_prompt, model=model,
-                                           system_prompt=system_prompt,
-                                           file_context=file_context, sink=sink)
+                    result = submit_single(
+                        user_prompt,
+                        model=model,
+                        system_prompt=system_prompt,
+                        file_context=file_context,
+                        sink=sink,
+                    )
                 else:
                     prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
                     full_prompt = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
@@ -1135,20 +1274,34 @@ def cmd_translate(args):
                 total_in += result.input_tokens
                 total_out += result.output_tokens
                 if archive is not None:
-                    archive.commit(func_idx, dep.name, result.rust_code,
-                                   result.input_tokens, result.output_tokens)
+                    archive.commit(
+                        func_idx,
+                        dep.name,
+                        result.rust_code,
+                        result.input_tokens,
+                        result.output_tokens,
+                    )
                     running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
-                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)"
-                          f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                    print(
+                        f"OK ({result.input_tokens} in / {result.output_tokens} out)"
+                        f"  [running ${running_cost:.2f}]",
+                        file=sys.stderr,
+                    )
                 else:
-                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
+                    print(
+                        f"OK ({result.input_tokens} in / {result.output_tokens} out)",
+                        file=sys.stderr,
+                    )
             else:
                 print(f"FAIL: {result.error}", file=sys.stderr)
 
             # Hard cost cap — stop before the next (paid) call if we've crossed it.
             if cost_cap is not None and running_cost >= cost_cap:
-                print(f"  ⛔ COST CAP HIT: ${running_cost:.2f} ≥ ${cost_cap:.2f} after "
-                      f"{func_idx}/{len(sorted_deps)} functions — stopping.", file=sys.stderr)
+                print(
+                    f"  ⛔ COST CAP HIT: ${running_cost:.2f} ≥ ${cost_cap:.2f} after "
+                    f"{func_idx}/{len(sorted_deps)} functions — stopping.",
+                    file=sys.stderr,
+                )
                 capped = True
                 break
 
@@ -1166,20 +1319,26 @@ def cmd_translate(args):
         if pre_hit is not None:
             preamble_rust = pre_hit
             resumed += 1
-            print(f"  [preamble] CACHED ($0)", file=sys.stderr)
+            print("  [preamble] CACHED ($0)", file=sys.stderr)
         elif preamble_src and not capped:
-            print(f"  [preamble] {len(preamble_src)} C chars...",
-                  file=sys.stderr, end=" ", flush=True)
+            print(
+                f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
+            )
             pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
             pre_sink = None
             if archive is not None:
                 pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
             try:
                 if use_claude:
-                    pre_res = submit_single(pre_prompt, model=model,
-                                            system_prompt=system_prompt, sink=pre_sink)
+                    pre_res = submit_single(
+                        pre_prompt, model=model, system_prompt=system_prompt, sink=pre_sink
+                    )
                 else:
-                    pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
+                    pre_full = (
+                        (system_prompt + "\n\n---\n\n" + pre_prompt)
+                        if system_prompt
+                        else pre_prompt
+                    )
                     pre_res = submit_single(pre_full, model=model, sink=pre_sink)
             finally:
                 if pre_sink is not None:
@@ -1190,27 +1349,34 @@ def cmd_translate(args):
                 total_in += pre_res.input_tokens
                 total_out += pre_res.output_tokens
                 if archive is not None:
-                    archive.commit(0, "preamble", pre_res.rust_code,
-                                   pre_res.input_tokens, pre_res.output_tokens)
+                    archive.commit(
+                        0,
+                        "preamble",
+                        pre_res.rust_code,
+                        pre_res.input_tokens,
+                        pre_res.output_tokens,
+                    )
                     running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
-                print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
-                      file=sys.stderr)
+                print(
+                    f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)", file=sys.stderr
+                )
             else:
-                print(f"FAIL: {pre_res.error} (stitching without preamble)",
-                      file=sys.stderr)
+                print(f"FAIL: {pre_res.error} (stitching without preamble)", file=sys.stderr)
 
         # c2rust DATA preamble wins over the LLM's: prepend the compiler-exact
         # static/const tables, and strip any LLM-emitted item with the same name
         # (the LLM copy is the fabrication-prone one). Deterministic, $0.
         if c2rust_preamble.strip():
-            import re
-            names = set(re.findall(r"\b(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:",
-                                   c2rust_preamble))
+            names = set(
+                re.findall(r"\b(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:", c2rust_preamble)
+            )
             if names and preamble_rust.strip():
                 kept, drop_depth, dropping = [], 0, False
                 for ln in preamble_rust.splitlines():
                     if not dropping:
-                        m = re.match(r"\s*(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:", ln)
+                        m = re.match(
+                            r"\s*(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:", ln
+                        )
                         if m and m.group(1) in names:
                             dropping, drop_depth = True, 0
                         else:
@@ -1220,27 +1386,40 @@ def cmd_translate(args):
                         if drop_depth <= 0 and ln.rstrip().endswith(";"):
                             dropping = False
                 preamble_rust = "\n".join(kept)
-            preamble_rust = ("// @c2rust file-scope data (compiler-exact tables/statics)\n"
-                             + c2rust_preamble + "\n\n" + preamble_rust)
-            print(f"  [c2rust] prepended {len(names)} exact static/const item(s) to preamble",
-                  file=sys.stderr)
+            preamble_rust = (
+                "// @c2rust file-scope data (compiler-exact tables/statics)\n"
+                + c2rust_preamble
+                + "\n\n"
+                + preamble_rust
+            )
+            print(
+                f"  [c2rust] prepended {len(names)} exact static/const item(s) to preamble",
+                file=sys.stderr,
+            )
 
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
-            print(f"  Resumed {resumed} unit(s) from cache this run (re-translation skipped, $0)",
-                  file=sys.stderr)
+            print(
+                f"  Resumed {resumed} unit(s) from cache this run (re-translation skipped, $0)",
+                file=sys.stderr,
+            )
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
         # Stitch functions into a single file
-        stitched = stitch_file(translated, sorted_deps, scan, file_res,
-                               target=rustconv_target, preamble=preamble_rust)
+        stitched = stitch_file(
+            translated, sorted_deps, scan, file_res, target=rustconv_target, preamble=preamble_rust
+        )
 
         # Post-process
-        code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,
-                           target_name=rustconv_target.name,
-                           sys_crate=rustconv_target.sys_crate,
-                           sys_umbrella=rustconv_target.sys_umbrella,
-                           c_source_path=c_file)
+        code = postprocess(
+            stitched,
+            exports=file_res.exports,
+            globals=scan.globals,
+            target_name=rustconv_target.name,
+            sys_crate=rustconv_target.sys_crate,
+            sys_umbrella=rustconv_target.sys_umbrella,
+            c_source_path=c_file,
+        )
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)
@@ -1255,16 +1434,24 @@ def cmd_translate(args):
                 output_tokens=total_out,
                 success=True,
             )
-            out_path = assemble_file(fake_result, subsystem, scan.raw_source,
-                                     exports=file_res.exports, scan=scan,
-                                     target=rustconv_target, c_source_path=c_file)
+            out_path = assemble_file(
+                fake_result,
+                subsystem,
+                scan.raw_source,
+                exports=file_res.exports,
+                scan=scan,
+                target=rustconv_target,
+                c_source_path=c_file,
+            )
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
         # Respect the cost cap across files too, not just within one file.
         if capped:
-            print(f"\n⛔ Stopping run: cost cap ${cost_cap:.2f} reached "
-                  f"(run total ≈ ${running_cost:.2f}). Remaining files NOT translated.",
-                  file=sys.stderr)
+            print(
+                f"\n⛔ Stopping run: cost cap ${cost_cap:.2f} reached "
+                f"(run total ≈ ${running_cost:.2f}). Remaining files NOT translated.",
+                file=sys.stderr,
+            )
             break
 
     # Generate mod.rs and lib.rs for batch runs (ntoskrnl only — HAL handles
@@ -1277,24 +1464,21 @@ def cmd_translate(args):
         print(f"\nUpdated mod.rs and lib.rs for {subsystem}/", file=sys.stderr)
 
     if archive is not None:
-        print(f"\n  Total spent this run: ${running_cost:.2f}  "
-              f"({len(archive.committed)} unit(s) archived)", file=sys.stderr)
+        print(
+            f"\n  Total spent this run: ${running_cost:.2f}  "
+            f"({len(archive.committed)} unit(s) archived)",
+            file=sys.stderr,
+        )
         print(f"  Durable archive: {archive.dir}", file=sys.stderr)
 
     if not args.dry_run:
-        print(f"\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
+        print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
 def cmd_estimate(args):
-    from .scanner import scan_file
-    from .catalog import build_catalog
-    from .spec_parser import parse_spec
-    from .resolver import resolve
-    from .prompt_builder import build_full_prompt, estimate_tokens
 
     target = Path(args.path)
     if not target.is_absolute():
-        from .config import REACTOS_ROOT, HAL_DIR
         for candidate in (REACTOS_ROOT / args.path, NTOSKRNL_DIR / args.path, HAL_DIR / args.path):
             if candidate.exists():
                 target = candidate
@@ -1310,7 +1494,7 @@ def cmd_estimate(args):
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
-    rustconv_target = resolve_target(args,target)
+    rustconv_target = resolve_target(args, target)
     catalog = build_catalog(arch=args.arch, target=rustconv_target)
     spec = parse_spec(rustconv_target.spec_file) if rustconv_target.spec_file else {}
 
@@ -1330,20 +1514,21 @@ def cmd_estimate(args):
     total_output = int(total_input * 0.6)
 
     print(f"\nTotal: {len(c_files)} files, {total_lines:,} lines")
-    print(f"Estimated tokens (single full-file prompt): "
-          f"~{total_input:,} input, ~{total_output:,} output")
+    print(
+        f"Estimated tokens (single full-file prompt): "
+        f"~{total_input:,} input, ~{total_output:,} output"
+    )
     print("\n  ⚠️  NOTE: `submit`/`batch` send ONE prompt per file. But `translate`")
     print("     (the path used for big files) sends one paid call PER FUNCTION,")
     print("     each RE-SENDING the system prompt + growing context — real input")
     print("     is commonly 2–5× the figure above. These estimates are a FLOOR.")
 
-    from .config import MODEL_PRICING, BATCH_DISCOUNT
     rows = [
-        ("Opus   (claude-opus-4-8)",   "claude-opus-4-8"),
+        ("Opus   (claude-opus-4-8)", "claude-opus-4-8"),
         ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
-        ("Haiku  (claude-haiku-4-5)",  "claude-haiku-4-5-20251001"),
-        ("Gemini 2.5 Pro",             "gemini-2.5-pro"),
-        ("Gemini 2.5 Flash",           "gemini-2.5-flash"),
+        ("Haiku  (claude-haiku-4-5)", "claude-haiku-4-5-20251001"),
+        ("Gemini 2.5 Pro", "gemini-2.5-pro"),
+        ("Gemini 2.5 Flash", "gemini-2.5-flash"),
     ]
     print("\nEstimated cost (sync = translate/submit; batch = `batch` cmd, 50% off):")
     print(f"  {'model':<28} {'sync':>10}  {'batch':>10}   sync @5x")
@@ -1351,13 +1536,14 @@ def cmd_estimate(args):
         pin, pout = MODEL_PRICING[mid]
         sync = total_input * pin / 1_000_000 + total_output * pout / 1_000_000
         batch = sync * BATCH_DISCOUNT
-        print(f"  {label:<28} {'$' + format(sync, '.2f'):>10}  "
-              f"{'$' + format(batch, '.2f'):>10}   ${sync * 5:.2f}")
+        print(
+            f"  {label:<28} {'$' + format(sync, '.2f'):>10}  "
+            f"{'$' + format(batch, '.2f'):>10}   ${sync * 5:.2f}"
+        )
 
 
 def cmd_objdiff(args):
     """Compare C vs Rust object files for symbol/ABI differences."""
-    from .objdiff import run_objdiff
 
     run_objdiff(
         arch=args.arch,
@@ -1373,16 +1559,13 @@ def cmd_objdiff(args):
 def cmd_extern_audit(args):
     """Audit extern declarations vs #[no_mangle] definitions."""
     if args.fix or args.dry_run:
-        from .extern_audit import run_extern_fix
         run_extern_fix(dry_run=args.dry_run)
     else:
-        from .extern_audit import run_extern_audit
         run_extern_audit(json_output=args.json)
 
 
 def cmd_trace_catalog(args):
     """Generate debugcon trace catalog from Rust source."""
-    from .trace_catalog import generate_catalog, print_catalog
 
     print_catalog(args.arch)
     out = generate_catalog(args.arch)
@@ -1391,8 +1574,7 @@ def cmd_trace_catalog(args):
 
 def cmd_postprocess(args):
     """Run postprocessor on existing .rs files."""
-    from .postprocess import postprocess
-    from .config import OUTPUT_CRATE
+
     NTOSKRNL_RUST_SRC = OUTPUT_CRATE / "src"
 
     target = Path(args.path)
@@ -1445,10 +1627,15 @@ def cmd_postprocess(args):
         added = len(proc_lines - orig_lines)
 
         if args.dry_run:
-            print(f"  {rs_file.name}: would change (~{removed} removed, ~{added} added)", file=sys.stderr)
+            print(
+                f"  {rs_file.name}: would change (~{removed} removed, ~{added} added)",
+                file=sys.stderr,
+            )
         else:
             rs_file.write_text(processed)
-            print(f"  {rs_file.name}: updated (~{removed} removed, ~{added} added)", file=sys.stderr)
+            print(
+                f"  {rs_file.name}: updated (~{removed} removed, ~{added} added)", file=sys.stderr
+            )
 
     verb = "would change" if args.dry_run else "changed"
     print(f"\n{total_changed}/{len(rs_files)} files {verb}", file=sys.stderr)
@@ -1459,8 +1646,12 @@ def main():
         prog="rustconv",
         description="C-to-Rust translation pipeline for ReactOS ntoskrnl",
     )
-    parser.add_argument("--arch", default="arm64", choices=["arm64", "amd64", "i386"],
-                        help="Architecture for catalog/type resolution")
+    parser.add_argument(
+        "--arch",
+        default="arm64",
+        choices=["arm64", "amd64", "i386"],
+        help="Architecture for catalog/type resolution",
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1492,17 +1683,28 @@ def main():
     p.add_argument("file", help="C source file")
     p.add_argument("-o", "--output", help="Write Rust output to file")
     p.add_argument("--assemble", action="store_true", help="Assemble into crate structure")
-    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument(
+        "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
+    p.add_argument(
+        "-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID"
+    )
 
     # batch
     p = sub.add_parser("batch", help="Batch-submit entire subsystem directory")
     p.add_argument("directory", help="Subsystem directory (relative to ntoskrnl/ or absolute)")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
-    p.add_argument("--exclude", nargs="*", default=[],
-                   help="File stems to skip (e.g., obhandle ob_rust_shims)")
-    p.add_argument("-s", "--subsystem", default=None,
-                   help="Override subsystem name (e.g., ke/i386 for nested arch dirs)")
+    p.add_argument(
+        "-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID"
+    )
+    p.add_argument(
+        "--exclude", nargs="*", default=[], help="File stems to skip (e.g., obhandle ob_rust_shims)"
+    )
+    p.add_argument(
+        "-s",
+        "--subsystem",
+        default=None,
+        help="Override subsystem name (e.g., ke/i386 for nested arch dirs)",
+    )
 
     # check
     sub.add_parser("check", help="Run cargo check on all 3 targets")
@@ -1511,10 +1713,12 @@ def main():
     p = sub.add_parser("shims", help="Generate C shim file from TOML manifest")
     p.add_argument("subsystem", help="Subsystem name (e.g., ob, ex)")
     p.add_argument("-o", "--output", help="Write output to file")
-    p.add_argument("--write", action="store_true",
-                   help="Write directly to ntoskrnl/{subsys}/{subsys}_rust_shims.c")
-    p.add_argument("--check", action="store_true",
-                   help="Check if generated file matches existing")
+    p.add_argument(
+        "--write",
+        action="store_true",
+        help="Write directly to ntoskrnl/{subsys}/{subsys}_rust_shims.c",
+    )
+    p.add_argument("--check", action="store_true", help="Check if generated file matches existing")
 
     # estimate
     p = sub.add_parser("estimate", help="Estimate token count and cost")
@@ -1527,188 +1731,305 @@ def main():
     p.add_argument("--json", action="store_true", help="Output JSON")
 
     # seh-inventory (win32k Pass 0 triage)
-    p = sub.add_parser("seh-inventory",
-                       help="Win32k Pass 0: triage SEH sites a/b/c/d/e + sidecars")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute); "
-                        "default win32ss/ keep-set")
+    p = sub.add_parser("seh-inventory", help="Win32k Pass 0: triage SEH sites a/b/c/d/e + sidecars")
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute); default win32ss/ keep-set",
+    )
     p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
-    p.add_argument("--write-sidecars", action="store_true",
-                   help="Write <file>.win32k_meta.json next to each source")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the winsta.c spike self-test and exit")
+    p.add_argument(
+        "--write-sidecars",
+        action="store_true",
+        help="Write <file>.win32k_meta.json next to each source",
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Run the winsta.c spike self-test and exit"
+    )
 
     # seh-rewrite (win32k Pass 1 mechanical probe lowering)
-    p = sub.add_parser("seh-rewrite",
-                       help="Win32k Pass 1: mechanically lower category-(a) "
-                            "probe SEH sites to SafeProbeFor*")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute)")
-    p.add_argument("--apply", action="store_true",
-                   help="Write changes in place (default: print unified diff)")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the winsta.c spike self-test and exit")
+    p = sub.add_parser(
+        "seh-rewrite",
+        help="Win32k Pass 1: mechanically lower category-(a) probe SEH sites to SafeProbeFor*",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute)",
+    )
+    p.add_argument(
+        "--apply", action="store_true", help="Write changes in place (default: print unified diff)"
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Run the winsta.c spike self-test and exit"
+    )
 
     # seh-belt (win32k Pass 1c: delete (d) BELT_SUSPENDERS SEH wrappers)
-    p = sub.add_parser("seh-belt",
-                       help="Win32k Pass 1c: delete category-(d) BELT_SUSPENDERS "
-                            "SEH wrappers (user write, no probe, dead handler "
-                            "under DUMMY_PSEH)")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute)")
-    p.add_argument("--apply", action="store_true",
-                   help="Write changes in place (default: print unified diff)")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the synthetic self-test and exit")
+    p = sub.add_parser(
+        "seh-belt",
+        help="Win32k Pass 1c: delete category-(d) BELT_SUSPENDERS "
+        "SEH wrappers (user write, no probe, dead handler "
+        "under DUMMY_PSEH)",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute)",
+    )
+    p.add_argument(
+        "--apply", action="store_true", help="Write changes in place (default: print unified diff)"
+    )
+    p.add_argument("--oracle", action="store_true", help="Run the synthetic self-test and exit")
 
     # callout-annotate (win32k Pass 3 USER callout extraction — no rewrite)
-    p = sub.add_parser("callout-annotate",
-                       help="Win32k Pass 3: extract KeUserModeCallback "
-                            "callout sites + sidecars (no source rewrite)")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute); "
-                        "default win32ss/ keep-set")
+    p = sub.add_parser(
+        "callout-annotate",
+        help="Win32k Pass 3: extract KeUserModeCallback "
+        "callout sites + sidecars (no source rewrite)",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute); default win32ss/ keep-set",
+    )
     p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
-    p.add_argument("--write-sidecars", action="store_true",
-                   help="Write <file>.win32k_callouts.json next to each source")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the callback.c ground-truth self-test and exit")
+    p.add_argument(
+        "--write-sidecars",
+        action="store_true",
+        help="Write <file>.win32k_callouts.json next to each source",
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Run the callback.c ground-truth self-test and exit"
+    )
 
     # seh-llm-lower (win32k Pass 1b: LLM lowering of the 64-site ledger)
-    p = sub.add_parser("seh-llm-lower",
-                       help="Win32k Pass 1b: LLM-lower the Pass-1 "
-                            "manual-followup ledger (cached, validated)")
-    p.add_argument("--apply", action="store_true",
-                   help="Splice validated rewrites in place (default: dry-run)")
-    p.add_argument("--diff", action="store_true",
-                   help="Print unified diffs for the ready rewrites")
-    p.add_argument("--model", default="",
-                   help="Model id/shortcut (default: Sonnet)")
-    p.add_argument("--only", default=None,
-                   help="Restrict to ledger files whose path contains this")
-    p.add_argument("--oracle", action="store_true",
-                   help="Structural self-test (no API spend) and exit")
+    p = sub.add_parser(
+        "seh-llm-lower",
+        help="Win32k Pass 1b: LLM-lower the Pass-1 manual-followup ledger (cached, validated)",
+    )
+    p.add_argument(
+        "--apply", action="store_true", help="Splice validated rewrites in place (default: dry-run)"
+    )
+    p.add_argument("--diff", action="store_true", help="Print unified diffs for the ready rewrites")
+    p.add_argument("--model", default="", help="Model id/shortcut (default: Sonnet)")
+    p.add_argument("--only", default=None, help="Restrict to ledger files whose path contains this")
+    p.add_argument(
+        "--oracle", action="store_true", help="Structural self-test (no API spend) and exit"
+    )
 
     # split-plan (win32k giant-file split analyzer — analyze-only)
-    p = sub.add_parser("split-plan",
-                       help="Win32k: analyze giant .c for safe split seams "
-                            "(static-coupling graph; no mutation)")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (default win32ss/ translation scope)")
-    p.add_argument("--min-loc", type=int, default=1000,
-                   help="Only consider files with ≥ this LOC (default 1000)")
-    p.add_argument("--target-loc", type=int, default=900,
-                   help="Target per-group LOC for the split (default 900)")
+    p = sub.add_parser(
+        "split-plan",
+        help="Win32k: analyze giant .c for safe split seams (static-coupling graph; no mutation)",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (default win32ss/ translation scope)",
+    )
+    p.add_argument(
+        "--min-loc",
+        type=int,
+        default=1000,
+        help="Only consider files with ≥ this LOC (default 1000)",
+    )
+    p.add_argument(
+        "--target-loc",
+        type=int,
+        default=900,
+        help="Target per-group LOC for the split (default 900)",
+    )
     p.add_argument("--json", action="store_true", help="Output JSON")
 
     # switch-extract (win32k tree-sitter switch-dispatcher de-monstering)
-    p = sub.add_parser("switch-extract",
-                       help="Win32k: extract proven-safe switch arms of a "
-                            "giant dispatcher fn into static helpers")
+    p = sub.add_parser(
+        "switch-extract",
+        help="Win32k: extract proven-safe switch arms of a giant dispatcher fn into static helpers",
+    )
     p.add_argument("path", help="C file (relative to repo root or absolute)")
-    p.add_argument("--function", required=True,
-                   help="Target function name (e.g. SpiGetSet)")
-    p.add_argument("--apply", action="store_true",
-                   help="Write the transform (default: dry-run report)")
-    p.add_argument("--oracle", action="store_true",
-                   help="Self-test (label-set + reparse invariants) and exit")
+    p.add_argument("--function", required=True, help="Target function name (e.g. SpiGetSet)")
+    p.add_argument(
+        "--apply", action="store_true", help="Write the transform (default: dry-run report)"
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Self-test (label-set + reparse invariants) and exit"
+    )
 
     # split-apply (win32k giant-file #include-back emitter)
-    p = sub.add_parser("split-apply",
-                       help="Win32k: emit the #include-back split for "
-                            "CLEAN_SPLIT files (one TU, no CMake change)")
-    p.add_argument("path", nargs="?", default=None,
-                   help="One C file; omit to do ALL CLEAN_SPLIT in scope")
-    p.add_argument("--apply", action="store_true",
-                   help="Write fragments + rewrite base (default: dry-run)")
+    p = sub.add_parser(
+        "split-apply",
+        help="Win32k: emit the #include-back split for CLEAN_SPLIT files (one TU, no CMake change)",
+    )
+    p.add_argument(
+        "path", nargs="?", default=None, help="One C file; omit to do ALL CLEAN_SPLIT in scope"
+    )
+    p.add_argument(
+        "--apply", action="store_true", help="Write fragments + rewrite base (default: dry-run)"
+    )
     p.add_argument("--min-loc", type=int, default=1000)
     p.add_argument("--target-loc", type=int, default=900)
 
     # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
-    p = sub.add_parser("gdi-locks",
-                       help="Win32k Pass 2: detect GDI manual lock brackets "
-                            "+ sidecars (no source rewrite)")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute); "
-                        "default win32ss/ keep-set")
+    p = sub.add_parser(
+        "gdi-locks",
+        help="Win32k Pass 2: detect GDI manual lock brackets + sidecars (no source rewrite)",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute); default win32ss/ keep-set",
+    )
     p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
-    p.add_argument("--write-sidecars", action="store_true",
-                   help="Write <file>.win32k_gdilocks.json next to each source")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the dcutil.c ground-truth self-test and exit")
+    p.add_argument(
+        "--write-sidecars",
+        action="store_true",
+        help="Write <file>.win32k_gdilocks.json next to each source",
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Run the dcutil.c ground-truth self-test and exit"
+    )
 
     # user-locks (win32k Pass 2b USER critsec-bracket detection — no rewrite)
-    p = sub.add_parser("user-locks",
-                       help="Win32k Pass 2b: detect USER critical-section "
-                            "brackets + sidecars (no source rewrite)")
-    p.add_argument("path", nargs="?", default="win32ss",
-                   help="C file or dir (relative to repo root or absolute); "
-                        "default win32ss/ keep-set")
+    p = sub.add_parser(
+        "user-locks",
+        help="Win32k Pass 2b: detect USER critical-section brackets + sidecars (no source rewrite)",
+    )
+    p.add_argument(
+        "path",
+        nargs="?",
+        default="win32ss",
+        help="C file or dir (relative to repo root or absolute); default win32ss/ keep-set",
+    )
     p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
-    p.add_argument("--write-sidecars", action="store_true",
-                   help="Write <file>.win32k_userlocks.json next to each source")
-    p.add_argument("--oracle", action="store_true",
-                   help="Run the simplecall.c ground-truth self-test and exit")
+    p.add_argument(
+        "--write-sidecars",
+        action="store_true",
+        help="Write <file>.win32k_userlocks.json next to each source",
+    )
+    p.add_argument(
+        "--oracle", action="store_true", help="Run the simplecall.c ground-truth self-test and exit"
+    )
 
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
-    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, deepseek, deepseek-r1, or full ID")
-    p.add_argument("--mode", default="idiomatic", choices=["idiomatic", "mechanical"],
-                   help="idiomatic (default): translate + idiomize in one pass. "
-                        "mechanical: faithful transliteration only — compiles, "
-                        "preserves C control flow/pointers, no idiom, no stubs "
-                        "(pass 1 of a two-pass cheap-model pipeline).")
+    p.add_argument(
+        "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
+    p.add_argument(
+        "-m",
+        "--model",
+        help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, deepseek, "
+        "deepseek-r1, or full ID",
+    )
+    p.add_argument(
+        "--mode",
+        default="idiomatic",
+        choices=["idiomatic", "mechanical"],
+        help="idiomatic (default): translate + idiomize in one pass. "
+        "mechanical: faithful transliteration only — compiles, "
+        "preserves C control flow/pointers, no idiom, no stubs "
+        "(pass 1 of a two-pass cheap-model pipeline).",
+    )
     p.add_argument("-o", "--output", help="Write Rust output to file (single file only)")
     p.add_argument("--fn", dest="fn", help="Translate only this function")
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
-    p.add_argument("--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)")
-    p.add_argument("--exclude", nargs="*", default=[],
-                   help="File stems to skip (batch mode)")
-    p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
-                   help="Hard USD spend cap for this invocation; stops before the next "
-                        "call once cumulative cost reaches it (safety brake).")
-    p.add_argument("--concurrency", type=int, default=1,
-                   help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
-                        "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
-                        "Try 5; pair with --cost-cap as the runaway brake.")
-    p.add_argument("--no-resume", dest="no_resume", action="store_true",
-                   help="Ignore the .responses/ resume cache and re-translate every "
-                        "function fresh (cache still refreshed). Default resumes "
-                        "unchanged-body functions for $0.")
-    p.add_argument("--c2rust", action="store_true",
-                   help="Anchor each function on its c2rust transpilation (compiler-exact, "
-                        "behavior-preserving) so the model can't silently stub/drop logic. "
-                        "Best-effort: needs the c2rust binary + a build-*/compile_commands.json; "
-                        "falls back to anchor-less translation if unavailable. Pairs with "
-                        "--mode mechanical.")
+    p.add_argument(
+        "--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)"
+    )
+    p.add_argument("--exclude", nargs="*", default=[], help="File stems to skip (batch mode)")
+    p.add_argument(
+        "--cost-cap",
+        dest="cost_cap",
+        type=float,
+        default=None,
+        help="Hard USD spend cap for this invocation; stops before the next "
+        "call once cumulative cost reaches it (safety brake).",
+    )
+    p.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
+        "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
+        "Try 5; pair with --cost-cap as the runaway brake.",
+    )
+    p.add_argument(
+        "--no-resume",
+        dest="no_resume",
+        action="store_true",
+        help="Ignore the .responses/ resume cache and re-translate every "
+        "function fresh (cache still refreshed). Default resumes "
+        "unchanged-body functions for $0.",
+    )
+    p.add_argument(
+        "--c2rust",
+        action="store_true",
+        help="Anchor each function on its c2rust transpilation (compiler-exact, "
+        "behavior-preserving) so the model can't silently stub/drop logic. "
+        "Best-effort: needs the c2rust binary + a build-*/compile_commands.json; "
+        "falls back to anchor-less translation if unavailable. Pairs with "
+        "--mode mechanical.",
+    )
 
     # probe-migrate
-    p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
-    p.add_argument("path", help="Rust file or directory (relative to ntoskrnl-rust/src/ or absolute)")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
-    p.add_argument("--dry-run", action="store_true", help="Don't write, just show what would change")
-    p.add_argument("--scan-only", action="store_true", help="Only scan for probe calls, don't migrate")
-    p.add_argument("--prompt", action="store_true", help="Print the prompt for the first file and exit")
+    p = sub.add_parser(
+        "probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*"
+    )
+    p.add_argument(
+        "path", help="Rust file or directory (relative to ntoskrnl-rust/src/ or absolute)"
+    )
+    p.add_argument(
+        "-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID"
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Don't write, just show what would change"
+    )
+    p.add_argument(
+        "--scan-only", action="store_true", help="Only scan for probe calls, don't migrate"
+    )
+    p.add_argument(
+        "--prompt", action="store_true", help="Print the prompt for the first file and exit"
+    )
 
     # objdiff
     p = sub.add_parser("objdiff", help="Compare C vs Rust object files for ABI differences")
-    p.add_argument("target", nargs="?", default=None,
-                   help="Subsystem (ex/) or file (ex/atom) to compare (default: all)")
+    p.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Subsystem (ex/) or file (ex/atom) to compare (default: all)",
+    )
     p.add_argument("--json", action="store_true", help="JSON output for CI")
     p.add_argument("-v", "--verbose", action="store_true", help="Per-function details")
     p.add_argument("--critical-only", action="store_true", help="Only show critical issues")
-    p.add_argument("--baseline", default=None, metavar="COMMIT",
-                   help="Git commit to extract C files from (compare Rust vs historical C)")
-    p.add_argument("--deep", action="store_true",
-                   help="Analyze function prologues (stack frame size, callee-saved regs)")
+    p.add_argument(
+        "--baseline",
+        default=None,
+        metavar="COMMIT",
+        help="Git commit to extract C files from (compare Rust vs historical C)",
+    )
+    p.add_argument(
+        "--deep",
+        action="store_true",
+        help="Analyze function prologues (stack frame size, callee-saved regs)",
+    )
 
     # extern-audit
-    p = sub.add_parser("extern-audit", help="Audit extern declarations vs definitions for convention mismatches")
+    p = sub.add_parser(
+        "extern-audit", help="Audit extern declarations vs definitions for convention mismatches"
+    )
     p.add_argument("--json", action="store_true", help="JSON output")
     p.add_argument("--fix", action="store_true", help="Fix critical mismatches automatically")
-    p.add_argument("--dry-run", action="store_true", help="Show what --fix would change without writing")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Show what --fix would change without writing"
+    )
 
     # pp (postprocess existing .rs files)
     p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
@@ -1718,6 +2039,22 @@ def main():
     # trace-catalog
     p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
+
+    p = sub.add_parser("semdiff",
+                       help="Find C↔Rust semantic/behavioral divergences (LLM)")
+    p.add_argument("file", help="C source file (.c)")
+    p.add_argument("--rust", default=None,
+                   help="Rust file (.rs). If omitted, located by stem under sdk/lib/rust.")
+    p.add_argument("--model", default="deepseek-reasoner",
+                   help="Model: deepseek-reasoner (default), deepseek-chat, sonnet, opus, ...")
+    p.add_argument("--only", default=None,
+                   help="Comma-separated function names to diff (default: all paired)")
+    p.add_argument("--max-fns", type=int, default=None,
+                   help="Cap the number of functions diffed (cost control)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="Ignore the per-pair response cache (force fresh API calls)")
+    p.add_argument("--workers", type=int, default=6,
+                   help="Concurrent API calls (default 6)")
 
     args = parser.parse_args()
 
@@ -1748,6 +2085,7 @@ def main():
         "extern-audit": cmd_extern_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
+        "semdiff": cmd_semdiff,
     }
 
     try:
