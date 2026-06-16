@@ -1191,6 +1191,25 @@ a crash).
   they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
   anyway — only arm64's staged-ramdisk path has the gap.
 
+### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
+
+Distinct from §9.6c (which is a real ABI mismatch). `mkramdisk.sh` occasionally produces a
+**subtly-bad boot image** that hangs arm64 deterministically in late boot — but the *same
+binaries* boot fine from a freshly-regenerated ramdisk. Seen 2026-06-16: one `mkramdisk
+--refresh` output hung **3/3** arm64 smokes; a second `--refresh` (identical build inputs)
+booted green in 30s. The boot binaries were byte-identical across all runs, so it was the
+image, not the code.
+
+- **Signature (vs §9.6c):** serial reaches csrss → user32 → winsrv → mpr → the `ufat.dll
+  c0000135` load-fail lines, then **stops just before `[EXPLORER] _tWinMain entered`** —
+  i.e. explorer never launches (black screen). §9.6c instead reaches the desktop *and*
+  starts explorer/notepad user threads, then idle-times-out. If explorer's `PspUserThreadStartup`
+  never appears and a recent kernel-ABI commit is *not* in play, suspect the image first.
+- **Fix:** re-run `bash qemu/mkramdisk.sh --refresh` and re-smoke before spending any time
+  in a debugger. A green on the fresh image confirms it was mkramdisk, not a regression.
+- **Corollary:** when an arm64 smoke flips red, reproduce on a **freshly-regenerated**
+  ramdisk before reporting a regression — a stale/bad boot image is a false signal.
+
 ### 9.7 Reliable-repro timing — slow ≠ hung
 
 - A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
