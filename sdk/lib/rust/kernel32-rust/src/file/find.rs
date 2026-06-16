@@ -884,8 +884,11 @@ pub unsafe extern "system" fn FindFirstFileExW(
         }
 
         (*FindDataHandle).Type = FindFile;
+        // C: (PFIND_FILE_DATA)(FindDataHandle + 1) — advance by sizeof(FIND_DATA_HANDLE),
+        // THEN cast. Offsetting after the cast advances by sizeof(FIND_FILE_DATA) (~16KB),
+        // placing FindFileData (and its Buffer) past the allocation → heap overrun.
         (*FindDataHandle).u.FindFileData =
-            (FindDataHandle as PFIND_FILE_DATA).offset(1) as PFIND_FILE_DATA;
+            FindDataHandle.offset(1) as PFIND_FILE_DATA;
         FindFileData = (*FindDataHandle).u.FindFileData;
 
         (*FindFileData).Handle = hDirectory;
