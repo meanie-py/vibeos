@@ -35,6 +35,18 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
     (*stk).Control = ctl;
 }
 
+// aarch64-windows LLVM codegen emits a reference to the *user-mode-named*
+// `IsProcessorFeaturePresent` (kernel mode only exports the `Ex`-prefixed form);
+// cdrom-rust trips it while fastfat/scsiport/etc. don't, so cdrom.sys fails its
+// arm64 link with `undefined symbol: IsProcessorFeaturePresent`. i386/amd64
+// codegen does not emit the reference (cdrom.sys links clean there). Forward it
+// to the real kernel export so the feature query stays faithful. arm64-only.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn IsProcessorFeaturePresent(feature: ULONG) -> i32 {
+    ExIsProcessorFeaturePresent(feature) as i32
+}
+
 // ===================== IRQL / tick (cfg-gated like classpnp: real exports on i386) =====================
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
