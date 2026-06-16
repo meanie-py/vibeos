@@ -1,0 +1,16 @@
+# fastfat-rust — Rust translation of drivers/filesystems/fastfat (the FAT
+# filesystem .sys; MS-architecture, 35 .c / 68.8K LOC). DeepSeek mechanical +
+# c2rust-anchored translate. WDM kernelmode FS driver, DriverEntry-only.
+# ntkrnl-sys + crate::types (gen_driver_types.sh, 53 private structs) substrate.
+[package]
+name = "fastfat-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fastfat_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

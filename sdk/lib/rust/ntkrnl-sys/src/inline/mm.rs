@@ -813,8 +813,15 @@ pub unsafe fn PFN_FROM_SSE(entry: ULONG_PTR) -> ULONG_PTR {
 /// MM_IS_WAIT_PTE — check if entry is a wait PTE.
 #[inline]
 pub unsafe fn MM_IS_WAIT_PTE(entry: ULONG_PTR) -> BOOLEAN {
-    // MM_WAIT_ENTRY defined in mm.h
-    const MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFF;
+    // MM_WAIT_ENTRY defined in ntoskrnl/include/internal/mm.h — pointer-width
+    // dependent: 0x7ffffc00 (32-bit) / 0x7FFFFFFFFFFFFC00 (64-bit). The prior
+    // 0x7FFFFFFF was a placeholder wrong on BOTH widths, so MM_IS_WAIT_PTE never
+    // recognized a wait-PTE written by MAKE_SWAP_SSE(MM_WAIT_ENTRY) → collided
+    // section faults never waited → page-in livelock (arm64 fastfat, amd64 stall).
+    #[cfg(target_pointer_width = "64")]
+    const MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFFFFFFFC00;
+    #[cfg(target_pointer_width = "32")]
+    const MM_WAIT_ENTRY: ULONG_PTR = 0x7ffffc00;
     if (entry & 0x1) != 0 && (entry >> 1) == MM_WAIT_ENTRY {
         1
     } else {
@@ -825,7 +832,11 @@ pub unsafe fn MM_IS_WAIT_PTE(entry: ULONG_PTR) -> BOOLEAN {
 /// IS_SWAP_FROM_SSE — check if section segment entry is a swap entry.
 #[inline]
 pub unsafe fn IS_SWAP_FROM_SSE(entry: ULONG_PTR) -> BOOLEAN {
-    if (entry & 0x00000001) != 0 && (entry & 0x00000002) == 0 {
+    // C macro (mm.h): ((E) & 0x00000001). The swap bit (0x1) and dirty bit (0x2)
+    // are orthogonal — a dirty swap entry has both set, and callers test
+    // IS_SWAP_FROM_SSE / IS_DIRTY_SSE independently. The prior extra
+    // `&& (E & 0x2) == 0` wrongly declassified dirty swap entries.
+    if (entry & 0x00000001) != 0 {
         1
     } else {
         0

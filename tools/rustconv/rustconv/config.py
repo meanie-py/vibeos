@@ -58,6 +58,7 @@ PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
 FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
+FASTFAT_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fastfat"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
@@ -563,6 +564,21 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
+    # 35 .c / 68.8K LOC: create/fsctrl/allocsup/fileinfo the giants). WDM kernelmode
+    # FS driver, DriverEntry-only (no .spec; fatinit.c). PSEH-dense (create.c 119
+    # try-finally) — the SEH/try_return cleanup control flow is the main repair surface,
+    # not consts. Private structs (VCB/FCB/CCB/IRP_CONTEXT/PACKED_DIRENT/PACKED_BOOT_
+    # SECTOR/FAT_DATA/...) from gen_driver_types substrate (crate::types, 53 structs);
+    # FsRtl/cache kernel types via ntkrnl-sys ddk. arm64 = the boot-exercised arch
+    # (ramdisk.img is FAT32, the live system volume). Compiles at the 0x502 profile.
+    "fastfat": Target(
+        name="fastfat", source_dir=FASTFAT_DIR,
+        output_crate=RUST_DIR / "fastfat-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # pciidex.sys — the PCI IDE bus extension (drivers/storage/ide/pciidex, ~1.9K LOC,
     # 5 .c: fdo/pdo/pciidex/miniport/power). WDM kernelmodedriver + EXPORT driver
     # (pciidex.spec: PciIdeXInitialize/GetBusData/SetBusData stdcall + PciIdeXDebugPrint
@@ -956,6 +972,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["partmgr"]
     if "/drivers/filesystems/fs_rec" in posix:
         return TARGETS["fs_rec"]
+    if "/drivers/filesystems/fastfat" in posix:
+        return TARGETS["fastfat"]
     if "/drivers/storage/mountmgr" in posix:
         return TARGETS["mountmgr"]
     if "/drivers/storage/ide/pciidex" in posix:

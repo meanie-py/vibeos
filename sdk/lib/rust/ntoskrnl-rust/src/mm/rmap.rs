@@ -72,7 +72,13 @@ extern "C" {
     fn MA_GetStartingAddress(MemoryArea: PMEMORY_AREA) -> ULONG_PTR;
 }
 
-static MM_WAIT_ENTRY: ULONG_PTR = 0xFFFFFFFE;
+// MM_WAIT_ENTRY (ntoskrnl/include/internal/mm.h) — pointer-width dependent.
+// 0xFFFFFFFE was a placeholder that disagreed with ntkrnl_sys::mm::MM_WAIT_ENTRY
+// (the value section.rs compares against) → page-file wait sentinel mismatch.
+#[cfg(target_pointer_width = "64")]
+static MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFFFFFFFC00;
+#[cfg(target_pointer_width = "32")]
+static MM_WAIT_ENTRY: ULONG_PTR = 0x7ffffc00;
 static RMAP_SEGMENT_MASK: ULONG_PTR = 0xFFFFFF00;
 static MEMORY_AREA_SECTION_VIEW: ULONG = 1;
 static MM_SEGMENT_INDELETE: ULONG = 1;

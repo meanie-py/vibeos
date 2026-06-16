@@ -7,6 +7,7 @@ Every step is idempotent (find-then-create) so a half-provisioned agent re-runs 
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from .authentik import AuthentikClient
@@ -14,6 +15,8 @@ from .config import Config
 from .config import config as default_config
 from .errors import HttpError
 from .mattermost import MattermostClient
+from .roster import roster
+from .state import clear as clear_state
 from .vikunja import VikunjaClient
 
 
@@ -173,6 +176,14 @@ class Registrar:
             (identity._agents_dir() / f"{name}.json").unlink()
         except OSError:
             pass
+        # local roster cache + state file (the services above are remote; these are this
+        # machine's view — without this the torn-down agent lingers in `swarm_who`).
+        try:
+            roster().remove(name)
+            clear_state(name)
+            result["roster"] = "removed"
+        except sqlite3.Error as e:
+            result["roster"] = f"err {e}"
         ch_id = self.mm.find_channel(f"agent-{name}")
         if ch_id:
             try:

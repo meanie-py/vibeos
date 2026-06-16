@@ -2721,4 +2721,3 @@ pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLock(
 pub unsafe extern "system" fn IoGetCurrentProcess() -> PEPROCESS {
     ntkrnl_sys::inline::tier1::PsGetCurrentProcess()
 }
-
