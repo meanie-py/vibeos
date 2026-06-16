@@ -13,7 +13,6 @@ extern "C" {
     fn GreGetTextExtentExW( hdc: HDC, lpwsz: LPCWSTR, cwc: i32, dxMax: i32, pcCh: *mut u32, pdxOut: *mut i32, psize: *mut SIZE, fl: u32, ) -> i32;
 }
 extern "C" {
-    fn ExitProcess(uExitCode: u32);
     fn RtlStringCchCopyNW( pszDest: LPWSTR, cchDest: usize, pszSrc: LPCWSTR, cchToCopy: usize, ) -> NTSTATUS;
     fn UserEnterCo();
     fn UserLeaveCo();
@@ -68,15 +67,12 @@ pub const MAX_BUFFER: usize = 1024;
 #[no_mangle]
 pub unsafe extern "C" fn _font_assert(msg: *const i8, file: *const i8, line: i32) {
     DbgPrint(b"Assertion failed at %s line %d: %s\n\0".as_ptr() as *const i8, file, line, msg);
-    #[cfg(feature = "_WIN32K_")]
-    {
-        core::debug_assert!(false);
-    }
-    #[cfg(not(feature = "_WIN32K_"))]
-    {
-        ExitProcess(3);
-        loop {}
-    }
+    // Debug aid only (mirrors the no-op `assert<T>` above): never abort the kernel.
+    // The C `assert` is a no-op in release; in DBG this prints + breaks. The old
+    // `cfg(not(_WIN32K_))` arm called the USER-MODE `ExitProcess` — which doesn't
+    // exist in kernel mode and broke the arm64 win32k.sys link with an undefined
+    // symbol once _font_assert wasn't dead-code-eliminated (amd64 DCE'd it).
+    core::debug_assert!(false);
 }
 
 unsafe fn TEXT_Ellipsify(
