@@ -82,6 +82,11 @@ class LocalSqliteRoster:
     def offline(self, identity):
         self.set_status(identity, "offline")
 
+    def remove(self, identity):
+        """Delete an agent from the roster entirely (used by teardown)."""
+        with self._conn() as c:
+            c.execute("DELETE FROM agents WHERE identity=?", (identity,))
+
     @staticmethod
     def _to_agent(r, *, status=None, age=0.0) -> Agent:
         return Agent(
@@ -111,6 +116,10 @@ class LocalSqliteRoster:
             for r in c.execute("SELECT * FROM agents ORDER BY last_seen DESC"):
                 age = now - (r["last_seen"] or 0)
                 status = r["status"]
+                # Liveness is last_seen-based, NOT pid-based: Claude Code hooks run as
+                # short-lived subprocesses, so the recorded pid is a transient hook pid
+                # that's dead moments later — pid_alive() would reap every live agent.
+                # A crashed/closed session stops heartbeating → ages to 'stale' → prune().
                 if status == "online" and age > stale_secs:
                     status = "stale"
                 if status == "offline" and not include_offline:

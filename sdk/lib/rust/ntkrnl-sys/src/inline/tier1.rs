@@ -53,6 +53,46 @@ const WR_EXECUTIVE: ddk::KWAIT_REASON = ddk::_KWAIT_REASON_WrExecutive;
 // IO stack location flag
 const SL_PENDING_RETURNED: u8 = 0x01;
 
+#[cfg(target_arch = "aarch64")]
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
+#[cfg(target_arch = "aarch64")]
+const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
+
+#[inline]
+unsafe fn irp_current_stack_location_slot(irp: ddk::PIRP) -> *mut ddk::PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut ddk::PIO_STACK_LOCATION
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        core::ptr::addr_of_mut!(
+            (*irp)
+                .Tail
+                .Overlay
+                .__bindgen_anon_2
+                .__bindgen_anon_1
+                .CurrentStackLocation
+        )
+    }
+}
+
+#[inline]
+unsafe fn irp_stack_location_add(
+    stack: ddk::PIO_STACK_LOCATION,
+    count: isize,
+) -> ddk::PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (stack as *mut u8).offset(count * IO_STACK_LOCATION_ABI_SIZE as isize)
+            as ddk::PIO_STACK_LOCATION
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        stack.offset(count)
+    }
+}
+
 // ============================================================================
 // IO IRP stack location macros (from iofuncs.h)
 // ============================================================================
@@ -61,15 +101,14 @@ const SL_PENDING_RETURNED: u8 = 0x01;
 /// C: `return Irp->Tail.Overlay.CurrentStackLocation;`
 #[inline]
 pub unsafe fn IoGetCurrentIrpStackLocation(irp: ddk::PIRP) -> ddk::PIO_STACK_LOCATION {
-    (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation
+    *irp_current_stack_location_slot(irp)
 }
 
 /// IoGetNextIrpStackLocation — return next (lower) IO_STACK_LOCATION.
 /// C: `return Irp->Tail.Overlay.CurrentStackLocation - 1;`
 #[inline]
 pub unsafe fn IoGetNextIrpStackLocation(irp: ddk::PIRP) -> ddk::PIO_STACK_LOCATION {
-    let current = (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
-    current.sub(1)
+    irp_stack_location_add(IoGetCurrentIrpStackLocation(irp), -1)
 }
 
 /// IoSetNextIrpStackLocation — decrement CurrentLocation, advance stack pointer.
@@ -77,8 +116,8 @@ pub unsafe fn IoGetNextIrpStackLocation(irp: ddk::PIRP) -> ddk::PIO_STACK_LOCATI
 #[inline]
 pub unsafe fn IoSetNextIrpStackLocation(irp: ddk::PIRP) {
     (*irp).CurrentLocation -= 1;
-    let p = &mut (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
-    *p = (*p).sub(1);
+    let p = irp_current_stack_location_slot(irp);
+    *p = irp_stack_location_add(*p, -1);
 }
 
 /// IoSkipCurrentIrpStackLocation — increment CurrentLocation, retreat stack pointer.
@@ -86,8 +125,8 @@ pub unsafe fn IoSetNextIrpStackLocation(irp: ddk::PIRP) {
 #[inline]
 pub unsafe fn IoSkipCurrentIrpStackLocation(irp: ddk::PIRP) {
     (*irp).CurrentLocation += 1;
-    let p = &mut (*irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
-    *p = (*p).add(1);
+    let p = irp_current_stack_location_slot(irp);
+    *p = irp_stack_location_add(*p, 1);
 }
 
 /// IoCopyCurrentIrpStackLocationToNext — copy current stack location to next.

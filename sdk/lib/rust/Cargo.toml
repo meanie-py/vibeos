@@ -3,6 +3,7 @@ members = [
     "classpnp-rust",
     "disk-rust",
     "mountmgr-rust",
+    "fastfat-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",

@@ -201,6 +201,7 @@ extern "C" {
     fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
     fn ObReferenceObject(Object: PVOID);
 }
+
 // InterlockedExchange is fastcall on i386, cdecl on others
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -657,7 +658,7 @@ pub unsafe extern "system" fn IopParseDevice(
     let Object = opaque_ptr(Object);
 
     let OpenPacket = Context as POPEN_PACKET;
-    let OriginalDeviceObject = ParseObject as PDEVICE_OBJECT;
+    let mut OriginalDeviceObject = ParseObject as PDEVICE_OBJECT;
     let mut DeviceObject: PDEVICE_OBJECT = null_mut();
     let mut Vpb: PVPB = null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -701,11 +702,10 @@ pub unsafe extern "system" fn IopParseDevice(
             }
         }
 
-        let CurrentDeviceObject = if !(*OpenPacket).RelatedFileObject.is_null() {
-            (*(*OpenPacket).RelatedFileObject).DeviceObject
-        } else {
-            OriginalDeviceObject
-        };
+        if !(*OpenPacket).RelatedFileObject.is_null() {
+            OriginalDeviceObject = (*(*OpenPacket).RelatedFileObject).DeviceObject;
+        }
+        let CurrentDeviceObject = OriginalDeviceObject;
 
         Status = IopCheckDeviceAndDriver(OpenPacket, CurrentDeviceObject);
         if Status < 0 {

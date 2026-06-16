@@ -25,11 +25,50 @@ use ntkrnl_sys::base::{InitializeListHead, InsertHeadList, IsListEmpty, RemoveEn
 use ntkrnl_sys::ddk::{
     BOOLEAN, HAL_DISPATCH, KPROCESSOR_MODE, NTSTATUS, PCM_FULL_RESOURCE_DESCRIPTOR,
     PDEVICE_OBJECT, PEPROCESS, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PFILE_OBJECT, PIRP,
-    POPEN_PACKET, PRKEVENT, _CM_FULL_RESOURCE_DESCRIPTOR, _IO_STACK_LOCATION, _OPEN_PACKET,
+    PIO_STACK_LOCATION, POPEN_PACKET, PRKEVENT, _CM_FULL_RESOURCE_DESCRIPTOR,
+    _IO_STACK_LOCATION, _OPEN_PACKET,
 };
 
 /// `IO_TYPE_OPEN_PACKET` from `sdk/include/xdk/iotypes.h`.
 const IO_TYPE_OPEN_PACKET: i16 = 8;
+
+#[cfg(target_arch = "aarch64")]
+const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
+#[cfg(target_arch = "aarch64")]
+const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
+
+#[inline(always)]
+unsafe fn irp_current_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        (*irp)
+            .Tail
+            .Overlay
+            .__bindgen_anon_2
+            .__bindgen_anon_1
+            .CurrentStackLocation
+    }
+}
+
+#[inline(always)]
+unsafe fn irp_stack_location_add(
+    stack: PIO_STACK_LOCATION,
+    count: isize,
+) -> PIO_STACK_LOCATION {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (stack as *mut u8).offset(count * IO_STACK_LOCATION_ABI_SIZE as isize)
+            as PIO_STACK_LOCATION
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        stack.offset(count)
+    }
+}
 
 /// IopValidateOpenPacket — `static __inline` from `io_x.h`.
 ///
@@ -64,15 +103,8 @@ pub unsafe extern "system" fn IoGetDevObjExtension_shim(
 /// then zeroes the next slot's Control byte.
 #[no_mangle]
 pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext_shim(irp: PIRP) {
-    // IoGetCurrentIrpStackLocation: Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation
-    let cur = (*irp)
-        .Tail
-        .Overlay
-        .__bindgen_anon_2
-        .__bindgen_anon_1
-        .CurrentStackLocation;
-    // IoGetNextIrpStackLocation: cur - 1
-    let next = cur.offset(-1);
+    let cur = irp_current_stack_location(irp);
+    let next = irp_stack_location_add(cur, -1);
     let copy_len = core::mem::offset_of!(_IO_STACK_LOCATION, CompletionRoutine);
     ptr::copy_nonoverlapping(cur as *const u8, next as *mut u8, copy_len);
     (*next).Control = 0;

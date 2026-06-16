@@ -949,6 +949,22 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     crate::glue::dprint_noop((b"Non-pci bus\n\0".as_ptr() as *const u8).cast());
                 }
 
+                // Re-seed the AT-disk claim state from the authoritative system
+                // configuration before every HwFindAdapter call. PortConfig is
+                // reallocated fresh (non-zeroed) on each iteration of this loop and
+                // SpiCreatePortConfig only seeds these fields when ZeroStruct
+                // (FirstConfigCall) is TRUE. Without this a legacy miniport (uniata)
+                // that re-enumerates per channel reads uninitialized garbage for
+                // AtdiskPrimaryClaimed/AtdiskSecondaryClaimed, fails to notice a
+                // channel it already claimed, keeps returning SP_RETURN_FOUND, and
+                // this while-loop never terminates (BUGCHECK 0x50 — was flaky,
+                // deterministic once the winsock catalog perturbs pool contents).
+                {
+                    let ddk = IoGetConfigurationInformation();
+                    (*PortConfig).AtdiskPrimaryClaimed = (*ddk).AtDiskPrimaryAddressClaimed;
+                    (*PortConfig).AtdiskSecondaryClaimed = (*ddk).AtDiskSecondaryAddressClaimed;
+                }
+
                 Again = 0;
                 crate::glue::dprint_noop(
                     (b"Calling HwFindAdapter() for Bus %lu\n\0".as_ptr() as *const u8).cast(),
@@ -1044,7 +1060,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     ExFreePoolWithTag(ResourceList as *mut c_void, TAG_SCSIPORT);
                 }
 
-                if (*PortConfig).MaximumNumberOfTargets > 8 /* SCSI_MAXIMUM_TARGETS_PER_BUS */ {
+                if (*PortConfig).MaximumNumberOfTargets > 0x80 /* SCSI_MAXIMUM_TARGETS_PER_BUS */ {
                     (*DeviceExtension).MaxTargetIds = 8;
                 } else {
                     (*DeviceExtension).MaxTargetIds = ((*PortConfig).MaximumNumberOfTargets) as u32;
@@ -2246,6 +2262,17 @@ unsafe fn SpiCreatePortConfig(
     (*InternalConfigInfo).DisableMultipleLun = 0;
 
     (*ConfigInfo).SystemIoBusNumber = (*InternalConfigInfo).BusNumber;
+
+    // PortConfig is reallocated fresh on every find-loop iteration, but the init
+    // block above only runs when ZeroStruct (FirstConfigCall) is TRUE — i.e. only
+    // before the first device is found. On later iterations AdapterInterfaceType is
+    // left as uninitialized pool garbage; when it happens to read 0 (== Internal),
+    // the Internal hardware-database branch below wrongly resets BusNumber to 0, so
+    // the legacy find loop (uniata AtapiFindIsaController) never advances past bus 0
+    // and never terminates -> BUGCHECK 0x50 (flaky; deterministic once the winsock
+    // catalog perturbs the pool). Always seed it from HwInitData so the interface
+    // check is correct regardless of ZeroStruct.
+    (*ConfigInfo).AdapterInterfaceType = (*HwInitData).AdapterInterfaceType;
 
     'try_next_ad: loop {
         if (*ConfigInfo).AdapterInterfaceType == Internal {
