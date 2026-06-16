@@ -1,0 +1,32 @@
+//! client/ — client-side Win32 API surface of kernel32, ported to Rust (rustconv c2rust).
+pub mod version;
+pub mod handle;
+pub mod atom;
+pub mod environ;
+pub mod path;
+pub mod actctx;
+pub mod appcache;
+pub mod compname;
+pub mod debugger;
+pub mod dosdev;
+pub mod except;
+pub mod fiber;
+pub mod heapmem;
+pub mod job;
+pub mod loader;
+pub mod perfcnt;
+pub mod power;
+pub mod resntfy;
+pub mod session;
+pub mod synch;
+pub mod sysinfo;
+pub mod time;
+pub mod timerqueue;
+pub mod utils;
+// DEFERRED (tlhelp32 PROCESSENTRY32W/MODULEENTRY32W/HEAPLIST32 types not yet defined;
+// .rs preserved on disk, toolhelp.c stays C):
+// pub mod toolhelp;
+pub mod thread;
+pub mod vdm;
+pub mod virtmem;
+pub mod dllmain;
