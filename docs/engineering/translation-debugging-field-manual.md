@@ -1274,6 +1274,36 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 KTRAP_FRAME, and `identify-object` on bogus pointers in one call. Run
 `qemu/build-index.sh <arch>` after each kernel build for offline symbol lookup.
 
+### 9.9 Timer-table base skew — every relative KeDelay/KeWait-timeout over-waits ~4–60×
+
+- **Symptom:** relative timed waits (`KeDelayExecutionThread`, relative `KeWaitForSingleObject`,
+  Cc/Mm read-ahead pacing) take far longer than requested — a 2000ms delay waits ~8.7s
+  (~4.37×), a 100ms delay waits ~6.4s (worse for shorter waits). UDP-style single-cycle ops and
+  i386 are unaffected; multi-RTT operations (TDI TCP connect) time out. Box looks "idle, advancing
+  on a coarse ~8s timer." Often **latent** and only exposed when an unrelated commit makes the
+  clock actually tick (e.g. RTC→LAPIC switch `22356522c58`).
+- **Root cause:** the NT timer table requires the invariant
+  **`InterruptTime / KeMaximumIncrement == KeTickCount`** (both 0-based since boot). Insertion
+  (`KiComputeTimerTableIndex`) hashes the *absolute* InterruptTime by KeMaximumIncrement;
+  expiration sweeps `KeTickCount.LowPart & 511`. If the two clocks are seeded inconsistently at
+  boot, the insertion bucket is offset from the sweeping hand by a constant N — a timer lands in a
+  bucket the hand *just passed* and waits a full ~512-tick table revolution (~8s) before
+  re-examination.
+- **Oracle (deterministic, in-kernel):** drop a one-shot probe in `KxSetTimerForThreadWait`
+  (inline/ke.rs — the REAL `KeDelayExecutionThread` hand path, NOT `KiComputeDueTime`) logging
+  `now=KeQueryInterruptTime()`, `now_hand=(now/KeMaximumIncrement)&511`,
+  `exp_hand=KeTickCount.LowPart&511`, `ins_hand`, `delta=(ins_hand-exp_hand)&511`,
+  `expect=mag/KeMaximumIncrement`. **`now_hand != exp_hand` is the smoking gun** (the two bases are
+  skewed). A first-tick probe in `KeUpdateSystemTimeImpl` shows whether InterruptTime/KeTickCount
+  are pre-seeded huge before any tick.
+- **Fix:** zero KUSER InterruptTime, KUSER TickCount and the `KeTickCount` global on the first
+  `KeUpdateSystemTime` tick so they advance from 0 in lockstep. (`KeBootTime`/`SystemTime` are wall-
+  clock and separate — leave them.) Verify: `now_hand == exp_hand`, `delta == expect`, KeDelay(100ms)
+  → ~110–125ms.
+- **Gotcha that cost ~6 build cycles:** the smoke `full.log` is a **truncated tail** (~140 lines of
+  late boot) — early-boot `DbgPrint` probes (phase-1 self-tests, first ticks) are NOT in it. Grep the
+  **live log** `qemu/<arch>-uefi_smoke_live.log` (full capture) instead.
+
 ---
 
 *Maintenance: this manual is the fast-lookup index distilled from the project's debug
