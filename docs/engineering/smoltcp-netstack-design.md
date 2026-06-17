@@ -1,9 +1,14 @@
 # smoltcp Net Stack — Design
 
-**Date:** 2026-06-07 (design) · **Updated:** 2026-06-13 (M0–M6 landed)
-**Status:** **M0–M6 DONE** — the C `tcpip`/`lwip` stack is removed; `netstack.sys`
-(smoltcp) is the whole stack, boot-green on all 3 arches, merged onto current crp.
-One open item: a usermode-winsock blocker root-caused to a *storage* driver (see Status).
+**Date:** 2026-06-07 (design) · **Updated:** 2026-06-16 (M0–M6 + usermode winsock landed on mainline)
+**Status:** **M0–M6 DONE + ON MAINLINE** (`c4911ea7c68`, master + continue-rust-port) — the
+C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
+all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
+smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` **11/11** on amd64).
+The earlier "usermode-winsock blocker root-caused to a *storage* driver" was superseded — the
+true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
+**`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`: IsBad{Read,Write,String}Ptr reported every
+valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT). Both fixed and landed.
 **Lane:** L4 (Rust-ecosystem-crate rewrite) of `docs/engineering/translation-banking-roadmap.md`
 **Goal:** Replace the ReactOS C TCP/IP protocol engine with the Rust **`smoltcp`** crate,
 reaching a **usable networked desktop in QEMU**, while keeping the Windows-compatible
@@ -247,8 +252,13 @@ Original risks — how each resolved:
   ensures a missing/idle NIC never stalls boot.
 
 Remaining open:
-- **Usermode-winsock storage 0x50** (task 79) — the *only* blocker to a real `ws2_32`
-  socket round-trip; root-caused to the uniata/scsiport IDE stack, not netstack. See Status.
+- ~~**Usermode-winsock storage 0x50** (task 79)~~ — ✅ **RESOLVED + landed.** The real
+  ws2_32 round-trip is GREEN (`test_net.py` 11/11). The blockers were *not* a storage driver:
+  (1) the amd64 kernel **timer-table base skew** (`38b63f15b74`) made every relative
+  KeDelay/KeWait over-wait ~4–60× → multi-RTT TCP connect timed out; (2) a kernel32
+  **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`) made IsBad{Read,Write,String}Ptr
+  report every valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT before
+  reaching msafd (UDP was unaffected — only connect()/rnr.c validate via IsBad*Ptr).
 - **arm64 `DriverEntry`** — netstack.sys is staged on arm64 but the minimal ramdisk boot
   doesn't run its Start=1 init yet (arm64 networking deferred).
 - **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads.
