@@ -1,16 +1,31 @@
 # Static-Lib Translation Audit (cargo drive)
 
-> **Ground-truth re-verified 2026-06-14** against `sdk/lib/rust/*-cargo/build.rs`
-> + CMakeLists + code — the "Where we are" ledger and the live-`.a` table are
-> accurate, with ONE important nuance corrected: the deep-C cohab libs
-> (cportlib/csq/arbiter/lsalib/rossym, and cmlib) are Rust-translated and the
-> Rust archive is pulled on **arm64 only**. On **i386/amd64 the kernel still
-> links the bundled C body** — the cmake `libX.a` is NOT a stub there (a
-> rust-only `--clean` does not rebuild it), and the x86 ungate is *blocked* by a
-> layout-sensitive miscompile on the cmlib `Hv*` hive-write path (cold amd64
-> HANG at `hivewrt.c`; gating the 5 cohab archives to arm64 is the fix —
-> `ntoskrnl-cargo/build.rs:163-178`, field manual "Incomplete Rust cohab flip",
-> crp `672b9808345`). The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
+> **Ground-truth re-verified 2026-06-15** against `sdk/lib/rust/*-cargo/build.rs`
+> + CMakeLists + code. **CORRECTION (supersedes the 2026-06-14 banner): cmlib is
+> NOT in the arm64-gated set — the kernel cmlib body is 100% Rust on ALL three
+> arches.** cmlib's cmake target REMOVE_ITEM's all 13 `.c` → a placeholder TU on
+> every arch (`sdk/lib/cmlib/CMakeLists.txt:28-59`) and `build.rs` links
+> `cmlib-rust` **unconditionally** (`ntoskrnl-cargo/build.rs:282`). The C-free
+> clean build is exactly what exposed (then fixed) the `write_bytes`
+> element-vs-byte APC bug — see `cmlib-apc-bugcheck-handoff.md` (RESOLVED
+> 2026-06-11); i386+amd64 boot C-free.
+>
+> The genuinely arm64-gated set is the OTHER **five** deep-C cohab libs —
+> **cportlib / csq / arbiter / lsalib / rossym**. Their `libX_rust.a` is pulled
+> on **arm64 only** (`ntoskrnl-cargo/build.rs:165`); on **i386/amd64 the kernel
+> still links the bundled C body** (the build dir's pre-flip `libX.a` still
+> carries the symbols — a rust-only `--clean` does not rebuild it). The x86
+> ungate of these 5 is *blocked* because adding their archives shifts the kernel
+> link LAYOUT and tips cmlib's *latent* layout-sensitive miscompile on the `Hv*`
+> hive-write path (cold amd64 HANG at `hivewrt.c`). So cmlib is the *epicentre*
+> of the blocker, but cmlib itself is fully flipped ×3 — it's the 5 OTHER
+> archives whose x86 ungate is gated. Field manual "Incomplete Rust cohab flip",
+> crp `672b9808345`. **Loader-side cmlib is ALSO Rust now**: uefildr/rosload link
+> `cmlib-rust --features bldr` (the `-D_BLDR_` read-only surface) — the C
+> `blcmlib` is no longer linked by any loader (`da9c72b240d`, 2026-06-11; the
+> cmake `blcmlib` target is vestigial). So **cmlib is 100% Rust end-to-end —
+> kernel AND loader, all 3 arches**. (`cmlib-loader-swap-handoff.md` is stale; it
+> still says OPEN.) The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
 > (`14a0563b291`) — this doc never referenced them, so no correction needed.
 > No softfloat gap: the libcntpr float/printf/scanf core is already Rust.
 
@@ -107,7 +122,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `sdk/lib/vcruntime/libsetjmp.a` | hal (1) | setjmp/longjmp. **✅ Rust (`setjmp-rust`, commit `a0f85f894bb`)** for the kernel — global_asm! save/restore (disasm-identical to the cmake asm) + Rust longjmp. DROPPED from both kernels' static_libs: amd64 links setjmp-rust, i386 (DUMMY_PSEH) + arm64 reference no setjmp (inert). hal still links the C `.a`. |
 | `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — but kernel pulls `libarbiter_rust.a` on **arm64 ONLY**; on i386/amd64 it still links this C body (x86 ungate blocked, see banner). hal still links the C. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
-| `sdk/lib/cmlib/libcmlib.a` | kernel ×2 | Config-Manager hive lib. **`cmlib-rust` is the translation** (linked alongside via mechanism 5). On i386/amd64 the kernel still links this C body — and cmlib is the *epicentre* of the x86-ungate blocker: its `Hv*` hive-write path holds a latent layout-sensitive miscompile (cold amd64 HANG at `hivewrt.c`) that any link-layout shift tips. See banner + field manual "Incomplete Rust cohab flip" / "latent hive-path miscompile". |
+| `sdk/lib/cmlib/libcmlib.a` | kernel ×2 (placeholder TU only) | Config-Manager hive lib. **✅ FLIPPED ×3: kernel cmlib is 100% Rust** (`cmlib-rust`, mechanism 5, `.rust_lib` unconditional). The cmake `libcmlib.a` is a placeholder TU on every arch (all 13 `.c` REMOVE_ITEM'd). The **loader is also Rust** (uefildr/rosload link `cmlib-rust --features bldr`, `da9c72b240d`) → cmlib is 100% Rust kernel+loader ×3. cmlib is still the *epicentre* of the x86-ungate blocker for the OTHER 5 libs: its `Hv*` hive-write path holds a latent layout-sensitive miscompile (cold amd64 HANG at `hivewrt.c`) that any link-layout shift tips. See banner + field manual "Incomplete Rust cohab flip" / "latent hive-path miscompile". |
 | `drivers/base/…/libkdcom.a` | kernel ×2 | KD COM transport. `kdcom-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `drivers/base/…/libbootvid.a` | kernel ×2 | Boot video. `bootvid-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — kernel pulls `libcsq_rust.a` on **arm64 ONLY**; i386/amd64 still link this C body (x86 ungate blocked, see banner). |
@@ -131,7 +146,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
 | `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD dropped it) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
-| `libcmlib` | C | `cmlib-rust` is the translation; kernel links the C `.a` on i386/amd64 (x86-ungate blocker epicentre — `Hv*` hive-path miscompile). |
+| `libcmlib` | C | **Rust ×3 (kernel AND loader)** (`cmlib-rust`); kernel body 100% Rust all arches (cmake `.a` = placeholder TU), loader links `cmlib-rust --features bldr` (`da9c72b240d`). Still the x86-ungate blocker *epicentre* for the OTHER 5 cohab libs (`Hv*` hive-path latent miscompile). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
 | `librossym` | C (~3K) | **Rust** (`rossym-rust`); kernel pulls Rust `.a` arm64-only, C on i386/amd64. |
 | `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13, 5 still reuse `.a` (kernel ×2, hal, winsrv, win32k). |

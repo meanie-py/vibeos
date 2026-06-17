@@ -66,9 +66,11 @@ fn main() {
     // reactos-link from freeldr.spec (.import_lib() below), so cmake's
     // spec2def(freeldr.sys ... ADD_IMPORTLIB) is retired.
     libs.extend_from_slice(&[
-        // blcmlib (CM hive boot lib) is now compiled IN-cargo via
-        // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
-        // blrtl (boot RTL leaf) is likewise compiled IN-cargo below (C via
+        // blcmlib (CM hive boot lib): the C is GONE — the loader reads the SYSTEM
+        // hive via `cmlib-rust` built with the `bldr` feature (mirrors the old C
+        // blcmlib's -D_BLDR_ reduced surface). See .rust_lib("cmlib-rust",
+        // &["bldr"]) below + cmlib_loader_stubs.c (da9c72b240d).
+        // blrtl (boot RTL leaf) is compiled IN-cargo below (C via
         // .c_from_compile_db("blrtl", …) + asm via .asm_archive("blrtl_asm", …)),
         // not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",

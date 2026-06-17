@@ -1,7 +1,23 @@
 # Handoff: swap the bootloader's blcmlib (C) → cmlib-rust (`bldr` feature)
 
-**Status:** OPEN. The KERNEL cmlib is fully Rust + boots C-free ×3 (committed). The
-LOADER (freeldr/uefildr/rosload) still links the reduced **`_BLDR_`** C variant
+**Status: RESOLVED (2026-06-11, commit `da9c72b240d` on continue-rust-port).**
+The loader swap is DONE and committed: `uefildr-cargo/build.rs:167` and
+`rosload-cargo/build.rs:133` both link `.rust_lib("cmlib-rust", &["bldr"], true)`;
+the C `blcmlib` is no longer linked by any loader (its `.c_from_compile_db` is
+gone, only `blrtl` remains; the cmake `add_library(blcmlib)` target is vestigial).
+The `bldr` cargo feature mirrors `-D_BLDR_` via `#[cfg(not(feature="bldr"))]` gates
+across cmcheck/cmheal/hivewrt/hiveinit/hivecell; `boot/freeldr/freeldr/lib/cmlib_loader_stubs.c`
+supplies the loader-side externs (CmpSelfHeal/CmpBootType/KeQuerySystemTime/
+IoSetThreadHardErrorMode/CmiVolatileHive). `cmlib-rust --features bldr` compiles
+0-err on all 3 targets (verified 2026-06-15). Validated implicitly: the swap is on
+continue-rust-port and the whole lane fleet boots ×3 through the loader's SYSTEM-hive
+read — so **cmlib is now 100% Rust end-to-end, kernel AND loader, all 3 arches.**
+The historical brief below is kept for the method/spec.
+
+---
+
+**(historical brief as handed off):** The KERNEL cmlib is fully Rust + boots C-free ×3.
+The LOADER (freeldr/uefildr/rosload) still links the reduced **`_BLDR_`** C variant
 (`blcmlib`). This is the last piece to make cmlib 100% Rust. Branch
 `integ/mlang-cabinet-cohab`, worktree `/home/curi/Projects/os-playground/vibeos-wt-cohab`.
 
