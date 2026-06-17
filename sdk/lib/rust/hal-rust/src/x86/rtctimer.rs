@@ -240,14 +240,6 @@ pub unsafe extern "system" fn HalpInitializeClock() {
     apic_write(APIC_TICR, reload);
     apic_write(APIC_TMRLVTR, lvt_long(APIC_CLOCK_VECTOR, false, true));
 
-    DbgPrint(
-        b"[CLKINIT] tsc_freq=%llu calib_tsc=%llu reload=%llu lvt=%llx\n\0".as_ptr(),
-        tsc_freq,
-        calib_tsc,
-        reload as u64,
-        apic_read(APIC_TMRLVTR) as u64,
-    );
-
     write_eflags(eflags);
 }
 
@@ -258,41 +250,15 @@ pub unsafe extern "system" fn HalpInitializeClock() {
 #[no_mangle]
 pub unsafe extern "C" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     let mut Irql: KIRQL = 0;
-    static mut CLK_SPUR: u64 = 0; // TEMP probe: spurious-begin count
 
     KiEnterInterruptTrap(TrapFrame);
     (*TrapFrame).__bindgen_anon_4.ErrorCode = 0xc10c4;
 
     if HalBeginSystemInterrupt(CLOCK_LEVEL as KIRQL, APIC_CLOCK_VECTOR, &raw mut Irql) == 0 {
-        CLK_SPUR += 1; // TEMP probe
-        return; // Spurious  -- NOTE: returns WITHOUT reading register C (re-arm)
+        return; // Spurious
     }
 
     // LAPIC-timer clock: no RTC register-C ack needed (periodic mode auto-reloads).
-
-    // === TEMP amd64 clock-rate probe: measure true inter-tick interval via TSC ===
-    {
-        static mut CLK_N: u64 = 0;
-        static mut LAST_PC: i64 = 0;
-        CLK_N += 1;
-        let mut freq = ntkrnl_sys::ddk::_LARGE_INTEGER { QuadPart: 0 };
-        let pc = ntkrnl_sys::ddk::KeQueryPerformanceCounter(&mut freq as *mut _);
-        let pc_q = pc.QuadPart;
-        let f = freq.QuadPart;
-        if LAST_PC != 0 && f != 0 {
-            let dms = (pc_q - LAST_PC) * 1000 / f;
-            if dms > 300 || CLK_N % 64 == 0 || CLK_N <= 4 {
-                DbgPrint(
-                    b"[CLKRATE] n=%llu dt_ms=%llu rip=%llx spur=%llu\n\0".as_ptr(),
-                    CLK_N,
-                    dms as u64,
-                    (*TrapFrame).Rip,
-                    CLK_SPUR,
-                );
-            }
-        }
-        LAST_PC = pc_q;
-    }
 
     let mut last_increment = HalpCurrentTimeIncrement;
 
