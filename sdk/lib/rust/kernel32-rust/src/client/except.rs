@@ -845,7 +845,7 @@ pub unsafe extern "system" fn IsBadReadPtr(
     ucb: UINT_PTR,
 ) -> BOOL {
     let PageSize: ULONG;
-    let mut Result: BOOLEAN = 0;
+    let Result: BOOLEAN = 0;
     let mut Current: *const CHAR;
     let mut Last: PCHAR;
 
@@ -886,10 +886,15 @@ pub unsafe extern "system" fn IsBadReadPtr(
         }
     }
     // _SEH2_END
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Result = 1;
-    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): under USE_DUMMY_PSEH the SEH filter
+    // never runs, so this handler is DEAD CODE and must NOT execute. The original
+    // C sets `Result = TRUE` *only* inside the except handler (when the probe above
+    // faults). Leaving it as an unconditional block made IsBadReadPtr report EVERY
+    // pointer — valid ones included — as bad, which broke ws2_32 connect()
+    // (sockctrl.c: `IsBadReadPtr(name) -> WSAEFAULT`) and the rnr.c name-resolution
+    // validators. With the handler dead, Result stays FALSE for a probed-OK range.
+    // (DUMMY_PSEH limitation: a genuinely-bad pointer can't be caught here.)
+    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
 
     return Result as BOOL;
 }
@@ -918,7 +923,7 @@ pub unsafe extern "system" fn IsBadWritePtr(
     ucb: UINT_PTR,
 ) -> BOOL {
     let PageSize: ULONG;
-    let mut Result: BOOLEAN = FALSE as BOOLEAN;
+    let Result: BOOLEAN = FALSE as BOOLEAN;
     let mut Current: *mut CHAR;
     let mut Last: PCHAR;
 
@@ -958,10 +963,9 @@ pub unsafe extern "system" fn IsBadWritePtr(
             *Current = *Current;
         }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Result = TRUE as BOOLEAN;
-    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
+    // run, or IsBadWritePtr reports every (even valid, writable) pointer as bad.
+    // { Result = TRUE as BOOLEAN; }   // dead _SEH2_EXCEPT body — intentionally not executed
     // _SEH2_END
 
     /* Return exception status */
@@ -981,7 +985,7 @@ pub unsafe extern "system" fn IsBadStringPtrW(
     lpsz: LPCWSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    let mut Result: BOOLEAN = 0;
+    let Result: BOOLEAN = 0;
     let mut Current: *const WCHAR;
     let mut Last: PWCHAR;
     let mut Char: WCHAR;
@@ -1009,10 +1013,9 @@ pub unsafe extern "system" fn IsBadStringPtrW(
             Current = Current.offset(1);
         }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Result = 1;
-    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
+    // run, or IsBadStringPtr reports every (even valid) string pointer as bad.
+    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
     // _SEH2_END
 
     /* Return result */
@@ -1024,7 +1027,7 @@ pub unsafe extern "system" fn IsBadStringPtrA(
     lpsz: LPCSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    let mut Result: BOOLEAN = 0;
+    let Result: BOOLEAN = 0;
     let mut Current: *const CHAR;
     let mut Last: PCHAR;
     let mut Char: CHAR;
@@ -1052,10 +1055,9 @@ pub unsafe extern "system" fn IsBadStringPtrA(
             Current = Current.offset(1);
         }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Result = 1;
-    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
+    // run, or IsBadStringPtr reports every (even valid) string pointer as bad.
+    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
     // _SEH2_END
 
     /* Return result */
