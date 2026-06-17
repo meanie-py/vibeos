@@ -1181,13 +1181,24 @@ never moved.
 - **Detect:** `stat -c %y build-amd64/ntoskrnl/ntoskrnl.exe` vs your edit's mtime; or
   put a unique string in your edit and `strings ntoskrnl.exe | grep` for it **before
   smoking**. If absent, the kernel is stale.
-- **Force a relink:** delete the outputs so ninja must regenerate (this reruns cargo,
-  which *does* see the `.rs` change):
+- **Force a relink — you MUST nuke the cargo *target dir*, not just the exes.** Deleting
+  only the outputs makes ninja relink, but cargo's incremental cache in the per-arch kernel
+  target reuses the **stale rlib body** — so the relink reproduces the old kernel invisibly
+  (the exact "cargo incremental masks regressions" trap). Nuke the target dir first, then the
+  outputs:
   ```bash
+  rm -rf sdk/lib/rust/target/x86_64-kernel      # amd64 (i686-kernel / aarch64-kernel per arch)
   rm -f build-amd64/ntoskrnl/{ntoskrnl.exe,libkernel_rust.a,ntkrnlmp/ntkrnlmp.exe}
-  ninja -C build-amd64 livecd
+  ninja -C build-amd64 livecd                   # arm64: ninja (full) + mkramdisk --refresh
   strings build-amd64/ntoskrnl/ntoskrnl.exe | grep '<your-marker>'   # verify BEFORE smoke
+  ls -la build-amd64/ntoskrnl/ntoskrnl.exe       # mtime MUST advance past your nuke
   ```
+- **Applies to all 3 arches** — the cargo kernel target is `sdk/lib/rust/target/<arch>-kernel`
+  (`x86_64`/`i686`/`aarch64`). **2026-06-16 netstack-landing incident:** arm64 hung at
+  `PspExitThread → LpcExitThread` (ABI mismatch — new-ABI drivers + stale kernel) because
+  `rm exes && ninja` relinked the **Jun-5 `aarch64-kernel` rlib**; `ntoskrnl.exe` mtime never
+  moved. `rm -rf …/aarch64-kernel` + rm exes + `ninja` (mtime advanced) → clean boot. amd64/i386
+  dodged it because their `--clean` path nukes the target; the standalone arm64 staged path does not.
 - **NOT affected:** driver/usermode cohab crates (e.g. `scsiport-rust`, `conutils-rust`)
   link via the **main-workspace** cargo step which *does* rerun on `.rs` edits — only
   the **kernel** (separate `rust-kernel-target`) has the missing edge. (Smoke's
