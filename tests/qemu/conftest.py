@@ -22,7 +22,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default="arm64",
         # BIOS boot is gone: x86 is UEFI-only (i386-uefi / amd64-uefi). The
         # legacy "i386"/"amd64" BIOS arches were dropped with the BIOS prune.
-        choices=["arm64", "arm64-test", "i386-uefi", "amd64-uefi"],
+        choices=["arm64", "arm64-test", "i386-uefi", "amd64-uefi", "amd64-uefi-net"],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(
@@ -48,9 +48,11 @@ def arch(request: pytest.FixtureRequest) -> str:
 
 def _base_arch(arch: str) -> str:
     """Map a smoke variant to its build directory arch. Variants like
-    'i386-uefi' and 'arm64-test' build from the base 'build-i386'/'build-arm64'
-    trees (same binaries, different boot media/firmware)."""
-    return arch.replace("-uefi", "").replace("-test", "")
+    'i386-uefi', 'arm64-test' and 'amd64-uefi-net' build from the base
+    'build-i386'/'build-arm64'/'build-amd64' trees (same binaries, different
+    boot media/firmware/devices). Strip '-net' BEFORE '-uefi' so
+    'amd64-uefi-net' resolves to 'amd64', not 'amd64-net'."""
+    return arch.replace("-net", "").replace("-uefi", "").replace("-test", "")
 
 
 def _ensure_clean_rust_build(arch: str) -> None:

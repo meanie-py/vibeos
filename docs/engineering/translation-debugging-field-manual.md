@@ -276,6 +276,11 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 
 Bugs that link clean and compile clean but corrupt memory or strings at runtime — derived from per-file translation footguns where the Rust mirror, literal width, or struct offset silently disagrees with C.
 
+### Hand-built kernel wire struct as `#[repr(C, packed)]` mislocates a field vs the naturally-aligned C struct
+**Symptom:** a value passed in/out via a hand-rolled mirror of a C struct comes out shifted by a few bytes (e.g. a TDI connect to 10.0.2.100 is parsed as 2.100.0.0); the operation silently fails (connection never establishes, request rejected). Compiles + links clean. The CONSUMER (real kernel/driver) builds the struct with natural alignment, so only the hand-built copy is wrong.
+**Root cause:** declaring the mirror `#[repr(C, packed)]` removes the alignment padding the real `#[repr(C)]` struct has. Classic case: `TDI_ADDRESS_IP { USHORT sin_port; ULONG in_addr; ... }` — the `ULONG` forces 4-byte alignment, so C inserts **2 padding bytes after `sin_port`**, putting `in_addr` at offset 4. A packed mirror puts it at offset 2 → every reader using the real (aligned) layout reads 2 bytes early. The kernel's own parser was correct all along; only the hand-built test/FFI struct was wrong.
+**Fix:** mirror the kernel's NATURAL alignment — either use `#[repr(C)]` (let Rust insert the same padding) or, if you need `packed` for a wire buffer, add the explicit `_pad` fields the aligned struct has. Cross-check field offsets against the consumer's struct, not just the field list. **Companion footgun:** a synchronous-IRP test helper that waits with `KeWaitForSingleObject` must check the WAIT return — on `STATUS_TIMEOUT` the IRP never completed and the stack `IO_STATUS_BLOCK` is still zero (== STATUS_SUCCESS), so reading it reports a FALSE "OK" that masks the real failure (this pair hid a netstack TDI round-trip that never actually connected, 2026-06-13).
+
 ### amd64 BUGCHECK 0x1E (STATUS_DATATYPE_MISALIGNMENT 0x80000002), i386/arm64 fine, after a flip with a UNICODE_STRING name
 **Symptom:** amd64-only deterministic 0x1E at a fixed win32k/probe PC; P1 = `0xffffffff80000002`; probe arg register holds an ODD pointer (e.g. rcx=`0x7ff87028453`, rdx=0x14=10 WCHARs).
 **Root cause:** rustconv emits `b"C\0S\0D\0V\0...".as_ptr() as *mut u16` for a wide-string `UNICODE_STRING.Buffer`. `b"..."` is `&[u8;N]` with alignment 1, so it can land at an odd address; amd64 `ProbeForRead(buf,len,sizeof(WCHAR))` enforces 2-byte alignment and raises, unhandled under DUMMY_PSEH.
@@ -309,7 +314,8 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Silent csrss/PnP hang or kernel BUGCHECK indexing a bindgen flexible array past 0
 **Symptom:** enumeration processes element [0] then dies before [1]; csrss silently dies (no panic output) at i=1 → BUGCHECK 0x4C STATUS_SYSTEM_PROCESS_TERMINATED; amd64 silently corrupts/hangs (no bounds-check crash visible).
 **Root cause:** bindgen models C `T arr[ANYSIZE_ARRAY]`/`T arr[1]` as `arr: [T; 1]`. Rust `arr[i]` for i≥1 inserts a bounds check that panic-aborts under `panic="abort"`; C intentionally over-allocates so the memory is valid.
-**Fix:** use raw-pointer arithmetic — `arr.as_mut_ptr().add(i)` or `core::ptr::addr_of_mut!((*p).arr[0]).cast::<T>().add(i)`. Watch DEVICE_RELATIONS.Objects, CM_RESOURCE_LIST, IO_RESOURCE_REQUIREMENTS_LIST, KEY_VALUE_FULL_INFORMATION, CsrRootProcess.ServerData. Note: for `static mut FOO: [T;N]`, `addr_of_mut!(FOO).add(i)` strides by whole-array size — use `FOO.as_mut_ptr().add(i)`.
+**Fix:** use raw-pointer arithmetic — `arr.as_mut_ptr().add(i)` or `core::ptr::addr_of_mut!((*p).arr[0]).cast::<T>().add(i)`. Watch DEVICE_RELATIONS.Objects, CM_RESOURCE_LIST, IO_RESOURCE_REQUIREMENTS_LIST, KEY_VALUE_FULL_INFORMATION, CsrRootProcess.ServerData, **FILE_FULL_EA_INFORMATION.EaName** (`[CHAR;1]`, read the NUL terminator at `EaName[EaNameLength]`). Note: for `static mut FOO: [T;N]`, `addr_of_mut!(FOO).add(i)` strides by whole-array size — use `FOO.as_mut_ptr().add(i)`.
+**Variant — SILENT THREAD HANG (not a bugcheck), message went to debugcon not serial (2026-06-13):** `IoCheckEaBufferValidity` (iomgr/util.rs) translated C `Current->EaName[EaNameLength] != 0` literally → `(*Current).EaName[16]` on `[CHAR;1]` → `panic_bounds_check`. The kernel-rust panic handler (kernel-rust/src/lib.rs) writes `PANIC:<file>:<line>` to **debugcon port 0xe9** (the `-debugcon file:...` sink, NOT the COM/serial log) then `loop {}`. On QEMU's single vCPU the timer still preempts the spinning thread, so OTHER threads keep running — symptom looked like one operation wedging forever (here: opening `\Device\Tcp` WITH an EA buffer, the AFD/winsock path) while the rest of the system was live, with no message in the serial log. **Diagnosis when a single op wedges but the box stays alive: check the debugcon capture for `PANIC:`** before assuming a lock/IO-manager hang. Triggered the FIRST time any EA-based create ran (AFD/named-pipes); fixed kernel-wide by `*(*Current).EaName.as_ptr().add(EaNameLength as usize)`.
 **Source:** `feedback_bindgen_flexible_array_index.md`, `feedback_flexible_array.md`
 
 ### amd64/arm64 AV (BUGCHECK 0x1E 0xC0000005), i386 fine, from a hand-computed win32k flattened-head offset
@@ -1303,6 +1309,97 @@ KTRAP_FRAME, and `identify-object` on bogus pointers in one call. Run
 - **Gotcha that cost ~6 build cycles:** the smoke `full.log` is a **truncated tail** (~140 lines of
   late boot) — early-boot `DbgPrint` probes (phase-1 self-tests, first ticks) are NOT in it. Grep the
   **live log** `qemu/<arch>-uefi_smoke_live.log` (full capture) instead.
+
+### 9.10 A registry/hive addition that "shouldn't matter" deterministically tripping an early BUGCHECK 0x50
+
+**Symptom:** You add benign data to a *baked* registry hive (e.g. an `add_registry_inf`
+`.inf` with new `HKLM,...` values — in our case the Winsock2 protocol catalog
+`netstack_winsock.inf`). The kernel code is untouched, yet boot now **deterministically**
+BUGCHECKs `0x50` (PAGE_FAULT_IN_NONPAGED_AREA) in an early driver — read-fault on a
+`0xfffff8a0...` paged-pool VA, faulting PC in the `0xfffff880...` driver region —
+*before* `shell ready`, at the same log line every run. Backing the hive change out
+restores a green boot.
+
+**Root cause:** The hive is loaded early by the config manager; growing/altering it
+shifts pool allocation order, which moves a **latent** memory bug (uninitialised read,
+off-by-one, use-after-free, a hand-mirrored `repr(C)` struct with a wrong offset) from
+"benign / lands on valid memory" to "lands on an unmapped page → 0x50." The registry
+data is innocent; it is a **layout perturbation** that *exposes* a pre-existing driver
+bug. This is the same family as the known amd64 taskbar 0x50 (`project_amd64_taskbar_
+bugcheck_0x50`), but the hive shift makes it **deterministic and early** instead of
+non-deterministic and post-`shell ready`.
+
+**What to do:**
+1. **Don't ship the hive change** — a baked `add_registry_inf` goes into the *shared*
+   system hive, so it breaks boot on *all* arches/configs, not just the one you tested.
+   Disable the `add_registry_inf(...)` line (keep the `.inf` artifact + a comment).
+2. **Treat it as a gift:** a deterministic, same-line repro of an otherwise
+   non-deterministic 0x50 is the easiest version to hunt. Symbolicate the faulting PC
+   (`0xfffff880...`) against the per-arch build index (`qemu/build-index.sh amd64`,
+   then `qemu/addr2sym.sh`) to name the driver, then bisect that driver's recent
+   translations. The layout shift is the *trigger*, not the *bug* — fix the driver,
+   not the hive.
+3. **Confirm causation cheaply:** revert only the hive line and re-run. Boot green ⇒
+   the addition is the trigger (not a flake). Two identical-line crashes ≠ the ~1/3
+   flake; determinism + a *pre*-`shell ready` PC that the flake never reaches is the
+   tell.
+
+**Worked instance (2026-06-13, netstack Winsock2 catalog → 0x50, survives the crp merge):**
+The faulting driver is the **uniata/scsiport IDE storage stack**, *not* netstack — the
+catalog hive is innocent. Diagnosis chain that worked when the usual symbolication failed:
+- **build-index/addr2sym is ntoskrnl-only.** The faulting PC `0xfffff880055cd0x0` is in a
+  *driver* (`0xfffff880` region), which addr2sym can't resolve, and the Rust-cohab modules
+  ship **no Rust DWARF** (cargo-drive strips it) so `qemu/start.sh --gdb` *preflight fails*
+  — use `--skip-preflight`. Adding debug info is NOT an option: the bug is layout-sensitive,
+  so the size change would move it (Heisenbug).
+- **Caller-level bisect markers** (cheap `DbgPrint` at each call site, *not* in the hot path)
+  localised it: the crash fires *after* the IDE `adapter-init complete` marker with no
+  subsequent init call → it's an **async callback** (timer/DPC/ISR), reached because
+  `FdoCallHWInitialize`'s `IoConnectInterrupt` fails (~33× "Could not connect interrupt") and
+  the caller ignores the failure, starting the IoTimer on a half-set-up adapter.
+- **The crash PC is STABLE across `scsiport-rust` rebuilds** (it does *not* shift when you add
+  code to scsiport and recompile). That is the key tell: the faulting code is **not in the
+  module you're editing** — here it points at `uniata.sys` (C miniport, never rebuilt) or a
+  scsiport function linked before the edited init path. Instrumenting `ScsiPortIoTimer`
+  *ruled it out* (its entry `DbgPrint` never fired before the fault). Lesson: when a PC
+  refuses to move under your edits, you're editing the wrong module — bisect by *which
+  module* moves the PC, not just which function.
+**SOLVED (2026-06-14, commit `scsiport: fix uninitialized PortConfig on find-loop retries`):**
+The earlier "IoConnectInterrupt fails ~33×" / "`Interrupt[0]` NULL → `KeSynchronizeExecution`"
+hypotheses were **wrong** — instrumenting the connect path showed *both* IDE channels connect
+fine (IRQ14→vec176, IRQ15→vec160, Status=0). The real bug is in **scsiport's `ScsiPortInitialize`
+HwFindAdapter while-loop**, not uniata or the interrupt path:
+- `ScsiPortInitialize` **re-allocates `PortConfig` fresh (non-zeroed pool) every loop iteration**,
+  but `SpiCreatePortConfig` only *initializes* the struct when `ZeroStruct` (`FirstConfigCall`)
+  is TRUE — i.e. only before the first device is found. On later iterations every PortConfig
+  field is uninitialized garbage.
+- The killer field is **`AdapterInterfaceType`**: when the garbage reads `0` (== `Internal`),
+  `SpiCreatePortConfig` wrongly enters the Internal hardware-database branch and **resets
+  `InternalConfigInfo->BusNumber = 0`**. The legacy per-channel find loop (uniata
+  `AtapiFindIsaController`, `AdapterInterfaceType=Isa`) then never advances past bus 0, the
+  `IoQueryDeviceDescription` bus bound never trips, and `ScsiPortInitialize` spins ~25 000×
+  → 0x50. The catalog only perturbs the pool so the garbage is deterministically `0`.
+- Secondary garbage field: `AtdiskPrimaryClaimed`/`AtdiskSecondaryClaimed` (uniata's
+  "channel already claimed" check reads them).
+- **Fix:** in `SpiCreatePortConfig`, seed `AdapterInterfaceType` from `HwInitData` before the
+  Internal check; and re-seed the AT-disk claim state from `IoGetConfigurationInformation()`
+  before every `HwFindAdapter` call. Both target the *fresh-PortConfig-not-reinitialized* root.
+- **Diagnosis tooling that cracked it:** tagged `DbgPrint` probes walking the chain
+  scsiport find-loop → `SpiCreatePortConfig`/`IoQueryDeviceDescription` → the BusNumber value
+  per iteration (it was stuck at 0 — the smoking gun). Confirmed ×3 amd64 + i386 + arm64 boot to
+  desktop **with the catalog enabled**.
+
+**General lesson (recurs across the C→Rust port):** a C `for(;;){…}` loop body that re-allocates
+a struct each pass and relies on a `ZeroStruct`/first-call flag to initialize it is a garbage-on-
+retry trap — the "preserve across iterations" optimization assumes the buffer is *reused*, which
+ReactOS violates by re-allocating. Any field read before it is set (here `AdapterInterfaceType`
+gates a code path) becomes a non-deterministic, pool-layout-sensitive bug. When a loop "never
+terminates", print the loop's *advancement variable* (here `BusNumber`) every iteration — if it
+doesn't move, find who resets it.
+
+- **Remaining (M5, separate bug):** with the 0x50 gone and the catalog in the hive, usermode
+  `socket()` still returns `WSAEINVAL (10022)` — ws2_32/msafd isn't consuming the netstack
+  Winsock2 catalog entries. Boot-unblocked; catalog-loading issue, tracked on M5/task-77.
 
 ---
 

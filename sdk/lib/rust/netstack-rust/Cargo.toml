@@ -1,0 +1,20 @@
+# netstack-rust — the smoltcp network stack (L4 rewrite, NOT a C translation).
+# Replaces the ReactOS tcpip protocol engine (tcpip/ip ~8K + tcpip/lwip ~115K C)
+# with the smoltcp crate behind the existing TDI device interface; AFD/msafd/
+# ws2_32 stay untouched. Device backend = virtio-net via virtio-drivers
+# (bypassing NDIS; the phy::Device trait keeps an NDIS backend swappable later).
+# Design: docs/engineering/smoltcp-netstack-design.md. Becomes netstack.sys.
+# staticlib -> libnetstack_rust.a; amd64 bringup first, then i386/arm64.
+
+[package]
+name = "netstack-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+smoltcp = { version = "0.13.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-icmp", "socket-raw", "socket-dhcpv4", "socket-dns", "alloc"] }
+virtio-drivers = { version = "0.13.0", default-features = false, features = ["alloc"] }

@@ -163,7 +163,13 @@ pub unsafe extern "system" fn IoCheckEaBufferValidity(
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
-        if (*Current).EaName[EaNameLength as usize] != 0 {
+        // C: `Current->EaName[EaNameLength]` is pointer arithmetic past the
+        // declared trailing `CHAR EaName[1]` array (reads the NUL terminator at
+        // EaName + EaNameLength). The bindgen type is `[CHAR; 1]`, so indexing it
+        // with EaNameLength (>0) is an out-of-bounds *array* access in Rust →
+        // panic_bounds_check → the panic handler spins forever (silent HANG, not
+        // a bugcheck). Read through the raw pointer to preserve C semantics.
+        if *(*Current).EaName.as_ptr().add(EaNameLength as usize) != 0 {
             *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
             return STATUS_EA_LIST_INCONSISTENT;
         }

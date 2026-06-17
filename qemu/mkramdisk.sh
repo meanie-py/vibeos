@@ -98,6 +98,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/base/shell/cmd/cmd.exe"
     "$BUILD_DIR/win32ss/user/winsrv/winsrv.dll"
     "$BUILD_DIR/drivers/serial/pl011/pl011.sys"
+    "$BUILD_DIR/drivers/network/netstack/netstack.sys"
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
     "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.dll"
@@ -207,6 +208,7 @@ RMC "$BUILD_DIR/boot/bootdata/default"                         ::/reactos/system
 RMC "$BUILD_DIR/boot/bootdata/software"                        ::/reactos/system32/config/software
 RMC "$BUILD_DIR/drivers/storage/class/ramdisk/ramdisk.sys"     ::/reactos/system32/drivers/ramdisk.sys
 RMC "$BUILD_DIR/drivers/filesystems/fastfat/fastfat.sys"       ::/reactos/system32/drivers/fastfat.sys
+RMC "$BUILD_DIR/drivers/network/netstack/netstack.sys"         ::/reactos/system32/drivers/netstack.sys
 RMC "$BUILD_DIR/base/system/smss/smss.exe"                   ::/reactos/system32/smss.exe
 # Patch csrss.exe SizeOfStackCommit to 256KB — the PE default (4KB) is too small
 # for deep DLL initialization call chains on ARM64 where delay-imports become
