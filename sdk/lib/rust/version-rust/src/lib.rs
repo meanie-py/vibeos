@@ -511,7 +511,9 @@ pub const fn PRIMARYLANGID(lgid: WORD) -> WORD { lgid & 0x3FF }
 #[cfg(target_arch = "x86")]
 #[repr(C)]
 pub struct TEB {
-    _pad: [u8; 0xC0],
+    // CurrentLocale sits at TEB+0xC4 on i386 (NT_TIB 0x1C + fields up through
+    // WOW32Reserved). 0xC0 (the prior value) read WOW32Reserved instead.
+    _pad: [u8; 0xC4],
     pub CurrentLocale: u32,
 }
 #[cfg(not(target_arch = "x86"))]
@@ -720,7 +722,10 @@ pub fn ARRAY_SIZE<T>(_arr: &[T]) -> usize {
 // ============================================================================
 #[inline]
 pub unsafe fn VersionInfoIs16(ver: *const c_void) -> BOOL {
-    if (*(ver as *const CHAR) as u8) >= b' ' { 1 } else { 0 }
+    // C: `((const VS_VERSION_INFO_STRUCT16 *)ver)->szKey[0] >= ' '` where szKey
+    // is CHAR (signed). Compare as signed i8 so high bytes (0x80-0xFF) read as
+    // negative (< ' ') exactly as the C does — casting to u8 first diverged.
+    if (*(ver as *const CHAR)) >= b' ' as CHAR { 1 } else { 0 }
 }
 
 // ============================================================================
@@ -850,12 +855,17 @@ unsafe fn find_entry_by_id(
     max = min + (*dir).NumberOfIdEntries as i32 - 1;
     while min <= max {
         pos = (min + max) / 2;
-        if (*entry.offset(pos as isize)).u.Id == id as DWORD {
+        // C `u.Id` is a USHORT (16-bit) overlaying the low word of the Name
+        // union; read it as such so the high word (NameOffset/NameIsString
+        // bits) can never leak into the compare.
+        if ((*entry.offset(pos as isize)).u.Id & 0xFFFF) == id as DWORD {
+            // C `u2.s2.OffsetToDirectory` is a :31 bitfield — the top bit is
+            // DataIsDirectory and MUST be masked off before use as an offset.
             return (root as *const u8)
-                .offset((*entry.offset(pos as isize)).u2.s2.OffsetToDirectory as isize)
+                .offset(((*entry.offset(pos as isize)).u2.s2.OffsetToDirectory & 0x7FFF_FFFF) as isize)
                 as *const IMAGE_RESOURCE_DIRECTORY;
         }
-        if (*entry.offset(pos as isize)).u.Id > id as DWORD {
+        if ((*entry.offset(pos as isize)).u.Id & 0xFFFF) > id as DWORD {
             max = pos - 1;
         } else {
             min = pos + 1;
@@ -869,8 +879,10 @@ unsafe fn find_entry_default(
 ) -> *const IMAGE_RESOURCE_DIRECTORY {
     let entry: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     entry = dir.offset(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    // OffsetToDirectory is a :31 bitfield in C — mask off the DataIsDirectory
+    // top bit before using it as an offset.
     return (root as *const u8)
-        .offset((*entry).u2.s2.OffsetToDirectory as isize) as *const IMAGE_RESOURCE_DIRECTORY;
+        .offset(((*entry).u2.s2.OffsetToDirectory & 0x7FFF_FFFF) as isize) as *const IMAGE_RESOURCE_DIRECTORY;
 }
 
 unsafe fn push_language(list: *mut u16, pos: i32, lang: u16) -> i32 {
