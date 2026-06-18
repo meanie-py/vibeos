@@ -373,6 +373,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** import the real generated type (`crate::types::FAT_DATA`) and read bitfields through the generated accessor (`FatData.ChicagoMode()`), never as a plain offset-0 field. Delete the hand-rolled stub struct. **Tell:** an `extern static <global>: <LocalStubStruct>` next to a `#[repr(C)] struct <LocalStubStruct> { one_field }` — the LLM fabricates a minimal view of a big global and guesses offset 0. Cross-check every such stub against the real type, especially when the field is a C bitfield.
 **Source:** fastfat-port `b2de393afb5` (2026-06-15), `project_fastfat_rust_track.md`
 
+### C `:31` bitfield read as a full DWORD → high flag bit corrupts the value (wild pointer/offset)
+**Symptom:** i386-only BUGCHECK 0x1E (KMODE AV, `0xc0000005`) deep in a kernel list-walk (`ExfAcquirePushLockShared`) on a bogus session-space pointer (`0xf6f65700`) — fired as explorer/children read version resources after the version.dll C→Rust flip. amd64/arm64 booted green (luck-masked).
+**Root cause:** `IMAGE_RESOURCE_DIRECTORY_ENTRY.OffsetToDirectory` is an `OffsetToDirectory:31` bitfield in C (ntimage.h) whose **top bit is `DataIsDirectory`**. The translation declared it a full `DWORD` and used it raw. Every intermediate resource-directory level has `DataIsDirectory=1`, so the Rust computed `root + (0x80000000 | offset)` → a pointer far outside the `resSection` heap buffer; the garbage offset/length cascaded into a kernel deref. `find_pe_resource()` is the *primary* path for any on-disk PE, so it fired on essentially every PE version query. Bug class: **bitfield-not-masked** (sibling of cast-before-offset / element-vs-byte and the FatData offset-0 bitfield above).
+**Fix:** mask before use — `OffsetToDirectory & 0x7FFF_FFFF` (and read the `:31`/USHORT siblings `& 0x7FFF_FFFF` / `& 0xFFFF`). **Tell / grep:** translations that use `.OffsetToDirectory`/`.OffsetToData`/`.NameOffset` (any C `:31`/`:N` bitfield) directly as an offset without masking the high flag bit. When the source field is a C bitfield, never read it as the full storage word.
+**Source:** version-rust `79d7680b685` (2026-06-18), dc/version rescue → mainline.
+
 ---
 
 ## rustconv translation-output bug catalog
