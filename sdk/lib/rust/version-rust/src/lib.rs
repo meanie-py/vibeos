@@ -506,18 +506,40 @@ pub const fn PRIMARYLANGID(lgid: WORD) -> WORD { lgid & 0x3FF }
 // Forward declarations for NT/Win32 APIs (resolved at link time)
 // ============================================================================
 
-// Minimal TEB for NtCurrentTeb().CurrentLocale (offset 0xC0 on i386)
+// Minimal TEB exposing only NtCurrentTeb().CurrentLocale. The field offset is
+// pointer-width-dependent: 0xC0 on i386, 0x108 on amd64/arm64 (64-bit TEB layout).
+#[cfg(target_arch = "x86")]
 #[repr(C)]
 pub struct TEB {
     _pad: [u8; 0xC0],
+    pub CurrentLocale: u32,
+}
+#[cfg(not(target_arch = "x86"))]
+#[repr(C)]
+pub struct TEB {
+    _pad: [u8; 0x108],
     pub CurrentLocale: u32,
 }
 
 // Wine debug channel for TRACE_ON(__wine_dbch_ver)
 pub const __wine_dbch_ver: u32 = 0;
 
+// NtCurrentTeb() is an inline intrinsic (reads the TEB self-pointer from the
+// thread register), NOT an exported symbol on amd64/arm64 — provide it inline.
+// TEB self-pointer lives at NT_TIB.Self: fs:[0x18] (i386), gs:[0x30] (amd64), x18 (arm64).
+#[inline(always)]
+pub unsafe fn NtCurrentTeb() -> *mut TEB {
+    let teb: usize;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {}, fs:[0x18]", out(reg) teb, options(nostack, pure, readonly));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb, options(nostack, pure, readonly));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {}, x18", out(reg) teb, options(nostack, pure, readonly));
+    teb as *mut TEB
+}
+
 extern "system" {
-    pub fn NtCurrentTeb() -> *mut TEB;
     pub fn RtlCreateUnicodeStringFromAsciiz(
         TargetString: *mut _UNICODE_STRING,
         SourceString: LPCSTR,
@@ -574,22 +596,10 @@ extern "system" {
     pub fn LZRead(hFile: HFILE, lpBuffer: LPSTR, nCount: i32) -> i32;
     pub fn LZCopy(hfSource: HFILE, hfDest: HFILE) -> LONG;
 
-    pub fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-    pub fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void;
-    pub fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32;
-
-    pub fn strlen(s: *const CHAR) -> usize;
-    pub fn strcpy(dest: *mut CHAR, src: *const CHAR) -> *mut CHAR;
-    pub fn strcat(dest: *mut CHAR, src: *const CHAR) -> *mut CHAR;
-    pub fn strrchr(s: *const CHAR, c: i32) -> *mut CHAR;
     pub fn lstrcmpiA(s1: *const CHAR, s2: *const CHAR) -> i32;
     pub fn lstrcpynA(dest: *mut CHAR, src: *const CHAR, maxlen: i32) -> *mut CHAR;
     pub fn lstrlenW(s: *const WCHAR) -> i32;
     pub fn lstrcpynW(dest: *mut WCHAR, src: *const WCHAR, maxlen: i32) -> *mut WCHAR;
-    pub fn _strnicmp(s1: *const CHAR, s2: *const CHAR, n: usize) -> i32;
-    pub fn _wcsnicmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> i32;
-    pub fn wcsicmp(s1: *const WCHAR, s2: *const WCHAR) -> i32;
-    pub fn wcslen(s: *const WCHAR) -> usize;
 
     pub fn MultiByteToWideChar(
         CodePage: UINT,
@@ -645,9 +655,24 @@ pub unsafe fn debugstr_a(s: LPCSTR) -> LPCSTR { s }
 #[inline]
 pub unsafe fn debugstr_w(s: LPCWSTR) -> LPCWSTR { s }
 
-// Variadic functions MUST use extern "C" (extern "system" variadic is unstable)
+// CRT/libc helpers are cdecl (msvcrt exports them undecorated, NOT _name@N), so
+// they must live in an extern "C" block, not extern "system" — on i386 the latter
+// is stdcall and would look up _strlen@4 etc. which don't exist.
 extern "C" {
     pub fn sprintf(buffer: *mut CHAR, format: *const CHAR, ...) -> i32;
+
+    pub fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    pub fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void;
+    pub fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32;
+
+    pub fn strlen(s: *const CHAR) -> usize;
+    pub fn strcpy(dest: *mut CHAR, src: *const CHAR) -> *mut CHAR;
+    pub fn strcat(dest: *mut CHAR, src: *const CHAR) -> *mut CHAR;
+    pub fn strrchr(s: *const CHAR, c: i32) -> *mut CHAR;
+    pub fn _strnicmp(s1: *const CHAR, s2: *const CHAR, n: usize) -> i32;
+    pub fn _wcsnicmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> i32;
+    pub fn wcsicmp(s1: *const WCHAR, s2: *const WCHAR) -> i32;
+    pub fn wcslen(s: *const WCHAR) -> usize;
 }
 
 // Wine TRACE/WARN/FIXME are C macros (not linkable symbols); the DeepSeek
