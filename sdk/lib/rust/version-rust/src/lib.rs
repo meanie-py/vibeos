@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(c_variadic)]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #[allow(dead_code)]
 #[allow(unused_assignments)]
@@ -573,8 +574,6 @@ extern "system" {
     pub fn LZRead(hFile: HFILE, lpBuffer: LPSTR, nCount: i32) -> i32;
     pub fn LZCopy(hfSource: HFILE, hfDest: HFILE) -> LONG;
 
-    pub fn LANGIDFROMLCID(lcid: u32) -> LANGID;
-
     pub fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
     pub fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void;
     pub fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32;
@@ -632,21 +631,36 @@ extern "system" {
     pub fn GetSystemDirectoryA(lpBuffer: LPSTR, uSize: UINT) -> UINT;
     pub fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
 
-    // Debug helpers (Wine trace)
-    pub fn TRACE_ON(channel: u32) -> i32;
-
-    // debugstr helpers
-    pub fn debugstr_a(str: LPCSTR) -> LPCSTR;
-    pub fn debugstr_w(str: LPCWSTR) -> LPCWSTR;
 }
+
+// Wine debug helpers are C macros, not linkable symbols — provide no-op shims
+// (same approach as kernel32-rust/src/prelude.rs).
+// LANGIDFROMLCID is a C macro ((WORD)(lcid)), not a linkable symbol.
+#[inline]
+pub fn LANGIDFROMLCID(lcid: u32) -> LANGID { lcid as LANGID }
+#[inline]
+pub unsafe fn TRACE_ON(_channel: u32) -> i32 { 0 }
+#[inline]
+pub unsafe fn debugstr_a(s: LPCSTR) -> LPCSTR { s }
+#[inline]
+pub unsafe fn debugstr_w(s: LPCWSTR) -> LPCWSTR { s }
 
 // Variadic functions MUST use extern "C" (extern "system" variadic is unstable)
 extern "C" {
     pub fn sprintf(buffer: *mut CHAR, format: *const CHAR, ...) -> i32;
-    pub fn TRACE(format: *const i8, ...);
-    pub fn WARN(format: *const i8, ...);
-    pub fn FIXME(format: *const i8, ...);
 }
+
+// Wine TRACE/WARN/FIXME are C macros (not linkable symbols); the DeepSeek
+// translation declared them as extern fns, which would leave undefined symbols
+// at link. Mirror kernel32-rust's no-op-debug approach, but keep the original
+// call syntax (`TRACE(...)`) by defining them as in-crate C-variadic no-ops
+// (the project already builds with `#![feature(c_variadic)]` for scsiport et al).
+#[allow(unused_variables)]
+pub unsafe extern "C" fn TRACE(format: *const i8, mut args: ...) {}
+#[allow(unused_variables)]
+pub unsafe extern "C" fn WARN(format: *const i8, mut args: ...) {}
+#[allow(unused_variables)]
+pub unsafe extern "C" fn FIXME(format: *const i8, mut args: ...) {}
 
 // ============================================================================
 // Helper: MAKEINTRESOURCEW (inline)
