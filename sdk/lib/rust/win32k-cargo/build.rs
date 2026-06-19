@@ -79,13 +79,35 @@ fn main() {
         "win32ss/libwin32k_residue.a",
         "sdk/lib/pseh/libpseh.a",
         "sdk/lib/dxguid/libdxguid.a",
-        "sdk/lib/crt/liblibcntpr.a",
+        // liblibcntpr.a (cmake C CRT) DROPPED — libcntpr_rust.a provides the whole
+        // translatable surface; the only irreducible C floor win32k pulls is the
+        // C-variadic printf shells (Rust stable can't define C variadics),
+        // compiled in-cargo via c_from_compile_db below. Offline drop-test
+        // (nm: win32k undefined ∩ liblibcntpr defs − libcntpr_rust defs) = i386
+        // needs only _vsnwprintf; the full shell set is lazy-pull + cross-arch
+        // safe (nothing else defines them — zero dup risk).
     ];
     if chkstk {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
     static_libs.push("sdk/lib/crt/libcntpr_rust.a");
     static_libs.push("sdk/lib/crt/libmemcmp.a");
+
+    // The irreducible C-variadic printf shells (sprintf/_snwprintf/… = thin
+    // `va_start; vsnwprintf(...)` over the now-Rust streamout engine). Arch-
+    // independent. Mirrors ntoskrnl-cargo's cntpr_residue.
+    let cntpr_residue: &[&str] = &[
+        "sdk/lib/crt/printf/sprintf.c",
+        "sdk/lib/crt/printf/swprintf.c",
+        "sdk/lib/crt/printf/vsprintf.c",
+        "sdk/lib/crt/printf/_snprintf.c",
+        "sdk/lib/crt/printf/_snwprintf.c",
+        "sdk/lib/crt/printf/_vsnprintf.c",
+        "sdk/lib/crt/printf/_vsnwprintf.c",
+        // _vscwprintf (wide char-count) — win32k's body pulls it transitively;
+        // its only dep is wstreamout, which the Rust CRT provides.
+        "sdk/lib/crt/printf/_vscwprintf.c",
+    ];
 
     let mut linker = Linker::new(target_json)
         // The translated body — built with the user hardfloat target exactly
@@ -107,6 +129,10 @@ fn main() {
     }
     linker
         .static_libs(&static_libs)
+        // Compile the cntpr C-variadic floor in-cargo (replaces the dropped
+        // liblibcntpr.a). Symbol-identical to the cmake objects (replays
+        // compile_commands.json); lazy-pull so unused shells cost nothing.
+        .c_from_compile_db("libcntpr", cntpr_residue)
         // cmake add_importlibs(win32k ntoskrnl hal ftfd), self-hosted from
         // each .spec (spec2def + dlltool) like every other cargo cut.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
