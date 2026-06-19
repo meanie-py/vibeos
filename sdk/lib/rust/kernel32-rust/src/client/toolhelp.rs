@@ -2,6 +2,179 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// ---- cohab glue (kernel32 Rust port: tlhelp32 FFI surface + intra-DLL imports) ----
+use crate::k32_externs::{RtlCopyMemory, RtlZeroMemory, CloseHandle, SetLastError};
+
+// tlhelp32.h constants
+pub const MAX_MODULE_NAME32: usize = 255;
+pub const LF32_FIXED: DWORD = 0x1;
+pub const LF32_FREE: DWORD = 0x2;
+pub const LF32_MOVEABLE: DWORD = 0x4;
+pub const TH32CS_SNAPHEAPLIST: DWORD = 0x1;
+pub const TH32CS_SNAPPROCESS: DWORD = 0x2;
+pub const TH32CS_SNAPTHREAD: DWORD = 0x4;
+pub const TH32CS_SNAPMODULE: DWORD = 0x8;
+pub const TH32CS_INHERIT: DWORD = 0x80000000;
+const STATUS_NO_MORE_FILES: NTSTATUS = 0x8000_0006u32 as NTSTATUS;
+// BOOL is i32; the nt::* glob exports FALSE/TRUE as u32 — shadow with BOOL-typed consts.
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+
+// L"[System Process]" (no_std: no Vec/string literals for UTF-16)
+static SYSTEM_PROCESS: [u16; 17] = [
+    b'[' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16,
+    b'm' as u16, b' ' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'c' as u16,
+    b'e' as u16, b's' as u16, b's' as u16, b']' as u16, 0,
+];
+
+// tlhelp32.h structures (PE-COFF layout; faithful to sdk/include/psdk/tlhelp32.h)
+#[repr(C)]
+pub struct tagHEAPLIST32 {
+    pub dwSize: DWORD,
+    pub th32ProcessID: DWORD,
+    pub th32HeapID: DWORD,
+    pub dwFlags: DWORD,
+}
+pub type HEAPLIST32 = tagHEAPLIST32;
+pub type PHEAPLIST32 = *mut tagHEAPLIST32;
+pub type LPHEAPLIST32 = *mut tagHEAPLIST32;
+
+#[repr(C)]
+pub struct tagHEAPENTRY32 {
+    pub dwSize: DWORD,
+    pub hHandle: HANDLE,
+    pub dwAddress: DWORD,
+    pub dwBlockSize: DWORD,
+    pub dwFlags: DWORD,
+    pub dwLockCount: DWORD,
+    pub dwResvd: DWORD,
+    pub th32ProcessID: DWORD,
+    pub th32HeapID: DWORD,
+}
+pub type HEAPENTRY32 = tagHEAPENTRY32;
+pub type PHEAPENTRY32 = *mut tagHEAPENTRY32;
+pub type LPHEAPENTRY32 = *mut tagHEAPENTRY32;
+
+#[repr(C)]
+pub struct tagPROCESSENTRY32W {
+    pub dwSize: DWORD,
+    pub cntUsage: DWORD,
+    pub th32ProcessID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
+    pub th32ModuleID: DWORD,
+    pub cntThreads: DWORD,
+    pub th32ParentProcessID: DWORD,
+    pub pcPriClassBase: LONG,
+    pub dwFlags: DWORD,
+    pub szExeFile: [WCHAR; 260],
+}
+pub type PROCESSENTRY32W = tagPROCESSENTRY32W;
+pub type PPROCESSENTRY32W = *mut tagPROCESSENTRY32W;
+pub type LPPROCESSENTRY32W = *mut tagPROCESSENTRY32W;
+
+#[repr(C)]
+pub struct tagPROCESSENTRY32 {
+    pub dwSize: DWORD,
+    pub cntUsage: DWORD,
+    pub th32ProcessID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
+    pub th32ModuleID: DWORD,
+    pub cntThreads: DWORD,
+    pub th32ParentProcessID: DWORD,
+    pub pcPriClassBase: LONG,
+    pub dwFlags: DWORD,
+    pub szExeFile: [CHAR; 260],
+}
+pub type PROCESSENTRY32 = tagPROCESSENTRY32;
+pub type PPROCESSENTRY32 = *mut tagPROCESSENTRY32;
+pub type LPPROCESSENTRY32 = *mut tagPROCESSENTRY32;
+
+#[repr(C)]
+pub struct tagMODULEENTRY32W {
+    pub dwSize: DWORD,
+    pub th32ModuleID: DWORD,
+    pub th32ProcessID: DWORD,
+    pub GlblcntUsage: DWORD,
+    pub ProccntUsage: DWORD,
+    pub modBaseAddr: *mut BYTE,
+    pub modBaseSize: DWORD,
+    pub hModule: HMODULE,
+    pub szModule: [WCHAR; MAX_MODULE_NAME32 + 1],
+    pub szExePath: [WCHAR; 260],
+}
+pub type MODULEENTRY32W = tagMODULEENTRY32W;
+pub type PMODULEENTRY32W = *mut tagMODULEENTRY32W;
+pub type LPMODULEENTRY32W = *mut tagMODULEENTRY32W;
+
+#[repr(C)]
+pub struct tagMODULEENTRY32 {
+    pub dwSize: DWORD,
+    pub th32ModuleID: DWORD,
+    pub th32ProcessID: DWORD,
+    pub GlblcntUsage: DWORD,
+    pub ProccntUsage: DWORD,
+    pub modBaseAddr: *mut BYTE,
+    pub modBaseSize: DWORD,
+    pub hModule: HMODULE,
+    pub szModule: [CHAR; MAX_MODULE_NAME32 + 1],
+    pub szExePath: [CHAR; 260],
+}
+pub type MODULEENTRY32 = tagMODULEENTRY32;
+pub type PMODULEENTRY32 = *mut tagMODULEENTRY32;
+pub type LPMODULEENTRY32 = *mut tagMODULEENTRY32;
+
+#[repr(C)]
+pub struct tagTHREADENTRY32 {
+    pub dwSize: DWORD,
+    pub cntUsage: DWORD,
+    pub th32ThreadID: DWORD,
+    pub th32OwnerProcessID: DWORD,
+    pub tpBasePri: LONG,
+    pub tpDeltaPri: LONG,
+    pub dwFlags: DWORD,
+}
+pub type THREADENTRY32 = tagTHREADENTRY32;
+pub type PTHREADENTRY32 = *mut tagTHREADENTRY32;
+pub type LPTHREADENTRY32 = *mut tagTHREADENTRY32;
+
+// C macro: #define OffsetToPtr(Snapshot, Offset) ((LPVOID)((LPBYTE)(Snapshot) + (Offset)))
+#[inline]
+unsafe fn OffsetToPtr<T>(snapshot: *const T, offset: ULONG_PTR) -> PVOID {
+    (snapshot as *const u8).add(offset as usize) as PVOID
+}
+
+// intra-DLL kernel32 exports (resolved to #[no_mangle] symbols in sibling modules at link)
+extern "system" {
+    fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
+    fn ReadProcessMemory(
+        hProcess: HANDLE,
+        lpBaseAddress: LPCVOID,
+        lpBuffer: LPVOID,
+        nSize: SIZE_T,
+        lpNumberOfBytesRead: *mut SIZE_T,
+    ) -> BOOL;
+    fn GetCurrentProcessId() -> DWORD;
+    fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+    fn MultiByteToWideChar(
+        CodePage: UINT,
+        Flags: DWORD,
+        MultiByteString: LPCSTR,
+        MultiByteCount: INT,
+        WideCharString: LPWSTR,
+        WideCharCount: INT,
+    ) -> INT;
+    fn WideCharToMultiByte(
+        CodePage: UINT,
+        Flags: DWORD,
+        WideCharString: LPCWSTR,
+        WideCharCount: INT,
+        MultiByteString: LPSTR,
+        MultiByteCount: INT,
+        DefaultChar: LPCSTR,
+        UsedDefaultChar: LPBOOL,
+    ) -> INT;
+}
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct _RTLP_HEAP_ENTRY {
@@ -34,8 +207,8 @@ pub type PTH32SNAPSHOT = *mut _TH32SNAPSHOT;
 unsafe fn TH32FreeAllocatedResources(
     HeapDebug: PRTL_DEBUG_INFORMATION,
     ModuleDebug: PRTL_DEBUG_INFORMATION,
-    ProcThrdInfo: PVOID,
-    ProcThrdInfoSize: SIZE_T,
+    mut ProcThrdInfo: PVOID,
+    mut ProcThrdInfoSize: SIZE_T,
 ) {
     if !HeapDebug.is_null() {
         RtlDestroyQueryDebugBuffer(HeapDebug);
@@ -111,7 +284,7 @@ unsafe fn TH32CreateSnapshot(
             Status = NtQuerySystemInformation(
                 SystemProcessInformation,
                 *ProcThrdInfo,
-                *ProcThrdInfoSize,
+                *ProcThrdInfoSize as ULONG,
                 core::ptr::null_mut(),
             );
             if Status == STATUS_INFO_LENGTH_MISMATCH {
@@ -178,7 +351,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
     }
 
     if dwFlags & TH32CS_SNAPMODULE != 0 {
-        mi = (*ModuleDebug).Modules;
+        mi = (*ModuleDebug).__bindgen_anon_1.Modules;
         nModules = (*mi).NumberOfModules;
         RequiredSnapshotSize = RequiredSnapshotSize.wrapping_add(
             (nModules as usize).wrapping_mul(core::mem::size_of::<MODULEENTRY32W>()) as ULONG,
@@ -259,7 +432,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
         return Status;
     }
 
-    RtlZeroMemory(Snapshot as PVOID, core::mem::size_of::<TH32SNAPSHOT>());
+    RtlZeroMemory(Snapshot as PVOID, core::mem::size_of::<TH32SNAPSHOT>() as SIZE_T);
     DataOffset = 0;
 
     if dwFlags & TH32CS_SNAPHEAPLIST != 0 {
@@ -271,7 +444,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
         while i < nHeaps {
             (*HeapListEntry).dwSize = core::mem::size_of::<HEAPLIST32>() as DWORD;
             (*HeapListEntry).th32ProcessID = th32ProcessID;
-            (*HeapListEntry).th32HeapID = (*hi).Heaps[i as usize].BaseAddress as ULONG_PTR;
+            (*HeapListEntry).th32HeapID = (*hi).Heaps[i as usize].BaseAddress as ULONG_PTR as DWORD;
             (*HeapListEntry).dwFlags = (*hi).Heaps[i as usize].Flags;
 
             HeapListEntry = HeapListEntry.offset(1);
@@ -293,8 +466,8 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
             (*ModuleListEntry).dwSize = core::mem::size_of::<MODULEENTRY32W>() as DWORD;
             (*ModuleListEntry).th32ModuleID = 1;
             (*ModuleListEntry).th32ProcessID = th32ProcessID;
-            (*ModuleListEntry).GlblcntUsage = (*mi).Modules[i as usize].LoadCount;
-            (*ModuleListEntry).ProccntUsage = (*mi).Modules[i as usize].LoadCount;
+            (*ModuleListEntry).GlblcntUsage = (*mi).Modules[i as usize].LoadCount as DWORD;
+            (*ModuleListEntry).ProccntUsage = (*mi).Modules[i as usize].LoadCount as DWORD;
             (*ModuleListEntry).modBaseAddr = (*mi).Modules[i as usize].ImageBase as *mut BYTE;
             (*ModuleListEntry).modBaseSize = (*mi).Modules[i as usize].ImageSize;
             (*ModuleListEntry).hModule = (*mi).Modules[i as usize].ImageBase as HMODULE;
@@ -350,19 +523,19 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
 
             if !(*ProcessInfo).ImageName.Buffer.is_null() {
                 let ExeFileLength: ULONG = min(
-                    (*ProcessInfo).ImageName.Length,
+                    (*ProcessInfo).ImageName.Length as ULONG,
                     (core::mem::size_of::<[WCHAR; 260]>() - core::mem::size_of::<WCHAR>()) as ULONG,
                 );
                 RtlCopyMemory(
                     &mut (*ProcessListEntry).szExeFile as *mut WCHAR as PVOID,
                     (*ProcessInfo).ImageName.Buffer as PVOID,
-                    ExeFileLength as usize,
+                    ExeFileLength as SIZE_T,
                 );
                 (*ProcessListEntry).szExeFile[(ExeFileLength as usize / core::mem::size_of::<WCHAR>()) as usize] = UNICODE_NULL;
             } else {
                 lstrcpyW(
                     &mut (*ProcessListEntry).szExeFile as *mut WCHAR,
-                    "[System Process]\0".encode_utf16().collect::<Vec<u16>>().as_ptr(),
+                    SYSTEM_PROCESS.as_ptr(),
                 );
             }
 
@@ -393,7 +566,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
 
             ProcessInfo = (ProcessInfo as ULONG_PTR).wrapping_add(ProcOffset as ULONG_PTR)
                 as PSYSTEM_PROCESS_INFORMATION;
-            ThreadInfo = (ProcessInfo as ULONG_PTR).wrapping_add(core::mem::size_of::<SYSTEM_PROCESS_INFORMATION>()) as PSYSTEM_THREAD_INFORMATION;
+            ThreadInfo = (ProcessInfo as ULONG_PTR).wrapping_add(core::mem::size_of::<SYSTEM_PROCESS_INFORMATION>() as ULONG_PTR) as PSYSTEM_THREAD_INFORMATION;
 
             n = 0;
             while n < (*ProcessInfo).NumberOfThreads {
@@ -478,7 +651,7 @@ pub unsafe extern "system" fn Heap32First(
                 Block = (*Heap).Entries as PRTLP_HEAP_ENTRY;
                 LastBlock = Block.offset((*Heap).NumberOfEntries as isize);
 
-                while Block != LastBlock && ((*Block).Flags & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
+                while Block != LastBlock && ((*Block).Flags as ULONG & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
                     (*lphe).dwResvd = (*lphe).dwResvd.wrapping_add(1);
                     (*lphe).dwAddress = ((*Block).Address as ULONG_PTR)
                         .wrapping_add((*Heap).EntryOverhead as ULONG_PTR) as DWORD;
@@ -557,7 +730,7 @@ pub unsafe extern "system" fn Heap32Next(lphe: LPHEAPENTRY32) -> BOOL {
                     Block = ((*Heap).Entries as PRTLP_HEAP_ENTRY).offset((*lphe).dwResvd as isize);
                     LastBlock = ((*Heap).Entries as PRTLP_HEAP_ENTRY).offset((*Heap).NumberOfEntries as isize);
 
-                    while Block < LastBlock && ((*Block).Flags as i32 & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
+                    while Block < LastBlock && ((*Block).Flags as ULONG & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
                         (*lphe).dwResvd = (*lphe).dwResvd.wrapping_add(1);
                         (*lphe).dwAddress = ((*Block).Address as ULONG_PTR)
                             .wrapping_add((*Heap).EntryOverhead as ULONG_PTR) as DWORD;
@@ -643,7 +816,7 @@ pub unsafe extern "system" fn Heap32ListFirst(
             RtlCopyMemory(
                 lphl as *mut core::ffi::c_void,
                 &(*Entries.offset(0)) as *const HEAPLIST32 as *const core::ffi::c_void,
-                core::mem::size_of::<HEAPLIST32>(),
+                core::mem::size_of::<HEAPLIST32>() as SIZE_T,
             );
             Ret = 1;
         } else {
@@ -710,7 +883,7 @@ pub unsafe extern "system" fn Heap32ListNext(
             RtlCopyMemory(
                 lphl as *mut core::ffi::c_void,
                 &*Entries.add(idx as usize) as *const HEAPLIST32 as *const core::ffi::c_void,
-                core::mem::size_of::<HEAPLIST32>(),
+                core::mem::size_of::<HEAPLIST32>() as SIZE_T,
             );
             Ret = TRUE;
         } else {
@@ -818,7 +991,7 @@ pub unsafe extern "system" fn Module32FirstW(
             RtlCopyMemory(
                 lpme as *mut core::ffi::c_void,
                 &(*Entries.offset(0)) as *const MODULEENTRY32W as *const core::ffi::c_void,
-                core::mem::size_of::<MODULEENTRY32W>(),
+                core::mem::size_of::<MODULEENTRY32W>() as SIZE_T,
             );
             Ret = TRUE;
         } else {
@@ -930,7 +1103,7 @@ pub unsafe extern "system" fn Module32NextW(
             RtlCopyMemory(
                 lpme as *mut core::ffi::c_void,
                 Entries.offset(idx as isize) as *const core::ffi::c_void,
-                core::mem::size_of::<MODULEENTRY32W>(),
+                core::mem::size_of::<MODULEENTRY32W>() as SIZE_T,
             );
             Ret = TRUE;
         } else {
@@ -1031,8 +1204,8 @@ pub unsafe extern "system" fn Process32FirstW(
             (*Snapshot).ProcessListIndex = 1;
             RtlCopyMemory(
                 lppe as *mut core::ffi::c_void,
-                &Entries[0] as *const PROCESSENTRY32W as *const core::ffi::c_void,
-                core::mem::size_of::<PROCESSENTRY32W>(),
+                &*Entries.offset(0) as *const PROCESSENTRY32W as *const core::ffi::c_void,
+                core::mem::size_of::<PROCESSENTRY32W>() as SIZE_T,
             );
             Ret = TRUE;
         } else {
@@ -1096,7 +1269,7 @@ pub unsafe extern "system" fn Process32NextW(
     lppe: LPPROCESSENTRY32W,
 ) -> BOOL {
     let mut Snapshot: PTH32SNAPSHOT;
-    let mut SOffset: LARGE_INTEGER;
+    let mut SOffset: LARGE_INTEGER = core::mem::zeroed();
     let mut ViewSize: SIZE_T;
     let mut Status: NTSTATUS;
 
@@ -1135,7 +1308,7 @@ pub unsafe extern "system" fn Process32NextW(
             RtlCopyMemory(
                 lppe as *mut ::core::ffi::c_void,
                 &*Entries.add(idx as usize) as *const PROCESSENTRY32W as *const ::core::ffi::c_void,
-                core::mem::size_of::<PROCESSENTRY32W>(),
+                core::mem::size_of::<PROCESSENTRY32W>() as SIZE_T,
             );
             Ret = 1;
         } else {
@@ -1190,7 +1363,7 @@ pub unsafe extern "system" fn Thread32First(
             RtlCopyMemory(
                 lpte as *mut core::ffi::c_void,
                 &*Entries.offset(0) as *const THREADENTRY32 as *const core::ffi::c_void,
-                core::mem::size_of::<THREADENTRY32>(),
+                core::mem::size_of::<THREADENTRY32>() as SIZE_T,
             );
             Ret = 1;
         } else {
@@ -1211,12 +1384,7 @@ pub unsafe extern "system" fn Thread32Next(
     lpte: LPTHREADENTRY32,
 ) -> BOOL {
     let mut Snapshot: PTH32SNAPSHOT = core::ptr::null_mut();
-    let mut SOffset: LARGE_INTEGER = LARGE_INTEGER {
-        u: LARGE_INTEGER_u {
-            LowPart: 0,
-            HighPart: 0,
-        },
-    };
+    let mut SOffset: LARGE_INTEGER = core::mem::zeroed();
     let mut ViewSize: SIZE_T = 0;
     let mut Status: NTSTATUS = 0;
 
@@ -1259,7 +1427,7 @@ pub unsafe extern "system" fn Thread32Next(
             RtlCopyMemory(
                 lpte as *mut core::ffi::c_void,
                 Entries.offset(fresh3 as isize) as *const core::ffi::c_void,
-                core::mem::size_of::<THREADENTRY32>(),
+                core::mem::size_of::<THREADENTRY32>() as SIZE_T,
             );
 
             Ret = TRUE;
@@ -1310,6 +1478,7 @@ pub unsafe extern "system" fn CreateToolhelp32Snapshot(
     let mut Status: NTSTATUS = 0;
     let mut hSnapShotSection: HANDLE = core::ptr::null_mut();
 
+    let mut th32ProcessID = th32ProcessID;
     if th32ProcessID == 0 {
         th32ProcessID = GetCurrentProcessId();
     }

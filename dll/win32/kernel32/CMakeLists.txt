@@ -39,7 +39,7 @@ list(APPEND SOURCE
     # client/sysinfo.c — replaced by Rust
     # client/time.c — replaced by Rust
     # client/timerqueue.c — replaced by Rust
-    client/toolhelp.c # DEFERRED back to C (tlhelp32 types not yet in FFI; toolhelp.rs on disk)
+    # client/toolhelp.c — replaced by Rust (kernel32-rust/src/client/toolhelp.rs); cohab-linked via libkernel32_rust.a
     # client/utils.c — replaced by Rust
     # client/thread.c — replaced by Rust
     # client/vdm.c — replaced by Rust
