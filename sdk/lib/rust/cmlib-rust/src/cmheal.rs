@@ -22,6 +22,11 @@ use core::ffi::c_void;
 unsafe extern "C" {
     // conditionally compiled in original (#if !defined(CMLIB_HOST) && !defined(_BLDR_)) pub static mut CmpSelfHeal: u8;   // BOOLEAN pub static mut CmpBootType: u32;  // ULONG
     fn PAGED_CODE();
+}
+// HvMarkCellDirty is NTAPI = __stdcall on i386 (`_HvMarkCellDirty@12`, callee-pops).
+// Must be `extern "system"`, NOT `extern "C"` — see the cmcheck.rs note (cdecl
+// decl + stdcall def drifts ESP per call → BUGCHECK 0x1E on i386).
+unsafe extern "system" {
     fn HvMarkCellDirty(hive: PHHIVE, cell: HCELL_INDEX, dirty: i32);
 }
 
