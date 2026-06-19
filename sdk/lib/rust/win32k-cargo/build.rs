@@ -25,8 +25,10 @@
 //! residue was force-linked objects ahead of the Rust archive.
 //!
 //! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's
-//! libwin32k_residue.a / libpseh.a / libdxguid.a / liblibcntpr.a /
-//! libchkstk.a / libcntpr_rust.a / libmemcmp.a). The version resource is the
+//! libwin32k_residue.a / libdxguid.a / libchkstk.a / libcntpr_rust.a /
+//! libmemcmp.a; libpseh.a + liblibcntpr.a were dropped — win32k references
+//! nothing from libpseh, and the libcntpr C-variadic floor is compiled in-cargo
+//! via c_from_compile_db). The version resource is the
 //! checked-in per-arch `data/win32k-<arch>.rc.res` (byte-identical to cmake's
 //! win32k.rc.res; regenerate via tools/gen_win32k_res.py when version blocks
 //! change). Post-link pefixup --kernelmodedriver / fix_lld_forwarding.py run
@@ -77,7 +79,14 @@ fn main() {
     // after this group via rust_staticlib).
     let mut static_libs: Vec<&str> = vec![
         "win32ss/libwin32k_residue.a",
-        "sdk/lib/pseh/libpseh.a",
+        // libpseh.a DROPPED — win32k references NOTHING from it. Offline nm
+        // drop-test (undefined across libwin32k_residue + libwin32k_kernel_rust
+        // ∩ libpseh defs) = EMPTY on both i386 (full seh.s runtime + volatiles)
+        // and amd64 (volatiles-only): win32k's DUMMY_PSEH handlers are dead code
+        // and its body never references the `_SEH2_Volatile*` data symbols, so
+        // the cmake reuse was vestigial. The SEH runtime export ABI lives in
+        // ntoskrnl (pseh-rust), not here. C kept on disk. arm64 (volatiles-only,
+        // same arch-independent refs as amd64) verified at the gate's cold link.
         "sdk/lib/dxguid/libdxguid.a",
         // liblibcntpr.a (cmake C CRT) DROPPED — libcntpr_rust.a provides the whole
         // translatable surface; the only irreducible C floor win32k pulls is the
