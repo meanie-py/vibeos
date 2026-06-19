@@ -237,7 +237,15 @@ unsafe fn ConnectConsole(
     ConnectInfo: PCONSRV_API_CONNECTINFO,
     InServerProcess: PBOOLEAN,
 ) -> BOOLEAN {
-    let ConnectInfoSize: ULONG = core::mem::size_of::<CONSRV_API_CONNECTINFO>() as ULONG;
+    // C: `ULONG ConnectInfoSize = sizeof(*ConnectInfo);` then `&ConnectInfoSize`.
+    // CsrClientConnectToServer takes this as an IN/OUT PULONG and WRITES the actual
+    // size back. It MUST be a mutable local passed as a real `&mut` — the previous
+    // `&ConnectInfoSize as *const ULONG as *mut ULONG` wrote through a *const-derived
+    // pointer to an immutable `let`, which is UB. arm64 gnullvm LLVM exploited that UB
+    // and miscompiled the post-connect reads (stale ConsoleStartInfo.InitEvents → wait
+    // on null handles → deadlock at NtWaitForMultipleObjects); a debug print perturbed
+    // codegen and masked it (the Heisenbug). i386/amd64 codegen happened not to bite.
+    let mut ConnectInfoSize: ULONG = core::mem::size_of::<CONSRV_API_CONNECTINFO>() as ULONG;
 
     // ASSERT(SessionDir);
 
@@ -247,7 +255,7 @@ unsafe fn ConnectConsole(
         SessionDir,
         CONSRV_SERVERDLL_INDEX,
         ConnectInfo as *mut _,
-        &ConnectInfoSize as *const ULONG as *mut ULONG,
+        &mut ConnectInfoSize as *mut ULONG,
         InServerProcess,
     );
     if !NT_SUCCESS(Status) {
