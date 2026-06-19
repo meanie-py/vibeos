@@ -1853,10 +1853,15 @@ unsafe fn RemoveConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     while i < NrCtrlHandlers {
         if *CtrlHandlers.add(i as usize) == HandlerRoutine {
             if i < (NrCtrlHandlers - 1) {
+                // C: memmove(&CtrlHandlers[i], &CtrlHandlers[i+1],
+                //            (NrCtrlHandlers - i + 1) * sizeof(PHANDLER_ROUTINE));
+                // ptr::copy counts ELEMENTS, not bytes — the count is the element
+                // count (NrCtrlHandlers - i + 1); multiplying by size_of here would
+                // copy 4x the elements = 16x the bytes = heap overflow.
                 core::ptr::copy(
                     CtrlHandlers.offset((i + 1) as isize),
                     CtrlHandlers.offset(i as isize),
-                    (NrCtrlHandlers - i + 1) as usize * core::mem::size_of::<PHANDLER_ROUTINE>(),
+                    (NrCtrlHandlers - i + 1) as usize,
                 );
             }
 
