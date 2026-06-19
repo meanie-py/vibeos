@@ -60,7 +60,7 @@ list(APPEND SOURCE
     wine/comm.c # DEFERRED back to C (SERIAL_*/IOCTL_SERIAL_* types not yet in FFI; comm.rs on disk)
     # wine/lzexpand.c — replaced by Rust (kernel32-rust/src/wine/lzexpand.rs); cohab-linked via libkernel32_rust.a
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
-    wine/profile.c # DEFERRED back to C (INI + CurProfile state; profile.rs on disk)
+    # wine/profile.c — replaced by Rust (kernel32-rust/src/wine/profile.rs); cohab-linked via libkernel32_rust.a
     wine/res.c
     # wine/timezone.c — replaced by Rust
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)

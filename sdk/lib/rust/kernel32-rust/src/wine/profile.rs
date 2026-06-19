@@ -1,6 +1,45 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+use ENCODING::*;
+// HeapAlloc/HeapFree are pure ntdll forwarders (no @N symbol) → the nls_subst Rust
+// wrappers; RtlUshortByteSwap is a FORCEINLINE intrinsic (no export) → also imported.
+use crate::string::nls_subst::{HeapAlloc, HeapFree, RtlUshortByteSwap};
+
+// ---- cohab glue: Wine debug macros (no-ops, as in the other ported modules) ----
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+macro_rules! FIXME { ($($t:tt)*) => {{}} }
+
+// ---- cohab glue: kernel32 Rust exports this module calls (real stdcall @N exports) ----
+extern "system" {
+    fn GetProcessHeap() -> HANDLE;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+    fn CreateFileW(lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE) -> HANDLE;
+    fn GetFileSize(hFile: HANDLE, lpFileSizeHigh: LPDWORD) -> DWORD;
+    fn GetFileTime(hFile: HANDLE, lpCreationTime: LPFILETIME, lpLastAccessTime: LPFILETIME, lpLastWriteTime: LPFILETIME) -> BOOL;
+    fn GetFullPathNameW(lpFileName: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
+    fn GetSystemTimeAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
+    fn GetWindowsDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
+    fn MultiByteToWideChar(CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: INT, lpWideCharStr: LPWSTR, cchWideChar: INT) -> INT;
+    fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT, lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: *const CHAR, lpUsedDefaultChar: *mut BOOL) -> INT;
+    fn ReadFile(hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED) -> BOOL;
+    fn WriteFile(hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED) -> BOOL;
+    fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR;
+}
+
+// ---- cohab glue: profile.c statics / function-like macros ----
+static mut CurProfile: *mut PROFILE = core::ptr::null_mut();
+#[inline]
+unsafe fn IS_ENTRY_COMMENT(s: *const WCHAR) -> c_int {
+    (*s == ';' as WCHAR) as c_int          // #define IS_ENTRY_COMMENT(str) ((str)[0] == ';')
+}
+#[inline]
+unsafe fn ZeroMemory(dest: PVOID, len: usize) {
+    core::ptr::write_bytes(dest as *mut u8, 0, len);
+}
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -48,7 +87,7 @@ static mut critsect_debug: RTL_CRITICAL_SECTION_DEBUG = RTL_CRITICAL_SECTION_DEB
     },
     EntryCount: 0,
     ContentionCount: 0,
-    c2rust_unnamed: C2RustUnnamed { WineDebugString: 0 },
+    __bindgen_anon_1: _RTL_CRITICAL_SECTION_DEBUG__bindgen_ty_1 { WineDebugString: 0 },
 };
 
 static mut PROFILE_CritSect: RTL_CRITICAL_SECTION = unsafe {
@@ -65,9 +104,11 @@ static mut PROFILE_CritSect: RTL_CRITICAL_SECTION = unsafe {
 static mut hex: [::core::ffi::c_char; 16] =
     unsafe { ::core::mem::transmute::<[u8; 16], [::core::ffi::c_char; 16]>(*b"0123456789ABCDEF") };
 
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+// (c2rust emitted a `static INIT_ARRAY = [run_static_initializers]` .init_array hook
+//  here; dropped — all statics in this module are const-initialized, nothing to run.)
 
 #[repr(C)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ENCODING {
     ENCODING_ANSI = 1,
     ENCODING_UTF8,
@@ -102,10 +143,10 @@ pub struct PROFILE {
     pub encoding: ENCODING,
 }
 
-pub const N_CACHED_PROFILES: u32 = 10;
+pub const N_CACHED_PROFILES: INT = 10;
 unsafe fn PROFILE_CopyEntry(
     buffer: LPWSTR,
-    value: LPCWSTR,
+    mut value: LPCWSTR,
     len: ::core::ffi::c_int,
     strip_quote: BOOL,
 ) {
@@ -185,14 +226,14 @@ unsafe fn PROFILE_WriteMarker(hFile: HANDLE, encoding: ENCODING) {
 unsafe fn PROFILE_WriteLine(
     hFile: HANDLE,
     szLine: *mut WCHAR,
-    len: ::core::ffi::c_int,
+    mut len: ::core::ffi::c_int,
     encoding: ENCODING,
 ) {
     let mut write_buffer: *mut ::core::ffi::c_char = core::ptr::null_mut();
     let mut write_buffer_len: ::core::ffi::c_int = 0;
     let mut dwBytesWritten: DWORD = 0;
 
-    TRACE(b"writing: %s\n\0" as *const u8 as *const ::core::ffi::c_char, debugstr_wn(szLine, len));
+    TRACE!(b"writing: %s\n\0" as *const u8 as *const ::core::ffi::c_char, debugstr_wn(szLine, len));
 
     match encoding as ::core::ffi::c_uint {
         1 => {
@@ -283,7 +324,7 @@ unsafe fn PROFILE_WriteLine(
             );
         }
         _ => {
-            FIXME(b"encoding type %d not implemented\n\0" as *const u8 as *const ::core::ffi::c_char, encoding as ::core::ffi::c_uint);
+            FIXME!(b"encoding type %d not implemented\n\0" as *const u8 as *const ::core::ffi::c_char, encoding as ::core::ffi::c_uint);
         }
     }
 }
@@ -392,7 +433,7 @@ unsafe fn PROFILE_DetectTextEncoding(
     len: *mut ::core::ffi::c_int,
 ) -> ENCODING {
     let mut flags: ::core::ffi::c_int =
-        IS_TEXT_UNICODE_SIGNATURE | IS_TEXT_UNICODE_REVERSE_SIGNATURE | IS_TEXT_UNICODE_ODD_LENGTH;
+        (IS_TEXT_UNICODE_SIGNATURE | IS_TEXT_UNICODE_REVERSE_SIGNATURE | IS_TEXT_UNICODE_ODD_LENGTH) as c_int;
     if *len as usize >= core::mem::size_of::<[::core::ffi::c_char; 3]>()
         && memcmp(
             buffer,
@@ -404,11 +445,11 @@ unsafe fn PROFILE_DetectTextEncoding(
         return ENCODING_UTF8;
     }
     RtlIsTextUnicode(buffer, *len, &mut flags);
-    if flags & IS_TEXT_UNICODE_SIGNATURE != 0 {
+    if flags & IS_TEXT_UNICODE_SIGNATURE as c_int != 0 {
         *len = core::mem::size_of::<WCHAR>() as ::core::ffi::c_int;
         return ENCODING_UTF16LE;
     }
-    if flags & IS_TEXT_UNICODE_REVERSE_SIGNATURE != 0 {
+    if flags & IS_TEXT_UNICODE_REVERSE_SIGNATURE as c_int != 0 {
         *len = core::mem::size_of::<WCHAR>() as ::core::ffi::c_int;
         return ENCODING_UTF16BE;
     }
@@ -437,7 +478,7 @@ unsafe fn PROFILE_Load(
     let mut next_key: *mut *mut PROFILEKEY = core::ptr::null_mut();
     let mut dwFileSize: DWORD = 0;
 
-    TRACE(b"%p\n\0" as *const u8 as *const ::core::ffi::c_char, hFile);
+    TRACE!(b"%p\n\0" as *const u8 as *const ::core::ffi::c_char, hFile);
 
     dwFileSize = GetFileSize(hFile, core::ptr::null_mut());
     if dwFileSize == INVALID_FILE_SIZE || dwFileSize == 0 {
@@ -458,7 +499,7 @@ unsafe fn PROFILE_Load(
     ) == 0
     {
         HeapFree(GetProcessHeap(), 0, buffer_base);
-        WARN(
+        WARN!(
             b"Error %d reading file\n\0" as *const u8 as *const ::core::ffi::c_char,
             GetLastError(),
         );
@@ -472,7 +513,7 @@ unsafe fn PROFILE_Load(
 
     match *pEncoding as ::core::ffi::c_uint {
         1 => {
-            TRACE(b"ANSI encoding\n\0" as *const u8 as *const ::core::ffi::c_char);
+            TRACE!(b"ANSI encoding\n\0" as *const u8 as *const ::core::ffi::c_char);
 
             len = MultiByteToWideChar(
                 0, // CP_ACP
@@ -502,7 +543,7 @@ unsafe fn PROFILE_Load(
             szEnd = szFile.offset(len as isize);
         }
         2 => {
-            TRACE(b"UTF8 encoding\n\0" as *const u8 as *const ::core::ffi::c_char);
+            TRACE!(b"UTF8 encoding\n\0" as *const u8 as *const ::core::ffi::c_char);
 
             len = MultiByteToWideChar(
                 65001, // CP_UTF8
@@ -532,14 +573,14 @@ unsafe fn PROFILE_Load(
             szEnd = szFile.offset(len as isize);
         }
         3 => {
-            TRACE(
+            TRACE!(
                 b"UTF16 Little Endian encoding\n\0" as *const u8 as *const ::core::ffi::c_char,
             );
             szFile = pBuffer as *mut WCHAR;
             szEnd = (pBuffer as *mut ::core::ffi::c_char).offset(dwFileSize as isize) as *mut WCHAR;
         }
         4 => {
-            TRACE(
+            TRACE!(
                 b"UTF16 Big Endian encoding\n\0" as *const u8 as *const ::core::ffi::c_char,
             );
             szFile = pBuffer as *mut WCHAR;
@@ -550,7 +591,7 @@ unsafe fn PROFILE_Load(
             );
         }
         _ => {
-            FIXME(
+            FIXME!(
                 b"encoding type %d not implemented\n\0" as *const u8 as *const ::core::ffi::c_char,
                 *pEncoding as ::core::ffi::c_uint,
             );
@@ -621,7 +662,7 @@ unsafe fn PROFILE_Load(
                 (szLineEnd as isize).wrapping_sub(szLineStart as isize) as usize,
             );
             if szSectionEnd.is_null() {
-                WARN(
+                WARN!(
                     b"Invalid section header at line %d: %s\n\0" as *const u8
                         as *const ::core::ffi::c_char,
                     line,
@@ -655,7 +696,7 @@ unsafe fn PROFILE_Load(
                 next_key = &mut (*section).key as *mut *mut PROFILEKEY;
                 prev_key = core::ptr::null_mut();
 
-                TRACE(
+                TRACE!(
                     b"New section: %s\n\0" as *const u8 as *const ::core::ffi::c_char,
                     debugstr_w((*section).name.as_mut_ptr()),
                 );
@@ -723,7 +764,7 @@ unsafe fn PROFILE_Load(
             next_key = &mut (*key).next as *mut *mut PROFILEKEY;
             prev_key = key;
 
-            TRACE(
+            TRACE!(
                 b"New key: name=%s, value=%s\n\0" as *const u8 as *const ::core::ffi::c_char,
                 debugstr_w((*key).name.as_mut_ptr()),
                 if !(*key).value.is_null() {
@@ -746,37 +787,37 @@ unsafe fn PROFILE_DeleteSection(
     mut name: LPCWSTR,
 ) -> BOOL {
     while !(*section).is_null() {
-        if strcmpiW((*section).name.as_ptr(), name) == 0 {
+        if strcmpiW((**section).name.as_ptr(), name) == 0 {
             let mut to_del: *mut PROFILESECTION = *section;
             *section = (*to_del).next;
             (*to_del).next = core::ptr::null_mut();
             PROFILE_Free(to_del);
             return 1;
         }
-        section = &mut (*section).next as *mut *mut PROFILESECTION;
+        section = &mut (**section).next as *mut *mut PROFILESECTION;
     }
     return 0;
 }
 unsafe fn PROFILE_DeleteKey(
-    section: *mut *mut PROFILESECTION,
+    mut section: *mut *mut PROFILESECTION,
     section_name: LPCWSTR,
     key_name: LPCWSTR,
 ) -> BOOL {
     while !(*section).is_null() {
-        if strcmpiW((*section).name.as_ptr(), section_name) == 0 {
-            let mut key: *mut *mut PROFILEKEY = &mut (*section).key;
+        if strcmpiW((**section).name.as_ptr(), section_name) == 0 {
+            let mut key: *mut *mut PROFILEKEY = &mut (**section).key;
             while !(*key).is_null() {
-                if strcmpiW((*key).name.as_ptr(), key_name) == 0 {
+                if strcmpiW((**key).name.as_ptr(), key_name) == 0 {
                     let to_del: *mut PROFILEKEY = *key;
                     *key = (*to_del).next;
                     HeapFree(GetProcessHeap(), 0, (*to_del).value as LPVOID);
                     HeapFree(GetProcessHeap(), 0, to_del as LPVOID);
                     return 1;
                 }
-                key = &mut (*key).next;
+                key = &mut (**key).next;
             }
         }
-        section = &mut (*section).next;
+        section = &mut (**section).next;
     }
     0
 }
@@ -830,20 +871,20 @@ unsafe fn PROFILE_Find(
     }
 
     while !(*section).is_null() {
-        if strncmpiW((*section).name.as_ptr(), section_name, seclen as usize) == 0
-            && *((*section).name.as_ptr()).offset(seclen as isize) == 0
+        if strncmpiW((**section).name.as_ptr(), section_name, seclen as usize) == 0
+            && *((**section).name.as_ptr()).offset(seclen as isize) == 0
         {
-            let mut key: *mut *mut PROFILEKEY = &raw mut (*section).key;
+            let mut key: *mut *mut PROFILEKEY = &raw mut (**section).key;
 
             while !(*key).is_null() {
                 if create_always == 0 {
-                    if strncmpiW((*key).name.as_ptr(), key_name, keylen as usize) == 0
-                        && *((*key).name.as_ptr()).offset(keylen as isize) == 0
+                    if strncmpiW((**key).name.as_ptr(), key_name, keylen as usize) == 0
+                        && *((**key).name.as_ptr()).offset(keylen as isize) == 0
                     {
                         return *key;
                     }
                 }
-                key = &raw mut (*key).next as *mut *mut PROFILEKEY;
+                key = &raw mut (**key).next as *mut *mut PROFILEKEY;
             }
             if create == 0 {
                 return core::ptr::null_mut();
@@ -857,12 +898,12 @@ unsafe fn PROFILE_Find(
             if (*key).is_null() {
                 return core::ptr::null_mut();
             }
-            strcpyW((*key).name.as_mut_ptr(), key_name);
-            (*key).value = core::ptr::null_mut();
-            (*key).next = core::ptr::null_mut();
+            strcpyW((**key).name.as_mut_ptr(), key_name);
+            (**key).value = core::ptr::null_mut();
+            (**key).next = core::ptr::null_mut();
             return *key;
         }
-        section = &raw mut (*section).next as *mut *mut PROFILESECTION;
+        section = &raw mut (**section).next as *mut *mut PROFILESECTION;
     }
     if create == 0 {
         return core::ptr::null_mut();
@@ -876,22 +917,22 @@ unsafe fn PROFILE_Find(
     if (*section).is_null() {
         return core::ptr::null_mut();
     }
-    strcpyW((*section).name.as_mut_ptr(), section_name);
-    (*section).next = core::ptr::null_mut();
-    (*section).key = HeapAlloc(
+    strcpyW((**section).name.as_mut_ptr(), section_name);
+    (**section).next = core::ptr::null_mut();
+    (**section).key = HeapAlloc(
         GetProcessHeap(),
         0,
         core::mem::size_of::<PROFILEKEY>()
             .wrapping_add(strlenW(key_name).wrapping_mul(core::mem::size_of::<WCHAR>())),
     ) as *mut PROFILEKEY;
-    if (*section).key.is_null() {
+    if (**section).key.is_null() {
         HeapFree(GetProcessHeap(), 0, *section as *mut c_void);
         return core::ptr::null_mut();
     }
-    strcpyW((*section).key.name.as_mut_ptr(), key_name);
-    (*section).key.value = core::ptr::null_mut();
-    (*section).key.next = core::ptr::null_mut();
-    return (*section).key;
+    strcpyW((*(**section).key).name.as_mut_ptr(), key_name);
+    (*(**section).key).value = core::ptr::null_mut();
+    (*(**section).key).next = core::ptr::null_mut();
+    return (**section).key;
 }
 unsafe fn PROFILE_FlushFile() -> BOOL {
     let mut hFile: HANDLE = core::ptr::null_mut();
@@ -899,7 +940,7 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
 
     if CurProfile.is_null()
     {
-        WARN(b"No current profile!\n\0" as *const u8 as LPCSTR);
+        WARN!(b"No current profile!\n\0" as *const u8 as LPCSTR);
         return FALSE;
     }
 
@@ -920,7 +961,7 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
 
     if hFile == INVALID_HANDLE_VALUE
     {
-        WARN(
+        WARN!(
             b"could not save profile file %s (error was %d)\n\0" as *const u8 as LPCSTR,
             debugstr_w((*CurProfile).filename),
             GetLastError(),
@@ -928,7 +969,7 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
         return FALSE;
     }
 
-    TRACE(
+    TRACE!(
         b"Saving %s\n\0" as *const u8 as LPCSTR,
         debugstr_w((*CurProfile).filename),
     );
@@ -976,7 +1017,7 @@ unsafe fn is_not_current(ft: *mut FILETIME) -> BOOL {
     GetSystemTimeAsFileTime(&mut Now as *mut FILETIME);
     ftll = (((*ft).dwHighDateTime as LONGLONG) << 32) + (*ft).dwLowDateTime as LONGLONG;
     nowll = ((Now.dwHighDateTime as LONGLONG) << 32) + Now.dwLowDateTime as LONGLONG;
-    TRACE(
+    TRACE!(
         b"%08x;%08x\n\0".as_ptr() as LPCSTR,
         (ftll as u32).wrapping_add(21000000),
         nowll as u32,
@@ -1050,7 +1091,7 @@ unsafe fn PROFILE_Open(
         );
     }
 
-    TRACE(
+    TRACE!(
         b"path: %s\n\0".as_ptr() as LPCSTR,
         debugstr_w(buffer.as_mut_ptr()),
     );
@@ -1071,7 +1112,7 @@ unsafe fn PROFILE_Open(
     );
 
     if hFile == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_NOT_FOUND {
-        WARN(
+        WARN!(
             b"Error %d opening file %s\n\0".as_ptr() as LPCSTR,
             GetLastError(),
             debugstr_w(buffer.as_mut_ptr()),
@@ -1084,7 +1125,7 @@ unsafe fn PROFILE_Open(
         if !(*MRUProfile[i as usize]).filename.is_null()
             && strcmpiW(buffer.as_mut_ptr(), (*MRUProfile[i as usize]).filename) == 0
         {
-            TRACE(
+            TRACE!(
                 b"MRU Filename: %s, new filename: %s\n\0".as_ptr() as LPCSTR,
                 debugstr_w((*MRUProfile[i as usize]).filename),
                 debugstr_w(buffer.as_mut_ptr()),
@@ -1097,7 +1138,7 @@ unsafe fn PROFILE_Open(
                     MRUProfile[j as usize] = MRUProfile[(j - 1) as usize];
                     j -= 1;
                 }
-                MRUProfile[0] = tempProfile;
+                CurProfile = tempProfile;
             }
 
             if hFile != INVALID_HANDLE_VALUE {
@@ -1108,31 +1149,31 @@ unsafe fn PROFILE_Open(
                     &mut LastWriteTime,
                 );
                 if memcmp(
-                    &(*MRUProfile[0]).LastWriteTime as *const FILETIME as *const core::ffi::c_void,
+                    &(*CurProfile).LastWriteTime as *const FILETIME as *const core::ffi::c_void,
                     &LastWriteTime as *const FILETIME as *const core::ffi::c_void,
                     core::mem::size_of::<FILETIME>(),
                 ) == 0
                     && is_not_current(&mut LastWriteTime) != 0
                 {
-                    TRACE(
+                    TRACE!(
                         b"(%s): already opened (mru=%d)\n\0".as_ptr() as LPCSTR,
                         debugstr_w(buffer.as_mut_ptr()),
                         i,
                     );
                 } else {
-                    TRACE(
+                    TRACE!(
                         b"(%s): already opened, needs refreshing (mru=%d)\n\0".as_ptr() as LPCSTR,
                         debugstr_w(buffer.as_mut_ptr()),
                         i,
                     );
-                    PROFILE_Free((*MRUProfile[0]).section);
-                    (*MRUProfile[0]).section = PROFILE_Load(hFile, &mut (*MRUProfile[0]).encoding);
-                    (*MRUProfile[0]).LastWriteTime = LastWriteTime;
+                    PROFILE_Free((*CurProfile).section);
+                    (*CurProfile).section = PROFILE_Load(hFile, &mut (*CurProfile).encoding);
+                    (*CurProfile).LastWriteTime = LastWriteTime;
                 }
                 CloseHandle(hFile);
                 return 1;
             } else {
-                TRACE(
+                TRACE!(
                     b"(%s): already opened, not yet created (mru=%d)\n\0".as_ptr() as LPCSTR,
                     debugstr_w(buffer.as_mut_ptr()),
                     i,
@@ -1151,31 +1192,31 @@ unsafe fn PROFILE_Open(
             MRUProfile[i as usize] = MRUProfile[(i - 1) as usize];
             i -= 1;
         }
-        MRUProfile[0] = tempProfile;
+        CurProfile = tempProfile;
     }
 
-    if !(*MRUProfile[0]).filename.is_null() {
+    if !(*CurProfile).filename.is_null() {
         PROFILE_ReleaseFile();
     }
 
-    (*MRUProfile[0]).filename = HeapAlloc(
+    (*CurProfile).filename = HeapAlloc(
         GetProcessHeap(),
         0,
         ((strlenW(buffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as usize,
     ) as *mut WCHAR;
-    strcpyW((*MRUProfile[0]).filename, buffer.as_mut_ptr());
+    strcpyW((*CurProfile).filename, buffer.as_mut_ptr());
 
     if hFile != INVALID_HANDLE_VALUE {
-        (*MRUProfile[0]).section = PROFILE_Load(hFile, &mut (*MRUProfile[0]).encoding);
+        (*CurProfile).section = PROFILE_Load(hFile, &mut (*CurProfile).encoding);
         GetFileTime(
             hFile,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            &mut (*MRUProfile[0]).LastWriteTime,
+            &mut (*CurProfile).LastWriteTime,
         );
         CloseHandle(hFile);
     } else {
-        WARN(
+        WARN!(
             b"profile file %s not found\n\0".as_ptr() as LPCSTR,
             debugstr_w(buffer.as_mut_ptr()),
         );
@@ -1185,10 +1226,10 @@ unsafe fn PROFILE_Open(
 }
 
 unsafe extern "C" fn PROFILE_GetSection(
-    section: *mut PROFILESECTION,
+    mut section: *mut PROFILESECTION,
     section_name: LPCWSTR,
-    buffer: LPWSTR,
-    len: DWORD,
+    mut buffer: LPWSTR,
+    mut len: DWORD,
     return_values: BOOL,
 ) -> INT {
     let mut key: *mut PROFILEKEY;
@@ -1197,7 +1238,7 @@ unsafe extern "C" fn PROFILE_GetSection(
         return 0;
     }
 
-    TRACE("%s,%p,%u\n", debugstr_w(section_name), buffer, len);
+    TRACE!("%s,%p,%u\n", debugstr_w(section_name), buffer, len);
 
     while !section.is_null() {
         if strcmpiW((*section).name.as_ptr(), section_name) == 0 {
@@ -1252,7 +1293,7 @@ unsafe fn PROFILE_GetSectionNames(mut buffer: LPWSTR, mut len: UINT) -> INT {
     let mut tmplen: UINT;
     let mut section: *mut PROFILESECTION;
 
-    TRACE(b"(%p, %d)\n\0" as *const u8 as LPCSTR, buffer, len);
+    TRACE!(b"(%p, %d)\n\0" as *const u8 as LPCSTR, buffer, len);
 
     if buffer.is_null() || len == 0 {
         return 0;
@@ -1300,7 +1341,7 @@ unsafe fn PROFILE_GetSectionNames(mut buffer: LPWSTR, mut len: UINT) -> INT {
 unsafe extern "C" fn PROFILE_GetString(
     section: LPCWSTR,
     key_name: LPCWSTR,
-    def_val: LPCWSTR,
+    mut def_val: LPCWSTR,
     buffer: LPWSTR,
     len: DWORD,
 ) -> INT {
@@ -1332,14 +1373,14 @@ unsafe extern "C" fn PROFILE_GetString(
             len as ::core::ffi::c_int,
             1,
         );
-        TRACE(
+        TRACE!(
             b"(%s,%s,%s): returning %s\n\0".as_ptr() as *const i8,
             debugstr_w(section),
             debugstr_w(key_name),
             debugstr_w(def_val),
             debugstr_w(buffer),
         );
-        return strlenW(buffer);
+        return strlenW(buffer) as INT;
     }
     /* no "else" here ! */
     if !section.is_null() {
@@ -1353,7 +1394,7 @@ unsafe extern "C" fn PROFILE_GetString(
         if *buffer.offset(0) == 0 {
             /* no luck -> def_val */
             PROFILE_CopyEntry(buffer, def_val, len as ::core::ffi::c_int, 1);
-            ret = strlenW(buffer);
+            ret = strlenW(buffer) as INT;
         }
         return ret;
     }
@@ -1363,18 +1404,18 @@ unsafe extern "C" fn PROFILE_GetString(
 unsafe fn PROFILE_SetString(
     section_name: LPCWSTR,
     key_name: LPCWSTR,
-    value: LPCWSTR,
+    mut value: LPCWSTR,
     create_always: BOOL,
 ) -> BOOL {
     if key_name.is_null() {
-        TRACE(b"(%s)\n\0" as *const u8 as LPCSTR, debugstr_w(section_name));
+        TRACE!(b"(%s)\n\0" as *const u8 as LPCSTR, debugstr_w(section_name));
         (*CurProfile).changed |= PROFILE_DeleteSection(
             &raw mut (*CurProfile).section,
             section_name,
         );
         return TRUE;
     } else if value.is_null() {
-        TRACE(
+        TRACE!(
             b"(%s,%s)\n\0" as *const u8 as LPCSTR,
             debugstr_w(section_name),
             debugstr_w(key_name),
@@ -1393,7 +1434,7 @@ unsafe fn PROFILE_SetString(
             TRUE,
             create_always,
         );
-        TRACE(
+        TRACE!(
             b"(%s,%s,%s):\n\0" as *const u8 as LPCSTR,
             debugstr_w(section_name),
             debugstr_w(key_name),
@@ -1407,21 +1448,21 @@ unsafe fn PROFILE_SetString(
         }
         if !(*key).value.is_null() {
             if strcmpW((*key).value, value) == 0 {
-                TRACE(b"  no change needed\n\0" as *const u8 as LPCSTR);
+                TRACE!(b"  no change needed\n\0" as *const u8 as LPCSTR);
                 return TRUE;
             }
-            TRACE(
+            TRACE!(
                 b"  replacing %s\n\0" as *const u8 as LPCSTR,
                 debugstr_w((*key).value),
             );
             HeapFree(GetProcessHeap(), 0, (*key).value as LPVOID);
         } else {
-            TRACE(b"  creating key\n\0" as *const u8 as LPCSTR);
+            TRACE!(b"  creating key\n\0" as *const u8 as LPCSTR);
         }
         (*key).value = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((strlenW(value) + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
+            ((strlenW(value) + 1) * core::mem::size_of::<WCHAR>()) as usize,
         ) as LPWSTR;
         strcpyW((*key).value, value);
         (*CurProfile).changed = TRUE;
@@ -1571,7 +1612,7 @@ pub unsafe extern "system" fn GetPrivateProfileSectionW(
         return 0;
     }
 
-    TRACE(
+    TRACE!(
         b"(%s, %p, %d, %s)\n\0".as_ptr() as LPCSTR,
         debugstr_w(section),
         buffer,
@@ -1683,6 +1724,155 @@ pub unsafe extern "system" fn GetProfileSectionW(
     GetPrivateProfileSectionW(section, buffer, len, wininiW.as_ptr())
 }
 
+// ============================================================================
+// Hand-translated from wine/profile.c (__REACTOS__ branch) — the batch run
+// dropped these 5 exports; faithful ports so the cohab flip stays symbol-complete.
+// ============================================================================
+
+/// GetPrivateProfileStringW (KERNEL32.@) — profile.c
+#[no_mangle]
+pub unsafe extern "system" fn GetPrivateProfileStringW(
+    section: LPCWSTR,
+    entry: LPCWSTR,
+    mut def_val: LPCWSTR,
+    buffer: LPWSTR,
+    len: DWORD,
+    filename: LPCWSTR,
+) -> DWORD {
+    let mut ret: INT;
+    let mut defval_tmp: LPWSTR = core::ptr::null_mut();
+
+    // strip any trailing ' ' of def_val.
+    if !def_val.is_null() {
+        let mut p: LPCWSTR = def_val.offset(strlenW(def_val) as isize - 1);
+        while p > def_val && *p == ' ' as WCHAR {
+            p = p.offset(-1);
+        }
+        if p >= def_val {
+            let vlen: INT = (p.offset_from(def_val) as INT) + 1;
+            defval_tmp = HeapAlloc(
+                GetProcessHeap(),
+                0,
+                ((vlen + 1) as usize) * core::mem::size_of::<WCHAR>(),
+            ) as LPWSTR;
+            memcpy(
+                defval_tmp as *mut c_void,
+                def_val as *const c_void,
+                (vlen as usize) * core::mem::size_of::<WCHAR>(),
+            );
+            *defval_tmp.offset(vlen as isize) = 0;
+            def_val = defval_tmp;
+        }
+    }
+
+    RtlEnterCriticalSection(&raw mut PROFILE_CritSect);
+
+    if PROFILE_Open(filename, 0) != 0 {
+        if section.is_null() {
+            ret = PROFILE_GetSectionNames(buffer, len as UINT);
+        } else {
+            // PROFILE_GetString can handle the 'entry == NULL' case
+            ret = PROFILE_GetString(section, entry, def_val, buffer, len);
+        }
+    } else if !buffer.is_null() && !def_val.is_null() {
+        lstrcpynW(buffer, def_val, len as INT);
+        ret = strlenW(buffer) as INT;
+    } else {
+        ret = 0;
+    }
+
+    RtlLeaveCriticalSection(&raw mut PROFILE_CritSect);
+
+    HeapFree(GetProcessHeap(), 0, defval_tmp as LPVOID);
+
+    return ret as DWORD;
+}
+
+/// GetPrivateProfileStringA (KERNEL32.@) — profile.c
+#[no_mangle]
+pub unsafe extern "system" fn GetPrivateProfileStringA(
+    section: LPCSTR,
+    entry: LPCSTR,
+    def_val: LPCSTR,
+    buffer: LPSTR,
+    len: DWORD,
+    filename: LPCSTR,
+) -> DWORD {
+    let mut sectionW: _UNICODE_STRING = core::mem::zeroed();
+    let mut entryW: _UNICODE_STRING = core::mem::zeroed();
+    let mut def_valW: _UNICODE_STRING = core::mem::zeroed();
+    let mut filenameW: _UNICODE_STRING = core::mem::zeroed();
+    let bufferW: LPWSTR;
+    let retW: INT;
+    let mut ret: INT = 0;
+
+    bufferW = if !buffer.is_null() {
+        HeapAlloc(GetProcessHeap(), 0, (len as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR
+    } else {
+        core::ptr::null_mut()
+    };
+    if !section.is_null() { RtlCreateUnicodeStringFromAsciiz(&raw mut sectionW, section as PCSZ); } else { sectionW.Buffer = core::ptr::null_mut(); }
+    if !entry.is_null() { RtlCreateUnicodeStringFromAsciiz(&raw mut entryW, entry as PCSZ); } else { entryW.Buffer = core::ptr::null_mut(); }
+    if !def_val.is_null() { RtlCreateUnicodeStringFromAsciiz(&raw mut def_valW, def_val as PCSZ); } else { def_valW.Buffer = core::ptr::null_mut(); }
+    if !filename.is_null() { RtlCreateUnicodeStringFromAsciiz(&raw mut filenameW, filename as PCSZ); } else { filenameW.Buffer = core::ptr::null_mut(); }
+
+    retW = GetPrivateProfileStringW(
+        sectionW.Buffer, entryW.Buffer, def_valW.Buffer, bufferW, len, filenameW.Buffer,
+    ) as INT;
+    if len != 0 && !buffer.is_null() {
+        if retW != 0 {
+            ret = WideCharToMultiByte(
+                CP_ACP, 0, bufferW, retW, buffer, (len - 1) as INT, core::ptr::null(), core::ptr::null_mut(),
+            );
+            if ret == 0 {
+                ret = (len - 1) as INT;
+            }
+        }
+        *buffer.offset(ret as isize) = 0;
+    }
+
+    RtlFreeUnicodeString(&raw mut sectionW);
+    RtlFreeUnicodeString(&raw mut entryW);
+    RtlFreeUnicodeString(&raw mut def_valW);
+    RtlFreeUnicodeString(&raw mut filenameW);
+    HeapFree(GetProcessHeap(), 0, bufferW as LPVOID);
+    return ret as DWORD;
+}
+
+/// GetProfileStringW (KERNEL32.@) — profile.c
+#[no_mangle]
+pub unsafe extern "system" fn GetProfileStringW(
+    section: LPCWSTR,
+    entry: LPCWSTR,
+    def_val: LPCWSTR,
+    buffer: LPWSTR,
+    len: DWORD,
+) -> DWORD {
+    GetPrivateProfileStringW(section, entry, def_val, buffer, len, wininiW.as_ptr())
+}
+
+/// GetProfileStringA (KERNEL32.@) — profile.c
+#[no_mangle]
+pub unsafe extern "system" fn GetProfileStringA(
+    section: LPCSTR,
+    entry: LPCSTR,
+    def_val: LPCSTR,
+    buffer: LPSTR,
+    len: DWORD,
+) -> DWORD {
+    GetPrivateProfileStringA(section, entry, def_val, buffer, len, b"win.ini\0".as_ptr() as LPCSTR)
+}
+
+/// GetProfileSectionA (KERNEL32.@) — profile.c
+#[no_mangle]
+pub unsafe extern "system" fn GetProfileSectionA(
+    section: LPCSTR,
+    buffer: LPSTR,
+    len: DWORD,
+) -> DWORD {
+    GetPrivateProfileSectionA(section, buffer, len, b"win.ini\0".as_ptr() as LPCSTR)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn WritePrivateProfileStringW(
     section: LPCWSTR,
@@ -1782,7 +1972,7 @@ pub unsafe extern "system" fn WritePrivateProfileStringA(
 #[no_mangle]
 pub unsafe extern "system" fn WritePrivateProfileSectionW(
     section: LPCWSTR,
-    string: LPCWSTR,
+    mut string: LPCWSTR,
     filename: LPCWSTR,
 ) -> BOOL {
     let mut ret: BOOL = 0;
@@ -2018,12 +2208,12 @@ pub unsafe extern "system" fn GetPrivateProfileStructW(
             FALSE,
         );
         if !k.is_null() {
-            TRACE(
+            TRACE!(
                 b"value (at %p): %s\n\0".as_ptr() as LPCSTR,
                 (*k).value,
                 debugstr_w((*k).value),
             );
-            if ((strlenW((*k).value) - 2) / 2) == len as DWORD {
+            if ((strlenW((*k).value) - 2) / 2) == len as usize {
                 let mut end: LPWSTR;
                 let mut p: LPWSTR;
                 let mut valid: BOOL = TRUE;
@@ -2033,8 +2223,8 @@ pub unsafe extern "system" fn GetPrivateProfileStructW(
                 end = (*k).value.offset(strlenW((*k).value) as isize) as LPWSTR;
                 p = (*k).value as LPWSTR;
                 while p < end {
-                    if isxdigitW(*p) == 0 {
-                        WARN(
+                    if !isxdigitW(*p) {
+                        WARN!(
                             b"invalid char '%x' in file %s->[%s]->%s !\n\0".as_ptr() as LPCSTR,
                             *p as i32,
                             debugstr_w(filename),
@@ -2273,14 +2463,14 @@ pub unsafe extern "system" fn WritePrivateProfileStructA(
 
 #[no_mangle]
 pub unsafe extern "system" fn OpenProfileUserMapping() -> BOOL {
-    FIXME(b"(), stub!\n");
+    FIXME!(b"(), stub!\n");
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
-    FIXME("(), stub!\n");
+    FIXME!("(), stub!\n");
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0;
 }
@@ -2474,7 +2664,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     int write_buffer_len;
 //     DWORD dwBytesWritten;
 //
-//     TRACE("writing: %s\n", debugstr_wn(szLine, len));
+//     TRACE!("writing: %s\n", debugstr_wn(szLine, len));
 //
 //     switch (encoding)
 //     {
@@ -2502,7 +2692,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         WriteFile(hFile, szLine, len * sizeof(WCHAR), &dwBytesWritten, NULL);
 //         break;
 //     default:
-//         FIXME("encoding type %d not implemented\n", encoding);
+//         FIXME!("encoding type %d not implemented\n", encoding);
 //     }
 // }
 //
@@ -2636,7 +2826,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     PROFILEKEY *key, *prev_key, **next_key;
 //     DWORD dwFileSize;
 //
-//     TRACE("%p\n", hFile);
+//     TRACE!("%p\n", hFile);
 //
 //     dwFileSize = GetFileSize(hFile, NULL);
 //     if (dwFileSize == INVALID_FILE_SIZE || dwFileSize == 0)
@@ -2648,7 +2838,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     if (!ReadFile(hFile, buffer_base, dwFileSize, &dwFileSize, NULL))
 //     {
 //         HeapFree(GetProcessHeap(), 0, buffer_base);
-//         WARN("Error %d reading file\n", GetLastError());
+//         WARN!("Error %d reading file\n", GetLastError());
 //         return NULL;
 //     }
 //     len = dwFileSize;
@@ -2660,7 +2850,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     switch (*pEncoding)
 //     {
 //     case ENCODING_ANSI:
-//         TRACE("ANSI encoding\n");
+//         TRACE!("ANSI encoding\n");
 //
 //         len = MultiByteToWideChar(CP_ACP, 0, pBuffer, dwFileSize, NULL, 0);
 //         szFile = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
@@ -2673,7 +2863,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         szEnd = szFile + len;
 //         break;
 //     case ENCODING_UTF8:
-//         TRACE("UTF8 encoding\n");
+//         TRACE!("UTF8 encoding\n");
 //
 //         len = MultiByteToWideChar(CP_UTF8, 0, pBuffer, dwFileSize, NULL, 0);
 //         szFile = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
@@ -2686,18 +2876,18 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         szEnd = szFile + len;
 //         break;
 //     case ENCODING_UTF16LE:
-//         TRACE("UTF16 Little Endian encoding\n");
+//         TRACE!("UTF16 Little Endian encoding\n");
 //         szFile = pBuffer;
 //         szEnd = (WCHAR *)((char *)pBuffer + dwFileSize);
 //         break;
 //     case ENCODING_UTF16BE:
-//         TRACE("UTF16 Big Endian encoding\n");
+//         TRACE!("UTF16 Big Endian encoding\n");
 //         szFile = pBuffer;
 //         szEnd = (WCHAR *)((char *)pBuffer + dwFileSize);
 //         PROFILE_ByteSwapShortBuffer(szFile, dwFileSize / sizeof(WCHAR));
 //         break;
 //     default:
-//         FIXME("encoding type %d not implemented\n", *pEncoding);
+//         FIXME!("encoding type %d not implemented\n", *pEncoding);
 //         HeapFree(GetProcessHeap(), 0, buffer_base);
 //         return NULL;
 //     }
@@ -2740,7 +2930,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //             const WCHAR * szSectionEnd;
 //             if (!(szSectionEnd = memrchrW( szLineStart, ']', szLineEnd - szLineStart )))
 //             {
-//                 WARN("Invalid section header at line %d: %s\n",
+//                 WARN!("Invalid section header at line %d: %s\n",
 //                     line, debugstr_wn(szLineStart, (int)(szLineEnd - szLineStart)) );
 //             }
 //             else
@@ -2760,7 +2950,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //                 next_key      = &section->key;
 //                 prev_key      = NULL;
 //
-//                 TRACE("New section: %s\n", debugstr_w(section->name));
+//                 TRACE!("New section: %s\n", debugstr_w(section->name));
 //
 //                 continue;
 //             }
@@ -2800,11 +2990,11 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //            prev_key   = key;
 //
 // #ifdef __REACTOS__
-//            TRACE("New key: name=%s, value=%s\n",
+//            TRACE!("New key: name=%s, value=%s\n",
 //                  debugstr_w(key->name),
 //                  key->value ? debugstr_w(key->value) : L"(none)");
 // #else
-//            TRACE("New key: name=%s, value=%s\n",
+//            TRACE!("New key: name=%s, value=%s\n",
 //                debugstr_w(key->name), key->value ? debugstr_w(key->value) : "(none)");
 // #endif
 //         }
@@ -2987,7 +3177,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     if(!CurProfile)
 //     {
-//         WARN("No current profile!\n");
+//         WARN!("No current profile!\n");
 //         return FALSE;
 //     }
 //
@@ -2998,11 +3188,11 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     if (hFile == INVALID_HANDLE_VALUE)
 //     {
-//         WARN("could not save profile file %s (error was %d)\n", debugstr_w(CurProfile->filename), GetLastError());
+//         WARN!("could not save profile file %s (error was %d)\n", debugstr_w(CurProfile->filename), GetLastError());
 //         return FALSE;
 //     }
 //
-//     TRACE("Saving %s\n", debugstr_w(CurProfile->filename));
+//     TRACE!("Saving %s\n", debugstr_w(CurProfile->filename));
 //     PROFILE_Save( hFile, CurProfile->section, CurProfile->encoding );
 //     if(GetFileTime(hFile, NULL, NULL, &LastWriteTime))
 //        CurProfile->LastWriteTime=LastWriteTime;
@@ -3045,7 +3235,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     GetSystemTimeAsFileTime(&Now);
 //     ftll = ((LONGLONG)ft->dwHighDateTime << 32) + ft->dwLowDateTime;
 //     nowll = ((LONGLONG)Now.dwHighDateTime << 32) + Now.dwLowDateTime;
-//     TRACE("%08x;%08x\n",(unsigned)ftll+21000000,(unsigned)nowll);
+//     TRACE!("%08x;%08x\n",(unsigned)ftll+21000000,(unsigned)nowll);
 //     return ftll + 21000000 < nowll;
 // }
 //
@@ -3101,7 +3291,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         GetFullPathNameW(filename, sizeof(buffer)/sizeof(buffer[0]), buffer, &dummy);
 //     }
 //
-//     TRACE("path: %s\n", debugstr_w(buffer));
+//     TRACE!("path: %s\n", debugstr_w(buffer));
 //
 //     hFile = CreateFileW(buffer, GENERIC_READ | (write_access ? GENERIC_WRITE : 0),
 //                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -3109,7 +3299,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     if ((hFile == INVALID_HANDLE_VALUE) && (GetLastError() != ERROR_FILE_NOT_FOUND))
 //     {
-//         WARN("Error %d opening file %s\n", GetLastError(), debugstr_w(buffer));
+//         WARN!("Error %d opening file %s\n", GetLastError(), debugstr_w(buffer));
 //         return FALSE;
 //     }
 //
@@ -3117,7 +3307,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     {
 //         if ((MRUProfile[i]->filename && !strcmpiW( buffer, MRUProfile[i]->filename )))
 //         {
-//             TRACE("MRU Filename: %s, new filename: %s\n", debugstr_w(MRUProfile[i]->filename), debugstr_w(buffer));
+//             TRACE!("MRU Filename: %s, new filename: %s\n", debugstr_w(MRUProfile[i]->filename), debugstr_w(buffer));
 //             if(i)
 //             {
 //                 PROFILE_FlushFile();
@@ -3132,11 +3322,11 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //                 GetFileTime(hFile, NULL, NULL, &LastWriteTime);
 //                 if (!memcmp( &CurProfile->LastWriteTime, &LastWriteTime, sizeof(FILETIME) ) &&
 //                     is_not_current(&LastWriteTime))
-//                     TRACE("(%s): already opened (mru=%d)\n",
+//                     TRACE!("(%s): already opened (mru=%d)\n",
 //                           debugstr_w(buffer), i);
 //                 else
 //                 {
-//                     TRACE("(%s): already opened, needs refreshing (mru=%d)\n",
+//                     TRACE!("(%s): already opened, needs refreshing (mru=%d)\n",
 //                           debugstr_w(buffer), i);
 //                     PROFILE_Free(CurProfile->section);
 //                     CurProfile->section = PROFILE_Load(hFile, &CurProfile->encoding);
@@ -3145,7 +3335,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //                 CloseHandle(hFile);
 //                 return TRUE;
 //             }
-//             else TRACE("(%s): already opened, not yet created (mru=%d)\n",
+//             else TRACE!("(%s): already opened, not yet created (mru=%d)\n",
 //                        debugstr_w(buffer), i);
 //         }
 //     }
@@ -3176,7 +3366,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     else
 //     {
 //         /* Does not exist yet, we will create it in PROFILE_FlushFile */
-//         WARN("profile file %s not found\n", debugstr_w(buffer) );
+//         WARN!("profile file %s not found\n", debugstr_w(buffer) );
 //     }
 //     return TRUE;
 // }
@@ -3199,7 +3389,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     if(!buffer) return 0;
 //
-//     TRACE("%s,%p,%u\n", debugstr_w(section_name), buffer, len);
+//     TRACE!("%s,%p,%u\n", debugstr_w(section_name), buffer, len);
 //
 //     while (section)
 //     {
@@ -3254,7 +3444,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     UINT buflen,tmplen;
 //     PROFILESECTION *section;
 //
-//     TRACE("(%p, %d)\n", buffer, len);
+//     TRACE!("(%p, %d)\n", buffer, len);
 //
 //     if (!buffer || !len)
 //         return 0;
@@ -3329,7 +3519,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         key = PROFILE_Find( &CurProfile->section, section, key_name, FALSE, FALSE);
 //         PROFILE_CopyEntry( buffer, (key && key->value) ? key->value : def_val,
 //                            len, TRUE );
-//         TRACE("(%s,%s,%s): returning %s\n",
+//         TRACE!("(%s,%s,%s): returning %s\n",
 //               debugstr_w(section), debugstr_w(key_name),
 //               debugstr_w(def_val), debugstr_w(buffer) );
 //         return strlenW( buffer );
@@ -3360,7 +3550,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 // {
 //     if (!key_name)  /* Delete a whole section */
 //     {
-//         TRACE("(%s)\n", debugstr_w(section_name));
+//         TRACE!("(%s)\n", debugstr_w(section_name));
 //         CurProfile->changed |= PROFILE_DeleteSection( &CurProfile->section,
 //                                                       section_name );
 //         return TRUE;         /* Even if PROFILE_DeleteSection() has failed,
@@ -3368,7 +3558,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     }
 //     else if (!value)  /* Delete a key */
 //     {
-//         TRACE("(%s,%s)\n", debugstr_w(section_name), debugstr_w(key_name) );
+//         TRACE!("(%s,%s)\n", debugstr_w(section_name), debugstr_w(key_name) );
 //         CurProfile->changed |= PROFILE_DeleteKey( &CurProfile->section,
 //                                                   section_name, key_name );
 //         return TRUE;          /* same error handling as above */
@@ -3377,7 +3567,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     {
 //         PROFILEKEY *key = PROFILE_Find(&CurProfile->section, section_name,
 //                                         key_name, TRUE, create_always );
-//         TRACE("(%s,%s,%s):\n",
+//         TRACE!("(%s,%s,%s):\n",
 //               debugstr_w(section_name), debugstr_w(key_name), debugstr_w(value) );
 //         if (!key) return FALSE;
 //
@@ -3389,13 +3579,13 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         {
 //             if (!strcmpW( key->value, value ))
 //             {
-//                 TRACE("  no change needed\n" );
+//                 TRACE!("  no change needed\n" );
 //                 return TRUE;  /* No change needed */
 //             }
-//             TRACE("  replacing %s\n", debugstr_w(key->value) );
+//             TRACE!("  replacing %s\n", debugstr_w(key->value) );
 //             HeapFree( GetProcessHeap(), 0, key->value );
 //         }
-//         else TRACE("  creating key\n" );
+//         else TRACE!("  creating key\n" );
 //         key->value = HeapAlloc( GetProcessHeap(), 0, (strlenW(value)+1) * sizeof(WCHAR) );
 //         strcpyW( key->value, value );
 //         CurProfile->changed = TRUE;
@@ -3439,7 +3629,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     int		ret;
 //     LPWSTR	defval_tmp = NULL;
 //
-//     TRACE("%s,%s,%s,%p,%u,%s\n", debugstr_w(section), debugstr_w(entry),
+//     TRACE!("%s,%s,%s,%p,%u,%s\n", debugstr_w(section), debugstr_w(entry),
 //           debugstr_w(def_val), buffer, len, debugstr_w(filename));
 //
 //     /* strip any trailing ' ' of def_val. */
@@ -3480,7 +3670,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     HeapFree(GetProcessHeap(), 0, defval_tmp);
 //
-//     TRACE("returning %s, %d\n", debugstr_w(buffer), ret);
+//     TRACE!("returning %s, %d\n", debugstr_w(buffer), ret);
 //
 //     return ret;
 // }
@@ -3652,7 +3842,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         return 0;
 //     }
 //
-//     TRACE("(%s, %p, %d, %s)\n", debugstr_w(section), buffer, len, debugstr_w(filename));
+//     TRACE!("(%s, %p, %d, %s)\n", debugstr_w(section), buffer, len, debugstr_w(filename));
 //
 //     RtlEnterCriticalSection( &PROFILE_CritSect );
 //
@@ -3995,7 +4185,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     if (PROFILE_Open( filename, FALSE )) {
 //         PROFILEKEY *k = PROFILE_Find ( &CurProfile->section, section, key, FALSE, FALSE);
 // 	if (k) {
-// 	    TRACE("value (at %p): %s\n", k->value, debugstr_w(k->value));
+// 	    TRACE!("value (at %p): %s\n", k->value, debugstr_w(k->value));
 // 	    if (((strlenW(k->value) - 2) / 2) == len)
 // 	    {
 // 		LPWSTR end, p;
@@ -4009,7 +4199,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 // 		{
 //                     if (!isxdigitW(*p))
 // 		    {
-// 			WARN("invalid char '%x' in file %s->[%s]->%s !\n",
+// 			WARN!("invalid char '%x' in file %s->[%s]->%s !\n",
 //                              *p, debugstr_w(filename), debugstr_w(section), debugstr_w(key));
 // 		        valid = FALSE;
 // 		        break;
@@ -4155,7 +4345,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //  *           OpenProfileUserMapping   (KERNEL32.@)
 //  */
 // BOOL WINAPI OpenProfileUserMapping(void) {
-//     FIXME("(), stub!\n");
+//     FIXME!("(), stub!\n");
 //     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
 //     return FALSE;
 // }
@@ -4164,7 +4354,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //  *           CloseProfileUserMapping   (KERNEL32.@)
 //  */
 // BOOL WINAPI CloseProfileUserMapping(void) {
-//     FIXME("(), stub!\n");
+//     FIXME!("(), stub!\n");
 //     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
 //     return FALSE;
 // }
