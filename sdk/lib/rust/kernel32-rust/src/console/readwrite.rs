@@ -1,5 +1,17 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+
+// RTL_FIELD_SIZE(type, field) — size of a struct/union field (runtime eval; CodeSize is ULONG).
+macro_rules! RTL_FIELD_SIZE {
+    ($t:ty, $f:ident) => {{
+        let __z: $t = unsafe { core::mem::zeroed() };
+        (unsafe { core::mem::size_of_val(&__z.$f) }) as ULONG
+    }};
+}
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 1;
@@ -37,7 +49,7 @@ unsafe fn IntReadConsole(
     // DPRINT("IntReadConsole\n");
 
     /* Set up the data to send to the Console Server */
-    (*ReadConsoleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ReadConsoleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ReadConsoleRequest).InputHandle = hConsoleInput;
     (*ReadConsoleRequest).Unicode = bUnicode;
 
@@ -173,7 +185,7 @@ unsafe fn IntReadConsole(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Retrieve the results */
     if Success != 0 {
@@ -198,7 +210,7 @@ unsafe fn IntReadConsole(
         // }
         // _SEH2_END;
     } else {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
     }
 
     /* Release the capture buffer if needed */
@@ -208,8 +220,8 @@ unsafe fn IntReadConsole(
 
     if Success != 0 {
         /* Yield execution to another thread if Ctrl-C or Ctrl-Break happened */
-        if ApiMessage.__bindgen_anon_1.Status == STATUS_ALERTED {
-            /* || ApiMessage.__bindgen_anon_1.Status == STATUS_CANCELLED */
+        if ApiMessage.Status == STATUS_ALERTED {
+            /* || ApiMessage.Status == STATUS_CANCELLED */
             NtYieldExecution();
             SetLastError(ERROR_OPERATION_ABORTED); // STATUS_CANCELLED
         }
@@ -270,7 +282,7 @@ unsafe fn IntReadConsoleOutput(
     let mut SizeY: SHORT;
     let mut NumCells: ULONG;
 
-    (*ReadOutputRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ReadOutputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ReadOutputRequest).OutputHandle = hConsoleOutput;
     (*ReadOutputRequest).Unicode = bUnicode;
 
@@ -313,7 +325,7 @@ unsafe fn IntReadConsoleOutputCode(
     }
 
     /* Set up the data to send to the Console Server */
-    (*ReadOutputCodeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ReadOutputCodeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ReadOutputCodeRequest).OutputHandle = hConsoleOutput;
     (*ReadOutputCodeRequest).Coord = dwReadCoord;
     (*ReadOutputCodeRequest).NumCodes = nLength;
@@ -322,13 +334,13 @@ unsafe fn IntReadConsoleOutputCode(
     (*ReadOutputCodeRequest).CodeType = CodeType;
     match CodeType {
         CODE_ASCII => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, AsciiChar);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, AsciiChar);
         }
         CODE_UNICODE => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, UnicodeChar);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, UnicodeChar);
         }
         CODE_ATTRIBUTE => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, Attribute);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, Attribute);
         }
         _ => {
             CodeSize = 0; // unreachable but keep control flow
@@ -365,7 +377,7 @@ unsafe fn IntReadConsoleOutputCode(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Retrieve the results */
     let seh2_result: BOOL;
@@ -382,7 +394,7 @@ unsafe fn IntReadConsoleOutputCode(
                     ((*ReadOutputCodeRequest).NumCodes * CodeSize) as usize,
                 );
             } else {
-                BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+                BaseSetLastNTError(ApiMessage.Status);
             }
         }
         // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -431,7 +443,7 @@ unsafe fn IntWriteConsole(
     // DPRINT("IntWriteConsole\n");
 
     /* Set up the data to send to the Console Server */
-    (*WriteConsoleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*WriteConsoleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*WriteConsoleRequest).OutputHandle = hConsoleOutput;
     (*WriteConsoleRequest).Unicode = bUnicode;
 
@@ -502,7 +514,7 @@ unsafe fn IntWriteConsole(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -522,7 +534,7 @@ unsafe fn IntWriteConsole(
         // }
         // _SEH2_END;
     } else if Success == 0 {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
     }
 
     /* Return success status */
@@ -544,7 +556,7 @@ unsafe fn IntWriteConsoleInput(
     // DPRINT("IntWriteConsoleInput: %lx %p\n", nLength, lpNumberOfEventsWritten);
 
     /* Set up the data to send to the Console Server */
-    (*WriteInputRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*WriteInputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*WriteInputRequest).InputHandle = hConsoleInput;
     (*WriteInputRequest).NumRecords = nLength;
     (*WriteInputRequest).Unicode = bUnicode;
@@ -612,7 +624,7 @@ unsafe fn IntWriteConsoleInput(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -627,7 +639,7 @@ unsafe fn IntWriteConsoleInput(
             *lpNumberOfEventsWritten = (*WriteInputRequest).NumRecords;
 
             if Success == 0 {
-                BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+                BaseSetLastNTError(ApiMessage.Status);
             }
             Ok::<_, ()>(())
         };
@@ -664,7 +676,7 @@ unsafe fn IntWriteConsoleOutput(
     let mut SizeY: SHORT;
     let mut NumCells: ULONG;
 
-    (*WriteOutputRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*WriteOutputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*WriteOutputRequest).OutputHandle = hConsoleOutput;
     (*WriteOutputRequest).Unicode = bUnicode;
 
@@ -707,7 +719,7 @@ unsafe fn IntWriteConsoleOutputCode(
     // DPRINT("IntWriteConsoleOutputCode\n");
 
     /* Set up the data to send to the Console Server */
-    (*WriteOutputCodeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*WriteOutputCodeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*WriteOutputCodeRequest).OutputHandle = hConsoleOutput;
     (*WriteOutputCodeRequest).Coord = dwWriteCoord;
     (*WriteOutputCodeRequest).NumCodes = nLength;
@@ -716,13 +728,13 @@ unsafe fn IntWriteConsoleOutputCode(
     (*WriteOutputCodeRequest).CodeType = CodeType;
     match CodeType {
         CODE_ASCII => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, AsciiChar);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, AsciiChar);
         }
         CODE_UNICODE => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, UnicodeChar);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, UnicodeChar);
         }
         CODE_ATTRIBUTE => {
-            CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, Attribute);
+            CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, Attribute);
         }
         _ => {
             CodeSize = 0; // unreachable
@@ -781,7 +793,7 @@ unsafe fn IntWriteConsoleOutputCode(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -794,7 +806,7 @@ unsafe fn IntWriteConsoleOutputCode(
         *lpNumberOfCodesWritten = (*WriteOutputCodeRequest).NumCodes;
 
         if Success == 0 {
-            BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+            BaseSetLastNTError(ApiMessage.Status);
         }
     }
     // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -827,7 +839,7 @@ unsafe fn IntFillConsoleOutputCode(
     }
 
     /* Set up the data to send to the Console Server */
-    (*FillOutputRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*FillOutputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*FillOutputRequest).OutputHandle = hConsoleOutput;
     (*FillOutputRequest).WriteCoord = dwWriteCoord;
     (*FillOutputRequest).CodeType = CodeType;
@@ -843,7 +855,7 @@ unsafe fn IntFillConsoleOutputCode(
     );
 
     /* Check for success */
-    Success = if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) { 1 } else { 0 };
+    Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
     /* Retrieve the results */
     {
@@ -852,7 +864,7 @@ unsafe fn IntFillConsoleOutputCode(
             *lpNumberOfCodesWritten = (*FillOutputRequest).NumCodes;
 
             if Success == 0 {
-                BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+                BaseSetLastNTError(ApiMessage.Status);
             }
             0
         };
@@ -1855,15 +1867,15 @@ pub unsafe extern "system" fn FillConsoleOutputAttribute(
 //     switch (CodeType)
 //     {
 //         case CODE_ASCII:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, AsciiChar);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, AsciiChar);
 //             break;
 //
 //         case CODE_UNICODE:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, UnicodeChar);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, UnicodeChar);
 //             break;
 //
 //         case CODE_ATTRIBUTE:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, Attribute);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, Attribute);
 //             break;
 //     }
 //     SizeBytes = nLength * CodeSize;
@@ -2349,15 +2361,15 @@ pub unsafe extern "system" fn FillConsoleOutputAttribute(
 //     switch (CodeType)
 //     {
 //         case CODE_ASCII:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, AsciiChar);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, AsciiChar);
 //             break;
 //
 //         case CODE_UNICODE:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, UnicodeChar);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, UnicodeChar);
 //             break;
 //
 //         case CODE_ATTRIBUTE:
-//             CodeSize = RTL_FIELD_SIZE(CODE_ELEMENT, Attribute);
+//             CodeSize = RTL_FIELD_SIZE!(CODE_ELEMENT, Attribute);
 //             break;
 //     }
 //     SizeBytes = nLength * CodeSize;

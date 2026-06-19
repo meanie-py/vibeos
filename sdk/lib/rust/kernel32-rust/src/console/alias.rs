@@ -1,5 +1,9 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -9,6 +13,7 @@ pub struct _ALIAS_ENTRY {
     pub Value: PWSTR,
     pub ValueLength: ULONG,
 }
+pub type ALIAS_ENTRY = _ALIAS_ENTRY;
 pub type PALIAS_ENTRY = *mut _ALIAS_ENTRY;
 
 #[repr(C)]
@@ -123,8 +128,8 @@ unsafe fn IntAddConsoleAlias(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return FALSE;
     }
 
@@ -262,11 +267,11 @@ unsafe fn IntGetConsoleAlias(
         core::mem::size_of::<CONSOLE_ADDGETALIAS>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
 
-        if ApiMessage.__bindgen_anon_1.Status == STATUS_BUFFER_TOO_SMALL {
+        if ApiMessage.Status == STATUS_BUFFER_TOO_SMALL {
             return (*ConsoleAliasRequest).TargetLength as DWORD;
         } else {
             return 0;
@@ -391,9 +396,9 @@ unsafe fn IntGetConsoleAliases(
         core::mem::size_of::<CONSOLE_GETALLALIASES>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -492,8 +497,8 @@ unsafe fn IntGetConsoleAliasesLength(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -546,9 +551,9 @@ unsafe fn IntGetConsoleAliasExes(
         core::mem::size_of::<CONSOLE_GETALIASESEXES>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -601,8 +606,8 @@ unsafe fn IntGetConsoleAliasExesLength(mut bUnicode: BOOLEAN) -> DWORD {
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetAliasExesLength),
         core::mem::size_of::<CONSOLE_GETALIASESEXESLENGTH>() as ULONG,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 

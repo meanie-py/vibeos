@@ -1,5 +1,9 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
 
 extern "system" {
     fn GetCurrentThreadId() -> DWORD;
@@ -21,7 +25,7 @@ pub static mut InputWaitHandle: HANDLE = INVALID_HANDLE_VALUE;
 
 pub const EXENAME_LENGTH: u32 = 255 + 1;
 
-static ExeNameLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION::new();
+static mut ExeNameLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION::new();
 static ExeNameInitialized: BOOLEAN = 0;
 static ExeNameBuffer: [WCHAR; EXENAME_LENGTH as usize] = [0; EXENAME_LENGTH as usize];
 static ExeNameLength: USHORT = 0;
@@ -201,8 +205,8 @@ pub unsafe extern "C" fn InitExeName() {
 
     /* Retrieve the EXE name, NULL-terminate it... */
     ExeNameLength = min(
-        core::mem::size_of::<[WCHAR; EXENAME_LENGTH]>() / core::mem::size_of::<WCHAR>(),
-        (*ImageEntry).BaseDllName.Length / core::mem::size_of::<WCHAR>(),
+        core::mem::size_of::<[WCHAR; EXENAME_LENGTH]>() / (core::mem::size_of::<WCHAR>() as ULONG),
+        (*ImageEntry).BaseDllName.Length / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
         ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
@@ -213,8 +217,8 @@ pub unsafe extern "C" fn InitExeName() {
 
     /* ... and retrieve the current directory path and NULL-terminate it. */
     StartDirLength = min(
-        core::mem::size_of::<[WCHAR; MAX_PATH + 1]>() / core::mem::size_of::<WCHAR>(),
-        (*CurrentDirectory).DosPath.Length / core::mem::size_of::<WCHAR>(),
+        core::mem::size_of::<[WCHAR; MAX_PATH + 1]>() / (core::mem::size_of::<WCHAR>() as ULONG),
+        (*CurrentDirectory).DosPath.Length / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
         StartDirBuffer.as_mut_ptr() as *mut core::ffi::c_void,
@@ -234,7 +238,7 @@ pub unsafe extern "C" fn SetUpAppName(
     let mut Length: DWORD;
 
     /* Retrieve the needed buffer size */
-    Length = (StartDirLength as DWORD + 1) * core::mem::size_of::<WCHAR>() as DWORD;
+    Length = (StartDirLength as DWORD + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
     if *CurDirLength > 0 {
         Length = min(Length, *CurDirLength);
     }
@@ -246,19 +250,19 @@ pub unsafe extern "C" fn SetUpAppName(
          * Length is always >= sizeof(WCHAR). Copy everything but the
          * possible trailing NULL character, and then NULL-terminate.
          */
-        Length -= core::mem::size_of::<WCHAR>() as DWORD;
+        Length -= (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
         RtlCopyMemory(
             *CurDir as *mut core::ffi::c_void,
             StartDirBuffer.as_ptr() as *const core::ffi::c_void,
             Length as usize,
         );
-        (*(*CurDir as *mut WCHAR).offset((Length / core::mem::size_of::<WCHAR>() as DWORD) as isize)) = UNICODE_NULL;
+        (*(*CurDir as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
         *CurDir = StartDirBuffer.as_ptr() as LPWSTR;
     }
 
     /* Retrieve the needed buffer size */
-    Length = (ExeNameLength as DWORD + 1) * core::mem::size_of::<WCHAR>() as DWORD;
+    Length = (ExeNameLength as DWORD + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
     if *AppNameLength > 0 {
         Length = min(Length, *AppNameLength);
     }
@@ -270,13 +274,13 @@ pub unsafe extern "C" fn SetUpAppName(
          * Length is always >= sizeof(WCHAR). Copy everything but the
          * possible trailing NULL character, and then NULL-terminate.
          */
-        Length -= core::mem::size_of::<WCHAR>() as DWORD;
+        Length -= (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
         RtlCopyMemory(
             *AppName as *mut core::ffi::c_void,
             ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
             Length as usize,
         );
-        (*(*AppName as *mut WCHAR).offset((Length / core::mem::size_of::<WCHAR>() as DWORD) as isize)) = UNICODE_NULL;
+        (*(*AppName as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
         *AppName = ExeNameBuffer.as_ptr() as LPWSTR;
     }
@@ -292,11 +296,11 @@ pub unsafe extern "C" fn GetCurrentExeName(
         RtlEnterCriticalSection(&mut ExeNameLock);
 
         let mut BufferSize = BufferSize;
-        if (BufferSize as u32) > (ExeNameLength as u32) * core::mem::size_of::<u16>() as u32 {
-            BufferSize = (ExeNameLength as u32 * core::mem::size_of::<u16>() as u32) as u16;
+        if (BufferSize as u32) > (ExeNameLength as u32) * (core::mem::size_of::<u16>() as ULONG) as u32 {
+            BufferSize = (ExeNameLength as u32 * (core::mem::size_of::<u16>() as ULONG) as u32) as u16;
         }
 
-        core::ptr::copy_nonoverlapping(ExeNameBuffer.as_ptr(), ExeName, (BufferSize as usize) / core::mem::size_of::<u16>());
+        core::ptr::copy_nonoverlapping(ExeNameBuffer.as_ptr(), ExeName, (BufferSize as usize) / (core::mem::size_of::<u16>() as ULONG));
 
         RtlLeaveCriticalSection(&mut ExeNameLock);
         ExeLength = BufferSize;
@@ -354,7 +358,7 @@ pub unsafe extern "system" fn ConsoleMenuControl(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepMenuControl),
-        core::mem::size_of::<CONSOLE_MENUCONTROL>(),
+        (core::mem::size_of::<CONSOLE_MENUCONTROL>() as ULONG),
     );
 
     return (*MenuControlRequest).MenuHandle;
@@ -378,7 +382,7 @@ pub unsafe extern "system" fn DuplicateConsoleHandle(
         return INVALID_HANDLE_VALUE;
     }
 
-    (*DuplicateHandleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*DuplicateHandleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*DuplicateHandleRequest).SourceHandle = hSourceHandle;
     (*DuplicateHandleRequest).DesiredAccess = dwDesiredAccess;
     (*DuplicateHandleRequest).InheritHandle = bInheritHandle;
@@ -388,10 +392,10 @@ pub unsafe extern "system" fn DuplicateConsoleHandle(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepDuplicateHandle),
-        core::mem::size_of::<CONSOLE_DUPLICATEHANDLE>() as u32,
+        (core::mem::size_of::<CONSOLE_DUPLICATEHANDLE>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return INVALID_HANDLE_VALUE;
     }
 
@@ -406,17 +410,17 @@ pub unsafe extern "system" fn GetConsoleHandleInformation(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let GetHandleInfoRequest: PCONSOLE_GETHANDLEINFO = &mut ApiMessage.Data.GetHandleInfoRequest;
 
-    (*GetHandleInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetHandleInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetHandleInfoRequest).Handle = hHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetHandleInformation),
-        core::mem::size_of::<CONSOLE_GETHANDLEINFO>() as u32,
+        (core::mem::size_of::<CONSOLE_GETHANDLEINFO>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32;
     }
 
@@ -434,7 +438,7 @@ pub unsafe extern "system" fn SetConsoleHandleInformation(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetHandleInfoRequest: PCONSOLE_SETHANDLEINFO = &mut ApiMessage.Data.SetHandleInfoRequest;
 
-    (*SetHandleInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetHandleInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetHandleInfoRequest).Handle = hHandle;
     (*SetHandleInfoRequest).Mask = dwMask;
     (*SetHandleInfoRequest).Flags = dwFlags;
@@ -443,10 +447,10 @@ pub unsafe extern "system" fn SetConsoleHandleInformation(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetHandleInformation),
-        core::mem::size_of::<CONSOLE_SETHANDLEINFO>(),
+        (core::mem::size_of::<CONSOLE_SETHANDLEINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -463,16 +467,16 @@ pub unsafe extern "system" fn GetConsoleDisplayMode(lpModeFlags: LPDWORD) -> BOO
         return 0;
     }
 
-    (*GetDisplayModeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetDisplayModeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetDisplayMode),
-        core::mem::size_of::<CONSOLE_GETDISPLAYMODE>(),
+        (core::mem::size_of::<CONSOLE_GETDISPLAYMODE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -492,12 +496,12 @@ pub unsafe extern "system" fn GetConsoleFontInfo(
     let GetFontInfoRequest: PCONSOLE_GETFONTINFO = &mut ApiMessage.Data.GetFontInfoRequest;
     let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
-    (*GetFontInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetFontInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetFontInfoRequest).OutputHandle = hConsoleOutput;
     (*GetFontInfoRequest).MaximumWindow = bMaximumWindow;
     (*GetFontInfoRequest).NumFonts = nFontCount;
 
-    CaptureBuffer = CsrAllocateCaptureBuffer(1, nFontCount * core::mem::size_of::<CONSOLE_FONT_INFO>());
+    CaptureBuffer = CsrAllocateCaptureBuffer(1, nFontCount * (core::mem::size_of::<CONSOLE_FONT_INFO>() as ULONG));
     if CaptureBuffer.is_null() {
         // DPRINT1("CsrAllocateCaptureBuffer failed!\n");
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -506,7 +510,7 @@ pub unsafe extern "system" fn GetConsoleFontInfo(
 
     CsrAllocateMessagePointer(
         CaptureBuffer,
-        nFontCount * core::mem::size_of::<CONSOLE_FONT_INFO>(),
+        nFontCount * (core::mem::size_of::<CONSOLE_FONT_INFO>() as ULONG),
         &mut (*GetFontInfoRequest).FontInfo as *mut _ as *mut PVOID,
     );
 
@@ -516,13 +520,13 @@ pub unsafe extern "system" fn GetConsoleFontInfo(
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetFontInfo),
         core::mem::size_of_val(&*GetFontInfoRequest) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
     } else {
         RtlCopyMemory(
             lpConsoleFontInfo as *mut core::ffi::c_void,
             (*GetFontInfoRequest).FontInfo as *const core::ffi::c_void,
-            ((*GetFontInfoRequest).NumFonts as usize) * core::mem::size_of::<CONSOLE_FONT_INFO>(),
+            ((*GetFontInfoRequest).NumFonts as usize) * (core::mem::size_of::<CONSOLE_FONT_INFO>() as ULONG),
         );
     }
 
@@ -547,10 +551,10 @@ pub unsafe extern "system" fn GetConsoleFontSize(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetFontSize),
-        core::mem::size_of::<CONSOLE_GETFONTSIZE>() as u32,
+        (core::mem::size_of::<CONSOLE_GETFONTSIZE>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return Empty;
     }
 
@@ -572,17 +576,17 @@ pub unsafe extern "system" fn GetConsoleHardwareState(
         return 0;
     }
 
-    (*HardwareStateRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*HardwareStateRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*HardwareStateRequest).OutputHandle = hConsoleOutput;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetHardwareState),
-        core::mem::size_of::<CONSOLE_GETSETHWSTATE>(),
+        (core::mem::size_of::<CONSOLE_GETSETHWSTATE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -614,10 +618,10 @@ pub unsafe extern "system" fn GetCurrentConsoleFont(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetCurrentFont),
-        core::mem::size_of::<CONSOLE_GETCURRENTFONT>(),
+        (core::mem::size_of::<CONSOLE_GETCURRENTFONT>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -632,16 +636,16 @@ pub unsafe extern "system" fn GetNumberOfConsoleFonts() -> u32 {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let GetNumFontsRequest: *mut CONSOLE_GETNUMFONTS = &mut ApiMessage.Data.GetNumFontsRequest;
 
-    (*GetNumFontsRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetNumFontsRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetNumberOfFonts),
-        core::mem::size_of::<CONSOLE_GETNUMFONTS>(),
+        (core::mem::size_of::<CONSOLE_GETNUMFONTS>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -662,7 +666,7 @@ pub unsafe extern "system" fn InvalidateConsoleDIBits(
         return 0;
     }
 
-    (*InvalidateDIBitsRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*InvalidateDIBitsRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*InvalidateDIBitsRequest).OutputHandle = hConsoleOutput;
     (*InvalidateDIBitsRequest).Region = *lpRect;
 
@@ -670,10 +674,10 @@ pub unsafe extern "system" fn InvalidateConsoleDIBits(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepInvalidateBitMapRect),
-        core::mem::size_of::<CONSOLE_INVALIDATEDIBITS>() as u32,
+        (core::mem::size_of::<CONSOLE_INVALIDATEDIBITS>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -707,7 +711,7 @@ pub unsafe extern "system" fn OpenConsoleW(
         return INVALID_HANDLE_VALUE;
     }
 
-    (*OpenConsoleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*OpenConsoleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*OpenConsoleRequest).HandleType = HandleType;
     (*OpenConsoleRequest).DesiredAccess = dwDesiredAccess;
     (*OpenConsoleRequest).InheritHandle = bInheritHandle;
@@ -717,10 +721,10 @@ pub unsafe extern "system" fn OpenConsoleW(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepOpenConsole),
-        core::mem::size_of::<CONSOLE_OPENCONSOLE>() as u32,
+        (core::mem::size_of::<CONSOLE_OPENCONSOLE>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return INVALID_HANDLE_VALUE;
     }
 
@@ -735,7 +739,7 @@ pub unsafe extern "system" fn SetConsoleCursor(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetCursorRequest: PCONSOLE_SETCURSOR = &mut ApiMessage.Data.SetCursorRequest;
 
-    (*SetCursorRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetCursorRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetCursorRequest).OutputHandle = hConsoleOutput;
     (*SetCursorRequest).CursorHandle = hCursor;
 
@@ -743,10 +747,10 @@ pub unsafe extern "system" fn SetConsoleCursor(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCursor),
-        core::mem::size_of::<CONSOLE_SETCURSOR>(),
+        (core::mem::size_of::<CONSOLE_SETCURSOR>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -762,7 +766,7 @@ pub unsafe extern "system" fn SetConsoleDisplayMode(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetDisplayModeRequest: PCONSOLE_SETDISPLAYMODE = &mut ApiMessage.Data.SetDisplayModeRequest;
 
-    (*SetDisplayModeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetDisplayModeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetDisplayModeRequest).OutputHandle = hConsoleOutput;
     (*SetDisplayModeRequest).DisplayMode = dwFlags;
     (*SetDisplayModeRequest).NewSBDim.X = 0;
@@ -772,11 +776,11 @@ pub unsafe extern "system" fn SetConsoleDisplayMode(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetDisplayMode),
-        core::mem::size_of::<CONSOLE_SETDISPLAYMODE>() as u32,
+        (core::mem::size_of::<CONSOLE_SETDISPLAYMODE>() as ULONG) as u32,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -795,7 +799,7 @@ pub unsafe extern "system" fn SetConsoleFont(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetFontRequest: PCONSOLE_SETFONT = &mut ApiMessage.Data.SetFontRequest;
 
-    (*SetFontRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetFontRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetFontRequest).OutputHandle = hConsoleOutput;
     (*SetFontRequest).FontIndex = nFont;
 
@@ -803,10 +807,10 @@ pub unsafe extern "system" fn SetConsoleFont(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetFont),
-        core::mem::size_of::<CONSOLE_SETFONT>() as u32,
+        (core::mem::size_of::<CONSOLE_SETFONT>() as ULONG) as u32,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -824,7 +828,7 @@ pub unsafe extern "system" fn SetConsoleHardwareState(
 
     // DPRINT1("SetConsoleHardwareState(%lu, %lu) unimplemented!()\n", Flags, State);
 
-    (*HardwareStateRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*HardwareStateRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*HardwareStateRequest).OutputHandle = hConsoleOutput;
     (*HardwareStateRequest).Flags = Flags;
     (*HardwareStateRequest).State = State;
@@ -833,10 +837,10 @@ pub unsafe extern "system" fn SetConsoleHardwareState(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetHardwareState),
-        core::mem::size_of::<CONSOLE_GETSETHWSTATE>(),
+        (core::mem::size_of::<CONSOLE_GETSETHWSTATE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -871,17 +875,17 @@ pub unsafe extern "system" fn SetConsoleMenuClose(bEnable: BOOL) -> BOOL {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetMenuCloseRequest: PCONSOLE_SETMENUCLOSE = &mut ApiMessage.Data.SetMenuCloseRequest;
 
-    (*SetMenuCloseRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetMenuCloseRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetMenuCloseRequest).Enable = bEnable;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetMenuClose),
-        core::mem::size_of::<CONSOLE_SETMENUCLOSE>(),
+        (core::mem::size_of::<CONSOLE_SETMENUCLOSE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -897,7 +901,7 @@ pub unsafe extern "system" fn SetConsolePalette(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetPaletteRequest: PCONSOLE_SETPALETTE = &mut ApiMessage.Data.SetPaletteRequest;
 
-    (*SetPaletteRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetPaletteRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetPaletteRequest).OutputHandle = hConsoleOutput;
     (*SetPaletteRequest).PaletteHandle = hPalette;
     (*SetPaletteRequest).Usage = dwUsage;
@@ -906,10 +910,10 @@ pub unsafe extern "system" fn SetConsolePalette(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetPalette),
-        core::mem::size_of::<CONSOLE_SETPALETTE>(),
+        (core::mem::size_of::<CONSOLE_SETPALETTE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -924,7 +928,7 @@ pub unsafe extern "system" fn ShowConsoleCursor(
     let mut ApiMessage: CONSOLE_API_MESSAGE;
     let ShowCursorRequest: PCONSOLE_SHOWCURSOR = &mut ApiMessage.Data.ShowCursorRequest;
 
-    (*ShowCursorRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ShowCursorRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ShowCursorRequest).OutputHandle = hConsoleOutput;
     (*ShowCursorRequest).Show = bShow;
     (*ShowCursorRequest).RefCount = 0;
@@ -933,7 +937,7 @@ pub unsafe extern "system" fn ShowConsoleCursor(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepShowCursor),
-        core::mem::size_of::<CONSOLE_SHOWCURSOR>(),
+        (core::mem::size_of::<CONSOLE_SHOWCURSOR>() as ULONG),
     );
 
     return (*ShowCursorRequest).RefCount;
@@ -946,7 +950,7 @@ pub unsafe extern "system" fn VerifyConsoleIoHandle(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let VerifyHandleRequest: PCONSOLE_VERIFYHANDLE = &mut ApiMessage.Data.VerifyHandleRequest;
 
-    (*VerifyHandleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*VerifyHandleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*VerifyHandleRequest).Handle = hIoHandle;
     (*VerifyHandleRequest).IsValid = 0;
 
@@ -958,10 +962,10 @@ pub unsafe extern "system" fn VerifyConsoleIoHandle(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepVerifyIoHandle),
-        core::mem::size_of::<CONSOLE_VERIFYHANDLE>(),
+        (core::mem::size_of::<CONSOLE_VERIFYHANDLE>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if NT_SUCCESS(ApiMessage.Status) == 0 {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -973,17 +977,17 @@ pub unsafe extern "system" fn CloseConsoleHandle(hHandle: HANDLE) -> BOOL {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let CloseHandleRequest: PCONSOLE_CLOSEHANDLE = &mut ApiMessage.Data.CloseHandleRequest;
 
-    (*CloseHandleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*CloseHandleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*CloseHandleRequest).Handle = hHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepCloseHandle),
-        core::mem::size_of::<CONSOLE_CLOSEHANDLE>(),
+        (core::mem::size_of::<CONSOLE_CLOSEHANDLE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1061,7 +1065,7 @@ unsafe fn IntAllocConsole(
         CaptureBuffer = CsrAllocateCaptureBuffer(
             5,
             TitleLength + DesktopLength + CurDirLength + AppNameLength
-                + core::mem::size_of::<CONSOLE_START_INFO>() as u32,
+                + (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG) as u32,
         );
         if CaptureBuffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1072,7 +1076,7 @@ unsafe fn IntAllocConsole(
         CsrCaptureMessageBuffer(
             CaptureBuffer,
             ConsoleStartInfo as *const _ as *mut _,
-            core::mem::size_of::<CONSOLE_START_INFO>() as u32,
+            (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG) as u32,
             &mut (*AllocConsoleRequest).ConsoleStartInfo as *mut _ as *mut *mut _,
         );
 
@@ -1114,8 +1118,8 @@ unsafe fn IntAllocConsole(
             CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepAlloc),
             core::mem::size_of_val(&*AllocConsoleRequest) as u32,
         );
-        if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-            BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        if NT_SUCCESS(ApiMessage.Status) == 0 {
+            BaseSetLastNTError(ApiMessage.Status);
             Success = 0;
             break 'quit;
         }
@@ -1136,7 +1140,7 @@ unsafe fn IntAllocConsole(
         NtClose((*AllocConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_SUCCESS]);
         NtClose((*AllocConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_FAILURE]);
         if Status != INIT_SUCCESS {
-            (*NtCurrentPeb()).ProcessParameters.as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
+            (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
             Success = 0;
         } else {
             core::ptr::copy_nonoverlapping(
@@ -1164,10 +1168,10 @@ pub unsafe extern "system" fn AllocConsole() -> BOOL {
     let mut AppName: PWCHAR;
     let mut CurDir: PWCHAR;
 
-    let mut TitleLength: ULONG = (MAX_PATH + 1) * core::mem::size_of::<WCHAR>() as ULONG;
-    let mut DesktopLength: ULONG = (MAX_PATH + 1) * core::mem::size_of::<WCHAR>() as ULONG;
-    let mut AppNameLength: ULONG = 128 * core::mem::size_of::<WCHAR>() as ULONG;
-    let mut CurDirLength: ULONG = (MAX_PATH + 1) * core::mem::size_of::<WCHAR>() as ULONG;
+    let mut TitleLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
+    let mut DesktopLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
+    let mut AppNameLength: ULONG = 128 * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
+    let mut CurDirLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
 
     RtlEnterCriticalSection(&ConsoleLock);
 
@@ -1257,13 +1261,13 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
             &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
             core::ptr::null_mut(),
             CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepFree),
-            core::mem::size_of::<CONSOLE_FREECONSOLE>() as u32
+            (core::mem::size_of::<CONSOLE_FREECONSOLE>() as ULONG) as u32
         );
 
         /* Check for success */
-        if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0
+        if NT_SUCCESS(ApiMessage.Status) == 0
         {
-            BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+            BaseSetLastNTError(ApiMessage.Status);
             Success = 0;
             break 'quit;
         }
@@ -1294,17 +1298,17 @@ pub unsafe extern "system" fn GetConsoleScreenBufferInfo(
         return 0;
     }
 
-    (*ScreenBufferInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ScreenBufferInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ScreenBufferInfoRequest).OutputHandle = hConsoleOutput;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetScreenBufferInfo),
-        core::mem::size_of::<CONSOLE_GETSCREENBUFFERINFO>(),
+        (core::mem::size_of::<CONSOLE_GETSCREENBUFFERINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1342,10 +1346,10 @@ pub unsafe extern "system" fn SetConsoleCursorPosition(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCursorPosition),
-        core::mem::size_of::<CONSOLE_SETCURSORPOSITION>(),
+        (core::mem::size_of::<CONSOLE_SETCURSORPOSITION>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1365,17 +1369,17 @@ pub unsafe extern "system" fn GetConsoleMode(
         return 0;
     }
 
-    (*ConsoleModeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*ConsoleModeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ConsoleModeRequest).Handle = hConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetMode),
-        core::mem::size_of::<CONSOLE_GETSETCONSOLEMODE>(),
+        (core::mem::size_of::<CONSOLE_GETSETCONSOLEMODE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1400,10 +1404,10 @@ pub unsafe extern "system" fn SetConsoleMode(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetMode),
-        core::mem::size_of::<CONSOLE_GETSETCONSOLEMODE>(),
+        (core::mem::size_of::<CONSOLE_GETSETCONSOLEMODE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32;
     }
 
@@ -1419,7 +1423,7 @@ pub unsafe extern "system" fn GetNumberOfConsoleInputEvents(
     let GetNumInputEventsRequest: PCONSOLE_GETNUMINPUTEVENTS =
         &mut ApiMessage.Data.GetNumInputEventsRequest;
 
-    (*GetNumInputEventsRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetNumInputEventsRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetNumInputEventsRequest).InputHandle = hConsoleInput;
     (*GetNumInputEventsRequest).NumberOfEvents = 0;
 
@@ -1427,10 +1431,10 @@ pub unsafe extern "system" fn GetNumberOfConsoleInputEvents(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetNumberOfInputEvents),
-        core::mem::size_of::<CONSOLE_GETNUMINPUTEVENTS>(),
+        (core::mem::size_of::<CONSOLE_GETNUMINPUTEVENTS>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1462,10 +1466,10 @@ pub unsafe extern "system" fn GetLargestConsoleWindowSize(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetLargestWindowSize),
-        core::mem::size_of::<CONSOLE_GETLARGESTWINDOWSIZE>(),
+        (core::mem::size_of::<CONSOLE_GETLARGESTWINDOWSIZE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
     }
 
     return (*GetLargestWindowSizeRequest).Size;
@@ -1488,17 +1492,17 @@ pub unsafe extern "system" fn GetConsoleCursorInfo(
         return 0;
     }
 
-    (*CursorInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*CursorInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*CursorInfoRequest).OutputHandle = hConsoleOutput;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetCursorInfo),
-        core::mem::size_of::<PCONSOLE_GETSETCURSORINFO>(),
+        (core::mem::size_of::<PCONSOLE_GETSETCURSORINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1515,7 +1519,7 @@ pub unsafe extern "system" fn SetConsoleCursorInfo(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let CursorInfoRequest: PCONSOLE_GETSETCURSORINFO = &mut ApiMessage.Data.CursorInfoRequest;
 
-    (*CursorInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*CursorInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*CursorInfoRequest).OutputHandle = hConsoleOutput;
     (*CursorInfoRequest).Info = *lpConsoleCursorInfo;
 
@@ -1523,10 +1527,10 @@ pub unsafe extern "system" fn SetConsoleCursorInfo(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCursorInfo),
-        core::mem::size_of::<CONSOLE_GETSETCURSORINFO>(),
+        (core::mem::size_of::<CONSOLE_GETSETCURSORINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1541,16 +1545,16 @@ pub unsafe extern "system" fn GetNumberOfConsoleMouseButtons(
     let GetMouseInfoRequest: PCONSOLE_GETMOUSEINFO =
         &mut ApiMessage.Data.GetMouseInfoRequest;
 
-    (*GetMouseInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetMouseInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetMouseInfo),
-        core::mem::size_of::<CONSOLE_GETMOUSEINFO>(),
+        (core::mem::size_of::<CONSOLE_GETMOUSEINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1574,10 +1578,10 @@ pub unsafe extern "system" fn SetConsoleActiveScreenBuffer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetActiveScreenBuffer),
-        core::mem::size_of::<CONSOLE_SETACTIVESCREENBUFFER>(),
+        (core::mem::size_of::<CONSOLE_SETACTIVESCREENBUFFER>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1600,10 +1604,10 @@ pub unsafe extern "system" fn FlushConsoleInputBuffer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepFlushInputBuffer),
-        core::mem::size_of::<CONSOLE_FLUSHINPUTBUFFER>(),
+        (core::mem::size_of::<CONSOLE_FLUSHINPUTBUFFER>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32;
     }
 
@@ -1619,7 +1623,7 @@ pub unsafe extern "system" fn SetConsoleScreenBufferSize(
     let SetScreenBufferSizeRequest: PCONSOLE_SETSCREENBUFFERSIZE =
         &mut ApiMessage.Data.SetScreenBufferSizeRequest;
 
-    (*SetScreenBufferSizeRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetScreenBufferSizeRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetScreenBufferSizeRequest).OutputHandle = hConsoleOutput;
     (*SetScreenBufferSizeRequest).Size = dwSize;
 
@@ -1627,10 +1631,10 @@ pub unsafe extern "system" fn SetConsoleScreenBufferSize(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetScreenBufferSize),
-        core::mem::size_of::<CONSOLE_SETSCREENBUFFERSIZE>(),
+        (core::mem::size_of::<CONSOLE_SETSCREENBUFFERSIZE>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1668,10 +1672,10 @@ unsafe fn IntScrollConsoleScreenBuffer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepScrollScreenBuffer),
-        core::mem::size_of::<CONSOLE_SCROLLSCREENBUFFER>(),
+        (core::mem::size_of::<CONSOLE_SCROLLSCREENBUFFER>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if NT_SUCCESS(ApiMessage.Status) == 0 {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1728,7 +1732,7 @@ pub unsafe extern "system" fn SetConsoleWindowInfo(
         return 0;
     }
 
-    (*SetWindowInfoRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetWindowInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetWindowInfoRequest).OutputHandle = hConsoleOutput;
     (*SetWindowInfoRequest).Absolute = bAbsolute;
     (*SetWindowInfoRequest).WindowRect = *lpConsoleWindow;
@@ -1737,10 +1741,10 @@ pub unsafe extern "system" fn SetConsoleWindowInfo(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetWindowInfo),
-        core::mem::size_of::<CONSOLE_SETWINDOWINFO>(),
+        (core::mem::size_of::<CONSOLE_SETWINDOWINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1755,7 +1759,7 @@ pub unsafe extern "system" fn SetConsoleTextAttribute(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let SetTextAttribRequest: *mut CONSOLE_SETTEXTATTRIB = &mut ApiMessage.Data.SetTextAttribRequest;
 
-    (*SetTextAttribRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetTextAttribRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetTextAttribRequest).OutputHandle = hConsoleOutput;
     (*SetTextAttribRequest).Attributes = wAttributes;
 
@@ -1763,10 +1767,10 @@ pub unsafe extern "system" fn SetConsoleTextAttribute(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetTextAttribute),
-        core::mem::size_of::<CONSOLE_SETTEXTATTRIB>(),
+        (core::mem::size_of::<CONSOLE_SETTEXTATTRIB>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32;
     }
 
@@ -1776,7 +1780,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     let mut NewCtrlHandlers: *mut PHANDLER_ROUTINE = core::ptr::null_mut();
 
     if HandlerRoutine.is_null() {
-        (*NtCurrentPeb()).ProcessParameters.ConsoleFlags = 1;
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleFlags = 1;
         return 1;
     }
 
@@ -1784,7 +1788,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
         NewCtrlHandlers = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (NrCtrlHandlers + 4) * core::mem::size_of::<PHANDLER_ROUTINE>(),
+            (NrCtrlHandlers + 4) * (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
         ) as *mut PHANDLER_ROUTINE;
         if NewCtrlHandlers.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1794,7 +1798,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
         core::ptr::copy_nonoverlapping(
             CtrlHandlers,
             NewCtrlHandlers,
-            (core::mem::size_of::<PHANDLER_ROUTINE>() * NrCtrlHandlers as usize) / core::mem::size_of::<PHANDLER_ROUTINE>(),
+            ((core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG) * NrCtrlHandlers as usize) / (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
         );
 
         if NrAllocatedHandlers > 1 {
@@ -1827,7 +1831,7 @@ unsafe fn RemoveConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
                 core::ptr::copy(
                     CtrlHandlers.as_ptr().offset((i + 1) as isize),
                     CtrlHandlers.as_mut_ptr().offset(i as isize),
-                    (NrCtrlHandlers - i + 1) as usize * core::mem::size_of::<PHANDLER_ROUTINE>(),
+                    (NrCtrlHandlers - i + 1) as usize * (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
                 );
             }
 
@@ -1874,7 +1878,7 @@ pub unsafe extern "system" fn GenerateConsoleCtrlEvent(
         return 0;
     }
 
-    (*GenerateCtrlEventRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GenerateCtrlEventRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GenerateCtrlEventRequest).CtrlEvent = dwCtrlEvent;
     (*GenerateCtrlEventRequest).ProcessGroupId = dwProcessGroupId;
 
@@ -1882,10 +1886,10 @@ pub unsafe extern "system" fn GenerateConsoleCtrlEvent(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGenerateCtrlEvent),
-        core::mem::size_of::<CONSOLE_GENERATECTRLEVENT>(),
+        (core::mem::size_of::<CONSOLE_GENERATECTRLEVENT>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -1904,8 +1908,8 @@ unsafe fn IntGetConsoleTitle(
         return 0;
     }
 
-    (*TitleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
-    (*TitleRequest).Length = dwNumChars * (if bUnicode != 0 { core::mem::size_of::<WCHAR>() } else { core::mem::size_of::<CHAR>() }) as DWORD;
+    (*TitleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
+    (*TitleRequest).Length = dwNumChars * (if bUnicode != 0 { (core::mem::size_of::<WCHAR>() as ULONG) } else { (core::mem::size_of::<CHAR>() as ULONG) }) as DWORD;
     (*TitleRequest).Unicode = bUnicode;
 
     CaptureBuffer = CsrAllocateCaptureBuffer(1, (*TitleRequest).Length);
@@ -1925,15 +1929,15 @@ unsafe fn IntGetConsoleTitle(
         &mut ApiMessage as *mut _ as PCSR_API_MESSAGE,
         CaptureBuffer,
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetTitle),
-        core::mem::size_of::<CONSOLE_GETSETCONSOLETITLE>() as DWORD,
+        (core::mem::size_of::<CONSOLE_GETSETCONSOLETITLE>() as ULONG) as DWORD,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
-    dwNumChars = (*TitleRequest).Length / (if bUnicode != 0 { core::mem::size_of::<WCHAR>() } else { core::mem::size_of::<CHAR>() }) as DWORD;
+    dwNumChars = (*TitleRequest).Length / (if bUnicode != 0 { (core::mem::size_of::<WCHAR>() as ULONG) } else { (core::mem::size_of::<CHAR>() as ULONG) }) as DWORD;
 
     if dwNumChars > 0 {
         RtlCopyMemory(
@@ -1987,11 +1991,11 @@ unsafe fn IntSetConsoleTitle(
         0
     };
 
-    (*TitleRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*TitleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*TitleRequest).Length = NumChars * if bUnicode != 0 {
-        core::mem::size_of::<WCHAR>() as ULONG
+        (core::mem::size_of::<WCHAR>() as ULONG) as ULONG
     } else {
-        core::mem::size_of::<CHAR>() as ULONG
+        (core::mem::size_of::<CHAR>() as ULONG) as ULONG
     };
     (*TitleRequest).Unicode = bUnicode;
 
@@ -2013,13 +2017,13 @@ unsafe fn IntSetConsoleTitle(
         &mut ApiMessage as *mut _ as PCSR_API_MESSAGE,
         CaptureBuffer,
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetTitle),
-        core::mem::size_of::<CONSOLE_GETSETCONSOLETITLE>() as ULONG,
+        (core::mem::size_of::<CONSOLE_GETSETCONSOLETITLE>() as ULONG) as ULONG,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if NT_SUCCESS(ApiMessage.Status) == 0 {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2061,7 +2065,7 @@ pub unsafe extern "system" fn CreateConsoleScreenBuffer(
         return INVALID_HANDLE_VALUE;
     }
 
-    (*CreateScreenBufferRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*CreateScreenBufferRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*CreateScreenBufferRequest).DesiredAccess = dwDesiredAccess;
     (*CreateScreenBufferRequest).InheritHandle = if !lpSecurityAttributes.is_null() {
         (*lpSecurityAttributes).bInheritHandle
@@ -2097,15 +2101,15 @@ pub unsafe extern "system" fn CreateConsoleScreenBuffer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         CaptureBuffer,
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepCreateScreenBuffer),
-        core::mem::size_of::<CONSOLE_CREATESCREENBUFFER>() as u32,
+        (core::mem::size_of::<CONSOLE_CREATESCREENBUFFER>() as ULONG) as u32,
     );
 
     if !CaptureBuffer.is_null() {
         CsrFreeCaptureBuffer(CaptureBuffer);
     }
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return INVALID_HANDLE_VALUE;
     }
 
@@ -2123,17 +2127,17 @@ pub unsafe extern "system" fn GetConsoleCP() -> u32 {
     let GetConsoleCPRequest: *mut CONSOLE_GETINPUTOUTPUTCP = &mut ApiMessage.Data.GetConsoleCPRequest;
 
     /* Get the Input Code Page */
-    (*GetConsoleCPRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetConsoleCPRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetConsoleCPRequest).OutputCP = 0;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetCP),
-        core::mem::size_of::<CONSOLE_GETINPUTOUTPUTCP>(),
+        (core::mem::size_of::<CONSOLE_GETINPUTOUTPUTCP>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2146,7 +2150,7 @@ pub unsafe extern "system" fn SetConsoleCP(wCodePageID: UINT) -> BOOL {
     let SetConsoleCPRequest: PCONSOLE_SETINPUTOUTPUTCP = &mut ApiMessage.Data.SetConsoleCPRequest;
 
     /* Set the Input Code Page */
-    (*SetConsoleCPRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetConsoleCPRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetConsoleCPRequest).CodePage = wCodePageID;
     (*SetConsoleCPRequest).OutputCP = 0; /* FALSE */
     /* SetConsoleCPRequest->EventHandle; */
@@ -2155,10 +2159,10 @@ pub unsafe extern "system" fn SetConsoleCP(wCodePageID: UINT) -> BOOL {
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCP),
-        core::mem::size_of::<CONSOLE_SETINPUTOUTPUTCP>(),
+        (core::mem::size_of::<CONSOLE_SETINPUTOUTPUTCP>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0; /* FALSE */
     }
 
@@ -2171,17 +2175,17 @@ pub unsafe extern "system" fn GetConsoleOutputCP() -> u32 {
     let GetConsoleCPRequest: PCONSOLE_GETINPUTOUTPUTCP = &mut ApiMessage.Data.GetConsoleCPRequest;
 
     /* Get the Output Code Page */
-    (*GetConsoleCPRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetConsoleCPRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetConsoleCPRequest).OutputCP = 1i32;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetCP),
-        core::mem::size_of::<CONSOLE_GETINPUTOUTPUTCP>(),
+        (core::mem::size_of::<CONSOLE_GETINPUTOUTPUTCP>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2193,7 +2197,7 @@ pub unsafe extern "system" fn SetConsoleOutputCP(wCodePageID: UINT) -> BOOL {
     let SetConsoleCPRequest: PCONSOLE_SETINPUTOUTPUTCP = &mut ApiMessage.Data.SetConsoleCPRequest;
 
     /* Set the Output Code Page */
-    (*SetConsoleCPRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*SetConsoleCPRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetConsoleCPRequest).CodePage = wCodePageID;
     (*SetConsoleCPRequest).OutputCP = 1i32; /* TRUE */
     /* SetConsoleCPRequest->EventHandle; */
@@ -2202,11 +2206,11 @@ pub unsafe extern "system" fn SetConsoleOutputCP(wCodePageID: UINT) -> BOOL {
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCP),
-        core::mem::size_of::<CONSOLE_SETINPUTOUTPUTCP>(),
+        (core::mem::size_of::<CONSOLE_SETINPUTOUTPUTCP>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0
+    if NT_SUCCESS(ApiMessage.Status) == 0
     {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32; /* FALSE */
     }
 
@@ -2231,19 +2235,19 @@ pub unsafe extern "system" fn GetConsoleProcessList(
         return 0;
     }
 
-    CaptureBuffer = CsrAllocateCaptureBuffer(1, dwProcessCount * core::mem::size_of::<DWORD>() as ULONG);
+    CaptureBuffer = CsrAllocateCaptureBuffer(1, dwProcessCount * (core::mem::size_of::<DWORD>() as ULONG) as ULONG);
     if CaptureBuffer.is_null() {
         // DPRINT removed
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
     }
 
-    (*GetProcessListRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetProcessListRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetProcessListRequest).ProcessCount = dwProcessCount;
 
     CsrAllocateMessagePointer(
         CaptureBuffer,
-        dwProcessCount * core::mem::size_of::<DWORD>() as ULONG,
+        dwProcessCount * (core::mem::size_of::<DWORD>() as ULONG) as ULONG,
         &mut (*GetProcessListRequest).ProcessIdsList as *mut _ as *mut *mut core::ffi::c_void,
     );
 
@@ -2251,17 +2255,17 @@ pub unsafe extern "system" fn GetConsoleProcessList(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         CaptureBuffer,
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetProcessList),
-        core::mem::size_of::<CONSOLE_GETPROCESSLIST>() as ULONG,
+        (core::mem::size_of::<CONSOLE_GETPROCESSLIST>() as ULONG) as ULONG,
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
     } else {
         nProcesses = (*GetProcessListRequest).ProcessCount;
         if dwProcessCount >= nProcesses {
             RtlCopyMemory(
                 lpdwProcessList as *mut core::ffi::c_void,
                 (*GetProcessListRequest).ProcessIdsList as *const core::ffi::c_void,
-                (nProcesses * core::mem::size_of::<DWORD>() as ULONG) as usize,
+                (nProcesses * (core::mem::size_of::<DWORD>() as ULONG) as ULONG) as usize,
             );
         }
     }
@@ -2290,10 +2294,10 @@ pub unsafe extern "system" fn GetConsoleSelectionInfo(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetSelectionInfo),
-        core::mem::size_of::<CONSOLE_GETSELECTIONINFO>(),
+        (core::mem::size_of::<CONSOLE_GETSELECTIONINFO>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2319,7 +2323,7 @@ unsafe fn IntAttachConsole(
     (*AttachConsoleRequest).PropRoutine = PropRoutine;
 
     'quit: {
-        CaptureBuffer = CsrAllocateCaptureBuffer(1, core::mem::size_of::<CONSOLE_START_INFO>());
+        CaptureBuffer = CsrAllocateCaptureBuffer(1, (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG));
         if CaptureBuffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             Success = 0;
@@ -2329,7 +2333,7 @@ unsafe fn IntAttachConsole(
         CsrCaptureMessageBuffer(
             CaptureBuffer,
             ConsoleStartInfo as *const _ as *mut _,
-            core::mem::size_of::<CONSOLE_START_INFO>(),
+            (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG),
             &mut (*AttachConsoleRequest).ConsoleStartInfo as *mut _ as *mut *mut _,
         );
 
@@ -2339,8 +2343,8 @@ unsafe fn IntAttachConsole(
             CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepAttach),
             core::mem::size_of_val(&*AttachConsoleRequest) as u32,
         );
-        if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-            BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        if !NT_SUCCESS(ApiMessage.Status) {
+            BaseSetLastNTError(ApiMessage.Status);
             Success = 0;
             break 'quit;
         }
@@ -2361,13 +2365,13 @@ unsafe fn IntAttachConsole(
         NtClose((*AttachConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_SUCCESS]);
         NtClose((*AttachConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_FAILURE]);
         if Status != INIT_SUCCESS {
-            (*NtCurrentPeb()).ProcessParameters.as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
+            (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
             Success = 0;
         } else {
             RtlCopyMemory(
                 ConsoleStartInfo as *mut _,
                 (*AttachConsoleRequest).ConsoleStartInfo as *const _ as *mut _,
-                core::mem::size_of::<CONSOLE_START_INFO>(),
+                (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG),
             );
             Success = 1;
         }
@@ -2438,10 +2442,10 @@ pub unsafe extern "system" fn GetConsoleWindow() -> HWND {
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetConsoleWindow),
-        core::mem::size_of::<CONSOLE_GETWINDOW>(),
+        (core::mem::size_of::<CONSOLE_GETWINDOW>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return core::ptr::null_mut();
     }
 
@@ -2460,10 +2464,10 @@ pub unsafe extern "system" fn SetConsoleIcon(hIcon: HICON) -> BOOL {
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetIcon),
-        core::mem::size_of::<CONSOLE_SETICON>(),
+        (core::mem::size_of::<CONSOLE_SETICON>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0i32;
     }
 
@@ -2487,7 +2491,7 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
         RtlCopyMemory(
             ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
             lpExeName as *const core::ffi::c_void,
-            (ExeLength * core::mem::size_of::<WCHAR>() as DWORD) as usize,
+            (ExeLength * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as usize,
         );
         ExeNameLength = ExeLength as USHORT;
         _SEH2_ret = 1;
@@ -2547,7 +2551,7 @@ pub unsafe extern "system" fn GetConsoleInputExeNameW(
         RtlCopyMemory(
             lpExeName as *mut core::ffi::c_void,
             ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
-            (ExeNameLength as usize) * core::mem::size_of::<WCHAR>(),
+            (ExeNameLength as usize) * (core::mem::size_of::<WCHAR>() as ULONG),
         );
         *lpExeName.offset(ExeNameLength as isize) = 0u16; // UNICODE_NULL
     }
@@ -2667,13 +2671,13 @@ unsafe fn IntRegisterConsoleIME(
     let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
     if cbDesktop == 0 || pDesktop.is_null() {
-        pDesktop = (*NtCurrentPeb()).ProcessParameters.DesktopInfo.Buffer;
-        cbDesktop = (*NtCurrentPeb()).ProcessParameters.DesktopInfo.Length;
+        pDesktop = (*(*NtCurrentPeb()).ProcessParameters).DesktopInfo.Buffer;
+        cbDesktop = (*(*NtCurrentPeb()).ProcessParameters).DesktopInfo.Length;
     }
 
-    cbDesktop = min(cbDesktop, (MAX_PATH + 1) * core::mem::size_of::<WCHAR>());
+    cbDesktop = min(cbDesktop, (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG));
 
-    (*RegisterConsoleIME).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*RegisterConsoleIME).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*RegisterConsoleIME).hWnd = hWnd;
     (*RegisterConsoleIME).dwThreadId = dwThreadId;
     (*RegisterConsoleIME).cbDesktop = cbDesktop;
@@ -2700,8 +2704,8 @@ unsafe fn IntRegisterConsoleIME(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2739,10 +2743,10 @@ unsafe fn IntUnregisterConsoleIME(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepUnregisterConsoleIME),
-        core::mem::size_of::<CONSOLE_UNREGISTERCONSOLEIME>(),
+        (core::mem::size_of::<CONSOLE_UNREGISTERCONSOLEIME>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2782,15 +2786,15 @@ pub unsafe extern "C" fn SetTEBLangID() {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let LangIdRequest: PCONSOLE_GETLANGID = &mut ApiMessage.Data.LangIdRequest;
 
-    LangIdRequest.as_mut().unwrap().ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.as_mut().unwrap().ConsoleHandle;
+    LangIdRequest.as_mut().unwrap().ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetLangId),
-        core::mem::size_of::<CONSOLE_GETLANGID>(),
+        (core::mem::size_of::<CONSOLE_GETLANGID>() as ULONG),
     );
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         return;
     }
 
@@ -2806,18 +2810,18 @@ unsafe fn IntGetConsoleKeyboardLayoutName(
     let GetKbdLayoutNameRequest: *mut CONSOLE_GETKBDLAYOUTNAME =
         &mut ApiMessage.Data.GetKbdLayoutNameRequest;
 
-    (*GetKbdLayoutNameRequest).ConsoleHandle = (*NtCurrentPeb()).ProcessParameters.ConsoleHandle;
+    (*GetKbdLayoutNameRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetKbdLayoutNameRequest).Ansi = bAnsi;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut CSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetKeyboardLayoutName),
-        core::mem::size_of::<CONSOLE_GETKBDLAYOUTNAME>() as u32,
+        (core::mem::size_of::<CONSOLE_GETKBDLAYOUTNAME>() as ULONG) as u32,
     );
 
-    if NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) == 0 {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if NT_SUCCESS(ApiMessage.Status) == 0 {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -2875,7 +2879,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepNotifyLastClose),
-        core::mem::size_of::<CONSOLE_NOTIFYLASTCLOSE>()
+        (core::mem::size_of::<CONSOLE_NOTIFYLASTCLOSE>() as ULONG)
     ) as DWORD;
 }
 

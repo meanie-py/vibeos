@@ -4,6 +4,7 @@
 //! translations are preserved on disk; the .c files remain active C in CMakeLists.
 //! Re-enable these (and `pub mod console;` in lib.rs) once the CSR console message
 //! types are defined.
+// mod cffi;
 // pub mod alias;
 // pub mod console;
 // pub mod history;

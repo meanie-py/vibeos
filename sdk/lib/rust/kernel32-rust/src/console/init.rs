@@ -1,8 +1,12 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
 
 // ---- file-scope preamble (translated) ----
-pub static ConsoleLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
+pub static mut ConsoleLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
     DebugInfo: core::ptr::null_mut(),
     LockCount: -1,
     RecursionCount: 0,
@@ -262,7 +266,7 @@ unsafe fn ConnectConsole(
     NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_SUCCESS]);
     NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_FAILURE]);
     if Status != INIT_SUCCESS {
-        (*NtCurrentPeb()).ProcessParameters.ConsoleHandle = core::ptr::null_mut();
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle = core::ptr::null_mut();
         return 0;
     }
 

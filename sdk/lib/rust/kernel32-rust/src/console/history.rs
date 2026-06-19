@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -180,8 +182,8 @@ unsafe fn IntExpungeConsoleCommandHistory(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
     }
 }
 unsafe fn IntGetConsoleCommandHistory(
@@ -252,9 +254,9 @@ unsafe fn IntGetConsoleCommandHistory(
         core::mem::size_of::<CONSOLE_GETCOMMANDHISTORY>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -328,8 +330,8 @@ unsafe fn IntGetConsoleCommandHistoryLength(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -394,8 +396,8 @@ unsafe fn IntSetConsoleNumberOfCommands(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return FALSE;
     }
 
@@ -497,8 +499,8 @@ pub unsafe extern "system" fn SetConsoleCommandHistoryMode(dwMode: DWORD) -> BOO
         core::mem::size_of::<CONSOLE_SETHISTORYMODE>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return FALSE;
     }
 

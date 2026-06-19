@@ -89,7 +89,7 @@ pub mod file;
 // hierarchy (~80 message structs) isn't in the FFI layer yet; .rs translations are
 // preserved on disk + the .c files remain active C in CMakeLists. Re-enable once the
 // console CSR message types are defined. See kernel32 translation audit.
-// pub mod console;
+// pub mod console;  // WIP: winsrv-sys FFI bridge wired (cffi.rs); 1243→200 errs, re-enable to resume
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
