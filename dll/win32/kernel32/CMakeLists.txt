@@ -57,7 +57,7 @@ list(APPEND SOURCE
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
     #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,volume}.c — replaced by Rust (kernel32-rust/src/file/)
     # wine/actctx.c — replaced by Rust
-    wine/comm.c # DEFERRED back to C (SERIAL_*/IOCTL_SERIAL_* types not yet in FFI; comm.rs on disk)
+    # wine/comm.c — replaced by Rust (kernel32-rust/src/wine/comm.rs); cohab-linked via libkernel32_rust.a
     # wine/lzexpand.c — replaced by Rust (kernel32-rust/src/wine/lzexpand.rs); cohab-linked via libkernel32_rust.a
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
     # wine/profile.c — replaced by Rust (kernel32-rust/src/wine/profile.rs); cohab-linked via libkernel32_rust.a

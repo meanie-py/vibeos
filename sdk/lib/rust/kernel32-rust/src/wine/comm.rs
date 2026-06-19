@@ -2,8 +2,170 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "system" {
+extern "C" {
     fn wcsncmp( str1: *const WCHAR, str2: *const WCHAR, n: usize, ) -> i32;
+}
+
+// ---- cohab glue (kernel32 Rust port: SERIAL/IOCTL FFI + intra-DLL imports) ----
+use crate::string::nls_subst::{HeapAlloc, HeapFree};
+
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+macro_rules! FIXME { ($($t:tt)*) => {{}} }
+macro_rules! ERR   { ($($t:tt)*) => {{}} }
+
+// BOOL is i32; nt::* glob exports FALSE/TRUE as u32 — shadow with BOOL-typed consts.
+const FALSE: BOOL = 0;
+const TRUE: BOOL = 1;
+
+// winbase.h DCB DTR/RTS control values
+pub const DTR_CONTROL_DISABLE: DWORD = 0x00;
+pub const DTR_CONTROL_ENABLE: DWORD = 0x01;
+pub const DTR_CONTROL_HANDSHAKE: DWORD = 0x02;
+pub const RTS_CONTROL_DISABLE: DWORD = 0x00;
+pub const RTS_CONTROL_ENABLE: DWORD = 0x01;
+pub const RTS_CONTROL_HANDSHAKE: DWORD = 0x02;
+pub const RTS_CONTROL_TOGGLE: DWORD = 0x03;
+
+// IOCTL_SERIAL_* (ntddser.h): CTL_CODE(FILE_DEVICE_SERIAL_PORT=0x1b, fn, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
+const fn serial_ioctl(func: ULONG) -> ULONG { (0x1b << 16) | (func << 2) }
+pub const IOCTL_SERIAL_SET_BAUD_RATE: ULONG = serial_ioctl(1);
+pub const IOCTL_SERIAL_SET_QUEUE_SIZE: ULONG = serial_ioctl(2);
+pub const IOCTL_SERIAL_SET_LINE_CONTROL: ULONG = serial_ioctl(3);
+pub const IOCTL_SERIAL_SET_BREAK_ON: ULONG = serial_ioctl(4);
+pub const IOCTL_SERIAL_SET_BREAK_OFF: ULONG = serial_ioctl(5);
+pub const IOCTL_SERIAL_IMMEDIATE_CHAR: ULONG = serial_ioctl(6);
+pub const IOCTL_SERIAL_SET_TIMEOUTS: ULONG = serial_ioctl(7);
+pub const IOCTL_SERIAL_GET_TIMEOUTS: ULONG = serial_ioctl(8);
+pub const IOCTL_SERIAL_SET_DTR: ULONG = serial_ioctl(9);
+pub const IOCTL_SERIAL_CLR_DTR: ULONG = serial_ioctl(10);
+pub const IOCTL_SERIAL_RESET_DEVICE: ULONG = serial_ioctl(11);
+pub const IOCTL_SERIAL_SET_RTS: ULONG = serial_ioctl(12);
+pub const IOCTL_SERIAL_CLR_RTS: ULONG = serial_ioctl(13);
+pub const IOCTL_SERIAL_SET_XOFF: ULONG = serial_ioctl(14);
+pub const IOCTL_SERIAL_SET_XON: ULONG = serial_ioctl(15);
+pub const IOCTL_SERIAL_GET_WAIT_MASK: ULONG = serial_ioctl(16);
+pub const IOCTL_SERIAL_SET_WAIT_MASK: ULONG = serial_ioctl(17);
+pub const IOCTL_SERIAL_WAIT_ON_MASK: ULONG = serial_ioctl(18);
+pub const IOCTL_SERIAL_PURGE: ULONG = serial_ioctl(19);
+pub const IOCTL_SERIAL_GET_BAUD_RATE: ULONG = serial_ioctl(20);
+pub const IOCTL_SERIAL_GET_LINE_CONTROL: ULONG = serial_ioctl(21);
+pub const IOCTL_SERIAL_GET_CHARS: ULONG = serial_ioctl(22);
+pub const IOCTL_SERIAL_SET_CHARS: ULONG = serial_ioctl(23);
+pub const IOCTL_SERIAL_GET_HANDFLOW: ULONG = serial_ioctl(24);
+pub const IOCTL_SERIAL_SET_HANDFLOW: ULONG = serial_ioctl(25);
+pub const IOCTL_SERIAL_GET_MODEMSTATUS: ULONG = serial_ioctl(26);
+pub const IOCTL_SERIAL_GET_COMMSTATUS: ULONG = serial_ioctl(27);
+pub const IOCTL_SERIAL_LSRMST_INSERT: ULONG = serial_ioctl(31);
+
+// SERIAL_* flag values (ntddser.h)
+pub const SERIAL_DTR_CONTROL: ULONG = 0x00000001;
+pub const SERIAL_DTR_HANDSHAKE: ULONG = 0x00000002;
+pub const SERIAL_CTS_HANDSHAKE: ULONG = 0x00000008;
+pub const SERIAL_DSR_HANDSHAKE: ULONG = 0x00000010;
+pub const SERIAL_DSR_SENSITIVITY: ULONG = 0x00000040;
+pub const SERIAL_ERROR_ABORT: ULONG = 0x80000000;
+pub const SERIAL_AUTO_TRANSMIT: ULONG = 0x00000001;
+pub const SERIAL_AUTO_RECEIVE: ULONG = 0x00000002;
+pub const SERIAL_ERROR_CHAR: ULONG = 0x00000004;
+pub const SERIAL_NULL_STRIPPING: ULONG = 0x00000008;
+pub const SERIAL_RTS_CONTROL: ULONG = 0x00000040;
+pub const SERIAL_RTS_HANDSHAKE: ULONG = 0x00000080;
+pub const SERIAL_XOFF_CONTINUE: ULONG = 0x80000000;
+pub const SERIAL_IOC_MCR_DTR: ULONG = 0x00000001;
+pub const SERIAL_IOC_MCR_RTS: ULONG = 0x00000002;
+pub const SERIAL_IOC_MCR_LOOP: ULONG = 0x00000010;
+pub const SERIAL_IOC_MCR_OUT: ULONG = 0x0000000C;
+pub const SERIAL_IOC_FCR_FIFO_ENABLE: ULONG = 0x00000001;
+pub const SERIAL_IOC_FCR_RCVR_RESET: ULONG = 0x00000002;
+pub const SERIAL_IOC_FCR_XMIT_RESET: ULONG = 0x00000004;
+pub const SERIAL_IOC_FCR_DMA_MODE: ULONG = 0x00000008;
+pub const SERIAL_IOC_FCR_RES: ULONG = 0x00000030;
+pub const SERIAL_IOC_FCR_RCVR_TRIGGER_LSB: ULONG = 0x00000040;
+pub const SERIAL_IOC_FCR_RCVR_TRIGGER_MSB: ULONG = 0x00000080;
+pub const SERIAL_LSRMST_ESCAPE: ULONG = 0x00;
+pub const SERIAL_LSRMST_LSR_DATA: ULONG = 0x01;
+pub const SERIAL_LSRMST_LSR_NODATA: ULONG = 0x02;
+pub const SERIAL_LSRMST_MST: ULONG = 0x03;
+pub const SERIAL_ERROR_BREAK: ULONG = 0x00000001;
+pub const SERIAL_ERROR_FRAMING: ULONG = 0x00000002;
+pub const SERIAL_ERROR_OVERRUN: ULONG = 0x00000004;
+pub const SERIAL_ERROR_QUEUEOVERRUN: ULONG = 0x00000008;
+pub const SERIAL_ERROR_PARITY: ULONG = 0x00000010;
+pub const SERIAL_TX_WAITING_FOR_CTS: ULONG = 0x00000001;
+pub const SERIAL_TX_WAITING_FOR_DSR: ULONG = 0x00000002;
+pub const SERIAL_TX_WAITING_FOR_DCD: ULONG = 0x00000004;
+pub const SERIAL_TX_WAITING_FOR_XON: ULONG = 0x00000008;
+pub const SERIAL_TX_WAITING_XOFF_SENT: ULONG = 0x00000010;
+
+// ntddser.h serial control structures
+#[repr(C)]
+pub struct _SERIAL_BAUD_RATE { pub BaudRate: ULONG }
+pub type SERIAL_BAUD_RATE = _SERIAL_BAUD_RATE;
+pub type PSERIAL_BAUD_RATE = *mut _SERIAL_BAUD_RATE;
+
+#[repr(C)]
+pub struct _SERIAL_CHARS {
+    pub EofChar: UCHAR, pub ErrorChar: UCHAR, pub BreakChar: UCHAR,
+    pub EventChar: UCHAR, pub XonChar: UCHAR, pub XoffChar: UCHAR,
+}
+pub type SERIAL_CHARS = _SERIAL_CHARS;
+pub type PSERIAL_CHARS = *mut _SERIAL_CHARS;
+
+#[repr(C)]
+pub struct _SERIAL_HANDFLOW {
+    pub ControlHandShake: ULONG, pub FlowReplace: ULONG,
+    pub XonLimit: LONG, pub XoffLimit: LONG,
+}
+pub type SERIAL_HANDFLOW = _SERIAL_HANDFLOW;
+pub type PSERIAL_HANDFLOW = *mut _SERIAL_HANDFLOW;
+
+#[repr(C)]
+pub struct _SERIAL_LINE_CONTROL {
+    pub StopBits: UCHAR, pub Parity: UCHAR, pub WordLength: UCHAR,
+}
+pub type SERIAL_LINE_CONTROL = _SERIAL_LINE_CONTROL;
+pub type PSERIAL_LINE_CONTROL = *mut _SERIAL_LINE_CONTROL;
+
+#[repr(C)]
+pub struct _SERIAL_QUEUE_SIZE { pub InSize: ULONG, pub OutSize: ULONG }
+pub type SERIAL_QUEUE_SIZE = _SERIAL_QUEUE_SIZE;
+pub type PSERIAL_QUEUE_SIZE = *mut _SERIAL_QUEUE_SIZE;
+
+#[repr(C)]
+pub struct _SERIAL_STATUS {
+    pub Errors: ULONG, pub HoldReasons: ULONG,
+    pub AmountInInQueue: ULONG, pub AmountInOutQueue: ULONG,
+    pub EofReceived: BOOLEAN, pub WaitForImmediate: BOOLEAN,
+}
+pub type SERIAL_STATUS = _SERIAL_STATUS;
+pub type PSERIAL_STATUS = *mut _SERIAL_STATUS;
+
+#[repr(C)]
+pub struct _SERIAL_TIMEOUTS {
+    pub ReadIntervalTimeout: ULONG,
+    pub ReadTotalTimeoutMultiplier: ULONG,
+    pub ReadTotalTimeoutConstant: ULONG,
+    pub WriteTotalTimeoutMultiplier: ULONG,
+    pub WriteTotalTimeoutConstant: ULONG,
+}
+pub type SERIAL_TIMEOUTS = _SERIAL_TIMEOUTS;
+pub type PSERIAL_TIMEOUTS = *mut _SERIAL_TIMEOUTS;
+
+// intra-DLL kernel32 exports (resolve to sibling #[no_mangle] symbols at link)
+extern "system" {
+    fn DeviceIoControl(
+        hDevice: HANDLE, dwIoControlCode: DWORD, lpInBuffer: LPVOID, nInBufferSize: DWORD,
+        lpOutBuffer: LPVOID, nOutBufferSize: DWORD, lpBytesReturned: LPDWORD, lpOverlapped: LPOVERLAPPED,
+    ) -> BOOL;
+    fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HINSTANCE;
+    fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL;
+    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
+    fn GetProcessHeap() -> HANDLE;
+    fn MultiByteToWideChar(
+        CodePage: UINT, Flags: DWORD, MultiByteString: LPCSTR, MultiByteCount: INT,
+        WideCharString: LPWSTR, WideCharCount: INT,
+    ) -> INT;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -239,28 +401,28 @@ unsafe fn COMM_BuildOldCommDCB(mut device: LPCWSTR, mut lpdcb: LPDCB) -> BOOL {
     }
     match last as i32 {
         0 => {
-            (*lpdcb).fInX = FALSE;
-            (*lpdcb).fOutX = FALSE;
-            (*lpdcb).fOutxCtsFlow = FALSE;
-            (*lpdcb).fOutxDsrFlow = FALSE;
-            (*lpdcb).fDtrControl = DTR_CONTROL_ENABLE;
-            (*lpdcb).fRtsControl = RTS_CONTROL_ENABLE;
+            (*lpdcb).set_fInX((FALSE) as DWORD);
+            (*lpdcb).set_fOutX((FALSE) as DWORD);
+            (*lpdcb).set_fOutxCtsFlow((FALSE) as DWORD);
+            (*lpdcb).set_fOutxDsrFlow((FALSE) as DWORD);
+            (*lpdcb).set_fDtrControl((DTR_CONTROL_ENABLE) as DWORD);
+            (*lpdcb).set_fRtsControl((RTS_CONTROL_ENABLE) as DWORD);
         }
         88 => {
-            (*lpdcb).fInX = TRUE;
-            (*lpdcb).fOutX = TRUE;
-            (*lpdcb).fOutxCtsFlow = FALSE;
-            (*lpdcb).fOutxDsrFlow = FALSE;
-            (*lpdcb).fDtrControl = DTR_CONTROL_ENABLE;
-            (*lpdcb).fRtsControl = RTS_CONTROL_ENABLE;
+            (*lpdcb).set_fInX((TRUE) as DWORD);
+            (*lpdcb).set_fOutX((TRUE) as DWORD);
+            (*lpdcb).set_fOutxCtsFlow((FALSE) as DWORD);
+            (*lpdcb).set_fOutxDsrFlow((FALSE) as DWORD);
+            (*lpdcb).set_fDtrControl((DTR_CONTROL_ENABLE) as DWORD);
+            (*lpdcb).set_fRtsControl((RTS_CONTROL_ENABLE) as DWORD);
         }
         80 => {
-            (*lpdcb).fInX = FALSE;
-            (*lpdcb).fOutX = FALSE;
-            (*lpdcb).fOutxCtsFlow = TRUE;
-            (*lpdcb).fOutxDsrFlow = TRUE;
-            (*lpdcb).fDtrControl = DTR_CONTROL_HANDSHAKE;
-            (*lpdcb).fRtsControl = RTS_CONTROL_HANDSHAKE;
+            (*lpdcb).set_fInX((FALSE) as DWORD);
+            (*lpdcb).set_fOutX((FALSE) as DWORD);
+            (*lpdcb).set_fOutxCtsFlow((TRUE) as DWORD);
+            (*lpdcb).set_fOutxDsrFlow((TRUE) as DWORD);
+            (*lpdcb).set_fDtrControl((DTR_CONTROL_HANDSHAKE) as DWORD);
+            (*lpdcb).set_fRtsControl((RTS_CONTROL_HANDSHAKE) as DWORD);
         }
         _ => return FALSE,
     }
@@ -402,8 +564,8 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fOutX = temp;
-            (*lpdcb).fInX = temp;
+            (*lpdcb).set_fOutX((temp) as DWORD);
+            (*lpdcb).set_fInX((temp) as DWORD);
         } else if strncmpiW(
             odsrW.as_ptr() as LPCWSTR,
             device,
@@ -417,7 +579,7 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fOutxDsrFlow = temp;
+            (*lpdcb).set_fOutxDsrFlow((temp) as DWORD);
         } else if strncmpiW(
             octsW.as_ptr() as LPCWSTR,
             device,
@@ -431,7 +593,7 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fOutxCtsFlow = temp;
+            (*lpdcb).set_fOutxCtsFlow((temp) as DWORD);
         } else if strncmpiW(
             dtrW.as_ptr() as LPCWSTR,
             device,
@@ -445,7 +607,7 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fDtrControl = temp;
+            (*lpdcb).set_fDtrControl((temp) as DWORD);
         } else if strncmpiW(
             rtsW.as_ptr() as LPCWSTR,
             device,
@@ -459,7 +621,7 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fRtsControl = temp;
+            (*lpdcb).set_fRtsControl((temp) as DWORD);
         } else if strncmpiW(
             idsrW.as_ptr() as LPCWSTR,
             device,
@@ -473,7 +635,7 @@ unsafe fn COMM_BuildNewCommDCB(
             if device.is_null() {
                 return FALSE;
             }
-            (*lpdcb).fDsrSensitivity = temp;
+            (*lpdcb).set_fDsrSensitivity((temp) as DWORD);
         } else {
             return FALSE;
         }
@@ -494,14 +656,14 @@ unsafe fn COMM_BuildNewCommDCB(
     return TRUE;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BuildCommDCBA(
+pub unsafe extern "system" fn BuildCommDCBA(
     device: LPCSTR,
     lpdcb: LPDCB,
 ) -> BOOL {
     return BuildCommDCBAndTimeoutsA(device, lpdcb, core::ptr::null_mut());
 }
 #[no_mangle]
-pub unsafe extern "C" fn BuildCommDCBAndTimeoutsA(
+pub unsafe extern "system" fn BuildCommDCBAndTimeoutsA(
     device: LPCSTR,
     lpdcb: LPDCB,
     lptimeouts: LPCOMMTIMEOUTS,
@@ -509,7 +671,7 @@ pub unsafe extern "C" fn BuildCommDCBAndTimeoutsA(
     let mut ret: BOOL = 0;
     let mut deviceW: _UNICODE_STRING = core::mem::zeroed();
 
-    TRACE(
+    TRACE!(
         b"(%s,%p,%p)\n\0".as_ptr() as LPCSTR,
         device,
         lpdcb,
@@ -530,7 +692,7 @@ pub unsafe extern "C" fn BuildCommDCBAndTimeoutsA(
     return ret;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BuildCommDCBAndTimeoutsW(
+pub unsafe extern "system" fn BuildCommDCBAndTimeoutsW(
     devid: LPCWSTR,
     lpdcb: LPDCB,
     lptimeouts: LPCOMMTIMEOUTS,
@@ -540,7 +702,7 @@ pub unsafe extern "C" fn BuildCommDCBAndTimeoutsW(
     let mut result: BOOL = 0;
     let mut ptr: LPCWSTR = devid;
 
-    TRACE(
+    TRACE!(
         b"(%s,%p,%p)\n\0".as_ptr() as LPCSTR,
         debugstr_w(devid),
         lpdcb,
@@ -577,7 +739,7 @@ pub unsafe extern "C" fn BuildCommDCBAndTimeoutsW(
         }
         return TRUE;
     } else {
-        WARN(
+        WARN!(
             b"Invalid device control string: %s\n\0".as_ptr() as LPCSTR,
             debugstr_w(devid),
         );
@@ -586,7 +748,7 @@ pub unsafe extern "C" fn BuildCommDCBAndTimeoutsW(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn BuildCommDCBW(
+pub unsafe extern "system" fn BuildCommDCBW(
     devid: LPCWSTR,
     lpdcb: LPDCB,
 ) -> BOOL {
@@ -660,7 +822,7 @@ pub unsafe extern "system" fn EscapeCommFunction(
             ioc = IOCTL_SERIAL_RESET_DEVICE;
         }
         _ => {
-            ERR(
+            ERR!(
                 b"Unknown function code (%u)\n\0".as_ptr() as LPCSTR,
                 func,
             );
@@ -745,25 +907,25 @@ pub unsafe extern "system" fn ClearCommError(
         core::ptr::write_bytes(lpStat as *mut u8, 0, core::mem::size_of::<COMSTAT>());
 
         if ss.HoldReasons & SERIAL_TX_WAITING_FOR_CTS != 0 {
-            (*lpStat).fCtsHold = 1;
+            (*lpStat).set_fCtsHold((1) as DWORD);
         }
         if ss.HoldReasons & SERIAL_TX_WAITING_FOR_DSR != 0 {
-            (*lpStat).fDsrHold = 1;
+            (*lpStat).set_fDsrHold((1) as DWORD);
         }
         if ss.HoldReasons & SERIAL_TX_WAITING_FOR_DCD != 0 {
-            (*lpStat).fRlsdHold = 1;
+            (*lpStat).set_fRlsdHold((1) as DWORD);
         }
         if ss.HoldReasons & SERIAL_TX_WAITING_FOR_XON != 0 {
-            (*lpStat).fXoffHold = 1;
+            (*lpStat).set_fXoffHold((1) as DWORD);
         }
         if ss.HoldReasons & SERIAL_TX_WAITING_XOFF_SENT != 0 {
-            (*lpStat).fXoffSent = 1;
+            (*lpStat).set_fXoffSent((1) as DWORD);
         }
         if ss.EofReceived != 0 {
-            (*lpStat).fEof = 1;
+            (*lpStat).set_fEof((1) as DWORD);
         }
         if ss.WaitForImmediate != 0 {
-            (*lpStat).fTxim = 1;
+            (*lpStat).set_fTxim((1) as DWORD);
         }
         (*lpStat).cbInQue = ss.AmountInInQueue;
         (*lpStat).cbOutQue = ss.AmountInOutQueue;
@@ -803,7 +965,7 @@ pub unsafe extern "system" fn GetCommMask(
     evtmask: LPDWORD,
 ) -> BOOL {
     let mut dwBytesReturned: DWORD = 0;
-    TRACE(
+    TRACE!(
         b"handle %p, mask %p\n\0".as_ptr() as LPCSTR,
         handle,
         evtmask,
@@ -823,10 +985,10 @@ pub unsafe extern "system" fn GetCommMask(
 #[no_mangle]
 pub unsafe extern "system" fn SetCommMask(
     handle: HANDLE,
-    evtmask: DWORD,
+    mut evtmask: DWORD,
 ) -> BOOL {
     let mut dwBytesReturned: DWORD = 0;
-    TRACE(
+    TRACE!(
         b"handle %p, mask %x\n\0".as_ptr() as LPCSTR,
         handle,
         evtmask,
@@ -843,11 +1005,11 @@ pub unsafe extern "system" fn SetCommMask(
     );
 }
 unsafe fn dump_dcb(lpdcb: *const DCB) {
-    TRACE(
+    TRACE!(
         b"bytesize=%d baudrate=%d fParity=%d Parity=%d stopbits=%d\n\0".as_ptr() as *const i8,
         (*lpdcb).ByteSize as i32,
         (*lpdcb).BaudRate as i32,
-        (*lpdcb).fParity as i32,
+        (*lpdcb).fParity() as i32,
         (*lpdcb).Parity as i32,
         if (*lpdcb).StopBits as i32 == ONESTOPBIT as i32 {
             1i32
@@ -857,33 +1019,33 @@ unsafe fn dump_dcb(lpdcb: *const DCB) {
             0i32
         },
     );
-    TRACE(
+    TRACE!(
         b"%sIXON %sIXOFF\n\0".as_ptr() as *const i8,
-        if (*lpdcb).fOutX != 0 {
+        if (*lpdcb).fOutX() != 0 {
             b"\0".as_ptr() as *const i8
         } else {
             b"~\0".as_ptr() as *const i8
         },
-        if (*lpdcb).fInX != 0 {
+        if (*lpdcb).fInX() != 0 {
             b"\0".as_ptr() as *const i8
         } else {
             b"~\0".as_ptr() as *const i8
         },
     );
-    TRACE(
+    TRACE!(
         b"fOutxCtsFlow=%d fRtsControl=%d\n\0".as_ptr() as *const i8,
-        (*lpdcb).fOutxCtsFlow as i32,
-        (*lpdcb).fRtsControl as i32,
+        (*lpdcb).fOutxCtsFlow() as i32,
+        (*lpdcb).fRtsControl() as i32,
     );
-    TRACE(
+    TRACE!(
         b"fOutxDsrFlow=%d fDtrControl=%d\n\0".as_ptr() as *const i8,
-        (*lpdcb).fOutxDsrFlow as i32,
-        (*lpdcb).fDtrControl as i32,
+        (*lpdcb).fOutxDsrFlow() as i32,
+        (*lpdcb).fDtrControl() as i32,
     );
-    if (*lpdcb).fOutxCtsFlow != 0 || (*lpdcb).fRtsControl == RTS_CONTROL_HANDSHAKE {
-        TRACE(b"CRTSCTS\n\0".as_ptr() as *const i8);
+    if (*lpdcb).fOutxCtsFlow() != 0 || (*lpdcb).fRtsControl() == RTS_CONTROL_HANDSHAKE {
+        TRACE!(b"CRTSCTS\n\0".as_ptr() as *const i8);
     } else {
-        TRACE(b"~CRTSCTS\n\0".as_ptr() as *const i8);
+        TRACE!(b"~CRTSCTS\n\0".as_ptr() as *const i8);
     }
 }
 
@@ -898,7 +1060,7 @@ pub unsafe extern "system" fn SetCommState(
     let mut sc: SERIAL_CHARS = core::mem::zeroed();
     let mut dwBytesReturned: DWORD = 0;
 
-    TRACE(b"handle %p, ptr %p\n\0".as_ptr() as LPCSTR, handle, lpdcb);
+    TRACE!(b"handle %p, ptr %p\n\0".as_ptr() as LPCSTR, handle, lpdcb);
 
     if lpdcb.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -914,13 +1076,13 @@ pub unsafe extern "system" fn SetCommState(
 
     shf.ControlHandShake = 0;
     shf.FlowReplace = 0;
-    if (*lpdcb).fOutxCtsFlow != 0 {
+    if (*lpdcb).fOutxCtsFlow() != 0 {
         shf.ControlHandShake |= SERIAL_CTS_HANDSHAKE;
     }
-    if (*lpdcb).fOutxDsrFlow != 0 {
+    if (*lpdcb).fOutxDsrFlow() != 0 {
         shf.ControlHandShake |= SERIAL_DSR_HANDSHAKE;
     }
-    match (*lpdcb).fDtrControl {
+    match (*lpdcb).fDtrControl() {
         DTR_CONTROL_DISABLE => {}
         DTR_CONTROL_ENABLE => {
             shf.ControlHandShake |= SERIAL_DTR_CONTROL;
@@ -933,7 +1095,7 @@ pub unsafe extern "system" fn SetCommState(
             return FALSE;
         }
     }
-    match (*lpdcb).fRtsControl {
+    match (*lpdcb).fRtsControl() {
         RTS_CONTROL_DISABLE => {}
         RTS_CONTROL_ENABLE => {
             shf.FlowReplace |= SERIAL_RTS_CONTROL;
@@ -949,37 +1111,37 @@ pub unsafe extern "system" fn SetCommState(
             return FALSE;
         }
     }
-    if (*lpdcb).fDsrSensitivity != 0 {
+    if (*lpdcb).fDsrSensitivity() != 0 {
         shf.ControlHandShake |= SERIAL_DSR_SENSITIVITY;
     }
-    if (*lpdcb).fAbortOnError != 0 {
+    if (*lpdcb).fAbortOnError() != 0 {
         shf.ControlHandShake |= SERIAL_ERROR_ABORT;
     }
-    if (*lpdcb).fErrorChar != 0 {
+    if (*lpdcb).fErrorChar() != 0 {
         shf.FlowReplace |= SERIAL_ERROR_CHAR;
     }
-    if (*lpdcb).fNull != 0 {
+    if (*lpdcb).fNull() != 0 {
         shf.FlowReplace |= SERIAL_NULL_STRIPPING;
     }
-    if (*lpdcb).fTXContinueOnXoff != 0 {
+    if (*lpdcb).fTXContinueOnXoff() != 0 {
         shf.FlowReplace |= SERIAL_XOFF_CONTINUE;
     }
-    if (*lpdcb).fOutX != 0 {
+    if (*lpdcb).fOutX() != 0 {
         shf.FlowReplace |= SERIAL_AUTO_TRANSMIT;
     }
-    if (*lpdcb).fInX != 0 {
+    if (*lpdcb).fInX() != 0 {
         shf.FlowReplace |= SERIAL_AUTO_RECEIVE;
     }
 
-    shf.XonLimit = (*lpdcb).XonLim;
-    shf.XoffLimit = (*lpdcb).XoffLim;
+    shf.XonLimit = (*lpdcb).XonLim as LONG;
+    shf.XoffLimit = (*lpdcb).XoffLim as LONG;
 
-    sc.EofChar = (*lpdcb).EofChar;
-    sc.ErrorChar = (*lpdcb).ErrorChar;
+    sc.EofChar = (*lpdcb).EofChar as UCHAR;
+    sc.ErrorChar = (*lpdcb).ErrorChar as UCHAR;
     sc.BreakChar = 0;
-    sc.EventChar = (*lpdcb).EvtChar;
-    sc.XonChar = (*lpdcb).XonChar;
-    sc.XoffChar = (*lpdcb).XoffChar;
+    sc.EventChar = (*lpdcb).EvtChar as UCHAR;
+    sc.XonChar = (*lpdcb).XonChar as UCHAR;
+    sc.XoffChar = (*lpdcb).XoffChar as UCHAR;
 
     (DeviceIoControl(
         handle,
@@ -1031,7 +1193,7 @@ pub unsafe extern "system" fn GetCommState(handle: HANDLE, lpdcb: LPDCB) -> BOOL
     let mut sc: SERIAL_CHARS = core::mem::zeroed();
     let mut dwBytesReturned: DWORD = 0;
 
-    TRACE(b"handle %p, ptr %p\n\0".as_ptr() as LPCSTR, handle, lpdcb);
+    TRACE!(b"handle %p, ptr %p\n\0".as_ptr() as LPCSTR, handle, lpdcb);
 
     if lpdcb.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -1085,8 +1247,8 @@ pub unsafe extern "system" fn GetCommState(handle: HANDLE, lpdcb: LPDCB) -> BOOL
     core::ptr::write_bytes(lpdcb as *mut u8, 0, core::mem::size_of::<DCB>());
     (*lpdcb).DCBlength = core::mem::size_of::<DCB>() as DWORD;
 
-    (*lpdcb).fBinary = 1;
-    (*lpdcb).fParity = 0;
+    (*lpdcb).set_fBinary((1) as DWORD);
+    (*lpdcb).set_fParity((0) as DWORD);
 
     (*lpdcb).BaudRate = sbr.BaudRate;
 
@@ -1095,56 +1257,56 @@ pub unsafe extern "system" fn GetCommState(handle: HANDLE, lpdcb: LPDCB) -> BOOL
     (*lpdcb).ByteSize = slc.WordLength;
 
     if shf.ControlHandShake & SERIAL_CTS_HANDSHAKE != 0 {
-        (*lpdcb).fOutxCtsFlow = 1;
+        (*lpdcb).set_fOutxCtsFlow((1) as DWORD);
     }
     if shf.ControlHandShake & SERIAL_DSR_HANDSHAKE != 0 {
-        (*lpdcb).fOutxDsrFlow = 1;
+        (*lpdcb).set_fOutxDsrFlow((1) as DWORD);
     }
     match shf.ControlHandShake & (SERIAL_DTR_CONTROL | SERIAL_DTR_HANDSHAKE) {
-        0 => (*lpdcb).fDtrControl = DTR_CONTROL_DISABLE,
-        1 => (*lpdcb).fDtrControl = DTR_CONTROL_ENABLE,
-        2 => (*lpdcb).fDtrControl = DTR_CONTROL_HANDSHAKE,
+        0 => (*lpdcb).set_fDtrControl(DTR_CONTROL_DISABLE as DWORD),
+        1 => (*lpdcb).set_fDtrControl(DTR_CONTROL_ENABLE as DWORD),
+        2 => (*lpdcb).set_fDtrControl(DTR_CONTROL_HANDSHAKE as DWORD),
         _ => {}
     }
     match shf.FlowReplace & (SERIAL_RTS_CONTROL | SERIAL_RTS_HANDSHAKE) {
-        0 => (*lpdcb).fRtsControl = RTS_CONTROL_DISABLE,
-        64 => (*lpdcb).fRtsControl = RTS_CONTROL_ENABLE,
-        128 => (*lpdcb).fRtsControl = RTS_CONTROL_HANDSHAKE,
-        192 => (*lpdcb).fRtsControl = RTS_CONTROL_TOGGLE,
+        0 => (*lpdcb).set_fRtsControl(RTS_CONTROL_DISABLE as DWORD),
+        64 => (*lpdcb).set_fRtsControl(RTS_CONTROL_ENABLE as DWORD),
+        128 => (*lpdcb).set_fRtsControl(RTS_CONTROL_HANDSHAKE as DWORD),
+        192 => (*lpdcb).set_fRtsControl(RTS_CONTROL_TOGGLE as DWORD),
         _ => {}
     }
     if shf.ControlHandShake & SERIAL_DSR_SENSITIVITY != 0 {
-        (*lpdcb).fDsrSensitivity = 1;
+        (*lpdcb).set_fDsrSensitivity(1 as DWORD);
     }
     if shf.ControlHandShake & SERIAL_ERROR_ABORT != 0 {
-        (*lpdcb).fAbortOnError = 1;
+        (*lpdcb).set_fAbortOnError((1) as DWORD);
     }
     if shf.FlowReplace & SERIAL_ERROR_CHAR != 0 {
-        (*lpdcb).fErrorChar = 1;
+        (*lpdcb).set_fErrorChar((1) as DWORD);
     }
     if shf.FlowReplace & SERIAL_NULL_STRIPPING != 0 {
-        (*lpdcb).fNull = 1;
+        (*lpdcb).set_fNull((1) as DWORD);
     }
     if shf.FlowReplace & SERIAL_XOFF_CONTINUE != 0 {
-        (*lpdcb).fTXContinueOnXoff = 1;
+        (*lpdcb).set_fTXContinueOnXoff((1) as DWORD);
     }
-    (*lpdcb).XonLim = shf.XonLimit;
-    (*lpdcb).XoffLim = shf.XoffLimit;
+    (*lpdcb).XonLim = shf.XonLimit as WORD;
+    (*lpdcb).XoffLim = shf.XoffLimit as WORD;
 
     if shf.FlowReplace & SERIAL_AUTO_TRANSMIT != 0 {
-        (*lpdcb).fOutX = 1;
+        (*lpdcb).set_fOutX((1) as DWORD);
     }
     if shf.FlowReplace & SERIAL_AUTO_RECEIVE != 0 {
-        (*lpdcb).fInX = 1;
+        (*lpdcb).set_fInX((1) as DWORD);
     }
 
-    (*lpdcb).EofChar = sc.EofChar;
-    (*lpdcb).ErrorChar = sc.ErrorChar;
-    (*lpdcb).EvtChar = sc.EventChar;
-    (*lpdcb).XonChar = sc.XonChar;
-    (*lpdcb).XoffChar = sc.XoffChar;
+    (*lpdcb).EofChar = sc.EofChar as CHAR;
+    (*lpdcb).ErrorChar = sc.ErrorChar as CHAR;
+    (*lpdcb).EvtChar = sc.EventChar as CHAR;
+    (*lpdcb).XonChar = sc.XonChar as CHAR;
+    (*lpdcb).XoffChar = sc.XoffChar as CHAR;
 
-    TRACE(b"OK\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"OK\n\0".as_ptr() as LPCSTR);
     dump_dcb(lpdcb);
 
     TRUE
@@ -1153,7 +1315,7 @@ pub unsafe extern "system" fn GetCommState(handle: HANDLE, lpdcb: LPDCB) -> BOOL
 #[no_mangle]
 pub unsafe extern "system" fn TransmitCommChar(
     hComm: HANDLE,
-    chTransmit: CHAR,
+    mut chTransmit: CHAR,
 ) -> BOOL {
     let mut dwBytesReturned: DWORD = 0;
     return DeviceIoControl(
@@ -1176,7 +1338,7 @@ pub unsafe extern "system" fn GetCommTimeouts(
     let mut st: SERIAL_TIMEOUTS = core::mem::zeroed();
     let mut dwBytesReturned: DWORD = 0;
 
-    TRACE(b"(%p, %p)\n\0".as_ptr() as LPCSTR, hComm, lptimeouts);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as LPCSTR, hComm, lptimeouts);
     if lptimeouts.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -1216,7 +1378,7 @@ pub unsafe extern "system" fn SetCommTimeouts(
     };
     let mut dwBytesReturned: DWORD = 0;
 
-    TRACE(
+    TRACE!(
         b"(%p, %p)\n\0".as_ptr() as LPCSTR,
         hComm,
         lptimeouts,
@@ -1263,7 +1425,7 @@ pub unsafe extern "system" fn GetCommModemStatus(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn WaitCommEvent(
+pub unsafe extern "system" fn WaitCommEvent(
     hFile: HANDLE,
     lpdwEvents: LPDWORD,
     lpOverlapped: LPOVERLAPPED,
@@ -1280,11 +1442,11 @@ pub unsafe extern "C" fn WaitCommEvent(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetCommProperties(
+pub unsafe extern "system" fn GetCommProperties(
     hFile: HANDLE,
     lpCommProp: LPCOMMPROP,
 ) -> BOOL {
-    TRACE(
+    TRACE!(
         b"(%p %p)\0".as_ptr() as LPCSTR,
         hFile,
         lpCommProp,
@@ -1307,14 +1469,14 @@ pub unsafe extern "C" fn GetCommProperties(
     (*lpCommProp).dwProvCapabilities = PCF_DTRDSR | PCF_PARITY_CHECK | PCF_RTSCTS | PCF_TOTALTIMEOUTS;
     (*lpCommProp).dwSettableParams = SP_BAUD | SP_DATABITS | SP_HANDSHAKING | SP_PARITY | SP_PARITY_CHECK | SP_STOPBITS;
     (*lpCommProp).dwSettableBaud = BAUD_075 | BAUD_110 | BAUD_134_5 | BAUD_150 | BAUD_300 | BAUD_600 | BAUD_1200 | BAUD_1800 | BAUD_2400 | BAUD_4800 | BAUD_9600 | BAUD_19200 | BAUD_38400 | BAUD_57600 | BAUD_115200;
-    (*lpCommProp).wSettableData = DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8;
-    (*lpCommProp).wSettableStopParity = STOPBITS_10 | STOPBITS_15 | STOPBITS_20 | PARITY_NONE | PARITY_ODD | PARITY_EVEN | PARITY_MARK | PARITY_SPACE;
+    (*lpCommProp).wSettableData = (DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8) as WORD;
+    (*lpCommProp).wSettableStopParity = (STOPBITS_10 | STOPBITS_15 | STOPBITS_20 | PARITY_NONE | PARITY_ODD | PARITY_EVEN | PARITY_MARK | PARITY_SPACE) as WORD;
     (*lpCommProp).dwCurrentTxQueue = (*lpCommProp).dwMaxTxQueue;
     (*lpCommProp).dwCurrentRxQueue = (*lpCommProp).dwMaxRxQueue;
     TRUE
 }
 #[no_mangle]
-pub unsafe extern "C" fn CommConfigDialogA(
+pub unsafe extern "system" fn CommConfigDialogA(
     lpszDevice: LPCSTR,
     hWnd: HWND,
     lpCommConfig: LPCOMMCONFIG,
@@ -1323,7 +1485,7 @@ pub unsafe extern "C" fn CommConfigDialogA(
     let mut len: DWORD = 0;
     let mut r: BOOL = 0;
 
-    TRACE(
+    TRACE!(
         "(%s, %p, %p)\n",
         debugstr_a(lpszDevice),
         hWnd,
@@ -1359,16 +1521,16 @@ pub unsafe extern "C" fn CommConfigDialogA(
     return r;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CommConfigDialogW(
+pub unsafe extern "system" fn CommConfigDialogW(
     lpszDevice: LPCWSTR,
     hWnd: HWND,
     lpCommConfig: LPCOMMCONFIG,
 ) -> BOOL {
     let mut pCommConfigDialog: Option<unsafe extern "system" fn(LPCWSTR, HWND, LPCOMMCONFIG) -> DWORD>;
     let mut hConfigModule: HMODULE;
-    let mut res: DWORD;
+    let mut res: DWORD = ERROR_INVALID_PARAMETER;
 
-    TRACE(
+    TRACE!(
         b"(%s, %p, %p)\n\0".as_ptr() as LPCSTR,
         debugstr_w(lpszDevice),
         hWnd,
@@ -1390,14 +1552,14 @@ pub unsafe extern "C" fn CommConfigDialogW(
     return (res == ERROR_SUCCESS) as BOOL;
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetCommConfig(
+pub unsafe extern "system" fn GetCommConfig(
     hFile: HANDLE,
     lpCommConfig: LPCOMMCONFIG,
     lpdwSize: LPDWORD,
 ) -> BOOL {
     let mut r: BOOL;
 
-    TRACE(
+    TRACE!(
         b"(%p, %p, %p) *lpdwSize: %u\n\0".as_ptr() as LPCSTR,
         hFile,
         lpCommConfig,
@@ -1426,12 +1588,12 @@ pub unsafe extern "C" fn GetCommConfig(
     return r;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetCommConfig(
+pub unsafe extern "system" fn SetCommConfig(
     hFile: HANDLE,
     lpCommConfig: LPCOMMCONFIG,
     dwSize: DWORD,
 ) -> BOOL {
-    TRACE("(%p, %p, %u)\n", hFile, lpCommConfig, dwSize);
+    TRACE!("(%p, %p, %u)\n", hFile, lpCommConfig, dwSize);
     return SetCommState(hFile, &raw mut (*lpCommConfig).dcb);
 }
 
@@ -1447,7 +1609,7 @@ pub unsafe extern "system" fn SetDefaultCommConfigW(
     let mut hConfigModule: HMODULE = core::ptr::null_mut();
     let mut r: BOOL = 0;
 
-    TRACE(
+    TRACE!(
         b"(%s, %p, %u)\n\0".as_ptr() as LPCSTR,
         debugstr_w(lpszDevice),
         lpCommConfig,
@@ -1460,7 +1622,7 @@ pub unsafe extern "system" fn SetDefaultCommConfigW(
     }
 
     lpfnSetDefaultCommConfig = core::mem::transmute::<
-        *mut core::ffi::c_void,
+        FARPROC,
         Option<unsafe extern "system" fn(LPCWSTR, LPCOMMCONFIG, DWORD) -> BOOL>,
     >(
         GetProcAddress(
@@ -1492,7 +1654,7 @@ pub unsafe extern "system" fn SetDefaultCommConfigA(
     let mut lpDeviceW: LPWSTR = core::ptr::null_mut();
     let mut len: DWORD = 0;
 
-    TRACE(
+    TRACE!(
         "(%s, %p, %u)\n\0".as_ptr() as LPCSTR,
         debugstr_a(lpszDevice),
         lpCommConfig,
@@ -1527,7 +1689,7 @@ pub unsafe extern "system" fn SetDefaultCommConfigA(
     return r;
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetDefaultCommConfigW(
+pub unsafe extern "system" fn GetDefaultCommConfigW(
     lpszName: LPCWSTR,
     lpCC: LPCOMMCONFIG,
     lpdwSize: LPDWORD,
@@ -1538,7 +1700,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigW(
     let hConfigModule: HMODULE;
     let mut res: DWORD = ERROR_INVALID_PARAMETER;
 
-    TRACE(
+    TRACE!(
         b"(%s, %p, %p)  *lpdwSize: %u\n\0".as_ptr() as LPCSTR,
         debugstr_w(lpszName),
         lpCC,
@@ -1571,7 +1733,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigW(
     return (res == ERROR_SUCCESS) as BOOL;
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetDefaultCommConfigA(
+pub unsafe extern "system" fn GetDefaultCommConfigA(
     lpszName: LPCSTR,
     lpCC: LPCOMMCONFIG,
     lpdwSize: LPDWORD,
@@ -2050,7 +2212,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // 	BOOL ret = FALSE;
 // 	UNICODE_STRING deviceW;
 //
-// 	TRACE("(%s,%p,%p)\n",device,lpdcb,lptimeouts);
+// 	TRACE!("(%s,%p,%p)\n",device,lpdcb,lptimeouts);
 // 	if(device) RtlCreateUnicodeStringFromAsciiz(&deviceW,device);
 // 	else deviceW.Buffer = NULL;
 //
@@ -2081,7 +2243,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // 	BOOL result;
 // 	LPCWSTR ptr = devid;
 //
-// 	TRACE("(%s,%p,%p)\n",debugstr_w(devid),lpdcb,lptimeouts);
+// 	TRACE!("(%s,%p,%p)\n",debugstr_w(devid),lpdcb,lptimeouts);
 //
 // 	memset(&timeouts, 0, sizeof timeouts);
 //
@@ -2111,7 +2273,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // 	}
 // 	else
 // 	{
-// 		WARN("Invalid device control string: %s\n", debugstr_w(devid));
+// 		WARN!("Invalid device control string: %s\n", debugstr_w(devid));
 // 		SetLastError(ERROR_INVALID_PARAMETER);
 // 		return FALSE;
 // 	}
@@ -2214,7 +2376,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     case CLRBREAK:      ioc = IOCTL_SERIAL_SET_BREAK_OFF;       break;
 //     case RESETDEV:      ioc = IOCTL_SERIAL_RESET_DEVICE;        break;
 //     default:
-//         ERR("Unknown function code (%u)\n", func);
+//         ERR!("Unknown function code (%u)\n", func);
 //         SetLastError(ERROR_INVALID_PARAMETER);
 //         return FALSE;
 //     }
@@ -2342,7 +2504,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // BOOL WINAPI GetCommMask(HANDLE handle, LPDWORD evtmask)
 // {
 //     DWORD dwBytesReturned;
-//     TRACE("handle %p, mask %p\n", handle, evtmask);
+//     TRACE!("handle %p, mask %p\n", handle, evtmask);
 //     return DeviceIoControl(handle, IOCTL_SERIAL_GET_WAIT_MASK,
 //                            NULL, 0, evtmask, sizeof(*evtmask), &dwBytesReturned, NULL);
 // }
@@ -2366,24 +2528,24 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // BOOL WINAPI SetCommMask(HANDLE handle, DWORD evtmask)
 // {
 //     DWORD dwBytesReturned;
-//     TRACE("handle %p, mask %x\n", handle, evtmask);
+//     TRACE!("handle %p, mask %x\n", handle, evtmask);
 //     return DeviceIoControl(handle, IOCTL_SERIAL_SET_WAIT_MASK,
 //                            &evtmask, sizeof(evtmask), NULL, 0, &dwBytesReturned, NULL);
 // }
 //
 // static void dump_dcb(const DCB* lpdcb)
 // {
-//     TRACE("bytesize=%d baudrate=%d fParity=%d Parity=%d stopbits=%d\n",
+//     TRACE!("bytesize=%d baudrate=%d fParity=%d Parity=%d stopbits=%d\n",
 //           lpdcb->ByteSize, lpdcb->BaudRate, lpdcb->fParity, lpdcb->Parity,
 //           (lpdcb->StopBits == ONESTOPBIT) ? 1 :
 //           (lpdcb->StopBits == TWOSTOPBITS) ? 2 : 0);
-//     TRACE("%sIXON %sIXOFF\n", (lpdcb->fOutX) ? "" : "~", (lpdcb->fInX) ? "" : "~");
-//     TRACE("fOutxCtsFlow=%d fRtsControl=%d\n", lpdcb->fOutxCtsFlow, lpdcb->fRtsControl);
-//     TRACE("fOutxDsrFlow=%d fDtrControl=%d\n", lpdcb->fOutxDsrFlow, lpdcb->fDtrControl);
+//     TRACE!("%sIXON %sIXOFF\n", (lpdcb->fOutX) ? "" : "~", (lpdcb->fInX) ? "" : "~");
+//     TRACE!("fOutxCtsFlow=%d fRtsControl=%d\n", lpdcb->fOutxCtsFlow, lpdcb->fRtsControl);
+//     TRACE!("fOutxDsrFlow=%d fDtrControl=%d\n", lpdcb->fOutxDsrFlow, lpdcb->fDtrControl);
 //     if (lpdcb->fOutxCtsFlow || lpdcb->fRtsControl == RTS_CONTROL_HANDSHAKE)
-//         TRACE("CRTSCTS\n");
+//         TRACE!("CRTSCTS\n");
 //     else
-//         TRACE("~CRTSCTS\n");
+//         TRACE!("~CRTSCTS\n");
 // }
 //
 // /*****************************************************************************
@@ -2410,7 +2572,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     SERIAL_CHARS               sc;
 //     DWORD dwBytesReturned;
 //
-//     TRACE("handle %p, ptr %p\n", handle, lpdcb);
+//     TRACE!("handle %p, ptr %p\n", handle, lpdcb);
 //
 //     if (lpdcb == NULL)
 //     {
@@ -2507,7 +2669,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     SERIAL_CHARS        sc;
 //     DWORD dwBytesReturned;
 //
-//     TRACE("handle %p, ptr %p\n", handle, lpdcb);
+//     TRACE!("handle %p, ptr %p\n", handle, lpdcb);
 //
 //     if (!lpdcb)
 //     {
@@ -2571,7 +2733,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     lpdcb->XonChar = sc.XonChar;
 //     lpdcb->XoffChar = sc.XoffChar;
 //
-//     TRACE("OK\n");
+//     TRACE!("OK\n");
 //     dump_dcb(lpdcb);
 //
 //     return TRUE;
@@ -2620,7 +2782,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     SERIAL_TIMEOUTS     st;
 //     DWORD dwBytesReturned;
 //
-//     TRACE("(%p, %p)\n", hComm, lptimeouts);
+//     TRACE!("(%p, %p)\n", hComm, lptimeouts);
 //     if (!lptimeouts)
 //     {
 //         SetLastError(ERROR_INVALID_PARAMETER);
@@ -2662,7 +2824,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     SERIAL_TIMEOUTS     st;
 //     DWORD dwBytesReturned;
 //
-//     TRACE("(%p, %p)\n", hComm, lptimeouts);
+//     TRACE!("(%p, %p)\n", hComm, lptimeouts);
 //
 //     if (lptimeouts == NULL)
 //     {
@@ -2743,7 +2905,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     HANDLE hFile,          /* [in] handle of the comm port */
 //     LPCOMMPROP lpCommProp) /* [out] pointer to struct to be filled */
 // {
-//     TRACE("(%p %p)\n",hFile,lpCommProp);
+//     TRACE!("(%p %p)\n",hFile,lpCommProp);
 //     if(!lpCommProp)
 //         return FALSE;
 //
@@ -2818,7 +2980,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     DWORD   len;
 //     BOOL    r;
 //
-//     TRACE("(%s, %p, %p)\n", debugstr_a(lpszDevice), hWnd, lpCommConfig);
+//     TRACE!("(%s, %p, %p)\n", debugstr_a(lpszDevice), hWnd, lpCommConfig);
 //
 //     if (lpszDevice)
 //     {
@@ -2845,7 +3007,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     HMODULE hConfigModule;
 //     DWORD   res = ERROR_INVALID_PARAMETER;
 //
-//     TRACE("(%s, %p, %p)\n", debugstr_w(lpszDevice), hWnd, lpCommConfig);
+//     TRACE!("(%s, %p, %p)\n", debugstr_w(lpszDevice), hWnd, lpCommConfig);
 //     hConfigModule = LoadLibraryW(lpszSerialUI);
 //
 //     if (hConfigModule) {
@@ -2882,7 +3044,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // {
 //     BOOL r;
 //
-//     TRACE("(%p, %p, %p) *lpdwSize: %u\n", hFile, lpCommConfig, lpdwSize, lpdwSize ? *lpdwSize : 0 );
+//     TRACE!("(%p, %p, %p) *lpdwSize: %u\n", hFile, lpCommConfig, lpdwSize, lpdwSize ? *lpdwSize : 0 );
 //
 //     if(lpCommConfig == NULL)
 //         return FALSE;
@@ -2916,7 +3078,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     LPCOMMCONFIG lpCommConfig,	/* [in] The desired configuration. */
 //     DWORD dwSize) 		/* [in] size of the lpCommConfig struct */
 // {
-//     TRACE("(%p, %p, %u)\n", hFile, lpCommConfig, dwSize);
+//     TRACE!("(%p, %p, %u)\n", hFile, lpCommConfig, dwSize);
 //     return SetCommState(hFile,&lpCommConfig->dcb);
 // }
 //
@@ -2941,7 +3103,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     HMODULE hConfigModule;
 //     BOOL r = FALSE;
 //
-//     TRACE("(%s, %p, %u)\n", debugstr_w(lpszDevice), lpCommConfig, dwSize);
+//     TRACE!("(%s, %p, %u)\n", debugstr_w(lpszDevice), lpCommConfig, dwSize);
 //
 //     hConfigModule = LoadLibraryW(lpszSerialUI);
 //     if(!hConfigModule)
@@ -2971,7 +3133,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     LPWSTR lpDeviceW = NULL;
 //     DWORD len;
 //
-//     TRACE("(%s, %p, %u)\n", debugstr_a(lpszDevice), lpCommConfig, dwSize);
+//     TRACE!("(%s, %p, %u)\n", debugstr_a(lpszDevice), lpCommConfig, dwSize);
 //
 //     if (lpszDevice)
 //     {
@@ -3006,7 +3168,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 //     HMODULE hConfigModule;
 //     DWORD   res = ERROR_INVALID_PARAMETER;
 //
-//     TRACE("(%s, %p, %p)  *lpdwSize: %u\n", debugstr_w(lpszName), lpCC, lpdwSize, lpdwSize ? *lpdwSize : 0 );
+//     TRACE!("(%s, %p, %p)  *lpdwSize: %u\n", debugstr_w(lpszName), lpCC, lpdwSize, lpdwSize ? *lpdwSize : 0 );
 //     hConfigModule = LoadLibraryW(lpszSerialUI);
 //
 //     if (hConfigModule) {
@@ -3041,7 +3203,7 @@ pub unsafe extern "C" fn GetDefaultCommConfigA(
 // 	BOOL ret = FALSE;
 // 	UNICODE_STRING lpszNameW;
 //
-// 	TRACE("(%s, %p, %p)  *lpdwSize: %u\n", debugstr_a(lpszName), lpCC, lpdwSize, lpdwSize ? *lpdwSize : 0 );
+// 	TRACE!("(%s, %p, %p)  *lpdwSize: %u\n", debugstr_a(lpszName), lpCC, lpdwSize, lpdwSize ? *lpdwSize : 0 );
 // 	if(lpszName) RtlCreateUnicodeStringFromAsciiz(&lpszNameW,lpszName);
 // 	else lpszNameW.Buffer = NULL;
 //

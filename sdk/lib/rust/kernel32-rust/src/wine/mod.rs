@@ -6,6 +6,6 @@ pub mod actctx;
 //   comm (SERIAL_*/IOCTL_SERIAL_*), profile (INI + CurProfile state),
 //   res (Wine resource-tree, 200+ residual type errors — .c is the active provider)
 pub mod lzexpand;
-// pub mod comm;
+pub mod comm;
 pub mod profile;
 // pub mod res;
