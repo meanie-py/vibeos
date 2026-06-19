@@ -1,0 +1,30 @@
+# pseh-rust — Rust translation of the i386 PSEH/CRT SEH runtime
+# (sdk/lib/pseh/i386/seh.s) + the DUMMY_PSEH volatile data symbols
+# (sdk/lib/pseh/dummy.c).
+#
+# The kernel (ntoskrnl + ntkrnlmp) is the only consumer that needs the i386 SEH
+# runtime: ntoskrnl.spec EXPORTS `_except_handler2/3`, `_global_unwind2`,
+# `_local_unwind2`, `_abnormal_termination` (-arch=i386,arm) as the driver-facing
+# SEH ABI, so they must be DEFINED in the kernel even under USE_DUMMY_PSEH (the
+# kernel's own body never raises through them — they exist for old MSVC/PSEH3
+# drivers). amd64/arm64 ntoskrnl does NOT export them (spec arch list excludes
+# x86_64/arm64), so the runtime is i386-gated; all three arches still need the
+# two dummy `_SEH2_Volatile*` data symbols, referenced by the C cohab archives
+# that include pseh2.h under DUMMY_PSEH.
+#
+# The SEH runtime is irreducible machine code (fs:[0] chain walking, ebp-relative
+# frame access tied to the seh_prolog layout, all-registers-cleared filter calls)
+# → `global_asm!` transcribed verbatim from seh.s (the setjmp-rust pattern).
+# Validated by disassembly-equivalence vs the cmake libpseh.a. The dummy volatile
+# globals are genuine Rust. C/asm kept on disk (never-delete) for the cmake hal/
+# winsrv/win32k consumers, which already use the dummy.c c_shim.
+#
+# crate-type staticlib+rlib → .rust_lib("pseh-rust") into ntkrnlmp/ntoskrnl on
+# all 3 arches; libpseh.a dropped from the kernel static_libs.
+[package]
+name = "pseh-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]

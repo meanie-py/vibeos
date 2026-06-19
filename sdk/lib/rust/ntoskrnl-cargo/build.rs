@@ -126,7 +126,12 @@ fn main() {
         "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/drivers/csq/libcsq.a",
         "sdk/lib/drivers/csq/libcsq_rust.a",
-        "sdk/lib/pseh/libpseh.a",
+        // libpseh.a DROPPED → `pseh-rust` (.rust_lib below, all arches). It
+        // provides the 2 DUMMY_PSEH `_SEH2_Volatile*` data symbols (referenced
+        // by the C cohab archives' pseh2.h) on every arch, plus the i386 SEH
+        // runtime (`_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/
+        // `_abnormal_termination`, exported by ntoskrnl.spec for -arch=i386,arm)
+        // via global_asm! disasm-identical to the cmake seh.s. C kept on disk.
         "sdk/lib/drivers/arbiter/libarbiter.a",
         "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
@@ -309,6 +314,12 @@ fn main() {
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
+    // All arches: pseh-rust (replaces the dropped libpseh.a). Provides the 2
+    // DUMMY_PSEH `_SEH2_Volatile*` data symbols everywhere; the i386 SEH runtime
+    // (the 5 ntoskrnl.spec-exported entry points) self-gates inside the crate
+    // via cfg(target_arch="x86"), so amd64/arm64 link only the volatiles. Its
+    // panic_handler/eh_personality are absorbed by --allow-multiple-definition.
+    linker = linker.rust_lib("pseh-rust", &[], true);
     // amd64 only: the SEH unwind path links _setjmp/_setjmpex/longjmp →
     // setjmp-rust (global_asm! save/restore, disasm-identical to the cmake asm,
     // + Rust longjmp). libsetjmp.a dropped. i386/arm64 don't reference setjmp.
