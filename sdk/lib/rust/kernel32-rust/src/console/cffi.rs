@@ -132,7 +132,10 @@ pub use winsrv_sys::winsrv::{
     ConsolepNotifyLastClose,
     ConsolepOpenConsole,
     ConsolepReadConsole,
+    ConsolepReadConsoleOutput,
     ConsolepReadConsoleOutputString,
+    ConsolepWriteConsoleOutput,
+    ConsolepGetConsoleInput,
     ConsolepRegisterConsoleIME,
     ConsolepScrollScreenBuffer,
     ConsolepSetActiveScreenBuffer,
@@ -252,9 +255,10 @@ pub use crate::k32_externs::{
     CSR_CREATE_API_NUMBER, RtlCopyMemory, RtlZeroMemory, BaseSetLastNTError,
     CloseHandle, INVALID_HANDLE_VALUE, HANDLE_DETACHED_PROCESS,
     HANDLE_CREATE_NEW_CONSOLE, HANDLE_CREATE_NO_WINDOW, STARTF_SHELLPRIVATE,
+    IsConsoleHandle,
 };
 // sibling pub fns/statics referenced cross-file within the console family
-pub use super::console::{ConsoleControlDispatcher, SetTEBLangID, InputWaitHandle};
+pub use super::console::{ConsoleControlDispatcher, SetTEBLangID, InputWaitHandle, GetCurrentExeName, InitializeCtrlHandling, InitExeName, SetUpAppName};
 pub use super::init::{PropDialogHandler, SetUpConsoleInfo, SetUpHandles, ConsoleLock};
 pub use super::alias::ALIAS_ENTRY;
 

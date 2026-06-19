@@ -5,17 +5,42 @@ use core::ffi::c_void;
 const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
 
+// CONTAINING_RECORD(addr, type, field): recover the struct base from a member ptr.
+macro_rules! CONTAINING_RECORD {
+    ($addr:expr, $ty:ty, $field:ident) => {
+        ($addr as *mut u8).offset(-(core::mem::offset_of!($ty, $field) as isize)) as *mut $ty
+    };
+}
+
 extern "system" {
     fn GetCurrentThreadId() -> DWORD;
+    fn GetCurrentThread() -> HANDLE;
+    fn SetThreadPriority(hThread: HANDLE, nPriority: i32) -> BOOL;
+    fn IsDebuggerPresent() -> BOOL;
+    fn SetThreadLocale(lcid: LCID) -> BOOL;
+}
+extern "C" {
+    fn MAKELCID(langid: LANGID, sortid: DWORD) -> LCID;
+}
+
+// winnt.h PtrToUlong: truncate a pointer to a ULONG.
+#[inline]
+unsafe fn PtrToUlong(p: *mut core::ffi::c_void) -> ULONG {
+    (p as usize) as ULONG
+}
+
+// const zero-initializer for static RTL_CRITICAL_SECTION (matches C zero-init).
+const fn k32_zeroed<T>() -> T {
+    unsafe { core::mem::MaybeUninit::<T>::zeroed().assume_init() }
 }
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
 
-static BaseConFileName: LPCWSTR = CONSOLE_FILE_NAME;
-static BaseConInputFileName: LPCWSTR = CONSOLE_INPUT_FILE_NAME;
-static BaseConOutputFileName: LPCWSTR = CONSOLE_OUTPUT_FILE_NAME;
-static InitialHandler: [PHANDLER_ROUTINE; 1] = [core::ptr::null_mut()];
+static mut BaseConFileName: LPCWSTR = CONSOLE_FILE_NAME;
+static mut BaseConInputFileName: LPCWSTR = CONSOLE_INPUT_FILE_NAME;
+static mut BaseConOutputFileName: LPCWSTR = CONSOLE_OUTPUT_FILE_NAME;
+static mut InitialHandler: [PHANDLER_ROUTINE; 1] = [None];
 static mut CtrlHandlers: *mut PHANDLER_ROUTINE = core::ptr::null_mut();
 static mut NrCtrlHandlers: ULONG = 0;
 static mut NrAllocatedHandlers: ULONG = 0;
@@ -25,13 +50,13 @@ pub static mut InputWaitHandle: HANDLE = INVALID_HANDLE_VALUE;
 
 pub const EXENAME_LENGTH: u32 = 255 + 1;
 
-static mut ExeNameLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION::new();
-static ExeNameInitialized: BOOLEAN = 0;
-static ExeNameBuffer: [WCHAR; EXENAME_LENGTH as usize] = [0; EXENAME_LENGTH as usize];
-static ExeNameLength: USHORT = 0;
-static StartDirBuffer: [WCHAR; (MAX_PATH + 1) as usize] = [0; (MAX_PATH + 1) as usize];
-static StartDirLength: USHORT = 0;
-unsafe fn DefaultConsoleCtrlHandler(Event: DWORD) -> BOOL {
+static mut ExeNameLock: RTL_CRITICAL_SECTION = k32_zeroed();
+static mut ExeNameInitialized: BOOLEAN = 0;
+static mut ExeNameBuffer: [WCHAR; EXENAME_LENGTH as usize] = [0; EXENAME_LENGTH as usize];
+static mut ExeNameLength: USHORT = 0;
+static mut StartDirBuffer: [WCHAR; (MAX_PATH + 1) as usize] = [0; (MAX_PATH + 1) as usize];
+static mut StartDirLength: USHORT = 0;
+unsafe extern "system" fn DefaultConsoleCtrlHandler(Event: DWORD) -> BOOL {
     // DPRINT("Default handler called: %lx\n", Event);
     match Event {
         CTRL_C_EVENT => {
@@ -55,7 +80,7 @@ unsafe fn DefaultConsoleCtrlHandler(Event: DWORD) -> BOOL {
         _ => {}
     }
 
-    ExitProcess(CONTROL_C_EXIT);
+    ExitProcess(CONTROL_C_EXIT as UINT);
     return 1;
 }
 
@@ -67,10 +92,10 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
     let CodeAndFlag: u32 = PtrToUlong(lpThreadParameter);
     let nCode: u32 = CodeAndFlag & MAXLONG;
     let mut i: u32;
-    let mut erException: EXCEPTION_RECORD;
+    let mut erException: EXCEPTION_RECORD = core::mem::zeroed();
 
     // DPRINT1("Console Dispatcher Active: %lx %lx\n", CodeAndFlag, nCode);
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST as i32);
 
     match nCode {
         0 => {
@@ -85,7 +110,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                 };
                 erException.ExceptionFlags = 0;
                 erException.ExceptionRecord = core::ptr::null_mut();
-                erException.ExceptionAddress = Some(DefaultConsoleCtrlHandler as *mut core::ffi::c_void);
+                erException.ExceptionAddress = DefaultConsoleCtrlHandler as *mut core::ffi::c_void;
                 erException.NumberParameters = 0;
 
                 // _SEH2_TRY
@@ -101,7 +126,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                     {
                         i = NrCtrlHandlers;
                         while i > 0 {
-                            if CtrlHandlers[(i - 1) as usize](nCode) != 0 {
+                            if (*CtrlHandlers.add((i - 1) as usize)).map_or(0, |h| h(nCode)) != 0 {
                                 break;
                             }
                             i -= 1;
@@ -153,7 +178,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                 break;
             }
 
-            if CtrlHandlers[(i - 1) as usize](nCode) != 0 {
+            if (*CtrlHandlers.add((i - 1) as usize)).map_or(0, |h| h(nCode)) != 0 {
                 match nCode {
                     1 | 6 | 2 | 5 => {
                         // CTRL_CLOSE_EVENT, CTRL_LAST_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT
@@ -177,13 +202,13 @@ pub unsafe extern "C" fn InitializeCtrlHandling() {
     NrAllocatedHandlers = 1;
     NrCtrlHandlers = 1;
     CtrlHandlers = InitialHandler.as_mut_ptr();
-    *CtrlHandlers = Some(DefaultConsoleCtrlHandler);
+    *CtrlHandlers = core::mem::transmute::<unsafe extern "system" fn(DWORD) -> BOOL, PHANDLER_ROUTINE>(DefaultConsoleCtrlHandler);
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitExeName() {
     let Status: NTSTATUS;
     let Peb: PPEB = NtCurrentPeb();
-    let CurrentDirectory: PCURDIR = &(*Peb).ProcessParameters.CurrentDirectory;
+    let CurrentDirectory: PCURDIR = &mut (*(*Peb).ProcessParameters).CurrentDirectory;
     let ImageEntry: PLDR_DATA_TABLE_ENTRY;
 
     if ExeNameInitialized != 0 {
@@ -192,38 +217,38 @@ pub unsafe extern "C" fn InitExeName() {
 
     /* Initialize the EXE name lock */
     Status = RtlInitializeCriticalSection(&mut ExeNameLock);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return;
     }
     ExeNameInitialized = 1i32 as BOOLEAN;
 
-    ImageEntry = CONTAINING_RECORD(
+    ImageEntry = CONTAINING_RECORD!(
         (*((*Peb).Ldr)).InLoadOrderModuleList.Flink,
         LDR_DATA_TABLE_ENTRY,
-        InLoadOrderLinks,
+        InLoadOrderLinks
     );
 
     /* Retrieve the EXE name, NULL-terminate it... */
     ExeNameLength = min(
-        core::mem::size_of::<[WCHAR; EXENAME_LENGTH]>() / (core::mem::size_of::<WCHAR>() as ULONG),
-        (*ImageEntry).BaseDllName.Length / (core::mem::size_of::<WCHAR>() as ULONG),
+        core::mem::size_of::<[WCHAR; EXENAME_LENGTH as usize]>() as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
+        (*ImageEntry).BaseDllName.Length as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
         ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
         (*ImageEntry).BaseDllName.Buffer as *const core::ffi::c_void,
-        (*ImageEntry).BaseDllName.Length as usize,
+        (*ImageEntry).BaseDllName.Length as SIZE_T,
     );
     ExeNameBuffer[ExeNameLength as usize] = UNICODE_NULL;
 
     /* ... and retrieve the current directory path and NULL-terminate it. */
     StartDirLength = min(
-        core::mem::size_of::<[WCHAR; MAX_PATH + 1]>() / (core::mem::size_of::<WCHAR>() as ULONG),
-        (*CurrentDirectory).DosPath.Length / (core::mem::size_of::<WCHAR>() as ULONG),
+        core::mem::size_of::<[WCHAR; (MAX_PATH + 1) as usize]>() as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
+        (*CurrentDirectory).DosPath.Length as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
         StartDirBuffer.as_mut_ptr() as *mut core::ffi::c_void,
         (*CurrentDirectory).DosPath.Buffer as *const core::ffi::c_void,
-        (*CurrentDirectory).DosPath.Length as usize,
+        (*CurrentDirectory).DosPath.Length as SIZE_T,
     );
     StartDirBuffer[StartDirLength as usize] = UNICODE_NULL;
 }
@@ -254,7 +279,7 @@ pub unsafe extern "C" fn SetUpAppName(
         RtlCopyMemory(
             *CurDir as *mut core::ffi::c_void,
             StartDirBuffer.as_ptr() as *const core::ffi::c_void,
-            Length as usize,
+            Length as SIZE_T,
         );
         (*(*CurDir as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
@@ -278,7 +303,7 @@ pub unsafe extern "C" fn SetUpAppName(
         RtlCopyMemory(
             *AppName as *mut core::ffi::c_void,
             ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
-            Length as usize,
+            Length as SIZE_T,
         );
         (*(*AppName as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
@@ -300,7 +325,7 @@ pub unsafe extern "C" fn GetCurrentExeName(
             BufferSize = (ExeNameLength as u32 * (core::mem::size_of::<u16>() as ULONG) as u32) as u16;
         }
 
-        core::ptr::copy_nonoverlapping(ExeNameBuffer.as_ptr(), ExeName, (BufferSize as usize) / (core::mem::size_of::<u16>() as ULONG));
+        core::ptr::copy_nonoverlapping(ExeNameBuffer.as_ptr(), ExeName, (BufferSize as usize) / core::mem::size_of::<u16>());
 
         RtlLeaveCriticalSection(&mut ExeNameLock);
         ExeLength = BufferSize;
@@ -321,7 +346,7 @@ pub unsafe extern "C" fn IntCheckForConsoleFileName(
 
     DeviceNameInfo = RtlIsDosDeviceName_U(pszName);
     if DeviceNameInfo != 0 {
-        ConsoleName = (ConsoleName as ULONG_PTR + ((DeviceNameInfo >> 16) & 0xFFFF)) as LPCWSTR;
+        ConsoleName = (ConsoleName as ULONG_PTR + ((DeviceNameInfo >> 16) & 0xFFFF) as ULONG_PTR) as LPCWSTR;
     }
 
     if _wcsicmp(ConsoleName, BaseConInputFileName) == 0 {
@@ -361,7 +386,7 @@ pub unsafe extern "system" fn ConsoleMenuControl(
         (core::mem::size_of::<CONSOLE_MENUCONTROL>() as ULONG),
     );
 
-    return (*MenuControlRequest).MenuHandle;
+    return (*MenuControlRequest).MenuHandle as _;
 }
 
 #[no_mangle]
@@ -385,7 +410,7 @@ pub unsafe extern "system" fn DuplicateConsoleHandle(
     (*DuplicateHandleRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*DuplicateHandleRequest).SourceHandle = hSourceHandle;
     (*DuplicateHandleRequest).DesiredAccess = dwDesiredAccess;
-    (*DuplicateHandleRequest).InheritHandle = bInheritHandle;
+    (*DuplicateHandleRequest).InheritHandle = bInheritHandle as BOOLEAN;
     (*DuplicateHandleRequest).Options = dwOptions;
 
     CsrClientCallServer(
@@ -498,7 +523,7 @@ pub unsafe extern "system" fn GetConsoleFontInfo(
 
     (*GetFontInfoRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetFontInfoRequest).OutputHandle = hConsoleOutput;
-    (*GetFontInfoRequest).MaximumWindow = bMaximumWindow;
+    (*GetFontInfoRequest).MaximumWindow = bMaximumWindow as BOOLEAN;
     (*GetFontInfoRequest).NumFonts = nFontCount;
 
     CaptureBuffer = CsrAllocateCaptureBuffer(1, nFontCount * (core::mem::size_of::<CONSOLE_FONT_INFO>() as ULONG));
@@ -526,7 +551,7 @@ pub unsafe extern "system" fn GetConsoleFontInfo(
         RtlCopyMemory(
             lpConsoleFontInfo as *mut core::ffi::c_void,
             (*GetFontInfoRequest).FontInfo as *const core::ffi::c_void,
-            ((*GetFontInfoRequest).NumFonts as usize) * (core::mem::size_of::<CONSOLE_FONT_INFO>() as ULONG),
+            (*GetFontInfoRequest).NumFonts as SIZE_T * (core::mem::size_of::<CONSOLE_FONT_INFO>() as SIZE_T),
         );
     }
 
@@ -612,7 +637,7 @@ pub unsafe extern "system" fn GetCurrentConsoleFont(
 
     (*GetCurrentFontRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetCurrentFontRequest).OutputHandle = hConsoleOutput;
-    (*GetCurrentFontRequest).MaximumWindow = bMaximumWindow;
+    (*GetCurrentFontRequest).MaximumWindow = bMaximumWindow as BOOLEAN;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -639,7 +664,7 @@ pub unsafe extern "system" fn GetNumberOfConsoleFonts() -> u32 {
     (*GetNumFontsRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
-        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
+        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetNumberOfFonts),
         (core::mem::size_of::<CONSOLE_GETNUMFONTS>() as ULONG),
@@ -741,7 +766,7 @@ pub unsafe extern "system" fn SetConsoleCursor(
 
     (*SetCursorRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetCursorRequest).OutputHandle = hConsoleOutput;
-    (*SetCursorRequest).CursorHandle = hCursor;
+    (*SetCursorRequest).CursorHandle = hCursor as _;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -903,7 +928,7 @@ pub unsafe extern "system" fn SetConsolePalette(
 
     (*SetPaletteRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*SetPaletteRequest).OutputHandle = hConsoleOutput;
-    (*SetPaletteRequest).PaletteHandle = hPalette;
+    (*SetPaletteRequest).PaletteHandle = hPalette as _;
     (*SetPaletteRequest).Usage = dwUsage;
 
     CsrClientCallServer(
@@ -925,7 +950,7 @@ pub unsafe extern "system" fn ShowConsoleCursor(
     hConsoleOutput: HANDLE,
     bShow: BOOL,
 ) -> BOOL {
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let ShowCursorRequest: PCONSOLE_SHOWCURSOR = &mut ApiMessage.Data.ShowCursorRequest;
 
     (*ShowCursorRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
@@ -964,7 +989,7 @@ pub unsafe extern "system" fn VerifyConsoleIoHandle(
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepVerifyIoHandle),
         (core::mem::size_of::<CONSOLE_VERIFYHANDLE>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.Status) == 0 {
+    if !NT_SUCCESS(ApiMessage.Status) {
         BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
@@ -994,7 +1019,7 @@ pub unsafe extern "system" fn CloseConsoleHandle(hHandle: HANDLE) -> BOOL {
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetStdHandle(nStdHandle: DWORD) -> HANDLE {
+pub unsafe extern "system" fn GetStdHandle(nStdHandle: DWORD) -> HANDLE {
     let Ppb: PRTL_USER_PROCESS_PARAMETERS = (*NtCurrentPeb()).ProcessParameters;
     let mut Handle: HANDLE = INVALID_HANDLE_VALUE;
 
@@ -1018,7 +1043,7 @@ pub unsafe extern "C" fn GetStdHandle(nStdHandle: DWORD) -> HANDLE {
     Handle
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetStdHandle(
+pub unsafe extern "system" fn SetStdHandle(
     nStdHandle: DWORD,
     hHandle: HANDLE,
 ) -> BOOL {
@@ -1054,7 +1079,7 @@ unsafe fn IntAllocConsole(
     let mut Success: BOOL = 1;
     let Status: NTSTATUS;
 
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let AllocConsoleRequest: PCONSOLE_ALLOCCONSOLE = &mut ApiMessage.Data.AllocConsoleRequest;
     let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
@@ -1118,7 +1143,7 @@ unsafe fn IntAllocConsole(
             CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepAlloc),
             core::mem::size_of_val(&*AllocConsoleRequest) as u32,
         );
-        if NT_SUCCESS(ApiMessage.Status) == 0 {
+        if !NT_SUCCESS(ApiMessage.Status) {
             BaseSetLastNTError(ApiMessage.Status);
             Success = 0;
             break 'quit;
@@ -1126,21 +1151,21 @@ unsafe fn IntAllocConsole(
 
         Status = NtWaitForMultipleObjects(
             MAX_INIT_EVENTS,
-            (*AllocConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents.as_ptr(),
+            (*(*AllocConsoleRequest).ConsoleStartInfo).InitEvents.as_ptr() as *mut _,
             0, // WaitAny
             0, // FALSE
             core::ptr::null_mut(),
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             BaseSetLastNTError(Status);
             Success = 0;
             break 'quit;
         }
 
-        NtClose((*AllocConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_SUCCESS]);
-        NtClose((*AllocConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_FAILURE]);
-        if Status != INIT_SUCCESS {
-            (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
+        NtClose((*(*AllocConsoleRequest).ConsoleStartInfo).InitEvents[INIT_SUCCESS as usize]);
+        NtClose((*(*AllocConsoleRequest).ConsoleStartInfo).InitEvents[INIT_FAILURE as usize]);
+        if Status != INIT_SUCCESS as NTSTATUS {
+            (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle = core::ptr::null_mut();
             Success = 0;
         } else {
             core::ptr::copy_nonoverlapping(
@@ -1161,19 +1186,19 @@ unsafe fn IntAllocConsole(
 #[no_mangle]
 pub unsafe extern "system" fn AllocConsole() -> BOOL {
     let mut Success: BOOL;
-    let mut ConsoleStartInfo: CONSOLE_START_INFO;
+    let mut ConsoleStartInfo: CONSOLE_START_INFO = core::mem::zeroed();
 
-    let mut ConsoleTitle: PWCHAR;
-    let mut Desktop: PWCHAR;
-    let mut AppName: PWCHAR;
-    let mut CurDir: PWCHAR;
+    let mut ConsoleTitle: PWCHAR = core::ptr::null_mut();
+    let mut Desktop: PWCHAR = core::ptr::null_mut();
+    let mut AppName: PWCHAR = core::ptr::null_mut();
+    let mut CurDir: PWCHAR = core::ptr::null_mut();
 
     let mut TitleLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
     let mut DesktopLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
     let mut AppNameLength: ULONG = 128 * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
     let mut CurDirLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
 
-    RtlEnterCriticalSection(&ConsoleLock);
+    RtlEnterCriticalSection(&mut ConsoleLock);
 
     'quit: {
         if !(*(*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters).ConsoleHandle.is_null() {
@@ -1214,9 +1239,9 @@ pub unsafe extern "system" fn AllocConsole() -> BOOL {
             CurDirLength,
             AppName,
             AppNameLength,
-            Some(ConsoleControlDispatcher),
-            Some(PropDialogHandler),
-            &ConsoleStartInfo,
+            core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(ConsoleControlDispatcher),
+            core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(PropDialogHandler),
+            &mut ConsoleStartInfo,
         );
         if Success != 0 {
             /* Set up the handles */
@@ -1231,7 +1256,7 @@ pub unsafe extern "system" fn AllocConsole() -> BOOL {
         }
     }
 
-    RtlLeaveCriticalSection(&ConsoleLock);
+    RtlLeaveCriticalSection(&mut ConsoleLock);
     return Success;
 }
 
@@ -1240,7 +1265,7 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
     let mut Success: BOOL = 1;
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let FreeConsoleRequest: *mut CONSOLE_FREECONSOLE = &mut ApiMessage.Data.FreeConsoleRequest;
-    let ConsoleHandle: HANDLE = (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleHandle;
+    let ConsoleHandle: HANDLE = (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle;
 
     RtlEnterCriticalSection(&mut ConsoleLock);
 
@@ -1258,14 +1283,14 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
 
         /* Call the server */
         CsrClientCallServer(
-            &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
+            &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
             core::ptr::null_mut(),
             CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepFree),
             (core::mem::size_of::<CONSOLE_FREECONSOLE>() as ULONG) as u32
         );
 
         /* Check for success */
-        if NT_SUCCESS(ApiMessage.Status) == 0
+        if !NT_SUCCESS(ApiMessage.Status)
         {
             BaseSetLastNTError(ApiMessage.Status);
             Success = 0;
@@ -1273,7 +1298,7 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
         }
 
         /* Reset the console handle */
-        (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleHandle = core::ptr::null_mut();
+        (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle = core::ptr::null_mut();
 
         /* Close the associated input handle */
         CloseHandle(InputWaitHandle);
@@ -1396,7 +1421,7 @@ pub unsafe extern "system" fn SetConsoleMode(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let ConsoleModeRequest: PCONSOLE_GETSETCONSOLEMODE = &mut ApiMessage.Data.ConsoleModeRequest;
 
-    (*ConsoleModeRequest).ConsoleHandle = (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleHandle;
+    (*ConsoleModeRequest).ConsoleHandle = (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle;
     (*ConsoleModeRequest).Handle = hConsoleHandle;
     (*ConsoleModeRequest).Mode = dwMode;
 
@@ -1457,7 +1482,7 @@ pub unsafe extern "system" fn GetLargestConsoleWindowSize(
         &mut ApiMessage.Data.GetLargestWindowSizeRequest;
 
     (*GetLargestWindowSizeRequest).ConsoleHandle =
-        (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters.ConsoleHandle;
+        (*(*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters).ConsoleHandle;
     (*GetLargestWindowSizeRequest).OutputHandle = hConsoleOutput;
     (*GetLargestWindowSizeRequest).Size.X = 0;
     (*GetLargestWindowSizeRequest).Size.Y = 0;
@@ -1480,7 +1505,7 @@ pub unsafe extern "system" fn GetConsoleCursorInfo(
     hConsoleOutput: HANDLE,
     lpConsoleCursorInfo: PCONSOLE_CURSOR_INFO,
 ) -> BOOL {
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let CursorInfoRequest: PCONSOLE_GETSETCURSORINFO = &mut ApiMessage.Data.CursorInfoRequest;
 
     if lpConsoleCursorInfo.is_null() {
@@ -1597,7 +1622,7 @@ pub unsafe extern "system" fn FlushConsoleInputBuffer(
         &mut ApiMessage.Data.FlushInputBufferRequest;
 
     (*FlushInputBufferRequest).ConsoleHandle =
-        (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters.ConsoleHandle;
+        (*(*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters).ConsoleHandle;
     (*FlushInputBufferRequest).InputHandle = hConsoleInput;
 
     CsrClientCallServer(
@@ -1666,7 +1691,7 @@ unsafe fn IntScrollConsoleScreenBuffer(
 
     (*ScrollScreenBufferRequest).DestinationOrigin = dwDestinationOrigin;
     (*ScrollScreenBufferRequest).Fill = *lpFill;
-    (*ScrollScreenBufferRequest).Unicode = bUnicode;
+    (*ScrollScreenBufferRequest).Unicode = bUnicode as BOOLEAN;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -1674,7 +1699,7 @@ unsafe fn IntScrollConsoleScreenBuffer(
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepScrollScreenBuffer),
         (core::mem::size_of::<CONSOLE_SCROLLSCREENBUFFER>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.Status) == 0 {
+    if !NT_SUCCESS(ApiMessage.Status) {
         BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
@@ -1779,7 +1804,7 @@ pub unsafe extern "system" fn SetConsoleTextAttribute(
 unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     let mut NewCtrlHandlers: *mut PHANDLER_ROUTINE = core::ptr::null_mut();
 
-    if HandlerRoutine.is_null() {
+    if HandlerRoutine.is_none() {
         (*(*NtCurrentPeb()).ProcessParameters).ConsoleFlags = 1;
         return 1;
     }
@@ -1788,7 +1813,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
         NewCtrlHandlers = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (NrCtrlHandlers + 4) * (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
+            ((NrCtrlHandlers + 4) * (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG)) as SIZE_T,
         ) as *mut PHANDLER_ROUTINE;
         if NewCtrlHandlers.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1798,7 +1823,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
         core::ptr::copy_nonoverlapping(
             CtrlHandlers,
             NewCtrlHandlers,
-            ((core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG) * NrCtrlHandlers as usize) / (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
+            (core::mem::size_of::<PHANDLER_ROUTINE>() * NrCtrlHandlers as usize) / core::mem::size_of::<PHANDLER_ROUTINE>(),
         );
 
         if NrAllocatedHandlers > 1 {
@@ -1819,19 +1844,19 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
 unsafe fn RemoveConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     let mut i: ULONG;
 
-    if HandlerRoutine.is_null() {
-        (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleFlags = 0;
+    if HandlerRoutine.is_none() {
+        (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleFlags = 0;
         return 1;
     }
 
     i = 0;
     while i < NrCtrlHandlers {
-        if CtrlHandlers[i as usize] == HandlerRoutine {
+        if *CtrlHandlers.add(i as usize) == HandlerRoutine {
             if i < (NrCtrlHandlers - 1) {
                 core::ptr::copy(
-                    CtrlHandlers.as_ptr().offset((i + 1) as isize),
-                    CtrlHandlers.as_mut_ptr().offset(i as isize),
-                    (NrCtrlHandlers - i + 1) as usize * (core::mem::size_of::<PHANDLER_ROUTINE>() as ULONG),
+                    CtrlHandlers.offset((i + 1) as isize),
+                    CtrlHandlers.offset(i as isize),
+                    (NrCtrlHandlers - i + 1) as usize * core::mem::size_of::<PHANDLER_ROUTINE>(),
                 );
             }
 
@@ -1852,7 +1877,7 @@ pub unsafe extern "system" fn SetConsoleCtrlHandler(
 ) -> BOOL {
     let Ret: BOOL;
 
-    RtlEnterCriticalSection(&ConsoleLock);
+    RtlEnterCriticalSection(&mut ConsoleLock);
 
     if Add != 0 {
         Ret = AddConsoleCtrlHandler(HandlerRoutine);
@@ -1860,7 +1885,7 @@ pub unsafe extern "system" fn SetConsoleCtrlHandler(
         Ret = RemoveConsoleCtrlHandler(HandlerRoutine);
     }
 
-    RtlLeaveCriticalSection(&ConsoleLock);
+    RtlLeaveCriticalSection(&mut ConsoleLock);
     return Ret;
 }
 
@@ -1897,7 +1922,7 @@ pub unsafe extern "system" fn GenerateConsoleCtrlEvent(
 }
 unsafe fn IntGetConsoleTitle(
     lpConsoleTitle: LPVOID,
-    dwNumChars: DWORD,
+    mut dwNumChars: DWORD,
     bUnicode: BOOLEAN,
 ) -> DWORD {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
@@ -1943,13 +1968,13 @@ unsafe fn IntGetConsoleTitle(
         RtlCopyMemory(
             lpConsoleTitle,
             (*TitleRequest).Title as *const _,
-            (*TitleRequest).Length as usize,
+            (*TitleRequest).Length as SIZE_T,
         );
 
         if bUnicode != 0 {
             *((lpConsoleTitle as LPWSTR).offset(dwNumChars as isize)) = UNICODE_NULL;
         } else {
-            *((lpConsoleTitle as LPSTR).offset(dwNumChars as isize)) = ANSI_NULL;
+            *((lpConsoleTitle as LPSTR).offset(dwNumChars as isize)) = crate::console::cffi::ANSI_NULL;
         }
     }
 
@@ -1963,7 +1988,7 @@ pub unsafe extern "system" fn GetConsoleTitleW(
     lpConsoleTitle: LPWSTR,
     nSize: DWORD,
 ) -> DWORD {
-    return IntGetConsoleTitle(lpConsoleTitle, nSize, 1);
+    return IntGetConsoleTitle(lpConsoleTitle as LPVOID, nSize, 1);
 }
 
 #[no_mangle]
@@ -2022,7 +2047,7 @@ unsafe fn IntSetConsoleTitle(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if NT_SUCCESS(ApiMessage.Status) == 0 {
+    if !NT_SUCCESS(ApiMessage.Status) {
         BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
@@ -2093,7 +2118,7 @@ pub unsafe extern "system" fn CreateConsoleScreenBuffer(
             CaptureBuffer,
             (*GraphicsBufferInfo).lpBitMapInfo as *mut core::ffi::c_void,
             (*GraphicsBufferInfo).dwBitMapInfoLength,
-            &mut (*CreateScreenBufferRequest).GraphicsBufferInfo.lpBitMapInfo as *mut *mut core::ffi::c_void as *mut *mut core::ffi::c_void,
+            &mut (*CreateScreenBufferRequest).GraphicsBufferInfo.lpBitMapInfo as *mut _ as *mut *mut core::ffi::c_void,
         );
     }
 
@@ -2131,7 +2156,7 @@ pub unsafe extern "system" fn GetConsoleCP() -> u32 {
     (*GetConsoleCPRequest).OutputCP = 0;
 
     CsrClientCallServer(
-        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as *mut PCSR_API_MESSAGE,
+        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
         core::ptr::null_mut(),
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetCP),
         (core::mem::size_of::<CONSOLE_GETINPUTOUTPUTCP>() as ULONG),
@@ -2171,7 +2196,7 @@ pub unsafe extern "system" fn SetConsoleCP(wCodePageID: UINT) -> BOOL {
 
 #[no_mangle]
 pub unsafe extern "system" fn GetConsoleOutputCP() -> u32 {
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let GetConsoleCPRequest: PCONSOLE_GETINPUTOUTPUTCP = &mut ApiMessage.Data.GetConsoleCPRequest;
 
     /* Get the Output Code Page */
@@ -2208,7 +2233,7 @@ pub unsafe extern "system" fn SetConsoleOutputCP(wCodePageID: UINT) -> BOOL {
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetCP),
         (core::mem::size_of::<CONSOLE_SETINPUTOUTPUTCP>() as ULONG),
     );
-    if NT_SUCCESS(ApiMessage.Status) == 0
+    if !NT_SUCCESS(ApiMessage.Status)
     {
         BaseSetLastNTError(ApiMessage.Status);
         return 0i32; /* FALSE */
@@ -2265,7 +2290,7 @@ pub unsafe extern "system" fn GetConsoleProcessList(
             RtlCopyMemory(
                 lpdwProcessList as *mut core::ffi::c_void,
                 (*GetProcessListRequest).ProcessIdsList as *const core::ffi::c_void,
-                (nProcesses * (core::mem::size_of::<DWORD>() as ULONG) as ULONG) as usize,
+                (nProcesses * (core::mem::size_of::<DWORD>() as ULONG)) as SIZE_T,
             );
         }
     }
@@ -2288,7 +2313,7 @@ pub unsafe extern "system" fn GetConsoleSelectionInfo(
     }
 
     (*GetSelectionInfoRequest).ConsoleHandle =
-        (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters.ConsoleHandle;
+        (*(*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -2314,7 +2339,7 @@ unsafe fn IntAttachConsole(
     let mut Success: BOOL = 1;
     let mut Status: NTSTATUS;
 
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let AttachConsoleRequest: PCONSOLE_ATTACHCONSOLE = &mut ApiMessage.Data.AttachConsoleRequest;
     let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
@@ -2351,7 +2376,7 @@ unsafe fn IntAttachConsole(
 
         Status = NtWaitForMultipleObjects(
             MAX_INIT_EVENTS,
-            (*AttachConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents.as_ptr(),
+            (*(*AttachConsoleRequest).ConsoleStartInfo).InitEvents.as_ptr() as *mut _,
             0, // WaitAny
             0, // FALSE
             core::ptr::null_mut(),
@@ -2362,16 +2387,16 @@ unsafe fn IntAttachConsole(
             break 'quit;
         }
 
-        NtClose((*AttachConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_SUCCESS]);
-        NtClose((*AttachConsoleRequest).ConsoleStartInfo.as_ref().unwrap().InitEvents[INIT_FAILURE]);
-        if Status != INIT_SUCCESS {
-            (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle = core::ptr::null_mut();
+        NtClose((*(*AttachConsoleRequest).ConsoleStartInfo).InitEvents[INIT_SUCCESS as usize]);
+        NtClose((*(*AttachConsoleRequest).ConsoleStartInfo).InitEvents[INIT_FAILURE as usize]);
+        if Status != INIT_SUCCESS as NTSTATUS {
+            (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle = core::ptr::null_mut();
             Success = 0;
         } else {
             RtlCopyMemory(
                 ConsoleStartInfo as *mut _,
                 (*AttachConsoleRequest).ConsoleStartInfo as *const _ as *mut _,
-                (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG),
+                (core::mem::size_of::<CONSOLE_START_INFO>() as ULONG) as SIZE_T,
             );
             Success = 1;
         }
@@ -2386,13 +2411,13 @@ unsafe fn IntAttachConsole(
 #[no_mangle]
 pub unsafe extern "system" fn AttachConsole(dwProcessId: DWORD) -> BOOL {
     let mut Success: BOOL;
-    let mut ConsoleStartInfo: CONSOLE_START_INFO;
-    let mut dummy: DWORD;
+    let mut ConsoleStartInfo: CONSOLE_START_INFO = core::mem::zeroed();
+    let mut dummy: DWORD = 0;
 
-    RtlEnterCriticalSection(&ConsoleLock);
+    RtlEnterCriticalSection(&mut ConsoleLock);
 
     'quit: {
-        if !(*((*((*NtCurrentPeb()).ProcessParameters)).ConsoleHandle)).is_null() {
+        if !(*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle.is_null() {
             SetLastError(ERROR_ACCESS_DENIED);
             Success = 0;
             break 'quit;
@@ -2410,9 +2435,9 @@ pub unsafe extern "system" fn AttachConsole(dwProcessId: DWORD) -> BOOL {
 
         Success = IntAttachConsole(
             dwProcessId,
-            Some(ConsoleControlDispatcher),
-            Some(PropDialogHandler),
-            &ConsoleStartInfo as *const CONSOLE_START_INFO,
+            core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(ConsoleControlDispatcher),
+            core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(PropDialogHandler),
+            &mut ConsoleStartInfo as *mut CONSOLE_START_INFO,
         );
         if Success != 0 {
             /* Set up the handles */
@@ -2427,7 +2452,7 @@ pub unsafe extern "system" fn AttachConsole(dwProcessId: DWORD) -> BOOL {
         }
     }
 
-    RtlLeaveCriticalSection(&ConsoleLock);
+    RtlLeaveCriticalSection(&mut ConsoleLock);
     return Success;
 }
 
@@ -2436,7 +2461,7 @@ pub unsafe extern "system" fn GetConsoleWindow() -> HWND {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let GetWindowRequest: PCONSOLE_GETWINDOW = &mut ApiMessage.Data.GetWindowRequest;
 
-    (*GetWindowRequest).ConsoleHandle = (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleHandle;
+    (*GetWindowRequest).ConsoleHandle = (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -2449,7 +2474,7 @@ pub unsafe extern "system" fn GetConsoleWindow() -> HWND {
         return core::ptr::null_mut();
     }
 
-    return (*GetWindowRequest).WindowHandle;
+    return (*GetWindowRequest).WindowHandle as _;
 }
 
 #[no_mangle]
@@ -2458,7 +2483,7 @@ pub unsafe extern "system" fn SetConsoleIcon(hIcon: HICON) -> BOOL {
     let SetIconRequest: PCONSOLE_SETICON = &mut ApiMessage.Data.SetIconRequest;
 
     (*SetIconRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
-    (*SetIconRequest).IconHandle = hIcon;
+    (*SetIconRequest).IconHandle = hIcon as _;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -2479,7 +2504,7 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
     let ExeLength: DWORD;
     let mut _SEH2_ret: BOOL = 0;
 
-    ExeLength = lstrlenW(lpExeName);
+    ExeLength = lstrlenW(lpExeName) as DWORD;
     if (ExeLength == 0) || (ExeLength >= EXENAME_LENGTH as DWORD) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -2491,7 +2516,7 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
         RtlCopyMemory(
             ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
             lpExeName as *const core::ffi::c_void,
-            (ExeLength * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as usize,
+            (ExeLength * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as SIZE_T,
         );
         ExeNameLength = ExeLength as USHORT;
         _SEH2_ret = 1;
@@ -2506,9 +2531,9 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
 #[no_mangle]
 pub unsafe extern "system" fn SetConsoleInputExeNameA(lpExeName: LPCSTR) -> BOOL {
     let mut Status: NTSTATUS;
-    let mut ExeNameU: _UNICODE_STRING;
-    let mut ExeNameA: ANSI_STRING;
-    let mut Buffer: [WCHAR; EXENAME_LENGTH] = [0; EXENAME_LENGTH];
+    let mut ExeNameU: _UNICODE_STRING = core::mem::zeroed();
+    let mut ExeNameA: ANSI_STRING = core::mem::zeroed();
+    let mut Buffer: [WCHAR; EXENAME_LENGTH as usize] = [0; EXENAME_LENGTH as usize];
 
     RtlInitAnsiString(&mut ExeNameA, lpExeName);
 
@@ -2518,7 +2543,7 @@ pub unsafe extern "system" fn SetConsoleInputExeNameA(lpExeName: LPCSTR) -> BOOL
     }
 
     ExeNameU.Length = 0;
-    ExeNameU.MaximumLength = core::mem::size_of::<[WCHAR; EXENAME_LENGTH]>() as USHORT;
+    ExeNameU.MaximumLength = core::mem::size_of::<[WCHAR; EXENAME_LENGTH as usize]>() as USHORT;
     ExeNameU.Buffer = Buffer.as_mut_ptr();
 
     Status = RtlAnsiStringToUnicodeString(&mut ExeNameU, &mut ExeNameA, 0);
@@ -2551,7 +2576,7 @@ pub unsafe extern "system" fn GetConsoleInputExeNameW(
         RtlCopyMemory(
             lpExeName as *mut core::ffi::c_void,
             ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
-            (ExeNameLength as usize) * (core::mem::size_of::<WCHAR>() as ULONG),
+            (ExeNameLength as SIZE_T) * (core::mem::size_of::<WCHAR>() as SIZE_T),
         );
         *lpExeName.offset(ExeNameLength as isize) = 0u16; // UNICODE_NULL
     }
@@ -2571,9 +2596,9 @@ pub unsafe extern "system" fn GetConsoleInputExeNameA(
 ) -> DWORD {
     let mut Status: NTSTATUS;
     let mut ExeLength: DWORD;
-    let mut BufferU: _UNICODE_STRING;
-    let mut BufferA: ANSI_STRING;
-    let mut Buffer: [WCHAR; EXENAME_LENGTH as usize];
+    let mut BufferU: _UNICODE_STRING = core::mem::zeroed();
+    let mut BufferA: ANSI_STRING = core::mem::zeroed();
+    let mut Buffer: [WCHAR; EXENAME_LENGTH as usize] = [0; EXENAME_LENGTH as usize];
 
     /* Get the UNICODE name */
     ExeLength = GetConsoleInputExeNameW(EXENAME_LENGTH, Buffer.as_mut_ptr());
@@ -2662,8 +2687,8 @@ pub unsafe extern "system" fn SetConsoleLocalEUDC(
 unsafe fn IntRegisterConsoleIME(
     hWnd: HWND,
     dwThreadId: DWORD,
-    cbDesktop: SIZE_T,
-    pDesktop: PWSTR,
+    mut cbDesktop: SIZE_T,
+    mut pDesktop: PWSTR,
     pdwAttachToThreadId: PDWORD,
 ) -> BOOL {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
@@ -2672,17 +2697,17 @@ unsafe fn IntRegisterConsoleIME(
 
     if cbDesktop == 0 || pDesktop.is_null() {
         pDesktop = (*(*NtCurrentPeb()).ProcessParameters).DesktopInfo.Buffer;
-        cbDesktop = (*(*NtCurrentPeb()).ProcessParameters).DesktopInfo.Length;
+        cbDesktop = (*(*NtCurrentPeb()).ProcessParameters).DesktopInfo.Length as SIZE_T;
     }
 
-    cbDesktop = min(cbDesktop, (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG));
+    cbDesktop = min(cbDesktop, ((MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG)) as SIZE_T);
 
     (*RegisterConsoleIME).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
-    (*RegisterConsoleIME).hWnd = hWnd;
+    (*RegisterConsoleIME).hWnd = hWnd as _;
     (*RegisterConsoleIME).dwThreadId = dwThreadId;
-    (*RegisterConsoleIME).cbDesktop = cbDesktop;
+    (*RegisterConsoleIME).cbDesktop = cbDesktop as DWORD;
 
-    CaptureBuffer = CsrAllocateCaptureBuffer(1, cbDesktop);
+    CaptureBuffer = CsrAllocateCaptureBuffer(1, cbDesktop as ULONG);
     if CaptureBuffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
@@ -2690,8 +2715,8 @@ unsafe fn IntRegisterConsoleIME(
 
     CsrCaptureMessageBuffer(
         CaptureBuffer,
-        pDesktop,
-        cbDesktop,
+        pDesktop as *mut core::ffi::c_void,
+        cbDesktop as ULONG,
         &mut (*RegisterConsoleIME).pDesktop as *mut _ as *mut *mut _,
     );
 
@@ -2699,7 +2724,7 @@ unsafe fn IntRegisterConsoleIME(
         &mut ApiMessage as *mut _ as *mut _,
         CaptureBuffer,
         CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepRegisterConsoleIME),
-        core::mem::size_of_val(&*RegisterConsoleIME),
+        core::mem::size_of_val(&*RegisterConsoleIME) as u32,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
@@ -2736,7 +2761,7 @@ unsafe fn IntUnregisterConsoleIME(
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let UnregisterConsoleIME: PCONSOLE_UNREGISTERCONSOLEIME = &mut ApiMessage.Data.UnregisterConsoleIME;
 
-    (*UnregisterConsoleIME).ConsoleHandle = (*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters.ConsoleHandle;
+    (*UnregisterConsoleIME).ConsoleHandle = (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle;
     (*UnregisterConsoleIME).dwThreadId = dwThreadId;
 
     CsrClientCallServer(
@@ -2786,7 +2811,7 @@ pub unsafe extern "C" fn SetTEBLangID() {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let LangIdRequest: PCONSOLE_GETLANGID = &mut ApiMessage.Data.LangIdRequest;
 
-    LangIdRequest.as_mut().unwrap().ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).as_mut().unwrap().ConsoleHandle;
+    (*LangIdRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     CsrClientCallServer(
         &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
@@ -2798,7 +2823,7 @@ pub unsafe extern "C" fn SetTEBLangID() {
         return;
     }
 
-    if SetThreadLocale(MAKELCID(LangIdRequest.as_ref().unwrap().LangId, SORT_DEFAULT)) == 0 {
+    if SetThreadLocale(MAKELCID((*LangIdRequest).LangId, SORT_DEFAULT)) == 0 {
         // DPRINT removed
     }
 }
@@ -2820,7 +2845,7 @@ unsafe fn IntGetConsoleKeyboardLayoutName(
         (core::mem::size_of::<CONSOLE_GETKBDLAYOUTNAME>() as ULONG) as u32,
     );
 
-    if NT_SUCCESS(ApiMessage.Status) == 0 {
+    if !NT_SUCCESS(ApiMessage.Status) {
         BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
@@ -2830,14 +2855,14 @@ unsafe fn IntGetConsoleKeyboardLayoutName(
         if bAnsi != 0 {
             strncpy(
                 pszLayoutName as *mut i8,
-                (*GetKbdLayoutNameRequest).LayoutBuffer as *const i8,
-                KL_NAMELENGTH,
+                (*GetKbdLayoutNameRequest).LayoutBuffer.as_ptr() as *const i8,
+                KL_NAMELENGTH as usize,
             );
         } else {
             wcsncpy(
                 pszLayoutName as *mut u16,
-                (*GetKbdLayoutNameRequest).LayoutBuffer as *const u16,
-                KL_NAMELENGTH,
+                (*GetKbdLayoutNameRequest).LayoutBuffer.as_ptr() as *const u16,
+                KL_NAMELENGTH as usize,
             );
         }
         0
@@ -2970,7 +2995,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //             break;
 //     }
 //
-//     ExitProcess(CONTROL_C_EXIT);
+//     ExitProcess(CONTROL_C_EXIT as UINT);
 //     return TRUE;
 // }
 //
@@ -2985,7 +3010,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     EXCEPTION_RECORD erException;
 //
 //     DPRINT1("Console Dispatcher Active: %lx %lx\n", CodeAndFlag, nCode);
-//     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+//     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST as i32);
 //
 //     switch(nCode)
 //     {
@@ -3007,7 +3032,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //                 }
 //                 _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
 //                 {
-//                     RtlEnterCriticalSection(&ConsoleLock);
+//                     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //                     if ((nCode != CTRL_C_EVENT) ||
 //                         (NtCurrentPeb()->ProcessParameters->ConsoleFlags != 1))
@@ -3018,7 +3043,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //                         }
 //                     }
 //
-//                     RtlLeaveCriticalSection(&ConsoleLock);
+//                     RtlLeaveCriticalSection(&mut ConsoleLock);
 //                 }
 //                 _SEH2_END;
 //
@@ -3043,7 +3068,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //             break;
 //
 //         case 4:
-//             ExitProcess(CONTROL_C_EXIT);
+//             ExitProcess(CONTROL_C_EXIT as UINT);
 //             break;
 //
 //         default:
@@ -3053,7 +3078,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //
 //     ASSERT(ConsoleInitialized);
 //
-//     RtlEnterCriticalSection(&ConsoleLock);
+//     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //     nExitCode = 0;
 //     if ((nCode != CTRL_C_EVENT) || (NtCurrentPeb()->ProcessParameters->ConsoleFlags != 1))
@@ -3084,7 +3109,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //         }
 //     }
 //
-//     RtlLeaveCriticalSection(&ConsoleLock);
+//     RtlLeaveCriticalSection(&mut ConsoleLock);
 //
 //     ExitThread(nExitCode);
 //     return STATUS_SUCCESS;
@@ -4267,7 +4292,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     ULONG AppNameLength = 128 * sizeof(WCHAR);
 //     ULONG CurDirLength  = (MAX_PATH + 1) * sizeof(WCHAR);
 //
-//     RtlEnterCriticalSection(&ConsoleLock);
+//     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //     if (NtCurrentPeb()->ProcessParameters->ConsoleHandle)
 //     {
@@ -4322,7 +4347,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     }
 //
 // Quit:
-//     RtlLeaveCriticalSection(&ConsoleLock);
+//     RtlLeaveCriticalSection(&mut ConsoleLock);
 //     return Success;
 // }
 //
@@ -4340,7 +4365,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     PCONSOLE_FREECONSOLE FreeConsoleRequest = &ApiMessage.Data.FreeConsoleRequest;
 //     HANDLE ConsoleHandle = NtCurrentPeb()->ProcessParameters->ConsoleHandle;
 //
-//     RtlEnterCriticalSection(&ConsoleLock);
+//     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //     /* We must have a non-trivial handle to close */
 //     if (ConsoleHandle == NULL) // IsConsoleHandle(ConsoleHandle)
@@ -4375,7 +4400,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     InputWaitHandle = INVALID_HANDLE_VALUE;
 //
 // Quit:
-//     RtlLeaveCriticalSection(&ConsoleLock);
+//     RtlLeaveCriticalSection(&mut ConsoleLock);
 //     return Success;
 // }
 //
@@ -5003,14 +5028,14 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 // {
 //     BOOL Ret;
 //
-//     RtlEnterCriticalSection(&ConsoleLock);
+//     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //     if (Add)
 //         Ret = AddConsoleCtrlHandler(HandlerRoutine);
 //     else
 //         Ret = RemoveConsoleCtrlHandler(HandlerRoutine);
 //
-//     RtlLeaveCriticalSection(&ConsoleLock);
+//     RtlLeaveCriticalSection(&mut ConsoleLock);
 //     return Ret;
 // }
 //
@@ -5571,7 +5596,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     CONSOLE_START_INFO ConsoleStartInfo;
 //     DWORD dummy;
 //
-//     RtlEnterCriticalSection(&ConsoleLock);
+//     RtlEnterCriticalSection(&mut ConsoleLock);
 //
 //     if (NtCurrentPeb()->ProcessParameters->ConsoleHandle)
 //     {
@@ -5607,7 +5632,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     }
 //
 // Quit:
-//     RtlLeaveCriticalSection(&ConsoleLock);
+//     RtlLeaveCriticalSection(&mut ConsoleLock);
 //     return Success;
 // }
 //
@@ -5682,7 +5707,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 // {
 //     DWORD ExeLength;
 //
-//     ExeLength = lstrlenW(lpExeName);
+//     ExeLength = lstrlenW(lpExeName) as DWORD;
 //     if ((ExeLength == 0) || (ExeLength >= EXENAME_LENGTH))
 //     {
 //         /* Fail if string is empty or too long */
@@ -5949,7 +5974,7 @@ pub unsafe extern "system" fn SetLastConsoleEventActive() -> DWORD {
 //     RegisterConsoleIME->dwThreadId = dwThreadId;
 //     RegisterConsoleIME->cbDesktop = cbDesktop;
 //
-//     CaptureBuffer = CsrAllocateCaptureBuffer(1, cbDesktop);
+//     CaptureBuffer = CsrAllocateCaptureBuffer(1, cbDesktop as ULONG);
 //     if (!CaptureBuffer)
 //     {
 //         SetLastError(ERROR_NOT_ENOUGH_MEMORY);

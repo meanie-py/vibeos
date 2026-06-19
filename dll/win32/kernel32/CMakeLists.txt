@@ -45,13 +45,13 @@ list(APPEND SOURCE
     # client/vdm.c — replaced by Rust
     # client/version.c    — replaced by Rust (kernel32-rust/src/client/version.rs)
     # client/virtmem.c — replaced by Rust
-    # client/console/* — DEFERRED back to C (CSR CONSOLE_API_MESSAGE types not yet in FFI;
-    #   console/*.rs translations preserved on disk):
-    client/console/alias.c
-    client/console/console.c
-    client/console/history.c
-    client/console/init.c
-    client/console/readwrite.c
+    # client/console/* — replaced by Rust (kernel32-rust/src/console/); cohab-linked via
+    #   libkernel32_rust.a (CSR CONSOLE_API_MESSAGE family bridged through winsrv-sys):
+    # client/console/alias.c
+    # client/console/console.c
+    # client/console/history.c
+    # client/console/init.c
+    # client/console/readwrite.c
     client/file/move.c
     # client/file/tape.c — replaced by Rust (kernel32-rust/src/file/tape.rs); cohab-linked via libkernel32_rust.a
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,

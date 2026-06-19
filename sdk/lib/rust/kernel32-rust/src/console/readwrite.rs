@@ -16,7 +16,7 @@ macro_rules! RTL_FIELD_SIZE {
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 1;
 
-pub fn ConioRectHeight(Rect: *const RECT) -> i32 {
+pub unsafe fn ConioRectHeight(Rect: *const SMALL_RECT) -> SHORT {
     if (*Rect).Top > (*Rect).Bottom {
         0
     } else {
@@ -24,7 +24,7 @@ pub fn ConioRectHeight(Rect: *const RECT) -> i32 {
     }
 }
 
-pub fn ConioRectWidth(Rect: *const RECT) -> i32 {
+pub unsafe fn ConioRectWidth(Rect: *const SMALL_RECT) -> SHORT {
     if (*Rect).Left > (*Rect).Right {
         0
     } else {
@@ -40,7 +40,7 @@ unsafe fn IntReadConsole(
     bUnicode: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let ReadConsoleRequest: PCONSOLE_READCONSOLE = &mut ApiMessage.Data.ReadConsoleRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
     let mut CharSize: ULONG;
@@ -58,13 +58,13 @@ unsafe fn IntReadConsole(
      * not NULL-terminated (always in UNICODE format).
      */
     (*ReadConsoleRequest).ExeLength = GetCurrentExeName(
-        (*ReadConsoleRequest).StaticBuffer.as_mut_ptr() as *mut PWCHAR,
-        core::mem::size_of_val(&(*ReadConsoleRequest).StaticBuffer) as ULONG,
+        (*ReadConsoleRequest).StaticBuffer.as_mut_ptr() as *mut u16,
+        core::mem::size_of_val(&(*ReadConsoleRequest).StaticBuffer) as u16,
     );
 
     /*** For DEBUGGING purposes ***/
     {
-        let mut ExeName: _UNICODE_STRING;
+        let mut ExeName: _UNICODE_STRING = core::mem::zeroed();
         ExeName.Length = (*ReadConsoleRequest).ExeLength as u16;
         ExeName.MaximumLength = (*ReadConsoleRequest).ExeLength as u16;
         ExeName.Buffer = (*ReadConsoleRequest).StaticBuffer.as_mut_ptr() as *mut u16;
@@ -90,7 +90,7 @@ unsafe fn IntReadConsole(
      * This behaviour is also expected in the server-side.
      */
     if SizeBytes <= core::mem::size_of_val(&(*ReadConsoleRequest).StaticBuffer) as ULONG {
-        (*ReadConsoleRequest).Buffer = (*ReadConsoleRequest).StaticBuffer.as_mut_ptr() as *mut u8;
+        (*ReadConsoleRequest).Buffer = (*ReadConsoleRequest).StaticBuffer.as_mut_ptr() as *mut core::ffi::c_void;
         // CaptureBuffer = NULL;
     } else {
         /* Allocate a Capture Buffer */
@@ -105,7 +105,7 @@ unsafe fn IntReadConsole(
         CsrAllocateMessagePointer(
             CaptureBuffer,
             SizeBytes,
-            &mut (*ReadConsoleRequest).Buffer as *mut *mut u8 as *mut PVOID,
+            &mut (*ReadConsoleRequest).Buffer as *mut _ as *mut PVOID,
         );
     }
 
@@ -143,7 +143,7 @@ unsafe fn IntReadConsole(
                     RtlCopyMemory(
                         (*ReadConsoleRequest).Buffer as *mut core::ffi::c_void,
                         lpBuffer,
-                        (*ReadConsoleRequest).InitialNumBytes,
+                        (*ReadConsoleRequest).InitialNumBytes as SIZE_T,
                     );
                 }
 
@@ -200,7 +200,7 @@ unsafe fn IntReadConsole(
             RtlCopyMemory(
                 lpBuffer,
                 (*ReadConsoleRequest).Buffer as *const core::ffi::c_void,
-                (*ReadConsoleRequest).NumBytes,
+                (*ReadConsoleRequest).NumBytes as SIZE_T,
             );
         }
         // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -239,31 +239,100 @@ unsafe fn IntGetConsoleInput(
     bUnicode: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let GetInputRequest: PCONSOLE_GETINPUT = &mut ApiMessage.Data.GetInputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
-    if IsConsoleHandle(hConsoleInput) == 0 {
-        loop {
-            // _SEH2_TRY
-            let __try_result: i32;
-            __try_result = {
-                *lpNumberOfEventsRead = 0;
-                SetLastError(ERROR_INVALID_HANDLE);
-                0
-            };
-            // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            let __except_val = EXCEPTION_EXECUTE_HANDLER;
-            if __except_val != 0 {
-                SetLastError(ERROR_INVALID_ACCESS);
-            }
-            break;
+    if !IsConsoleHandle(hConsoleInput) {
+        // _SEH2_TRY
+        {
+            *lpNumberOfEventsRead = 0;
+            SetLastError(ERROR_INVALID_HANDLE);
         }
+        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
+        //     SetLastError(ERROR_INVALID_ACCESS);
         // _SEH2_END
 
         return 0;
     }
-    // ... rest of function continues below
+
+    // DPRINT("IntGetConsoleInput: %lx %p\n", nLength, lpNumberOfEventsRead);
+
+    /* Set up the data to send to the Console Server */
+    (*GetInputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
+    (*GetInputRequest).InputHandle = hConsoleInput;
+    (*GetInputRequest).NumRecords = nLength;
+    (*GetInputRequest).Flags = wFlags;
+    (*GetInputRequest).Unicode = bUnicode;
+
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than five
+     * input records are read. Otherwise a new buffer is allocated.
+     * This behaviour is also expected in the server-side.
+     */
+    if nLength
+        <= (core::mem::size_of_val(&(*GetInputRequest).RecordStaticBuffer) as ULONG)
+            / (core::mem::size_of::<INPUT_RECORD>() as ULONG)
+    {
+        (*GetInputRequest).RecordBufPtr = (*GetInputRequest).RecordStaticBuffer.as_mut_ptr();
+        // CaptureBuffer = NULL;
+    } else {
+        let Size: ULONG = nLength * (core::mem::size_of::<INPUT_RECORD>() as ULONG);
+
+        /* Allocate a Capture Buffer */
+        CaptureBuffer = CsrAllocateCaptureBuffer(1, Size);
+        if CaptureBuffer.is_null() {
+            // DPRINT1("CsrAllocateCaptureBuffer failed!\n");
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+
+        /* Allocate space in the Buffer */
+        CsrAllocateMessagePointer(
+            CaptureBuffer,
+            Size,
+            &mut (*GetInputRequest).RecordBufPtr as *mut *mut INPUT_RECORD as *mut PVOID,
+        );
+    }
+
+    /* Call the server */
+    CsrClientCallServer(
+        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
+        CaptureBuffer,
+        CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepGetConsoleInput),
+        core::mem::size_of_val(&*GetInputRequest) as ULONG,
+    );
+
+    /* Check for success */
+    Success = NT_SUCCESS(ApiMessage.Status) as BOOL;
+
+    /* Retrieve the results */
+    // _SEH2_TRY
+    {
+        // DPRINT("Events read: %lx\n", GetInputRequest->NumRecords);
+        *lpNumberOfEventsRead = (*GetInputRequest).NumRecords;
+
+        if Success != 0 {
+            RtlCopyMemory(
+                lpBuffer as *mut core::ffi::c_void,
+                (*GetInputRequest).RecordBufPtr as *const core::ffi::c_void,
+                ((*GetInputRequest).NumRecords * (core::mem::size_of::<INPUT_RECORD>() as ULONG)) as SIZE_T,
+            );
+        } else {
+            BaseSetLastNTError(ApiMessage.Status);
+        }
+    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
+    // _SEH2_END
+
+    /* Release the capture buffer if needed */
+    if !CaptureBuffer.is_null() {
+        CsrFreeCaptureBuffer(CaptureBuffer);
+    }
+
+    /* Return success status */
+    return Success;
 }
 unsafe fn IntReadConsoleOutput(
     hConsoleOutput: HANDLE,
@@ -274,8 +343,8 @@ unsafe fn IntReadConsoleOutput(
     bUnicode: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
-    let ReadOutputRequest: *mut CONSOLE_READOUTPUT = &mut (*ApiMessage.Data).ReadOutputRequest;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
+    let ReadOutputRequest: *mut CONSOLE_READOUTPUT = &mut ApiMessage.Data.ReadOutputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
     let mut SizeX: SHORT;
@@ -300,7 +369,89 @@ unsafe fn IntReadConsoleOutput(
 
         (*ReadOutputRequest).ReadRegion = *lpReadRegion;
     }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
     // _SEH2_END
+
+    NumCells = (SizeX as ULONG) * (SizeY as ULONG);
+    // DPRINT("IntReadConsoleOutput: (%d x %d)\n", SizeX, SizeY);
+
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than one
+     * cell is read. Otherwise a new buffer is allocated.
+     * This behaviour is also expected in the server-side.
+     */
+    if NumCells <= 1 {
+        (*ReadOutputRequest).CharInfo = &mut (*ReadOutputRequest).StaticBuffer;
+        // CaptureBuffer = NULL;
+    } else {
+        let Size: ULONG = NumCells * (core::mem::size_of::<CHAR_INFO>() as ULONG);
+
+        /* Allocate a Capture Buffer */
+        CaptureBuffer = CsrAllocateCaptureBuffer(1, Size);
+        if CaptureBuffer.is_null() {
+            // DPRINT1("CsrAllocateCaptureBuffer failed with size %ld!\n", Size);
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+
+        /* Allocate space in the Buffer */
+        CsrAllocateMessagePointer(
+            CaptureBuffer,
+            Size,
+            &mut (*ReadOutputRequest).CharInfo as *mut *mut CHAR_INFO as *mut PVOID,
+        );
+    }
+
+    /* Call the server */
+    CsrClientCallServer(
+        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
+        CaptureBuffer,
+        CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepReadConsoleOutput),
+        (core::mem::size_of::<CONSOLE_READOUTPUT>() as ULONG),
+    );
+
+    /* Check for success */
+    Success = NT_SUCCESS(ApiMessage.Status) as BOOL;
+
+    /* Retrieve the results */
+    // _SEH2_TRY
+    {
+        *lpReadRegion = (*ReadOutputRequest).ReadRegion;
+
+        if Success != 0 {
+            let mut y: SHORT;
+            let mut Y: SHORT;
+
+            /* Copy into the buffer */
+
+            SizeX = ConioRectWidth(&(*ReadOutputRequest).ReadRegion);
+
+            y = 0;
+            Y = (*ReadOutputRequest).ReadRegion.Top;
+            while Y <= (*ReadOutputRequest).ReadRegion.Bottom {
+                RtlCopyMemory(
+                    lpBuffer.offset(((y as i32 + dwBufferCoord.Y as i32) * dwBufferSize.X as i32 + dwBufferCoord.X as i32) as isize) as *mut core::ffi::c_void,
+                    (*ReadOutputRequest).CharInfo.offset((y as i32 * SizeX as i32) as isize) as *const core::ffi::c_void,
+                    (SizeX as ULONG * (core::mem::size_of::<CHAR_INFO>() as ULONG)) as SIZE_T,
+                );
+                y += 1;
+                Y += 1;
+            }
+        } else {
+            BaseSetLastNTError(ApiMessage.Status);
+        }
+    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
+    // _SEH2_END
+
+    /* Release the capture buffer if needed */
+    if !CaptureBuffer.is_null() {
+        CsrFreeCaptureBuffer(CaptureBuffer);
+    }
+
+    /* Return success status */
+    return Success;
 }
 unsafe fn IntReadConsoleOutputCode(
     hConsoleOutput: HANDLE,
@@ -311,7 +462,7 @@ unsafe fn IntReadConsoleOutputCode(
     lpNumberOfCodesRead: LPDWORD,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let ReadOutputCodeRequest: PCONSOLE_READOUTPUTCODE = &mut ApiMessage.Data.ReadOutputCodeRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
     let mut CodeSize: ULONG;
@@ -391,7 +542,7 @@ unsafe fn IntReadConsoleOutputCode(
                 RtlCopyMemory(
                     pCode,
                     (*ReadOutputCodeRequest).pCode,
-                    ((*ReadOutputCodeRequest).NumCodes * CodeSize) as usize,
+                    ((*ReadOutputCodeRequest).NumCodes * CodeSize) as SIZE_T,
                 );
             } else {
                 BaseSetLastNTError(ApiMessage.Status);
@@ -434,7 +585,7 @@ unsafe fn IntWriteConsole(
     bUnicode: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let WriteConsoleRequest: PCONSOLE_WRITECONSOLE = &mut ApiMessage.Data.WriteConsoleRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
     let mut CharSize: ULONG;
@@ -477,7 +628,7 @@ unsafe fn IntWriteConsole(
             RtlCopyMemory(
                 (*WriteConsoleRequest).Buffer,
                 lpBuffer,
-                SizeBytes as usize,
+                SizeBytes as SIZE_T,
             );
         }
         // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -549,7 +700,7 @@ unsafe fn IntWriteConsoleInput(
     bAppendToEnd: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let WriteInputRequest: PCONSOLE_WRITEINPUT = &mut ApiMessage.Data.WriteInputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
@@ -609,9 +760,9 @@ unsafe fn IntWriteConsoleInput(
         /* Capture the user buffer */
         CsrCaptureMessageBuffer(
             CaptureBuffer,
-            lpBuffer as *const core::ffi::c_void,
+            lpBuffer as *mut core::ffi::c_void,
             Size,
-            &mut (*WriteInputRequest).RecordBufPtr as *mut *mut INPUT_RECORD as *mut core::ffi::c_void,
+            &mut (*WriteInputRequest).RecordBufPtr as *mut *mut INPUT_RECORD as *mut PVOID,
         );
     }
 
@@ -668,7 +819,7 @@ unsafe fn IntWriteConsoleOutput(
     bUnicode: BOOLEAN,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let WriteOutputRequest: *mut CONSOLE_WRITEOUTPUT = &mut (*core::ptr::addr_of_mut!(ApiMessage)).Data.WriteOutputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
@@ -694,7 +845,122 @@ unsafe fn IntWriteConsoleOutput(
 
         (*WriteOutputRequest).WriteRegion = *lpWriteRegion;
     }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
     // _SEH2_END
+
+    NumCells = (SizeX as ULONG) * (SizeY as ULONG);
+    // DPRINT("IntWriteConsoleOutput: (%d x %d)\n", SizeX, SizeY);
+
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than one
+     * cell is written. Otherwise a new buffer is allocated.
+     * This behaviour is also expected in the server-side.
+     */
+    if NumCells <= 1 {
+        (*WriteOutputRequest).CharInfo = &mut (*WriteOutputRequest).StaticBuffer;
+        // CaptureBuffer = NULL;
+        (*WriteOutputRequest).UseVirtualMemory = 0;
+    } else {
+        let Size: ULONG = NumCells * (core::mem::size_of::<CHAR_INFO>() as ULONG);
+
+        /* Allocate a Capture Buffer */
+        CaptureBuffer = CsrAllocateCaptureBuffer(1, Size);
+        if !CaptureBuffer.is_null() {
+            /* Allocate space in the Buffer */
+            CsrAllocateMessagePointer(
+                CaptureBuffer,
+                Size,
+                &mut (*WriteOutputRequest).CharInfo as *mut *mut CHAR_INFO as *mut PVOID,
+            );
+            (*WriteOutputRequest).UseVirtualMemory = 0;
+        } else {
+            /*
+             * CsrAllocateCaptureBuffer failed because we tried to allocate
+             * a too large (>= 64 kB, size of the CSR heap) data buffer.
+             * To circumvent this, Windows uses a trick (that we reproduce for
+             * compatibility reasons): we allocate a heap buffer in the process'
+             * memory, and CSR will read it via NtReadVirtualMemory.
+             */
+            // DPRINT1("CsrAllocateCaptureBuffer failed with size %ld, let's use local heap buffer...\n", Size);
+
+            (*WriteOutputRequest).CharInfo =
+                RtlAllocateHeap(RtlGetProcessHeap(), 0, Size as SIZE_T) as *mut CHAR_INFO;
+            (*WriteOutputRequest).UseVirtualMemory = 1;
+
+            /* Bail out if we still cannot allocate memory */
+            if (*WriteOutputRequest).CharInfo.is_null() {
+                // DPRINT1("Failed to allocate heap buffer with size %ld!\n", Size);
+                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                return 0;
+            }
+        }
+    }
+
+    /* Capture the user buffer contents */
+    // _SEH2_TRY
+    {
+        let mut y: SHORT;
+        let mut Y: SHORT;
+
+        /* Copy into the buffer */
+
+        SizeX = ConioRectWidth(&(*WriteOutputRequest).WriteRegion);
+
+        y = 0;
+        Y = (*WriteOutputRequest).WriteRegion.Top;
+        while Y <= (*WriteOutputRequest).WriteRegion.Bottom {
+            RtlCopyMemory(
+                (*WriteOutputRequest).CharInfo.offset((y as i32 * SizeX as i32) as isize) as *mut core::ffi::c_void,
+                lpBuffer.offset(((y as i32 + dwBufferCoord.Y as i32) * dwBufferSize.X as i32 + dwBufferCoord.X as i32) as isize) as *const core::ffi::c_void,
+                (SizeX as ULONG * (core::mem::size_of::<CHAR_INFO>() as ULONG)) as SIZE_T,
+            );
+            y += 1;
+            Y += 1;
+        }
+    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
+    // _SEH2_END
+
+    /* Call the server */
+    CsrClientCallServer(
+        &mut ApiMessage as *mut CONSOLE_API_MESSAGE as PCSR_API_MESSAGE,
+        CaptureBuffer,
+        CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepWriteConsoleOutput),
+        (core::mem::size_of::<CONSOLE_WRITEOUTPUT>() as ULONG),
+    );
+
+    /* Check for success */
+    Success = NT_SUCCESS(ApiMessage.Status) as BOOL;
+
+    /* Release the capture buffer if needed */
+    if !CaptureBuffer.is_null() {
+        CsrFreeCaptureBuffer(CaptureBuffer);
+    } else {
+        /* If we used a heap buffer, free it */
+        if (*WriteOutputRequest).UseVirtualMemory != 0 {
+            RtlFreeHeap(
+                RtlGetProcessHeap(),
+                0,
+                (*WriteOutputRequest).CharInfo as *mut core::ffi::c_void,
+            );
+        }
+    }
+
+    /* Retrieve the results */
+    // _SEH2_TRY
+    {
+        *lpWriteRegion = (*WriteOutputRequest).WriteRegion;
+
+        if Success == 0 {
+            BaseSetLastNTError(ApiMessage.Status);
+        }
+    }
+    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
+    // _SEH2_END
+
+    /* Return success status */
+    return Success;
 }
 unsafe fn IntWriteConsoleOutputCode(
     hConsoleOutput: HANDLE,
@@ -705,7 +971,7 @@ unsafe fn IntWriteConsoleOutputCode(
     lpNumberOfCodesWritten: LPDWORD,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let WriteOutputCodeRequest: PCONSOLE_WRITEOUTPUTCODE = &mut ApiMessage.Data.WriteOutputCodeRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
     let mut CodeSize: ULONG;
@@ -757,7 +1023,7 @@ unsafe fn IntWriteConsoleOutputCode(
             RtlCopyMemory(
                 (*WriteOutputCodeRequest).pCode as *mut core::ffi::c_void,
                 pCode as *const core::ffi::c_void,
-                SizeBytes as usize,
+                SizeBytes as SIZE_T,
             );
         }
         // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -828,7 +1094,7 @@ unsafe fn IntFillConsoleOutputCode(
     lpNumberOfCodesWritten: LPDWORD,
 ) -> BOOL {
     let mut Success: BOOL;
-    let mut ApiMessage: CONSOLE_API_MESSAGE;
+    let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();
     let FillOutputRequest: PCONSOLE_FILLOUTPUTCODE = &mut ApiMessage.Data.FillOutputRequest;
 
     // DPRINT("IntFillConsoleOutputCode\n");
@@ -926,7 +1192,7 @@ pub unsafe extern "system" fn PeekConsoleInputW(
         lpBuffer,
         nLength,
         lpNumberOfEventsRead,
-        CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT,
+        (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT) as u16,
         1, // TRUE
     )
 }
@@ -943,8 +1209,8 @@ pub unsafe extern "system" fn PeekConsoleInputA(
         lpBuffer,
         nLength,
         lpNumberOfEventsRead,
-        CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT,
-        FALSE,
+        (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT) as u16,
+        FALSE as BOOLEAN,
     )
 }
 
@@ -1310,7 +1576,7 @@ pub unsafe extern "system" fn FillConsoleOutputCharacterW(
     dwWriteCoord: COORD,
     lpNumberOfCharsWritten: LPDWORD,
 ) -> BOOL {
-    let mut Code: CODE_ELEMENT;
+    let mut Code: CODE_ELEMENT = core::mem::zeroed();
     Code.UnicodeChar = cCharacter;
     return IntFillConsoleOutputCode(
         hConsoleOutput,
@@ -1330,7 +1596,7 @@ pub unsafe extern "system" fn FillConsoleOutputCharacterA(
     dwWriteCoord: COORD,
     lpNumberOfCharsWritten: LPDWORD,
 ) -> BOOL {
-    let mut Code: CODE_ELEMENT;
+    let mut Code: CODE_ELEMENT = core::mem::zeroed();
     Code.AsciiChar = cCharacter;
     return IntFillConsoleOutputCode(
         hConsoleOutput,
@@ -1350,7 +1616,7 @@ pub unsafe extern "system" fn FillConsoleOutputAttribute(
     dwWriteCoord: COORD,
     lpNumberOfAttrsWritten: LPDWORD,
 ) -> BOOL {
-    let mut Code: CODE_ELEMENT;
+    let mut Code: CODE_ELEMENT = core::mem::zeroed();
     Code.Attribute = wAttribute;
     return IntFillConsoleOutputCode(
         hConsoleOutput,
@@ -2571,7 +2837,7 @@ pub unsafe extern "system" fn FillConsoleOutputAttribute(
 //                               lpBuffer,
 //                               nLength,
 //                               lpNumberOfEventsRead,
-//                               CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT,
+//                               (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT) as u16,
 //                               TRUE);
 // }
 //
@@ -2591,7 +2857,7 @@ pub unsafe extern "system" fn FillConsoleOutputAttribute(
 //                               lpBuffer,
 //                               nLength,
 //                               lpNumberOfEventsRead,
-//                               CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT,
+//                               (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT) as u16,
 //                               FALSE);
 // }
 //

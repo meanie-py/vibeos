@@ -5,6 +5,22 @@ use core::ffi::c_void;
 const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
 
+// kernel32 exports referenced by the console init path (resolve to sibling
+// #[no_mangle] definitions at link).
+extern "system" {
+    fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
+    fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
+    fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
+    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
+    fn GetOEMCP() -> UINT;
+}
+
+// winnt.h HandleToUlong: truncate a handle to a ULONG.
+#[inline]
+unsafe fn HandleToUlong(h: HANDLE) -> ULONG {
+    (h as usize) as ULONG
+}
+
 // ---- file-scope preamble (translated) ----
 pub static mut ConsoleLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
     DebugInfo: core::ptr::null_mut(),
@@ -15,7 +31,7 @@ pub static mut ConsoleLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
     SpinCount: 0,
 };
 pub static mut ConsoleInitialized: BOOLEAN = 0;
-pub static DefaultConsoleTitle: PWSTR = {
+pub static mut DefaultConsoleTitle: PWSTR = {
     const S: &[u16] = &[
         'R' as u16, 'e' as u16, 'a' as u16, 'c' as u16, 't' as u16,
         'O' as u16, 'S' as u16, ' ' as u16, 'C' as u16, 'o' as u16,
@@ -37,7 +53,7 @@ pub unsafe extern "system" fn PropDialogHandler(lpThreadParameter: LPVOID) -> DW
         if !lpThreadParameter.is_null() {
             CloseHandle(lpThreadParameter as HANDLE);
         }
-        return STATUS_UNSUCCESSFUL;
+        return STATUS_UNSUCCESSFUL as DWORD;
     }
 
     AlreadyDisplayingProps = 1;
@@ -51,7 +67,7 @@ pub unsafe extern "system" fn PropDialogHandler(lpThreadParameter: LPVOID) -> DW
             break 'quit;
         }
 
-        CPlApplet = core::mem::transmute::<*mut core::ffi::c_void, APPLET_PROC>(
+        CPlApplet = core::mem::transmute::<FARPROC, APPLET_PROC>(
             GetProcAddress(hConsoleApplet, "CPlApplet\0".as_ptr() as *const i8)
         );
         if CPlApplet.is_none() {
@@ -79,7 +95,7 @@ pub unsafe extern "system" fn PropDialogHandler(lpThreadParameter: LPVOID) -> DW
         FreeLibrary(hConsoleApplet);
     }
     AlreadyDisplayingProps = 0;
-    return Status;
+    return Status as DWORD;
 }
 unsafe fn ParseShellInfo(
     lpszShellInfo: LPCWSTR,
@@ -118,7 +134,7 @@ pub unsafe extern "C" fn SetUpConsoleInfo(
             Length = (lstrlenW(DefaultConsoleTitle) as DWORD).wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD);
         } else {
             Title = (*Parameters).WindowTitle.Buffer;
-            Length = (*Parameters).WindowTitle.Length;
+            Length = (*Parameters).WindowTitle.Length as DWORD;
         }
 
         /* Retrieve the needed buffer size */
@@ -135,7 +151,7 @@ pub unsafe extern "C" fn SetUpConsoleInfo(
              * possible trailing NULL character, and then NULL-terminate.
              */
             Length = Length.wrapping_sub(core::mem::size_of::<WCHAR>() as DWORD);
-            RtlCopyMemory(*lpTitle as *mut core::ffi::c_void, Title as *const core::ffi::c_void, Length as usize);
+            RtlCopyMemory(*lpTitle as *mut core::ffi::c_void, Title as *const core::ffi::c_void, Length as SIZE_T);
             *((*lpTitle).offset((Length / core::mem::size_of::<WCHAR>() as DWORD) as isize)) = UNICODE_NULL;
         } else {
             *lpTitle = Title;
@@ -146,7 +162,7 @@ pub unsafe extern "C" fn SetUpConsoleInfo(
 
     if !lpDesktop.is_null() && !(*Parameters).DesktopInfo.Buffer.is_null() && *(*Parameters).DesktopInfo.Buffer != 0 {
         /* Retrieve the needed buffer size */
-        Length = (*Parameters).DesktopInfo.Length.wrapping_add(core::mem::size_of::<WCHAR>() as DWORD);
+        Length = (*Parameters).DesktopInfo.Length as DWORD + (core::mem::size_of::<WCHAR>() as DWORD);
         if *pDesktopLength > 0 {
             Length = min(Length, *pDesktopLength);
         }
@@ -185,7 +201,7 @@ pub unsafe extern "C" fn SetUpConsoleInfo(
         (*ConsoleStartInfo).IconIndex = ParseShellInfo((*Parameters).ShellInfo.Buffer, w!("dde.").as_ptr() as LPCWSTR);
 
         if (*Parameters).WindowFlags & STARTF_USEHOTKEY == 0 {
-            (*ConsoleStartInfo).dwHotKey = ParseShellInfo((*Parameters).ShellInfo.Buffer, w!("hotkey.").as_ptr() as LPCWSTR);
+            (*ConsoleStartInfo).dwHotKey = ParseShellInfo((*Parameters).ShellInfo.Buffer, w!("hotkey.").as_ptr() as LPCWSTR) as DWORD;
         } else {
             (*ConsoleStartInfo).dwHotKey = HandleToUlong((*Parameters).StandardInput);
         }
@@ -195,10 +211,10 @@ pub unsafe extern "C" fn SetUpConsoleInfo(
 pub unsafe extern "C" fn SetUpHandles(ConsoleStartInfo: *const CONSOLE_START_INFO) {
     let Parameters: *mut RTL_USER_PROCESS_PARAMETERS = (*NtCurrentPeb()).ProcessParameters;
 
-    if (*ConsoleStartInfo).dwStartupFlags & STARTF_USEHOTKEY {
+    if (*ConsoleStartInfo).dwStartupFlags & STARTF_USEHOTKEY != 0 {
         (*Parameters).WindowFlags &= !STARTF_USEHOTKEY;
     }
-    if (*ConsoleStartInfo).dwStartupFlags & STARTF_SHELLPRIVATE {
+    if (*ConsoleStartInfo).dwStartupFlags & STARTF_SHELLPRIVATE != 0 {
         (*Parameters).WindowFlags &= !STARTF_SHELLPRIVATE;
     }
 
@@ -213,8 +229,8 @@ pub unsafe extern "C" fn SetUpHandles(ConsoleStartInfo: *const CONSOLE_START_INF
 }
 
 unsafe fn IsConsoleApp() -> BOOLEAN {
-    let ImageNtHeader: PIMAGE_NT_HEADERS = RtlImageNtHeader(NtCurrentPeb().ImageBaseAddress);
-    return if !ImageNtHeader.is_null() && (ImageNtHeader.as_ref().unwrap().OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI) { 1 } else { 0 };
+    let ImageNtHeader: PIMAGE_NT_HEADERS = RtlImageNtHeader((*NtCurrentPeb()).ImageBaseAddress);
+    return if !ImageNtHeader.is_null() && ((*ImageNtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as u16) { 1 } else { 0 };
 }
 unsafe fn ConnectConsole(
     SessionDir: PWSTR,
@@ -253,7 +269,7 @@ unsafe fn ConnectConsole(
     // Is ConnectInfo->ConsoleStartInfo.InitEvents aligned on handle boundary ????
     let Status: NTSTATUS = NtWaitForMultipleObjects(
         MAX_INIT_EVENTS,
-        (*ConnectInfo).ConsoleStartInfo.InitEvents.as_ptr(),
+        (*ConnectInfo).ConsoleStartInfo.InitEvents.as_ptr() as *mut _,
         WaitAny,
         0,
         core::ptr::null_mut(),
@@ -263,9 +279,9 @@ unsafe fn ConnectConsole(
         return 0;
     }
 
-    NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_SUCCESS]);
-    NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_FAILURE]);
-    if Status != INIT_SUCCESS {
+    NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_SUCCESS as usize]);
+    NtClose((*ConnectInfo).ConsoleStartInfo.InitEvents[INIT_FAILURE as usize]);
+    if Status != INIT_SUCCESS as NTSTATUS {
         (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle = core::ptr::null_mut();
         return 0;
     }
@@ -281,7 +297,7 @@ pub unsafe extern "system" fn ConDllInitialize(
     let mut Status: NTSTATUS;
     let Parameters: PRTL_USER_PROCESS_PARAMETERS = (*NtCurrentPeb()).ProcessParameters;
     let mut InServerProcess: BOOLEAN = 0;
-    let mut ConnectInfo: CONSRV_API_CONNECTINFO;
+    let mut ConnectInfo: CONSRV_API_CONNECTINFO = core::mem::zeroed();
 
     if Reason != DLL_PROCESS_ATTACH {
         if (Reason == DLL_THREAD_ATTACH) && (IsConsoleApp() != 0) {
@@ -300,7 +316,7 @@ pub unsafe extern "system" fn ConDllInitialize(
 
     /* Initialize our global console DLL lock */
     Status = RtlInitializeCriticalSection(&mut ConsoleLock);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return 0;
     }
     ConsoleInitialized = 1;
@@ -352,8 +368,8 @@ pub unsafe extern "system" fn ConDllInitialize(
     ConnectInfo.ConsoleStartInfo.ConsoleHandle = (*Parameters).ConsoleHandle;
 
     /* Initialize the console dispatchers */
-    ConnectInfo.CtrlRoutine = Some(ConsoleControlDispatcher);
-    ConnectInfo.PropRoutine = Some(PropDialogHandler);
+    ConnectInfo.CtrlRoutine = core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(ConsoleControlDispatcher);
+    ConnectInfo.PropRoutine = core::mem::transmute::<unsafe extern "system" fn(LPVOID) -> DWORD, LPTHREAD_START_ROUTINE>(PropDialogHandler);
     // ConnectInfo.ImeRoutine  = ImeRoutine;
 
     /* Set up the console properties */
@@ -489,7 +505,7 @@ pub unsafe extern "system" fn ConDllInitialize(
 //         if (lpThreadParameter)
 //             CloseHandle((HANDLE)lpThreadParameter);
 //
-//         return STATUS_UNSUCCESSFUL;
+//         return STATUS_UNSUCCESSFUL as DWORD;
 //     }
 //
 //     AlreadyDisplayingProps = TRUE;
@@ -543,7 +559,7 @@ pub unsafe extern "system" fn ConDllInitialize(
 // Quit:
 //     if (hConsoleApplet) FreeLibrary(hConsoleApplet);
 //     AlreadyDisplayingProps = FALSE;
-//     return Status;
+//     return Status as DWORD;
 // }
 //
 //

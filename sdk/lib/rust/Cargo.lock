@@ -656,6 +656,7 @@ name = "kernel32-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "winsrv-sys",
 ]
 
 [[package]]

@@ -281,7 +281,7 @@ unsafe fn IntGetConsoleAlias(
     RtlCopyMemory(
         Target,
         (*ConsoleAliasRequest).Target as LPCVOID,
-        (*ConsoleAliasRequest).TargetLength as usize,
+        (*ConsoleAliasRequest).TargetLength as SIZE_T,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
@@ -350,7 +350,7 @@ unsafe fn IntGetConsoleAliases(
     }
 
     (*GetAllAliasesRequest).ConsoleHandle =
-        (*(*(*NtCurrentPeb()).ProcessParameters)).ConsoleHandle;
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
 
     (*GetAllAliasesRequest).ExeLength = (NumChars as usize).wrapping_mul(
         if bUnicode != 0 {
@@ -405,7 +405,7 @@ unsafe fn IntGetConsoleAliases(
     RtlCopyMemory(
         AliasBuffer,
         (*GetAllAliasesRequest).AliasesBuffer as LPCVOID,
-        (*GetAllAliasesRequest).AliasesBufferLength as usize,
+        (*GetAllAliasesRequest).AliasesBufferLength as SIZE_T,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
@@ -437,7 +437,7 @@ pub unsafe extern "system" fn GetConsoleAliasesA(
         AliasBuffer as LPVOID,
         AliasBufferLength,
         ExeName as LPCVOID,
-        0i8, // FALSE as BOOLEAN
+        0u8, // FALSE as BOOLEAN
     )
 }
 unsafe fn IntGetConsoleAliasesLength(
@@ -465,7 +465,7 @@ unsafe fn IntGetConsoleAliasesLength(
     }
 
     (*GetAllAliasesLengthRequest).ConsoleHandle =
-        (*(*(*NtCurrentPeb()).ProcessParameters)).ConsoleHandle;
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetAllAliasesLengthRequest).ExeLength = (NumChars as usize)
         .wrapping_mul(if bUnicode != 0 {
             core::mem::size_of::<WCHAR>()
@@ -560,7 +560,7 @@ unsafe fn IntGetConsoleAliasExes(
     RtlCopyMemory(
         lpExeNameBuffer,
         (*GetAliasesExesRequest).ExeNames as PVOID,
-        (*GetAliasesExesRequest).Length as usize,
+        (*GetAliasesExesRequest).Length as SIZE_T,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
