@@ -1460,19 +1460,16 @@ impl Linker {
             // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
             // on every arch.
             //
-            // cmlib-rust (#38/#35): the documented #35 blocker is a layout-sensitive
-            // captures(none)/DCE miscompile on the cmlib Hv* hive-write path (cold
-            // HANG at hivewrt.c "Failed to write the primary hive"). cmlib is already
-            // 100% Rust on x86, so that code already ships in the x86 kernel; ungating
-            // the 5 deep-C cohab archives (cportlib/csq/arbiter/lsalib/rossym) merely
-            // perturbs the link LAYOUT enough to TIP the latent miscompile. Guarding
-            // cmlib-rust itself with the class-guard hardens the hive-write path so the
-            // ungate can land — a TARGETED guard on the small cmlib crate, not the
-            // whole 447K-LOC body (whole-body no-prepop boots but is far too slow to
-            // be shippable — it blew the smoke window). All arches: cheap + uniform.
+            // (#38/#35) The cmlib-rust no-prepop guard was REMOVED 2026-06-18: it was
+            // added on the hypothesis that the #35 x86-ungate blocker was a
+            // layout-sensitive captures(none)/DCE miscompile on cmlib's Hv* hive-write
+            // path. That turned out to be a RED HERRING — the real blocker was an i386
+            // stdcall/cdecl ABI mismatch in cmlib cmcheck/cmheal (fixed by declaring
+            // the CMAPI fns extern "system"; field manual "#35 SOLVED"). With the ABI
+            // fix in place the ungate boots ×3 WITHOUT guarding cmlib, so the guard is
+            // dead weight. rtl-rust/i386 + cnt-rust-lib keep their genuine guards.
             let no_prepop = match (crate_name, self.arch.name) {
                 ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
-                ("cmlib-rust", _) => "-C no-prepopulate-passes ",
                 _ => "",
             };
             // Match cmake's lint POSTURE: cmake builds the kernel rust on STABLE
