@@ -57,7 +57,7 @@ unsafe extern "C" {
 // amd64/arm64 where "system"==cdecl.) These MUST be `extern "system"`.
 unsafe extern "system" {
     fn CmpCompareCompressedName( String: *const _UNICODE_STRING, Name: *const u16, NameLength: u16, ) -> i32;
-    fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: i32);
+    fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: u8) -> u8;
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> i32;
     fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
 }
