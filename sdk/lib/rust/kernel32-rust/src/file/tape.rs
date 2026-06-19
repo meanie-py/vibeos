@@ -2,6 +2,37 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// ---- cohab glue: kernel32 Rust exports this module calls (real stdcall @N exports) ----
+extern "system" {
+    fn CreateEventA(lpEventAttributes: *mut c_void, bManualReset: BOOL, bInitialState: BOOL, lpName: LPCSTR) -> HANDLE;
+    fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+}
+
+// ---- cohab glue: IOCTL_TAPE_* control codes (winioctl.h) ----
+//   CTL_CODE(DeviceType, Function, Method, Access) macro, expanded faithfully.
+const fn CTL_CODE(device: ULONG, function: ULONG, method: ULONG, access: ULONG) -> ULONG {
+    (device << 16) | (access << 14) | (function << 2) | method
+}
+const FILE_DEVICE_TAPE: ULONG = 31;       // IOCTL_TAPE_BASE
+const METHOD_BUFFERED:  ULONG = 0;
+const FILE_READ_ACCESS: ULONG = 0x0001;
+const FILE_WRITE_ACCESS: ULONG = 0x0002;
+const RW: ULONG = FILE_READ_ACCESS | FILE_WRITE_ACCESS;
+const R: ULONG = FILE_READ_ACCESS;
+
+pub const IOCTL_TAPE_ERASE:            ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0000, METHOD_BUFFERED, RW);
+pub const IOCTL_TAPE_PREPARE:          ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0001, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_WRITE_MARKS:      ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0002, METHOD_BUFFERED, RW);
+pub const IOCTL_TAPE_GET_POSITION:     ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0003, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_SET_POSITION:     ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0004, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_GET_DRIVE_PARAMS: ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0005, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_SET_DRIVE_PARAMS: ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0006, METHOD_BUFFERED, RW);
+pub const IOCTL_TAPE_GET_MEDIA_PARAMS: ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0007, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_SET_MEDIA_PARAMS: ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0008, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_GET_STATUS:       ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x0009, METHOD_BUFFERED, R);
+pub const IOCTL_TAPE_CREATE_PARTITION: ULONG = CTL_CODE(FILE_DEVICE_TAPE, 0x000a, METHOD_BUFFERED, RW);
+
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
 pub unsafe extern "system" fn BasepDoTapeOperation(
@@ -15,7 +46,7 @@ pub unsafe extern "system" fn BasepDoTapeOperation(
     let mut TapeEvent: HANDLE;
     let mut ErrorCode: DWORD;
     let mut Status: NTSTATUS;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     TapeEvent = CreateEventA(core::ptr::null_mut(), 0, 0, core::ptr::null());
     if TapeEvent.is_null() {
@@ -161,8 +192,8 @@ pub unsafe extern "system" fn GetTapePosition(
         *lpdwOffsetHigh = 0;
     } else {
         *lpdwPartition = TapeGetPosition.Partition;
-        *lpdwOffsetLow = TapeGetPosition.Offset.u.__bindgen_anon_1.LowPart;
-        *lpdwOffsetHigh = TapeGetPosition.Offset.u.__bindgen_anon_1.HighPart;
+        *lpdwOffsetLow = TapeGetPosition.Offset.u.LowPart;
+        *lpdwOffsetHigh = TapeGetPosition.Offset.u.HighPart as DWORD;
     }
 
     return Result;
@@ -242,8 +273,8 @@ pub unsafe extern "system" fn SetTapePosition(
 
     TapeSetPosition.Method = dwPositionMethod;
     TapeSetPosition.Partition = dwPartition;
-    TapeSetPosition.Offset.u.__bindgen_anon_1.LowPart = dwOffsetLow;
-    TapeSetPosition.Offset.u.__bindgen_anon_1.HighPart = dwOffsetHigh as LONG;
+    TapeSetPosition.Offset.u.LowPart = dwOffsetLow;
+    TapeSetPosition.Offset.u.HighPart = dwOffsetHigh as LONG;
     TapeSetPosition.Immediate = bImmediate as BOOLEAN;
     return BasepDoTapeOperation(
         hDevice,
@@ -478,7 +509,7 @@ pub unsafe extern "system" fn WriteTapemark(
 //     {
 //         *lpdwPartition = TapeGetPosition.Partition;
 //         *lpdwOffsetLow = TapeGetPosition.Offset.u.LowPart;
-//         *lpdwOffsetHigh = TapeGetPosition.Offset.u.HighPart;
+//         *lpdwOffsetHigh = TapeGetPosition.Offset.u.HighPart as DWORD;
 //     }
 //
 //     return Result;

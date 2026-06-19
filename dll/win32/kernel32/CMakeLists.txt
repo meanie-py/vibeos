@@ -53,7 +53,7 @@ list(APPEND SOURCE
     client/console/init.c
     client/console/readwrite.c
     client/file/move.c
-    client/file/tape.c # DEFERRED back to C (IOCTL_TAPE_* types not yet in FFI; tape.rs on disk)
+    # client/file/tape.c — replaced by Rust (kernel32-rust/src/file/tape.rs); cohab-linked via libkernel32_rust.a
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
     #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,volume}.c — replaced by Rust (kernel32-rust/src/file/)
     # wine/actctx.c — replaced by Rust
