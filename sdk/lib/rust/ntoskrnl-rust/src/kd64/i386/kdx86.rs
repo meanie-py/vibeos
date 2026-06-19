@@ -40,7 +40,7 @@ extern "system" {
         Length: ULONG,
     ) -> ULONG;
     fn KdpCopyMemoryChunks(
-        Address: ULONG_PTR,
+        Address: u64,
         Buffer: PVOID,
         Size: ULONG,
         ChunkSize: ULONG,
@@ -266,7 +266,7 @@ pub unsafe extern "system" fn KdpSysReadControlSpace(
             + core::ptr::addr_of_mut!((*prcb).ProcessorState) as usize) as PVOID;
 
         KdpCopyMemoryChunks(
-            Buffer as ULONG_PTR,
+            Buffer as u64,
             control_start,
             length,
             0,
@@ -296,7 +296,7 @@ pub unsafe extern "system" fn KdpSysWriteControlSpace(
             + core::ptr::addr_of_mut!((*prcb).ProcessorState) as usize) as PVOID;
 
         KdpCopyMemoryChunks(
-            Buffer as ULONG_PTR,
+            Buffer as u64,
             control_start,
             Length,
             0,
