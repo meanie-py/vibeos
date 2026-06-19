@@ -1459,8 +1459,20 @@ impl Linker {
             // and hung the kernel after ACPI). Mirrors sdk/lib/rtl/CMakeLists.txt
             // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
             // on every arch.
+            //
+            // cmlib-rust (#38/#35): the documented #35 blocker is a layout-sensitive
+            // captures(none)/DCE miscompile on the cmlib Hv* hive-write path (cold
+            // HANG at hivewrt.c "Failed to write the primary hive"). cmlib is already
+            // 100% Rust on x86, so that code already ships in the x86 kernel; ungating
+            // the 5 deep-C cohab archives (cportlib/csq/arbiter/lsalib/rossym) merely
+            // perturbs the link LAYOUT enough to TIP the latent miscompile. Guarding
+            // cmlib-rust itself with the class-guard hardens the hive-write path so the
+            // ungate can land — a TARGETED guard on the small cmlib crate, not the
+            // whole 447K-LOC body (whole-body no-prepop boots but is far too slow to
+            // be shippable — it blew the smoke window). All arches: cheap + uniform.
             let no_prepop = match (crate_name, self.arch.name) {
                 ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
+                ("cmlib-rust", _) => "-C no-prepopulate-passes ",
                 _ => "",
             };
             // Match cmake's lint POSTURE: cmake builds the kernel rust on STABLE

@@ -166,8 +166,11 @@ fn main() {
     // layout-sensitive miscompile on the cmlib Hv* hive-write path (cold amd64
     // HANG at `hivewrt.c "Failed to write the primary hive"`; warm dodges it — see
     // field manual "latent hive-path miscompile" + [[feedback_cargo_drive_reuse_a_redundancy]]).
-    // Gating to arm64 keeps i386/amd64 byte-for-byte on crp's known-green layout.
-    if arch == "aarch64" {
+    // #35 ungate: x86 now pulls these too. The layout shift historically tipped a
+    // latent cmlib Hv* hive-write miscompile — now guarded by the targeted
+    // `cmlib-rust` no-prepopulate-passes class-guard in reactos-link, so the ungate
+    // lands on i386/amd64 (driving cport/csq/arbiter/lsalib/rossym to Rust ×3).
+    if arch == "aarch64" || arch == "x86" || arch == "x86_64" {
         static_libs.extend_from_slice(&[
             "sdk/lib/cportlib/libcport_rust.a",
             "sdk/lib/drivers/csq/libcsq_rust.a",

@@ -154,11 +154,12 @@ fn main() {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
 
-    // Rust-flipped cohab archives — ARM64 ONLY (same rationale as ntoskrnl-cargo):
-    // arm64's clean stub-only C archives need them; i386/amd64 resolve from the
-    // cmake C `libX.a` and adding these shifts the link layout, tipping a latent
-    // cmlib Hv* hive-write miscompile (cold amd64 hivewrt HANG). Gate to arm64.
-    if arch == "aarch64" {
+    // Rust-flipped cohab archives. arm64 always (clean stub-only C archives need
+    // them). x86 (#35 ungate): adding these shifts the link layout and historically
+    // tipped a latent cmlib Hv* hive-write miscompile — now guarded by the targeted
+    // `cmlib-rust` no-prepopulate-passes class-guard in reactos-link, so the ungate
+    // can land on i386/amd64 too (driving cport/csq/arbiter/lsalib/rossym to Rust ×3).
+    if arch == "aarch64" || arch == "x86" || arch == "x86_64" {
         static_libs.extend_from_slice(&[
             "sdk/lib/cportlib/libcport_rust.a",
             "sdk/lib/drivers/csq/libcsq_rust.a",
