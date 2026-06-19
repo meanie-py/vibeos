@@ -38,7 +38,10 @@ for i in $(seq 1 "$MAX"); do
         qemu-img create -f qcow2 "$SCR" 64M >/dev/null 2>&1
         export VIBEOS_QEMU_EXTRA="-drive file=$SCR,format=qcow2,if=none,id=scratch -device virtio-blk-pci,drive=scratch -debugcon file:$SCRATCH_DIR/dbg_$i.bin"
     fi
-    RUN=$(bash qemu/start.sh "$ARCH" --gdb 2>/dev/null | tail -1)
+    # --skip-preflight: the runtime symbolicator is nm-based and does NOT need
+    # kernel DWARF, but start.sh's preflight hard-fails on a 0-DWARF kernel —
+    # which is exactly the cohab-port case this tool exists for.
+    RUN=$(bash qemu/start.sh "$ARCH" --gdb --skip-preflight 2>/dev/null | tail -1)
     [ -z "$RUN" ] && { echo "[catch] start.sh failed"; continue; }
     echo "[catch]   run=$RUN"
     SERIAL="$(runid_serial_log "$RUN" 2>/dev/null)"
