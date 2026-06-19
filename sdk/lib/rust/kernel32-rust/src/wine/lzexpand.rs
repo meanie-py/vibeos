@@ -1,12 +1,72 @@
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
+// HeapAlloc/HeapFree are pure ntdll forwarders in kernel32.def (no @N symbol in this
+// module) — they come from the nls_subst.rs Rust wrappers over RtlAllocateHeap/
+// RtlFreeHeap, not from a linkable export. GetProcessHeap IS a real @0 export (below).
+use crate::string::nls_subst::{HeapAlloc, HeapFree};
 
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc( hHeap: *mut core::ffi::c_void, dwFlags: DWORD, dwBytes: usize, ) -> *mut core::ffi::c_void;
-    fn HeapFree( hHeap: *mut core::ffi::c_void, dwFlags: DWORD, lpMem: *mut core::ffi::c_void, ) -> BOOL;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: i32, lpMultiByteStr: LPSTR, cbMultiByte: i32, lpDefaultChar: *const CHAR, lpUsedDefaultChar: *mut BOOL, ) -> i32;
+    // ---- cohab glue: kernel32 Rust exports this module calls (resolved in-crate / via spec) ----
+    fn _hread(hFile: HFILE, lpBuffer: LPVOID, lBytes: LONG) -> LONG;
+    fn _hwrite(hFile: HFILE, lpBuffer: LPCSTR, lBytes: LONG) -> LONG;
+    fn _llseek(hFile: HFILE, lOffset: LONG, iOrigin: c_int) -> LONG;
+    fn _lclose(hFile: HFILE) -> HFILE;
+    fn OpenFile(lpFileName: LPCSTR, lpReOpenBuff: LPOFSTRUCT, uStyle: UINT) -> HFILE;
+    fn MultiByteToWideChar(CodePage: UINT, Flags: DWORD, MultiByteString: LPCSTR, MultiByteCount: INT, WideCharString: LPWSTR, WideCharCount: INT) -> INT;
+    fn GetFileTime(hFile: HANDLE, lpCreationTime: LPFILETIME, lpLastAccessTime: LPFILETIME, lpLastWriteTime: LPFILETIME) -> BOOL;
+    fn SetFileTime(hFile: HANDLE, lpCreationTime: *const FILETIME, lpLastAccessTime: *const FILETIME, lpLastWriteTime: *const FILETIME) -> BOOL;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+}
+
+// ---- cohab glue: Wine debug macros (no-ops, as in the other ported modules) ----
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+
+// ---- cohab glue: LZ error codes (sdk/include/psdk/lzexpand.h) ----
+pub const LZERROR_BADINHANDLE:  INT = -1;
+pub const LZERROR_BADOUTHANDLE: INT = -2;
+pub const LZERROR_READ:         INT = -3;
+pub const LZERROR_WRITE:        INT = -4;
+pub const LZERROR_GLOBALLOC:    INT = -5;
+pub const LZERROR_GLOBLOCK:     INT = -6;
+pub const LZERROR_BADVALUE:     INT = -7;
+pub const LZERROR_UNKNOWNALG:   INT = -8;
+
+// ---- cohab glue: HandleToLong/LongToHandle FORCEINLINE intrinsics (winnt.h) ----
+#[inline]
+unsafe fn LongToHandle(l_long: i32) -> HANDLE {
+    l_long as isize as HANDLE
+}
+
+// ---- cohab glue: lzexpand.c function-like macros, as inline fns ----
+//   _lread/_lwrite are spec forwarders to _hread/_hwrite (no static symbol) — wrap them.
+#[inline]
+unsafe fn _lread(hFile: HFILE, lpBuffer: LPVOID, uBytes: c_int) -> i32 {
+    _hread(hFile, lpBuffer, uBytes as LONG) as i32
+}
+#[inline]
+unsafe fn _lwrite(hFile: HFILE, lpBuffer: *mut CHAR, uBytes: LONG) -> i32 {
+    _hwrite(hFile, lpBuffer as LPCSTR, uBytes) as i32
+}
+#[inline]
+unsafe fn IS_LZ_HANDLE(h: HFILE) -> bool {
+    h >= LZ_MIN_HANDLE && h < LZ_MIN_HANDLE + MAX_LZSTATES as HFILE
+}
+#[inline]
+unsafe fn GET_LZ_STATE(h: HFILE) -> *mut lzstate {
+    if IS_LZ_HANDLE(h) {
+        let arr = core::ptr::addr_of!(lzstates) as *const *mut lzstate;
+        *arr.add((h - LZ_MIN_HANDLE) as usize)
+    } else {
+        core::ptr::null_mut()
+    }
+}
+#[inline]
+unsafe fn GET(lzs: *mut lzstate, b: *mut BYTE) -> c_int {
+    _lzget(lzs, b)
 }
 
 // ---- file-scope preamble (translated) ----
@@ -86,11 +146,11 @@ unsafe fn _lzget(lzs: *mut lzstate, b: *mut BYTE) -> c_int {
 unsafe fn read_header(fd: HFILE, head: *mut lzfileheader) -> INT {
     let mut buf: [BYTE; LZ_HEADER_LEN] = [0; LZ_HEADER_LEN];
 
-    if _llseek(fd, 0, SEEK_SET) == -1 {
+    if _llseek(fd, 0, SEEK_SET as c_int) == -1 {
         return LZERROR_BADINHANDLE;
     }
 
-    if _lread(fd, buf.as_mut_ptr(), LZ_HEADER_LEN) < LZ_HEADER_LEN as LONG {
+    if _lread(fd, buf.as_mut_ptr() as LPVOID, LZ_HEADER_LEN as c_int) < LZ_HEADER_LEN as LONG {
         return 0;
     }
 
@@ -132,7 +192,7 @@ unsafe fn read_header(fd: HFILE, head: *mut lzfileheader) -> INT {
 }
 #[no_mangle]
 pub unsafe extern "system" fn LZStart() -> i32 {
-    TRACE("(void)\n");
+    TRACE!("(void)\n");
     return 1;
 }
 #[no_mangle]
@@ -142,22 +202,22 @@ pub unsafe extern "system" fn LZInit(hfSrc: HFILE) -> HFILE {
     let mut i: i32 = 0;
     let mut ret: i32 = 0;
 
-    TRACE(b"(%d)\n\0".as_ptr() as LPCSTR, hfSrc);
+    TRACE!(b"(%d)\n\0".as_ptr() as LPCSTR, hfSrc);
 
     ret = read_header(hfSrc, &mut head as *mut lzfileheader) as i32;
     if ret <= 0 {
-        _llseek(hfSrc, 0, SEEK_SET);
+        _llseek(hfSrc, 0, SEEK_SET as c_int);
         return if ret != 0 { ret as HFILE } else { hfSrc };
     }
 
     i = 0;
-    while i < MAX_LZSTATES {
+    while (i as usize) < MAX_LZSTATES {
         if lzstates[i as usize].is_null() {
             break;
         }
         i += 1;
     }
-    if i == MAX_LZSTATES {
+    if i as usize == MAX_LZSTATES {
         return LZERROR_GLOBALLOC as HFILE;
     }
 
@@ -196,7 +256,7 @@ pub unsafe extern "system" fn LZInit(hfSrc: HFILE) -> HFILE {
 }
 #[no_mangle]
 pub unsafe extern "system" fn LZDone() {
-    TRACE(b"(void)\n\0" as *const u8 as *const ::core::ffi::c_char);
+    TRACE!(b"(void)\n\0" as *const u8 as *const ::core::ffi::c_char);
 }
 
 #[no_mangle]
@@ -210,7 +270,7 @@ pub unsafe extern "system" fn GetExpandedNameA(in_: LPSTR, out: LPSTR) -> INT {
     let mut s: LPSTR = core::ptr::null_mut();
     let mut t: LPSTR = core::ptr::null_mut();
 
-    TRACE(b"(%s)\n\0".as_ptr() as LPCSTR, in_);
+    TRACE!(b"(%s)\n\0".as_ptr() as LPCSTR, in_);
     fd = OpenFile(in_ as LPCSTR, &raw mut ofs, OF_READ);
     if fd == HFILE_ERROR {
         return LZERROR_BADINHANDLE as INT16 as INT;
@@ -232,7 +292,7 @@ pub unsafe extern "system" fn GetExpandedNameA(in_: LPSTR, out: LPSTR) -> INT {
     }
 
     if *s == 0 {
-        WARN(b"Specified a directory or what? (%s)\n\0".as_ptr() as LPCSTR, in_);
+        WARN!(b"Specified a directory or what? (%s)\n\0".as_ptr() as LPCSTR, in_);
         _lclose(fd);
         return 1;
     }
@@ -284,9 +344,9 @@ pub unsafe extern "system" fn GetExpandedNameW(in_: LPWSTR, out: LPWSTR) -> INT 
         0,
         core::ptr::null(),
         core::ptr::null_mut(),
-    );
-    let xin: LPSTR = HeapAlloc(GetProcessHeap(), 0, len) as LPSTR;
-    let xout: LPSTR = HeapAlloc(GetProcessHeap(), 0, len.wrapping_add(3)) as LPSTR;
+    ) as DWORD;
+    let xin: LPSTR = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+    let xout: LPSTR = HeapAlloc(GetProcessHeap(), 0, len.wrapping_add(3) as usize) as LPSTR;
     WideCharToMultiByte(CP_ACP, 0, in_, -1, xin, len as i32, core::ptr::null(), core::ptr::null_mut());
     ret = GetExpandedNameA(xin, xout);
     if ret > 0 {
@@ -312,17 +372,17 @@ pub unsafe extern "system" fn LZRead(fd: HFILE, vbuf: LPSTR, toread: INT) -> INT
     let mut lzs: *mut lzstate = core::ptr::null_mut();
 
     buf = vbuf as LPBYTE;
-    TRACE("(%d,%p,%d)\n", fd, buf, toread);
+    TRACE!("(%d,%p,%d)\n", fd, buf, toread);
 
     howmuch = toread;
     lzs = GET_LZ_STATE(fd);
     if lzs.is_null() {
-        return _lread(fd, buf, toread);
+        return _lread(fd, buf as LPVOID, toread as c_int);
     }
 
     if (*lzs).realcurrent != (*lzs).realwanted {
         if (*lzs).realcurrent > (*lzs).realwanted {
-            _llseek((*lzs).realfd, LZ_HEADER_LEN as i32, SEEK_SET);
+            _llseek((*lzs).realfd, LZ_HEADER_LEN as i32, SEEK_SET as c_int);
             (*lzs).getcur = (*lzs).getlen;
             (*lzs).realcurrent = 0;
             (*lzs).bytetype = 0;
@@ -418,9 +478,9 @@ pub unsafe extern "system" fn LZRead(fd: HFILE, vbuf: LPSTR, toread: INT) -> INT
 #[no_mangle]
 pub unsafe extern "system" fn LZSeek(fd: HFILE, off: LONG, type_: INT) -> LONG {
     let lzs: *mut lzstate;
-    let newwanted: LONG;
+    let mut newwanted: LONG;
 
-    TRACE(b"(%d,%d,%d)\n\0".as_ptr() as LPCSTR, fd, off, type_);
+    TRACE!(b"(%d,%d,%d)\n\0".as_ptr() as LPCSTR, fd, off, type_);
 
     lzs = GET_LZ_STATE(fd);
     if lzs.is_null() {
@@ -467,7 +527,7 @@ pub unsafe extern "system" fn LZCopy(mut src: HFILE, mut dest: HFILE) -> LONG {
     let mut buf: [CHAR; 1000] = [0; 1000];
     let mut xread: Option<unsafe extern "system" fn(HFILE, LPVOID, UINT) -> UINT> = None;
 
-    TRACE(b"(%d,%d)\n\0" as *const u8 as LPCSTR, src, dest);
+    TRACE!(b"(%d,%d)\n\0" as *const u8 as LPCSTR, src, dest);
 
     if !IS_LZ_HANDLE(src) {
         src = LZInit(src);
@@ -574,7 +634,7 @@ pub unsafe extern "system" fn LZOpenFileA(
     let mut cfd: HFILE = 0;
     let ofs_cBytes: BYTE = (*ofs).cBytes;
 
-    TRACE(
+    TRACE!(
         b"(%s,%p,%d)\0".as_ptr() as LPCSTR,
         fn_0,
         ofs,
@@ -640,7 +700,7 @@ pub unsafe extern "system" fn LZOpenFileW(
 pub unsafe extern "system" fn LZClose(fd: HFILE) {
     let lzs: *mut lzstate;
 
-    TRACE(b"(%d)\n\0".as_ptr() as LPCSTR, fd);
+    TRACE!(b"(%d)\n\0".as_ptr() as LPCSTR, fd);
 
     lzs = GET_LZ_STATE(fd);
     if lzs.is_null() {
@@ -648,7 +708,7 @@ pub unsafe extern "system" fn LZClose(fd: HFILE) {
     } else {
         HeapFree(GetProcessHeap(), 0, (*lzs).get as LPVOID);
         CloseHandle(LongToHandle((*lzs).realfd as i32) as HANDLE);
-        lzstates[(fd as i32 - LZ_MIN_HANDLE) as usize] = core::ptr::null_mut::<*mut lzstate>();
+        lzstates[(fd as i32 - LZ_MIN_HANDLE) as usize] = core::ptr::null_mut::<lzstate>();
         HeapFree(GetProcessHeap(), 0, lzs as LPVOID);
     }
 }
@@ -666,7 +726,7 @@ pub unsafe extern "system" fn LZCreateFileW(
     dwCreationDisposition: DWORD,
     lpString1: LPWSTR,
 ) -> ULONG {
-    WARN(b" LZCreateFileW Not implemented!\n\0" as *const u8 as LPCSTR);
+    WARN!(b" LZCreateFileW Not implemented!\n\0" as *const u8 as LPCSTR);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return ERROR_CALL_NOT_IMPLEMENTED;
 }
@@ -856,7 +916,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 //  */
 // INT WINAPI LZStart(void)
 // {
-//     TRACE("(void)\n");
+//     TRACE!("(void)\n");
 //     return 1;
 // }
 //
@@ -879,7 +939,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	struct	lzstate		*lzs;
 // 	int	i, ret;
 //
-// 	TRACE("(%d)\n",hfSrc);
+// 	TRACE!("(%d)\n",hfSrc);
 // 	ret=read_header(hfSrc,&head);
 // 	if (ret<=0) {
 // 		_llseek(hfSrc,0,SEEK_SET);
@@ -917,7 +977,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 //  */
 // void WINAPI LZDone(void)
 // {
-//     TRACE("(void)\n");
+//     TRACE!("(void)\n");
 // }
 //
 //
@@ -940,7 +1000,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	INT		fnislowercased,ret,len;
 // 	LPSTR		s,t;
 //
-// 	TRACE("(%s)\n",in);
+// 	TRACE!("(%s)\n",in);
 // 	fd=OpenFile(in,&ofs,OF_READ);
 // 	if (fd==HFILE_ERROR)
 // 		return (INT)(INT16)LZERROR_BADINHANDLE;
@@ -962,7 +1022,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	/* now mangle the basename */
 // 	if (!*s) {
 // 		/* FIXME: hmm. shouldn't happen? */
-// 		WARN("Specified a directory or what? (%s)\n",in);
+// 		WARN!("Specified a directory or what? (%s)\n",in);
 // 		_lclose(fd);
 // 		return 1;
 // 	}
@@ -1027,7 +1087,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	struct	lzstate	*lzs;
 //
 // 	buf=(LPBYTE)vbuf;
-// 	TRACE("(%d,%p,%d)\n",fd,buf,toread);
+// 	TRACE!("(%d,%p,%d)\n",fd,buf,toread);
 // 	howmuch=toread;
 // 	if (!(lzs = GET_LZ_STATE(fd))) return _lread(fd,buf,toread);
 //
@@ -1116,7 +1176,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	struct	lzstate	*lzs;
 // 	LONG	newwanted;
 //
-// 	TRACE("(%d,%d,%d)\n",fd,off,type);
+// 	TRACE!("(%d,%d,%d)\n",fd,off,type);
 // 	/* not compressed? just use normal _llseek() */
 //         if (!(lzs = GET_LZ_STATE(fd))) return _llseek(fd,off,type);
 // 	newwanted = lzs->realwanted;
@@ -1163,7 +1223,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 //
 // 	_readfun	xread;
 //
-// 	TRACE("(%d,%d)\n",src,dest);
+// 	TRACE!("(%d,%d)\n",src,dest);
 // 	if (!IS_LZ_HANDLE(src)) {
 // 		src = LZInit(src);
 //                 if ((INT)src <= 0) return 0;
@@ -1236,7 +1296,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // 	HFILE	fd,cfd;
 // 	BYTE    ofs_cBytes = ofs->cBytes;
 //
-// 	TRACE("(%s,%p,%d)\n",fn,ofs,mode);
+// 	TRACE!("(%s,%p,%d)\n",fn,ofs,mode);
 // 	/* 0x70 represents all OF_SHARE_* flags, ignore them for the check */
 // 	fd=OpenFile(fn,ofs,mode);
 // 	if (fd==HFILE_ERROR)
@@ -1279,7 +1339,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 // {
 // 	struct lzstate *lzs;
 //
-// 	TRACE("(%d)\n",fd);
+// 	TRACE!("(%d)\n",fd);
 //         if (!(lzs = GET_LZ_STATE(fd))) _lclose(fd);
 //         else
 //         {
@@ -1314,7 +1374,7 @@ pub unsafe extern "system" fn LZCreateFileW(
 //               IN DWORD dwCreationDisposition,
 //               IN LPWSTR lpString1)
 // {
-//     WARN(" LZCreateFileW Not implemented!\n");
+//     WARN!(" LZCreateFileW Not implemented!\n");
 //     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
 //     return ERROR_CALL_NOT_IMPLEMENTED;
 // }
