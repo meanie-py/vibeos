@@ -18,6 +18,34 @@ fn nt_success(s: NTSTATUS) -> bool {
     s >= 0
 }
 
+/// ntstrsafe.h `RtlStringCbPrintfW` result mapping → NTSTATUS, given the
+/// `_snwprintf`/`_vsnwprintf` return `written` and the dest **byte** capacity
+/// `cb_dest`. ntstrsafe's `RtlStringCbPrintfW` is FORCEINLINE (no exported
+/// symbol) and is just `_vsnwprintf(dest, cchDest-1, fmt, args)` + NUL-handling;
+/// callers invoke `_snwprintf` directly (same crate idiom as client/except.rs's
+/// StringCchPrintfW) and pass the return here. Mirrors StringCbVPrintfWorker:
+/// guarantee a NUL, STATUS_BUFFER_OVERFLOW on truncation, STATUS_INVALID_PARAMETER
+/// when there isn't even room for a NUL.
+#[inline]
+pub unsafe fn rtl_strcbprintf_w_status(written: i32, cb_dest: usize, dest: *mut u16) -> NTSTATUS {
+    let cch_dest = cb_dest / core::mem::size_of::<u16>();
+    if cch_dest == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let cch_max = cch_dest - 1;
+    if written < 0 || (written as usize) > cch_max {
+        // overflow/truncation: NUL-terminate at the end of the buffer
+        *dest.add(cch_max) = 0;
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        // _snwprintf does not NUL-terminate when the output exactly fills count
+        if (written as usize) == cch_max {
+            *dest.add(cch_max) = 0;
+        }
+        STATUS_SUCCESS
+    }
+}
+
 /// RtlStringLengthWorkerW (ntstrsafe.h) — count up to `cch_max` WCHARs.
 #[inline]
 unsafe fn length_worker_w(

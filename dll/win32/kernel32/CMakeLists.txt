@@ -20,7 +20,7 @@ list(APPEND SOURCE
     # client/compname.c — replaced by Rust
     # client/debugger.c — replaced by Rust
     # client/dosdev.c — replaced by Rust
-    client/dllmain.c
+    # client/dllmain.c    — replaced by Rust (kernel32-rust/src/client/dllmain.rs); cohab-linked via libkernel32_rust.a
     # client/environ.c    — replaced by Rust (kernel32-rust/src/client/environ.rs)
     # client/except.c — replaced by Rust
     # client/fiber.c — replaced by Rust
@@ -52,7 +52,7 @@ list(APPEND SOURCE
     # client/console/history.c
     # client/console/init.c
     # client/console/readwrite.c
-    client/file/move.c
+    # client/file/move.c — replaced by Rust (kernel32-rust/src/file/move.rs); cohab-linked via libkernel32_rust.a
     # client/file/tape.c — replaced by Rust (kernel32-rust/src/file/tape.rs); cohab-linked via libkernel32_rust.a
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
     #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,volume}.c — replaced by Rust (kernel32-rust/src/file/)

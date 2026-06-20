@@ -13,6 +13,7 @@ use crate::client::heapmem::BaseDllInitializeMemoryManager;
 use crate::proc_helpers::InitCommandLines;
 use crate::string::nls::{NlsInit, NlsUninit};
 use crate::k32_globals::{BasepAppCertDllsList, gcsAppCert};
+use crate::ntstrsafe::rtl_strcbprintf_w_status;
 
 extern "system" {
     fn CreateRemoteThread( hProcess: HANDLE, lpThreadAttributes: *mut _SECURITY_ATTRIBUTES, dwStackSize: u32, lpStartAddress: PTHREAD_START_ROUTINE, lpParameter: PVOID, dwCreationFlags: u32, lpThreadId: *mut u32, ) -> HANDLE;
@@ -21,7 +22,11 @@ extern "system" {
 
 extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> core::ffi::c_int;
-    fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+    // ntstrsafe RtlStringCbPrintfW is FORCEINLINE (no exported symbol). Call the
+    // CRT _snwprintf directly (same idiom as client/except.rs) and map the result
+    // to NTSTATUS via rtl_strcbprintf_w_status. Both share ReactOS's %wZ-aware
+    // printf engine, so the UNICODE_STRING (%wZ) conversions format correctly.
+    fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
 }
 
 extern "system" {
@@ -30,18 +35,27 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+// NOTE: globals imported by other TUs via `extern "C"` blocks (k32_externs,
+// utils, path, nls, nls_subst) MUST be #[no_mangle] so the cohab flip links —
+// once dllmain.c is gone, these Rust defs are the sole providers of the C symbols.
+#[no_mangle]
 pub static mut BaseStaticServerData: PBASE_STATIC_SERVER_DATA =
     ::core::ptr::null::<_BASE_STATIC_SERVER_DATA>() as *mut _BASE_STATIC_SERVER_DATA;
 
+#[no_mangle]
 pub static mut BaseRunningInServerProcess: BOOLEAN = FALSE as BOOLEAN;
 
+// dllmain-internal (no external importer) — no #[no_mangle] needed.
 pub static mut BaseDefaultPathBuffer: [WCHAR; 6140] = [0; 6140];
 
+#[no_mangle]
 pub static mut BaseNamedObjectDirectory: HANDLE =
     ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void;
 
+#[no_mangle]
 pub static mut hCurrentModule: HMODULE = ::core::ptr::null::<HINSTANCE__>() as *mut HINSTANCE__;
 
+#[no_mangle]
 pub static mut kernel32_handle: HMODULE = ::core::ptr::null::<HINSTANCE__>() as *mut HINSTANCE__;
 
 pub static mut Peb: PPEB = ::core::ptr::null::<_PEB>() as *mut _PEB;
@@ -50,6 +64,18 @@ pub static mut SessionId: ULONG = 0;
 
 static mut DllInitialized: BOOL = FALSE;
 
+// ARM64-only: CSRSS may be unavailable during early native boot. Matches the
+// C `#ifdef _M_ARM64` globals in dllmain.c (BaseCsrConnectionEstablished is
+// imported by proc_create.rs:2215 under the same cfg).
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub static mut BaseCsrConnectionEstablished: BOOLEAN = FALSE as BOOLEAN;
+
+#[cfg(target_arch = "aarch64")]
+static mut BaseStaticServerDataFallback: ::core::mem::MaybeUninit<_BASE_STATIC_SERVER_DATA> =
+    ::core::mem::MaybeUninit::uninit();
+
+#[no_mangle]
 pub static mut BaseDllDirectoryLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
     DebugInfo: ::core::ptr::null::<_RTL_CRITICAL_SECTION_DEBUG>()
         as *mut _RTL_CRITICAL_SECTION_DEBUG,
@@ -170,31 +196,86 @@ pub unsafe extern "system" fn DllMain(
                     Status,
                     (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
                 );
-                NtTerminateProcess(NtCurrentProcess(), Status);
-                return FALSE;
+                // ARM64: continue without a CSRSS connection (native process);
+                // every other arch terminates. (dllmain.c #ifdef _M_ARM64)
+                #[cfg(target_arch = "aarch64")]
+                {
+                    DbgPrint(
+                        b"ARM64: Continuing without CSRSS connection\n\0".as_ptr() as *const i8,
+                    );
+                }
+                #[cfg(not(target_arch = "aarch64"))]
+                {
+                    NtTerminateProcess(NtCurrentProcess(), Status);
+                    return FALSE;
+                }
+            } else {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    BaseCsrConnectionEstablished = TRUE as BOOLEAN;
+                }
             }
 
-            if (*Peb).ReadOnlyStaticServerData.is_null() {
-                RtlAssert(
-                    b"Peb->ReadOnlyStaticServerData\0".as_ptr() as *const i8 as PVOID,
-                    b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
-                    186u32,
-                    core::ptr::null_mut(),
-                );
+            // Get the server data. On ARM64 ReadOnlyStaticServerData may be
+            // absent during native boot → synthesize a minimal fallback rather
+            // than asserting. (dllmain.c #ifdef _M_ARM64)
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                if (*Peb).ReadOnlyStaticServerData.is_null() {
+                    RtlAssert(
+                        b"Peb->ReadOnlyStaticServerData\0".as_ptr() as *const i8 as PVOID,
+                        b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
+                        186u32,
+                        core::ptr::null_mut(),
+                    );
+                }
+
+                BaseStaticServerData = *(*Peb)
+                    .ReadOnlyStaticServerData
+                    .offset(BASESRV_SERVERDLL_INDEX as isize)
+                    as PBASE_STATIC_SERVER_DATA;
+
+                if BaseStaticServerData.is_null() {
+                    RtlAssert(
+                        b"BaseStaticServerData\0".as_ptr() as *const i8 as PVOID,
+                        b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
+                        188u32,
+                        core::ptr::null_mut(),
+                    );
+                }
             }
-
-            BaseStaticServerData = *(*Peb)
-                .ReadOnlyStaticServerData
-                .offset(BASESRV_SERVERDLL_INDEX as isize)
-                as PBASE_STATIC_SERVER_DATA;
-
-            if BaseStaticServerData.is_null() {
-                RtlAssert(
-                    b"BaseStaticServerData\0".as_ptr() as *const i8 as PVOID,
-                    b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
-                    188u32,
-                    core::ptr::null_mut(),
-                );
+            #[cfg(target_arch = "aarch64")]
+            {
+                if !(*Peb).ReadOnlyStaticServerData.is_null() {
+                    BaseStaticServerData = *(*Peb)
+                        .ReadOnlyStaticServerData
+                        .offset(BASESRV_SERVERDLL_INDEX as isize)
+                        as PBASE_STATIC_SERVER_DATA;
+                }
+                if BaseStaticServerData.is_null() {
+                    DbgPrint(
+                        b"ARM64: ReadOnlyStaticServerData not available, using fallback\n\0".as_ptr()
+                            as *const i8,
+                    );
+                    BaseStaticServerDataFallback = ::core::mem::MaybeUninit::zeroed();
+                    let fallback = BaseStaticServerDataFallback.as_mut_ptr();
+                    NtQuerySystemInformation(
+                        SystemBasicInformation,
+                        core::ptr::addr_of_mut!((*fallback).SysInfo) as *mut core::ffi::c_void,
+                        core::mem::size_of_val(&(*fallback).SysInfo) as u32,
+                        core::ptr::null_mut(),
+                    );
+                    RtlInitUnicodeString(
+                        core::ptr::addr_of_mut!((*fallback).WindowsDirectory),
+                        w!("\\reactos").as_ptr(),
+                    );
+                    RtlInitUnicodeString(
+                        core::ptr::addr_of_mut!((*fallback).WindowsSystemDirectory),
+                        w!("\\reactos\\system32").as_ptr(),
+                    );
+                    (*fallback).TermsrvClientTimeZoneId = TIME_ZONE_ID_INVALID as ULONG;
+                    BaseStaticServerData = fallback;
+                }
             }
 
             if BaseRunningInServerProcess == 0 {
@@ -209,13 +290,19 @@ pub unsafe extern "system" fn DllMain(
             BaseWindowsDirectory = (*BaseStaticServerData).WindowsDirectory;
             BaseWindowsSystemDirectory = (*BaseStaticServerData).WindowsSystemDirectory;
 
-            Status = RtlStringCbPrintfW(
+            let cb_dest = core::mem::size_of::<[WCHAR; 6140]>();
+            let written = _snwprintf(
                 BaseDefaultPathBuffer.as_mut_ptr(),
-                core::mem::size_of::<[WCHAR; 6140]>(),
+                (cb_dest / core::mem::size_of::<WCHAR>()).saturating_sub(1),
                 w!("%wZ;%wZ\\system;%wZ;\0").as_ptr() as *const u16,
-                &mut BaseWindowsSystemDirectory,
-                &mut BaseWindowsDirectory,
-                &mut BaseWindowsDirectory,
+                core::ptr::addr_of!(BaseWindowsSystemDirectory),
+                core::ptr::addr_of!(BaseWindowsDirectory),
+                core::ptr::addr_of!(BaseWindowsDirectory),
+            );
+            Status = rtl_strcbprintf_w_status(
+                written,
+                cb_dest,
+                BaseDefaultPathBuffer.as_mut_ptr(),
             );
 
             if !NT_SUCCESS(Status) {
