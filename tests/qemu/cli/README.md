@@ -166,6 +166,19 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
+### `prune [--apply] [--self] [--idle-hours N]`
+Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
+Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
+fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
+~150 G across worktrees, most of it idle). **Dry-run by default** — prints what
+*would* be freed and why each tree is kept; deletes nothing without `--apply`.
+Hard safety gates: never a worktree with a **live QEMU** (same lock files `ps`
+reads), never one with a **running ninja/cargo/rustc/clang/lld**, never the
+**current** worktree unless `--self`. `--idle-hours N` additionally protects any
+tree touched in the last N hours (recommended — the live gates are instantaneous,
+so an actively-worked lane that just isn't building *this second* otherwise looks
+prunable). Only ever removes the build/target dirs, never source or the worktree.
+
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
 lints the *kernel* source. Runs, over the whole vibeos-cli tool surface

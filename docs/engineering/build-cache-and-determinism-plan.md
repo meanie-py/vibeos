@@ -209,6 +209,73 @@ fresh build hits issues the copied (already-built) tree never does:
 → So the cache's proven win today is **rebuild + smoke-nuke acceleration inside an existing
 build dir**, not (yet) retiring the copy. Keep the copy recipe.
 
+## Disk-first reframing (2026-06-20) — GC, not dedup
+
+User priority clarified: **(1) disk space, (2) the non-standard ntoskrnl/win32k build is
+error-prone, (3) determinism is a strong nice-to-have that makes both simpler.** Speed is
+*not* a priority (the Ryzen 9 crushes it — though it likely under-uses cores during the
+serial-ish cargo-kernel link phase; parked).
+
+Measured the real footprint (2026-06-20, this machine, 16 worktrees):
+
+| thing | size | dedup-able? |
+|---|---|---|
+| C/C++ objects in `build-i386` | **0.3 G** (5881 `.obj`) | yes, but negligible → **hardlinks are a dud** |
+| `build-i386` total | 6.2 G | no — bulk is *linked* `dll/` (2.2 G) + `drivers/` (1.5 G) + generated headers; differ per branch |
+| Rust target (`sdk/lib/rust/target`) | **26 G** | no — cargo target isn't content-addressed; **the monster** |
+| **Σ build+target across all 16 worktrees** | **~150 G** | — |
+
+**Conclusion that flips the plan: the cache cannot dedup the big artifacts** (objects are
+0.3 G; the 26 G Rust target + linked C outputs are per-branch and uncacheable as *files*).
+So the disk win is **not** content-addressed file-sharing — it's **garbage-collecting
+idle worktrees' build+target trees**, with the shared cache as the *enabler* that makes a
+GC'd tree cheap to regenerate (sccache 100% Rust hits + ccache 73–86% C, already proven).
+
+Reframed model:
+- **Cache = the durable, shared, content-addressed, concurrent-safe store** (built).
+- **Build trees = ephemeral scratch** — GC an idle lane's 26–42 G freely; the cache
+  rehydrates on next build. Disk per idle worktree → ~0.
+- **De-risks #2 for free:** a GC'd-then-regenerated tree can't be stale — it's rebuilt from
+  the cache keyed on *current* source. Determinism makes that regen byte-identical and
+  cross-worktree-shareable (the hit-rate multiplier + reproducible-binary proof).
+
+**Hardlinks (`CCACHE_HARDLINK`) dropped** — measured 0.3 G of objects, not worth it.
+
+### Can the *linked* outputs (dll/, drivers/) dedup across worktrees? — measured
+
+Yes in principle (filesystem hardlinks; ext4 here = no reflinks but hardlinks work), but the
+yield today is small and determinism-gated. `hardlink --dry-run` across the 5 worktrees that
+have a `build-i386` (**31 G** combined): **saved 3.94 GiB (~13%)**, not the ~90% you'd expect
+from "most binaries are untouched per lane."
+
+**Why only 13%:** the binaries aren't byte-identical even when logically the same. Linked
+outputs embed the **worktree's absolute path** (debug info `-g`/`__FILE__`/assert strings) and
+a **PE build timestamp** — so the *same* `advapi32.dll` built in two worktrees differs in those
+bytes → different content → won't dedup. These are exactly determinism-ladder rungs 2–3
+(`SOURCE_DATE_EPOCH`, `--no-insert-timestamp`, `--remap-path-prefix`).
+
+**Consequence — determinism moves onto the DISK critical path, not just #2.** It's the
+multiplier that raises the cross-worktree dedup ceiling from ~13% toward the ~90%-identical
+reality (same for the 26 G Rust target — rlibs embed paths too, fixed by the deferred
+`--remap-path-prefix`-via-config.toml). So the sequencing is: GC first (big, determinism-
+independent) → determinism rungs (cheap, unlock dedup + de-risk #2) → a `hardlink` dedup pass
+last, when it's finally worth it. (`hardlink` caveat: shared inode → any in-place post-link
+mutation corrupts all copies; safe only because builds write-fresh — gate to leaf artifacts.)
+
+### Disk-first build order
+
+1. **`vibeos-cli prune` (the disk win).** GC build-`<arch>`/ + Rust target dirs for idle
+   worktrees. Safety gates (non-negotiable, cross-lane destructive): **dry-run by default**;
+   never touch a worktree with a **live QEMU** (`qemu/ps` lock check) or a **running
+   ninja/cargo**; LRU/idle heuristic (mtime); never the current worktree without `--self`.
+   Reclaims ~110 G of the 150 G today.
+2. **Cache default-on** (finish item (c) gate) so regeneration after a prune is cheap.
+3. **Fix fresh-worktree friction** (header race, `llvm-mingw` symlink, link cascade — see
+   Measurements §1–3) so a *fully* pruned worktree rebuilds clean → also retires `cp -a`.
+4. **Determinism rungs** (`SOURCE_DATE_EPOCH`, `--remap-path-prefix` via config.toml,
+   lld `--no-insert-timestamp`) → cross-worktree byte-identity + reproducible-kernel proof,
+   which is the principled fix for #2.
+
 ## Staged rollout (measure first, promise later)
 
 1. ✅ **Baseline.** ccache 4.5.1 + sccache 0.8.2 installed. (Cold-build/copy reference times

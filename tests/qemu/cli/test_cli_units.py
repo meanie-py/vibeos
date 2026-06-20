@@ -459,3 +459,63 @@ def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
     third._acquire_arch_slot()
     assert third._arch_slot_fd is not None
     third._release_slot()
+
+
+# --- prune: idle-worktree GC eligibility gates -----------------------------
+from . import prune  # noqa: E402
+
+
+def _classify(
+    wt,
+    current,
+    *,
+    live_qemu=None,
+    active_build=None,
+    allow_self=False,
+    min_age_hours=0.0,
+    now=1000.0,
+    newest_mtime=None,
+):
+    return prune.classify(
+        Path(wt),
+        current=Path(current),
+        live_qemu=live_qemu or set(),
+        active_build=active_build or set(),
+        allow_self=allow_self,
+        min_age_hours=min_age_hours,
+        now=now,
+        newest_mtime=newest_mtime,
+    )
+
+
+def test_prune_gates_current_live_and_build():
+    # current worktree is protected unless --self
+    assert _classify("/wt/a", "/wt/a") == "current worktree (use --self)"
+    assert _classify("/wt/a", "/wt/a", allow_self=True) is None
+    # live QEMU and in-flight build are hard skips
+    assert _classify("/wt/b", "/wt/a", live_qemu={Path("/wt/b")}) == "live QEMU running"
+    assert _classify("/wt/b", "/wt/a", active_build={Path("/wt/b")}) == "build in flight"
+    # otherwise prunable
+    assert _classify("/wt/b", "/wt/a") is None
+
+
+def test_prune_idle_hours_filter():
+    now = 100_000.0
+    # touched 1h ago, threshold 24h -> held
+    assert (
+        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 3600)
+        == "touched < 24h ago"
+    )
+    # touched 48h ago, threshold 24h -> prunable
+    assert (
+        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 48 * 3600) is None
+    )
+    # threshold 0 disables the age gate even with a fresh mtime
+    assert _classify("/wt/b", "/wt/a", min_age_hours=0, now=now, newest_mtime=now) is None
+
+
+def test_prune_attribute_longest_match_wins():
+    wts = [Path("/wt"), Path("/wt/nested")]
+    assert prune._attribute("/wt/nested/build-i386/x.o", wts) == Path("/wt/nested")
+    assert prune._attribute("/wt/build-i386/x.o", wts) == Path("/wt")
+    assert prune._attribute("/elsewhere/x", wts) is None

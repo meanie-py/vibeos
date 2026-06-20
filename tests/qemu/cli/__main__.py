@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import build as build_mod
 from . import cargoswap, debugcmd, tooling
+from . import prune as prune_mod
 from . import smoke as smoke_mod
 from .archcfg import ACCEPTED_ARCHES
 
@@ -135,6 +136,19 @@ def build_parser() -> argparse.ArgumentParser:
     ct.add_argument("--no-types", action="store_true", help="skip pyright")
     ct.add_argument("--no-tests", action="store_true", help="skip pytest")
     ct.set_defaults(fn=tooling.check_tooling)
+
+    pr = sub.add_parser(
+        "prune", help="reclaim disk: GC idle worktrees' build+target dirs (dry-run by default)"
+    )
+    pr.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
+    pr.add_argument("--self", action="store_true", help="also allow pruning the current worktree")
+    pr.add_argument(
+        "--idle-hours",
+        type=float,
+        default=0,
+        help="only prune trees untouched for at least N hours (default 0 = no age filter)",
+    )
+    pr.set_defaults(fn=prune_mod.prune)
 
     return p
 
