@@ -1603,6 +1603,13 @@ name = "usbdex-rust"
 version = "0.1.0"
 
 [[package]]
+name = "user32-rust"
+version = "0.1.0"
+dependencies = [
+ "win32k-sys",
+]
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
