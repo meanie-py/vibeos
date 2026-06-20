@@ -27,18 +27,16 @@ fn main() {
     //   - asm: the per-arch `.S` set the cmake kernel target compiles
     //   - cnt_float: cnt-rust-lib `float` feature — i386 omits it (no-SSE
     //     softfloat kernel), amd64/arm64 enable it (libcntpr.cmake CNT_RUST_*).
-    //   - hal_dir: hal/halx86 (i386+amd64) vs hal/halarm64 (arm64).
     // (libchkstk.a DROPPED 2026-06-20: the i386 cntpr_asm below assembles
     // chkstk_asm.s — which PUBLICs all 4 stack-probe symbols __chkstk/
     // __alloca_probe/__alloca_probe_16/___alloca — and clang_rt.builtins covers
     // __chkstk on amd64/arm64, so the ReactOS libchkstk.a was redundant.)
-    let (rust_target, res, entry, asm, cnt_float, hal_dir): (
+    let (rust_target, res, entry, asm, cnt_float): (
         &str,
         &str,
         &str,
         Vec<&str>,
         bool,
-        &str,
     ) = match arch.as_str() {
         "x86" => (
             "i686-kernel.json",
@@ -53,7 +51,6 @@ fn main() {
                 "ntoskrnl/ke/i386/usercall_asm.S",
             ],
             false,
-            "halx86",
         ),
         "x86_64" => (
             "x86_64-kernel.json",
@@ -68,7 +65,6 @@ fn main() {
                 "ntoskrnl/ke/amd64/zeropage.S",
             ],
             true,
-            "halx86",
         ),
         "aarch64" => (
             "aarch64-pc-windows-gnullvm",
@@ -82,13 +78,11 @@ fn main() {
                 "ntoskrnl/ke/arm64/zwdispatch.S",
             ],
             true,
-            "halarm64",
         ),
         o => panic!("ntkrnlmp-cargo: unsupported arch {o}"),
     };
 
     let cnt_feats: &[&str] = if cnt_float { &["float"] } else { &[] };
-    let hal_lib = format!("hal/{hal_dir}/CMakeFiles/libhal.dir/libhal.a");
 
     // Header-free C shims (no kernel -I; clang's own stdarg/stddef/stdint).
     // kdbg_rust_shims.c is x86-only — it references the kdbg pager symbols
@@ -158,7 +152,11 @@ fn main() {
         // wdmguid/poguid/ioevent (the 3 cmake C GUID libs) → `guids-rust`
         // (.rust_lib below): 217 deduped #[no_mangle] GUID data constants. C
         // kept on disk for any remaining cmake consumers.
-        &hal_lib,
+        // libhal.a (the cmake-built hal.dll IMPORT lib) DROPPED 2026-06-20 — the
+        // kernel now self-hosts the hal import from hal.spec via .import_lib
+        // below (the classpnp/win32k pattern). hal.dll itself is 100% hal-rust
+        // (cargo-driven); this was only the import library (95 short-import
+        // members → hal.dll), not a HAL body.
         "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
         "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
     ];
@@ -359,6 +357,10 @@ fn main() {
     if arch == "x86_64" {
         linker = linker.rust_lib("setjmp-rust", &[], true);
     }
+    // Self-host the hal.dll import lib from hal.spec (replaces the dropped
+    // cmake-built libhal.a import lib) — the classpnp/win32k pattern. The shared
+    // hal/hal.spec serves all 3 arches (halx86 + halarm64 both spec2def it).
+    linker = linker.import_lib("hal/hal.spec", "hal.dll", "hal");
     linker
         .static_libs(&static_libs)
         .link(ModuleKind::KernelExe {
