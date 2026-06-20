@@ -5,16 +5,18 @@
 C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
 all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
 smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` **11/11** on amd64).
-**M7 (arm64 net data path) — CORE GREEN on arm64, one TX bug open.** arm64 was staged-but-inert;
-now (on `netstack-arm64-m7`, `arm64-net` config) netstack.sys loads, the new arm64-HAL ECAM
-enumerates the NIC, the virtio handshake + DMA work, and the smoltcp core runs: **M1 ARP, DHCP
-lease, ICMP ping, and TDI device ownership are all GREEN on arm64.** Required fixing two things:
-the arm64 HAL `HalGetBusData*` no-op stubs (real ECAM PCI config), and the arm64 kernel skipping
-ALL Start=1 drivers (it now explicitly loads the netstack service). OPEN follow-up: on arm64
-smoltcp never resolves a **new on-link neighbour** — broadcast + already-resolved-gateway traffic
-(DHCP/ARP-gw/ICMP) egresses fine (`can_send` stays true), but the ARP for a *new* host (DNS's
-10.0.2.3, TCP's 10.0.2.100) never goes out, so DNS + outbound TCP stall. Suspect `now()` skew or
-the CIDR/route (plus a thread=multi-only engine stall). See the M7 Remaining-open entry for detail.
+**M7 (arm64 net data path) — DATA PATH GREEN on arm64.** netstack.sys loads (on
+`netstack-arm64-m7`, `arm64-net` config), the new arm64-HAL ECAM enumerates the NIC, virtio +
+DMA work, and the **full smoltcp data path runs: ARP, DHCP, ICMP, DNS, outbound TCP, and both
+TDI round-trips (TCP RECEIVE + UDP datagram) are GREEN — `test_net.py --arch arm64-net` 9/11**,
+and the regular arm64 boot is stable 3/3. Three fixes were needed: (1) the arm64 HAL
+`HalGetBusData*` no-op stubs → real ECAM PCI config; (2) the arm64 kernel skipping ALL Start=1
+drivers → it now explicitly loads the netstack service; (3) **the killer — arm64
+`KUSER_SHARED_DATA.InterruptTime` never advances** (no periodic clock interrupt → no
+`KeUpdateSystemTime`), so netstack's `now()` froze smoltcp's clock and every retransmit /
+new-neighbour-ARP timer stalled; fixed by reading `cntvct_el0` (`KeQueryPerformanceCounter`)
+instead (`72e062966f3`). Open (narrow, not the data path): inbound tcp-echo server +
+`nettest.exe` not staged for the arm64 usermode-winsock test. See the M7 Remaining-open entry.
 The earlier "usermode-winsock blocker root-caused to a *storage* driver" was superseded — the
 true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
 **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`: IsBad{Read,Write,String}Ptr reported every
@@ -237,7 +239,7 @@ All milestones landed (commits on `netstack-port`):
 | M4 | TDI dispatch (Rust) + completion bridge; **TCP via AFD/ws2_32** | TDI TCP round-trip via the real AFD path | ✅ `45ce3ffdb8e` (kernel TDI self-test; usermode winsock blocked on the storage 0x50) |
 | M5 | UDP via AFD; usermode dhcp/dns services over smoltcp | UDP datagram round-trip via the AFD datagram-event model | ✅ `b9127eb3e7c` (transport done; usermode-winsock vehicle built `349043e91b9`, blocked on the storage 0x50) |
 | M6 | `netstack.sys` cargo cutover; old `tcpip` ip/lwip removed from build | net green; boot smoke green ×3 arches | ✅ `0ad0e4e59dd` (+ crp merge `810d513d3c8`) |
-| M7 | arm64 net data path: ECAM PCI config in arm64 HAL + Start=1 load fix + `arm64-net` config | netstack loads + enumerates NIC + ARP/DHCP/ICMP/TDI green on arm64 | 🟢 core GREEN (`a210ee02856`+`ab442a59122`); ⚠️ new-on-link-neighbour ARP doesn't egress → dns/outbound-tcp open (M7 follow-up) |
+| M7 | arm64 net data path: ECAM PCI config + Start=1 load fix + cntvct clock fix + `arm64-net` config | netstack loads + NIC enum + ARP/DHCP/ICMP/DNS/TCP/TDI green on arm64 | 🟢 **DATA PATH GREEN** — `test_net.py --arch arm64-net` 9/11 (`a210ee02856`+`ab442a59122`+`72e062966f3`); regular arm64 boot 3/3. Open: inbound tcp-echo + usermode-winsock staging |
 
 The kernel TDI self-tests (`tditest.rs` TCP, `tdidgtest.rs` UDP) drive netstack's own
 `\Device\Tcp`/`\Device\Udp` through the *exact* IRP path AFD uses, so M4/M5 are proven at
@@ -282,28 +284,33 @@ Remaining open:
   arm64 (`ab442a59122`); (3) `livecd_hives`+`netstack` wired into the arm64 `ArchBuild`. Boot
   result: `netstack.sys` loads, ECAM enumerates the NIC, virtio handshake + DMA work, and the
   smoltcp core runs — **M1 ARP, DHCP lease, ICMP ping, TDI device ownership all GREEN on arm64.**
-  - **OPEN (M7 follow-up): smoltcp never resolves a NEW on-link neighbor on arm64.** DNS
-    (10.0.2.3) and outbound TCP (10.0.2.100) never complete. Per-frame TX instrumentation
-    *corrected the earlier theory* (it is NOT TX-queue exhaustion): the engine's sends are
-    tx#0 DHCP-discover, #1 DHCP-request, #2 ARP-for-gateway, #3 ICMP — all `send_ok=true`,
-    `can_send_after=true`. Every one targets **broadcast** or the **already-resolved gateway
-    (10.0.2.2)**. When smoltcp then needs to reach a *new* on-link host (.3 / .100) it must emit
-    a fresh ARP request — and that ARP never egresses (no tx#4 in the pcap), so the DNS query /
-    TCP SYN stay queued forever. So reply-driven exchanges to the gateway work; new-neighbour
-    discovery does not. Suspects: `now()` (KUSER InterruptTime read) granularity/skew on arm64
-    breaking smoltcp's neighbour-cache ARP rate-limiter, or the interface CIDR/route. Plus a
-    *second, thread=multi-only* symptom: the engine worker stops looping after ping (no heartbeat
-    under `tcg,thread=multi`, but runs to 1.85M iters under `=single`) — a virtio DMA ordering
-    race between QEMU's device thread and the vCPU. Next: instrument smoltcp's neighbour cache /
-    log `now()` advancement + the assigned IPv4 CIDR; bisect the thread=multi engine stall.
-  - **OPEN (M7 landing-blocker): arm64 boot hangs at a netstack thread exit (`LpcExitThread`).**
-    Because netstack now loads on *all* arm64 boots (Start=1 fix), the regular arm64 smoke
-    (default QEMU NIC) hangs when a netstack TDI self-test thread exits — last serial is
-    `[PS] PspExitThread: about to call LpcExitThread`, never reaching the desktop. arm64-net
-    reached the desktop, so it may be timing-dependent. Likely a pre-existing arm64 kernel
-    thread-exit/LPC bug that netstack is the first to trigger (first driver to spawn + exit
-    system threads during arm64 boot). Must be resolved before M7 lands (it would regress the
-    regular arm64 smoke). Triage with the kernel-debug toolkit (break in `LpcExitThread`).
+  - **✅ FIXED — arm64 DNS + outbound TCP + TDI round-trips (`72e062966f3`).** ROOT CAUSE: the
+    arm64 **system clock doesn't advance** — `KUSER_SHARED_DATA.InterruptTime` sits at 0 (no
+    periodic clock interrupt is wired to `KeUpdateSystemTime` on this port). netstack's `now()`
+    read it, so smoltcp's whole clock was frozen: reply-driven exchanges (DHCP/ICMP) worked, but
+    anything needing time to pass — neighbour-cache ARP for a NEW on-link host, ARP/DNS/TCP
+    retransmit timers — never fired, so DNS (10.0.2.3) + outbound TCP (10.0.2.100) stalled (the
+    fresh ARP never egressed). Confirmed with a dual probe: over `delay_ms(500)`, KUSER advanced
+    0 while the cntvct perf counter advanced ~35ms. FIX: arm64 `now()` reads the ARM generic
+    timer (`cntvct_el0` via `KeQueryPerformanceCounter`, a real 62.5 MHz counter) instead. Result:
+    `test_net.py --arch arm64-net` **9/11** (was 5/7) — DNS, outbound TCP, **TDI TCP RECEIVE OK**,
+    **TDI UDP datagram** all GREEN. (NB: `delay_ms`/`KeDelayExecutionThread` still rely on the
+    dead InterruptTime so they don't honour the requested duration — the proper kernel/HAL fix is
+    to wire a periodic arm64 clock interrupt → `KeUpdateSystemTime`, which would benefit ALL arm64
+    timing; tracked separately.)
+  - **✅ FIXED (same commit) — the regular arm64 boot is stable again.** The earlier "boot hangs
+    at `LpcExitThread`" was NOT a hang there (`PspExitThread` runs to completion); it was a timing
+    perturbation from netstack's TDI self-tests 10s-timing-out because the dead clock froze their
+    wait timers. With `now()` fixed the timers work, the self-tests finish fast, and the regular
+    arm64 smoke reaches the desktop **3/3** (was flaky).
+  - **OPEN (narrow M7 follow-ups, not the data path):** (a) `test_tcp_echo_roundtrip` — host→guest
+    *inbound* echo server times out on arm64 (the guest announces `tcp echo ready` and outbound
+    works, but inbound accept doesn't complete); server-side path. (b) `test_usermode_winsock_roundtrip`
+    — `nettest.exe` is built for arm64 but not staged on the ramdisk (`mkramdisk.sh`), so the full
+    ws2_32→msafd→AFD→netstack usermode chain is unexercised on arm64.
+  - **OPEN (proper kernel fix):** wire a periodic arm64 clock interrupt → `KeUpdateSystemTime` so
+    `InterruptTime`/`delay_ms`/all timer-based kernel paths work on arm64 (currently only the
+    cntvct perf counter advances). Benefits all arm64 work, not just netstack.
 - **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads;
   server-side TCP (TDI_LISTEN/TDI_ACCEPT — netstack is outbound-client-only today).
 
