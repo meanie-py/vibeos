@@ -303,11 +303,13 @@ Remaining open:
     perturbation from netstack's TDI self-tests 10s-timing-out because the dead clock froze their
     wait timers. With `now()` fixed the timers work, the self-tests finish fast, and the regular
     arm64 smoke reaches the desktop **3/3** (was flaky).
-  - **OPEN (narrow M7 follow-ups, not the data path):** (a) `test_tcp_echo_roundtrip` — host→guest
+  - **OPEN (M7 follow-ups beyond the kernel data path):** (a) `test_tcp_echo_roundtrip` — host→guest
     *inbound* echo server times out on arm64 (the guest announces `tcp echo ready` and outbound
     works, but inbound accept doesn't complete); server-side path. (b) `test_usermode_winsock_roundtrip`
-    — `nettest.exe` is built for arm64 but not staged on the ramdisk (`mkramdisk.sh`), so the full
-    ws2_32→msafd→AFD→netstack usermode chain is unexercised on arm64.
+    — the whole usermode winsock stack is absent from the arm64 ramdisk: `afd.sys`, `msafd.dll`,
+    `mswsock.dll` and `nettest.exe` are all unstaged (only `ws2_32.dll`/`ws2help.dll` are present),
+    and `afd.sys` (Start=1) would need the same explicit arm64-load as netstack. So the full
+    ws2_32→msafd→AFD→netstack usermode chain is unexercised on arm64 — a separate chunk of work.
   - **OPEN (proper kernel fix):** wire a periodic arm64 clock interrupt → `KeUpdateSystemTime` so
     `InterruptTime`/`delay_ms`/all timer-based kernel paths work on arm64 (currently only the
     cntvct perf counter advances). Benefits all arm64 work, not just netstack.
