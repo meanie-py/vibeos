@@ -121,9 +121,17 @@ pattern. **hal.dll reached ZERO cmake `.static_libs()` `.a` (commit
 (libsetjmp/libarbiter/libchkstk) were inert vestigial (drop-test EMPTY) and
 dropped outright. **Every cargo-linked kernel-mode module is now a fully
 cargo-native CRT floor on all 3 arches** (libcntpr/libpseh/libchkstk/libmemcmp/
-libcntpr_rust + setjmp/arbiter eliminated from every cargo cut). What remains is
-boot-critical (uefildr/rosload bootloaders keep genuine mini_hal+libcntpr), or
-active other-agent lanes (kernel ntoskrnl/ntkrnlmp floor, winsrv, ntdll librtl).
+libcntpr_rust + setjmp/arbiter eliminated from every cargo cut).
+**Kernel-floor cohab cleanup (commit `e8765d21008`, 2026-06-20, ×3-green incl.
+amd64 cold — the cmlib #35 area held):** the 5 driver/serial cohabs
+(cportlib/csq/arbiter/lsalib/rossym) went cargo-native `.rust_lib`, dropping 10
+cmake `.a` from the kernel `static_libs` (5 empty C-body stubs + 5 cmake-built
+`libX_rust.a`). The cmlib-rust no-prepopulate class-guard survived the layout
+shift (0 hivewrt failures, amd64 cold ✓boot ✓net). What remains on the kernel
+`static_libs` is the genuine cohab floor — libntoskrnl_vista, libcmlib
+(placeholder TU), librtl, libhal, libkdcom, libbootvid, libchkstk (i386/arm64) —
+plus boot-critical bootloader C (uefildr/rosload mini_hal+libcntpr) and the
+winsrv / ntdll-librtl lanes.
 
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
 
@@ -138,23 +146,23 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | ~~`sdk/lib/crt/libcntpr_rust.a`~~ | — (no cargo consumers) | **Already Rust** (cmake-built from `cnt-rust`). **2026-06-20 ground-truth re-verify: ZERO cargo modules reuse it** — framebuf (`.rust_lib("cnt-rust-lib")`), kdgdb/kdvm/kdcom-serial (`.rust_lib` + `c_from_compile_db`, commits `afaba999919`/`d7e2d90bd83`), classpnp/ntdll/kernel/hal/winsrv/win32k all on the cargo-native `cnt-rust-lib`. The cmake `.a` survives only for non-cargo cmake consumers. |
 | ~~`sdk/lib/crt/libmemcmp.a`~~ | — (no cargo consumers) | One C fn → compiler-builtins-mem (build-std). **2026-06-20 ground-truth re-verify: ZERO cargo modules reuse it** — bootvid (fully zero-`.a`) + kdcom/kdgdb/kdvm (commits `afaba999919`/`d7e2d90bd83`) dropped it alongside the earlier 8 + hal + win32k. The cmake `.a` survives only for non-cargo cmake consumers. |
 | ~~`sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a`~~ | ~~userinit, winlogon, services~~ | `_name`→`name` MSVC alias archive. **All cargo consumers dropped it: cabinet/mlang (Push A), lsass + userinit + winlogon + services 2026-06-13** (probe: zero oldname refs ×3). No cargo module reuses it now. |
-| `sdk/lib/cportlib/libcportlib.a` | kernel ×2 | Serial/KD port lib. **2026-06-20: KD transports dropped it** — kdcom/kdgdb/kdcom-serial use the cargo-native `cport-rust` via `.rust_lib` (commits `afaba999919`/`d7e2d90bd83`), as uefildr already did. Kernel ×2 still reuse the cmake `libcport_rust.a` (the Rust half) cohab — see that row. |
+| ~~`sdk/lib/cportlib/libcportlib.a`~~ | — (no cargo consumers) | Serial/KD port lib. KD transports dropped it (`afaba999919`/`d7e2d90bd83`), uefildr earlier. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("cport-rust")`; the empty C-body stub left the link too. No cargo module reuses it. |
 | ~~`sdk/lib/3rdparty/libwine/libwine.a`~~ | ~~userinit, winlogon~~ | 3rd-party wine glue (~1.1K LOC). **All cargo consumers dropped it: cabinet/mlang (cohab c_shim), userinit + winlogon 2026-06-13** (probe: inert ×3 — bodies reference none of wine's debug-channel stubs). No cargo module reuses it now. |
 | ~~`sdk/lib/vcruntime/libsetjmp.a`~~ | — (no cargo consumers) | setjmp/longjmp. **✅ Rust (`setjmp-rust`, commit `a0f85f894bb`)** for the kernel — global_asm! save/restore (disasm-identical to the cmake asm) + Rust longjmp. DROPPED from both kernels' static_libs: amd64 links setjmp-rust, i386 (DUMMY_PSEH) + arm64 reference no setjmp (inert). **hal DROPPED 2026-06-20 (`5f90dce5049`)** — inert there too (drop-test EMPTY; hal references no setjmp/longjmp), dropped outright with no setjmp-rust swap. No cargo module reuses the C `.a`. |
-| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2 | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — kernel pulls `libarbiter_rust.a` ×3 (kernel x86 ungate landed `bacd1fc64d3`). **hal DROPPED 2026-06-20 (`5f90dce5049`)** — inert (drop-test EMPTY; hal calls no Arb* API), dropped outright with no arbiter-rust swap. Only kernel ×2 still carry it (cohab alongside `libarbiter_rust.a`). |
+| ~~`sdk/lib/drivers/arbiter/libarbiter.a`~~ | — (no cargo consumers) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)**. hal dropped it 2026-06-20 (`5f90dce5049`, inert). **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("arbiter-rust")`; the empty C-body stub + cmake `libarbiter_rust.a` both left the link. No cargo module reuses it. |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
 | `sdk/lib/cmlib/libcmlib.a` | kernel ×2 (placeholder TU only) | Config-Manager hive lib. **✅ FLIPPED ×3: kernel cmlib is 100% Rust** (`cmlib-rust`, mechanism 5, `.rust_lib` unconditional). The cmake `libcmlib.a` is a placeholder TU on every arch (all 13 `.c` REMOVE_ITEM'd). The **loader is also Rust** (uefildr/rosload link `cmlib-rust --features bldr`, `da9c72b240d`) → cmlib is 100% Rust kernel+loader ×3. cmlib WAS the suspected blocker epicentre, but the "latent hive-path miscompile" was a RED HERRING — the real blocker was an i386 stdcall/cdecl ABI mismatch in cmlib `cmcheck`/`cmheal` (fixed; x86 ungate of the OTHER 5 landed `bacd1fc64d3`). See banner + field manual "#35 SOLVED". |
 | `drivers/base/…/libkdcom.a` | kernel ×2 | KD COM transport. `kdcom-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `drivers/base/…/libbootvid.a` | kernel ×2 | Boot video. `bootvid-rust` is the standalone Rust flip; kernel keeps the `.a`. |
-| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — kernel pulls `libcsq_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
-| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers. **✅ Rust (`lsalib-rust`)** — kernel pulls `liblsalib_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
-| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)** — kernel pulls `librossym_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
+| ~~`sdk/lib/drivers/csq/libcsq.a`~~ | — (no cargo consumers) | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)**. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("csq-rust")`; empty C-body stub + cmake `libcsq_rust.a` both gone. No cargo module reuses it. |
+| ~~`sdk/lib/lsalib/libntlsalib.a`~~ | — (no cargo consumers) | LSA helpers. **✅ Rust (`lsalib-rust`)**. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("lsalib-rust")`; empty C-body stub + cmake `liblsalib_rust.a` both gone. No cargo module reuses it. |
+| ~~`sdk/lib/rossym/librossym.a`~~ | — (no cargo consumers) | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)**. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("rossym-rust")`; empty C-body stub + cmake `librossym_rust.a` both gone. No cargo module reuses it. |
 | ~~`sdk/lib/{wdmguid,poguid,ioevent}.a`~~ | ~~kernel ×2~~ | GUID data libs. **✅ Rust (`guids-rust`, commit `8e61fee3e68`)** — 217 deduped GUID statics, `.rust_lib()`'d into both kernels, the 3 cmake `.a` DROPPED from static_libs. cold smoke ×3. C kept on disk for non-kernel cmake consumers. |
 | `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
 | ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
 | ~~`sdk/lib/smlib/libsmlib.a`~~ | ~~csrsrv, smss~~ | **✅ Resolved 2026-06-13 (`cf7a6caa082`)** — NOT translation debt: smclient.c is already a Rust port (`smss-csrss-rust/src/smlib/smclient.rs`, compiled into the body via `pub mod smlib`); smutils.c is dead (compiled nowhere). The cmake target is a comment-only cohab stub; the body defines all 7 Sm* + SmBaseTag, so it was inert (residue probe ×3). Dropped from both build.rs → csrsrv + smss ZERO cmake .a. C kept on disk. |
 | `sdk/lib/uuid/libuuid.a` | winsrv, mlang (2) | GUID/IID constants. Tiny; data. |
-| `sdk/lib/cportlib/libcport_rust.a` | kernel ×2 | **Already Rust** (cmake-built). **2026-06-20: KD transports dropped it** for the cargo-native `cport-rust` (`.rust_lib`, commits `afaba999919`/`d7e2d90bd83`); only kernel ×2 still reuse the cmake `.a`. Kernel swap = `.rust_lib("cport-rust")` (kernel-floor lane). |
+| ~~`sdk/lib/cportlib/libcport_rust.a`~~ | — (no cargo consumers) | **Already Rust** (cmake-built). KD transports dropped it (`afaba999919`/`d7e2d90bd83`). **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("cport-rust")`. No cargo module reuses the cmake-built `.a`. |
 | ~~`sdk/lib/dmilib/libdmilib.a`~~ | ~~i8042prt~~ | **✅ Rust 2026-06-13** — `ParseSMBiosTables` ported to `i8042prt-rust::dmi` (also fixed a fabricated SYS_VENDOR/PRODUCT slot-index bug). i8042prt now ZERO cmake .a; the host tool udmihelp keeps the C copy. |
 | `sdk/lib/dxguid/libdxguid.a` | win32k (1) | DirectX GUIDs. Data. |
 | `win32ss/libwin32ksys.a`, `win32ss/libwin32k_residue.a` | winsrv / win32k | win32k C residue — own track (`win32k-translation-audit.md`). |
