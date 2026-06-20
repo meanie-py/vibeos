@@ -141,7 +141,12 @@ fn main() {
         // defined symbols; all 13 cmlib .c are REMOVE_ITEM'd) since the kernel
         // cmlib body is 100% Rust via `.rust_lib("cmlib-rust")` below. The
         // placeholder contributed nothing to the link.
-        "sdk/lib/rtl/librtl.a",
+        // librtl.a DROPPED 2026-06-20 — the whole sdk/lib/rtl/*.c surface is Rust
+        // (rtl-rust .rust_lib below, 5681 syms); librtl.a was down to the
+        // irreducible floor (34 syms i386 / 18 amd64): the C-variadic DbgPrint
+        // family (dbgprint_variadic.c) + per-arch asm (except/mem/swap/debug),
+        // now compiled in-cargo via the rtl c_from_compile_db + rtl_asm
+        // asm_archive below (the cntpr pattern). No translation gap.
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
@@ -257,6 +262,28 @@ fn main() {
     // asm, arm64 needs NOTHING extra — cnt-rust-lib + kernel-rust already provide
     // it all). Keeping it would only make cnt-rust dead-cohab (C-first wins).
 
+    // librtl.a's irreducible asm floor (the `.c` surface is all rtl-rust now):
+    // per-arch except/mem/swap/debug asm. Assembled in-cargo via asm_archive
+    // (lazy in-group archive, same asm_set as .asm() = Kernel + the kernel asm
+    // -I chain — identical to how cmake compiled them into librtl.a). The
+    // C-variadic DbgPrint family (dbgprint_variadic.c) goes via c_from_compile_db
+    // below. Together these replace the dropped librtl.a.
+    let rtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/except_asm.s",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => &[
+            "sdk/lib/rtl/amd64/debug_asm.S",
+            "sdk/lib/rtl/amd64/except_asm.S",
+            "sdk/lib/rtl/amd64/unwind-asm.s",
+        ],
+        "aarch64" => &["sdk/lib/rtl/arm64/debug_asm.S"],
+        _ => &[],
+    };
+
     let mut linker = Linker::new(rust_target);
     linker = linker
         .rust_staticlib("kernel-rust")
@@ -309,6 +336,16 @@ fn main() {
     }
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
+    }
+    // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
+    //   - dbgprint_variadic.c (the C-variadic DbgPrint/DbgPrintEx/wine_dbg_*
+    //     trampolines) via c_from_compile_db — name = the cmake `rtl` target so
+    //     the engine finds CMakeFiles/rtl.dir in compile_commands.json.
+    //   - the per-arch asm floor via asm_archive (lazy in-group, Kernel define
+    //     set + kernel asm -I chain).
+    linker = linker.c_from_compile_db("rtl", &["sdk/lib/rtl/dbgprint_variadic.c"]);
+    if !rtl_asm.is_empty() {
+        linker = linker.asm_archive("rtl_asm", rtl_asm);
     }
     // All arches: pseh-rust (replaces the dropped libpseh.a). Provides the 2
     // DUMMY_PSEH `_SEH2_Volatile*` data symbols everywhere; the i386 SEH runtime
