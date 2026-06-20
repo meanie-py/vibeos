@@ -536,6 +536,13 @@ class Arm64NetConfig(Arm64Config):
     echo_hostfwd_port: int = 0
     GUESTFWD_ADDR: str = "10.0.2.100"
     GUESTFWD_PORT: int = 9999
+    # Modest extra settle so the netstack engine markers that DO complete on
+    # arm64 (dhcp/ping) reliably land in the captured output. NOTE: the deeper
+    # self-tests (dns, outbound TCP) currently do NOT complete on arm64 — the
+    # netstack worker stalls after `ping gateway OK` (an arm64-specific worker
+    # bug, NOT a timing/settle issue: a 150s settle did not change it). Tracked
+    # as an M7 follow-up; the core data path (ARP/DHCP/ICMP/TDI) is proven.
+    desktop_settle_seconds: float = 30.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()

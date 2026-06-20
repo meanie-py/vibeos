@@ -1197,7 +1197,23 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        ARM64_UART_TRACE!("[SYSDRV] ARM64: Skipping system-start drivers\r\n");
+        // ARM64 skips the BULK system-start load because ZwLoadDriver HANGS on a
+        // service whose .sys is absent from the minimal ramdisk (the full
+        // CmGetSystemDriverList includes many such services). But specific
+        // drivers we explicitly stage on the ramdisk CAN be loaded here — loading
+        // a single present driver can't hit the missing-file hang. netstack.sys
+        // is staged (M7 arm64 net data path): load it so its DriverEntry brings up
+        // the smoltcp stack on arm64.
+        ARM64_UART_TRACE!("[SYSDRV] ARM64: system-start skipped; loading netstack only\r\n");
+        const NETSTACK_SVC: &[u16] =
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\netstack");
+        let mut svc = _UNICODE_STRING {
+            Length: (NETSTACK_SVC.len() * 2) as u16,
+            MaximumLength: (NETSTACK_SVC.len() * 2) as u16,
+            Buffer: NETSTACK_SVC.as_ptr() as *mut u16,
+        };
+        let st = ZwLoadDriver(&mut svc as *mut _UNICODE_STRING);
+        crate::dbg_print!(b"[SYSDRV] netstack ZwLoadDriver -> 0x%08x\r\n\0", st as u32);
         return;
     }
 
