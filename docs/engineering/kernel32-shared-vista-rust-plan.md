@@ -1,8 +1,16 @@
 # kernel32_shared + kernel32_vista → Rust — translation plan
 
-**Status:** planned (2026-06-20). The kernel32 *client* API surface is 100% Rust
-at link (`94d3c4511f7`); this plan covers the genuine structural remainder — the
-two cmake static libs shared between `kernel32.dll` and `kernel32_vista.dll`.
+**Status:** ✅ DONE (2026-06-20). Phase 1 `kernel32-shared-rust` (`c28b8fd0f81`) +
+Phase 2 `kernel32-vista-rust` (`e74b29f092c` WIP → `48d9c3b2e7b` complete), all
+hand-translated. cargo green ×3; kernel32.dll + kernel32_vista.dll both link clean
+on i386 (no undef/dup; ud2 baseline); decorations verified. Boot ×3 gate-owed.
+Only genuinely-C remainder in kernel32.dll's surface now: `kernel32_vista/DllMain.c`
+(the vista module entrypoint — can't live in a crate linked into both DLLs),
+generated `kernel32_stubs.c`/`.def`, and the `fiber.S`/`thread.S` asm.
+
+The kernel32 *client* API surface was already 100% Rust at link (`94d3c4511f7`);
+this plan covered the genuine structural remainder — the two cmake static libs
+shared between `kernel32.dll` and `kernel32_vista.dll`.
 
 ## The structural crux
 
