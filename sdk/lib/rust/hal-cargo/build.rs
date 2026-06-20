@@ -7,17 +7,24 @@
 //! install-time aliases of it. i386 is the pic-flavor (generic/legacy/pic
 //! components), amd64 the acpi/apic-flavor (generic/acpi/apic) — both reduce
 //! to libhal_rust.a (the whole x86 HAL translation) + a couple of self-hosted
-//! asm files + the shared leaf libs. arm64 is pure-Rust stubs
-//! (hal-rust/src/arm64) → libhal_rust.a + libmemcmp.a, no asm/resource.
+//! asm files + the in-cargo cnt-rust-lib/printf-shell CRT floor. arm64 is
+//! pure-Rust stubs (hal-rust/src/arm64) → just libhal_rust.a, no asm/resource.
+//!
+//! ZERO cmake `.static_libs()` .a on every arch (2026-06-20): the former leaf
+//! reuses are all gone — liblibcntpr.a → cnt-rust-lib (.rust_lib) + in-cargo
+//! printf shells; libpseh.a → dummy.c c_shim; libmemcmp.a → compiler-builtins-
+//! mem; and libsetjmp.a / libarbiter.a / libchkstk.a DROPPED as inert vestigial
+//! reuses (drop-test EMPTY — hal references no setjmp/arbiter/chkstk; clang_rt
+//! covers __chkstk). hal.dll now links a fully cargo-native floor.
 //!
 //! Per-arch differences (from each build-<arch>/build.ninja `hal.dll` line):
 //!   i386 : entry `_HalInitSystem@8` (stdcall `_`/`@8`); asm generic/systimer.S
-//!          + generic/trap.S + pic/pic.S; static libs add libchkstk.a; a
-//!          checked-in resource (pic/halpic.rc → data/hal-i386.rc.res).
+//!          + generic/trap.S + pic/pic.S; no cmake static libs (libchkstk.a
+//!          dropped as inert); a checked-in resource (pic/halpic.rc →
+//!          data/hal-i386.rc.res).
 //!   amd64: entry `HalInitSystem` (no decoration); asm apic/apictrap.S +
-//!          apic/tsccal.S; static libs add libcntpr_rust.a (the cnt-rust
-//!          cohabitation twin), no chkstk; NO resource (the amd64 link line
-//!          carries no .res).
+//!          apic/tsccal.S; no cmake static libs; NO resource (the amd64 link
+//!          line carries no .res).
 //! Both: image base 0x10000, native subsystem, 0x1000 file/section align,
 //! `--exclude-all-symbols` (KernelDll bakes these in); the ntoskrnl import
 //! lib is self-hosted from ntoskrnl.spec; hal.spec → hal.def via spec2def.
@@ -43,12 +50,14 @@ fn main() {
     let is_x86 = arch == "x86" || arch == "x86_64";
     let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
-    // Per-arch: (target json, entry, image base, asm sources, static libs in
-    // cmake hal.dll link order). x86/amd64 (halx86) carry the full leaf chain
-    // (cntpr/setjmp/arbiter/pseh + per-arch extras + memcmp). arm64 (halarm64)
-    // is pure-Rust stubs whose authoritative build.ninja link line is just
-    // libhal_rust.a + the ntoskrnl import lib + libmemcmp.a — no asm, no
-    // resource, none of the x86 leaf libs. image base: x86 0x10000; arm64
+    // Per-arch: (target json, entry, image base, asm sources, static libs).
+    // The cmake hal.dll leaf chain (cntpr/setjmp/arbiter/pseh/chkstk/memcmp) is
+    // now FULLY cargo-native: cnt-rust-lib via .rust_lib + dummy.c c_shim +
+    // compiler-builtins-mem cover cntpr/pseh/memcmp, and setjmp/arbiter/chkstk
+    // were dropped as inert (drop-test EMPTY) → `libs` is empty on every arch.
+    // x86/amd64 (halx86) still carry the self-hosted asm + the i386 printf
+    // shells; arm64 (halarm64) is pure-Rust stubs (just libhal_rust.a + the
+    // ntoskrnl import lib). image base: x86 0x10000; arm64
     // 0x7FFB00000000 (verbatim from build-arm64/build.ninja, == kdcom/uefildr).
     // libhal_rust.a is emitted first by the engine (rust_staticlib); the
     // ntoskrnl import lib is self-generated from ntoskrnl.spec (.import_lib
@@ -58,14 +67,14 @@ fn main() {
     {
         // i386 pic-flavor (hal/halx86/pic.cmake): generic/systimer.S +
         // generic/trap.S + pic/pic.S. v86.S is GONE (pre-Vista V86 INT10 BIOS
-        // path retired with fast486/x86bios, commit ebf1ac53a99). i386 cmake
-        // link adds libchkstk.a (no transitive propagation in the cargo link).
+        // path retired with fast486/x86bios, commit ebf1ac53a99).
         // cntpr's Rust half (was the cmake-copied libcntpr_rust.a) now comes
         // from the cargo-native sibling `cnt-rust-lib` via .rust_lib() below
         // (classpnp/framebuf pattern); libpseh.a → the dummy.c c_shim; memcmp →
         // compiler-builtins-mem (build-std). liblibcntpr.a (C residual) is
         // DROPPED — the sprintf/swprintf C-variadic shells come in-cargo via
-        // c_from_compile_db (see below); setjmp/arbiter/chkstk stay reused.
+        // c_from_compile_db (see below); setjmp/arbiter/chkstk DROPPED as inert
+        // (see the `libs` comment below) → no cmake static libs.
         "x86" => (
             "i686-kernel.json",
             "_HalInitSystem@8",
@@ -83,11 +92,17 @@ fn main() {
             // undefined across libhal_rust + setjmp/arbiter/chkstk ∩ liblibcntpr
             // defs − cnt-rust-lib defs) = {_sprintf,_swprintf} on i386, EMPTY on
             // amd64.
-            vec![
-                "sdk/lib/vcruntime/libsetjmp.a",
-                "sdk/lib/drivers/arbiter/libarbiter.a",
-                "sdk/lib/crt/libchkstk.a",
-            ],
+            //
+            // libsetjmp.a + libarbiter.a + libchkstk.a DROPPED (2026-06-20) — all
+            // three were INERT vestigial reuses: the offline drop-test (undefined
+            // across libhal_rust + the engine-assembled trap/timer/pic asm ∩ each
+            // .a's defs) is EMPTY. i386 hal uses DUMMY_PSEH so it references no
+            // setjmp/longjmp (setjmp-rust's own doc: "i386 uses DUMMY_PSEH... so
+            // libsetjmp.a is inert there"); the body calls no Arb* arbiter API;
+            // and clang_rt.builtins covers __chkstk (the engine links it into
+            // every kernel DLL — win32k proved this ×3 incl arm64 cold-relink).
+            // → ZERO cmake .static_libs() .a for hal.dll, all 3 arches.
+            vec![],
         ),
         // amd64 acpi/apic-flavor: the only non-empty component contributions
         // are apic/apictrap.S + apic/tsccal.S (generic + acpi are empty.c).
@@ -102,10 +117,13 @@ fn main() {
             // liblibcntpr.a DROPPED — cnt-rust-lib provides amd64 hal's ENTIRE
             // libcntpr surface; drop-test residue is EMPTY (no C-variadic shell
             // needed; amd64 hal calls printf only via Rust-provided entry points).
-            vec![
-                "sdk/lib/vcruntime/libsetjmp.a",
-                "sdk/lib/drivers/arbiter/libarbiter.a",
-            ],
+            // libsetjmp.a + libarbiter.a DROPPED (2026-06-20) — INERT: drop-test
+            // (undefined across libhal_rust + asm ∩ each .a's defs) is EMPTY.
+            // amd64 hal references no setjmp/longjmp (only the kernel's SEH unwind
+            // path does — setjmp-rust serves that; hal's body doesn't) and no Arb*
+            // arbiter API. amd64 already had no chkstk (clang_rt.builtins). → ZERO
+            // cmake .static_libs() .a for amd64 hal.dll.
+            vec![],
         ),
         // arm64 (hal/halarm64): pure-Rust stubs (src/arm64/halstubs.rs). The
         // build-arm64/build.ninja hal.dll link line is just libhal_rust.a +
