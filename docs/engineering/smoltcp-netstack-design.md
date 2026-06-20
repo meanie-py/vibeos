@@ -289,6 +289,14 @@ Remaining open:
     and stays false → TX descriptors are not replenished. NOT memory-ordering (identical under
     `tcg,thread=single` and `=multi`), NOT DNS/slirp (no frame ever egresses). Next: debug the
     virtio-drivers 0.13 `VirtIONet`/`add_notify_wait_pop` TX-queue reclaim accounting on arm64.
+  - **OPEN (M7 landing-blocker): arm64 boot hangs at a netstack thread exit (`LpcExitThread`).**
+    Because netstack now loads on *all* arm64 boots (Start=1 fix), the regular arm64 smoke
+    (default QEMU NIC) hangs when a netstack TDI self-test thread exits — last serial is
+    `[PS] PspExitThread: about to call LpcExitThread`, never reaching the desktop. arm64-net
+    reached the desktop, so it may be timing-dependent. Likely a pre-existing arm64 kernel
+    thread-exit/LPC bug that netstack is the first to trigger (first driver to spawn + exit
+    system threads during arm64 boot). Must be resolved before M7 lands (it would regress the
+    regular arm64 smoke). Triage with the kernel-debug toolkit (break in `LpcExitThread`).
 - **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads;
   server-side TCP (TDI_LISTEN/TDI_ACCEPT — netstack is outbound-client-only today).
 
