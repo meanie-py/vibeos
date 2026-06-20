@@ -47,6 +47,81 @@ extern "system" {
 extern "C" {
     pub fn wcslen(s: *const WCHAR) -> usize;
     pub fn wcscpy(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    pub fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+}
+
+// ---- more kernel32.dll exports (wave 2) ----
+extern "system" {
+    pub fn GetLastError() -> DWORD;
+    pub fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
+    pub fn GetFullPathNameW(
+        lpFileName: LPCWSTR,
+        nBufferLength: DWORD,
+        lpBuffer: LPWSTR,
+        lpFilePart: *mut LPWSTR,
+    ) -> DWORD;
+    pub fn GetVolumeNameForVolumeMountPointW(
+        lpszVolumeMountPoint: LPCWSTR,
+        lpszVolumeName: LPWSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+    pub fn WideCharToMultiByte(
+        CodePage: UINT,
+        dwFlags: DWORD,
+        lpWideCharStr: LPCWSTR,
+        cchWideChar: core::ffi::c_int,
+        lpMultiByteStr: LPSTR,
+        cbMultiByte: core::ffi::c_int,
+        lpDefaultChar: LPCSTR,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> core::ffi::c_int;
+    pub fn EnumResourceLanguagesW(
+        hModule: HMODULE,
+        lpType: LPCWSTR,
+        lpName: LPCWSTR,
+        lpEnumFunc: ENUMRESLANGPROCW,
+        lParam: LONG_PTR,
+    ) -> BOOL;
+}
+
+// ---- kernel32-shared-rust (cdecl, no WINAPI) ----
+extern "C" {
+    pub fn FilenameA2W(NameA: LPCSTR, alloc: BOOL) -> PWCHAR;
+    pub fn FilenameU2A_FitOrFail(DestA: LPSTR, destLen: INT, SourceU: PUNICODE_STRING) -> DWORD;
+}
+
+// ---- constants bindgen lacks (wave 2) ----
+pub const PROCESS_NAME_NATIVE: DWORD = 0x0000_0001;
+pub const CP_ACP: UINT = 0;
+pub const WC_NO_BEST_FIT_CHARS: DWORD = 0x0000_0400;
+pub const SYMBOLIC_LINK_FLAG_DIRECTORY: DWORD = 0x1;
+pub const NO_ERROR: DWORD = 0;
+pub const E_FAIL: HRESULT = 0x8000_4005u32 as HRESULT;
+pub const FSCTL_SET_REPARSE_POINT: ULONG = 0x0009_00A4; // CTL_CODE(FS, 41, BUFFERED, ANY)
+pub const VOLUME_NAME_DOS: DWORD = 0x0;
+pub const VOLUME_NAME_GUID: DWORD = 0x1;
+pub const VOLUME_NAME_NT: DWORD = 0x2;
+pub const VOLUME_NAME_NONE: DWORD = 0x4;
+pub const LOCALE_NOUSEROVERRIDE: DWORD = 0x8000_0000;
+pub const LOCALE_RETURN_NUMBER: DWORD = 0x2000_0000;
+pub const LOCALE_INEUTRAL: LCTYPE = 0x0071;
+pub const LOCALE_WINDOWS: DWORD = 0x01;
+pub const LOCALE_NEUTRALDATA: DWORD = 0x10;
+pub const LOCALE_SPECIFICDATA: DWORD = 0x20;
+pub const RT_STRING_ID: u16 = 6; // MAKEINTRESOURCE(6)
+// CTL_CODE(MOUNTMGRCONTROLTYPE='m'=0x6D, 12, METHOD_BUFFERED, FILE_ANY_ACCESS)
+pub const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATH: ULONG = (0x6D << 16) | (12 << 2);
+
+// ---- ddk/mountmgr.h structs (not in bindgen) ----
+#[repr(C)]
+pub struct MOUNTMGR_TARGET_NAME {
+    pub DeviceNameLength: USHORT,
+    pub DeviceName: [WCHAR; 1],
+}
+#[repr(C)]
+pub struct MOUNTMGR_VOLUME_PATHS {
+    pub MultiSzLength: ULONG,
+    pub MultiSz: [WCHAR; 1],
 }
 
 // ---- constants bindgen lacks ----
@@ -69,9 +144,23 @@ pub struct SYSTEM_BOOT_ENVIRONMENT_INFORMATION {
     pub FirmwareType: FIRMWARE_TYPE,
 }
 
+pub const UNICODE_NULL: WCHAR = 0;
+
 #[inline]
 pub fn NT_SUCCESS(Status: NTSTATUS) -> bool {
     Status >= 0
+}
+
+/// RtlCopyMemory (NDK macro) — memcpy.
+#[inline]
+pub unsafe fn RtlCopyMemory(Destination: PVOID, Source: *const core::ffi::c_void, Length: SIZE_T) {
+    core::ptr::copy_nonoverlapping(Source as *const u8, Destination as *mut u8, Length as usize);
+}
+
+/// RtlGetProcessHeap (FORCEINLINE) — NtCurrentPeb()->ProcessHeap.
+#[inline]
+pub unsafe fn RtlGetProcessHeap() -> PVOID {
+    (*NtCurrentPeb()).ProcessHeap
 }
 
 // ---- LCID / LANGID bit macros (winnt.h) ----

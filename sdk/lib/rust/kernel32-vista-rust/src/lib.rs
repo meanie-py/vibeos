@@ -10,13 +10,36 @@
 //! kernel32_vista's DllMain.c stays C (collision: this .a links into kernel32.dll too).
 //! See docs/engineering/kernel32-shared-vista-rust-plan.md.
 
+// Crate-wide `w!("...")` — compile-time NUL-terminated UTF-16 literal (same as kernel32-rust).
+#[macro_export]
+macro_rules! w {
+    ($s:literal) => {{
+        const __B: &[u8] = $s.as_bytes();
+        const __N: usize = __B.len();
+        static __W: [u16; __N + 1] = {
+            let mut out = [0u16; __N + 1];
+            let mut i = 0;
+            while i < __N {
+                out[i] = __B[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        &__W
+    }};
+}
+
 pub mod common;
 pub mod localenametolcid_table;
 
+pub mod enumlocales;
+pub mod fileinfo;
+pub mod finalpath;
 pub mod firmware;
 pub mod locale;
 pub mod misc;
 pub mod sync;
+pub mod vista;
 
 // no_std staticlib floor. Duplicates kernel32-rust's handler when both .a link into
 // kernel32.dll — resolved by the link's --allow-multiple-definition (first wins).

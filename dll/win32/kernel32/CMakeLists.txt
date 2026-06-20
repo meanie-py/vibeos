@@ -36,7 +36,32 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_kernel32_shared DEPENDS ${KERNEL32_SHARED_RUST_LIB})
 
-# kernel32_vista links KERNEL32_SHARED_RUST_LIB + depends on rust_kernel32_shared (above).
+# kernel32_vista_static C (the NT6/Vista+ API set) → Rust (kernel32-vista-rust).
+# Built once → libkernel32_vista_rust.a, linked into BOTH kernel32.dll AND
+# kernel32_vista.dll (the C kernel32_vista_static target is dropped; .c kept on disk).
+# kernel32_vista/DllMain.c stays C (a #[no_mangle] DllMain here would collide with
+# kernel32-rust's DllMain in kernel32.dll, which this .a also links into).
+set(KERNEL32_VISTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-vista-target")
+set(KERNEL32_VISTA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_vista_rust.a")
+file(GLOB_RECURSE KERNEL32_VISTA_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-vista-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${KERNEL32_VISTA_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${KERNEL32_VISTA_RUST_TARGET_DIR}
+        cargo build --release --target ${KERNEL32_RUST_TARGET}
+            -p kernel32-vista-rust
+            --manifest-path ${KERNEL32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${KERNEL32_VISTA_RUST_TARGET_DIR}/${KERNEL32_RUST_TARGET}/release/libkernel32_vista_rust.a
+        ${KERNEL32_VISTA_RUST_LIB}
+    DEPENDS ${KERNEL32_VISTA_RUST_SRCS}
+            ${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-vista-rust/Cargo.toml
+    WORKING_DIRECTORY ${KERNEL32_RUST_WORKSPACE_DIR}
+    COMMENT "Building kernel32-vista-rust (${KERNEL32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_kernel32_vista DEPENDS ${KERNEL32_VISTA_RUST_LIB})
+
+# kernel32_vista links KERNEL32_{SHARED,VISTA}_RUST_LIB + deps on the rust targets (above).
 add_subdirectory(kernel32_vista)
 
 list(APPEND SOURCE
@@ -178,8 +203,16 @@ set_module_type(kernel32 win32dll ENTRYPOINT DllMain 12)
 set_subsystem(kernel32 console)
 ################# END  HACK #################
 
-target_link_libraries(kernel32 psapi_static kernel32_vista_static ${KERNEL32_SHARED_RUST_LIB} wine chkstk ${PSEH_LIB} ${KERNEL32_RUST_LIB})
+# KERNEL32_RUST_LIB first: its locale defs (e.g. LCIDToLocaleName) win so the vista-rust
+# locale cgu stays dormant in kernel32.dll (as the C kernel32_vista_static did) — it only
+# goes live in kernel32_vista.dll, which has the ntdll_vista (0x600) importlib for RtlLcid*.
+target_link_libraries(kernel32 psapi_static ${KERNEL32_RUST_LIB} ${KERNEL32_VISTA_RUST_LIB} ${KERNEL32_SHARED_RUST_LIB} wine chkstk ${PSEH_LIB})
 add_importlibs(kernel32 ntdll)
+# kernel32-vista-rust's locale/sync/initonce code references the NT6 (0x600+) ntdll Rtl
+# exports (RtlLcidToLocaleName/RtlLocaleNameToLcid/RtlRunOnce*/SRW*); the coarse Rust
+# codegen unit pulls them into kernel32.dll even though the locale path is dead here, so
+# resolve them via the ntdll_vista (0x600) import lib (delay-loaded; same runtime ntdll.dll).
+add_delay_importlibs(kernel32 ntdll_vista)
 add_pch(kernel32 k32.h SOURCE)
-add_dependencies(kernel32 psdk errcodes asm rust_kernel32 rust_kernel32_shared)
+add_dependencies(kernel32 psdk errcodes asm rust_kernel32 rust_kernel32_shared rust_kernel32_vista)
 add_cd_file(TARGET kernel32 DESTINATION reactos/system32 FOR all)
