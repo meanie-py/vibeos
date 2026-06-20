@@ -150,3 +150,50 @@ Both phases hand-translated ($0). Phase 1: ~1 focused hour (6 fns + plumbing +
 gate). Phase 2: a focused session — hand-translate the 15 files (LEAF→MEDIUM→HEAVY)
 + cohab + ×3 gate. (The survey's "weeks" were human-from-scratch estimates; faithful
 1:1 C→Rust transcription of mostly-thin-wrappers is far quicker.)
+
+## Post-translation faithfulness audit (2026-06-20, while gate-queued)
+Full line-by-line re-read of all 8 vista body files + the generated table vs the C
+originals. **Result: faithful, no reachable functional bugs.** Detail:
+- **locale.rs** — `LocaleNameToLCID` 3-way SubLangId logic (==NEUTRAL→default /
+  ≥0x18→table-or-0 / else→passthrough) exact; `None=>return 0` correctly mirrors the
+  C NDEBUG `ASSERT(FALSE);return 0`. `LCIDToLocaleName`/`GetUserDefaultLocaleName`
+  (`Length/sizeof` ±1), `GetLocaleInfoEx` (`wcslen==2` neutral special-case) match.
+- **localenametolcid_table.rs** — `gen_kernel32_vista_lcid_table.py --check` byte-parity
+  (31 entries) green.
+- **finalpath.rs** — DOS/GUID/NT/NONE length math, the `\Device\` split, `offset_from`
+  element-vs-byte, `VolumeBuffer[53]`/`sizeof` all correct. ⚠️ Reproduces a *pre-existing
+  C bug* (misplaced parens in `QueryDosVolumeNameForNtDeviceName`'s 3-append condition)
+  as the clean short-circuit form — identical in every reachable case (106-byte volume
+  buffer always fits; diverges only on an impossible buffer-too-small append). Documented
+  in-code; left as-is (unreachable, zero-impact).
+- **vista.rs** — REPARSE offsets verified (`offset_of __bindgen_anon_1` = FIELD_OFFSET
+  GenericReparseBuffer = 8; PathBuffer = 20), `pBufTail` accumulation, `DeleteFileA`
+  bindgen rename, goto→`'cleanup`-loop reaches `finish_symlink` with correct free-state
+  on every path. ⚠️ Reproduces a 2nd *pre-existing C bug* faithfully: `bAllocatedTarget`
+  set TRUE only on the RtlDosPathNameToNtPathName_U *failure* path → success-path
+  TargetFileName.Buffer leak. Documented in-code.
+- **fileinfo.rs** — 16-case dispatch faithful; the or-patterns compiling *proves* every
+  arm is a constant pattern (a binding in a multi-alt or-pattern is a compile error) →
+  no silent catch-all-binding bug (the class that bit the `FileNameInfo` const).
+- **sync.rs** — `GetNtTimeout` = `(Timeout as u64).wrapping_mul((-10000i64) as u64)`
+  reproduces `(ULONGLONG)Timeout*-10000`; SRW/condvar pass-throughs + `STATUS_TIMEOUT`
+  handling match.
+- **misc.rs** — `GetTickCount64` High1/High2 spin-read + `(low*mult>>24)+(high*mult<<8)`,
+  `CTL_CODE→0x110030`, `sizeof("ClientProcessId")=16`, `HRESULT_FROM_NT=x|0x10000000`.
+- **firmware.rs** — ANSI→W cleanup ordering exact (frees VariableName before bailing on
+  the 2nd conversion fail; Namespace-then-VariableName on success).
+- **enumlocales.rs** — `RT_STRING=6`, `MAKEINTRESOURCE((LOCALE_SNAME>>4)+1)=6`,
+  neutral-data flags, and the `extern "system"`↔`ENUMRESLANGPROCW` transmute (ABI-identical
+  per-arch) all correct.
+
+**Gate-risk #1 (amd64/arm64 `ntdll_vista` link) de-risked across all 3 arches:** every
+referenced ntdll symbol is in `dll/ntdll/def/ntdll.spec`; the 0x600-gated set
+(`RtlLcidToLocaleName`/`RtlRunOnce*`/SRW/condvar) resolves via the *unconditional*
+`add_delay_importlibs(kernel32 ntdll_vista)` (CMakeLists.txt:215) — same importlib the C
+kernel32_vista.dll already used for these exact symbols; ungated ones via base `ntdll`;
+the inline-only trio (`RtlInitEmptyUnicodeString`/`RtlCopyMemory`/`RtlGetProcessHeap`) are
+local fns needing no symbol. Per-arch decoration handled by `extern "system"`+spec2def.
+The only amd64/arm64 unknown is whether the coarse Rust cgu drags these symbols into
+kernel32.dll at all — and resolution is covered whether it does or not. (Output-pointer
+writes empirically safe: clean ud2 baseline ⇒ no vista output-write folded under
+captures(none).)
