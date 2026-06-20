@@ -24,11 +24,14 @@
 //! C-before-Rust cohab first-match precedence matches the old link, where the
 //! residue was force-linked objects ahead of the Rust archive.
 //!
-//! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's
-//! libwin32k_residue.a / libdxguid.a / libchkstk.a / libcntpr_rust.a /
-//! libmemcmp.a; libpseh.a + liblibcntpr.a were dropped — win32k references
-//! nothing from libpseh, and the libcntpr C-variadic floor is compiled in-cargo
-//! via c_from_compile_db). The version resource is the
+//! Run `ninja` in build-<arch>/ first (the cargo link reuses only cmake's
+//! genuine C residue — libwin32k_residue.a + libdxguid.a). The former CRT-floor
+//! reuses are all dropped: libpseh.a + liblibcntpr.a (win32k references nothing
+//! from pseh; the libcntpr C-variadic floor is compiled in-cargo via
+//! c_from_compile_db), and now libcntpr_rust.a (→ `.rust_lib("cnt-rust-lib")`),
+//! libmemcmp.a (→ compiler-builtins-mem via build-std) and libchkstk.a (→
+//! clang_rt.builtins) — the classpnp-cargo fully-cargo-native CRT pattern. The
+//! version resource is the
 //! checked-in per-arch `data/win32k-<arch>.rc.res` (byte-identical to cmake's
 //! win32k.rc.res; regenerate via tools/gen_win32k_res.py when version blocks
 //! change). Post-link pefixup --kernelmodedriver / fix_lld_forwarding.py run
@@ -41,43 +44,42 @@ fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
     // Per-arch facts, verbatim from each build-<arch>/build.ninja:
-    //   - chkstk: cmake links libchkstk.a on i386+arm64 (amd64 takes __chkstk
-    //     from the clang_rt.builtins the engine already links).
     //   - hal_dir: hal import lib spec dir is shared (hal/hal.spec) but the
     //     arch matters only for the .a path, which we don't reuse — the engine
     //     self-hosts the import lib from the spec.
-    let (target_json, res, entry, image_base, chkstk): (&str, &str, &str, u64, bool) =
-        match arch.as_str() {
-            "x86" => (
-                "i686-kernel.json",
-                "win32k-i386.rc.res",
-                "_DriverEntry@8",
-                0x0001_0000,
-                true,
-            ),
-            "x86_64" => (
-                "x86_64-kernel.json",
-                "win32k-amd64.rc.res",
-                "DriverEntry",
-                0x0001_0000,
-                false,
-            ),
-            "aarch64" => (
-                "aarch64-kernel.json",
-                "win32k-arm64.rc.res",
-                "DriverEntry",
-                0x7FFB_0000_0000,
-                true,
-            ),
-            o => panic!("win32k-cargo: unsupported arch {o}"),
-        };
+    let (target_json, res, entry, image_base): (&str, &str, &str, u64) = match arch.as_str() {
+        "x86" => (
+            "i686-kernel.json",
+            "win32k-i386.rc.res",
+            "_DriverEntry@8",
+            0x0001_0000,
+        ),
+        "x86_64" => (
+            "x86_64-kernel.json",
+            "win32k-amd64.rc.res",
+            "DriverEntry",
+            0x0001_0000,
+        ),
+        "aarch64" => (
+            "aarch64-kernel.json",
+            "win32k-arm64.rc.res",
+            "DriverEntry",
+            0x7FFB_0000_0000,
+        ),
+        o => panic!("win32k-cargo: unsupported arch {o}"),
+    };
+
+    // cnt-rust-lib feature set: amd64/arm64 enable `float` (the forbid-unsafe
+    // floatcvt/scanf cabi surface); i386 omits it (no-SSE-illegal by-value f64
+    // returns stay C). Mirrors libcntpr.cmake's CNT_RUST_FEATURES + classpnp.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
     // cmake C / cohab static libs, in the cmake link-line order. The residue
     // archive comes FIRST (it was force-linked objects in the cmake link, so
     // archive-position-first preserves the C-first --allow-multiple-definition
     // cohab precedence over libwin32k_kernel_rust.a, which the engine emits
     // after this group via rust_staticlib).
-    let mut static_libs: Vec<&str> = vec![
+    let static_libs: Vec<&str> = vec![
         "win32ss/libwin32k_residue.a",
         // libpseh.a DROPPED — win32k references NOTHING from it. Offline nm
         // drop-test (undefined across libwin32k_residue + libwin32k_kernel_rust
@@ -88,19 +90,29 @@ fn main() {
         // ntoskrnl (pseh-rust), not here. C kept on disk. arm64 (volatiles-only,
         // same arch-independent refs as amd64) verified at the gate's cold link.
         "sdk/lib/dxguid/libdxguid.a",
-        // liblibcntpr.a (cmake C CRT) DROPPED — libcntpr_rust.a provides the whole
-        // translatable surface; the only irreducible C floor win32k pulls is the
-        // C-variadic printf shells (Rust stable can't define C variadics),
-        // compiled in-cargo via c_from_compile_db below. Offline drop-test
-        // (nm: win32k undefined ∩ liblibcntpr defs − libcntpr_rust defs) = i386
-        // needs only _vsnwprintf; the full shell set is lazy-pull + cross-arch
-        // safe (nothing else defines them — zero dup risk).
+        // liblibcntpr.a (cmake C CRT) DROPPED — cnt-rust-lib (.rust_lib below)
+        // provides the whole translatable surface; the only irreducible C floor
+        // win32k pulls is the C-variadic printf shells (Rust stable can't define
+        // C variadics), compiled in-cargo via c_from_compile_db below. Offline
+        // drop-test (nm: win32k undefined ∩ liblibcntpr defs − libcntpr_rust
+        // defs) = i386 needs only _vsnwprintf; the full shell set is lazy-pull +
+        // cross-arch safe (nothing else defines them — zero dup risk).
+        //
+        // The remaining three cmake .a are now ALSO dropped — win32k links a
+        // fully cargo-native CRT floor, exactly the classpnp-cargo pattern (the
+        // largest driver after win32k, booting ×3 with the same drops):
+        //   - libcntpr_rust.a → `.rust_lib("cnt-rust-lib", cnt_feats, true)`
+        //     (cmake built the same Rust crate into libcntpr_rust.a; building it
+        //     as a cargo-native sibling is symbol-identical, ntdll/classpnp/hal
+        //     pattern).
+        //   - libmemcmp.a → compiler-builtins-mem (build-std, pulled in by the
+        //     `.rust_lib(.., true)` calls). The one C `memcmp` fn is now a Rust
+        //     builtin.
+        //   - libchkstk.a → clang_rt.builtins provides `__chkstk` on all 3 arches
+        //     (the engine links clang_rt into every kernel DLL; classpnp's cold
+        //     link confirmed nothing else referenced the cmake stack-probe asm).
+        //     The win32k cold link is the oracle if any arch still pulls it.
     ];
-    if chkstk {
-        static_libs.push("sdk/lib/crt/libchkstk.a");
-    }
-    static_libs.push("sdk/lib/crt/libcntpr_rust.a");
-    static_libs.push("sdk/lib/crt/libmemcmp.a");
 
     // The irreducible C-variadic printf shells (sprintf/_snwprintf/… = thin
     // `va_start; vsnwprintf(...)` over the now-Rust streamout engine). Arch-
@@ -123,6 +135,11 @@ fn main() {
         // as cmake's custom_command did (see module doc above).
         .rust_staticlib("win32k-kernel-rust")
         .rust_user_target()
+        // cnt-rust-lib (libcntpr's Rust half) built as a cargo-native sibling
+        // staticlib instead of reusing cmake's libcntpr_rust.a — ntdll/classpnp/
+        // hal pattern. The `true` (build-std) also pulls compiler-builtins-mem,
+        // which is what lets libmemcmp.a be dropped.
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         // win32k-kernel-rust is an umbrella; the actual translation lives in
         // win32k-rust (a path dep) — watch it so edits re-run this build.
         .rust_watch(&["win32k-rust/src"])
