@@ -32,6 +32,26 @@ QEMU_QUEUE_TIMEOUT_SECONDS="${VIBEOS_QEMU_QUEUE_TIMEOUT:-1800}"
 # automatically when the holding process (the QEMU that inherited the fd) dies.
 QEMU_SLOT_DIR="/tmp/vibeos-qemu-locks/slots"
 
+# Per-architecture concurrency SUB-cap, layered under the global pool. The
+# global cap bounds total host load (RAM/KVM); this bounds SAME-ARCH boots,
+# which contend on a shared resource the global count is blind to: two i386 (or
+# two amd64) KVM guests starve each other on /dev/kvm + the shared IDE/IO path
+# into false HANG_TIMEOUTs that look exactly like a boot regression (cost
+# multiple multi-hour misattributions; e.g. 2026-06-19: 3/3 fail @~361s
+# contended vs 5/5 green @~103s host-quiet). Lowering the GLOBAL cap can't fix
+# this — two i386 boots can still both be among the survivors. KVM arches
+# default to a sub-cap of 1 (strict same-arch serialize); arm64 (TCG, no
+# accelerator contention) defaults to 0 = uncapped. Per-arch env overrides let
+# you widen i386/amd64 or cap arm64 if TCG starvation is ever observed.
+qemu_per_arch_cap() {
+    case "$1" in
+        i386)  echo "${VIBEOS_QEMU_CAP_I386:-${VIBEOS_QEMU_PER_ARCH_CAP:-1}}" ;;
+        amd64) echo "${VIBEOS_QEMU_CAP_AMD64:-${VIBEOS_QEMU_PER_ARCH_CAP:-1}}" ;;
+        arm64) echo "${VIBEOS_QEMU_CAP_ARM64:-0}" ;;
+        *)     echo 0 ;;
+    esac
+}
+
 # Acquire one of QEMU_MAX_CONCURRENT global concurrency slots. The slot is held
 # on fd 200 of the CALLING shell (so call directly — never in a subshell, or
 # the fd closes when the subshell exits). The QEMU launched afterwards inherits
@@ -43,11 +63,20 @@ QEMU_SLOT_DIR="/tmp/vibeos-qemu-locks/slots"
 # CRITICAL: time spent queued here is BEFORE the caller computes the VM's
 # deadline, so queue wait never counts against the 30-min lifetime cap.
 # CRITICAL: any OTHER long-lived child the caller spawns after acquiring (e.g.
-# the watchdog) MUST close fd 200 (`200>&-`) or it will pin the slot too.
+# the watchdog) MUST close BOTH fd 200 and fd 201 (`200>&- 201>&-`) or it will
+# pin the slot(s) too.
+#
+# Pass the target arch as $1 to enable the per-arch sub-cap (see
+# qemu_per_arch_cap): same-arch KVM boots then QUEUE on fd 201 instead of
+# starving each other into false HANG_TIMEOUTs. Cross-arch stays parallel
+# (an i386 KVM boot and an arm64 TCG boot don't contend).
 acquire_qemu_slot() {
+    local arch="${1:-}"
     mkdir -p "$QEMU_SLOT_DIR" 2>/dev/null || true
     local n="$QEMU_MAX_CONCURRENT" i waited=0
     local q_deadline=$(( $(date +%s) + QEMU_QUEUE_TIMEOUT_SECONDS ))
+
+    # --- (1) global concurrency slot on fd 200 (total host RAM/KVM ceiling) ---
     while :; do
         for (( i=0; i<n; i++ )); do
             # `>>` opens for append: creates if absent, never truncates (we
@@ -56,7 +85,7 @@ acquire_qemu_slot() {
             if flock -n 200; then
                 SLOT_INDEX="$i"
                 [ "$waited" -gt 0 ] && log_info "acquired qemu slot $i after ${waited}s queued"
-                return 0
+                break 2
             fi
             exec 200>&-   # busy — drop and try the next slot
         done
@@ -68,6 +97,35 @@ acquire_qemu_slot() {
         sleep 2
         waited=$(( waited + 2 ))
     done
+
+    # --- (2) per-arch sub-cap on fd 201 (serialize same-arch KVM boots) -------
+    # Layered UNDER the global slot we just took. We already hold fd 200 while
+    # queuing here; that's fine — the per-arch lock is the scarce resource. On
+    # timeout we MUST drop fd 200 so a failed acquire doesn't leak a slot.
+    local pac; pac="$(qemu_per_arch_cap "$arch")"
+    pac="${pac//[!0-9]/}"; pac="${pac:-0}"
+    if [ "$pac" -gt 0 ]; then
+        local pwaited=0
+        while :; do
+            for (( i=0; i<pac; i++ )); do
+                exec 201>>"$QEMU_SLOT_DIR/arch-$arch-$(printf '%02d' "$i")"
+                if flock -n 201; then
+                    [ "$pwaited" -gt 0 ] && log_info "acquired same-arch ($arch) slot $i after ${pwaited}s queued"
+                    return 0
+                fi
+                exec 201>&-
+            done
+            if [ "$(date +%s)" -ge "$q_deadline" ]; then
+                log_warn "no free same-arch ($arch) slot after queue timeout (per-arch cap=$pac)"
+                exec 200>&-   # release the global slot we were holding
+                return 1
+            fi
+            [ "$pwaited" -eq 0 ] && log_info "same-arch ($arch) boot in progress; queuing same-arch (cap=$pac, cross-arch stays parallel)..."
+            sleep 2
+            pwaited=$(( pwaited + 2 ))
+        done
+    fi
+    return 0
 }
 
 log_info()  { printf '[INFO]  %s\n' "$*" >&2; }

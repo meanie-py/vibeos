@@ -390,3 +390,72 @@ def test_parse_sccache_json_scalar_and_garbage():
     st = cachecfg.parse_sccache_json(json.dumps({"stats": {"cache_hits": 5, "cache_misses": 0}}))
     assert st["hits"] == 5 and st["hit_rate"] == 1.0
     assert cachecfg.parse_sccache_json("not json") == {}
+
+
+# --- per-arch QEMU concurrency sub-cap (serialize same-arch boots) ---------
+import types  # noqa: E402
+
+from .. import vm  # noqa: E402
+
+
+def test_per_arch_cap_defaults(monkeypatch):
+    for v in (
+        "VIBEOS_QEMU_PER_ARCH_CAP",
+        "VIBEOS_QEMU_CAP_I386",
+        "VIBEOS_QEMU_CAP_AMD64",
+        "VIBEOS_QEMU_CAP_ARM64",
+    ):
+        monkeypatch.delenv(v, raising=False)
+    # KVM arches serialize (1); arm64 TCG uncapped (0). Aliases resolve to base.
+    assert vm.per_arch_cap("i386") == 1
+    assert vm.per_arch_cap("i386-uefi") == 1
+    assert vm.per_arch_cap("amd64") == 1
+    assert vm.per_arch_cap("amd64-uefi") == 1
+    assert vm.per_arch_cap("arm64") == 0
+
+
+def test_per_arch_cap_env_overrides(monkeypatch):
+    monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "3")  # blanket KVM override
+    assert vm.per_arch_cap("i386") == 3 and vm.per_arch_cap("amd64") == 3
+    monkeypatch.setenv("VIBEOS_QEMU_CAP_I386", "1")  # per-arch beats blanket
+    assert vm.per_arch_cap("i386") == 1 and vm.per_arch_cap("amd64") == 3
+    monkeypatch.setenv("VIBEOS_QEMU_CAP_ARM64", "2")  # cap arm64 if TCG starves
+    assert vm.per_arch_cap("arm64") == 2
+
+
+def _bare_vm(arch: str):
+    """An uninitialized QemuVM carrying only what the slot methods touch."""
+    v = vm.QemuVM.__new__(vm.QemuVM)
+    v.config = types.SimpleNamespace(arch=arch)  # type: ignore[assignment]
+    v._slot_fd = None
+    v._arch_slot_fd = None
+    return v
+
+
+def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm, "SLOT_DIR", tmp_path)
+    monkeypatch.setattr(vm, "QEMU_QUEUE_TIMEOUT", 0.0)  # second boot fails fast
+    for var in ("VIBEOS_QEMU_PER_ARCH_CAP", "VIBEOS_QEMU_CAP_I386"):
+        monkeypatch.delenv(var, raising=False)
+
+    first = _bare_vm("i386")
+    first._acquire_arch_slot()
+    assert first._arch_slot_fd is not None  # holds the single i386 slot
+
+    # A second i386 boot can't get the cap-1 slot → queues → times out.
+    second = _bare_vm("i386")
+    with pytest.raises(TimeoutError):
+        second._acquire_arch_slot()
+    assert second._arch_slot_fd is None
+
+    # Cross-arch is uncapped → arm64 acquires immediately alongside i386.
+    other = _bare_vm("arm64")
+    other._acquire_arch_slot()
+    assert other._arch_slot_fd is None  # cap 0: no lock taken, no contention
+
+    # Free the first → the queued arch is available again.
+    first._release_slot()
+    third = _bare_vm("i386")
+    third._acquire_arch_slot()
+    assert third._arch_slot_fd is not None
+    third._release_slot()

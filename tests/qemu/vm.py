@@ -66,6 +66,27 @@ QEMU_QUEUE_TIMEOUT = float(os.environ.get("VIBEOS_QEMU_QUEUE_TIMEOUT", "1800"))
 SLOT_DIR = LOCK_DIR / "slots"
 
 
+def per_arch_cap(arch: str) -> int:
+    """Same-arch concurrency sub-cap, layered under the global pool. Mirrors
+    qemu/lib/common.sh:qemu_per_arch_cap. The global cap bounds total host load;
+    this serializes SAME-ARCH boots, which contend on /dev/kvm + the shared IDE
+    path the global count is blind to (two i386/amd64 KVM guests starve each
+    other into false HANG_TIMEOUTs). KVM arches default to 1 (strict serialize);
+    arm64 (TCG, no accelerator contention) defaults to 0 = uncapped."""
+    base = arch.replace("-uefi", "").replace("-test", "")
+    if base == "i386":
+        return int(
+            os.environ.get("VIBEOS_QEMU_CAP_I386", os.environ.get("VIBEOS_QEMU_PER_ARCH_CAP", "1"))
+        )
+    if base == "amd64":
+        return int(
+            os.environ.get("VIBEOS_QEMU_CAP_AMD64", os.environ.get("VIBEOS_QEMU_PER_ARCH_CAP", "1"))
+        )
+    if base == "arm64":
+        return int(os.environ.get("VIBEOS_QEMU_CAP_ARM64", "0"))
+    return 0
+
+
 def process_cpu_pct(pid: int, window: float = 3.0) -> float:
     """Percent of ONE core the qemu process (all threads) burns over
     `window`s. Under -accel kvm a HLT-idle guest blocks the vCPU thread
@@ -73,6 +94,7 @@ def process_cpu_pct(pid: int, window: float = 3.0) -> float:
     catches "boots green but pathological" regressions (e.g. the serial-
     backpressure starvation) that every other smoke check misses.
     """
+
     def jiffies() -> int:
         total = 0
         for t in Path(f"/proc/{pid}/task").iterdir():
@@ -82,6 +104,7 @@ def process_cpu_pct(pid: int, window: float = 3.0) -> float:
             except (OSError, IndexError):
                 pass
         return total
+
     j0 = jiffies()
     time.sleep(window)
     j1 = jiffies()
@@ -130,10 +153,7 @@ def reap_orphan_qemus() -> list[str]:
         if launcher_alive and not expired:
             continue  # live session (maybe another agent), within cap — DO NOT TOUCH
         if qpid and _pid_alive(qpid) and _proc_is_qemu(qpid):
-            reason = (
-                "exceeded 30-min lifetime cap" if expired
-                else f"launcher {lpid} dead"
-            )
+            reason = "exceeded 30-min lifetime cap" if expired else f"launcher {lpid} dead"
             try:
                 os.killpg(os.getpgid(qpid), signal.SIGTERM)
                 time.sleep(2)
@@ -175,24 +195,33 @@ class ArchConfig:
 class Arm64Config(ArchConfig):
     arch: str = "arm64"
     qemu_bin: str = "qemu-system-aarch64"
-    machine_args: list[str] = field(default_factory=lambda: [
-        "-M", "virt", "-cpu", "cortex-a72",
-        "-accel", "tcg,thread=multi",
-        # virtio-mmio kbd+mouse — the devices arm64input.rs binds to
-        # (scans virtio-mmio transports at 0x0a000000 + i*0x200 for the
-        # virtio-input device id). Without these the poll thread polls
-        # empty virtqueues and the input stack has no functional coverage.
-        # `*-device` (not `*-pci`) is the virtio-mmio transport variant.
-        "-device", "virtio-keyboard-device,id=arm64kbd",
-        "-device", "virtio-mouse-device,id=arm64mouse",
-        # QEMU `virt` defaults its virtio-mmio transports to legacy (v1).
-        # arm64input's modern (v2) split-queue path is the well-exercised
-        # one; force modern so smoke drives it. Modern virtio-mmio is what
-        # real ARM64 virtio environments use — a representative, non-
-        # weakening host-config choice (the legacy queue path remains a
-        # tracked driver follow-up, not a smoke blocker).
-        "-global", "virtio-mmio.force-legacy=false",
-    ])
+    machine_args: list[str] = field(
+        default_factory=lambda: [
+            "-M",
+            "virt",
+            "-cpu",
+            "cortex-a72",
+            "-accel",
+            "tcg,thread=multi",
+            # virtio-mmio kbd+mouse — the devices arm64input.rs binds to
+            # (scans virtio-mmio transports at 0x0a000000 + i*0x200 for the
+            # virtio-input device id). Without these the poll thread polls
+            # empty virtqueues and the input stack has no functional coverage.
+            # `*-device` (not `*-pci`) is the virtio-mmio transport variant.
+            "-device",
+            "virtio-keyboard-device,id=arm64kbd",
+            "-device",
+            "virtio-mouse-device,id=arm64mouse",
+            # QEMU `virt` defaults its virtio-mmio transports to legacy (v1).
+            # arm64input's modern (v2) split-queue path is the well-exercised
+            # one; force modern so smoke drives it. Modern virtio-mmio is what
+            # real ARM64 virtio environments use — a representative, non-
+            # weakening host-config choice (the legacy queue path remains a
+            # tracked driver follow-up, not a smoke blocker).
+            "-global",
+            "virtio-mmio.force-legacy=false",
+        ]
+    )
     memory: str = "1G"
     # Wait for SMSS user-mode dispatch to be set up. This proves the kernel
     # got to user-mode entry — currently the highest reliably-reached point
@@ -216,15 +245,17 @@ class Arm64Config(ArchConfig):
     # silenced on arm64 (iomgr.rs::io_trace is a no-op for aarch64) so we
     # don't gate on it; the surrounding [SMSS]/[CSRSS] entries already prove
     # IO subsystem init completed.
-    required_milestones: list[str] = field(default_factory=lambda: [
-        "[KERNEL] KiSystemStartup entered",
-        "[PS] PspUserThreadStartup: returning",
-        "[SMSS] _main entered",
-        "[CSRSS] _main entered",
-        "[WINLOGON] WinMain entered",
-        "[EXPLORER] _tWinMain entered",
-        "shell ready",
-    ])
+    required_milestones: list[str] = field(
+        default_factory=lambda: [
+            "[KERNEL] KiSystemStartup entered",
+            "[PS] PspUserThreadStartup: returning",
+            "[SMSS] _main entered",
+            "[CSRSS] _main entered",
+            "[WINLOGON] WinMain entered",
+            "[EXPLORER] _tWinMain entered",
+            "shell ready",
+        ]
+    )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         boot_img = QEMU_DIR / "boot.img"
@@ -234,20 +265,26 @@ class Arm64Config(ArchConfig):
 
         shutil.copy2(QEMU_DIR / "efivars.fd", efivars_raw)
         subprocess.run(
-            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
-             str(efivars_raw), str(efivars)],
-            check=True, capture_output=True,
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(efivars_raw), str(efivars)],
+            check=True,
+            capture_output=True,
         )
         efivars_raw.unlink()
 
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-drive", f"if=pflash,format=raw,file={uefi_fw},readonly=on",
-            "-drive", f"if=pflash,format=qcow2,file={efivars}",
-            "-drive", f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
-            "-device", "ramfb",
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-drive",
+            f"if=pflash,format=raw,file={uefi_fw},readonly=on",
+            "-drive",
+            f"if=pflash,format=qcow2,file={efivars}",
+            "-drive",
+            f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
+            "-device",
+            "ramfb",
+            "-display",
+            "none",
         ]
 
 
@@ -255,7 +292,9 @@ class Arm64Config(ArchConfig):
 class I386Config(ArchConfig):
     arch: str = "i386"
     qemu_bin: str = "qemu-system-i386"
-    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
+    machine_args: list[str] = field(
+        default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"]
+    )
     memory: str = "512M"
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
@@ -265,22 +304,28 @@ class I386Config(ArchConfig):
     # captures the rendered shell. 5s was too short — it screenshotted the bare
     # blue desktop before explorer built the tray.
     desktop_settle_seconds: float = 30.0
-    required_milestones: list[str] = field(default_factory=lambda: [
-        "[SMSS] _main entered",
-        "[CSRSS] _main entered",
-        "[WINLOGON] WinMain entered",
-        "[EXPLORER] _tWinMain entered",
-        "shell ready",
-    ])
+    required_milestones: list[str] = field(
+        default_factory=lambda: [
+            "[SMSS] _main entered",
+            "[CSRSS] _main entered",
+            "[WINLOGON] WinMain entered",
+            "[EXPLORER] _tWinMain entered",
+            "shell ready",
+        ]
+    )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-i386" / "livecd.iso"
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-vga", "std",
-            "-cdrom", str(iso),
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-vga",
+            "std",
+            "-cdrom",
+            str(iso),
+            "-display",
+            "none",
             "-no-reboot",
         ]
 
@@ -295,6 +340,7 @@ class I386UefiConfig(I386Config):
     the ISO is attached as an ide-cd device with bootindex=0 (a bare -cdrom
     drops to the UEFI shell instead).
     """
+
     arch: str = "i386-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
@@ -308,20 +354,27 @@ class I386UefiConfig(I386Config):
         ovmf_vars = work_dir / "ovmf32_vars.qcow2"
         shutil.copy2(ovmf_vars_src, ovmf_vars_raw)
         subprocess.run(
-            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
-             str(ovmf_vars_raw), str(ovmf_vars)],
-            check=True, capture_output=True,
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(ovmf_vars_raw), str(ovmf_vars)],
+            check=True,
+            capture_output=True,
         )
         ovmf_vars_raw.unlink()
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-drive", f"if=pflash,format=raw,file={ovmf_code},readonly=on",
-            "-drive", f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device", "ide-cd,drive=cd0,bootindex=0",
-            "-vga", "std",
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-drive",
+            f"if=pflash,format=raw,file={ovmf_code},readonly=on",
+            "-drive",
+            f"if=pflash,format=qcow2,file={ovmf_vars}",
+            "-drive",
+            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
+            "-device",
+            "ide-cd,drive=cd0,bootindex=0",
+            "-vga",
+            "std",
+            "-display",
+            "none",
             "-no-reboot",
         ]
 
@@ -330,7 +383,9 @@ class I386UefiConfig(I386Config):
 class Amd64Config(ArchConfig):
     arch: str = "amd64"
     qemu_bin: str = "qemu-system-x86_64"
-    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
+    machine_args: list[str] = field(
+        default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"]
+    )
     memory: str = "512M"
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
@@ -344,22 +399,28 @@ class Amd64Config(ArchConfig):
     # the storm never gates the taskbar, and the smoke verdict is the serial
     # marker, not the screenshot, so an occasional early shot is only cosmetic.)
     desktop_settle_seconds: float = 30.0
-    required_milestones: list[str] = field(default_factory=lambda: [
-        "[SMSS] _main entered",
-        "[CSRSS] _main entered",
-        "[WINLOGON] WinMain entered",
-        "[EXPLORER] _tWinMain entered",
-        "shell ready",
-    ])
+    required_milestones: list[str] = field(
+        default_factory=lambda: [
+            "[SMSS] _main entered",
+            "[CSRSS] _main entered",
+            "[WINLOGON] WinMain entered",
+            "[EXPLORER] _tWinMain entered",
+            "shell ready",
+        ]
+    )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-vga", "cirrus",
-            "-cdrom", str(iso),
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-vga",
+            "cirrus",
+            "-cdrom",
+            str(iso),
+            "-display",
+            "none",
             "-no-reboot",
         ]
 
@@ -375,6 +436,7 @@ class Amd64UefiConfig(Amd64Config):
     + framebuf) and synthetic-RSDP ACPI path make the desktop render and PS/2
     input work, same as i386-uefi.
     """
+
     arch: str = "amd64-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
@@ -386,20 +448,27 @@ class Amd64UefiConfig(Amd64Config):
         ovmf_vars = work_dir / "ovmf_vars.qcow2"
         shutil.copy2(ovmf_vars_src, ovmf_vars_raw)
         subprocess.run(
-            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
-             str(ovmf_vars_raw), str(ovmf_vars)],
-            check=True, capture_output=True,
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(ovmf_vars_raw), str(ovmf_vars)],
+            check=True,
+            capture_output=True,
         )
         ovmf_vars_raw.unlink()
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-drive", f"if=pflash,format=raw,file={ovmf_code},readonly=on",
-            "-drive", f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device", "ide-cd,drive=cd0,bootindex=0",
-            "-vga", "std",
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-drive",
+            f"if=pflash,format=raw,file={ovmf_code},readonly=on",
+            "-drive",
+            f"if=pflash,format=qcow2,file={ovmf_vars}",
+            "-drive",
+            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
+            "-device",
+            "ide-cd,drive=cd0,bootindex=0",
+            "-vga",
+            "std",
+            "-display",
+            "none",
             "-no-reboot",
         ]
 
@@ -434,6 +503,7 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     ICMP), so the TCP echo check connects to 127.0.0.1:echo_hostfwd_port,
     forwarded to guest port ECHO_GUEST_PORT.
     """
+
     arch: str = "amd64-uefi-net"
     # Guest-side TCP echo port the netstack self-test listens on (M2+).
     ECHO_GUEST_PORT: int = 7777
@@ -455,7 +525,8 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
             # netstack backend (virtio-drivers) speaks the modern interface,
             # and forcing it here keeps the device contract unambiguous —
             # same reasoning as arm64's virtio-mmio.force-legacy=false.
-            "-device", "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
+            "-device",
+            "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
@@ -466,6 +537,7 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
 @dataclass
 class Arm64TestKernelConfig(Arm64Config):
     """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options."""
+
     arch: str = "arm64-test"
     boot_marker: str = "TESTKERNEL READY"
     boot_timeout: float = 180.0
@@ -483,7 +555,8 @@ class Arm64TestKernelConfig(Arm64Config):
         ini_path = work_dir / "freeldr.ini"
         subprocess.run(
             ["mcopy", "-o", "-i", str(boot_img), "::/freeldr.ini", str(ini_path)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         ini_text = ini_path.read_text()
         if "/TESTKERNEL" not in ini_text:
@@ -494,25 +567,32 @@ class Arm64TestKernelConfig(Arm64Config):
             ini_path.write_text(ini_text)
         subprocess.run(
             ["mcopy", "-o", "-i", str(boot_img), str(ini_path), "::/freeldr.ini"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         shutil.copy2(QEMU_DIR / "efivars.fd", efivars_raw)
         subprocess.run(
-            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
-             str(efivars_raw), str(efivars)],
-            check=True, capture_output=True,
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(efivars_raw), str(efivars)],
+            check=True,
+            capture_output=True,
         )
         efivars_raw.unlink()
 
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-drive", f"if=pflash,format=raw,file={uefi_fw},readonly=on",
-            "-drive", f"if=pflash,format=qcow2,file={efivars}",
-            "-drive", f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
-            "-device", "ramfb",
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-drive",
+            f"if=pflash,format=raw,file={uefi_fw},readonly=on",
+            "-drive",
+            f"if=pflash,format=qcow2,file={efivars}",
+            "-drive",
+            f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
+            "-device",
+            "ramfb",
+            "-display",
+            "none",
         ]
 
 
@@ -558,12 +638,14 @@ class QemuVM:
         self._watchdog: threading.Timer | None = None
         self._slot_fd: int | None = None
         self._slot_index: int | None = None
+        self._arch_slot_fd: int | None = None  # per-arch sub-cap lock (KVM arches)
 
     def start(self) -> None:
         """Start QEMU process, connect QMP + serial."""
         subprocess.run(
             ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         self.serial.listen(str(self.serial_path))
@@ -576,28 +658,39 @@ class QemuVM:
         self.serial.set_tee(
             str(self.live_log_path),
             header=f"# vibeos smoke live serial -- {self.config.arch} -- "
-                   f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
-                   f"# tail -f {self.live_log_path}\n",
+            f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
+            f"# tail -f {self.live_log_path}\n",
         )
 
         cmd = [
             self.config.qemu_bin,
-            "-qmp", f"unix:{self.qmp_path},server,nowait",
-            "-chardev", f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
-            "-serial", "chardev:ser0",
+            "-qmp",
+            f"unix:{self.qmp_path},server,nowait",
+            "-chardev",
+            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
+            "-serial",
+            "chardev:ser0",
             # Scratch disk for snapshots (writable qcow2 backend for savevm).
             # i386: if=none without a device — FreeLDR crashes on unpartitioned
             # BIOS-visible disks; QEMU savevm only needs a block backend.
-            "-drive", f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
+            "-drive",
+            f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
             *(
-                ["-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
-                     else "virtio-blk-pci,drive=scratch"]
-                if not self.config.arch.startswith("i386") else []
+                [
+                    "-device",
+                    "virtio-blk-device,drive=scratch"
+                    if self.config.arch.startswith("arm64")
+                    else "virtio-blk-pci,drive=scratch",
+                ]
+                if not self.config.arch.startswith("i386")
+                else []
             ),
-            "-monitor", "none",
+            "-monitor",
+            "none",
             *(
                 ["-debugcon", f"file:{self.debugcon_path}"]
-                if not self.config.arch.startswith("arm64") else []
+                if not self.config.arch.startswith("arm64")
+                else []
             ),
             *self.config.qemu_args(self.work_dir),
         ]
@@ -625,22 +718,26 @@ class QemuVM:
         try:
             LOCK_DIR.mkdir(parents=True, exist_ok=True)
             self._lock_path = LOCK_DIR / f"{os.getpid()}-{self._proc.pid}.json"
-            self._lock_path.write_text(json.dumps({
-                "launcher_pid": os.getpid(),
-                "qemu_pid": self._proc.pid,
-                "arch": self.config.arch,
-                "work_dir": str(self.work_dir),
-                "started": started,
-                # Integer epoch seconds: shell consumers (reap.sh) compare this
-                # with `[ "$(date +%s)" -ge "$dl" ]`, which errors on a float and
-                # would silently treat the VM as never-expired. Sub-second
-                # precision is meaningless for a 30-min cap anyway.
-                "deadline": int(started + MAX_VM_LIFETIME_SECONDS),
-                "slot": self._slot_index,
-                # Absolute so qemu/ps.sh can point at it from ANY worktree.
-                "live_log": str(self.live_log_path),
-                "cmd": cmd,
-            }))
+            self._lock_path.write_text(
+                json.dumps(
+                    {
+                        "launcher_pid": os.getpid(),
+                        "qemu_pid": self._proc.pid,
+                        "arch": self.config.arch,
+                        "work_dir": str(self.work_dir),
+                        "started": started,
+                        # Integer epoch seconds: shell consumers (reap.sh) compare this
+                        # with `[ "$(date +%s)" -ge "$dl" ]`, which errors on a float and
+                        # would silently treat the VM as never-expired. Sub-second
+                        # precision is meaningless for a 30-min cap anyway.
+                        "deadline": int(started + MAX_VM_LIFETIME_SECONDS),
+                        "slot": self._slot_index,
+                        # Absolute so qemu/ps.sh can point at it from ANY worktree.
+                        "live_log": str(self.live_log_path),
+                        "cmd": cmd,
+                    }
+                )
+            )
             atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
         except OSError:
             self._lock_path = None
@@ -743,6 +840,7 @@ class QemuVM:
             return None
         try:
             from .debugcon import debugcon_report as _report
+
             return _report(raw, self.config.arch)
         except Exception:
             return f"Debugcon: {len(raw)} bytes (catalog unavailable)"
@@ -761,36 +859,84 @@ class QemuVM:
         announced = False
         while True:
             for i in range(QEMU_MAX_CONCURRENT):
-                fd = os.open(str(SLOT_DIR / f"slot-{i:02d}"),
-                             os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                fd = os.open(
+                    str(SLOT_DIR / f"slot-{i:02d}"), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
+                )
                 try:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     self._slot_fd = fd
                     self._slot_index = i
                     if announced:
                         print(f"[QemuVM] acquired slot {i} after queuing")
+                    self._acquire_arch_slot()  # layer per-arch sub-cap under it
                     return
                 except OSError:
                     os.close(fd)
             if time.monotonic() >= deadline:
                 raise TimeoutError(
                     f"no free QEMU slot after {QEMU_QUEUE_TIMEOUT:.0f}s "
-                    f"(concurrency cap={QEMU_MAX_CONCURRENT})")
+                    f"(concurrency cap={QEMU_MAX_CONCURRENT})"
+                )
             if not announced:
-                print(f"[QemuVM] all {QEMU_MAX_CONCURRENT} QEMU slots busy; "
-                      f"queuing (queue time excluded from "
-                      f"{MAX_VM_LIFETIME_SECONDS // 60}-min lifetime cap)...")
+                print(
+                    f"[QemuVM] all {QEMU_MAX_CONCURRENT} QEMU slots busy; "
+                    f"queuing (queue time excluded from "
+                    f"{MAX_VM_LIFETIME_SECONDS // 60}-min lifetime cap)..."
+                )
+                announced = True
+            time.sleep(2)
+
+    def _acquire_arch_slot(self) -> None:
+        """Serialize same-arch boots under the global slot (see per_arch_cap).
+        Held on self._arch_slot_fd for this process's lifetime alongside the
+        global slot; cross-arch boots don't contend so they stay parallel. On
+        timeout we release the global slot we already hold so it doesn't leak."""
+        cap = per_arch_cap(self.config.arch)
+        if cap <= 0:
+            return  # uncapped (arm64 TCG): no per-arch lock
+        arch = self.config.arch
+        deadline = time.monotonic() + QEMU_QUEUE_TIMEOUT
+        announced = False
+        while True:
+            for i in range(cap):
+                fd = os.open(
+                    str(SLOT_DIR / f"arch-{arch}-{i:02d}"),
+                    os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                    0o644,
+                )
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self._arch_slot_fd = fd
+                    if announced:
+                        print(f"[QemuVM] acquired same-arch ({arch}) slot {i} after queuing")
+                    return
+                except OSError:
+                    os.close(fd)
+            if time.monotonic() >= deadline:
+                self._release_slot()  # don't leak the global slot we hold
+                raise TimeoutError(
+                    f"no free same-arch ({arch}) slot after {QEMU_QUEUE_TIMEOUT:.0f}s "
+                    f"(per-arch cap={cap})"
+                )
+            if not announced:
+                print(
+                    f"[QemuVM] same-arch ({arch}) boot in progress; queuing "
+                    f"same-arch (cap={cap}, cross-arch stays parallel)..."
+                )
                 announced = True
             time.sleep(2)
 
     def _release_slot(self) -> None:
-        """Release the concurrency slot (idempotent)."""
-        if self._slot_fd is not None:
-            try:
-                os.close(self._slot_fd)
-            except OSError:
-                pass
-            self._slot_fd = None
+        """Release the concurrency slot(s) (idempotent): the per-arch sub-cap
+        lock and the global slot."""
+        for attr in ("_arch_slot_fd", "_slot_fd"):
+            fd = getattr(self, attr)
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                setattr(self, attr, None)
 
     def _watchdog_kill(self) -> None:
         """Fired by the 30-min hard-cap timer. Kill the VM's process group.
@@ -803,8 +949,10 @@ class QemuVM:
         proc = self._proc
         if proc is None:
             return
-        print(f"[QemuVM] WATCHDOG: {self.config.arch} VM exceeded "
-              f"{MAX_VM_LIFETIME_SECONDS // 60}-min hard cap — killing pid={proc.pid}")
+        print(
+            f"[QemuVM] WATCHDOG: {self.config.arch} VM exceeded "
+            f"{MAX_VM_LIFETIME_SECONDS // 60}-min hard cap — killing pid={proc.pid}"
+        )
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             time.sleep(3)
