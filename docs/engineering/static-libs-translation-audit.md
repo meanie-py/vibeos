@@ -131,7 +131,9 @@ shift (0 hivewrt failures, amd64 cold ✓boot ✓net). What remains on the kerne
 `static_libs` is the genuine cohab floor — libntoskrnl_vista, libcmlib
 (placeholder TU), librtl, libhal, libkdcom, libbootvid, libchkstk (i386/arm64) —
 plus boot-critical bootloader C (uefildr/rosload mini_hal+libcntpr) and the
-winsrv / ntdll-librtl lanes.
+winsrv lane. NB: librtl is **not** a translation lane — the rtl `*.c` surface is
+100% Rust (`rtl-rust`); librtl.a is only the irreducible C-variadic+asm floor
+(34 syms i386 / 18 amd64 — see its live-surface row).
 
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
 
@@ -158,7 +160,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | ~~`sdk/lib/lsalib/libntlsalib.a`~~ | — (no cargo consumers) | LSA helpers. **✅ Rust (`lsalib-rust`)**. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("lsalib-rust")`; empty C-body stub + cmake `liblsalib_rust.a` both gone. No cargo module reuses it. |
 | ~~`sdk/lib/rossym/librossym.a`~~ | — (no cargo consumers) | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)**. **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("rossym-rust")`; empty C-body stub + cmake `librossym_rust.a` both gone. No cargo module reuses it. |
 | ~~`sdk/lib/{wdmguid,poguid,ioevent}.a`~~ | ~~kernel ×2~~ | GUID data libs. **✅ Rust (`guids-rust`, commit `8e61fee3e68`)** — 217 deduped GUID statics, `.rust_lib()`'d into both kernels, the 3 cmake `.a` DROPPED from static_libs. cold smoke ×3. C kept on disk for non-kernel cmake consumers. |
-| `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
+| `sdk/lib/rtl/librtl.a` | ntdll, kernel ×2 | **NOT a translation gap — the whole `sdk/lib/rtl/*.c` surface is Rust** (`rtl-rust` = 5681 syms; rtl-translation-audit.md "ground-truth re-verified 2026-06-14"). **2026-06-20 re-verify: librtl.a is down to 34 syms i386 / 18 amd64 — purely the irreducible floor:** the C-variadic DbgPrint family (`dbgprint_variadic.c`: DbgPrint/DbgPrintEx/wine_dbg_*/ros_dbg_log — Rust can't define C variadics, same class as the printf shells) + per-arch asm (`except_asm.s` SEH dispatch RtlpExecuteHandler*/RtlCaptureContext/RtlRaiseException, `rtlmem.s` RtlCompareMemory/Fill/Move/Zero, `rtlswap.S` byteswaps, `debug_asm.S` DbgBreakPoint/DebugService). Elimination (cargo-native, not translation) = `c_from_compile_db` the variadic shells (cntpr pattern) + route the asm to existing crates (`mem`/`byteswap`) or `global_asm!` (pseh-rust/setjmp-rust pattern) — a floor-cleanup, not a port. |
 | ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
 | ~~`sdk/lib/smlib/libsmlib.a`~~ | ~~csrsrv, smss~~ | **✅ Resolved 2026-06-13 (`cf7a6caa082`)** — NOT translation debt: smclient.c is already a Rust port (`smss-csrss-rust/src/smlib/smclient.rs`, compiled into the body via `pub mod smlib`); smutils.c is dead (compiled nowhere). The cmake target is a comment-only cohab stub; the body defines all 7 Sm* + SmBaseTag, so it was inert (residue probe ×3). Dropped from both build.rs → csrsrv + smss ZERO cmake .a. C kept on disk. |
 | `sdk/lib/uuid/libuuid.a` | winsrv, mlang (2) | GUID/IID constants. Tiny; data. |
@@ -172,7 +174,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 
 | Lib | Then | Now |
 |---|---|---|
-| `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
+| `librtl` | **Rust** | The whole `sdk/lib/rtl/*.c` surface is flipped (`rtl-rust` = 5681 syms; ground-truth re-verified 2026-06-14). `librtl.a` is down to the irreducible floor (34 syms i386 / 18 amd64: C-variadic DbgPrint family + per-arch asm) — see the live-surface row. Translation done; only a cargo-native floor-cleanup remains. |
 | `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD + win32k + winsrv + hal dropped it; only uefildr/rosload bootloaders + kernel-reuse framebuf remain) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
 | `libcmlib` | C | **Rust ×3 (kernel AND loader)** (`cmlib-rust`); kernel body 100% Rust all arches (cmake `.a` = placeholder TU), loader links `cmlib-rust --features bldr` (`da9c72b240d`). x86 ungate of the OTHER 5 cohab libs landed `bacd1fc64d3` (the suspected hive-path miscompile was a red herring; real cause was an i386 ABI bug). |
