@@ -150,25 +150,50 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
     if not test_file.exists():
         run.add(Stage("net", status="skip", detail="no test_net.py"))
         return
-    cmd = [sys.executable, "-m", "pytest", str(test_file),
-           "--arch", "amd64-uefi-net", "--timeout", "600", "-q",
-           "-p", "no:cacheprovider"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "--arch",
+        "amd64-uefi-net",
+        "--timeout",
+        "600",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+    ]
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
-                              text=True, timeout=1200)
+        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
     except subprocess.TimeoutExpired:
-        run.add(Stage("net", status="fail", detail="net suite timed out",
-                      salient=["tests/qemu/test_net.py hung > 1200s"]))
+        run.add(
+            Stage(
+                "net",
+                status="fail",
+                detail="net suite timed out",
+                salient=["tests/qemu/test_net.py hung > 1200s"],
+            )
+        )
         return
     tail = (proc.stdout or "").strip().splitlines()
-    summary = next((l for l in reversed(tail) if " passed" in l or " failed" in l
-                    or " error" in l), tail[-1] if tail else "")
+    summary = next(
+        (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
+        tail[-1] if tail else "",
+    )
     if proc.returncode == 0:
         run.add(Stage("net", status="ok", detail=summary.strip("= ")))
     else:
-        run.add(Stage("net", status="fail", detail="net suite FAILED",
-                      salient=[summary.strip("= "),
-                               "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net"]))
+        run.add(
+            Stage(
+                "net",
+                status="fail",
+                detail="net suite FAILED",
+                salient=[
+                    summary.strip("= "),
+                    "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net",
+                ],
+            )
+        )
 
 
 def smoke(args, repo: Path) -> int:

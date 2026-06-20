@@ -573,11 +573,17 @@ TARGETS = {
     # FsRtl/cache kernel types via ntkrnl-sys ddk. arm64 = the boot-exercised arch
     # (ramdisk.img is FAT32, the live system volume). Compiles at the 0x502 profile.
     "fastfat": Target(
-        name="fastfat", source_dir=FASTFAT_DIR,
+        name="fastfat",
+        source_dir=FASTFAT_DIR,
         output_crate=RUST_DIR / "fastfat-rust",
-        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
-        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
-        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # pciidex.sys — the PCI IDE bus extension (drivers/storage/ide/pciidex, ~1.9K LOC,
     # 5 .c: fdo/pdo/pciidex/miniport/power). WDM kernelmodedriver + EXPORT driver
