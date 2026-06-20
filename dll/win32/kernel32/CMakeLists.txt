@@ -61,7 +61,7 @@ list(APPEND SOURCE
     # wine/lzexpand.c — replaced by Rust (kernel32-rust/src/wine/lzexpand.rs); cohab-linked via libkernel32_rust.a
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
     # wine/profile.c — replaced by Rust (kernel32-rust/src/wine/profile.rs); cohab-linked via libkernel32_rust.a
-    wine/res.c
+    # wine/res.c — replaced by Rust (kernel32-rust/src/wine/res.rs); cohab-linked via libkernel32_rust.a
     # wine/timezone.c — replaced by Rust
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
     # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)
