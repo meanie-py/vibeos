@@ -62,7 +62,11 @@ _CFGS = {
     ),
     "arm64": ArchBuild(
         arch="arm64",
-        ninja_targets=("ntoskrnl", "hal", "uefildr"),
+        # livecd_hives builds boot/bootdata/system (the SYSTEM hive) so Start=1
+        # driver registrations (e.g. netstack) reach the arm64 boot — the arm64
+        # build used to skip it, staging a stale netstack-less hive. netstack is
+        # the cargo-driven netstack.sys; both are mkramdisk-staged below.
+        ninja_targets=("ntoskrnl", "hal", "uefildr", "netstack", "livecd_hives"),
         ninja_targets_optional=("arm64input", "arm64vid"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
@@ -72,6 +76,8 @@ _CFGS = {
             "boot/freeldr/uefildr/uefildr.efi",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
+            "drivers/network/netstack/netstack.sys",
+            "boot/bootdata/system",
         ),
     ),
 }

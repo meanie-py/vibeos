@@ -8,7 +8,7 @@
 #![cfg(target_arch = "aarch64")]
 #![allow(unused_variables)]
 
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use ntkrnl_sys::ddk;
 
 const TRUE: ddk::BOOLEAN = 1;
@@ -211,6 +211,152 @@ pub unsafe extern "system" fn HalGetAdapter(
     core::ptr::null_mut()
 }
 
+// ============================================================================
+// PCI configuration space (ECAM) — QEMU `virt` Generic PCIe (GPEX) host bridge.
+// ============================================================================
+//
+// QEMU `-M virt` exposes PCIe config space as a flat ECAM (Enhanced
+// Configuration Access Mechanism) MMIO window. Its base depends on the
+// machine's `highmem-ecam` setting:
+//   * high ECAM: 0x40_1000_0000, 256 MB (buses 0..=255)  — default on aarch64
+//   * low  ECAM: 0x0000_3F00_0000, 16 MB (buses 0..=15)
+// We probe both: map a bus-0 window and read the host-bridge VID/DID at 00:00.0;
+// whichever base reports a present vendor (low 16 bits != 0xFFFF) is the live
+// ECAM. Mapping a wrong/unbacked base reads back all-ones on QEMU, so the probe
+// is side-effect free.
+//
+// The only HAL bus-data consumer on arm64 today is netstack's `find_virtio_net`,
+// which scans bus 0 exclusively (QEMU keeps the NIC there) — so a single 1 MB
+// bus-0 ECAM window is sufficient. Any access with BusNumber != 0, or when no
+// ECAM is present, reads back as "device not present" (all-ones).
+//
+// ECAM address layout within the bus window:
+//   offset = (device << 15) | (function << 12) | register   (4 KB per function)
+// `SlotNumber` is the kernel PCI_SLOT_NUMBER packing used by the caller:
+//   bits 0..4 = device, bits 5..7 = function.
+
+const PCI_CONFIGURATION: ddk::BUS_DATA_TYPE = 4; // _BUS_DATA_TYPE_PCIConfiguration
+const ECAM_HIGH_BASE: u64 = 0x40_1000_0000;
+const ECAM_LOW_BASE: u64 = 0x0000_3F00_0000;
+const ECAM_BUS_SIZE: usize = 0x10_0000; // 1 MB = 256 functions * 4 KB
+const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
+
+// Cached mapped VA of the bus-0 ECAM window:
+//   0          = not yet probed
+//   usize::MAX = probed, no ECAM present
+//   otherwise  = mapped kernel VA
+static ECAM_BUS0_VA: AtomicUsize = AtomicUsize::new(0);
+const ECAM_VA_NONE: usize = usize::MAX;
+
+#[inline]
+fn phys(v: u64) -> ddk::PHYSICAL_ADDRESS {
+    ddk::PHYSICAL_ADDRESS { QuadPart: v as i64 }
+}
+
+/// Lazily map + probe the bus-0 ECAM window. Returns the mapped VA, or null when
+/// no PCIe ECAM is present (e.g. a non-virt machine).
+unsafe fn ecam_bus0_va() -> *mut u8 {
+    let cached = ECAM_BUS0_VA.load(Ordering::Acquire);
+    if cached == ECAM_VA_NONE {
+        return core::ptr::null_mut();
+    }
+    if cached != 0 {
+        return cached as *mut u8;
+    }
+    for &base in &[ECAM_HIGH_BASE, ECAM_LOW_BASE] {
+        let va = ddk::MmMapIoSpace(
+            phys(base),
+            ECAM_BUS_SIZE as _,
+            ddk::_MEMORY_CACHING_TYPE_MmNonCached as _,
+        ) as *mut u8;
+        if va.is_null() {
+            continue;
+        }
+        // Host bridge sits at 00:00.0 in either layout; a present vendor id
+        // confirms this base is the live ECAM.
+        let vid_did = core::ptr::read_volatile(va as *const u32);
+        if (vid_did & 0xFFFF) != 0xFFFF {
+            ECAM_BUS0_VA.store(va as usize, Ordering::Release);
+            return va;
+        }
+        ddk::MmUnmapIoSpace(va as ddk::PVOID, ECAM_BUS_SIZE as _);
+    }
+    ECAM_BUS0_VA.store(ECAM_VA_NONE, Ordering::Release);
+    core::ptr::null_mut()
+}
+
+/// Byte pointer to (device, function) config space within the bus-0 window.
+#[inline]
+unsafe fn ecam_fn_ptr(va: *mut u8, slot_number: ddk::ULONG) -> *mut u8 {
+    let device = slot_number & 0x1F;
+    let function = (slot_number >> 5) & 0x7;
+    let win = (device << 15) | (function << 12);
+    va.add(win as usize)
+}
+
+/// Shared read for HalGetBusData / HalGetBusDataByOffset. Copies `Length` bytes
+/// of config space at `Offset` into `Buffer`; absent device / no ECAM yields
+/// all-ones (the PCI "not present" convention).
+unsafe fn ecam_read(
+    bus_data_type: ddk::BUS_DATA_TYPE,
+    bus_number: ddk::ULONG,
+    slot_number: ddk::ULONG,
+    buffer: ddk::PVOID,
+    offset: ddk::ULONG,
+    length: ddk::ULONG,
+) -> ddk::ULONG {
+    if bus_data_type != PCI_CONFIGURATION || buffer.is_null() || length == 0 {
+        return 0;
+    }
+    let dst = buffer as *mut u8;
+    let va = ecam_bus0_va();
+    if va.is_null() || bus_number != 0 {
+        core::ptr::write_bytes(dst, 0xFF, length as usize);
+        return length;
+    }
+    let src = ecam_fn_ptr(va, slot_number);
+    let mut copied = 0u32;
+    for i in 0..length {
+        let reg = offset + i;
+        if reg >= ECAM_FN_SIZE {
+            break;
+        }
+        *dst.add(i as usize) = core::ptr::read_volatile(src.add(reg as usize));
+        copied += 1;
+    }
+    copied
+}
+
+/// Shared write for HalSetBusData / HalSetBusDataByOffset.
+unsafe fn ecam_write(
+    bus_data_type: ddk::BUS_DATA_TYPE,
+    bus_number: ddk::ULONG,
+    slot_number: ddk::ULONG,
+    buffer: ddk::PVOID,
+    offset: ddk::ULONG,
+    length: ddk::ULONG,
+) -> ddk::ULONG {
+    if bus_data_type != PCI_CONFIGURATION || buffer.is_null() || length == 0 {
+        return 0;
+    }
+    let va = ecam_bus0_va();
+    if va.is_null() || bus_number != 0 {
+        return 0;
+    }
+    let dst = ecam_fn_ptr(va, slot_number);
+    let src = buffer as *const u8;
+    let mut copied = 0u32;
+    for i in 0..length {
+        let reg = offset + i;
+        if reg >= ECAM_FN_SIZE {
+            break;
+        }
+        core::ptr::write_volatile(dst.add(reg as usize), *src.add(i as usize));
+        copied += 1;
+    }
+    copied
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalGetBusData(
     BusDataType: ddk::BUS_DATA_TYPE,
@@ -219,7 +365,7 @@ pub unsafe extern "system" fn HalGetBusData(
     Buffer: ddk::PVOID,
     Length: ddk::ULONG,
 ) -> ddk::ULONG {
-    0
+    ecam_read(BusDataType, BusNumber, SlotNumber, Buffer, 0, Length)
 }
 
 #[unsafe(no_mangle)]
@@ -231,7 +377,7 @@ pub unsafe extern "system" fn HalGetBusDataByOffset(
     Offset: ddk::ULONG,
     Length: ddk::ULONG,
 ) -> ddk::ULONG {
-    0
+    ecam_read(BusDataType, BusNumber, SlotNumber, Buffer, Offset, Length)
 }
 
 #[unsafe(no_mangle)]
@@ -347,7 +493,7 @@ pub unsafe extern "system" fn HalSetBusData(
     Buffer: ddk::PVOID,
     Length: ddk::ULONG,
 ) -> ddk::ULONG {
-    0
+    ecam_write(BusDataType, BusNumber, SlotNumber, Buffer, 0, Length)
 }
 
 #[unsafe(no_mangle)]
@@ -359,7 +505,7 @@ pub unsafe extern "system" fn HalSetBusDataByOffset(
     Offset: ddk::ULONG,
     Length: ddk::ULONG,
 ) -> ddk::ULONG {
-    0
+    ecam_write(BusDataType, BusNumber, SlotNumber, Buffer, Offset, Length)
 }
 
 #[unsafe(no_mangle)]
