@@ -149,6 +149,7 @@ members = [
     "atapi-rust",
     "mup-rust",
     "kernel32-rust",
+    "user32-rust",
     "uniata-rust",
     "dxg-rust",
     "rtl-heap",

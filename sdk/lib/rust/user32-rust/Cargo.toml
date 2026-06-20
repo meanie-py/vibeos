@@ -1,0 +1,25 @@
+# user32-rust — Rust translation of win32ss/user/user32 (the usermode Win32 windowing DLL).
+# staticlib → libuser32_rust.a, cohab-linked into the cmake-built user32.dll with the
+# translated .c files commented out (per-file flip, like kernel32-rust / ntdll-rust).
+# User-mode DLL: builds for the STANDARD per-arch targets (i686/x86_64 gnu, aarch64
+# gnullvm) with i386 -sse,-sse2 (the user-mode no-SSE rule). Imports resolve at runtime
+# to win32k.sys (NtUser* syscalls, via the win32ksys importlib), gdi32, kernel32, ntdll.
+#
+# First flip: misc/timer.c (KillSystemTimer) — a one-function leaf that forwards to the
+# NtUserCallHwndParam syscall. Proves the cohab link + export decoration + ×3 smoke
+# before any bulk translation. See docs/engineering/user32-translation-audit.md.
+
+[package]
+name = "user32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# win32k FFI surface (NtUser*/Nt* fns, SimpleCallRoutines consts, win32k struct
+# layouts) — bindgen, builds clean for the usermode targets, arch-consistent. The
+# rustconv opus output targets `win32k_sys::win32k::*` directly, so the translated
+# windows/ bodies integrate against this near-verbatim. Imports resolve via win32ksys.
+win32k-sys = { path = "../win32k-sys" }
