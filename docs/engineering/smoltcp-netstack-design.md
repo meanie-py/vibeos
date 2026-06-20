@@ -1,10 +1,15 @@
 # smoltcp Net Stack — Design
 
-**Date:** 2026-06-07 (design) · **Updated:** 2026-06-16 (M0–M6 + usermode winsock landed on mainline)
+**Date:** 2026-06-07 (design) · **Updated:** 2026-06-20 (M7 arm64 net data path — code, boot-verify pending)
 **Status:** **M0–M6 DONE + ON MAINLINE** (`c4911ea7c68`, master + continue-rust-port) — the
 C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
 all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
 smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` **11/11** on amd64).
+**M7 (arm64 net data path) in progress** — the amd64 data path is config-only (virtio-net-pci);
+arm64 was staged-but-inert. Code-complete on `netstack-arm64-m7`: real ECAM PCI config in the
+arm64 HAL (was a no-op stub), an `arm64-net` QEMU config (virtio-net-pci on the virt GPEX bus),
+and arm64 hive wiring so netstack's Start=1 registration reaches the boot. Boot-verification
+(find_virtio_net + virtio handshake + self-test on arm64) is pending a host-quiet smoke slot.
 The earlier "usermode-winsock blocker root-caused to a *storage* driver" was superseded — the
 true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
 **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`: IsBad{Read,Write,String}Ptr reported every
@@ -39,23 +44,24 @@ backend, DHCP/DNS/ping. Lane = worktree `vibeos-wt-netstack`, branch `netstack-p
   NIC (no DHCP) — otherwise their DISPATCH-level UART flood drops adjacent boot markers
   and false-hangs no-NIC boots. They still run+pass on the net config.
 
-**One open item — and it is NOT a netstack bug.** Real usermode `ws2_32` `socket()`
-needs the Winsock2 protocol catalog (msafd providers) in the system hive; without it
-`socket()` → `WSAEINVAL`. Baking the catalog in (`netstack_winsock.inf`) deterministically
-trips a **BUGCHECK 0x50**, but the hunt pins it to the **uniata/scsiport IDE storage
-stack**: an async paged-pool read-fault at a stable PC right after IDE adapter-init
-(`IoConnectInterrupt` fails ~33×, the caller starts the IoTimer on a half-set-up
-adapter). The catalog hive is innocent — its size shift just exposes the latent storage
-bug. The catalog `.inf` is preserved but its registration is disabled (boot stays green).
-Finishing it is a storage-driver fix, tangential to networking — see
-`docs/engineering/translation-debugging-field-manual.md` §9.9, the
-`drivers/network/netstack/CMakeLists.txt` comment, and memories
-`project_smoltcp_netstack_design` / `project_scsiport_rust_track`.
+**Usermode `ws2_32` `socket()` — RESOLVED.** It needs the Winsock2 protocol catalog
+(msafd providers) in the system hive; the `netstack_winsock.inf` bakes it in and is now
+**registered on all 3 arches** (`drivers/network/netstack/CMakeLists.txt`). The earlier
+"baking the catalog trips BUGCHECK 0x50 → uniata/scsiport storage bug" theory was a red
+herring: the catalog's size shift merely *exposed* an uninitialized `PortConfig` on a
+scsiport find-loop retry, fixed in `451ec29d08e`. With that fixed the catalog registers
+cleanly and `test_usermode_winsock_roundtrip` asserts (no skip) — `socket()` →
+`WSAEINVAL` is gone; the full ws2_32→msafd→AFD→netstack round-trip is GREEN.
 
-**Left for a truly "complete" v1:** (a) fix the storage 0x50 → re-enable the catalog →
-flip `test_usermode_winsock_roundtrip` from skip to asserts; (b) arm64 `DriverEntry`
-execution (arm64 networking is deferred — the driver is staged but the minimal ramdisk
-boot doesn't run its Start=1 init yet).
+**M7 — arm64 net data path (in progress).** The amd64 data path is config-only; arm64
+loaded `netstack.sys` nowhere and enumerated no NIC, for two reasons now fixed in code on
+`netstack-arm64-m7`: (1) the arm64 HAL's `HalGetBusData*` were no-op stubs, so
+`find_virtio_net` (HalGetBusDataByOffset over PCIConfiguration) could not see the PCIe
+bus — now a real ECAM implementation for the QEMU virt GPEX bridge; (2) the arm64 build
+skipped `livecd_hives`, so the staged SYSTEM hive carried no netstack Start=1 registration
+— now wired into the arm64 `ArchBuild`. Plus an `arm64-net` QEMU config (virtio-net-pci on
+the virt PCIe bus). Boot-verification (find + handshake + ICMP/TCP/DHCP/DNS self-test, and
+arm64 DMA cache-coherence in `NetHal`) is the remaining step — see the M7 milestone row.
 
 ---
 
@@ -224,6 +230,7 @@ All milestones landed (commits on `netstack-port`):
 | M4 | TDI dispatch (Rust) + completion bridge; **TCP via AFD/ws2_32** | TDI TCP round-trip via the real AFD path | ✅ `45ce3ffdb8e` (kernel TDI self-test; usermode winsock blocked on the storage 0x50) |
 | M5 | UDP via AFD; usermode dhcp/dns services over smoltcp | UDP datagram round-trip via the AFD datagram-event model | ✅ `b9127eb3e7c` (transport done; usermode-winsock vehicle built `349043e91b9`, blocked on the storage 0x50) |
 | M6 | `netstack.sys` cargo cutover; old `tcpip` ip/lwip removed from build | net green; boot smoke green ×3 arches | ✅ `0ad0e4e59dd` (+ crp merge `810d513d3c8`) |
+| M7 | arm64 net data path: ECAM PCI config in arm64 HAL + `arm64-net` config + hive wiring | `find_virtio_net` + handshake + ICMP/TCP/DHCP/DNS self-test green on arm64 | 🚧 code `a210ee02856` (`netstack-arm64-m7`); boot-verify pending host-quiet arm64 slot |
 
 The kernel TDI self-tests (`tditest.rs` TCP, `tdidgtest.rs` UDP) drive netstack's own
 `\Device\Tcp`/`\Device\Udp` through the *exact* IRP path AFD uses, so M4/M5 are proven at
@@ -259,9 +266,15 @@ Remaining open:
   **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`) made IsBad{Read,Write,String}Ptr
   report every valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT before
   reaching msafd (UDP was unaffected — only connect()/rnr.c validate via IsBad*Ptr).
-- **arm64 `DriverEntry`** — netstack.sys is staged on arm64 but the minimal ramdisk boot
-  doesn't run its Start=1 init yet (arm64 networking deferred).
-- **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads.
+- **M7 — arm64 net data path (in progress, `netstack-arm64-m7`).** Was: netstack.sys staged
+  on arm64 but Start=1 never ran and no NIC enumerated. Fixed in code: real ECAM PCI config in
+  the arm64 HAL (`hal-rust/src/arm64/halstubs.rs` — `HalGetBusData*` were no-op stubs);
+  `livecd_hives` + `netstack` wired into the arm64 `ArchBuild` so the SYSTEM hive carries the
+  Start=1 registration; `arm64-net` QEMU config (virtio-net-pci on the virt GPEX bus). Pending:
+  boot-verify `find_virtio_net` + virtio handshake + the ICMP/TCP/DHCP/DNS self-test, and check
+  arm64 DMA cache-coherence in `NetHal` (cached contiguous rings vs the device under TCG).
+- **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads;
+  server-side TCP (TDI_LISTEN/TDI_ACCEPT — netstack is outbound-client-only today).
 
 ---
 
