@@ -1,17 +1,43 @@
 
-add_subdirectory(kernel32_vista)
-
 add_definitions(-D_KERNEL32_)
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 spec2def(kernel32.dll kernel32.spec ADD_IMPORTLIB)
 
-# Shared between kernel32 and kernel32_vista
-add_library(kernel32_shared
-    client/shared_utils.c
-    client/file/fileutils.c
-)
-target_link_libraries(kernel32_shared PRIVATE pseh)
-add_dependencies(kernel32_shared psdk)
+# client/shared_utils.c + client/file/fileutils.c — replaced by Rust
+# (sdk/lib/rust/kernel32-shared-rust). This .a is linked into BOTH kernel32.dll
+# AND kernel32_vista.dll (the old kernel32_shared C static lib is dropped). The .c
+# files stay on disk (never-delete). Defined here, BEFORE add_subdirectory(kernel32_vista),
+# so the subdir can depend on it. See docs/engineering/kernel32-shared-vista-rust-plan.md.
+set(KERNEL32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+if(ARCH STREQUAL "i386")
+    set(KERNEL32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(KERNEL32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(KERNEL32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+set(KERNEL32_SHARED_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-shared-target")
+set(KERNEL32_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_shared_rust.a")
+file(GLOB_RECURSE KERNEL32_SHARED_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-shared-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${KERNEL32_SHARED_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${KERNEL32_SHARED_RUST_TARGET_DIR}
+        cargo build --release --target ${KERNEL32_RUST_TARGET}
+            -p kernel32-shared-rust
+            --manifest-path ${KERNEL32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${KERNEL32_SHARED_RUST_TARGET_DIR}/${KERNEL32_RUST_TARGET}/release/libkernel32_shared_rust.a
+        ${KERNEL32_SHARED_RUST_LIB}
+    DEPENDS ${KERNEL32_SHARED_RUST_SRCS}
+            ${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-shared-rust/Cargo.toml
+    WORKING_DIRECTORY ${KERNEL32_RUST_WORKSPACE_DIR}
+    COMMENT "Building kernel32-shared-rust (${KERNEL32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_kernel32_shared DEPENDS ${KERNEL32_SHARED_RUST_LIB})
+
+# kernel32_vista links KERNEL32_SHARED_RUST_LIB + depends on rust_kernel32_shared (above).
+add_subdirectory(kernel32_vista)
 
 list(APPEND SOURCE
     # client/actctx.c — replaced by Rust
@@ -152,8 +178,8 @@ set_module_type(kernel32 win32dll ENTRYPOINT DllMain 12)
 set_subsystem(kernel32 console)
 ################# END  HACK #################
 
-target_link_libraries(kernel32 psapi_static kernel32_vista_static kernel32_shared wine chkstk ${PSEH_LIB} ${KERNEL32_RUST_LIB})
+target_link_libraries(kernel32 psapi_static kernel32_vista_static ${KERNEL32_SHARED_RUST_LIB} wine chkstk ${PSEH_LIB} ${KERNEL32_RUST_LIB})
 add_importlibs(kernel32 ntdll)
 add_pch(kernel32 k32.h SOURCE)
-add_dependencies(kernel32 psdk errcodes asm rust_kernel32)
+add_dependencies(kernel32 psdk errcodes asm rust_kernel32 rust_kernel32_shared)
 add_cd_file(TARGET kernel32 DESTINATION reactos/system32 FOR all)

@@ -39,8 +39,9 @@ add_library(kernel32_vista MODULE
     kernel32_vista.rc
     ${CMAKE_CURRENT_BINARY_DIR}/kernel32_vista.def)
 set_module_type(kernel32_vista win32dll ENTRYPOINT DllMain 12)
-target_link_libraries(kernel32_vista kernel32_vista_static kernel32_shared)
+# kernel32_shared C → Rust (libkernel32_shared_rust.a, built in the parent CMakeLists).
+target_link_libraries(kernel32_vista kernel32_vista_static ${KERNEL32_SHARED_RUST_LIB})
 add_importlibs(kernel32_vista kernel32 ntdll_vista ntdll)
 add_delay_importlibs(kernel32_vista ntdll_vista)
-add_dependencies(kernel32_vista psdk)
+add_dependencies(kernel32_vista psdk rust_kernel32_shared)
 add_cd_file(TARGET kernel32_vista DESTINATION reactos/system32 FOR all)
