@@ -667,6 +667,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel32-vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "kmdf-sys"
 version = "0.1.0"
 dependencies = [
