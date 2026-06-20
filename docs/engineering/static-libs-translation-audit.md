@@ -1,16 +1,37 @@
 # Static-Lib Translation Audit (cargo drive)
 
-> **Ground-truth re-verified 2026-06-14** against `sdk/lib/rust/*-cargo/build.rs`
-> + CMakeLists + code — the "Where we are" ledger and the live-`.a` table are
-> accurate, with ONE important nuance corrected: the deep-C cohab libs
-> (cportlib/csq/arbiter/lsalib/rossym, and cmlib) are Rust-translated and the
-> Rust archive is pulled on **arm64 only**. On **i386/amd64 the kernel still
-> links the bundled C body** — the cmake `libX.a` is NOT a stub there (a
-> rust-only `--clean` does not rebuild it), and the x86 ungate is *blocked* by a
-> layout-sensitive miscompile on the cmlib `Hv*` hive-write path (cold amd64
-> HANG at `hivewrt.c`; gating the 5 cohab archives to arm64 is the fix —
-> `ntoskrnl-cargo/build.rs:163-178`, field manual "Incomplete Rust cohab flip",
-> crp `672b9808345`). The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
+> **Ground-truth re-verified 2026-06-15** against `sdk/lib/rust/*-cargo/build.rs`
+> + CMakeLists + code. **CORRECTION (supersedes the 2026-06-14 banner): cmlib is
+> NOT in the arm64-gated set — the kernel cmlib body is 100% Rust on ALL three
+> arches.** cmlib's cmake target REMOVE_ITEM's all 13 `.c` → a placeholder TU on
+> every arch (`sdk/lib/cmlib/CMakeLists.txt:28-59`) and `build.rs` links
+> `cmlib-rust` **unconditionally** (`ntoskrnl-cargo/build.rs:282`). The C-free
+> clean build is exactly what exposed (then fixed) the `write_bytes`
+> element-vs-byte APC bug — see `cmlib-apc-bugcheck-handoff.md` (RESOLVED
+> 2026-06-11); i386+amd64 boot C-free.
+>
+> The genuinely arm64-gated set is the OTHER **five** deep-C cohab libs —
+> **cportlib / csq / arbiter / lsalib / rossym**. **✅ x86 UNGATE DONE — landed
+> `bacd1fc64d3` (c-r-p + master), ×3-green full-from-scratch cold (2026-06-18).**
+> The gate is now `aarch64 || x86 || x86_64` (`ntoskrnl-cargo`/`ntkrnlmp-cargo`
+> build.rs), so all 5 `libX_rust.a` link into the kernel on i386/amd64/arm64 and
+> the bundled C bodies are dropped. The blocker was NEVER the suspected cmlib
+> "layout-sensitive miscompile" on the `Hv*` hive-write path — that was a
+> red herring. The real blocker: an **i386 stdcall/cdecl ABI mismatch** in cmlib
+> `cmcheck.rs`/`cmheal.rs` (CMAPI fns `HvMarkCellDirty`/`HvIsCellAllocated`/
+> `HvGetCellSize`/`CmpCompareCompressedName` declared `extern "C"` but defined
+> `extern "system"` = stdcall `_Name@N`; LLD fuzzy `_foo`↔`_foo@N` links it, both
+> sides pop → ESP drifts per call → the deep `CmCheckRegistry` tree-walk `ret`s
+> into stack word `0x20` → BUGCHECK 0x1E at smss). Fixed by making the decls
+> `extern "system"` (i386-only effect; no-op on amd64/arm64). Field manual §"#35
+> SOLVED". Follow-up owed: test-remove the cmlib no-prepop guard (kept
+> conservatively; the real bug was ABI not captures(none)).
+> **Loader-side cmlib is ALSO Rust now**: uefildr/rosload link
+> `cmlib-rust --features bldr` (the `-D_BLDR_` read-only surface) — the C
+> `blcmlib` is no longer linked by any loader (`da9c72b240d`, 2026-06-11; the
+> cmake `blcmlib` target is vestigial). So **cmlib is 100% Rust end-to-end —
+> kernel AND loader, all 3 arches**. (`cmlib-loader-swap-handoff.md` is stale; it
+> still says OPEN.) The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
 > (`14a0563b291`) — this doc never referenced them, so no correction needed.
 > No softfloat gap: the libcntpr float/printf/scanf core is already Rust.
 
@@ -85,8 +106,8 @@ Modules now fully cargo-native (ZERO cmake `.static_libs()` .a): pci, usbd,
 processr, swenum, hidparse, classpnp, cabinet, mlang, bootvid, framebuf,
 i8042prt, basesrv, csrss, csrsrv, smss, **userinit, winlogon, services** (18).
 The entire user-mode spine is now `.a`-free; what remains is boot-critical
-(hal — cgu-fragile guardrail; uefildr/rosload bootloaders keep genuine
-mini_hal+libcntpr), unvalidatable (KD transports — not smoke-covered), or active
+(uefildr/rosload bootloaders keep genuine mini_hal+libcntpr; hal's libcntpr
+dropped 2026-06-19), unvalidatable (KD transports — not smoke-covered), or active
 other-agent lanes (kernel ntoskrnl/ntkrnlmp 16-.a floor, win32k/winsrv, ntdll librtl).
 
 ## Remaining cmake-built `.a` consumed via `.static_libs()` (the live surface)
@@ -96,23 +117,23 @@ Sorted roughly by how entrenched (consumer count / centrality):
 
 | `.a` | Consumers | Status / path to Rust |
 |---|---|---|
-| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, hal, win32k, winsrv, framebuf, rosload, uefildr (classpnp + all 4 KD transports dropped it) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). NOT a softfloat gap — the float/printf/scanf CORE is already Rust (streamout engine incl. format_float, floatcvt, math, strtod, scanf). What stays C = the **irreducible variadic plumbing** (thin `va_start; streamout(...)` shells sprintf/_snprintf/… + scanf's `cnt_va_next_ptr`); Rust can't DEFINE C-variadics on stable. ELIMINATION (done for ntdll + all 4 KD transports): `.c_from_compile_db("libcntpr", &[shells + cnt-rust scanf_trampoline.c])` then drop the `.a`. |
-| `sdk/lib/pseh/libpseh.a` | kernel ×2, win32k (3) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss + winlogon + services dropped it 2026-06-13; hal + winsrv 2026-06-14** (probe: zero PSEH-runtime refs in the Rust body — dummy.c provides only `_SEH2_Volatile0`/`_SEH2_VolatileExceptionCode`). Remaining (kernel ×2, win32k) can follow — trivial. |
+| `sdk/lib/crt/liblibcntpr.a` | kernel ×2, framebuf, rosload, uefildr (classpnp + all 4 KD transports + win32k + winsrv + hal dropped it) | **C residual** of the CRT. Rust half is `cnt-rust-lib` (mechanism 5, already linked alongside). NOT a softfloat gap — the float/printf/scanf CORE is already Rust (streamout engine incl. format_float, floatcvt, math, strtod, scanf). What stays C = the **irreducible variadic plumbing** (thin `va_start; streamout(...)` shells sprintf/_snprintf/… + scanf's `cnt_va_next_ptr`); Rust can't DEFINE C-variadics on stable. ELIMINATION (done for ntdll + all 4 KD transports + kernel ×2 via cntpr_residue): `.c_from_compile_db("libcntpr", &[shells + cnt-rust scanf_trampoline.c])` then drop the `.a`. **2026-06-19: win32k DROPPED** (printf-shell + `_vscwprintf` residue via c_from_compile_db; offline nm drop-test sized it; i386 cold smoke OK) **+ winsrv DROPPED** (ZERO residue — cnt-rust-lib covers its whole surface; i386 cold smoke OK) **+ hal DROPPED** (i386 residue = `sprintf`/`swprintf` shells via c_from_compile_db, amd64 ZERO residue, arm64 never linked it; both x86 flavors cold-built + smoke green incl amd64 ✓net; cgu-fragility was a non-issue — the drop is symbol-clean). **Remaining active: uefildr/rosload** (bootloaders, intentionally keep genuine libcntpr+mini_hal) — **every kernel-mode + spine consumer now libcntpr-free.** |
+| `sdk/lib/pseh/libpseh.a` | win32k (1) | DUMMY_PSEH stub. ntdll/ntdll_vista/classpnp already use the `dummy.c` `c_shim` (mechanism 4); **csrsrv + basesrv + smss + winlogon + services dropped it 2026-06-13; hal + winsrv 2026-06-14**; **✅ kernel ×2 DROPPED 2026-06-19 → `pseh-rust`.** The first attempt (drop to nothing) failed because `ntoskrnl.spec` EXPORTS the PSEH3 runtime `_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/`_abnormal_termination` (-arch=i386,arm) as the driver-facing ABI — libpseh is live (exported), not dead code, so the kernel needed the runtime DEFINED even under DUMMY_PSEH. Solution: `pseh-rust` (`sdk/lib/rust/pseh-rust`) — the i386 `seh.s` runtime as `global_asm!` (disasm-IDENTICAL to the cmake `seh.s.obj` modulo two `push offset`→`mov+push` workarounds for an LLVM push-imm32-symbol reloc limitation) + the 2 `_SEH2_Volatile*` dummy data symbols as Rust statics (needed on ALL arches; referenced by C cohab pseh2.h). Wired `.rust_lib("pseh-rust", &[], true)` into ntoskrnl/ntkrnlmp (all arches; the asm self-gates `cfg(target_arch="x86")`, amd64/arm64 link only volatiles). i386+amd64 cold smoke green; all 5 symbols still exported from ntoskrnl.exe (same ordinals). win32k may still drop independently (its inputs probe clean). `seh.s`/`seh_prolog.s`/`dummy.c` kept on disk for the cmake win32k consumer. |
 | `sdk/lib/crt/libchkstk.a` | kernel ×2 (i386+arm64), hal (i386), winsrv, win32k (i386+arm64), uefildr | i386/arm64 stack-probe asm. amd64 gets `__chkstk` from clang_rt.builtins; ntdll/kernel i386 already assemble it in-cargo (`asm_archive`). **classpnp + basesrv + smss + winlogon + services dropped it 2026-06-13** (probe: no >4KB-frame refs; uefildr i386 also probes inert but kept — bootloader risk). → `global_asm!` crate or asm_archive everywhere. |
 | `sdk/lib/crt/libcntpr_rust.a` | win32k, framebuf, kdgdb, kdvm, kdcom-serial (5) | **Already Rust** (cmake-built from `cnt-rust`). Pure plumbing: swap for `.rust_lib("cnt-rust-lib")` (classpnp/ntdll/kernel/**hal + winsrv 2026-06-14** already do). |
 | `sdk/lib/crt/libmemcmp.a` | win32k, bootvid, kdcom, kdgdb, kdvm (5) | One C fn. The 8 driver/DLL modules + **hal (2026-06-14)** already dropped it (compiler-builtins-mem, build-std). Remaining = same one-line drop. |
 | ~~`sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a`~~ | ~~userinit, winlogon, services~~ | `_name`→`name` MSVC alias archive. **All cargo consumers dropped it: cabinet/mlang (Push A), lsass + userinit + winlogon + services 2026-06-13** (probe: zero oldname refs ×3). No cargo module reuses it now. |
-| `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. **`cport-rust`/`libcport_rust.a` exists; kernel pulls it on arm64 ONLY** — on i386/amd64 the kernel still links this C body (x86 ungate blocked by the cmlib hive-path layout miscompile, see banner). uefildr uses `cport-rust` via `.rust_lib`. |
+| `sdk/lib/cportlib/libcportlib.a` | kernel ×2, kdcom, kdgdb, kdcom-serial (5) | Serial/KD port lib. **`cport-rust`/`libcport_rust.a` — kernel pulls it ×3 (x86 ungate landed `bacd1fc64d3`); kdcom/kdgdb/uefildr already did. uefildr uses `cport-rust` via `.rust_lib`. |
 | ~~`sdk/lib/3rdparty/libwine/libwine.a`~~ | ~~userinit, winlogon~~ | 3rd-party wine glue (~1.1K LOC). **All cargo consumers dropped it: cabinet/mlang (cohab c_shim), userinit + winlogon 2026-06-13** (probe: inert ×3 — bodies reference none of wine's debug-channel stubs). No cargo module reuses it now. |
 | `sdk/lib/vcruntime/libsetjmp.a` | hal (1) | setjmp/longjmp. **✅ Rust (`setjmp-rust`, commit `a0f85f894bb`)** for the kernel — global_asm! save/restore (disasm-identical to the cmake asm) + Rust longjmp. DROPPED from both kernels' static_libs: amd64 links setjmp-rust, i386 (DUMMY_PSEH) + arm64 reference no setjmp (inert). hal still links the C `.a`. |
-| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — but kernel pulls `libarbiter_rust.a` on **arm64 ONLY**; on i386/amd64 it still links this C body (x86 ungate blocked, see banner). hal still links the C. |
+| `sdk/lib/drivers/arbiter/libarbiter.a` | kernel ×2, hal (3) | HW-resource arbiter. **✅ Rust (`arbiter-rust`, commit `4ebacf613a7`)** — but kernel pulls `libarbiter_rust.a` ×3 (kernel x86 ungate landed `bacd1fc64d3`); hal still links the C body (hal not in the kernel ungate). |
 | `hal/{halx86\|halarm64}/…/libhal.a` | kernel ×2 | HAL body the kernel links. The `hal.dll` PE itself is **`hal-rust`** (Rust); this `.a` is the kernel's separate reuse. |
-| `sdk/lib/cmlib/libcmlib.a` | kernel ×2 | Config-Manager hive lib. **`cmlib-rust` is the translation** (linked alongside via mechanism 5). On i386/amd64 the kernel still links this C body — and cmlib is the *epicentre* of the x86-ungate blocker: its `Hv*` hive-write path holds a latent layout-sensitive miscompile (cold amd64 HANG at `hivewrt.c`) that any link-layout shift tips. See banner + field manual "Incomplete Rust cohab flip" / "latent hive-path miscompile". |
+| `sdk/lib/cmlib/libcmlib.a` | kernel ×2 (placeholder TU only) | Config-Manager hive lib. **✅ FLIPPED ×3: kernel cmlib is 100% Rust** (`cmlib-rust`, mechanism 5, `.rust_lib` unconditional). The cmake `libcmlib.a` is a placeholder TU on every arch (all 13 `.c` REMOVE_ITEM'd). The **loader is also Rust** (uefildr/rosload link `cmlib-rust --features bldr`, `da9c72b240d`) → cmlib is 100% Rust kernel+loader ×3. cmlib WAS the suspected blocker epicentre, but the "latent hive-path miscompile" was a RED HERRING — the real blocker was an i386 stdcall/cdecl ABI mismatch in cmlib `cmcheck`/`cmheal` (fixed; x86 ungate of the OTHER 5 landed `bacd1fc64d3`). See banner + field manual "#35 SOLVED". |
 | `drivers/base/…/libkdcom.a` | kernel ×2 | KD COM transport. `kdcom-rust` is the standalone Rust flip; kernel keeps the `.a`. |
 | `drivers/base/…/libbootvid.a` | kernel ×2 | Boot video. `bootvid-rust` is the standalone Rust flip; kernel keeps the `.a`. |
-| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — kernel pulls `libcsq_rust.a` on **arm64 ONLY**; i386/amd64 still link this C body (x86 ungate blocked, see banner). |
-| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers. **✅ Rust (`lsalib-rust`)** — kernel pulls `liblsalib_rust.a` on **arm64 ONLY**; i386/amd64 still link this C body (x86 ungate blocked). |
-| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)** — kernel pulls `librossym_rust.a` on **arm64 ONLY**; i386/amd64 still link this C body (x86 ungate blocked). |
+| `sdk/lib/drivers/csq/libcsq.a` | kernel ×2 | Cancel-safe queue. **✅ Rust (`csq-rust`, commit `4ebacf613a7`)** — kernel pulls `libcsq_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
+| `sdk/lib/lsalib/libntlsalib.a` | kernel ×2 | LSA helpers. **✅ Rust (`lsalib-rust`)** — kernel pulls `liblsalib_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
+| `sdk/lib/rossym/librossym.a` | kernel ×2 | ROSSYM reader (~3,083 LOC). **✅ Rust (`rossym-rust`)** — kernel pulls `librossym_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
 | ~~`sdk/lib/{wdmguid,poguid,ioevent}.a`~~ | ~~kernel ×2~~ | GUID data libs. **✅ Rust (`guids-rust`, commit `8e61fee3e68`)** — 217 deduped GUID statics, `.rust_lib()`'d into both kernels, the 3 cmake `.a` DROPPED from static_libs. cold smoke ×3. C kept on disk for non-kernel cmake consumers. |
 | `sdk/lib/rtl/librtl.a` | ntdll (1) | RTL C bodies (~59K LOC). Active track → `rtl-translation-audit.md`; `rtl-rust` umbrella is the algorithm half. |
 | ~~`sdk/lib/nt/libnt.a`~~ | ~~csrss, smss~~ | **✅ Rust 2026-06-13** — `NtProcessStartup` ported to `smss-csrss-rust::entry_point` (gated csrss_main_only/smss_exe_only). csrss/smss no longer link it; the host tool keeps the C copy. csrss.exe now ZERO cmake .a. |
@@ -129,18 +150,18 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | Lib | Then | Now |
 |---|---|---|
 | `librtl` | C | C `.a`, ntdll only. `rtl-rust` umbrella = algorithm half. Active rtl track. |
-| `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD dropped it) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
+| `liblibcntpr` | C (~59K) | C residual `.a` (classpnp + all 4 KD + win32k + winsrv + hal dropped it; only uefildr/rosload bootloaders + kernel-reuse framebuf remain) + `cnt-rust-lib` Rust half. Residual = variadic printf/scanf shells (NOT softfloat — the float core is Rust); drop via `c_from_compile_db` (ntdll/KD pattern). |
 | `libhal` | C (~24K) | kernel reuse only; the `hal.dll` PE is `hal-rust`. |
-| `libcmlib` | C | `cmlib-rust` is the translation; kernel links the C `.a` on i386/amd64 (x86-ungate blocker epicentre — `Hv*` hive-path miscompile). |
+| `libcmlib` | C | **Rust ×3 (kernel AND loader)** (`cmlib-rust`); kernel body 100% Rust all arches (cmake `.a` = placeholder TU), loader links `cmlib-rust --features bldr` (`da9c72b240d`). x86 ungate of the OTHER 5 cohab libs landed `bacd1fc64d3` (the suspected hive-path miscompile was a red herring; real cause was an i386 ABI bug). |
 | `libbootvid` | C | **Rust** (`bootvid-rust`); `.a` kernel-reuse only. |
-| `librossym` | C (~3K) | **Rust** (`rossym-rust`); kernel pulls Rust `.a` arm64-only, C on i386/amd64. |
-| `libpseh` | C | DUMMY stub; ntdll/classpnp on `dummy.c` c_shim, csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13, 5 still reuse `.a` (kernel ×2, hal, winsrv, win32k). |
+| `librossym` | C (~3K) | **Rust** (`rossym-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
+| `libpseh` | C/asm | DUMMY stub + i386 SEH runtime. ntdll/classpnp on `dummy.c` c_shim; csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13; hal/winsrv 2026-06-14; **kernel ×2 → `pseh-rust` (global_asm! seh.s + Rust dummy volatiles) 2026-06-19**. Only win32k still reuses the `.a`. |
 | `libsetjmp` | C | **Rust** (`setjmp-rust`) for the kernel (amd64 global_asm!+Rust; i386/arm64 inert, dropped). hal still C. |
-| `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). Kernel pulls `libcport_rust.a` arm64-only; i386/amd64 still link C (x86 ungate blocked). |
+| `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). Kernel pulls `libcport_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
 | `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
-| `libcsq` | C (~440) | **Rust** (`csq-rust`); kernel pulls Rust `.a` arm64-only, C on i386/amd64. |
-| `libarbiter` | C (~406) | **Rust** (`arbiter-rust`); kernel pulls Rust `.a` arm64-only, C on i386/amd64, hal still C. |
-| `libntlsalib` | C (~345) | **Rust** (`lsalib-rust`); kernel pulls Rust `.a` arm64-only, C on i386/amd64. |
+| `libcsq` | C (~440) | **Rust** (`csq-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
+| `libarbiter` | C (~406) | **Rust** (`arbiter-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`), hal still C. |
+| `libntlsalib` | C (~345) | **Rust** (`lsalib-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
 | `libchkstk` | C/asm | hybrid: classpnp/basesrv/smss/winlogon/services dropped 2026-06-13; i386 ntdll/kernel in-cargo asm; amd64 clang_rt. |
 | `libkdcom` | C (~116) | **Rust** (`kdcom-rust`); kernel `.a` reuse. |
 | `libwdmguid`/`libpoguid`/`libioevent` | C | **Rust** (`guids-rust`, 217 GUID statics); DROPPED from both kernels' static_libs (commit `8e61fee3e68`). C on disk for non-kernel cmake consumers. |

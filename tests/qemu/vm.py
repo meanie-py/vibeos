@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
@@ -403,6 +404,65 @@ class Amd64UefiConfig(Amd64Config):
         ]
 
 
+def _free_tcp_port() -> int:
+    """Pick a currently-free localhost TCP port for a slirp hostfwd rule.
+
+    Bind-to-0 then release: there's a tiny reuse race, but QEMU rebinding it
+    moments later in practice never collides, and it keeps parallel net VMs
+    (multiple agents/worktrees) from fighting over a fixed port.
+    """
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+@dataclass
+class Amd64UefiNetConfig(Amd64UefiConfig):
+    """amd64-uefi + a virtio-net-pci NIC on a slirp user netdev.
+
+    The net-enabled variant for the smoltcp netstack lane (M0 of
+    docs/engineering/smoltcp-netstack-design.md). Deliberately NOT the default
+    smoke config: boot smoke keeps its meaning (no NIC), net is its own signal
+    (tests/qemu/test_net.py).
+
+    slirp defaults give the guest a ready-made mini-internet:
+      network 10.0.2.0/24, gateway+host 10.0.2.2, DNS forwarder 10.0.2.3,
+      built-in DHCP server (leases from 10.0.2.15).
+    Host->guest reachability goes through hostfwd only (slirp has no inbound
+    ICMP), so the TCP echo check connects to 127.0.0.1:echo_hostfwd_port,
+    forwarded to guest port ECHO_GUEST_PORT.
+    """
+    arch: str = "amd64-uefi-net"
+    # Guest-side TCP echo port the netstack self-test listens on (M2+).
+    ECHO_GUEST_PORT: int = 7777
+    # Host port forwarded to the guest echo port; allocated in qemu_args().
+    echo_hostfwd_port: int = 0
+    # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual
+    # address:port, which slirp pipes through `cat` on the host (a built-in
+    # line echo — no host-listener startup race). This is the path an outbound
+    # TCP client (and later winsock-via-AFD) uses; the guest's serial markers
+    # prove connect/send/recv.
+    GUESTFWD_ADDR: str = "10.0.2.100"
+    GUESTFWD_PORT: int = 9999
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        self.echo_hostfwd_port = _free_tcp_port()
+        return [
+            *super().qemu_args(work_dir),
+            # Modern-only virtio (PCI\VEN_1AF4&DEV_1041, virtio 1.x): the
+            # netstack backend (virtio-drivers) speaks the modern interface,
+            # and forcing it here keeps the device contract unambiguous —
+            # same reasoning as arm64's virtio-mmio.force-legacy=false.
+            "-device", "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
+            "-netdev",
+            f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
+            f"-:{self.ECHO_GUEST_PORT}"
+            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+        ]
+
+
 @dataclass
 class Arm64TestKernelConfig(Arm64Config):
     """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options."""
@@ -464,6 +524,7 @@ ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64-test": Arm64TestKernelConfig,
     "i386-uefi": I386UefiConfig,
     "amd64-uefi": Amd64UefiConfig,
+    "amd64-uefi-net": Amd64UefiNetConfig,
 }
 
 

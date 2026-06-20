@@ -51,6 +51,11 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 - **Inline-interaction fold:** a fn that's fold-free standalone can fold its *caller* when inlined — LLVM combines the inlinee's writes with the caller's `memcpy`/dereferenceable facts. Fix: `#[inline(never)]` (classpnp `ClassInitializeDispatchTables` inlined into `ClassInitialize` → ud2 after `RtlCopyUnicodeString`).
 **Note:** i386-only — on amd64/arm64 `extern "C"` == `extern "system"` (both cdecl), so these never fold there. Fixed in classpnp `ec2ad2607db`; full writeup `classpnp-cohab-link-gap.md`.
 
+### `verify_abi.py` blind spot: INTERNAL (non-exported) symbols — runtime ESP corruption, not a fold (kernel32, 2026-06-15)
+**Symptom:** i386 runtime `STATUS_INVALID_HANDLE` from `WaitForMultipleObjectsEx` (winlogon StartRpcServer → rpcrt4 wait → WAIT_FAILED → black screen), **with `verify_abi ✓` AND `verify_ffi ✓` AND no `ud2`/fold.** The mismatched fn (`TranslateStdHandle`, cdecl per handle.c's no-`WINAPI` decl) was DEFINED `extern "C"` but one caller (`synch.rs`) DECLARED it `extern "system"`. Because it's a kernel32-**internal** helper (not in `ntoskrnl.spec` / bindgen), `verify_abi.py` — which cross-checks extern blocks *against the spec/bindgen* — never sees it. And it didn't fold (the two ABIs agree enough that LLVM emits a real call), so `scan_ud2` is silent too. It just **drifts ESP 4B per call**: harmless in a single-call caller (absorbed at the frame-pointer epilogue) but in `WaitForMultipleObjectsEx`'s per-handle translate **loop** the drift corrupts the ESP-relative handle buffer (release build omits the frame pointer) → garbage handles. WaitForSingleObject (one TranslateStdHandle call) survived; the loop didn't.
+**Diagnostic:** the def↔decl CC scan must run over the **whole crate's own symbols**, not just spec-checked ones — find every fn name appearing under BOTH `extern "C"` and `extern "system"` (decls *and* `pub extern "X" fn` defs). Catches what verify_abi misses for internal helpers. (kernel32 had 4; only the *called* ones bite — `TranslateStdHandle`, `BaseFormatTimeOut`. Address-taken-only startup fns (BaseThreadStartup/BaseFiberStartup/BaseProcessStartup written into CONTEXT `.Eip/.Rip`) are harmless: never called via the decl, and i386 uses a separate `_BaseThreadStartupThunk@0`.)
+**Fix:** decl CC := def CC := the C contract (no `WINAPI`/`NTAPI` ⇒ cdecl ⇒ `extern "C"`; `WINAPI`/`NTAPI` ⇒ stdcall ⇒ `extern "system"`). Fixed `f2f349d8a5d` (kernel32-port).
+
 ### disk-rust variants (2026-06-11): llvm.assume fold, noreturn-decl poison, per-symbol CC authority
 Same class as the classpnp at-scale fold; four refinements from the disk.sys port:
 - **Faster diagnostic than `-print-changed`:** `cargo rustc -p <crate> --target i686… --release -- --emit=llvm-ir`, then read the folded fn in the `.ll`. The smoking gun is `tail call void @llvm.assume(i1 %cond)` where the source had `if cond` — LLVM proved the OTHER branch UB and converted the branch to an assume. Whatever the surviving path calls next is NOT the culprit; the proven-UB call on the dead path is.
@@ -235,6 +240,13 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 **Bottom line:** the deep-C cohab "ungate" cannot complete the flip — it's redundant AND it exposes a latent layout-fragile kernel miscompile that ANY link change re-triggers (the exact crp layout merely dodges it today). Keep the `if arch=="aarch64"` gate. Two real follow-ons, both bigger than a one-line fix: (1) repair `find-kbase`/symbolication, then name + `write_volatile` the storage-path site; (2) understand why the `cgu=256` firewall doesn't neutralize this within-crate captures(none) case (a true flip needs the kernel layout-robust, not just this one site patched).
 **Source:** uniata arm64 bring-up 2026-06-14 — ntoskrnl-cargo + ntkrnlmp-cargo (cport/csq/arbiter/lsalib/rossym, arm64-gated) + conutils-rust (csStd*/StringCchVPrintfExW/InterlockedCompareExchangePointer/Con*printf forwarders); hive captures(none) candidate fix `d67f97bd87a`
 
+**🔁 RE-CONFIRMED + the tip MIGRATED AGAIN (2026-06-15, staticlibs lane, on crp+LAPIC):** redid the amd64 ungate on a fresh crp merge (incl. the LAPIC clock fix `22356522c58` + the find-kbase PE32+ fix `5bba213f288`). Clean controlled A/B on one build dir: **baseline (no ungate) = 3/3 boot to desktop ~3m45s; ungate (+5 rust archives) = 3/3 HANG_TIMEOUT 6m01s.** Decisive new facts:
+- **The miscompile MIGRATED a THIRD time.** 2026-06-14 it was the storage `0x50` (uniata enum); now it's a **late user-mode HANG** — PID 112 (csrss/services) wedges right at `[LDR] DllMain(crypt32.dll)` after loading the ws2_32→dhcpcsvc→iphlpapi→mbedtls→bcrypt→advapi32_vista chain. NO bugcheck; kernel alive (LAPIC `[CLKRATE]` ticking, `KiIdleLoop`); the user thread is blocked in a kernel call that never returns (classic captures(none) output-write elided → a wait/status never set). This **cements that it's a captures(none) CLASS, not one fixed site** — any link-layout perturbation tips whichever vulnerable site the current codegen exposes. So a per-site `write_volatile` is whack-a-mole; the durable fix is kernel layout-robustness (follow-on 2 below), not naming this one site.
+- **find-kbase is now FIXED** (`5bba213f288`): `qemu/start.sh --gdb` resolves kbase (`find-kbase kbase=0x… reloc=0x…`). So symbolication of driver/late PCs works now — the 2026-06-14 "find-kbase fails" blocker is gone.
+- **But a debuggable-yet-bootable kernel is STILL the wall.** `list-threads` needs Rust DWARF in the linked `ntoskrnl.exe`; the release kernel has `Rust=0`. Methods that DON'T get DWARF in: (i) `reactos-link` `compile()`'s `no_prepop`/RUSTFLAGS path — the **main body (`kernel-rust`) builds via `build_rust_crate` (lib.rs ~849), NOT `compile()`**, so editing the `no_prepop` match is a no-op on the body (this also means a `no-prepopulate-passes` systemic-guard test must go through `rust_build_rustflags`/`build_rust_crate`, NOT the `no_prepop` arm — the body was never actually tested with it); (ii) `[profile.release.package.{kernel-rust,ntoskrnl-rust}] debug=2` → `libkernel_rust.a` still has **0 DW_TAG** (per-package profile didn't apply under the `-Z build-std` json-target build). The method that DOES apply — workspace `[profile.release] debug=true` — **bloats the kernel so freeldr dies at "Switching stack…"** (per the 2026-06-14 note). **→ the real prerequisite for the GDB hunt is split-debuginfo: `-C debuginfo=2 -C split-debuginfo=packed` (or `objcopy --only-keep-debug` + strip the loaded image) so the booted PE stays lean but GDB has a sidecar `.dwp`/`.debug`.** That's a tooling sub-project, owed before the site can be named.
+
+**Updated bottom line (2026-06-15):** the x86 cohab ungate is a confirmed layout-fragile *class* wall and remains **non-blocking** (baseline green; the 5 libs already run as Rust on arm64, as C on x86). Keep the `if arch=="aarch64"` gate. The durable path is two stacked sub-projects: **(A) split-debuginfo bootable-debug kernel** → walk PID 112's blocked thread → name the wait-site; **(B) kernel layout-robustness** for the captures(none) class (test `-C no-prepopulate-passes` on the kernel BODY via `build_rust_crate`/`rust_build_rustflags`, watching boot-size; understand why `cgu=256` doesn't neutralize within-crate/internal-helper captures(none)). Until (A)+(B), the ungate cannot land.
+
 ### cnt-rust CRT shim returns garbage / hangs ONLY on amd64/arm64
 **Symptom:** A `libcntpr` CRT symbol misbehaves only on amd64/arm64 — memset dead-store-eliminated into a guard-only spin (freeldr hung after "Starting freeldr from UEFI"); `_strnicmp` collapsed to "always equal"; or (cargo-drive) arm64 ntdll printf misformats (`0xc000003a`→`0xc`) → 0x6A bugcheck.
 **Root cause:** After the per-fn cgu-split, tiny one-shim-per-CGU objects let LLVM's full pipeline miscompile isolated shims. i386 always carried `-C no-prepopulate-passes`; amd64/arm64 (and any cargo-driver scrubbing RUSTFLAGS) never got it. It's a class bug, not whack-a-mole.
@@ -271,6 +283,11 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 
 Bugs that link clean and compile clean but corrupt memory or strings at runtime — derived from per-file translation footguns where the Rust mirror, literal width, or struct offset silently disagrees with C.
 
+### Hand-built kernel wire struct as `#[repr(C, packed)]` mislocates a field vs the naturally-aligned C struct
+**Symptom:** a value passed in/out via a hand-rolled mirror of a C struct comes out shifted by a few bytes (e.g. a TDI connect to 10.0.2.100 is parsed as 2.100.0.0); the operation silently fails (connection never establishes, request rejected). Compiles + links clean. The CONSUMER (real kernel/driver) builds the struct with natural alignment, so only the hand-built copy is wrong.
+**Root cause:** declaring the mirror `#[repr(C, packed)]` removes the alignment padding the real `#[repr(C)]` struct has. Classic case: `TDI_ADDRESS_IP { USHORT sin_port; ULONG in_addr; ... }` — the `ULONG` forces 4-byte alignment, so C inserts **2 padding bytes after `sin_port`**, putting `in_addr` at offset 4. A packed mirror puts it at offset 2 → every reader using the real (aligned) layout reads 2 bytes early. The kernel's own parser was correct all along; only the hand-built test/FFI struct was wrong.
+**Fix:** mirror the kernel's NATURAL alignment — either use `#[repr(C)]` (let Rust insert the same padding) or, if you need `packed` for a wire buffer, add the explicit `_pad` fields the aligned struct has. Cross-check field offsets against the consumer's struct, not just the field list. **Companion footgun:** a synchronous-IRP test helper that waits with `KeWaitForSingleObject` must check the WAIT return — on `STATUS_TIMEOUT` the IRP never completed and the stack `IO_STATUS_BLOCK` is still zero (== STATUS_SUCCESS), so reading it reports a FALSE "OK" that masks the real failure (this pair hid a netstack TDI round-trip that never actually connected, 2026-06-13).
+
 ### amd64 BUGCHECK 0x1E (STATUS_DATATYPE_MISALIGNMENT 0x80000002), i386/arm64 fine, after a flip with a UNICODE_STRING name
 **Symptom:** amd64-only deterministic 0x1E at a fixed win32k/probe PC; P1 = `0xffffffff80000002`; probe arg register holds an ODD pointer (e.g. rcx=`0x7ff87028453`, rdx=0x14=10 WCHARs).
 **Root cause:** rustconv emits `b"C\0S\0D\0V\0...".as_ptr() as *mut u16` for a wide-string `UNICODE_STRING.Buffer`. `b"..."` is `&[u8;N]` with alignment 1, so it can land at an odd address; amd64 `ProbeForRead(buf,len,sizeof(WCHAR))` enforces 2-byte alignment and raises, unhandled under DUMMY_PSEH.
@@ -304,7 +321,8 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Silent csrss/PnP hang or kernel BUGCHECK indexing a bindgen flexible array past 0
 **Symptom:** enumeration processes element [0] then dies before [1]; csrss silently dies (no panic output) at i=1 → BUGCHECK 0x4C STATUS_SYSTEM_PROCESS_TERMINATED; amd64 silently corrupts/hangs (no bounds-check crash visible).
 **Root cause:** bindgen models C `T arr[ANYSIZE_ARRAY]`/`T arr[1]` as `arr: [T; 1]`. Rust `arr[i]` for i≥1 inserts a bounds check that panic-aborts under `panic="abort"`; C intentionally over-allocates so the memory is valid.
-**Fix:** use raw-pointer arithmetic — `arr.as_mut_ptr().add(i)` or `core::ptr::addr_of_mut!((*p).arr[0]).cast::<T>().add(i)`. Watch DEVICE_RELATIONS.Objects, CM_RESOURCE_LIST, IO_RESOURCE_REQUIREMENTS_LIST, KEY_VALUE_FULL_INFORMATION, CsrRootProcess.ServerData. Note: for `static mut FOO: [T;N]`, `addr_of_mut!(FOO).add(i)` strides by whole-array size — use `FOO.as_mut_ptr().add(i)`.
+**Fix:** use raw-pointer arithmetic — `arr.as_mut_ptr().add(i)` or `core::ptr::addr_of_mut!((*p).arr[0]).cast::<T>().add(i)`. Watch DEVICE_RELATIONS.Objects, CM_RESOURCE_LIST, IO_RESOURCE_REQUIREMENTS_LIST, KEY_VALUE_FULL_INFORMATION, CsrRootProcess.ServerData, **FILE_FULL_EA_INFORMATION.EaName** (`[CHAR;1]`, read the NUL terminator at `EaName[EaNameLength]`). Note: for `static mut FOO: [T;N]`, `addr_of_mut!(FOO).add(i)` strides by whole-array size — use `FOO.as_mut_ptr().add(i)`.
+**Variant — SILENT THREAD HANG (not a bugcheck), message went to debugcon not serial (2026-06-13):** `IoCheckEaBufferValidity` (iomgr/util.rs) translated C `Current->EaName[EaNameLength] != 0` literally → `(*Current).EaName[16]` on `[CHAR;1]` → `panic_bounds_check`. The kernel-rust panic handler (kernel-rust/src/lib.rs) writes `PANIC:<file>:<line>` to **debugcon port 0xe9** (the `-debugcon file:...` sink, NOT the COM/serial log) then `loop {}`. On QEMU's single vCPU the timer still preempts the spinning thread, so OTHER threads keep running — symptom looked like one operation wedging forever (here: opening `\Device\Tcp` WITH an EA buffer, the AFD/winsock path) while the rest of the system was live, with no message in the serial log. **Diagnosis when a single op wedges but the box stays alive: check the debugcon capture for `PANIC:`** before assuming a lock/IO-manager hang. Triggered the FIRST time any EA-based create ran (AFD/named-pipes); fixed kernel-wide by `*(*Current).EaName.as_ptr().add(EaNameLength as usize)`.
 **Source:** `feedback_bindgen_flexible_array_index.md`, `feedback_flexible_array.md`
 
 ### amd64/arm64 AV (BUGCHECK 0x1E 0xC0000005), i386 fine, from a hand-computed win32k flattened-head offset
@@ -349,6 +367,18 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** before building a separate FFI crate, check whether the parent master header already pulls the lib. If it does, FOLD the complete lib surface into the existing `-sys` crate instead: add the lib's headers to `wrapper.h` (under any required build defines like `#define FT2_BUILD_LIBRARY`), extend the allowlist (`FT_[A-Za-z0-9_]*|TT_...`), hand-add the fn-like macros bindgen drops (`FT_HAS_*`/`IS_*` → return `c_int`, callers use `!= 0`), regenerate ×3, then delete the redundant crate.
 **Source:** `project_freetype_ftsys_track.md`
 
+### Per-file hand-rolled struct view of a global reads a BITFIELD at offset 0 → feature silently disabled
+**Symptom:** A whole feature is silently off with no crash. fastfat: every long-file-name (>8.3) open returned STATUS_OBJECT_NAME_NOT_FOUND though the file was on the volume; 8.3 names worked. On arm64 this made the loader report `kernel32_vista.dll`/`advapi32_vista.dll`/`windowscodecs.dll` "missing" (c0000135), msvcrt's imports went unsnapped, and csrss jumped through an unresolved thunk (arm64 instruction abort at a raw RVA → looks like a reloc bug).
+**Root cause:** the file declared its OWN view of a shared global — `extern { static FatData: FatGlobalData; }` with a hand-rolled `struct FatGlobalData { ChicagoMode: u8 }` putting the field at offset 0. The real `FAT_DATA` has `ChicagoMode` as a packed `BOOLEAN:1` bitfield far past offset 0; offset 0 is `NodeTypeCode` (FAT_NTC_DATA_HEADER `0x0500`), whose little-endian low byte is `0x00` → `FatData.ChicagoMode != 0` is always FALSE. Two files (dirsup.rs, volinfo.rs) each had their own wrong stub; a third (strucsup.rs) correctly used the real type's `.ChicagoMode()` accessor — so the bug was invisible by grep-for-consistency.
+**Fix:** import the real generated type (`crate::types::FAT_DATA`) and read bitfields through the generated accessor (`FatData.ChicagoMode()`), never as a plain offset-0 field. Delete the hand-rolled stub struct. **Tell:** an `extern static <global>: <LocalStubStruct>` next to a `#[repr(C)] struct <LocalStubStruct> { one_field }` — the LLM fabricates a minimal view of a big global and guesses offset 0. Cross-check every such stub against the real type, especially when the field is a C bitfield.
+**Source:** fastfat-port `b2de393afb5` (2026-06-15), `project_fastfat_rust_track.md`
+
+### C `:31` bitfield read as a full DWORD → high flag bit corrupts the value (wild pointer/offset)
+**Symptom:** i386-only BUGCHECK 0x1E (KMODE AV, `0xc0000005`) deep in a kernel list-walk (`ExfAcquirePushLockShared`) on a bogus session-space pointer (`0xf6f65700`) — fired as explorer/children read version resources after the version.dll C→Rust flip. amd64/arm64 booted green (luck-masked).
+**Root cause:** `IMAGE_RESOURCE_DIRECTORY_ENTRY.OffsetToDirectory` is an `OffsetToDirectory:31` bitfield in C (ntimage.h) whose **top bit is `DataIsDirectory`**. The translation declared it a full `DWORD` and used it raw. Every intermediate resource-directory level has `DataIsDirectory=1`, so the Rust computed `root + (0x80000000 | offset)` → a pointer far outside the `resSection` heap buffer; the garbage offset/length cascaded into a kernel deref. `find_pe_resource()` is the *primary* path for any on-disk PE, so it fired on essentially every PE version query. Bug class: **bitfield-not-masked** (sibling of cast-before-offset / element-vs-byte and the FatData offset-0 bitfield above).
+**Fix:** mask before use — `OffsetToDirectory & 0x7FFF_FFFF` (and read the `:31`/USHORT siblings `& 0x7FFF_FFFF` / `& 0xFFFF`). **Tell / grep:** translations that use `.OffsetToDirectory`/`.OffsetToData`/`.NameOffset` (any C `:31`/`:N` bitfield) directly as an offset without masking the high flag bit. When the source field is a C bitfield, never read it as the full storage word.
+**Source:** version-rust `79d7680b685` (2026-06-18), dc/version rescue → mainline.
+
 ---
 
 ## rustconv translation-output bug catalog
@@ -358,6 +388,12 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 ### Wrong INLINED flag/constant literal (comment names the right flag, literal is a different one)
 **Symptom:** `SetFlag(f, 0x2 /* IRP_CONTEXT_FLAG_TOP_LEVEL */)` (0x2 is MORE_PROCESSING; TOP_LEVEL=0x10); `PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)` (PAL_BITFIELDS=0x2, 0x4=PAL_RGB); `RtlRaiseStatus(0xC0000002 /* STATUS_DATATYPE_MISALIGNMENT */)` (0xC0000002=NOT_IMPLEMENTED; MISALIGN=0x80000002). The LLM hardcodes a literal it labels with the intended name but the value is wrong/placeholder. Compiles & links clean; pure runtime/semantic. cdfs alone had 7 (TOP_LEVEL/TOP_LEVEL_CDFS/DISABLE_POPUPS/CDFS_NTC_IRP_CONTEXT/FSP_FLAGS/CCB_FLAG_DISMOUNT/CDFS_RESIDUAL); the codebase sweep found more in scsiport (LUNEX, HIGH), ntoskrnl se/srm (OBJ_OPENIF), win32k dibobj, disk, cabinet, smss.
 **Oracle:** `tools/scan_inline_flag_literals.py <crate/src/*.rs> --headers <driver C dir>` — **`verify_constants.py` is BLIND to this** (it only checks `const NAME = VALUE;` defs, not bare literals). The tool is tree-sitter/AST-based (regex can't pair a literal with its naming-comment across nested `|`/parens/casts — not a regular language); catalog = kernel headers + sdk/include/{xdk,ndk,psdk} + driver `--headers`. It's a TRIAGE AID not a verifier — residual FP classes need a human eye: flag-MASK unions (`A|B|C // N1|N2|N3` where the union is right but order differs), informational args (KWAIT_REASON `Wr*`, WPP TRACE_LEVEL), and value-tables labeled by index (COLOR_*, suppressed).
+
+### C `if (!Fn())` → Rust `if !Fn() != 0` — bitwise-NOT on an integer BOOLEAN makes the condition ALWAYS TRUE
+**Symptom:** a guard that should fire "only when the predicate is false" fires unconditionally. Real case (fastfat write.rs:382): `if !FatIsIoRangeValid(Vcb, byte, count) != 0 { return STATUS_DISK_FULL; }` → **every** non-paging, non-write-to-EOF user-file write returned `STATUS_DISK_FULL`, which killed the registry hive flush (`cmlib hivewrt.c:360/649` "Failed to write the base block header / alternate hive"). Boots otherwise (the path is only one of several), so it reads as a narrow "some writes fail" bug.
+**Root cause:** the callee returns a C `BOOLEAN`/`BOOL` (Rust `u8`/`i32`/`KPROCESSOR_MODE`, NOT `bool`). C's `!x` is logical; Rust's `!x` on an integer is **bitwise NOT**. So `!Fn()` is `0xFE`(from 1) or `0xFF`(from 0), and the appended `!= 0` (the LLM's truthiness cast) is then *always* satisfied: `(!Fn()) != 0` ≡ `true` for any value except all-ones. Net: the negation AND the truthiness-cast both got applied and the predicate is dead.
+**Fix:** `!Fn(...) != 0` → `Fn(...) == 0` (C `!x` on a BOOLEAN is exactly `x == 0`). fastfat had 10 sites (write.rs FatIsIoRangeValid + FatLookupMcbEntry×3; read.rs FlagOn×5 DASD/MDL gates; dirsup.rs FatIsFat32) — commit `5525f825288`.
+**Oracle/sweep:** `grep -rnE '!\s*[A-Za-z_][A-Za-z0-9_:]*\s*\([^;{]*\)\s*!=\s*0' --include=*.rs`. **Filter false positives** — fns that truly return Rust `bool` (`NT_SUCCESS`, `MI_IS_*`, `.is_null()`/`.is_some()`) make `!Fn()` a *correct* logical NOT and never have a trailing `!= 0` on the same call. The tell is specifically `!<call> != 0` (or `!<call> == 0`) where the call returns an integer BOOLEAN. Codebase-wide this also hit ntoskrnl `ke/i386/traphdlr.rs` (KiUserTrap), win32k (IsCJKT/co_IntMouseActivateWindow/IntCheckFontPathNames), cdfs (SectorOffset in an NT_ASSERT) — a recurring per-lane defect, worth a sweep on any LLM-translated crate.
 
 ### Translation-MODEL fidelity gap: DeepSeek output is markedly buggier on constants than Claude
 **Observation (2026-06-14):** the inlined-flag-literal sweep + the cdfs debug grind correlate hard with the translating model. **Claude-translated** crates (ntoskrnl 405 files, win32k 166, ntdll, most of kernel32, rtl×20, the FS libs) came back essentially CLEAN. **DeepSeek-translated** crates (cdfs, scsiport, disk, kernel32 lcformat/nls) carried the wrong-literal + wrong-struct-flag + dropped-control-flow defects (cdfs needed ~18 fixes to boot; scsiport LUNEX HIGH; disk SMART/pool). DeepSeek is far cheaper but trades real fidelity on numeric constants, flag bits, and SEH/control-flow faithfulness.
@@ -385,6 +421,17 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Root cause:** Sonnet (and `batch` especially) truncate complex bodies — inline asm + PCR access + bit-twiddling — without hitting max_tokens. `batch` is worst on >1000 LOC; stitcher oracle-injection can also mangle control flow (orphan `} else {`, raw-C fragments, literal `...`).
 **Fix / oracle:** use `translate` not `batch` for >1000 LOC. `grep -cE '^\s+(0u8|1u8)\s*$' file.rs` (high vs fn count = stubbed). Read 2-3 hottest fns against C before integrating; always audit IRQL/DPC/interrupt/scheduler hot paths. Re-translate a single stub via `--fn <name>` (cents). Drop injected SmokeDeliveryOracle DbgPrint — it's instrumentation, not C.
 **Source:** `feedback_rustconv_stubbed_bodies.md`, `feedback_rustconv_translate_gotchas.md`
+
+### Placeholder constants — the LLM invents a value for an enum/#define it can't resolve (fastfat, 2026-06-14)
+**Symptom:** logic is structurally faithful to the C but uses the *wrong number*, so a guard never fires / an enum never matches. Five distinct fastfat boot failures came from this one class, each unmasked by fixing the prior: `if NodeType==0/*FAT_NTC_ROOT_DCB*/` (real 0x504) → root-DCB guard dead → wild-ptr `KeAcquireGuardedMutex` **0x1E**; `FCB_CONDITION` (FcbGood=1/Bad=2/NeedsVerify=3) defined with placeholder values inconsistently across **9 files** (one file sets `FcbGood=0`, another checks `FcbGood=2`) → every fresh FCB mis-classified → **STATUS_FILE_INVALID 0xC0000098**; `FCB_LOOKUP_ALLOCATIONSIZE_HINT` `=0x4000`/`=0x7FFF..` vs real `((LONGLONG)-1)` → set-vs-check sentinel never matches.
+**Root cause:** the constant lives in a *header* (`fastfat.h` enum, a `#define`), not the `.c` being translated, so the LLM emits a local `const FcbGood: u32 = 0; // placeholder` (or a bare literal `0/*FcbGood*/`) and the rest of the function is internally consistent with the guess. **Two reasons this slips every per-file behavioral check:** (1) it's *cross-file* — file A writes the field, file B reads it, each looks fine alone; (2) semdiff/semantic-diff compares the Rust to *the .c body it was generated from* — the value isn't in that body, and a dead guard / never-true match is structurally identical to the correct one. NT_ASSERTs that would catch it in C are no-ops under DUMMY_PSEH.
+**Fix / oracle:** the LLM *self-flags* these — grep the crate for the tells: `grep -rnE '/\*placeholder\*/|// ?placeholder|// ?assumed|/\*Fcb|0/\*[A-Z]' src/`. Cross-check every such const against the C header value, and **run `verify_constants.py` over driver crates, not just ntoskrnl** (it cross-checks Rust consts vs C headers — it was never wired to fastfat, which is the actual process gap here). Prompt lever: instruct the translator to mark *any* invented value with `// placeholder` so it's greppable (turns the failure mode into a detectable signal — slightly lazier but far more findable). When a constant appears in N files, make ONE canonical def and re-export; N independent placeholder defs is the smell.
+**Source:** `40dd6711a5d` (fastfat-port), [[project_fastfat_rust_track]]
+
+#### Completing a dropped stub: verify the C vs PRISTINE upstream before "fixing" its apparent bugs
+**Symptom:** you go to translate a recovered stub (e.g. cdfs `CdOpenByFileId`, emitted by the grind as `STATUS_UNSUCCESSFUL` + "body missing from the provided C snippet") and the source C looks broken — a `while (TRUE)` loop with NO success `break` (only an error `try_return` on overshoot/!Found), or pointer handling that seems to NULL-deref.
+**Trap:** the instinct is "the repo's C was mangled, let me reconstruct the *correct* logic." Often it WASN'T — it's faithful upstream with a genuine long-standing latent bug on a rarely-hit path. cdfs `CdOpenByFileId` is verbatim reactos master: both the path-table and dirent `while(TRUE)` walks lack a success break, so CdLookupNext* always advances → an *uncached* open-by-id always returns `STATUS_INVALID_PARAMETER` (terminates via overshoot/!Found, NOT an infinite loop), making the Fcb-construction code after each loop effectively dead; only an already-cached Fcb completes the open. "Fixing" it would silently DEVIATE from upstream behavior.
+**How to apply:** (1) confirm the repo file is pristine — `git log --oneline -- <file>` (cdfs/create.c had only one unrelated touch). (2) `WebFetch` the matching `raw.githubusercontent.com/reactos/reactos/master/...` and diff the exact function. (3) if it matches upstream, translate FAITHFULLY — preserve the structure incl. dead/buggy paths, add `#[allow(unreachable_code)]` if a divergent loop makes a tail unreachable, and DOCUMENT the upstream behavior in a header comment. A faithful mirror means a later upstream fix "just works" in the Rust. Only treat it as a mangle (and reconstruct) if it genuinely diverges from upstream.
 
 ### DeepSeek/grinder fabrication-audit checklist (compiles-but-wrong at scale)
 **Symptom:** A DeepSeek-`--mode mechanical`/c2rust-anchored grind of a #define/macro-dense driver (HID parser, descriptor parsers) cargo-checks green but is silently wrong: parsing breaks, link fails, or a constant has the wrong facility.
@@ -421,6 +468,33 @@ those. `--unverifiable` (ALL_CAPS const not in ANY header) is too noisy to gate 
 opt-in investigative only.
 **Source:** [[feedback_llm_invented_enum_constants]], [[project_disk_rust_track]], [[project_mountmgr_rust_track]]
 
+### PSEH (`_SEH2_TRY/_FINALLY/_EXCEPT`) hand-lowering recipe (FS-driver translations)
+**Symptom:** a PSEH-dense driver (fastfat: 276 try-blocks; cdfs/vfatfs similar) translates
+with the SEH macros left as raw tokens in a fraction of functions — `cargo check` shows bare
+`error:` PARSE errors ("found `_SEH2_EXCEPT`", "expected `{`, found `||`"), NOT E-codes, which
+BLOCK the whole crate (resolve_imports can't run until it parses). Most blocks DO get lowered
+(left as `// _SEH2_TRY` comments); only the live residue (fastfat: 19 of 276) needs hand-work,
+concentrated in a few files. Find them: `cargo check 2>&1 | grep -oE "src/[a-z]+\.rs" | sort |
+uniq -c` — the per-file parse-error histogram is the worklist.
+**Lowering rules (DUMMY_PSEH — the whole kernel uses it; EXCEPT handlers are DEAD code, validate
+pointers instead of catching):**
+- `_SEH2_TRY{ body } _SEH2_EXCEPT(filter){ handler } _SEH2_END;` (and the `!`-macro form
+  `_SEH2_TRY!{…}_SEH2_EXCEPT!(…){…}_SEH2_END!;`) → emit the **body only**, drop the handler. It
+  references nonexistent `_SEH2_GetExceptionCode()/_GetExceptionInformation()` intrinsics and is
+  unreachable anyway. This is every `FatFsd*`/dispatch wrapper.
+- `_SEH2_TRY{ body w/ try_return/try_leave } _SEH2_FINALLY{ cleanup } _SEH2_END;` → the FINALLY
+  must ALWAYS run, so: wrap body in a labeled block, run cleanup AFTER it:
+  `'tryblk: { …body…; FINALLY-runs-after } ; { …cleanup… }`. `try_leave(NOTHING)` → `break 'tryblk;`;
+  `try_return(Status = X)` → `{ Status = X; break 'tryblk; }`. NEVER drop the finally — a skipped
+  cleanup (unpin BCB / release FCB / free pool) is a runtime leak or lock-imbalance, not a parse bug.
+- bare `_SEH2_TRY{ body } _SEH2_END;` → `{ body }`.
+- LLM-fabricated `extern { fn _SEH2_TRY()->i32; … }` + a `__seh_frame` if/else (ea.rs) → delete the
+  fake externs; the `if __seh_frame==0 {try} else {handler}` collapses to the try body (handler dead).
+Nested blocks lower inside-out. Validate per-file: `grep -nE "_SEH2_(TRY|FINALLY|EXCEPT|END|LEAVE)"
+<f> | grep -v '//'` must be empty, then re-run cargo check. Did fastfat flush.rs first to validate
+the recipe (3 blocks: 1 dispatch-EXCEPT, 1 triple-nested TRY/FINALLY+try_leave, 1 bare) → file clean.
+**Source:** [[project_fastfat_rust_track]]
+
 ### Odd ATAPI PIO transfer uses dword I/O and wedges CD reads
 **Symptom:** Boot reaches SMSS, then registry hive reads never complete; storage timeouts churn through `AtapiTimerDpc -> AtapiInterruptDpc -> AtapiResetController`, and the system eventually bugchecks because the boot CD is inaccessible. GDB/debugcon can prove real interrupts fire, so IRQ wiring is a red herring.
 **Root cause:** On ATAPI PIO reads, QEMU/IDE can report an odd final word count with DRQ still set on large CD reads (e.g. READ(10) length over 64 KiB). The C has a 64K/odd-count special case: unaligned ATAPI PIO must fall through to the 16-bit transfer path. The Rust port gated that fallback on `g_opt_VirtualMachine == VM_BOCHS`, so this QEMU path kept dword I/O enabled and missed the final word/DRQ transition.
@@ -444,6 +518,12 @@ opt-in investigative only.
 **Root cause:** rustconv strips the function-name identifier on translation, leaving a side-effect-free tuple expression. Also: discarded direct calls translated to `core::ptr::null_mut()`.
 **Fix / oracle:** `grep -nE '^\s+\([A-Za-z_][A-Za-z0-9_]*,' file.rs` — each hit is a candidate dropped call; verify against C. If a "swap C out for Rust" change links clean but BUGCHECKs far from the file in question while cohabitation worked, suspect this first.
 **Source:** `feedback_rustconv_dropped_fn_calls.md`
+
+### Stitcher comment-collapse drops whole fn bodies into a `//` line — and how to find them (fastfat, 2026-06-13)
+**Symptom:** Crate is "cargo-clean ×3" but a cohab driver is non-functional: callers reference `FatCommonRead` etc. via `extern "C"`, the real body is nowhere, and a hand-written cohab `STUB_BUGCHECK()` provides the symbol → false-green link that bugchecks on first real I/O. fastfat had 7 core bodies (incl. the 29 KB `FatCommonRead`) gone this way.
+**Root cause:** rustconv `stitcher.py::_merge_extern_blocks` space-JOINS multi-line extern decls (`current = current + " " + stripped` until `;`). When a banked decl line ends in a `// annotation` (e.g. `fn X(...) -> i32; // BOOLEAN`), the join concatenates every following definition onto that one physical line — so `pub unsafe extern "C" fn FatCommonRead(...) { body }` becomes trailing text of a `//` comment and is silently dead. Per-file `assemble_file` ALSO appends the whole original C source as `//` comments, so a 45–88% comment ratio is NORMAL — do not use comment ratio as the corruption signal.
+**Fix / oracle:** NEVER decide "is fn X live?" by line-grepping `fn X(` (conflates extern-decls, multi-line sigs, comment-collapsed copies, embedded-C comments — gave 66 false "drops", 61 of which were already-`#[no_mangle]` dupes). AUTHORITATIVE = nm on the built `.a`: `nm` → defined set `D` (`T/t/D/d/R/r/B/b`) and undefined set `U`; the true external gap is `U − D` (a static archive resolves intra-archive U↔T, so raw U overcounts ~4×). A genuinely-dropped fn = `(U−D) ∩ {names with a bank file under .responses/fastfat__<file>/}`. Recover those (and ONLY those) from the bank with a targeted re-injection (`tools/rustconv/reinject_dropped.py`: extract the `#[no_mangle] pub fn …{}` span, move the bank's top-level placeholder consts function-local like the assembler does, strip the live self extern-decl to avoid E0428), then repair the reopened cascade. Raw injected bodies carry fabricated placeholder consts (`IRP_PAGING_IO=0x1`) — run verify_constants after.
+**Source:** `project_fastfat_rust_track.md`
 
 ### Lock/RAII-pair epilogue dropped when inlining a macro
 **Symptom:** acquire>release count imbalance; leaked console lock → timing-dependent 0xF4 critical-process-termination. coninput.rs had 5 `ConSrvGetConsole` / 0 `ConSrvReleaseConsole`. Heisenbug — any DbgPrint/gdb observation masks it.
@@ -538,6 +618,12 @@ opt-in investigative only.
 **Fix / oracle:** cast FIRST: `(x.field as *mut T).add(i)`. Sweep: `grep -P 'pub (\w+): \*mut \[\w+; 0usize\]' types_*.rs` for the field names, then grep `.FIELD.add(`/`.FIELD.offset(` in modules. Caught in scsiport SpiConfigToResource (descriptor-per-range overrun of an exactly-sized CM_RESOURCE_LIST), 2026-06-12.
 **Source:** `project_scsiport_rust_track.md`
 
+### Cast-before-offset: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun
+**Symptom:** an allocation `sizeof(HEADER) + sizeof(BIGPAYLOAD)` is sub-divided so a sub-object lands near the END of the block; its large trailing field (here a 16KB `Buffer`) overruns into reserved-but-uncommitted heap; a later memset/fill (`NtQueryDirectoryFile` dir-fill) crosses the committed-page boundary → unhandled AV → **i386 BUGCHECK 0x1E** (the DUMMY_PSEH `_SEH2_EXCEPT` is dead code, so nothing catches it). Misleads everyone upstream: looks like a heap/Mm/session bug (the faulting addr `0xf6…/0xf7…` was just the trapframe), not the caller. (kernel32 `FindFirstFileExW`, surfaced only once the wave advanced boot to winlogon dir-enumeration.)
+**Root cause:** C `(T*)(p + 1)` advances `p` by `sizeof(*p)` (the pointee's type) and THEN casts to `T*`. The literal Rust translation `(p as *T).offset(1)` casts FIRST, so `.offset(1)` advances by `sizeof(T)`. When the cast type `T` differs in size from `*p` (handle-header vs big payload struct), it overshoots by the size delta and the sub-object/its fields land past where C put them.
+**Fix / oracle:** offset on the ORIGINAL pointer, then cast: `p.offset(1) as *mut T` (mirrors `(T*)(p+1)`). Sweep heuristic (staticlibs): `grep -nP '\(\w+ as P?[A-Z_]+\)\.(offset|add)\('` — flag any cast-immediately-before-`.offset`/`.add` where the cast type ≠ the pointer's own allocation/pointee type. Sibling class to fastfat's `!Fn()!=0` and the ZST-`.add()` entry above. Worked example: kernel32-port `e4925a9d720` (cdfs root-cause; cold i386 verify → shell ready, 0 bugchecks).
+**Source:** kernel32 wave (find.rs), 2026-06-16.
+
 ### Plain Rust-ABI `unsafe fn` address handed to the kernel (timer/dispatch)
 **Symptom:** i386 BUGCHECK 0x1E with PC INSIDE pool data (PC ≈ a DeviceExtension address) shortly after a timer starts or a device opens; works until the kernel first CALLS the pointer.
 **Root cause:** fn defined `unsafe fn Foo(...)` (Rust ABI) but its ADDRESS escapes via `Foo as *mut c_void`/transmute into IoInitializeTimer/MajorFunction/etc. The kernel calls it as NTAPI (stdcall on i386) → callee-pop mismatch → caller's stack walks into its own args/locals and `ret`s into data.
@@ -626,6 +712,13 @@ Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) wh
 **Symptom:** arm64 freeldr "hangs" with frozen serial + spinning CPU, indistinguishable from an infinite loop. Misdiagnosed as a "TCG-slow loop" (the 910 iter/sec was a per-iteration UART-print artifact).
 **Root cause:** (1) `freeldr-rust` `#[panic_handler]` printed only under `cfg(any(x86,x86_64))`; on aarch64 it fell into `loop{wfe}` with zero output. (2) The hidden panic was a Rust slice-index OOB — `MemTypeDesc[MemoryType as usize]` where C silently reads adjacent garbage; QEMU virt's page table spans the MMIO hole below 0x40000000 RAM, yielding `MemoryType >= len`. Fires even when DbgPrint is disabled (Rust still bounds-checks the index expr).
 **Fix:** make the arm64 panic handler emit file:line via PL011 DR @ 0x09000000 before spinning. Guard the index to match C's tolerate-garbage: `if i < MemTypeDesc.len() {…} else {b"Unknown\0"…}`. Audit rustconv output for `[…as usize]` slice indexing of device/enum fields. Commit `6662c9a4c5c`.
+
+### arm64 "idle hang" that is really a kernel Rust panic — sample $pc, it's `rust_begin_unwind`
+**Symptom:** arm64 boot freezes; serial stops, screen black, `info registers` shows `$pc` frozen at ONE kernel address across many samples → looks exactly like the idle WFI / a blocked wait. Reached deep (csrss/winsrv win32 init) after other fixes let boot advance.
+**Root cause #1 (the tell):** the frozen PC was `__rustc::rust_begin_unwind` — a kernel **Rust panic**, not idle. The panic handler spins. A proper backtrace (`add-symbol-file ntoskrnl.exe -o <kbase - 0x400000>`, then `bt`) showed `panic_bounds_check` ← `KiDispatchException`. Read the `core::panic::Location` (the `x2`/3rd arg to `panic_bounds_check`: `file_ptr,len,line`) to get file:line for free.
+**Root cause #2 (the actual bug):** `KiDispatchException`'s kernel-mode user-AV fixup (zero the faulting load's dest reg, skip the insn — the DUMMY_PSEH safe-probe substitute) wrote `TrapFrame.X[Rd]` for `Rd < 29`. But the arm64 **KTRAP_FRAME only holds X0..X18 (19 entries)**; X19..X28 are in the **KEXCEPTION_FRAME** and X29/X30 are `Fp`/`Lr` (see `KeTrapFrameToContext`, which already splits them). A faulting load whose dest is X19..X28 indexed `X[19..28]` OOB → `panic_bounds_check(len 19)`.
+**Fix:** route the zeroed reg by range — X0..X18→`TrapFrame.X[]`, X19..X28→`KEXCEPTION_FRAME` (guard non-null), X29/X30→`Fp`/`Lr`, X31(xzr) no-op; apply to both the dest (Rd) and the STP second reg (Rt2). `ke/arm64/stubs.rs`, commit `23406d8c708`. **General tell:** any arm64 code that treats `TrapFrame.X[]` as a full 31-reg file is wrong — only X0..X18 live there.
+**Source:** `project_fastfat_rust_track.md` (2026-06-15)
 **Source:** `feedback_arm64_silent_panic_slice_oob.md`
 
 ### arm64 0xF4 winlogon death right after `[WIN32K] shell ready`
@@ -639,6 +732,16 @@ Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) wh
 **Root cause:** `./vibeos-cli build --arch arm64` runs only `ninja ntoskrnl hal uefildr` — it does NOT build win32k.sys (nor user-mode), so smoke boots a stale win32k.sys. i386/amd64 link gates take the other cfg branch; an aarch64 branch calling a symbol-less bindgen extern (FORCEINLINE/intrinsic, e.g. `ddk::NtCurrentTeb`) links fine on x86 but is `undefined symbol` on arm64.
 **Fix:** per flip, manually `cd build-arm64 && ninja win32k`, mcopy fresh win32k.sys into ramdisk.img + boot.img, then `smoke --arch arm64 --allow-stale`. Prefer `ntkrnl_sys::inline::ke::*` over `ddk::*` for arm64 intrinsics (read TEB via `asm!("mov {}, x18")`).
 **Source:** `feedback_arm64_harness_skips_win32k_link.md`
+
+### Same trap for user-mode DLLs (kernel32) — AND it hides arm64 COMPILE errors (kernel32, 2026-06-15)
+**Symptom:** A kernel32-rust fix builds + smokes green on i386; `vibeos-cli build --arch arm64` reports WARN/green; arm64 smoke shows the **exact same BUGCHECK with identical params** as before the fix. The repeated-identical-bugcheck is the tell: the new code never ran.
+**Root cause:** `vibeos-cli build --arch arm64`'s staged set builds only `ninja ntoskrnl hal uefildr` — **not kernel32 (nor any user-mode DLL)**. So it (a) boots a STALE `kernel32.dll` (mkramdisk --refresh copies the old one), and worse (b) **never compiles kernel32-rust for aarch64, so arm64-only compile errors in your edit are silently invisible** — cargo-check on the workspace may also skip the per-DLL staticlib unless you target it. My `BaseInitializeContext` edit had 3 `E0425` (the 3 startup-thunk externs were `#[cfg(x86_64)]`-only, no aarch64 block) and I didn't see them until I forced `ninja rust_kernel32`.
+**Fix / workflow:** to test a kernel32 (or any user-mode DLL) change on arm64: (1) `cd build-arm64 && ninja rust_kernel32 dll/win32/kernel32/kernel32.dll` — this is where arm64 compile errors actually surface; (2) `llvm-objdump -d build-arm64/.../kernel32.dll` and eyeball the changed fn IS your new code, not a stale stub; (3) `mcopy -o -i qemu/ramdisk.img <dll> ::/reactos/system32/<dll>` + `mcopy -o -i qemu/boot.img qemu/ramdisk.img ::/ramdisk.img`; (4) `smoke --arch arm64 --allow-stale`. Generalizes the win32k entry above: the arm64 staged set excludes everything except ntoskrnl/hal/uefildr.
+
+### arm64 cfg-gated stub left empty by translation → NULL thread-start 0xF4 (kernel32 BaseInitializeContext, 2026-06-15)
+**Symptom:** arm64 boots far (winlogon spawns explorer/notepad/cmd) then BUGCHECK 0xF4 (CRITICAL_OBJECT_TERMINATION, p1=0x3); serial shows `PspUserThreadStartup: StartRoutine=0x0, StartContext=0x0` for a thread of a critical process.
+**Root cause:** the C source has a real `_M_ARM64` branch but the translation emitted a no-op stub (`{ let _ = (args); }`) "because there's no upstream ARM64 path" — a misread (utils.c DID have `#elif defined(_M_ARM64)`). `CreateRemoteThread` zeroes a CONTEXT then calls `BaseInitializeContext`; with the stub, Pc/X0 stay 0 → `NtCreateThread` starts the thread at PC=0 → StartRoutine=0 → 0xF4. (i386/amd64 fine — they have real cfg branches.)
+**Fix:** translate the `_M_ARM64` branch (utils.c:648): X0=StartAddress, X1=Parameter, Sp=Stack&~15, Pc=BaseThreadStartup/Fiber/Process per ContextType, ContextFlags=CONTEXT_FULL. Watch for arm64 bindgen CONTEXT layout (X0/X1 in `__bindgen_anon_1.__bindgen_anon_1`; Sp/Pc flat) and add the aarch64 extern block for symbols an x86-only block was declaring. **Lesson:** grep translated crates for empty arch-cfg stubs (`#[cfg(target_arch = "aarch64")] ... { let _ = (` ) — each is a silent unimplemented function. Fixed `c06848a9df2`.
 
 ### arm64 RtlCreateAtomTable divide-by-zero panic (NumberOfBuckets==0)
 **Symptom:** arm64 only; Rust panic at `rtl-strings/src/core_rs/atom.rs:58` (`hash % number_of_buckets` divide-by-zero) AFTER `_tWinMain`/desktop. i386/amd64 never hit it. Masked because arm64 idle-detection smoke passes on reaching desktop and a HALT also reads as idle.
@@ -673,6 +776,28 @@ The false-red/false-green class: cohabitation flips, stale archives, and cross-D
 **Fix:** after ANY workspace-composition change, COLD-build before trusting (or debugging!) a cohab smoke — nuke ALL rust target dirs (`find build-<arch> -type d -name '*rust*target*' | xargs rm -rf`; do NOT `find … -prune -exec`, it misfires and leaves them). The cold rebuild boots green with zero hivewrt errors. Don't chase a byte-identical-core-symbol "collision" as the cause.
 **⚠ `vibeos-cli build --clean` is NOT a sufficient cold nuke for this:** it removes `rust-kernel-target` + `lib*_rust.a` but LEAVES the per-crate sibling cohab target dirs (`build-<arch>/sdk/lib/cmlib/cmlib-rust-target`, `…/lsalib/rust-lsalib-target`, `…/rossym/rossym-rust-target`, etc.), so cmlib-rust still builds incrementally and the hivewrt hazard survives. Confirmed 2026-06-14 on the uniata rebase: after `--clean`, `find build-i386 -type d -name '*rust*target*'` still listed cmlib-rust-target; i386 cold smoke flaked HANG_TIMEOUT at hivewrt:360 (passed on re-run — the bad-codegen binary boots *sometimes*, which is what makes it read as flaky rather than deterministic). The manual `find … | xargs rm -rf` nuke (which DOES catch the sibling dirs) → green. Always do the manual nuke after a Cargo.toml `members` change; don't trust `--clean` alone.
 **Source:** `project_cmlib_rossym_cohab_smoke.md`, uniata rebase 2026-06-14
+
+### Cold-build from a fresh worktree: generate psdk/xdk headers BEFORE the cargo crates
+**Symptom:** A from-scratch `ninja livecd` in a freshly-`configure.sh`'d build dir dies very early (≈ step 34/8748) in a `*-cargo` build script: `cc-rs` assembling e.g. `chkstk_asm.s` fails with `minwindef.h:171: fatal error: 'winnt.h' file not found`. Warm/`cp -a`-seeded builds never hit it.
+**Root cause:** `winnt.h` (+ ~268 other psdk/xdk headers) is GENERATED by a cmake CUSTOM_COMMAND (only `winnt.rh` is tracked). The cargo build scripts' `cc-rs` invocations run at the very front of the ninja graph and lack a dependency edge on the generated-header targets, so on a cold tree they race ahead of header generation. Seeded trees already have the headers on disk, hiding the missing edge.
+**Fix:** generate the headers first, then build: `ninja psdk xdk` (the per-dir phony aggregates) **before** `ninja livecd`. One-time per fresh build dir. (Also: `configure.sh` defaults to `toolchain-gcc.cmake`; override with `-DCMAKE_TOOLCHAIN_FILE:FILEPATH=toolchain-llvm-mingw.cmake` — last-`-D`-wins.)
+
+### i386 cold-link `undefined symbol: _Foo@24` from an extern decl with the wrong arg WIDTH (kd64, 2026-06-17)
+**Symptom:** An honest cold i386 kernel link fails `ld.lld: error: undefined symbol: _KdpCopyMemoryChunks@24` even though the function is `#[no_mangle] pub unsafe extern "system" fn` and present. `nm libkernel_rust.a` shows BOTH `T _KdpCopyMemoryChunks@28` (the def) AND `U _KdpCopyMemoryChunks@24` (a caller) — same name, two stdcall byte-counts.
+**Root cause:** Two `extern "system"` declarations of the same fn disagree on a parameter's WIDTH. `KdpCopyMemoryChunks`'s first arg is `ULONG64` (8 bytes — the kd debugger protocol is 64-bit even on i386) in the definition + kdb.rs, but `kdbreak.rs`/`kdx86.rs` declared it `ULONG_PTR` (4 bytes on i386) → 24-byte stdcall decoration vs the real 28 → the `@24` reference is undefined. **Silent on amd64/arm64** (there `ULONG_PTR`==`ULONG64`==8 bytes, and NTAPI is cdecl/undecorated). **Masked on warm i386** by §9.6b (the kernel hadn't honestly relinked) and by DCE removing the unreachable `@24` callers under normal opt — only a true cold link (or `-C no-prepopulate-passes`, which keeps the dead code) forces the reference to the linker.
+**Fix:** make every extern decl's arg widths match the definition (here `Address: u64` + call sites `as u64`). **Recipe:** when a cold i386 link reports `undefined _Foo@N`, `nm | grep Foo` — if you see both `@N` and `@M`, grep all `extern "system"` decls of `Foo` for a `ULONG_PTR`/`ULONG`-vs-`ULONG64`/`u64` mismatch on the first 64-bit arg. Sibling of the verify_abi.py internal-symbol blind spot (§ABI) — invisible to spec/bindgen because it's an internal kd fn.
+
+### `-C no-prepopulate-passes` as a captures(none) class-guard: scope it to the offending CRATE, not the whole kernel body (#38/#35, 2026-06-17)
+**Context:** The #35 x86 ungate of the 5 deep-C cohab archives (cportlib/csq/arbiter/lsalib/rossym) shifts the kernel link layout and tips a latent captures(none)/DCE miscompile. `-C no-prepopulate-passes` is the established class-guard (already on rtl-rust/i386 + cnt-rust-lib in `reactos-link` `no_prepop` match).
+**Finding 1 — whole-body is too blunt:** adding `("kernel-rust", _)` to the match (guarding the entire 447K-LOC body) DOES build + boot to `shell ready`, but the kernel balloons 4.3MB→9.8MB (all opt passes off) and boots so slowly it blows the 6-min smoke window (`shell ready` emitted just *past* the cutoff → reads as HANG_TIMEOUT). Not shippable. (Earlier "no-op on the body" claim was the §9.6b relink-staleness trap — the body DOES route through `build_rust_crate`→the match at lib.rs:1462; force `rm ntoskrnl.exe ntkrnlmp.exe` to verify.)
+**Finding 2 — targeted is the right scope:** guard only the small crate on the miscompiled path. For #35 that's `("cmlib-rust", _)` (cmlib is already 100% Rust on x86; its `Hv*` hive-write path is the documented tip site). Kernel stays 4.3MB/normal speed. With the cmlib guard + x86 ungate, a COLD i386 build boots PAST the hivewrt hang all the way to `[SMSS] _main entered` — but then BUGCHECK 0x1E (`0xc0000005, 0x00000020, …` → faulting EIP = `0x20`, i.e. a CALL through a ~null/poison function pointer; pool-poison `0xbadb0d00` on the faulting stack).
+**Finding 3 — SOLVED: the smss 0x1E was an i386 stdcall/cdecl ABI mismatch in cmlib `cmcheck`/`cmheal`, NOT captures(none) and NOT a bad hive (2026-06-18, fixed `336d31be6ff`; i386 cold smoke OK, amd64 warm boot+net OK).** The crack, after three wrong guesses:
+- *Tooling unlock.* The gdb-attached i386 boot hangs at `[freeldr] Switching stack…` under **KVM** (gdbstub + real→protected→paging mode-transition quirk); **`VIBEOS_NO_KVM=1` (TCG)** boots past it cleanly AND gives working SW breakpoints (meaniepy). The 0-DWARF kernel is symbolicated with `qemu/runtime_symbolicate.py` (meaniepy's amd64 tool, now i386-aware — nm-derived RVAs, 32-bit PsLoadedModuleList offsets, page-granular MZ-scan fallback). It MZ-scans the correct kbase, walks PsLoadedModuleList, and resolves via full `nm` → names **Rust-internal (non-export)** frames, which `addr2sym`/`info symbol` cannot. `catch_bugcheck.sh` needs `--skip-preflight` (preflight hard-fails on 0-DWARF). **This is the durable #37 answer: nm-based runtime symbolication, NOT a split-debuginfo kernel.**
+- *Three wrong guesses, ruled out:* (1) "it's in the 5 cohab libs, not cmlib" — WRONG, it IS cmlib. (2) "captures(none) miscompile" — WRONG, no-prepop on body+cmlib didn't touch it. (3) "bad `GetCellRoutine`=0x20 / corrupt hive" — WRONG: the faulting hive is **VALID** (`Signature=0xbee0bee0`, `GetCellRoutine=0x83a11590`, all FileXxx/Allocate/Free ptrs good, `DirtyVector.SizeOfBitMap=0x40`). The `HvGetCell` `[hive+4]==0x20` bp correctly never fired.
+- *The crack — catch the instant EIP=0x20 with a CLEAN stack.* `hbreak *0x20` under `VIBEOS_NO_KVM=1` TCG stops BEFORE the page-fault dispatch overwrites the deep frames (KiTrap0E builds its 0x8c-byte frame at the low ESP, clobbering the culprit's frame — so the post-mortem trap frame can't see it). At the hit: `[esp]` was **not** a return address (`0x00000002`) and `0x20`/`0x08`/`0x292` (EIP/CS/EFLAGS) sat just below — i.e. a **`ret`/iret consumed a stack DATA word `0x20` as its target**, classic ESP desync. Frame chain: `CmpInitializeHive → CmCheckRegistry → CmpValidateRegistryInternal → CmpValidateKey → ret-to-0x20`.
+- *Root cause = stdcall/cdecl ABI mismatch.* `cmcheck.rs`/`cmheal.rs` declared `HvMarkCellDirty`/`HvIsCellAllocated`/`HvGetCellSize`/`CmpCompareCompressedName` as `extern "C"` (cdecl, caller-pops) but they're DEFINED `extern "system"` = NTAPI __stdcall on i386 (`_Name@N`, callee-pops). **LLD's fuzzy `_foo`↔`_foo@N` match links it silently**, but on i386 BOTH sides pop the args → ESP drifts 8–12 bytes per call. The deep `CmCheckRegistry` per-key tree-walk calls these in a tight loop, so the drift accumulates until a `ret` lands on a stale stack value (`0x20`) → 0x1E. Invisible on amd64/arm64 (`system`==cdecl) — exactly why it was i386-only and survived the kernel32/cdfs gates (standard smoke didn't exercise the cohab-cmlib path on i386). **Fix:** declarations → `extern "system"`. (cmse.rs `HvGetCell`/`HvReleaseCell` verified via `llvm-nm` as genuinely cdecl `_HvGetCell` — correctly left `extern "C"`; the cmlib API surface genuinely mixes ABIs, so each decl must match its own def.)
+- *Reusable recipe (NEW, the highest-value generalization):* an `EIP` = a small constant (`0x20`, `0x8`, …) or a stack-data-looking value, with `[esp]` not a return address, ⇒ **ESP desync, almost always an i386 stdcall/cdecl ABI mismatch hidden by LLD fuzzy `_foo`↔`_foo@N` linking.** Scan each crate for `extern "C"` fn decls whose REAL symbol is `_Name@N` (stdcall): `llvm-nm <lib>.a | grep -E ' [Tt] _[A-Za-z]+@[0-9]+'`, then cross-check every `extern "C"` decl name against that list. Sibling of the kernel32 RPC-wait ABI bug.
+- *Recipe banked (catch any deterministic kernel fault on a 0-DWARF i386 kernel):* `VIBEOS_NO_KVM=1 start.sh i386 --gdb --skip-preflight`, then `hbreak *<KiDispatchException> if *(int*)(*(int*)($esp+4)+0xc)==<faulting_eip>`; on hit, `TrapFrame=[esp+0xc]`, regs at KTRAP_FRAME offsets (i386: Eax+0x44, Edi+0x54, Esi+0x58, Ebx+0x5c, Ebp+0x60, Eip+0x68), ExceptionRecord=`[esp+4]` (Code+0, Addr+0xc, Params+0x14).
 
 ### Stale C `.obj`/`.a` member survives merge → false cold-LINK_FAIL on a commented-out `.c`
 **Symptom:** Cold link fails `undefined symbol: _Foo@N` `referenced by bar.c.obj` where `bar.c` is already commented out (replaced by Rust) in its CMakeLists; or fresh cold-clean reports `duplicate symbol` from a flipped file. Warm builds are green.
@@ -746,6 +871,15 @@ The false-red/false-green class: cohabitation flips, stale archives, and cross-D
 **Root cause:** The Rust port is partial — its `.rs` `#[no_mangle]`s SOME of the C unit's exports but not all (e.g. crp freeldr's mm port provides `_FrLdrHeap*`/`_MmInitializeHeap` but not `_ExAllocatePool*`/`_AddMemoryDescriptor`). Each unit must be all-C (pub mod un-wired) or all-Rust (.c commented).
 **Fix:** Apply the oracle per unit: C-present+wired dup ⇒ Rust provides; C-commented undefined ⇒ Rust only consumes; BOTH ⇒ partial. A partial unit needs Rust-crate edits (un-wire the incomplete `pub mod` so C fully owns it, or finish the port) — keep partial units as C. If the break is in another agent's in-flight crate, root-cause and hand back; don't fix mid-collision or revert your own green work.
 **Source:** `feedback_cohabitation_consume_vs_provide.md`
+
+### Driver cohab: provide DDK/driver MACROS + FORCEINLINEs correctly via real headers, NOT bugcheck stubs (fastfat, 2026-06-13)
+**Symptom:** A fully-translated driver crate references its own header macros (`FatIsFat32`, `FatGetLboFromIndex`, `FatLookup12BitEntry`) and DDK intrinsics (`KeGetCurrentIrql`, `KeQuerySystemTime`, `KeAcquireSpinLock`) via `extern "C"` — none have a linker symbol (they're macros / FORCEINLINEs). Tempting (and wrong) fixes: (a) hand-roll the struct offsets in a no-header TU (fragile, arch-specific — `VCB_RESOURCE_OFFSET=404` breaks on the next struct change / other arch); (b) `STUB_BUGCHECK()` them to force a link (false-green — the FS faults on first real I/O; FATAL where the driver is the boot volume, e.g. arm64 fastfat on the FAT32 ramdisk).
+**Fix / oracle:** Write a cohab provider TU that **`#include`s the driver's real PCH** (`fatprocs.h` → ntifs.h + the private FAT headers) so every macro/inline/struct-layout is the compiler's own — ZERO hand offsets. It compiles standalone with the module's flags plus `-mcx16` and `-Isdk/lib/pseh/include`. Classify each needed symbol with a one-shot `#ifdef X` probe (compile a TU of `#ifdef X \n #warning MACRO:X \n #endif`), then:
+  - **function-like MACRO** → POST-include capture: `static RET cap(args){ return X(args); }` then `#undef X` then real `RET X(args){ return cap(args); }`. (You can't write `RET X(decl-args){…}` directly — `X(decl-args)` is itself a macro invocation that expands to garbage; the capture-then-undef two-step is required.)
+  - **FORCEINLINE function** → PRE-include rename: `#define X X_inl` BEFORE the include so the header emits its inline body as `X_inl`, then real-named `RET X(args){ return X_inl(args); }`. (Pre-rename does NOT work on macros — the header's `#define X(…)` re-defines and overrides your alias.)
+  - **Vista+ (≥0x600) API #if'd out at the driver's 0x502 profile** (probe = not-a-macro AND header doesn't declare it → "implicit function declaration" on the alias) → direct impl on a 0x502 export: `ObReferenceObjectWithTag`→`ObfReferenceObject`, `KeExpandKernelStackAndCalloutEx`→`Callout(Param)` direct, `FsRtlCheckOplockEx`→`FsRtlCheckOplock`.
+CRITICAL link-order rule: this provider TU is linked AFTER the bugcheck-stub TU, and `--allow-multiple-definition` is first-match-wins — so you MUST delete the shadowing bugcheck stubs from the stub `.c`, or the bugcheck still wins. Authoritative shadow set to remove = `cohab-defined ∩ Rust-`.a`-defined`. fastfat: `drivers/filesystems/fastfat/rust_cohab_fat.c` (17 intrinsics + 25 FAT macros), amd64 links clean; 18 untranslated fsctl FSCTL handlers deferred (off boot/mount/read path, still bugcheck-stubbed — tracked).
+**Source:** `project_fastfat_rust_track.md`
 
 ### Shared `librtl.a` in BOTH ntoskrnl AND ntdll: kernel-VA read faults in user mode (silent idle hang)
 **Symptom:** x86 boot reaches `[WIN32K] shell ready` but never `[EXPLORER] _tWinMain entered`; serial dead after `[LDR] DllMain(apphelp.dll) ret=1`; whole system goes idle (HLT) with NO bugcheck. Arch-neutral (i386+amd64).
@@ -1066,6 +1200,115 @@ touch sdk/lib/rust/ntdll-cargo/build.rs
 ```
 See `feedback_stale_fat_librtl_masks_rust` + §6 (cohab/cold-link) for the general thin-archive trap.
 
+### 9.6b ⚠️ The amd64 (cargo-driven) kernel does NOT relink on a `.rs` edit — `ninja livecd` silently ships a STALE kernel
+
+The single most dangerous staleness trap, and it **invalidates any amd64 kernel-Rust
+debugging done without checking for it.** `ntoskrnl.exe`/`ntkrnlmp.exe` are built by a
+ninja **CUSTOM_COMMAND** that shells out to `cargo build` (target dir
+`build-amd64/ntoskrnl/rust-kernel-target`, crate `ntkrnlmp-cargo`). Ninja's dep graph
+for that command does **not** list the `.rs` source files — so editing
+`ntoskrnl-rust/src/**.rs` and running `./vibeos-cli build --arch amd64` (even
+**`--clean`**) **does not rerun the command** → the kernel on the ISO is whatever it
+was last forced to. A 2026-06-14 session burned multiple smoke cycles (and a prior
+session reached a *wrong root cause*) analysing a 5-hour-stale kernel whose `mtime`
+never moved.
+
+- **Detect:** `stat -c %y build-amd64/ntoskrnl/ntoskrnl.exe` vs your edit's mtime; or
+  put a unique string in your edit and `strings ntoskrnl.exe | grep` for it **before
+  smoking**. If absent, the kernel is stale.
+- **Force a relink — you MUST nuke the cargo *target dir*, not just the exes.** Deleting
+  only the outputs makes ninja relink, but cargo's incremental cache in the per-arch kernel
+  target reuses the **stale rlib body** — so the relink reproduces the old kernel invisibly
+  (the exact "cargo incremental masks regressions" trap). Nuke the target dir first, then the
+  outputs:
+  ```bash
+  rm -rf sdk/lib/rust/target/x86_64-kernel      # amd64 (i686-kernel / aarch64-kernel per arch)
+  rm -f build-amd64/ntoskrnl/{ntoskrnl.exe,libkernel_rust.a,ntkrnlmp/ntkrnlmp.exe}
+  ninja -C build-amd64 livecd                   # arm64: ninja (full) + mkramdisk --refresh
+  strings build-amd64/ntoskrnl/ntoskrnl.exe | grep '<your-marker>'   # verify BEFORE smoke
+  ls -la build-amd64/ntoskrnl/ntoskrnl.exe       # mtime MUST advance past your nuke
+  ```
+- **Applies to all 3 arches** — the cargo kernel target is `sdk/lib/rust/target/<arch>-kernel`
+  (`x86_64`/`i686`/`aarch64`). **2026-06-16 netstack-landing incident:** arm64 hung at
+  `PspExitThread → LpcExitThread` (ABI mismatch — new-ABI drivers + stale kernel) because
+  `rm exes && ninja` relinked the **Jun-5 `aarch64-kernel` rlib**; `ntoskrnl.exe` mtime never
+  moved. `rm -rf …/aarch64-kernel` + rm exes + `ninja` (mtime advanced) → clean boot. amd64/i386
+  dodged it because their `--clean` path nukes the target; the standalone arm64 staged path does not.
+- **NOT affected:** driver/usermode cohab crates (e.g. `scsiport-rust`, `conutils-rust`)
+  link via the **main-workspace** cargo step which *does* rerun on `.rs` edits — only
+  the **kernel** (separate `rust-kernel-target`) has the missing edge. (Smoke's
+  `--clean` nukes `rust-kernel-target` but the staleness is in the *ninja relink trigger*,
+  not the cargo cache, so even clean can skip it.) Always verify-by-marker for kernel work.
+
+### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
+
+Sibling of §9.6b, different mechanism. When a commit changes a **kernel ABI that
+drivers depend on** (e.g. the arm64 `IRP`/`IO_STACK_LOCATION` layout —
+`IoGetCurrentIrpStackLocation` math), *every* driver must be recompiled against the new
+layout. But `./vibeos-cli build --arch arm64` (and the smoke harness) build only the
+**staged set** (`ntoskrnl`/`hal`/`uefildr`) + `mkramdisk` — they do **not** rebuild
+drivers (`fastfat.sys`, `scsiport.sys`, the storage stack, etc.). So after pulling such a
+change you get a ramdisk with a **new-ABI ntoskrnl + old-ABI drivers** → the mismatch
+manifests as: **boot reaches the desktop, then idle-detection times out** (win32k/user32
+come up, apps launch, but the box never settles — looks exactly like a hang/livelock, not
+a crash).
+
+- **Detect:** arm64 smoke `HANG_TIMEOUT` whose serial shows the desktop reached
+  (`PspUserThreadStartup` for explorer/notepad/cmd, `NtUserProcessConnect`) — i.e. it got
+  *far*, didn't BugCheck. Pair that with a recent kernel-ABI commit.
+- **Fix:** a **full** `ninja -C build-arm64` (not the staged set) to rebuild all `.sys`
+  against the new ABI, then `bash qemu/mkramdisk.sh --refresh`, then re-smoke. Cleared an
+  arm64 idle-timeout to green in one shot (2026-06-15, fastfat cohab-flip merge: the merge
+  carried the arm64 IRP-stack-location ABI fix).
+- **i386/amd64 unaffected** when the ABI fix is arch-cfg-gated (`cfg(target_arch)`), and
+  they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
+  anyway — only arm64's staged-ramdisk path has the gap.
+
+### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
+
+Distinct from §9.6c (which is a real ABI mismatch). `mkramdisk.sh` occasionally produces a
+**subtly-bad boot image** that hangs arm64 deterministically in late boot — but the *same
+binaries* boot fine from a freshly-regenerated ramdisk. Seen 2026-06-16: one `mkramdisk
+--refresh` output hung **3/3** arm64 smokes; a second `--refresh` (identical build inputs)
+booted green in 30s. The boot binaries were byte-identical across all runs, so it was the
+image, not the code.
+
+- **Signature (vs §9.6c):** serial reaches csrss → user32 → winsrv → mpr → the `ufat.dll
+  c0000135` load-fail lines, then **stops just before `[EXPLORER] _tWinMain entered`** —
+  i.e. explorer never launches (black screen). §9.6c instead reaches the desktop *and*
+  starts explorer/notepad user threads, then idle-times-out. If explorer's `PspUserThreadStartup`
+  never appears and a recent kernel-ABI commit is *not* in play, suspect the image first.
+- **Fix:** re-run `bash qemu/mkramdisk.sh --refresh` and re-smoke before spending any time
+  in a debugger. A green on the fresh image confirms it was mkramdisk, not a regression.
+- **Corollary:** when an arm64 smoke flips red, reproduce on a **freshly-regenerated**
+  ramdisk before reporting a regression — a stale/bad boot image is a false signal.
+
+### 9.6e ⚠️ A *reconstructed* build-arm64 dir → perpetual CMake reconfigure → permanent false `STALE_MEDIA`
+
+Seen 2026-06-16 landing cdrom-rust. Symptom: `vibeos-cli smoke --arch arm64` hard-fails the
+**staleness gate** (`verdict: FAIL, classification: STALE_MEDIA`) with salient
+`"ninja reports work for ntoskrnl"` *even on genuinely-fresh media you just rebuilt*. Root:
+in a build-arm64 that was reconstructed by hand (stale-dir cleanup, winnt.h-race fixes, etc.)
+a `file(GLOB … CONFIGURE_DEPENDS)` enters a **perpetual reconfigure loop** — every `ninja -n`
+prints `Re-checking globbed directories` → `Re-running CMake`, and a real `ninja` settles to
+`no work to do` yet the *next* `ninja -n` still wants to reconfigure. The smoke staleness
+check keys on `ninja -n <kernel>` being clean, so it can **never** pass for that build dir.
+
+- **It is NOT a code/branch signal.** A fresh `git clone` + fresh `build-arm64` configures
+  clean; the loop is local build-dir cruft. Don't chase it as a regression.
+- **Get the real verdict:** verify the media is current by hand (ramdisk.img mtime newer than
+  `ntoskrnl.exe`/`win32k.sys` etc.), then boot with `vibeos-cli smoke --arch arm64
+  --allow-stale` and read the serial for `[WIN32K] shell ready` / `[KERNEL] SwitchDesktop OK`
+  / `[EXPLORER] _tWinMain entered`. That bypasses the (false) gate, not a real check.
+- **Media-tree prerequisite (related, same session):** `mkramdisk.sh --refresh` checks a long
+  `REQUIRED_FILES` list under `build-arm64/{media,boot/bootdata}`. A reconstructed build dir
+  often hasn't populated it (the SYSTEM hive `boot/bootdata/system`, the NLS files
+  `media/nls/c_437.nls`/`c_1252.nls`). vibeos-cli's arm64 staged set (`ntoskrnl hal uefildr`)
+  **assumes those already exist from a prior full build**. Populate once with `ninja livecd`
+  (stages the bootdata hives + cd files) **plus** `ninja gen_nls` (the txt2nls outputs —
+  these are NOT in the arm64 livecd DAG), then `mkramdisk --refresh` succeeds. (Do not pass
+  `media/nls/l_intl.nls` to ninja — it's not a target; mkramdisk has a source-dir fallback.)
+
 ### 9.7 Reliable-repro timing — slow ≠ hung
 
 - A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
@@ -1082,6 +1325,127 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 `triage-bugcheck` returns stop code, exception code, faulting PC + symbol, full
 KTRAP_FRAME, and `identify-object` on bogus pointers in one call. Run
 `qemu/build-index.sh <arch>` after each kernel build for offline symbol lookup.
+
+### 9.9 Timer-table base skew — every relative KeDelay/KeWait-timeout over-waits ~4–60×
+
+- **Symptom:** relative timed waits (`KeDelayExecutionThread`, relative `KeWaitForSingleObject`,
+  Cc/Mm read-ahead pacing) take far longer than requested — a 2000ms delay waits ~8.7s
+  (~4.37×), a 100ms delay waits ~6.4s (worse for shorter waits). UDP-style single-cycle ops and
+  i386 are unaffected; multi-RTT operations (TDI TCP connect) time out. Box looks "idle, advancing
+  on a coarse ~8s timer." Often **latent** and only exposed when an unrelated commit makes the
+  clock actually tick (e.g. RTC→LAPIC switch `22356522c58`).
+- **Root cause:** the NT timer table requires the invariant
+  **`InterruptTime / KeMaximumIncrement == KeTickCount`** (both 0-based since boot). Insertion
+  (`KiComputeTimerTableIndex`) hashes the *absolute* InterruptTime by KeMaximumIncrement;
+  expiration sweeps `KeTickCount.LowPart & 511`. If the two clocks are seeded inconsistently at
+  boot, the insertion bucket is offset from the sweeping hand by a constant N — a timer lands in a
+  bucket the hand *just passed* and waits a full ~512-tick table revolution (~8s) before
+  re-examination.
+- **Oracle (deterministic, in-kernel):** drop a one-shot probe in `KxSetTimerForThreadWait`
+  (inline/ke.rs — the REAL `KeDelayExecutionThread` hand path, NOT `KiComputeDueTime`) logging
+  `now=KeQueryInterruptTime()`, `now_hand=(now/KeMaximumIncrement)&511`,
+  `exp_hand=KeTickCount.LowPart&511`, `ins_hand`, `delta=(ins_hand-exp_hand)&511`,
+  `expect=mag/KeMaximumIncrement`. **`now_hand != exp_hand` is the smoking gun** (the two bases are
+  skewed). A first-tick probe in `KeUpdateSystemTimeImpl` shows whether InterruptTime/KeTickCount
+  are pre-seeded huge before any tick.
+- **Fix:** zero KUSER InterruptTime, KUSER TickCount and the `KeTickCount` global on the first
+  `KeUpdateSystemTime` tick so they advance from 0 in lockstep. (`KeBootTime`/`SystemTime` are wall-
+  clock and separate — leave them.) Verify: `now_hand == exp_hand`, `delta == expect`, KeDelay(100ms)
+  → ~110–125ms.
+- **Gotcha that cost ~6 build cycles:** the smoke `full.log` is a **truncated tail** (~140 lines of
+  late boot) — early-boot `DbgPrint` probes (phase-1 self-tests, first ticks) are NOT in it. Grep the
+  **live log** `qemu/<arch>-uefi_smoke_live.log` (full capture) instead.
+
+### 9.10 A registry/hive addition that "shouldn't matter" deterministically tripping an early BUGCHECK 0x50
+
+**Symptom:** You add benign data to a *baked* registry hive (e.g. an `add_registry_inf`
+`.inf` with new `HKLM,...` values — in our case the Winsock2 protocol catalog
+`netstack_winsock.inf`). The kernel code is untouched, yet boot now **deterministically**
+BUGCHECKs `0x50` (PAGE_FAULT_IN_NONPAGED_AREA) in an early driver — read-fault on a
+`0xfffff8a0...` paged-pool VA, faulting PC in the `0xfffff880...` driver region —
+*before* `shell ready`, at the same log line every run. Backing the hive change out
+restores a green boot.
+
+**Root cause:** The hive is loaded early by the config manager; growing/altering it
+shifts pool allocation order, which moves a **latent** memory bug (uninitialised read,
+off-by-one, use-after-free, a hand-mirrored `repr(C)` struct with a wrong offset) from
+"benign / lands on valid memory" to "lands on an unmapped page → 0x50." The registry
+data is innocent; it is a **layout perturbation** that *exposes* a pre-existing driver
+bug. This is the same family as the known amd64 taskbar 0x50 (`project_amd64_taskbar_
+bugcheck_0x50`), but the hive shift makes it **deterministic and early** instead of
+non-deterministic and post-`shell ready`.
+
+**What to do:**
+1. **Don't ship the hive change** — a baked `add_registry_inf` goes into the *shared*
+   system hive, so it breaks boot on *all* arches/configs, not just the one you tested.
+   Disable the `add_registry_inf(...)` line (keep the `.inf` artifact + a comment).
+2. **Treat it as a gift:** a deterministic, same-line repro of an otherwise
+   non-deterministic 0x50 is the easiest version to hunt. Symbolicate the faulting PC
+   (`0xfffff880...`) against the per-arch build index (`qemu/build-index.sh amd64`,
+   then `qemu/addr2sym.sh`) to name the driver, then bisect that driver's recent
+   translations. The layout shift is the *trigger*, not the *bug* — fix the driver,
+   not the hive.
+3. **Confirm causation cheaply:** revert only the hive line and re-run. Boot green ⇒
+   the addition is the trigger (not a flake). Two identical-line crashes ≠ the ~1/3
+   flake; determinism + a *pre*-`shell ready` PC that the flake never reaches is the
+   tell.
+
+**Worked instance (2026-06-13, netstack Winsock2 catalog → 0x50, survives the crp merge):**
+The faulting driver is the **uniata/scsiport IDE storage stack**, *not* netstack — the
+catalog hive is innocent. Diagnosis chain that worked when the usual symbolication failed:
+- **build-index/addr2sym is ntoskrnl-only.** The faulting PC `0xfffff880055cd0x0` is in a
+  *driver* (`0xfffff880` region), which addr2sym can't resolve, and the Rust-cohab modules
+  ship **no Rust DWARF** (cargo-drive strips it) so `qemu/start.sh --gdb` *preflight fails*
+  — use `--skip-preflight`. Adding debug info is NOT an option: the bug is layout-sensitive,
+  so the size change would move it (Heisenbug).
+- **Caller-level bisect markers** (cheap `DbgPrint` at each call site, *not* in the hot path)
+  localised it: the crash fires *after* the IDE `adapter-init complete` marker with no
+  subsequent init call → it's an **async callback** (timer/DPC/ISR), reached because
+  `FdoCallHWInitialize`'s `IoConnectInterrupt` fails (~33× "Could not connect interrupt") and
+  the caller ignores the failure, starting the IoTimer on a half-set-up adapter.
+- **The crash PC is STABLE across `scsiport-rust` rebuilds** (it does *not* shift when you add
+  code to scsiport and recompile). That is the key tell: the faulting code is **not in the
+  module you're editing** — here it points at `uniata.sys` (C miniport, never rebuilt) or a
+  scsiport function linked before the edited init path. Instrumenting `ScsiPortIoTimer`
+  *ruled it out* (its entry `DbgPrint` never fired before the fault). Lesson: when a PC
+  refuses to move under your edits, you're editing the wrong module — bisect by *which
+  module* moves the PC, not just which function.
+**SOLVED (2026-06-14, commit `scsiport: fix uninitialized PortConfig on find-loop retries`):**
+The earlier "IoConnectInterrupt fails ~33×" / "`Interrupt[0]` NULL → `KeSynchronizeExecution`"
+hypotheses were **wrong** — instrumenting the connect path showed *both* IDE channels connect
+fine (IRQ14→vec176, IRQ15→vec160, Status=0). The real bug is in **scsiport's `ScsiPortInitialize`
+HwFindAdapter while-loop**, not uniata or the interrupt path:
+- `ScsiPortInitialize` **re-allocates `PortConfig` fresh (non-zeroed pool) every loop iteration**,
+  but `SpiCreatePortConfig` only *initializes* the struct when `ZeroStruct` (`FirstConfigCall`)
+  is TRUE — i.e. only before the first device is found. On later iterations every PortConfig
+  field is uninitialized garbage.
+- The killer field is **`AdapterInterfaceType`**: when the garbage reads `0` (== `Internal`),
+  `SpiCreatePortConfig` wrongly enters the Internal hardware-database branch and **resets
+  `InternalConfigInfo->BusNumber = 0`**. The legacy per-channel find loop (uniata
+  `AtapiFindIsaController`, `AdapterInterfaceType=Isa`) then never advances past bus 0, the
+  `IoQueryDeviceDescription` bus bound never trips, and `ScsiPortInitialize` spins ~25 000×
+  → 0x50. The catalog only perturbs the pool so the garbage is deterministically `0`.
+- Secondary garbage field: `AtdiskPrimaryClaimed`/`AtdiskSecondaryClaimed` (uniata's
+  "channel already claimed" check reads them).
+- **Fix:** in `SpiCreatePortConfig`, seed `AdapterInterfaceType` from `HwInitData` before the
+  Internal check; and re-seed the AT-disk claim state from `IoGetConfigurationInformation()`
+  before every `HwFindAdapter` call. Both target the *fresh-PortConfig-not-reinitialized* root.
+- **Diagnosis tooling that cracked it:** tagged `DbgPrint` probes walking the chain
+  scsiport find-loop → `SpiCreatePortConfig`/`IoQueryDeviceDescription` → the BusNumber value
+  per iteration (it was stuck at 0 — the smoking gun). Confirmed ×3 amd64 + i386 + arm64 boot to
+  desktop **with the catalog enabled**.
+
+**General lesson (recurs across the C→Rust port):** a C `for(;;){…}` loop body that re-allocates
+a struct each pass and relies on a `ZeroStruct`/first-call flag to initialize it is a garbage-on-
+retry trap — the "preserve across iterations" optimization assumes the buffer is *reused*, which
+ReactOS violates by re-allocating. Any field read before it is set (here `AdapterInterfaceType`
+gates a code path) becomes a non-deterministic, pool-layout-sensitive bug. When a loop "never
+terminates", print the loop's *advancement variable* (here `BusNumber`) every iteration — if it
+doesn't move, find who resets it.
+
+- **Remaining (M5, separate bug):** with the 0x50 gone and the catalog in the hive, usermode
+  `socket()` still returns `WSAEINVAL (10022)` — ws2_32/msafd isn't consuming the netstack
+  Winsock2 catalog entries. Boot-unblocked; catalog-loading issue, tracked on M5/task-77.
 
 ---
 

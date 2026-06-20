@@ -54,7 +54,6 @@ extern "system" {
     fn WriteFile(hFile: *mut c_void, lpBuffer: *const c_void, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: *mut u32, lpOverlapped: *mut c_void) -> i32;
     fn EnterCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn LeaveCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
-    fn wcslen(s: *const u16) -> usize;
     fn K32LoadStringExW(hInstance: HINSTANCE, uID: UINT, LanguageId: LANGID, lpBuffer: PWSTR, cchBufferMax: i32) -> i32;
     fn FormatMessageW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *mut c_void) -> u32;
     fn LocalFree(hMem: *mut c_void) -> *mut c_void;
@@ -65,6 +64,9 @@ extern "system" {
 }
 
 extern "C" {
+    // wcslen is msvcrt cdecl (`_wcslen`, no @N) — must NOT be in the stdcall
+    // Win32 block above, else i386 mangles it to `_wcslen@4` and link fails.
+    fn wcslen(s: *const u16) -> usize;
     fn va_start(ap: *mut va_list, ...);
     fn va_end(ap: *mut va_list);
     // msvcrt cdecl (`@ cdecl _vsnwprintf` in msvcrt.spec). The original

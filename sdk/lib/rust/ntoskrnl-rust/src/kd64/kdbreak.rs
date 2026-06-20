@@ -13,7 +13,10 @@ extern "C" {
 }
 
 extern "system" {
-    fn KdpCopyMemoryChunks( Address: ULONG_PTR, Buffer: PVOID, Size: ULONG, Unknown: ULONG, Flags: ULONG, ActualSize: *mut ULONG, ) -> NTSTATUS;
+    // Address is ULONG64 (the kd debugger protocol is 64-bit even on i386) to
+    // match the definition in kdapi.rs — ULONG_PTR here mis-sized the i386
+    // stdcall arg (@24 vs the real @28) → undefined symbol at cold link.
+    fn KdpCopyMemoryChunks( Address: u64, Buffer: PVOID, Size: ULONG, Unknown: ULONG, Flags: ULONG, ActualSize: *mut ULONG, ) -> NTSTATUS;
     fn KdEnterDebugger(TrapFrame: PVOID, ExceptionFrame: PVOID) -> BOOLEAN;
     fn KdExitDebugger(Enable: BOOLEAN);
     fn KeGetCurrentThread() -> PKTHREAD;
@@ -96,7 +99,7 @@ pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {
 
     // Try to save the old instruction
     status = KdpCopyMemoryChunks(
-        Address as ULONG_PTR,
+        Address as u64,
         core::ptr::addr_of_mut!(content) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,
@@ -111,7 +114,7 @@ pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {
 
         // Write the breakpoint
         status = KdpCopyMemoryChunks(
-            Address as ULONG_PTR,
+            Address as u64,
             core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
             KD_BREAKPOINT_SIZE,
             0,
@@ -173,7 +176,7 @@ pub unsafe extern "system" fn KdSetOwedBreakpoints() {
 
             // Try to save the old instruction
             status = KdpCopyMemoryChunks(
-                KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                KdpBreakpointTable[i as usize].Address as u64,
                 core::ptr::addr_of_mut!(content) as PVOID,
                 KD_BREAKPOINT_SIZE,
                 0,
@@ -195,7 +198,7 @@ pub unsafe extern "system" fn KdSetOwedBreakpoints() {
 
                 // Write the breakpoint
                 status = KdpCopyMemoryChunks(
-                    KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                    KdpBreakpointTable[i as usize].Address as u64,
                     core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
                     KD_BREAKPOINT_SIZE,
                     0,
@@ -222,7 +225,7 @@ pub unsafe extern "system" fn KdSetOwedBreakpoints() {
             if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_EXPIRED) != 0 {
                 // Write it back
                 status = KdpCopyMemoryChunks(
-                    KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                    KdpBreakpointTable[i as usize].Address as u64,
                     core::ptr::addr_of_mut!(KdpBreakpointTable[i as usize].Content) as PVOID,
                     KD_BREAKPOINT_SIZE,
                     0,
@@ -277,7 +280,7 @@ pub unsafe extern "system" fn KdpLowWriteContent(BpIndex: ULONG) -> BOOLEAN {
 
     // We have an active breakpoint with an instruction to bring back. Do it.
     status = KdpCopyMemoryChunks(
-        KdpBreakpointTable[BpIndex as usize].Address as ULONG_PTR,
+        KdpBreakpointTable[BpIndex as usize].Address as u64,
         core::ptr::addr_of_mut!(KdpBreakpointTable[BpIndex as usize].Content) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,
@@ -315,7 +318,7 @@ pub unsafe extern "system" fn KdpLowRestoreBreakpoint(BpIndex: ULONG) -> BOOLEAN
 
     // Ok, we actually have to overwrite the instruction now
     status = KdpCopyMemoryChunks(
-        KdpBreakpointTable[BpIndex as usize].Address as ULONG_PTR,
+        KdpBreakpointTable[BpIndex as usize].Address as u64,
         core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,

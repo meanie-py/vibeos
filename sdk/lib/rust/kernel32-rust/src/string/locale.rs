@@ -29365,7 +29365,7 @@ unsafe fn NLS_EnumSystemCodePages(lpProcs: *mut ENUMSYSTEMCODEPAGES_CALLBACKS) -
 
     hKey = NLS_RegOpenKey(
         core::ptr::null_mut(),
-        b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\NLS\\CodePage\0".as_ptr() as PCWSTR,
+        w!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\NLS\\CodePage\0").as_ptr() as PCWSTR,
     );
     if hKey.is_null() {
         WARN(b"NLS_RegOpenKey() failed\n\0".as_ptr() as PCSTR);

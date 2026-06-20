@@ -123,13 +123,23 @@ fn main() {
     let mut static_libs: Vec<&str> = vec![
         "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
         "sdk/lib/cportlib/libcportlib.a",
+        "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/drivers/csq/libcsq.a",
-        "sdk/lib/pseh/libpseh.a",
+        "sdk/lib/drivers/csq/libcsq_rust.a",
+        // libpseh.a DROPPED → `pseh-rust` (.rust_lib below, all arches). It
+        // provides the 2 DUMMY_PSEH `_SEH2_Volatile*` data symbols (referenced
+        // by the C cohab archives' pseh2.h) on every arch, plus the i386 SEH
+        // runtime (`_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/
+        // `_abnormal_termination`, exported by ntoskrnl.spec for -arch=i386,arm)
+        // via global_asm! disasm-identical to the cmake seh.s. C kept on disk.
         "sdk/lib/drivers/arbiter/libarbiter.a",
+        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
         "sdk/lib/lsalib/libntlsalib.a",
+        "sdk/lib/lsalib/liblsalib_rust.a",
         "sdk/lib/rtl/librtl.a",
         "sdk/lib/rossym/librossym.a",
+        "sdk/lib/rossym/librossym_rust.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
@@ -161,8 +171,11 @@ fn main() {
     // layout-sensitive miscompile on the cmlib Hv* hive-write path (cold amd64
     // HANG at `hivewrt.c "Failed to write the primary hive"`; warm dodges it — see
     // field manual "latent hive-path miscompile" + [[feedback_cargo_drive_reuse_a_redundancy]]).
-    // Gating to arm64 keeps i386/amd64 byte-for-byte on crp's known-green layout.
-    if arch == "aarch64" {
+    // #35 ungate: x86 now pulls these too. The layout shift historically tipped a
+    // latent cmlib Hv* hive-write miscompile — now guarded by the targeted
+    // `cmlib-rust` no-prepopulate-passes class-guard in reactos-link, so the ungate
+    // lands on i386/amd64 (driving cport/csq/arbiter/lsalib/rossym to Rust ×3).
+    if arch == "aarch64" || arch == "x86" || arch == "x86_64" {
         static_libs.extend_from_slice(&[
             "sdk/lib/cportlib/libcport_rust.a",
             "sdk/lib/drivers/csq/libcsq_rust.a",
@@ -301,6 +314,12 @@ fn main() {
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
+    // All arches: pseh-rust (replaces the dropped libpseh.a). Provides the 2
+    // DUMMY_PSEH `_SEH2_Volatile*` data symbols everywhere; the i386 SEH runtime
+    // (the 5 ntoskrnl.spec-exported entry points) self-gates inside the crate
+    // via cfg(target_arch="x86"), so amd64/arm64 link only the volatiles. Its
+    // panic_handler/eh_personality are absorbed by --allow-multiple-definition.
+    linker = linker.rust_lib("pseh-rust", &[], true);
     // amd64 only: the SEH unwind path links _setjmp/_setjmpex/longjmp →
     // setjmp-rust (global_asm! save/restore, disasm-identical to the cmake asm,
     // + Rust longjmp). libsetjmp.a dropped. i386/arm64 don't reference setjmp.

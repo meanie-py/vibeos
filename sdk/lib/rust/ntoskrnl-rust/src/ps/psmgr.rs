@@ -295,7 +295,14 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
         0,
     );
     if status < 0 {
-        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 2, 0, 0);
+        #[cfg(target_arch = "aarch64")]
+        {
+            return status;
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 2, 0, 0);
+        }
     }
 
     status = MmCheckSystemImage(file_handle);
@@ -323,7 +330,14 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     );
     ZwClose(file_handle);
     if status < 0 {
-        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 3, 0, 0);
+        #[cfg(target_arch = "aarch64")]
+        {
+            return status;
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 3, 0, 0);
+        }
     }
 
     status = ObReferenceObjectByHandle(
@@ -336,12 +350,26 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     );
     ZwClose(section_handle);
     if status < 0 {
-        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 4, 0, 0);
+        #[cfg(target_arch = "aarch64")]
+        {
+            return status;
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 4, 0, 0);
+        }
     }
 
     status = PspMapSystemDll(PsGetCurrentProcess() as PEPROCESS, &mut PspSystemDllBase, 0u8);
     if status < 0 {
-        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 5, 0, 0);
+        #[cfg(target_arch = "aarch64")]
+        {
+            return status;
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 5, 0, 0);
+        }
     }
 
     status

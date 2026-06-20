@@ -94,13 +94,10 @@ pub unsafe extern "system" fn DxDdStartupDxGraphics(
 
     /*
      * Setup internal driver functions list we got from dxg driver functions list.
-     *
-     * NOTE: the C populates pDxgDrv->pdrvfn with gaDxgFuncs (dxg_driver.h), the
-     * giant DRVFN[] dispatch table. That table is C glue in dxg_driver.h whose
-     * ~90 entries are unported stub fns, so it stays on the C side of the cohab
-     * build (the C TU that defines gaDxgFuncs assigns pdrvfn). We still publish
-     * the version and count fields faithfully here.
+     * main.c:63 — `pDxgDrv->pdrvfn = gaDxgFuncs;`. The DRVFN[] dispatch table
+     * (dxg_driver.h) now lives Rust-side in crate::dxg_driver.
      */
+    (*pDxgDrv).pdrvfn = core::ptr::addr_of_mut!(crate::dxg_driver::gaDxgFuncs) as *mut DRVFN;
     (*pDxgDrv).iDriverVersion = 0x80000; /* DirectX 8 */
     (*pDxgDrv).c = DXG_INDEX_DxDdIoctl + 1;
 

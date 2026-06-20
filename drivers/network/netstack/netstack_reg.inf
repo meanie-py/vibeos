@@ -1,0 +1,10 @@
+; netstack.sys — smoltcp kernel network stack (system-start, non-PnP driver).
+; Start=1 (system) so DriverEntry runs at boot after the PCI bus is enumerated;
+; Type=1 (kernel driver). The virtio-net BARs are firmware-assigned, so the
+; engine self-test does not depend on OS PnP claiming the device.
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Group",0x00000000,"NDIS Wrapper"
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack","ImagePath",0x00020000,"system32\drivers\netstack.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Start",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Type",0x00010001,0x00000001

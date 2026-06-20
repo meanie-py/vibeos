@@ -34,6 +34,13 @@ pub mod dxgallocator;
 pub mod eng;
 pub mod historic;
 
+// dxg_driver.h — the 75 DXG dispatch-table stubs + the gaDxgFuncs[] DRVFN table.
+pub mod dxg_driver;
+
+// DirectDraw driver-info GUID data (was DEFINE_GUID in main.c via initguid.h);
+// #[no_mangle] statics that satisfy win32k-sys's extern GUID_* declarations.
+mod guids;
+
 // ============================================================================
 // Panic handler — dxg.sys is its own kernel-mode module (separate from
 // ntoskrnl.exe), so the Rust body needs its own panic handler + eh_personality,

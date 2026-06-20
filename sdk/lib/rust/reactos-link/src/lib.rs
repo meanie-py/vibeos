@@ -1459,6 +1459,15 @@ impl Linker {
             // and hung the kernel after ACPI). Mirrors sdk/lib/rtl/CMakeLists.txt
             // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
             // on every arch.
+            //
+            // (#38/#35) The cmlib-rust no-prepop guard was REMOVED 2026-06-18: it was
+            // added on the hypothesis that the #35 x86-ungate blocker was a
+            // layout-sensitive captures(none)/DCE miscompile on cmlib's Hv* hive-write
+            // path. That turned out to be a RED HERRING — the real blocker was an i386
+            // stdcall/cdecl ABI mismatch in cmlib cmcheck/cmheal (fixed by declaring
+            // the CMAPI fns extern "system"; field manual "#35 SOLVED"). With the ABI
+            // fix in place the ungate boots ×3 WITHOUT guarding cmlib, so the guard is
+            // dead weight. rtl-rust/i386 + cnt-rust-lib keep their genuine guards.
             let no_prepop = match (crate_name, self.arch.name) {
                 ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
                 _ => "",

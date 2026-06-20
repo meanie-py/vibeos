@@ -9,6 +9,10 @@ const STATUS_DLL_NOT_FOUND: i32 = 0xC0000135_u32 as i32;
 // ---- file-scope preamble (translated) ----
 pub static mut gpfnStartupDxGraphics: PGD_DXDDSTARTUPDXGRAPHICS = None;
 pub static mut gpfnCleanupDxGraphics: PGD_DXDDCLEANUPDXGRAPHICS = None;
+// #[no_mangle]: the DirectDraw cohab flip commented out reactx/ntddraw/*.c, so the
+// global DXG dispatch table must be exported under its C-ABI name for the rest of
+// win32k (eng/pdevobj etc.) that references it unmangled.
+#[no_mangle]
 pub static mut gpDxFuncs: [DRVFN; (DXG_INDEX_DxDdIoctl + 1) as usize] = unsafe { core::mem::zeroed() };
 pub static mut ghDxGraphics: HANDLE = core::ptr::null_mut();
 pub static mut gdwDirectDrawContext: ULONG = 0;

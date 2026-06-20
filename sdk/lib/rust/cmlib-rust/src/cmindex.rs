@@ -51,7 +51,7 @@ use core::ffi::c_void;
 extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, Type: HSTORAGE_TYPE, SourceCell: HCELL_INDEX) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
-    fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unk: u8);
+    fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unk: u8) -> u8;
     fn HvGetCellSize(Hive: PHHIVE, Cell: *mut CM_KEY_INDEX) -> u32;
     fn HvReallocateCell(Hive: PHHIVE, Cell: HCELL_INDEX, NewSize: u32) -> HCELL_INDEX;
     fn RtlUpcaseUnicodeChar(ch: u16) -> u16;

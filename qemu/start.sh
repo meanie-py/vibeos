@@ -125,6 +125,14 @@ fi
 
 DAEMON_FLAGS=(-display none)
 
+# Opt-in extra QEMU args (e.g. match smoke's virtio-blk scratch + debugcon when a
+# crash only reproduces under that device config). Word-split VIBEOS_QEMU_EXTRA.
+EXTRA_FLAGS=()
+if [ -n "${VIBEOS_QEMU_EXTRA:-}" ]; then
+    # shellcheck disable=SC2206
+    EXTRA_FLAGS=(${VIBEOS_QEMU_EXTRA})
+fi
+
 # --- per-arch QEMU command -------------------------------------------------
 declare -a QEMU_CMD
 
@@ -157,7 +165,7 @@ case "$ARCH" in
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
             -device ide-cd,drive=cd0,bootindex=0
             -vga std -no-reboot
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
     amd64)
@@ -169,14 +177,20 @@ case "$ARCH" in
         [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE — apt install ovmf"
         OVMF_VARS="$RUN_DIR/ovmf_vars.fd"
         cp /usr/share/OVMF/OVMF_VARS_4M.fd "$OVMF_VARS"
+        # Scratch virtio-blk disk — mirror vm.py/smoke so the storage stack sees the
+        # same device set (without it, a storage driver faults → deterministic 0x50).
+        SCRATCH_IMG="$RUN_DIR/scratch.img"
+        dd if=/dev/zero of="$SCRATCH_IMG" bs=1M count=64 2>/dev/null
         QEMU_CMD=(
             qemu-system-x86_64 -M pc -accel kvm -cpu host -m 512M
             -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
             -drive "if=pflash,format=raw,file=$OVMF_VARS"
+            -drive "if=none,id=scratch,format=raw,file=$SCRATCH_IMG"
+            -device virtio-blk-pci,drive=scratch
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
             -device ide-cd,drive=cd0,bootindex=0
             -vga std -no-reboot
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
     arm64)
@@ -191,7 +205,7 @@ case "$ARCH" in
             -drive "if=pflash,format=raw,file=$EFIVARS"
             -drive "file=$BOOT_IMG,format=raw,if=virtio"
             -device ramfb
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
 esac

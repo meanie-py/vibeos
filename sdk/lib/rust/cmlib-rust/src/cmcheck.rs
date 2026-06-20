@@ -49,13 +49,21 @@ use core::ffi::c_void;
 unsafe extern "C" {
     fn abs(x: i32) -> i32;
 }
-unsafe extern "C" {
+// CMAPI / Hv* are NTAPI = __stdcall on i386 (callee-pops, `_Name@N`). Declaring
+// them `extern "C"` (cdecl, caller-pops) makes BOTH sides pop the args on i386,
+// drifting ESP by N bytes per call — in the deep CmCheckRegistry tree-walk this
+// accumulates until a `ret` grabs a stack data word (e.g. 0x20) → BUGCHECK 0x1E.
+// (LLD's fuzzy `_foo`↔`_foo@N` match hides it at link time; invisible on
+// amd64/arm64 where "system"==cdecl.) These MUST be `extern "system"`.
+unsafe extern "system" {
     fn CmpCompareCompressedName( String: *const _UNICODE_STRING, Name: *const u16, NameLength: u16, ) -> i32;
-    fn PAGED_CODE();
-    fn DPRINT1(format: *const i8, ...);
-    fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: i32);
+    fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: u8) -> u8;
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> i32;
     fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
+    fn DPRINT1(format: *const i8, ...);
     fn ASSERT(condition: BOOLEAN);
     fn DPRINT(format: *const u8, ...);
     #[cfg(not(feature = "bldr"))]

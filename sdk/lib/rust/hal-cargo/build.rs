@@ -63,8 +63,9 @@ fn main() {
         // cntpr's Rust half (was the cmake-copied libcntpr_rust.a) now comes
         // from the cargo-native sibling `cnt-rust-lib` via .rust_lib() below
         // (classpnp/framebuf pattern); libpseh.a → the dummy.c c_shim; memcmp →
-        // compiler-builtins-mem (build-std). liblibcntpr.a (C residual) +
-        // setjmp/arbiter/chkstk stay reused.
+        // compiler-builtins-mem (build-std). liblibcntpr.a (C residual) is
+        // DROPPED — the sprintf/swprintf C-variadic shells come in-cargo via
+        // c_from_compile_db (see below); setjmp/arbiter/chkstk stay reused.
         "x86" => (
             "i686-kernel.json",
             "_HalInitSystem@8",
@@ -74,8 +75,15 @@ fn main() {
                 "hal/halx86/generic/trap.S",
                 "hal/halx86/pic/pic.S",
             ],
+            // liblibcntpr.a (C CRT) DROPPED — cnt-rust-lib (.rust_lib below)
+            // provides hal's translatable libcntpr surface; the only irreducible
+            // C floor i386 hal pulls is the two C-variadic printf shells
+            // sprintf/swprintf (Rust stable can't define C variadics), compiled
+            // in-cargo via c_from_compile_db below. Offline drop-test (nm: hal
+            // undefined across libhal_rust + setjmp/arbiter/chkstk ∩ liblibcntpr
+            // defs − cnt-rust-lib defs) = {_sprintf,_swprintf} on i386, EMPTY on
+            // amd64.
             vec![
-                "sdk/lib/crt/liblibcntpr.a",
                 "sdk/lib/vcruntime/libsetjmp.a",
                 "sdk/lib/drivers/arbiter/libarbiter.a",
                 "sdk/lib/crt/libchkstk.a",
@@ -91,8 +99,10 @@ fn main() {
             "HalInitSystem",
             0x0001_0000,
             &["hal/halx86/apic/apictrap.S", "hal/halx86/apic/tsccal.S"],
+            // liblibcntpr.a DROPPED — cnt-rust-lib provides amd64 hal's ENTIRE
+            // libcntpr surface; drop-test residue is EMPTY (no C-variadic shell
+            // needed; amd64 hal calls printf only via Rust-provided entry points).
             vec![
-                "sdk/lib/crt/liblibcntpr.a",
                 "sdk/lib/vcruntime/libsetjmp.a",
                 "sdk/lib/drivers/arbiter/libarbiter.a",
             ],
@@ -155,8 +165,25 @@ fn main() {
 
     linker = linker
         .spec2def("hal/hal.spec", "hal.dll")
-        .static_libs(&libs)
-        .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl");
+        .static_libs(&libs);
+
+    // i386 only: the two irreducible C-variadic printf shells (sprintf/swprintf
+    // = thin `va_start; vsxprintf(...)` over the now-Rust streamout engine that
+    // cnt-rust-lib provides). Replaces the dropped liblibcntpr.a. Compiled
+    // in-cargo via compile_commands.json so the objects are symbol-identical to
+    // cmake's; lazy-pull so unused shells cost nothing. amd64 drop-test residue
+    // is empty → no shells (arm64 never linked cntpr at all).
+    if arch == "x86" {
+        linker = linker.c_from_compile_db(
+            "libcntpr",
+            &[
+                "sdk/lib/crt/printf/sprintf.c",
+                "sdk/lib/crt/printf/swprintf.c",
+            ],
+        );
+    }
+
+    linker = linker.import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl");
 
     // i386 hal.dll carries the pic/halpic.rc resource (checked-in .res). amd64
     // and arm64 link lines carry no .res, so skip it there.

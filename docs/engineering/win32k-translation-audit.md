@@ -52,8 +52,13 @@
 > `_ERESOURCE`/HGDIOBJ→HDC `.cast()`; BOOL→BOOLEAN `as u8`; amd64 DWORD_PTR(u64)
 > match-scrutinee + ULONG field casts.
 > **Cold `--clean` smoke GREEN ×3 (i386/amd64/arm64 — ✓ staleness ✓ boot).**
-> win32k.sys now has **4 live C files**: `safe_user_io.c`,
-> `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.
+> ~~win32k.sys now has **4 live C files**: `safe_user_io.c`,
+> `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.~~
+> **CORRECTED 2026-06-17 (rollup ground-truth):** all four are now
+> `# replaced by Rust` in `win32ss/CMakeLists.txt` — none are live. The only
+> active C is irreducible glue (see the 2026-06-14 header at top: `*_rust_shims.c`,
+> `main_rust_shims.c`, i386 `floatobj.c`, gendib tables; `dib_new.c` is the dead
+> `USE_DIBLIB=FALSE` path, not compiled).
 
 > **SUPERSEDED 2026-06-09 / re-verified 2026-06-14 — the ntuser flip is now COMPLETE: all 59 `user/ntuser/*.c` are cohabitation-commented in `win32ss/CMakeLists.txt`; the "3/59" counts below are the obsolete 2026-06-04 snapshot, kept only for history.**
 

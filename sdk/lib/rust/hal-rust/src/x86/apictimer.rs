@@ -147,21 +147,11 @@ pub unsafe extern "system" fn HalInitializeProfiling() {
 // ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalStartProfileInterrupt(ProfileSource: KPROFILE_SOURCE) {
-    unsafe {
-        if ProfileSource != PROFILE_TIME as KPROFILE_SOURCE {
-            return;
-        }
-        HalIsProfiling = 1; // TRUE
-
-        let pcr = KeGetPcr() as *mut _KPCR;
-        apic_write(APIC_TICR, (*pcr).HalReserved[HAL_PROFILING_INTERVAL]);
-        // Periodic, unmasked, mapped to PROFILE_VECTOR.
-        apic_write(
-            APIC_TMRLVTR,
-            lvt_long(APIC_PROFILE_VECTOR, false, true),
-        );
-    }
+pub unsafe extern "system" fn HalStartProfileInterrupt(_ProfileSource: KPROFILE_SOURCE) {
+    // Profiling is unavailable on amd64: the single per-CPU local APIC timer is
+    // repurposed as the SYSTEM CLOCK (see rtctimer.rs HalpInitializeClock — the
+    // QEMU mc146818 RTC drops periodic IRQ8s under KVM). Touching APIC_TMRLVTR /
+    // APIC_TICR here would clobber the clock LVT and freeze the system.
 }
 
 // ---------------------------------------------------------------------------
@@ -170,17 +160,10 @@ pub unsafe extern "system" fn HalStartProfileInterrupt(ProfileSource: KPROFILE_S
 // ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalStopProfileInterrupt(ProfileSource: KPROFILE_SOURCE) {
-    unsafe {
-        if ProfileSource != PROFILE_TIME as KPROFILE_SOURCE {
-            return;
-        }
-        HalIsProfiling = 0; // FALSE
-        apic_write(
-            APIC_TMRLVTR,
-            lvt_long(APIC_PROFILE_VECTOR, true, true),
-        );
-    }
+pub unsafe extern "system" fn HalStopProfileInterrupt(_ProfileSource: KPROFILE_SOURCE) {
+    // No-op: see HalStartProfileInterrupt. Must NOT mask the shared LAPIC timer,
+    // which is the system clock on amd64. (Boot calls this once to clear a
+    // possibly-pending profile interrupt — harmless to skip, profiling is off.)
 }
 
 // ---------------------------------------------------------------------------
@@ -192,21 +175,7 @@ pub unsafe extern "system" fn HalStopProfileInterrupt(ProfileSource: KPROFILE_SO
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalSetProfileInterval(Interval: ULONG_PTR) -> ULONG_PTR {
-    unsafe {
-        let mut fixed = Interval as u64;
-        if fixed < HalMinProfileInterval {
-            fixed = HalMinProfileInterval;
-        } else if fixed > HalMaxProfileInterval {
-            fixed = HalMaxProfileInterval;
-        }
-        HalCurProfileInterval = fixed;
-
-        let pcr = KeGetPcr() as *mut _KPCR;
-        let mult = (*pcr).HalReserved[HAL_PROFILING_MULTIPLIER] as u64;
-        let timer_interval = fixed.wrapping_mul(mult) / HalMaxProfileInterval;
-        (*pcr).HalReserved[HAL_PROFILING_INTERVAL] = timer_interval as ULONG;
-        apic_write(APIC_TICR, timer_interval as ULONG);
-
-        Interval
-    }
+    // No-op: the LAPIC timer is the system clock on amd64; do NOT reprogram
+    // APIC_TICR (that would change the clock rate). Profiling is unavailable.
+    Interval
 }

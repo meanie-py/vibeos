@@ -139,9 +139,19 @@ pub unsafe extern "system" fn HvMarkCellDirty(
     );
     (*RegistryHive).DirtyCount += 1;
 
-    // CmpLazyFlush() is gated behind !CMLIB_HOST && !_BLDR_ in C; we omit it here
-    // (it is a consumer-provided lazy-flush trigger, not part of the hive
-    // mutation itself, and is absent in the bootloader/host environments).
+    // C HvMarkCellDirty queues a lazy flush of the dirty data (unless the hive
+    // opted out via HIVE_NOLAZYFLUSH), gated `#if !defined(CMLIB_HOST) &&
+    // !defined(_BLDR_)`. The `bldr` feature mirrors _BLDR_ (the loader has no
+    // lazy-flush worker), so the kernel build calls it, the loader build omits
+    // it. CmpLazyFlush is _CmpLazyFlush@0 (ntoskrnl config). hivedata.h:24
+    // HIVE_NOLAZYFLUSH = 2.
+    #[cfg(not(feature = "bldr"))]
+    {
+        const HIVE_NOLAZYFLUSH: u32 = 2;
+        if ((*RegistryHive).HiveFlags & HIVE_NOLAZYFLUSH) == 0 {
+            CmpLazyFlush();
+        }
+    }
     1
 }
 

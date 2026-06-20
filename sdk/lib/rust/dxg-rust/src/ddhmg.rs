@@ -3,7 +3,10 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentProcessId;
 use ntkrnl_sys::interlocked::InterlockedIncrement;
-use ntkrnl_sys::mm::KeGetCurrentThread;
+// Exported ntoskrnl KeGetCurrentThread (real symbol on all 3 arches), not the
+// mm.rs inline helper — that inlines via KeGetCurrentPrcb (a C FORCEINLINE with
+// no exported symbol) on arm64, undefined at dxg.sys link.
+use ntkrnl_sys::ddk::PsGetCurrentThread;
 use crate::types::*;
 use crate::tags::*;
 use crate::driver_main::gpLockShortDelay;
@@ -105,7 +108,7 @@ pub unsafe extern "C" fn DdHmgLock(
                 InterlockedIncrement(
                     core::ptr::addr_of_mut!((*(*pEntry).u.pobj).cExclusiveLock) as *mut LONG,
                 );
-                (*(*pEntry).u.pobj).Tid = KeGetCurrentThread();
+                (*(*pEntry).u.pobj).Tid = PsGetCurrentThread() as PVOID;
                 Object = (*pEntry).u.pobj as PVOID;
             }
         }
@@ -238,7 +241,7 @@ pub unsafe extern "C" fn DdHmgAlloc(
             InterlockedIncrement(
                 core::ptr::addr_of_mut!((*(*pEntry).u.pobj).cExclusiveLock) as *mut LONG,
             );
-            (*(*pEntry).u.pobj).Tid = KeGetCurrentThread();
+            (*(*pEntry).u.pobj).Tid = PsGetCurrentThread() as PVOID;
         }
         (*(*pEntry).u.pobj).hHmgr = DdHandle;
 

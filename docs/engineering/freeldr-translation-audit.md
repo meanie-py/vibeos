@@ -5,7 +5,7 @@ Last updated 2026-06-02. **Status: FreeLDR + all boot-DLLs flipped.**
 > **Ground-truth re-verified 2026-06-14** against `boot/freeldr/` + `sdk/lib/rust/freeldr-rust` + the `-cargo` crates — FreeLDR (now 89 `.rs` modules) + kdcom/bootvid/uefildr/rosload cargo-driven links all present; the only non-Rust left is `lib/strsafe_shim.c` (variadic shell, floor) and `boot/freeldr/bootsect/{fat.S,fat32.S}` (boot-sector asm reused to stamp the UEFI FAT image, floor — the pure-BIOS sectors were git-rm'd).
 This doc started (2026-05-08) as a pre-translation plan; it is now a
 *state* audit. The headline change since: **FreeLDR is translated and
-integrated** (86 Rust modules, cohabitation, all 3 arches boot green),
+integrated** (89 Rust modules, cohabitation, all 3 arches boot green),
 **the BIOS path is pruned** (x86 is UEFI-only), **the display drivers
 are flipped** (`arm64vid.sys` + `framebuf.dll`), and as of 2026-06-01
 the two sibling DLLs **`kdcom.dll` and `bootvid.dll` are flipped to Rust
@@ -32,7 +32,7 @@ Companion to:
 
 | Component | Crate | Translated | Integrated (default cmake) | Smoke |
 |---|---|---|---|---|
-| **FreeLDR** (`uefildr.efi`) | `freeldr-rust` | ✅ 86 modules, 3-arch | ✅ cohabitation (3 `.a` variants) | ✅ all 3 arches boot via UEFI |
+| **FreeLDR** (`uefildr.efi`) | `freeldr-rust` | ✅ 89 modules, 3-arch | ✅ cohabitation (3 `.a` variants) | ✅ all 3 arches boot via UEFI |
 | **peloader** (crown jewel) | `freeldr-rust` (`peloader.rs`) | ✅ | ✅ (within freeldr-rust) | ✅ kernel load is Rust→Rust |
 | **rosload** 2nd-stage | `freeldr-rust` (`libfreeldr_rust_rosload.a`) | ✅ 14 files | ✅ cohabitation | ✅ |
 | **arm64vid.sys** | `arm64vid-rust` | ✅ 3-arch | ✅ cohabitation | ✅ (UEFI GOP on every boot) |
@@ -54,7 +54,7 @@ is what made flipping the whole of FreeLDR to one Rust crate tractable.
 
 ---
 
-## FreeLDR — DONE (`freeldr-rust`, 86 modules, 3-arch)
+## FreeLDR — DONE (`freeldr-rust`, 89 modules, 3-arch)
 
 `sdk/lib/rust/freeldr-rust/` builds three archives consumed by the
 cmake `uefildr` / `rosload` targets via cohabitation:

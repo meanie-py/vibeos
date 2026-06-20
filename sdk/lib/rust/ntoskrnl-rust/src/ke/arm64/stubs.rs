@@ -862,22 +862,40 @@ pub unsafe extern "system" fn KiDispatchException(
                 let Instr = *((*TrapFrame).Pc as *const ULONG);
                 let Rd = Instr & 0x1F;
                 if (Instr & (1 << 22)) != 0 {
-                    if Rd < 29 {
-                        (*TrapFrame).__bindgen_anon_3.X[Rd as usize] = 0;
-                    } else if Rd == 29 {
-                        (*TrapFrame).Fp = 0;
-                    } else if Rd == 30 {
-                        (*TrapFrame).Lr = 0;
+                    // Zero the destination register(s) of the faulting load so the
+                    // kernel probe reads 0 and we skip the instruction (the
+                    // DUMMY_PSEH safe-access fixup). NB: on arm64 the KTRAP_FRAME
+                    // only holds X0..X18 (19 entries); X19..X28 live in the
+                    // KEXCEPTION_FRAME and X29/X30 are Fp/Lr (see
+                    // KeTrapFrameToContext). Writing TrapFrame.X[Rd] for Rd>=19
+                    // is out of bounds -> panic_bounds_check.
+                    macro_rules! zero_reg {
+                        ($r:expr) => {{
+                            let r = $r;
+                            match r {
+                                0..=18 => (*TrapFrame).__bindgen_anon_3.X[r as usize] = 0,
+                                19 if !ExceptionFrame.is_null() => (*ExceptionFrame).X19 = 0,
+                                20 if !ExceptionFrame.is_null() => (*ExceptionFrame).X20 = 0,
+                                21 if !ExceptionFrame.is_null() => (*ExceptionFrame).X21 = 0,
+                                22 if !ExceptionFrame.is_null() => (*ExceptionFrame).X22 = 0,
+                                23 if !ExceptionFrame.is_null() => (*ExceptionFrame).X23 = 0,
+                                24 if !ExceptionFrame.is_null() => (*ExceptionFrame).X24 = 0,
+                                25 if !ExceptionFrame.is_null() => (*ExceptionFrame).X25 = 0,
+                                26 if !ExceptionFrame.is_null() => (*ExceptionFrame).X26 = 0,
+                                27 if !ExceptionFrame.is_null() => (*ExceptionFrame).X27 = 0,
+                                28 if !ExceptionFrame.is_null() => (*ExceptionFrame).X28 = 0,
+                                29 => (*TrapFrame).Fp = 0,
+                                30 => (*TrapFrame).Lr = 0,
+                                // 31 == xzr (no destination); 19..=28 with a null
+                                // ExceptionFrame -> nothing we can fix up.
+                                _ => {}
+                            }
+                        }};
                     }
+                    zero_reg!(Rd);
                     if (Instr & 0x3B000000) == 0x29000000 || (Instr & 0x3B000000) == 0x28000000 {
                         let Rt2 = (Instr >> 10) & 0x1F;
-                        if Rt2 < 29 {
-                            (*TrapFrame).__bindgen_anon_3.X[Rt2 as usize] = 0;
-                        } else if Rt2 == 29 {
-                            (*TrapFrame).Fp = 0;
-                        } else if Rt2 == 30 {
-                            (*TrapFrame).Lr = 0;
-                        }
+                        zero_reg!(Rt2);
                     }
                 }
                 (*TrapFrame).Pc += 4;

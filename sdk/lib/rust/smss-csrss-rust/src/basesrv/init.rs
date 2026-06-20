@@ -672,7 +672,6 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::mem::zeroed(),
     ];
 
-    crate::dbg_print!(b"[BISD] enter\n\0");
     // C: BaseSrvHeap = RtlGetProcessHeap()           (TEB inline)
     // C: BaseSrvSharedHeap = LoadedServerDll->SharedSection
     // The earlier rustconv translation invented a fake CSR_SERVER_DLL_STRUCT
@@ -681,21 +680,14 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     // feedback_cohab_flip_runtime_traps.
     BaseSrvHeap = (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap;
     BaseSrvSharedHeap = (*(LoadedServerDll as *const CSR_SERVER_DLL_FULL)).SharedSection;
-    crate::dbg_print!(
-        b"[BISD] heap=%p shared=%p\n\0",
-        BaseSrvHeap,
-        BaseSrvSharedHeap
-    );
 
     SessionId = (*(NtCurrentPeb())).SessionId;
-    crate::dbg_print!(b"[BISD] SessionId=%u\n\0", SessionId);
 
     RtlInitEmptyUnicodeString(
         &mut SystemRootString,
         Buffer.as_mut_ptr(),
         (core::mem::size_of_val(&Buffer)) as USHORT,
     );
-    crate::dbg_print!(b"[BISD] before RtlExpandEnvironmentStrings_U\n\0");
     Status = RtlExpandEnvironmentStrings_U(
         core::ptr::null_mut(),
         &UnexpandedSystemRootString as *const _ as *mut _,
@@ -703,14 +695,8 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::ptr::null_mut(),
     );
 
-    crate::dbg_print!(
-        b"[BISD] after Expand status=%lx len=%u\n\0",
-        Status,
-        SystemRootString.Length as ULONG
-    );
     Buffer[SystemRootString.Length as usize / 2] = UNICODE_NULL;
     Success = RtlCreateUnicodeString(&mut BaseSrvWindowsDirectory, SystemRootString.Buffer);
-    crate::dbg_print!(b"[BISD] after WinDir create=%u\n\0", Success as ULONG);
 
     let system32 = [
         b'\\' as u16,
@@ -1254,11 +1240,6 @@ pub unsafe extern "system" fn ServerDllInitialization(
     const BASESRV_FIRST_API_NUMBER: ULONG = 0;
     const BasepMaxApiNumber: ULONG = 31;
 
-    crate::dbg_print!(
-        b"[BASESRV] ServerDllInitialization entered LoadedServerDll=%p\n\0",
-        LoadedServerDll
-    );
-
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ApiBase = BASESRV_FIRST_API_NUMBER;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).HighestApiSupported = BasepMaxApiNumber;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).DispatchTable =
@@ -1279,20 +1260,11 @@ pub unsafe extern "system" fn ServerDllInitialization(
 
     BaseSrvDllInstance = (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ServerHandle;
 
-    crate::dbg_print!(b"[BASESRV] before BaseInitializeStaticServerData\n\0");
     BaseInitializeStaticServerData(LoadedServerDll);
-    crate::dbg_print!(
-        b"[BASESRV] after BaseInitializeStaticServerData, BaseStaticServerData=%p\n\0",
-        BaseStaticServerData
-    );
 
-    crate::dbg_print!(b"[BASESRV] before BaseInitDefineDosDevice\n\0");
     BaseInitDefineDosDevice();
-    crate::dbg_print!(b"[BASESRV] after BaseInitDefineDosDevice\n\0");
 
-    crate::dbg_print!(b"[BASESRV] before BaseInitializeVDM\n\0");
     BaseInitializeVDM();
-    crate::dbg_print!(b"[BASESRV] after BaseInitializeVDM, returning SUCCESS\n\0");
 
     STATUS_SUCCESS
 }

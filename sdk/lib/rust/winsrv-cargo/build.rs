@@ -83,12 +83,15 @@ fn main() {
         // covers the concfg-rust / cntpr overlaps.
         // libpseh.a → dummy.c c_shim, libcntpr_rust.a → .rust_lib(cnt-rust-lib)
         // (both above). libchkstk.a KEPT: i386 winsrv-rust references __alloca.
-        // liblibcntpr.a (C variadic + i386 float residual) + the csr server
-        // bodies + concfg_rust stay reused.
+        // liblibcntpr.a DROPPED — cnt-rust-lib (.rust_lib above) provides winsrv's
+        // ENTIRE libcntpr surface. Offline nm drop-test (undefined across ALL
+        // winsrv inputs — libwinsrv_rust + basesrv/csrsrv/win32ksys/concfg_rust —
+        // ∩ liblibcntpr defs − cnt-rust defs) = EMPTY, so no C-variadic/float
+        // residue is needed (unlike win32k, winsrv calls printf only via the
+        // Rust-provided entry points). The csr server bodies + concfg_rust stay.
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
-            "sdk/lib/crt/liblibcntpr.a",
             "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
             "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
             "sdk/lib/crt/libchkstk.a",

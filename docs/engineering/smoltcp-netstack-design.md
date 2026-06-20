@@ -1,7 +1,14 @@
 # smoltcp Net Stack — Design
 
-**Date:** 2026-06-07
-**Status:** design (pre-implementation)
+**Date:** 2026-06-07 (design) · **Updated:** 2026-06-16 (M0–M6 + usermode winsock landed on mainline)
+**Status:** **M0–M6 DONE + ON MAINLINE** (`c4911ea7c68`, master + continue-rust-port) — the
+C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
+all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
+smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` **11/11** on amd64).
+The earlier "usermode-winsock blocker root-caused to a *storage* driver" was superseded — the
+true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
+**`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`: IsBad{Read,Write,String}Ptr reported every
+valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT). Both fixed and landed.
 **Lane:** L4 (Rust-ecosystem-crate rewrite) of `docs/engineering/translation-banking-roadmap.md`
 **Goal:** Replace the ReactOS C TCP/IP protocol engine with the Rust **`smoltcp`** crate,
 reaching a **usable networked desktop in QEMU**, while keeping the Windows-compatible
@@ -11,6 +18,44 @@ This is an **L4 rewrite, not a C→Rust translation.** We are not translating
 `tcpip/lwip` (115K LOC) or `tcpip/ip` (8K LOC); we replace that engine with smoltcp and
 write the glue. It does not move the "C LOC translated" metric — it moves "usable
 desktop in Rust."
+
+---
+
+## Status (2026-06-13)
+
+**The networking stack is done.** `netstack.sys` (`netstack-rust` + `netstack-cargo`,
+KernelDll cargo cutover) replaces the C `tcpip`/`lwip` stack end-to-end: TCP stream +
+UDP datagram transport behind the real AFD/TDI event-indication model, virtio-net
+backend, DHCP/DNS/ping. Lane = worktree `vibeos-wt-netstack`, branch `netstack-port`.
+
+- **M0–M6 all landed.** The old C stack (`ip/` + `lwip/` + C TDI dispatch, ~129K C) is
+  removed from the build; the net suite (`tests/qemu/test_net.py`) is folded into the
+  smoke verdict as the amd64 `net` stage.
+- **Cold 3-arch verified** (`netstack.sys` builds+links on i686/x86_64/aarch64):
+  amd64 cold build + boot + net (10 pass / 1 skip), i386 boot, arm64 boot (netstack.sys
+  staged into the ramdisk). All boot-green.
+- **Merged onto current crp** (merge `810d513d3c8`) and re-verified green ×3.
+- **Self-test gate:** the throwaway in-kernel TDI self-tests now skip when there is no
+  NIC (no DHCP) — otherwise their DISPATCH-level UART flood drops adjacent boot markers
+  and false-hangs no-NIC boots. They still run+pass on the net config.
+
+**One open item — and it is NOT a netstack bug.** Real usermode `ws2_32` `socket()`
+needs the Winsock2 protocol catalog (msafd providers) in the system hive; without it
+`socket()` → `WSAEINVAL`. Baking the catalog in (`netstack_winsock.inf`) deterministically
+trips a **BUGCHECK 0x50**, but the hunt pins it to the **uniata/scsiport IDE storage
+stack**: an async paged-pool read-fault at a stable PC right after IDE adapter-init
+(`IoConnectInterrupt` fails ~33×, the caller starts the IoTimer on a half-set-up
+adapter). The catalog hive is innocent — its size shift just exposes the latent storage
+bug. The catalog `.inf` is preserved but its registration is disabled (boot stays green).
+Finishing it is a storage-driver fix, tangential to networking — see
+`docs/engineering/translation-debugging-field-manual.md` §9.9, the
+`drivers/network/netstack/CMakeLists.txt` comment, and memories
+`project_smoltcp_netstack_design` / `project_scsiport_rust_track`.
+
+**Left for a truly "complete" v1:** (a) fix the storage 0x50 → re-enable the catalog →
+flip `test_usermode_winsock_roundtrip` from skip to asserts; (b) arm64 `DriverEntry`
+execution (arm64 networking is deferred — the driver is staged but the minimal ramdisk
+boot doesn't run its Start=1 init yet).
 
 ---
 
@@ -168,36 +213,63 @@ NIC (QEMU virtio-net) + loopback; usermode dhcp/dns services over smoltcp UDP.
 
 ## Milestones
 
-| # | Milestone | Gate |
-|---|---|---|
-| M0 | QEMU net harness + net test scaffold (red) | harness boots with virtio-net attached |
-| M1 | `Hal` + `VirtIONet` raw frame RX/TX | host sees guest frames |
-| M2 | smoltcp `Device` + `Interface` + poll loop; **ICMP/TCP-echo self-test** | host ping reply + TCP echo (no TDI) |
-| M3 | DHCPv4 lease + DNS from kernel self-test | lease obtained, name resolved |
-| M4 | TDI dispatch (Rust) + completion bridge; **TCP via AFD/ws2_32** | usermode winsock TCP round-trip |
-| M5 | UDP via AFD; usermode dhcp/dns services over smoltcp | services get lease/resolve through the socket layer |
-| M6 | `netstack.sys` cargo cutover; old `tcpip` ip/lwip removed from build | net test green ×(arches in scope); boot smoke still green |
+All milestones landed (commits on `netstack-port`):
+
+| # | Milestone | Gate | Status |
+|---|---|---|---|
+| M0 | QEMU net harness + net test scaffold (red) | harness boots with virtio-net attached | ✅ `c9ef0e5d3e1` |
+| M1 | `Hal` + `VirtIONet` raw frame RX/TX | host sees guest frames | ✅ `5f477ca4f67` |
+| M2 | smoltcp `Device` + `Interface` + poll loop; **ICMP/TCP-echo self-test** | host ping reply + TCP echo (no TDI) | ✅ `56704464f0d` |
+| M3 | DHCPv4 lease + DNS from kernel self-test | lease obtained, name resolved | ✅ `988624f0daa` |
+| M4 | TDI dispatch (Rust) + completion bridge; **TCP via AFD/ws2_32** | TDI TCP round-trip via the real AFD path | ✅ `45ce3ffdb8e` (kernel TDI self-test; usermode winsock blocked on the storage 0x50) |
+| M5 | UDP via AFD; usermode dhcp/dns services over smoltcp | UDP datagram round-trip via the AFD datagram-event model | ✅ `b9127eb3e7c` (transport done; usermode-winsock vehicle built `349043e91b9`, blocked on the storage 0x50) |
+| M6 | `netstack.sys` cargo cutover; old `tcpip` ip/lwip removed from build | net green; boot smoke green ×3 arches | ✅ `0ad0e4e59dd` (+ crp merge `810d513d3c8`) |
+
+The kernel TDI self-tests (`tditest.rs` TCP, `tdidgtest.rs` UDP) drive netstack's own
+`\Device\Tcp`/`\Device\Udp` through the *exact* IRP path AFD uses, so M4/M5 are proven at
+the TDI boundary. The only unproven hop is usermode `ws2_32`→AFD, gated on the storage
+0x50 (see Status).
 
 ---
 
 ## Risks / open items
 
-- **Completion-bridge correctness** (poll-model ↔ IRP-pending) is the deepest risk —
-  M4 is where it's proven.
-- **TDI fidelity:** AFD exercises a specific subset of TDI; reimplementing dispatch in
-  Rust must match what AFD actually issues (read AFD's TDI usage, don't implement the
-  whole spec).
-- **Arch coverage:** virtio + DMA `Hal` must be correct per-arch (i386/amd64/arm64
-  DMA/coherency). Bring up on one arch (amd64) first, then generalize.
-- **smoltcp version pinning** + `no_std` build under our nightly build-std target jsons.
-- **Locking under DPC/IRQL:** the global lock is taken from DPC (RX) and passive
-  (socket ops) — IRQL discipline (no blocking at DISPATCH_LEVEL) must be designed in.
-- **Boot smoke must stay green** — netstack is not boot-critical; ensure a missing/idle
-  NIC doesn't stall boot.
+Original risks — how each resolved:
+- ~~**Completion-bridge correctness** (poll-model ↔ IRP-pending)~~ — ✅ proven at M4/M5;
+  `tditrans.rs` `bridge()` completes pended connect/recv IRPs and upcalls the AFD
+  `TDI_EVENT_RECEIVE`/`RECEIVE_DATAGRAM` handlers. The M4 round-trip was initially a false
+  positive (packed-vs-aligned `TDI_ADDRESS_IP` + an unchecked wait status) — both fixed.
+- ~~**TDI fidelity**~~ — ✅ we implemented exactly the subset AFD issues (ASSOCIATE/CONNECT/
+  SEND/RECEIVE/SET_EVENT/SEND_DATAGRAM/RECEIVE_DATAGRAM), driven by reading AFD's usage.
+- ~~**Arch coverage**~~ — ✅ builds+links on all 3 arches; boots green ×3. (Net data path is
+  amd64-only by config; i386/arm64 load netstack with no NIC and skip cleanly.)
+- ~~**smoltcp version pinning / no_std build-std**~~ — ✅ smoltcp 0.13.1 + virtio-drivers
+  0.13.0 build under the nightly kernel target jsons.
+- ~~**Locking under DPC/IRQL**~~ — ✅ the worker is the sole socket owner, draining a
+  spinlock'd inbox at PASSIVE; `IrqlGuard::raise_to_dpc()` gives UP mutual exclusion
+  (note: `KeAcquireSpinLockForDpc` is a no-op in this tree — don't rely on it).
+- ~~**Boot smoke must stay green**~~ — ✅ folded into the smoke verdict; the self-test gate
+  ensures a missing/idle NIC never stalls boot.
+
+Remaining open:
+- ~~**Usermode-winsock storage 0x50** (task 79)~~ — ✅ **RESOLVED + landed.** The real
+  ws2_32 round-trip is GREEN (`test_net.py` 11/11). The blockers were *not* a storage driver:
+  (1) the amd64 kernel **timer-table base skew** (`38b63f15b74`) made every relative
+  KeDelay/KeWait over-wait ~4–60× → multi-RTT TCP connect timed out; (2) a kernel32
+  **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`) made IsBad{Read,Write,String}Ptr
+  report every valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT before
+  reaching msafd (UDP was unaffected — only connect()/rnr.c validate via IsBad*Ptr).
+- **arm64 `DriverEntry`** — netstack.sys is staged on arm64 but the minimal ramdisk boot
+  doesn't run its Start=1 init yet (arm64 networking deferred).
+- **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads.
 
 ---
 
 ## Cross-references
+- Net test suite: `tests/qemu/test_net.py` (`--arch amd64-uefi-net`); folded into
+  `vibeos-cli smoke --arch amd64` as the `net` stage
+- Storage 0x50 blocker: `docs/engineering/translation-debugging-field-manual.md` §9.9 +
+  `drivers/network/netstack/CMakeLists.txt` comment (task 79)
 - Roadmap / lanes: `docs/engineering/translation-banking-roadmap.md` (L4)
 - Driver cargo-cutover recipe: memory `project_device_driver_cargo_cutover`
 - DDK substrate for drivers: memory `feedback_driver_ddk_substrate`

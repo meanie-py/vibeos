@@ -15,7 +15,12 @@
 
 > **UPDATE 2026-06-09 — the deferral gate has CLEARED: `ntdll-rust-port` has merged to `continue-rust-port` (b3252b81c5a, c1cf116f38c) and the spine is now cargo-driven (ba1be3f93ca). The smlib/csrlib cohab-flip described below as "deferred until ntdll-rust-port merges" can proceed — re-verify the flip against current CMakeLists. Beyond the spine: winlogon.exe is now 100% Rust (1443c4a94d8) and services.exe/SCM is 100% Rust (no longer "not started").**
 
-**Last updated 2026-06-01.** Branch `continue-rust-port` (worktree
+**Last updated 2026-06-01; status re-verified 2026-06-17 (rollup): the boot-chain
+spine — smss/csrss/csrsrv/services/lsass/userinit — is 100% Rust + cargo-driven with
+zero cmake `.a`; winlogon mostly Rust (C residue compiled in-cargo, not external `.a`).
+The smlib/csrlib client-side flip remains on the unmerged `smlib-csrlib-client-flip`
+branch. The dated per-component notes below predate that and are kept for history.**
+Branch `continue-rust-port` (worktree
 `worktree-smss-csrss`, in sync at `a52dce70629`).
 
 ## Current state (re-verified 2026-06-14) — the spine is flipped and `.a`-free

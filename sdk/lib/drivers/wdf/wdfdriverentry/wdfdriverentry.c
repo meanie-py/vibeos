@@ -21,17 +21,23 @@ DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath);
 
-const WDFFUNC *WdfFunctions;
+// The Rust kmdf-sys dispatch (sdk/lib/rust/kmdf-sys) reads the framework
+// function table through the versioned symbol `WdfFunctions_01017` (the real
+// KMDF wdf.h convention). WdfVersionBind writes the bound table pointer to
+// whatever BindInfo.FuncTable points at, so this global MUST be the exact same
+// symbol the Rust dispatch dereferences — otherwise every Wdf* call indexes a
+// NULL table (BUGCHECK 0x1E at the first WdfDriverCreate).
+const WDFFUNC *WdfFunctions_01017;
 PWDF_DRIVER_GLOBALS WdfDriverGlobals;
 WDF_BIND_INFO BindInfo =
 {
     .Size = sizeof(BindInfo),
-    .Component = L"KmdfLibrary", 
+    .Component = L"KmdfLibrary",
     .Version.Major = __WDF_MAJOR_VERSION,
     .Version.Minor = __WDF_MINOR_VERSION,
     .Version.Build = __WDF_BUILD_NUMBER,
     .FuncCount = WdfFunctionTableNumEntries,
-    .FuncTable = (WDFFUNC *)&WdfFunctions
+    .FuncTable = (WDFFUNC *)&WdfFunctions_01017
 };
 PDRIVER_UNLOAD pOriginalUnload = NULL;
 UNICODE_STRING gRegistryPath;
@@ -63,6 +69,7 @@ FxDriverEntry(
 {
     NTSTATUS status;
 
+
     if (DriverObject == NULL)
     {
         return DriverEntry(DriverObject, RegistryPath);
@@ -86,6 +93,7 @@ FxDriverEntry(
                             RegistryPath,
                             &BindInfo,
                             (PWDF_COMPONENT_GLOBALS*)(&WdfDriverGlobals));
+
 
     if (!NT_SUCCESS(status))
     {

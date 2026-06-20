@@ -950,52 +950,12 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                     LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_ATTACH);
                 }
 
-                {
-                    let mut dll_name_a: [i8; 64] = [0; 64];
-                    let mut len = ((*LdrEntry).BaseDllName.Length as ULONG) / (core::mem::size_of::<u16>() as ULONG);
-                    if len > 60 {
-                        len = 60;
-                    }
-                    let mut j: ULONG = 0;
-                    while j < len {
-                        dll_name_a[j as usize] = *((*LdrEntry).BaseDllName.Buffer.add(j as usize)) as i8;
-                        j += 1;
-                    }
-                    dll_name_a[len as usize] = 0;
-                    DbgPrint(
-                        b"[LDR] DllMain(%s) ATTACH PID=%lu Base=%p\n\0".as_ptr() as *const i8,
-                        dll_name_a.as_ptr(),
-                        (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
-                        (*LdrEntry).DllBase,
-                    );
-                }
-
                 DllStatus = LdrpCallInitRoutine(
                     EntryPoint,
                     (*LdrEntry).DllBase,
                     DLL_PROCESS_ATTACH,
                     Context as PVOID,
                 );
-
-                {
-                    let mut dll_name_a: [i8; 64] = [0; 64];
-                    let mut len = ((*LdrEntry).BaseDllName.Length as ULONG) / (core::mem::size_of::<u16>() as ULONG);
-                    if len > 60 {
-                        len = 60;
-                    }
-                    let mut j: ULONG = 0;
-                    while j < len {
-                        dll_name_a[j as usize] = *((*LdrEntry).BaseDllName.Buffer.add(j as usize)) as i8;
-                        j += 1;
-                    }
-                    dll_name_a[len as usize] = 0;
-                    DbgPrint(
-                        b"[LDR] DllMain(%s) ret=%d PID=%lu\n\0".as_ptr() as *const i8,
-                        dll_name_a.as_ptr(),
-                        DllStatus as i32,
-                        (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
-                    );
-                }
 
                 RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
 

@@ -278,27 +278,10 @@ unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usiz
     (ptr as usize - field_offset) as *mut T
 }
 
-#[cfg(not(target_arch = "aarch64"))]
 #[inline(never)]
-unsafe fn da_trace(s: &[u8]) {
-    crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
-}
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
 unsafe fn da_trace(_s: &[u8]) {}
 
-#[cfg(not(target_arch = "aarch64"))]
 #[inline(never)]
-unsafe fn da_tracex(tag: &[u8], a: usize, b: usize) {
-    crate::dbg_print!(
-        b"[DA] %s a=%p b=%p\r\n\0",
-        tag.as_ptr() as *const i8,
-        a as *const i8,
-        b as *const i8
-    );
-}
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
 unsafe fn da_tracex(_tag: &[u8], _a: usize, _b: usize) {}
 // `IoRequestDeviceEject_c` deleted 2026-05-06 — Rust impl below replaces it.
 extern "system" {
@@ -867,9 +850,6 @@ unsafe fn PiCallDriverAddDevice(
     DeviceNode: PDEVICE_NODE,
     LoadDrivers: BOOLEAN,
 ) -> NTSTATUS {
-    da_tracex(b"PiCallDriverAddDevice enter node\0", DeviceNode as usize, LoadDrivers as usize);
-    crate::dbg_print!(b"[DA] PCDA node InstancePath=%wZ\r\n\0",
-        &(*DeviceNode).InstancePath as *const _UNICODE_STRING);
     let mut Status: NTSTATUS;
     let mut EnumRootKey: HANDLE = core::ptr::null_mut();
     let mut SubKey: HANDLE = core::ptr::null_mut();
@@ -897,20 +877,17 @@ unsafe fn PiCallDriverAddDevice(
     RtlInitUnicodeString(&mut EnumRoot as *mut _, ENUM_ROOT.as_ptr());
 
     Status = IopOpenRegistryKeyEx(&mut EnumRootKey as *mut _, core::ptr::null_mut(), &mut EnumRoot as *mut _, KEY_READ);
-    da_tracex(b"PCDA open EnumRoot ->\0", Status as usize, 0);
     if Status < 0 {
         return Status;
     }
 
     Status = IopOpenRegistryKeyEx(&mut SubKey as *mut _, EnumRootKey, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
-    da_tracex(b"PCDA open Enum InstancePath ->\0", Status as usize, (*DeviceNode).InstancePath.Length as usize);
     ZwClose(EnumRootKey);
     if Status < 0 {
         return Status;
     }
 
     Status = IopGetRegistryValue(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
-    da_tracex(b"PCDA get ClassGUID ->\0", Status as usize, 0);
     if Status >= 0 {
         if ((*kvInfo).Type == REG_SZ)
             && ((*kvInfo).DataLength > core::mem::size_of::<u16>() as ULONG)
@@ -1032,18 +1009,13 @@ unsafe fn PiCallDriverAddDevice(
         return Status;
     }
 
-    da_tracex(b"PiCallDriverAddDevice list empty?\0",
-        IsListEmpty(&mut drvListHead as *mut _) as usize, Status as usize);
-
     let mut listEntry = drvListHead.Flink;
     while listEntry != &mut drvListHead as *mut _ {
         let driverEntry = CONTAINING_RECORD(listEntry as PVOID, core::mem::size_of::<ADD_DEV_DRIVERS_LIST>(), 0) as PADD_DEV_DRIVERS_LIST;
         let driverObject = (*driverEntry).DriverObject;
 
         if !driverObject.is_null() && !(*driverObject).DriverExtension.is_null() && (*(*driverObject).DriverExtension).AddDevice.is_some() {
-            da_tracex(b"calling AddDevice drvobj/pdo\0", driverObject as usize, (*DeviceNode).PhysicalDeviceObject as usize);
             Status = ((*(*driverObject).DriverExtension).AddDevice.unwrap())((*driverEntry).DriverObject, (*DeviceNode).PhysicalDeviceObject);
-            da_tracex(b"AddDevice returned\0", Status as usize, 0);
         } else if driverObject.is_null() {
             Status = STATUS_SUCCESS;
         } else {
@@ -2226,14 +2198,9 @@ unsafe fn PiEnumerateDevice(
     (*DeviceNode).OverUsed1.PendingDeviceRelations = core::ptr::null_mut();
 
     if DeviceRelations.is_null() {
-        crate::dbg_print!(b"[DA] PiEnumerateDevice node=%wZ NO RELATIONS\r\n\0",
-            &(*DeviceNode).InstancePath as *const _UNICODE_STRING);
         PiSetDevNodeState(DeviceNode, DeviceNodeStarted);
         return STATUS_SUCCESS;
     }
-    crate::dbg_print!(b"[DA] PiEnumerateDevice node=%wZ children=%lu\r\n\0",
-        &(*DeviceNode).InstancePath as *const _UNICODE_STRING,
-        (*DeviceRelations).Count as usize);
 
     let mut child = (*DeviceNode).Child;
     while !child.is_null() {
@@ -2447,23 +2414,18 @@ unsafe fn PiDevNodeStateMachine(
             continue;
         }
 
-        da_tracex(b"SM node/state\0", currentNode as usize, (*currentNode).State as usize);
-
         match (*currentNode).State {
             DeviceNodeUnspecified => {}
             DeviceNodeUninitialized => {
                 status = PiInitializeDevNode(currentNode);
-                da_tracex(b"SM PiInitializeDevNode->st\0", status as usize, (*currentNode).State as usize);
                 doProcessAgain = if status >= 0 { 1 } else { 0 };
             }
             DeviceNodeInitialized => {
                 status = PiCallDriverAddDevice(currentNode, PnPBootDriversInitialized);
-                da_tracex(b"SM PiCallDriverAddDevice->st\0", status as usize, (*currentNode).State as usize);
                 doProcessAgain = if status >= 0 { 1 } else { 0 };
             }
             DeviceNodeDriversAdded => {
                 status = IopAssignDeviceResources(currentNode);
-                da_tracex(b"SM IopAssignDeviceResources->\0", status as usize, currentNode as usize);
                 doProcessAgain = if status >= 0 { 1 } else { 0 };
             }
             DeviceNodeResourcesAssigned => {
@@ -2494,11 +2456,9 @@ unsafe fn PiDevNodeStateMachine(
                 doProcessAgain = 1;
             }
             DeviceNodeStarted => {
-                da_tracex(b"SM Started flags\0", (*currentNode).Flags as usize, DNF_REENUMERATE as usize);
                 if ((*currentNode).Flags & DNF_REENUMERATE) != 0 {
                     (*currentNode).Flags &= !DNF_REENUMERATE;
                     status = PiIrpQueryDeviceRelations(currentNode, BusRelations);
-                    da_tracex(b"SM QueryDeviceRelations->\0", status as usize, 0);
 
                     PiSetDevNodeState(currentNode, DeviceNodeEnumerateCompletion);
                     doProcessAgain = 1;
@@ -2535,7 +2495,6 @@ unsafe fn PiDevNodeStateMachine(
             DeviceNodeEnumeratePending => {}
             DeviceNodeEnumerateCompletion => {
                 status = PiEnumerateDevice(currentNode);
-                da_tracex(b"SM PiEnumerateDevice->\0", status as usize, 0);
                 doProcessAgain = 1;
             }
             DeviceNodeAwaitingQueuedDeletion => {}
@@ -2593,9 +2552,6 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
         Request = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<DEVICE_ACTION_REQUEST>(), 0) as PDEVICE_ACTION_REQUEST;
 
         deviceNode = IopGetDeviceNode((*Request).DeviceObject);
-
-        da_tracex(b"worker req action/state\0", (*Request).Action as usize,
-            if deviceNode.is_null() { 0xffff } else { (*deviceNode).State as usize });
 
         status = STATUS_SUCCESS;
 

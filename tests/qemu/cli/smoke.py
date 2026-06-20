@@ -9,6 +9,8 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -137,6 +139,38 @@ def _one_boot(
         vm.stop()
 
 
+def _net_stage(run: Run, repo: Path, arch: str) -> None:
+    """Folded netstack coverage (M6): run the net suite (tests/qemu/test_net.py
+    against the amd64-uefi-net config — UEFI smoke boot + a virtio-net NIC on
+    slirp) and fold its pass/fail into the smoke verdict. The smoltcp netstack
+    (netstack.sys) replaced the old C tcpip/lwip stack, so a netstack regression
+    must turn the North Star red like any other boot regression. amd64-only (the
+    virtio-net config is amd64); boot smoke itself stays no-NIC by design."""
+    test_file = repo / "tests" / "qemu" / "test_net.py"
+    if not test_file.exists():
+        run.add(Stage("net", status="skip", detail="no test_net.py"))
+        return
+    cmd = [sys.executable, "-m", "pytest", str(test_file),
+           "--arch", "amd64-uefi-net", "--timeout", "600", "-q",
+           "-p", "no:cacheprovider"]
+    try:
+        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
+                              text=True, timeout=1200)
+    except subprocess.TimeoutExpired:
+        run.add(Stage("net", status="fail", detail="net suite timed out",
+                      salient=["tests/qemu/test_net.py hung > 1200s"]))
+        return
+    tail = (proc.stdout or "").strip().splitlines()
+    summary = next((l for l in reversed(tail) if " passed" in l or " failed" in l
+                    or " error" in l), tail[-1] if tail else "")
+    if proc.returncode == 0:
+        run.add(Stage("net", status="ok", detail=summary.strip("= ")))
+    else:
+        run.add(Stage("net", status="fail", detail="net suite FAILED",
+                      salient=[summary.strip("= "),
+                               "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net"]))
+
+
 def smoke(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
@@ -204,6 +238,13 @@ def smoke(args, repo: Path) -> int:
     run.extra["passes"] = npass
     run.extra["runs"] = total
     run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
+
+    # M6: fold the netstack net-suite into the verdict. Only when boot is green
+    # (no point net-testing a broken boot) and only on amd64 (the virtio-net
+    # config). --no-net opts out for fast boot-only iteration.
+    if arch == "amd64" and npass == total and not getattr(args, "no_net", False):
+        _net_stage(run, repo, arch)
+
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"
         if 0 < npass < total:

@@ -2040,6 +2040,22 @@ def main():
     p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
+    p = sub.add_parser("semdiff",
+                       help="Find C↔Rust semantic/behavioral divergences (LLM)")
+    p.add_argument("file", help="C source file (.c)")
+    p.add_argument("--rust", default=None,
+                   help="Rust file (.rs). If omitted, located by stem under sdk/lib/rust.")
+    p.add_argument("--model", default="deepseek-reasoner",
+                   help="Model: deepseek-reasoner (default), deepseek-chat, sonnet, opus, ...")
+    p.add_argument("--only", default=None,
+                   help="Comma-separated function names to diff (default: all paired)")
+    p.add_argument("--max-fns", type=int, default=None,
+                   help="Cap the number of functions diffed (cost control)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="Ignore the per-pair response cache (force fresh API calls)")
+    p.add_argument("--workers", type=int, default=6,
+                   help="Concurrent API calls (default 6)")
+
     args = parser.parse_args()
 
     commands = {
@@ -2069,6 +2085,7 @@ def main():
         "extern-audit": cmd_extern_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
+        "semdiff": cmd_semdiff,
     }
 
     try:

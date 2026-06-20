@@ -1,0 +1,19 @@
+# Cargo-driven `netstack.sys` link (i386 + amd64 + arm64). The smoltcp network
+# stack driver. build.rs is a manifest for the shared `reactos-link` engine; the
+# Rust body is the `netstack-rust` staticlib, whose `DriverEntry` is the PE entry
+# point (kerneldll link, entry=DriverEntry, no exports yet — the TDI device
+# interface arrives at M4). Sibling of `beep-cargo` / `null-cargo`.
+
+[package]
+name = "netstack-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "netstack"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

@@ -95,9 +95,11 @@ fn main() {
         // --allow-multiple-definition); the cohab stub symbol it also carries
         // (__cportlib_rust_cohab_stub) and the C file-global RingIndicator are
         // unreferenced (cport-rust folds RingIndicator into internal state).
-        // blcmlib (CM hive boot lib) is now compiled IN-cargo via
-        // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
-        // blrtl (boot RTL leaf) is likewise compiled IN-cargo below: its C via
+        // blcmlib (CM hive boot lib): the C is GONE — the loader now reads the
+        // SYSTEM hive via `cmlib-rust` built with the `bldr` feature (mirrors the
+        // old C blcmlib's -D_BLDR_ reduced surface). See .rust_lib("cmlib-rust",
+        // &["bldr"]) below + cmlib_loader_stubs.c (da9c72b240d).
+        // blrtl (boot RTL leaf) is compiled IN-cargo below: its C via
         // .c_from_compile_db("blrtl", …) + its per-arch asm via
         // .asm_archive("blrtl_asm", …), not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",
