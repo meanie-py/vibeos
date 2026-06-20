@@ -112,6 +112,22 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Fix:** When migrating a `shim_exports.rs` wrapper into a sibling rlib, move its `.set _name, _name@0` line into the destination rlib's `lib.rs` (`#[cfg(target_arch="x86")] core::arch::global_asm!`). Came up moving `PsGetCurrentThread` into common-inlines.
 **Source:** `feedback_global_asm_alias_locality.md`
 
+### LLVM COFF-i386 `global_asm!`: `push offset <label>` → "unsupported relocation type" (must `mov reg, offset`; bare `push <label>` is a MEMORY push)
+**Symptom:** Transcribing MASM/GAS `.s` into `core::arch::global_asm!` for the i686 (`i686-w64-mingw32` / `i686-kernel.json`) target, the build dies with `error: unsupported relocation type` on a line like `push offset glu_return` / `push _unwind_handler` (pushing a code-label address as an imm32). Same source assembled fine with the original `ml`/GAS.
+**Root cause:** LLVM's COFF-i386 backend won't emit a symbol relocation on the `push imm32` encoding (`0x68 + DIR32`), even though MASM does. The *mov-imm32* encoding (`0xB8 + IMAGE_REL_I386_DIR32`) **is** supported. Worse trap if you "simplify" to bare `push glu_return`: LLVM intel syntax treats that as a **memory** push (`ff 35` — reads the dword *at* the label), silently producing wrong code instead of an error. `offset` is mandatory for the address; `cmp dword ptr [..], offset <label>` (cmp-imm32) is supported and needs no workaround.
+**Fix:** Materialize the address in a dead caller-saved scratch reg, then push the reg:
+```
+"    mov eax, offset glu_return",   // was: push offset glu_return
+"    push eax",
+```
+Pick a register provably dead at that point (here `eax`: clobbered by the imminent `_RtlUnwind@16` / reloaded after). Verify the result with the disasm-diff oracle below.
+**Source:** pseh-rust (seh.s → `sdk/lib/rust/pseh-rust/src/lib.rs`, the two push-address sites in `__global_unwind2` / `__local_unwind2`).
+
+### Verify a `global_asm!` translation by disasm-diffing against the original `.obj` (a stronger oracle than smoke)
+**Symptom:** N/A — preventive method for irreducible-asm translations (SEH/setjmp/CRT runtimes) whose paths a boot smoke barely or never exercises, so green smoke is weak evidence of correctness.
+**Fix:** Build both, then disassemble and diff the function bodies — they should be instruction-for-instruction identical except for documented workarounds. The original cmake `.obj` lives under `build-<arch>/.../CMakeFiles/<tgt>.dir/<file>.s.obj`; the Rust output is in the crate's staticlib. `objdump -d` each (don't `llvm-ar x/p` a **thin archive** — `libpseh.a` references `.obj` on disk, extraction is unsupported; objdump the on-disk `.obj` directly). Any diff beyond your annotated `mov/push` reloc workarounds is a real divergence. This caught nothing-wrong on pseh-rust (clean match) but is the oracle that makes a cold/untestable asm port trustworthy without booting it.
+**Source:** pseh-rust validation (disasm-equivalence vs `seh.s.obj`).
+
 ### New rlib's `#[no_mangle]` symbols absent from libkernel_rust.a (link fails)
 **Symptom:** Staticlib builds OK, but ntoskrnl link fails with hundreds of undefined-symbol errors naming the new rlib's wrappers; `nm` shows them `U` in libkernel_rust.a.
 **Root cause:** A Cargo dependency alone gives no reachability path; rustc only archives a dep's CGUs into a staticlib when explicitly reached.
