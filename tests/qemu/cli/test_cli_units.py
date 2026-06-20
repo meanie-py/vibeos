@@ -231,7 +231,37 @@ def test_triage_hang_surfaces_tails():
         "line1\nline2\nstuck...\n", reached=False, fail_marker=None, debugcon="A\nB\nC\n"
     )
     assert r["classification"] == "HANG_TIMEOUT"
+    assert r["known_flake"] is None  # unsignatured hang stays a blocking HANG_TIMEOUT
     assert any("debugcon" in s for s in r["salient"])
+
+
+def test_triage_known_hang_flakes():
+    # i386 nettest race: nettest spawned, explorer never reached _tWinMain
+    nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
+    r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
+    assert r["classification"] == "KNOWN_FLAKE"
+    assert r["known_flake"] == "i386_nettest_explorer_race"
+
+    # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
+    r2 = triage.classify(
+        nettest + "[EXPLORER] _tWinMain entered\n", reached=False, fail_marker=None, debugcon=None
+    )
+    assert r2["classification"] == "HANG_TIMEOUT" and r2["known_flake"] is None
+
+    # arm64 LpcExitThread race
+    arm = "[PS] PspExitThread Image=System -> about to call LpcExitThread\n"
+    r3 = triage.classify(arm, reached=False, fail_marker=None, debugcon=None)
+    assert r3["classification"] == "KNOWN_FLAKE"
+    assert r3["known_flake"] == "arm64_lpcexitthread_race"
+
+    # a hang-stage flake signature must NOT match a bugcheck (when-gated)
+    r4 = triage.classify(
+        "BugCheck 0x7E\n[WINLOGON] nettest.exe created\n",
+        reached=False,
+        fail_marker=None,
+        debugcon=None,
+    )
+    assert r4["classification"] == "BUGCHECK"  # bugcheck branch, hang sig ignored
 
 
 # --- artifacts: summary.json is the machine-true verdict -------------------
