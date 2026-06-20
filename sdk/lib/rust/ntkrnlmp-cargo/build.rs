@@ -28,16 +28,17 @@ fn main() {
     //   - cnt_float: cnt-rust-lib `float` feature — i386 omits it (no-SSE
     //     softfloat kernel), amd64/arm64 enable it (libcntpr.cmake CNT_RUST_*).
     //   - hal_dir: hal/halx86 (i386+amd64) vs hal/halarm64 (arm64).
-    //   - chkstk: cmake links the ReactOS libchkstk.a on i386+arm64 (amd64 takes
-    //     __chkstk from the clang_rt.builtins the engine already links).
-    let (rust_target, res, entry, asm, cnt_float, hal_dir, chkstk): (
+    // (libchkstk.a DROPPED 2026-06-20: the i386 cntpr_asm below assembles
+    // chkstk_asm.s — which PUBLICs all 4 stack-probe symbols __chkstk/
+    // __alloca_probe/__alloca_probe_16/___alloca — and clang_rt.builtins covers
+    // __chkstk on amd64/arm64, so the ReactOS libchkstk.a was redundant.)
+    let (rust_target, res, entry, asm, cnt_float, hal_dir): (
         &str,
         &str,
         &str,
         Vec<&str>,
         bool,
         &str,
-        bool,
     ) = match arch.as_str() {
         "x86" => (
             "i686-kernel.json",
@@ -53,7 +54,6 @@ fn main() {
             ],
             false,
             "halx86",
-            true,
         ),
         "x86_64" => (
             "x86_64-kernel.json",
@@ -69,7 +69,6 @@ fn main() {
             ],
             true,
             "halx86",
-            false,
         ),
         "aarch64" => (
             "aarch64-pc-windows-gnullvm",
@@ -84,7 +83,6 @@ fn main() {
             ],
             true,
             "halarm64",
-            true,
         ),
         o => panic!("ntkrnlmp-cargo: unsupported arch {o}"),
     };
@@ -139,7 +137,10 @@ fn main() {
         // runtime (`_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/
         // `_abnormal_termination`, exported by ntoskrnl.spec for -arch=i386,arm)
         // via global_asm! disasm-identical to the cmake seh.s. C kept on disk.
-        "sdk/lib/cmlib/libcmlib.a",
+        // libcmlib.a DROPPED 2026-06-20 — it was an empty placeholder TU (0
+        // defined symbols; all 13 cmlib .c are REMOVE_ITEM'd) since the kernel
+        // cmlib body is 100% Rust via `.rust_lib("cmlib-rust")` below. The
+        // placeholder contributed nothing to the link.
         "sdk/lib/rtl/librtl.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
@@ -156,9 +157,6 @@ fn main() {
         "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
         "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
     ];
-    if chkstk {
-        static_libs.push("sdk/lib/crt/libchkstk.a");
-    }
 
     // (cportlib/csq/arbiter/lsalib/rossym are now cargo-native `.rust_lib` — see
     // the calls in the linker chain below. Historically these were cmake-built
