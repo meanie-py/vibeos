@@ -112,6 +112,22 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Fix:** When migrating a `shim_exports.rs` wrapper into a sibling rlib, move its `.set _name, _name@0` line into the destination rlib's `lib.rs` (`#[cfg(target_arch="x86")] core::arch::global_asm!`). Came up moving `PsGetCurrentThread` into common-inlines.
 **Source:** `feedback_global_asm_alias_locality.md`
 
+### LLVM COFF-i386 `global_asm!`: `push offset <label>` → "unsupported relocation type" (must `mov reg, offset`; bare `push <label>` is a MEMORY push)
+**Symptom:** Transcribing MASM/GAS `.s` into `core::arch::global_asm!` for the i686 (`i686-w64-mingw32` / `i686-kernel.json`) target, the build dies with `error: unsupported relocation type` on a line like `push offset glu_return` / `push _unwind_handler` (pushing a code-label address as an imm32). Same source assembled fine with the original `ml`/GAS.
+**Root cause:** LLVM's COFF-i386 backend won't emit a symbol relocation on the `push imm32` encoding (`0x68 + DIR32`), even though MASM does. The *mov-imm32* encoding (`0xB8 + IMAGE_REL_I386_DIR32`) **is** supported. Worse trap if you "simplify" to bare `push glu_return`: LLVM intel syntax treats that as a **memory** push (`ff 35` — reads the dword *at* the label), silently producing wrong code instead of an error. `offset` is mandatory for the address; `cmp dword ptr [..], offset <label>` (cmp-imm32) is supported and needs no workaround.
+**Fix:** Materialize the address in a dead caller-saved scratch reg, then push the reg:
+```
+"    mov eax, offset glu_return",   // was: push offset glu_return
+"    push eax",
+```
+Pick a register provably dead at that point (here `eax`: clobbered by the imminent `_RtlUnwind@16` / reloaded after). Verify the result with the disasm-diff oracle below.
+**Source:** pseh-rust (seh.s → `sdk/lib/rust/pseh-rust/src/lib.rs`, the two push-address sites in `__global_unwind2` / `__local_unwind2`).
+
+### Verify a `global_asm!` translation by disasm-diffing against the original `.obj` (a stronger oracle than smoke)
+**Symptom:** N/A — preventive method for irreducible-asm translations (SEH/setjmp/CRT runtimes) whose paths a boot smoke barely or never exercises, so green smoke is weak evidence of correctness.
+**Fix:** Build both, then disassemble and diff the function bodies — they should be instruction-for-instruction identical except for documented workarounds. The original cmake `.obj` lives under `build-<arch>/.../CMakeFiles/<tgt>.dir/<file>.s.obj`; the Rust output is in the crate's staticlib. `objdump -d` each (don't `llvm-ar x/p` a **thin archive** — `libpseh.a` references `.obj` on disk, extraction is unsupported; objdump the on-disk `.obj` directly). Any diff beyond your annotated `mov/push` reloc workarounds is a real divergence. This caught nothing-wrong on pseh-rust (clean match) but is the oracle that makes a cold/untestable asm port trustworthy without booting it.
+**Source:** pseh-rust validation (disasm-equivalence vs `seh.s.obj`).
+
 ### New rlib's `#[no_mangle]` symbols absent from libkernel_rust.a (link fails)
 **Symptom:** Staticlib builds OK, but ntoskrnl link fails with hundreds of undefined-symbol errors naming the new rlib's wrappers; `nm` shows them `U` in libkernel_rust.a.
 **Root cause:** A Cargo dependency alone gives no reachability path; rustc only archives a dep's CGUs into a staticlib when explicitly reached.
@@ -720,6 +736,14 @@ Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) wh
 **Fix:** route the zeroed reg by range — X0..X18→`TrapFrame.X[]`, X19..X28→`KEXCEPTION_FRAME` (guard non-null), X29/X30→`Fp`/`Lr`, X31(xzr) no-op; apply to both the dest (Rd) and the STP second reg (Rt2). `ke/arm64/stubs.rs`, commit `23406d8c708`. **General tell:** any arm64 code that treats `TrapFrame.X[]` as a full 31-reg file is wrong — only X0..X18 live there.
 **Source:** `project_fastfat_rust_track.md` (2026-06-15)
 **Source:** `feedback_arm64_silent_panic_slice_oob.md`
+
+### arm64-only deadlock from UB: `&immutable_local as *const T as *mut T` on an in/out FFI param (Heisenbug-via-instrumentation)
+**Symptom:** arm64 only; csrss hangs forever inside `LdrLoadDll(winsrv.dll)` at kernel32 `ConnectConsole` → `NtWaitForMultipleObjects(MAX_INIT_EVENTS, ConsoleStartInfo.InitEvents, …)`. CPU idle (PC pinned at `KiIdleLoop`), thread blocked off-CPU on a dispatcher wait — a pure deadlock, no bugcheck/panic. i386+amd64 green (2/3). **The tell: adding an entry `DbgPrint` to the function makes it boot clean** — a Heisenbug, which means a UB-miscompile (instrumentation perturbs codegen and masks it), not a logic/race bug. (Bonus red herring: a non-fatal `KeSignalGateBoostPriority: BAD gate … caller=00000000` DbgPrint line shows up in PASSING runs too — ignore it.)
+**Root cause:** `ConnectConsole` passed the IN/OUT size to `CsrClientConnectToServer` as `&ConnectInfoSize as *const ULONG as *mut ULONG`, where `ConnectInfoSize` was an immutable `let`. The callee writes the actual size back through it → **writing through a `*const`-derived pointer to an immutable local = UB.** arm64 gnullvm LLVM exploited the UB and miscompiled the *post-call reads of the same struct*: `ConnectInfo->ConsoleStartInfo.InitEvents` loaded STALE (the pre-connect zeroed values) → `NtWaitForMultipleObjects` waited on null handles consrv never signals → deadlock. i386/amd64 (gnu) codegen happened not to bite.
+**Fix:** `let mut ConnectInfoSize` + `&mut ConnectInfoSize as *mut ULONG` (matches the C `ULONG ConnectInfoSize; … &ConnectInfoSize`). Commit `cc13aded8fd`.
+**Grep:** `&\w+ as \*const .* as \*mut` — flags `&` of a local cast const→mut for an FFI out/in-out param. NOT the same as `ptr as *const _ as *mut _` round-trips on a caller-provided buffer pointer (those are fine); the UB is specifically taking `&`/`&mut`... no — taking `&` (shared) of an *immutable local* and writing through it. The c2rust output drops the `mut` on locals whose address is only taken once.
+**Debugging technique that cracked it (arm64 has ZERO kernel DWARF → thread-walk fails):** instrument the suspect functions with `DbgPrint("[TAG] <fn>")` at entry, build the user DLL for arm64 + inject into ramdisk + boot, read the last serial line before the freeze. Here the instrument *masked* the bug — which was itself the decisive Heisenbug clue.
+**Source:** `project_kernel32_nls_rust_track.md` (2026-06-19 cont.5)
 
 ### arm64 0xF4 winlogon death right after `[WIN32K] shell ready`
 **Symptom:** arm64 only; deterministic BUGCHECK 0xF4 (critical-process death, P1=3, P2=winlogon EPROCESS) immediately after `shell ready` on the logoff KeUserModeCallback. amd64 immune.

@@ -20,7 +20,7 @@ list(APPEND SOURCE
     # client/compname.c — replaced by Rust
     # client/debugger.c — replaced by Rust
     # client/dosdev.c — replaced by Rust
-    client/dllmain.c
+    # client/dllmain.c    — replaced by Rust (kernel32-rust/src/client/dllmain.rs); cohab-linked via libkernel32_rust.a
     # client/environ.c    — replaced by Rust (kernel32-rust/src/client/environ.rs)
     # client/except.c — replaced by Rust
     # client/fiber.c — replaced by Rust
@@ -45,14 +45,14 @@ list(APPEND SOURCE
     # client/vdm.c — replaced by Rust
     # client/version.c    — replaced by Rust (kernel32-rust/src/client/version.rs)
     # client/virtmem.c — replaced by Rust
-    # client/console/* — DEFERRED back to C (CSR CONSOLE_API_MESSAGE types not yet in FFI;
-    #   console/*.rs translations preserved on disk):
-    client/console/alias.c
-    client/console/console.c
-    client/console/history.c
-    client/console/init.c
-    client/console/readwrite.c
-    client/file/move.c
+    # client/console/* — replaced by Rust (kernel32-rust/src/console/); cohab-linked via
+    #   libkernel32_rust.a (CSR CONSOLE_API_MESSAGE family bridged through winsrv-sys):
+    # client/console/alias.c
+    # client/console/console.c
+    # client/console/history.c
+    # client/console/init.c
+    # client/console/readwrite.c
+    # client/file/move.c — replaced by Rust (kernel32-rust/src/file/move.rs); cohab-linked via libkernel32_rust.a
     # client/file/tape.c — replaced by Rust (kernel32-rust/src/file/tape.rs); cohab-linked via libkernel32_rust.a
     # client/file/{backup,cnotify,copy,create,delete,deviceio,dir,disk,fileinfo,filemap,filename,find,
     #   hardlink,iocompl,lfile,lock,mailslot,mntpoint,npipe,rw,volume}.c — replaced by Rust (kernel32-rust/src/file/)
@@ -61,7 +61,7 @@ list(APPEND SOURCE
     # wine/lzexpand.c — replaced by Rust (kernel32-rust/src/wine/lzexpand.rs); cohab-linked via libkernel32_rust.a
     # wine/muldiv.c       — replaced by Rust (kernel32-rust/src/wine/muldiv.rs)
     # wine/profile.c — replaced by Rust (kernel32-rust/src/wine/profile.rs); cohab-linked via libkernel32_rust.a
-    wine/res.c
+    # wine/res.c — replaced by Rust (kernel32-rust/src/wine/res.rs); cohab-linked via libkernel32_rust.a
     # wine/timezone.c — replaced by Rust
     # winnls/string/casemap.c    — replaced by Rust (kernel32-rust/src/string/casemap.rs)
     # winnls/string/collation.c  — replaced by Rust (kernel32-rust/src/string/collation.rs)

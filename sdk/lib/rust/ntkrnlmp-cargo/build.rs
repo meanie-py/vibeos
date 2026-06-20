@@ -122,24 +122,25 @@ fn main() {
     // order is non-critical.
     let mut static_libs: Vec<&str> = vec![
         "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
-        "sdk/lib/cportlib/libcportlib.a",
-        "sdk/lib/cportlib/libcport_rust.a",
-        "sdk/lib/drivers/csq/libcsq.a",
-        "sdk/lib/drivers/csq/libcsq_rust.a",
+        // cportlib/csq/arbiter/lsalib/rossym cohab → cargo-native `.rust_lib`
+        // (the 5 calls below) 2026-06-20. Both halves of each cohab dropped from
+        // this cmake-.a list: the C bodies (libcportlib/libcsq/libarbiter/
+        // libntlsalib/librossym .a) were empty rust_cohab_stub placeholders —
+        // 0 real symbols (libcportlib's lone def, ___cportlib_rust_cohab_stub,
+        // is unreferenced) — and the cmake-BUILT libX_rust.a are superseded by
+        // building those same crates (cport-rust/csq-rust/arbiter-rust/
+        // lsalib-rust/rossym-rust) cargo-native, exactly the rtl-rust/
+        // cnt-rust-lib/cmlib-rust pattern. The `bacd1fc64d3` x86-ungate block
+        // (which re-added the cmake libX_rust.a on x86 too) is likewise gone —
+        // the `.rust_lib` calls below serve all 3 arches uniformly.
         // libpseh.a DROPPED → `pseh-rust` (.rust_lib below, all arches). It
         // provides the 2 DUMMY_PSEH `_SEH2_Volatile*` data symbols (referenced
         // by the C cohab archives' pseh2.h) on every arch, plus the i386 SEH
         // runtime (`_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/
         // `_abnormal_termination`, exported by ntoskrnl.spec for -arch=i386,arm)
         // via global_asm! disasm-identical to the cmake seh.s. C kept on disk.
-        "sdk/lib/drivers/arbiter/libarbiter.a",
-        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
         "sdk/lib/cmlib/libcmlib.a",
-        "sdk/lib/lsalib/libntlsalib.a",
-        "sdk/lib/lsalib/liblsalib_rust.a",
         "sdk/lib/rtl/librtl.a",
-        "sdk/lib/rossym/librossym.a",
-        "sdk/lib/rossym/librossym_rust.a",
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
@@ -159,20 +160,14 @@ fn main() {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
 
-    // Rust-flipped cohab archives. arm64 always (clean stub-only C archives need
-    // them). x86 (#35 ungate): adding these shifts the link layout and historically
-    // tipped a latent cmlib Hv* hive-write miscompile — now guarded by the targeted
-    // `cmlib-rust` no-prepopulate-passes class-guard in reactos-link, so the ungate
-    // can land on i386/amd64 too (driving cport/csq/arbiter/lsalib/rossym to Rust ×3).
-    if arch == "aarch64" || arch == "x86" || arch == "x86_64" {
-        static_libs.extend_from_slice(&[
-            "sdk/lib/cportlib/libcport_rust.a",
-            "sdk/lib/drivers/csq/libcsq_rust.a",
-            "sdk/lib/drivers/arbiter/libarbiter_rust.a",
-            "sdk/lib/lsalib/liblsalib_rust.a",
-            "sdk/lib/rossym/librossym_rust.a",
-        ]);
-    }
+    // (cportlib/csq/arbiter/lsalib/rossym are now cargo-native `.rust_lib` — see
+    // the calls in the linker chain below. Historically these were cmake-built
+    // libX_rust.a added to static_libs, gated arm64-only then x86-ungated in
+    // `bacd1fc64d3`; the layout shift once tipped a latent cmlib Hv* hive-write
+    // miscompile [cold amd64 HANG at hivewrt.c "Failed to write the primary
+    // hive"], now guarded by the cmlib-rust no-prepopulate-passes class-guard in
+    // reactos-link. Building the crates cargo-native instead of reusing cmake's
+    // copy keeps the same guard in force; the amd64 cold boot is the oracle.)
 
     // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
     // (enumerated by a drop-test against liblibcntpr.a). Compiled in-cargo via
@@ -284,6 +279,15 @@ fn main() {
         .rust_lib("cmlib-rust", &[], true)
         // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
         .rust_lib("guids-rust", &[], true)
+        // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
+        // libX_rust.a in static_libs + the empty C-body stubs, both dropped
+        // above). Same crates cmake compiled into libX_rust.a — building them
+        // here via the engine is symbol-identical. All 3 arches uniformly.
+        .rust_lib("cport-rust", &[], true)
+        .rust_lib("csq-rust", &[], true)
+        .rust_lib("arbiter-rust", &[], true)
+        .rust_lib("lsalib-rust", &[], true)
+        .rust_lib("rossym-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its

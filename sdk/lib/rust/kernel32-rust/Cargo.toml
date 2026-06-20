@@ -20,3 +20,4 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

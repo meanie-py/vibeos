@@ -17,7 +17,9 @@ extern "system" {
 }
 
 extern "C" {
-    fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+    // ntstrsafe RtlStringCbPrintfW is FORCEINLINE (no symbol) → call the CRT
+    // _snwprintf directly (crate idiom; see client/except.rs / ntstrsafe.rs).
+    fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
     fn BasepCopyFileExW(
         lpExistingFileName: LPCWSTR,
         lpNewFileName: LPCWSTR,
@@ -97,9 +99,12 @@ pub unsafe extern "system" fn BasepMoveFileDelayed(
     if KeyId == 1 {
         PendingOperations = w!("PendingFileRenameOperations").as_ptr() as PWSTR;
     } else {
-        RtlStringCbPrintfW(
+        // C ignores the RtlStringCbPrintfW return here; _snwprintf with
+        // count = cch-1 leaves room for the NUL _snwprintf writes on a short fit.
+        _snwprintf(
             PendingOperationsBuffer.as_mut_ptr(),
-            core::mem::size_of_val(&PendingOperationsBuffer),
+            (core::mem::size_of_val(&PendingOperationsBuffer) / core::mem::size_of::<WCHAR>())
+                .saturating_sub(1),
             w!("PendingFileRenameOperations%d").as_ptr(),
             KeyId,
         );

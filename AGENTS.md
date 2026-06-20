@@ -63,7 +63,8 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 - **Never lower boot markers** (e.g., from "explorer.exe created" to "ksecdd.sys") to work around regressions.
 - **Run smoke tests after any kernel/subsystem change** that touches boot paths (MM, KE, EX, IO, SE, OB, PS, CC, FSRTL, win32k, HAL).
 - **All 3 architectures must pass independently.**
-- **Always check the screenshot** — the test saves `qemu/<arch>_smoke.png` for visual inspection.
+- **Always check the screenshot** — the test saves `qemu/<arch>_smoke.png` for visual inspection. **Caveat: the screenshot is captured at the boot marker (`shell ready`), *before* the taskbar finishes rendering — so a green run routinely shows bare wallpaper with no taskbar. An empty tray in the shot is NOT a failure signal; the `verdict` + boot duration are. Don't infer "explorer died" from a missing taskbar.**
+- **Serialize same-arch QEMU smokes on a shared host.** Two i386 (or two amd64) QEMU boots running concurrently on the same machine starve each other (KVM/IO/slot contention) and both stall into **false `HANG_TIMEOUT`s** — looks exactly like a real boot regression. A 2026-06-19 incident burned multiple hours: two agents gated i386 at once, both saw `HANG_TIMEOUT` + no-taskbar, and it was misattributed to a code bug (pseh-rust/kernel32-console) until a host-quiet re-gate came back 5/5 green at ~103s vs 3/3 fail at ~361s while contended. Before declaring an i386/amd64 smoke red, confirm no other agent is booting the same arch (`qemu/ps` / `./vibeos-cli ps`); coordinate in `#swarm` so only one same-arch boot runs at a time.
 
 ## `vibeos-cli` — The Build/Check/Smoke/Debug Front Door
 
