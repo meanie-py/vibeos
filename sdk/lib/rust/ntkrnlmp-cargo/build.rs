@@ -157,8 +157,14 @@ fn main() {
         // below (the classpnp/win32k pattern). hal.dll itself is 100% hal-rust
         // (cargo-driven); this was only the import library (95 short-import
         // members → hal.dll), not a HAL body.
-        "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
-        "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
+        // libkdcom.a / libbootvid.a (the cmake-built kdcom.dll / bootvid.dll
+        // IMPORT libs) DROPPED 2026-06-20 — the kernel now self-hosts both
+        // imports from their .spec via .import_lib below (the hal pattern).
+        // kdcom.spec = 8 stdcall exports (Kd{D0,D3}Transition/DebuggerInitialize
+        // {0,1}/ReceivePacket/Restore/Save/SendPacket); bootvid.spec = 11 Vid*.
+        // Symbol-identical: the cmake .a is itself spec2def-generated from these
+        // same specs. bootvid.dll is cargo-driven (bootvid-cargo); these were
+        // only the import libraries, not bodies.
     ];
 
     // (cportlib/csq/arbiter/lsalib/rossym are now cargo-native `.rust_lib` — see
@@ -361,6 +367,10 @@ fn main() {
     // cmake-built libhal.a import lib) — the classpnp/win32k pattern. The shared
     // hal/hal.spec serves all 3 arches (halx86 + halarm64 both spec2def it).
     linker = linker.import_lib("hal/hal.spec", "hal.dll", "hal");
+    // Self-host the kdcom.dll / bootvid.dll import libs from their specs
+    // (replaces the dropped cmake-built libkdcom.a / libbootvid.a import libs).
+    linker = linker.import_lib("drivers/base/kdcom/kdcom.spec", "kdcom.dll", "kdcom");
+    linker = linker.import_lib("drivers/base/bootvid/bootvid.spec", "bootvid.dll", "bootvid");
     linker
         .static_libs(&static_libs)
         .link(ModuleKind::KernelExe {
