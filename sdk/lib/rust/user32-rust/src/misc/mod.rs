@@ -2,3 +2,4 @@
 //! Wave 0 leaf: timer.rs.
 
 pub mod timer;
+pub mod display;
