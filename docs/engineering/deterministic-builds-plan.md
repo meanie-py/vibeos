@@ -35,7 +35,7 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 
 | rung | buys | mechanism |
 |---|---|---|
-| 0. measurement harness | know what differs today | build-twice-in-two-paths → sha256 → `diffoscope` to localize |
+| 0. measurement harness ✅ | know what differs today | `vibeos-cli repro` (built-in PE parser; `diffoscope` optional) |
 | 1. path normalization | cross-worktree byte-identity + dedup | C: `-ffile-prefix-map`; Rust: `trim-paths` |
 | 2. timestamp elimination | kills `__DATE__`/`__TIME__` + PE-header time variance | `SOURCE_DATE_EPOCH`; lld no-timestamp; deterministic `ar` |
 | 3. build-script / generator audit | the cargo-link + widl/windmc/gen tables are path/time/order-free | audit the ~48 `*-cargo/build.rs` + generators |
@@ -187,14 +187,33 @@ fixes close both gaps without that overhead. Both are build-path changes → own
 
 ## Verification methodology
 
+- **`vibeos-cli repro`** — the rung-0 harness (built 2026-06-20, `tests/qemu/cli/repro.py`).
+  Self-contained PE parser (no `pefile`/`diffoscope` dependency), so it runs anywhere and is
+  unit-tested in `test_cli_units.py` (5 tests). Three verbs:
+  - `repro report <pe>…` — dumps the COFF `TimeDateStamp` (flags `← LEAK` if non-zero) +
+    sha256 + section count. The baseline-capture command.
+  - `repro compare <a> <b>` — byte-identity; on a mismatch, **localizes**: does the
+    TimeDateStamp diverge, and *which sections* differ (so a leak is pinpointed, not just
+    "bytes differ"). `--diffoscope` shells out to diffoscope if installed for byte-level depth.
+  - `repro diff-dirs <buildA> <buildB> [--artifacts …]` — runs `compare` over the staged
+    artifact set (ntoskrnl.exe, win32k.sys, kernel32.dll by default) across two build trees:
+    the build-twice-in-two-paths verification + dedup-yield measurement in one command.
 - **Build-twice-in-two-paths.** Build the same commit in two different worktree paths (or the
-  same path twice after a clean), `sha256sum` the artifacts. Identical = reproducible. This is
-  also the dedup-yield measurement.
-- **`diffoscope`** — the gold-standard localizer: unpacks PE, disassembles, shows exactly which
-  bytes/sections differ. **NOT installed** — `pip install diffoscope` (or apt) for rung 0.
+  same path twice after a clean), then `repro diff-dirs`. Identical = reproducible.
+- **`diffoscope`** — optional deep localizer (unpacks PE, disassembles). NOT installed;
+  `pip install diffoscope` enables `repro --diffoscope`. The built-in parser covers the
+  timestamp + per-section localization without it.
 - **Cache hit-rate as gauge** — a build-twice with <100 % hits points at a varying input.
-- **Reproducibility smoke (rung 5)** — wire build-twice-diff into a harness check; a non-repro
+- **Reproducibility smoke (rung 5)** — wire `repro diff-dirs` into a harness check; a non-repro
   binary turns it red, like any North-Star regression.
+
+### Rung-0 baseline confirmed by the harness (2026-06-20)
+
+`repro report` on the three built kernels reproduces the measured PE-timestamp leak exactly —
+each arch carries a *different wall-clock* TimeDateStamp (i386 00:50:17Z, amd64 00:41:39Z,
+arm64 00:49:56Z on a 2026-06-21 build), so two worktrees building the same commit get
+different bytes → 0 % dedup on the kernel. This is the rung-2 target, now machine-checkable:
+after the `--no-insert-timestamp` fix, `repro report` must show `0 (deterministic)` on all 3.
 
 ## Staged plan
 
