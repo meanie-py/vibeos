@@ -22,19 +22,29 @@ from .artifacts import Run, Stage
 
 def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
     """Poll serial for the success marker or a fail-marker regex. Returns
-    (outcome, text) where outcome in {reached, failmarker, timeout, dead}."""
+    (outcome, text, diag) where outcome in {reached, failmarker, timeout, dead}.
+
+    `diag` carries timeout-characterization (silence duration + last serial line)
+    so a HANG_TIMEOUT can be told apart from a slow/contended boot WITHOUT manually
+    grepping full.log: if serial was still flowing at the deadline the box was
+    making progress (host contention / slow TCG), not wedged."""
     fail_re = re.compile(fail_on) if fail_on else None
     buf = ""
-    deadline = time.monotonic() + timeout
+    start = time.monotonic()
+    deadline = start + timeout
+    last_activity = start
     while time.monotonic() < deadline:
         chunk = vm.serial.read_available(timeout=0.5)
         if chunk:
             buf += chunk
+            last_activity = time.monotonic()
             if until in buf:
-                return "reached", buf
+                return "reached", buf, {}
             if fail_re and fail_re.search(buf):
-                return "failmarker", buf
-    return "timeout", buf
+                return "failmarker", buf, {}
+    silent_s = time.monotonic() - last_activity
+    last_line = next((ln for ln in reversed(buf.splitlines()) if ln.strip()), "")
+    return "timeout", buf, {"silent_s": silent_s, "last_line": last_line[:160]}
 
 
 def _settle(vm: QemuVM, seconds: float) -> None:
@@ -109,7 +119,7 @@ def _one_boot(
             "salient": [str(e).splitlines()[0][:140]],
         }
     try:
-        outcome, text = _watch(vm, marker, fail_on, config.boot_timeout)
+        outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
         run.log(text[-8000:], header=f"{label} serial tail")
         # On success, let the desktop settle (taskbar/tray render ~15s after the
         # marker) so the canonical screenshot shows the real shell. On failure,
@@ -139,6 +149,21 @@ def _one_boot(
         sym = triage.symbolicate_pc(repo, arch, text)
         if sym:
             tri["salient"].append(sym)
+        # Distinguish a real wedge from a slow/contended boot on timeout: if serial
+        # was still flowing near the deadline the box was making progress (host
+        # contention / slow TCG), not stuck — so a retry, not a regression, is the move.
+        if outcome == "timeout":
+            silent_s = diag.get("silent_s", 0.0)
+            if silent_s < 5.0:
+                hint = (
+                    f"serial STILL FLOWING at deadline (silent {silent_s:.0f}s) — "
+                    "likely SLOW/CONTENDED host; retry before assuming a wedge"
+                )
+            else:
+                hint = f"serial SILENT {silent_s:.0f}s before deadline — likely genuinely WEDGED"
+            last_line = diag.get("last_line", "")
+            tail = f"; last serial: {last_line}" if last_line else ""
+            tri["salient"].insert(0, f"timeout: {hint}{tail}")
         if shot:
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
