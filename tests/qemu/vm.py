@@ -618,10 +618,25 @@ def get_arch_config(arch: str) -> ArchConfig:
 class QemuVM:
     """Manages a single QEMU VM instance with QMP + serial control."""
 
-    def __init__(self, config: ArchConfig, work_dir: Path) -> None:
+    def __init__(
+        self,
+        config: ArchConfig,
+        work_dir: Path,
+        *,
+        backend: str = "native",
+        windows: dict | None = None,
+    ) -> None:
         self.config = config
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        # Launch backend: "native" (local qemu + Unix sockets + KVM/TCG — unchanged) or
+        # "windows-host" (Windows QEMU.exe via interop + TCP transport + staged media — see
+        # backend.py / docs/engineering/windows-host-qemu-spike.md). windows = the
+        # qemu.windows.* config subtree.
+        self._backend = backend
+        self._win = windows or {}
+        self._win_uid = ""  # unique -name tag for uid-scoped kill (windows backend)
 
         self._sock_dir = Path(tempfile.mkdtemp(prefix="ros-"))
         atexit.register(lambda d=self._sock_dir: shutil.rmtree(d, ignore_errors=True))
@@ -640,39 +655,10 @@ class QemuVM:
         self._slot_index: int | None = None
         self._arch_slot_fd: int | None = None  # per-arch sub-cap lock (KVM arches)
 
-    def start(self) -> None:
-        """Start QEMU process, connect QMP + serial."""
-        subprocess.run(
-            ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
-            check=True,
-            capture_output=True,
-        )
-
-        self.serial.listen(str(self.serial_path))
-
-        # Tee all serial bytes to a predictable per-arch live log so agents can
-        # `tail -f` boot progress. Truncated fresh each session.
-        self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
-        # ASCII-only header: the tee file is opened latin-1 (byte-faithful to
-        # the latin-1-decoded serial stream), which can't encode non-latin-1.
-        self.serial.set_tee(
-            str(self.live_log_path),
-            header=f"# vibeos smoke live serial -- {self.config.arch} -- "
-            f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
-            f"# tail -f {self.live_log_path}\n",
-        )
-
-        cmd = [
-            self.config.qemu_bin,
-            "-qmp",
-            f"unix:{self.qmp_path},server,nowait",
-            "-chardev",
-            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
-            "-serial",
-            "chardev:ser0",
-            # Scratch disk for snapshots (writable qcow2 backend for savevm).
-            # i386: if=none without a device — FreeLDR crashes on unpartitioned
-            # BIOS-visible disks; QEMU savevm only needs a block backend.
+    def _scratch_device_args(self) -> list[str]:
+        """Scratch disk + (non-i386) its virtio device. i386: bare if=none (FreeLDR
+        crashes on an unpartitioned BIOS-visible disk; savevm only needs a backend)."""
+        return [
             "-drive",
             f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
             *(
@@ -685,6 +671,37 @@ class QemuVM:
                 if not self.config.arch.startswith("i386")
                 else []
             ),
+        ]
+
+    def _set_live_tee(self) -> None:
+        """Tee serial to a predictable per-arch live log (`tail -f`). Truncated per session."""
+        self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
+        # ASCII-only header: the tee file is latin-1 (byte-faithful to the serial stream).
+        self.serial.set_tee(
+            str(self.live_log_path),
+            header=f"# vibeos smoke live serial -- {self.config.arch} -- "
+            f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
+            f"# tail -f {self.live_log_path}\n",
+        )
+
+    def _build_native_cmd(self) -> list[str]:
+        """Native backend: local qemu, Unix-socket QMP/serial, KVM/TCG. Unchanged."""
+        subprocess.run(
+            ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
+            check=True,
+            capture_output=True,
+        )
+        self.serial.listen(str(self.serial_path))
+        self._set_live_tee()
+        return [
+            self.config.qemu_bin,
+            "-qmp",
+            f"unix:{self.qmp_path},server,nowait",
+            "-chardev",
+            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
+            "-serial",
+            "chardev:ser0",
+            *self._scratch_device_args(),
             "-monitor",
             "none",
             *(
@@ -694,6 +711,75 @@ class QemuVM:
             ),
             *self.config.qemu_args(self.work_dir),
         ]
+
+    def _build_windows_cmd(self) -> list[str]:
+        """windows-host backend: Windows QEMU.exe via interop, media staged to a
+        Windows-visible dir, QMP + serial over TCP (we listen on 127.0.0.1; the Windows
+        QEMU connects back via WSL2 localhost forwarding). See backend.py."""
+        from . import backend as be
+
+        if self.config.arch.startswith("arm64"):
+            raise RuntimeError("windows-host backend supports x86 only (arm64 stays native TCG)")
+
+        accel = self._win.get("accel", "tcg")
+        staging = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True, exist_ok=True)
+
+        # Scratch (created WSL-side under /mnt, read by Windows QEMU via its Windows path).
+        self.scratch_path = staging / "scratch.qcow2"
+        subprocess.run(
+            ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
+            check=True,
+            capture_output=True,
+        )
+        # debugcon written by Windows QEMU to a staged path; read back via /mnt.
+        self.debugcon_path = staging / "debugcon.bin"
+
+        # We listen (WSL); the Windows QEMU connects to host_addr:<port>. CRITICAL: bind
+        # 0.0.0.0, NOT 127.0.0.1 — WSL2's localhost relay only forwards Windows->WSL for
+        # services bound to the wildcard; a 127.0.0.1-bound WSL listener is invisible to
+        # Windows (verified: 127.0.0.1 reachable from Windows iff WSL binds 0.0.0.0; the
+        # WSL-VM IP is not reachable at all under NAT). QEMU still dials 127.0.0.1.
+        host = self._win.get("host_addr", "127.0.0.1")
+        ser_port = self.serial.listen_tcp("0.0.0.0", 0)
+        qmp_port = self.qmp.listen_tcp("0.0.0.0", 0)
+        self._set_live_tee()
+
+        self._win_uid = f"vibeos-{os.getpid()}-{ser_port}"
+        win_bin = be.windows_qemu_bin(self.config.qemu_bin, self._win["qemu_dir"], accel)
+
+        arch_args = be.rewrite_accel(
+            be.stage_media_paths(self.config.qemu_args(self.work_dir), staging), accel
+        )
+        return [
+            win_bin,
+            "-name",
+            self._win_uid,
+            # reconnect-ms (not the older `reconnect=N`): recent QEMU (the Windows 11.x
+            # build) dropped the seconds-form param. We listen, QEMU dials back in.
+            "-chardev",
+            f"socket,id=qmp0,host={host},port={qmp_port},server=off,reconnect-ms=1000",
+            "-mon",
+            "chardev=qmp0,mode=control",
+            "-chardev",
+            f"socket,id=ser0,host={host},port={ser_port},server=off,reconnect-ms=1000",
+            "-serial",
+            "chardev:ser0",
+            *be.stage_media_paths(self._scratch_device_args(), staging),
+            "-monitor",
+            "none",
+            "-debugcon",
+            f"file:{be.win_path(self.debugcon_path)}",
+            *arch_args,
+        ]
+
+    def start(self) -> None:
+        """Start QEMU process, connect QMP + serial (backend-aware)."""
+        if self._backend == "windows-host":
+            cmd = self._build_windows_cmd()
+        else:
+            cmd = self._build_native_cmd()
 
         print(f"[QemuVM] {' '.join(cmd)}")
 
@@ -752,11 +838,19 @@ class QemuVM:
 
         self.serial.accept(timeout=15.0)
 
-        self._wait_for_socket(self.qmp_path, timeout=10.0)
-        self._connect_with_retry(
-            lambda: self.qmp.connect(str(self.qmp_path), timeout=self.config.qmp_timeout),
-            "QMP",
-        )
+        if self._backend == "windows-host":
+            # We listen; the Windows QEMU connects back. accept() blocks for the
+            # connection then completes the QMP handshake.
+            self._connect_with_retry(
+                lambda: self.qmp.accept(timeout=self.config.qmp_timeout),
+                "QMP",
+            )
+        else:
+            self._wait_for_socket(self.qmp_path, timeout=10.0)
+            self._connect_with_retry(
+                lambda: self.qmp.connect(str(self.qmp_path), timeout=self.config.qmp_timeout),
+                "QMP",
+            )
 
     def wait_for_boot(self) -> str:
         """Wait for boot to complete. Returns all boot output.
@@ -819,8 +913,22 @@ class QemuVM:
         return self.serial.read_available(timeout=timeout)
 
     def screendump(self, path: str | Path) -> Path:
-        """Save a screenshot via QMP screendump."""
+        """Save a screenshot via QMP screendump.
+
+        windows-host: the Windows QEMU writes to a Windows path, so screendump to a staged
+        path then copy it back to the requested (Linux) location, transparently to callers."""
         path = Path(path)
+        if self._backend == "windows-host":
+            from . import backend as be
+
+            staging = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+            staged = staging / f"screen-{path.name}"
+            result = self.qmp.execute("screendump", filename=be.win_path(staged))
+            time.sleep(0.5)
+            if not staged.exists():
+                raise RuntimeError(f"screendump failed: {result}")
+            shutil.copy2(staged, path)
+            return path
         result = self.qmp.execute("screendump", filename=str(path))
         time.sleep(0.5)
         if not path.exists():
@@ -891,6 +999,12 @@ class QemuVM:
         Held on self._arch_slot_fd for this process's lifetime alongside the
         global slot; cross-arch boots don't contend so they stay parallel. On
         timeout we release the global slot we already hold so it doesn't leak."""
+        # windows-host runs TCG on the Windows host (no nested KVM), which we measured to
+        # NOT contend under same-arch concurrency — the per-arch serialize cap is the
+        # nested-KVM workaround it makes obsolete, so skip it (like arm64 TCG). getattr
+        # default keeps slot-only partial QemuVM constructions (tests) working.
+        if getattr(self, "_backend", "native") == "windows-host":
+            return
         cap = per_arch_cap(self.config.arch)
         if cap <= 0:
             return  # uncapped (arm64 TCG): no per-arch lock
@@ -968,6 +1082,13 @@ class QemuVM:
             self._watchdog = None
         self.serial.close()
         self.qmp.close()
+
+        # windows-host: the Windows QEMU.exe runs behind WSL interop, so the Linux
+        # pgroup kill below won't reach it — kill it precisely by our unique -name tag.
+        if self._backend == "windows-host" and self._win_uid:
+            from . import backend as be
+
+            be.kill_by_uid(self._win_uid)
 
         if self._proc is not None:
             try:

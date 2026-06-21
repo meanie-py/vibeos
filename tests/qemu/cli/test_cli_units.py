@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
@@ -734,3 +735,47 @@ def test_qmp_client_tcp_handshake_and_execute():
     assert qmp.execute("query-status")["return"]["status"] == "running"
     qmp.close()
     t.join(timeout=5)
+
+
+# --- backend helpers (windows-host path translation / arg rewrite) ----------
+
+
+def test_backend_win_path():
+    assert be_mod.win_path("/mnt/c/temp/x/livecd.iso") == "C:/temp/x/livecd.iso"
+    assert be_mod.win_path("/mnt/d/qemu/OVMF.fd") == "D:/qemu/OVMF.fd"
+    with pytest.raises(ValueError):
+        be_mod.win_path("/home/curi/not/under/mnt")
+
+
+def test_backend_windows_qemu_bin():
+    d = "/mnt/c/Program Files/qemu"
+    # tcg keeps the per-arch exe
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "tcg").endswith("qemu-system-i386.exe")
+    # whpx only exists in the x86_64 emulator → i386 guest uses it
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "whpx").endswith("qemu-system-x86_64.exe")
+    assert be_mod.windows_qemu_bin("qemu-system-x86_64", d, "tcg").endswith(
+        "qemu-system-x86_64.exe"
+    )
+
+
+def test_backend_rewrite_accel():
+    base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
+    # tcg: kvm->tcg AND drop the paired -cpu host
+    assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
+    # whpx: kvm->whpx (irqchip off) and KEEP -cpu host
+    assert be_mod.rewrite_accel(base, "whpx") == [
+        "-M",
+        "pc",
+        "-accel",
+        "whpx,kernel-irqchip=off",
+        "-cpu",
+        "host",
+        "-m",
+        "512M",
+    ]
+
+
+def test_backend_stage_media_paths_passthrough():
+    # args without a file= token are returned unchanged (staging only touches file= paths)
+    args = ["-M", "pc", "-vga", "std", "-display", "none", "-no-reboot"]
+    assert be_mod.stage_media_paths(args, Path("/mnt/c/temp/vibeos-qemu")) == args
