@@ -1,9 +1,52 @@
 # lsasrv + samsrv → Rust — Translation Plan
 
-**Status:** planning (2026-06-21). Scope: translate the ReactOS **`lsasrv`** and **`samsrv`**
-server DLLs C→Rust, multi-arch (i386/amd64/arm64), completing the boot/logon spine in Rust.
-Sibling of the userland audit set — see `userland-translation-audit-part2.md` (these are 2 of
-its 3 High-value native targets; **msgina**, the 3rd, landed `e69a7adaf82`).
+**Status:** IN PROGRESS (2026-06-21, kernel32-port). Scope: translate the ReactOS **`lsasrv`**
+and **`samsrv`** server DLLs C→Rust, multi-arch (i386/amd64/arm64), completing the boot/logon
+spine in Rust. Sibling of the userland audit set — see `userland-translation-audit-part2.md`
+(these are 2 of its 3 High-value native targets; **msgina**, the 3rd, landed `e69a7adaf82`).
+
+> ### Execution progress (kernel32-port)
+> - **M0a ✅ (`effde8d4469`)** — Rust `lsa-stub` replaces widl's `lsa_s.c`; i386+amd64 boot.
+>   Fixed `tools/widl_to_rust.py` named-type ExprEval (lsa.idl's `LSAPR_ACL` conformant array).
+> - **M0b ✅ (`238dca6d6ee`)** — `lsasrv-sys` bindgen substrate + `dssetup.c` body; i386+amd64 boot.
+> - **M1 ✅ (`f9f54798af0`)** — substrate (`prelude.rs`/`consts.rs` + crate TRACE macros) + leaf
+>   cluster `privileges.c` + `utils.c` flipped; lsasrv-rust compiles ×3, DLL links ×3, i386 boots.
+> - **M2 (in progress)** — `security.c` ✅ (`00a7b6afc8f`, SD/ACL builders), `registry.c` ✅
+>   (`af3e0ba7e99`, Nt*Key wrappers). **6 of 16 units Rust** (lsa_s stub + dssetup + privileges +
+>   utils + security + registry); each ×3-link-verified + i386 boot-gated.
+> - **Next:** `lookup.c` (2534, SID predicates — big), then M3 (database/policy/session — incl. the
+>   lone DUMMY_PSEH fix + NtAuthority/WorldSidAuthority globals consumed by security.rs),
+>   M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out + ×3 gate). Then samsrv S0–S4.
+>
+> **⚠️ Link is the oracle for cross-file exports.** rustconv occasionally emits a cross-file C
+> function as a private Rust fn (no `#[no_mangle]`) → undefined-symbol at DLL link (e.g.
+> `LsapRegQueryValue`). A stale DLL can falsely boot green — always confirm `ninja lsasrv` rc=0 +
+> `undefined symbol` count 0 ×3 before trusting a smoke. Restore `#[no_mangle] pub extern "C"`.
+>
+> ### The per-file integration recipe (validated; follow for every remaining file)
+> 1. **Translate:** `python -m rustconv translate dll/win32/lsasrv/<f>.c -m deepseek --c2rust
+>    --cost-cap N` (PYTHONPATH=worktree/tools/rustconv; `source .env`). Output assembles to
+>    `sdk/lib/rust/lsasrv-rust/src/lsasrv/<f>.rs` (~$0.01–0.05/file on DeepSeek).
+> 2. **Imports:** change the file's `use ntdll_sys::nt::*;` → `use crate::prelude::*;`. Add
+>    `use crate::lsasrv::<other>::{fn,…};` for cross-file lsasrv-internal calls (the callees are
+>    `pub` in their module — same-crate Rust calls, not externs).
+> 3. **Wide-string statics (c2rust dangling-pointer):** rewrite `transmute::<[u8;N],[u16;K]>
+>    (*b"..").as_ptr()` → `transmute::<&[u8;N],&[u16;K]>(b"..").as_ptr()` (script in commit
+>    `f9f54798af0`'s history; **only** `.as_ptr()`-suffixed transmutes — NOT by-value array fields
+>    like the `__wine_debug_channel.name`). Should be folded into rustconv postprocess (TODO).
+> 4. **Boundary casts:** dual-crate `_LUID`/`SID` etc. (lsasrv_sys vs ntdll_sys, same layout) →
+>    `transmute`; `SIZE_T`↔`usize` (ntdll ULONG_PTR=u32 on i386 ≠ usize) → normalize to `as usize`
+>    for `MIDL_user_allocate`; resource-id `IDS_*` (INT) used as UINT arg → `as u32`.
+> 5. **New substrate gaps:** missing kernel32/CRT externs → add to `prelude.rs`; missing consts →
+>    `consts.rs`; missing LSAPR type → add to the prelude's curated `lsasrv_sys::{…}` import (and
+>    if absent from lsasrv-sys, widen `lsasrv-sys/generate_bindings.sh` allowlist + regenerate ×3).
+> 6. **Build green ×3** (`cargo build -p lsasrv-rust --target {i686,x86_64,aarch64}-…`), then
+>    **cohab-flip** (comment the `.c` out of `dll/win32/lsasrv/CMakeLists.txt` SOURCE), `cmake .`,
+>    `ninja lsasrv` ×3, smoke. Run a batch of files, flip together, gate once.
+> - **Crate layout:** bodies live in `lsasrv-rust/src/lsasrv/<f>.rs` (assembler namespaces by C
+>   parent dir); list each in `src/lsasrv/mod.rs`. lsasrv-rust deps `ntdll-sys` + `lsasrv-sys`.
+> - **The lone DUMMY_PSEH fix** (`database.c:833`, M3) — validate the handle in safe Rust before
+>   deref; the `_SEH2_EXCEPT` body that mutates `bValid` must be dead code.
 
 > **Why this is the prize:** `lsass.exe` is already Rust (`lsass-rust`/`lsass-cargo`), but it
 > links **lsasrv** + **samsrv** as C importlibs — those two DLLs hold the *actual* LSA/SAM

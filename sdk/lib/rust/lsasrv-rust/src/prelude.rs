@@ -35,7 +35,7 @@ pub use crate::consts::*;
 // ---- universal type aliases the c2rust output uses ----
 pub type VOID = core::ffi::c_void;
 pub type size_t = usize;
-pub use core::ffi::{c_int, c_long};
+pub use core::ffi::{c_int, c_long, c_void};
 
 // ---- common NT/Win32 constants the translations bare-reference ----
 pub const UNICODE_NULL: u16 = 0;
@@ -88,6 +88,15 @@ extern "C" {
     pub fn _wcsicmp(a: *const u16, b: *const u16) -> c_int;
     pub fn _wcsnicmp(a: *const u16, b: *const u16, n: usize) -> c_int;
     pub fn wcstoul(s: *const u16, end: *mut *mut u16, base: c_int) -> ULONG;
+}
+
+
+// RtlGetProcessHeap() is a macro (NtCurrentPeb()->ProcessHeap) in rtlfuncs.h,
+// not an export — implement in-crate so call sites bind directly (mirrors
+// kernel32-rust/k32_externs).
+#[inline]
+pub unsafe fn RtlGetProcessHeap() -> PVOID {
+    (*NtCurrentPeb()).ProcessHeap
 }
 
 // ---- STUB / UNIMPLEMENTED markers (ReactOS `STUB;` statements → no-op) ----
