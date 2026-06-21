@@ -127,12 +127,19 @@ amd64 cold — the cmlib #35 area held):** the 5 driver/serial cohabs
 (cportlib/csq/arbiter/lsalib/rossym) went cargo-native `.rust_lib`, dropping 10
 cmake `.a` from the kernel `static_libs` (5 empty C-body stubs + 5 cmake-built
 `libX_rust.a`). The cmlib-rust no-prepopulate class-guard survived the layout
-shift (0 hivewrt failures, amd64 cold ✓boot ✓net). What remains on the kernel
-`static_libs` is the genuine cohab floor — libcmlib
-(placeholder TU) — (libntoskrnl_vista/librtl/libhal/libkdcom/libbootvid/libchkstk
-all DROPPED from the kernel link 2026-06-20; see rows below) —
-plus boot-critical bootloader C (uefildr/rosload mini_hal+libcntpr) and the
-winsrv lane. NB: librtl is **not** a translation lane — the rtl `*.c` surface is
+shift (0 hivewrt failures, amd64 cold ✓boot ✓net).
+**🏆 KERNEL `static_libs` IS NOW EMPTY (2026-06-20): the cargo-driven
+ntoskrnl.exe / ntkrnlmp.exe link references ZERO cmake-built `.a`.** The final
+clearances this session: libchkstk + libcmlib (placeholder TU) dropped
+(`a812475681a`); librtl + libhal (`a009c2ca0af`); libkdcom + libbootvid
+self-hosted via `.import_lib` (`dbb83b3b776`); and libntoskrnl_vista dropped as
+inert (`97344374dce`). Everything the kernel link needs is now cargo-native:
+`.rust_lib` crates, `c_from_compile_db` (irreducible C variadics), `asm_archive`
+(irreducible asm), and `.import_lib` (hal/kdcom/bootvid import libs from their
+specs). The only non-cargo C left in the *kernel* picture is boot-critical
+bootloader C (uefildr/rosload mini_hal+libcntpr) and the winsrv lane — neither
+is a `static_libs` `.a` reuse. NB: librtl was **not** a translation lane — the
+rtl `*.c` surface is
 100% Rust (`rtl-rust`); librtl.a is only the irreducible C-variadic+asm floor
 (34 syms i386 / 18 amd64 — see its live-surface row).
 
