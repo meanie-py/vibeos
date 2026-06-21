@@ -35,7 +35,7 @@ pub use crate::consts::*;
 // ---- universal type aliases the c2rust output uses ----
 pub type VOID = core::ffi::c_void;
 pub type size_t = usize;
-pub use core::ffi::{c_int, c_long};
+pub use core::ffi::{c_int, c_long, c_void};
 
 // ---- common NT/Win32 constants the translations bare-reference ----
 pub const UNICODE_NULL: u16 = 0;

@@ -31,7 +31,7 @@ list(APPEND SOURCE
     notify.c
     policy.c
     # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
-    registry.c
+    # registry.c     — replaced by Rust (lsasrv-rust/src/lsasrv/registry.rs)
     # security.c     — replaced by Rust (lsasrv-rust/src/lsasrv/security.rs)
     service.c
     session.c

@@ -2,4 +2,5 @@
 pub mod dssetup;
 pub mod privileges;
 pub mod security;
+pub mod registry;
 pub mod utils;
