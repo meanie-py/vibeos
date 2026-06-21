@@ -119,34 +119,58 @@ def _parse_functions(rs_text: str) -> dict[str, str]:
     return out
 
 
+class C2RustError(RuntimeError):
+    """c2rust was explicitly requested (--c2rust / strict=True) but could not produce
+    an anchor transpilation. Raised instead of silently degrading to a pure-LLM
+    translation: a requested-but-failed compiler anchor is a hard error, never a
+    dumb fallback (see AGENTS.md — "Fail loud, never silently degrade")."""
+
+
 # Transpile is the slow step (~seconds); a file's anchors AND preamble both need it.
 # Cache the raw .rs text per (path, mtime) so the second consumer is free.
 _TRANSPILE_CACHE: dict[tuple[str, float], str | None] = {}
 
 
-def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> str | None:
-    """Run c2rust on c_file and return the raw transpiled .rs text (None on any failure).
-    Best-effort + cached: anchors and preamble extraction share one transpile."""
+def _transpile_text(
+    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+) -> str | None:
+    """Run c2rust on c_file and return the raw transpiled .rs text.
+
+    strict=False (library default): best-effort — returns None on any failure.
+    strict=True (what --c2rust passes): raises C2RustError on ANY failure (missing
+      binary, no compile_commands entry, timeout, or no .rs produced). When the caller
+      explicitly asked for the compiler anchor, silently falling back to a worse
+      pure-LLM translation is never acceptable — fail loud so the cause gets fixed.
+    Cached: anchors and preamble extraction share one transpile."""
+
+    def _fail(msg: str) -> None:
+        if strict:
+            raise C2RustError(msg)
+        if verbose:
+            print(f"  [c2rust] {msg} — skipping", file=sys.stderr)
+
     try:
         key = (str(c_file.resolve()), c_file.stat().st_mtime)
-    except OSError:
+    except OSError as e:
+        _fail(f"cannot stat {c_file}: {e}")
         return None
     if key in _TRANSPILE_CACHE:
-        return _TRANSPILE_CACHE[key]
+        cached = _TRANSPILE_CACHE[key]
+        if cached is None:
+            _fail(f"c2rust previously failed for {c_file.name}")
+        return cached
     result: str | None = None
     if shutil.which("c2rust") is None:
-        if verbose:
-            print("  [c2rust] binary not on PATH — skipping", file=sys.stderr)
         _TRANSPILE_CACHE[key] = None
+        _fail("binary not on PATH (install c2rust, or drop --c2rust to translate pure-LLM)")
         return None
     found = _find_db_entry(c_file)
     if found is None:
-        if verbose:
-            print(
-                f"  [c2rust] no compile_commands entry for {c_file.name} — skipping",
-                file=sys.stderr,
-            )
         _TRANSPILE_CACHE[key] = None
+        _fail(
+            f"no compile_commands entry for {c_file.name} "
+            "(build the arch first so the compile DB exists, or drop --c2rust)"
+        )
         return None
     entry, build_dir = found
     flags = _extract_clang_flags(entry)
@@ -164,9 +188,8 @@ def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> s
         try:
             subprocess.run(cmd, cwd=str(build_dir), capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
-            if verbose:
-                print(f"  [c2rust] timeout on {c_file.name}", file=sys.stderr)
             _TRANSPILE_CACHE[key] = None
+            _fail(f"timeout on {c_file.name} after {timeout}s")
             return None
         # c2rust panics on some kernel ASTs (e.g. the `Could not find CDeclId` TU-abort);
         # we don't care about exit code, only whether it produced output for our file.
@@ -176,20 +199,25 @@ def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> s
             rs = alt if alt.exists() else rs
         if rs.exists():
             result = rs.read_text(errors="replace")
-        elif verbose:
-            print(
-                f"  [c2rust] no .rs produced for {c_file.name} (AST unsupported)", file=sys.stderr
+        else:
+            _TRANSPILE_CACHE[key] = None
+            _fail(
+                f"no .rs produced for {c_file.name} (AST unsupported) — this file cannot "
+                "be anchored; drop --c2rust to translate it pure-LLM as a deliberate choice"
             )
+            return None
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
     _TRANSPILE_CACHE[key] = result
     return result
 
 
-def build_anchor_map(c_file: Path, timeout: int = 180, verbose: bool = True) -> dict[str, str]:
-    """Transpile c_file with c2rust and return {fn_name: rust_body}. Best-effort:
-    returns {} on any failure (anchor is optional context, never a hard dep)."""
-    text = _transpile_text(c_file, timeout=timeout, verbose=verbose)
+def build_anchor_map(
+    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+) -> dict[str, str]:
+    """Transpile c_file with c2rust and return {fn_name: rust_body}. strict=True raises
+    C2RustError on failure (no dumb fallback); strict=False returns {} best-effort."""
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict)
     if text is None:
         return {}
     fns = _parse_functions(text)
@@ -209,12 +237,14 @@ def build_anchor_map(c_file: Path, timeout: int = 180, verbose: bool = True) -> 
 _DATA_SIG = re.compile(r"^(?:pub\s+)?(static(?:\s+mut)?|const)\s+[A-Za-z_]\w*\s*:", re.M)
 
 
-def build_preamble(c_file: Path, timeout: int = 180, verbose: bool = True) -> str:
+def build_preamble(
+    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+) -> str:
     """Return c2rust's file-scope DATA tables (`static [mut]` + aggregate `const`) as exact
     Rust text, to prepend deterministically instead of LLM-translating the preamble (which
-    fabricates table values). Excludes header enum-variant scalar consts. Best-effort: '' on
-    failure."""
-    text = _transpile_text(c_file, timeout=timeout, verbose=verbose)
+    fabricates table values). Excludes header enum-variant scalar consts. strict=True raises
+    C2RustError on failure (no dumb fallback); strict=False returns '' best-effort."""
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict)
     if text is None:
         return ""
     lines = text.splitlines()
