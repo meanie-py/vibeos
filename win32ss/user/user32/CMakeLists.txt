@@ -23,7 +23,7 @@ list(APPEND SOURCE
     misc/ddeclient.c
     misc/ddemisc.c
     misc/ddeserver.c
-    misc/desktop.c
+    # misc/desktop.c — replaced by Rust (user32-rust/src/misc/desktop.rs); cohab via libuser32_rust.a
     # misc/display.c — replaced by Rust (user32-rust/src/misc/display.rs); cohab via libuser32_rust.a
     misc/dllmain.c
     misc/exit.c
@@ -47,12 +47,12 @@ list(APPEND SOURCE
     # windows/dc.c — replaced by Rust (user32-rust/src/windows/dc.rs); cohab via libuser32_rust.a
     # windows/defwnd.c — replaced by Rust (user32-rust/src/windows/defwnd.rs); cohab via libuser32_rust.a
     # windows/dialog.c — replaced by Rust (user32-rust/src/windows/dialog.rs); cohab via libuser32_rust.a
-    windows/draw.c
+    # windows/draw.c — replaced by Rust (user32-rust/src/windows/draw.rs); cohab via libuser32_rust.a
     # windows/font.c — replaced by Rust (user32-rust/src/windows/font.rs); cohab via libuser32_rust.a
-    windows/hook.c
-    windows/input.c
+    # windows/hook.c — replaced by Rust (user32-rust/src/windows/hook.rs); cohab via libuser32_rust.a
+    # windows/input.c — replaced by Rust (user32-rust/src/windows/input.rs); cohab via libuser32_rust.a
     windows/mdi.c
-    windows/menu.c
+    # windows/menu.c — replaced by Rust (user32-rust/src/windows/menu.rs); cohab via libuser32_rust.a
     # windows/messagebox.c — replaced by Rust (user32-rust/src/windows/messagebox.rs); cohab via libuser32_rust.a
     # windows/message.c — replaced by Rust (user32-rust/src/windows/message.rs); cohab via libuser32_rust.a
     # windows/nonclient.c — replaced by Rust (user32-rust/src/windows/nonclient.rs); cohab via libuser32_rust.a

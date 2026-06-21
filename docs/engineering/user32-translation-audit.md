@@ -164,8 +164,13 @@ symbols** before handing to the ×3 gate. The recurring traps, with the fix:
   (`regcontrol.h`: name/style/procA/procW/extra/cursor/brush) and the WndProcs transmuted to
   `WNDPROC` (`transmute::<extern "system" fn(..), WNDPROC>` — calling-convention-identical per
   arch). The rustconv translator routinely **drops** these statics → re-add from the C.
-  Active ones: DIALOG/BUTTON/EDIT/COMBO/COMBOLBOX/LISTBOX/STATIC; **MENU** is active for Wave 3;
-  POPUPMENU/ICONTITLE are "moved to win32k" (commented out in regcontrol.c — skip).
+  Active ones: DIALOG/BUTTON/EDIT/COMBO/COMBOLBOX/LISTBOX/STATIC.
+  **Correction (Wave 3b, verified):** `MENU`/`POPUPMENU`/`DESKTOP`/`ICONTITLE` are **NOT**
+  live cross-TU symbols — regcontrol.c's `MENU_builtin_class` entry is inside `#if 0`,
+  POPUPMENU is comment-only, DESKTOP isn't referenced at all. So `menu.rs`'s
+  `POPUPMENU_builtin_class` / `desktop.rs`'s `DESKTOP_builtin_class` stay plain `pub static`
+  (no `#[no_mangle]`). Always grep regcontrol.c for the *active* (non-`#if 0`) reference
+  before assuming a builtin_class is cross-TU.
 - **`IMM_FN(name)` is a runtime dispatch table, not imm32 imports.** `edit.c` calls IMM via
   `IMM_FN(ImmGetContext)` = `gImmApiEntries.pImmGetContext` — a global `Imm32ApiTable` filled
   at runtime in the still-C `misc/imm.c`; **user32 does not import imm32**. A direct
@@ -246,8 +251,11 @@ shape the wave:
 - **Less SEH than Wave 1** — only `hook.c` (×4), `desktop.c` (×3), `text.c` (×2), `draw.c` (×1)
   use `_SEH2_TRY`; menu/cursoricon/input/font/accel/rect have none. The §2.1 dead-except
   discipline still applies to the four that do.
-- **Cross-TU exports to expect** (§2.7): `MENU_builtin_class` is **active** in regcontrol.c →
-  `menu.rs` needs the `#[no_mangle] pub static`. `cursoricon.c` **defines `get_icon_size`** —
+- **Cross-TU exports to expect** (§2.7): `MENU_builtin_class` is **NOT** live (regcontrol.c's
+  ref is `#if 0` — see §2.7 correction), so `menu.rs`'s static stays plain `pub static`. The
+  *real* cross-TU exports that Wave 3b had to re-add (`#[no_mangle]`): `MenuInit`/`MenuCleanup`
+  (cdecl, called by dllmain.c), `IntLoadPreloadKeyboardLayouts` (cdecl, logon.c),
+  `IntNotifyWinEvent` (`@…@20` **fastcall**, dialog/scrollbar). `cursoricon.c` **defines `get_icon_size`** —
   the helper Wave-2 `static_.rs`/`edit.rs` currently `extern "C"` from the surviving C; when
   cursoricon flips it becomes the Rust export (keep the symbol name + cdecl). `draw.c` provides
   `DrawFrameControl`/`DrawEdge`/`DrawState*` and the internal `set_control_clipping` peers that
@@ -259,6 +267,23 @@ shape the wave:
   geometry + GDI marshalling, no SEH). **3b (core):** menu, draw, input, desktop, hook (~5.4K,
   the explorer interaction path; menu has the builtin_class). **3c (heavy):** cursoricon (3.1K,
   alone). Gate each sub-slice ×3 before the next, same as Wave 2a/2b would have been.
+- **Wave 3b done (2026-06-21) — extra learnings (all in the field-manual class):**
+  - **bindgen-opaqued structs.** `tagSERVERINFO` buries its `_PERUSERSERVERINFO` tail
+    (aiSysMet/hbrGray/argbSystem/dwLastRITEventTickCount…) in `__bindgen_padding_0`;
+    access via the shared `crate::internal::gpsi_perusr()` accessor (promoted from defwnd.rs),
+    **not** `(*gpsi).field`. `_SECURITY_ATTRIBUTES` is fully opaque (`_unused:[u8;0]`) →
+    hand-declare a local `#[repr(C)]` for `nLength/lpSecurityDescriptor/bInheritHandle`.
+  - **mixed-sign bindgen consts break `match`.** `WH_*`: positives (WH_CBT=5) are `u32` but
+    `WH_MSGFILTER`=-1 is `i32`; `HCBT_*` are `u32`. A `match HookId as u32` arm `WH_MSGFILTER`
+    won't typecheck → alias the lone negative (`const WH_MSGFILTER_U: u32 = WH_MSGFILTER as u32`).
+  - **C macros translated as calls.** `RGB(r,g,b)` (wingdi.h macro) → translator emits a
+    `_RGB@12` extern → undefined; reimplement inline. Same risk for any FOO()-macro.
+  - **strsafe `StringCch*`/`StringCb*`** have no exported symbol → use `wsprintfW` (user32
+    __cdecl variadic, like messagebox.rs) for the printf cases + a local bounded wide-concat.
+  - **`ValidateHandle`/`ValidateHandleNoErr`** are `PVOID FASTCALL` (user32p.h) → `extern "fastcall"`
+    (@Name@N on i386), and call args need `as HANDLE` (HMENU/etc. don't coerce).
+  - amd64 width: `dwHookData`/`CI_flags` are `ULONG_PTR` (u64) — local mirror vars + flag-const
+    bitops must cast `as ULONG_PTR`, else i386-green / amd64-red.
 
 ### Wave 4 — Secondary surface
 `windows/clipboard.c` (409), `prop.c` (489), `mdi.c` (2513), `spy.c` (2687),
@@ -329,11 +354,17 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 0 — crate + FFI scaffold + 1 leaf | timer | ~40 | ✅ i386 cold-green |
 | 1 — window core | window/class/message/defwnd/nonclient/winpos/paint/dc/caret | ~8,200 | ✅ integrated, i386 cold-green; ×3 gate pending |
 | 2 — dialogs + logon controls | dialog/messagebox/button/static/edit/combo/listbox/scrollbar | ~19,400 | ✅ integrated, i386 link+boot green; amd64/arm64 ×3 gate pending |
-| 3 — desktop/menu/draw | menu/draw/cursoricon/text/font/accel/rect/hook/input/desktop/display | ~11,300 | ☐ |
+| 3a — leaf (landed) | rect/accel/text/font/display | ~1,900 | ✅ landed on mainline (LAND TRAIN 1) |
+| 3b — core | menu/draw/input/hook/desktop | ~6,100 | ✅ integrated; cohab-link ×3 green, i386+amd64 boot green (arm64 compile/link green, flake-tolerant); ×3 gate pending |
+| 3c — cursoricon (heavy) | cursoricon | ~3,100 | ☐ (next) |
 | 4 — secondary | clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain/+misc/+minor controls | ~12,000 | ☐ |
 | 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde | ~5,400 | ☐ |
 
-**Next action:** Wave 3 — the explorer/desktop-render path (menu/draw/cursoricon/text/font/
+**Next action:** Wave 3c — `cursoricon.c` (3,095 LOC, alone) closes Wave 3. Watch the PNG/libpng
+delay-import path (arm64 stubs it) and `get_icon_size` becoming the Rust export (draw.rs already
+declares it `extern "C"` from the surviving C). (Superseded note below kept for history.)
+
+~~Wave 3 — the explorer/desktop-render path (menu/draw/cursoricon/text/font/
 accel/rect/hook/input/desktop/display, ~11.4K LOC). Run it in 3 sub-slices (3a leaf →
 3b core → 3c cursoricon), gating each ×3, per the §2.8 playbook. Watch `MENU_builtin_class`
 (cross-TU), `cursoricon.c`'s `get_icon_size`/PNG path, and the §2.7 link classes.
