@@ -807,3 +807,41 @@ def test_backend_rewrite_netdev_for_windows():
     # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
     plain = ["-M", "pc", "-accel", "tcg"]
     assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)
+
+
+def test_backend_stage_media_paths_arm64_drives():
+    # arm64 boot media rides on pflash (QEMU_EFI.fd + efivars) and a virtio -drive
+    # whose value carries a trailing `file.locking=off`. Staging must rewrite each
+    # real `file=/abs` to its Windows path while leaving `file.locking=off` (no `=/`)
+    # and every non-file token untouched. Fake /mnt paths that don't exist take the
+    # win_path branch (no 293 MB copy).
+    staging = Path("/mnt/c/temp/vibeos-qemu/run-x")
+    args = [
+        "-drive",
+        "if=pflash,format=raw,file=/mnt/c/fake/QEMU_EFI.fd,readonly=on",
+        "-drive",
+        "if=pflash,format=qcow2,file=/mnt/c/fake/efivars.qcow2",
+        "-drive",
+        "file=/mnt/c/fake/boot.img,format=raw,if=virtio,readonly=on,file.locking=off",
+        "-device",
+        "ramfb",
+        "-display",
+        "none",
+    ]
+    out = be_mod.stage_media_paths(args, staging)
+    assert out[1] == "if=pflash,format=raw,file=C:/fake/QEMU_EFI.fd,readonly=on"
+    assert out[3] == "if=pflash,format=qcow2,file=C:/fake/efivars.qcow2"
+    # the virtio drive: file= rewritten, file.locking=off preserved verbatim
+    assert out[5] == "file=C:/fake/boot.img,format=raw,if=virtio,readonly=on,file.locking=off"
+    assert out[7] == "ramfb" and out[9] == "none"
+
+
+def test_backend_rewrite_accel_would_break_arm64():
+    # WHY _build_windows_cmd skips rewrite_accel for arm64: rewrite_accel treats any
+    # `-cpu` as the KVM-only `-cpu host` and DROPS it under tcg — but arm64 `virt`
+    # needs the real `cortex-a72` model. It also flattens `tcg,thread=multi` -> `tcg`.
+    # Both are why arm64 keeps its machine args untouched on the windows-host backend.
+    arm64 = ["-M", "virt", "-cpu", "cortex-a72", "-accel", "tcg,thread=multi"]
+    out = be_mod.rewrite_accel(arm64, "tcg")
+    assert "cortex-a72" not in out  # the model loss we avoid by NOT calling it
+    assert out == ["-M", "virt", "-accel", "tcg"]
