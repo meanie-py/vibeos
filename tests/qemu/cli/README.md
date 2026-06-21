@@ -204,7 +204,16 @@ the process is killed by a uid-scoped `Stop-Process`. To enable, copy
 `qemu.backend="windows-host"` (+ `qemu.windows.{qemu_dir,staging_dir,accel,host_addr}`).
 `accel` is `tcg` (works today, no reboot — already beats nested-KVM under concurrency)
 or `whpx` (needs HypervisorPlatform + reboot; uses `qemu-system-x86_64.exe`). x86 only;
-arm64 stays native TCG.
+arm64 stays native TCG. Validated under TCG: **i386 + amd64** both boot to `shell ready`
+(amd64 via `qemu-system-x86_64.exe`), and **QMP savevm/loadvm** (the snapshot fixture path)
+round-trips over the TCP transport. The backend choice is read wherever a `QemuVM` is
+constructed — the cli smoke path *and* every pytest path (the folded net stage,
+`test_snapshot_apps`, a direct `test_smoke`) via `conftest.py`. The KVM-only idle-cpu gate
+(`test_idle_cpu_not_spinning`) skips on windows-host (TCG, and `_proc.pid` is the WSL interop
+shim — same reason it skips arm64). **Caveat:** the net suite's slirp `hostfwd` isn't yet
+adapted to windows-host — WSL→Windows reaches the QEMU only via the WSL default-gateway IP
+(`ip route show default`), not `127.0.0.1` (the mirror of the inbound `0.0.0.0` rule), so a
+windows-host user gets boot smoke but the folded net stage still needs native KVM for now.
 
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which

@@ -119,9 +119,34 @@ saturation point, but 2×-flat already covers typical agent load.
   Usage: `tests/qemu/cli/README.md` → "Launch backend config". Two bring-up gotchas baked into
   the code + commit msg: **listen on `0.0.0.0`** (WSL2 localhost relay ignores 127.0.0.1-bound
   listeners; the WSL-VM IP is unreachable under NAT) and **`reconnect-ms=1000`** (Windows QEMU
-  11.x dropped `reconnect=N`). Follow-ups: amd64-uefi validation; QMP-savevm snapshots over TCP
-  (untested on windows-host); the cpu%-pathology check reads Linux /proc so it no-ops for the
-  Windows process (harmless — TCG-on-host has no nested-KVM pathology to detect).
+  11.x dropped `reconnect=N`).
+- ✅ **Follow-ups resolved 2026-06-21** (build-cache lane):
+  - **amd64-uefi validated** — boots via `qemu-system-x86_64.exe` under TCG (binary-select +
+    accel-rewrite drop `-cpu host` + OVMF_CODE_4M/vars path-staging all work unchanged for amd64),
+    reaches `shell ready` ×3 (full desktop chain) in ~1m36s.
+  - **QMP savevm/loadvm over TCP validated** — boot → HMP `savevm ready` → `loadvm ready`
+    round-trips clean over the TCP QMP transport on windows-host i386 (the snapshot path the
+    `restore_vm` fixture / `test_snapshot_apps` rely on). Same channel `screendump` already used.
+  - **cpu%-pathology check** (`test_idle_cpu_not_spinning`) now **explicitly skips** on
+    windows-host. It was doubly invalid there: `vm._proc.pid` is the WSL *interop shim* (not the
+    Windows QEMU) so `/proc/<pid>/task` measures the shim (~0%), and the backend runs TCG not KVM
+    so the HLT-idle baseline doesn't apply — same reasoning as the existing arm64 skip. An honest
+    skip beats silently reading the shim and reporting a meaningless "pass".
+  - **net suite made backend-aware** — `conftest.py`'s `vm` fixture now reads the same layered
+    launch-backend config the cli smoke path uses, so EVERY pytest QEMU path (the net suite folded
+    into smoke, `test_snapshot_apps`, a direct `test_smoke` run) honors `qemu.backend`. Before, the
+    net stage spawned a plain pytest that always launched native KVM — a WSL2-no-KVM user on the
+    windows-host backend got a working boot stage but a net stage that failed on KVM.
+- ⏳ **Remaining follow-up — net-over-windows-host transport:** the boot/QMP/serial transports
+  are validated, but the net suite's slirp `hostfwd` (for the in-guest TCP echo / outbound-client
+  tests) is NOT yet adapted to windows-host. The WSL↔Windows directionality is the mirror image of
+  the inbound rule: WSL→Windows on `127.0.0.1` is **refused** (WSL's loopback is its own VM's), but
+  the **WSL default-gateway IP** (`ip route show default`, e.g. `172.26.176.1`) IS reachable
+  (verified: a Windows-side `0.0.0.0` listener answers from WSL via the gateway IP). So net-over-
+  windows-host needs (1) `hostfwd=tcp:0.0.0.0:PORT-:GUESTPORT` (bind the wildcard Windows-side, not
+  `127.0.0.1`) and (2) the test client to dial the gateway IP, not `127.0.0.1`. Scoped, not done.
+  Until then a windows-host user gets boot smoke (the North Star) but the folded net stage needs
+  native KVM or the gateway-IP adaptation.
 - **Spike outcome (original): build a `windows-host` TCG backend for WSL2.** Proven feasible *and*
   measured to fix the contention (+8% under 2× concurrency) while being ~3× faster than nested-KVM.
   WHPX is NOT on the critical path — skip the reboot.
