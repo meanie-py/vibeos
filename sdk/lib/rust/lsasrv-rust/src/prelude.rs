@@ -75,6 +75,8 @@ pub use lsasrv_sys::{
     // session.c logon-session types
     _SECURITY_LOGON_SESSION_DATA, SECURITY_LOGON_SESSION_DATA, PSECURITY_LOGON_SESSION_DATA,
     PLSA_STRING, PLSA_API_MSG,
+    // notify.c
+    POLICY_NOTIFICATION_INFORMATION_CLASS,
 };
 
 // LSAPR_POLICY_INFORMATION is a union typedef'd directly (no `_`-tag form);

@@ -28,7 +28,7 @@ list(APPEND SOURCE
     lookup.c
     lsarpc.c
     lsasrv.c
-    notify.c
+    # notify.c      — replaced by Rust (lsasrv-rust/src/lsasrv/notify.rs)
     # policy.c      — replaced by Rust (lsasrv-rust/src/lsasrv/policy.rs)
     # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
     # registry.c     — replaced by Rust (lsasrv-rust/src/lsasrv/registry.rs)
