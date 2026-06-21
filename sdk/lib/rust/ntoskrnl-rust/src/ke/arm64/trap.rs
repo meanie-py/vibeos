@@ -22,6 +22,11 @@ use ntkrnl_sys::ddk::{
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
     static mut MmUserProbeAddress: ULONG_PTR;
+    /// GICv2 interrupt dispatch — implemented in the HAL (hal-rust
+    /// arm64/clock.rs). Acknowledges the GIC, services the periodic
+    /// virtual-timer clock tick (→ KeUpdateSystemTime), re-arms + EOIs.
+    /// No-op until HalInitializeClockArm64 runs in Phase 1.
+    fn HalClockInterruptArm64(TrapFrame: PKTRAP_FRAME);
 }
 use crate::ps::win32::KeGdiFlushUserBatch;
 use crate::ke::procobj::KeServiceDescriptorTable;
@@ -53,6 +58,47 @@ unsafe fn TrapPutHex64(val: u64) {
     TrapPuts(b"0x");
     for i in (0..=60).rev().step_by(4) {
         TrapPutHex4((val >> i) as ULONG);
+    }
+}
+
+/// [TRAP-PROBE] Called from KiTrapReturn (trap.S, gated on ARM64_TRAP_DEBUG)
+/// just before the `eret`, with x0 = the KTRAP_FRAME being restored. Catches a
+/// bad EL0-return state at the point of use: an illegal SPSR (IL/M4/garbage
+/// bits) or a non-usermode ELR. This is the KiTrapReturn 0xC000001D illegal-
+/// exec-state hunt (task #9). Dumps the frame so the corrupting writer can be
+/// correlated by frame address.
+#[no_mangle]
+pub unsafe extern "C" fn KiTrapReturnProbe(tf: *const _KTRAP_FRAME) {
+    if tf.is_null() {
+        return;
+    }
+    let spsr = (*tf).Spsr;
+    // Only EL0t (user) returns — M[3:0]==0.
+    if (spsr & 0xF) != 0 {
+        return;
+    }
+    let pc = (*tf).Pc;
+    // Illegal for an EL0t AArch64 return: M[4] (bit4), IL (bit20), or any of
+    // bits[19:10] set (a valid user PSTATE is ~NZCV|DAIF|SS|feature-bits, never
+    // a pointer pattern — the captured corruption was 0x0013DC80).
+    let spsr_bad = (spsr & 0x0010_0010) != 0 || (spsr & 0x000F_FC00) != 0;
+    // ELR (eret target) must be a real user-code VA: non-tiny and canonical
+    // low half. pc==0 / pc<0x10000 (null or near-null entry) is a bug too.
+    let pc_bad = pc < 0x1_0000 || (pc >> 48) != 0;
+    if spsr_bad || pc_bad {
+        TrapPuts(b"[TRPROBE] EL0ret BAD tf=");
+        TrapPutHex64(tf as u64);
+        TrapPuts(b" spsr=");
+        TrapPutHex32(spsr);
+        TrapPuts(b" pc=");
+        TrapPutHex64(pc);
+        TrapPuts(b" sp=");
+        TrapPutHex64((*tf).Sp);
+        TrapPuts(b" lr=");
+        TrapPutHex64((*tf).Lr);
+        TrapPuts(b" x0=");
+        TrapPutHex64((*tf).__bindgen_anon_3.X[0]);
+        TrapPuts(b"\r\n");
     }
 }
 
@@ -409,9 +455,9 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
 
 #[no_mangle]
 pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
-    TrapPuts(b"[IRQ] PC=");
-    TrapPutHex64((*TrapFrame).Pc);
-    TrapPuts(b"\r\n");
+    /* Dispatch the GIC interrupt: clock tick → KeUpdateSystemTime, then EOI.
+     * (No per-IRQ UART trace — the clock fires at 100Hz and would flood.) */
+    HalClockInterruptArm64(TrapFrame);
 }
 
 #[no_mangle]

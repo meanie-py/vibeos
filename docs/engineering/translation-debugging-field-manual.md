@@ -173,6 +173,13 @@ The first cohab driver to reference a kernel **data** export (vs a function) —
 ### Kept `extern "C"` block for NTAPI fns → i386-only `_Name` vs `_Name@N` link break (ramdisk, 2026-06-21)
 A mechanical translation often keeps a hand-written `extern "C" { fn RtlInitUnicodeString(..); fn RtlCopyUnicodeString(..); fn RtlQueryRegistryValues(..); }` block for ntoskrnl APIs. On **amd64/arm64** NTAPI is cdecl → links fine. On **i386** NTAPI is **stdcall**: ntoskrnl exports `_RtlInitUnicodeString@8`, but `extern "C"` emits a reference to undecorated `_RtlInitUnicodeString` → `undefined symbol: _RtlInitUnicodeString`. Same root as the kernel32 RPC-wait ABI bug (TranslateStdHandle) — only here it's a *kept extern block* in the translated module, not a cross-rlib mismatch. **Fix:** split the block — NTAPI fns go in `extern "system" { }` (resolves to stdcall `_Name@N` on i386, cdecl elsewhere); leave genuine **cdecl CRT** helpers (`wcsncpy`/`_snwprintf`/`strlen`/`_strnicmp`/`strstr`) in `extern "C"`. Tell them apart: anything `NTAPI`/`WINAPI` in the C header → `extern "system"`; plain C runtime → `extern "C"`. (Keeping the translation's own signatures in an `extern "system"` block is lower-risk than re-importing from `ntkrnl_sys::ddk`, which can drift the param types — `PCWSTR` vs `PWSTR` — and cascade into call-site E0308s.) i386-only → an amd64/arm64 link passes while i386 breaks.
 
+### i386 export-driver + mixed-convention link traps — three refinements (fltmgr/ksecdd, 2026-06-21)
+Two multi-`.c` EXPORT-driver cohabs (fltmgr = Flt* SSPI-ish, ksecdd = SSPI) sharpened the kept-`extern "C"` rule above into three reusable sub-cases. All are **i386-only** (amd64/arm64 NTAPI=cdecl hides them) and surface only at the central `.sys` link, never in cargo:
+1. **The driver's OWN spec exports must be `extern "system"` too, not just its callees.** A `spec2def` driver's `.def` declares each export `@ stdcall Foo` → the linker needs `_Foo@N`. But the translation defines the export bodies as `#[no_mangle] pub unsafe extern "C" fn Foo` → emits undecorated `_Foo` → `undefined symbol: _Foo@N`. **Fix:** flip every spec-exported definition to `extern "system"` (grep `extern "C" fn <Prefix>[A-Z]` for the API prefix — `Flt`/`Ksec`/SSPI names; leave internal `<Prefix>p*`/helpers alone). 22 Flt + 37 SSPI fns respectively. Safe on amd64/arm64 (system=cdecl there).
+2. **`extern "system"` ≠ correct for *all* NTAPI — some kernel exports are FASTCALL.** Blanket-flipping a callee block C→system is WRONG for the fastcall variants: `IofCallDriver`/`IofCompleteRequest`/`ObfDereferenceObject` (the `f`-suffix forms) and, surprisingly, **`ExReleaseResourceLite`** (verify against `ntoskrnl.spec`: `@ fastcall`). stdcall (`extern "system"`) passes args on the stack; fastcall passes the first two in ecx/edx → silent corruption, not a link error. **Best fix: REMOVE the redundant `extern "C"` decl and import the callee from `ntkrnl_sys::ddk`** — the bindgen there carries the real per-arch convention (stdcall *and* fastcall) automatically. Only hand-qualify (`extern "system"`) when a ddk import drifts the signature into E0308.
+3. **A vendored crypto lib gives ONE driver two conventions.** ksecdd links cryptlib: the **tomcrypt** primitives (`aes_*`/`des3_*`) are **cdecl** (`extern "C"`), but ReactOS's own crypt-lib **`MD5Init`/`MD5Update`/`MD5Final`** are **NTAPI stdcall** (`_MD5Init@4`, `extern "system"`). They sit in the same `crypt.c` — don't assume one block = one ABI; split by *which library* provides each symbol.
+Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsics referenced on arm64** — `__rdtsc`/`_rotl` lose their C `#if defined(_M_IX86|_M_AMD64)` arch guard in translation → undefined on arm64; cfg-gate a glue def (`__rdtsc`: `rdtsc` on x86, `CNTVCT_EL0` on arm64). (b) **lld i386 cascade red-herrings** — an unresolved symbol in an object can make lld also report unrelated `Ki*`/`Hal*`/internal "undefined"s that **clear once the real undefined is fixed**; fix the obvious crypto/intrinsic undefineds and re-link *before* chasing the weird ones. (c) **git `core.ignorecase` collision** — a `Foo.c`→`Foo.rs` module whose name case-folds onto the crate-root `lib.rs` (e.g. `Lib.c`→`Lib.rs`) blocks `git add` (`will not add file alias`); rename the module (`flt_lib`).
+
 ### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
 **Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
 **Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
@@ -437,6 +444,10 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 ### Wrong INLINED flag/constant literal (comment names the right flag, literal is a different one)
 **Symptom:** `SetFlag(f, 0x2 /* IRP_CONTEXT_FLAG_TOP_LEVEL */)` (0x2 is MORE_PROCESSING; TOP_LEVEL=0x10); `PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)` (PAL_BITFIELDS=0x2, 0x4=PAL_RGB); `RtlRaiseStatus(0xC0000002 /* STATUS_DATATYPE_MISALIGNMENT */)` (0xC0000002=NOT_IMPLEMENTED; MISALIGN=0x80000002). The LLM hardcodes a literal it labels with the intended name but the value is wrong/placeholder. Compiles & links clean; pure runtime/semantic. cdfs alone had 7 (TOP_LEVEL/TOP_LEVEL_CDFS/DISABLE_POPUPS/CDFS_NTC_IRP_CONTEXT/FSP_FLAGS/CCB_FLAG_DISMOUNT/CDFS_RESIDUAL); the codebase sweep found more in scsiport (LUNEX, HIGH), ntoskrnl se/srm (OBJ_OPENIF), win32k dibobj, disk, cabinet, smss.
 **Oracle:** `tools/scan_inline_flag_literals.py <crate/src/*.rs> --headers <driver C dir>` — **`verify_constants.py` is BLIND to this** (it only checks `const NAME = VALUE;` defs, not bare literals). The tool is tree-sitter/AST-based (regex can't pair a literal with its naming-comment across nested `|`/parens/casts — not a regular language); catalog = kernel headers + sdk/include/{xdk,ndk,psdk} + driver `--headers`. It's a TRIAGE AID not a verifier — residual FP classes need a human eye: flag-MASK unions (`A|B|C // N1|N2|N3` where the union is right but order differs), informational args (KWAIT_REASON `Wr*`, WPP TRACE_LEVEL), and value-tables labeled by index (COLOR_*, suppressed).
+
+#### Sub-class: correct literal for the WRONG named constant — a range BOUND, not a flag (scanner-invisible)
+**Symptom (2026-06-21, user32-rust):** `IS_ATOM(x)` coded `v > 0 && v < 0xC000` with a comment "MAXINTATOM is 0xC000". The C macro (`user32p.h`) is `(x > 0) && (x < 0x10000)` — the upper bound is **0x10000** (high 48 bits clear), NOT `MAXINTATOM`. MAXINTATOM (0xC000) is the *base* of registered-class atoms; they start at 0xC000 and increment. So once the shell registers ~100 window classes, a real class atom (e.g. `0xC06A`) is `>= 0xC000` and `IS_ATOM` returns false → it flows into `RtlInitUnicodeString`, whose `wcslen` derefs the tiny integer → **AV 0xC0000005 in explorer at "taskbar: creating tray window"**, crash-looping the shell post-`shell ready` (so the smoke gate stays green; only the *desktop* is broken). Two copies (`window.rs:42` `User32CreateWindowEx`, `class.rs:111`) had the bug; `message.rs:224` had it right (0x10000). Fixed in `67c9e5849c7`.
+**Why the literal-scanner misses it:** the literal `0xC000` *matches* its naming comment (`MAXINTATOM` really is 0xC000) — so `scan_inline_flag_literals.py` sees a consistent literal/label pair and stays silent. The defect is one level up: the translator picked the **wrong named constant** for an *unnamed* numeric bound in the source (the C `0x10000` had no symbol). This is the residual "correct value, wrong concept" class. **Tell:** a range/threshold compare (`< CONST`, `>= CONST`, `>> N`) where the C original used a bare numeric literal — re-derive the bound from the C, don't trust a plausible-looking named-constant comment. **Cross-arch:** `user32-rust` (and most usermode `*-rust` crates) are cohab'd on all 3 arches, so a usermode-DLL translation bug breaks amd64/i386 identically — it just hides *past* their `shell ready` gate. To see it, boot past the gate and watch for `[UEXC]`/`PspExitThread ExitStatus=0xC0000005`.
 
 ### C `if (!Fn())` → Rust `if !Fn() != 0` — bitwise-NOT on an integer BOOLEAN makes the condition ALWAYS TRUE
 **Symptom:** a guard that should fire "only when the predicate is false" fires unconditionally. Real case (fastfat write.rs:382): `if !FatIsIoRangeValid(Vcb, byte, count) != 0 { return STATUS_DISK_FULL; }` → **every** non-paging, non-write-to-EOF user-file write returned `STATUS_DISK_FULL`, which killed the registry hive flush (`cmlib hivewrt.c:360/649` "Failed to write the base block header / alternate hive"). Boots otherwise (the path is only one of several), so it reads as a narrow "some writes fail" bug.
@@ -1532,6 +1543,94 @@ doesn't move, find who resets it.
 - **Remaining (M5, separate bug):** with the 0x50 gone and the catalog in the hive, usermode
   `socket()` still returns `WSAEINVAL (10022)` — ws2_32/msafd isn't consuming the netstack
   Winsock2 catalog entries. Boot-unblocked; catalog-loading issue, tracked on M5/task-77.
+
+### 9.x Symbolicating a cargo-built kernel crash address (when objdump/nm come back empty)
+
+**Symptom:** you have a runtime crash/return address (e.g. an unhandled-exception PC, a
+backtrace frame) on arm64 (or any cargo-linked module), but `aarch64-w64-mingw32-objdump
+-d/-t/-h`, `llvm-nm`, and `llvm-objdump` all return **empty** on `ntoskrnl.exe` — the
+cargo-linked PE is opaque to the GNU binutils, and the in-memory RVAs exceed the on-disk
+file size (large virtual layout), so file-offset reasoning fails.
+
+**Recipe:**
+1. **Get a symbol index:** `qemu/build-index.sh <arch>` → `qemu/symbols-<arch>.tsv`
+   (`<hex_RVA>\t<symbol>`). NB it covers **only that module's Rust+asm symbols** and tops
+   out at the highest such symbol — **C-object functions and *other modules* (hal, fastfat,
+   drivers) are absent**.
+2. **Find the runtime load base** — the kernel is relocated, so you must calibrate. Print a
+   *known* symbol's runtime address from inside the kernel (cheapest: temporarily
+   `ARM64_UART_TRACE_HEX("kdx=", KiDispatchException as usize)` in a path you'll hit; tsv
+   gives its RVA). Then **`base = runtime_addr − tsv_RVA`** (observed arm64 ≈
+   `0xFFFFF80041D91xxx`, shifts a few bytes per rebuild — recalibrate each build).
+3. **Resolve:** `rva = crash_addr − base`; nearest tsv symbol `≤ rva` names it.
+4. **Key inference:** if `rva` is **past the tsv's max symbol**, the address is **not in this
+   module** — it's in a module loaded *after* it (hal/fastfat/driver). That alone localizes
+   a raiser (e.g. confirmed an unhandled `STATUS_FILE_CORRUPT_ERROR` was raised in
+   *fastfat.sys*, not ntoskrnl Cc, because the `ExRaiseStatus` caller addr was past
+   ntoskrnl's last symbol).
+5. **Identify the raiser directly:** hook the **`ExRaiseStatus` shim** (`ntoskrnl-rust/src/
+   shim_exports.rs` — it exists expressly for this) to print `x30` (caller LR) when
+   `status == <the code>`. One clean address beats a stack scan.
+
+**Gotchas:** `strings <exe> | grep <marker>` MISSES `TrapPuts(b"...")`-style traces — the
+optimizer turns short byte-strings into **inline per-char immediate stores** (`mov w,#0x5b
+'['; …`), not rodata; disassemble (or just trust the build) instead. A raw **stack scan**
+for kernel-VA values works but is **polluted by stale frames** (the 100Hz clock leaves
+`KiIrqEntry`/`KiIrqHandler`/`KeUpdateRunTime` return addrs on every stack); **frame-pointer
+(x29) unwind from a big function like `KiDispatchException` does NOT work** (x29 isn't a
+clean FP there). **Source:** arm64 clock-fix lane, `arm64-clock-and-lpcexitthread-findings.md`.
+
+### 9.11 A nested `0x50` whose fault addr is one page above SP = STACK OVERFLOW — look for unbounded recursion (often a constant-placeholder), not a scheduler/LPC race
+
+**Symptom:** a deterministic `BUGCHECK 0x50` (PAGE_FAULT_IN_NONPAGED_AREA) late in boot that
+*looks* like a flaky scheduler/LPC race (it was mislabeled `arm64_lpcexitthread_race` for a
+whole session because the last serial line before it was `PspExitThread → LpcExitThread`).
+Tells that it's really a **kernel stack overflow**, not the thing the last log line names:
+- **`arg2 == 2` (write)** and **`arg1` (fault addr) is ~one page ABOVE the trap-frame / SP**
+  (here fault `0x..256050`, trapframe `0x..255e40`, SP `0x..255fa0` — all in the same
+  `0x..255/256xxx` page-pair). A heap/pool wild-write lands *anywhere*; a stack overflow
+  faults *adjacent to SP* in the guard page.
+- The faulting **Pc is `KiSynchronousExceptionEntry+0x4`** (the first `stp x0,x1,[sp,#…]` of
+  the exception prologue) while **Lr points into the real victim function**. That's a
+  *nested* fault: the first exception fired in the victim, then the handler couldn't even
+  save its own trapframe because the stack was already blown → the `0x50` you see is the
+  handler's store, not the original fault.
+
+**Why arm64 specifically:** `KERNEL_STACK_SIZE` is **12 KB on i386 *and* arm64** but **48 KB
+(0xC000) on amd64**. A 64-bit recursion (bigger frames) that amd64 absorbs, and that i386
+never reaches (it boots read-only media), blows arm64's inherited-from-i386 12 KB stack. So
+arm64 is the first arch to expose any unbounded-recursion / deep-chain bug in a *writable*-FS
+path (fastfat-on-ramdisk).
+
+**Diagnosis recipe (no DWARF needed):**
+1. From the bugcheck args, read the trap frame raw. arm64 `KTRAP_FRAME` offsets (from
+   `ndk/arm64/ketypes.h`): `FaultAddress@0x10`, `Sp@0xa8`, `X[0]@0xb0`, `Lr@0x148`,
+   `Fp@0x150`, `Pc@0x158`. `Esr@0xa4`: `EC = Esr>>26` (`0x25`=data abort), `WnR=(Esr>>6)&1`
+   (1=write), `DFSC=Esr&0x3f` (`0x07`=translation fault = page not mapped).
+2. **Walk the frame chain** off `Fp` (x29): `lr=*(fp+8)`, `next=*(fp)`. A short cycle of the
+   **same 3–5 return addresses repeating** = the recursion; that *is* the bug.
+3. **Symbolicate with the *right* binutils name** — it's `aarch64-w64-mingw32-nm`
+   (`.build-tools/llvm-mingw/bin/`), NOT `llvm-nm`/plain `objdump` (those silently print
+   nothing on the cargo PE). `qemu/symbols-<arch>.tsv` from `build-index.sh` is sparse/wrong
+   above the last named symbol — build your own map: `nm <exe> | awk 'NF==3&&$2~/[Tt]/'`.
+4. **If a frame's RVA is past ntoskrnl's `.text` end, it's in another module** (§9.x). Map
+   runtime→module by **walking `PsLoadedModuleList`** in gdb (KLDR_DATA_TABLE_ENTRY:
+   `DllBase@0x30`, `SizeOfImage@0x40`, `BaseDllName.Buffer@0x60`, `.Length@0x58`). Then for
+   that module: `PE_VA = ImageBase + (runtime − module_base)`; resolve against *its* nm map.
+   (Here the cycle resolved into **fastfat.sys**, not ntoskrnl.)
+
+**Root cause (this instance, 2026-06-20):** constant-placeholder bug class again (sibling to
+cdfs `BugCheckFileId`, scsiport LUNEX, fastfat `ChicagoMode`, find.rs cast-before-offset).
+fastfat's recursion-breaker is `FatSetFatEntry` setting `IRP_CONTEXT_FLAG_DISABLE_DIRTY`
+(canonical **0x00000001**, fatstruc.h) around its `FatPrepareWriteVolumeFile` writes, so the
+nested `FatSetDirtyBcb` skips re-marking the volume dirty. The local const inside
+`FatSetDirtyBcb` (cachesup.rs) was a placeholder **0x100**, so `Flags & DISABLE_DIRTY` never
+matched the 0x1 bit actually set → guard never fired → infinite cycle
+`FatSetDirtyBcb→FatMarkVolume→FatSetFatEntry→FatPrepareWriteVolumeFile→FatSetDirtyBcb`. Fix:
+`0x100→0x01` (commit `3b3f9744c0a`). **Lesson:** when a flag-guarded recursion-breaker is
+defeated, the *setter* and the *checker* of the flag are often in different files/functions —
+grep every definition of the flag constant and confirm they agree with the C header. **Source:**
+arm64-love lane; `arm64-clock-and-lpcexitthread-findings.md`.
 
 ---
 

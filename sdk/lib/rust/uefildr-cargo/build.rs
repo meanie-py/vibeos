@@ -104,7 +104,13 @@ fn main() {
         // blrtl (boot RTL leaf) is compiled IN-cargo below: its C via
         // .c_from_compile_db("blrtl", …) + its per-arch asm via
         // .asm_archive("blrtl_asm", …), not reused boot/rtl/libblrtl.a.
-        "sdk/lib/crt/liblibcntpr.a",
+        // libcntpr (cntpr C floor) likewise compiled IN-cargo below via
+        // .c_from_compile_db("libcntpr", …) (cmake-off WS1 DEEP) — was the
+        // reused cmake "sdk/lib/crt/liblibcntpr.a". Its i386/amd64 MSVC asm
+        // intrinsics (_alldiv/_ftol2/_chkstk/…) are unreferenced by freeldr-rust
+        // (a *-windows-gnu target that uses gnu-named helpers __divdi3/
+        // ___chkstk_ms from compiler_builtins), so no asm_archive is needed —
+        // offline residue confirms zero undefined libcntpr-asm symbols.
         // libchkstk.a DROP-TEST 2026-06-20 — INERT: complete offline residue
         // (chkstk defs __chkstk/___alloca/__alloca_probe{,_16} ∩ truly-unresolved
         // across ALL uefildr i686 rlibs) = 0, no >4KB-frame refs; clang_rt.builtins
@@ -147,6 +153,51 @@ fn main() {
         _ => &[],
     };
 
+    // libcntpr (cntpr C floor, sdk/lib/crt/libcntpr.cmake) compiled in-cargo via
+    // c_from_compile_db — was the reused cmake liblibcntpr.a (cmake-off WS1 DEEP).
+    // The common C set (math _invoke_matherr/exp2f, mbstring, misc fltused, the 12
+    // printf shells, string atol/wctype/winesup, scanf_trampoline); i386 adds the
+    // x87 math wrappers (ci*/libm_sse2/nexttowardf), amd64 adds ehandler.c. Source
+    // list mirrors the cmake `libcntpr` target's objects (see tools/gen_cflags.py
+    // + the committed cflags/libcntpr.<arch>.flags template). asm intrinsics are
+    // GC'd (gnu target) — no asm_archive.
+    let mut libcntpr_c: Vec<&str> = vec![
+        "sdk/lib/crt/math/_invoke_matherr.c",
+        "sdk/lib/crt/math/exp2f.c",
+        "sdk/lib/crt/mbstring/mbstrlen.c",
+        "sdk/lib/crt/misc/fltused.c",
+        "sdk/lib/crt/printf/_snprintf.c",
+        "sdk/lib/crt/printf/_snwprintf.c",
+        "sdk/lib/crt/printf/_swprintf.c",
+        "sdk/lib/crt/printf/_vscprintf.c",
+        "sdk/lib/crt/printf/_vscwprintf.c",
+        "sdk/lib/crt/printf/_vsnprintf.c",
+        "sdk/lib/crt/printf/_vsnwprintf.c",
+        "sdk/lib/crt/printf/sprintf.c",
+        "sdk/lib/crt/printf/swprintf.c",
+        "sdk/lib/crt/printf/vprintf.c",
+        "sdk/lib/crt/printf/vsprintf.c",
+        "sdk/lib/crt/printf/vswprintf.c",
+        "sdk/lib/crt/string/atol.c",
+        "sdk/lib/crt/string/wctype.c",
+        "sdk/lib/crt/string/winesup.c",
+        "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
+    ];
+    match arch.as_str() {
+        "x86" => libcntpr_c.extend_from_slice(&[
+            "sdk/lib/crt/math/nexttowardf.c",
+            "sdk/lib/crt/math/i386/ci.c",
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/libm_sse2.c",
+        ]),
+        "x86_64" => libcntpr_c.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        _ => {}
+    }
+
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 builds
     // WITHOUT `float` (no-SSE pre-boot, no by-value f64 ABI); amd64/arm64 with
     // `float`. build_rust_crate's cnt-rust-lib special case supplies the exact
@@ -176,6 +227,9 @@ fn main() {
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
         .c_from_compile_db("blrtl", &blrtl_c)
+        // libcntpr C compiled in-cargo — drops the cmake liblibcntpr.a reuse
+        // (cmake-off WS1 DEEP). cmake-off path uses cflags/libcntpr.<arch>.flags.
+        .c_from_compile_db("libcntpr", &libcntpr_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // cport-rust (NS16550 serial) built directly (was reused cmake

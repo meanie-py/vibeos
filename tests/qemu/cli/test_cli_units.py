@@ -225,7 +225,8 @@ def test_workspace_cargo_target_per_arch(tmp_path: Path):
     assert provenance.workspace_cargo_target(repo, "i386") == stem
     # arch alias + per-arch stem resolution
     (repo / "sdk" / "lib" / "rust" / "target" / "x86_64-kernel").mkdir(parents=True)
-    assert provenance.workspace_cargo_target(repo, "amd64-uefi").name == "x86_64-kernel"
+    amd64_stem = provenance.workspace_cargo_target(repo, "amd64-uefi")
+    assert amd64_stem is not None and amd64_stem.name == "x86_64-kernel"
 
 
 def test_discover_rust_module_outputs(tmp_path: Path):

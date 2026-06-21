@@ -192,11 +192,20 @@ pub unsafe extern "system" fn RtlInitCodePageTable(
     cpt.TransDefaultChar = (*hdr).TransDefaultChar;
     cpt.TransUniDefaultChar = (*hdr).TransUniDefaultChar;
 
-    ptr::copy_nonoverlapping(
-        (*hdr).LeadByte.as_ptr(),
-        cpt.LeadByte.as_mut_ptr(),
-        MAXIMUM_LEADBYTES,
-    );
+    // Faithful to C's `RtlCopyMemory(.., NlsFileHeader->LeadByte, MAXIMUM_LEADBYTES)`,
+    // but copied byte-wise via volatile so the optimizer cannot coalesce the 12-byte
+    // copy into a wide unaligned load. `table_base` here lands at +0x0e (2-byte
+    // aligned, not 4/8-aligned); on arm64 a vectorized `ldur w`/`ldur x` of that
+    // source alignment-faults (DFSC 0x21) because the NLS region is mapped with
+    // natural-alignment-required attributes — a clean cargo rebuild emitted exactly
+    // that wide load and bugchecked 0x1E in RtlInitCodePageTable during Phase-1 init.
+    let lb_src = (*hdr).LeadByte.as_ptr();
+    let lb_dst = cpt.LeadByte.as_mut_ptr();
+    let mut i = 0usize;
+    while i < MAXIMUM_LEADBYTES {
+        ptr::write_volatile(lb_dst.add(i), ptr::read_volatile(lb_src.add(i)));
+        i += 1;
+    }
 
     let header_size = (*hdr).HeaderSize as usize;
 

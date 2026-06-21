@@ -70,6 +70,12 @@ the LSA/SAM server spine, leaning on lsass-rust) → msgina (logon UI) → then 
 self-contained ones (apphelp/ntmarta/hid). Everything else defers behind a COM-vtable
 strategy and the higher-value native client DLLs from Part 1 (gdi32/userenv/…).
 
+> **Status:** **msgina ✅ landed** (`e69a7adaf82`). **lsasrv + samsrv** have a detailed
+> execution plan → **`lsa-sam-server-translation-plan.md`** (RPC-server cohab via the proven
+> svcctl/`midl-rt` pattern, per-file maps, differential-fuzz strategy for the SID/blob math,
+> milestones). Key finding: the MIDL-RPC-server-in-Rust cohab is **already a shipping pattern**
+> here (svcctl/winreg), and samsrv has **no in-module crypto** (delegated to advapi32).
+
 ---
 
 ## Per-family detail

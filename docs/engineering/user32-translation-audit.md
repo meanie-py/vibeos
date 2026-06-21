@@ -356,13 +356,24 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 2 — dialogs + logon controls | dialog/messagebox/button/static/edit/combo/listbox/scrollbar | ~19,400 | ✅ integrated, i386 link+boot green; amd64/arm64 ×3 gate pending |
 | 3a — leaf (landed) | rect/accel/text/font/display | ~1,900 | ✅ landed on mainline (LAND TRAIN 1) |
 | 3b — core | menu/draw/input/hook/desktop | ~6,100 | ✅ integrated; cohab-link ×3 green, i386+amd64 boot green (arm64 compile/link green, flake-tolerant); ×3 gate pending |
-| 3c — cursoricon (heavy) | cursoricon | ~3,100 | ☐ (next) |
+| 3c — cursoricon (heavy) | cursoricon | ~3,100 | ✅ integrated; compile + cohab-link ×3 green; ×3 gate pending — **Wave 3 COMPLETE** |
 | 4 — secondary | clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain/+misc/+minor controls | ~12,000 | ☐ |
 | 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde | ~5,400 | ☐ |
 
-**Next action:** Wave 3c — `cursoricon.c` (3,095 LOC, alone) closes Wave 3. Watch the PNG/libpng
-delay-import path (arm64 stubs it) and `get_icon_size` becoming the Rust export (draw.rs already
-declares it `extern "C"` from the surviving C). (Superseded note below kept for history.)
+**Next action:** Wave 4 — secondary surface (clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain
++ misc + minor controls, ~12K LOC). Not boot-critical; can be batched.
+
+**Wave 3c done (2026-06-21):** `cursoricon.rs` (90 fns, 3.4K LOC) integrated; compile + cohab-link
+×3 green. **libpng was a non-issue:** delay-load was never functional in vibeos (see
+`delay-import-llvm-mingw-design.md` §1 — `add_delay_importlibs` silently degrades to a regular
+import), so the ~23 `png_*` calls are plain `extern "C"` regular imports resolving to libpng.dll
+on i386/amd64 and to the `arm64_user32_stubs.c` NULL-stubs on arm64 — identical to the old C.
+`png_check_sig`→`png_sig_cmp(..)==0`, `PNG_LIBPNG_VER_STRING`→`b"1.6.39\0"`. `get_icon_size`/
+`CursorIconToCursor`/`get_best_icon_file_offset` are the cdecl cross-TU exports (draw.rs/static_.rs/
+exticon.c). Bug classes hit: `bmiColors[N]` indexing on a `[_;1]` flexible-array-member trips
+Rust's compile-time bounds check → use `.as_ptr().add(N)`; `GetObject`→`GetObjectW` (i386 UNICODE
+macro); HICON/HCURSOR → `as HANDLE` at NtUser* boundaries; opaque `gpsi.hIconSmWindows` via
+`gpsi_perusr()`. With 3a+3b landed, **Wave 3 (the explorer/desktop-render path) is complete.**
 
 ~~Wave 3 — the explorer/desktop-render path (menu/draw/cursoricon/text/font/
 accel/rect/hook/input/desktop/display, ~11.4K LOC). Run it in 3 sub-slices (3a leaf →

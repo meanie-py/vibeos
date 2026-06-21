@@ -91,9 +91,14 @@ pub static mut ProcessCount: ULONG = 0;
 pub static mut Arm64UartKernelBase: PVOID = 0x09000000 as PVOID;
 
 const _B: u64 = 0x0000000000000402;
-const _C: u64 = 0x0000000000000004;
-const _NC: u64 = 0x0000000000000000;
-const _WC: u64 = 0x000000000000000C;
+// CacheType = PTE bits[3:2] = AttrIndx into MAIR_EL1. freeldr programs
+// MAIR=0x004400FF (winldr.c): AttrIndx 0=Normal-WB, 1=Device-nGnRnE, 2=Normal-NC.
+// These were bit-swapped (cached→AttrIndx1=Device etc.), so every cached page in
+// this table mapped as Device → unaligned accesses alignment-faulted (the 0x1E
+// cold-build cascade). Corrected to match the actual MAIR.
+const _C: u64 = 0x0000000000000000; // cached → AttrIndx 0 (Normal-WB)
+const _NC: u64 = 0x0000000000000004; // no-cache → AttrIndx 1 (Device-nGnRnE)
+const _WC: u64 = 0x0000000000000008; // write-combine → AttrIndx 2 (Normal-NC)
 const _ND: u64 = 0x0000000000000080;
 const _RO: u64 = 0x0040000000000000 | _ND;
 const _X: u64 = 0x0000000000000000 | _ND;
@@ -903,6 +908,24 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
 
+        #[cfg(target_arch = "aarch64")]
+        {
+            // Kernel-mode unhandled exception. If this is an EC=0/IL=1 illegal-
+            // exec-state fault that kept us at EL1, it surfaces here (not [UEXC]).
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] Code=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionCode as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(b"[KEXC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] Spsr=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Spsr as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] ESR=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Esr as ULONG_PTR,
+            );
+        }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
             (*ExceptionRecord).ExceptionCode as ULONG_PTR,
@@ -923,6 +946,14 @@ pub unsafe extern "system" fn KiDispatchException(
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] ESR=\0".as_ptr() as PCSTR,
                 (*TrapFrame).Esr as ULONG_PTR,
+            );
+            // Spsr carries PSTATE at the fault: M[3:0] (0x0=EL0t, 0x5=EL1h) +
+            // IL bit (0x00100000). For an EC=0/IL=1 illegal-exec-state fault this
+            // tells us whether the bad eret landed us in EL0 (M=0, IL set) or kept
+            // us at EL1 (M=0x5). ESR>>26 == EC disambiguates IL-fault vs real AV.
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] Spsr=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Spsr as ULONG_PTR,
             );
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] ExAddr=\0".as_ptr() as PCSTR,

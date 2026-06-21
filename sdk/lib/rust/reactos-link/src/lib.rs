@@ -1134,7 +1134,7 @@ impl Linker {
                 // cmake's compile_commands.json wins when a build is configured
                 // (the replay branch below — it can never go stale against the
                 // committed flags), the committed flags fill in only when there
-                // is no cmake build at all. Regen via `tools/gen_blrtl_flags.py`.
+                // is no cmake build at all. Regen via `tools/gen_cflags.py`.
                 self.compile_c_db_committed(&clang, &ar);
             } else {
             let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
@@ -1816,7 +1816,7 @@ impl Linker {
             let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
                 panic!(
                     "cmake-off c_from_compile_db({name}) needs committed flags {} \
-                     (no compile_commands.json) — regen via tools/gen_blrtl_flags.py: {e}",
+                     (no compile_commands.json) — regen via tools/gen_cflags.py: {e}",
                     flags_path.display()
                 )
             });

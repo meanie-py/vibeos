@@ -60,12 +60,23 @@ cmake-configure-free.** After `46b48272a0f` (LEAF) + `f1e182c0f1d` (printf/scanf
   Verified: blrtl objects are **code+data+reloc identical** to cmake's on all 3 arches
   (only `.debug_*` comp_dir differs); cmake-off `uefildr.exe` (i386) has a **byte-identical
   `.text`** to the replay/cmake loader; rosload i386 (NativeExe) + uefildr amd64
-  (EfiApplication) also build cmake-off. Regen: `tools/gen_blrtl_flags.py`.
-- **No remaining `c_from_compile_db` users in the loaders.** (Other cells — driver/spine
-  cells like i8042prt/kbdclass/basesrv/csrss — still use `c_from_compile_db`; they landed
-  from other lanes after the WS1 kernel milestone and are a separate, now-unblocked surface:
-  the same committed-flags + native-hpp mechanism generalizes to them, one
-  `<name>.<arch>.flags` template per target.)
+  (EfiApplication) also build cmake-off. Regen: `tools/gen_cflags.py`.
+- **`c_from_compile_db` is now FULLY cmake-off (2026-06-21).** Precise enumeration of the
+  live `.c_from_compile_db(` calls: only `blrtl` (loaders, done above) + three
+  `("libcntpr", &cntpr_residue)` in ntoskrnl/ntkrnlmp/ntdll that are **empty-guarded**
+  (`cntpr_residue = Vec::new()`, never fire). Every i8042prt/kbdclass/basesrv/csrss/hal/
+  win32k/winsrv match is a *comment* (historical). So no other cell uses it.
+- **`libcntpr` static_lib → in-cargo c_db (loaders, 2026-06-21).** Generalized the
+  mechanism to a 2nd target: `rosload`/`uefildr` dropped the reused cmake
+  `sdk/lib/crt/liblibcntpr.a` for `c_from_compile_db("libcntpr", &libcntpr_c)` (the cntpr
+  C floor: math/printf/string/scanf + i386 x87 wrappers / amd64 ehandler). Its MSVC asm
+  intrinsics (`_alldiv`/`_ftol2`/`_chkstk`/`seh`) are GC'd by the gnu-target loaders, so
+  no asm_archive is needed (empirically confirmed: C-only links on all arches). The
+  engine `compile_c_db_committed` is target-agnostic; the gen script generalized to
+  `tools/gen_cflags.py <target>` (committed `cflags/libcntpr.<arch>.flags`). Verified:
+  uefildr i386 cmake-off `.text` byte-identical to the liblibcntpr.a build; rosload
+  i386/amd64 + uefildr i386/amd64/arm64 all build (replay + cmake-off). This leaves the
+  loaders free of reused cmake C `.a`'s (rosload keeps only `libchkstk.a` asm).
 
 **Shared-file guard pattern (printf):** `_sxprintf.c`/`_vscwprintf.c` are `#include`d by
 BOTH the cargo cells (non-secapi shells) and cmake's `crt.dll` (secapi `_s` shells), so
