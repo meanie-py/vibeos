@@ -51,6 +51,7 @@ def _detect_reactos_root() -> Path:
 
 REACTOS_ROOT = _detect_reactos_root()  # the tree we operate on (CWD worktree, not install dir)
 
+
 # Load API keys from .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY). .env is
 # gitignored, so it lives in the MAIN checkout and is usually ABSENT from a
 # worktree. Try, in order (all override=False so a shell export always wins):
