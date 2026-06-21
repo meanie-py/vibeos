@@ -66,7 +66,16 @@ _CFGS = {
         # driver registrations (e.g. netstack) reach the arm64 boot — the arm64
         # build used to skip it, staging a stale netstack-less hive. netstack is
         # the cargo-driven netstack.sys; both are mkramdisk-staged below.
-        ninja_targets=("ntoskrnl", "hal", "uefildr", "netstack", "livecd_hives"),
+        # afd/msafd/mswsock/nettest = the netstack usermode-winsock chain (#92):
+        # afd.sys is Start=1 (loaded explicitly on arm64, see iomgr/driver.rs),
+        # msafd/mswsock are the winsock providers, nettest.exe is the proof app
+        # winlogon spawns. Building+staging them here ends the per-gate manual
+        # `ninja <target>` + mcopy inject dance (the same false-green footgun the
+        # staged-set was created to close). mkramdisk.sh copies them.
+        ninja_targets=(
+            "ntoskrnl", "hal", "uefildr", "netstack", "livecd_hives",
+            "afd", "msafd", "mswsock", "nettest",
+        ),
         ninja_targets_optional=("arm64input", "arm64vid"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
@@ -77,6 +86,10 @@ _CFGS = {
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
             "drivers/network/netstack/netstack.sys",
+            "drivers/network/afd/afd.sys",
+            "dll/win32/msafd/msafd.dll",
+            "dll/win32/mswsock/mswsock.dll",
+            "base/applications/network/nettest/nettest.exe",
             "boot/bootdata/system",
         ),
     ),
