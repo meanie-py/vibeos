@@ -1,8 +1,19 @@
 # Delay-Import Support for llvm-mingw — Design & Plan
 
-**Status:** design / spike (2026-06-20). **Owner:** user32 lane (picked up as an independent
-toolchain unit; it is *not* user32-specific — see §8 Scope/ownership).
-**Lane branch:** TBD (`delay-import` worktree). **Type:** build-system / toolchain.
+**Status:** generator built & ×3 build-green; **parked behind an opt-in flag** pending a runtime
+fix (2026-06-21). **Owner:** user32 lane (picked up as an independent toolchain unit; it is *not*
+user32-specific — see §8 Scope/ownership). **Type:** build-system / toolchain.
+
+> **CURRENT STATE (read first): `docs/engineering/delay-import-llvm-mingw-roadmap.md`.**
+> The generator (`sdk/tools/gen-delaylib.py`) works and the cmake wiring is in, but enabling real
+> delay-load triggers an i386 boot regression (BUGCHECK 0x1E, win32k session-pool corruption — see
+> the roadmap §"the i386 0x1E regression"). It is therefore **opt-in** behind the cmake flag
+> **`VIBEOS_ENABLE_DELAYLOAD`** (default OFF). Default-off == the *prior* behaviour exactly: empty
+> `_delayed.a` + regular imports, everything loaded eagerly (delay-load was never functional in
+> vibeos), so default-off is a true status-quo no-op, not a regression. The design narrative below
+> (§4–§6) was written assuming a `VIBEOS_NO_DELAYLOAD` *opt-out*; the shipped control is the
+> inverted `VIBEOS_ENABLE_DELAYLOAD` *opt-in* (both vars are honoured: enable ⇒ on, no-delayload ⇒
+> off).
 
 > This is a **self-contained unit of work** independent of the user32 translation waves.
 > It fixes a toolchain gap that currently forces per-module stub workarounds OS-wide.
@@ -255,6 +266,42 @@ boot (re-enable user32→libpng i386 first).
 - **Fixes the root cause of the consrv stack overflow** (eager 30-dep transitive load).
 - Shrinks every module's load-time dependency closure → faster, more robust early boot.
 - Reusable forever (any future optional dependency).
+
+---
+
+## 7b. The cargo-driven link path (reactos-link) — the second front
+
+There are **two** import-lib generators in the tree, and both independently hit this gap:
+
+| Path | Final link | Import-lib generator | Delay status |
+|---|---|---|---|
+| cmake (`add_library MODULE`) | lld via cmake | `sdk/cmake/gcc.cmake::generate_import_lib` | ✅ fixed here |
+| cargo (`add_cargo_module`) | lld via `reactos-link` build.rs | `sdk/lib/rust/reactos-link/src/lib.rs::generate_import_lib` (~1624) | ❌ still collapses delay→regular |
+
+`reactos-link` (the engine behind every `add_cargo_module`: ntoskrnl, ntkrnlmp, win32k, winsrv,
+basesrv, csrss, framebuf, freeldr) has its **own** Rust import-lib generation and its **own** copy
+of the same llvm-dlltool workaround. The smoking gun: `lib.rs:415-419` has a `stack_reserve`
+field that exists *only because* "llvm-dlltool converts delay-imports to regular ones so every
+dependency loads at once and LdrpLoadDll recursion overflows the default 1MB stack" on **arm64
+csrss.exe**. That band-aid is a direct symptom of the same root cause this fix removes.
+
+**Today there is no gap:** no cargo-driven module is a delay-import consumer (none call
+`add_delay_importlibs`), and every current delay-import consumer (user32/advapi32/shell32/
+comctl32/oleaut32/msvcrt/…) is cmake-linked, where this fix applies. So the cmake fix is complete
+for the current build.
+
+**When a delay-import consumer's link migrates to cargo**, port the fix into `reactos-link`'s
+`generate_import_lib`. The mechanism is link-driver-agnostic — the generated `_delayed.a`
+(descriptor + thunk) and the `delayimp` runtime are static archives any linker pulls in; only the
+emitter + the "add these to the link line" wiring differ. **Architecture: one shared generator.**
+`reactos-link` already shells out to `dlltool` for regular import libs, so it should shell out to
+the same `sdk/tools/gen-delaylib.py` for delay libs (and link `libdelayimp.a`) rather than
+reimplement the `.S` emission in Rust — keeping the two paths from drifting further (they already
+carry two copies of the regular-import gen + two copies of the delay→regular workaround).
+
+**Bonus payoff:** real delay-load in `reactos-link` obsoletes the `stack_reserve` hack — csrss/
+consrv could actually delay-load shell32/ole32 on arm64 instead of eager-loading the whole tree
+(the thing that blows the stack). A concrete arm64 win (gated behind the arm64 flake for now).
 
 ---
 
