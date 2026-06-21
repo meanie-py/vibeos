@@ -23,32 +23,13 @@ import os
 import shlex
 import subprocess
 
-# (rc-stem, rc-path, cmake _res target, consumer data dir)
+# (rc-stem, rc-path) — the cmake `<stem>_res` target and the consumer data dir
+# `sdk/lib/rust/<stem>-cargo/data` are both pure functions of the stem.
 CELLS = [
-    (
-        "basesrv",
-        "subsystems/win/basesrv/basesrv.rc",
-        "basesrv_res",
-        "sdk/lib/rust/basesrv-cargo/data",
-    ),
-    (
-        "services",
-        "base/system/services/services.rc",
-        "services_res",
-        "sdk/lib/rust/services-cargo/data",
-    ),
-    (
-        "userinit",
-        "base/system/userinit/userinit.rc",
-        "userinit_res",
-        "sdk/lib/rust/userinit-cargo/data",
-    ),
-    (
-        "winlogon",
-        "base/system/winlogon/winlogon.rc",
-        "winlogon_res",
-        "sdk/lib/rust/winlogon-cargo/data",
-    ),
+    ("basesrv", "subsystems/win/basesrv/basesrv.rc"),
+    ("services", "base/system/services/services.rc"),
+    ("userinit", "base/system/userinit/userinit.rc"),
+    ("winlogon", "base/system/winlogon/winlogon.rc"),
 ]
 
 
@@ -59,7 +40,9 @@ def gen(arch):
         return
     with open(db_path) as f:
         db = json.load(f)
-    for stem, rc, target, datadir in CELLS:
+    for stem, rc in CELLS:
+        target = f"{stem}_res"
+        datadir = f"sdk/lib/rust/{stem}-cargo/data"
         rc_base = rc.split("/")[-1]
         hits = [e for e in db if e["file"].endswith(rc_base) and f"{target}.dir" in e["command"]]
         if not hits:
