@@ -8,6 +8,7 @@ cmake configure/ninja step).
 | file | consumer | sources |
 |---|---|---|
 | `blrtl.{i386,amd64,arm64}.flags` | `rosload` / `uefildr` loaders | the boot-RTL C floor: `sdk/lib/rtl/{bitmap,compress,crc32,image,largeint,random,unicode,bitmap64,byteswap,mem}.c` + `boot/rtl/nlsboot.c` |
+| `libcntpr.{i386,amd64,arm64}.flags` | `rosload` / `uefildr` loaders | the cntpr C floor (was the reused cmake `liblibcntpr.a`): `sdk/lib/crt/{math,mbstring,misc,printf,string}/*.c` + `cnt-rust/.../scanf_trampoline.c` (i386 +x87 `ci*`/`libm_sse2`/`nexttowardf`; amd64 +`ehandler.c`). Its MSVC asm intrinsics are GC'd by the gnu-target loaders, so no asm is committed. |
 
 ## How it works
 
@@ -42,7 +43,8 @@ linked `uefildr.exe` has a **byte-identical `.text`** to the shipping cmake load
 
 ```
 # from a configured build-<arch>/ :
-python3 tools/gen_blrtl_flags.py --arch i386 --arch amd64 --arch arm64
+python3 tools/gen_cflags.py --arch i386 --arch amd64 --arch arm64   # all targets
+python3 tools/gen_cflags.py --target libcntpr --arch i386           # one target/arch
 ```
 
 A CI diff-check (committed vs freshly-generated) catches drift cheaply. See the
