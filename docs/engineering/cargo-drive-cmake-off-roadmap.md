@@ -204,9 +204,30 @@ needs no cmake-generated headers at build time. `generate_bindings.sh` is a manu
 regen tool. Message headers (`ntstatus.h`/`bugcodes.h`) are NOT consumed by cargo
 (bindgen committed + constants hardcoded). **No work required.**
 
-### WS5 — Orchestration: replace ninja for the cells
+### WS5 — Orchestration: replace ninja for the cells — **MVP DONE (2026-06-21)**
 
-**Finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
+**MVP shipped:** `tools/cargo_orchestrate.py` — the thin cmake/ninja-free driver. It
+self-hosts the post-link host tool (`native-pefixup`, single `.c` like spec2def/
+native-hpp: `cc -O2 -DTARGET_<host> [-D_TARGET_PE64] -I sdk/include/host
+sdk/tools/pefixup.c`), runs the exact `cargo +nightly build-std` invocation
+`add_cargo_module()` emits per cell in dependency (topo) order, copies the `.exe`
+out, and applies the KIND post-link (`native-pefixup --kernel/--kerneldll/
+--kernelmodedriver`, i386 `fix_lld_forwarding.py`, efi strip). **Proof:** with
+`build-i386/compile_commands.json` moved aside (no cmake artifact consultable) and
+**zero ninja**, it builds `ntoskrnl.exe` (KIND kernelexe) → the result is
+**byte-identical to the cmake-built kernel except the 4-byte PE TimeDateStamp**
+(2 bytes at file off 0x80, two link runs at different wall-clock — runtime-irrelevant).
+ntoskrnl/ntkrnlmp need **no** cargo-cell deps: they synth their hal/kdcom/bootvid
+import libs in-cargo from `.spec` via the self-hosted spec2def, and (cntpr_residue
+empty) call no `c_from_compile_db`, so the kernel EXE has no cmake prerequisite at
+all. The `CELLS` table + topo walk generalize to the full 44-cell set — add a
+`Cell(...)` with its verified KIND + cargo-cell deps. **Remaining (was the "long
+pole"):** the usermode-spine import-lib DAG (ntdll → csrsrv/winsrv/basesrv → the
+exes), per-arch parallel fan-out, and the loaders' efi/native KINDs (need the
+*cross* llvm-strip, not host strip) — all mechanically straightforward extensions
+of the proven driver.
+
+**Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
 `ntoskrnl → hal → {kdcom, bootvid} → drivers`; `ntdll → {csrsrv, winsrv, basesrv} →
 {csrss, smss, lsass, winlogon, services, userinit}`; loaders (uefildr/rosload)
@@ -239,8 +260,11 @@ the import-lib DAG); the long pole, do last.
    committed; usermode-spine `.res` committed-fallback added (i386/amd64/arm64). The
    *kernel* cargo build now needs no cmake-generated artifact on any arch. Remaining:
    `widl` (usermode RPC) + the WS1 DEEP loaders.
-4. **Phase 3 — orchestration (WS5):** the thin driver replacing ninja for the kernel +
-   core cells; prove `ntoskrnl.exe` builds with no cmake/ninja.
+4. **Phase 3 — orchestration (WS5): MVP DONE (2026-06-21).** `tools/cargo_orchestrate.py`
+   replaces ninja for the cells; **proven** on `ntoskrnl.exe` — builds with
+   `compile_commands.json` moved aside + no ninja, byte-identical to cmake's kernel
+   bar the PE timestamp. Remaining: usermode-spine import-lib DAG + per-arch fan-out
+   (extend the `CELLS` table).
 5. **Phase 4 — DEEP loaders (WS1): DONE (2026-06-21).** `rosload`/`uefildr`'s `blrtl_c`
    off `compile_commands.json` via committed flag templates + native-hpp-generated xdk
    headers (`compile_c_db_committed` in `reactos-link`). Loaders now build cmake-off
