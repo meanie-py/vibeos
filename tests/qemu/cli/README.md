@@ -190,6 +190,22 @@ over the staged artifact set (ntoskrnl.exe, win32k.sys, kernel32.dll) across two
 build trees — the build-twice-in-two-paths check in one command. `--diffoscope`
 shells out for byte-level depth if it's installed (optional).
 
+### Launch backend config (`native` vs `windows-host`)
+The smoke/boot runner picks a QEMU **backend** from layered config — committed
+`DEFAULTS` (in `config.py`) **<** a gitignored per-machine `<repo>/.vibeos-cli.local.json`
+**<** env (`VIBEOS_QEMU_*`). Default `native`: local `qemu-system-*` + Unix-socket
+QMP/serial + KVM/TCG — unchanged, the right choice on real Linux and plain (nested)
+WSL2. **`windows-host`** (WSL2 only) launches the *Windows* QEMU.exe via interop to
+escape WSL2 nested-virt contention (`docs/engineering/windows-host-qemu-spike.md`):
+media is staged to a Windows-visible dir, QMP+serial run over TCP (we listen on
+`0.0.0.0`, the Windows QEMU dials back `127.0.0.1` via WSL2 localhost forwarding), and
+the process is killed by a uid-scoped `Stop-Process`. To enable, copy
+`.vibeos-cli.local.example.json` → `.vibeos-cli.local.json` and set
+`qemu.backend="windows-host"` (+ `qemu.windows.{qemu_dir,staging_dir,accel,host_addr}`).
+`accel` is `tcg` (works today, no reboot — already beats nested-KVM under concurrency)
+or `whpx` (needs HypervisorPlatform + reboot; uses `qemu-system-x86_64.exe`). x86 only;
+arm64 stays native TCG.
+
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
 lints the *kernel* source. Runs, over the whole vibeos-cli tool surface

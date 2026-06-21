@@ -112,7 +112,17 @@ saturation point, but 2×-flat already covers typical agent load.
 
 ## Decision / next step
 
-- **Spike outcome: build a `windows-host` TCG backend for WSL2.** It's proven feasible *and*
+- ✅ **IMPLEMENTED 2026-06-21** (build-cache lane, `cc982b61c93`/`a4ae25d688f`/`733ff79c3e3`):
+  layered config (`.vibeos-cli.local.json`) + TCP transport (serial+QMP) + `windows-host` backend
+  in `vm.py`/`backend.py`, selected by `qemu.backend`. Native path unchanged. Validated: native
+  i386 boot OK; windows-host i386 boots the full desktop chain + screenshot under TCG (~1m31s).
+  Usage: `tests/qemu/cli/README.md` → "Launch backend config". Two bring-up gotchas baked into
+  the code + commit msg: **listen on `0.0.0.0`** (WSL2 localhost relay ignores 127.0.0.1-bound
+  listeners; the WSL-VM IP is unreachable under NAT) and **`reconnect-ms=1000`** (Windows QEMU
+  11.x dropped `reconnect=N`). Follow-ups: amd64-uefi validation; QMP-savevm snapshots over TCP
+  (untested on windows-host); the cpu%-pathology check reads Linux /proc so it no-ops for the
+  Windows process (harmless — TCG-on-host has no nested-KVM pathology to detect).
+- **Spike outcome (original): build a `windows-host` TCG backend for WSL2.** Proven feasible *and*
   measured to fix the contention (+8% under 2× concurrency) while being ~3× faster than nested-KVM.
   WHPX is NOT on the critical path — skip the reboot.
 - **Recommended backend selection** (keep simple cases simple):
