@@ -37,7 +37,7 @@ extern "C" {
     fn KiGetUserModeStackAddress() -> *mut ULONG_PTR;
 }
 
-const KERNEL_STACK_SIZE: ULONG_PTR = 0xC000;
+const KERNEL_STACK_SIZE: ULONG_PTR = 0x3000;
 const USER_MODE: KPROCESSOR_MODE = 1;
 const OriginalApcEnvironment: u8 = 0;
 
