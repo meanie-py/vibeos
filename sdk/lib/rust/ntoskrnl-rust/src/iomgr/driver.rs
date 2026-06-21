@@ -1197,7 +1197,37 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        ARM64_UART_TRACE!("[SYSDRV] ARM64: Skipping system-start drivers\r\n");
+        // ARM64 skips the BULK system-start load because ZwLoadDriver HANGS on a
+        // service whose .sys is absent from the minimal ramdisk (the full
+        // CmGetSystemDriverList includes many such services). But specific
+        // drivers we explicitly stage on the ramdisk CAN be loaded here — loading
+        // a single present driver can't hit the missing-file hang. We load an
+        // ORDERED list of staged Start=1 services:
+        //   1. netstack.sys (M7 arm64 net data path) — its DriverEntry brings up
+        //      the smoltcp stack + creates the TDI transport devices (\Device\Tcp
+        //      etc.) that AFD opens.
+        //   2. afd.sys (#92 usermode-winsock) — the TDI client behind ws2_32; MUST
+        //      load AFTER netstack (it binds netstack's TDI devices). Stock x86
+        //      orders this via the "NDIS Wrapper" → "TDI" load groups; on arm64 we
+        //      enforce the order explicitly by listing afd second.
+        ARM64_UART_TRACE!("[SYSDRV] ARM64: system-start skipped; loading staged drivers\r\n");
+        const STAGED_SVCS: [&[u16]; 2] = [
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\netstack"),
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Afd"),
+        ];
+        for svc_path in STAGED_SVCS {
+            let mut svc = _UNICODE_STRING {
+                Length: (svc_path.len() * 2) as u16,
+                MaximumLength: (svc_path.len() * 2) as u16,
+                Buffer: svc_path.as_ptr() as *mut u16,
+            };
+            let st = ZwLoadDriver(&mut svc as *mut _UNICODE_STRING);
+            crate::dbg_print!(
+                b"[SYSDRV] staged ZwLoadDriver %wZ -> 0x%08x\r\n\0",
+                &svc as *const _UNICODE_STRING,
+                st as u32
+            );
+        }
         return;
     }
 

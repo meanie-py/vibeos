@@ -18,6 +18,7 @@ pub mod time;
 pub mod hal;
 pub mod pci;
 pub mod device;
+pub mod netcfg;
 pub mod selftest;
 pub mod engine;
 pub mod tdi;

@@ -619,12 +619,55 @@ class Arm64TestKernelConfig(Arm64Config):
         ]
 
 
+@dataclass
+class Arm64NetConfig(Arm64Config):
+    """arm64 virt + a virtio-net-pci NIC on a slirp user netdev (M7 of
+    docs/engineering/smoltcp-netstack-design.md — the arm64 net data path).
+
+    arm64's existing virtio devices (kbd/mouse) are virtio-MMIO; the NIC is
+    virtio-net-PCI, attached to the `virt` machine's Generic PCIe (GPEX) host
+    bridge. netstack's PCI access is portable (HalGetBusDataByOffset over ECAM,
+    newly implemented in the arm64 HAL), so the same device.rs/pci.rs path that
+    works on amd64 enumerates here. Same slirp mini-internet + hostfwd/guestfwd
+    contract as Amd64UefiNetConfig — see that class for the slirp topology.
+
+    Deliberately NOT the default arm64 smoke config: boot smoke keeps its
+    meaning (no NIC), net is its own signal (tests/qemu/test_net.py).
+    """
+    arch: str = "arm64-net"
+    ECHO_GUEST_PORT: int = 7777
+    echo_hostfwd_port: int = 0
+    GUESTFWD_ADDR: str = "10.0.2.100"
+    GUESTFWD_PORT: int = 9999
+    # Modest extra settle so the netstack engine markers that DO complete on
+    # arm64 (dhcp/ping) reliably land in the captured output. NOTE: the deeper
+    # self-tests (dns, outbound TCP) currently do NOT complete on arm64 — the
+    # netstack worker stalls after `ping gateway OK` (an arm64-specific worker
+    # bug, NOT a timing/settle issue: a 150s settle did not change it). Tracked
+    # as an M7 follow-up; the core data path (ARP/DHCP/ICMP/TDI) is proven.
+    desktop_settle_seconds: float = 30.0
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        self.echo_hostfwd_port = _free_tcp_port()
+        return [
+            *super().qemu_args(work_dir),
+            # Modern-only virtio (PCI\VEN_1AF4&DEV_1041), same contract as the
+            # amd64 net config; attaches to the virt GPEX PCIe root bus.
+            "-device", "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
+            "-netdev",
+            f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
+            f"-:{self.ECHO_GUEST_PORT}"
+            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+        ]
+
+
 # x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
 # the (non-selectable) base classes that hold shared defaults for the -uefi
 # variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
 ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
+    "arm64-net": Arm64NetConfig,
     "i386-uefi": I386UefiConfig,
     "amd64-uefi": Amd64UefiConfig,
     "amd64-uefi-net": Amd64UefiNetConfig,
