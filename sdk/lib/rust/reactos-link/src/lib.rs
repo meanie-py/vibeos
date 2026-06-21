@@ -805,12 +805,37 @@ impl Linker {
     /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
     /// SOURCE `.S` assembles directly via `-x assembler-with-cpp` — no offline
     /// pre-expansion (the old tools/gen_ntdll_asm.py step). Inert for an
-    /// already-expanded `.s` (no `#include`s to resolve). The build dir is
-    /// guaranteed present (the engine requires `build-<arch>/`).
+    /// already-expanded `.s` (no `#include`s to resolve).
+    ///
+    /// cmake-off (WS2): the generated `ks*.inc` normally lives in the cmake build
+    /// dir. The build-dir copy is added FIRST so it always wins when a cmake build
+    /// is configured (the committed fallback can never make a configured build go
+    /// stale). When that copy is ABSENT (the cmake-off path — cargo kernel build
+    /// with no cmake configure/ninja), fall back to the committed byte-stable copy
+    /// in `sdk/include/asm/committed/` (see that dir's README + the roadmap WS2).
     fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
         b.include(self.repo_root.join("sdk/include/asm"))
             .include(self.build_dir.join("sdk/include/asm"))
             .include(self.repo_root.join("ntoskrnl/include"));
+        let generated = self
+            .build_dir
+            .join("sdk/include/asm")
+            .join(self.ks_inc_name());
+        if !generated.exists() {
+            b.include(self.repo_root.join("sdk/include/asm/committed"));
+        }
+    }
+
+    /// The per-arch generated kernel-offset include filename (geninc output):
+    /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
+    /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
+    fn ks_inc_name(&self) -> &'static str {
+        match self.arch.name {
+            "i386" => "ks386.inc",
+            "amd64" => "ksamd64.inc",
+            "arm64" => "ksarm64.h",
+            other => panic!("unknown arch for ks*.inc: {other}"),
+        }
     }
 
     /// Run everything and emit the cargo: link directives.
