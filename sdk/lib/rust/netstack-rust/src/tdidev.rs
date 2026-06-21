@@ -411,6 +411,46 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 STATUS_NOT_IMPLEMENTED
             }
         }
+        tdi::TDI_LISTEN => {
+            // Server-side: AFD pre-posts this (after associate+bind) and it pends
+            // until an inbound connection is established. ReturnConnectionInformation
+            // receives the peer address on completion.
+            let p = params as *const tdi::TDI_REQUEST_KERNEL;
+            let ret_info = (*p).ReturnConnectionInformation as usize;
+            nsprint!("[NETSTACK] TDI LISTEN conn {}\n", id);
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::Listen { conn_id: id, irp: irp as usize, ret_info });
+            STATUS_PENDING
+        }
+        tdi::TDI_ACCEPT => {
+            // smoltcp completes the handshake during listen, so by the time AFD
+            // accepts, the connection is already established + bound to this conn
+            // object. Acknowledge synchronously.
+            nsprint!("[NETSTACK] TDI ACCEPT conn {}\n", id);
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        tdi::TDI_QUERY_INFORMATION => {
+            // getsockname: AfdGetSockName issues TDI_QUERY_ADDRESS_INFO and reads
+            // the reply (a TDI_ADDRESS_INFO) from the IRP's MDL.
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_QUERY;
+            if (*p).QueryType == tdi::TDI_QUERY_ADDRESS_INFO {
+                let va = mdl_va(irp);
+                if va == 0 {
+                    complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+                    return STATUS_INVALID_PARAMETER;
+                }
+                IoMarkIrpPending(irp);
+                tditrans::post(tditrans::Cmd::QueryAddress {
+                    id, irp: irp as usize, out: va, out_len: mdl_len(irp),
+                });
+                STATUS_PENDING
+            } else {
+                nsprint!("[NETSTACK] TDI QUERY_INFORMATION type {} unhandled\n", (*p).QueryType);
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                STATUS_NOT_IMPLEMENTED
+            }
+        }
         tdi::TDI_SEND => {
             let p = params as *const tdi::TDI_REQUEST_KERNEL_SEND;
             let len = (*p).SendLength as usize;
@@ -519,4 +559,13 @@ unsafe fn mdl_va(irp: PIRP) -> usize {
     }
     // NormalPagePriority = 16.
     ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe(mdl, 16) as usize
+}
+
+/// Byte length of the IRP's data MDL (TDI_QUERY output buffer), or 0.
+unsafe fn mdl_len(irp: PIRP) -> usize {
+    let mdl = (*irp).MdlAddress;
+    if mdl.is_null() {
+        return 0;
+    }
+    (*(mdl as *const ntkrnl_sys::ddk::_MDL)).ByteCount as usize
 }

@@ -46,6 +46,12 @@ pub enum Cmd {
     SetEvent { addr_id: u64, ev_type: u32, handler: usize, context: usize },
     Associate { conn_id: u64, addr_id: u64 },
     Connect { conn_id: u64, ip: [u8; 4], port: u16, irp: usize },
+    /// Server-side: bind a fresh socket to the connection's associated local port
+    /// and listen; the IRP completes when an inbound connection is established.
+    Listen { conn_id: u64, irp: usize, ret_info: usize },
+    /// getsockname: report the local address of a connection or address object
+    /// into the IRP's MDL (out/out_len), then complete.
+    QueryAddress { id: u64, irp: usize, out: usize, out_len: usize },
     Send { conn_id: u64, irp: usize, data: usize, len: usize },
     Receive { conn_id: u64, irp: usize, buf: usize, len: usize },
     Disconnect { conn_id: u64, irp: usize },
@@ -121,6 +127,10 @@ struct Conn {
     conn_ctx: usize,
     handle: Option<SocketHandle>,
     connect_irp: usize,
+    /// Pended TDI_LISTEN IRP + the caller's ReturnConnectionInformation (filled
+    /// with the remote address on accept). 0 when not listening.
+    listen_irp: usize,
+    listen_ret: usize,
     recv: Vec<(usize, usize, usize)>, // (irp, buf_va, buf_len)
     connected: bool,
 }
@@ -175,6 +185,8 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 conn_ctx,
                 handle: None,
                 connect_irp: 0,
+                listen_irp: 0,
+                listen_ret: 0,
                 recv: Vec::new(),
                 connected: false,
             });
@@ -219,6 +231,67 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             } else {
                 unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
             }
+        }
+        Cmd::Listen { conn_id, irp, ret_info } => {
+            // The bound local port comes from the address object AFD associated to
+            // this connection before posting TDI_LISTEN (port 0 = no bind = reject).
+            let local_port = state
+                .conn(conn_id)
+                .map(|c| c.addr_id)
+                .and_then(|aid| state.addrs.iter().find(|a| a.id == aid))
+                .map(|a| a.local_port)
+                .unwrap_or(0);
+            // smoltcp absorbs exactly one connection per listening socket (a backlog
+            // of N is N sockets listening on the same port — AFD re-posts a fresh
+            // TdiListen on a new connection object after each accept).
+            let sock = tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0u8; 8192]),
+                tcp::SocketBuffer::new(vec![0u8; 8192]),
+            );
+            let handle = sockets.add(sock);
+            let ok = local_port != 0 && sockets.get_mut::<tcp::Socket>(handle).listen(local_port).is_ok();
+            match (state.conn(conn_id), ok) {
+                (Some(c), true) => {
+                    c.handle = Some(handle);
+                    c.listen_irp = irp;
+                    c.listen_ret = ret_info;
+                    nsprint!("[NETSTACK] TDI LISTEN conn {} on :{}\n", conn_id, local_port);
+                }
+                (maybe_c, _) => {
+                    sockets.remove(handle);
+                    if let Some(c) = maybe_c {
+                        c.handle = None;
+                    }
+                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+                }
+            }
+        }
+        Cmd::QueryAddress { id, irp, out, out_len } => {
+            // A connection object reports its socket's local endpoint; an address
+            // object reports its bound port + the interface IP. ids are unique
+            // across both tables (single allocator), so a lookup miss is benign.
+            let (ip, port) = if let Some(c) = state.conns.iter().find(|c| c.id == id) {
+                match c.handle.and_then(|h| sockets.get::<tcp::Socket>(h).local_endpoint()) {
+                    Some(e) => (ip_octets(e.addr, iface), e.port),
+                    None => (iface_ipv4(iface), 0),
+                }
+            } else if let Some(a) = state.addrs.iter().find(|a| a.id == id) {
+                (iface_ipv4(iface), a.local_port)
+            } else {
+                (iface_ipv4(iface), 0)
+            };
+            let info = crate::tdi::TdiAddressInfo::new(ip, port);
+            let need = core::mem::size_of::<crate::tdi::TdiAddressInfo>();
+            if out != 0 && out_len >= need {
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &info as *const _ as *const u8,
+                        out as *mut u8,
+                        need,
+                    );
+                }
+            }
+            unsafe { complete(irp, STATUS_SUCCESS, need) };
         }
         Cmd::Send { conn_id, irp, data, len } => {
             let handle = state.conn(conn_id).and_then(|c| c.handle);
@@ -329,6 +402,38 @@ fn ep_to_v4(ep: smoltcp::wire::IpEndpoint) -> ([u8; 4], u16) {
     (octets, ep.port)
 }
 
+/// The interface's first IPv4 address (0.0.0.0 if unconfigured).
+fn iface_ipv4(iface: &Interface) -> [u8; 4] {
+    iface.ipv4_addr().map(|a| a.octets()).unwrap_or([0, 0, 0, 0])
+}
+
+/// An IpAddress's octets, falling back to the interface IP when unspecified
+/// (a socket's local endpoint can read 0.0.0.0 until traffic flows).
+fn ip_octets(a: IpAddress, iface: &Interface) -> [u8; 4] {
+    match a {
+        IpAddress::Ipv4(v4) => {
+            let o = v4.octets();
+            if o == [0, 0, 0, 0] { iface_ipv4(iface) } else { o }
+        }
+    }
+}
+
+/// Fill a TDI_CONNECTION_INFORMATION's RemoteAddress with a TA_IP_ADDRESS (the
+/// accepted peer), updating RemoteAddressLength to the bytes written. AFD's
+/// ListenComplete reads this to cache the connection's remote (getpeername).
+unsafe fn fill_remote_address(ret_info: usize, octets: [u8; 4], port: u16) {
+    let ci = ret_info as *mut crate::tdi::TDI_CONNECTION_INFORMATION;
+    let dst = (*ci).RemoteAddress as *mut u8;
+    if dst.is_null() {
+        return;
+    }
+    let cap = (*ci).RemoteAddressLength as usize;
+    let ta = crate::tdi::TaIpFull::new(octets, port);
+    let n = core::mem::size_of::<crate::tdi::TaIpFull>().min(cap);
+    core::ptr::copy_nonoverlapping(&ta as *const _ as *const u8, dst, n);
+    (*ci).RemoteAddressLength = n as i32;
+}
+
 /// Deliver all queued datagrams on `s` via the AFD datagram event-indication
 /// upcall (TDI_EVENT_RECEIVE_DATAGRAM). Each datagram is a whole message: smoltcp
 /// dequeues it on recv() regardless of how many bytes AFD takes; if AFD returns a
@@ -417,6 +522,36 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
                 State::Closed | State::TimeWait | State::Closing => {
                     let irp = state.conns[ci].connect_irp;
                     state.conns[ci].connect_irp = 0;
+                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+                }
+                _ => {}
+            }
+        }
+
+        // Listen completion (server-side accept). A listening socket reaches
+        // ESTABLISHED once smoltcp absorbs an inbound SYN + completes the handshake
+        // in place — that IS the accept; we fill the peer into the caller's
+        // ReturnConnectionInformation and complete the pended TDI_LISTEN.
+        if state.conns[ci].listen_irp != 0 {
+            use tcp::State;
+            match s.state() {
+                State::Established => {
+                    let irp = state.conns[ci].listen_irp;
+                    let ret_info = state.conns[ci].listen_ret;
+                    state.conns[ci].listen_irp = 0;
+                    state.conns[ci].connected = true;
+                    if ret_info != 0 {
+                        if let Some(ep) = s.remote_endpoint() {
+                            let (octets, port) = ep_to_v4(ep);
+                            unsafe { fill_remote_address(ret_info, octets, port) };
+                        }
+                    }
+                    nsprint!("[NETSTACK] TDI LISTEN accepted (conn {})\n", state.conns[ci].id);
+                    unsafe { complete(irp, STATUS_SUCCESS, 0) };
+                }
+                State::Closed | State::TimeWait | State::Closing => {
+                    let irp = state.conns[ci].listen_irp;
+                    state.conns[ci].listen_irp = 0;
                     unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
                 }
                 _ => {}

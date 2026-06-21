@@ -269,7 +269,19 @@ several are independent and can run in parallel or be resequenced.
 > idle-poll-starvation class). **M11 (NDIS real-NIC)** is the big multi-week lane that builds on
 > M10's interrupt/IRQL discipline. **M12+** is completeness/perf, done as target apps demand it.
 
-### M8 — Server-side TCP (`TDI_LISTEN` / `TDI_ACCEPT`)
+### M8 — Server-side TCP (`TDI_LISTEN` / `TDI_ACCEPT`) — ✅ IMPLEMENTED (2026-06-21)
+
+**Status.** Implemented exactly per the plan below: `TDI_LISTEN` (0x04) + `TDI_ACCEPT` (0x05)
+now dispatch in `tdidev.rs`; a `Cmd::Listen` rides into the worker, which binds a fresh
+`tcp::Socket` to the connection's associated local port and `.listen()`s it; `bridge()` completes
+the pended listen IRP once the socket reaches `Established` (smoltcp does the handshake in place),
+filling `ReturnConnectionInformation->RemoteAddress` with the peer (`fill_remote_address`).
+`TDI_ACCEPT` acknowledges synchronously (the connection is already established + bound). Two
+`Conn` fields added (`listen_irp`/`listen_ret`); the post-accept recv/disconnect path reuses the
+existing client machinery. Compile-validated (arm64 full body rebuild, arch-independent change).
+**Runtime validation pending** a usermode listen/accept test app (nettest is outbound-only) and,
+on arm64, the periodic-clock fix (an idle worker can't poll RX to absorb the inbound SYN — the
+#91/#92 idle-starvation blocker applies to the server path too).
 
 **Why.** netstack is *outbound-client-only* at the TDI surface today — a usermode app can
 `connect()` but cannot `bind()`+`listen()`+`accept()`. That blocks every inbound service: SMB/CIFS
@@ -308,6 +320,16 @@ the listen IRP filling `ReturnConnectionInformation->RemoteAddress` from `socket
 exhaustion → smoltcp RSTs the SYN (acceptable; matches Windows backlog behaviour).
 
 ### M9 — The management plane (`ipconfig` / `ping` / `getsockname` / iphlpapi)
+
+**Status (2026-06-21).** Item (1) **`getsockname` — ✅ IMPLEMENTED.** `TDI_QUERY_INFORMATION` (0x0C)
+now dispatches in `tdidev.rs`; for `TDI_QUERY_ADDRESS_INFO` it routes a `Cmd::QueryAddress` to the
+worker, which resolves the local endpoint (a connection object → its socket's `local_endpoint()`;
+an address object → its bound port + `iface.ipv4_addr()`) and writes a byte-exact `TdiAddressInfo`
+(`ActivityCount` + `TRANSPORT_ADDRESS`, sizeof 26 — the layout msafd's `WSPGetSockName` reads,
+verified against `dll/win32/msafd/misc/dllmain.c:2398-2440`) into the IRP's MDL. Items (2) MIB
+classes, (3) `IOCTL_ICMP_ECHO_REQUEST`, (4) `IOCTL_TCP_SET_INFORMATION_EX` remain — the moderate
+tier (need exact `IPSNMPInfo`/`IPAddrEntry`/`IFEntry` layouts + cross-thread ICMP plumbing) and
+are best tackled with runtime validation available (post clock-fix). The findings below stand.
 
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
