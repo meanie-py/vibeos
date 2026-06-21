@@ -42,11 +42,13 @@ $if (_WDMDDK_)
 
 #define PAUSE_PROCESSOR YieldProcessor();
 
-/* FIXME: Based on AMD64 but needed to compile apps */
-#define KERNEL_STACK_SIZE                   12288
-#define KERNEL_LARGE_STACK_SIZE             61440
+/* arm64 is a 64-bit arch with 64-bit frames; match amd64's stack sizes, NOT the
+ * 32-bit i386 values it was originally copied from (12288/61440). The undersized
+ * 12KB stack was the root reason a fastfat dirty-path recursion overflowed instead
+ * of being absorbed; a 64-bit kernel needs amd64-parity headroom. */
+#define KERNEL_STACK_SIZE                   0xC000
+#define KERNEL_LARGE_STACK_SIZE             0x12000
 #define KERNEL_LARGE_STACK_COMMIT KERNEL_STACK_SIZE
-/* FIXME End */
 
 #define EXCEPTION_READ_FAULT    0
 #define EXCEPTION_WRITE_FAULT   1

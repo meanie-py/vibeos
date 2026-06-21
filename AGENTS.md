@@ -56,7 +56,7 @@ When you learn something, route it to the right committed home — do **not** de
 
 ## Smoke Tests — The North Star
 
-The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `shell ready` (i386/amd64) which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. ARM64 uses idle detection. A screenshot is always saved for visual inspection.
+The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `[EXPLORER] _tWinMain entered` + `shell ready`, which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. **All three arches (i386/amd64/arm64) use this same real marker** — arm64 is *not* idle-detection (that's outdated lore); it reaches `_tWinMain`/`shell ready` like x86, just slower because arm64 runs under TCG (no KVM in WSL2 for aarch64), so its boot timeout is larger (~540s vs ~360s). See `Arm64Config.boot_marker`/`required_milestones` in `tests/qemu/vm.py`. A screenshot is always saved for visual inspection.
 
 **Rules:**
 - **Never weaken a smoke test to make it pass.** If a test fails, fix the OS, not the test.
