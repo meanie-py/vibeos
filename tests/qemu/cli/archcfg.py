@@ -76,6 +76,14 @@ _CFGS = {
             "win32k",
             "rust_kernel32",
             "dll/win32/kernel32/kernel32.dll",
+            # fastfat is THE arm64 boot filesystem (the ramdisk is FAT32) — same
+            # staleness trap: it was NOT in this set, so a fastfat source fix on
+            # mainline (arm64-love's FAT_DIRTY_VOLUME 0x0FFFFFF7→0xF0000001) never
+            # reached the boot — the staged ramdisk kept shipping a STALE
+            # fastfat.sys whose old dirty-volume constant mismatched
+            # FatSetFatEntry → spurious STATUS_FILE_CORRUPT_ERROR (0xC0000102) →
+            # BUGCHECK 0x1E during the registry hive-create. Staging it clears it.
+            "fastfat",
         ),
         ninja_targets_optional=("arm64input", "arm64vid"),
         needs_mkramdisk=True,
@@ -86,6 +94,7 @@ _CFGS = {
             "boot/freeldr/uefildr/uefildr.efi",
             "win32ss/win32k.sys",
             "dll/win32/kernel32/kernel32.dll",
+            "drivers/filesystems/fastfat/fastfat.sys",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
         ),
