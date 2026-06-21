@@ -859,6 +859,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msgina-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winlogon-sys",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [

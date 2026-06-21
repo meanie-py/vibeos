@@ -7,15 +7,81 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Root paths
-REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 
-# Load API keys from the repo-root .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY).
-# rustconv historically relied on these being exported in the shell; load them
-# here so `python -m rustconv ...` Just Works from a clean shell. Existing
-# environment values win (override=False) so an explicit export still takes
-# precedence.
-load_dotenv(REACTOS_ROOT / ".env", override=False)
+# Root paths
+def _detect_reactos_root() -> Path:
+    """The ReactOS tree rustconv operates on.
+
+    Prefer the git worktree of the CURRENT directory, so a `pip install -e`'d
+    rustconv (whose module physically lives in ONE checkout) still reads
+    sources, writes the output crate, and caches paid responses in the tree you
+    invoke it FROM — not wherever the module happens to be installed. This kills
+    the silent "fell back to the main checkout" footgun that let a worktree
+    `python -m rustconv translate` assemble into the main repo (and park paid
+    .responses there).
+
+    Order: $RUSTCONV_REACTOS_ROOT → CWD's git toplevel (if it looks like a
+    ReactOS tree carrying this tool) → module-relative (historical behaviour).
+    """
+    import subprocess
+
+    env = os.environ.get("RUSTCONV_REACTOS_ROOT")
+    if env:
+        return Path(env).resolve()
+    module_root = Path(__file__).resolve().parents[3]
+    try:
+        top = subprocess.run(
+            ["git", "-C", os.getcwd(), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        top = ""
+    if top:
+        cwd_root = Path(top)
+        # Only trust CWD if it's actually a ReactOS tree carrying this tool —
+        # otherwise an unrelated git repo as CWD would mis-route everything.
+        if (cwd_root / "ntoskrnl").is_dir() and (
+            cwd_root / "tools" / "rustconv" / "rustconv"
+        ).is_dir():
+            return cwd_root
+    return module_root
+
+
+REACTOS_ROOT = _detect_reactos_root()  # the tree we operate on (CWD worktree, not install dir)
+
+# Load API keys from .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY). .env is
+# gitignored, so it lives in the MAIN checkout and is usually ABSENT from a
+# worktree. Try, in order (all override=False so a shell export always wins):
+#   1. the invoked tree's own .env (a worktree may carry its own keys),
+#   2. the MAIN checkout's .env, found via the shared git common-dir (the usual
+#      case: worktrees share MAIN's .git, and MAIN holds the gitignored .env),
+#   3. the module-install tree's .env (the pip-install-e location).
+def _load_env_keys(root: Path) -> None:
+    candidates = [root / ".env"]
+    import subprocess
+
+    try:
+        common = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if common:
+            candidates.append((root / common).resolve().parent / ".env")  # .git → checkout → .env
+    except Exception:
+        pass
+    candidates.append(Path(__file__).resolve().parents[3] / ".env")
+    seen: set[Path] = set()
+    for env in candidates:
+        if env not in seen and env.exists():
+            seen.add(env)
+            load_dotenv(env, override=False)
+
+
+_load_env_keys(REACTOS_ROOT)
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
 # On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
@@ -68,7 +134,7 @@ SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
-TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
+TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
 TEMPLATES_DIR = TOOLS_DIR / "templates"
 DATA_DIR = TOOLS_DIR / "data"
 

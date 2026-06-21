@@ -24,7 +24,7 @@ from . import (
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
-from .c2rust_anchor import build_anchor_map, build_preamble
+from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .callgraph import extract_call_graph, topological_sort
 from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
@@ -1003,16 +1003,27 @@ def cmd_translate(args):
 
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
 
-        # c2rust behavior anchors (best-effort): a compiler-exact transpilation per
-        # function, handed to the model so it can't silently stub/drop logic. Built
-        # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
+        # c2rust behavior anchors: a compiler-exact transpilation per function, handed
+        # to the model so it can't silently stub/drop logic. Built once per file.
         c2rust_anchors: dict[str, str] = {}
         c2rust_preamble = ""
         if getattr(args, "c2rust", False):
-            c2rust_anchors = build_anchor_map(c_file)
-            # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended to
-            # the preamble so the LLM never has to (mis)transcribe a lookup table.
-            c2rust_preamble = build_preamble(c_file)
+            # --c2rust is an explicit opt-in: if c2rust can't anchor the file, HARD FAIL
+            # (strict=True) instead of silently degrading to a worse pure-LLM translation.
+            # Fails before any paid API call, so no money is wasted on unanchored output.
+            try:
+                c2rust_anchors = build_anchor_map(c_file, strict=True)
+                # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended
+                # to the preamble so the LLM never has to (mis)transcribe a lookup table.
+                c2rust_preamble = build_preamble(c_file, strict=True)
+            except C2RustError as e:
+                print(
+                    f"\n  ✗ FATAL: --c2rust requested but c2rust failed: {e}\n"
+                    "    Refusing to fall back to a pure-LLM translation (no dumb fallbacks).\n"
+                    "    Fix the cause above, or re-run WITHOUT --c2rust to opt into pure-LLM.\n",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
 
         if args.dry_run:
             # Just show the plan

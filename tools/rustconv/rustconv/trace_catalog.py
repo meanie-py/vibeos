@@ -13,8 +13,10 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 # Project paths
-REACTOS_DIR = Path(__file__).resolve().parent.parent.parent.parent
+REACTOS_DIR = _RUSTCONV_REACTOS_ROOT
 NTOSKRNL_RUST_SRC = REACTOS_DIR / "sdk" / "lib" / "rust" / "ntoskrnl-rust" / "src"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 

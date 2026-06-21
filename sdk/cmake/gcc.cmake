@@ -539,16 +539,20 @@ function(add_delay_importlibs _module)
     endif()
     foreach(_lib ${ARGN})
         get_filename_component(_basename "${_lib}" NAME_WE)
-        # llvm-dlltool doesn't support --output-delaylib, so on ARM64/LLVM builds
-        # we use regular imports instead of delayed imports
-        if(CMAKE_DLLTOOL_MACHINE)
+        # llvm-dlltool lacks --output-delaylib; when VIBEOS_ENABLE_DELAYLOAD is set
+        # we generate a real delay-import lib ourselves (sdk/tools/gen-delaylib.py,
+        # used by generate_import_lib below), so delay-load works on all llvm-mingw
+        # arches. The default remains the old behaviour (empty _delayed.a + regular
+        # imports) until the i386 runtime regression is fixed. See
+        # docs/engineering/delay-import-llvm-mingw-design.md.
+        if(CMAKE_DLLTOOL_MACHINE AND (VIBEOS_NO_DELAYLOAD OR NOT VIBEOS_ENABLE_DELAYLOAD))
             target_link_libraries(${_module} lib${_basename})
         else()
             target_link_libraries(${_module} lib${_basename}_delayed)
         endif()
     endforeach()
-    # Only link delayimp when actually using delayed imports
-    if(NOT CMAKE_DLLTOOL_MACHINE)
+    # Link the delay-load runtime helper (__delayLoadHelper2) whenever we delay-load
+    if(NOT (CMAKE_DLLTOOL_MACHINE AND (VIBEOS_NO_DELAYLOAD OR NOT VIBEOS_ENABLE_DELAYLOAD)))
         target_link_libraries(${_module} delayimp)
     endif()
 endfunction()
@@ -797,15 +801,38 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
 
     # Do the same with delay-import libs
     set(LIBRARY_PRIVATE_DIR ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_libname}_delayed.dir)
-    # llvm-dlltool doesn't support --output-delaylib, so create an empty archive for LLVM builds
-    if(CMAKE_DLLTOOL_MACHINE)
+    # llvm-dlltool doesn't support --output-delaylib. Instead of an empty archive (which
+    # silently degraded delay-imports to regular imports OS-wide), generate a real
+    # delay-import lib ourselves: sdk/tools/gen-delaylib.py emits the descriptor + INT/IAT
+    # + per-function thunk from the implib .def and clang-compiles it. The delay-load
+    # runtime helper is sdk/lib/delayimp (__delayLoadHelper2). See
+    # docs/engineering/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD opts in
+    # to the generated delay libs; otherwise we keep the empty-archive +
+    # regular-import fallback while the i386 runtime regression is tracked.
+    if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
+        add_custom_command(
+            OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/gen-delaylib.py
+                --def ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
+                --arch ${ARCH}
+                --out ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+                --clang ${CMAKE_C_COMPILER} --ar ${CMAKE_AR}
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
+                ${REACTOS_SOURCE_DIR}/sdk/tools/gen-delaylib.py
+            WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR}
+            COMMENT "Generating delay-import lib for ${_libname} (gen-delaylib.py, ${ARCH})")
+    elseif(CMAKE_DLLTOOL_MACHINE)
+        # Default/VIBEOS_NO_DELAYLOAD fallback: empty archive → add_delay_importlibs()
+        # uses regular imports.
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             COMMAND ${CMAKE_AR} crT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
             WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR}
-            COMMENT "Creating empty delay-import stub for ${_libname} (llvm-dlltool)")
+            COMMENT "Creating empty delay-import stub for ${_libname} (delay-load disabled)")
     else()
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a

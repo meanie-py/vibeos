@@ -24,7 +24,7 @@ list(APPEND SOURCE
     misc/ddemisc.c
     misc/ddeserver.c
     misc/desktop.c
-    misc/display.c
+    # misc/display.c — replaced by Rust (user32-rust/src/misc/display.rs); cohab via libuser32_rust.a
     misc/dllmain.c
     misc/exit.c
     misc/exticon.c
@@ -39,7 +39,7 @@ list(APPEND SOURCE
     misc/usrapihk.c
     misc/winhelp.c
     misc/winsta.c
-    windows/accel.c
+    # windows/accel.c — replaced by Rust (user32-rust/src/windows/accel.rs); cohab via libuser32_rust.a
     # windows/caret.c — replaced by Rust (user32-rust/src/windows/caret.rs); cohab via libuser32_rust.a
     # windows/class.c — replaced by Rust (user32-rust/src/windows/class.rs); cohab via libuser32_rust.a
     windows/clipboard.c
@@ -48,7 +48,7 @@ list(APPEND SOURCE
     # windows/defwnd.c — replaced by Rust (user32-rust/src/windows/defwnd.rs); cohab via libuser32_rust.a
     # windows/dialog.c — replaced by Rust (user32-rust/src/windows/dialog.rs); cohab via libuser32_rust.a
     windows/draw.c
-    windows/font.c
+    # windows/font.c — replaced by Rust (user32-rust/src/windows/font.rs); cohab via libuser32_rust.a
     windows/hook.c
     windows/input.c
     windows/mdi.c
@@ -58,9 +58,9 @@ list(APPEND SOURCE
     # windows/nonclient.c — replaced by Rust (user32-rust/src/windows/nonclient.rs); cohab via libuser32_rust.a
     # windows/paint.c — replaced by Rust (user32-rust/src/windows/paint.rs); cohab via libuser32_rust.a
     windows/prop.c
-    windows/rect.c
+    # windows/rect.c — replaced by Rust (user32-rust/src/windows/rect.rs); cohab via libuser32_rust.a
     windows/spy.c
-    windows/text.c
+    # windows/text.c — replaced by Rust (user32-rust/src/windows/text.rs); cohab via libuser32_rust.a
     # windows/window.c — replaced by Rust (user32-rust/src/windows/window.rs); cohab via libuser32_rust.a
     # windows/winpos.c — replaced by Rust (user32-rust/src/windows/winpos.rs); cohab via libuser32_rust.a
     ${REACTOS_SOURCE_DIR}/win32ss/user/rtl/image.c
