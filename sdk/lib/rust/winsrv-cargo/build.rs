@@ -88,14 +88,17 @@ fn main() {
         // winsrv inputs — libwinsrv_rust + basesrv/csrsrv/win32ksys/concfg_rust —
         // ∩ liblibcntpr defs − cnt-rust defs) = EMPTY, so no C-variadic/float
         // residue is needed (unlike win32k, winsrv calls printf only via the
-        // Rust-provided entry points). The csr server bodies + concfg_rust stay.
+        // Rust-provided entry points). The csr server bodies stay.
+        // libconcfg_rust.a DROPPED 2026-06-20 — REDUNDANT: winsrv-rust already
+        // pulls concfg-rust as a Cargo dep, so all 50 of libconcfg_rust.a's syms
+        // are provided by the cargo dep (offline residue: concfg_rust defs −
+        // winsrv-rlib defs = EMPTY). Same pattern as libcntpr_rust→cnt-rust-lib.
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
             "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
             "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
             "sdk/lib/crt/libchkstk.a",
-            "win32ss/user/winsrv/concfg/libconcfg_rust.a",
         ])
         // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
         // not reused as cmake lib<dll>.a — same as the other 6 spine binaries.

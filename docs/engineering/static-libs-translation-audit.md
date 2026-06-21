@@ -176,7 +176,8 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | ~~`sdk/lib/dmilib/libdmilib.a`~~ | ~~i8042prt~~ | **✅ Rust 2026-06-13** — `ParseSMBiosTables` ported to `i8042prt-rust::dmi` (also fixed a fabricated SYS_VENDOR/PRODUCT slot-index bug). i8042prt now ZERO cmake .a; the host tool udmihelp keeps the C copy. |
 | ~~`sdk/lib/dxguid/libdxguid.a`~~ | — (no cargo consumers) | DirectX/Direct3DRM GUID *data* (1228 `.rdata` CLSID_/IID_ consts, 0 text). **win32k ×1 DROPPED 2026-06-20**: offline residue (win32k undefined ∩ dxguid-defined) = EMPTY — win32k.sys doesn't reference these user-mode DX GUIDs. Empirical drop-test: i386 ✓boot, amd64 ✓boot+net (win32k.sys relinks clean, no undefined CLSID/IID). Inert, like libntoskrnl_vista. arm64 full-ninja cold gate pending. |
 | `win32ss/libwin32ksys.a`, `win32ss/libwin32k_residue.a` | winsrv / win32k | win32k C residue — own track (`win32k-translation-audit.md`). |
-| `subsystems/.../libbasesrv.a`, `.../libcsrsrv.a`, `win32ss/.../libconcfg_rust.a` | winsrv | csr server C bodies (+ one already-Rust `concfg`). |
+| `subsystems/.../libbasesrv.a`, `.../libcsrsrv.a` | winsrv | csr server C bodies (basesrv/csrsrv) — kernel32 lane's live CSR surface; left in place. |
+| ~~`win32ss/.../libconcfg_rust.a`~~ | — (redundant) | cmake-built concfg-rust. **winsrv ×1 DROPPED 2026-06-20**: winsrv-rust already pulls `concfg-rust` as a Cargo dep, so all 50 of libconcfg_rust.a's syms come from the dep (offline residue: concfg_rust defs − winsrv-rlib defs = EMPTY). Same as libcntpr_rust→cnt-rust-lib. i386 ✓boot, amd64 ✓boot+net (winsrv.dll boot-critical, relinks clean). arm64 full-ninja cold gate pending. |
 
 ## Status of the original 18 (2026-05-09 → 2026-06-13)
 
