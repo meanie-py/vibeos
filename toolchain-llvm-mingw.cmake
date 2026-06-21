@@ -127,9 +127,15 @@ set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 set(CMAKE_C_STANDARD_LIBRARIES "" CACHE STRING "Standard C Libraries")
 set(CMAKE_CXX_STANDARD_LIBRARIES "" CACHE STRING "Standard C++ Libraries")
 
-# Use lld linker
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
-set(CMAKE_MODULE_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
+# Use lld linker.
+# --no-insert-timestamp: reproducible builds (deterministic-builds-plan.md rung 2).
+# The gnu ld.lld driver defaults to --insert-timestamp, stamping the PE header with
+# wall-clock time so every rebuild diverges and cross-worktree dedup can't fire. Zero
+# it here for all 679 cmake DLL/driver/exe links (the cargo-driven links zero it in
+# reactos-link). Verify with `vibeos-cli repro report <pe>` (TimeDateStamp → 0).
+set(_VIBEOS_LLD_COMMON "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import -Wl,--no-insert-timestamp")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_VIBEOS_LLD_COMMON}")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_VIBEOS_LLD_COMMON}")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${_VIBEOS_LLD_COMMON}")
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_LIST_DIR}/overrides-gcc.cmake")

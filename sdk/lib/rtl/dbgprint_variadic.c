@@ -15,13 +15,46 @@
  * ntprintf_va_format_a dispatch (non-NULL only in ntoskrnl; NULL in ntdll
  * where it falls back to _vsnprintf). Weak linkage is expressible in C but
  * not in stable Rust, and it resolves at each consumer's final link.
+ *
+ * SELF-CONTAINED / HEADERLESS (cmake-off spike, 2026-06-20): this file is
+ * compiled directly by cc-rs via reactos-link's `.c_shims()` — NOT replayed
+ * from cmake's compile_commands.json (`.c_from_compile_db`). It therefore
+ * pulls NONE of the cmake header chain (was: <rtl.h>, <ndk/kdfuncs.h>,
+ * <debug.h>, <wine/debug.h>); the handful of types/macros/consts those
+ * provided are hand-defined below, layout-faithful (verified symbol-identical
+ * vs the cmake-built object via nm). Same pattern as strsafe_shim.c /
+ * variadic_shims.c. This is what lets the kernel/ntdll cargo link drop its
+ * dependency on cmake having generated compile_commands.json for the C floor.
  */
 
-#include <rtl.h>
-#include <ndk/kdfuncs.h>
-#define NDEBUG
-#include <debug.h>
-#include <wine/debug.h>
+/* ---- minimal hand-defined types/macros (was: the 4 cmake headers) ---- */
+typedef unsigned long  ULONG;     /* `long` is 32-bit on all Windows arches (LLP64) */
+typedef unsigned char  BOOLEAN;
+typedef const char    *PCCH;
+typedef __SIZE_TYPE__  size_t;
+typedef __builtin_va_list va_list;
+#define va_start(ap, p) __builtin_va_start(ap, p)
+#define va_end(ap)      __builtin_va_end(ap)
+#define IN
+#define NTAPI __stdcall                 /* stdcall@N on i386; ignored on amd64/arm64 */
+#define DPFLTR_ERROR_LEVEL 0            /* ndk/kdtypes.h + psdk/dpfilter.h */
+#define TRUE  1                         /* ntdef.h BOOLEAN truth values */
+#define FALSE 0
+
+/* wine/debug.h — layout-faithful minimal (flags@0, name[15]; 16 bytes) */
+enum __wine_debug_class
+{
+    __WINE_DBCL_FIXME = 0,
+    __WINE_DBCL_ERR   = 1,
+    __WINE_DBCL_WARN  = 2,
+    __WINE_DBCL_TRACE = 3,
+    __WINE_DBCL_INIT  = 0x7
+};
+struct __wine_debug_channel
+{
+    unsigned char flags;
+    char name[15];
+};
 
 /* --- Rust va_list workers (sdk/lib/rust/rtl-diag/src/{debug,wine_debug}.rs) --- */
 ULONG NTAPI
@@ -38,6 +71,9 @@ int rtldiag_ros_dbg_log_v(enum __wine_debug_class cls,
                           struct __wine_debug_channel *channel,
                           const char *file, const char *func, int line,
                           const char *format, va_list args);
+
+/* libcntpr provides _vsnprintf (sdk/lib/crt/printf/_vsnprintf.c). */
+int __cdecl _vsnprintf(char *str, size_t size, const char *fmt, va_list ap);
 
 /* --- weak ntprintf formatter: non-NULL only in ntoskrnl --- */
 __attribute__((weak)) extern size_t

@@ -1,0 +1,16 @@
+[package]
+name = "hidusb-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+hid-sys = { path = "../hid-sys" }
+usb-sys = { path = "../usb-sys" }
