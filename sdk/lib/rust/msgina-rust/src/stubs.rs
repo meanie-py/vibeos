@@ -1,13 +1,14 @@
 use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
+use crate::resources::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
     __wine_debug_channel {
-        flags: !(0 as ::core::ffi::c_int) as ::core::ffi::c_uchar,
+        flags: WINE_DBG_DEFAULT_FLAGS,
         name: ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(
             *b"msgina\0\0\0\0\0\0\0\0\0",
         ),

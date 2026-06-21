@@ -70,7 +70,10 @@ pub mod prelude;
 pub mod resources;
 
 // ---- translated body modules (added per-file as each .c is flipped) ----
+pub mod gui;
 pub mod lsa;
+pub mod msgina;
+pub mod shutdown;
 pub mod stubs;
 pub mod tui;
 pub mod utils;

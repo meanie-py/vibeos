@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
+use crate::resources::*;
 use core::ffi::c_void;
 
 extern "C" {
@@ -16,7 +17,7 @@ extern "C" {
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
     __wine_debug_channel {
-        flags: !(0 as ::core::ffi::c_int) as ::core::ffi::c_uchar,
+        flags: WINE_DBG_DEFAULT_FLAGS,
         name: ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(
             *b"msgina\0\0\0\0\0\0\0\0\0",
         ),
@@ -155,7 +156,7 @@ unsafe fn DisplayResourceText(
 }
 
 unsafe fn TUIDisplaySASNotice(pgContext: PGINA_CONTEXT) {
-    // DPRINT removed
+    TRACE!(b"TUIDisplaySASNotice()\n".as_ptr() as *const i8);
     UNREFERENCED_PARAMETER(pgContext);
     DisplayResourceText(IDS_LOGGEDOUTSAS as UINT, 1u8);
     DisplayResourceText(IDS_PRESSCTRLALTDELETE as UINT, 1u8);
@@ -280,7 +281,7 @@ unsafe fn TUILoggedOutSAS(pgContext: PGINA_CONTEXT) -> i32 {
     let mut Password: [u16; 256] = [0u16; 256];
     let mut SubStatus: NTSTATUS = STATUS_SUCCESS;
 
-    // DPRINT removed
+    TRACE!(b"TUILoggedOutSAS()\n\0".as_ptr() as *const i8);
 
     if ReadString(IDS_ASKFORUSER, UserName.as_mut_ptr(), UserName.len() as u32, 1u8) == 0 {
         return WLX_SAS_ACTION_NONE;
@@ -319,7 +320,7 @@ unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
     let mut SubStatus: NTSTATUS = 0;
     let mut Status: NTSTATUS;
 
-    // DPRINT removed
+    TRACE!(b"TUILockedSAS()\n\0".as_ptr() as *const i8);
 
     let _ = pgContext; // UNREFERENCED_PARAMETER
 
@@ -337,7 +338,7 @@ unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
 
     Status = ConnectToLsa(pgContext);
     if !NT_SUCCESS(Status) {
-        // DPRINT removed
+        WARN!(b"ConnectToLsa() failed\n\0".as_ptr() as *const i8);
         return WLX_SAS_ACTION_NONE;
     }
 
@@ -351,7 +352,7 @@ unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
         &mut SubStatus,
     );
     if !NT_SUCCESS(Status) {
-        // DPRINT removed
+        WARN!(b"MyLogonUser() failed\n\0".as_ptr() as *const i8);
         return WLX_SAS_ACTION_NONE;
     }
 
