@@ -23,7 +23,7 @@ spec2def(lsasrv.dll lsasrv.spec ADD_IMPORTLIB)
 list(APPEND SOURCE
     authpackage.c
     authport.c
-    database.c
+    # database.c   — replaced by Rust (lsasrv-rust/src/lsasrv/database.rs)
     # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
     lookup.c
     lsarpc.c

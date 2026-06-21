@@ -28,7 +28,37 @@ pub use lsasrv_sys::{
     POLICY_INFORMATION_CLASS,
     DSROLE_PRIMARY_DOMAIN_INFO_LEVEL,
     PDSROLER_PRIMARY_DOMAIN_INFORMATION,
+    // database.c LSA DB object model + policy-info structs
+    LSA_DB_OBJECT, _LSA_DB_OBJECT, PLSA_DB_OBJECT,
+    LSA_DB_OBJECT_TYPE, _LSA_DB_OBJECT_TYPE, PLSA_DB_OBJECT_TYPE,
+    _LSA_DB_OBJECT_TYPE_LsaDbIgnoreObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbAccountObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbDomainObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbSecretObject,
+    _POLICY_AUDIT_LOG_INFO, _POLICY_DEFAULT_QUOTA_INFO,
+    _POLICY_MODIFICATION_INFO, _POLICY_AUDIT_FULL_QUERY_INFO,
 };
+
+// Bare enum-variant aliases (bindgen names them `_LSA_DB_OBJECT_TYPE_<v>`; the
+// translation uses both the bindgen form and the bare C name).
+pub const LsaDbIgnoreObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbIgnoreObject;
+pub const LsaDbPolicyObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject;
+pub const LsaDbAccountObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbAccountObject;
+pub const LsaDbDomainObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbDomainObject;
+pub const LsaDbSecretObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbSecretObject;
+
+// lsasrv-internal type (its `_LSAP_` prefix dodged the lsasrv-sys bindgen
+// allowlist) — hand-declared to match lsasrv.h. AuditEvents length is
+// POLICY_AUDIT_EVENT_TYPE_COUNT.
+#[repr(C)]
+pub struct _LSAP_POLICY_AUDIT_EVENTS_DATA {
+    pub AuditingMode: BOOLEAN,
+    pub AuditEvents: [DWORD; crate::consts::POLICY_AUDIT_EVENT_TYPE_COUNT as usize],
+    pub MaximumAuditEventCount: DWORD,
+}
+pub type LSAP_POLICY_AUDIT_EVENTS_DATA = _LSAP_POLICY_AUDIT_EVENTS_DATA;
+pub type PLSAP_POLICY_AUDIT_EVENTS_DATA = *mut _LSAP_POLICY_AUDIT_EVENTS_DATA;
 
 pub use crate::consts::*;
 
