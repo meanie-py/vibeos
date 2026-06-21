@@ -11,8 +11,17 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **M0b ✅ (`238dca6d6ee`)** — `lsasrv-sys` bindgen substrate + `dssetup.c` body; i386+amd64 boot.
 > - **M1 ✅ (`f9f54798af0`)** — substrate (`prelude.rs`/`consts.rs` + crate TRACE macros) + leaf
 >   cluster `privileges.c` + `utils.c` flipped; lsasrv-rust compiles ×3, DLL links ×3, i386 boots.
-> - **Next: M2** — `security.c` (SD builders, fuzz target), `registry.c`, `lookup.c` SID predicates,
->   then M3 (database/policy/session), M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out).
+> - **M2 (in progress)** — `security.c` ✅ (`00a7b6afc8f`, SD/ACL builders), `registry.c` ✅
+>   (`af3e0ba7e99`, Nt*Key wrappers). **6 of 16 units Rust** (lsa_s stub + dssetup + privileges +
+>   utils + security + registry); each ×3-link-verified + i386 boot-gated.
+> - **Next:** `lookup.c` (2534, SID predicates — big), then M3 (database/policy/session — incl. the
+>   lone DUMMY_PSEH fix + NtAuthority/WorldSidAuthority globals consumed by security.rs),
+>   M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out + ×3 gate). Then samsrv S0–S4.
+>
+> **⚠️ Link is the oracle for cross-file exports.** rustconv occasionally emits a cross-file C
+> function as a private Rust fn (no `#[no_mangle]`) → undefined-symbol at DLL link (e.g.
+> `LsapRegQueryValue`). A stale DLL can falsely boot green — always confirm `ninja lsasrv` rc=0 +
+> `undefined symbol` count 0 ×3 before trusting a smoke. Restore `#[no_mangle] pub extern "C"`.
 >
 > ### The per-file integration recipe (validated; follow for every remaining file)
 > 1. **Translate:** `python -m rustconv translate dll/win32/lsasrv/<f>.c -m deepseek --c2rust
