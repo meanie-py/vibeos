@@ -826,6 +826,20 @@ impl Linker {
         }
     }
 
+    /// Determinism (rung 1, cc-rs side): cc-rs compiles every shim/asm/stub with
+    /// its ABSOLUTE source path (`repo_root.join(rel)`), which clang embeds into
+    /// `__FILE__`/assert strings + debug info — so two worktrees building the same
+    /// commit at different paths produce different bytes → zero hardlink dedup
+    /// (measured: ntoskrnl.exe carried `…/<worktree>/ntoskrnl/mm_lock_outlines.c`).
+    /// cmake's own C TUs already remap via `-ffile-prefix-map`, and the cargo Rust
+    /// objects via `--remap-path-prefix=<root>=/vibeos` (det-remap.toml) — these
+    /// cc-rs compiles were the one path missing it. Map this worktree's root to the
+    /// same `/vibeos` token so all three (cmake-C, rustc, cc-rs) agree.
+    /// See docs/engineering/deterministic-builds-plan.md.
+    fn apply_prefix_map(&self, b: &mut cc::Build) {
+        b.flag(format!("-ffile-prefix-map={}=/vibeos", self.repo_root.display()));
+    }
+
     /// The per-arch generated kernel-offset include filename (geninc output):
     /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
     /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
@@ -906,6 +920,7 @@ impl Linker {
             }
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
+            self.apply_prefix_map(&mut b);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
             for f in &self.c_shim_flags {
                 b.flag(f);
@@ -925,6 +940,7 @@ impl Linker {
             }
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            self.apply_prefix_map(&mut b);
             // Caller-layered extra defines (e.g. ntkrnlmp's CONFIG_SMP) on top
             // of the asm_set list. Inert when empty (every non-ntkrnlmp module).
             for (n, v) in &self.asm_extra_defines {
@@ -1063,6 +1079,7 @@ impl Linker {
                 }
                 let mut b = cc::Build::new();
                 apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
+                self.apply_prefix_map(&mut b);
                 // module_stubs.c only `#include <stubs.h>` (self-contained).
                 b.file(&stubs)
                     .out_dir(self.obj_dir())
@@ -1193,6 +1210,7 @@ impl Linker {
         for (name, rels) in &self.asm_archives {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            self.apply_prefix_map(&mut b);
             for rel in rels {
                 let abs = self.repo_root.join(rel);
                 if !abs.exists() {
