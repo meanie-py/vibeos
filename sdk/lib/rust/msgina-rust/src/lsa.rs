@@ -283,11 +283,15 @@ pub unsafe extern "C" fn MyLogonUser(
     }
 
     (*TokenGroupsVar).GroupCount = 2;
-    (*TokenGroupsVar).Groups[0].Sid = LogonSid;
-    (*TokenGroupsVar).Groups[0].Attributes =
+    // Groups is a C flexible-array member (`SID_AND_ATTRIBUTES Groups[ANYSIZE_ARRAY]`,
+    // i.e. [_; 1]); the heap block above reserved 2 entries. Index via the base
+    // pointer so Groups[1] doesn't trip Rust's compile-time bounds-panic on [_; 1].
+    let __groups = (*TokenGroupsVar).Groups.as_mut_ptr();
+    (*__groups.add(0)).Sid = LogonSid;
+    (*__groups.add(0)).Attributes =
         SE_GROUP_MANDATORY | SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_LOGON_ID;
-    (*TokenGroupsVar).Groups[1].Sid = LocalSid;
-    (*TokenGroupsVar).Groups[1].Attributes =
+    (*__groups.add(1)).Sid = LocalSid;
+    (*__groups.add(1)).Attributes =
         SE_GROUP_MANDATORY | SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT;
 
     RtlCopyMemory!(

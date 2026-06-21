@@ -195,8 +195,7 @@ extern "system" {
         lpDialogFunc: DLGPROC,
         dwInitParam: LPARAM,
     ) -> INT_PTR;
-    pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) -> isize;
-    pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: isize) -> isize;
+    // GetWindowLongPtrW/SetWindowLongPtrW handled per-arch below (i386 has no Ptr forms).
     pub fn SetDlgItemTextW(hDlg: HWND, nIDDlgItem: c_int, lpString: PCWSTR) -> BOOL;
     pub fn GetDlgItemTextW(hDlg: HWND, nIDDlgItem: c_int, lpString: PWSTR, cchMax: c_int) -> UINT;
     pub fn GetParent(hWnd: HWND) -> HWND;
@@ -393,6 +392,16 @@ pub unsafe fn SecureZeroMemory(ptr: PVOID, cnt: usize) -> PVOID {
     ptr
 }
 
+// RtlSecureZeroMemory — winnt.h inline (no link symbol); ntdll-sys *declares* it
+// extern (unsatisfiable), so we PROVIDE the `_RtlSecureZeroMemory` symbol via
+// #[no_mangle]. NOT `pub` (and not re-exported) so it doesn't add a second Rust-scope
+// name that would clash with ntdll-sys's decl under the body modules' globs — callers
+// resolve to ntdll-sys's declaration, which links here.
+#[no_mangle]
+unsafe extern "C" fn RtlSecureZeroMemory(ptr: PVOID, cnt: usize) -> PVOID {
+    SecureZeroMemory(ptr, cnt)
+}
+
 extern "C" {
     // --- msvcrt CRT ---
     pub fn wcstoul(nptr: *const u16, endptr: *mut *mut u16, base: c_int) -> c_ulong;
@@ -403,4 +412,28 @@ extern "C" {
     pub fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16;
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> c_int;
     pub fn wsprintfW(buf: PWSTR, fmt: PCWSTR, ...) -> c_int;
+}
+
+// Window long-ptr accessors. On Win64 these are real user32 exports; on i386 they are
+// header macros for the LONG-sized Get/SetWindowLongW (the *Ptr* forms don't exist in
+// 32-bit user32). Wrapper fns keep the call sites (isize in/out) arch-agnostic.
+#[cfg(target_pointer_width = "64")]
+extern "system" {
+    pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) -> isize;
+    pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: isize) -> isize;
+}
+#[cfg(target_pointer_width = "32")]
+extern "system" {
+    pub fn GetWindowLongW(hWnd: HWND, nIndex: c_int) -> i32;
+    pub fn SetWindowLongW(hWnd: HWND, nIndex: c_int, dwNewLong: i32) -> i32;
+}
+#[cfg(target_pointer_width = "32")]
+#[inline(always)]
+pub unsafe fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) -> isize {
+    GetWindowLongW(hWnd, nIndex) as isize
+}
+#[cfg(target_pointer_width = "32")]
+#[inline(always)]
+pub unsafe fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: isize) -> isize {
+    SetWindowLongW(hWnd, nIndex, dwNewLong as i32) as isize
 }

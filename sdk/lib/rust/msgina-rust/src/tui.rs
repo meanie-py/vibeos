@@ -8,13 +8,14 @@ use crate::lsa::{ConnectToLsa, MyLogonUser};
 use crate::msgina::{hDllInstance, DoLoginTasks, CreateProfile};
 use core::ffi::c_void;
 
-extern "C" {
+// Console APIs are WINAPI (stdcall on i386) → extern "system", NOT extern "C"
+// (cdecl) — a cdecl decl here corrupts the i386 stack. GetStdHandle/wcslen come
+// from crate::msgina_externs (imported above), so they're not redeclared here.
+extern "system" {
     fn FlushConsoleInputBuffer(hConsoleInput: *mut core::ffi::c_void) -> i32;
-    fn GetStdHandle(nStdHandle: u32) -> *mut core::ffi::c_void;
     fn ReadConsoleW( hConsoleInput: *mut core::ffi::c_void, lpBuffer: *mut core::ffi::c_void, nNumberOfCharsToRead: u32, lpNumberOfCharsRead: *mut u32, pInputControl: *mut core::ffi::c_void, ) -> i32;
     fn SetConsoleMode(hConsoleHandle: *mut core::ffi::c_void, dwMode: u32) -> i32;
     fn WriteConsoleW( hConsoleOutput: *mut core::ffi::c_void, lpBuffer: *const core::ffi::c_void, nNumberOfCharsToWrite: u32, lpNumberOfCharsWritten: *mut u32, lpReserved: *mut core::ffi::c_void, ) -> i32;
-    fn wcslen(s: *const u16) -> usize;
 }
 
 // ---- file-scope preamble (translated) ----

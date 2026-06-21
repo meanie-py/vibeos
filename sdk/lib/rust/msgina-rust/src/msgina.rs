@@ -10,7 +10,10 @@ use crate::gui::GinaGraphicalUI;
 use crate::tui::GinaTextUI;
 use core::ffi::c_void;
 
-extern "C" {
+// WINAPI = stdcall on i386 → extern "system" (NOT extern "C"/cdecl: a cdecl decl
+// references the undecorated `_LoadLibraryW` and fails to link vs the importlib's
+// stdcall `_LoadLibraryW@4`).
+extern "system" {
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
     fn GetProcAddress(hModule: HINSTANCE, lpProcName: LPCSTR) -> FARPROC;
 }
@@ -29,6 +32,9 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 static mut __wine_dbch___default: *mut __wine_debug_channel =
     unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
 
+// #[no_mangle]: the C dimmedwindow.cpp references `extern HINSTANCE hDllInstance`,
+// so this global must export the undecorated `_hDllInstance` data symbol.
+#[no_mangle]
 pub static mut hDllInstance: HINSTANCE = ::core::ptr::null::<HINSTANCE__>() as *mut HINSTANCE__;
 
 static mut pGinaUI: PGINA_UI = ::core::ptr::null::<_GINA_UI>() as *mut _GINA_UI;

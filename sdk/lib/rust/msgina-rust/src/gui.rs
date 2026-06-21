@@ -23,7 +23,9 @@ static mut __wine_dbch___default: *mut __wine_debug_channel =
     unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
 
 // Cross-DLL out-calls unique to gui.rs (the rest come from crate::msgina_externs).
-extern "C" {
+// WINAPI = stdcall on i386 → extern "system", not extern "C" (cdecl decoration
+// would fail to link against the user32 importlib's `_GetWindowTextW@12`).
+extern "system" {
     fn GetWindowTextLengthW(hWnd: HWND) -> i32;
     fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
 }
