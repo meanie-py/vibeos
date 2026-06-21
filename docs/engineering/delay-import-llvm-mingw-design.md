@@ -164,6 +164,73 @@ KVM** — everything above is host CPU, no smoke slot.
 
 ---
 
+## 5b. Spike results — i386 VALIDATED (2026-06-20)
+
+Hand-wrote a delay-lib `.S` for `provider.dll!TestFunc@4` + a minimal faithful
+`__delayLoadHelper2` (clang native headers), linked a consumer against **only** the delay-lib,
+and verified the full structure host-side (artifacts: `~/vibeos-delayimp-spike/`). **Every
+invariant the runtime depends on is proven; the approach works.**
+
+- ✅ **`.S` assembles** with correct symbols/decoration. The i386 scheme (read off the regular
+  implib `llvm-nm libprovider.a`): public stub `_TestFunc@4`, IAT slot `__imp__TestFunc@4`. The
+  `@` in symbol names works via **quoted labels** in clang asm (`"_TestFunc@4":`). Helper symbol
+  is `___delayLoadHelper2@8` (WINAPI/stdcall: leading `_` + the C `__delayLoadHelper2` + `@8`).
+- ✅ **Consumer links against the delay-lib alone** (no regular `libprovider.a`), and
+  `provider.dll` is **absent from the regular import table** (`llvm-objdump -p`) — it is genuinely
+  delay-loaded, not a load-time dep.
+- ✅ **Thunk is byte-perfect** (`llvm-objdump -d`): `push $&__imp` (pIATEntry) ; `push $&descriptor`
+  (pidd) ; `call ___delayLoadHelper2@8` ; `jmp *eax`. stdcall callee-cleans the 8 bytes, then the
+  tail-jump enters the resolved fn with the caller's original args intact. After patching,
+  subsequent `jmp *__imp` calls bypass the thunk → real fn directly.
+- ✅ **All `.rva` relocations resolved** to correct in-image targets (walked the linked
+  descriptor in Python): `grAttrs=1`, `rvaDLLName→"provider.dll"`, `INT[0]→{hint=0,"TestFunc@4"}`,
+  `IAT[0]` initialized to the thunk VA. So GAS-style `.rva` (image-relative DIR32NB) through
+  clang's integrated assembler is the right primitive for every RVA field.
+- ⚠️ **Resolves open Q#2:** lld leaves PE **data-directory[13] (DELAY_IMPORT) empty** — it does
+  *not* auto-populate it from a linked-in descriptor. **That's fine and expected** for the
+  mingw/`__delayLoadHelper2` model: the mechanism is driven entirely by the thunk→descriptor
+  reference, not by the data directory (which is only used by some tools/debuggers and for
+  bound-import/unload optimization). No action needed for correctness. *(If we later want tools to
+  see it, we'd emit a `.idata$delay`-style section lld coalesces into dir[13] — optional.)*
+
+**The proven i386 `.S` template** (one DLL, one fn — the generator just parameterizes this over
+the `.def`'s `Name @N` list):
+```asm
+    .section .rdata,"dr"
+dllname:            .asciz "provider.dll"
+    .p2align 1
+hintname_0:         .short 0
+                    .asciz "TestFunc@4"          # name = the .def export (decoration included)
+    .p2align 2
+delay_int:          .rva hintname_0
+                    .long 0
+    .section .data,"dw"                          # writable: IAT (patched) + hmod cache
+    .p2align 2
+    .globl "__imp__TestFunc@4"
+delay_iat:
+"__imp__TestFunc@4": .long thunk_0               # init → thunk (base-relocated VA)
+                    .long 0
+delay_hmod:         .long 0
+    .section .rdata,"dr"
+    .p2align 2
+___DELAY_DESC_provider:
+    .long 1 ; .rva dllname ; .rva delay_hmod ; .rva delay_iat ; .rva delay_int
+    .long 0 ; .long 0 ; .long 0
+    .section .text,"xr"
+    .globl "_TestFunc@4"
+"_TestFunc@4":      jmp  *"__imp__TestFunc@4"
+thunk_0:            push $"__imp__TestFunc@4" ; push $___DELAY_DESC_provider
+                    call ___delayLoadHelper2@8 ; jmp *%eax
+```
+
+**Remaining to do:** (a) `gen_delaylib.py` (parse `.def` → emit this `.S` → clang `-c` → `llvm-ar`);
+(b) x86-64 + arm64 thunk stubs (RCX/RDX + shadow space; X0/X1 + `br`) and 8-byte thunk-data on x64
+(INT uses `.rva name ; .long 0` padding); (c) wire into `gcc.cmake`'s `CMAKE_DLLTOOL_MACHINE`
+branch + re-enable the `delayimp` link, behind `VIBEOS_NO_DELAYLOAD`; (d) runtime proof at QEMU
+boot (re-enable user32→libpng i386 first).
+
+---
+
 ## 6. Validation & rollout
 
 - **Host-side gates (no KVM):** generator unit output (golden `.c`/`.S` per `.def`); `llvm-objdump
