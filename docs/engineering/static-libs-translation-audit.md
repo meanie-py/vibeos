@@ -174,7 +174,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `sdk/lib/uuid/libuuid.a` | winsrv, mlang (2) | GUID/IID constants. Tiny; data. |
 | ~~`sdk/lib/cportlib/libcport_rust.a`~~ | — (no cargo consumers) | **Already Rust** (cmake-built). KD transports dropped it (`afaba999919`/`d7e2d90bd83`). **Kernel ×2 DROPPED 2026-06-20 (`e8765d21008`)** → cargo-native `.rust_lib("cport-rust")`. No cargo module reuses the cmake-built `.a`. |
 | ~~`sdk/lib/dmilib/libdmilib.a`~~ | ~~i8042prt~~ | **✅ Rust 2026-06-13** — `ParseSMBiosTables` ported to `i8042prt-rust::dmi` (also fixed a fabricated SYS_VENDOR/PRODUCT slot-index bug). i8042prt now ZERO cmake .a; the host tool udmihelp keeps the C copy. |
-| `sdk/lib/dxguid/libdxguid.a` | win32k (1) | DirectX GUIDs. Data. |
+| ~~`sdk/lib/dxguid/libdxguid.a`~~ | — (no cargo consumers) | DirectX/Direct3DRM GUID *data* (1228 `.rdata` CLSID_/IID_ consts, 0 text). **win32k ×1 DROPPED 2026-06-20**: offline residue (win32k undefined ∩ dxguid-defined) = EMPTY — win32k.sys doesn't reference these user-mode DX GUIDs. Empirical drop-test: i386 ✓boot, amd64 ✓boot+net (win32k.sys relinks clean, no undefined CLSID/IID). Inert, like libntoskrnl_vista. arm64 full-ninja cold gate pending. |
 | `win32ss/libwin32ksys.a`, `win32ss/libwin32k_residue.a` | winsrv / win32k | win32k C residue — own track (`win32k-translation-audit.md`). |
 | `subsystems/.../libbasesrv.a`, `.../libcsrsrv.a`, `win32ss/.../libconcfg_rust.a` | winsrv | csr server C bodies (+ one already-Rust `concfg`). |
 
