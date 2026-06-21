@@ -291,7 +291,7 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
 On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus pointer — all in one tool call.
 
-Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
+Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch KVM boots (i386/amd64) auto-serialize** via a per-arch sub-cap — a second same-arch boot queues instead of starving `/dev/kvm` into a false `HANG_TIMEOUT`, so you no longer need to hand-coordinate same-arch smokes in `#swarm` (cross-arch still runs in parallel; see `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
 ## Test Suite
 

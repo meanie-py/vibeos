@@ -1,16 +1,107 @@
 use ntdll_sys::nt::*;
-use crate::prelude::*;
 use core::ffi::c_void;
 
-/* The C source compiles with `#define NDEBUG`, so the WINE DEBUG_CHANNEL
- * TRACE/ERR macros and the debugstr_a/w helpers expand to nothing. Model that
- * faithfully as no-op macros that do not evaluate their arguments. */
-macro_rules! TRACE { ($($arg:tt)*) => {} }
-macro_rules! ERR   { ($($arg:tt)*) => {} }
+use crate::string::nls_subst::{HeapAlloc, HeapFree, HeapReAlloc};
+
+// ---- logging macros (no-op; established sibling convention from comm.rs) ----
+macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! WARN  { ($($t:tt)*) => {{}} }
+macro_rules! ERR   { ($($t:tt)*) => {{}} }
+macro_rules! FIXME { ($($t:tt)*) => {{}} }
+// debugstr_a/_w only ever appear inside the (no-op) TRACE/ERR/WARN args, so
+// they can be no-op macros too — faithful to the C, evaluates nothing.
+macro_rules! debugstr_a { ($($t:tt)*) => {{ () }} }
+macro_rules! debugstr_w { ($($t:tt)*) => {{ () }} }
+
+// ---- win32 macro helpers (faithful to winnt.h / winbase.h) ----
+// IS_INTRESOURCE: returns BOOL (i32) to match the c2rust `== 0` / `!= 0`
+// integer-comparison call sites. Accepts any pointer/integer via `as usize`.
+macro_rules! IS_INTRESOURCE {
+    ($x:expr) => {
+        (((($x) as usize) >> 16) == 0) as BOOL
+    };
+}
+
+macro_rules! LOWORD {
+    ($x:expr) => { ((($x) as usize) & 0xffff) as WORD };
+}
+macro_rules! HIWORD {
+    ($x:expr) => { (((($x) as usize) >> 16) & 0xffff) as WORD };
+}
+macro_rules! ULongToPtr {
+    ($x:expr) => { (($x) as usize) as *mut c_void };
+}
+macro_rules! UIntToPtr {
+    ($x:expr) => { (($x) as usize) as *mut c_void };
+}
+macro_rules! MAKELANGID {
+    ($p:expr, $s:expr) => { (((($s) as WORD) << 10) | (($p) as WORD)) as WORD };
+}
+
+const CP_ACP: UINT = 0;
+const INVALID_HANDLE_VALUE: isize = -1;
+
+// ---- wine/list.h intrusive doubly-linked-list (faithful to wine list.h) ----
+#[repr(C)]
+pub struct list {
+    pub next: *mut list,
+    pub prev: *mut list,
+}
 
 #[inline]
-fn MAKELANGID(p: WORD, s: WORD) -> WORD {
-    ((s as u32) << 10 | (p as u32)) as WORD
+unsafe fn list_init(list: *mut list) {
+    (*list).next = list;
+    (*list).prev = list;
+}
+#[inline]
+unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
+    (*elem).prev = (*list).prev;
+    (*elem).next = list;
+    (*(*list).prev).next = elem;
+    (*list).prev = elem;
+}
+#[inline]
+unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
+    (*to_add).next = elem;
+    (*to_add).prev = (*elem).prev;
+    (*(*elem).prev).next = to_add;
+    (*elem).prev = to_add;
+}
+#[inline]
+unsafe fn list_remove(elem: *mut list) {
+    (*(*elem).next).prev = (*elem).prev;
+    (*(*elem).prev).next = (*elem).next;
+}
+#[inline]
+unsafe fn list_next(list: *const list, elem: *const list) -> *mut list {
+    let ret = (*elem).next;
+    if ret == list as *mut list { core::ptr::null_mut() } else { ret }
+}
+#[inline]
+unsafe fn list_head(list: *const list) -> *mut list {
+    list_next(list, list)
+}
+
+/// wine list.h `LIST_ENTRY(ptr, type, field)` — container_of. (Macro namespace
+/// is distinct from the `LIST_ENTRY` type alias, so both coexist.)
+macro_rules! LIST_ENTRY {
+    ($ptr:expr, $ty:ty, $field:ident) => {
+        (($ptr as *mut u8).offset(-(core::mem::offset_of!($ty, $field) as isize))
+            as *mut $ty)
+    };
+}
+
+/// wine list.h `LIST_FOR_EACH_ENTRY(elem, list, type, field) { body }`.
+/// Faithful expansion of the for-loop; `$body` is the loop body block.
+macro_rules! LIST_FOR_EACH_ENTRY {
+    ($elem:ident, $head:expr, $ty:ty, $field:ident, $body:block) => {{
+        let __head: *mut list = ($head) as *const list as *mut list;
+        $elem = LIST_ENTRY!((*__head).next, $ty, $field);
+        while &mut (*$elem).$field as *mut list != __head {
+            $body
+            $elem = LIST_ENTRY!((*$elem).$field.next, $ty, $field);
+        }
+    }};
 }
 
 extern "system" {
@@ -19,86 +110,102 @@ extern "system" {
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
 }
 
-// ---- Wine intrusive doubly-linked list (wine/list.h), translated ----
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-
+// ---- IMAGE_RESOURCE_DIRECTORY_ENTRY bitfield/union accessors ----------------
+// winnt.h declares NameIsString/NameOffset/OffsetToDirectory/DataIsDirectory as
+// :31/:1 bitfields and Name/Id/OffsetToData as union members; bindgen lowers
+// these into nested anonymous unions + accessor methods. These thin helpers map
+// the flat C field syntax used by res.rs onto the bindgen layout (faithful, no
+// behavior change).
 #[inline]
-unsafe fn list_init(l: *mut list) {
-    (*l).next = l;
-    (*l).prev = l;
+unsafe fn rde_name_is_string(e: *const IMAGE_RESOURCE_DIRECTORY_ENTRY) -> DWORD {
+    (*e).__bindgen_anon_1.__bindgen_anon_1.NameIsString()
 }
-
-/* add an element after the specified one */
 #[inline]
-unsafe fn list_add_after(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = (*elem).next;
-    (*to_add).prev = elem;
-    (*(*elem).next).prev = to_add;
-    (*elem).next = to_add;
+unsafe fn rde_set_name_is_string(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: DWORD) {
+    (*e).__bindgen_anon_1.__bindgen_anon_1.set_NameIsString(v)
 }
-
-/* add an element before the specified one */
 #[inline]
-unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = elem;
-    (*to_add).prev = (*elem).prev;
-    (*(*elem).prev).next = to_add;
-    (*elem).prev = to_add;
+unsafe fn rde_name_offset(e: *const IMAGE_RESOURCE_DIRECTORY_ENTRY) -> DWORD {
+    (*e).__bindgen_anon_1.__bindgen_anon_1.NameOffset()
 }
-
-/* add element at the tail of the list */
 #[inline]
-unsafe fn list_add_tail(l: *mut list, elem: *mut list) {
-    list_add_before(l, elem);
+unsafe fn rde_set_name_offset(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: DWORD) {
+    (*e).__bindgen_anon_1.__bindgen_anon_1.set_NameOffset(v)
 }
-
-/* remove an element from its list */
 #[inline]
-unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
+unsafe fn rde_id(e: *const IMAGE_RESOURCE_DIRECTORY_ENTRY) -> WORD {
+    (*e).__bindgen_anon_1.Id
 }
-
-/* get the first element, or NULL if the list is empty */
 #[inline]
-unsafe fn list_head(l: *mut list) -> *mut list {
-    if (*l).next == l {
-        core::ptr::null_mut()
-    } else {
-        (*l).next
-    }
+unsafe fn rde_set_id(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: WORD) {
+    (*e).__bindgen_anon_1.Id = v;
 }
-
-/* IS_INTRESOURCE: ((ULONG_PTR)(x) >> 16) == 0  -> BOOL (1/0), faithful to C */
 #[inline]
-fn IS_INTRESOURCE<T>(x: *const T) -> BOOL {
-    if (x as usize) >> 16 == 0 { 1 } else { 0 }
+unsafe fn rde_offset_to_directory(e: *const IMAGE_RESOURCE_DIRECTORY_ENTRY) -> DWORD {
+    (*e).__bindgen_anon_2.__bindgen_anon_1.OffsetToDirectory()
 }
-
-/* LOWORD: low 16 bits. Faithful to C's LOWORD on pointers and integers alike;
- * the result is used both as an integer and recast to a pointer at call sites. */
-macro_rules! LOWORD {
-    ($x:expr) => {
-        (($x as usize) & 0xffff) as ULONG
-    };
-}
-
-/* HIWORD: high 16 bits of a 32-bit value */
 #[inline]
-fn HIWORD(x: ULONG) -> WORD {
-    ((x >> 16) & 0xffff) as WORD
+unsafe fn rde_set_offset_to_directory(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: DWORD) {
+    (*e).__bindgen_anon_2.__bindgen_anon_1.set_OffsetToDirectory(v)
+}
+#[inline]
+unsafe fn rde_set_data_is_directory(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: DWORD) {
+    (*e).__bindgen_anon_2.__bindgen_anon_1.set_DataIsDirectory(v)
+}
+#[inline]
+unsafe fn rde_offset_to_data(e: *const IMAGE_RESOURCE_DIRECTORY_ENTRY) -> DWORD {
+    (*e).__bindgen_anon_2.OffsetToData
+}
+#[inline]
+unsafe fn rde_set_offset_to_data(e: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY, v: DWORD) {
+    (*e).__bindgen_anon_2.OffsetToData = v;
 }
 
-/* CONTAINING_RECORD: get the struct holding the given list field */
-macro_rules! LIST_ENTRY {
-    ($ptr:expr, $type:ty, $field:ident) => {
-        ($ptr as *mut u8)
-            .offset(-(core::mem::offset_of!($type, $field) as isize)) as *mut $type
-    };
+// ---- kernel32 / win32 API exports used by res.rs (faithful Win32 sigs) ----
+extern "system" {
+    fn GetProcessHeap() -> HANDLE;
+    fn lstrlenW(lpString: LPCWSTR) -> INT;
+    fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+    fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> INT;
+    fn WideCharToMultiByte(
+        CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT,
+        lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: LPCSTR,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> INT;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+    fn CreateFileW(
+        lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD,
+        lpSecurityAttributes: *mut c_void, dwCreationDisposition: DWORD,
+        dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE,
+    ) -> HANDLE;
+    fn CreateFileMappingW(
+        hFile: HANDLE, lpFileMappingAttributes: *mut c_void, flProtect: DWORD,
+        dwMaximumSizeHigh: DWORD, dwMaximumSizeLow: DWORD, lpName: LPCWSTR,
+    ) -> HANDLE;
+    fn MapViewOfFile(
+        hFileMappingObject: HANDLE, dwDesiredAccess: DWORD,
+        dwFileOffsetHigh: DWORD, dwFileOffsetLow: DWORD, dwNumberOfBytesToMap: SIZE_T,
+    ) -> LPVOID;
+    fn UnmapViewOfFile(lpBaseAddress: *const c_void) -> BOOL;
+    fn CopyFileW(lpExistingFileName: LPCWSTR, lpNewFileName: LPCWSTR, bFailIfExists: BOOL) -> BOOL;
+    fn GetFileSize(hFile: HANDLE, lpFileSizeHigh: *mut DWORD) -> DWORD;
+    fn SetFilePointer(hFile: HANDLE, lDistanceToMove: i32, lpDistanceToMoveHigh: *mut i32, dwMoveMethod: DWORD) -> DWORD;
+    fn SetEndOfFile(hFile: HANDLE) -> BOOL;
+    fn GetTempPathW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
+    fn GetTempFileNameW(lpPathName: LPCWSTR, lpPrefixString: LPCWSTR, uUnique: UINT, lpTempFileName: LPWSTR) -> UINT;
+    fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL;
+    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
+    fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
+    fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
+    fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
+}
+
+// ---- CRT functions (cdecl — MUST be extern "C" for i386 link) ----
+extern "C" {
+    fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> INT;
+    fn memset(s: *mut c_void, c: INT, n: usize) -> *mut c_void;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -144,16 +251,16 @@ pub struct mapping_info {
     pub read_write: BOOL,
 }
 unsafe fn get_res_nameA(name: LPCSTR, str: *mut _UNICODE_STRING) -> NTSTATUS {
-    if IS_INTRESOURCE(name) != 0 {
-        (*str).Buffer = ULongToPtr(LOWORD!(name));
+    if IS_INTRESOURCE!(name) != 0 {
+        (*str).Buffer = ULongToPtr!(LOWORD!(name)) as LPWSTR;
         return STATUS_SUCCESS;
     }
     if *name.offset(0) as u8 == b'#' {
         let mut value: ULONG = 0;
-        if RtlCharToInteger(name.offset(1), 10, &mut value) != STATUS_SUCCESS || HIWORD(value) != 0 {
+        if RtlCharToInteger(name.offset(1), 10, &mut value) != STATUS_SUCCESS || HIWORD!(value) != 0 {
             return STATUS_INVALID_PARAMETER;
         }
-        (*str).Buffer = ULongToPtr(value);
+        (*str).Buffer = ULongToPtr!(value) as LPWSTR;
         return STATUS_SUCCESS;
     }
     RtlCreateUnicodeStringFromAsciiz(str, name);
@@ -161,17 +268,17 @@ unsafe fn get_res_nameA(name: LPCSTR, str: *mut _UNICODE_STRING) -> NTSTATUS {
     return STATUS_SUCCESS;
 }
 unsafe fn get_res_nameW( name: LPCWSTR, str: *mut _UNICODE_STRING ) -> NTSTATUS {
-    if IS_INTRESOURCE(name) != 0 {
-        (*str).Buffer = ULongToPtr(LOWORD!(name));
+    if IS_INTRESOURCE!(name) != 0 {
+        (*str).Buffer = ULongToPtr!(LOWORD!(name)) as LPWSTR;
         return STATUS_SUCCESS;
     }
     if *name.offset(0) as u16 == '#' as u16 {
         let mut value: ULONG = 0;
         RtlInitUnicodeString(str, name.offset(1));
-        if RtlUnicodeStringToInteger(str, 10, &mut value) != STATUS_SUCCESS || HIWORD(value) != 0 {
+        if RtlUnicodeStringToInteger(str, 10, &mut value) != STATUS_SUCCESS || HIWORD!(value) != 0 {
             return STATUS_INVALID_PARAMETER;
         }
-        (*str).Buffer = ULongToPtr(value);
+        (*str).Buffer = ULongToPtr!(value) as LPWSTR;
         return STATUS_SUCCESS;
     }
     RtlCreateUnicodeString(str, name);
@@ -185,15 +292,15 @@ unsafe fn find_resourceA(
     lang: WORD,
 ) -> HRSRC {
     let mut status: NTSTATUS;
-    let mut nameW: _UNICODE_STRING;
-    let mut typeW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
+    let mut nameW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
     let mut entry: *mut IMAGE_RESOURCE_DATA_ENTRY = core::ptr::null_mut();
 
     nameW.Buffer = core::ptr::null_mut();
     typeW.Buffer = core::ptr::null_mut();
 
-    /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
+    // __TRY block (DUMMY_PSEH: runs unconditionally, __EXCEPT is dead code)
     'done: {
         status = get_res_nameA(name, &mut nameW);
         if status != STATUS_SUCCESS {
@@ -205,20 +312,26 @@ unsafe fn find_resourceA(
         }
         info.Type = typeW.Buffer as ULONG_PTR;
         info.Name = nameW.Buffer as ULONG_PTR;
-        info.Language = lang;
-        status = LdrFindResource_U(hModule, &info, 3, &mut entry);
+        info.Language = lang as ULONG_PTR;
+        status = LdrFindResource_U(hModule as PVOID, &mut info, 3, &mut entry);
     }
-    // done: (epilogue reached by break 'done and by fall-through)
     if status != STATUS_SUCCESS {
         SetLastError(RtlNtStatusToDosError(status));
     }
 
-    if IS_INTRESOURCE(nameW.Buffer) == 0 {
-        HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut _);
-    }
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
-        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
-    }
+    // __EXCEPT_PAGE_FAULT handler
+    // In Rust we cannot have SEH, so we wrap the try block in a way that
+    // catches access violations. For a faithful transliteration, we keep
+    // the structure but note that actual SEH is not available.
+    // The page fault handler would set ERROR_INVALID_PARAMETER.
+    // Since we cannot catch page faults in Rust, we just proceed.
+    // The original code would catch STATUS_ACCESS_VIOLATION and set
+    // ERROR_INVALID_PARAMETER. We simulate this by checking if entry is null
+    // after the call, but that's not exactly the same. For now, we just
+    // keep the structure as a comment.
+    // __EXCEPT_PAGE_FAULT:
+    // SetLastError(ERROR_INVALID_PARAMETER);
+
     return entry as HRSRC;
 }
 unsafe fn find_resourceW(
@@ -228,15 +341,15 @@ unsafe fn find_resourceW(
     lang: WORD,
 ) -> HRSRC {
     let mut status: NTSTATUS;
-    let mut nameW: _UNICODE_STRING;
-    let mut typeW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
+    let mut nameW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
     let mut entry: *mut IMAGE_RESOURCE_DATA_ENTRY = core::ptr::null_mut();
 
     nameW.Buffer = core::ptr::null_mut();
     typeW.Buffer = core::ptr::null_mut();
 
-    /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
+    // __TRY block (DUMMY_PSEH: runs unconditionally, __EXCEPT is dead code)
     'done: {
         status = get_res_nameW(name, &mut nameW);
         if status != STATUS_SUCCESS {
@@ -248,20 +361,13 @@ unsafe fn find_resourceW(
         }
         info.Type = typeW.Buffer as ULONG_PTR;
         info.Name = nameW.Buffer as ULONG_PTR;
-        info.Language = lang;
-        status = LdrFindResource_U(hModule, &info, 3, &mut entry);
+        info.Language = lang as ULONG_PTR;
+        status = LdrFindResource_U(hModule as PVOID, &mut info, 3, &mut entry);
     }
-    // done: (epilogue reached by break 'done and by fall-through)
     if status != STATUS_SUCCESS {
         SetLastError(RtlNtStatusToDosError(status));
     }
 
-    if IS_INTRESOURCE(nameW.Buffer) == 0 {
-        HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut _);
-    }
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
-        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
-    }
     entry as HRSRC
 }
 
@@ -276,8 +382,8 @@ pub unsafe extern "system" fn FindResourceExA(
     TRACE!(
         b"%p %s %s %04x\0".as_ptr() as *const u8,
         hModule,
-        debugstr_a(type_),
-        debugstr_a(name),
+        debugstr_a!(type_),
+        debugstr_a!(name),
         lang,
     );
 
@@ -294,7 +400,7 @@ pub unsafe extern "system" fn FindResourceA(
     name: LPCSTR,
     type_: LPCSTR,
 ) -> HRSRC {
-    return FindResourceExA(hModule, type_, name, MAKELANGID(4u16, 0u16));
+    return FindResourceExA(hModule, type_, name, MAKELANGID!(4u16, 0u16));
 }
 
 #[no_mangle]
@@ -308,8 +414,8 @@ pub unsafe extern "system" fn FindResourceExW(
     TRACE!(
         b"%p %s %s %04x\0".as_ptr() as *const u8,
         hModule,
-        debugstr_w(r#type),
-        debugstr_w(name),
+        debugstr_w!(r#type),
+        debugstr_w!(name),
         lang,
     );
 
@@ -330,7 +436,7 @@ pub unsafe extern "system" fn FindResourceW(
         hModule,
         r#type,
         name,
-        MAKELANGID(LANG_NEUTRAL as WORD, SUBLANG_NEUTRAL as WORD),
+        MAKELANGID!(LANG_NEUTRAL as WORD, SUBLANG_NEUTRAL as WORD),
     );
 }
 
@@ -341,12 +447,12 @@ pub unsafe extern "system" fn EnumResourceTypesA(
     lparam: LONG_PTR,
 ) -> BOOL {
     let mut i: i32;
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = FALSE as BOOL;
     let mut type_: LPSTR = core::ptr::null_mut();
     let mut len: DWORD = 0;
     let mut newlen: DWORD;
     let mut status: NTSTATUS;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let mut et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     let mut str_: *const IMAGE_RESOURCE_DIR_STRING_U;
 
@@ -357,17 +463,17 @@ pub unsafe extern "system" fn EnumResourceTypesA(
         hmod = GetModuleHandleA(core::ptr::null_mut());
     }
 
-    status = LdrFindResourceDirectory_U(hmod, core::ptr::null_mut(), 0, &mut resdir);
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut resdir);
     if status != STATUS_SUCCESS {
         SetLastError(RtlNtStatusToDosError(status));
-        return FALSE;
+        return FALSE as BOOL;
     }
     et = resdir.add(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     i = 0;
-    while i < (*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries {
-        if (*et.add(i as usize)).NameIsString != 0 {
+    while i < ((*resdir).NumberOfNamedEntries as i32 + (*resdir).NumberOfIdEntries as i32) {
+        if rde_name_is_string(et.add(i as usize)) != 0 {
             str_ = (resdir as *const u8)
-                .offset((*et.add(i as usize)).NameOffset as isize)
+                .offset(rde_name_offset(et.add(i as usize)) as isize)
                 as *const IMAGE_RESOURCE_DIR_STRING_U;
             newlen = WideCharToMultiByte(
                 CP_ACP,
@@ -378,13 +484,13 @@ pub unsafe extern "system" fn EnumResourceTypesA(
                 0,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
-            );
+            ) as DWORD;
             if newlen + 1 > len {
                 len = newlen + 1;
                 HeapFree(GetProcessHeap(), 0, type_ as *mut _);
                 type_ = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
                 if type_.is_null() {
-                    return FALSE;
+                    return FALSE as BOOL;
                 }
             }
             WideCharToMultiByte(
@@ -398,9 +504,9 @@ pub unsafe extern "system" fn EnumResourceTypesA(
                 core::ptr::null_mut(),
             );
             *type_.add(newlen as usize) = 0;
-            ret = lpfun(hmod, type_, lparam);
+            ret = lpfun.unwrap()(hmod, type_, lparam);
         } else {
-            ret = lpfun(hmod, UIntToPtr((*et.add(i as usize)).Id), lparam);
+            ret = lpfun.unwrap()(hmod, UIntToPtr!(rde_id(et.add(i as usize))) as LPSTR, lparam);
         }
         if ret == 0 {
             break;
@@ -422,7 +528,7 @@ pub unsafe extern "system" fn EnumResourceTypesW(
     let mut ret: BOOL = 0;
     let mut r#type: LPWSTR = core::ptr::null_mut();
     let mut status: NTSTATUS;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let mut et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     let mut str_: *const IMAGE_RESOURCE_DIR_STRING_U;
 
@@ -433,17 +539,17 @@ pub unsafe extern "system" fn EnumResourceTypesW(
         hmod = GetModuleHandleW(core::ptr::null_mut());
     }
 
-    status = LdrFindResourceDirectory_U(hmod, core::ptr::null_mut(), 0, &mut resdir);
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut resdir);
     if status != STATUS_SUCCESS {
         SetLastError(RtlNtStatusToDosError(status));
         return 0;
     }
     et = resdir.offset(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     i = 0;
-    while i < (*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries {
-        if (*et.offset(i as isize)).NameIsString != 0 {
+    while i < ((*resdir).NumberOfNamedEntries as i32 + (*resdir).NumberOfIdEntries as i32) {
+        if rde_name_is_string(et.offset(i as isize)) != 0 {
             str_ = (resdir as *const u8)
-                .offset((*et.offset(i as isize)).NameOffset as isize)
+                .offset(rde_name_offset(et.offset(i as isize)) as isize)
                 as *const IMAGE_RESOURCE_DIR_STRING_U;
             if (*str_).Length as i32 + 1 > len {
                 len = (*str_).Length as i32 + 1;
@@ -460,14 +566,14 @@ pub unsafe extern "system" fn EnumResourceTypesW(
             memcpy(
                 r#type as *mut core::ffi::c_void,
                 (*str_).NameString.as_ptr() as *const core::ffi::c_void,
-                (*str_).Length as u32 * core::mem::size_of::<WCHAR>() as u32,
+                (*str_).Length as usize * core::mem::size_of::<WCHAR>(),
             );
             *r#type.offset((*str_).Length as isize) = 0;
-            ret = lpfun(hmod, r#type, lparam);
+            ret = lpfun.unwrap()(hmod, r#type, lparam);
         } else {
-            ret = lpfun(
+            ret = lpfun.unwrap()(
                 hmod,
-                UIntToPtr((*et.offset(i as isize)).Id),
+                UIntToPtr!(rde_id(et.offset(i as isize))) as LPWSTR,
                 lparam,
             );
         }
@@ -493,17 +599,17 @@ pub unsafe extern "system" fn EnumResourceNamesA(
     let mut newlen: DWORD;
     let mut name: LPSTR = core::ptr::null_mut();
     let mut status: NTSTATUS;
-    let mut typeW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
-    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
+    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let mut et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     let mut str_: *const IMAGE_RESOURCE_DIR_STRING_U;
 
     TRACE!(
         "%p %s %p %lx\n",
         hmod,
-        debugstr_a(type_),
+        debugstr_a!(type_),
         lpfun,
         lparam,
     );
@@ -515,75 +621,75 @@ pub unsafe extern "system" fn EnumResourceNamesA(
     };
     typeW.Buffer = core::ptr::null_mut();
     'done: {
-        status = LdrFindResourceDirectory_U(hmod, core::ptr::null_mut(), 0, &mut basedir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameA(type_, &mut typeW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        info.Type = typeW.Buffer as ULONG_PTR;
-        status = LdrFindResourceDirectory_U(hmod, &info, 1, &mut resdir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-
-        et = resdir.add(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-        /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
-        i = 0;
-        while i < ((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
-            if (*et.add(i as usize)).NameIsString != 0 {
-                str_ = ((basedir as *const u8).add((*et.add(i as usize)).NameOffset as usize))
-                    as *const IMAGE_RESOURCE_DIR_STRING_U;
-                newlen = WideCharToMultiByte(
-                    CP_ACP,
-                    0,
-                    (*str_).NameString.as_ptr(),
-                    (*str_).Length as i32,
-                    core::ptr::null_mut(),
-                    0,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                ) as DWORD;
-                if newlen + 1 > len {
-                    len = newlen + 1;
-                    HeapFree(GetProcessHeap(), 0, name as *mut _);
-                    name = HeapAlloc(GetProcessHeap(), 0, (len + 1) as usize) as LPSTR;
-                    if name.is_null() {
-                        ret = 0;
-                        break;
-                    }
-                }
-                WideCharToMultiByte(
-                    CP_ACP,
-                    0,
-                    (*str_).NameString.as_ptr(),
-                    (*str_).Length as i32,
-                    name,
-                    len as i32,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-                *name.add(newlen as usize) = 0;
-                ret = lpfun(hmod, type_, name, lparam);
-            } else {
-                ret = lpfun(
-                    hmod,
-                    type_,
-                    UIntToPtr((*et.add(i as usize)).Id),
-                    lparam,
-                );
-            }
-            if ret == 0 {
-                break;
-            }
-            i += 1;
-        }
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut basedir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameA(type_, &mut typeW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    info.Type = typeW.Buffer as ULONG_PTR;
+    status = LdrFindResourceDirectory_U(hmod as PVOID, &mut info, 1, &mut resdir);
+    if status != STATUS_SUCCESS {
+        break 'done;
     }
 
-    HeapFree(GetProcessHeap(), 0, name as *mut _);
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
+    et = resdir.add(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    // DUMMY_PSEH: the _SEH2_TRY body runs unconditionally; the _SEH2_EXCEPT
+    // handler (ret=0; status=ACCESS_VIOLATION) is dead code under USE_DUMMY_PSEH.
+    {
+            for i in 0..((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
+                if rde_name_is_string(et.add(i as usize)) != 0 {
+                    str_ = ((basedir as *const u8).add(rde_name_offset(et.add(i as usize)) as usize))
+                        as *const IMAGE_RESOURCE_DIR_STRING_U;
+                    newlen = WideCharToMultiByte(
+                        CP_ACP,
+                        0,
+                        (*str_).NameString.as_ptr(),
+                        (*str_).Length as i32,
+                        core::ptr::null_mut(),
+                        0,
+                        core::ptr::null_mut(),
+                        core::ptr::null_mut(),
+                    ) as DWORD;
+                    if newlen + 1 > len {
+                        len = newlen + 1;
+                        HeapFree(GetProcessHeap(), 0, name as *mut _);
+                        name = HeapAlloc(GetProcessHeap(), 0, (len + 1) as usize) as LPSTR;
+                        if name.is_null() {
+                            ret = 0;
+                            break 'done;
+                        }
+                    }
+                    WideCharToMultiByte(
+                        CP_ACP,
+                        0,
+                        (*str_).NameString.as_ptr(),
+                        (*str_).Length as i32,
+                        name,
+                        len as i32,
+                        core::ptr::null_mut(),
+                        core::ptr::null_mut(),
+                    );
+                    *name.add(newlen as usize) = 0;
+                    ret = lpfun.unwrap()(hmod, type_, name, lparam);
+                } else {
+                    ret = lpfun.unwrap()(
+                        hmod,
+                        type_,
+                        UIntToPtr!(rde_id(et.add(i as usize))) as LPSTR,
+                        lparam,
+                    );
+                }
+                if ret == 0 {
+                    break;
+                }
+            }
+    }
+    } // 'done
+
+    if !typeW.Buffer.is_null() && IS_INTRESOURCE!(typeW.Buffer) == 0 {
         HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
     }
     if status != STATUS_SUCCESS {
@@ -604,17 +710,17 @@ pub unsafe extern "system" fn EnumResourceNamesW(
     let mut ret: BOOL = 0;
     let mut name: LPWSTR = core::ptr::null_mut();
     let mut status: NTSTATUS;
-    let mut typeW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
-    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
+    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let mut et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
     let mut str: *const IMAGE_RESOURCE_DIR_STRING_U;
 
     TRACE!(
         "%p %s %p %lx\0".as_ptr() as *const i8,
         hmod,
-        debugstr_w(r#type),
+        debugstr_w!(r#type),
         lpfun,
         lparam,
     );
@@ -625,65 +731,68 @@ pub unsafe extern "system" fn EnumResourceNamesW(
     }
     typeW.Buffer = core::ptr::null_mut();
     'done: {
-        status = LdrFindResourceDirectory_U(hmod, core::ptr::null_mut(), 0, &mut basedir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameW(r#type, &mut typeW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        info.Type = typeW.Buffer as ULONG_PTR;
-        status = LdrFindResourceDirectory_U(hmod, &info, 1, &mut resdir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-
-        et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-        /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
-        i = 0;
-        while i < ((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
-            if (*(et.offset(i as isize))).NameIsString != 0 {
-                str = ((basedir as *const u8)
-                    .offset((*(et.offset(i as isize))).NameOffset as isize))
-                    as *const IMAGE_RESOURCE_DIR_STRING_U;
-                if ((*str).Length as i32 + 1) > len {
-                    len = (*str).Length as i32 + 1;
-                    HeapFree(GetProcessHeap(), 0, name as *mut core::ffi::c_void);
-                    name = HeapAlloc(
-                        GetProcessHeap(),
-                        0,
-                        (len as u32 * core::mem::size_of::<WCHAR>() as u32) as usize,
-                    ) as LPWSTR;
-                    if name.is_null() {
-                        ret = 0;
-                        break;
-                    }
-                }
-                memcpy(
-                    name as *mut core::ffi::c_void,
-                    (*str).NameString.as_ptr() as *const core::ffi::c_void,
-                    ((*str).Length as u32 * core::mem::size_of::<WCHAR>() as u32) as usize,
-                );
-                *name.offset((*str).Length as isize) = 0;
-                ret = lpfun(hmod, r#type, name, lparam);
-            } else {
-                ret = lpfun(
-                    hmod,
-                    r#type,
-                    UIntToPtr((*(et.offset(i as isize))).Id),
-                    lparam,
-                );
-            }
-            if ret == 0 {
-                break;
-            }
-            i += 1;
-        }
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut basedir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameW(r#type, &mut typeW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    info.Type = typeW.Buffer as ULONG_PTR;
+    status = LdrFindResourceDirectory_U(hmod as PVOID, &mut info, 1, &mut resdir);
+    if status != STATUS_SUCCESS {
+        break 'done;
     }
 
-    HeapFree(GetProcessHeap(), 0, name as *mut core::ffi::c_void);
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
+    et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    // DUMMY_PSEH: __TRY runs unconditionally, __EXCEPT is dead code.
+    {
+        {
+            i = 0;
+            while i < ((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
+                if rde_name_is_string(et.offset(i as isize)) != 0 {
+                    str = ((basedir as *const u8)
+                        .offset(rde_name_offset((et.offset(i as isize))) as isize))
+                        as *const IMAGE_RESOURCE_DIR_STRING_U;
+                    if ((*str).Length as i32 + 1) > len {
+                        len = (*str).Length as i32 + 1;
+                        HeapFree(GetProcessHeap(), 0, name as *mut core::ffi::c_void);
+                        name = HeapAlloc(
+                            GetProcessHeap(),
+                            0,
+                            (len as u32 * core::mem::size_of::<WCHAR>() as u32) as usize,
+                        ) as LPWSTR;
+                        if name.is_null() {
+                            ret = 0;
+                            break;
+                        }
+                    }
+                    memcpy(
+                        name as *mut core::ffi::c_void,
+                        (*str).NameString.as_ptr() as *const core::ffi::c_void,
+                        ((*str).Length as u32 * core::mem::size_of::<WCHAR>() as u32) as usize,
+                    );
+                    *name.offset((*str).Length as isize) = 0;
+                    ret = lpfun.unwrap()(hmod, r#type, name, lparam);
+                } else {
+                    ret = lpfun.unwrap()(
+                        hmod,
+                        r#type,
+                        UIntToPtr!(rde_id(et.offset(i as isize))) as LPWSTR,
+                        lparam,
+                    );
+                }
+                if ret == 0 {
+                    break;
+                }
+                i += 1;
+            }
+        }
+    }
+    } // 'done
+    // __EXCEPT_PAGE_FAULT handler is dead code under USE_DUMMY_PSEH.
+    if !(typeW.Buffer as usize >> 16 == 0) {
         HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut core::ffi::c_void);
     }
     if status != STATUS_SUCCESS {
@@ -703,18 +812,18 @@ pub unsafe extern "system" fn EnumResourceLanguagesA(
     let mut i: i32;
     let mut ret: BOOL = 0;
     let mut status: NTSTATUS;
-    let mut typeW: _UNICODE_STRING;
-    let mut nameW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
-    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut nameW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
+    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
 
     TRACE!(
         "%p %s %s %p %lx\0".as_ptr() as *const i8,
         hmod,
-        debugstr_a(type_),
-        debugstr_a(name),
+        debugstr_a!(type_),
+        debugstr_a!(name),
         lpfun,
         lparam,
     );
@@ -727,34 +836,35 @@ pub unsafe extern "system" fn EnumResourceLanguagesA(
     typeW.Buffer = core::ptr::null_mut();
     nameW.Buffer = core::ptr::null_mut();
     'done: {
-        status = LdrFindResourceDirectory_U(hmod, core::ptr::null(), 0, &mut basedir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameA(type_, &mut typeW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameA(name, &mut nameW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        info.Type = typeW.Buffer as ULONG_PTR;
-        info.Name = nameW.Buffer as ULONG_PTR;
-        status = LdrFindResourceDirectory_U(hmod, &info, 2, &mut resdir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut basedir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameA(type_, &mut typeW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameA(name, &mut nameW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    info.Type = typeW.Buffer as ULONG_PTR;
+    info.Name = nameW.Buffer as ULONG_PTR;
+    status = LdrFindResourceDirectory_U(hmod as PVOID, &mut info, 2, &mut resdir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
 
-        et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-        /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
+    et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    // __TRY (DUMMY_PSEH: runs unconditionally, __EXCEPT is dead code)
+    {
         i = 0;
         while i < ((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
-            ret = lpfun(
+            ret = lpfun.unwrap()(
                 hmod,
                 type_,
                 name,
-                (*et.offset(i as isize)).Id,
+                rde_id(et.offset(i as isize)),
                 lparam,
             );
             if ret == 0 {
@@ -763,12 +873,13 @@ pub unsafe extern "system" fn EnumResourceLanguagesA(
             i += 1;
         }
     }
+    } // 'done
 
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
-        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
-    }
-    if IS_INTRESOURCE(nameW.Buffer) == 0 {
+    if IS_INTRESOURCE!(nameW.Buffer) == 0 {
         HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut _);
+    }
+    if IS_INTRESOURCE!(typeW.Buffer) == 0 {
+        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
     }
     if status != STATUS_SUCCESS {
         SetLastError(RtlNtStatusToDosError(status));
@@ -787,18 +898,18 @@ pub unsafe extern "system" fn EnumResourceLanguagesW(
     let mut i: i32;
     let mut ret: BOOL = 0;
     let mut status: NTSTATUS;
-    let mut typeW: _UNICODE_STRING;
-    let mut nameW: _UNICODE_STRING;
-    let mut info: LDR_RESOURCE_INFO;
-    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY;
-    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY;
+    let mut typeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut nameW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut info: LDR_RESOURCE_INFO = unsafe { core::mem::zeroed() };
+    let mut basedir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
+    let mut resdir: *mut IMAGE_RESOURCE_DIRECTORY = core::ptr::null_mut();
     let et: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
 
     TRACE!(
         "%p %s %s %p %lx\0".as_ptr() as *const i8,
         hmod,
-        debugstr_w(type_),
-        debugstr_w(name),
+        debugstr_w!(type_),
+        debugstr_w!(name),
         lpfun,
         lparam,
     );
@@ -810,34 +921,35 @@ pub unsafe extern "system" fn EnumResourceLanguagesW(
     typeW.Buffer = core::ptr::null_mut();
     nameW.Buffer = core::ptr::null_mut();
     'done: {
-        status = LdrFindResourceDirectory_U(hmod, core::ptr::null_mut(), 0, &mut basedir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameW(type_, &mut typeW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        status = get_res_nameW(name, &mut nameW);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
-        info.Type = typeW.Buffer as ULONG_PTR;
-        info.Name = nameW.Buffer as ULONG_PTR;
-        status = LdrFindResourceDirectory_U(hmod, &info, 2, &mut resdir);
-        if status != STATUS_SUCCESS {
-            break 'done;
-        }
+    status = LdrFindResourceDirectory_U(hmod as PVOID, core::ptr::null_mut(), 0, &mut basedir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameW(type_, &mut typeW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    status = get_res_nameW(name, &mut nameW);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
+    info.Type = typeW.Buffer as ULONG_PTR;
+    info.Name = nameW.Buffer as ULONG_PTR;
+    status = LdrFindResourceDirectory_U(hmod as PVOID, &mut info, 2, &mut resdir);
+    if status != STATUS_SUCCESS {
+        break 'done;
+    }
 
-        et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-        /* __TRY (DUMMY_PSEH: __EXCEPT_PAGE_FAULT is dead code) */
+    et = (resdir.offset(1)) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    // __TRY (DUMMY_PSEH: runs unconditionally, __EXCEPT is dead code)
+    {
         i = 0;
         while i < ((*resdir).NumberOfNamedEntries + (*resdir).NumberOfIdEntries) as i32 {
-            ret = lpfun(
+            ret = lpfun.unwrap()(
                 hmod,
                 type_,
                 name,
-                (*et.offset(i as isize)).Id,
+                rde_id(et.offset(i as isize)),
                 lparam,
             );
             if ret == 0 {
@@ -846,11 +958,12 @@ pub unsafe extern "system" fn EnumResourceLanguagesW(
             i += 1;
         }
     }
+    } // 'done
 
-    if IS_INTRESOURCE(typeW.Buffer) == 0 {
+    if IS_INTRESOURCE!(typeW.Buffer) == 0 {
         HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut _);
     }
-    if IS_INTRESOURCE(nameW.Buffer) == 0 {
+    if IS_INTRESOURCE!(nameW.Buffer) == 0 {
         HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut _);
     }
     if status != STATUS_SUCCESS {
@@ -867,7 +980,7 @@ pub unsafe extern "system" fn LoadResource(
     let status: NTSTATUS;
     let mut ret: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    // TRACE( "%p %p\n", hModule, hRsrc );
+    // TRACE!( "%p %p\n", hModule, hRsrc );
 
     if hRsrc.is_null() {
         return core::ptr::null_mut();
@@ -878,7 +991,7 @@ pub unsafe extern "system" fn LoadResource(
         hModule
     };
     status = LdrAccessResource(
-        hModule,
+        hModule as PVOID,
         hRsrc as *mut IMAGE_RESOURCE_DATA_ENTRY,
         &mut ret,
         core::ptr::null_mut(),
@@ -913,14 +1026,14 @@ unsafe fn resource_strcmp(a: LPCWSTR, b: LPCWSTR) -> i32 {
     if a == b {
         return 0;
     }
-    if IS_INTRESOURCE(a) == 0 && IS_INTRESOURCE(b) == 0 {
+    if IS_INTRESOURCE!(a) == 0 && IS_INTRESOURCE!(b) == 0 {
         return lstrcmpW(a, b);
     }
     /* strings come before ids */
-    if IS_INTRESOURCE(a) == 0 && IS_INTRESOURCE(b) != 0 {
+    if IS_INTRESOURCE!(a) == 0 && IS_INTRESOURCE!(b) != 0 {
         return -1;
     }
-    if IS_INTRESOURCE(b) == 0 && IS_INTRESOURCE(a) != 0 {
+    if IS_INTRESOURCE!(b) == 0 && IS_INTRESOURCE!(a) != 0 {
         return 1;
     }
     return if a < b { -1 } else { 1 };
@@ -931,16 +1044,11 @@ unsafe fn find_resource_dir_entry(
 ) -> *mut resource_dir_entry {
     let mut ent: *mut resource_dir_entry;
 
-    /* match either IDs or strings */
-    /* LIST_FOR_EACH_ENTRY( ent, dir, struct resource_dir_entry, entry ) */
-    let mut __cur = (*dir).next;
-    while __cur != dir {
-        ent = LIST_ENTRY!(__cur, resource_dir_entry, entry);
+    LIST_FOR_EACH_ENTRY!(ent, dir, resource_dir_entry, entry, {
         if resource_strcmp(id, (*ent).id) == 0 {
             return ent;
         }
-        __cur = (*__cur).next;
-    }
+    });
 
     return core::ptr::null_mut();
 }
@@ -949,62 +1057,50 @@ unsafe fn find_resource_data(dir: *mut list, lang: LANGID) -> *mut resource_data
     let mut res_data: *mut resource_data;
 
     /* match only languages here */
-    /* LIST_FOR_EACH_ENTRY( res_data, dir, struct resource_data, entry ) */
-    let mut __cur = (*dir).next;
-    while __cur != dir {
-        res_data = LIST_ENTRY!(__cur, resource_data, entry);
+    LIST_FOR_EACH_ENTRY!(res_data, dir, resource_data, entry, {
         if lang == (*res_data).lang {
             return res_data;
         }
-        __cur = (*__cur).next;
-    }
+    });
 
     return core::ptr::null_mut();
 }
 unsafe fn add_resource_dir_entry(dir: *mut list, resdir: *mut resource_dir_entry) {
     let mut ent: *mut resource_dir_entry;
-    /* LIST_FOR_EACH_ENTRY( ent, dir, struct resource_dir_entry, entry ) */
-    let mut __cur = (*dir).next;
-    while __cur != dir {
-        ent = LIST_ENTRY!(__cur, resource_dir_entry, entry);
-        __cur = (*__cur).next; /* advance before body so `continue` is faithful */
+    LIST_FOR_EACH_ENTRY!(ent, dir, resource_dir_entry, entry, {
         if 0 > resource_strcmp((*ent).id, (*resdir).id) {
             continue;
         }
         list_add_before(&mut (*ent).entry, &mut (*resdir).entry);
         return;
-    }
+    });
     list_add_tail(dir, &mut (*resdir).entry);
 }
 unsafe fn add_resource_data_entry(dir: *mut list, resdata: *mut resource_data) {
     let mut ent: *mut resource_data;
-    /* LIST_FOR_EACH_ENTRY( ent, dir, struct resource_data, entry ) */
-    let mut __cur = (*dir).next;
-    while __cur != dir {
-        ent = LIST_ENTRY!(__cur, resource_data, entry);
-        __cur = (*__cur).next; /* advance before body so `continue` is faithful */
+    LIST_FOR_EACH_ENTRY!(ent, dir, resource_data, entry, {
         if (*ent).lang < (*resdata).lang {
             continue;
         }
         list_add_before(&mut (*ent).entry, &mut (*resdata).entry);
         return;
-    }
+    });
     list_add_tail(dir, &mut (*resdata).entry);
 }
 unsafe fn res_strdupW(str: LPCWSTR) -> LPWSTR {
     let ret: LPWSTR;
     let len: UINT;
 
-    if IS_INTRESOURCE(str) != 0 {
+    if IS_INTRESOURCE!(str) != 0 {
         return LOWORD!(str) as UINT_PTR as LPWSTR;
     }
-    len = (lstrlenW(str) + 1) * core::mem::size_of::<WCHAR>() as UINT;
+    len = (lstrlenW(str) + 1) as UINT * core::mem::size_of::<WCHAR>() as UINT;
     ret = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPWSTR;
     memcpy(ret as *mut core::ffi::c_void, str as *const core::ffi::c_void, len as usize);
     return ret;
 }
 unsafe fn res_free_str(str: LPWSTR) {
-    if IS_INTRESOURCE(str) == 0 {
+    if IS_INTRESOURCE!(str) == 0 {
         HeapFree(GetProcessHeap(), 0, str as *mut _);
     }
 }
@@ -1023,8 +1119,8 @@ unsafe fn update_add_resource(
     TRACE!(
         "%p %s %s %p %d\n",
         updates,
-        debugstr_w(Type),
-        debugstr_w(Name),
+        debugstr_w!(Type),
+        debugstr_w!(Name),
         resdata,
         overwrite_existing,
     );
@@ -1121,7 +1217,7 @@ unsafe fn get_nt_header(base: *mut core::ffi::c_void, mapping_size: DWORD) -> *m
     }
 
     dos = base as *mut IMAGE_DOS_HEADER;
-    if (*dos).e_magic != IMAGE_DOS_SIGNATURE {
+    if (*dos).e_magic != IMAGE_DOS_SIGNATURE as u16 {
         return core::ptr::null_mut();
     }
 
@@ -1152,7 +1248,7 @@ unsafe fn get_section_header(
 
     /* check that we don't go over the end of the file accessing the sections */
     section_ofs = (core::mem::offset_of!(IMAGE_NT_HEADERS, OptionalHeader) as DWORD)
-        + (*nt).FileHeader.SizeOfOptionalHeader;
+        + (*nt).FileHeader.SizeOfOptionalHeader as DWORD;
     if ((*nt).FileHeader.NumberOfSections as DWORD)
         .wrapping_mul(core::mem::size_of::<IMAGE_SECTION_HEADER>() as DWORD)
         .wrapping_add(section_ofs)
@@ -1162,7 +1258,7 @@ unsafe fn get_section_header(
     }
 
     if !num_sections.is_null() {
-        *num_sections = (*nt).FileHeader.NumberOfSections;
+        *num_sections = (*nt).FileHeader.NumberOfSections as DWORD;
     }
 
     /* from here we have a valid PE exe to update */
@@ -1181,40 +1277,40 @@ unsafe fn check_pe_exe(file: HANDLE, updates: *mut QUEUEDUPDATES) -> BOOL {
 
     mapping_size = GetFileSize(file, core::ptr::null_mut());
 
-    mapping = CreateFileMappingW(file, core::ptr::null_mut(), PAGE_READONLY, 0, 0, core::ptr::null_mut());
     'done: {
-        if mapping.is_null() {
-            break 'done;
-        }
+    mapping = CreateFileMappingW(file, core::ptr::null_mut(), PAGE_READONLY, 0, 0, core::ptr::null_mut());
+    if mapping.is_null() {
+        break 'done;
+    }
 
-        base = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, mapping_size);
-        if base.is_null() {
-            break 'done;
-        }
+    base = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, mapping_size as SIZE_T);
+    if base.is_null() {
+        break 'done;
+    }
 
-        nt = get_nt_header(base, mapping_size) as *const IMAGE_NT_HEADERS32;
-        if nt.is_null() {
-            break 'done;
-        }
+    nt = get_nt_header(base, mapping_size) as *const IMAGE_NT_HEADERS32;
+    if nt.is_null() {
+        break 'done;
+    }
 
-        nt64 = nt as *const IMAGE_NT_HEADERS64;
-        dd = &(*nt).OptionalHeader.DataDirectory[0];
-        if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC {
-            dd = &(*nt64).OptionalHeader.DataDirectory[0];
-        }
+    nt64 = nt as *const IMAGE_NT_HEADERS64;
+    dd = &(*nt).OptionalHeader.DataDirectory[0];
+    if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16 {
+        dd = &(*nt64).OptionalHeader.DataDirectory[0];
+    }
 
-        TRACE!(
-            b"resources: %08x %08x\n\0".as_ptr() as *const i8,
-            (*dd.offset(IMAGE_DIRECTORY_ENTRY_RESOURCE as isize)).VirtualAddress,
-            (*dd.offset(IMAGE_DIRECTORY_ENTRY_RESOURCE as isize)).Size,
-        );
+    TRACE!(
+        b"resources: %08x %08x\n\0".as_ptr() as *const i8,
+        (*dd.offset(IMAGE_DIRECTORY_ENTRY_RESOURCE as isize)).VirtualAddress,
+        (*dd.offset(IMAGE_DIRECTORY_ENTRY_RESOURCE as isize)).Size,
+    );
 
-        sec = get_section_header(base, mapping_size, &mut num_sections);
-        if sec.is_null() {
-            break 'done;
-        }
+    sec = get_section_header(base, mapping_size, &mut num_sections);
+    if sec.is_null() {
+        break 'done;
+    }
 
-        ret = 1;
+    ret = 1;
     }
 
     if !base.is_null() {
@@ -1233,7 +1329,7 @@ unsafe fn section_from_rva(
 ) -> *const IMAGE_SECTION_HEADER {
     let sec: *const IMAGE_SECTION_HEADER;
     let mut num_sections: DWORD = 0;
-    let i: i32;
+    let mut i: i32;
 
     sec = get_section_header(base, mapping_size, &mut num_sections);
     if sec.is_null() {
@@ -1280,11 +1376,11 @@ unsafe fn resource_dup_string(
     let string: *const IMAGE_RESOURCE_DIR_STRING_U;
     let s: LPWSTR;
 
-    if (*entry).NameIsString == 0 {
-        return UIntToPtr((*entry).Id as usize) as LPWSTR;
+    if rde_name_is_string(entry) == 0 {
+        return UIntToPtr!(rde_id(entry) as usize) as LPWSTR;
     }
 
-    string = (root as *const u8).offset((*entry).NameOffset as isize) as *const IMAGE_RESOURCE_DIR_STRING_U;
+    string = (root as *const u8).offset(rde_name_offset(entry) as isize) as *const IMAGE_RESOURCE_DIR_STRING_U;
     s = HeapAlloc(GetProcessHeap(), 0, ((*string).Length as usize + 1) * core::mem::size_of::<u16>()) as LPWSTR;
     memcpy(
         s as *mut core::ffi::c_void,
@@ -1301,15 +1397,15 @@ unsafe fn enumerate_mapped_resources(
     mapping_size: DWORD,
     root: *const IMAGE_RESOURCE_DIRECTORY,
 ) -> BOOL {
-    let namedir: *const IMAGE_RESOURCE_DIRECTORY;
-    let langdir: *const IMAGE_RESOURCE_DIRECTORY;
-    let e1: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-    let e2: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-    let e3: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
-    let data: *const IMAGE_RESOURCE_DATA_ENTRY;
-    let i: DWORD;
-    let j: DWORD;
-    let k: DWORD;
+    let mut namedir: *const IMAGE_RESOURCE_DIRECTORY;
+    let mut langdir: *const IMAGE_RESOURCE_DIRECTORY;
+    let mut e1: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    let mut e2: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    let mut e3: *const IMAGE_RESOURCE_DIRECTORY_ENTRY;
+    let mut data: *const IMAGE_RESOURCE_DATA_ENTRY;
+    let mut i: DWORD;
+    let mut j: DWORD;
+    let mut k: DWORD;
 
     TRACE!(
         "version (%d.%d) %d named %d id entries\n",
@@ -1320,7 +1416,7 @@ unsafe fn enumerate_mapped_resources(
     );
 
     i = 0;
-    while i < (*root).NumberOfNamedEntries + (*root).NumberOfIdEntries {
+    while i < ((*root).NumberOfNamedEntries as u32 + (*root).NumberOfIdEntries as u32) {
         let Type: LPWSTR;
 
         e1 = (root.offset(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY).offset(i as isize);
@@ -1328,9 +1424,9 @@ unsafe fn enumerate_mapped_resources(
         Type = resource_dup_string(root, e1);
 
         namedir = (root as *const u8)
-            .offset((*e1).OffsetToDirectory as isize) as *const IMAGE_RESOURCE_DIRECTORY;
+            .offset(rde_offset_to_directory(e1) as isize) as *const IMAGE_RESOURCE_DIRECTORY;
         j = 0;
-        while j < (*namedir).NumberOfNamedEntries + (*namedir).NumberOfIdEntries {
+        while j < ((*namedir).NumberOfNamedEntries as u32 + (*namedir).NumberOfIdEntries as u32) {
             let Name: LPWSTR;
 
             e2 = (namedir.offset(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY).offset(j as isize);
@@ -1338,9 +1434,9 @@ unsafe fn enumerate_mapped_resources(
             Name = resource_dup_string(root, e2);
 
             langdir = (root as *const u8)
-                .offset((*e2).OffsetToDirectory as isize) as *const IMAGE_RESOURCE_DIRECTORY;
+                .offset(rde_offset_to_directory(e2) as isize) as *const IMAGE_RESOURCE_DIRECTORY;
             k = 0;
-            while k < (*langdir).NumberOfNamedEntries + (*langdir).NumberOfIdEntries {
+            while k < ((*langdir).NumberOfNamedEntries as u32 + (*langdir).NumberOfIdEntries as u32) {
                 let Lang: LANGID;
                 let p: *mut core::ffi::c_void;
                 let resdata: *mut resource_data;
@@ -1348,10 +1444,10 @@ unsafe fn enumerate_mapped_resources(
                 e3 = (langdir.offset(1) as *const IMAGE_RESOURCE_DIRECTORY_ENTRY)
                     .offset(k as isize);
 
-                Lang = (*e3).Id;
+                Lang = rde_id(e3);
 
                 data = (root as *const u8)
-                    .offset((*e3).OffsetToData as isize) as *const IMAGE_RESOURCE_DATA_ENTRY;
+                    .offset(rde_offset_to_data(e3) as isize) as *const IMAGE_RESOURCE_DATA_ENTRY;
 
                 p = address_from_rva(base, mapping_size, (*data).OffsetToData, (*data).Size);
 
@@ -1385,12 +1481,12 @@ unsafe fn read_mapped_resources(
 
     nt = get_nt_header(base, mapping_size);
     if nt.is_null() {
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     sec = get_section_header(base, mapping_size, &mut num_sections);
     if sec.is_null() {
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     i = 0;
@@ -1407,7 +1503,7 @@ unsafe fn read_mapped_resources(
     }
 
     if i == num_sections {
-        return TRUE;
+        return TRUE as BOOL;
     }
 
     /* check the resource data is inside the mapping */
@@ -1415,7 +1511,7 @@ unsafe fn read_mapped_resources(
         || ((*sec.offset(i as isize)).PointerToRawData + (*sec.offset(i as isize)).SizeOfRawData)
             > mapping_size
     {
-        return TRUE;
+        return TRUE as BOOL;
     }
 
     TRACE!(
@@ -1428,14 +1524,14 @@ unsafe fn read_mapped_resources(
         || (*sec.offset(i as isize)).SizeOfRawData
             < core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD
     {
-        return TRUE;
+        return TRUE as BOOL;
     }
 
     root = (base as *mut u8).offset((*sec.offset(i as isize)).PointerToRawData as isize)
         as *const IMAGE_RESOURCE_DIRECTORY;
     enumerate_mapped_resources(updates, base, mapping_size, root);
 
-    return TRUE;
+    return TRUE as BOOL;
 }
 unsafe fn map_file_into_memory(mi: *mut mapping_info) -> BOOL {
     let page_attr: DWORD;
@@ -1455,7 +1551,7 @@ unsafe fn map_file_into_memory(mi: *mut mapping_info) -> BOOL {
         return 0;
     }
 
-    (*mi).base = MapViewOfFile(mapping, perm, 0, 0, (*mi).size);
+    (*mi).base = MapViewOfFile(mapping, perm, 0, 0, (*mi).size as SIZE_T);
     CloseHandle(mapping);
 
     return if !(*mi).base.is_null() { 1 } else { 0 };
@@ -1492,10 +1588,10 @@ unsafe fn create_mapping(name: LPCWSTR, rw: BOOL) -> *mut mapping_info {
         core::ptr::null_mut(),
         OPEN_EXISTING,
         0,
-        0,
+        core::ptr::null_mut(),
     );
 
-    if (*mi).file != INVALID_HANDLE_VALUE {
+    if (*mi).file != INVALID_HANDLE_VALUE as HANDLE {
         (*mi).size = GetFileSize((*mi).file, core::ptr::null_mut());
 
         if map_file_into_memory(mi) != 0 {
@@ -1509,7 +1605,7 @@ unsafe fn resize_mapping(mi: *mut mapping_info, new_size: DWORD) -> BOOL {
     if unmap_file_from_memory(mi) == 0 {
         return 0i32;
     }
-    SetFilePointer((*mi).file, new_size, core::ptr::null_mut(), FILE_BEGIN);
+    SetFilePointer((*mi).file, new_size as i32, core::ptr::null_mut(), FILE_BEGIN);
     if SetEndOfFile((*mi).file) == 0 {
         ERR!("failed to set file size to %08x\n", new_size);
         return 0i32;
@@ -1529,46 +1625,25 @@ unsafe fn get_resource_sizes(updates: *mut QUEUEDUPDATES, si: *mut resource_size
 
     memset(si as *mut core::ffi::c_void, 0, core::mem::size_of::<resource_size_info>());
 
-    /* LIST_FOR_EACH_ENTRY( types, &updates->root, struct resource_dir_entry, entry ) */
-    let __types_list: *mut list = &mut (*updates).root;
-    let mut __types_cur = (*__types_list).next;
-    while __types_cur != __types_list {
-        types = LIST_ENTRY!(__types_cur, resource_dir_entry, entry);
-        {
-            num_types += 1;
-            if IS_INTRESOURCE((*types).id) == 0 {
-                strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*types).id) * core::mem::size_of::<WCHAR>() as DWORD;
-            }
-
-            /* LIST_FOR_EACH_ENTRY( names, &types->children, struct resource_dir_entry, entry ) */
-            let __names_list: *mut list = &mut (*types).children;
-            let mut __names_cur = (*__names_list).next;
-            while __names_cur != __names_list {
-                names = LIST_ENTRY!(__names_cur, resource_dir_entry, entry);
-                {
-                    num_names += 1;
-
-                    if IS_INTRESOURCE((*names).id) == 0 {
-                        strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*names).id) * core::mem::size_of::<WCHAR>() as DWORD;
-                    }
-
-                    /* LIST_FOR_EACH_ENTRY( data, &names->children, struct resource_data, entry ) */
-                    let __data_list: *mut list = &mut (*names).children;
-                    let mut __data_cur = (*__data_list).next;
-                    while __data_cur != __data_list {
-                        data = LIST_ENTRY!(__data_cur, resource_data, entry);
-                        {
-                            num_langs += 1;
-                            data_size += ((*data).cbData + 3) & !3;
-                        }
-                        __data_cur = (*__data_cur).next;
-                    }
-                }
-                __names_cur = (*__names_cur).next;
-            }
+    LIST_FOR_EACH_ENTRY!(types, &(*updates).root, resource_dir_entry, entry, {
+        num_types += 1;
+        if IS_INTRESOURCE!((*types).id) == 0 {
+            strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*types).id) as DWORD * core::mem::size_of::<WCHAR>() as DWORD;
         }
-        __types_cur = (*__types_cur).next;
-    }
+
+        LIST_FOR_EACH_ENTRY!(names, &(*types).children, resource_dir_entry, entry, {
+            num_names += 1;
+
+            if IS_INTRESOURCE!((*names).id) == 0 {
+                strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*names).id) as DWORD * core::mem::size_of::<WCHAR>() as DWORD;
+            }
+
+            LIST_FOR_EACH_ENTRY!(data, &(*names).children, resource_data, entry, {
+                num_langs += 1;
+                data_size += ((*data).cbData + 3) & !3;
+            });
+        });
+    });
 
     /* names are at the end of the types */
     (*si).names_ofs = core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD +
@@ -1634,27 +1709,28 @@ unsafe fn write_resources(
     core::ptr::write_bytes(root, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
     (*root).MajorVersion = 4;
     (*si).types_ofs = core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
-    /* LIST_FOR_EACH_ENTRY( types, &updates->root, struct resource_dir_entry, entry ) */
-    let __types_list: *mut list = &mut (*updates).root;
-    let mut __types_cur = (*__types_list).next;
-    while __types_cur != __types_list {
-        types = LIST_ENTRY!(__types_cur, resource_dir_entry, entry);
+    LIST_FOR_EACH_ENTRY!(
+        types,
+        &mut (*updates).root,
+        resource_dir_entry,
+        entry,
+    {
         let e1: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
         let namedir: *mut IMAGE_RESOURCE_DIRECTORY;
 
         e1 = base.offset((*si).types_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
         core::ptr::write_bytes(e1, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
-        if IS_INTRESOURCE((*types).id) == 0 {
+        if IS_INTRESOURCE!((*types).id) == 0 {
             let strings: *mut WCHAR;
             let len: DWORD;
 
             (*root).NumberOfNamedEntries += 1;
-            (*e1).NameIsString = 1;
-            (*e1).NameOffset = (*si).strings_ofs;
+            rde_set_name_is_string(e1, (1) as DWORD);
+            rde_set_name_offset(e1, ((*si).strings_ofs) as DWORD);
 
             strings = base.offset((*si).strings_ofs as isize) as *mut WCHAR;
-            len = lstrlenW((*types).id);
-            *strings = len;
+            len = lstrlenW((*types).id) as DWORD;
+            *strings = len as WORD;
             core::ptr::copy_nonoverlapping(
                 (*types).id as *const WCHAR,
                 strings.offset(1),
@@ -1663,10 +1739,10 @@ unsafe fn write_resources(
             (*si).strings_ofs += (len + 1) * core::mem::size_of::<WCHAR>() as DWORD;
         } else {
             (*root).NumberOfIdEntries += 1;
-            (*e1).Id = LOWORD!((*types).id) as WORD;
+            rde_set_id(e1, (LOWORD!((*types).id)) as WORD);
         }
-        (*e1).OffsetToDirectory = (*si).names_ofs;
-        (*e1).DataIsDirectory = 1;
+        rde_set_offset_to_directory(e1, ((*si).names_ofs) as DWORD);
+        rde_set_data_is_directory(e1, (1) as DWORD);
         (*si).types_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
         namedir = base.offset((*si).names_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY;
@@ -1674,27 +1750,28 @@ unsafe fn write_resources(
         (*namedir).MajorVersion = 4;
         (*si).names_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
 
-        /* LIST_FOR_EACH_ENTRY( names, &types->children, struct resource_dir_entry, entry ) */
-        let __names_list: *mut list = &mut (*types).children;
-        let mut __names_cur = (*__names_list).next;
-        while __names_cur != __names_list {
-            names = LIST_ENTRY!(__names_cur, resource_dir_entry, entry);
+        LIST_FOR_EACH_ENTRY!(
+            names,
+            &mut (*types).children,
+            resource_dir_entry,
+            entry,
+        {
             let e2: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
             let langdir: *mut IMAGE_RESOURCE_DIRECTORY;
 
             e2 = base.offset((*si).names_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
             core::ptr::write_bytes(e2, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
-            if IS_INTRESOURCE((*names).id) == 0 {
+            if IS_INTRESOURCE!((*names).id) == 0 {
                 let strings: *mut WCHAR;
                 let len: DWORD;
 
                 (*namedir).NumberOfNamedEntries += 1;
-                (*e2).NameIsString = 1;
-                (*e2).NameOffset = (*si).strings_ofs;
+                rde_set_name_is_string(e2, (1) as DWORD);
+                rde_set_name_offset(e2, ((*si).strings_ofs) as DWORD);
 
                 strings = base.offset((*si).strings_ofs as isize) as *mut WCHAR;
-                len = lstrlenW((*names).id);
-                *strings = len;
+                len = lstrlenW((*names).id) as DWORD;
+                *strings = len as WORD;
                 core::ptr::copy_nonoverlapping(
                     (*names).id as *const WCHAR,
                     strings.offset(1),
@@ -1703,10 +1780,10 @@ unsafe fn write_resources(
                 (*si).strings_ofs += (len + 1) * core::mem::size_of::<WCHAR>() as DWORD;
             } else {
                 (*namedir).NumberOfIdEntries += 1;
-                (*e2).Id = LOWORD!((*names).id) as WORD;
+                rde_set_id(e2, (LOWORD!((*names).id)) as WORD);
             }
-            (*e2).OffsetToDirectory = (*si).langs_ofs;
-            (*e2).DataIsDirectory = 1;
+            rde_set_offset_to_directory(e2, ((*si).langs_ofs) as DWORD);
+            rde_set_data_is_directory(e2, (1) as DWORD);
             (*si).names_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
             langdir = base.offset((*si).langs_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY;
@@ -1714,11 +1791,12 @@ unsafe fn write_resources(
             (*langdir).MajorVersion = 4;
             (*si).langs_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
 
-            /* LIST_FOR_EACH_ENTRY( data, &names->children, struct resource_data, entry ) */
-            let __data_list: *mut list = &mut (*names).children;
-            let mut __data_cur = (*__data_list).next;
-            while __data_cur != __data_list {
-                data = LIST_ENTRY!(__data_cur, resource_data, entry);
+            LIST_FOR_EACH_ENTRY!(
+                data,
+                &mut (*names).children,
+                resource_data,
+                entry,
+            {
                 let e3: *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
                 let de: *mut IMAGE_RESOURCE_DATA_ENTRY;
                 let pad_size: i32;
@@ -1726,8 +1804,8 @@ unsafe fn write_resources(
                 e3 = base.offset((*si).langs_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
                 core::ptr::write_bytes(e3, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
                 (*langdir).NumberOfIdEntries += 1;
-                (*e3).Id = LOWORD!((*data).lang) as WORD;
-                (*e3).OffsetToData = (*si).data_entry_ofs;
+                rde_set_id(e3, (LOWORD!((*data).lang)) as WORD);
+                rde_set_offset_to_data(e3, ((*si).data_entry_ofs) as DWORD);
 
                 (*si).langs_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
@@ -1748,12 +1826,9 @@ unsafe fn write_resources(
                 pad_size = (-((*si).data_ofs as i32)) & 3;
                 res_write_padding(base.offset((*si).data_ofs as isize), pad_size as u32);
                 (*si).data_ofs += pad_size as DWORD;
-                __data_cur = (*__data_cur).next;
-            }
-            __names_cur = (*__names_cur).next;
-        }
-        __types_cur = (*__types_cur).next;
-    }
+            });
+        });
+    });
 
     1
 }
@@ -1829,7 +1904,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
     let mut sec: *mut IMAGE_SECTION_HEADER;
     let mut nt: *mut IMAGE_NT_HEADERS32;
     let mut nt64: *mut IMAGE_NT_HEADERS64;
-    let mut res_size: resource_size_info;
+    let mut res_size: resource_size_info = unsafe { core::mem::zeroed() };
     let mut res_base: *mut u8;
     let mut read_map: *mut mapping_info = core::ptr::null_mut();
     let mut write_map: *mut mapping_info = core::ptr::null_mut();
@@ -1851,7 +1926,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
         break 'done;
     }
 
-    TRACE!(b"tempfile %s\n\0".as_ptr() as *const i8, debugstr_w(tempfile.as_mut_ptr()));
+    TRACE!(b"tempfile %s\n\0".as_ptr() as *const i8, debugstr_w!(tempfile.as_mut_ptr()));
 
     if (*updates).bDeleteExistingResources == 0 {
         read_map = create_mapping((*updates).pFileName, 0);
@@ -1877,7 +1952,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
     }
 
     nt64 = nt as *mut IMAGE_NT_HEADERS64;
-    if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC {
+    if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16 {
         PeSectionAlignment = (*nt64).OptionalHeader.SectionAlignment;
         PeFileAlignment = (*nt64).OptionalHeader.FileAlignment;
         PeSizeOfImage = (*nt64).OptionalHeader.SizeOfImage;
@@ -2015,7 +2090,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
 
         (*sec).SizeOfRawData = section_size;
         (*sec).Misc.VirtualSize = virtual_section_size;
-        if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC {
+        if (*nt).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16 {
             (*nt64).OptionalHeader.SizeOfImage = ((*nt64).OptionalHeader.SizeOfImage as i32 + rva_delta) as DWORD;
             (*nt64)
                 .OptionalHeader
@@ -2080,9 +2155,9 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
         (*sec).PointerToRawData,
         (*sec).SizeOfRawData,
     );
-    } // end 'done
 
-    // done: (epilogue)
+    } // 'done
+
     destroy_mapping(read_map);
     destroy_mapping(write_map);
 
@@ -2107,11 +2182,11 @@ pub unsafe extern "system" fn BeginUpdateResourceW(
 
     TRACE!(
         b"%s, %d\0".as_ptr() as *const i8,
-        debugstr_w(pFileName),
+        debugstr_w!(pFileName),
         bDeleteExistingResources,
     );
 
-    hUpdate = GlobalAlloc(GHND, core::mem::size_of::<QUEUEDUPDATES>());
+    hUpdate = GlobalAlloc(GHND, core::mem::size_of::<QUEUEDUPDATES>() as SIZE_T);
     if hUpdate.is_null() {
         return ret;
     }
@@ -2123,7 +2198,7 @@ pub unsafe extern "system" fn BeginUpdateResourceW(
         (*updates).pFileName = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((lstrlenW(pFileName) + 1) * core::mem::size_of::<u16>()) as usize,
+            ((lstrlenW(pFileName) + 1) as usize * core::mem::size_of::<u16>()) as usize,
         ) as LPWSTR;
         if !(*updates).pFileName.is_null() {
             lstrcpyW((*updates).pFileName, pFileName);
@@ -2135,11 +2210,11 @@ pub unsafe extern "system" fn BeginUpdateResourceW(
                 core::ptr::null_mut(),
                 OPEN_EXISTING,
                 0,
-                0,
+                core::ptr::null_mut(),
             );
 
             /* if resources are deleted, only the file's presence is checked */
-            if file != INVALID_HANDLE_VALUE
+            if file != INVALID_HANDLE_VALUE as HANDLE
                 && (bDeleteExistingResources != 0 || check_pe_exe(file, updates) != 0)
             {
                 ret = hUpdate;
@@ -2220,8 +2295,8 @@ pub unsafe extern "system" fn UpdateResourceW(
     TRACE!(
         "%p %s %s %08x %p %d\0".as_ptr() as *const i8,
         hUpdate,
-        debugstr_w(lpType),
-        debugstr_w(lpName),
+        debugstr_w!(lpType),
+        debugstr_w!(lpName),
         wLanguage,
         lpData,
         cbData,
@@ -2254,23 +2329,23 @@ pub unsafe extern "system" fn UpdateResourceA(
     cbData: DWORD,
 ) -> BOOL {
     let ret: BOOL;
-    let mut TypeW: _UNICODE_STRING;
-    let mut NameW: _UNICODE_STRING;
-    if IS_INTRESOURCE(lpType) != 0 {
-        TypeW.Buffer = ULongToPtr(LOWORD!(lpType));
+    let mut TypeW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    let mut NameW: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+    if IS_INTRESOURCE!(lpType) != 0 {
+        TypeW.Buffer = ULongToPtr!(LOWORD!(lpType)) as LPWSTR;
     } else {
         RtlCreateUnicodeStringFromAsciiz(&mut TypeW, lpType);
     }
-    if IS_INTRESOURCE(lpName) != 0 {
-        NameW.Buffer = ULongToPtr(LOWORD!(lpName));
+    if IS_INTRESOURCE!(lpName) != 0 {
+        NameW.Buffer = ULongToPtr!(LOWORD!(lpName)) as LPWSTR;
     } else {
         RtlCreateUnicodeStringFromAsciiz(&mut NameW, lpName);
     }
     ret = UpdateResourceW(hUpdate, TypeW.Buffer, NameW.Buffer, wLanguage, lpData, cbData);
-    if IS_INTRESOURCE(lpType) == 0 {
+    if IS_INTRESOURCE!(lpType) == 0 {
         RtlFreeUnicodeString(&mut TypeW);
     }
-    if IS_INTRESOURCE(lpName) == 0 {
+    if IS_INTRESOURCE!(lpName) == 0 {
         RtlFreeUnicodeString(&mut NameW);
     }
     return ret;
@@ -2314,17 +2389,17 @@ pub unsafe extern "system" fn UpdateResourceA(
 // /* retrieve the resource name to pass to the ntdll functions */
 // static NTSTATUS get_res_nameA( LPCSTR name, UNICODE_STRING *str )
 // {
-//     if (IS_INTRESOURCE(name))
+//     if (IS_INTRESOURCE!(name))
 //     {
-//         str->Buffer = ULongToPtr(LOWORD(name));
+//         str->Buffer = ULongToPtr!(LOWORD!(name));
 //         return STATUS_SUCCESS;
 //     }
 //     if (name[0] == '#')
 //     {
 //         ULONG value;
-//         if (RtlCharToInteger( name + 1, 10, &value ) != STATUS_SUCCESS || HIWORD(value))
+//         if (RtlCharToInteger( name + 1, 10, &value ) != STATUS_SUCCESS || HIWORD!(value))
 //             return STATUS_INVALID_PARAMETER;
-//         str->Buffer = ULongToPtr(value);
+//         str->Buffer = ULongToPtr!(value);
 //         return STATUS_SUCCESS;
 //     }
 //     RtlCreateUnicodeStringFromAsciiz( str, name );
@@ -2335,18 +2410,18 @@ pub unsafe extern "system" fn UpdateResourceA(
 // /* retrieve the resource name to pass to the ntdll functions */
 // static NTSTATUS get_res_nameW( LPCWSTR name, UNICODE_STRING *str )
 // {
-//     if (IS_INTRESOURCE(name))
+//     if (IS_INTRESOURCE!(name))
 //     {
-//         str->Buffer = ULongToPtr(LOWORD(name));
+//         str->Buffer = ULongToPtr!(LOWORD!(name));
 //         return STATUS_SUCCESS;
 //     }
 //     if (name[0] == '#')
 //     {
 //         ULONG value;
 //         RtlInitUnicodeString( str, name + 1 );
-//         if (RtlUnicodeStringToInteger( str, 10, &value ) != STATUS_SUCCESS || HIWORD(value))
+//         if (RtlUnicodeStringToInteger( str, 10, &value ) != STATUS_SUCCESS || HIWORD!(value))
 //             return STATUS_INVALID_PARAMETER;
-//         str->Buffer = ULongToPtr(value);
+//         str->Buffer = ULongToPtr!(value);
 //         return STATUS_SUCCESS;
 //     }
 //     RtlCreateUnicodeString( str, name );
@@ -2372,7 +2447,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         info.Type = (ULONG_PTR)typeW.Buffer;
 //         info.Name = (ULONG_PTR)nameW.Buffer;
 //         info.Language = lang;
-//         status = LdrFindResource_U( hModule, &info, 3, &entry );
+//         status = LdrFindResource_U( hModule, &mut info, 3, &entry );
 //     done:
 //         if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     }
@@ -2382,8 +2457,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     }
 //     __ENDTRY
 //
-//     if (!IS_INTRESOURCE(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
 //     return (HRSRC)entry;
 // }
 //
@@ -2405,7 +2480,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         info.Type = (ULONG_PTR)typeW.Buffer;
 //         info.Name = (ULONG_PTR)nameW.Buffer;
 //         info.Language = lang;
-//         status = LdrFindResource_U( hModule, &info, 3, &entry );
+//         status = LdrFindResource_U( hModule, &mut info, 3, &entry );
 //     done:
 //         if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     }
@@ -2415,8 +2490,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     }
 //     __ENDTRY
 //
-//     if (!IS_INTRESOURCE(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
 //     return (HRSRC)entry;
 // }
 //
@@ -2425,7 +2500,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //  */
 // HRSRC WINAPI FindResourceExA( HMODULE hModule, LPCSTR type, LPCSTR name, WORD lang )
 // {
-//     TRACE( "%p %s %s %04x\n", hModule, debugstr_a(type), debugstr_a(name), lang );
+//     TRACE!( "%p %s %s %04x\n", hModule, debugstr_a!(type), debugstr_a!(name), lang );
 //
 //     if (!hModule) hModule = GetModuleHandleW(0);
 //     return find_resourceA( hModule, type, name, lang );
@@ -2437,7 +2512,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //  */
 // HRSRC WINAPI FindResourceA( HMODULE hModule, LPCSTR name, LPCSTR type )
 // {
-//     return FindResourceExA( hModule, type, name, MAKELANGID( LANG_NEUTRAL, SUBLANG_NEUTRAL ) );
+//     return FindResourceExA( hModule, type, name, MAKELANGID!( LANG_NEUTRAL, SUBLANG_NEUTRAL ) );
 // }
 //
 //
@@ -2446,7 +2521,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //  */
 // HRSRC WINAPI FindResourceExW( HMODULE hModule, LPCWSTR type, LPCWSTR name, WORD lang )
 // {
-//     TRACE( "%p %s %s %04x\n", hModule, debugstr_w(type), debugstr_w(name), lang );
+//     TRACE!( "%p %s %s %04x\n", hModule, debugstr_w!(type), debugstr_w!(name), lang );
 //
 //     if (!hModule) hModule = GetModuleHandleW(0);
 //     return find_resourceW( hModule, type, name, lang );
@@ -2458,7 +2533,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //  */
 // HRSRC WINAPI FindResourceW( HINSTANCE hModule, LPCWSTR name, LPCWSTR type )
 // {
-//     return FindResourceExW( hModule, type, name, MAKELANGID( LANG_NEUTRAL, SUBLANG_NEUTRAL ) );
+//     return FindResourceExW( hModule, type, name, MAKELANGID!( LANG_NEUTRAL, SUBLANG_NEUTRAL ) );
 // }
 //
 //
@@ -2476,7 +2551,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //     const IMAGE_RESOURCE_DIR_STRING_U *str;
 //
-//     TRACE( "%p %p %lx\n", hmod, lpfun, lparam );
+//     TRACE!( "%p %p %lx\n", hmod, lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleA( NULL );
 //
@@ -2500,11 +2575,11 @@ pub unsafe extern "system" fn UpdateResourceA(
 //             }
 //             WideCharToMultiByte( CP_ACP, 0, str->NameString, str->Length, type, len, NULL, NULL);
 //             type[newlen] = 0;
-//             ret = lpfun(hmod,type,lparam);
+//             ret = lpfun.unwrap()(hmod,type,lparam);
 //         }
 //         else
 //         {
-//             ret = lpfun( hmod, UIntToPtr(et[i].Id), lparam );
+//             ret = lpfun.unwrap()( hmod, UIntToPtr!(et[i].Id), lparam );
 //         }
 //         if (!ret) break;
 //     }
@@ -2526,7 +2601,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //     const IMAGE_RESOURCE_DIR_STRING_U *str;
 //
-//     TRACE( "%p %p %lx\n", hmod, lpfun, lparam );
+//     TRACE!( "%p %p %lx\n", hmod, lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleW( NULL );
 //
@@ -2549,11 +2624,11 @@ pub unsafe extern "system" fn UpdateResourceA(
 //             }
 //             memcpy(type, str->NameString, str->Length * sizeof (WCHAR));
 //             type[str->Length] = 0;
-//             ret = lpfun(hmod,type,lparam);
+//             ret = lpfun.unwrap()(hmod,type,lparam);
 //         }
 //         else
 //         {
-//             ret = lpfun( hmod, UIntToPtr(et[i].Id), lparam );
+//             ret = lpfun.unwrap()( hmod, UIntToPtr!(et[i].Id), lparam );
 //         }
 //         if (!ret) break;
 //     }
@@ -2578,7 +2653,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //     const IMAGE_RESOURCE_DIR_STRING_U *str;
 //
-//     TRACE( "%p %s %p %lx\n", hmod, debugstr_a(type), lpfun, lparam );
+//     TRACE!( "%p %s %p %lx\n", hmod, debugstr_a!(type), lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleA( NULL );
 //     typeW.Buffer = NULL;
@@ -2587,7 +2662,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     if ((status = get_res_nameA( type, &typeW )) != STATUS_SUCCESS)
 //         goto done;
 //     info.Type = (ULONG_PTR)typeW.Buffer;
-//     if ((status = LdrFindResourceDirectory_U( hmod, &info, 1, &resdir )) != STATUS_SUCCESS)
+//     if ((status = LdrFindResourceDirectory_U( hmod, &mut info, 1, &resdir )) != STATUS_SUCCESS)
 //         goto done;
 //
 //     et = (const IMAGE_RESOURCE_DIRECTORY_ENTRY *)(resdir + 1);
@@ -2611,11 +2686,11 @@ pub unsafe extern "system" fn UpdateResourceA(
 //                 }
 //                 WideCharToMultiByte( CP_ACP, 0, str->NameString, str->Length, name, len, NULL, NULL );
 //                 name[newlen] = 0;
-//                 ret = lpfun(hmod,type,name,lparam);
+//                 ret = lpfun.unwrap()(hmod,type,name,lparam);
 //             }
 //             else
 //             {
-//                 ret = lpfun( hmod, type, UIntToPtr(et[i].Id), lparam );
+//                 ret = lpfun.unwrap()( hmod, type, UIntToPtr!(et[i].Id), lparam );
 //             }
 //             if (!ret) break;
 //         }
@@ -2629,7 +2704,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 // done:
 //     HeapFree( GetProcessHeap(), 0, name );
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
 //     if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     return ret;
 // }
@@ -2650,7 +2725,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //     const IMAGE_RESOURCE_DIR_STRING_U *str;
 //
-//     TRACE( "%p %s %p %lx\n", hmod, debugstr_w(type), lpfun, lparam );
+//     TRACE!( "%p %s %p %lx\n", hmod, debugstr_w!(type), lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleW( NULL );
 //     typeW.Buffer = NULL;
@@ -2659,7 +2734,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     if ((status = get_res_nameW( type, &typeW )) != STATUS_SUCCESS)
 //         goto done;
 //     info.Type = (ULONG_PTR)typeW.Buffer;
-//     if ((status = LdrFindResourceDirectory_U( hmod, &info, 1, &resdir )) != STATUS_SUCCESS)
+//     if ((status = LdrFindResourceDirectory_U( hmod, &mut info, 1, &resdir )) != STATUS_SUCCESS)
 //         goto done;
 //
 //     et = (const IMAGE_RESOURCE_DIRECTORY_ENTRY *)(resdir + 1);
@@ -2682,11 +2757,11 @@ pub unsafe extern "system" fn UpdateResourceA(
 //                 }
 //                 memcpy(name, str->NameString, str->Length * sizeof (WCHAR));
 //                 name[str->Length] = 0;
-//                 ret = lpfun(hmod,type,name,lparam);
+//                 ret = lpfun.unwrap()(hmod,type,name,lparam);
 //             }
 //             else
 //             {
-//                 ret = lpfun( hmod, type, UIntToPtr(et[i].Id), lparam );
+//                 ret = lpfun.unwrap()( hmod, type, UIntToPtr!(et[i].Id), lparam );
 //             }
 //             if (!ret) break;
 //         }
@@ -2699,7 +2774,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     __ENDTRY
 // done:
 //     HeapFree( GetProcessHeap(), 0, name );
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
 //     if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     return ret;
 // }
@@ -2719,7 +2794,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     IMAGE_RESOURCE_DIRECTORY *basedir, *resdir;
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //
-//     TRACE( "%p %s %s %p %lx\n", hmod, debugstr_a(type), debugstr_a(name), lpfun, lparam );
+//     TRACE!( "%p %s %s %p %lx\n", hmod, debugstr_a!(type), debugstr_a!(name), lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleA( NULL );
 //     typeW.Buffer = nameW.Buffer = NULL;
@@ -2731,7 +2806,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         goto done;
 //     info.Type = (ULONG_PTR)typeW.Buffer;
 //     info.Name = (ULONG_PTR)nameW.Buffer;
-//     if ((status = LdrFindResourceDirectory_U( hmod, &info, 2, &resdir )) != STATUS_SUCCESS)
+//     if ((status = LdrFindResourceDirectory_U( hmod, &mut info, 2, &resdir )) != STATUS_SUCCESS)
 //         goto done;
 //
 //     et = (const IMAGE_RESOURCE_DIRECTORY_ENTRY *)(resdir + 1);
@@ -2739,7 +2814,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     {
 //         for (i = 0; i < resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries; i++)
 //         {
-//             ret = lpfun( hmod, type, name, et[i].Id, lparam );
+//             ret = lpfun.unwrap()( hmod, type, name, et[i].Id, lparam );
 //             if (!ret) break;
 //         }
 //     }
@@ -2750,8 +2825,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     }
 //     __ENDTRY
 // done:
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
-//     if (!IS_INTRESOURCE(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
 //     if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     return ret;
 // }
@@ -2771,7 +2846,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     IMAGE_RESOURCE_DIRECTORY *basedir, *resdir;
 //     const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
 //
-//     TRACE( "%p %s %s %p %lx\n", hmod, debugstr_w(type), debugstr_w(name), lpfun, lparam );
+//     TRACE!( "%p %s %s %p %lx\n", hmod, debugstr_w!(type), debugstr_w!(name), lpfun, lparam );
 //
 //     if (!hmod) hmod = GetModuleHandleW( NULL );
 //     typeW.Buffer = nameW.Buffer = NULL;
@@ -2783,7 +2858,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         goto done;
 //     info.Type = (ULONG_PTR)typeW.Buffer;
 //     info.Name = (ULONG_PTR)nameW.Buffer;
-//     if ((status = LdrFindResourceDirectory_U( hmod, &info, 2, &resdir )) != STATUS_SUCCESS)
+//     if ((status = LdrFindResourceDirectory_U( hmod, &mut info, 2, &resdir )) != STATUS_SUCCESS)
 //         goto done;
 //
 //     et = (const IMAGE_RESOURCE_DIRECTORY_ENTRY *)(resdir + 1);
@@ -2791,7 +2866,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     {
 //         for (i = 0; i < resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries; i++)
 //         {
-//             ret = lpfun( hmod, type, name, et[i].Id, lparam );
+//             ret = lpfun.unwrap()( hmod, type, name, et[i].Id, lparam );
 //             if (!ret) break;
 //         }
 //     }
@@ -2802,8 +2877,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     }
 //     __ENDTRY
 // done:
-//     if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
-//     if (!IS_INTRESOURCE(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
+//     if (!IS_INTRESOURCE!(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
+//     if (!IS_INTRESOURCE!(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
 //     if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
 //     return ret;
 // }
@@ -2817,7 +2892,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     NTSTATUS status;
 //     void *ret = NULL;
 //
-//     TRACE( "%p %p\n", hModule, hRsrc );
+//     TRACE!( "%p %p\n", hModule, hRsrc );
 //
 //     if (!hRsrc) return 0;
 //     if (!hModule) hModule = GetModuleHandleA( NULL );
@@ -2891,12 +2966,12 @@ pub unsafe extern "system" fn UpdateResourceA(
 // {
 //     if ( a == b )
 //         return 0;
-//     if (!IS_INTRESOURCE( a ) && !IS_INTRESOURCE( b ) )
+//     if (!IS_INTRESOURCE!( a ) && !IS_INTRESOURCE!( b ) )
 //         return lstrcmpW( a, b );
 //     /* strings come before ids */
-//     if (!IS_INTRESOURCE( a ) && IS_INTRESOURCE( b ))
+//     if (!IS_INTRESOURCE!( a ) && IS_INTRESOURCE!( b ))
 //         return -1;
-//     if (!IS_INTRESOURCE( b ) && IS_INTRESOURCE( a ))
+//     if (!IS_INTRESOURCE!( b ) && IS_INTRESOURCE!( a ))
 //         return 1;
 //     return ( a < b ) ? -1 : 1;
 // }
@@ -2960,8 +3035,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     LPWSTR ret;
 //     UINT len;
 //
-//     if (IS_INTRESOURCE(str))
-//         return (LPWSTR) (UINT_PTR) LOWORD(str);
+//     if (IS_INTRESOURCE!(str))
+//         return (LPWSTR) (UINT_PTR) LOWORD!(str);
 //     len = (lstrlenW( str ) + 1) * sizeof (WCHAR);
 //     ret = HeapAlloc( GetProcessHeap(), 0, len );
 //     memcpy( ret, str, len );
@@ -2970,7 +3045,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 // static void res_free_str( LPWSTR str )
 // {
-//     if (!IS_INTRESOURCE(str))
+//     if (!IS_INTRESOURCE!(str))
 //         HeapFree( GetProcessHeap(), 0, str );
 // }
 //
@@ -2981,8 +3056,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     struct resource_dir_entry *restype, *resname;
 //     struct resource_data *existing;
 //
-//     TRACE("%p %s %s %p %d\n", updates,
-//           debugstr_w(Type), debugstr_w(Name), resdata, overwrite_existing );
+//     TRACE!("%p %s %s %p %d\n", updates,
+//           debugstr_w!(Type), debugstr_w!(Name), resdata, overwrite_existing );
 //
 //     restype = find_resource_dir_entry( &updates->root, Type );
 //     if (!restype)
@@ -3058,7 +3133,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         {
 //             struct resource_dir_entry *ent;
 //
-//             ent = LIST_ENTRY( ptr, struct resource_dir_entry, entry );
+//             ent = LIST_ENTRY!( ptr, struct resource_dir_entry, entry );
 //             res_free_str( ent->id );
 //             free_resource_directory( &ent->children, level - 1 );
 //             HeapFree(GetProcessHeap(), 0, ent);
@@ -3067,7 +3142,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         {
 //             struct resource_data *data;
 //
-//             data = LIST_ENTRY( ptr, struct resource_data, entry );
+//             data = LIST_ENTRY!( ptr, struct resource_data, entry );
 //             HeapFree( GetProcessHeap(), 0, data );
 //         }
 //     }
@@ -3144,10 +3219,10 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //     nt64 = (IMAGE_NT_HEADERS64*)nt;
 //     dd = &nt->OptionalHeader.DataDirectory[0];
-//     if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+//     if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16)
 //         dd = &nt64->OptionalHeader.DataDirectory[0];
 //
-//     TRACE("resources: %08x %08x\n",
+//     TRACE!("resources: %08x %08x\n",
 //           dd[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress,
 //           dd[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size);
 //
@@ -3225,7 +3300,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     LPWSTR s;
 //
 //     if (!entry->NameIsString)
-//         return UIntToPtr(entry->Id);
+//         return UIntToPtr!(entry->Id);
 //
 //     string = (const IMAGE_RESOURCE_DIR_STRING_U*) (((const char *)root) + entry->NameOffset);
 //     s = HeapAlloc(GetProcessHeap(), 0, (string->Length + 1)*sizeof (WCHAR) );
@@ -3245,7 +3320,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     const IMAGE_RESOURCE_DATA_ENTRY *data;
 //     DWORD i, j, k;
 //
-//     TRACE("version (%d.%d) %d named %d id entries\n",
+//     TRACE!("version (%d.%d) %d named %d id entries\n",
 //           root->MajorVersion, root->MinorVersion, root->NumberOfNamedEntries, root->NumberOfIdEntries);
 //
 //     for (i = 0; i< root->NumberOfNamedEntries + root->NumberOfIdEntries; i++)
@@ -3322,7 +3397,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         (sec[i].PointerToRawData + sec[i].SizeOfRawData) > mapping_size)
 //         return TRUE;
 //
-//     TRACE("found .rsrc at %08x, size %08x\n", sec[i].PointerToRawData, sec[i].SizeOfRawData);
+//     TRACE!("found .rsrc at %08x, size %08x\n", sec[i].PointerToRawData, sec[i].SizeOfRawData);
 //
 //     if (!sec[i].PointerToRawData || sec[i].SizeOfRawData < sizeof(IMAGE_RESOURCE_DIRECTORY))
 //         return TRUE;
@@ -3389,7 +3464,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     mi->file = CreateFileW( name, GENERIC_READ | (rw ? GENERIC_WRITE : 0),
 //                             0, NULL, OPEN_EXISTING, 0, 0 );
 //
-//     if (mi->file != INVALID_HANDLE_VALUE)
+//     if (mi->file != INVALID_HANDLE_VALUE as HANDLE)
 //     {
 //         mi->size = GetFileSize( mi->file, NULL );
 //
@@ -3409,7 +3484,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     SetFilePointer( mi->file, new_size, NULL, FILE_BEGIN );
 //     if (!SetEndOfFile( mi->file ))
 //     {
-//         ERR("failed to set file size to %08x\n", new_size );
+//         ERR!("failed to set file size to %08x\n", new_size );
 //         return FALSE;
 //     }
 //
@@ -3429,14 +3504,14 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     LIST_FOR_EACH_ENTRY( types, &updates->root, struct resource_dir_entry, entry )
 //     {
 //         num_types++;
-//         if (!IS_INTRESOURCE( types->id ))
+//         if (!IS_INTRESOURCE!( types->id ))
 //             strings_size += sizeof (WORD) + lstrlenW( types->id )*sizeof (WCHAR);
 //
 //         LIST_FOR_EACH_ENTRY( names, &types->children, struct resource_dir_entry, entry )
 //         {
 //             num_names++;
 //
-//             if (!IS_INTRESOURCE( names->id ))
+//             if (!IS_INTRESOURCE!( names->id ))
 //                 strings_size += sizeof (WORD) + lstrlenW( names->id )*sizeof (WCHAR);
 //
 //             LIST_FOR_EACH_ENTRY( data, &names->children, struct resource_data, entry )
@@ -3467,7 +3542,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //     si->total_size = si->data_ofs + data_size;
 //
-//     TRACE("names %08x langs %08x data entries %08x strings %08x data %08x total %08x\n",
+//     TRACE!("names %08x langs %08x data entries %08x strings %08x data %08x total %08x\n",
 //           si->names_ofs, si->langs_ofs, si->data_entry_ofs,
 //           si->strings_ofs, si->data_ofs, si->total_size);
 // }
@@ -3489,7 +3564,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     struct resource_data *data;
 //     IMAGE_RESOURCE_DIRECTORY *root;
 //
-//     TRACE("%p %p %p %08x\n", updates, base, si, rva );
+//     TRACE!("%p %p %p %08x\n", updates, base, si, rva );
 //
 //     memset( base, 0, si->total_size );
 //
@@ -3505,7 +3580,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //         e1 = (IMAGE_RESOURCE_DIRECTORY_ENTRY*) &base[si->types_ofs];
 //         memset( e1, 0, sizeof *e1 );
-//         if (!IS_INTRESOURCE( types->id ))
+//         if (!IS_INTRESOURCE!( types->id ))
 //         {
 //             WCHAR *strings;
 //             DWORD len;
@@ -3523,7 +3598,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         else
 //         {
 //             root->NumberOfIdEntries++;
-//             e1->Id = LOWORD( types->id );
+//             e1->Id = LOWORD!( types->id );
 //         }
 //         e1->OffsetToDirectory = si->names_ofs;
 //         e1->DataIsDirectory = TRUE;
@@ -3541,7 +3616,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //             e2 = (IMAGE_RESOURCE_DIRECTORY_ENTRY*) &base[si->names_ofs];
 //             memset( e2, 0, sizeof *e2 );
-//             if (!IS_INTRESOURCE( names->id ))
+//             if (!IS_INTRESOURCE!( names->id ))
 //             {
 //                 WCHAR *strings;
 //                 DWORD len;
@@ -3559,7 +3634,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //             else
 //             {
 //                 namedir->NumberOfIdEntries++;
-//                 e2->Id = LOWORD( names->id );
+//                 e2->Id = LOWORD!( names->id );
 //             }
 //             e2->OffsetToDirectory = si->langs_ofs;
 //             e2->DataIsDirectory = TRUE;
@@ -3579,7 +3654,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //                 e3 = (IMAGE_RESOURCE_DIRECTORY_ENTRY*) &base[si->langs_ofs];
 //                 memset( e3, 0, sizeof *e3 );
 //                 langdir->NumberOfIdEntries++;
-//                 e3->Id = LOWORD( data->lang );
+//                 e3->Id = LOWORD!( data->lang );
 //                 e3->OffsetToData = si->data_entry_ofs;
 //
 //                 si->langs_ofs += sizeof (IMAGE_RESOURCE_DIRECTORY_ENTRY);
@@ -3657,7 +3732,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         if (s[i].Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA)
 //             sz += s[i].SizeOfRawData;
 //
-//     TRACE("size = %08x\n", sz);
+//     TRACE!("size = %08x\n", sz);
 //
 //     return sz;
 // }
@@ -3687,7 +3762,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     if (!CopyFileW( updates->pFileName, tempfile, FALSE ))
 //         goto done;
 //
-//     TRACE("tempfile %s\n", debugstr_w(tempfile));
+//     TRACE!("tempfile %s\n", debugstr_w!(tempfile));
 //
 //     if (!updates->bDeleteExistingResources)
 //     {
@@ -3698,7 +3773,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         ret = read_mapped_resources( updates, read_map->base, read_map->size );
 //         if (!ret)
 //         {
-//             ERR("failed to read existing resources\n");
+//             ERR!("failed to read existing resources\n");
 //             goto done;
 //         }
 //     }
@@ -3712,7 +3787,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         goto done;
 //
 //     nt64 = (IMAGE_NT_HEADERS64*)nt;
-//     if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+//     if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16) {
 //         PeSectionAlignment = nt64->OptionalHeader.SectionAlignment;
 //         PeFileAlignment = nt64->OptionalHeader.FileAlignment;
 //         PeSizeOfImage = nt64->OptionalHeader.SizeOfImage;
@@ -3724,13 +3799,13 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //     if ((LONG)PeSectionAlignment <= 0)
 //     {
-//         ERR("invalid section alignment %08x\n", PeSectionAlignment);
+//         ERR!("invalid section alignment %08x\n", PeSectionAlignment);
 //         goto done;
 //     }
 //
 //     if ((LONG)PeFileAlignment <= 0)
 //     {
-//         ERR("invalid file alignment %08x\n", PeFileAlignment);
+//         ERR!("invalid file alignment %08x\n", PeFileAlignment);
 //         goto done;
 //     }
 //
@@ -3758,7 +3833,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         sec->SizeOfRawData = 0;
 //     }
 //
-//     TRACE("before .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
+//     TRACE!("before .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
 //
 //     get_resource_sizes( updates, &res_size );
 //
@@ -3766,7 +3841,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     section_size = res_size.total_size;
 //     section_size += (-section_size) % PeFileAlignment;
 //
-//     TRACE("requires %08x (%08x) bytes\n", res_size.total_size, section_size );
+//     TRACE!("requires %08x (%08x) bytes\n", res_size.total_size, section_size );
 //
 //     /* check if the file size needs to be changed */
 //     if (section_size != sec->SizeOfRawData)
@@ -3784,7 +3859,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         /* postpone file truncation if there are some data to be moved down from file end */
 //         BOOL resize_after = mapping_size < old_size && !rsrc_is_last;
 //
-//         TRACE("file size %08x -> %08x\n", old_size, mapping_size);
+//         TRACE!("file size %08x -> %08x\n", old_size, mapping_size);
 //
 //         if (!resize_after)
 //         {
@@ -3795,7 +3870,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //             nt = (IMAGE_NT_HEADERS32*)get_nt_header( write_map->base, mapping_size );
 //             if (!nt)
 //             {
-//                 ERR("couldn't get NT header\n");
+//                 ERR!("couldn't get NT header\n");
 //                 goto done;
 //             }
 //             nt64 = (IMAGE_NT_HEADERS64*)nt;
@@ -3832,7 +3907,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //             nt = (IMAGE_NT_HEADERS32*)get_nt_header( write_map->base, mapping_size );
 //             if (!nt)
 //             {
-//                 ERR("couldn't get NT header\n");
+//                 ERR!("couldn't get NT header\n");
 //                 goto done;
 //             }
 //             nt64 = (IMAGE_NT_HEADERS64*)nt;
@@ -3845,7 +3920,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //         /* adjust the PE header information */
 //         sec->SizeOfRawData = section_size;
 //         sec->Misc.VirtualSize = virtual_section_size;
-//         if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+//         if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC as u16) {
 //             nt64->OptionalHeader.SizeOfImage += rva_delta;
 //             nt64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress = sec->VirtualAddress;
 //             nt64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size = res_size.total_size;
@@ -3868,13 +3943,13 @@ pub unsafe extern "system" fn UpdateResourceA(
 //
 //     res_base = (LPBYTE) write_map->base + sec->PointerToRawData;
 //
-//     TRACE("base = %p offset = %08x\n", write_map->base, sec->PointerToRawData);
+//     TRACE!("base = %p offset = %08x\n", write_map->base, sec->PointerToRawData);
 //
 //     ret = write_resources( updates, res_base, &res_size, sec->VirtualAddress );
 //
 //     res_write_padding( res_base + res_size.total_size, section_size - res_size.total_size );
 //
-//     TRACE("after  .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
+//     TRACE!("after  .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
 //
 // done:
 //     destroy_mapping( read_map );
@@ -3896,7 +3971,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     QUEUEDUPDATES *updates = NULL;
 //     HANDLE hUpdate, file, ret = NULL;
 //
-//     TRACE("%s, %d\n", debugstr_w(pFileName), bDeleteExistingResources);
+//     TRACE!("%s, %d\n", debugstr_w!(pFileName), bDeleteExistingResources);
 //
 //     hUpdate = GlobalAlloc(GHND, sizeof(QUEUEDUPDATES));
 //     if (!hUpdate)
@@ -3916,7 +3991,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //                                 0, NULL, OPEN_EXISTING, 0, 0 );
 //
 //             /* if resources are deleted, only the file's presence is checked */
-//             if (file != INVALID_HANDLE_VALUE &&
+//             if (file != INVALID_HANDLE_VALUE as HANDLE &&
 //                 (bDeleteExistingResources || check_pe_exe( file, updates )))
 //                 ret = hUpdate;
 //             else
@@ -3956,7 +4031,7 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     QUEUEDUPDATES *updates;
 //     BOOL ret;
 //
-//     TRACE("%p %d\n", hUpdate, fDiscard);
+//     TRACE!("%p %d\n", hUpdate, fDiscard);
 //
 //     updates = GlobalLock(hUpdate);
 //     if (!updates)
@@ -3992,8 +4067,8 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     QUEUEDUPDATES *updates;
 //     BOOL ret = FALSE;
 //
-//     TRACE("%p %s %s %08x %p %d\n", hUpdate,
-//           debugstr_w(lpType), debugstr_w(lpName), wLanguage, lpData, cbData);
+//     TRACE!("%p %s %s %08x %p %d\n", hUpdate,
+//           debugstr_w!(lpType), debugstr_w!(lpName), wLanguage, lpData, cbData);
 //
 //     updates = GlobalLock(hUpdate);
 //     if (updates)
@@ -4024,17 +4099,17 @@ pub unsafe extern "system" fn UpdateResourceA(
 //     BOOL ret;
 //     UNICODE_STRING TypeW;
 //     UNICODE_STRING NameW;
-//     if(IS_INTRESOURCE(lpType))
-//         TypeW.Buffer = ULongToPtr(LOWORD(lpType));
+//     if(IS_INTRESOURCE!(lpType))
+//         TypeW.Buffer = ULongToPtr!(LOWORD!(lpType));
 //     else
 //         RtlCreateUnicodeStringFromAsciiz(&TypeW, lpType);
-//     if(IS_INTRESOURCE(lpName))
-//         NameW.Buffer = ULongToPtr(LOWORD(lpName));
+//     if(IS_INTRESOURCE!(lpName))
+//         NameW.Buffer = ULongToPtr!(LOWORD!(lpName));
 //     else
 //         RtlCreateUnicodeStringFromAsciiz(&NameW, lpName);
 //     ret = UpdateResourceW(hUpdate, TypeW.Buffer, NameW.Buffer, wLanguage, lpData, cbData);
-//     if(!IS_INTRESOURCE(lpType)) RtlFreeUnicodeString(&TypeW);
-//     if(!IS_INTRESOURCE(lpName)) RtlFreeUnicodeString(&NameW);
+//     if(!IS_INTRESOURCE!(lpType)) RtlFreeUnicodeString(&TypeW);
+//     if(!IS_INTRESOURCE!(lpName)) RtlFreeUnicodeString(&NameW);
 //     return ret;
 // }
 //

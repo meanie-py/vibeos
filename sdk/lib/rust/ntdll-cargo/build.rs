@@ -197,8 +197,32 @@ fn main() {
     // yet (i386/arm64). librtl_vista.a is gone (compiled in-cargo below).
     // liblibcntpr.a is DROPPED on every arch (cntpr_residue + cntpr_asm cover the
     // floor: amd64 = SEH + printf shells + scanf, i386 = _CIxxx + shells + scanf +
-    // integer/chkstk asm, arm64 = shells + scanf only). librtl.a stays (Tier-C).
-    let static_libs: Vec<&str> = vec!["sdk/lib/rtl/librtl.a"];
+    // integer/chkstk asm, arm64 = shells + scanf only).
+    // librtl.a DROPPED 2026-06-20 — the whole sdk/lib/rtl/*.c surface is Rust
+    // (rtl-rust .rust_lib above); librtl.a was down to the irreducible floor
+    // (C-variadic DbgPrint family + per-arch except/mem/swap/debug asm), now
+    // compiled in-cargo via the rtl c_from_compile_db + rtl_asm asm_archive below
+    // (the cntpr pattern). ntdll now links ZERO cmake .a.
+    let static_libs: Vec<&str> = vec![];
+
+    // librtl.a's irreducible asm floor (the `.c` surface is all rtl-rust now),
+    // assembled in-cargo via asm_archive (lazy in-group, same asm_set as .asm()
+    // = Kernel + the kernel asm -I chain). Per-arch except/mem/swap/debug asm.
+    let rtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/except_asm.s",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => &[
+            "sdk/lib/rtl/amd64/debug_asm.S",
+            "sdk/lib/rtl/amd64/except_asm.S",
+            "sdk/lib/rtl/amd64/unwind-asm.s",
+        ],
+        "aarch64" => &["sdk/lib/rtl/arm64/debug_asm.S"],
+        _ => &[],
+    };
     // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now assembled
     // from the SOURCE ntoskrnl/ntdll.S (asm_archive below). libapisets.a / libuuid.a
     // dropped — now Rust (ntdll-rust apisets/uuid). libsetjmp.a dropped — amd64
@@ -242,6 +266,14 @@ fn main() {
     }
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
+    }
+    // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
+    // dbgprint_variadic.c (C-variadic DbgPrint/wine_dbg_* trampolines) via
+    // c_from_compile_db (name = the cmake `rtl` target → CMakeFiles/rtl.dir),
+    // plus the per-arch asm floor via asm_archive (lazy in-group).
+    linker = linker.c_from_compile_db("rtl", &["sdk/lib/rtl/dbgprint_variadic.c"]);
+    if !rtl_asm.is_empty() {
+        linker = linker.asm_archive("rtl_asm", rtl_asm);
     }
     linker.static_libs(&static_libs).link(ModuleKind::Win32Dll {
         entry: entry.into(),

@@ -633,6 +633,18 @@ def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
                     "at idle so host-CPU%% is not a valid idle signal; this "
                     "gate is -accel kvm-only (i386/amd64)")
 
+    if getattr(vm, "_backend", "native") == "windows-host":
+        # Doubly invalid here: (1) vm._proc.pid is the WSL *interop shim* that
+        # launched the .exe, not the Windows QEMU process, so /proc/<pid>/task
+        # measures the shim (~0%), not the guest vCPU — the number is garbage;
+        # (2) the backend runs TCG, not KVM, so the HLT-idle baseline this gate
+        # is calibrated against (clean 3-6%, starved 90%+) doesn't apply. Same
+        # reasoning as the arm64 skip. Skip honestly rather than read the shim
+        # and report a meaningless "pass".
+        pytest.skip("windows-host backend: vm._proc.pid is the WSL interop shim "
+                    "(not the Windows QEMU) so /proc CPU% is unreadable, and it "
+                    "runs TCG not KVM — host-CPU%% is not a valid idle signal")
+
     pct = process_cpu_pct(vm._proc.pid, window=3.0)
     print(f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
           f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})")

@@ -155,6 +155,15 @@ A standalone `.sys` cohab that reads system time, raises status, or checks IRQL 
 Also (worktree-build, not translation): when giving a worktree its own `build-<arch>` via the warm-dir copy+repoint recipe, the repoint sed must **NOT** rewrite `.build-tools/` paths — `.build-tools` is gitignored and lives only in main. Over-rewriting makes the `cc` crate's build.rs look for `…/vibeos-wt-X/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang` (ENOENT) → **every `*-cargo` Phase-2 crate fails its custom build command** ("failed to run custom build command", ToolNotFound), masquerading as a systemic cargo regression. Fix: `ln -sfn <main>/.build-tools <worktree>/.build-tools` (toolchain is read-only/shared). The C/link compiler path in the cache should also stay pointed at main's `.build-tools` (the recipe's "harmless" note assumed it was left alone).
 **Source:** `project_mup_rust_track.md`
 
+### Four multi-file driver-cohab integration traps (npfs-rust, 2026-06-20)
+A 20-module driver translated by parallel subagents over a shared substrate hit these at central integration. All recur for any multi-`.c` driver-cohab lane — grep here before re-deriving.
+1. **`use ntkrnl_sys::base::*;` + `use ntkrnl_sys::ddk::*;` together → a wall of `error[E0659]: X is ambiguous`** (UNICODE_STRING, ULONG, NTSTATUS, PVOID, LIST_ENTRY, STATUS_SUCCESS…). `base` and `ddk` both export those names. **Fix:** keep ONE glob (`use ntkrnl_sys::ddk::*;` — it has the types) and import base-only items explicitly (`use ntkrnl_sys::base::{NT_SUCCESS, InitializeListHead, InsertHeadList, InsertTailList, RemoveEntryList, RemoveHeadList, RemoveTailList, IsListEmpty};`). The glue/types/glob STATUS_* ambiguity vanishes too once the base glob is gone. (`AppendTailList` is NOT in base — don't list it.) Bake this into the per-module skeleton in the subagent contract, not the contract's "use both globs" default.
+2. **`src/main.rs` is auto-detected as a CARGO BIN TARGET** — a module named `main` (from `main.c`) collides with cargo's convention, so cargo builds a `bin "npfs-rust"` and every `crate::glue`/`crate::types`/sibling import "fails to resolve" + `error[E0601]: main function not found`. **Fix:** `autobins = false` (and `autoexamples/autotests/autobenches = false`) in `[package]`. Keeps `pub mod main;` working as a lib module.
+3. **`Io{SetCancelRoutine,SetCompletionRoutine,GetNextIrpStackLocation,SetNextIrpStackLocation,MarkIrpPending}` + `RtlInitEmptyUnicodeString` compile via `ddk::*` but are `undefined symbol` at link** (i386 `_IoSetCancelRoutine`, etc.). They're header **inlines** (FORCEINLINE), not ntoskrnl exports — bindgen still emits an extern decl, so the call compiles but has no symbol to bind. **Fix:** route them through the inline modules: `use ntkrnl_sys::inline::tier1::{IoSetCancelRoutine, IoSetCompletionRoutine, IoGetNextIrpStackLocation, IoSetNextIrpStackLocation, IoMarkIrpPending};` and `ntkrnl_sys::inline::common::RtlInitEmptyUnicodeString` (the explicit import beats the `ddk::*` glob). Same class as the `KeGetCurrentPrcb`/`KeQuerySystemTime` inline-vs-export traps above. (Pre-flight a cohab link to surface these — cargo-check is blind to them.)
+4. **i386 FAST_IO (and any NTAPI callback) slot is `extern "stdcall"`, not `extern "C"`** → `error[E0308]: expected "stdcall" fn, found "C" fn` ONLY on i386 when a hand-written raw target type is `extern "C"`. **Fix:** don't name a raw inner fn type — transmute the `extern "system"` fn item straight to the bindgen `Option` slot type (`PFAST_IO_READ`/`PDRIVER_DISPATCH`/`PDRIVER_CANCEL`/`PKDEFERRED_ROUTINE`), which carries the correct per-arch ABI (stdcall on i386, C on amd64/arm64): `transmute::<FastIoReadFn, PFAST_IO_READ>(NpFastRead)`. Same null-niche fn→Option transmute as the dispatch-table pattern.
+
+**Source:** `npfs` commit (filesystems lane); contract substrate `sdk/lib/rust/npfs-rust/src/{lib,glue,globals,helpers,types}.rs`.
+
 ### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
 **Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
 **Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
@@ -1302,6 +1311,30 @@ a crash).
 - **i386/amd64 unaffected** when the ABI fix is arch-cfg-gated (`cfg(target_arch)`), and
   they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
   anyway — only arm64's staged-ramdisk path has the gap.
+
+**⚠️ Sharper, more dangerous variant (2026-06-20): the skew can wedge EARLY and impersonate
+a layout-tip miscompile in the exact change you're gating.** A *targeted-subset* arm64 build
+(`ninja ntoskrnl hal uefildr win32k kernel32` — what agents reach for to gate a single
+module fast) restages stale old-ABI drivers under the new-ABI kernel just like the staged
+smoke path. But the wedge it produced was **not** "desktop-then-idle-timeout" — it was a
+**deterministic 2/2 wedge at `PspUserThreadStartup → KiInitializeUserApc done → returning`,
+PC=0x7FFB7001018, `_tWinMain=0`, explorer never starts** (the *first* usermode thread never
+progresses). That signature is indistinguishable from a **#35-class layout-tip latent
+miscompile** (links clean, wedges at runtime at a user-thread-startup site) — so when it
+appeared while gating a kernel **link-layout change** (the `librtl.a`+`libhal.a` static-lib
+drops), it looked exactly like "your link change tipped a latent captures(none) miscompile."
+It hadn't: **bare mainline built the same subset-way wedged at the identical PC.** A full
+`ninja -C build-arm64` + `mkramdisk --refresh` on mainline reached explorer (34s) → the
+"regression" was 100% build-completeness artifact.
+- **Rule:** NEVER gate an arm64 **link/layout or static-lib** change with a targeted-subset
+  build post-fastfat-merge — *always* full `ninja` + `mkramdisk --refresh`, or the driver
+  ABI skew fakes a usermode wedge that frames your change.
+- **Decisive disambiguation (do this BEFORE symbolicating / reaching for a `no-prepop`
+  guard):** rebuild **bare mainline** (without your change) the *same subset way* and boot.
+  Same wedge on mainline ⇒ build artifact, your change is innocent, stop. Only if mainline
+  is clean and your change wedges **under a FULL ninja** is it a real regression worth the
+  symbolicate→targeted-guard path (§"#38/#35" Findings 2–3). Cost of skipping this step:
+  a full symbolication + no-prepop fork put to the user on a phantom regression.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

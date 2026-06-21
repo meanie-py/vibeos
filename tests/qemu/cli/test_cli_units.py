@@ -6,11 +6,18 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
+from tests.qemu import backend as be_mod
+from tests.qemu import qmp_client, serial_client
+
+from . import config as config_mod
 from . import lints, provenance, triage
 from .artifacts import Run, Stage
 
@@ -231,7 +238,37 @@ def test_triage_hang_surfaces_tails():
         "line1\nline2\nstuck...\n", reached=False, fail_marker=None, debugcon="A\nB\nC\n"
     )
     assert r["classification"] == "HANG_TIMEOUT"
+    assert r["known_flake"] is None  # unsignatured hang stays a blocking HANG_TIMEOUT
     assert any("debugcon" in s for s in r["salient"])
+
+
+def test_triage_known_hang_flakes():
+    # i386 nettest race: nettest spawned, explorer never reached _tWinMain
+    nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
+    r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
+    assert r["classification"] == "KNOWN_FLAKE"
+    assert r["known_flake"] == "i386_nettest_explorer_race"
+
+    # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
+    r2 = triage.classify(
+        nettest + "[EXPLORER] _tWinMain entered\n", reached=False, fail_marker=None, debugcon=None
+    )
+    assert r2["classification"] == "HANG_TIMEOUT" and r2["known_flake"] is None
+
+    # arm64 LpcExitThread race
+    arm = "[PS] PspExitThread Image=System -> about to call LpcExitThread\n"
+    r3 = triage.classify(arm, reached=False, fail_marker=None, debugcon=None)
+    assert r3["classification"] == "KNOWN_FLAKE"
+    assert r3["known_flake"] == "arm64_lpcexitthread_race"
+
+    # a hang-stage flake signature must NOT match a bugcheck (when-gated)
+    r4 = triage.classify(
+        "BugCheck 0x7E\n[WINLOGON] nettest.exe created\n",
+        reached=False,
+        fail_marker=None,
+        debugcon=None,
+    )
+    assert r4["classification"] == "BUGCHECK"  # bugcheck branch, hang sig ignored
 
 
 # --- artifacts: summary.json is the machine-true verdict -------------------
@@ -301,3 +338,371 @@ def test_cargo_link_guard_respects_arch_filter(tmp_path, monkeypatch):
     names = {s.name for s in run.stages}
     assert "cargo_link:i386only:amd64" not in names  # filtered out on amd64
     assert "cargo_link:everywhere:amd64" in names
+
+
+# --- cachecfg: VIBEOS_ROOT resolution, env overlay, stats parsing ----------
+
+from . import cachecfg  # noqa: E402
+
+
+def test_vibeos_root_env_wins(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "custom"))
+    assert cachecfg.vibeos_root(tmp_path / "repo") == (tmp_path / "custom").resolve()
+
+
+def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    # main checkout and a sibling worktree must resolve to the SAME root → shared
+    # CCACHE_BASEDIR → cross-worktree hits.
+    parent = Path("/home/u/os-playground")
+    assert cachecfg.vibeos_root(parent / "vibeos") == parent
+    assert cachecfg.vibeos_root(parent / "vibeos-wt-x") == parent
+
+
+def test_cache_enabled_flag_and_env(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("VIBEOS_BUILD_CACHE", raising=False)
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is False  # default off
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=True)) is True
+    monkeypatch.setenv("VIBEOS_BUILD_CACHE", "1")
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=False)) is False  # --no-cache beats env
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is True  # env fallback
+
+
+def test_cache_env_overlay_shape(tmp_path):
+    ce = cachecfg.CacheEnv(
+        root=tmp_path,
+        ccache_dir=tmp_path / "ccache",
+        sccache_dir=tmp_path / "sccache",
+        ccache_bin="/usr/bin/ccache",
+        sccache_bin="/usr/local/bin/sccache",
+    )
+    e = ce.env()
+    assert e["CCACHE_BASEDIR"] == str(tmp_path)  # basedir == worktree parent
+    assert e["CCACHE_NOHASHDIR"] == "true"
+    assert e["CCACHE_DIR"] == str(tmp_path / "ccache")
+    assert e["RUSTC_WRAPPER"] == "/usr/local/bin/sccache"
+    assert e["CARGO_INCREMENTAL"] == "0"
+    assert e["SCCACHE_DIR"] == str(tmp_path / "sccache")
+    # critical safety: we never set RUSTFLAGS (would clobber config.toml's
+    # load-bearing i386 -sse,-sse2 kernel guard).
+    assert "RUSTFLAGS" not in e
+
+
+def test_cache_env_absent_tools(tmp_path):
+    ce = cachecfg.CacheEnv(tmp_path, tmp_path / "c", tmp_path / "s", None, None)
+    assert ce.env() == {}
+    assert not ce.use_ccache and not ce.use_sccache
+
+
+def test_parse_ccache_stats():
+    txt = (
+        "direct_cache_hit\t7\n"
+        "preprocessed_cache_hit\t3\n"
+        "cache_miss\t10\n"
+        "primary_storage_hit\t99\n"  # must be IGNORED (not double-counted)
+    )
+    st = cachecfg.parse_ccache_stats(txt)
+    assert st["hits"] == 10 and st["misses"] == 10
+    assert abs(st["hit_rate"] - 0.5) < 1e-9
+
+
+def test_parse_sccache_json_bucketed():
+    txt = json.dumps(
+        {
+            "stats": {
+                "compile_requests": 20,
+                "cache_hits": {"counts": {"Rust": 12}},
+                "cache_misses": {"counts": {"Rust": 8}},
+            }
+        }
+    )
+    st = cachecfg.parse_sccache_json(txt)
+    assert st["requests"] == 20 and st["hits"] == 12 and st["misses"] == 8
+    assert abs(st["hit_rate"] - 0.6) < 1e-9
+
+
+def test_parse_sccache_json_scalar_and_garbage():
+    st = cachecfg.parse_sccache_json(json.dumps({"stats": {"cache_hits": 5, "cache_misses": 0}}))
+    assert st["hits"] == 5 and st["hit_rate"] == 1.0
+    assert cachecfg.parse_sccache_json("not json") == {}
+
+
+# --- per-arch QEMU concurrency sub-cap (serialize same-arch boots) ---------
+import types  # noqa: E402
+
+from .. import vm  # noqa: E402
+
+
+def test_per_arch_cap_defaults(monkeypatch):
+    for v in (
+        "VIBEOS_QEMU_PER_ARCH_CAP",
+        "VIBEOS_QEMU_CAP_I386",
+        "VIBEOS_QEMU_CAP_AMD64",
+        "VIBEOS_QEMU_CAP_ARM64",
+    ):
+        monkeypatch.delenv(v, raising=False)
+    # KVM arches serialize (1); arm64 TCG uncapped (0). Aliases resolve to base.
+    assert vm.per_arch_cap("i386") == 1
+    assert vm.per_arch_cap("i386-uefi") == 1
+    assert vm.per_arch_cap("amd64") == 1
+    assert vm.per_arch_cap("amd64-uefi") == 1
+    assert vm.per_arch_cap("arm64") == 0
+
+
+def test_per_arch_cap_env_overrides(monkeypatch):
+    monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "3")  # blanket KVM override
+    assert vm.per_arch_cap("i386") == 3 and vm.per_arch_cap("amd64") == 3
+    monkeypatch.setenv("VIBEOS_QEMU_CAP_I386", "1")  # per-arch beats blanket
+    assert vm.per_arch_cap("i386") == 1 and vm.per_arch_cap("amd64") == 3
+    monkeypatch.setenv("VIBEOS_QEMU_CAP_ARM64", "2")  # cap arm64 if TCG starves
+    assert vm.per_arch_cap("arm64") == 2
+
+
+def _bare_vm(arch: str):
+    """An uninitialized QemuVM carrying only what the slot methods touch."""
+    v = vm.QemuVM.__new__(vm.QemuVM)
+    v.config = types.SimpleNamespace(arch=arch)  # type: ignore[assignment]
+    v._slot_fd = None
+    v._arch_slot_fd = None
+    return v
+
+
+def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm, "SLOT_DIR", tmp_path)
+    monkeypatch.setattr(vm, "QEMU_QUEUE_TIMEOUT", 0.0)  # second boot fails fast
+    for var in ("VIBEOS_QEMU_PER_ARCH_CAP", "VIBEOS_QEMU_CAP_I386"):
+        monkeypatch.delenv(var, raising=False)
+
+    first = _bare_vm("i386")
+    first._acquire_arch_slot()
+    assert first._arch_slot_fd is not None  # holds the single i386 slot
+
+    # A second i386 boot can't get the cap-1 slot → queues → times out.
+    second = _bare_vm("i386")
+    with pytest.raises(TimeoutError):
+        second._acquire_arch_slot()
+    assert second._arch_slot_fd is None
+
+    # Cross-arch is uncapped → arm64 acquires immediately alongside i386.
+    other = _bare_vm("arm64")
+    other._acquire_arch_slot()
+    assert other._arch_slot_fd is None  # cap 0: no lock taken, no contention
+
+    # Free the first → the queued arch is available again.
+    first._release_slot()
+    third = _bare_vm("i386")
+    third._acquire_arch_slot()
+    assert third._arch_slot_fd is not None
+    third._release_slot()
+
+
+# --- prune: idle-worktree GC eligibility gates -----------------------------
+from . import prune  # noqa: E402
+
+
+def _classify(
+    wt,
+    current,
+    *,
+    live_qemu=None,
+    active_build=None,
+    allow_self=False,
+    min_age_hours=0.0,
+    now=1000.0,
+    newest_mtime=None,
+):
+    return prune.classify(
+        Path(wt),
+        current=Path(current),
+        live_qemu=live_qemu or set(),
+        active_build=active_build or set(),
+        allow_self=allow_self,
+        min_age_hours=min_age_hours,
+        now=now,
+        newest_mtime=newest_mtime,
+    )
+
+
+def test_prune_gates_current_live_and_build():
+    # current worktree is protected unless --self
+    assert _classify("/wt/a", "/wt/a") == "current worktree (use --self)"
+    assert _classify("/wt/a", "/wt/a", allow_self=True) is None
+    # live QEMU and in-flight build are hard skips
+    assert _classify("/wt/b", "/wt/a", live_qemu={Path("/wt/b")}) == "live QEMU running"
+    assert _classify("/wt/b", "/wt/a", active_build={Path("/wt/b")}) == "build in flight"
+    # otherwise prunable
+    assert _classify("/wt/b", "/wt/a") is None
+
+
+def test_prune_idle_hours_filter():
+    now = 100_000.0
+    # touched 1h ago, threshold 24h -> held
+    assert (
+        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 3600)
+        == "touched < 24h ago"
+    )
+    # touched 48h ago, threshold 24h -> prunable
+    assert (
+        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 48 * 3600) is None
+    )
+    # threshold 0 disables the age gate even with a fresh mtime
+    assert _classify("/wt/b", "/wt/a", min_age_hours=0, now=now, newest_mtime=now) is None
+
+
+def test_prune_attribute_longest_match_wins():
+    wts = [Path("/wt"), Path("/wt/nested")]
+    assert prune._attribute("/wt/nested/build-i386/x.o", wts) == Path("/wt/nested")
+    assert prune._attribute("/wt/build-i386/x.o", wts) == Path("/wt")
+    assert prune._attribute("/elsewhere/x", wts) is None
+
+
+# --- config: layered defaults + local override + env (windows-host backend) -
+
+
+def test_config_defaults_when_no_overrides(tmp_path: Path):
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "windows-host"
+    assert cfg.get("qemu.windows.accel") == "tcg"
+    assert cfg.get("nonexistent.key", "fallback") == "fallback"
+
+
+def test_config_local_file_deep_merges(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text(
+        json.dumps({"qemu": {"backend": "windows-host", "windows": {"accel": "whpx"}}})
+    )
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "windows-host"
+    assert cfg.get("qemu.windows.accel") == "whpx"
+    # untouched sibling defaults survive the deep merge
+    assert cfg.get("qemu.windows.host_addr") == "127.0.0.1"
+
+
+def test_config_env_beats_local_and_defaults(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text(
+        json.dumps({"qemu": {"backend": "windows-host"}})
+    )
+    cfg = config_mod.load(tmp_path, environ={"VIBEOS_QEMU_BACKEND": "native"})
+    assert cfg.get("qemu.backend") == "native"  # env wins over local
+
+
+def test_config_malformed_local_file_falls_back_to_defaults(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text("{ not valid json")
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "windows-host"
+
+
+# --- TCP transport (windows-host backend: WSL listens, QEMU connects) -------
+
+
+def test_serial_client_tcp_drains_and_reads_marker():
+    s = serial_client.SerialClient()
+    port = s.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(b"booting...\n[MARK] WORLD ready\n")
+        time.sleep(0.3)
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    s.accept(timeout=5)
+    out = s.read_until("WORLD", timeout=5)
+    assert "WORLD" in out
+    s.close()
+    t.join(timeout=5)
+
+
+def test_qmp_client_tcp_handshake_and_execute():
+    qmp = qmp_client.QmpClient()
+    port = qmp.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+    greeting = {"QMP": {"version": {"qemu": {"major": 11}}, "capabilities": []}}
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(json.dumps(greeting).encode() + b"\n")
+
+        def read_line() -> bytes:
+            buf = b""
+            while b"\n" not in buf:
+                buf += c.recv(4096)
+            return buf
+
+        read_line()  # qmp_capabilities
+        c.sendall(json.dumps({"return": {}}).encode() + b"\n")
+        read_line()  # query-status
+        c.sendall(json.dumps({"return": {"status": "running"}}).encode() + b"\n")
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    assert qmp.accept(timeout=5) == greeting
+    assert qmp.execute("query-status")["return"]["status"] == "running"
+    qmp.close()
+    t.join(timeout=5)
+
+
+# --- backend helpers (windows-host path translation / arg rewrite) ----------
+
+
+def test_backend_win_path():
+    assert be_mod.win_path("/mnt/c/temp/x/livecd.iso") == "C:/temp/x/livecd.iso"
+    assert be_mod.win_path("/mnt/d/qemu/OVMF.fd") == "D:/qemu/OVMF.fd"
+    with pytest.raises(ValueError):
+        be_mod.win_path("/home/curi/not/under/mnt")
+
+
+def test_backend_windows_qemu_bin():
+    d = "/mnt/c/Program Files/qemu"
+    # tcg keeps the per-arch exe
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "tcg").endswith("qemu-system-i386.exe")
+    # whpx only exists in the x86_64 emulator → i386 guest uses it
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "whpx").endswith("qemu-system-x86_64.exe")
+    assert be_mod.windows_qemu_bin("qemu-system-x86_64", d, "tcg").endswith(
+        "qemu-system-x86_64.exe"
+    )
+
+
+def test_backend_rewrite_accel():
+    base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
+    # tcg: kvm->tcg AND drop the paired -cpu host
+    assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
+    # whpx: kvm->whpx (irqchip off) and KEEP -cpu host
+    assert be_mod.rewrite_accel(base, "whpx") == [
+        "-M",
+        "pc",
+        "-accel",
+        "whpx,kernel-irqchip=off",
+        "-cpu",
+        "host",
+        "-m",
+        "512M",
+    ]
+
+
+def test_backend_stage_media_paths_passthrough():
+    # args without a file= token are returned unchanged (staging only touches file= paths)
+    args = ["-M", "pc", "-vga", "std", "-display", "none", "-no-reboot"]
+    assert be_mod.stage_media_paths(args, Path("/mnt/c/temp/vibeos-qemu")) == args
+
+
+def test_backend_rewrite_netdev_for_windows():
+    # the real amd64-uefi-net netdev: hostfwd 127.0.0.1 -> 0.0.0.0, guestfwd cmd:cat -> chardev
+    args = [
+        "-device",
+        "virtio-net-pci,netdev=net0",
+        "-netdev",
+        "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777,guestfwd=tcp:10.0.2.100:9999-cmd:cat",
+    ]
+    out, needs_echo = be_mod.rewrite_netdev_for_windows(args, "gf0")
+    assert needs_echo is True
+    assert "hostfwd=tcp:0.0.0.0:54321-:7777" in out[-1]
+    assert "guestfwd=tcp:10.0.2.100:9999-chardev:gf0" in out[-1]
+    assert "cmd:cat" not in out[-1]
+    # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
+    plain = ["-M", "pc", "-accel", "tcg"]
+    assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)

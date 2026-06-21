@@ -71,3 +71,6 @@ qemu/manual-arm64-*/
 ~*.md
 .cargo-wt-target/
 agent-swarm/channel/node_modules/
+
+# vibeos-cli per-machine config override (see .vibeos-cli.local.example.json)
+.vibeos-cli.local.json

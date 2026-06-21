@@ -63,6 +63,13 @@ from exhausting host KVM/RAM:
 - **Concurrency cap** — `slots/slot-NN` flock pool limits concurrent QEMUs to
   `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) across all worktrees; over the cap,
   launchers queue.
+- **Per-arch sub-cap** — layered under the global cap: `slots/arch-<arch>-NN`
+  serializes **same-arch** boots (`VIBEOS_QEMU_CAP_I386` / `_AMD64`, default 1;
+  `_ARM64` default 0 = uncapped). Two i386 (or two amd64) KVM guests starve each
+  other on `/dev/kvm` + the shared IDE path into false `HANG_TIMEOUT`s, so a
+  second same-arch boot **queues automatically** instead of contending; an arm64
+  (TCG) boot still runs in parallel with an x86 one. This is what makes it safe
+  to smoke without hand-coordinating same-arch boots in `#swarm`.
 - **Lifetime cap** — no QEMU outlives `VIBEOS_QEMU_MAX_LIFETIME` (default 1800 s);
   queue-wait doesn't count against it.
 - **Orphan reaping** — `reap.sh` culls QEMUs whose owning session died.
