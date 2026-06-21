@@ -1288,6 +1288,30 @@ a crash).
   they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
   anyway — only arm64's staged-ramdisk path has the gap.
 
+**⚠️ Sharper, more dangerous variant (2026-06-20): the skew can wedge EARLY and impersonate
+a layout-tip miscompile in the exact change you're gating.** A *targeted-subset* arm64 build
+(`ninja ntoskrnl hal uefildr win32k kernel32` — what agents reach for to gate a single
+module fast) restages stale old-ABI drivers under the new-ABI kernel just like the staged
+smoke path. But the wedge it produced was **not** "desktop-then-idle-timeout" — it was a
+**deterministic 2/2 wedge at `PspUserThreadStartup → KiInitializeUserApc done → returning`,
+PC=0x7FFB7001018, `_tWinMain=0`, explorer never starts** (the *first* usermode thread never
+progresses). That signature is indistinguishable from a **#35-class layout-tip latent
+miscompile** (links clean, wedges at runtime at a user-thread-startup site) — so when it
+appeared while gating a kernel **link-layout change** (the `librtl.a`+`libhal.a` static-lib
+drops), it looked exactly like "your link change tipped a latent captures(none) miscompile."
+It hadn't: **bare mainline built the same subset-way wedged at the identical PC.** A full
+`ninja -C build-arm64` + `mkramdisk --refresh` on mainline reached explorer (34s) → the
+"regression" was 100% build-completeness artifact.
+- **Rule:** NEVER gate an arm64 **link/layout or static-lib** change with a targeted-subset
+  build post-fastfat-merge — *always* full `ninja` + `mkramdisk --refresh`, or the driver
+  ABI skew fakes a usermode wedge that frames your change.
+- **Decisive disambiguation (do this BEFORE symbolicating / reaching for a `no-prepop`
+  guard):** rebuild **bare mainline** (without your change) the *same subset way* and boot.
+  Same wedge on mainline ⇒ build artifact, your change is innocent, stop. Only if mainline
+  is clean and your change wedges **under a FULL ninja** is it a real regression worth the
+  symbolicate→targeted-guard path (§"#38/#35" Findings 2–3). Cost of skipping this step:
+  a full symbolication + no-prepop fork put to the user on a phantom regression.
+
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 
 Distinct from §9.6c (which is a real ABI mismatch). `mkramdisk.sh` occasionally produces a
