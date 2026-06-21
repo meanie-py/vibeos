@@ -182,13 +182,30 @@ pub(crate) unsafe fn open_dev(
     handle
 }
 
-/// Run one synchronous internal-device-control IRP against the connection.
+/// Run one synchronous internal-device-control IRP against the connection, with a
+/// 10s completion wait (the default for client request/reply).
 pub(crate) unsafe fn run_tdi(
     dev: PDEVICE_OBJECT,
     fo: *mut _FILE_OBJECT,
     minor: u8,
     out_buf: PVOID,
     out_len: u32,
+    setup_params: impl FnOnce(*mut u8),
+) -> i32 {
+    run_tdi_to(dev, fo, minor, out_buf, out_len, -100_000_000i64, setup_params)
+}
+
+/// Same, but with a caller-chosen relative completion timeout (100ns units, must
+/// be negative for a relative wait). The server self-test posts a `TDI_LISTEN`
+/// that pends until a host connects — which, in the test, happens only *after*
+/// boot completes — so it needs a much longer window than the 10s default.
+pub(crate) unsafe fn run_tdi_to(
+    dev: PDEVICE_OBJECT,
+    fo: *mut _FILE_OBJECT,
+    minor: u8,
+    out_buf: PVOID,
+    out_len: u32,
+    timeout_100ns: i64,
     setup_params: impl FnOnce(*mut u8),
 ) -> i32 {
     let mut event: KEVENT = zeroed();
@@ -217,7 +234,7 @@ pub(crate) unsafe fn run_tdi(
     let mut st = IofCallDriver(dev, irp);
     if st == STATUS_PENDING {
         let mut timeout: LARGE_INTEGER = zeroed();
-        timeout.QuadPart = -100_000_000i64; // 10s relative
+        timeout.QuadPart = timeout_100ns; // relative (negative)
         let wait = KeWaitForSingleObject(&mut event as *mut _ as PVOID, 0, 0, 0, &mut timeout);
         // Honesty: on timeout the IRP never completed, so iosb is untouched
         // (reads as 0 = STATUS_SUCCESS) — report the timeout instead of a false OK.
