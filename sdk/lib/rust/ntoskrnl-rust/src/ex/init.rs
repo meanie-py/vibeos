@@ -1246,6 +1246,30 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
     }
 
+    // Map the GICv2 (QEMU virt: GICD @ 0x08000000, GICC @ 0x08010000) to kernel
+    // VA and start the periodic ARM generic-timer clock interrupt.  Must run
+    // after MmInitSystem(1) (so MmMapIoSpace works) and before the first process
+    // switch (SMSS) — the clock ISR runs in arbitrary process context and user
+    // PML4s lack the early-boot PXE[0] identity map, same constraint as the UART
+    // remap above.  Without this the arm64 system clock is frozen:
+    // InterruptTime/KeTickCount never advance, so every relative timer and
+    // KeDelayExecutionThread is broken (netstack's smoltcp clock froze on this).
+    #[cfg(target_arch = "aarch64")]
+    {
+        use ntkrnl_sys::ddk::MmMapIoSpace;
+        extern "C" {
+            fn HalInitializeClockArm64(GicDistVa: PVOID, GicCpuVa: PVOID);
+        }
+        let mut Phys: LARGE_INTEGER = core::mem::zeroed();
+        Phys.QuadPart = 0x08000000; // GICv2 distributor
+        let GicDistVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
+        Phys.QuadPart = 0x08010000; // GICv2 CPU interface
+        let GicCpuVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
+        if !GicDistVa.is_null() && !GicCpuVa.is_null() {
+            HalInitializeClockArm64(GicDistVa, GicCpuVa);
+        }
+    }
+
     ExpInitNls(LoaderBlock);
 
     if CcInitializeCacheManager() == 0 {
