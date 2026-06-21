@@ -819,6 +819,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "msfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
