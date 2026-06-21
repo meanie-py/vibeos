@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy this to .vibeos-cli.local.json (gitignored) and edit. Deep-merged over the committed DEFAULTS in tests/qemu/cli/config.py. Only include keys you want to override. Example below switches the smoke/boot runner to the Windows-host QEMU backend (escapes WSL2 nested-virt contention; see docs/engineering/windows-host-qemu-spike.md). Leave backend at 'native' (the default) for real Linux or plain nested-WSL2 KVM.",
+  "qemu": {
+    "backend": "windows-host",
+    "windows": {
+      "qemu_dir": "/mnt/c/Program Files/qemu",
+      "staging_dir": "/mnt/c/temp/vibeos-qemu",
+      "accel": "tcg",
+      "host_addr": "127.0.0.1"
+    }
+  }
+}
