@@ -45,6 +45,29 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 Rung 1 is the highest-leverage (it's the dedup unlock *and* most of the disk win). Rungs 2–4
 are cheap and mop up the residual; rung 5 is the payoff gauge.
 
+### Progress (2026-06-20, build-cache lane)
+
+- **Rung 0 ✅ landed** (`f3e4abe9640`): `vibeos-cli repro` harness + validated baseline.
+- **Rung 1 (Rust) ✅ implemented, gate-pending**: `trim-paths = "object"` on both workspace
+  profiles (`sdk/lib/rust/Cargo.toml`). Profile setting → sidesteps the `[target.*].rustflags`
+  SSE-guard XOR clobber (the landmine that made env/build-rustflags remap unsafe).
+- **Rung 1 (C) ✅ already correct in source** — no change needed. `CMakeLists.txt:97` maps
+  `-ffile-prefix-map=${REACTOS_SOURCE_DIR}=`, which a *fresh per-worktree configure* expands to
+  that worktree's own abs path → empty; main's generated `build.ninja` only *looks* hardcoded
+  because it shows main's expansion. The plan's earlier "hardcoded to main" was reading main's
+  generated ninja, not the source. Residual `DW_AT_comp_dir` (the abs *build* dir, which neither
+  prefix-map covers) is a possible remaining C leak → measure with `repro --diffoscope` post-
+  timestamp-fix; if it shows, add `-ffile-compilation-dir=.` (clang 19 supports it). Deferred
+  until measured (it touches every C TU → don't widen blast radius on spec).
+- **Rung 2a (PE timestamp) ✅ implemented, gate-pending**: `-Wl,--no-insert-timestamp` added in
+  BOTH link paths — the 679 cmake DLL/driver/exe links (`toolchain-llvm-mingw.cmake`
+  `*_LINKER_FLAGS_INIT`) and every cargo-driven link (`reactos-link` common PE-flag block, one
+  place covering all 42 `*-cargo` modules incl. ntoskrnl.exe/win32k.sys). This kills the only
+  leak measured live on all 3 arches. Verify post-build: `repro report` → `0 (deterministic)`.
+- **Pending ×3 cold gate** for the rung-1/2 build changes (can't ride a held gate; arm64 boots
+  held for media rebuild as of 2026-06-20). Rung 2b (SOURCE_DATE_EPOCH + version-resource
+  `__DATE__`/`__TIME__`) and rungs 3–5 still TODO.
+
 ## Sources of nondeterminism — the catalog (research notes)
 
 ### Cross-cutting

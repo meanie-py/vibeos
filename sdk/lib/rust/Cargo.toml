@@ -192,9 +192,17 @@ resolver = "2"
 
 [profile.dev]
 panic = "abort"
+# Reproducible builds (deterministic-builds-plan.md rung 1): remap the workspace +
+# registry + std paths embedded in objects so two worktrees building the same commit
+# produce byte-identical Rust objects. "object" trims paths in the binary only (not
+# diagnostics). This is a *profile* setting, NOT rustflags — so it sidesteps the
+# i386 SSE-guard XOR clobber in .cargo/config.toml [target.*].rustflags (the whole
+# reason env/build-rustflags remap was unsafe here). Stabilized 1.81; we're on 1.92.
+trim-paths = "object"
 
 [profile.release]
 panic = "abort"
 opt-level = 1
 lto = false
 codegen-units = 256
+trim-paths = "object"  # see [profile.dev] — reproducible-builds path remap (rung 1)
