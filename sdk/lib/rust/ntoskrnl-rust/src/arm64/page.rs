@@ -329,8 +329,14 @@ pub unsafe extern "system" fn MmGetPageProtect(
             final_protect <<= 4;
         }
 
-        if cache_type == 0 {
+        // CacheType = AttrIndx into MAIR=0x004400FF: 0=Normal-WB (cached),
+        // 1=Device (no-cache), 2=Normal-NC (write-combine). This was previously
+        // `== 0` (the inverted scheme that mapped cached pages as Device); now
+        // consistent with the corrected MmProtectToPteMask cache bits.
+        if cache_type == 1 {
             final_protect |= PAGE_NOCACHE;
+        } else if cache_type == 2 {
+            final_protect |= PAGE_WRITECOMBINE;
         }
 
         Protect = final_protect;
