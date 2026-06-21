@@ -30,13 +30,13 @@ list(APPEND SOURCE
     lsasrv.c
     notify.c
     policy.c
-    privileges.c
+    # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
     registry.c
     security.c
     service.c
     session.c
     srm.c
-    utils.c
+    # utils.c        — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
     lsasrv.h
     ${CMAKE_CURRENT_BINARY_DIR}/dssetup_s.c
     ${CMAKE_CURRENT_BINARY_DIR}/lsasrv_stubs.c)

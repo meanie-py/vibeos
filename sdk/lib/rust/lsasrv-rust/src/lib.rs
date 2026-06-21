@@ -6,11 +6,21 @@
 //! those symbols once their C TU is commented out; the RPC dispatch tables
 //! (lsa-stub Rust + the generated dssetup_s.c) bind them by decorated name, and
 //! the not-yet-flipped C bodies (Lsar*/Lsap*/Lsa*) resolve at link the other
-//! way. FFI substrate = lsasrv-sys.
+//! way. FFI substrate = ntdll-sys (nt base) + lsasrv-sys (LSAPR_* marshalled).
 #![no_std]
-#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, unused_unsafe)]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, unused_unsafe, dead_code)]
 
-mod dssetup;
+// Wine debug macros — no-ops in the NDEBUG build (TRACE/WARN/ERR/FIXME compile
+// out in the C too). Defined at crate root before the body modules so textual
+// macro scoping makes them visible to every translated file.
+macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
+macro_rules! WARN { ($($arg:tt)*) => {{}}; }
+macro_rules! ERR { ($($arg:tt)*) => {{}}; }
+macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+
+mod consts;
+mod prelude;
+mod lsasrv;
 
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role as
 // lsa-stub; deduped at link by --allow-multiple-definition).

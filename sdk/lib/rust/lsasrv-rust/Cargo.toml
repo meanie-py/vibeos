@@ -13,3 +13,4 @@ crate-type = ["staticlib"]
 
 [dependencies]
 lsasrv-sys = { path = "../lsasrv-sys" }
+ntdll-sys = { path = "../ntdll-sys" }

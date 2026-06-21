@@ -770,6 +770,7 @@ name = "lsasrv-rust"
 version = "0.1.0"
 dependencies = [
  "lsasrv-sys",
+ "ntdll-sys",
 ]
 
 [[package]]
