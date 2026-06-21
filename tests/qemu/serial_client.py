@@ -70,6 +70,19 @@ class SerialClient:
         self._server.listen(1)
         self._server.setblocking(False)
 
+    def listen_tcp(self, host: str = "127.0.0.1", port: int = 0) -> int:
+        """Listen on a TCP port instead of a Unix socket (windows-host backend:
+        the Windows QEMU connects back to us over WSL2 localhost forwarding).
+        Returns the actually-bound port (pass 0 to let the OS pick). Call BEFORE
+        starting QEMU. accept()/drain are transport-agnostic from here on."""
+        self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server.bind((host, port))
+        self._server.listen(1)
+        bound = self._server.getsockname()[1]
+        self._server.setblocking(False)
+        return bound
+
     def set_tee(self, path: str, header: str = "") -> None:
         """Mirror all received serial bytes to `path` in real time (truncates).
 

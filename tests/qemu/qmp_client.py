@@ -26,23 +26,48 @@ class QmpClient:
 
     def __init__(self) -> None:
         self._sock: socket.socket | None = None
+        self._server: socket.socket | None = None
         self._buf = b""
 
     def connect(self, path: str, timeout: float = 10.0) -> dict:
-        """Connect and complete QMP handshake (greeting + qmp_capabilities)."""
+        """Connect and complete QMP handshake (greeting + qmp_capabilities).
+
+        Native path: we are the TCP/Unix client connecting to QEMU's QMP server
+        (`-qmp unix:...,server`)."""
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.settimeout(timeout)
         self._sock.connect(path)
+        return self._handshake()
 
-        # Read greeting
+    def listen_tcp(self, host: str = "127.0.0.1", port: int = 0) -> int:
+        """Listen on a TCP port for QEMU to connect to us (windows-host backend:
+        QEMU's QMP chardev is `server=off`, connecting back over WSL2 localhost
+        forwarding). Returns the bound port. Call BEFORE starting QEMU; then
+        accept() once QEMU is up. QEMU is still the QMP protocol server (it sends
+        the greeting), regardless of which side opened the TCP connection."""
+        self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server.bind((host, port))
+        self._server.listen(1)
+        return self._server.getsockname()[1]
+
+    def accept(self, timeout: float = 30.0) -> dict:
+        """Accept QEMU's QMP connection (after listen_tcp) and complete the
+        handshake. Returns the greeting."""
+        assert self._server is not None, "call listen_tcp() before accept()"
+        self._server.settimeout(timeout)
+        conn, _ = self._server.accept()
+        conn.settimeout(timeout)
+        self._sock = conn
+        return self._handshake()
+
+    def _handshake(self) -> dict:
+        """Read the QMP greeting and enter command mode (qmp_capabilities)."""
         greeting = self._recv_json()
-
-        # Send qmp_capabilities to enter command mode
         self._send_json({"execute": "qmp_capabilities"})
         resp = self._recv_json()
         if "error" in resp:
             raise QmpError("qmp_capabilities", resp["error"])
-
         return greeting
 
     def execute(self, command: str, **args: Any) -> dict:
@@ -62,13 +87,15 @@ class QmpClient:
         return resp.get("return", "")
 
     def close(self) -> None:
-        """Close socket."""
-        if self._sock:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
+        """Close the connection and (if listening) the server socket."""
+        for attr in ("_sock", "_server"):
+            s = getattr(self, attr)
+            if s:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+                setattr(self, attr, None)
 
     def _send_json(self, obj: dict) -> None:
         assert self._sock is not None

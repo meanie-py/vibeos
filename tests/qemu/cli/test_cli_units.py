@@ -6,11 +6,18 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
+from tests.qemu import backend as be_mod
+from tests.qemu import qmp_client, serial_client
+
+from . import config as config_mod
 from . import lints, provenance, triage
 from .artifacts import Run, Stage
 
@@ -549,3 +556,135 @@ def test_prune_attribute_longest_match_wins():
     assert prune._attribute("/wt/nested/build-i386/x.o", wts) == Path("/wt/nested")
     assert prune._attribute("/wt/build-i386/x.o", wts) == Path("/wt")
     assert prune._attribute("/elsewhere/x", wts) is None
+
+
+# --- config: layered defaults + local override + env (windows-host backend) -
+
+
+def test_config_defaults_when_no_overrides(tmp_path: Path):
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "native"
+    assert cfg.get("qemu.windows.accel") == "tcg"
+    assert cfg.get("nonexistent.key", "fallback") == "fallback"
+
+
+def test_config_local_file_deep_merges(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text(
+        json.dumps({"qemu": {"backend": "windows-host", "windows": {"accel": "whpx"}}})
+    )
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "windows-host"
+    assert cfg.get("qemu.windows.accel") == "whpx"
+    # untouched sibling defaults survive the deep merge
+    assert cfg.get("qemu.windows.host_addr") == "127.0.0.1"
+
+
+def test_config_env_beats_local_and_defaults(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text(
+        json.dumps({"qemu": {"backend": "windows-host"}})
+    )
+    cfg = config_mod.load(tmp_path, environ={"VIBEOS_QEMU_BACKEND": "native"})
+    assert cfg.get("qemu.backend") == "native"  # env wins over local
+
+
+def test_config_malformed_local_file_falls_back_to_defaults(tmp_path: Path):
+    (tmp_path / config_mod.LOCAL_FILENAME).write_text("{ not valid json")
+    cfg = config_mod.load(tmp_path, environ={})
+    assert cfg.get("qemu.backend") == "native"
+
+
+# --- TCP transport (windows-host backend: WSL listens, QEMU connects) -------
+
+
+def test_serial_client_tcp_drains_and_reads_marker():
+    s = serial_client.SerialClient()
+    port = s.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(b"booting...\n[MARK] WORLD ready\n")
+        time.sleep(0.3)
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    s.accept(timeout=5)
+    out = s.read_until("WORLD", timeout=5)
+    assert "WORLD" in out
+    s.close()
+    t.join(timeout=5)
+
+
+def test_qmp_client_tcp_handshake_and_execute():
+    qmp = qmp_client.QmpClient()
+    port = qmp.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+    greeting = {"QMP": {"version": {"qemu": {"major": 11}}, "capabilities": []}}
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(json.dumps(greeting).encode() + b"\n")
+
+        def read_line() -> bytes:
+            buf = b""
+            while b"\n" not in buf:
+                buf += c.recv(4096)
+            return buf
+
+        read_line()  # qmp_capabilities
+        c.sendall(json.dumps({"return": {}}).encode() + b"\n")
+        read_line()  # query-status
+        c.sendall(json.dumps({"return": {"status": "running"}}).encode() + b"\n")
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    assert qmp.accept(timeout=5) == greeting
+    assert qmp.execute("query-status")["return"]["status"] == "running"
+    qmp.close()
+    t.join(timeout=5)
+
+
+# --- backend helpers (windows-host path translation / arg rewrite) ----------
+
+
+def test_backend_win_path():
+    assert be_mod.win_path("/mnt/c/temp/x/livecd.iso") == "C:/temp/x/livecd.iso"
+    assert be_mod.win_path("/mnt/d/qemu/OVMF.fd") == "D:/qemu/OVMF.fd"
+    with pytest.raises(ValueError):
+        be_mod.win_path("/home/curi/not/under/mnt")
+
+
+def test_backend_windows_qemu_bin():
+    d = "/mnt/c/Program Files/qemu"
+    # tcg keeps the per-arch exe
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "tcg").endswith("qemu-system-i386.exe")
+    # whpx only exists in the x86_64 emulator → i386 guest uses it
+    assert be_mod.windows_qemu_bin("qemu-system-i386", d, "whpx").endswith("qemu-system-x86_64.exe")
+    assert be_mod.windows_qemu_bin("qemu-system-x86_64", d, "tcg").endswith(
+        "qemu-system-x86_64.exe"
+    )
+
+
+def test_backend_rewrite_accel():
+    base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
+    # tcg: kvm->tcg AND drop the paired -cpu host
+    assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
+    # whpx: kvm->whpx (irqchip off) and KEEP -cpu host
+    assert be_mod.rewrite_accel(base, "whpx") == [
+        "-M",
+        "pc",
+        "-accel",
+        "whpx,kernel-irqchip=off",
+        "-cpu",
+        "host",
+        "-m",
+        "512M",
+    ]
+
+
+def test_backend_stage_media_paths_passthrough():
+    # args without a file= token are returned unchanged (staging only touches file= paths)
+    args = ["-M", "pc", "-vga", "std", "-display", "none", "-no-reboot"]
+    assert be_mod.stage_media_paths(args, Path("/mnt/c/temp/vibeos-qemu")) == args
