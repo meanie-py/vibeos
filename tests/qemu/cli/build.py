@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -29,6 +30,29 @@ def _decoration_hint(sym: str) -> str:
     if re.match(r"_\w+$", sym):
         return f"{sym}: i386 cdecl — missing symbol / wrong ABI"
     return f"{sym}: undefined"
+
+
+def source_date_epoch(repo: Path) -> str | None:
+    """Commit-date epoch for reproducible builds (deterministic-builds-plan.md rung 2b).
+
+    `git log -1 --format=%ct` → the HEAD commit's timestamp. Deriving from the *commit*
+    (not wall-clock) makes the build byte-identical across worktrees/agents on the same
+    commit while keeping a meaningful date. Pins both cmake's `string(TIMESTAMP)` in
+    version.cmake (→ buildno.h version resources) and clang's `__DATE__`/`__TIME__`
+    (e.g. ntoskrnl/ex/xipdisp.c) — both honor the SOURCE_DATE_EPOCH env var. Returns
+    None outside a git repo (caller leaves the env untouched)."""
+    try:
+        cp = subprocess.run(
+            ["git", "log", "-1", "--format=%ct"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    ts = cp.stdout.strip()
+    return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
 def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
@@ -184,6 +208,15 @@ def build(args, repo: Path) -> int:
 
     if cold:
         _clean(run, repo, arch)
+
+    # --- reproducible builds: pin SOURCE_DATE_EPOCH (rung 2b) ---
+    # Set it in our env so every subprocess (cmake configure inside _setup_cache,
+    # ninja compile, cargo) inherits it — no per-call threading. setdefault so an
+    # externally pinned value (CI) wins. Honored by cmake string(TIMESTAMP) and clang
+    # __DATE__/__TIME__; verify the effect with `vibeos-cli repro report`.
+    sde = source_date_epoch(repo)
+    if sde:
+        os.environ.setdefault("SOURCE_DATE_EPOCH", sde)
 
     # --- build cache (opt-in: --cache / VIBEOS_BUILD_CACHE) ---
     cache = cachecfg.make(repo)

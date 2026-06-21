@@ -1248,6 +1248,12 @@ impl Linker {
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
             "-Wl,--allow-multiple-definition",
+            // Reproducible builds (deterministic-builds-plan.md rung 2): the gnu
+            // ld.lld driver defaults to --insert-timestamp, stamping the PE
+            // header with wall-clock time → every rebuild diverges, defeating
+            // cross-worktree dedup. Zero it so the kernel/DLL byte-matches across
+            // builds. Verify with `vibeos-cli repro report <pe>` (→ 0).
+            "-Wl,--no-insert-timestamp",
         ] {
             println!("cargo:rustc-link-arg={f}");
         }
