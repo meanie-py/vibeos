@@ -62,12 +62,63 @@ macro_rules! WARN  { ($($a:tt)*) => { __msgina_wine_log!($crate::prelude::__WINE
 macro_rules! TRACE { ($($a:tt)*) => { __msgina_wine_log!($crate::prelude::__WINE_DBCL_TRACE, $($a)*) }; }
 macro_rules! FIXME { ($($a:tt)*) => { __msgina_wine_log!($crate::prelude::__WINE_DBCL_FIXME, $($a)*) }; }
 
+// ---- Win32 helper macros (windef.h/winuser.h) the translation uses. Defined
+// before the mods so every module sees them (macro_rules! resolves textually). ----
+macro_rules! LOWORD { ($x:expr) => { (($x as usize) & 0xffff) as $crate::prelude::WORD } }
+macro_rules! HIWORD { ($x:expr) => { ((($x as usize) >> 16) & 0xffff) as $crate::prelude::WORD } }
+macro_rules! MAKEINTRESOURCEW { ($i:expr) => { (($i as u16) as usize) as $crate::prelude::PWSTR } }
+// The translation carries the source's `MAKINTRESOURCEW` typo verbatim.
+macro_rules! MAKINTRESOURCEW { ($i:expr) => { (($i as u16) as usize) as $crate::prelude::PWSTR } }
+macro_rules! GET_X_LPARAM { ($lp:expr) => { (($lp as usize & 0xffff) as i16) as core::ffi::c_int } }
+macro_rules! GET_Y_LPARAM { ($lp:expr) => { ((($lp as usize >> 16) & 0xffff) as i16) as core::ffi::c_int } }
+macro_rules! PRIMARYLANGID { ($l:expr) => { (($l as usize) & 0x3ff) as $crate::prelude::WORD } }
+macro_rules! UNREFERENCED_PARAMETER { ($x:expr) => { { let _ = &$x; } } }
+// UNIMPLEMENTED() — DPRINT1-class no-op in this translation.
+macro_rules! UNIMPLEMENTED { () => { {} } }
+// A/W function-name macros (winuser.h/wingdi.h): the translation uses the generic
+// names; map them to the W-suffixed link symbols in crate::msgina_externs.
+macro_rules! SetWindowText { ($($a:expr),* $(,)?) => { $crate::msgina_externs::SetWindowTextW($($a),*) } }
+macro_rules! GetObject { ($($a:expr),* $(,)?) => { $crate::msgina_externs::GetObjectW($($a),*) } }
+macro_rules! GetVersionEx { ($($a:expr),* $(,)?) => { $crate::msgina_externs::GetVersionExW($($a),*) } }
+// RtlCopyMemory(dst, src, len) → copy_nonoverlapping(src, dst, count).
+macro_rules! RtlCopyMemory {
+    ($d:expr, $s:expr, $n:expr $(,)?) => {
+        core::ptr::copy_nonoverlapping($s as *const u8, $d as *mut u8, $n as usize)
+    };
+}
+// powrprof.h IS_PWR_{HIBERNATE,SUSPEND}_ALLOWED(pcaps) — msgina does NOT link powrprof,
+// so these are stubbed to 0/FALSE. TODO: this disables the hibernate/suspend shutdown
+// options in the GINA shutdown dialog; revisit when powrprof is available.
+macro_rules! IS_PWR_HIBERNATE_ALLOWED { ($caps:expr) => {{ let _ = &$caps; 0i32 }} }
+macro_rules! IS_PWR_SUSPEND_ALLOWED { ($caps:expr) => {{ let _ = &$caps; 0i32 }} }
+
+// strsafe.h printf-family (StringCchPrintfW/StringCbPrintfW): variadic, so forwarded
+// to user32's variadic wsprintfW (the size/cch arg is dropped — wsprintfW bounds to
+// 1024 wchars internally, matching the small fixed buffers these are called with).
+// Returns S_OK (0) like the strsafe inline on success.
+macro_rules! StringCchPrintfW {
+    ($buf:expr, $cch:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let _ = $cch;
+        $crate::msgina_externs::wsprintfW($buf as $crate::prelude::PWSTR, $fmt as $crate::prelude::PCWSTR $(, $arg)*);
+        0 as $crate::prelude::HRESULT
+    }};
+}
+macro_rules! StringCbPrintfW {
+    ($buf:expr, $cb:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let _ = $cb;
+        $crate::msgina_externs::wsprintfW($buf as $crate::prelude::PWSTR, $fmt as $crate::prelude::PCWSTR $(, $arg)*);
+        0 as $crate::prelude::HRESULT
+    }};
+}
+
 // Foundation: cross-DLL Win32/LSA out-call decls, GINA-specific types, and the
 // universal prelude the per-file translations expect in scope.
+pub mod msgina_consts;
 pub mod msgina_externs;
 pub mod msgina_types;
 pub mod prelude;
 pub mod resources;
+pub mod strsafe;
 
 // ---- translated body modules (added per-file as each .c is flipped) ----
 pub mod gui;

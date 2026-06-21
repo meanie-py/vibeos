@@ -67,7 +67,7 @@ pub unsafe extern "C" fn ReadRegSzValue(
     let Value = HeapAlloc(
         GetProcessHeap(),
         0,
-        (cbData as usize + core::mem::size_of::<u16>()) as SIZE_T,
+        ((cbData as usize + core::mem::size_of::<u16>()) as SIZE_T).try_into().unwrap(),
     ) as PWSTR;
     if Value.is_null() {
         return ERROR_NOT_ENOUGH_MEMORY;

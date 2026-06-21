@@ -6,18 +6,109 @@
 
 use crate::prelude::*;
 
-// ---- ntsecapi LSA client types (not in ntdll-sys) ----
-// LSA_STRING is an alias of the ANSI STRING; LSA_OPERATIONAL_MODE is a ULONG.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct LSA_STRING {
-    pub Length: USHORT,
-    pub MaximumLength: USHORT,
-    pub Buffer: PCHAR,
-}
-pub type PLSA_STRING = *mut LSA_STRING;
+// ---- ntsecapi LSA client types ----
+// LSA_STRING is, per ntsecapi.h, a typedef of the ANSI STRING (_STRING). Aliasing it
+// to ntdll-sys's `_STRING` keeps it the SAME Rust type as PANSI_STRING/PSTRING, so the
+// translation's `as PANSI_STRING` casts and the LSA externs' PLSA_STRING params unify.
+pub type LSA_STRING = _STRING;
+pub type PLSA_STRING = *mut _STRING;
 pub type LSA_OPERATIONAL_MODE = ULONG;
 pub type PLSA_OPERATIONAL_MODE = *mut ULONG;
+
+// LSA_UNICODE_STRING is an alias of UNICODE_STRING; LSA_HANDLE is a PVOID (ntsecapi.h).
+pub type LSA_UNICODE_STRING = _UNICODE_STRING;
+pub type PLSA_UNICODE_STRING = *mut _UNICODE_STRING;
+pub type LSA_HANDLE = HANDLE;
+pub type PLSA_HANDLE = *mut HANDLE;
+
+// ---- ntsecapi.h MSV1_0 message structs (field-exact) ----
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MSV1_0_INTERACTIVE_LOGON {
+    pub MessageType: ULONG, // MSV1_0_LOGON_SUBMIT_TYPE (C enum == int/ULONG)
+    pub LogonDomainName: _UNICODE_STRING,
+    pub UserName: _UNICODE_STRING,
+    pub Password: _UNICODE_STRING,
+}
+pub type PMSV1_0_INTERACTIVE_LOGON = *mut MSV1_0_INTERACTIVE_LOGON;
+pub type _MSV1_0_INTERACTIVE_LOGON = MSV1_0_INTERACTIVE_LOGON;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MSV1_0_INTERACTIVE_PROFILE {
+    pub MessageType: ULONG, // MSV1_0_PROFILE_BUFFER_TYPE
+    pub LogonCount: USHORT,
+    pub BadPasswordCount: USHORT,
+    pub LogonTime: LARGE_INTEGER,
+    pub LogoffTime: LARGE_INTEGER,
+    pub KickOffTime: LARGE_INTEGER,
+    pub PasswordLastSet: LARGE_INTEGER,
+    pub PasswordCanChange: LARGE_INTEGER,
+    pub PasswordMustChange: LARGE_INTEGER,
+    pub LogonScript: _UNICODE_STRING,
+    pub HomeDirectory: _UNICODE_STRING,
+    pub FullName: _UNICODE_STRING,
+    pub ProfilePath: _UNICODE_STRING,
+    pub HomeDirectoryDrive: _UNICODE_STRING,
+    pub LogonServer: _UNICODE_STRING,
+    pub UserFlags: ULONG,
+}
+pub type PMSV1_0_INTERACTIVE_PROFILE = *mut MSV1_0_INTERACTIVE_PROFILE;
+pub type _MSV1_0_INTERACTIVE_PROFILE = MSV1_0_INTERACTIVE_PROFILE;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DOMAIN_PASSWORD_INFORMATION {
+    pub MinPasswordLength: USHORT,
+    pub PasswordHistoryLength: USHORT,
+    pub PasswordProperties: ULONG,
+    pub MaxPasswordAge: LARGE_INTEGER,
+    pub MinPasswordAge: LARGE_INTEGER,
+}
+pub type PDOMAIN_PASSWORD_INFORMATION = *mut DOMAIN_PASSWORD_INFORMATION;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MSV1_0_CHANGEPASSWORD_REQUEST {
+    pub MessageType: ULONG, // MSV1_0_PROTOCOL_MESSAGE_TYPE
+    pub DomainName: _UNICODE_STRING,
+    pub AccountName: _UNICODE_STRING,
+    pub OldPassword: _UNICODE_STRING,
+    pub NewPassword: _UNICODE_STRING,
+    pub Impersonating: BOOLEAN,
+}
+pub type PMSV1_0_CHANGEPASSWORD_REQUEST = *mut MSV1_0_CHANGEPASSWORD_REQUEST;
+pub type _MSV1_0_CHANGEPASSWORD_REQUEST = MSV1_0_CHANGEPASSWORD_REQUEST;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MSV1_0_CHANGEPASSWORD_RESPONSE {
+    pub MessageType: ULONG, // MSV1_0_PROTOCOL_MESSAGE_TYPE
+    pub PasswordInfoValid: BOOLEAN,
+    pub DomainPasswordInfo: DOMAIN_PASSWORD_INFORMATION,
+}
+pub type PMSV1_0_CHANGEPASSWORD_RESPONSE = *mut MSV1_0_CHANGEPASSWORD_RESPONSE;
+pub type _MSV1_0_CHANGEPASSWORD_RESPONSE = MSV1_0_CHANGEPASSWORD_RESPONSE;
+
+// ---- BITMAP / WLX_PROFILE_V2_0 re-exports from winlogon-sys (tag forms) ----
+pub use winlogon_sys::nt::{tagBITMAP, BITMAP, _WLX_PROFILE_V2_0};
+
+// ---- commctrl.h TTTOOLINFOW (tagTOOLINFOW) — field-exact ----
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TTTOOLINFOW {
+    pub cbSize: UINT,
+    pub uFlags: UINT,
+    pub hwnd: HWND,
+    pub uId: UINT_PTR,
+    pub rect: RECT,
+    pub hinst: HINSTANCE,
+    pub lpszText: LPWSTR,
+    pub lParam: LPARAM,
+    pub lpReserved: *mut core::ffi::c_void,
+}
+pub type PTOOLINFOW = *mut TTTOOLINFOW;
+pub type LPTTTOOLINFOW = *mut TTTOOLINFOW;
 
 // ---- GINA context (msgina.h) ----
 #[repr(C)]
@@ -25,7 +116,10 @@ pub struct GINA_CONTEXT {
     pub hWlx: HANDLE,
     pub station: LPWSTR,
     pub pWlxFuncs: PWLX_DISPATCH_VERSION_1_3,
-    pub hDllInstance: HANDLE,
+    // C type is HANDLE; it always holds the HINSTANCE module handle (assigned from the
+    // `hDllInstance` global) and is passed to HINSTANCE-typed Win32 APIs. Typed HINSTANCE
+    // here so Rust's distinct pointer types line up (HANDLE/HINSTANCE are both void* in C).
+    pub hDllInstance: HINSTANCE,
     pub hStatusWindow: HWND,
     pub LsaHandle: HANDLE,
     pub AuthenticationPackage: ULONG,

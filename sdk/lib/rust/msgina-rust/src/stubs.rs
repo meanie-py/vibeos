@@ -2,6 +2,8 @@ use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
 use crate::resources::*;
+use crate::msgina_consts::*;
+use crate::strsafe::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -19,7 +21,7 @@ static mut __wine_dbch___default: *mut __wine_debug_channel =
     unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
 #[no_mangle]
 pub unsafe extern "system" fn WlxIsLockOk(pWlxContext: PVOID) -> BOOL {
-    if (*__wine_dbch___default).flags & (1i32 << __WINE_DBCL_FIXME) != 0 {
+    if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME) != 0 {
         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
         let __dbcl: __wine_debug_class = __WINE_DBCL_FIXME;
         ros_dbg_log(
@@ -33,7 +35,7 @@ pub unsafe extern "system" fn WlxIsLockOk(pWlxContext: PVOID) -> BOOL {
             b"WlxIsLockOk\0".as_ptr() as *const core::ffi::c_char,
         );
     }
-    TRUE
+    TRUE.try_into().unwrap()
 }
 
 #[no_mangle]

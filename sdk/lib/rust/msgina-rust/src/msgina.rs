@@ -2,13 +2,17 @@ use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
 use crate::resources::*;
+use crate::msgina_consts::*;
+use crate::strsafe::*;
+use crate::lsa::{ConnectToLsa, MyLogonUser};
+use crate::utils::{DuplicateString, ReadRegDwordValue, ReadRegSzValue, RegOpenLoggedOnHKCU};
+use crate::gui::GinaGraphicalUI;
+use crate::tui::GinaTextUI;
 use core::ffi::c_void;
 
 extern "C" {
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
     fn GetProcAddress(hModule: HINSTANCE, lpProcName: LPCSTR) -> FARPROC;
-    fn TRACE(format: *const i8, ...);
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -42,8 +46,8 @@ static mut SystemAuthority: SID_IDENTIFIER_AUTHORITY = _SID_IDENTIFIER_AUTHORITY
 
 static mut AdminSid: PSID = ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void;
 
-pub type pThemeWait = unsafe extern "system" fn(dwTimeout: DWORD) -> DWORD;
-pub type pThemeWatch = unsafe extern "system" fn() -> BOOL;
+pub type pThemeWait = Option<unsafe extern "system" fn(dwTimeout: DWORD) -> DWORD>;
+pub type pThemeWatch = Option<unsafe extern "system" fn() -> BOOL>;
 
 #[no_mangle]
 pub unsafe extern "system" fn WlxNegotiate(
@@ -56,10 +60,10 @@ pub unsafe extern "system" fn WlxNegotiate(
         pdwDllVersion,
     );
     if pdwDllVersion.is_null() || dwWinlogonVersion < WLX_VERSION_1_3 {
-        return 0u8;
+        return 0i32;
     }
     *pdwDllVersion = WLX_VERSION_1_3;
-    1u8
+    1i32
 }
 
 unsafe fn ChooseGinaUI() {
@@ -82,7 +86,7 @@ unsafe fn ChooseGinaUI() {
         ControlKey,
         b"S\0y\0s\0t\0e\0m\0S\0t\0a\0r\0t\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as *const u16,
         &raw mut SystemStartOptions,
-    );
+    ) as i32;
 
     if rc == ERROR_SUCCESS as i32 {
         CurrentOption = SystemStartOptions;
@@ -158,7 +162,7 @@ unsafe fn GetLsaDefaultPassword(pgContext: PGINA_CONTEXT) -> BOOL {
     };
     let mut Status: NTSTATUS = LsaOpenPolicy(
         core::ptr::null_mut::<_UNICODE_STRING>(),
-        &raw mut ObjectAttributes,
+        &raw mut ObjectAttributes as *mut core::ffi::c_void,
         POLICY_GET_PRIVATE_INFORMATION,
         &raw mut hPolicy,
     );
@@ -167,9 +171,7 @@ unsafe fn GetLsaDefaultPassword(pgContext: PGINA_CONTEXT) -> BOOL {
     }
     RtlInitUnicodeString(
         &raw mut Name,
-        &raw const core::mem::transmute::<[u8; 32], [u16; 16]>(
-            *b"D\0e\0f\0a\0u\0l\0t\0P\0a\0s\0s\0w\0o\0r\0d\0\0\0",
-        ) as PCWSTR,
+        { static __WS1: [u16; 16] = unsafe { core::mem::transmute::<[u8; 32], [u16; 16]>(*b"D\0e\0f\0a\0u\0l\0t\0P\0a\0s\0s\0w\0o\0r\0d\0\0\0",) }; __WS1.as_ptr() as PCWSTR },
     );
     Status = LsaRetrievePrivateData(hPolicy, &raw mut Name, &raw mut pPwd);
     LsaClose(hPolicy);
@@ -182,7 +184,7 @@ unsafe fn GetLsaDefaultPassword(pgContext: PGINA_CONTEXT) -> BOOL {
         {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
-        RtlSecureZeroMemory((*pPwd).Buffer as *mut core::ffi::c_void, (*pPwd).Length as usize);
+        RtlSecureZeroMemory((*pPwd).Buffer as *mut core::ffi::c_void, ((*pPwd).Length as usize).try_into().unwrap());
         LsaFreeMemory(pPwd as *mut core::ffi::c_void);
     }
     (Status == STATUS_SUCCESS) as BOOL
@@ -216,7 +218,7 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
                 rc,
             );
         }
-        return 0u8;
+        return 0i32;
     }
 
     rc = ReadRegDwordValue(
@@ -225,9 +227,9 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
             *b"A\0u\0t\0o\0A\0d\0m\0i\0n\0L\0o\0g\0o\0n\0\0\0",
         ).as_ptr() as PCWSTR,
         &raw mut dwValue,
-    );
+    ) as i32;
     if rc == ERROR_SUCCESS as i32 {
-        (*pgContext).bAutoAdminLogon = (dwValue != 0) as i32 as u8;
+        (*pgContext).bAutoAdminLogon = (dwValue != 0) as BOOL;
     }
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
         ros_dbg_log(
@@ -251,10 +253,10 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
             *b"D\0i\0s\0a\0b\0l\0e\0C\0A\0D\0\0\0",
         ).as_ptr() as PCWSTR,
         &raw mut dwDisableCAD,
-    );
+    ) as i32;
     if rc == ERROR_SUCCESS as i32 {
         if dwDisableCAD != 0 {
-            (*pgContext).bDisableCAD = 1u8;
+            (*pgContext).bDisableCAD = 1;
         }
     }
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
@@ -273,16 +275,16 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
         );
     }
 
-    (*pgContext).bShutdownWithoutLogon = 1u8;
+    (*pgContext).bShutdownWithoutLogon = 1;
     rc = ReadRegDwordValue(
         hKey,
         core::mem::transmute::<[u8; 42], [core::ffi::c_ushort; 21]>(
             *b"S\0h\0u\0t\0d\0o\0w\0n\0W\0i\0t\0h\0o\0u\0t\0L\0o\0g\0o\0n\0\0\0",
         ).as_ptr() as PCWSTR,
         &raw mut dwValue,
-    );
+    ) as i32;
     if rc == ERROR_SUCCESS as i32 {
-        (*pgContext).bShutdownWithoutLogon = (dwValue != 0) as i32 as u8;
+        (*pgContext).bShutdownWithoutLogon = (dwValue != 0) as BOOL;
     }
 
     rc = ReadRegDwordValue(
@@ -291,9 +293,9 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
             *b"D\0o\0n\0t\0D\0i\0s\0p\0l\0a\0y\0L\0a\0s\0t\0U\0s\0e\0r\0N\0a\0m\0e\0\0\0",
         ).as_ptr() as PCWSTR,
         &raw mut dwValue,
-    );
+    ) as i32;
     if rc == ERROR_SUCCESS as i32 {
-        (*pgContext).bDontDisplayLastUserName = (dwValue != 0) as i32 as u8;
+        (*pgContext).bDontDisplayLastUserName = (dwValue != 0) as BOOL;
     }
 
     rc = ReadRegDwordValue(
@@ -302,9 +304,9 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
             *b"I\0g\0n\0o\0r\0e\0S\0h\0i\0f\0t\0O\0v\0e\0r\0r\0i\0d\0e\0\0\0",
         ).as_ptr() as PCWSTR,
         &raw mut dwValue,
-    );
+    ) as i32;
     if rc == ERROR_SUCCESS as i32 {
-        (*pgContext).bIgnoreShiftOverride = (dwValue != 0) as i32 as u8;
+        (*pgContext).bIgnoreShiftOverride = (dwValue != 0) as BOOL;
     }
 
     dwSize = core::mem::size_of::<[u16; 256]>() as DWORD;
@@ -350,7 +352,7 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
         RegCloseKey(hKey);
     }
 
-    return 1u8;
+    return 1i32;
 }
 
 unsafe fn InitThemeSupport() {
@@ -364,8 +366,8 @@ unsafe fn InitThemeSupport() {
         return;
     }
 
-    let mut theme_wait: pThemeWait = core::ptr::null_mut() as pThemeWait;
-    let mut theme_watch: pThemeWatch = core::ptr::null_mut() as pThemeWatch;
+    let mut theme_wait: pThemeWait = None;
+    let mut theme_watch: pThemeWatch = None;
 
     theme_wait = core::mem::transmute::<FARPROC, pThemeWait>(
         GetProcAddress(hDll as HINSTANCE, 2 as LPCSTR),
@@ -374,9 +376,9 @@ unsafe fn InitThemeSupport() {
         GetProcAddress(hDll as HINSTANCE, 1 as LPCSTR),
     );
 
-    if !theme_wait.is_null() && !theme_watch.is_null() {
-        theme_wait(5000);
-        theme_watch();
+    if theme_wait.is_some() && theme_watch.is_some() {
+        (theme_wait.unwrap())(5000);
+        (theme_watch.unwrap())();
     }
 }
 #[no_mangle]
@@ -463,14 +465,14 @@ pub unsafe extern "system" fn WlxStartApplication(
 ) -> BOOL {
     let pgContext: PGINA_CONTEXT = pWlxContext as PGINA_CONTEXT;
 
-    let mut StartupInfo: STARTUPINFOW;
+    let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!(StartupInfo).cast::<::core::ffi::c_void>(),
         0,
         core::mem::size_of::<STARTUPINFOW>(),
     );
 
-    let mut ProcessInformation: PROCESS_INFORMATION;
+    let mut ProcessInformation: PROCESS_INFORMATION = core::mem::zeroed();
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!(ProcessInformation).cast::<::core::ffi::c_void>(),
         0,
@@ -504,7 +506,7 @@ pub unsafe extern "system" fn WlxStartApplication(
     ret = DuplicateTokenEx(
         (*pgContext).UserToken,
         MAXIMUM_ALLOWED as DWORD,
-        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
+        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>() as *mut core::ffi::c_void,
         SecurityImpersonation,
         TokenPrimary,
         &raw mut hAppToken,
@@ -534,7 +536,7 @@ pub unsafe extern "system" fn WlxStartApplication(
     StartupInfo.cb = core::mem::size_of::<STARTUPINFOW>() as DWORD;
     StartupInfo.lpTitle = pszCmdLine as LPWSTR;
     StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
-    StartupInfo.wShowWindow = SW_SHOW;
+    StartupInfo.wShowWindow = SW_SHOW as u16;
     StartupInfo.lpDesktop = pszDesktopName as LPWSTR;
 
     len = GetWindowsDirectoryW(&raw mut CurrentDirectory as LPWSTR, MAX_PATH as UINT);
@@ -560,14 +562,14 @@ pub unsafe extern "system" fn WlxStartApplication(
         hAppToken,
         pszCmdLine as LPCWSTR,
         ::core::ptr::null_mut::<WCHAR>(),
-        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
-        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
+        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>() as *mut core::ffi::c_void,
+        ::core::ptr::null_mut::<_SECURITY_ATTRIBUTES>() as *mut core::ffi::c_void,
         0, // FALSE
         CREATE_UNICODE_ENVIRONMENT,
         pEnvironment,
         &raw mut CurrentDirectory as *mut WCHAR as LPCWSTR,
-        &raw mut StartupInfo,
-        &raw mut ProcessInformation,
+        &raw mut StartupInfo as *mut core::ffi::c_void,
+        &raw mut ProcessInformation as *mut core::ffi::c_void,
     );
 
     CloseHandle(ProcessInformation.hProcess);
@@ -607,7 +609,7 @@ pub unsafe extern "system" fn WlxActivateUserShell(
     let mut hKey: HKEY = core::ptr::null_mut::<HKEY__>();
     let mut hKeyCurrentUser: HKEY = core::ptr::null_mut::<HKEY__>();
     let mut BufSize: DWORD;
-    let mut ValueType: DWORD;
+    let mut ValueType: DWORD = 0;
     let mut len: DWORD;
     let mut rc: LONG;
     let mut ret: BOOL;
@@ -619,22 +621,20 @@ pub unsafe extern "system" fn WlxActivateUserShell(
 
     rc = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        core::ptr::addr_of!(core::mem::transmute::<[u8; 108], [WCHAR; 54]>(
-            *b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0l\0o\0g\0o\0n\0\0\0"
-        )) as LPCWSTR,
+        { static __WS3: [WCHAR; 54] = unsafe { core::mem::transmute::<[u8; 108], [WCHAR; 54]>(*b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0l\0o\0g\0o\0n\0\0\0") }; __WS3.as_ptr() as LPCWSTR },
         0u32,
         KEY_QUERY_VALUE,
         &mut hKey,
     ) as LONG;
     if rc != ERROR_SUCCESS as LONG {
         WARN!(b"RegOpenKeyExW() failed with error %lu\n\0".as_ptr() as *const core::ffi::c_char, rc as core::ffi::c_ulong);
-        return FALSE;
+        return FALSE.try_into().unwrap();
     }
 
     BufSize = (core::mem::size_of::<[WCHAR; (MAX_PATH as usize) + 1]>() - core::mem::size_of::<WCHAR>()) as DWORD;
     rc = RegQueryValueExW(
         hKey,
-        core::ptr::addr_of!(core::mem::transmute::<[u8; 18], [WCHAR; 9]>(*b"U\0s\0e\0r\0i\0n\0i\0t\0\0\0")) as LPCWSTR,
+        { static __WS4: [WCHAR; 9] = unsafe { core::mem::transmute::<[u8; 18], [WCHAR; 9]>(*b"U\0s\0e\0r\0i\0n\0i\0t\0\0\0") }; __WS4.as_ptr() as LPCWSTR },
         core::ptr::null_mut::<DWORD>(),
         &mut ValueType,
         pszUserInitApp.as_mut_ptr() as *mut u8,
@@ -643,7 +643,7 @@ pub unsafe extern "system" fn WlxActivateUserShell(
     RegCloseKey(hKey);
     if rc != ERROR_SUCCESS as LONG || (ValueType != REG_SZ && ValueType != REG_EXPAND_SZ) {
         WARN!(b"RegQueryValueExW() failed with error %lu\n\0".as_ptr() as *const core::ffi::c_char, rc as core::ffi::c_ulong);
-        return FALSE;
+        return FALSE.try_into().unwrap();
     }
     pszUserInitApp[MAX_PATH as usize] = 0; // UNICODE_NULL
 
@@ -655,7 +655,7 @@ pub unsafe extern "system" fn WlxActivateUserShell(
     );
     if len > dest_len {
         WARN!(b"ExpandEnvironmentStringsW() failed. Required size %lu\n\0".as_ptr() as *const core::ffi::c_char, len as core::ffi::c_ulong);
-        return FALSE;
+        return FALSE.try_into().unwrap();
     }
 
     ret = WlxStartApplication(
@@ -672,7 +672,7 @@ pub unsafe extern "system" fn WlxActivateUserShell(
         (*pgContext).UserToken,
         KEY_SET_VALUE as REGSAM,
         &mut hKeyCurrentUser,
-    );
+    ) as i32;
     if rc != ERROR_SUCCESS as LONG {
         ERR!(b"RegOpenLoggedOnHKCU() failed with error %ld\n\0".as_ptr() as *const core::ffi::c_char, rc);
         return ret;
@@ -680,9 +680,7 @@ pub unsafe extern "system" fn WlxActivateUserShell(
 
     rc = RegOpenKeyExW(
         hKeyCurrentUser,
-        core::ptr::addr_of!(core::mem::transmute::<[u8; 102], [WCHAR; 51]>(
-            *b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\0\0"
-         )) as LPCWSTR,
+        { static __WS5: [WCHAR; 51] = unsafe { core::mem::transmute::<[u8; 102], [WCHAR; 51]>(*b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\0\0") }; __WS5.as_ptr() as LPCWSTR },
         0u32,
         KEY_SET_VALUE,
         &mut hKey,
@@ -691,12 +689,12 @@ pub unsafe extern "system" fn WlxActivateUserShell(
         len = wcslen((*pgContext).UserName.as_ptr()) as DWORD + 1;
         RegSetValueExW(
             hKey,
-            core::ptr::addr_of!(core::mem::transmute::<[u8; 32], [WCHAR; 16]>(*b"L\0o\0g\0o\0n\0 \0U\0s\0e\0r\0 \0N\0a\0m\0e\0\0\0")) as LPCWSTR,
+            { static __WS6: [WCHAR; 16] = unsafe { core::mem::transmute::<[u8; 32], [WCHAR; 16]>(*b"L\0o\0g\0o\0n\0 \0U\0s\0e\0r\0 \0N\0a\0m\0e\0\0\0") }; __WS6.as_ptr() as LPCWSTR },
             0u32,
             REG_SZ,
             (*pgContext).UserName.as_ptr() as *const u8,
             len.wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD),
-        );
+        ) as i32;
         RegCloseKey(hKey);
     }
     RegCloseKey(hKeyCurrentUser);
@@ -711,7 +709,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
     pReserved: PVOID,
 ) -> INT {
     let pgContext: PGINA_CONTEXT = pWlxContext as PGINA_CONTEXT;
-    let mut SasAction: INT = WLX_SAS_ACTION_NONE;
+    let mut SasAction: INT = WLX_SAS_ACTION_NONE.try_into().unwrap();
 
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
@@ -801,7 +799,7 @@ pub unsafe extern "system" fn WlxDisplayStatusMessage(
         );
     }
 
-    (*pGinaUI).DisplayStatusMessage(pgContext, hDesktop, dwOptions, pTitle, pMessage)
+    (*pGinaUI).DisplayStatusMessage.unwrap()(pgContext, hDesktop, dwOptions, pTitle, pMessage)
 }
 
 #[no_mangle]
@@ -1080,10 +1078,10 @@ pub unsafe extern "C" fn CreateProfile(
                 );
             }
         } else {
-            StringCbPrintfW(
+            StringCbPrintfW!(
                 pEnvironment as STRSAFE_LPWSTR,
                 cbSize as size_t,
-                &raw const core::mem::transmute::<[u8; 36], [u16; 18]>(*b"L\0O\0G\0O\0N\0S\0E\0R\0V\0E\0R\0=\0\\\0\\\0%\0w\0s\0\0\0") as STRSAFE_LPCWSTR,
+                { static __WS2: [u16; 18] = unsafe { core::mem::transmute::<[u8; 36], [u16; 18]>(*b"L\0O\0G\0O\0N\0S\0E\0R\0V\0E\0R\0=\0\\\0\\\0%\0w\0s\0\0\0") }; __WS2.as_ptr() as STRSAFE_LPCWSTR },
                 Domain,
             );
             if wcslen(pEnvironment as *const u16) as u32 != (cbSize as u32 / core::mem::size_of::<WCHAR>() as u32) - 2 {
@@ -1094,7 +1092,7 @@ pub unsafe extern "C" fn CreateProfile(
                     core::ptr::null_mut(),
                 );
             }
-            *pEnvironment.offset((cbSize as usize / core::mem::size_of::<WCHAR>()) - 1) = UNICODE_NULL;
+            *pEnvironment.offset(((cbSize as usize / core::mem::size_of::<WCHAR>()) - 1).try_into().unwrap()) = UNICODE_NULL;
             (*pProfile).pszEnvironment = pEnvironment;
 
             if GetTokenInformation(
@@ -1156,7 +1154,7 @@ pub unsafe extern "system" fn WlxDisplaySASNotice(pWlxContext: PVOID) {
         );
     }
 
-    if GetSystemMetrics(SM_REMOTESESSION) != 0 {
+    if GetSystemMetrics(SM_REMOTESESSION.try_into().unwrap()) != 0 {
         /* User is remotely logged on. Don't display a notice */
         ((*(*pgContext).pWlxFuncs).WlxSasNotify.expect("non-null function pointer"))(
             (*pgContext).hWlx,
@@ -1166,7 +1164,7 @@ pub unsafe extern "system" fn WlxDisplaySASNotice(pWlxContext: PVOID) {
     }
 
     if (*pgContext).bAutoAdminLogon != 0 {
-        if (*pgContext).bIgnoreShiftOverride != 0 || GetKeyState(VK_SHIFT) as i32 >= 0 {
+        if (*pgContext).bIgnoreShiftOverride != 0 || GetKeyState(VK_SHIFT.try_into().unwrap()) as i32 >= 0 {
             /* Don't display the window, we want to do an automatic logon */
             ((*(*pgContext).pWlxFuncs).WlxSasNotify.expect("non-null function pointer"))(
                 (*pgContext).hWlx,
@@ -1238,7 +1236,7 @@ pub unsafe extern "system" fn WlxLoggedOutSAS(
     (*pgContext).pMprNotifyInfo = pMprNotifyInfo;
     (*pgContext).pProfile = pProfile;
     res = (*pGinaUI).LoggedOutSAS.expect("non-null function pointer")(pgContext);
-    if res == WLX_SAS_ACTION_LOGON {
+    if res == WLX_SAS_ACTION_LOGON.try_into().unwrap() {
         *phToken = (*pgContext).UserToken as *mut core::ffi::c_void;
     }
     return res;
@@ -1271,7 +1269,7 @@ pub unsafe extern "system" fn WlxDisplayLockedNotice(pWlxContext: PVOID) {
 
     TRACE!(b"WlxDisplayLockedNotice()\n\0".as_ptr() as *const i8);
 
-    if (*pgContext).bDisableCAD != 0u8 {
+    if (*pgContext).bDisableCAD != 0i32 {
         let pWlxFuncs = (*pgContext).pWlxFuncs;
         ((*pWlxFuncs).WlxSasNotify.expect("non-null function pointer"))(
             (*pgContext).hWlx,
@@ -1287,14 +1285,14 @@ pub unsafe extern "system" fn WlxDisplayLockedNotice(pWlxContext: PVOID) {
 #[no_mangle]
 pub unsafe extern "system" fn WlxIsLogoffOk(pWlxContext: *mut core::ffi::c_void) -> i32 {
     TRACE!(b"WlxIsLogoffOk()\n\0".as_ptr() as *const i8);
-    UNREFERENCED_PARAMETER(pWlxContext);
+    UNREFERENCED_PARAMETER!(pWlxContext);
     1i32
 }
 #[no_mangle]
 pub unsafe extern "system" fn WlxLogoff(pWlxContext: *mut core::ffi::c_void) {
     let pgContext: *mut _GINA_CONTEXT = pWlxContext as *mut _GINA_CONTEXT;
 
-    if ((*__wine_dbch___default).flags & ((1i32) << __WINE_DBCL_TRACE as i32)) != 0 {
+    if ((*__wine_dbch___default).flags as i32 & ((1i32) << __WINE_DBCL_TRACE as i32)) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
@@ -1320,7 +1318,7 @@ pub unsafe extern "system" fn WlxLogoff(pWlxContext: *mut core::ffi::c_void) {
 
     RtlSecureZeroMemory(
         &raw mut (*pgContext).Password as *mut u16 as *mut core::ffi::c_void,
-        core::mem::size_of::<[u16; 256]>() as u32,
+        (core::mem::size_of::<[u16; 256]>() as u32).into(),
     );
 
     CloseHandle((*pgContext).UserToken);
@@ -1329,7 +1327,7 @@ pub unsafe extern "system" fn WlxLogoff(pWlxContext: *mut core::ffi::c_void) {
 #[no_mangle]
 pub unsafe extern "system" fn WlxShutdown(pWlxContext: *mut core::ffi::c_void, ShutdownType: u32) {
     let pgContext = pWlxContext as *mut _GINA_CONTEXT;
-    if (*__wine_dbch___default).flags & (1i32 << __WINE_DBCL_TRACE) != 0 {
+    if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
@@ -1344,7 +1342,7 @@ pub unsafe extern "system" fn WlxShutdown(pWlxContext: *mut core::ffi::c_void, S
     (*pgContext).AuthenticationPackage = 0u32;
     let Status: i32 = LsaDeregisterLogonProcess((*pgContext).LsaHandle);
     if !NT_SUCCESS(Status) {
-        if (*__wine_dbch___default).flags & (1i32 << __WINE_DBCL_ERR) != 0 {
+        if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_ERR) != 0 {
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,

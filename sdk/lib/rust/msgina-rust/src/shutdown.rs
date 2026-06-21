@@ -2,20 +2,26 @@ use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
 use crate::resources::*;
+use crate::msgina_consts::*;
+use crate::strsafe::*;
+use crate::msgina::hDllInstance;
+use crate::utils::{ReadRegDwordValue, ReadRegSzValue, RegOpenLoggedOnHKCU, TestTokenPrivilege, DuplicateString};
 use core::ffi::c_void;
 
-extern "C" {
-    fn CreateCompatibleDC(hdc: HDC) -> HDC;
-    fn SelectObject(hdc: HDC, h: HBITMAP) -> HBITMAP;
-    fn BitBlt( hdcDest: HDC, x: i32, y: i32, cx: i32, cy: i32, hdcSrc: HDC, x1: i32, y1: i32, dwRop: u32 ) -> BOOL;
-    fn DeleteDC(hdc: HDC) -> BOOL;
-}
-extern "system" {
-    fn RegOpenKeyExW( hKey: usize, lpSubKey: *const u16, ulOptions: u32, samDesired: u32, phkResult: *mut usize, ) -> i32;
-    fn RegQueryValueExW( hKey: usize, lpValueName: *const u16, lpReserved: *mut core::ffi::c_void, lpType: *mut u32, lpData: *mut u8, lpcbData: *mut u32, ) -> i32;
-    fn RegCloseKey(hKey: usize) -> i32;
-    fn GetKeyState(nVirtKey: i32) -> i16;
-}
+// All cross-DLL out-calls used here come from crate::msgina_externs (registry,
+// gdi32, GetKeyState) — local re-declarations removed to avoid ABI/type drift.
+
+// wine debug-channel statics (WINE_DEFAULT_DEBUG_CHANNEL(msgina) preamble).
+static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
+    __wine_debug_channel {
+        flags: WINE_DBG_DEFAULT_FLAGS,
+        name: ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(
+            *b"msgina\0\0\0\0\0\0\0\0\0",
+        ),
+    }
+};
+static mut __wine_dbch___default: *mut __wine_debug_channel =
+    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
 
 // ---- file-scope preamble (translated) ----
 pub const FONT_POINT_SIZE: i32 = 13;
@@ -66,45 +72,45 @@ pub unsafe extern "C" fn GetPolicyDWORDValue(
     ValueName: PCWSTR,
     pValue: PDWORD,
 ) -> LONG {
-    let mut hKey: HKEY;
-    let mut dwValue: u32;
+    let mut hKey: HKEY = core::ptr::null_mut();
+    let mut dwValue: u32 = 0;
     let mut rc: LONG;
 
     *pValue = 0;
 
-    rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, pPolicyKey, 0, KEY_QUERY_VALUE, &mut hKey);
-    if rc == ERROR_SUCCESS {
-        rc = ReadRegDwordValue(hKey, ValueName, &mut dwValue);
+    rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, pPolicyKey, 0, KEY_QUERY_VALUE, &mut hKey) as i32;
+    if rc == ERROR_SUCCESS.try_into().unwrap() {
+        rc = ReadRegDwordValue(hKey, ValueName, &mut dwValue) as i32;
         RegCloseKey(hKey);
-        if rc == ERROR_SUCCESS {
+        if rc == ERROR_SUCCESS.try_into().unwrap() {
             *pValue = dwValue;
-            return ERROR_SUCCESS;
+            return ERROR_SUCCESS.try_into().unwrap();
         }
     }
 
-    let use_hkey = if hKeyCurrentUser != 0 {
+    let use_hkey = if hKeyCurrentUser != core::ptr::null_mut() {
         hKeyCurrentUser
     } else {
         HKEY_CURRENT_USER
     };
-    rc = RegOpenKeyExW(use_hkey, pPolicyKey, 0, KEY_QUERY_VALUE, &mut hKey);
-    if rc == ERROR_SUCCESS {
-        rc = ReadRegDwordValue(hKey, ValueName, &mut dwValue);
+    rc = RegOpenKeyExW(use_hkey, pPolicyKey, 0, KEY_QUERY_VALUE, &mut hKey) as i32;
+    if rc == ERROR_SUCCESS.try_into().unwrap() {
+        rc = ReadRegDwordValue(hKey, ValueName, &mut dwValue) as i32;
         RegCloseKey(hKey);
-        if rc == ERROR_SUCCESS {
+        if rc == ERROR_SUCCESS.try_into().unwrap() {
             *pValue = dwValue;
-            return ERROR_SUCCESS;
+            return ERROR_SUCCESS.try_into().unwrap();
         }
     }
 
-    ERROR_NOT_FOUND
+    ERROR_NOT_FOUND.try_into().unwrap()
 }
 
 unsafe fn GetShutdownReasonUI() -> i32 {
     let mut dwValue: u32;
     let mut dwSize: u32;
     let mut hKey: HKEY;
-    let lRet: i32;
+    let mut lRet: i32;
 
     const HKLM: HKEY = 0x80000002usize as HKEY;
     let policy_key: &[u16] = &[
@@ -132,8 +138,8 @@ unsafe fn GetShutdownReasonUI() -> i32 {
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
-    );
-    if lRet == ERROR_SUCCESS {
+    ) as i32;
+    if lRet == ERROR_SUCCESS.try_into().unwrap() {
         dwValue = 0;
         dwSize = core::mem::size_of::<u32>() as u32;
         RegQueryValueExW(
@@ -156,8 +162,8 @@ unsafe fn GetShutdownReasonUI() -> i32 {
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
-    );
-    if lRet == ERROR_SUCCESS {
+    ) as i32;
+    if lRet == ERROR_SUCCESS.try_into().unwrap() {
         dwValue = 0;
         dwSize = core::mem::size_of::<u32>() as u32;
         RegQueryValueExW(
@@ -175,7 +181,7 @@ unsafe fn GetShutdownReasonUI() -> i32 {
     // Return the default value
     let mut VersionInfo: OSVERSIONINFOEX = core::mem::zeroed();
     VersionInfo.dwOSVersionInfoSize = core::mem::size_of::<OSVERSIONINFOEX>() as u32;
-    if GetVersionEx(&mut VersionInfo as *mut OSVERSIONINFOEX as POSVERSIONINFO) == 0 {
+    if GetVersionEx!(&mut VersionInfo as *mut OSVERSIONINFOEX as *mut core::ffi::c_void) == 0 {
         return 0;
     }
     0
@@ -186,7 +192,7 @@ unsafe fn IsFriendlyUIActive() -> i32 {
     const KEY_QUERY_VALUE: u32 = 0x0001;
     const REG_DWORD: u32 = 4;
 
-    const SYS_PATH: [u16; 42] = [
+    const SYS_PATH: [u16; 41] = [
         0x0053, 0x0059, 0x0053, 0x0054, 0x0045, 0x004D, 0x005C,
         0x0043, 0x0075, 0x0072, 0x0072, 0x0065, 0x006E, 0x0074,
         0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C,
@@ -207,7 +213,7 @@ unsafe fn IsFriendlyUIActive() -> i32 {
         0x0069, 0x006F, 0x006E, 0x0000,
     ];
 
-    const WINLOGON_PATH: [u16; 52] = [
+    const WINLOGON_PATH: [u16; 54] = [
         0x0053, 0x004F, 0x0046, 0x0054, 0x0057, 0x0041, 0x0052,
         0x0045, 0x005C, 0x004D, 0x0069, 0x0063, 0x0072, 0x006F,
         0x0073, 0x006F, 0x0066, 0x0074, 0x005C, 0x0057, 0x0069,
@@ -223,19 +229,19 @@ unsafe fn IsFriendlyUIActive() -> i32 {
         0x0070, 0x0065, 0x0000,
     ];
 
-    let mut dw_type: u32;
+    let mut dw_type: u32 = 0;
     let mut dw_value: u32;
     let mut dw_size: u32;
-    let mut h_key: usize;
-    let l_ret: i32;
+    let mut h_key: HKEY = core::ptr::null_mut();
+    let mut l_ret: i32;
 
     l_ret = RegOpenKeyExW(
-        HKLM,
+        HKLM as HKEY,
         SYS_PATH.as_ptr(),
         0,
         KEY_QUERY_VALUE,
         &mut h_key,
-    );
+    ) as i32;
     if l_ret != 0 {
         return 0;
     }
@@ -249,7 +255,7 @@ unsafe fn IsFriendlyUIActive() -> i32 {
         &mut dw_type,
         &mut dw_value as *mut u32 as *mut u8,
         &mut dw_size,
-    );
+    ) as i32;
 
     if l_ret == 0 && dw_type == REG_DWORD && dw_value == 1 {
         RegCloseKey(h_key);
@@ -265,7 +271,7 @@ unsafe fn IsFriendlyUIActive() -> i32 {
         &mut dw_type,
         &mut dw_value as *mut u32 as *mut u8,
         &mut dw_size,
-    );
+    ) as i32;
     RegCloseKey(h_key);
 
     if l_ret != 0 || dw_type != REG_DWORD || dw_value != 0x300 {
@@ -273,12 +279,12 @@ unsafe fn IsFriendlyUIActive() -> i32 {
     }
 
     l_ret = RegOpenKeyExW(
-        HKLM,
+        HKLM as HKEY,
         WINLOGON_PATH.as_ptr(),
         0,
         KEY_QUERY_VALUE,
         &mut h_key,
-    );
+    ) as i32;
     if l_ret != 0 {
         return 0;
     }
@@ -292,7 +298,7 @@ unsafe fn IsFriendlyUIActive() -> i32 {
         &mut dw_type,
         &mut dw_value as *mut u32 as *mut u8,
         &mut dw_size,
-    );
+    ) as i32;
     RegCloseKey(h_key);
 
     if l_ret != 0 || dw_type != REG_DWORD {
@@ -308,12 +314,12 @@ unsafe fn IsDomainMember() -> BOOL {
 }
 
 unsafe fn IsNetwareActive() -> BOOLEAN {
-    UNIMPLEMENTED();
+    UNIMPLEMENTED!();
     return 0u8;
 }
 
 unsafe fn IsShowHibernateButtonActive() -> i32 {
-    let reg_path: [u16; 53] = [
+    let reg_path: [u16; 52] = [
         b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16,
         b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16,
         b'\\' as u16, b'P' as u16, b'o' as u16, b'l' as u16,
@@ -344,7 +350,7 @@ unsafe fn IsShowHibernateButtonActive() -> i32 {
         0,
         KEY_QUERY_VALUE,
         &mut hKey as *mut HKEY,
-    );
+    ).try_into().unwrap();
 
     if lRet as u32 == ERROR_SUCCESS {
         let mut dwValue: u32 = 0;
@@ -357,7 +363,7 @@ unsafe fn IsShowHibernateButtonActive() -> i32 {
             core::ptr::null_mut(),
             &mut dwValue as *mut u32 as LPBYTE,
             &mut dwSize as *mut u32,
-        );
+        ).try_into().unwrap();
 
         RegCloseKey(hKey);
 
@@ -372,7 +378,7 @@ unsafe fn IsShowHibernateButtonActive() -> i32 {
 
 unsafe fn ForceFriendlyUI() -> u8 {
 
-    static KEY_PATH1: [u16; 59] = [
+    static KEY_PATH1: [u16; 58] = [
         b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16,
         b'\\' as u16,
         b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16,
@@ -387,7 +393,7 @@ unsafe fn ForceFriendlyUI() -> u8 {
         0,
     ];
 
-    static KEY_PATH2: [u16; 55] = [
+    static KEY_PATH2: [u16; 54] = [
         b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16,
         b'\\' as u16,
         b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16,
@@ -400,14 +406,14 @@ unsafe fn ForceFriendlyUI() -> u8 {
         0,
     ];
 
-    static VALUE_NAME: [u16; 17] = [
+    static VALUE_NAME: [u16; 16] = [
         b'F' as u16, b'o' as u16, b'r' as u16, b'c' as u16, b'e' as u16,
         b'F' as u16, b'r' as u16, b'i' as u16, b'e' as u16, b'n' as u16, b'd' as u16, b'l' as u16, b'y' as u16,
         b'U' as u16, b'I' as u16,
         0,
     ];
 
-    let mut dwType: DWORD;
+    let mut dwType: DWORD = 0;
     let mut dwValue: DWORD;
     let mut dwSize: DWORD;
     let mut hKey: HKEY = core::ptr::null_mut();
@@ -419,8 +425,8 @@ unsafe fn ForceFriendlyUI() -> u8 {
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
-    );
-    if lRet == ERROR_SUCCESS {
+    ) as i32;
+    if lRet == ERROR_SUCCESS.try_into().unwrap() {
         dwValue = 0;
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
         lRet = RegQueryValueExW(
@@ -430,9 +436,9 @@ unsafe fn ForceFriendlyUI() -> u8 {
             &mut dwType,
             (&mut dwValue as *mut DWORD) as LPBYTE,
             &mut dwSize,
-        );
+        ) as i32;
         RegCloseKey(hKey);
-        if lRet == ERROR_SUCCESS && dwType == REG_DWORD {
+        if lRet == ERROR_SUCCESS.try_into().unwrap() && dwType == REG_DWORD {
             return if dwValue != 0 { 1u8 } else { 0u8 };
         }
     }
@@ -443,8 +449,8 @@ unsafe fn ForceFriendlyUI() -> u8 {
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
-    );
-    if lRet == ERROR_SUCCESS {
+    ) as i32;
+    if lRet == ERROR_SUCCESS.try_into().unwrap() {
         dwValue = 0;
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
         lRet = RegQueryValueExW(
@@ -454,9 +460,9 @@ unsafe fn ForceFriendlyUI() -> u8 {
             &mut dwType,
             (&mut dwValue as *mut DWORD) as LPBYTE,
             &mut dwSize,
-        );
+        ) as i32;
         RegCloseKey(hKey);
-        if lRet == ERROR_SUCCESS && dwType == REG_DWORD {
+        if lRet == ERROR_SUCCESS.try_into().unwrap() && dwType == REG_DWORD {
             return if dwValue != 0 { 1u8 } else { 0u8 };
         }
     }
@@ -484,12 +490,12 @@ unsafe fn DrawIconOnOwnerDrawnButtons(
     const SRCCOPY: u32 = 0xCC0020;
 
     let hdcMem = CreateCompatibleDC((*pdis).hDC);
-    let hbmOld = SelectObject(hdcMem, (*pContext).hImageStrip);
+    let hbmOld = SelectObject(hdcMem, (*pContext).hImageStrip as *mut core::ffi::c_void);
     let rect = (*pdis).rcItem;
 
     let mut y = 0i32;
 
-    match (*pdis).CtlID {
+    match (*pdis).CtlID as i32 {
         IDC_BUTTON_SHUTDOWN => {
             match (*pdis).itemAction {
                 ODA_DRAWENTIRE | ODA_FOCUS | ODA_SELECT => {
@@ -526,8 +532,8 @@ unsafe fn DrawIconOnOwnerDrawnButtons(
                     } else if (*pdis).itemState & ODS_SELECTED != 0 {
                         y = BUTTON_SLEEP_PRESSED;
                     } else if 
-                        ((*pdis).CtlID == IDC_BUTTON_SLEEP && (*pContext).bIsButtonHot[2] != 0)
-                        || ((*pdis).CtlID == IDC_BUTTON_HIBERNATE && (*pContext).bIsButtonHot[3] != 0)
+                        ((*pdis).CtlID == IDC_BUTTON_SLEEP.try_into().unwrap() && (*pContext).bIsButtonHot[2] != 0)
+                        || ((*pdis).CtlID == IDC_BUTTON_HIBERNATE.try_into().unwrap() && (*pContext).bIsButtonHot[3] != 0)
                         || ((*pdis).itemState & ODS_FOCUS != 0)
                     {
                         y = BUTTON_SLEEP_FOCUSED;
@@ -583,19 +589,19 @@ unsafe fn OwnerDrawButtonSubclass(
     match uMsg {
         WM_MOUSEMOVE => {
             let mut pt = POINT {
-                x: GET_X_LPARAM(lParam) as i32,
-                y: GET_Y_LPARAM(lParam) as i32,
+                x: GET_X_LPARAM!(lParam) as i32,
+                y: GET_Y_LPARAM!(lParam) as i32,
             };
             if GetCapture() != hButton {
                 SetCapture(hButton);
                 if buttonID == IDC_BUTTON_SHUTDOWN {
-                    (*pContext).bIsButtonHot[SHUTDOWN_BUTTON_HOT as usize] = 1u8;
+                    (*pContext).bIsButtonHot[SHUTDOWN_BUTTON_HOT as usize] = 1;
                 } else if buttonID == IDC_BUTTON_REBOOT {
-                    (*pContext).bIsButtonHot[REBOOT_BUTTON_HOT as usize] = 1u8;
+                    (*pContext).bIsButtonHot[REBOOT_BUTTON_HOT as usize] = 1;
                 } else if buttonID == IDC_BUTTON_SLEEP {
-                    (*pContext).bIsButtonHot[SLEEP_BUTTON_HOT as usize] = 1u8;
+                    (*pContext).bIsButtonHot[SLEEP_BUTTON_HOT as usize] = 1;
                 } else if buttonID == IDC_BUTTON_HIBERNATE {
-                    (*pContext).bIsButtonHot[HIBERNATE_BUTTON_HOT as usize] = 1u8;
+                    (*pContext).bIsButtonHot[HIBERNATE_BUTTON_HOT as usize] = 1;
                 }
                 SetCursor(LoadCursorW(core::ptr::null_mut(), IDC_HAND));
             }
@@ -606,22 +612,22 @@ unsafe fn OwnerDrawButtonSubclass(
             if hwndTarget != hButton {
                 ReleaseCapture();
                 if buttonID == IDC_BUTTON_SHUTDOWN {
-                    (*pContext).bIsButtonHot[SHUTDOWN_BUTTON_HOT as usize] = 0u8;
+                    (*pContext).bIsButtonHot[SHUTDOWN_BUTTON_HOT as usize] = 0;
                 } else if buttonID == IDC_BUTTON_REBOOT {
-                    (*pContext).bIsButtonHot[REBOOT_BUTTON_HOT as usize] = 0u8;
+                    (*pContext).bIsButtonHot[REBOOT_BUTTON_HOT as usize] = 0;
                 } else if buttonID == IDC_BUTTON_SLEEP {
-                    (*pContext).bIsButtonHot[SLEEP_BUTTON_HOT as usize] = 0u8;
+                    (*pContext).bIsButtonHot[SLEEP_BUTTON_HOT as usize] = 0;
                 } else if buttonID == IDC_BUTTON_HIBERNATE {
-                    (*pContext).bIsButtonHot[HIBERNATE_BUTTON_HOT as usize] = 0u8;
+                    (*pContext).bIsButtonHot[HIBERNATE_BUTTON_HOT as usize] = 0;
                 }
             }
             InvalidateRect(hButton, core::ptr::null_mut(), 0i32);
         }
         WM_SETFOCUS => {
-            SendMessageW(GetParent(hButton), DM_SETDEFID, buttonID as WPARAM, 0 as LPARAM);
+            SendMessageW(GetParent(hButton), DM_SETDEFID, (buttonID as WPARAM).try_into().unwrap(), (0 as LPARAM).try_into().unwrap());
         }
         WM_KILLFOCUS => {
-            SendMessageW(GetParent(hButton), DM_SETDEFID, IDCANCEL as WPARAM, 0 as LPARAM);
+            SendMessageW(GetParent(hButton), DM_SETDEFID, (IDCANCEL as WPARAM).try_into().unwrap(), (0 as LPARAM).try_into().unwrap());
         }
         _ => {}
     }
@@ -643,11 +649,11 @@ pub unsafe extern "C" fn CreateToolTipForButtons(
     tool.cbSize = core::mem::size_of::<TTTOOLINFOW>() as u32;
     tool.hwnd = hDlg;
     tool.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-    tool.uId = hwndTool as usize;
+    tool.uId = hwndTool as UINT_PTR;
 
     let hwndTip: HWND = CreateWindowExW(
         0,
-        TOOLTIPS_CLASSW,
+        TOOLTIPS_CLASSW.as_ptr(),
         core::ptr::null_mut(),
         WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
         CW_USEDEFAULT,
@@ -660,30 +666,30 @@ pub unsafe extern "C" fn CreateToolTipForButtons(
         core::ptr::null_mut(),
     );
 
-    LoadStringW(hInst, detailID as u32, szBuffer.as_mut_ptr(), 256);
+    LoadStringW(hInst, (detailID as u32).try_into().unwrap(), szBuffer.as_mut_ptr(), 256);
     tool.lpszText = szBuffer.as_mut_ptr();
     SendMessageW(hwndTip, TTM_ADDTOOLW, 0, &tool as *const _ as isize);
 
-    LoadStringW(hInst, titleID as u32, szBuffer.as_mut_ptr(), 256);
+    LoadStringW(hInst, (titleID as u32).try_into().unwrap(), szBuffer.as_mut_ptr(), 256);
     SendMessageW(hwndTip, TTM_SETTITLEW, TTI_NONE as usize, szBuffer.as_mut_ptr() as isize);
 
     SendMessageW(hwndTip, TTM_SETMAXTIPWIDTH, 0, 250);
 }
 #[no_mangle]
 pub unsafe extern "C" fn EndFriendlyDialog(hDlg: HWND, pContext: *mut SHUTDOWN_DLG_CONTEXT) {
-    if (*pContext).bTimer != 0u8 {
+    if (*pContext).bTimer != 0i32 {
         KillTimer(hDlg, (*pContext).iTimer);
     }
 
-    DeleteObject((*pContext).hBitmap);
-    DeleteObject((*pContext).hBrush);
-    DeleteObject((*pContext).hImageStrip);
-    DeleteObject((*pContext).hfFont);
+    DeleteObject((*pContext).hBitmap as *mut core::ffi::c_void);
+    DeleteObject((*pContext).hBrush as *mut core::ffi::c_void);
+    DeleteObject((*pContext).hImageStrip as *mut core::ffi::c_void);
+    DeleteObject((*pContext).hfFont as *mut core::ffi::c_void);
 
     for i in 0..NUMBER_OF_BUTTONS {
-        SetWindowLongPtrW(GetDlgItem(hDlg, IDC_BUTTON_SHUTDOWN + i),
+        SetWindowLongPtrW(GetDlgItem(hDlg, IDC_BUTTON_SHUTDOWN + i as i32),
                           GWLP_WNDPROC,
-                          (*pContext).OldButtonProc as LONG_PTR);
+                          (*pContext).OldButtonProc.map_or(0isize, |f| f as usize as isize));
     }
 }
 #[no_mangle]
@@ -725,9 +731,9 @@ pub unsafe extern "C" fn ChangeRequiredButton(
     );
 
     EnableWindow(hwndDest, 0);
-    ShowWindow(hwndDest, SW_HIDE);
+    ShowWindow(hwndDest, SW_HIDE.try_into().unwrap());
     EnableWindow(hwndTarget, 1);
-    ShowWindow(hwndTarget, SW_SHOW);
+    ShowWindow(hwndTarget, SW_SHOW.try_into().unwrap());
     SetFocus(hwndTarget);
 
     if (*pContext).bIsSleepButtonReplaced == 0 {
@@ -784,7 +790,7 @@ pub unsafe extern "C" fn LoadShutdownSelState(hKeyCurrentUser: HKEY) -> DWORD {
     }
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
-    lRet = RegQueryValueExW(hKey, value_name, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwTemp as LPBYTE, &mut dwSize);
+    lRet = RegQueryValueExW(hKey, value_name, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwTemp as *mut DWORD as LPBYTE, &mut dwSize);
     RegCloseKey(hKey);
 
     if lRet == ERROR_SUCCESS {
@@ -807,7 +813,7 @@ pub unsafe extern "C" fn SaveShutdownSelState(
     hKeyCurrentUser: HKEY,
     ShutdownCode: DWORD,
 ) {
-    let mut hKey: HKEY = 0;
+    let mut hKey: HKEY = core::ptr::null_mut();
     let mut dwValue: DWORD = 0;
     const SUBKEY: [u16; 51] = [
         'S' as u16, 'o' as u16, 'f' as u16, 't' as u16, 'w' as u16, 'a' as u16, 'r' as u16, 'e' as u16, '\\' as u16,
@@ -840,7 +846,7 @@ pub unsafe extern "C" fn SaveShutdownSelState(
         _ => {}
     }
 
-    const SHUTDOWN_SETTING: [u16; 16] = [
+    const SHUTDOWN_SETTING: [u16; 17] = [
         'S' as u16, 'h' as u16, 'u' as u16, 't' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 'n' as u16,
         ' ' as u16, 'S' as u16, 'e' as u16, 't' as u16, 't' as u16, 'i' as u16, 'n' as u16, 'g' as u16,
         0u16,
@@ -883,7 +889,7 @@ pub unsafe extern "C" fn GetAllowedShutdownOptions(
         SystemPowerCapabilities,
         core::ptr::null_mut(),
         0,
-        core::ptr::addr_of_mut!(power_caps),
+        core::ptr::addr_of_mut!(power_caps) as *mut core::ffi::c_void,
         core::mem::size_of::<SYSTEM_POWER_CAPABILITIES>() as u32,
     );
 
@@ -893,10 +899,10 @@ pub unsafe extern "C" fn GetAllowedShutdownOptions(
             status as core::ffi::c_ulong,
         );
     } else {
-        if IS_PWR_SUSPEND_ALLOWED(&power_caps) != 0 {
+        if IS_PWR_SUSPEND_ALLOWED!(&power_caps) != 0 {
             options |= WLX_SHUTDOWN_STATE_SLEEP;
         }
-        if IS_PWR_HIBERNATE_ALLOWED(&power_caps) != 0 {
+        if IS_PWR_HIBERNATE_ALLOWED!(&power_caps) != 0 {
             options |= WLX_SHUTDOWN_STATE_HIBERNATE;
         }
     }
@@ -910,10 +916,10 @@ unsafe fn UpdateShutdownDesc(
 ) {
     let hwnd_list = GetDlgItem(h_dlg, IDC_SHUTDOWN_ACTION);
     let mut shutdown_code = SendMessageW(hwnd_list, CB_GETCURSEL, 0, 0);
-    if shutdown_code != CB_ERR {
+    if shutdown_code != CB_ERR.into() {
         shutdown_code = SendMessageW(hwnd_list, CB_GETITEMDATA, shutdown_code as usize, 0);
     }
-    if shutdown_code == CB_ERR {
+    if shutdown_code == CB_ERR.into() {
         return;
     }
 
@@ -932,7 +938,7 @@ unsafe fn UpdateShutdownDesc(
     SetDlgItemTextW(h_dlg, IDC_SHUTDOWN_DESCRIPTION, sz_buffer.as_ptr());
 
     if (*p_context).bReasonUI != 0 {
-        let b_not_logoff = (shutdown_code != WLX_SAS_ACTION_LOGOFF as isize) as i32;
+        let b_not_logoff = (shutdown_code != (WLX_SAS_ACTION_LOGOFF as isize).try_into().unwrap()) as i32;
         EnableWindow(GetDlgItem(h_dlg, IDC_REASON_PLANNED), b_not_logoff);
         EnableWindow(GetDlgItem(h_dlg, IDC_REASON_LIST), b_not_logoff);
         EnableWindow(GetDlgItem(h_dlg, IDC_REASON_COMMENT), b_not_logoff);
@@ -965,7 +971,7 @@ unsafe fn ShutdownOnFriendlyInit(
         0,
         0,
         FW_MEDIUM,
-        0i32,
+        0u32,
         0u32,
         0u32,
         0u32,
@@ -979,8 +985,8 @@ unsafe fn ShutdownOnFriendlyInit(
         hDlg,
         IDC_TURN_OFF_STATIC,
         WM_SETFONT,
-        (*pContext).hfFont as WPARAM,
-        1i32,
+        ((*pContext).hfFont as WPARAM).try_into().unwrap(),
+        1isize,
     );
 
     (*pContext).hBrush = CreateSolidBrush(DARK_GREY_COLOR);
@@ -990,8 +996,8 @@ unsafe fn ShutdownOnFriendlyInit(
         IDB_IMAGE_STRIP as LPCWSTR,
     );
 
-    (*pContext).bIsSleepButtonReplaced = 0u8;
-    (*pContext).bTimer = 0u8;
+    (*pContext).bIsSleepButtonReplaced = 0;
+    (*pContext).bTimer = 0;
 
     EnableWindow(
         GetDlgItem(hDlg, IDC_BUTTON_HIBERNATE),
@@ -1009,26 +1015,26 @@ unsafe fn ShutdownOnFriendlyInit(
     (*pContext).OldButtonProc = old_proc;
 
     for i in 0..NUMBER_OF_BUTTONS {
-        (*pContext).bIsButtonHot[i as usize] = 0u8;
+        (*pContext).bIsButtonHot[i as usize] = 0;
         SetWindowLongPtrW(
-            GetDlgItem(hDlg, IDC_BUTTON_SHUTDOWN + i),
+            GetDlgItem(hDlg, IDC_BUTTON_SHUTDOWN + i as i32),
             GWLP_WNDPROC as i32,
-            core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT, isize>(
+            core::mem::transmute::<unsafe fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR, isize>(
                 OwnerDrawButtonSubclass,
             ),
         );
         CreateToolTipForButtons(
-            IDC_BUTTON_SHUTDOWN + i,
-            IDS_SHUTDOWN_SHUTDOWN_DESC + i,
+            IDC_BUTTON_SHUTDOWN + i as i32,
+            IDS_SHUTDOWN_SHUTDOWN_DESC + i as i32,
             hDlg,
-            IDS_SHUTDOWN_SHUTDOWN + i,
+            IDS_SHUTDOWN_SHUTDOWN + i as i32,
             (*pgContext).hDllInstance,
         );
     }
 
-    if (*pContext).ShutdownDialogId == IDD_SHUTDOWN_FANCY && bCanSuspend != 0 {
-        (*pContext).iTimer = SetTimer(hDlg, 0, 50, core::ptr::null());
-        (*pContext).bTimer = 1u8;
+    if (*pContext).ShutdownDialogId == IDD_SHUTDOWN_FANCY.try_into().unwrap() && bCanSuspend != 0 {
+        (*pContext).iTimer = SetTimer(hDlg, 0, 50, core::ptr::null_mut());
+        (*pContext).bTimer = 1;
     }
 }
 
@@ -1038,13 +1044,13 @@ unsafe fn ShutdownOnInit(
 ) {
     let pgContext = (*pContext).pgContext;
     let hwndList: HWND;
-    let idx: LRESULT;
+    let mut idx: LRESULT;
     let count: LRESULT;
     let mut i: LRESULT;
     let mut szBuffer: [u16; 256] = [0; 256];
     let mut szBuffer2: [u16; 256] = [0; 256];
 
-    if (*pContext).bFriendlyUI != 0u8 {
+    if (*pContext).bFriendlyUI != 0i32 {
         ShutdownOnFriendlyInit(hDlg, pContext);
         return;
     }
@@ -1062,7 +1068,7 @@ unsafe fn ShutdownOnInit(
             szBuffer.as_mut_ptr(),
             szBuffer.len() as i32,
         );
-        StringCchPrintfW(
+        StringCchPrintfW!(
             szBuffer2.as_mut_ptr(),
             szBuffer2.len() as u32,
             szBuffer.as_ptr(),
@@ -1072,10 +1078,10 @@ unsafe fn ShutdownOnInit(
             hwndList,
             CB_ADDSTRING,
             0,
-            szBuffer2.as_ptr() as LPARAM,
+            (szBuffer2.as_ptr() as LPARAM).try_into().unwrap(),
         );
-        if idx != CB_ERR {
-            SendMessageW(hwndList, CB_SETITEMDATA, idx, WLX_SAS_ACTION_LOGOFF);
+        if idx != CB_ERR.into() {
+            SendMessageW(hwndList, CB_SETITEMDATA, idx.try_into().unwrap(), WLX_SAS_ACTION_LOGOFF.try_into().unwrap());
         }
     }
 
@@ -1091,10 +1097,10 @@ unsafe fn ShutdownOnInit(
             hwndList,
             CB_ADDSTRING,
             0,
-            szBuffer.as_ptr() as LPARAM,
+            (szBuffer.as_ptr() as LPARAM).try_into().unwrap(),
         );
-        if idx != CB_ERR {
-            SendMessageW(hwndList, CB_SETITEMDATA, idx, WLX_SAS_ACTION_SHUTDOWN_POWER_OFF);
+        if idx != CB_ERR.into() {
+            SendMessageW(hwndList, CB_SETITEMDATA, idx.try_into().unwrap(), WLX_SAS_ACTION_SHUTDOWN_POWER_OFF.try_into().unwrap());
         }
     }
 
@@ -1110,10 +1116,10 @@ unsafe fn ShutdownOnInit(
             hwndList,
             CB_ADDSTRING,
             0,
-            szBuffer.as_ptr() as LPARAM,
+            (szBuffer.as_ptr() as LPARAM).try_into().unwrap(),
         );
-        if idx != CB_ERR {
-            SendMessageW(hwndList, CB_SETITEMDATA, idx, WLX_SAS_ACTION_SHUTDOWN_REBOOT);
+        if idx != CB_ERR.into() {
+            SendMessageW(hwndList, CB_SETITEMDATA, idx.try_into().unwrap(), WLX_SAS_ACTION_SHUTDOWN_REBOOT.try_into().unwrap());
         }
     }
 
@@ -1129,10 +1135,10 @@ unsafe fn ShutdownOnInit(
             hwndList,
             CB_ADDSTRING,
             0,
-            szBuffer.as_ptr() as LPARAM,
+            (szBuffer.as_ptr() as LPARAM).try_into().unwrap(),
         );
-        if idx != CB_ERR {
-            SendMessageW(hwndList, CB_SETITEMDATA, idx, WLX_SAS_ACTION_SHUTDOWN_SLEEP);
+        if idx != CB_ERR.into() {
+            SendMessageW(hwndList, CB_SETITEMDATA, idx.try_into().unwrap(), WLX_SAS_ACTION_SHUTDOWN_SLEEP.try_into().unwrap());
         }
     }
 
@@ -1148,10 +1154,10 @@ unsafe fn ShutdownOnInit(
             hwndList,
             CB_ADDSTRING,
             0,
-            szBuffer.as_ptr() as LPARAM,
+            (szBuffer.as_ptr() as LPARAM).try_into().unwrap(),
         );
-        if idx != CB_ERR {
-            SendMessageW(hwndList, CB_SETITEMDATA, idx, WLX_SAS_ACTION_SHUTDOWN_HIBERNATE);
+        if idx != CB_ERR.into() {
+            SendMessageW(hwndList, CB_SETITEMDATA, idx.try_into().unwrap(), WLX_SAS_ACTION_SHUTDOWN_HIBERNATE.try_into().unwrap());
         }
     }
 
@@ -1159,8 +1165,8 @@ unsafe fn ShutdownOnInit(
     count = SendMessageW(hwndList, CB_GETCOUNT, 0, 0);
     i = 0;
     while i < count {
-        if SendMessageW(hwndList, CB_GETITEMDATA, i, 0) == (*pgContext).nShutdownAction as LPARAM {
-            SendMessageW(hwndList, CB_SETCURSEL, i, 0);
+        if SendMessageW(hwndList, CB_GETITEMDATA, i.try_into().unwrap(), 0) == (*pgContext).nShutdownAction as LPARAM {
+            SendMessageW(hwndList, CB_SETCURSEL, i.try_into().unwrap(), 0);
             break;
         }
         i += 1;
@@ -1169,7 +1175,7 @@ unsafe fn ShutdownOnInit(
     /* If no item was selected (nShutdownAction with value 0 or invalid,
      * or an action that is currently unavailable), set the selection to
      * the first list item. */
-    if count != 0 && (SendMessageW(hwndList, CB_GETCURSEL, 0, 0) == CB_ERR) {
+    if count != 0 && (SendMessageW(hwndList, CB_GETCURSEL, 0, 0) == CB_ERR.into()) {
         SendMessageW(hwndList, CB_SETCURSEL, 0, 0);
     }
 
@@ -1180,10 +1186,10 @@ unsafe fn ShutdownOnInit(
 unsafe fn ShutdownOnOk(hDlg: HWND, pgContext: *mut _GINA_CONTEXT) {
     let hwndList = GetDlgItem(hDlg, IDC_SHUTDOWN_ACTION as i32);
     let mut lresult = SendMessageW(hwndList, CB_GETCURSEL, 0, 0);
-    if lresult != CB_ERR as isize {
+    if lresult != (CB_ERR as isize).try_into().unwrap() {
         let mut shutdown_code = lresult as u32;
         lresult = SendMessageW(hwndList, CB_GETITEMDATA, shutdown_code as usize, 0);
-        if lresult != CB_ERR as isize {
+        if lresult != (CB_ERR as isize).try_into().unwrap() {
             shutdown_code = lresult as u32;
             (*pgContext).nShutdownAction = shutdown_code;
         }
@@ -1213,7 +1219,7 @@ unsafe fn ShutdownDialogProc(
         }
 
         WM_ACTIVATE => {
-            if (wParam as u32 & 0xFFFF) as u16 == WA_INACTIVE {
+            if u32::from((wParam as u32 & 0xFFFF) as u16) == WA_INACTIVE {
                 if (*pContext).bCloseDlg == 0 {
                     (*pContext).bCloseDlg = 1i32;
                     EndDialog(hDlg, IDCANCEL as isize);
@@ -1230,7 +1236,7 @@ unsafe fn ShutdownDialogProc(
 
         WM_COMMAND => {
             let loword = (wParam as u32 & 0xFFFF) as u32;
-            match loword {
+            match loword as i32 {
                 IDC_BUTTON_SHUTDOWN
                 | IDC_BUTTON_REBOOT
                 | IDC_BUTTON_SLEEP
@@ -1239,15 +1245,15 @@ unsafe fn ShutdownDialogProc(
                     let pgContext = (*pContext).pgContext;
                     (*pgContext).nShutdownAction = 0;
 
-                    if button == IDC_BUTTON_SHUTDOWN {
+                    if button == IDC_BUTTON_SHUTDOWN.try_into().unwrap() {
                         if (*pContext).ShutdownOptions & WLX_SHUTDOWN_STATE_POWER_OFF != 0 {
                             (*pgContext).nShutdownAction = WLX_SAS_ACTION_SHUTDOWN_POWER_OFF;
                         }
-                    } else if button == IDC_BUTTON_REBOOT {
+                    } else if button == IDC_BUTTON_REBOOT.try_into().unwrap() {
                         if (*pContext).ShutdownOptions & WLX_SHUTDOWN_STATE_REBOOT != 0 {
                             (*pgContext).nShutdownAction = WLX_SAS_ACTION_SHUTDOWN_REBOOT;
                         }
-                    } else if button == IDC_BUTTON_SLEEP {
+                    } else if button == IDC_BUTTON_SLEEP.try_into().unwrap() {
                         if (*pContext).ShutdownOptions
                             & (WLX_SHUTDOWN_STATE_SLEEP | WLX_SHUTDOWN_STATE_SLEEP2)
                             != 0
@@ -1260,7 +1266,7 @@ unsafe fn ShutdownDialogProc(
                                     WLX_SAS_ACTION_SHUTDOWN_SLEEP;
                             }
                         }
-                    } else if button == IDC_BUTTON_HIBERNATE {
+                    } else if button == IDC_BUTTON_HIBERNATE.try_into().unwrap() {
                         if (*pContext).ShutdownOptions & WLX_SHUTDOWN_STATE_HIBERNATE != 0 {
                             (*pgContext).nShutdownAction =
                                 WLX_SAS_ACTION_SHUTDOWN_HIBERNATE;
@@ -1276,14 +1282,14 @@ unsafe fn ShutdownDialogProc(
                     }
                 }
 
-                IDOK => {
+                x if x == IDOK as i32 => {
                     ShutdownOnOk(hDlg, (*pContext).pgContext);
                     // Fall through
                     (*pContext).bCloseDlg = 1i32;
                     EndDialog(hDlg, (wParam as u32 & 0xFFFF) as isize);
                 }
 
-                IDCANCEL | IDHELP => {
+                x if x == IDCANCEL as i32 || x == IDHELP as i32 => {
                     (*pContext).bCloseDlg = 1i32;
                     EndDialog(hDlg, (wParam as u32 & 0xFFFF) as isize);
                 }
@@ -1301,7 +1307,7 @@ unsafe fn ShutdownDialogProc(
             let hdcStatic = wParam as HDC;
             let staticId = GetWindowLongPtrW(lParam as HWND, GWL_ID) as u32;
 
-            match staticId {
+            match staticId as i32 {
                 IDC_TURN_OFF_STATIC => {
                     SetTextColor(hdcStatic, DARK_GREY_COLOR);
                     SetBkMode(hdcStatic, TRANSPARENT);
@@ -1322,7 +1328,7 @@ unsafe fn ShutdownDialogProc(
 
         WM_DRAWITEM => {
             let pdis = lParam as *mut DRAWITEMSTRUCT;
-            match (*pdis).CtlID {
+            match (*pdis).CtlID as i32 {
                 IDC_BUTTON_SHUTDOWN
                 | IDC_BUTTON_REBOOT
                 | IDC_BUTTON_SLEEP
@@ -1360,35 +1366,37 @@ pub unsafe extern "C" fn ShutdownDialog(
 
     context.pgContext = pgContext;
     context.ShutdownOptions = ShutdownOptions;
-    context.ShutdownDialogId = IDD_SHUTDOWN;
-    context.bCloseDlg = 0u8;
+    context.ShutdownDialogId = IDD_SHUTDOWN as u32;
+    context.bCloseDlg = 0;
     context.bReasonUI = GetShutdownReasonUI();
     context.bFriendlyUI = ShellIsFriendlyUIActive();
 
     if !(*pgContext).hWlx.is_null() && !(*pgContext).pWlxFuncs.is_null() && context.bFriendlyUI == 0 {
         let resource_id = if context.bReasonUI != 0 { IDD_SHUTDOWN_REASON } else { IDD_SHUTDOWN };
-        ret = (*(*(*pgContext).pWlxFuncs)).WlxDialogBoxParam(
+        ret = (*(*pgContext).pWlxFuncs).WlxDialogBoxParam.unwrap()(
             (*pgContext).hWlx,
-            (*pgContext).hDllInstance,
-            MAKEINTRESOURCEW(resource_id),
-            hwndDlg,
-            ShutdownDialogProc,
-            &mut context as *mut _ as LPARAM,
-        );
+            (*pgContext).hDllInstance as *mut core::ffi::c_void,
+            MAKEINTRESOURCEW!(resource_id) as *mut u16,
+            hwndDlg as winlogon_sys::nt::HWND,
+            core::mem::transmute::<*const (), winlogon_sys::nt::DLGPROC>(
+                ShutdownDialogProc as *const (),
+            ),
+            &mut context as *mut _ as winlogon_sys::nt::LPARAM,
+        ) as INT_PTR;
     } else {
         if context.bFriendlyUI != 0 {
             if IsShowHibernateButtonActive() != 0 {
-                context.ShutdownDialogId = IDD_SHUTDOWN_FANCY_LONG;
+                context.ShutdownDialogId = IDD_SHUTDOWN_FANCY_LONG as u32;
             } else {
-                context.ShutdownDialogId = IDD_SHUTDOWN_FANCY;
+                context.ShutdownDialogId = IDD_SHUTDOWN_FANCY as u32;
             }
         }
-        let resource_id = if context.bReasonUI != 0 { IDD_SHUTDOWN_REASON } else { context.ShutdownDialogId };
+        let resource_id = if context.bReasonUI != 0 { IDD_SHUTDOWN_REASON } else { context.ShutdownDialogId.try_into().unwrap() };
         ret = DialogBoxParamW(
             (*pgContext).hDllInstance,
-            MAKEINTRESOURCEW(resource_id),
+            MAKEINTRESOURCEW!(resource_id),
             hwndDlg,
-            ShutdownDialogProc,
+            core::mem::transmute::<*const (), DLGPROC>(ShutdownDialogProc as *const ()),
             &mut context as *mut _ as LPARAM,
         );
     }
@@ -1423,8 +1431,8 @@ pub unsafe extern "system" fn ShellShutdownDialog(
     } else {
         let mut hKey: HKEY = core::ptr::null_mut();
         let key_path: PCWSTR = b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\0".as_ptr() as PCWSTR;
-        let lRet: LONG = RegOpenKeyExW(HKEY_CURRENT_USER, key_path, 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(hKey));
-        if lRet == ERROR_SUCCESS {
+        let lRet: LONG = RegOpenKeyExW(HKEY_CURRENT_USER, key_path, 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(hKey)).try_into().unwrap();
+        if lRet == ERROR_SUCCESS.try_into().unwrap() {
             let mut dwType: DWORD = 0;
             let mut cbData: DWORD = core::mem::size_of_val(&gContext.UserName) as DWORD;
             let logon_name: PCWSTR = b"L\0o\0g\0o\0n\0 \0U\0s\0e\0r\0 \0N\0a\0m\0e\0\0".as_ptr() as PCWSTR;

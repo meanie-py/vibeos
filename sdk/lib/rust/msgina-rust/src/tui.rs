@@ -2,6 +2,10 @@ use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
 use crate::resources::*;
+use crate::msgina_consts::*;
+use crate::strsafe::*;
+use crate::lsa::{ConnectToLsa, MyLogonUser};
+use crate::msgina::{hDllInstance, DoLoginTasks, CreateProfile};
 use core::ffi::c_void;
 
 extern "C" {
@@ -47,7 +51,7 @@ pub static mut GinaTextUI: GINA_UI = unsafe {
     }
 };
 
-unsafe fn TUIInitialize(pgContext: PGINA_CONTEXT) -> BOOL {
+pub(crate) unsafe extern "C" fn TUIInitialize(pgContext: PGINA_CONTEXT) -> BOOL {
     if ((*__wine_dbch___default).flags & (1 << __WINE_DBCL_TRACE)) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -62,7 +66,7 @@ unsafe fn TUIInitialize(pgContext: PGINA_CONTEXT) -> BOOL {
     }
     AllocConsole()
 }
-unsafe fn TUIDisplayStatusMessage(
+pub(crate) unsafe extern "C" fn TUIDisplayStatusMessage(
     pgContext: PGINA_CONTEXT,
     hDesktop: HDESK,
     dwOptions: DWORD,
@@ -107,7 +111,7 @@ unsafe fn TUIDisplayStatusMessage(
     ) != 0) as i32
 }
 
-unsafe fn TUIRemoveStatusMessage(pgContext: PGINA_CONTEXT) -> i32 {
+pub(crate) unsafe extern "C" fn TUIRemoveStatusMessage(pgContext: PGINA_CONTEXT) -> i32 {
     // suppress unused parameter warning
     let _ = pgContext;
     1
@@ -122,7 +126,7 @@ unsafe fn DisplayResourceText(
 
     if LoadStringW(
         hDllInstance,
-        uIdResourceText,
+        uIdResourceText.try_into().unwrap(),
         prompt.as_mut_ptr(),
         prompt.len() as i32,
     ) == 0
@@ -131,7 +135,7 @@ unsafe fn DisplayResourceText(
     }
     if WriteConsoleW(
         GetStdHandle((-11i32) as DWORD),
-        prompt.as_ptr(),
+        prompt.as_ptr() as *const core::ffi::c_void,
         wcslen(prompt.as_ptr()) as DWORD,
         &mut count,
         core::ptr::null_mut(),
@@ -143,7 +147,7 @@ unsafe fn DisplayResourceText(
         let newline: [WCHAR; 2] = [0x0A, 0];
         if WriteConsoleW(
             GetStdHandle((-11i32) as DWORD),
-            newline.as_ptr(),
+            newline.as_ptr() as *const core::ffi::c_void,
             wcslen(newline.as_ptr()) as DWORD,
             &mut count,
             core::ptr::null_mut(),
@@ -155,14 +159,14 @@ unsafe fn DisplayResourceText(
     1
 }
 
-unsafe fn TUIDisplaySASNotice(pgContext: PGINA_CONTEXT) {
+pub(crate) unsafe extern "C" fn TUIDisplaySASNotice(pgContext: PGINA_CONTEXT) {
     TRACE!(b"TUIDisplaySASNotice()\n".as_ptr() as *const i8);
-    UNREFERENCED_PARAMETER(pgContext);
-    DisplayResourceText(IDS_LOGGEDOUTSAS as UINT, 1u8);
-    DisplayResourceText(IDS_PRESSCTRLALTDELETE as UINT, 1u8);
+    UNREFERENCED_PARAMETER!(pgContext);
+    DisplayResourceText(IDS_LOGGEDOUTSAS as UINT, 1i32);
+    DisplayResourceText(IDS_PRESSCTRLALTDELETE as UINT, 1i32);
 }
 
-unsafe fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasType: DWORD) -> INT {
+pub(crate) unsafe extern "C" fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasType: DWORD) -> INT {
     if (*__wine_dbch___default).flags as core::ffi::c_int & (1 << __WINE_DBCL_TRACE as core::ffi::c_int) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -177,7 +181,7 @@ unsafe fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasType: DWORD) -> INT {
     let _ = pgContext;
 
     if dwSasType != WLX_SAS_TYPE_CTRL_ALT_DEL as DWORD {
-        return WLX_SAS_ACTION_NONE;
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
     if (*__wine_dbch___default).flags as core::ffi::c_int & (1 << __WINE_DBCL_FIXME as core::ffi::c_int) != 0 {
@@ -191,7 +195,7 @@ unsafe fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasType: DWORD) -> INT {
         );
     }
 
-    WLX_SAS_ACTION_LOGOFF
+    WLX_SAS_ACTION_LOGOFF.try_into().unwrap()
 }
 
 unsafe fn ReadString(
@@ -215,7 +219,7 @@ unsafe fn ReadString(
     if FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE)) == 0 {
         return 0u8;
     }
-    if DisplayResourceText(uIdResourcePrompt, 0u8) == 0 {
+    if DisplayResourceText(uIdResourcePrompt, 0i32) == 0 {
         return 0u8;
     }
 
@@ -276,18 +280,18 @@ unsafe fn ReadString(
     1u8
 }
 
-unsafe fn TUILoggedOutSAS(pgContext: PGINA_CONTEXT) -> i32 {
+pub(crate) unsafe extern "C" fn TUILoggedOutSAS(pgContext: PGINA_CONTEXT) -> i32 {
     let mut UserName: [u16; 256] = [0u16; 256];
     let mut Password: [u16; 256] = [0u16; 256];
     let mut SubStatus: NTSTATUS = STATUS_SUCCESS;
 
     TRACE!(b"TUILoggedOutSAS()\n\0".as_ptr() as *const i8);
 
-    if ReadString(IDS_ASKFORUSER, UserName.as_mut_ptr(), UserName.len() as u32, 1u8) == 0 {
-        return WLX_SAS_ACTION_NONE;
+    if ReadString(IDS_ASKFORUSER.try_into().unwrap(), UserName.as_mut_ptr(), UserName.len() as u32, 1u8) == 0 {
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
-    if ReadString(IDS_ASKFORPASSWORD, Password.as_mut_ptr(), Password.len() as u32, 0u8) == 0 {
-        return WLX_SAS_ACTION_NONE;
+    if ReadString(IDS_ASKFORPASSWORD.try_into().unwrap(), Password.as_mut_ptr(), Password.len() as u32, 0u8) == 0 {
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
     let Status = DoLoginTasks(
@@ -306,14 +310,14 @@ unsafe fn TUILoggedOutSAS(pgContext: PGINA_CONTEXT) -> i32 {
             Password.as_mut_ptr(),
         ) != 0
         {
-            return WLX_SAS_ACTION_LOGON;
+            return WLX_SAS_ACTION_LOGON.try_into().unwrap();
         }
     }
 
-    WLX_SAS_ACTION_NONE
+    WLX_SAS_ACTION_NONE.try_into().unwrap()
 }
 
-unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
+pub(crate) unsafe extern "C" fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
     let mut hToken: HANDLE = core::ptr::null_mut();
     let mut UserName: [u16; 256] = [0u16; 256];
     let mut Password: [u16; 256] = [0u16; 256];
@@ -324,22 +328,22 @@ unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
 
     let _ = pgContext; // UNREFERENCED_PARAMETER
 
-    if DisplayResourceText(IDS_LOGGEDOUTSAS, 1u8) == 0 {
-        return WLX_SAS_ACTION_UNLOCK_WKSTA;
+    if DisplayResourceText(IDS_LOGGEDOUTSAS as UINT, 1i32) == 0 {
+        return WLX_SAS_ACTION_UNLOCK_WKSTA.try_into().unwrap();
     }
 
-    if ReadString(IDS_ASKFORUSER, UserName.as_mut_ptr(), 256u32, 1u8) == 0 {
-        return WLX_SAS_ACTION_NONE;
+    if ReadString(IDS_ASKFORUSER.try_into().unwrap(), UserName.as_mut_ptr(), 256u32, 1u8) == 0 {
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
-    if ReadString(IDS_ASKFORPASSWORD, Password.as_mut_ptr(), 256u32, 0u8) == 0 {
-        return WLX_SAS_ACTION_NONE;
+    if ReadString(IDS_ASKFORPASSWORD.try_into().unwrap(), Password.as_mut_ptr(), 256u32, 0u8) == 0 {
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
     Status = ConnectToLsa(pgContext);
     if !NT_SUCCESS(Status) {
         WARN!(b"ConnectToLsa() failed\n\0".as_ptr() as *const i8);
-        return WLX_SAS_ACTION_NONE;
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
     Status = MyLogonUser(
@@ -353,11 +357,11 @@ unsafe fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
     );
     if !NT_SUCCESS(Status) {
         WARN!(b"MyLogonUser() failed\n\0".as_ptr() as *const i8);
-        return WLX_SAS_ACTION_NONE;
+        return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
     CloseHandle(hToken);
-    return WLX_SAS_ACTION_UNLOCK_WKSTA;
+    return WLX_SAS_ACTION_UNLOCK_WKSTA.try_into().unwrap();
 }
 
-unsafe fn TUIDisplayLockedNotice(pgContext: *mut _GINA_CONTEXT) {}
+pub(crate) unsafe extern "C" fn TUIDisplayLockedNotice(pgContext: *mut _GINA_CONTEXT) {}

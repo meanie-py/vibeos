@@ -2,16 +2,11 @@ use crate::prelude::*;
 use crate::msgina_externs::*;
 use crate::msgina_types::*;
 use crate::resources::*;
+use crate::msgina_consts::*;
+use crate::strsafe::*;
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{copy_nonoverlapping, null_mut};
-use AllocateLocallyUniqueId;
-use CloseHandle;
-use DbgPrint;
-use LsaFreeReturnBuffer;
-use LsaLogonUser;
-use RtlGetProcessHeap;
-use SecureZeroMemory;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -156,27 +151,19 @@ pub unsafe extern "C" fn MyLogonUser(
     let mut AuthInfo: PMSV1_0_INTERACTIVE_LOGON = null_mut();
     let mut AuthInfoLength: ULONG;
     let mut Ptr: ULONG_PTR;
-    let mut TokenSource: TOKEN_SOURCE = TOKEN_SOURCE {
+    let mut TokenSourceVar: TOKEN_SOURCE = TOKEN_SOURCE {
         SourceName: [0; 8],
         SourceIdentifier: LUID { LowPart: 0, HighPart: 0 },
     };
-    let mut TokenGroups: PTOKEN_GROUPS = null_mut();
+    let mut TokenGroupsVar: PTOKEN_GROUPS = null_mut();
     let mut ProfileBuffer: PMSV1_0_INTERACTIVE_PROFILE = null_mut();
     let mut ProfileBufferLength: ULONG = 0;
     let mut Luid: LUID = LUID { LowPart: 0, HighPart: 0 };
     let mut LogonId: LUID = LUID { LowPart: 0, HighPart: 0 };
     let mut TokenHandle: HANDLE = null_mut();
-    let mut QuotaLimits: QUOTA_LIMITS = QUOTA_LIMITS {
-        PagedPoolLimit: 0,
-        NonPagedPoolLimit: 0,
-        MinimumWorkingSetSize: 0,
-        MaximumWorkingSetSize: 0,
-        PagefileLimit: 0,
-        TimeLimit: ntdll_sys::nt::LARGE_INTEGER {
-            LowPart: 0,
-            HighPart: 0,
-        },
-    };
+    // QUOTA_LIMITS contains a LARGE_INTEGER union (no named-field literal possible);
+    // C zero-initializes the whole struct, so do the same.
+    let mut QuotaLimits: QUOTA_LIMITS = core::mem::zeroed();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     *phToken = null_mut();
@@ -200,7 +187,7 @@ pub unsafe extern "C" fn MyLogonUser(
     AuthInfo = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        AuthInfoLength as usize,
+        (AuthInfoLength as usize).try_into().unwrap(),
     ) as PMSV1_0_INTERACTIVE_LOGON;
     if AuthInfo.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -251,8 +238,8 @@ pub unsafe extern "C" fn MyLogonUser(
 
     AllocateLocallyUniqueId(&mut LogonId);
     Status = RtlAllocateAndInitializeSid(
-        &SECURITY_NT_AUTHORITY,
-        SECURITY_LOGON_IDS_RID_COUNT,
+        &SECURITY_NT_AUTHORITY as *const _ as PSID_IDENTIFIER_AUTHORITY,
+        SECURITY_LOGON_IDS_RID_COUNT.try_into().unwrap(),
         SECURITY_LOGON_IDS_RID,
         LogonId.HighPart as ULONG,
         LogonId.LowPart as ULONG,
@@ -268,7 +255,7 @@ pub unsafe extern "C" fn MyLogonUser(
     }
 
     Status = RtlAllocateAndInitializeSid(
-        &SECURITY_LOCAL_SID_AUTHORITY,
+        &SECURITY_LOCAL_SID_AUTHORITY as *const _ as PSID_IDENTIFIER_AUTHORITY,
         1,
         SECURITY_LOCAL_RID,
         SECURITY_NULL_RID,
@@ -284,31 +271,31 @@ pub unsafe extern "C" fn MyLogonUser(
         break 'cleanup;
     }
 
-    TokenGroups = RtlAllocateHeap(
+    TokenGroupsVar = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        size_of::<TOKEN_GROUPS>()
-            + ((2 - ANYSIZE_ARRAY) as usize) * size_of::<SID_AND_ATTRIBUTES>(),
+        (size_of::<TOKEN_GROUPS>()
+            + ((2 - ANYSIZE_ARRAY) as usize) * size_of::<SID_AND_ATTRIBUTES>()).try_into().unwrap(),
     ) as PTOKEN_GROUPS;
-    if TokenGroups.is_null() {
+    if TokenGroupsVar.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         break 'cleanup;
     }
 
-    (*TokenGroups).GroupCount = 2;
-    (*TokenGroups).Groups[0].Sid = LogonSid;
-    (*TokenGroups).Groups[0].Attributes =
+    (*TokenGroupsVar).GroupCount = 2;
+    (*TokenGroupsVar).Groups[0].Sid = LogonSid;
+    (*TokenGroupsVar).Groups[0].Attributes =
         SE_GROUP_MANDATORY | SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_LOGON_ID;
-    (*TokenGroups).Groups[1].Sid = LocalSid;
-    (*TokenGroups).Groups[1].Attributes =
+    (*TokenGroupsVar).Groups[1].Sid = LocalSid;
+    (*TokenGroupsVar).Groups[1].Attributes =
         SE_GROUP_MANDATORY | SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT;
 
-    RtlCopyMemory(
-        TokenSource.SourceName.as_mut_ptr() as *mut u8,
-        User32TokenSourceName.as_ptr() as *const u8,
+    RtlCopyMemory!(
+        TokenSourceVar.SourceName.as_mut_ptr() as *mut u8,
+        User32TokenSourceName.as_ptr() as *const i8,
         size_of::<[i8; 8]>(),
     );
-    AllocateLocallyUniqueId(&mut TokenSource.SourceIdentifier);
+    AllocateLocallyUniqueId(&mut TokenSourceVar.SourceIdentifier);
 
     Status = LsaLogonUser(
         LsaHandle,
@@ -317,9 +304,9 @@ pub unsafe extern "C" fn MyLogonUser(
         AuthenticationPackage,
         AuthInfo as PVOID,
         AuthInfoLength,
-        TokenGroups,
-        &mut TokenSource,
-        &mut ProfileBuffer as *mut PVOID,
+        TokenGroupsVar,
+        &mut TokenSourceVar,
+        &mut ProfileBuffer as *mut _ as *mut PVOID,
         &mut ProfileBufferLength,
         &mut Luid,
         &mut TokenHandle,
@@ -328,42 +315,42 @@ pub unsafe extern "C" fn MyLogonUser(
     );
     if !NT_SUCCESS(Status) {
         DbgPrint(
-            b"LsaLogonUser failed (Status 0x%08lx)\n\0".as_ptr() as *const u8,
+            b"LsaLogonUser failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
             Status,
         );
         break 'cleanup;
     }
 
     if !ProfileBuffer.is_null() {
-        DbgPrint(b"ProfileBuffer: %p\n\0".as_ptr() as *const u8, ProfileBuffer);
+        DbgPrint(b"ProfileBuffer: %p\n\0".as_ptr() as *const i8, ProfileBuffer);
         DbgPrint(
-            b"MessageType: %u\n\0".as_ptr() as *const u8,
+            b"MessageType: %u\n\0".as_ptr() as *const i8,
             (*ProfileBuffer).MessageType,
         );
         DbgPrint(
-            b"FullName: %p\n\0".as_ptr() as *const u8,
+            b"FullName: %p\n\0".as_ptr() as *const i8,
             (*ProfileBuffer).FullName.Buffer,
         );
         DbgPrint(
-            b"FullName: %S\n\0".as_ptr() as *const u8,
+            b"FullName: %S\n\0".as_ptr() as *const i8,
             (*ProfileBuffer).FullName.Buffer,
         );
         DbgPrint(
-            b"LogonServer: %p\n\0".as_ptr() as *const u8,
+            b"LogonServer: %p\n\0".as_ptr() as *const i8,
             (*ProfileBuffer).LogonServer.Buffer,
         );
         DbgPrint(
-            b"LogonServer: %S\n\0".as_ptr() as *const u8,
+            b"LogonServer: %S\n\0".as_ptr() as *const i8,
             (*ProfileBuffer).LogonServer.Buffer,
         );
     }
     DbgPrint(
-        b"Luid: 0x%08lx%08lx\n\0".as_ptr() as *const u8,
+        b"Luid: 0x%08lx%08lx\n\0".as_ptr() as *const i8,
         Luid.HighPart,
         Luid.LowPart,
     );
     if !TokenHandle.is_null() {
-        DbgPrint(b"TokenHandle: %p\n\0".as_ptr() as *const u8, TokenHandle);
+        DbgPrint(b"TokenHandle: %p\n\0".as_ptr() as *const i8, TokenHandle);
     }
 
     *phToken = TokenHandle;
@@ -379,8 +366,8 @@ pub unsafe extern "C" fn MyLogonUser(
     if !NT_SUCCESS(Status) && !TokenHandle.is_null() {
         CloseHandle(TokenHandle);
     }
-    if !TokenGroups.is_null() {
-        RtlFreeHeap(RtlGetProcessHeap(), 0, TokenGroups as PVOID);
+    if !TokenGroupsVar.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, TokenGroupsVar as PVOID);
     }
     if !LocalSid.is_null() {
         RtlFreeSid(LocalSid);
