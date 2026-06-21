@@ -31,8 +31,39 @@ more hermetic build.
 
 ### WS1 — C floor: `c_from_compile_db` → self-contained `c_shims`
 
-**Finding (research):** ~50 distinct C files go through `.c_from_compile_db()` across
-10 cells. They split into:
+**STATUS (2026-06-21): LEAF + printf + scanf batches DONE — the *kernel* C floor is
+cmake-configure-free.** After `46b48272a0f` (LEAF) + `f1e182c0f1d` (printf/scanf):
+- **ntoskrnl-cargo + ntkrnlmp-cargo: `cntpr_residue` is now EMPTY** → the cargo kernel
+  link calls `c_from_compile_db` ZERO times (i386 integer/ftol/chkstk asm stays as an
+  `asm_archive` — asm, not C). This is the WS1 kernel milestone.
+- **ntdll-cargo: residue EMPTY** (8 printf shells + `_vscwprintf` + `scanf_trampoline`
+  + LEAF all → `c_shims`).
+- **win32k-cargo, hal-cargo (i386), kdgdb-cargo, kdcom-serial-cargo, kdvm-cargo**: each
+  now links free of `compile_commands.json`.
+- Converted source: i386 `ci{cos,sin,sqrt,log,pow}.c` + `fltused.c`, amd64
+  `except/amd64/ehandler.c`, the printf engine `_sxprintf.c` + `_vscwprintf.c` (guarded
+  headerless, see below), `scanf_trampoline.c` (toolchain headers only). All verified
+  symbol+disasm-identical (i386+amd64) and i386/amd64 smoke green.
+- **Remaining `c_from_compile_db` users:** `rosload`/`uefildr` (`blrtl_c` = the DEEP
+  loader engines, deferred) + `winsrv`'s `usersrv_rust_strsafe_shim.c`. Everything else
+  is converted.
+
+**Shared-file guard pattern (printf):** `_sxprintf.c`/`_vscwprintf.c` are `#include`d by
+BOTH the cargo cells (non-secapi shells) and cmake's `crt.dll` (secapi `_s` shells), so
+they can't be unconditionally stripped. Solution: hand-define the headerless types
+behind `#ifdef CRT_PRINTF_HEADERLESS`, and set `-DCRT_PRINTF_HEADERLESS` ONLY on the
+cargo `.c_shims()` compile (via `.c_shim_flags()`). cmake-crt takes the unchanged
+`#else` branch → byte-identical → zero blast radius. Same trick works for any shared
+floor file whose other consumers must stay on headers.
+
+**Verify harness (`/tmp/ws1_verify.py`, reusable):** for each file, compile the CURRENT
+source with its exact `compile_commands.json` command (baseline) and again with
+`-DCRT_PRINTF_HEADERLESS` (candidate), then diff `nm` symbols + `objdump -d` disasm. The
+only variable is the source edit, so a clean diff PROVES the headerless rewrite is a
+semantic drop-in before any build/boot. This is the WS1 acceptance gate.
+
+**Finding (original research):** ~50 distinct C files go through `.c_from_compile_db()`
+across 10 cells. They split into:
 - **18 LEAF** — zero/trivial includes, or a handful of hand-definable types. Includes
   the kernel-relevant `dbgprint_variadic.c`, `scanf_trampoline.c`, the `ci*.c` i386
   x87 math wrappers, `fltused.c`, `ehandler.c` (amd64 SEH), `mem{cpy,move,set}.c`.
@@ -141,9 +172,13 @@ the import-lib DAG); the long pole, do last.
 ## Phasing
 
 1. **Phase 0 (done):** spike — prove the C-floor conversion (`dbgprint_variadic.c`).
-2. **Phase 1 — C floor LEAF + printf (WS1):** convert the ~18 LEAF + the printf engine.
-   Each is independently landable + boot-validated; biggest cmake-decoupling per unit
-   effort. Leaves only DEEP (boot-only) on compile_commands.json.
+2. **Phase 1 — C floor LEAF + printf (WS1): DONE for the kernel + spine (2026-06-21).**
+   LEAF (`46b48272a0f`) + printf/scanf (`f1e182c0f1d`): ntoskrnl/ntkrnlmp/ntdll
+   `cntpr_residue` EMPTY, win32k/hal/kdgdb/kdcom/kdvm freed too. i386+amd64 smoke green;
+   arm64 object-identical but gates on a full arm64 build+smoke (no `build-arm64` in the
+   staticlibs worktree; lands with the arm64-deterministic-green train). Only the DEEP
+   loader engines (`blrtl_c`, boot-only) + `winsrv` strsafe shim remain on
+   compile_commands.json.
 3. **Phase 2 — asm includes (WS2-A) + host tools (WS3):** commit `ks*.inc` amd64/arm64
    + the `.res` set + self-compile spec2def. After this the *kernel* cargo build needs
    no cmake-generated artifact.
