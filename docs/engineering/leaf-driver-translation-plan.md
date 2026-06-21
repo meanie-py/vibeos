@@ -1,0 +1,222 @@
+# Non-FS Leaf-Driver Translation Plan (storage + serial + HID)
+
+**Date: 2026-06-20.** Branch `filesystems` (post FS-backlog close). Author: filesystems lane.
+
+This is the audit + rustconv-tier strategy for the **9 remaining C-only non-FS leaf
+drivers** flagged in `rust-port-status-rollup.md` ("Non-FS drivers — ~20K LOC, 9 C-only").
+It is the storage/serial/HID analogue of the FS-backlog work: cohab C→Rust, validated
+link-clean ×3, none boot-critical.
+
+## TL;DR — the headline that changes the cost math
+
+The naive read is "~20K LOC of hard hardware drivers." The real picture is better:
+
+1. **The expensive FFI substrate already exists.** `hid-sys` (3.2K), `usb-sys` (39K
+   bindgen), `usbd-rust`/`usbdex-rust` (USBD.SYS body, done), `hidparse-rust`+`hidparser-rust`
+   (HidP_* done), and `scsiport-rust` (122K, done) are all in-tree and wired. The HID stack
+   and serial reuse substrate that's already paid for. Only **storport** needs net-new FFI
+   (and it can lean on `scsiport-rust`'s SRB types). This is the same leverage that made
+   msfs/npfs cheap once `ntkrnl-sys` existed — except here it's *already* built.
+2. **None are boot/smoke-critical.** QEMU storage = IDE/ATAPI (uniata/pciide/atapi, all
+   done); QEMU input = PS/2 → i8042prt/kbdclass/mouclass (all done). So like msfs/npfs,
+   the cohab flips are validated by **link-clean ×3**, not smoke. Optional functional
+   validation needs a QEMU `-device usb-kbd`/`usb-tablet` or `-device buslogic` opt-in.
+3. **2 of the 9 are drop/defer candidates** (storahci already disabled; buslogic = legacy
+   BT-958 SCSI, never touched by QEMU) — same disposition logic as the nfs/udfs/vfatfs drop.
+
+Net: the *translatable, worth-keeping* set is **7 drivers (~17K LOC)**, most of it MEDIUM,
+with substrate already in place for the hardest cluster (HID/USB).
+
+## Inventory (ground-truth, measured from tree)
+
+| Driver | Path | C LOC | Files | In boot media? | QEMU-exercised? | Cohab? |
+|---|---|---|---|---|---|---|
+| **serial** | `drivers/serial/serial` | 2.7K | 12 | only as KD `/DEBUGPORT=COM1` (kernel owns it, not serial.sys) | no | none |
+| **ramdisk** | `drivers/storage/class/ramdisk` | 2.5K | 1 | `ramdisk.sys` + hivesys | no (boot ramdisk = freeldr, not this) | none |
+| **hidclass** | `drivers/hid/hidclass` | 2.8K | 4 | `hidclass.sys` + hivesys | only with USB HID | none |
+| **hidusb** | `drivers/hid/hidusb` | 2.0K | 1 | `hidusb.sys` + hivesys | only with USB HID | none |
+| **kbdhid** | `drivers/hid/kbdhid` | 1.1K | 1 | `kbdhid.sys` + hivesys | only with USB kbd | none |
+| **mouhid** | `drivers/hid/mouhid` | 1.3K | 1 | (mouhid.sys) + hivesys | only with USB mouse | none |
+| **storport** | `drivers/storage/port/storport` | 3.6K | 8 | `storport.sys` | no (no storport miniport in QEMU path) | none |
+| **storahci** | `drivers/storage/port/storahci` | 3.3K | 2 | **disabled** (`#add_cd_file` commented) | no | none |
+| **buslogic** | `drivers/storage/port/buslogic` | 4.6K | 7 | `buslogic.sys` (BT-958) | no (would need `-device buslogic`) | none |
+
+## Difficulty characterization (per driver)
+
+### HID cluster — substrate exists, so cheaper than LOC implies
+Dependency order: **hidclass first** (foundational), then **hidusb** (minidriver under
+hidclass), then **kbdhid + mouhid** in parallel (clients on top of hidclass).
+
+- **hidclass** (HARD): PnP state machine (START fetches the descriptor chain) + nested IRP
+  completion routines (`HidClass_ReadCompleteIrp`, IRP reuse via `IoReuseIrp`) + spinlock/
+  event sync. ~25-30 DDK fns. *Substrate: `hid-sys` covers hidport/hidclass/hidpi.*
+- **hidusb** (HARD): the genuinely hardest — async **URB** construction/submission
+  (`UsbBuild*`, `USBD_CreateConfigurationRequestEx`, `IOCTL_INTERNAL_USB_SUBMIT_URB`),
+  work-item-based pipe/port **reset error-recovery state machine**, multi-step descriptor
+  acquisition with size negotiation. *Substrate: `usb-sys` + `usbd-rust` already done.*
+- **kbdhid / mouhid** (MEDIUM, near-twins): async read loop (`IoReuseIrp` +
+  completion routine re-arms the read) + HID report parsing via `HidP_*` (→ `hidparse-rust`,
+  done) + callback dispatch to class driver at DISPATCH_LEVEL. mouhid is slightly harder
+  (absolute/relative branching + wheel feature detection). No URBs, no work items.
+
+### Storage cluster
+- **ramdisk** (EASY): the clean one. Class driver, **no miniport / no ISR / no DPC / no
+  hardware register I/O**. PnP+Power IRP dispatch, remove-locks, symbolic links, work items,
+  registry config. Self-contained, single file. *Substrate: existing `driver_ddk`.*
+- **storport** (HARD): the modern port-driver **provider interface** — miniport callbacks
+  (`HwInitialize/HwStartIo/HwInterrupt/HwFindAdapter`), ISR + DPC with KIRQL juggling,
+  **C-variadic** `StorPortNotification` dispatch, SRB handling, ~100 DDK fns, PnP state
+  machine, dense `StorPortRead/WriteRegister`. *Substrate: net-new storport FFI needed;
+  reuse `scsiport-rust` SRB/SCSI types.*
+- **storahci** (HARD, **DEFER**): AHCI MMIO + DMA/PRDT + FIS protocol + bitfield-union
+  registers. **Already disabled from shipping** — translate only if/when re-enabled.
+- **buslogic** (VERY HARD, **DROP candidate**): legacy BT-958 SCSI HBA — CCB↔SRB impedance,
+  128-entry scatter-gather mailbox queue, WMI (`wmi.c`), variadic logging. Not used by any
+  QEMU target. Highest effort, lowest value of the set.
+
+### serial (MEDIUM overall — high LOC, low conceptual depth)
+12 files. The bulk is **mechanical**: `devctrl.c` (880 LOC = 37 `IOCTL_SERIAL_*` handlers,
+repetitive), UART register I/O (8250/16550), circular buffer. The genuinely tricky files
+are `misc.c` (ISR + 3 DPCs + interlocked error counters + WaitOnMask race) and `rw.c`
+(work-item read with `KeWaitForMultipleObjects` timeout state machine) and `pnp.c`
+(resource parse + `IoConnectInterrupt` + registry). *Substrate: `ntddser` via `driver_ddk`;
+`kdcom-serial-rust` is a ready reference for the UART register patterns.* Self-contained.
+
+## rustconv model-tier strategy
+
+**First, the tool question:** use **rustconv (LLM, cohab-aware)**, *not* the deterministic
+`c2rust` transpiler. `c2rust` emits unsafe machine Rust against its own libc-style bindings
+— it has no concept of our cohab model (`#[no_mangle]` symbol takeover, per-arch NTAPI ABI,
+DUMMY_PSEH lowering, the `ntkrnl-sys`/`hid-sys`/`usb-sys` substrate), so its output would
+need total rework to link into a `.sys`. rustconv already produces cohab-ready faithful Rust.
+"opus/sonnet/deepseek + c2rust" in practice means **rustconv driven by that model**.
+
+**Tier principle:** API cost across all 9 drivers is *low tens of dollars* either way (a
+~3K-LOC driver is single-digit dollars on Sonnet sync, low-tens on Opus). The dominant cost
+is **integration + BUGCHECK debugging**, and the defect classes that cost multi-hour hunts
+(DUMMY_PSEH live-except bodies, `extern "system"` vs `"C"` ABI drift, cast-before-offset,
+scrambled flag literals — all catalogued in the field manual) cluster in the **async/ABI-
+heavy** drivers. So: **spend model strength where a translation defect is expensive to find,
+save it where the code is mechanical.** Minimize *defects*, not API dollars.
+
+| Driver | Tier | Model | Why |
+|---|---|---|---|
+| ramdisk | EASY | **DeepSeek-reasoner** + `semdiff` vs C (fallback Sonnet) | self-contained, no async/ISR/HW; cheapest path, semdiff catches drift |
+| serial (easy/mid files) | MEDIUM | **Sonnet** sync per-function | mechanical register I/O + IOCTL dispatch; Sonnet proven faithful (cdfs/msfs/npfs) |
+| serial (`misc.c`/`rw.c`/`pnp.c`) | HARD-ish | **Opus** | ISR/DPC race + timeout state machine + interrupt connect — defect-expensive |
+| kbdhid | MEDIUM | **Sonnet** | async read loop + HidP_* (substrate done); twin of mouhid |
+| mouhid | MEDIUM | **Sonnet** | ditto + abs/rel branch |
+| hidclass | HARD | **Opus** | nested IRP completion + PnP descriptor chain |
+| hidusb | HARD | **Opus** | URB async + work-item reset state machine — the single hardest |
+| storport | HARD | **Opus** | miniport provider + variadic notify + ISR/DPC |
+| storahci | HARD | **DEFER** | disabled from shipping |
+| buslogic | VERY HARD | **DROP candidate** | legacy, not in QEMU, highest effort/lowest value |
+
+**Why not DeepSeek more widely?** DeepSeek's win was *mechanical data-table* lift (NLS
+casemap/collation) verified by `semdiff`. Driver logic with ABI/PSEH traps is exactly where
+a weaker model silently introduces the expensive defect classes. Use it only for the EASY,
+self-contained tier (ramdisk) and pair it with `semdiff`. **Why not Sonnet-batch?** Batch
+"silently stubs lazy fns" on larger files — use sync `translate` (per-function) for anything
+>1000 LOC, which is most of these.
+
+## Recommended execution order (substrate-cost-ordered, cheapest leverage first)
+
+1. **ramdisk** — EASY, single file, existing substrate. Proves the cohab harness for this
+   driver family end-to-end. DeepSeek+semdiff.
+2. **kbdhid + mouhid** — MEDIUM, substrate (`hid-sys`+`hidparse-rust`) already done; near-twin
+   pair, good parallel-subagent batch. Sonnet.
+3. **hidclass** — HARD but unblocks the HID cluster's class layer. Opus.
+4. **hidusb** — HARD, the URB driver; last of the HID cluster. Opus.
+5. **serial** — MEDIUM bulk + 3 hard files; self-contained, no substrate gap. Sonnet+Opus split.
+6. **storport** — HARD, needs net-new FFI (build `storport-sys` leaning on `scsiport-rust`).
+   Biggest substrate cost; do after the cheaper wins land. Opus.
+7. **storahci** — DEFER (disabled). **buslogic** — DROP pending user confirmation.
+
+Each driver: parallel-subagent translation per-file over a CONTRACT.md (write `.rs` to
+`~/vibeos-rust-staging/`, no shared-file edits), integrate + cohab-flip + build + link ×3
+centrally — the msfs/npfs playbook. Validation = **link-clean ×3** (these don't boot in
+smoke); functional check is an optional QEMU USB/SCSI-device opt-in, flagged not silently
+skipped.
+
+## Scope decision (settled 2026-06-20, user)
+
+- **storahci**: **DEFER** (keep the C, translate later). It's the modern real-hardware AHCI
+  path — valuable to have in Rust eventually — just currently disabled/unfinished in ReactOS.
+  Translate when/if AHCI is wired up. Do **not** delete.
+- **buslogic**: **DROP** from translation scope (legacy BT-958 SCSI, ~4.6K LOC VERY HARD,
+  zero QEMU exposure). Recoverable from ReactOS + rustconv later, same logic as the
+  nfs/udfs/vfatfs drop. (Physical deletion vs leave-as-inert-C is a follow-up nicety; it
+  links today.)
+- **Translate (7):** ramdisk, serial, hidclass, hidusb, kbdhid, mouhid, storport.
+
+## Execution log
+
+- 2026-06-20: HID cluster started (user pick). Substrate verified ready — `hid-sys`
+  (HIDP_*), `hidparse-rust` (HidP_* exports), and `ntkrnl-sys` bindgen already cover the
+  KEYBOARD_*/MOUSE_*/CONNECT_DATA/HIDP_KEYBOARD_MODIFIER_STATE types; only `USAGE_AND_PAGE`
+  (trivial 2×USAGE struct) defined locally. First batch: kbdhid + mouhid (MEDIUM twins).
+- 2026-06-21: ✅ **kbdhid + mouhid DONE — link-clean ×3** (`786c5303ac1`, branch `filesystems`).
+  2 parallel Sonnet subagents → central integration. `kbdhid-rust` (8 modules) + `mouhid-rust`
+  (8 modules) cohab staticlibs; `.c` kept on disk. Both `.sys` build + link clean on i386/
+  amd64/arm64, lint-clean (no unprotected output writes; mouhid's lone ud2 is a benign
+  divide-by-zero guard, not a captures(none) fold). New field-manual entry: amd64 cohab-driver
+  IRQL raise/lower (tier1 `*Internal` unlinkable on amd64; per-crate CR8-asm helper). Next:
+  hidclass (Opus) → hidusb (Opus). Awaiting meaniepy ×3 cold-smoke gate (non-boot → link +
+  no-regression bar, same as msfs/npfs).
+- 2026-06-21: ✅ **hidclass + hidusb DONE — link-clean ×3** (HID cluster complete: 4/4). 2
+  parallel Opus subagents (whole-driver each, for cross-file type coherence) → central
+  integration; both rlibs compiled ×3 on the FIRST pass (tighter than the Sonnet twins).
+  `hidclass-rust` (6 modules, exports `DllInitialize`+`HidRegisterMinidriver` via spec2def,
+  ENTRYPOINT 0) + `hidusb-rust` (5 modules, links hidclass+usbd import libs). Verified the
+  cross-driver link: hidclass.sys exports HidRegisterMinidriver → hidusb.sys imports it +
+  USBD_Create/ParseConfigurationRequestEx from usbd.sys. hidport.h class types defined locally
+  (not bindgen'd). Lint-clean; hidclass's lone ud2 is a benign compiler-rt abort (collection-
+  sizing division), not a fold. Integration fixes: hidusb DriverEntry needed `#[no_mangle]`
+  (Opus dropped it → `_DriverEntry@8` undefined); hidusb inlined the 4 UsbBuild* usbdlib macros
+  (not in usb-sys); `HidNotifyPresence` correctly NOT fabricated (declared in hidport.h, zero
+  implementation in ReactOS). **Remaining leaf drivers: serial, ramdisk, storport** (storahci
+  deferred, buslogic dropped).
+- 2026-06-21: ✅ **storport + serial + storahci DONE — link-clean ×3** (scope revised: user
+  pulled storahci forward — "sounds really valuable" — alongside storport+serial). First
+  **rustconv-pipeline** translations of this cluster (not hand-done): `python -m rustconv
+  translate <driver> -m opus --mode mechanical --c2rust` — Opus model, mechanical (faithful
+  transliteration), c2rust-anchored (feeds compiler-exact transpilation into the prompt so the
+  model can't silently stub). ~$6.85 total (storport ~110 fns, serial ~35, storahci ~35).
+  Outputs in `tools/rustconv/.responses/`. Then ~900 compile errors across the 3 crates —
+  confirmed the user's "few systematic roots cascading" read: cleared to 0×3 by parallel
+  compile-fix subagents (one missing-import glob; bindgen bitfield-union register access for
+  AHCI; c2rust phantom-extern macros -> glue inline fns; substrate import homes; lib-name
+  underscore bug). Cohab flips: storport keeps spec2def+guid.c -> `libstorport_rust.a`; serial
+  keeps guid.c -> `libserial_rust.a`; storahci stays disabled-from-shipping (`#add_cd_file`, as
+  in ReactOS) + `rust_cohab_stub.c` -> `libstorahci_rust.a`. **amd64-specific:** storport's
+  `StorPortReadRegister*`/`WritePort*` wrappers call the 24 x86 port/register I/O intrinsics
+  the i386/arm64 HAL exports but amd64 doesn't -> defined faithfully in storport `glue.rs`
+  (`#[cfg(target_arch="x86_64")]`: `in`/`out` asm for PORT, volatile MMIO for REGISTER, loops
+  for BUFFER). All 3 `.sys` link i386/amd64/arm64; lint-clean; only-ud2 is `core::panicking`
+  (expected, not a fold). Latent infidelity flagged for integrator review: storport
+  `AllocateAddressMapping` glue extern typed first param `*mut LIST_ENTRY` vs bindgen's correct
+  `*mut PMAPPED_ADDRESS` (warning-level, linked). **Leaf-driver cluster: only `ramdisk` left.**
+  Awaiting meaniepy ×3 cold-smoke gate (non-boot -> link + no-regression bar).
+- 2026-06-21: ✅ **ramdisk DONE — link-clean ×3. LEAF-DRIVER CLUSTER COMPLETE (8/8: kbdhid,
+  mouhid, hidclass, hidusb, storport, serial, storahci, ramdisk; buslogic dropped).** rustconv
+  opus mechanical (c2rust anchor FAILED — `AST unsupported` — so plain opus, more drift than the
+  storport cluster). 29 fns, $1.45. One compile-fix subagent: 171 i386 errors -> 0×3 (missing
+  import glob, bindgen anon-union access, enum-const renames, callback-slot transmutes). Then the
+  central `.sys` link surfaced what cargo can't: 9 undefined symbols, all fixed faithfully in
+  `glue.rs` — `BYTE_OFFSET`/`IsRecognizedPartition`/`FatUnpackBios` (header macros), the
+  IO_REMOVE_LOCK family (FORCEINLINE wrappers over the `*Ex` exports), `ExInitializeFastMutex`
+  (route to `ntkrnl_sys::inline::ex`), and two i386/arm64-only roots: (a) **`Rtl*` NTAPI ABI** —
+  the translation's kept `extern "C"` block made RtlInitUnicodeString/RtlCopyUnicodeString/
+  RtlQueryRegistryValues cdecl; on i386 that emits undecorated `_Rtl...` (NTAPI is stdcall →
+  `_Name@N`) — split into an `extern "system"` block; (b) **`KeLoaderBlock` cross-DLL kernel
+  DATA import** — ramdisk is the FIRST cohab driver to import kernel data; globals.rs' plain
+  extern static resolves on amd64 but i386/arm64 PE need a raw-dylib data-import thunk → added a
+  driver-local `#[link(name="ntoskrnl", kind="raw-dylib")]` static in glue + an explicit `use`
+  in ramdisk.rs to shadow the `globals::*`/`glue::*` globs. Notable translation infidelities
+  (no c2rust anchor): LLM **dropped `RamdiskWorkerThread`** (subagent reconstructed from
+  ramdisk.c:813-911) and rendered C `L"..."` as a use-after-free temp-`Vec` ptr (fixed via a
+  static-backed `wstr!` macro). Cohab flip: ramdisk SHIPS (kept add_cd_file+inf), rust_cohab_stub.c
+  + libramdisk_rust.a. lint-clean; only-ud2 is `core::panicking`. **Reusable for the field
+  manual: (1) cohab driver importing kernel DATA needs raw-dylib on i386/arm64 (amd64 hides it);
+  (2) a kept `extern "C"` block for NTAPI fns is an i386-only `_Name`-vs-`_Name@N` link break —
+  same class as the kernel32 RPC-wait ABI bug.** Awaiting meaniepy ×3 cold-smoke gate.

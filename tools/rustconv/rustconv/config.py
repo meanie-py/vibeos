@@ -128,6 +128,10 @@ FASTFAT_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fastfat"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
+STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
+STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
+SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
+RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -696,6 +700,73 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # storport.sys — the modern storage port driver (drivers/storage/port/storport, ~3.6K
+    # LOC, 7 .c: fdo/miniport/misc/pdo/storport/stubs; guid.c = GUID data TU stays C). EXPORT
+    # driver (storport.spec: StorPort* miniport API → storahci links it). WDM kernelmodedriver.
+    # NOT boot-loaded in the QEMU smoke path (IDE via uniata/atapi) → link-clean x3 + no
+    # regression is the bar. Leaf-driver lane (storport/serial/storahci), opus + c2rust anchor.
+    "storport": Target(
+        name="storport",
+        source_dir=STORPORT_DIR,
+        output_crate=RUST_DIR / "storport-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=STORPORT_DIR / "storport.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # storahci.sys — AHCI storport miniport (drivers/storage/port/storahci, ~2.6K LOC, 1 .c).
+    # Links storport. Disabled from shipping (re-enable later); translate-for-completeness.
+    # No spec. NOT boot-loaded → link-clean x3 bar.
+    "storahci": Target(
+        name="storahci",
+        source_dir=STORAHCI_DIR,
+        output_crate=RUST_DIR / "storahci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # serial.sys — 8250/16550 UART COM driver (drivers/serial/serial, ~2.7K LOC, 12 .c).
+    # No spec (kernelmodedriver). NOT boot-loaded in smoke (kernel owns the KD COM port) →
+    # link-clean x3 bar. Self-contained; the ISR/DPC/timeout files are the hard part.
+    "serial": Target(
+        name="serial",
+        source_dir=SERIAL_DIR,
+        output_crate=RUST_DIR / "serial-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ramdisk.sys — RAM-disk class driver (drivers/storage/class/ramdisk, ~2.5K LOC, 1 .c).
+    # EASY leaf: pure WDM class driver — no miniport / no ISR / no DPC / no HW register I/O.
+    # No spec (kernelmodedriver). NOT boot-loaded in smoke (boot ramdisk = freeldr, not this)
+    # → link-clean x3 bar. Self-contained single .c; driver-private types from ntddrdsk.h.
+    "ramdisk": Target(
+        name="ramdisk",
+        source_dir=RAMDISK_DIR,
+        output_crate=RUST_DIR / "ramdisk-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1052,6 +1123,14 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["pciidex"]
     if "/drivers/storage/port/scsiport" in posix:
         return TARGETS["scsiport"]
+    if "/drivers/storage/port/storport" in posix:
+        return TARGETS["storport"]
+    if "/drivers/storage/port/storahci" in posix:
+        return TARGETS["storahci"]
+    if "/drivers/serial/serial" in posix:
+        return TARGETS["serial"]
+    if "/drivers/storage/class/ramdisk" in posix:
+        return TARGETS["ramdisk"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:
