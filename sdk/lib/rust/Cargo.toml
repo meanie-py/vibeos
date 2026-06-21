@@ -98,6 +98,7 @@ members = [
     "storahci-rust",
     "serial-rust",
     "ramdisk-rust",
+    "fltmgr-rust",
     "i8042prt-rust",
     "handle",
     "interlck",
