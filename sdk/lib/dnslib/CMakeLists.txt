@@ -2,27 +2,25 @@
 include_directories(inc)
 add_definitions(-DUNICODE -D_UNICODE)
 
-# 8 of the 17 dnslib TUs (addr/dnsaddr/flatbuf/hostent/memory/sablob/straddr/
-# string) → Rust (sdk/lib/rust/dnslib-rust, kept on disk per the never-delete
-# rule). libdnslib_rust.a provides those symbols; the other 9 .c stay C. 3 arches.
+# NOTE: dnslib is NOT currently built — add_subdirectory(dnslib) is commented
+# out in sdk/lib/CMakeLists.txt ("Nothing links to this lib."). This file is
+# dormant; the cohab below is ready for if/when a consumer re-enables it.
+#
+# dnslib is effectively 100% Rust. The 8 FUNCTIONAL TUs (addr/dnsaddr/flatbuf/
+# hostent/memory/sablob/straddr/string) → Rust (sdk/lib/rust/dnslib-rust);
+# libdnslib_rust.a (linked below) provides their symbols. The other 9 .c
+# (debug/dnsutil/ip6/name/print/record/rrprint/table/utf8) are EMPTY ReactOS
+# placeholder stubs (header comment + #include precomp.h, 0 functions/symbols) —
+# not real C debt — so they are dropped from the build too. ALL 17 .c kept on
+# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
+# (add_library needs ≥1 source); it defines no symbols. See its header for why.
+# 3 arches.
 list(APPEND SOURCE
-    # addr.c     — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    debug.c
-    # dnsaddr.c  — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    dnsutil.c
-    # flatbuf.c  — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    # hostent.c  — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    ip6.c
-    # memory.c   — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    name.c
-    print.c
-    record.c
-    rrprint.c
-    # sablob.c   — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    # straddr.c  — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    # string.c   — replaced by Rust implementation (sdk/lib/rust/dnslib-rust/)
-    table.c
-    utf8.c)
+    # The 8 functional .c → Rust (sdk/lib/rust/dnslib-rust/):
+    #   addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
+    # The 9 empty placeholder .c (0 symbols), dropped:
+    #   debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
+    dnslib_rust_stub.c)
 
 set(DNSLIB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(DNSLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnslib-target")

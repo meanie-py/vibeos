@@ -51,17 +51,26 @@ winsrv.dll (consrv + usersrv + concfg): 46 / 29K Rust; remaining C is shim/stub 
 
 ## Remaining C translation backlog (the real work)
 
-### Filesystems — ~110K LOC, 5 drivers, no Rust crate yet
-| FS | C/C++ LOC | |
-|---|---|---|
-| udfs | 52K | UDF (C++) |
-| vfatfs | 28K | VFAT/FAT-LFN |
-| nfs | 16K | NFS 4.1 client |
-| npfs | 12K | named pipes |
-| msfs | 2K | mailslots |
+### Filesystems — residual C backlog RESOLVED (2026-06-20, filesystems lane)
 
-Done: **cdfs** (35/130K, near-100% — a couple cohab shims), **fastfat** (40/225K), **fs_rec**
-(19/10K), **mup** (6/5K). Note: btrfs/ext2/ntfs were **deleted** from the tree (`14a0563b291`).
+The 2 NT-native IPC pseudo-filesystems are translated; the 3 imported/niche/non-target
+drivers are dropped from translation scope (rationale below — no smoltcp-shaped lib win exists
+for FS: the on-disk-format fraction a Rust crate could supply is the minority; the NT-IFS glue
+dominates, and the one mature `no_std` crate (FAT, `rust-fatfs`) is already covered by our own
+`fastfat-rust`).
+
+| FS | C/C++ LOC | Disposition |
+|---|---|---|
+| **msfs** | 2K | ✅ **DONE** — `msfs-rust` cohab, link-clean ×3 (`a4e1e1ff8e1`). Mailslot IPC. |
+| **npfs** | 12K | ✅ **DONE** — `npfs-rust` cohab (20 modules + substrate), link-clean ×3 (`84e2b9adbc6`). Named-pipe IPC. |
+| nfs | 16K | ⏭️ **DROPPED from kernel scope** — imported 3rd-party (UMich `ms-nfs41-client`, same category as the deleted btrfs/ext2/ntfs). To return as a **userland** NFS client/service later. No mature `no_std` kernel NFS crate exists. |
+| udfs | 52K | ⏭️ **DROPPED** — UDF (DVD/Blu-ray optical), C++, niche, non-boot. The optical complement to cdfs; nothing in the smoke path reads a UDF disc. |
+| vfatfs | 15K | ⏭️ **DROPPED** — in THIS tree fs_rec routes normal FAT → **fastfat** (already Rust) and **FATX → vfatfs**, so vfatfs is the **FATX (Xbox) driver only**. FATX isn't used by any of the 3 QEMU targets. ≠ fastfat (different codebase). Left as C; physical removal (txtsetup + fs_rec/fatx.c) is an optional follow-up. |
+
+Done (boot-critical / IPC): **cdfs** (35/130K, near-100%), **fastfat** (40/225K), **fs_rec**
+(19/10K), **mup** (6/5K), **msfs** (full), **npfs** (full). Note: btrfs/ext2/ntfs were
+**deleted** from the tree (`14a0563b291`). With msfs+npfs done and nfs/udfs/vfatfs scoped out,
+the residual-C **filesystem** backlog is closed.
 
 ### Non-FS drivers — ~20K LOC, 9 C-only (all non-boot-critical)
 storport (3.3K) · storahci (2.6K, disabled) · serial (2.4K, no QEMU serial console) ·

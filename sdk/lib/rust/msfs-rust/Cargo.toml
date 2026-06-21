@@ -1,0 +1,26 @@
+# msfs-rust — Rust translation of the Mailslot filesystem driver
+# (drivers/filesystems/msfs, ~1.2K LOC: msfs.c create.c finfo.c fsctrl.c msfssup.c rw.c).
+# Mailslots are a one-way NT IPC pseudo-filesystem: \Device\MailSlot. A server opens a
+# mailslot (IRP_MJ_CREATE_MAILSLOT) and reads datagrams; clients open the mailslot by name
+# (IRP_MJ_CREATE) and write datagrams that queue on the server FCB. Reads with no message
+# pending park on an IO_CSQ cancel-safe queue with an optional KTIMER timeout.
+#
+# NOT boot-loaded (no 'x' in txtsetup.sif → not on the SetupLdr load path), so the bar is
+# link-clean ×3 + no smoke regression — same tier as mup-rust / pcix. WDM kernelmodedriver,
+# imports ntoskrnl + hal only. Hand-translated (not LLM): every const value harvested from
+# the SDK headers, every struct field path from the ntkrnl-sys bindgen substrate. The two
+# KeLockMutex/KeUnlockMutex header macros lower to KeWaitForSingleObject / KeReleaseMutex.
+#
+# crate-type = staticlib -> libmsfs_rust.a, cohab-linked into the cmake-built msfs.sys with
+# the six .c bodies commented out. Built for all 3 arches. Mirrors mup-rust / fs_rec-rust.
+
+[package]
+name = "msfs-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
