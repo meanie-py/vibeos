@@ -175,6 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
     rp_d.add_argument("dir_b")
     rp_d.add_argument("--artifacts", nargs="*", help="relative artifact paths (default: staged)")
     _add_diffoscope(rp_d)
+    rp_v = rpsub.add_parser("verify", help="rung 5: cold build-twice byte-identity gauge")
+    rp_v.add_argument("--arch", choices=ACCEPTED_ARCHES, required=True)
+    rp_v.add_argument("--artifacts", nargs="*", help="relative artifact paths (default: staged)")
+    _add_diffoscope(rp_v)
     rp.set_defaults(fn=repro_mod.repro)
 
     return p

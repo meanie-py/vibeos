@@ -40,7 +40,7 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 | 2. timestamp elimination | kills `__DATE__`/`__TIME__` + PE-header time variance | `SOURCE_DATE_EPOCH`; lld no-timestamp; deterministic `ar` |
 | 3. build-script / generator audit | the cargo-link + widl/windmc/gen tables are path/time/order-free | audit the ~48 `*-cargo/build.rs` + generators |
 | 4. build-id / debug-GUID determinism | identical debug directory | content-hash (not random) build-id |
-| 5. reproducibility smoke | identical bytes across machines/agents, wired as a gauge | two-path build → byte-identical assertion |
+| 5. reproducibility smoke ✅ (gauge built) | identical bytes across builds/agents, wired as a gauge | `vibeos-cli repro verify --arch X` (cold build-twice → byte-identical assertion); cross-worktree run pending |
 
 Rung 1 is the highest-leverage (it's the dedup unlock *and* most of the disk win). Rungs 2–4
 are cheap and mop up the residual; rung 5 is the payoff gauge.
@@ -94,6 +94,13 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
   same commit. `setdefault` lets a CI-pinned value win. No version.cmake source edit needed (the
   env var pins it). Unit-tested (commit-`%ct` derivation + non-git → None).
 - **Rung 3 (build.rs/generator audit) ✅ done**: clean — see the date/time audit section.
+- **Rung 5 ✅ gauge built** (2026-06-21): `vibeos-cli repro verify --arch X` cold-builds the
+  arch twice and asserts the artifact set is byte-identical (`repro.py:_cmd_verify`). It deletes
+  the cargo output exes between builds to force a genuine relink (defeats the §stale-cargo /
+  task-#41 trap where `--clean` leaves the copied exe newer than its `.rs` inputs → ninja skips →
+  false "identical"). Unit-tested at the parser/dispatch level; the actual cold build-twice RUN
+  (and the stronger cross-worktree `diff-dirs` proof that validates the rung-1 Rust remap end-to-
+  end) is **pending** until build slots are free (mainline just recovered; lanes are mid-gate).
 - **Pending ×3 cold gate** for the rung-1/2/2b build changes (can't ride a held gate; arm64
   boots rebuilt + restored but the slot is contended by other lanes as of 2026-06-20). Determinism
   *effect* (timestamps→0, date pinned) is verified separately with `vibeos-cli repro report` after

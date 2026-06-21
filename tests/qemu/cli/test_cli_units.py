@@ -629,6 +629,16 @@ def test_repro_compare_localizes_changed_section():
     assert rep.section_diffs == (".data",)
 
 
+def test_repro_verify_parser_wires_arch_and_dispatch():
+    # rung 5: `repro verify --arch i386` routes to repro_mod.repro with repro_cmd=verify
+    from .__main__ import build_parser
+
+    ns = build_parser().parse_args(["repro", "verify", "--arch", "i386"])
+    assert ns.repro_cmd == "verify"
+    assert ns.arch == "i386"
+    assert ns.fn is repro.repro
+
+
 # --- build: SOURCE_DATE_EPOCH commit-date derivation (det-plan rung 2b) -----
 
 

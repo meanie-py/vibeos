@@ -23,6 +23,8 @@ from __future__ import annotations
 import hashlib
 import shutil
 import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -254,8 +256,88 @@ def _cmd_diff_dirs(args) -> int:
     return 1 if any_diff else 0
 
 
+def _cli_build_clean(repo: Path, base_arch: str, label: str) -> bool:
+    """Run a cold `vibeos-cli build --arch <base> --clean` as a subprocess (reuses the exact
+    build path: target nuke, cargo relink, lints, stamp). Returns True on success."""
+    print(f"\n[repro verify] {label}: build --arch {base_arch} --clean ...")
+    cp = subprocess.run(
+        [sys.executable, "-m", "tests.qemu.cli", "build", "--arch", base_arch, "--clean"],
+        cwd=str(repo),
+    )
+    return cp.returncode == 0
+
+
+def _cmd_verify(args, repo: Path) -> int:
+    """Rung 5: build the arch cold TWICE and assert the artifacts are byte-identical.
+
+    The reproducibility gauge — if two cold builds of the same commit at the same path differ,
+    something nondeterministic leaked (the rungs 1/2 fixes are exactly what make this pass).
+    Between the builds we DELETE the artifacts: `vibeos-cli build --clean` nukes the rust
+    target dirs + `lib*_rust.a` but NOT the copied-out cargo module exes (deterministic-builds-
+    plan.md §stale-cargo / task #41), so without removing them ninja would see the stale copy
+    as current and skip the relink — a false "identical". Removing them forces a genuine relink.
+
+    NOTE: cross-WORKTREE byte-identity (the dedup payoff, which the rung-1 Rust remap enables)
+    is the stronger claim — run this in two worktrees on the same commit and `diff-dirs` their
+    build trees. This same-path build-twice proves the timestamp/date/path determinism holds."""
+    from . import archcfg
+
+    base = archcfg.base_arch(args.arch)
+    build_dir = repo / f"build-{base}"
+    artifacts = args.artifacts or list(DEFAULT_ARTIFACTS)
+
+    if not _cli_build_clean(repo, base, "build #1 (cold)"):
+        print("[repro verify] build #1 FAILED")
+        return 1
+
+    snap = Path(tempfile.mkdtemp(prefix="repro-verify-"))
+    snapped: list[tuple[str, Path]] = []
+    for rel in artifacts:
+        src = build_dir / rel
+        if src.is_file():
+            dst = snap / rel.replace("/", "__")
+            shutil.copy2(src, dst)
+            snapped.append((rel, dst))
+    if not snapped:
+        print(f"[repro verify] no artifacts found under {build_dir} after build #1")
+        shutil.rmtree(snap, ignore_errors=True)
+        return 1
+
+    # Force a genuine relink (defeat the §41 stale-output trap) by removing the copies.
+    for rel, _ in snapped:
+        (build_dir / rel).unlink(missing_ok=True)
+
+    if not _cli_build_clean(repo, base, "build #2 (cold, forced relink)"):
+        print("[repro verify] build #2 FAILED")
+        shutil.rmtree(snap, ignore_errors=True)
+        return 1
+
+    print(f"\n[repro verify] byte-identity {base}: build #1 vs build #2")
+    any_diff = False
+    for rel, snap_path in snapped:
+        b = build_dir / rel
+        if not b.is_file():
+            print(f"  ! {rel}: missing after build #2")
+            any_diff = True
+            continue
+        rep = compare(snap_path.read_bytes(), b.read_bytes())
+        _print_compare(rel, rep)
+        if not rep.identical:
+            any_diff = True
+            if getattr(args, "diffoscope", False):
+                _run_diffoscope(snap_path, b)
+    shutil.rmtree(snap, ignore_errors=True)
+    print()
+    print(
+        "  → NOT reproducible (cold build-twice differs)"
+        if any_diff
+        else "  → cold build-twice BYTE-IDENTICAL ✓"
+    )
+    return 1 if any_diff else 0
+
+
 def repro(args, repo: Path) -> int:
-    """Dispatch the `repro` subverb. repo is unused (artifacts are addressed by path)."""
+    """Dispatch the `repro` subverb."""
     cmd = getattr(args, "repro_cmd", None)
     if cmd == "compare":
         return _cmd_compare(args)
@@ -263,5 +345,7 @@ def repro(args, repo: Path) -> int:
         return _cmd_report(args)
     if cmd == "diff-dirs":
         return _cmd_diff_dirs(args)
-    print("repro: specify a subcommand (compare | report | diff-dirs)")
+    if cmd == "verify":
+        return _cmd_verify(args, repo)
+    print("repro: specify a subcommand (compare | report | diff-dirs | verify)")
     return 2
