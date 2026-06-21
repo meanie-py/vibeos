@@ -9,6 +9,15 @@ missing.
 **Last updated:** 2026-06-21. Built from a fan-out research pass over the
 ReactOS-native client DLLs (LOC/native-vs-Wine/problem-points per target).
 
+**The 3-part userland map** (read together):
+1. **this doc** — the 10 highest-value native client DLLs, deep-scoped + ranked.
+2. `userland-translation-audit-part2.md` — the rest of the native residue
+   (124 modules / ~295K LOC; only lsasrv/samsrv/msgina are High).
+3. `userland-wine-libs-audit.md` — the Wine-imported tier (186 / ~1.23M LOC;
+   mostly skip — not ReactOS code).
+Together they account for the full `.spec` exported-DLL surface (~467): ~10 done
++ 185 Wine + 88 keyboard/NLS data + 6 vendored 3rd-party + 10 (here) + 124 (part 2).
+
 **Why this doc exists:** agents kept re-flagging finished or low-value work as
 "remaining userland C" (dnslib's empty stubs, basesrv/csrsrv already-done). This
 records the real frontier so we stop re-deriving it, and ranks the
