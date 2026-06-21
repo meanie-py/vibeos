@@ -903,6 +903,24 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
 
+        #[cfg(target_arch = "aarch64")]
+        {
+            // Kernel-mode unhandled exception. If this is an EC=0/IL=1 illegal-
+            // exec-state fault that kept us at EL1, it surfaces here (not [UEXC]).
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] Code=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionCode as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(b"[KEXC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] Spsr=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Spsr as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[KEXC] ESR=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Esr as ULONG_PTR,
+            );
+        }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
             (*ExceptionRecord).ExceptionCode as ULONG_PTR,
@@ -923,6 +941,14 @@ pub unsafe extern "system" fn KiDispatchException(
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] ESR=\0".as_ptr() as PCSTR,
                 (*TrapFrame).Esr as ULONG_PTR,
+            );
+            // Spsr carries PSTATE at the fault: M[3:0] (0x0=EL0t, 0x5=EL1h) +
+            // IL bit (0x00100000). For an EC=0/IL=1 illegal-exec-state fault this
+            // tells us whether the bad eret landed us in EL0 (M=0, IL set) or kept
+            // us at EL1 (M=0x5). ESR>>26 == EC disambiguates IL-fault vs real AV.
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] Spsr=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Spsr as ULONG_PTR,
             );
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] ExAddr=\0".as_ptr() as PCSTR,
