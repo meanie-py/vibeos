@@ -44,9 +44,11 @@ cmake-configure-free.** After `46b48272a0f` (LEAF) + `f1e182c0f1d` (printf/scanf
   `except/amd64/ehandler.c`, the printf engine `_sxprintf.c` + `_vscwprintf.c` (guarded
   headerless, see below), `scanf_trampoline.c` (toolchain headers only). All verified
   symbol+disasm-identical (i386+amd64) and i386/amd64 smoke green.
-- **Remaining `c_from_compile_db` users:** `rosload`/`uefildr` (`blrtl_c` = the DEEP
-  loader engines, deferred) + `winsrv`'s `usersrv_rust_strsafe_shim.c`. Everything else
-  is converted.
+- **winsrv-cargo**: the usersrv strsafe shim (already headerless) moved to `c_shims`
+  (`55842b1d4d9`) → winsrv free of `compile_commands.json` too.
+- **Only remaining `c_from_compile_db` users:** `rosload`/`uefildr` (`blrtl_c` = the DEEP
+  loader engines — `bitmap.c`/`compress.c`/`image.c`/`unicode.c`, boot-only, deferred per
+  Phase 4). The entire **non-DEEP** WS1 C-floor surface is converted.
 
 **Shared-file guard pattern (printf):** `_sxprintf.c`/`_vscwprintf.c` are `#include`d by
 BOTH the cargo cells (non-secapi shells) and cmake's `crt.dll` (secapi `_s` shells), so
