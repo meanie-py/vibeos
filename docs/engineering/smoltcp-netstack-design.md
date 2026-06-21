@@ -15,7 +15,9 @@ drivers → it now explicitly loads the netstack service; (3) **the killer — a
 `KUSER_SHARED_DATA.InterruptTime` never advances** (no periodic clock interrupt → no
 `KeUpdateSystemTime`), so netstack's `now()` froze smoltcp's clock and every retransmit /
 new-neighbour-ARP timer stalled; fixed by reading `cntvct_el0` (`KeQueryPerformanceCounter`)
-instead (`72e062966f3`). Open (narrow, not the data path): inbound tcp-echo server +
+instead (`72e062966f3`). Open (narrow, not the data path): inbound tcp-echo server (#91 —
+root-caused 2026-06-20 to the arm64 **no-preemption** gap: the poll worker stops polling RX at
+idle, so it's resolved by arm64-love's periodic-timer quest, not a netstack bug) +
 `nettest.exe` not staged for the arm64 usermode-winsock test. See the M7 Remaining-open entry.
 The earlier "usermode-winsock blocker root-caused to a *storage* driver" was superseded — the
 true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
@@ -239,7 +241,7 @@ All milestones landed (commits on `netstack-port`):
 | M4 | TDI dispatch (Rust) + completion bridge; **TCP via AFD/ws2_32** | TDI TCP round-trip via the real AFD path | ✅ `45ce3ffdb8e` (kernel TDI self-test; usermode winsock blocked on the storage 0x50) |
 | M5 | UDP via AFD; usermode dhcp/dns services over smoltcp | UDP datagram round-trip via the AFD datagram-event model | ✅ `b9127eb3e7c` (transport done; usermode-winsock vehicle built `349043e91b9`, blocked on the storage 0x50) |
 | M6 | `netstack.sys` cargo cutover; old `tcpip` ip/lwip removed from build | net green; boot smoke green ×3 arches | ✅ `0ad0e4e59dd` (+ crp merge `810d513d3c8`) |
-| M7 | arm64 net data path: ECAM PCI config + Start=1 load fix + cntvct clock fix + `arm64-net` config | netstack loads + NIC enum + ARP/DHCP/ICMP/DNS/TCP/TDI green on arm64 | 🟢 **DATA PATH GREEN** — `test_net.py --arch arm64-net` 9/11 (`a210ee02856`+`ab442a59122`+`72e062966f3`); regular arm64 boot 3/3. Open: inbound tcp-echo + usermode-winsock staging |
+| M7 | arm64 net data path: ECAM PCI config + Start=1 load fix + cntvct clock fix + `arm64-net` config | netstack loads + NIC enum + ARP/DHCP/ICMP/DNS/TCP/TDI green on arm64 | 🟢 **DATA PATH GREEN** — `test_net.py --arch arm64-net` 9/11 (`a210ee02856`+`ab442a59122`+`72e062966f3`); regular arm64 boot 3/3. Open: inbound tcp-echo (#91 — root-caused to arm64 no-preemption, fixed by arm64-love's timer quest) + usermode-winsock staging |
 
 The kernel TDI self-tests (`tditest.rs` TCP, `tdidgtest.rs` UDP) drive netstack's own
 `\Device\Tcp`/`\Device\Udp` through the *exact* IRP path AFD uses, so M4/M5 are proven at
@@ -303,9 +305,26 @@ Remaining open:
     perturbation from netstack's TDI self-tests 10s-timing-out because the dead clock froze their
     wait timers. With `now()` fixed the timers work, the self-tests finish fast, and the regular
     arm64 smoke reaches the desktop **3/3** (was flaky).
-  - **OPEN (M7 follow-ups beyond the kernel data path):** (a) `test_tcp_echo_roundtrip` — host→guest
-    *inbound* echo server times out on arm64 (the guest announces `tcp echo ready` and outbound
-    works, but inbound accept doesn't complete); server-side path. (b) `test_usermode_winsock_roundtrip`
+  - **ROOT-CAUSED (2026-06-20) — `test_tcp_echo_roundtrip` (#91) is downstream of the arm64
+    no-preemption gap, NOT an independent netstack bug.** The host→guest *inbound* echo times out
+    because the poll worker **stops polling the RX queue once the system goes idle**. Mechanism,
+    proven by instrumentation (loop heartbeat + virtio-RX inbound-SYN sniffer, one arm64-net boot):
+    the echo socket reaches `Listen` and never advances; the inbound SYN is **never pulled off the
+    virtio RX virtqueue** (sniffer fired 0×) and the loop **stops iterating at idle** (heartbeat
+    fired 0×). Why: on arm64 `KeDelayExecutionThread` is hard-coded to `NtYieldExecution()`
+    (`ke/wait.rs:401`) — it doesn't wait, it yields — and with no periodic clock interrupt there is
+    **no preemption**, so at idle the yield hands the CPU to the idle thread and the netstack worker
+    is never re-scheduled (during boot it resumes only because boot I/O constantly re-enters the
+    dispatcher; at idle desktop nothing does). netstack's virtio is **poll-mode** (no RX IRQ), so
+    packet arrival generates no CPU event either. Reply-driven paths (DHCP/ICMP/DNS/outbound-TCP/TDI)
+    all completed during the busy boot window, which is why only the *unsolicited* inbound SYN fails.
+    **→ arm64-love's periodic-timer work (the [[arm64-clock-handoff]] quest) gives the worker a
+    quantum re-schedule and resolves #91 for free; re-test inbound after it lands.** The only
+    self-contained alternative is an IRQ-driven-RX refactor (wire the NIC's GIC interrupt → DPC →
+    event-driven worker via `KeWaitForSingleObject`, which wakes from a DPC-set event without the
+    periodic clock) — substantial, and it overlaps arm64-love's interrupt-routing domain. A naive
+    busy-poll is NOT viable: the worker runs from DriverEntry (before the desktop), so never yielding
+    would starve boot itself. **(b)** `test_usermode_winsock_roundtrip`
     — the whole usermode winsock stack is absent from the arm64 ramdisk: `afd.sys`, `msafd.dll`,
     `mswsock.dll` and `nettest.exe` are all unstaged (only `ws2_32.dll`/`ws2help.dll` are present),
     and `afd.sys` (Start=1) would need the same explicit arm64-load as netstack. So the full
