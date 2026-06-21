@@ -76,8 +76,9 @@ Seam: a QEMU *backend* in `tests/qemu/vm.py` parameterizing the differences:
 
 The bulk of the work is the **transport abstraction** (Unix-socket → TCP) in
 `serial_client.py`/`qmp_client.py`; path-staging, accel flags, and process control are
-straightforward. Select via `VIBEOS_QEMU_BACKEND=windows` / `--host-qemu`. arm64 stays
-TCG-native (no accel either way).
+straightforward. Select via `VIBEOS_QEMU_BACKEND=windows` / `--host-qemu`. arm64 runs the
+*same* windows-host backend (TCG either way) — it escapes WSL2's whole-host build↔boot
+contention even though it never had KVM to lose (see the arm64 follow-up below).
 
 ## ⚡ Timing results (2026-06-21) — TCG-on-Windows-host WINS; WHPX not needed
 
@@ -155,6 +156,33 @@ saturation point, but 2×-flat already covers typical agent load.
   `vm._start_echo_server` + `QemuVM.net_host`, wired in `_build_windows_cmd`. The cli `_net_stage`
   inherits it automatically now that `conftest.py` is backend-aware. So a WSL2-no-KVM user on the
   windows-host backend gets the **full** smoke: boot North Star *and* the folded netstack suite.
+- ✅ **arm64 over windows-host — DONE 2026-06-21** (`tests/qemu/vm.py` `_build_windows_cmd`). The
+  backend previously hard-rejected arm64 (`raise RuntimeError("windows-host backend supports x86
+  only")`); arm64 emulates via TCG either way, but routing it through the windows-host backend
+  escapes WSL2's whole-host build↔boot contention (a 32-core `ninja` starving a concurrent
+  in-WSL TCG boot's timing) — the same structural win, minus the never-had KVM. Three
+  arm64-specific adaptations, all backend-gated (native + x86 paths byte-for-byte unchanged):
+  - **Keep arm64's machine args verbatim — do NOT call `rewrite_accel`.** That helper is an x86
+    concept (swap `-accel kvm`→tcg/whpx and drop the KVM-only `-cpu host`); on arm64 it would
+    DROP the required `-cpu cortex-a72` *model* and flatten `-accel tcg,thread=multi`→`tcg`.
+    arm64 already specifies exactly what the Windows QEMU wants, so it passes through untouched.
+  - **Skip `-debugcon`** (bochs ISA port 0xE9) — absent on the arm64 `virt` machine; mirrors the
+    native path's existing arm64 skip.
+  - **Media staging is already generic** — arm64's pflash (`QEMU_EFI.fd` + writable `efivars.qcow2`)
+    and the virtio `-drive ...,file.locking=off` boot.img all carry `file=/abs` tokens that
+    `stage_media_paths` rewrites to `C:/...`; the `qemu-system-aarch64.exe` resolves via
+    `windows_qemu_bin` with no special-casing.
+  Validated end-to-end: `qemu-system-aarch64.exe` launched on the Windows host, serial captured
+  over TCP, the staged Jun-20 boot.img booted UEFI → freeldr (`Switching stack...`) → kernel
+  (`KiSystemStartup entered`) → full MM init (`MmArmInitSystem returning TRUE`) before hitting a
+  BUGCHECK 0x1E. **That 0x1E is an OS/stale-media issue, not a backend one** — this worktree has
+  no `build-arm64`, so the boot.img predates current mainline's arm64 IRP/IO_STACK_LOCATION ABI
+  (the fastfat merge + filesystems leaf cluster); a `ninja -C build-arm64` + `mkramdisk --refresh`
+  is the prerequisite for a clean desktop boot (arm64 is flake-tolerant per the gate policy). The
+  reaching-deep-into-kernel-MM-init proves the plumbing (launch + args + TCP serial + staging) is
+  sound. Unit coverage: `test_backend_stage_media_paths_arm64_drives` (pflash/virtio + the
+  `file.locking=off` regex edge) + `test_backend_rewrite_accel_would_break_arm64` (documents WHY
+  rewrite_accel is skipped) in `test_cli_units.py`.
 - **Spike outcome (original): build a `windows-host` TCG backend for WSL2.** Proven feasible *and*
   measured to fix the contention (+8% under 2× concurrency) while being ~3× faster than nested-KVM.
   WHPX is NOT on the critical path — skip the reboot.
