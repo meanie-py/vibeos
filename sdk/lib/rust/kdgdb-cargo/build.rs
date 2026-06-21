@@ -42,17 +42,17 @@ fn main() {
         // (streamout) is already Rust in cnt-rust-lib; only the thin variadic
         // `va_start; streamout(...)` shells (sprintf.c/_snprintf.c, each #include
         // _sxprintf.c) + the scanf va_arg helper stay C — Rust can't DEFINE
-        // variadics on stable. Compile those genuine C shells in-cargo via
-        // c_from_compile_db (the ntdll-cargo pattern — replays cmake's libcntpr
-        // flags so _sxprintf.c's <stdio.h>/<tchar.h> resolve).
-        .c_from_compile_db(
-            "libcntpr",
-            &[
-                "sdk/lib/crt/printf/sprintf.c",
-                "sdk/lib/crt/printf/_snprintf.c",
-                "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
-            ],
-        )
+        // variadics on stable. WS1 cmake-off (2026-06-21): compile them as
+        // self-contained headerless c_shims (the shared _sxprintf.c engine behind
+        // -DCRT_PRINTF_HEADERLESS; scanf uses stdarg/stddef only) instead of a
+        // compile_commands.json replay. Verified disasm-identical (WS1 harness) —
+        // kdgdb now links free of cmake's compile_commands.json.
+        .c_shims(&[
+            "sdk/lib/crt/printf/sprintf.c",
+            "sdk/lib/crt/printf/_snprintf.c",
+            "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
+        ])
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

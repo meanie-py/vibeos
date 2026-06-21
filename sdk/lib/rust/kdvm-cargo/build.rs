@@ -28,8 +28,11 @@ fn main() {
         // ZERO cmake .a: liblibcntpr.a DROPPED. The ONLY symbol kdvm pulled from
         // it is `cnt_va_next_ptr` (cnt-rust-lib's scanf-engine va_arg helper from
         // cnt-rust's own cabi/scanf_trampoline.c — Rust can't DEFINE variadics on
-        // stable). Compiled in-cargo via c_from_compile_db (ntdll-cargo pattern).
-        .c_from_compile_db("libcntpr", &["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
+        // stable). WS1 cmake-off (2026-06-21): it uses only <stdarg.h>/<stddef.h>
+        // (toolchain headers, no cmake), so it's a plain self-contained c_shim now
+        // — no compile_commands.json replay. kdvm now links free of cmake's
+        // compile_commands.json.
+        .c_shims(&["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

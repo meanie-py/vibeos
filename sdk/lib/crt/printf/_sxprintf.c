@@ -6,12 +6,55 @@
  * PROGRAMMER:      Timo Kreuzer
  */
 
+#ifdef CRT_PRINTF_HEADERLESS
+/*
+ * SELF-CONTAINED / HEADERLESS (cmake-off WS1, 2026-06-21): when the consumer
+ * compiles this engine via reactos-link's `.c_shims()` (cc-rs direct, NOT a
+ * cmake compile_commands.json replay), it passes -DCRT_PRINTF_HEADERLESS and we
+ * hand-define the handful of types/macros stdio.h/stdarg.h/limits.h/tchar.h
+ * provided, layout-faithful to sdk/include/crt stdio.h + tchar.h. Only the
+ * non-secapi path runs here (IS_SECAPI is undefined, so 0, for the sprintf /
+ * swprintf / vsprintf / snprintf / vsnprintf shells the cargo cells use), so the
+ * safecrt.h surface (errno/MSVCRT_*) is dead and intentionally not provided.
+ * Each shell is verified disassembly-identical vs the header build (WS1 harness:
+ * cmake command with vs without -DCRT_PRINTF_HEADERLESS). The normal cmake
+ * crt.dll build (and the secapi _s shells) take the #else branch unchanged,
+ * so the conversion has zero blast radius.
+ */
+typedef __SIZE_TYPE__     size_t;
+typedef __builtin_va_list va_list;
+#define va_start(ap, p) __builtin_va_start(ap, p)
+#define va_end(ap)      __builtin_va_end(ap)
+#define NULL    ((void *)0)
+#define INT_MAX 0x7fffffff
+#define _IOWRT  0x0002          /* sdk/include/crt/stdio.h */
+#define _IOSTRG 0x0040
+typedef struct _iobuf            /* sdk/include/crt/stdio.h FILE, layout-faithful */
+{
+    char *_ptr;
+    int   _cnt;
+    char *_base;
+    int   _flag;
+    int   _file;
+    int   _charbuf;
+    int   _bufsiz;
+    char *_tmpfname;
+} FILE;
+#ifdef _UNICODE
+typedef __WCHAR_TYPE__ _TCHAR;   /* unsigned short on Windows targets */
+#define _T(x) L ## x
+#else
+typedef char _TCHAR;
+#define _T(x) x
+#endif
+#else
 #include <stdio.h>
 #include <stdarg.h>
 #include <limits.h>
 #include <tchar.h>
 #if IS_SECAPI
 #include <internal/safecrt.h>
+#endif
 #endif
 
 #ifdef _UNICODE

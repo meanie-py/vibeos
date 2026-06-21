@@ -30,10 +30,12 @@ fn main() {
         // pulled from it is `cnt_va_next_ptr` — cnt-rust-lib's scanf engine's
         // irreducible va_arg helper, which lives in cnt-rust's own
         // `cabi/scanf_trampoline.c` (Rust can't DEFINE variadics on stable). We
-        // compile that one C shell in-cargo via c_from_compile_db (the ntdll-cargo
-        // pattern), replaying cmake's libcntpr flags. No printf wrappers needed —
-        // this transport doesn't sprintf.
-        .c_from_compile_db("libcntpr", &["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
+        // compile that one C shell in-cargo. WS1 cmake-off (2026-06-21): it uses
+        // only <stdarg.h>/<stddef.h> (toolchain headers, no cmake), so it's a plain
+        // self-contained c_shim now — no compile_commands.json replay. No printf
+        // wrappers needed — this transport doesn't sprintf. kdcom-serial now links
+        // free of cmake's compile_commands.json.
+        .c_shims(&["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {
