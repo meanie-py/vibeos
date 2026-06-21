@@ -243,6 +243,12 @@ impl TdiAddressInfo {
     }
 }
 
+// Lock the on-wire TA layouts at compile time (all 3 arches) — these are read
+// byte-for-byte by msafd/AFD, so a layout drift would silently corrupt addresses.
+const _: () = assert!(core::mem::size_of::<TaIpFull>() == 22);
+const _: () = assert!(core::mem::size_of::<TdiAddressInfo>() == 26);
+const _: () = assert!(core::mem::size_of::<TDI_ADDRESS_IP>() == 14);
+
 /// Parse the first IPv4 endpoint out of a raw TRANSPORT_ADDRESS / TA_IP_ADDRESS
 /// (count + TA_ADDRESS + TDI_ADDRESS_IP). Returns (octets, port).
 pub unsafe fn parse_ta(ta: *const u8) -> Option<([u8; 4], u16)> {

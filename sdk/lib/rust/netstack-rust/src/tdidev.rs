@@ -486,6 +486,13 @@ struct IpRouteEntry {
     ire_info: u32,
 }
 
+// Lock the MIB struct layouts at compile time (all 3 arches) — iphlpapi reads
+// these by exact field offset, so a layout drift would mangle ipconfig output.
+const _: () = assert!(core::mem::size_of::<IfEntryFixed>() == 92);
+const _: () = assert!(core::mem::size_of::<IpSnmpInfo>() == 92);
+const _: () = assert!(core::mem::size_of::<IpAddrEntry>() == 24);
+const _: () = assert!(core::mem::size_of::<IpRouteEntry>() == 52);
+
 /// IFEntry — the adapter's interface MIB (ifenum reads index/type/mtu/physaddr/descr).
 unsafe fn mib_if_entry(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
     let mac = crate::netcfg::mac();
