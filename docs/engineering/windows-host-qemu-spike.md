@@ -137,16 +137,24 @@ saturation point, but 2×-flat already covers typical agent load.
     into smoke, `test_snapshot_apps`, a direct `test_smoke` run) honors `qemu.backend`. Before, the
     net stage spawned a plain pytest that always launched native KVM — a WSL2-no-KVM user on the
     windows-host backend got a working boot stage but a net stage that failed on KVM.
-- ⏳ **Remaining follow-up — net-over-windows-host transport:** the boot/QMP/serial transports
-  are validated, but the net suite's slirp `hostfwd` (for the in-guest TCP echo / outbound-client
-  tests) is NOT yet adapted to windows-host. The WSL↔Windows directionality is the mirror image of
-  the inbound rule: WSL→Windows on `127.0.0.1` is **refused** (WSL's loopback is its own VM's), but
-  the **WSL default-gateway IP** (`ip route show default`, e.g. `172.26.176.1`) IS reachable
-  (verified: a Windows-side `0.0.0.0` listener answers from WSL via the gateway IP). So net-over-
-  windows-host needs (1) `hostfwd=tcp:0.0.0.0:PORT-:GUESTPORT` (bind the wildcard Windows-side, not
-  `127.0.0.1`) and (2) the test client to dial the gateway IP, not `127.0.0.1`. Scoped, not done.
-  Until then a windows-host user gets boot smoke (the North Star) but the folded net stage needs
-  native KVM or the gateway-IP adaptation.
+- ✅ **net suite over windows-host — DONE 2026-06-21** (`tests/qemu/test_net.py` **11/11** under
+  the windows-host backend, ~118s). Two boundary adaptations, mirror images of each other, both
+  backend-gated (native path byte-for-byte unchanged):
+  - **Inbound (hostfwd, host dials the guest)** — `hostfwd=tcp:127.0.0.1:PORT` → `tcp:0.0.0.0:PORT`
+    (a 127.0.0.1 hostfwd binds only the Windows loopback, invisible from WSL), and the test client
+    dials `QemuVM.net_host` = the **WSL default-gateway IP** (`ip route show default`, e.g.
+    `172.26.176.1`), not `127.0.0.1`. WSL→Windows on `127.0.0.1` is *refused* (WSL's loopback is its
+    own VM's); the gateway IP reaches a Windows-side `0.0.0.0` listener. Mirror of the inbound
+    `0.0.0.0` rule for serial/QMP.
+  - **Outbound (guestfwd, guest dials an echo)** — the slirp `guestfwd=...-cmd:cat` runs a *Unix*
+    program on the QEMU host, which under windows-host is Windows (no `cat`). Redirected to
+    `-chardev:gf0` backed by a tiny harness-run TCP echo server (bound `0.0.0.0`; the Windows QEMU
+    chardev dials it back over WSL2 localhost forwarding). Drives `outbound_tcp_client`,
+    `tdi_selftest_roundtrip`, and the usermode `winsock_roundtrip` echo.
+  Implementation: `backend.rewrite_netdev_for_windows` + `backend.gateway_ip` +
+  `vm._start_echo_server` + `QemuVM.net_host`, wired in `_build_windows_cmd`. The cli `_net_stage`
+  inherits it automatically now that `conftest.py` is backend-aware. So a WSL2-no-KVM user on the
+  windows-host backend gets the **full** smoke: boot North Star *and* the folded netstack suite.
 - **Spike outcome (original): build a `windows-host` TCG backend for WSL2.** Proven feasible *and*
   measured to fix the contention (+8% under 2× concurrency) while being ~3× faster than nested-KVM.
   WHPX is NOT on the critical path — skip the reboot.
