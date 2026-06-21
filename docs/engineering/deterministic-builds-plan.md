@@ -78,6 +78,32 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
     **aarch64-pc-windows-gnullvm**. Injection is the single `add_cargo_module` cargo cmd shared by
     all three kernel stems → all 40 cargo modules ×3 get it. The clobber risk was i386-only (the
     SSE guard); amd64/arm64 carry less and still verified.
+  - **cc-rs c_shims path remap ✅ FIXED 2026-06-21** (the one compile path that missed the remap).
+    An empirical `strings` audit of a built `ntoskrnl.exe` (i386) found a residual **worktree**
+    abs-path leak: `…/<worktree>/ntoskrnl/mm_lock_outlines.c`. Root cause: `reactos-link` compiles
+    the kernel C shims/asm/stubs via **cc-rs with the absolute `repo_root.join(rel)` source path**
+    and carried **no `-ffile-prefix-map`** — so clang embedded the real path into `__FILE__`/assert
+    strings. cmake's own C TUs already remap (compile_commands carries `-ffile-prefix-map=<wt>=` +
+    `../=`) and the rustc objects via `--remap-path-prefix=<root>=/vibeos`; the cc-rs compiles were
+    the gap. **Fix:** `RosLink::apply_prefix_map()` maps the worktree root → the same `/vibeos`
+    token, wired into all four cc-rs sites (c_shims, asm, stubs, asm_archives). **Verified by
+    rebuild:** worktree-path leaks in ntoskrnl.exe **1 → 0**; `mm_lock_outlines.c` now embeds
+    `\vibeos\ntoskrnl\mm_lock_outlines.c` (constant token, no worktree path).
+  - **Empirical cross-worktree path audit of the rebuilt ntoskrnl.exe (i386, 2026-06-21):**
+    **0** worktree-specific paths (`vibeos-wt-buildcache` / `/build-i386/`) — source + build-dir
+    fully remapped. The remaining embedded abs paths are **home-relative toolchain paths, identical
+    in every worktree on this machine** so they do NOT break same-machine dedup: **260** ×
+    `/home/curi/.rustup/toolchains/…` (build-std core/alloc sources) + **~1829** llvm-mingw. **Net:
+    cross-worktree byte-identity on this machine is now essentially achieved** for the source/build
+    paths the remap targets.
+  - **2 residual `…/os-playground/vibeos/{arbiter,lsa}.c` (MAIN-path) strings — likely a
+    ccache/sccache cache-coherence artifact, NOT a build-rule gap.** This worktree's
+    compile_commands.json is fully worktree-correct (0 main refs) and the rebuilt `liblsalib.a` /
+    `libarbiter.a` carry 0 main refs — so these two strings come from neither. The build-cache lane
+    runs ccache; the most likely source is a cache-HIT object compiled earlier in *main* (whose
+    embedded `__FILE__` predates/bypasses the remap). If every worktree hits the same main-cached
+    object the string is *constant* (harmless to dedup); a cache-off cold build would confirm/clear
+    it. → flagged for the cold build-twice gate (which runs cache-off).
   - **Remaining:** the full cross-worktree *kernel* build-twice byte-identity on
     ntoskrnl/win32k/kernel32 (`repro verify` / `diff-dirs`) — deferred until build slots free.
 - **Rung 1 (C) ✅ already correct in source** — no change needed. `CMakeLists.txt:97` maps
