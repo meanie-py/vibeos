@@ -654,7 +654,7 @@ def test_source_date_epoch_none_outside_git(tmp_path: Path):
 
 def test_config_defaults_when_no_overrides(tmp_path: Path):
     cfg = config_mod.load(tmp_path, environ={})
-    assert cfg.get("qemu.backend") == "native"
+    assert cfg.get("qemu.backend") == "windows-host"
     assert cfg.get("qemu.windows.accel") == "tcg"
     assert cfg.get("nonexistent.key", "fallback") == "fallback"
 
@@ -681,7 +681,7 @@ def test_config_env_beats_local_and_defaults(tmp_path: Path):
 def test_config_malformed_local_file_falls_back_to_defaults(tmp_path: Path):
     (tmp_path / config_mod.LOCAL_FILENAME).write_text("{ not valid json")
     cfg = config_mod.load(tmp_path, environ={})
-    assert cfg.get("qemu.backend") == "native"
+    assert cfg.get("qemu.backend") == "windows-host"
 
 
 # --- TCP transport (windows-host backend: WSL listens, QEMU connects) -------

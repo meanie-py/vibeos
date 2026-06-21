@@ -660,6 +660,7 @@ class QemuVM:
         self._backend = backend
         self._win = windows or {}
         self._win_uid = ""  # unique -name tag for uid-scoped kill (windows backend)
+        self._win_staging: Path | None = None  # per-run Windows staging subdir (windows backend)
 
         self._sock_dir = Path(tempfile.mkdtemp(prefix="ros-"))
         atexit.register(lambda d=self._sock_dir: shutil.rmtree(d, ignore_errors=True))
@@ -760,7 +761,15 @@ class QemuVM:
             raise RuntimeError("windows-host backend supports x86 only (arm64 stays native TCG)")
 
         accel = self._win.get("accel", "tcg")
-        staging = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+        # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
+        # windows-host smokes across worktrees must not stomp each other's media — the per-arch
+        # KVM slot does NOT serialize windows-host (it runs off-host and early-returns the slot),
+        # so without a per-run dir two amd64 runs collide on livecd.iso/debugcon.bin (false
+        # LAUNCH_FAIL / false net failures). Mirrors the native per-run /tmp/vibeos-cli/<ts>/boot.
+        staging_root = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+        run_tag = f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
+        staging = staging_root / run_tag
+        self._win_staging = staging
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True, exist_ok=True)
 
@@ -975,7 +984,7 @@ class QemuVM:
         if self._backend == "windows-host":
             from . import backend as be
 
-            staging = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+            staging = self._win_staging or Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
             staged = staging / f"screen-{path.name}"
             result = self.qmp.execute("screendump", filename=be.win_path(staged))
             time.sleep(0.5)
@@ -1149,6 +1158,18 @@ class QemuVM:
             from . import backend as be
 
             be.kill_by_uid(self._win_uid)
+
+        # Remove this run's per-run Windows staging subdir (only ours — never the shared root,
+        # which other concurrent runs are using). Bounded retry: on DrvFs the Windows QEMU
+        # releases the staged file handles asynchronously after the kill above, so an immediate
+        # rmtree can no-op and leak the (~400MB) dir; retry until it's gone.
+        if self._win_staging is not None:
+            for _ in range(5):
+                shutil.rmtree(self._win_staging, ignore_errors=True)
+                if not self._win_staging.exists():
+                    break
+                time.sleep(0.3)
+            self._win_staging = None
 
         if self._proc is not None:
             try:
