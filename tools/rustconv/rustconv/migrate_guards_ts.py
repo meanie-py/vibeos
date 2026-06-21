@@ -21,6 +21,8 @@ from pathlib import Path
 import tree_sitter as ts
 import tree_sitter_rust as tsrust
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 RUST_LANGUAGE = ts.Language(tsrust.language())
 PARSER = ts.Parser(RUST_LANGUAGE)
 
@@ -341,7 +343,7 @@ def main():
     if not args.scan and not args.fix:
         args.scan = True
 
-    root = Path(__file__).parent.parent.parent.parent
+    root = _RUSTCONV_REACTOS_ROOT
 
     if args.files:
         rs_files = [Path(f) for f in args.files]

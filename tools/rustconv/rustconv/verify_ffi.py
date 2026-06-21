@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 # ── Known C macros that should NOT be declared as extern fn ──────────
 
 C_MACROS = {
@@ -416,7 +418,7 @@ def main():
     parser.add_argument("files", nargs="*", help="Rust files to check (default: all)")
     args = parser.parse_args()
 
-    reactos_root = Path(__file__).parent.parent.parent.parent
+    reactos_root = _RUSTCONV_REACTOS_ROOT
 
     spec = parse_spec(reactos_root / "ntoskrnl/ntoskrnl.spec")
     print(f"Spec catalog: {len(spec)} exports")

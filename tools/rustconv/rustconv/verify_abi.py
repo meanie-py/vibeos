@@ -18,6 +18,8 @@ import re
 import sys
 from pathlib import Path
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 # ── Spec Parser ──────────────────────────────────────────────────────
 
 
@@ -192,7 +194,7 @@ def main():
     parser.add_argument("files", nargs="*", help="Rust files to check (default: all)")
     args = parser.parse_args()
 
-    reactos_root = Path(__file__).parent.parent.parent.parent  # tools/rustconv → reactos/
+    reactos_root = _RUSTCONV_REACTOS_ROOT  # tools/rustconv → reactos/
 
     # Build catalogs
     spec = parse_spec(reactos_root / "ntoskrnl/ntoskrnl.spec")
