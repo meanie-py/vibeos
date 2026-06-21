@@ -34,12 +34,14 @@ const CP_ACP: UINT = 0;
 const STATUS_SUCCESS: i32 = 0;
 const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004u32 as i32;
 
-// IS_ATOM(x): (((ULONG_PTR)(x) > 0x0) && ((ULONG_PTR)(x) < MAXINTATOM))  (user32p.h)
-// MAXINTATOM == 0xC000
+// IS_ATOM(x): (((ULONG_PTR)(x) > 0x0) && ((ULONG_PTR)(x) < 0x10000))  (user32p.h)
+// NB: the upper bound is 0x10000 (high 48 bits clear), NOT MAXINTATOM (0xC000).
+// Registered-class atoms start at MAXINTATOM (0xC000), so a 0xC000 bound here
+// misclassifies every real class atom as a string pointer -> AV in RtlInitUnicodeString.
 #[inline]
 unsafe fn IS_ATOM<T>(x: *const T) -> bool {
     let v = x as usize;
-    v > 0 && v < 0xC000
+    v > 0 && v < 0x10000
 }
 
 // IS_INTRESOURCE(_r): ((((ULONG_PTR)(_r)) >> 16) == 0)
