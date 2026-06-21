@@ -317,9 +317,13 @@ MmGetPageProtect(
         if (!PointerPte->u.Hard.UserNoExecute)
             Protect <<= 4;
 
-        /* Cache attributes */
-        if (PointerPte->u.Hard.CacheType == 0)
+        /* Cache attributes: CacheType = AttrIndx into MAIR=0x004400FF
+         * (0=Normal-WB cached, 1=Device no-cache, 2=Normal-NC write-combine).
+         * Was inverted (== 0); corrected to match the MAIR. */
+        if (PointerPte->u.Hard.CacheType == 1)
             Protect |= PAGE_NOCACHE;
+        else if (PointerPte->u.Hard.CacheType == 2)
+            Protect |= PAGE_WRITECOMBINE;
     }
 
     if (Address < MmSystemRangeStart)
