@@ -19,3 +19,15 @@ for hook in "$src_dir"/*; do
     echo "installed: $hooks_dir/$name"
 done
 echo "git hooks installed (mainline-rewind guard active across all worktrees)."
+
+# Repair the fetch refspec. This clone shipped with a master-ONLY refspec
+# (+refs/heads/master:refs/remotes/origin/master), so `git fetch` never updated
+# refs/remotes/origin/continue-rust-port — it sat frozen at the ancient fork point,
+# which made agents read "origin is stale/behind" and reset mainline back to it (the
+# ~81-commit rewind). Restore the normal all-branches refspec so fetch tracks c-r-p.
+want_refspec="+refs/heads/*:refs/remotes/origin/*"
+if [ "$(git -C "$repo_root" config --get-all remote.origin.fetch || true)" != "$want_refspec" ]; then
+    git -C "$repo_root" config --unset-all remote.origin.fetch 2>/dev/null || true
+    git -C "$repo_root" config --add remote.origin.fetch "$want_refspec"
+    echo "fixed remote.origin.fetch -> $want_refspec (was master-only; broke origin/continue-rust-port tracking)"
+fi
