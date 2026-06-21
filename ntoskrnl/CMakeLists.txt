@@ -75,6 +75,20 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(RUST_KERNEL_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel_rust.a")
+
+# kernel-rust is an umbrella staticlib that pulls in EVERY sibling rlib via
+# `extern crate`, so its true input is the whole rust workspace — not the
+# hand-maintained 200-line file list this used to carry. That list was
+# necessarily incomplete (ntoskrnl-rust alone is ~405 .rs): editing any .rs not
+# listed left ninja thinking the staticlib was current, so a stale kernel
+# silently masked the source fix — field-manual §9.6b. Glob the whole workspace
+# (same mechanism as add_cargo_module in gcc.cmake), excluding cargo target/
+# dirs (build artifacts, not source). CONFIGURE_DEPENDS re-globs when files are
+# added/removed.
+file(GLOB_RECURSE _rust_kernel_srcs CONFIGURE_DEPENDS
+    ${RUST_WORKSPACE_DIR}/*.rs ${RUST_WORKSPACE_DIR}/*.toml)
+list(FILTER _rust_kernel_srcs EXCLUDE REGEX "/target/")
+
 add_custom_command(
     OUTPUT ${RUST_KERNEL_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -85,215 +99,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${RUST_KERNEL_TARGET_DIR}/${RUST_TARGET}/release/libkernel_rust.a
         ${RUST_KERNEL_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/kernel-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/kernel-rust/Cargo.toml            ${RUST_WORKSPACE_DIR}/ke-macros/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/ke-macros/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/shim_exports.rs
-            ${RUST_WORKSPACE_DIR}/cmboot-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/cmboot-rust/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/se.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/common.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ke.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mm.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ex.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ob.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/iomgr/arcname.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/obhandle.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/access.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/accesschk.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/acl.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/audit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/client.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/debug.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/objtype.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/priv_.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sd.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/semgr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sid.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sqos.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/srm.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/subject.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/token.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenadj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokencls.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenlif.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/apphelp.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/debug.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/job.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/kill.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/info_class.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/process.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psmgr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psnotify.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/query.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/quota.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/security.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/state.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/thread.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/win32.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/config/cmdata.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/close.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/complete.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/connect.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/create.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/listen.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/port.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/reply.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/send.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/dbgkobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/dbgkutil.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/events.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/poshtdwn.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/povolume.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/power.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/bootanim.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/inbv.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/inbvport.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/guidobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/smbios.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/wmi.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/wmidrv.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/vdmexec.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/vdmmain.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vf/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vf/driver.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/libsupp.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/misc.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ARM3/kdbg.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ARM3/wslist.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/page.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/procsup.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/init.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/init.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/procsup.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm64/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm64/page.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/init.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/atom.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/callback.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/dbgctrl.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/efi.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/event.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/evtpair.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/exintrin.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/fmutex.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/handle.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/harderr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/hdlsterm.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/init.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/interlocked.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/keyedevt.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/locale.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/lookas.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/mutant.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/profile.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/pushlock.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/resource.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/rundown.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sem.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/shutdown.rs
-            # ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sysinfo.rs  # kept in C
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/time.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/timer.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/uuid.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/win32k.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/work.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/xipdisp.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/zone.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/apc.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/balmgr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/bug.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/clock.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/config.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/devqueue.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/dpc.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/eventobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/except.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/freeze.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/gate.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/gmutex.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/ipi.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/krnlinit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/mutex.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/processor.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/procobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/profobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/queue.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/semphobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/spinlock.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/thrdobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/thrdschd.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/time.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/timerobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/wait.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/abios.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/context.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/cpu.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/exp.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/freeze.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/irqobj.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/kiinit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/ldt.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/mproc.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/mtrr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/patpge.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/thrdini.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/traphdlr.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/usercall.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/i386/v86vdm.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/context.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/cpu.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/except.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/freeze.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/interrupt.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/ipi.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/irql.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/kiinit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/krnlinit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/mproc.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/spinlock.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/stubs.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/thrdini.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/traphandler.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/usercall.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/amd64/xstate.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/mod.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/kiinit.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/stubs.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/thrdini.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/trap.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ke/arm64/usercall.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/mm.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/ke.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/ex.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/ps.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/ob.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/rtl.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/interlocked.rs
-            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/constants.rs
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
+    DEPENDS ${_rust_kernel_srcs}
     COMMENT "Building Rust kernel code (${RUST_TARGET})"
 )
 add_custom_target(rust_kernel DEPENDS ${RUST_KERNEL_LIB})

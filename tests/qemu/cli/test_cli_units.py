@@ -215,6 +215,35 @@ def test_discover_rust_targets(tmp_path: Path):
     assert len(provenance.discover_rust_archives(bd)) == 1
 
 
+def test_workspace_cargo_target_per_arch(tmp_path: Path):
+    # the cargo workspace cache lives OUTSIDE build-<arch>; discover_rust_targets
+    # can't see it, so --clean needs this to be genuinely cold (§9.6b / task #41).
+    repo = tmp_path
+    assert provenance.workspace_cargo_target(repo, "i386") is None  # absent -> None
+    stem = repo / "sdk" / "lib" / "rust" / "target" / "i686-kernel"
+    stem.mkdir(parents=True)
+    assert provenance.workspace_cargo_target(repo, "i386") == stem
+    # arch alias + per-arch stem resolution
+    (repo / "sdk" / "lib" / "rust" / "target" / "x86_64-kernel").mkdir(parents=True)
+    assert provenance.workspace_cargo_target(repo, "amd64-uefi").name == "x86_64-kernel"
+
+
+def test_discover_rust_module_outputs(tmp_path: Path):
+    # the copied cargo-module outputs --clean must delete so ninja re-links
+    # (§stale-cargo / task #41). Only existing files are returned.
+    repo = tmp_path
+    bd = repo / "build-i386"
+    (bd / "ntoskrnl").mkdir(parents=True)
+    (bd / "win32ss").mkdir(parents=True)
+    (bd / "ntoskrnl" / "ntoskrnl.exe").write_text("k")
+    (bd / "win32ss" / "win32k.sys").write_text("w")
+    # kernel32.dll absent -> not returned (no false unlink target)
+    outs = provenance.discover_rust_module_outputs(repo, "i386")
+    names = {p.name for p in outs}
+    assert names == {"ntoskrnl.exe", "win32k.sys"}, names
+    assert all(p.is_file() for p in outs)
+
+
 # --- triage classification --------------------------------------------------
 
 

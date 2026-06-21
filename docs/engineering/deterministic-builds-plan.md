@@ -258,30 +258,43 @@ Net: the *biggest* live leak is the **PE timestamp** (rung 2, all arches) + **Ru
 (rung 1 via `trim-paths`); the **C paths are largely handled** (verify the worktree abs-map
 residual). That's a smaller surface than feared.
 
-## Stale-cargo-binary elimination (the #2 payoff — root-caused 2026-06-20)
+## Stale-cargo-binary elimination (the #2 payoff — root-caused 2026-06-20, ✅ FIXED 2026-06-21)
 
 The non-standard cargo-driven kernel link can serve a **stale binary** — the concrete form of
-the #2 footgun. Two distinct gaps (NOT one):
+the #2 footgun. Two distinct gaps (NOT one), both now closed:
 
-- **§9.6b "doesn't relink on a `.rs` edit" (staticlib only).** `ntoskrnl/CMakeLists.txt:78`
-  builds the kernel-rust staticlib with `add_custom_command(OUTPUT ${RUST_KERNEL_LIB} … DEPENDS
-  ${WS}/kernel-rust/src/lib.rs)` — ninja's *only* declared input is `lib.rs`, so editing any
-  other `.rs` leaves ninja thinking it's current. (`add_cargo_module` in `gcc.cmake:608` is
-  fine — it `file(GLOB_RECURSE _srcs CONFIGURE_DEPENDS)` + `DEPENDS ${_srcs}`, so the *exe*
-  relinks on a `.rs` edit.) **Fix:** widen the staticlib `DEPENDS` to the same recursive glob.
-- **"wiped target → stale exe" (the `rm -f output` trap).** cargo outputs are *copied* out of
-  the target dir, so nuking the target alone leaves the copied exe present + newer than the
-  `.rs` inputs → ninja "no work to do" → stale. And `vibeos-cli build --clean` (`build.py:_clean`)
-  nukes target dirs + `lib*_rust.a` but **not the cargo-module output exes** — so `--clean` is
-  not guaranteed clean for cargo modules (it relies on the deleted-`.a`→dep-chain to force a
-  relink, which is fragile). **Fix:** `_clean` also removes the cargo-module output binaries
-  (ntoskrnl.exe, ntkrnlmp, win32k.sys, kernel32.dll, the `*-cargo` outputs) so ninja *must*
-  relink — automating meaniepy's manual `rm -f` and making `--clean` genuinely cold.
+- **§9.6b "doesn't relink on a `.rs` edit" (staticlib only) — ✅ FIXED.** `ntoskrnl/CMakeLists.txt`
+  built the kernel-rust staticlib with `add_custom_command(OUTPUT ${RUST_KERNEL_LIB} … DEPENDS …)`
+  carrying a **hand-maintained 200-line `.rs` file list** — necessarily incomplete (ntoskrnl-rust
+  alone is ~405 .rs; kernel-rust is an umbrella pulling in every sibling rlib via `extern crate`),
+  so editing any `.rs` not listed left ninja thinking the staticlib was current → stale kernel
+  masking the fix. (`add_cargo_module` in `gcc.cmake` was already fine — `file(GLOB_RECURSE _srcs
+  CONFIGURE_DEPENDS)` + `DEPENDS ${_srcs}`, so the *exe* relinked.) **Fix:** replaced the hand-list
+  with `file(GLOB_RECURSE _rust_kernel_srcs CONFIGURE_DEPENDS ${WS}/*.rs ${WS}/*.toml)` +
+  `list(FILTER … EXCLUDE REGEX "/target/")` (don't depend on build artifacts). **Verified:** the
+  regenerated `build-i386/build.ninja` libkernel_rust.a edge now lists **2032** `.rs` deps (was
+  ~204), 0 under `/target/`, incl. cross-crate `mm/mod.rs` + `rtl-rust/src/lib.rs` + deep `ke/`
+  files — any workspace `.rs` edit now forces the relink.
+- **"wiped target → stale exe" (the `rm -f output` trap) — ✅ FIXED.** cargo outputs are *copied*
+  out of the target dir, so nuking the target alone leaves the copy present + newer than the
+  `.rs` → ninja "no work" → stale. Worse, the cargo-EXE links build into the **shared workspace
+  cache `sdk/lib/rust/target/<stem>`** (i686/x86_64/aarch64-kernel), which lives OUTSIDE
+  `build-<arch>` — so `discover_rust_targets` (globs `build-<arch>`) never saw it, and `--clean`
+  left cargo serving a warm-cached object (the manual `rm -rf sdk/lib/rust/target/<stem>` agents
+  ran by hand). **Fix (`build.py:_clean` + `provenance.py`):** `_clean` now also (a) removes the
+  workspace cargo stem via `provenance.workspace_cargo_target(repo, arch)` and (b) deletes the
+  copied cargo-module output binaries via `provenance.discover_rust_module_outputs(repo, arch)`
+  (the kernel(s) + win32k.sys + kernel32.dll + the arm64 staged set) so ninja MUST re-run each
+  cargo link. Source-unchanged modules not in that set rebuild byte-identically anyway (the
+  determinism invariant), so a stale copy of one is harmless; the listed set is exactly the
+  frequently-edited boot-critical links whose staleness is a false-green. Unit-tested
+  (`test_workspace_cargo_target_per_arch`, `test_discover_rust_module_outputs`).
 
 Chosen over a blanket "always-run cargo" (corrosion-style): there are ~48 `*-cargo` modules, so
 always-invoking cargo would add 48 no-op cargo checks per `ninja` — too costly. The two targeted
-fixes close both gaps without that overhead. Both are build-path changes → own ×3 cold gate,
-**queued as the next increment after the build-cache bundle lands** (can't ride the locked gate).
+fixes close both gaps without that overhead. Both are build-path changes → **own ×3 cold gate**
+(cmake `cmake .` reconfigure of build-i386 verified clean; the full build-twice relink proof is
+the gate's job).
 
 ## Verification methodology
 
