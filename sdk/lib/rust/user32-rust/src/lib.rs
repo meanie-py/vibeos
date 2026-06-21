@@ -31,6 +31,9 @@ pub mod misc;
 // windows/ — the windowing core. Wave-1 integrated leaves: caret, dc.
 pub mod windows;
 
+// controls/ — Wave-2 standard control bodies (button/static/edit/combo/listbox/scrollbar).
+pub mod controls;
+
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
