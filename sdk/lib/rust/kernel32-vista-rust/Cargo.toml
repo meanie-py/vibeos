@@ -1,0 +1,19 @@
+# kernel32-vista-rust — Rust translation of dll/win32/kernel32/kernel32_vista/*.c
+# (the kernel32_vista_static lib: the NT6/Vista+ API set). Built once →
+# libkernel32_vista_rust.a, linked into BOTH kernel32.dll and kernel32_vista.dll
+# (the C kernel32_vista_static target is dropped). kernel32_vista's own DllMain.c
+# stays C — a #[no_mangle] DllMain here would collide with kernel32-rust's DllMain
+# in kernel32.dll (this .a links into both). User-mode: STANDARD per-arch targets
+# + i386 -sse,-sse2 (workspace .cargo/config.toml). Imports → ntdll.dll (Rtl*/Nt*),
+# kernel32.dll (Filename*/Base*/GetVolume*), kernel32-shared-rust (Filename*/BaseSetLastNTError).
+# See docs/engineering/kernel32-shared-vista-rust-plan.md.
+[package]
+name = "kernel32-vista-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

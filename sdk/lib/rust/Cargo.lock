@@ -660,6 +660,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel32-shared-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
+name = "kernel32-vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "kmdf-sys"
 version = "0.1.0"
 dependencies = [
@@ -805,6 +819,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "msfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
@@ -840,6 +861,13 @@ dependencies = [
 
 [[package]]
 name = "nmidebug-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "npfs-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -1587,6 +1615,13 @@ dependencies = [
 [[package]]
 name = "usbdex-rust"
 version = "0.1.0"
+
+[[package]]
+name = "user32-rust"
+version = "0.1.0"
+dependencies = [
+ "win32k-sys",
+]
 
 [[package]]
 name = "userinit-cargo"

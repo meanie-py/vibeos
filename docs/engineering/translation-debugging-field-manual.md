@@ -155,6 +155,15 @@ A standalone `.sys` cohab that reads system time, raises status, or checks IRQL 
 Also (worktree-build, not translation): when giving a worktree its own `build-<arch>` via the warm-dir copy+repoint recipe, the repoint sed must **NOT** rewrite `.build-tools/` paths — `.build-tools` is gitignored and lives only in main. Over-rewriting makes the `cc` crate's build.rs look for `…/vibeos-wt-X/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang` (ENOENT) → **every `*-cargo` Phase-2 crate fails its custom build command** ("failed to run custom build command", ToolNotFound), masquerading as a systemic cargo regression. Fix: `ln -sfn <main>/.build-tools <worktree>/.build-tools` (toolchain is read-only/shared). The C/link compiler path in the cache should also stay pointed at main's `.build-tools` (the recipe's "harmless" note assumed it was left alone).
 **Source:** `project_mup_rust_track.md`
 
+### Four multi-file driver-cohab integration traps (npfs-rust, 2026-06-20)
+A 20-module driver translated by parallel subagents over a shared substrate hit these at central integration. All recur for any multi-`.c` driver-cohab lane — grep here before re-deriving.
+1. **`use ntkrnl_sys::base::*;` + `use ntkrnl_sys::ddk::*;` together → a wall of `error[E0659]: X is ambiguous`** (UNICODE_STRING, ULONG, NTSTATUS, PVOID, LIST_ENTRY, STATUS_SUCCESS…). `base` and `ddk` both export those names. **Fix:** keep ONE glob (`use ntkrnl_sys::ddk::*;` — it has the types) and import base-only items explicitly (`use ntkrnl_sys::base::{NT_SUCCESS, InitializeListHead, InsertHeadList, InsertTailList, RemoveEntryList, RemoveHeadList, RemoveTailList, IsListEmpty};`). The glue/types/glob STATUS_* ambiguity vanishes too once the base glob is gone. (`AppendTailList` is NOT in base — don't list it.) Bake this into the per-module skeleton in the subagent contract, not the contract's "use both globs" default.
+2. **`src/main.rs` is auto-detected as a CARGO BIN TARGET** — a module named `main` (from `main.c`) collides with cargo's convention, so cargo builds a `bin "npfs-rust"` and every `crate::glue`/`crate::types`/sibling import "fails to resolve" + `error[E0601]: main function not found`. **Fix:** `autobins = false` (and `autoexamples/autotests/autobenches = false`) in `[package]`. Keeps `pub mod main;` working as a lib module.
+3. **`Io{SetCancelRoutine,SetCompletionRoutine,GetNextIrpStackLocation,SetNextIrpStackLocation,MarkIrpPending}` + `RtlInitEmptyUnicodeString` compile via `ddk::*` but are `undefined symbol` at link** (i386 `_IoSetCancelRoutine`, etc.). They're header **inlines** (FORCEINLINE), not ntoskrnl exports — bindgen still emits an extern decl, so the call compiles but has no symbol to bind. **Fix:** route them through the inline modules: `use ntkrnl_sys::inline::tier1::{IoSetCancelRoutine, IoSetCompletionRoutine, IoGetNextIrpStackLocation, IoSetNextIrpStackLocation, IoMarkIrpPending};` and `ntkrnl_sys::inline::common::RtlInitEmptyUnicodeString` (the explicit import beats the `ddk::*` glob). Same class as the `KeGetCurrentPrcb`/`KeQuerySystemTime` inline-vs-export traps above. (Pre-flight a cohab link to surface these — cargo-check is blind to them.)
+4. **i386 FAST_IO (and any NTAPI callback) slot is `extern "stdcall"`, not `extern "C"`** → `error[E0308]: expected "stdcall" fn, found "C" fn` ONLY on i386 when a hand-written raw target type is `extern "C"`. **Fix:** don't name a raw inner fn type — transmute the `extern "system"` fn item straight to the bindgen `Option` slot type (`PFAST_IO_READ`/`PDRIVER_DISPATCH`/`PDRIVER_CANCEL`/`PKDEFERRED_ROUTINE`), which carries the correct per-arch ABI (stdcall on i386, C on amd64/arm64): `transmute::<FastIoReadFn, PFAST_IO_READ>(NpFastRead)`. Same null-niche fn→Option transmute as the dispatch-table pattern.
+
+**Source:** `npfs` commit (filesystems lane); contract substrate `sdk/lib/rust/npfs-rust/src/{lib,glue,globals,helpers,types}.rs`.
+
 ### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
 **Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
 **Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
@@ -286,6 +295,21 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 **Root cause:** That line precedes the jump to `KiSystemStartup` (a `KNOWN_CGU_UD2` fn). Under memory/CPU pressure from 3 concurrent cold cargo builds, the non-deterministic `cgu=256` partitioner lands a ud2 body on the live early-boot path → kernel traps on entry. Build-time contention, not a code regression.
 **Fix:** Build cold ONE arch at a time (smokes may run parallel — separate slot-capped VMs; cold builds must not). A zero-serial hang at "Switching stack..." after a loaded/parallel build is the prime lottery suspect — re-run the cold build solo before triaging. Escalate only if it reproduces SOLO and deterministically (then `scan_ud2.py` + deep-nuked crp repro).
 **Source:** `feedback_parallel_cold_builds_cgu_lottery.md`
+
+### Same-host contention false-red is NOT only `HANG_TIMEOUT` — it also shows as a transient BUGCHECK and a *late*-boot hang
+**Symptom (variant A — transient BUGCHECK):** a single i386 smoke comes back **`BUGCHECK 0x1E` (e.g. 0xc0000006 IN_PAGE_ERROR)** while another arch is mid **cold-gate** on the same host; the *identical binary config* re-run on a quiet host boots green, reproducibly (user32 lane 2026-06-20: all-5-Rust config 0x1E'd once during a concurrent amd64 cold-gate + arm64 TCG boot, then booted green ×5 quiet). The contention class (previously documented only as `HANG_TIMEOUT` at freeldr) **also manifests as a transient BUGCHECK under memory/IO/KVM pressure** — don't root-cause a single contended red as a code regression.
+**Symptom (variant B — late-boot HANG that reaches `shell ready`):** the i386 OS prints `[WIN32K] shell ready` (often ×3) but explorer never reaches `[EXPLORER] _tWinMain entered` within the 360s timeout. A normally-1m48s i386 boot drifts past 6min under concurrent boots. `shell ready` is an intermediate **milestone**, not the verdict marker — success = `[EXPLORER] _tWinMain entered`.
+**Rule:** before declaring an i386/amd64 smoke red, confirm no other agent is cold-building or booting (`./vibeos-cli ps`, `#swarm`); a lone red (HANG *or* BUGCHECK) while another arch is mid-gate is prime contention-flake suspect. Re-run host-quiet to decide. (Distinct from the real pre-existing ~33% i386 flake where `winlogon` unconditionally spawns `nettest.exe` racing explorer's csrss/win32k handoff — that HANGs even host-quiet; serial tail shows `[WINLOGON] nettest.exe created` + no `_tWinMain`. Per-arch auto-serialization removes the contention variants.)
+**Source:** user32 lane 2026-06-20 (Wave-1 cohab bring-up).
+
+### usermode-DLL cohab integration traps (kernel32/user32 → Rust, against a bindgen `*-sys` glob)
+Reusable footguns when integrating rustconv output into a usermode-DLL cohab crate that globs a bindgen `*-sys` crate (`win32k_sys::win32k::*`):
+- **`extern "fastcall"` is i386-ONLY.** Rust mis-ABIs/rejects `fastcall` on amd64/arm64 (Win32 `FASTCALL` is the single standard convention there). Every `extern "fastcall"` block AND every `#[no_mangle] ... extern "fastcall"` export (cross-TU `@Name@N` symbols like `ValidateHwnd`, `IsMsgOverride`, `ClassNameToVersion`) MUST be cfg-split: `#[cfg(target_arch="x86")] extern "fastcall"` + `#[cfg(not(target_arch="x86"))] extern "C"`. i386's `@Name@N` decoration is load-bearing for the cohab link; only the non-x86 path changes. Use one private `_impl` body + two thin cfg'd `#[no_mangle]` wrappers to avoid duplicating bodies.
+- **bindgen flattens nested-`_HEAD` structs into `__bindgen_padding_0`.** `THRDESKHEAD`/`THROBJHEAD`/`_PROCMARKHEAD` lose `head.h`/`head.pti` (collapsed into `[u32; N]`). C's `obj->head.h` → `addr_of!(head) as *const HANDLE` (h is offset 0); `head.pti` → the right padding index (`[2]` on THRDESKHEAD). Reuse one `UserHMGetHandle`/`wnd_pti` helper; grep the bindgen struct per arch.
+- **A local `let Foo = ...` where `Foo` is also a glob-imported `const` silently becomes a refutable const-PATTERN match, not a binding** → `expected *mut X, found u32`. win32k-sys glob-exports PnP/enum-alias consts with innocuous names (`Root` = a `_PLUGPLAY_VIRTUAL_BUS_TYPE`); `let Root: PWND = ValidateHwnd(...)` breaks. Rename the local (`pRoot`).
+- **Two bindgen `*-sys` crates can't both be glob-imported** (E0659 ambiguous `BOOL`/`DWORD`/`HWND` from distinct-but-layout-identical types). Pick ONE for the type bulk (win32k-sys); declare the other's functions as **local `extern` blocks using the chosen crate's types** (ntdll Rtl*/Zw* resolve via the importlib). Also drop `crate::types::*` (hand-rolled BOOL=i32) — it collides with the glob; shadow `const FALSE/TRUE: BOOL` locally (win32k-sys emits them as `u32`).
+- **FORCEINLINE macros are NOT exports** — `RtlInitEmpty{Ansi,Unicode}String`, `NtCurrentTeb`, `RtlGetProcessHeap`, the `NtUserx*` ntwrapper inlines have no symbol; declaring them `extern` → undefined at link. Reproduce as `#[inline] pub unsafe fn`. rustconv opus routinely mis-emits these as `extern` AND as `ntkrnl_sys::ddk::` (kernel-crate) imports — both rewritten during integration (use a shared `internal.rs`).
+**Source:** user32 lane 2026-06-20 (Wave-1: 9 .c→Rust, i386 cold-green).
 
 ### Dead "diagnostic" instrumentation in trampolines
 **Symptom:** A C trampoline carries volatile `__builtin_return_address` captures + DPRINT1 tracebacks marked "load-bearing tracing"; deleting it breaks the build or leaves all-NULL output.
@@ -1287,6 +1311,30 @@ a crash).
 - **i386/amd64 unaffected** when the ABI fix is arch-cfg-gated (`cfg(target_arch)`), and
   they boot from a LiveCD ISO that `ninja livecd` repackages with freshly-built drivers
   anyway — only arm64's staged-ramdisk path has the gap.
+
+**⚠️ Sharper, more dangerous variant (2026-06-20): the skew can wedge EARLY and impersonate
+a layout-tip miscompile in the exact change you're gating.** A *targeted-subset* arm64 build
+(`ninja ntoskrnl hal uefildr win32k kernel32` — what agents reach for to gate a single
+module fast) restages stale old-ABI drivers under the new-ABI kernel just like the staged
+smoke path. But the wedge it produced was **not** "desktop-then-idle-timeout" — it was a
+**deterministic 2/2 wedge at `PspUserThreadStartup → KiInitializeUserApc done → returning`,
+PC=0x7FFB7001018, `_tWinMain=0`, explorer never starts** (the *first* usermode thread never
+progresses). That signature is indistinguishable from a **#35-class layout-tip latent
+miscompile** (links clean, wedges at runtime at a user-thread-startup site) — so when it
+appeared while gating a kernel **link-layout change** (the `librtl.a`+`libhal.a` static-lib
+drops), it looked exactly like "your link change tipped a latent captures(none) miscompile."
+It hadn't: **bare mainline built the same subset-way wedged at the identical PC.** A full
+`ninja -C build-arm64` + `mkramdisk --refresh` on mainline reached explorer (34s) → the
+"regression" was 100% build-completeness artifact.
+- **Rule:** NEVER gate an arm64 **link/layout or static-lib** change with a targeted-subset
+  build post-fastfat-merge — *always* full `ninja` + `mkramdisk --refresh`, or the driver
+  ABI skew fakes a usermode wedge that frames your change.
+- **Decisive disambiguation (do this BEFORE symbolicating / reaching for a `no-prepop`
+  guard):** rebuild **bare mainline** (without your change) the *same subset way* and boot.
+  Same wedge on mainline ⇒ build artifact, your change is innocent, stop. Only if mainline
+  is clean and your change wedges **under a FULL ninja** is it a real regression worth the
+  symbolicate→targeted-guard path (§"#38/#35" Findings 2–3). Cost of skipping this step:
+  a full symbolication + no-prepop fork put to the user on a phantom regression.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

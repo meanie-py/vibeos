@@ -62,7 +62,21 @@ _CFGS = {
     ),
     "arm64": ArchBuild(
         arch="arm64",
-        ninja_targets=("ntoskrnl", "hal", "uefildr"),
+        # win32k + kernel32 are boot-critical AND frequently edited, but unlike
+        # x86 (whose `livecd` DAG re-rolls everything) arm64 builds a hand-picked
+        # staged set. Omitting them meant a win32k/kernel32 edit smoked via the
+        # standard `build --arch arm64` rebuilt neither and re-staged a STALE
+        # binary → false green (every arm64 gate this session worked around it
+        # with manual `ninja win32k`/`rust_kernel32` + mcopy). They're in the
+        # staged set below too, so staleness now also catches an un-rebuilt copy.
+        ninja_targets=(
+            "ntoskrnl",
+            "hal",
+            "uefildr",
+            "win32k",
+            "rust_kernel32",
+            "dll/win32/kernel32/kernel32.dll",
+        ),
         ninja_targets_optional=("arm64input", "arm64vid"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
@@ -70,6 +84,8 @@ _CFGS = {
             "ntoskrnl/ntoskrnl.exe",
             "hal/halarm64/hal.dll",
             "boot/freeldr/uefildr/uefildr.efi",
+            "win32ss/win32k.sys",
+            "dll/win32/kernel32/kernel32.dll",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
         ),

@@ -49,7 +49,7 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--no-check] [--strict]`
+### `build --arch X [--clean] [--no-check] [--strict] [--cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 
@@ -57,6 +57,12 @@ provenance stamp.
   **every** discovered rust target dir + every `lib*_rust.a`, then rebuilds. The
   stamp records which mode was used; warm builds are flagged because cargo
   incremental *can mask regressions*.
+- **`--cache`** (opt-in; also `VIBEOS_BUILD_CACHE=1`) routes C/C++ through ccache
+  and Rust through sccache, keyed off `VIBEOS_ROOT` (the worktree-parent dir, so
+  hits are shared across worktrees for C/C++ and across the clean-smoke target
+  nuke for Rust). Reports a per-build hit-rate stage (also a determinism gauge).
+  Off by default while it's measured; design + status:
+  `docs/engineering/build-cache-and-determinism-plan.md`.
 - **Strategy:** iterate warm; do a `--clean` build before you believe a green
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
@@ -159,6 +165,47 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 ### `ps [--json]`
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
+
+### `prune [--apply] [--self] [--idle-hours N]`
+Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
+Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
+fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
+~150 G across worktrees, most of it idle). **Dry-run by default** — prints what
+*would* be freed and why each tree is kept; deletes nothing without `--apply`.
+Hard safety gates: never a worktree with a **live QEMU** (same lock files `ps`
+reads), never one with a **running ninja/cargo/rustc/clang/lld**, never the
+**current** worktree unless `--self`. `--idle-hours N` additionally protects any
+tree touched in the last N hours (recommended — the live gates are instantaneous,
+so an actively-worked lane that just isn't building *this second* otherwise looks
+prunable). Only ever removes the build/target dirs, never source or the worktree.
+
+### Launch backend config (`native` vs `windows-host`)
+The smoke/boot runner picks a QEMU **backend** from layered config — committed
+`DEFAULTS` (in `config.py`) **<** a gitignored per-machine `<repo>/.vibeos-cli.local.json`
+**<** env (`VIBEOS_QEMU_*`). **Default is now `windows-host`** (the swarm runs on a Windows
+host — escapes WSL2 nested-virt contention). `native` (local `qemu-system-*` + Unix-socket
+QMP/serial + KVM/TCG) is the right choice on real Linux / CI — override via
+`VIBEOS_QEMU_BACKEND=native` or a `.vibeos-cli.local.json`. **`windows-host`** (WSL2 only) launches the *Windows* QEMU.exe via interop to
+escape WSL2 nested-virt contention (`docs/engineering/windows-host-qemu-spike.md`):
+media is staged to a Windows-visible dir, QMP+serial run over TCP (we listen on
+`0.0.0.0`, the Windows QEMU dials back `127.0.0.1` via WSL2 localhost forwarding), and
+the process is killed by a uid-scoped `Stop-Process`. To enable, copy
+`.vibeos-cli.local.example.json` → `.vibeos-cli.local.json` and set
+`qemu.backend="windows-host"` (+ `qemu.windows.{qemu_dir,staging_dir,accel,host_addr}`).
+`accel` is `tcg` (works today, no reboot — already beats nested-KVM under concurrency)
+or `whpx` (needs HypervisorPlatform + reboot; uses `qemu-system-x86_64.exe`). x86 only;
+arm64 stays native TCG. Validated under TCG: **i386 + amd64** both boot to `shell ready`
+(amd64 via `qemu-system-x86_64.exe`), and **QMP savevm/loadvm** (the snapshot fixture path)
+round-trips over the TCP transport. The backend choice is read wherever a `QemuVM` is
+constructed — the cli smoke path *and* every pytest path (the folded net stage,
+`test_snapshot_apps`, a direct `test_smoke`) via `conftest.py`. The KVM-only idle-cpu gate
+(`test_idle_cpu_not_spinning`) skips on windows-host (TCG, and `_proc.pid` is the WSL interop
+shim — same reason it skips arm64). The **net suite also runs on windows-host** (`test_net.py`
+11/11 validated): the slirp `hostfwd` binds `0.0.0.0` Windows-side and tests dial `vm.net_host`
+(the WSL default-gateway IP, not `127.0.0.1` — WSL's loopback is its own VM's), and the
+`guestfwd ...-cmd:cat` outbound echo (no `cat` on Windows) is redirected to a harness-run echo
+server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke — boot North Star
+*and* the folded netstack suite.
 
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
