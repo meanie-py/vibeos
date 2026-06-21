@@ -193,6 +193,7 @@ NTDLL_DIR = REACTOS_ROOT / "dll" / "ntdll"
 # cmake-built kernel32.dll (proc.c was the first flip; see project memory).
 # Same user-mode substrate as ntdll/smss-csrss (ntdll-sys → ntdll_sys::nt).
 KERNEL32_DIR = REACTOS_ROOT / "dll" / "win32" / "kernel32"
+LSASRV_DIR = REACTOS_ROOT / "dll" / "win32" / "lsasrv"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
     "arm64": NTDLL_SYS_DIR / "bindgen_arm64.rs",
@@ -1020,6 +1021,26 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # lsasrv.dll — Local Security Authority server. Own lsasrv-rust crate; same
+    # user-mode substrate as kernel32/ntdll (ntdll_sys::nt base, auto-collapsed).
+    # The LSAPR_*/SAMPR_*/DSROLER marshalled + policy info types live in
+    # lsasrv-sys and are imported per-file at integration (named, no glob clash).
+    "lsasrv": Target(
+        name="lsasrv",
+        source_dir=LSASRV_DIR,
+        output_crate=RUST_DIR / "lsasrv-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=LSASRV_DIR / "lsasrv.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # winsrv.dll — USER + Console server (consrv + usersrv + concfg
     # aggregated into winsrv.dll, loaded by csrss). Phase 5 of the
     # SMSS→CSRSS spine. CSR server DLL, NOT a standalone exe — entry
@@ -1141,6 +1162,11 @@ def detect_target(c_path: Path) -> Target:
     # user-mode substrate as ntdll. NLS/string family + client/* etc.
     if "/dll/win32/kernel32/" in posix:
         return TARGETS["kernel32"]
+    # lsasrv.dll body (LSA server). Own lsasrv-rust crate, same user-mode
+    # substrate as ntdll (ntdll_sys::nt base). LSAPR_*/DSROLER marshalled types
+    # come from lsasrv-sys, imported per-file at integration.
+    if "/dll/win32/lsasrv/" in posix:
+        return TARGETS["lsasrv"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
     if "/drivers/input/kbdclass" in posix:

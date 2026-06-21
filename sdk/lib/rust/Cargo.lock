@@ -764,12 +764,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsa-stub"
+version = "0.1.0"
+dependencies = [
+ "midl-rt",
+ "reactos-link",
+]
+
+[[package]]
 name = "lsalib-rust"
 version = "0.1.0"
 dependencies = [
  "lsass-sys",
  "ntkrnl-sys",
 ]
+
+[[package]]
+name = "lsasrv-rust"
+version = "0.1.0"
+dependencies = [
+ "lsasrv-sys",
+ "ntdll-sys",
+]
+
+[[package]]
+name = "lsasrv-sys"
+version = "0.1.0"
 
 [[package]]
 name = "lsass-cargo"

@@ -1,0 +1,14 @@
+[package]
+name = "lsa-stub"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Rust RPC server stub for the lsarpc interface — replaces cmake's widl-generated lsa_s.c. Linked into lsasrv.dll alongside the (cohab) lsasrv bodies."
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+midl-rt = { path = "../midl-rt" }
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
