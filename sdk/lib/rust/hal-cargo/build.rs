@@ -149,9 +149,24 @@ fn main() {
     // mechanism-identical reuses turned cargo-native — exactly classpnp/ntdll.
     // arm64 halstubs reference neither cntpr nor pseh.
     if is_x86 {
+        // i386 also needs the two C-variadic printf shells (sprintf/swprintf =
+        // thin `va_start; vsxprintf(...)` over the now-Rust streamout engine that
+        // cnt-rust-lib provides). As of the WS1 cmake-off printf batch (2026-06-21)
+        // they are self-contained/headerless c_shims (the shared _sxprintf.c engine
+        // behind -DCRT_PRINTF_HEADERLESS, see c_shim_flags below) instead of a
+        // compile_commands.json replay; verified disasm-identical (WS1 harness).
+        // amd64 drop-test residue is empty → no shells (arm64 never linked cntpr).
+        let mut hal_shims: Vec<&str> = vec!["sdk/lib/pseh/dummy.c"];
+        if arch == "x86" {
+            hal_shims.extend_from_slice(&[
+                "sdk/lib/crt/printf/sprintf.c",
+                "sdk/lib/crt/printf/swprintf.c",
+            ]);
+        }
         linker = linker
             .rust_lib("cnt-rust-lib", cnt_feats, true)
-            .c_shims(&["sdk/lib/pseh/dummy.c"]);
+            .c_shims(&hal_shims)
+            .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"]);
     }
 
     // Self-hosted asm (x86 only): the engine assembles the SOURCE `.S` directly
@@ -185,21 +200,8 @@ fn main() {
         .spec2def("hal/hal.spec", "hal.dll")
         .static_libs(&libs);
 
-    // i386 only: the two irreducible C-variadic printf shells (sprintf/swprintf
-    // = thin `va_start; vsxprintf(...)` over the now-Rust streamout engine that
-    // cnt-rust-lib provides). Replaces the dropped liblibcntpr.a. Compiled
-    // in-cargo via compile_commands.json so the objects are symbol-identical to
-    // cmake's; lazy-pull so unused shells cost nothing. amd64 drop-test residue
-    // is empty → no shells (arm64 never linked cntpr at all).
-    if arch == "x86" {
-        linker = linker.c_from_compile_db(
-            "libcntpr",
-            &[
-                "sdk/lib/crt/printf/sprintf.c",
-                "sdk/lib/crt/printf/swprintf.c",
-            ],
-        );
-    }
+    // (the i386 printf shells moved up into the is_x86 c_shims block above —
+    // WS1 cmake-off printf batch.)
 
     linker = linker.import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl");
 

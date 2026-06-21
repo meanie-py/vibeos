@@ -158,10 +158,15 @@ fn main() {
     }
     linker
         .static_libs(&static_libs)
-        // Compile the cntpr C-variadic floor in-cargo (replaces the dropped
-        // liblibcntpr.a). Symbol-identical to the cmake objects (replays
-        // compile_commands.json); lazy-pull so unused shells cost nothing.
-        .c_from_compile_db("libcntpr", cntpr_residue)
+        // Compile the cntpr C-variadic printf floor in-cargo as self-contained
+        // headerless c_shims (WS1 cmake-off, 2026-06-21): the shells #include the
+        // shared _sxprintf.c / _vscwprintf.c engine, now headerless behind
+        // -DCRT_PRINTF_HEADERLESS — cc-rs compiles them directly, no
+        // compile_commands.json replay. Each verified disasm-identical vs the
+        // header build (WS1 harness). This is win32k's ONLY former C floor, so it
+        // now links free of cmake's compile_commands.json.
+        .c_shims(cntpr_residue)
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
         // cmake add_importlibs(win32k ntoskrnl hal ftfd), self-hosted from
         // each .spec (spec2def + dlltool) like every other cargo cut.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
