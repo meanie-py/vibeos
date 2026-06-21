@@ -3,3 +3,4 @@
 
 pub mod timer;
 pub mod display;
+pub mod desktop;
