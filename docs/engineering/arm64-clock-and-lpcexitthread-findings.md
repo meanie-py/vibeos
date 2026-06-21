@@ -188,3 +188,37 @@ past frame#1.
 site. Then fix the lifetime bug. Clock + FILE_CORRUPT fix stay parked on `arm64-love`
 (`65c82a286a0`) — correct but NOT desktop-green until the 0xC2 is fixed (the clock correctly
 *exposes* this latent bug; per the translation philosophy the red state is the right state).
+
+## 7. §6 refined: it's NON-DETERMINISTIC HEAP CORRUPTION (not a fixed logic bug)
+
+Adding a tiny timing perturbation to `ExFreePoolWithTag` (an `x30`-capture + DbgPrint in the
+bad-free branch) changed the crash from the deterministic **0xC2** to **0xF4
+CRITICAL_OBJECT_TERMINATION** (`0x03, proc=0xfffffa0006384760, …, 0xfffff800422ca710`) — a
+critical process died instead. Across builds the symptom rotates 0xC2 / 0x19 / 0xF4. That is
+the signature of **timing-sensitive heap/pool corruption** with random downstream victims,
+NOT a deterministic logic error. (The *clean* committed build is reproducibly 0xC2; any
+instrumentation that shifts timing redirects the victim — so print-based caller capture and
+no-DWARF unwind are both unreliable for this.)
+
+Tooling walls hit this session: (a) DWARF build is blocked — the cmake/cargo link clobbers
+`RUSTFLAGS=-C debuginfo=2` and the PE link strips `.debug_*` (preflight DWARF-richness fails
+by default); (b) the sparse `objdump -t` table can't name internal Rust fns (frames land at
+`+0xffXXX` past the nearest symbol); (c) `find-kbase` gives the true base
+`kbase=0xfffff80042191000`, and `objdump_VA = runtime − 0xfffff80042192040` (kbase + 0x1040
+header gap) — but that only resolves exported symbols.
+
+**Recommended next approach (catch the corruptor, not the victim):**
+1. Enable **special pool / page-heap for tag `Irp `** (and/or pool-corruption checks) so the
+   guard page faults at the moment of the bad write — turns a random downstream bugcheck into
+   a deterministic catch at the offending instruction.
+2. OR fix the DWARF plumbing (force `[profile.release] debug=true` in the workspace
+   `Cargo.toml` so rlibs carry DWARF regardless of RUSTFLAGS, and stop the cargo-link from
+   stripping `.debug_*`), then `run-until --break KeBugCheckEx --then "bt 60"` for a clean
+   CFI stack.
+3. Bisect the trigger: the corruption is reached only via the FAT-volume-WRITE path that the
+   verfysup fix newly exercises (FatSetFatEntry→FatPrepareWriteVolumeFile→Cc/Mm paging
+   write). Worth auditing that specific write/flush path on arm64 (MDL handling, buffer
+   sizing with the 0x44 IO_STACK_LOCATION ABI) as the prime suspect region.
+
+Clean repro (committed `arm64-love`, no instrument): boot arm64 → deterministic 0xC2 at the
+System-thread-exit `ExFreePoolWithTag` of a corrupt `Irp ` block.
