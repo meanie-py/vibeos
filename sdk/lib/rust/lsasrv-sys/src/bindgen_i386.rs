@@ -285,6 +285,24 @@ pub const _SECURITY_LOGON_TYPE_Proxy: _SECURITY_LOGON_TYPE = 6;
 pub const _SECURITY_LOGON_TYPE_Unlock: _SECURITY_LOGON_TYPE = 7;
 pub type _SECURITY_LOGON_TYPE = ::core::ffi::c_uint;
 pub use self::_SECURITY_LOGON_TYPE as SECURITY_LOGON_TYPE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _SECURITY_LOGON_SESSION_DATA {
+    pub Size: ULONG,
+    pub LogonId: LUID,
+    pub UserName: LSA_UNICODE_STRING,
+    pub LogonDomain: LSA_UNICODE_STRING,
+    pub AuthenticationPackage: LSA_UNICODE_STRING,
+    pub LogonType: ULONG,
+    pub Session: ULONG,
+    pub Sid: PSID,
+    pub LogonTime: LARGE_INTEGER,
+    pub LogonServer: LSA_UNICODE_STRING,
+    pub DnsDomainName: LSA_UNICODE_STRING,
+    pub Upn: LSA_UNICODE_STRING,
+}
+pub type SECURITY_LOGON_SESSION_DATA = _SECURITY_LOGON_SESSION_DATA;
+pub type PSECURITY_LOGON_SESSION_DATA = *mut _SECURITY_LOGON_SESSION_DATA;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainNameInformation: _TRUSTED_INFORMATION_CLASS = 1;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedControllersInformation: _TRUSTED_INFORMATION_CLASS = 2;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedPosixOffsetInformation: _TRUSTED_INFORMATION_CLASS = 3;

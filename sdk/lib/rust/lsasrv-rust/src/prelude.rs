@@ -72,6 +72,9 @@ pub use lsasrv_sys::{
     POLICY_AUDIT_LOG_INFO, POLICY_AUDIT_FULL_QUERY_INFO,
     POLICY_LSA_REPLICA_SRCE_INFO, _POLICY_LSA_REPLICA_SRCE_INFO,
     PRPC_SID,
+    // session.c logon-session types
+    _SECURITY_LOGON_SESSION_DATA, SECURITY_LOGON_SESSION_DATA, PSECURITY_LOGON_SESSION_DATA,
+    PLSA_STRING, PLSA_API_MSG,
 };
 
 // LSAPR_POLICY_INFORMATION is a union typedef'd directly (no `_`-tag form);
@@ -178,6 +181,18 @@ extern "C" {
 #[inline]
 pub unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
+}
+
+// RtlInitEmptyUnicodeString is a FORCEINLINE in rtlfuncs.h (not an export).
+#[inline]
+pub unsafe fn RtlInitEmptyUnicodeString(
+    UnicodeString: PUNICODE_STRING,
+    Buffer: *mut u16,
+    BufferSize: u16,
+) {
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
 }
 
 // ---- STUB / UNIMPLEMENTED markers (ReactOS `STUB;` statements → no-op) ----

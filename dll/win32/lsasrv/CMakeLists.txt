@@ -34,7 +34,7 @@ list(APPEND SOURCE
     # registry.c     — replaced by Rust (lsasrv-rust/src/lsasrv/registry.rs)
     # security.c     — replaced by Rust (lsasrv-rust/src/lsasrv/security.rs)
     service.c
-    session.c
+    # session.c     — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
     srm.c
     # utils.c        — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
     lsasrv.h
