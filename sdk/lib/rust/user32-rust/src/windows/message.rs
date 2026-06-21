@@ -80,7 +80,6 @@ extern "system" {
         lpUsedDefaultChar: *mut BOOL,
     ) -> c_int;
     fn GetLocaleInfoW(Locale: LCID, LCType: LCTYPE, lpLCData: LPWSTR, cchData: c_int) -> c_int;
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     fn WaitForMultipleObjectsEx(
         nCount: DWORD,
         lpHandles: *const HANDLE,
@@ -3220,6 +3219,15 @@ pub unsafe extern "system" fn ResetMessagePumpHook(Addresses: PUSER_MESSAGE_PUMP
     >(NTUSER_RWME));
     (*Addresses).RealGetQueueStatus = Some(RealGetQueueStatus);
     (*Addresses).RealMsgWaitForMultipleObjectsEx = Some(RealMsgWaitForMultipleObjectsEx);
+}
+
+// InterlockedExchange is a compiler intrinsic on amd64/arm64 (no extern symbol to link);
+// on i386 it's a CRT export. Use a portable in-place atomic swap instead — links on all
+// arches, semantically identical to the C intrinsic (LONG == i32 == AtomicI32 layout).
+#[inline]
+unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
+    (*(target as *const core::sync::atomic::AtomicI32))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
 }
 
 #[no_mangle]
