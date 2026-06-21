@@ -65,6 +65,7 @@ SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
 STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
 STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
 SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
+RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -683,6 +684,23 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # ramdisk.sys — RAM-disk class driver (drivers/storage/class/ramdisk, ~2.5K LOC, 1 .c).
+    # EASY leaf: pure WDM class driver — no miniport / no ISR / no DPC / no HW register I/O.
+    # No spec (kernelmodedriver). NOT boot-loaded in smoke (boot ramdisk = freeldr, not this)
+    # → link-clean x3 bar. Self-contained single .c; driver-private types from ntddrdsk.h.
+    "ramdisk": Target(
+        name="ramdisk",
+        source_dir=RAMDISK_DIR,
+        output_crate=RUST_DIR / "ramdisk-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1045,6 +1063,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["storahci"]
     if "/drivers/serial/serial" in posix:
         return TARGETS["serial"]
+    if "/drivers/storage/class/ramdisk" in posix:
+        return TARGETS["ramdisk"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

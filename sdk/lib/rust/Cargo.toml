@@ -97,6 +97,7 @@ members = [
     "storport-rust",
     "storahci-rust",
     "serial-rust",
+    "ramdisk-rust",
     "i8042prt-rust",
     "handle",
     "interlck",

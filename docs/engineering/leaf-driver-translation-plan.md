@@ -197,3 +197,26 @@ skipped.
   `AllocateAddressMapping` glue extern typed first param `*mut LIST_ENTRY` vs bindgen's correct
   `*mut PMAPPED_ADDRESS` (warning-level, linked). **Leaf-driver cluster: only `ramdisk` left.**
   Awaiting meaniepy ×3 cold-smoke gate (non-boot -> link + no-regression bar).
+- 2026-06-21: ✅ **ramdisk DONE — link-clean ×3. LEAF-DRIVER CLUSTER COMPLETE (8/8: kbdhid,
+  mouhid, hidclass, hidusb, storport, serial, storahci, ramdisk; buslogic dropped).** rustconv
+  opus mechanical (c2rust anchor FAILED — `AST unsupported` — so plain opus, more drift than the
+  storport cluster). 29 fns, $1.45. One compile-fix subagent: 171 i386 errors -> 0×3 (missing
+  import glob, bindgen anon-union access, enum-const renames, callback-slot transmutes). Then the
+  central `.sys` link surfaced what cargo can't: 9 undefined symbols, all fixed faithfully in
+  `glue.rs` — `BYTE_OFFSET`/`IsRecognizedPartition`/`FatUnpackBios` (header macros), the
+  IO_REMOVE_LOCK family (FORCEINLINE wrappers over the `*Ex` exports), `ExInitializeFastMutex`
+  (route to `ntkrnl_sys::inline::ex`), and two i386/arm64-only roots: (a) **`Rtl*` NTAPI ABI** —
+  the translation's kept `extern "C"` block made RtlInitUnicodeString/RtlCopyUnicodeString/
+  RtlQueryRegistryValues cdecl; on i386 that emits undecorated `_Rtl...` (NTAPI is stdcall →
+  `_Name@N`) — split into an `extern "system"` block; (b) **`KeLoaderBlock` cross-DLL kernel
+  DATA import** — ramdisk is the FIRST cohab driver to import kernel data; globals.rs' plain
+  extern static resolves on amd64 but i386/arm64 PE need a raw-dylib data-import thunk → added a
+  driver-local `#[link(name="ntoskrnl", kind="raw-dylib")]` static in glue + an explicit `use`
+  in ramdisk.rs to shadow the `globals::*`/`glue::*` globs. Notable translation infidelities
+  (no c2rust anchor): LLM **dropped `RamdiskWorkerThread`** (subagent reconstructed from
+  ramdisk.c:813-911) and rendered C `L"..."` as a use-after-free temp-`Vec` ptr (fixed via a
+  static-backed `wstr!` macro). Cohab flip: ramdisk SHIPS (kept add_cd_file+inf), rust_cohab_stub.c
+  + libramdisk_rust.a. lint-clean; only-ud2 is `core::panicking`. **Reusable for the field
+  manual: (1) cohab driver importing kernel DATA needs raw-dylib on i386/arm64 (amd64 hides it);
+  (2) a kept `extern "C"` block for NTAPI fns is an i386-only `_Name`-vs-`_Name@N` link break —
+  same class as the kernel32 RPC-wait ABI bug.** Awaiting meaniepy ×3 cold-smoke gate.

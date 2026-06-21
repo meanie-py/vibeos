@@ -393,6 +393,19 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  ramdisk)
+    # RAM-disk class driver (drivers/storage/class/ramdisk). Its private device-extension
+    # structs (RAMDISK_EXTENSION, RAMDISK_BUS_EXTENSION, RAMDISK_DRIVE_EXTENSION) are defined
+    # INLINE in ramdisk.c → translated directly from the .c, not bindgen'd. The only header
+    # types not in the kernel bindgen are the public IOCTL structs RAMDISK_CREATE_INPUT /
+    # RAMDISK_CREATE_OPTIONS in reactos/drivers/ntddrdsk.h → allowlist that one header. NT 5.2.
+    DRIVER_DIR="${SRC}/drivers/storage/class/ramdisk"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ntdddisk.h>\n#include <reactos/drivers/ntddrdsk.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ntddrdsk\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
