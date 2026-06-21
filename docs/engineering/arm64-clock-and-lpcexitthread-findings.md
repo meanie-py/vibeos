@@ -121,3 +121,70 @@ one-boot catch once instrumented.
 - Clock fix: complete, correct, preserved on `arm64-love`. **Gated** on the fastfat fix.
 - Next: fastfat instrument boot → confirm (a) vs (b) → fix in fastfat-rust → re-verify arm64
   deterministically desktop-green with the clock → hand SHA to control-plane for cold ×3.
+
+---
+
+## 5. RESOLVED root cause of the FILE_CORRUPT (supersedes §2 speculation) — 2026-06-20
+
+The "Cc/CcMapData page-in race" hypothesis in §2 was **WRONG**. With the clock making the
+fault deterministic, a `FatRaiseStatus` chokepoint instrument (log caller LR + a runtime
+anchor in the `rust_cohab_stub.c` shim) pinned the raise to **`FatSetFatEntry`'s
+volume-dirty switch** (`allocsup.rs`), reached from **`FatMarkVolume`** (`verfysup.rs`).
+
+Real bug = a **translation constant error**: `verfysup.rs` defined LOCAL
+`const FAT_DIRTY_VOLUME = 0x0FFFFFF7` / `FAT_CLEAN_VOLUME = 0x0FFFFFF8` (those are FAT32
+*cluster* end/bad markers) instead of the volume dirty-state values
+`0xF0000001` / `0xF0000000` (`~FAT32_ENTRY_MASK | {1,0}`, per `fastfat/fat.h`). So
+`FatMarkVolume(dirty)` passed `0x0FFFFFF7`; `FatSetFatEntry`'s `switch (FatEntry)` matched
+neither `FAT_CLEAN_VOLUME` nor `FAT_DIRTY_VOLUME` and fell to `default: FatRaiseStatus(
+STATUS_FILE_CORRUPT_ERROR)` (this `default` exists in pristine C — the translation was
+faithful; only the *constants* were wrong). DUMMY_PSEH → unhandled → BUGCHECK 0x1E. The
+clock made the timer-driven volume-dirty mark fire every boot → deterministic.
+
+**Fixed** (both the file-scope pair and the fn-local dup in `verfysup.rs`). Committed with
+the clock in `65c82a286a0`. New field-manual bug class: *wrong-value local constant
+shadowing a correct module/header constant* — grep fastfat/*.rs for re-declared FAT_*
+constants vs `fat.h`. Same family as the cdfs grind-constant fixes.
+
+## 6. NEW downstream blocker: 0xC2 / 0x19 pool corruption ("Irp " double-free) — OPEN
+
+With FILE_CORRUPT cleared, boot reaches a **BUGCHECK 0xC2 BAD_POOL_CALLER subcode 0x0D
+(POOL_BILLED_PROCESS_INVALID)** at `expool.rs:1404`, args
+`(0x0d, p=0xfffffa000638e330, tag=0x20707249 "Irp ", process=0xfffffa000638e508)`, during a
+**System worker thread exit** (`PspExitThread → LpcExitThread`). Deterministic.
+
+Diagnostic instrument (log block+IRP fields, guard-skip the bugcheck) revealed:
+`PoolType=0` (zeroed/free header — the quota branch fired *spuriously* because
+`0u8.wrapping_sub(1) & QUOTA_POOL_MASK != 0`), `IrpType=0xc7c0` (garbage; valid IRP Type=6),
+`AllocFlags=4` (**no `IRP_QUOTA_CHARGED` bit**). Guard-skipping then hit **BUGCHECK 0x19
+BAD_POOL_HEADER subcode 3** on a *different* block ⇒ **broad pool corruption / double-free**,
+NOT a quota-logic bug.
+
+**GDB backtrace** (run-until KeBugCheckEx; load_base from KeBugCheckEx-entry break =
+`0xfffff80042192000`):
+```
+#0 KeBugCheckEx
+#1 ExFreePoolWithTag   @ +0x8cc into the fn   (faithful: bad header → bugcheck)
+#2 0xfffff800423aafcc  → VA 0x218f8c  (BEYOND ntoskrnl image 0x1FA000 → a module loaded
+                                       AFTER ntoskrnl; NOT hal.dll — hal.dll is 0x7000 and
+                                       never calls ExFree/IoFreeIrp)
+#3 garbage (no-DWARF unwind broke here)
+```
+Ruled OUT: IRP stack-location layout/stride (208 base + 0x44 stride consistent end-to-end),
+quota alloc/free slot offsets (identical `pool_next_block-1`), `FatMarkVolume`'s own IRP
+lifecycle (completion routine correctly returns STATUS_MORE_PROCESSING_REQUIRED, no
+double-free), the quota constant path (faithful to C).
+
+**Hypothesis:** a real IRP double-free / use-after-free in the FAT-volume-WRITE path that my
+verfysup fix newly exercises (FatSetFatEntry→FatPrepareWriteVolumeFile→Cc/Mm paging write),
+OR a clock-IRQ-enablement interaction (KiIrqHandler was a no-op print before the clock; the
+clock is the FIRST code to enable the GICv2 distributor/CPU-interface on arm64 — devices
+were polled). frame#2-in-a-later-module is suspicious but the no-DWARF unwind is unreliable
+past frame#1.
+
+**Next (decisive):** DWARF rebuild (`cmake -DCMAKE_C_FLAGS_RELEASE="-O2 -g3" .` +
+`RUSTFLAGS=-C debuginfo=2`, full arm64 ninja) so `run-until --break KeBugCheckEx --then
+"bt 60"` gives a CFI-unwound, fully-symbolicated stack across all modules → exact double-free
+site. Then fix the lifetime bug. Clock + FILE_CORRUPT fix stay parked on `arm64-love`
+(`65c82a286a0`) — correct but NOT desktop-green until the 0xC2 is fixed (the clock correctly
+*exposes* this latent bug; per the translation philosophy the red state is the right state).
