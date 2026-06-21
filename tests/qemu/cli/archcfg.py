@@ -62,6 +62,13 @@ _CFGS = {
     ),
     "arm64": ArchBuild(
         arch="arm64",
+        # win32k + kernel32 are boot-critical AND frequently edited, but unlike
+        # x86 (whose `livecd` DAG re-rolls everything) arm64 builds a hand-picked
+        # staged set. Omitting them meant a win32k/kernel32 edit smoked via the
+        # standard `build --arch arm64` rebuilt neither and re-staged a STALE
+        # binary → false green (every arm64 gate this session worked around it
+        # with manual `ninja win32k`/`rust_kernel32` + mcopy). They're in the
+        # staged set below too, so staleness now also catches an un-rebuilt copy.
         # livecd_hives builds boot/bootdata/system (the SYSTEM hive) so Start=1
         # driver registrations (e.g. netstack) reach the arm64 boot — the arm64
         # build used to skip it, staging a stale netstack-less hive. netstack is
@@ -73,8 +80,18 @@ _CFGS = {
         # `ninja <target>` + mcopy inject dance (the same false-green footgun the
         # staged-set was created to close). mkramdisk.sh copies them.
         ninja_targets=(
-            "ntoskrnl", "hal", "uefildr", "netstack", "livecd_hives",
-            "afd", "msafd", "mswsock", "nettest",
+            "ntoskrnl",
+            "hal",
+            "uefildr",
+            "win32k",
+            "rust_kernel32",
+            "dll/win32/kernel32/kernel32.dll",
+            "netstack",
+            "livecd_hives",
+            "afd",
+            "msafd",
+            "mswsock",
+            "nettest",
         ),
         ninja_targets_optional=("arm64input", "arm64vid"),
         needs_mkramdisk=True,
@@ -83,6 +100,8 @@ _CFGS = {
             "ntoskrnl/ntoskrnl.exe",
             "hal/halarm64/hal.dll",
             "boot/freeldr/uefildr/uefildr.efi",
+            "win32ss/win32k.sys",
+            "dll/win32/kernel32/kernel32.dll",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
             "drivers/network/netstack/netstack.sys",

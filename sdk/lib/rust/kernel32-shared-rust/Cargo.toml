@@ -1,0 +1,17 @@
+# kernel32-shared-rust — Rust translation of dll/win32/kernel32/client/{shared_utils,file/fileutils}.c
+# the "kernel32_shared" static lib that is linked into BOTH kernel32.dll AND
+# kernel32_vista.dll. Built once → libkernel32_shared_rust.a, linked into both
+# DLLs' cmake link lines (the C kernel32_shared target is dropped). User-mode:
+# STANDARD per-arch targets (i686/x86_64 gnu, aarch64 gnullvm) + i386 -sse,-sse2
+# inherited from the workspace .cargo/config.toml. Imports resolve to ntdll.dll
+# (Rtl*) and the host kernel32.dll (AreFileApisANSI/SetLastError) at runtime.
+[package]
+name = "kernel32-shared-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

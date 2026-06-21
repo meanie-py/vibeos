@@ -1,0 +1,29 @@
+# npfs-rust — Rust translation of the Named Pipe filesystem driver
+# (drivers/filesystems/npfs, ~6.7K LOC across 20 .c files + npfs.h). NPFS implements the
+# \Device\NamedPipe FSD: a VCB-rooted prefix table of named-pipe FCBs, each with a list of
+# CCB instances; each CCB carries two NP_DATA_QUEUEs (in/out) driving the pipe state machine
+# (Disconnected/Listening/Connected/Closing) plus client security contexts, a wait queue for
+# FSCTL_PIPE_WAIT, and fast-I/O read/write paths.
+#
+# NOT boot-loaded (no 'x' in txtsetup.sif), so the bar is link-clean ×3 + no smoke regression
+# — same tier as mup-rust. WDM kernelmodedriver, imports ntoskrnl + hal only. SEH (PSEH2) is
+# dead under USE_DUMMY_PSEH: _SEH2_TRY bodies inline straight-line, _SEH2_FINALLY bodies always
+# run, _SEH2_EXCEPT handlers are dropped (faithful — the C compiles them to dead code too).
+#
+# crate-type = staticlib -> libnpfs_rust.a, cohab-linked into the cmake-built npfs.sys with
+# the 20 .c bodies commented out. Built for all 3 arches. Mirrors mup-rust / fs_rec-rust cohab.
+
+[package]
+name = "npfs-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

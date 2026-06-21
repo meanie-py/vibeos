@@ -503,6 +503,14 @@ name = "hid-sys"
 version = "0.1.0"
 
 [[package]]
+name = "hidclass-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "hidparse-cargo"
 version = "0.1.0"
 dependencies = [
@@ -519,6 +527,15 @@ version = "0.1.0"
 dependencies = [
  "hid-sys",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "hidusb-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+ "usb-sys",
 ]
 
 [[package]]
@@ -566,6 +583,14 @@ dependencies = [
 name = "kbdclass-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kbdhid-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
  "ntkrnl-sys",
 ]
 
@@ -653,6 +678,21 @@ dependencies = [
 
 [[package]]
 name = "kernel32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
+name = "kernel32-shared-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
+name = "kernel32-vista-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
@@ -797,10 +837,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "mouhid-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "mountmgr-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "msfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "msgina-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winlogon-sys",
 ]
 
 [[package]]
@@ -839,6 +902,13 @@ dependencies = [
 
 [[package]]
 name = "nmidebug-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "npfs-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -1069,6 +1139,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "ramdisk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -1324,6 +1401,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "serial-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "services-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1421,6 +1505,20 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "storahci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "storport-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "svcctl-stub"
@@ -1586,6 +1684,13 @@ dependencies = [
 [[package]]
 name = "usbdex-rust"
 version = "0.1.0"
+
+[[package]]
+name = "user32-rust"
+version = "0.1.0"
+dependencies = [
+ "win32k-sys",
+]
 
 [[package]]
 name = "userinit-cargo"

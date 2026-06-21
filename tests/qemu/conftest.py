@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from .cli import config as cli_config
 from .vm import QemuVM, get_arch_config, reap_orphan_qemus, PROJECT_DIR
 
 # Add tools/ to path for scan_ud2, lint_kernel
@@ -168,7 +169,15 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
     config = get_arch_config(arch)
     work_dir = tmp_path_factory.mktemp(f"qemu-{arch}")
 
-    vm = QemuVM(config, work_dir)
+    # Honor the same layered launch-backend config the cli smoke path reads
+    # (.vibeos-cli.local.json / env), so EVERY pytest QEMU path — the net suite
+    # folded into smoke, test_snapshot_apps, a direct test_smoke run — uses the
+    # selected backend. Without this the net stage spawned a plain pytest that
+    # always launched native KVM, so a WSL2-no-KVM user on the windows-host
+    # backend got a working boot stage but a net stage that failed on KVM.
+    cli_cfg = cli_config.load(PROJECT_DIR)
+    backend = cli_cfg.get("qemu.backend", "native")
+    vm = QemuVM(config, work_dir, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
     vm.start()
     # Tell watchers where to follow boot progress live — a cold arm64 TCG boot
     # is silent for minutes, so this is how an agent distinguishes "working"

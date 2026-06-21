@@ -59,24 +59,22 @@ fn main() {
         // in-cargo from dummy.c (was libpseh.a). Both proven on the other spine
         // binaries / ntdll / hal; dummy.c provides exactly libpseh.a's 2 symbols.
         .rust_lib("cnt-rust-lib", cnt_feats, true)
-        .c_shims(&["sdk/lib/pseh/dummy.c"])
+        // c_shims: dummy.c (DUMMY_PSEH _SEH2_Volatile* globals, was libpseh.a) +
+        // the usersrv strsafe shim (the real strsafe/_Interlocked/IsListEmpty
+        // provider harderror.rs needs). The strsafe shim was ALREADY headerless
+        // (only <stdarg.h>; it hand-defines NTSTATUS/WCHAR/UNICODE_STRING etc. on
+        // purpose to avoid colliding with ntstrsafe.h's __forceinline decls), so
+        // WS1 cmake-off (2026-06-21) just moved it off c_from_compile_db onto
+        // c_shims — verified symbol-identical (WS1 harness). winsrv now links free
+        // of cmake's compile_commands.json. (consrv_rust_shim.c / usersrv_rust_stub
+        // / concfg_rust_stub were already dropped — Rust-provided / vestigial.)
+        .c_shims(&[
+            "sdk/lib/pseh/dummy.c",
+            "win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c",
+        ])
         // Exports via spec2def-generated winsrv.def (ConServerDllInitialization
         // / UserServerDllInitialization / _UserSoundSentry / …).
         .spec2def("win32ss/user/winsrv/winsrv.spec", "winsrv.dll")
-        // Axis B: the consrv/usersrv/concfg C residue compiled IN-cargo (replays
-        // cmake's flag-exact clang command via the existing cmake targets as the
-        // CMakeFiles/<name>.dir markers) — drops the libconsrv/libusersrv/
-        // libconcfg.a reuse. Each lands in the --start-group with libwinsrv_rust.a.
-        // consrv_rust_shim.c (interlocked intrinsics / NT macros / COM-vtbl
-        // dispatchers) is now pure Rust: winsrv-rust/src/consrv/shim.rs provides
-        // the same per-arch symbols. No C compiled for consrv.
-        // usersrv_rust_stub.c + concfg_rust_stub.c dropped — cmake-era empty
-        // cohabitation stubs (archive-extraction hacks), vestigial in the cargo
-        // link. usersrv_rust_strsafe_shim.c is a real provider (strsafe) → kept.
-        .c_from_compile_db(
-            "usersrv",
-            &["win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c"],
-        )
         // The genuine shared leaf/runtime statics, reused from cmake (the same
         // tier every spine binary reuses). libwinsrv_rust.a is emitted first by
         // the engine (rust_staticlib). --allow-multiple-definition (engine)
@@ -88,14 +86,22 @@ fn main() {
         // winsrv inputs — libwinsrv_rust + basesrv/csrsrv/win32ksys/concfg_rust —
         // ∩ liblibcntpr defs − cnt-rust defs) = EMPTY, so no C-variadic/float
         // residue is needed (unlike win32k, winsrv calls printf only via the
-        // Rust-provided entry points). The csr server bodies + concfg_rust stay.
+        // Rust-provided entry points). The csr server bodies stay.
+        // libconcfg_rust.a DROPPED 2026-06-20 — REDUNDANT: winsrv-rust already
+        // pulls concfg-rust as a Cargo dep, so all 50 of libconcfg_rust.a's syms
+        // are provided by the cargo dep (offline residue: concfg_rust defs −
+        // winsrv-rlib defs = EMPTY). Same pattern as libcntpr_rust→cnt-rust-lib.
+        // libbasesrv.a / libcsrsrv.a self-hosted via .import_lib below (2026-06-20)
+        // — both are cmake-built IMPORT libs (members basesrv.dll/csrsrv.dll +
+        // __imp_ thunks), NOT bodies (basesrv/csrsrv are 100% Rust DLLs now).
+        // winsrv genuinely imports them (basesrv: BaseSetProcessCreateNotify;
+        // csrsrv: 21 Csr* syms), so they're self-hosted from each .spec (the
+        // kdcom/bootvid/hal pattern), symbol-identical (the cmake .a is itself
+        // spec2def-generated from these specs).
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
-            "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
-            "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
             "sdk/lib/crt/libchkstk.a",
-            "win32ss/user/winsrv/concfg/libconcfg_rust.a",
         ])
         // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
         // not reused as cmake lib<dll>.a — same as the other 6 spine binaries.
@@ -109,6 +115,8 @@ fn main() {
         .import_lib("dll/win32/ole32/ole32.spec", "ole32.dll", "ole32")
         .import_lib("dll/win32/psapi/psapi.spec", "psapi.dll", "psapi")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")
+        .import_lib("subsystems/win/basesrv/basesrv.spec", "basesrv.dll", "basesrv")
+        .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,

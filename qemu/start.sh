@@ -218,7 +218,7 @@ esac
 # before launch) so we never hold a slot during our own prep, and the lifetime
 # deadline computed after launch excludes all of this queue wait.
 SLOT_INDEX=""
-if ! acquire_qemu_slot; then
+if ! acquire_qemu_slot "$ARCH"; then
     die "timed out waiting for a free QEMU slot (cap=$QEMU_MAX_CONCURRENT, run-id=$RUN_ID)"
 fi
 
@@ -273,9 +273,10 @@ jq -n \
 # process group iff it's still alive AND still actually QEMU (guards pid reuse).
 # setsid+disown so it outlives start.sh and never receives the shell's SIGHUP.
 # Self-exits early-and-cheap if QEMU is already gone.
-# `200>&-` closes the inherited concurrency-slot fd in the watchdog: ONLY QEMU
-# should pin the slot. If the watchdog held fd 200 too, the slot would stay
-# occupied for the full cap even after QEMU exited early.
+# `200>&- 201>&-` closes the inherited concurrency-slot fds in the watchdog:
+# ONLY QEMU should pin the global slot (200) and the per-arch slot (201). If the
+# watchdog held either, that slot would stay occupied for the full cap even
+# after QEMU exited early. (201 may be unopened for uncapped arches — harmless.)
 setsid bash -c '
     qpid="$1"; secs="$2"
     sleep "$secs"
@@ -286,7 +287,7 @@ setsid bash -c '
     kill -TERM -- "-$pgid" 2>/dev/null || true
     sleep 5
     kill -0 "$qpid" 2>/dev/null && kill -KILL -- "-$pgid" 2>/dev/null || true
-' _ "$QEMU_PID" "$QEMU_MAX_LIFETIME_SECONDS" </dev/null >/dev/null 2>&1 200>&- &
+' _ "$QEMU_PID" "$QEMU_MAX_LIFETIME_SECONDS" </dev/null >/dev/null 2>&1 200>&- 201>&- &
 disown 2>/dev/null || true
 
 # --- wait briefly for QEMU to actually start ------------------------------

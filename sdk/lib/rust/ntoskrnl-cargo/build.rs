@@ -27,16 +27,15 @@ fn main() {
     //   - asm: the per-arch `.S` set the cmake kernel target compiles
     //   - cnt_float: cnt-rust-lib `float` feature — i386 omits it (no-SSE
     //     softfloat kernel), amd64/arm64 enable it (libcntpr.cmake CNT_RUST_*).
-    //   - hal_dir: hal/halx86 (i386+amd64) vs hal/halarm64 (arm64).
-    //   - chkstk: cmake links the ReactOS libchkstk.a on i386+arm64 (amd64 takes
-    //     __chkstk from the clang_rt.builtins the engine already links).
-    let (rust_target, res, entry, asm, cnt_float, hal_dir, chkstk): (
+    // (libchkstk.a DROPPED 2026-06-20: the i386 cntpr_asm below assembles
+    // chkstk_asm.s — which PUBLICs all 4 stack-probe symbols __chkstk/
+    // __alloca_probe/__alloca_probe_16/___alloca — and clang_rt.builtins covers
+    // __chkstk on amd64/arm64, so the ReactOS libchkstk.a was redundant.)
+    let (rust_target, res, entry, asm, cnt_float): (
         &str,
         &str,
         &str,
         Vec<&str>,
-        bool,
-        &str,
         bool,
     ) = match arch.as_str() {
         "x86" => (
@@ -52,8 +51,6 @@ fn main() {
                 "ntoskrnl/ke/i386/usercall_asm.S",
             ],
             false,
-            "halx86",
-            true,
         ),
         "x86_64" => (
             "x86_64-kernel.json",
@@ -68,8 +65,6 @@ fn main() {
                 "ntoskrnl/ke/amd64/zeropage.S",
             ],
             true,
-            "halx86",
-            false,
         ),
         "aarch64" => (
             "aarch64-pc-windows-gnullvm",
@@ -83,14 +78,11 @@ fn main() {
                 "ntoskrnl/ke/arm64/zwdispatch.S",
             ],
             true,
-            "halarm64",
-            true,
         ),
         o => panic!("ntoskrnl-cargo: unsupported arch {o}"),
     };
 
     let cnt_feats: &[&str] = if cnt_float { &["float"] } else { &[] };
-    let hal_lib = format!("hal/{hal_dir}/CMakeFiles/libhal.dir/libhal.a");
 
     // Header-free C shims (no kernel -I; clang's own stdarg/stddef/stdint).
     // kdbg_rust_shims.c is x86-only — it references the kdbg pager symbols
@@ -103,6 +95,11 @@ fn main() {
         "ntoskrnl/ke/ke_rust_shims.c",
         "ntoskrnl/mm/mm_rust_shims.c",
         "ntoskrnl/variadic_shims.c",
+        // dbgprint_variadic.c: the rtl-floor C-variadic DbgPrint/DbgPrintEx/
+        // wine_dbg_* trampolines. SELF-CONTAINED/headerless (cmake-off spike,
+        // 2026-06-20) → compiled directly by cc-rs here, dropping the
+        // c_from_compile_db("rtl") path that needed cmake's compile_commands.json.
+        "sdk/lib/rtl/dbgprint_variadic.c",
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
@@ -113,6 +110,41 @@ fn main() {
     if arch != "aarch64" {
         c_shims.push("ntoskrnl/kdbg/kdbg_rust_shims.c");
     }
+    // WS1 cmake-off LEAF batch (2026-06-21): CRT-floor files made
+    // self-contained/headerless (no precomp.h/winnt.h) → moved out of the
+    // cntpr_residue c_from_compile_db list into c_shims, dropping their
+    // dependency on cmake having generated compile_commands.json. Each verified
+    // symbol+disasm-identical vs the cmake object (WS1 verify harness). Per-arch:
+    //   i386  = the _CIxxx x87 math-intrinsic wrappers + _fltused
+    //   amd64 = the __C_specific_handler SEH personality (+ _fltused via shells)
+    match arch.as_str() {
+        "x86" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/misc/fltused.c",
+        ]),
+        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        _ => {}
+    }
+    // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust
+    // stable can't DEFINE C variadics) all #include the shared _sxprintf.c engine,
+    // now self-contained/headerless behind -DCRT_PRINTF_HEADERLESS (see
+    // c_shim_flags below) so cc-rs compiles them directly — no compile_commands.json
+    // replay. Each shell verified disasm-identical vs the header build (WS1 harness).
+    // All arches (the kernel's cmlib hive code pulls these on every arch). Moving
+    // them empties cntpr_residue → the kernel drops c_from_compile_db entirely.
+    c_shims.extend_from_slice(&[
+        "sdk/lib/crt/printf/sprintf.c",
+        "sdk/lib/crt/printf/swprintf.c",
+        "sdk/lib/crt/printf/vsprintf.c",
+        "sdk/lib/crt/printf/_snprintf.c",
+        "sdk/lib/crt/printf/_snwprintf.c",
+        "sdk/lib/crt/printf/_vsnprintf.c",
+        "sdk/lib/crt/printf/_vsnwprintf.c",
+    ]);
 
     // cmake C / cohab static libs (the rust archives — libkernel_rust.a,
     // librtl_rust.a, libcntpr_rust.a — are emitted by the engine AFTER this
@@ -121,25 +153,38 @@ fn main() {
     // link line; the engine wraps the whole set in --start-group so inter-C
     // order is non-critical.
     let mut static_libs: Vec<&str> = vec![
-        "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
-        "sdk/lib/cportlib/libcportlib.a",
-        "sdk/lib/cportlib/libcport_rust.a",
-        "sdk/lib/drivers/csq/libcsq.a",
-        "sdk/lib/drivers/csq/libcsq_rust.a",
+        // libntoskrnl_vista.a DROP-TEST 2026-06-20 — offline residue (vista-defined
+        // ∩ kernel-truly-unresolved) = EMPTY on i386+amd64. Empirical build is the
+        // oracle. (If the link needs it, residue = IoSetMasterIrpStatus /
+        // KeGetCurrentNodeNumber / PoQueryWatchdogTime / RtlUTF8ToUnicodeN — all
+        // already translated in ntoskrnl-vista-rust + utf8.)
+        // cportlib/csq/arbiter/lsalib/rossym cohab → cargo-native `.rust_lib`
+        // (the 5 calls below) 2026-06-20. Both halves of each cohab dropped from
+        // this cmake-.a list: the C bodies (libcportlib/libcsq/libarbiter/
+        // libntlsalib/librossym .a) were empty rust_cohab_stub placeholders —
+        // 0 real symbols (libcportlib's lone def, ___cportlib_rust_cohab_stub,
+        // is unreferenced) — and the cmake-BUILT libX_rust.a are superseded by
+        // building those same crates (cport-rust/csq-rust/arbiter-rust/
+        // lsalib-rust/rossym-rust) cargo-native, exactly the rtl-rust/
+        // cnt-rust-lib/cmlib-rust pattern. The `bacd1fc64d3` x86-ungate block
+        // (which re-added the cmake libX_rust.a on x86 too) is likewise gone —
+        // the `.rust_lib` calls below serve all 3 arches uniformly.
         // libpseh.a DROPPED → `pseh-rust` (.rust_lib below, all arches). It
         // provides the 2 DUMMY_PSEH `_SEH2_Volatile*` data symbols (referenced
         // by the C cohab archives' pseh2.h) on every arch, plus the i386 SEH
         // runtime (`_except_handler2/3`/`_global_unwind2`/`_local_unwind2`/
         // `_abnormal_termination`, exported by ntoskrnl.spec for -arch=i386,arm)
         // via global_asm! disasm-identical to the cmake seh.s. C kept on disk.
-        "sdk/lib/drivers/arbiter/libarbiter.a",
-        "sdk/lib/drivers/arbiter/libarbiter_rust.a",
-        "sdk/lib/cmlib/libcmlib.a",
-        "sdk/lib/lsalib/libntlsalib.a",
-        "sdk/lib/lsalib/liblsalib_rust.a",
-        "sdk/lib/rtl/librtl.a",
-        "sdk/lib/rossym/librossym.a",
-        "sdk/lib/rossym/librossym_rust.a",
+        // libcmlib.a DROPPED 2026-06-20 — it was an empty placeholder TU (0
+        // defined symbols; all 13 cmlib .c are REMOVE_ITEM'd) since the kernel
+        // cmlib body is 100% Rust via `.rust_lib("cmlib-rust")` below. The
+        // placeholder contributed nothing to the link.
+        // librtl.a DROPPED 2026-06-20 — the whole sdk/lib/rtl/*.c surface is Rust
+        // (rtl-rust .rust_lib below, 5681 syms); librtl.a was down to the
+        // irreducible floor (34 syms i386 / 18 amd64): the C-variadic DbgPrint
+        // family (dbgprint_variadic.c) + per-arch asm (except/mem/swap/debug),
+        // now compiled in-cargo via the rtl c_from_compile_db + rtl_asm
+        // asm_archive below (the cntpr pattern). No translation gap.
         // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
         // whole translatable surface (string/mem/ctype/search/printf+scanf
         // engines/full math); the irreducible C/asm floor is compiled in-cargo
@@ -151,99 +196,41 @@ fn main() {
         // wdmguid/poguid/ioevent (the 3 cmake C GUID libs) → `guids-rust`
         // (.rust_lib below): 217 deduped #[no_mangle] GUID data constants. C
         // kept on disk for any remaining cmake consumers.
-        &hal_lib,
-        "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
-        "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
+        // libhal.a (the cmake-built hal.dll IMPORT lib) DROPPED 2026-06-20 — the
+        // kernel now self-hosts the hal import from hal.spec via .import_lib
+        // below (the classpnp/win32k pattern). hal.dll itself is 100% hal-rust
+        // (cargo-driven); this was only the import library (95 short-import
+        // members → hal.dll), not a HAL body.
+        // libkdcom.a / libbootvid.a (the cmake-built kdcom.dll / bootvid.dll
+        // IMPORT libs) DROPPED 2026-06-20 — the kernel now self-hosts both
+        // imports from their .spec via .import_lib below (the hal pattern).
+        // kdcom.spec = 8 stdcall exports (Kd{D0,D3}Transition/DebuggerInitialize
+        // {0,1}/ReceivePacket/Restore/Save/SendPacket); bootvid.spec = 11 Vid*.
+        // Symbol-identical: the cmake .a is itself spec2def-generated from these
+        // same specs. bootvid.dll is cargo-driven (bootvid-cargo); these were
+        // only the import libraries, not bodies.
     ];
-    if chkstk {
-        static_libs.push("sdk/lib/crt/libchkstk.a");
-    }
 
-    // Rust-flipped cohab archives (cportlib/csq/arbiter/lsalib/rossym → libX_rust.a)
-    // ARM64 ONLY. These libs were C→Rust flipped: their cmake `libX.a` is now a
-    // rust_cohab_stub placeholder and the real Cp*/IoCsq*/Arb*/Lsa*/RosSym* symbols
-    // live in libX_rust.a (kdcom/kdgdb/uefildr already pull libcport_rust.a). On a
-    // clean arm64 tree the C archives are correctly stub-only → undefined at link,
-    // so arm64 MUST pull the rust archives. On i386/amd64 the cmake C `libX.a`
-    // still carries the symbols (it is not rebuilt by a rust-only `--clean`), so
-    // they resolve without these — and ADDING them there is not free: the extra
-    // archives shift the kernel link LAYOUT and tip a pre-existing latent
-    // layout-sensitive miscompile on the cmlib Hv* hive-write path (cold amd64
-    // HANG at `hivewrt.c "Failed to write the primary hive"`; warm dodges it — see
-    // field manual "latent hive-path miscompile" + [[feedback_cargo_drive_reuse_a_redundancy]]).
-    // #35 ungate: x86 now pulls these too. The layout shift historically tipped a
-    // latent cmlib Hv* hive-write miscompile — now guarded by the targeted
-    // `cmlib-rust` no-prepopulate-passes class-guard in reactos-link, so the ungate
-    // lands on i386/amd64 (driving cport/csq/arbiter/lsalib/rossym to Rust ×3).
-    if arch == "aarch64" || arch == "x86" || arch == "x86_64" {
-        static_libs.extend_from_slice(&[
-            "sdk/lib/cportlib/libcport_rust.a",
-            "sdk/lib/drivers/csq/libcsq_rust.a",
-            "sdk/lib/drivers/arbiter/libarbiter_rust.a",
-            "sdk/lib/lsalib/liblsalib_rust.a",
-            "sdk/lib/rossym/librossym_rust.a",
-        ]);
-    }
+    // (cportlib/csq/arbiter/lsalib/rossym are now cargo-native `.rust_lib` — see
+    // the calls in the linker chain below. Historically these were cmake-built
+    // libX_rust.a added to static_libs, gated arm64-only then x86-ungated in
+    // `bacd1fc64d3`; the layout shift once tipped a latent cmlib Hv* hive-write
+    // miscompile [cold amd64 HANG at hivewrt.c "Failed to write the primary
+    // hive"], now guarded by the cmlib-rust no-prepopulate-passes class-guard in
+    // reactos-link. Building the crates cargo-native instead of reusing cmake's
+    // copy keeps the same guard in force; the amd64 cold boot is the oracle.)
 
-    // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
-    // (enumerated by a drop-test against liblibcntpr.a). Compiled in-cargo via
-    // c_from_compile_db (replays compile_commands.json, symbol-identical to the
-    // cmake objects). i386 additionally needs an asm archive — see cntpr_asm.
-    //   - amd64: the variadic printf shells (Rust stable can't define C
-    //     variadics) + the amd64 SEH personality (except/amd64/ehandler.c →
-    //     __C_specific_handler/_local_unwind).
-    //   - i386: the _CIxxx x87 MSVC math intrinsic wrappers (ci*.c — they CALL
-    //     the now-Rust libm, e.g. _CIsqrt→sqrt) + the variadic printf shells +
-    //     _fltused. (No SEH personality — i386 uses DUMMY_PSEH.) The 64-bit
-    //     integer + ftol + chkstk asm go through cntpr_asm below.
-    // Archive members pull lazily, so the per-arch list is a SUPERSET safe for
-    // both ntoskrnl and ntdll (ntoskrnl gets _fltused/chkstk from hal etc., so
-    // those objects simply aren't pulled here). arm64 needs NO residue at all —
-    // its drop-test came back with zero undefined (cnt-rust-lib + kernel-rust
-    // cover the whole surface; clang_rt.builtins-aarch64 covers __chkstk).
-    let cntpr_residue: Vec<&str> = match arch.as_str() {
-        "x86_64" => vec![
-            "sdk/lib/crt/except/amd64/ehandler.c",
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        "x86" => vec![
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
-            "sdk/lib/crt/misc/fltused.c",
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        // arm64: the variadic printf shells only. The original 93d5ba8 drop-test
-        // found arm64 needed NOTHING — but that predated linking cmlib-rust here.
-        // cmlib's hive code pulls sprintf/swprintf/vsprintf/_sn*/_vsn*, which Rust
-        // stable can't define (C variadics), so compile the shells in-cargo. No
-        // SEH/_fltused/_CIxxx/chkstk (cdecl variadic ABI + clang_rt.builtins-aarch64
-        // + cnt-rust libm cover the rest), and no scanf/_vscwprintf (ntdll-only).
-        "aarch64" => vec![
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        _ => Vec::new(),
-    };
+    // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide.
+    // As of the WS1 cmake-off batches (2026-06-21) it is EMPTY for the kernel —
+    // every former member is now a self-contained/headerless c_shim:
+    //   - the amd64 SEH personality (ehandler.c) + i386 _CIxxx math wrappers +
+    //     _fltused → c_shims LEAF batch above;
+    //   - the C-variadic printf shells (all arches, pulled by cmlib hive code) →
+    //     c_shims printf batch above (-DCRT_PRINTF_HEADERLESS).
+    // So the kernel no longer calls c_from_compile_db at all — the cargo kernel
+    // link is free of cmake's compile_commands.json. (The i386 integer/ftol/
+    // chkstk asm floor remains, via the cntpr_asm asm_archive below — asm, not C.)
+    let cntpr_residue: Vec<&str> = Vec::new();
     // i386 asm floor: the 64-bit integer intrinsics (_alldiv/_allmul/…/_aullshr),
     // the float→int conversion (_ftol), and the stack probe (_chkstk /
     // _alloca_probe / ___alloca). Assembled from SOURCE .s via the engine's
@@ -275,6 +262,28 @@ fn main() {
     // asm, arm64 needs NOTHING extra — cnt-rust-lib + kernel-rust already provide
     // it all). Keeping it would only make cnt-rust dead-cohab (C-first wins).
 
+    // librtl.a's irreducible asm floor (the `.c` surface is all rtl-rust now):
+    // per-arch except/mem/swap/debug asm. Assembled in-cargo via asm_archive
+    // (lazy in-group archive, same asm_set as .asm() = Kernel + the kernel asm
+    // -I chain — identical to how cmake compiled them into librtl.a). The
+    // C-variadic DbgPrint family (dbgprint_variadic.c) goes via c_from_compile_db
+    // below. Together these replace the dropped librtl.a.
+    let rtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/except_asm.s",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => &[
+            "sdk/lib/rtl/amd64/debug_asm.S",
+            "sdk/lib/rtl/amd64/except_asm.S",
+            "sdk/lib/rtl/amd64/unwind-asm.s",
+        ],
+        "aarch64" => &["sdk/lib/rtl/arm64/debug_asm.S"],
+        _ => &[],
+    };
+
     let mut linker = Linker::new(rust_target);
     linker = linker
         .rust_staticlib("kernel-rust")
@@ -295,8 +304,20 @@ fn main() {
         .rust_lib("cmlib-rust", &[], true)
         // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
         .rust_lib("guids-rust", &[], true)
+        // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
+        // libX_rust.a in static_libs + the empty C-body stubs, both dropped
+        // above). Same crates cmake compiled into libX_rust.a — building them
+        // here via the engine is symbol-identical. All 3 arches uniformly.
+        .rust_lib("cport-rust", &[], true)
+        .rust_lib("csq-rust", &[], true)
+        .rust_lib("arbiter-rust", &[], true)
+        .rust_lib("lsalib-rust", &[], true)
+        .rust_lib("rossym-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
+        // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
+        // _sxprintf.c (harmless to the other shims, which don't reference it).
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
         // kernel asm -I chain (asm.inc + the generated build-<arch> ks*.inc +
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch
@@ -314,6 +335,17 @@ fn main() {
     if !cntpr_asm.is_empty() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
+    // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
+    //   - dbgprint_variadic.c → moved to .c_shims() above (cmake-off spike
+    //     2026-06-20): the file is now self-contained/headerless, compiled by
+    //     cc-rs directly, so it no longer needs c_from_compile_db's
+    //     compile_commands.json replay (the first kernel C-floor file freed of
+    //     the cmake-configure dependency).
+    //   - the per-arch asm floor via asm_archive (lazy in-group, Kernel define
+    //     set + kernel asm -I chain).
+    if !rtl_asm.is_empty() {
+        linker = linker.asm_archive("rtl_asm", rtl_asm);
+    }
     // All arches: pseh-rust (replaces the dropped libpseh.a). Provides the 2
     // DUMMY_PSEH `_SEH2_Volatile*` data symbols everywhere; the i386 SEH runtime
     // (the 5 ntoskrnl.spec-exported entry points) self-gates inside the crate
@@ -326,6 +358,14 @@ fn main() {
     if arch == "x86_64" {
         linker = linker.rust_lib("setjmp-rust", &[], true);
     }
+    // Self-host the hal.dll import lib from hal.spec (replaces the dropped
+    // cmake-built libhal.a import lib) — the classpnp/win32k pattern. The shared
+    // hal/hal.spec serves all 3 arches (halx86 + halarm64 both spec2def it).
+    linker = linker.import_lib("hal/hal.spec", "hal.dll", "hal");
+    // Self-host the kdcom.dll / bootvid.dll import libs from their specs
+    // (replaces the dropped cmake-built libkdcom.a / libbootvid.a import libs).
+    linker = linker.import_lib("drivers/base/kdcom/kdcom.spec", "kdcom.dll", "kdcom");
+    linker = linker.import_lib("drivers/base/bootvid/bootvid.spec", "bootvid.dll", "bootvid");
     linker
         .static_libs(&static_libs)
         .link(ModuleKind::KernelExe {

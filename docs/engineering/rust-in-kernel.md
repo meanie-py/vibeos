@@ -260,6 +260,19 @@ staticlib) that every consumer links via `extern crate`:
   new shims file; the shared crate only *imports* them.
 - Cohab: comment the `.c` out of every consumer's source list; add the crate as a
   workspace member + a dep in each consumer's Cargo.toml + the umbrella.
+- **DORMANT TRANSLATION (false "100%" accounting)** — a `.rs` can be fully
+  translated, committed, AND wired into `mod.rs`, yet never actually link, because
+  the corresponding `.c` is *still compiled* (uncommented in CMakeLists). Direct
+  `.c.obj` files are handed to the link before the archive, so they satisfy
+  `DllMain`/`MoveFile*`/etc., and lld — which pulls archive (`.a`) members only on
+  demand — never extracts the `.rs`'s members. The Rust is dead weight; the C runs.
+  Being in `mod.rs` is **NOT** proof of integration. This is what made `dllmain.c`
+  + `move.c` quietly survive the kernel32 "literally-100% Rust body" milestone
+  (`6a4adf940d7`); flipped in `3336d15e603`. Detect: for each `pub mod X;` in a
+  crate's `mod.rs`, grep CMakeLists for an *uncommented* `X.c` — a match = dormant.
+  Flipping it then often surfaces (a) globals the `.rs` left mangled (need
+  `#[no_mangle]` so cross-TU `extern` importers resolve) and (b) `#ifdef`-arch
+  paths the translation dropped — both invisible while dormant.
 - **Removing a file from a crate repartitions its cgu=256** — an intra-crate call
   rustc used to inline now goes through a symbol, which can surface a latent ABI
   decl mismatch (e.g. an `extern "C"` decl of a stdcall `_..@8` export). Fix the

@@ -805,12 +805,37 @@ impl Linker {
     /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
     /// SOURCE `.S` assembles directly via `-x assembler-with-cpp` — no offline
     /// pre-expansion (the old tools/gen_ntdll_asm.py step). Inert for an
-    /// already-expanded `.s` (no `#include`s to resolve). The build dir is
-    /// guaranteed present (the engine requires `build-<arch>/`).
+    /// already-expanded `.s` (no `#include`s to resolve).
+    ///
+    /// cmake-off (WS2): the generated `ks*.inc` normally lives in the cmake build
+    /// dir. The build-dir copy is added FIRST so it always wins when a cmake build
+    /// is configured (the committed fallback can never make a configured build go
+    /// stale). When that copy is ABSENT (the cmake-off path — cargo kernel build
+    /// with no cmake configure/ninja), fall back to the committed byte-stable copy
+    /// in `sdk/include/asm/committed/` (see that dir's README + the roadmap WS2).
     fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
         b.include(self.repo_root.join("sdk/include/asm"))
             .include(self.build_dir.join("sdk/include/asm"))
             .include(self.repo_root.join("ntoskrnl/include"));
+        let generated = self
+            .build_dir
+            .join("sdk/include/asm")
+            .join(self.ks_inc_name());
+        if !generated.exists() {
+            b.include(self.repo_root.join("sdk/include/asm/committed"));
+        }
+    }
+
+    /// The per-arch generated kernel-offset include filename (geninc output):
+    /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
+    /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
+    fn ks_inc_name(&self) -> &'static str {
+        match self.arch.name {
+            "i386" => "ks386.inc",
+            "amd64" => "ksamd64.inc",
+            "arm64" => "ksarm64.h",
+            other => panic!("unknown arch for ks*.inc: {other}"),
+        }
     }
 
     /// Run everything and emit the cargo: link directives.
@@ -936,40 +961,63 @@ impl Linker {
         // `.res` object. Drops the `ninja <m>_res` prereq.
         if let Some((rc_rel, res_target)) = &self.resource_from_rc {
             let db_path = self.build_dir.join("compile_commands.json");
-            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
-                panic!(
-                    "resource_from_rc needs {} — configure cmake with \
-                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
-                    db_path.display()
-                )
-            });
-            let entries = parse_ccdb(&db_text);
-            let abs = self.repo_root.join(rc_rel);
-            let marker = format!("CMakeFiles/{res_target}.dir");
-            let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
-                panic!(
-                    "no compile_commands.json windres entry for {} in target {res_target} \
-                     (marker {marker}) — is {res_target} a cmake OBJECT lib over that .rc?",
-                    abs.display()
-                )
-            });
             let dst = self.obj_dir().join("module.rc.res");
-            // windres: `... <input.rc> <output.res>` — the output is the LAST
-            // positional token; replace it with our OUT_DIR path, keep all else.
-            let mut args: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
-            *args.last_mut().expect("empty windres command") =
-                dst.to_str().expect("utf8 res path").to_string();
-            let status = Command::new(&args[0])
-                .args(&args[1..])
-                .current_dir(&dir)
-                .status()
-                .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
-            if !status.success() {
-                panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
+            if db_path.exists() {
+                // cmake build present: replay cmake's flag-exact windres.
+                let db_text = std::fs::read_to_string(&db_path)
+                    .unwrap_or_else(|e| panic!("read {}: {e}", db_path.display()));
+                let entries = parse_ccdb(&db_text);
+                let abs = self.repo_root.join(rc_rel);
+                let marker = format!("CMakeFiles/{res_target}.dir");
+                let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                    panic!(
+                        "no compile_commands.json windres entry for {} in target {res_target} \
+                         (marker {marker}) — is {res_target} a cmake OBJECT lib over that .rc?",
+                        abs.display()
+                    )
+                });
+                // windres: `... <input.rc> <output.res>` — the output is the LAST
+                // positional token; replace it with our OUT_DIR path, keep all else.
+                let mut args: Vec<String> =
+                    cmd.split_whitespace().map(|s| s.to_string()).collect();
+                *args.last_mut().expect("empty windres command") =
+                    dst.to_str().expect("utf8 res path").to_string();
+                let status = Command::new(&args[0])
+                    .args(&args[1..])
+                    .current_dir(&dir)
+                    .status()
+                    .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
+                if !status.success() {
+                    panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
+                }
+                println!("cargo:rerun-if-changed={}", abs.display());
+                println!("cargo:rerun-if-changed={}", db_path.display());
+            } else {
+                // cmake-off (WS3): no build dir → use the committed byte-stable .res
+                // (generated by replaying this exact windres command; see
+                // tools/gen_committed_res.py). Convention:
+                // <consumer crate>/data/<rc-stem>-<arch>.rc.res. The cmake path
+                // above is preferred whenever a build dir exists, so the committed
+                // copy can never make a configured build go stale.
+                let stem = Path::new(rc_rel)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_else(|| panic!("bad rc path {rc_rel}"));
+                let committed = self
+                    .manifest_dir
+                    .join(format!("data/{stem}-{}.rc.res", self.arch.name));
+                if !committed.exists() {
+                    panic!(
+                        "cmake-off: resource_from_rc({rc_rel}) needs committed {} \
+                         (regenerate via tools/gen_committed_res.py) or a configured build dir",
+                        committed.display()
+                    );
+                }
+                std::fs::copy(&committed, &dst)
+                    .unwrap_or_else(|e| panic!("stage committed .res {}: {e}", committed.display()));
+                println!("cargo:rerun-if-changed={}", committed.display());
             }
             println!("cargo:rustc-link-arg={}", dst.display());
-            println!("cargo:rerun-if-changed={}", abs.display());
-            println!("cargo:rerun-if-changed={}", db_path.display());
         }
 
         // ---- Resource (.res) — checked-in or cmake-built -------------
@@ -1200,6 +1248,12 @@ impl Linker {
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
             "-Wl,--allow-multiple-definition",
+            // Reproducible builds (deterministic-builds-plan.md rung 2): the gnu
+            // ld.lld driver defaults to --insert-timestamp, stamping the PE
+            // header with wall-clock time → every rebuild diverges, defeating
+            // cross-worktree dedup. Zero it so the kernel/DLL byte-matches across
+            // builds. Verify with `vibeos-cli repro report <pe>` (→ 0).
+            "-Wl,--no-insert-timestamp",
         ] {
             println!("cargo:rustc-link-arg={f}");
         }

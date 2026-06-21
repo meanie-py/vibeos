@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+use crate::prelude::*;
+use crate::console::cffi::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -81,18 +83,18 @@ pub const FALSE: BOOL = 0;
 pub const TRUE: BOOL = 1;
 pub const NULL: *mut core::ffi::c_void = core::ptr::null_mut();
 
-pub const STATUS_SUCCESS: NTSTATUS = 0x00000000;
-pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001;
-pub const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = 0xC0000004;
-pub const STATUS_ACCESS_DENIED: NTSTATUS = 0xC0000022;
-pub const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023;
-pub const STATUS_OBJECT_NAME_INVALID: NTSTATUS = 0xC0000033;
-pub const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = 0xC0000034;
-pub const STATUS_OBJECT_PATH_INVALID: NTSTATUS = 0xC0000039;
-pub const STATUS_INVALID_HANDLE: NTSTATUS = 0xC0000008;
-pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D;
-pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017;
-pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002;
+pub const STATUS_SUCCESS: NTSTATUS = 0x00000000u32 as NTSTATUS;
+pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as NTSTATUS;
+pub const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = 0xC0000004u32 as NTSTATUS;
+pub const STATUS_ACCESS_DENIED: NTSTATUS = 0xC0000022u32 as NTSTATUS;
+pub const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023u32 as NTSTATUS;
+pub const STATUS_OBJECT_NAME_INVALID: NTSTATUS = 0xC0000033u32 as NTSTATUS;
+pub const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = 0xC0000034u32 as NTSTATUS;
+pub const STATUS_OBJECT_PATH_INVALID: NTSTATUS = 0xC0000039u32 as NTSTATUS;
+pub const STATUS_INVALID_HANDLE: NTSTATUS = 0xC0000008u32 as NTSTATUS;
+pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as NTSTATUS;
+pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017u32 as NTSTATUS;
+pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
 
 pub const OBJ_CASE_INSENSITIVE: u32 = 0x00000040;
 pub const OBJ_KERNEL_HANDLE: u32 = 0x00000200;
@@ -135,10 +137,10 @@ unsafe fn IntExpungeConsoleCommandHistory(
         if bUnicode != 0 {
             wcslen(lpExeName as *const u16)
         } else {
-            strlen(lpExeName as *const i8) as u64
+            strlen(lpExeName as *const i8) as usize
         }
     } else {
-        0u64
+        0usize
     }) as USHORT;
 
     if lpExeName.is_null() || NumChars == 0 {
@@ -147,7 +149,7 @@ unsafe fn IntExpungeConsoleCommandHistory(
     }
 
     (*ExpungeCommandHistoryRequest).ConsoleHandle =
-        (*(*(*NtCurrentPeb()).ProcessParameters)).ConsoleHandle;
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ExpungeCommandHistoryRequest).ExeLength = (NumChars as usize).wrapping_mul(
         if bUnicode != 0 {
             core::mem::size_of::<WCHAR>()
@@ -180,8 +182,8 @@ unsafe fn IntExpungeConsoleCommandHistory(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
     }
 }
 unsafe fn IntGetConsoleCommandHistory(
@@ -252,16 +254,16 @@ unsafe fn IntGetConsoleCommandHistory(
         core::mem::size_of::<CONSOLE_GETCOMMANDHISTORY>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
+    if !NT_SUCCESS(ApiMessage.Status) {
         CsrFreeCaptureBuffer(CaptureBuffer);
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
     RtlCopyMemory(
         lpHistory,
         (*GetCommandHistoryRequest).History as LPCVOID,
-        (*GetCommandHistoryRequest).HistoryLength as usize,
+        (*GetCommandHistoryRequest).HistoryLength as SIZE_T,
     );
 
     CsrFreeCaptureBuffer(CaptureBuffer);
@@ -293,7 +295,7 @@ unsafe fn IntGetConsoleCommandHistoryLength(
     }
 
     (*GetCommandHistoryLengthRequest).ConsoleHandle =
-        (*(*(*NtCurrentPeb()).ProcessParameters)).ConsoleHandle;
+        (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*GetCommandHistoryLengthRequest).ExeLength = (NumChars as usize)
         .wrapping_mul(if bUnicode != 0 {
             core::mem::size_of::<WCHAR>()
@@ -328,8 +330,8 @@ unsafe fn IntGetConsoleCommandHistoryLength(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return 0;
     }
 
@@ -394,8 +396,8 @@ unsafe fn IntSetConsoleNumberOfCommands(
 
     CsrFreeCaptureBuffer(CaptureBuffer);
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return FALSE;
     }
 
@@ -497,8 +499,8 @@ pub unsafe extern "system" fn SetConsoleCommandHistoryMode(dwMode: DWORD) -> BOO
         core::mem::size_of::<CONSOLE_SETHISTORYMODE>() as ULONG,
     );
 
-    if !NT_SUCCESS(ApiMessage.__bindgen_anon_1.Status) {
-        BaseSetLastNTError(ApiMessage.__bindgen_anon_1.Status);
+    if !NT_SUCCESS(ApiMessage.Status) {
+        BaseSetLastNTError(ApiMessage.Status);
         return FALSE;
     }
 

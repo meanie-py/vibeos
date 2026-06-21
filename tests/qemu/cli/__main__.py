@@ -13,6 +13,8 @@ from pathlib import Path
 
 from . import build as build_mod
 from . import cargoswap, debugcmd, tooling
+from . import prune as prune_mod
+from . import repro as repro_mod
 from . import smoke as smoke_mod
 from .archcfg import ACCEPTED_ARCHES
 
@@ -48,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
     b.add_argument("--strict", action="store_true")
+    b.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="ccache(C/C++)+sccache(Rust); default off → VIBEOS_BUILD_CACHE env",
+    )
     b.set_defaults(fn=build_mod.build)
 
     c = sub.add_parser("check", help="source lints (baseline-diff gate)")
@@ -68,8 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
-    s.add_argument("--no-net", action="store_true",
-                   help="skip the folded netstack net-suite stage (amd64 only; default-on)")
+    s.add_argument(
+        "--no-net",
+        action="store_true",
+        help="skip the folded netstack net-suite stage (amd64 only; default-on)",
+    )
     s.set_defaults(fn=smoke_mod.smoke)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")
@@ -126,6 +137,49 @@ def build_parser() -> argparse.ArgumentParser:
     ct.add_argument("--no-types", action="store_true", help="skip pyright")
     ct.add_argument("--no-tests", action="store_true", help="skip pytest")
     ct.set_defaults(fn=tooling.check_tooling)
+
+    pr = sub.add_parser(
+        "prune", help="reclaim disk: GC idle worktrees' build+target dirs (dry-run by default)"
+    )
+    pr.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
+    pr.add_argument("--self", action="store_true", help="also allow pruning the current worktree")
+    pr.add_argument(
+        "--idle-hours",
+        type=float,
+        default=0,
+        help="only prune trees untouched for at least N hours (default 0 = no age filter)",
+    )
+    pr.set_defaults(fn=prune_mod.prune)
+
+    # repro — determinism/reproducibility measurement (det-plan rung 0/5)
+    rp = sub.add_parser(
+        "repro", help="reproducibility gauge: byte-identity + PE-timestamp/section diff"
+    )
+    rpsub = rp.add_subparsers(dest="repro_cmd")
+
+    def _add_diffoscope(sp):
+        sp.add_argument(
+            "--diffoscope",
+            action="store_true",
+            help="deep byte localization if diffoscope installed",
+        )
+
+    rp_c = rpsub.add_parser("compare", help="compare two PE files (localize the divergence)")
+    rp_c.add_argument("file_a")
+    rp_c.add_argument("file_b")
+    _add_diffoscope(rp_c)
+    rp_r = rpsub.add_parser("report", help="dump determinism metadata (timestamp/sections)")
+    rp_r.add_argument("files", nargs="+")
+    rp_d = rpsub.add_parser("diff-dirs", help="diff the staged artifact set across two build trees")
+    rp_d.add_argument("dir_a")
+    rp_d.add_argument("dir_b")
+    rp_d.add_argument("--artifacts", nargs="*", help="relative artifact paths (default: staged)")
+    _add_diffoscope(rp_d)
+    rp_v = rpsub.add_parser("verify", help="rung 5: cold build-twice byte-identity gauge")
+    rp_v.add_argument("--arch", choices=ACCEPTED_ARCHES, required=True)
+    rp_v.add_argument("--artifacts", nargs="*", help="relative artifact paths (default: staged)")
+    _add_diffoscope(rp_v)
+    rp.set_defaults(fn=repro_mod.repro)
 
     return p
 

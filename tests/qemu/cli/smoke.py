@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..vm import QemuVM, get_arch_config
 from . import archcfg, provenance, triage
+from . import config as cli_config
 from .artifacts import Run, Stage
 
 
@@ -89,8 +90,14 @@ def _one_boot(
     marker = until or config.boot_marker
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
-    vm = QemuVM(config, work)
+    # Launch backend from layered config (DEFAULTS < .vibeos-cli.local.json < env). Default
+    # "native"; a WSL user can set qemu.backend="windows-host" to escape nested-virt contention.
+    cli_cfg = cli_config.load(repo)
+    backend = cli_cfg.get("qemu.backend", "native")
+    vm = QemuVM(config, work, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
     label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
+    if backend != "native":
+        run.log(f"backend={backend} (qemu.windows={cli_cfg.get('qemu.windows', {})})", header=label)
     try:
         vm.start()
     except Exception as e:  # surface any launch failure
@@ -150,25 +157,50 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
     if not test_file.exists():
         run.add(Stage("net", status="skip", detail="no test_net.py"))
         return
-    cmd = [sys.executable, "-m", "pytest", str(test_file),
-           "--arch", "amd64-uefi-net", "--timeout", "600", "-q",
-           "-p", "no:cacheprovider"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "--arch",
+        "amd64-uefi-net",
+        "--timeout",
+        "600",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+    ]
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
-                              text=True, timeout=1200)
+        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
     except subprocess.TimeoutExpired:
-        run.add(Stage("net", status="fail", detail="net suite timed out",
-                      salient=["tests/qemu/test_net.py hung > 1200s"]))
+        run.add(
+            Stage(
+                "net",
+                status="fail",
+                detail="net suite timed out",
+                salient=["tests/qemu/test_net.py hung > 1200s"],
+            )
+        )
         return
     tail = (proc.stdout or "").strip().splitlines()
-    summary = next((l for l in reversed(tail) if " passed" in l or " failed" in l
-                    or " error" in l), tail[-1] if tail else "")
+    summary = next(
+        (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
+        tail[-1] if tail else "",
+    )
     if proc.returncode == 0:
         run.add(Stage("net", status="ok", detail=summary.strip("= ")))
     else:
-        run.add(Stage("net", status="fail", detail="net suite FAILED",
-                      salient=[summary.strip("= "),
-                               "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net"]))
+        run.add(
+            Stage(
+                "net",
+                status="fail",
+                detail="net suite FAILED",
+                salient=[
+                    summary.strip("= "),
+                    "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net",
+                ],
+            )
+        )
 
 
 def smoke(args, repo: Path) -> int:

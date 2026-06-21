@@ -24,7 +24,7 @@ from . import (
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
-from .c2rust_anchor import build_anchor_map, build_preamble
+from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .callgraph import extract_call_graph, topological_sort
 from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
@@ -1003,16 +1003,27 @@ def cmd_translate(args):
 
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
 
-        # c2rust behavior anchors (best-effort): a compiler-exact transpilation per
-        # function, handed to the model so it can't silently stub/drop logic. Built
-        # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
+        # c2rust behavior anchors: a compiler-exact transpilation per function, handed
+        # to the model so it can't silently stub/drop logic. Built once per file.
         c2rust_anchors: dict[str, str] = {}
         c2rust_preamble = ""
         if getattr(args, "c2rust", False):
-            c2rust_anchors = build_anchor_map(c_file)
-            # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended to
-            # the preamble so the LLM never has to (mis)transcribe a lookup table.
-            c2rust_preamble = build_preamble(c_file)
+            # --c2rust is an explicit opt-in: if c2rust can't anchor the file, HARD FAIL
+            # (strict=True) instead of silently degrading to a worse pure-LLM translation.
+            # Fails before any paid API call, so no money is wasted on unanchored output.
+            try:
+                c2rust_anchors = build_anchor_map(c_file, strict=True)
+                # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended
+                # to the preamble so the LLM never has to (mis)transcribe a lookup table.
+                c2rust_preamble = build_preamble(c_file, strict=True)
+            except C2RustError as e:
+                print(
+                    f"\n  ✗ FATAL: --c2rust requested but c2rust failed: {e}\n"
+                    "    Refusing to fall back to a pure-LLM translation (no dumb fallbacks).\n"
+                    "    Fix the cause above, or re-run WITHOUT --c2rust to opt into pure-LLM.\n",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
 
         if args.dry_run:
             # Just show the plan
@@ -2040,22 +2051,6 @@ def main():
     p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
-    p = sub.add_parser("semdiff",
-                       help="Find C↔Rust semantic/behavioral divergences (LLM)")
-    p.add_argument("file", help="C source file (.c)")
-    p.add_argument("--rust", default=None,
-                   help="Rust file (.rs). If omitted, located by stem under sdk/lib/rust.")
-    p.add_argument("--model", default="deepseek-reasoner",
-                   help="Model: deepseek-reasoner (default), deepseek-chat, sonnet, opus, ...")
-    p.add_argument("--only", default=None,
-                   help="Comma-separated function names to diff (default: all paired)")
-    p.add_argument("--max-fns", type=int, default=None,
-                   help="Cap the number of functions diffed (cost control)")
-    p.add_argument("--no-cache", action="store_true",
-                   help="Ignore the per-pair response cache (force fresh API calls)")
-    p.add_argument("--workers", type=int, default=6,
-                   help="Concurrent API calls (default 6)")
-
     args = parser.parse_args()
 
     commands = {
@@ -2085,7 +2080,6 @@ def main():
         "extern-audit": cmd_extern_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
-        "semdiff": cmd_semdiff,
     }
 
     try:

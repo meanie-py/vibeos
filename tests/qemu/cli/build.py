@@ -8,12 +8,14 @@ LINK_FAIL distinctly with i386 PE-decoration hints.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, lints, provenance
+from . import archcfg, cachecfg, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -28,6 +30,29 @@ def _decoration_hint(sym: str) -> str:
     if re.match(r"_\w+$", sym):
         return f"{sym}: i386 cdecl — missing symbol / wrong ABI"
     return f"{sym}: undefined"
+
+
+def source_date_epoch(repo: Path) -> str | None:
+    """Commit-date epoch for reproducible builds (deterministic-builds-plan.md rung 2b).
+
+    `git log -1 --format=%ct` → the HEAD commit's timestamp. Deriving from the *commit*
+    (not wall-clock) makes the build byte-identical across worktrees/agents on the same
+    commit while keeping a meaningful date. Pins both cmake's `string(TIMESTAMP)` in
+    version.cmake (→ buildno.h version resources) and clang's `__DATE__`/`__TIME__`
+    (e.g. ntoskrnl/ex/xipdisp.c) — both honor the SOURCE_DATE_EPOCH env var. Returns
+    None outside a git repo (caller leaves the env untouched)."""
+    try:
+        cp = subprocess.run(
+            ["git", "log", "-1", "--format=%ct"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    ts = cp.stdout.strip()
+    return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
 def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
@@ -68,6 +93,100 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
     run.add(Stage("clean", status="ok", detail=f"{len(targets)}t+{len(archives)}a"))
 
 
+def _ccache_already_enabled(build_dir: Path) -> bool:
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return False
+    try:
+        return "ENABLE_CCACHE:BOOL=ON" in cache.read_text(errors="ignore")
+    except OSError:
+        return False
+
+
+def _setup_cache(run: Run, repo: Path, build_dir: Path, cache: cachecfg.CacheEnv) -> dict | None:
+    """Prepare caches + return the env overlay for ninja, or None if setup failed
+    hard (ccache reconfigure error). C/C++ caching needs `-DENABLE_CCACHE` baked
+    into build.ninja (ReactOS wires `RULE_LAUNCH_COMPILE ccache` behind it); Rust
+    caching is pure env, no reconfigure."""
+    cache.ccache_dir.mkdir(parents=True, exist_ok=True)
+    cache.sccache_dir.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **cache.env()}
+
+    if cache.use_ccache and not _ccache_already_enabled(build_dir):
+        cp = run.run(
+            ["cmake", "-DENABLE_CCACHE=1", "."], cwd=build_dir, stage="ccache-config", timeout=600
+        )
+        if cp.returncode != 0:
+            run.classification = "CMAKE_CONFIGURE_FAIL"
+            run.add(
+                Stage(
+                    "ccache-config",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail="reconfigure for ENABLE_CCACHE failed",
+                    salient=[ln.strip() for ln in cp.stderr.splitlines() if "Error" in ln][:3],
+                )
+            )
+            return None
+        run.add(Stage("ccache-config", status="ok", detail="ENABLE_CCACHE=1"))
+
+    # zero per-build counters so the post-build stats are this build's delta
+    if cache.use_ccache:
+        run.run(
+            [cache.ccache_bin or "ccache", "-z"], cwd=repo, env=env, stage="ccache-zero", timeout=60
+        )
+    if cache.use_sccache:
+        run.run(
+            [cache.sccache_bin or "sccache", "--zero-stats"],
+            cwd=repo,
+            env=env,
+            stage="sccache-zero",
+            timeout=60,
+        )
+    run.add(Stage("cache", status="ok", detail=cache.summary()))
+    return env
+
+
+def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
+    """Post-build hit rates — also the determinism gauge: a no-source-change
+    rebuild should be ~100% hits; any miss = something varied (plan §determinism)."""
+    if cache.use_ccache:
+        cp = run.run(
+            [cache.ccache_bin or "ccache", "--print-stats"],
+            cwd=run.dir,
+            env=env,
+            stage="ccache-stats",
+            timeout=60,
+        )
+        st = cachecfg.parse_ccache_stats(cp.stdout)
+        run.extra["ccache"] = st
+        run.add(
+            Stage(
+                "ccache-stats",
+                status="ok",
+                detail=f"{st['hits']}h/{st['misses']}m  {st['hit_rate'] * 100:.0f}% hit",
+            )
+        )
+    if cache.use_sccache:
+        cp = run.run(
+            [cache.sccache_bin or "sccache", "--show-stats", "--stats-format=json"],
+            cwd=run.dir,
+            env=env,
+            stage="sccache-stats",
+            timeout=60,
+        )
+        st = cachecfg.parse_sccache_json(cp.stdout)
+        run.extra["sccache"] = st
+        if st:
+            run.add(
+                Stage(
+                    "sccache-stats",
+                    status="ok",
+                    detail=f"{st['hits']}h/{st['misses']}m  {st['hit_rate'] * 100:.0f}% hit",
+                )
+            )
+
+
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -90,9 +209,27 @@ def build(args, repo: Path) -> int:
     if cold:
         _clean(run, repo, arch)
 
+    # --- reproducible builds: pin SOURCE_DATE_EPOCH (rung 2b) ---
+    # Set it in our env so every subprocess (cmake configure inside _setup_cache,
+    # ninja compile, cargo) inherits it — no per-call threading. setdefault so an
+    # externally pinned value (CI) wins. Honored by cmake string(TIMESTAMP) and clang
+    # __DATE__/__TIME__; verify the effect with `vibeos-cli repro report`.
+    sde = source_date_epoch(repo)
+    if sde:
+        os.environ.setdefault("SOURCE_DATE_EPOCH", sde)
+
+    # --- build cache (opt-in: --cache / VIBEOS_BUILD_CACHE) ---
+    cache = cachecfg.make(repo)
+    caching = cachecfg.cache_enabled(args)
+    build_env: dict | None = None
+    if caching:
+        build_env = _setup_cache(run, repo, build_dir, cache)
+        if build_env is None:
+            return run.finalize(repo)  # ccache reconfigure failed hard
+
     # --- ninja the boot target(s) ---
     targets = list(cfg.ninja_targets)
-    cp = run.run(["ninja", *targets], cwd=build_dir, stage="ninja", timeout=1800)
+    cp = run.run(["ninja", *targets], cwd=build_dir, env=build_env, stage="ninja", timeout=1800)
     if cp.returncode != 0:
         cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
         run.classification = cls
@@ -113,9 +250,14 @@ def build(args, repo: Path) -> int:
         run.run(
             ["ninja", *cfg.ninja_targets_optional],
             cwd=build_dir,
+            env=build_env,
             stage="ninja-optional",
             timeout=900,
         )
+
+    # --- cache hit-rate stats (also the determinism gauge) ---
+    if caching and build_env is not None:
+        _collect_cache_stats(run, cache, build_env)
 
     # --- arm64 re-stage into ramdisk/boot.img ---
     if cfg.needs_mkramdisk:
