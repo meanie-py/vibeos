@@ -70,9 +70,16 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
   cmdline; and at the binary level a panic-bearing crate's embedded `…/<worktree>/src/lib.rs`
   becomes `/vibeos/src/lib.rs` (worktree path gone). std/registry paths (`~/.rustup`, `~/.cargo`)
   are home-relative = identical across worktrees on a machine, so remapping just the source root is
-  sufficient for the cross-worktree dedup goal. **Remaining:** the full cross-worktree build-twice
-  byte-identity proof on ntoskrnl/win32k/kernel32 (rung 5 gate) — deferred until mainline is stable
-  (gating needs a clean c-r-p base).
+  sufficient for the cross-worktree dedup goal.
+  - **Verified on ALL 3 arches** (2026-06-21): the `cfg(all())` join preserves the per-target
+    rustflags AND `--remap-path-prefix` rewrites the embedded source path `<worktree>/src/lib.rs`
+    → `/vibeos/src/lib.rs` on **i686-pc-windows-gnu** (sandbox + real `beep.sys` via the custom
+    `i686-kernel` target, SSE guard intact), **x86_64-pc-windows-gnu**, and
+    **aarch64-pc-windows-gnullvm**. Injection is the single `add_cargo_module` cargo cmd shared by
+    all three kernel stems → all 40 cargo modules ×3 get it. The clobber risk was i386-only (the
+    SSE guard); amd64/arm64 carry less and still verified.
+  - **Remaining:** the full cross-worktree *kernel* build-twice byte-identity on
+    ntoskrnl/win32k/kernel32 (`repro verify` / `diff-dirs`) — deferred until build slots free.
 - **Rung 1 (C) ✅ already correct in source** — no change needed. `CMakeLists.txt:97` maps
   `-ffile-prefix-map=${REACTOS_SOURCE_DIR}=`, which a *fresh per-worktree configure* expands to
   that worktree's own abs path → empty; main's generated `build.ninja` only *looks* hardcoded
