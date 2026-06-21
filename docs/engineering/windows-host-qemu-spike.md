@@ -79,11 +79,50 @@ The bulk of the work is the **transport abstraction** (Unix-socket → TCP) in
 straightforward. Select via `VIBEOS_QEMU_BACKEND=windows` / `--host-qemu`. arm64 stays
 TCG-native (no accel either way).
 
+## ⚡ Timing results (2026-06-21) — TCG-on-Windows-host WINS; WHPX not needed
+
+Measured i386 livecd boot → `[WIN32K] shell ready` on the Windows-host QEMU (TCG), vs the
+nested-KVM-in-WSL2 smoke baseline:
+
+| scenario | boot → shell-ready |
+|---|---|
+| nested-KVM (WSL2), single | ~112 s |
+| nested-KVM (WSL2), 2× same-arch contended | ~361 s (**the false-hang**) |
+| **Windows-host TCG, single** | **~36 s** |
+| **Windows-host TCG, 2× concurrent** | **39 s + 39 s (flat)** |
+
+**Conclusion: TCG on the Windows host both eliminates the contention AND runs ~3× faster than
+nested-KVM — no reboot, no WHPX required.** Two concurrent boots stayed flat (+8%) where
+nested-KVM ballooned 3.5×. Reason: each TCG boot is a CPU-bound, *independent* Windows userspace
+process (1 vCPU on 32 cores) with **zero VM-exits to a hypervisor** — the nested round-trips that
+crippled KVM simply don't exist. The Ryzen is fast enough that block-cached TCG beats nested-virt.
+
+So WHPX (the original spike target) is now a **maybe-later micro-optimization**, not the fix.
+The contention/token-burn problem is solved by TCG-on-Windows-host today. (WHPX lives only in
+`qemu-system-x86_64.exe`, not the i386 binary; if pursued, the Windows backend would use the
+x86_64 emulator for both arches. HypervisorPlatform is currently **disabled** — InstallState 2 —
+so WHPX needs an enable + reboot anyway. Not worth it unless single-boot latency ever matters
+more than concurrency, which on 32 cores it doesn't.)
+
+Caveats (honest): n=1 per cell (but 39/39 flat is unambiguous); i386 only (amd64 = same via
+x86_64 TCG; arm64 already TCG); validate full desktop + the smoke static checks under TCG, not
+just shell-ready, before trusting it as the gate runner (shell-ready *is* the north-star marker,
+so this is the real signal). Could probe higher concurrency (4×/8×) to find the 32-core
+saturation point, but 2×-flat already covers typical agent load.
+
 ## Decision / next step
 
-- **Plumbing: proven feasible.** No architectural blocker.
-- **Gate on a number, not faith:** install a WHPX QEMU + enable HypervisorPlatform (admin), re-run
-  the spike with `-accel whpx`, and measure single + *concurrent* boot times vs WSL-KVM. If WHPX
-  holds steady under concurrent boots (the whole point), build the dual backend; if not, the
-  cheaper win is the harness **contention-discriminator + auto-retry-serialized** (kills the
-  token-burn pain regardless of venue).
+- **Spike outcome: build a `windows-host` TCG backend for WSL2.** It's proven feasible *and*
+  measured to fix the contention (+8% under 2× concurrency) while being ~3× faster than nested-KVM.
+  WHPX is NOT on the critical path — skip the reboot.
+- **Recommended backend selection** (keep simple cases simple):
+  - real Linux → native `qemu-system-*` + KVM (default, unchanged).
+  - WSL2 → opt-in (or auto-detect WSL) `windows-host` backend: `qemu-system-i386.exe` (TCG) +
+    staged media on `/mnt/c` + serial capture. Falls back to native nested-KVM if unset.
+- **MVP is small** (serial-file-poll already works): binary path, media staging, `-serial file:`,
+  `Stop-Process` kill. The only heavier piece is QMP-dependent features (snapshot/screenshot/mouse)
+  → move that transport to **TCP** when needed; basic boot+marker smoke doesn't need it.
+- **Before trusting it as the gate runner:** confirm a full *desktop* boot + the smoke static
+  checks pass under TCG-on-Windows (shell-ready already does), and spot-check amd64.
+- This also moots the WHPX admin steps unless single-boot latency ever beats concurrency as the
+  constraint (it doesn't on 32 cores).
