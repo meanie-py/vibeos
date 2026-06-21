@@ -55,17 +55,58 @@ class Cell:
     deps: tuple[str, ...] = field(default=())  # cargo cells that must build first
 
 
-# Verified cmake-off cells. KINDs mirror the add_cargo_module() calls; deps are
-# the *cargo-cell* build-order edges (NOT spec/import-lib deps — those each cell
-# self-generates from .spec via the self-hosted spec2def). The kernel EXEs have
-# no cargo-cell deps: they synth their hal/kdcom/bootvid import libs in-cargo.
+# Verified cmake-off cells. KINDs mirror the add_cargo_module() calls. **deps is
+# empty for every cell**: the inter-cell DAG the roadmap feared (import-lib
+# ordering) is fully dissolved — each cell synthesizes the import libs it needs
+# from `.spec` via the self-hosted spec2def+dlltool (`.import_lib()`), so no cell
+# needs another cell's built `.dll`/`.a`. They build in any order / in parallel.
+#
+# The usermode spine (ntdll → csr servers → the boot exes) is cmake-off via the
+# committed-`.res` fallback (WS3) + self-hosted import libs; ntdll's cntpr_residue
+# + static_libs are empty (no c_from_compile_db, no cmake `.a`). The ONE spine
+# hold-out is `winsrv`: it still reuses three cmake-built static libs
+# (libuuid.a = midl-generated, libwin32ksys.a = asm, libchkstk.a) which have no
+# in-cargo path yet (the "other static_libs" floor) — `static_libs()` has no
+# committed fallback, so winsrv needs a configured `build-<arch>/` until that
+# floor lands. It is listed (real cell) but excluded from the cmake-off set.
 CELLS: dict[str, Cell] = {
     c.target: c
     for c in (
+        # kernel EXEs — synth hal/kdcom/bootvid import libs in-cargo
         Cell("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl.exe", "kernelexe"),
         Cell("ntkrnlmp", "ntkrnlmp-cargo", "ntkrnlmp.exe", "kernelexe"),
+        # usermode spine — DLLs
+        Cell("ntdll", "ntdll-cargo", "ntdll.dll", "win32dll"),
+        Cell("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista.dll", "win32dll"),
+        Cell("csrsrv", "csrsrv-cargo", "csrsrv.dll", "win32dll"),
+        Cell("basesrv", "basesrv-cargo", "basesrv.dll", "win32dll"),
+        # winsrv: needs build-<arch>/ for libuuid/libwin32ksys/libchkstk (not cmake-off yet)
+        Cell("winsrv", "winsrv-cargo", "winsrv.dll", "win32dll"),
+        # usermode spine — EXEs
+        Cell("csrss", "csrss-cargo", "csrss.exe", "native"),
+        Cell("smss", "smss-cargo", "smss.exe", "native"),
+        Cell("lsass", "lsass-cargo", "lsass.exe", "win32exe"),
+        Cell("winlogon", "winlogon-cargo", "winlogon.exe", "win32exe"),
+        Cell("services", "services-cargo", "services.exe", "win32exe"),
+        Cell("userinit", "userinit-cargo", "userinit.exe", "win32exe"),
     )
 }
+
+# The spine cells proven to build with NO configured build-<arch>/ (cmake-off).
+# winsrv is excluded (cmake static-lib floor); the kernel EXEs are proven
+# separately. Used by --spine.
+CMAKE_OFF_SPINE = (
+    "ntdll",
+    "ntdll_vista",
+    "csrsrv",
+    "basesrv",
+    "csrss",
+    "smss",
+    "lsass",
+    "winlogon",
+    "services",
+    "userinit",
+)
 
 
 def repo_root() -> Path:
@@ -219,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("targets", nargs="*", help="cells to build (default: ntoskrnl)")
     ap.add_argument("--out-dir", help="output dir (default: cmake-off-out/<arch>)")
     ap.add_argument("--list", action="store_true", help="list known cells and exit")
+    ap.add_argument(
+        "--spine",
+        action="store_true",
+        help="build the full cmake-off kernel+spine set (kernel EXEs + the proven spine)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
     args = ap.parse_args(argv)
 
@@ -229,7 +275,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     root = repo_root()
-    targets = args.targets or ["ntoskrnl"]
+    if args.spine:
+        targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *args.targets]
+    else:
+        targets = args.targets or ["ntoskrnl"]
     out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
     cells = topo(targets)
     log(f"arch={args.arch} cells={' -> '.join(c.target for c in cells)}")

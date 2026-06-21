@@ -220,12 +220,36 @@ out, and applies the KIND post-link (`native-pefixup --kernel/--kerneldll/
 ntoskrnl/ntkrnlmp need **no** cargo-cell deps: they synth their hal/kdcom/bootvid
 import libs in-cargo from `.spec` via the self-hosted spec2def, and (cntpr_residue
 empty) call no `c_from_compile_db`, so the kernel EXE has no cmake prerequisite at
-all. The `CELLS` table + topo walk generalize to the full 44-cell set — add a
-`Cell(...)` with its verified KIND + cargo-cell deps. **Remaining (was the "long
-pole"):** the usermode-spine import-lib DAG (ntdll → csrsrv/winsrv/basesrv → the
-exes), per-arch parallel fan-out, and the loaders' efi/native KINDs (need the
-*cross* llvm-strip, not host strip) — all mechanically straightforward extensions
-of the proven driver.
+all.
+
+**Kernel + usermode spine proven (2026-06-21).** `--spine` builds **12 modules**
+cmake-off — `ntoskrnl` `ntkrnlmp` `ntdll` `ntdll_vista` `csrsrv` `basesrv` `csrss`
+`smss` `lsass` `winlogon` `services` `userinit` — in ~35s (warm) with
+`compile_commands.json` moved aside + no ninja; **all 12 byte-identical to their
+cmake-built twins except the 2-byte PE TimeDateStamp**. Two structural findings
+made this fall out cleanly:
+
+- **The inter-cell DAG is fully dissolved.** The roadmap's blocker (2) (import-lib
+  ordering) is gone: *every* spine cell synthesizes the import libs it needs from
+  `.spec` via `.import_lib()` (self-hosted spec2def+dlltool), so no cell consumes
+  another cell's built `.dll`/`.a`. `deps=()` for all — they build in any order /
+  in parallel.
+- **`resource_from_rc` already has a committed-`.res` fallback** (WS3), so
+  basesrv/winlogon/services/userinit need no windres at build time cmake-off.
+
+**The one spine hold-out is `winsrv`** — it still reuses three cmake-built static
+libs (`libuuid.a` = midl-generated, `libwin32ksys.a` = asm, `libchkstk.a`); the
+engine's `static_libs()` has no committed fallback (panics "run ninja first"), so
+winsrv needs a configured `build-<arch>/` until the "other static_libs" floor
+(midl + the win32k asm/dib generators) lands. It's in `CELLS` but excluded from
+`--spine`.
+
+The `CELLS` table generalizes to the full 44-cell set — add a `Cell(...)` with its
+KIND (`deps` stays empty unless a future cell breaks the self-hosted-import-lib
+pattern). **Remaining:** per-arch fan-out (the workspace serializes today —
+blocker (1)), the drivers (kerneldll/kernelmodedriver — same shape, need their
+own cmake-off audit), the loaders' efi/native KINDs (need the *cross* llvm-strip,
+not host strip), and the `winsrv` static-lib floor.
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
