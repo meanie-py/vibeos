@@ -766,6 +766,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsasrv-rust"
+version = "0.1.0"
+dependencies = [
+ "lsasrv-sys",
+]
+
+[[package]]
+name = "lsasrv-sys"
+version = "0.1.0"
+
+[[package]]
 name = "lsass-cargo"
 version = "0.1.0"
 dependencies = [

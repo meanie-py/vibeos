@@ -24,7 +24,7 @@ list(APPEND SOURCE
     authpackage.c
     authport.c
     database.c
-    dssetup.c
+    # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
     lookup.c
     lsarpc.c
     lsasrv.c
@@ -83,6 +83,32 @@ add_custom_command(
     COMMENT "Building lsa-stub (${LSA_STUB_RUST_TARGET})"
     VERBATIM)
 add_custom_target(rust_lsa_stub DEPENDS ${LSA_STUB_LIB})
+
+# Build liblsasrv_rust.a — the translated lsasrv .c bodies (cohab; dssetup.rs is
+# the first). #[no_mangle] symbols take over from the commented-out C TUs. FFI
+# substrate = lsasrv-sys (bindgen, builds transitively).
+set(LSASRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsasrv-target")
+set(LSASRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsasrv_rust.a")
+file(GLOB_RECURSE LSASRV_RUST_SRCS
+    "${LSA_STUB_WORKSPACE_DIR}/lsasrv-rust/src/*.rs"
+    "${LSA_STUB_WORKSPACE_DIR}/lsasrv-sys/src/*.rs")
+add_custom_command(
+    OUTPUT ${LSASRV_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${LSASRV_RUST_TARGET_DIR}
+        cargo build --release --target ${LSA_STUB_RUST_TARGET}
+            -p lsasrv-rust
+            --manifest-path ${LSA_STUB_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${LSASRV_RUST_TARGET_DIR}/${LSA_STUB_RUST_TARGET}/release/liblsasrv_rust.a
+        ${LSASRV_RUST_LIB}
+    DEPENDS ${LSASRV_RUST_SRCS}
+            ${LSA_STUB_WORKSPACE_DIR}/lsasrv-rust/Cargo.toml
+            ${LSA_STUB_WORKSPACE_DIR}/lsasrv-sys/Cargo.toml
+    WORKING_DIRECTORY ${LSA_STUB_WORKSPACE_DIR}
+    COMMENT "Building lsasrv-rust (${LSA_STUB_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_lsasrv DEPENDS ${LSASRV_RUST_LIB})
 # --------------------------------------------------------------------------
 
 add_library(lsasrv MODULE
@@ -93,9 +119,9 @@ add_library(lsasrv MODULE
 set_module_type(lsasrv win32dll UNICODE)
 # --allow-multiple-definition: lsa-stub is a no_std staticlib carrying its own
 # panic_handler/eh_personality (lld first-match wins; the stub never panics).
-target_link_libraries(lsasrv ${LSA_STUB_LIB} wine ${PSEH_LIB})
+target_link_libraries(lsasrv ${LSASRV_RUST_LIB} ${LSA_STUB_LIB} wine ${PSEH_LIB})
 target_link_options(lsasrv PRIVATE LINKER:--allow-multiple-definition)
 add_importlibs(lsasrv samsrv rpcrt4 msvcrt kernel32 advapi32 ntdll)
 add_pch(lsasrv lsasrv.h SOURCE)
-add_dependencies(lsasrv rust_lsa_stub)
+add_dependencies(lsasrv rust_lsa_stub rust_lsasrv)
 add_cd_file(TARGET lsasrv DESTINATION reactos/system32 FOR all)

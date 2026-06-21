@@ -1,0 +1,15 @@
+# lsasrv-rust — the lsasrv.dll C->Rust body translation (cohab with the still-C
+# .c via dll/win32/lsasrv/CMakeLists.txt). #[no_mangle] extern "system" Lsar*/
+# DsRoler* server methods + LsaI*/Lsap* helpers take over from the commented-out
+# C TUs; the RPC dispatch (lsa-stub Rust + the C dssetup_s.c) binds them by
+# decorated name. FFI substrate = lsasrv-sys (LSAPR_*/DSROLER/policy types).
+[package]
+name = "lsasrv-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+lsasrv-sys = { path = "../lsasrv-sys" }
