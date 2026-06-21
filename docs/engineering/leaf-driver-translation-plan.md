@@ -155,3 +155,11 @@ skipped.
   (HIDP_*), `hidparse-rust` (HidP_* exports), and `ntkrnl-sys` bindgen already cover the
   KEYBOARD_*/MOUSE_*/CONNECT_DATA/HIDP_KEYBOARD_MODIFIER_STATE types; only `USAGE_AND_PAGE`
   (trivial 2×USAGE struct) defined locally. First batch: kbdhid + mouhid (MEDIUM twins).
+- 2026-06-21: ✅ **kbdhid + mouhid DONE — link-clean ×3** (`786c5303ac1`, branch `filesystems`).
+  2 parallel Sonnet subagents → central integration. `kbdhid-rust` (8 modules) + `mouhid-rust`
+  (8 modules) cohab staticlibs; `.c` kept on disk. Both `.sys` build + link clean on i386/
+  amd64/arm64, lint-clean (no unprotected output writes; mouhid's lone ud2 is a benign
+  divide-by-zero guard, not a captures(none) fold). New field-manual entry: amd64 cohab-driver
+  IRQL raise/lower (tier1 `*Internal` unlinkable on amd64; per-crate CR8-asm helper). Next:
+  hidclass (Opus) → hidusb (Opus). Awaiting meaniepy ×3 cold-smoke gate (non-boot → link +
+  no-regression bar, same as msfs/npfs).
