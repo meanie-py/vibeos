@@ -32,7 +32,7 @@ list(APPEND SOURCE
     policy.c
     # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
     registry.c
-    security.c
+    # security.c     — replaced by Rust (lsasrv-rust/src/lsasrv/security.rs)
     service.c
     session.c
     srm.c
