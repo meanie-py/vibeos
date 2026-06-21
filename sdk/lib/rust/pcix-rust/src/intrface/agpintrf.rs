@@ -62,7 +62,7 @@ pub unsafe extern "system" fn agpintrf_Initializer(Instance: PVOID) -> NTSTATUS 
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/agpintrf.c\0"
+            b"drivers/bus/pcix/intrface/agpintrf.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             41 as ULONG,
             b"PCI agpintrf_Initializer, unexpected call.\n\0" as *const u8
@@ -89,7 +89,7 @@ pub unsafe extern "system" fn agpintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"agpintrf_Constructor\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/agpintrf.c\0"
+        b"drivers/bus/pcix/intrface/agpintrf.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         71 as ::core::ffi::c_int,
     );

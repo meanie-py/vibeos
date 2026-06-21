@@ -44,7 +44,7 @@ pub unsafe extern "system" fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS {
         if true {
             RtlAssert(
                 b"0\0".as_ptr() as _,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+                b"drivers/bus/pcix/arb/ar_busno.c\0"
                     .as_ptr() as _,
                 41,
                 core::ptr::null_mut(),
@@ -65,7 +65,7 @@ pub unsafe extern "system" fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"arbusno_Initializer\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+        b"drivers/bus/pcix/arb/ar_busno.c\0"
             .as_ptr() as *const i8,
         48,
     );
@@ -85,7 +85,7 @@ pub unsafe extern "system" fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS {
         // DPRINT1 expansion
         let ret = DbgPrint(
             b"(%s:%d) arbusno_Initializer: init arbiter return %X\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+            b"drivers/bus/pcix/arb/ar_busno.c\0"
                 .as_ptr() as *const i8,
             65,
             Status,
@@ -93,7 +93,7 @@ pub unsafe extern "system" fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS {
         if ret != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+                b"drivers/bus/pcix/arb/ar_busno.c\0"
                     .as_ptr() as *const i8,
                 65,
             );
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn arbusno_Constructor(
         );
         RtlAssert(
             b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+            b"drivers/bus/pcix/arb/ar_busno.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             82u32,
             core::ptr::null_mut::<i8>(),
@@ -133,7 +133,7 @@ pub unsafe extern "system" fn arbusno_Constructor(
             DbgPrint(
                 b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
                 b"arbusno_Constructor\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_busno.c\0"
+                b"drivers/bus/pcix/arb/ar_busno.c\0"
                     as *const u8 as *const i8,
                 96i32,
             );

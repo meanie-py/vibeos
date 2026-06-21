@@ -552,7 +552,7 @@ pub unsafe extern "system" fn BaseUpdateAppcompatCache(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         461i32,
         b"BaseUpdateAppcompatCache\0" as *const u8 as *const ::core::ffi::c_char,
@@ -560,7 +560,7 @@ pub unsafe extern "system" fn BaseUpdateAppcompatCache(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             461i32,
         );
@@ -572,7 +572,7 @@ pub unsafe extern "system" fn BaseCleanupAppcompatCache() -> NTSTATUS {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as u32);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             .as_ptr() as *const i8,
         471i32,
         b"BaseCleanupAppcompatCache\0".as_ptr() as *const i8,
@@ -580,7 +580,7 @@ pub unsafe extern "system" fn BaseCleanupAppcompatCache() -> NTSTATUS {
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 .as_ptr() as *const i8,
             471i32,
         );
@@ -595,7 +595,7 @@ pub unsafe extern "system" fn BaseCleanupAppcompatCacheSupport(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             .as_ptr() as *const i8,
         482i32,
         b"BaseCleanupAppcompatCacheSupport\0".as_ptr() as *const i8,
@@ -603,7 +603,7 @@ pub unsafe extern "system" fn BaseCleanupAppcompatCacheSupport(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 .as_ptr() as *const i8,
             482i32,
         );
@@ -616,7 +616,7 @@ pub unsafe extern "system" fn BaseInitAppcompatCache() -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             .as_ptr() as *const i8,
         493i32,
         b"BaseInitAppcompatCache\0".as_ptr() as *const i8,
@@ -624,7 +624,7 @@ pub unsafe extern "system" fn BaseInitAppcompatCache() -> BOOL {
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 .as_ptr() as *const i8,
             493i32,
         );
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn BaseInitAppcompatCacheSupport() -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             .as_ptr() as *const i8,
         504i32,
         b"BaseInitAppcompatCacheSupport\0".as_ptr() as *const i8,
@@ -645,7 +645,7 @@ pub unsafe extern "system" fn BaseInitAppcompatCacheSupport() -> BOOL {
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 .as_ptr() as *const i8,
             504i32,
         );
@@ -657,7 +657,7 @@ pub unsafe extern "system" fn GetComPlusPackageInstallStatus() -> *mut core::ffi
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as u32);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             .as_ptr() as *const i8,
         515i32,
         b"GetComPlusPackageInstallStatus\0".as_ptr() as *const i8,
@@ -665,7 +665,7 @@ pub unsafe extern "system" fn GetComPlusPackageInstallStatus() -> *mut core::ffi
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 .as_ptr() as *const i8,
             515i32,
         );
@@ -702,14 +702,14 @@ pub unsafe extern "system" fn SetTermsrvAppInstallMode(bInstallMode: BOOL) {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"dll/win32/kernel32/client/appcache.c\0".as_ptr() as *const ::core::ffi::c_char,
         555 as ::core::ffi::c_int,
         b"SetTermsrvAppInstallMode\0".as_ptr() as *const ::core::ffi::c_char,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0".as_ptr() as *const ::core::ffi::c_char,
+            b"dll/win32/kernel32/client/appcache.c\0".as_ptr() as *const ::core::ffi::c_char,
             555 as ::core::ffi::c_int,
         );
     }
@@ -719,7 +719,7 @@ pub unsafe extern "system" fn TermsrvAppInstallMode() -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+        b"dll/win32/kernel32/client/appcache.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         565 as ::core::ffi::c_int,
         b"TermsrvAppInstallMode\0" as *const u8 as *const ::core::ffi::c_char,
@@ -727,7 +727,7 @@ pub unsafe extern "system" fn TermsrvAppInstallMode() -> BOOL {
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/appcache.c\0"
+            b"dll/win32/kernel32/client/appcache.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             565 as ::core::ffi::c_int,
         );

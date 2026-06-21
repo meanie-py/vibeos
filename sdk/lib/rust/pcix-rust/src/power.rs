@@ -79,7 +79,7 @@ pub unsafe extern "system" fn PciStallForPowerChange(
         RtlAssert(
             b"(PdoExtension->PowerState.CurrentDeviceState >= PowerDeviceD0) && (PdoExtension->PowerState.CurrentDeviceState <= PowerDeviceD3)\0"
                 .as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0".as_ptr()
+            b"drivers/bus/pcix/power.c\0".as_ptr()
                 as PVOID,
             57 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -90,7 +90,7 @@ pub unsafe extern "system" fn PciStallForPowerChange(
     {
         RtlAssert(
             b"(PowerState >= PowerDeviceD0) && (PowerState <= PowerDeviceD3)\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0".as_ptr()
+            b"drivers/bus/pcix/power.c\0".as_ptr()
                 as PVOID,
             58 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -99,7 +99,7 @@ pub unsafe extern "system" fn PciStallForPowerChange(
     if (*PdoExtension).HackFlags & 0x20000000 != 0 {
         RtlAssert(
             b"!(PdoExtension->HackFlags & PCI_HACK_NO_PM_CAPS)\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0".as_ptr()
+            b"drivers/bus/pcix/power.c\0".as_ptr()
                 as PVOID,
             59 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn PciStallForPowerChange(
     if VerifierData.is_null() {
         RtlAssert(
             b"VerifierData\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0".as_ptr()
+            b"drivers/bus/pcix/power.c\0".as_ptr()
                 as PVOID,
             105 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn PciFdoWaitWake(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8 as *const i8,
         b"PciFdoWaitWake\0".as_ptr() as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0".as_ptr() as *const u8 as *const i8,
+        b"drivers/bus/pcix/power.c\0".as_ptr() as *const u8 as *const i8,
         214i32,
     );
     loop {}
@@ -305,7 +305,7 @@ pub unsafe extern "system" fn PciFdoSetPowerState(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"PciFdoSetPowerState\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/power.c\0" as *const u8
+        b"drivers/bus/pcix/power.c\0" as *const u8
             as *const ::core::ffi::c_char,
         229 as ::core::ffi::c_int,
     );

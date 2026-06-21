@@ -773,7 +773,7 @@ pub unsafe extern "C" fn PciIdeXPdoStartDevice(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 .as_ptr() as *const i8 as PVOID,
             23 as ULONG,
             core::ptr::null_mut::<i8>(),
@@ -798,7 +798,7 @@ pub unsafe extern "C" fn PciIdeXPdoStopDevice(PdoExtension: PPDO_DEVICE_EXTENSIO
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 41u32 as ULONG,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -852,7 +852,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryStopRemoveDevice(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8 as PVOID,
                 85 as ULONG,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -880,7 +880,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryTargetDeviceRelations(
         if false {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8 as *const i8 as PVOID,
                 106 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -931,7 +931,7 @@ pub unsafe extern "C" fn PciIdeXPdoRepeatRequest(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8 as PVOID,
                 154 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -993,7 +993,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryCapabilities(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 .as_ptr() as *const i8 as PVOID,
             210,
             core::ptr::null_mut::<i8>(),
@@ -1041,7 +1041,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryPnpDeviceState(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 .as_ptr() as PVOID,
             240 as ULONG,
             core::ptr::null_mut::<i8>(),
@@ -1068,7 +1068,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryResources(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 .as_ptr() as *const i8 as PVOID,
             266,
             core::ptr::null_mut(),
@@ -1159,7 +1159,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryResourceRequirements(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 346 as u32,
                 core::ptr::null_mut(),
@@ -1257,7 +1257,7 @@ pub unsafe extern "C" fn PciIdeXGetControllerVendorId(FdoExtension: PFDO_DEVICE_
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 .as_ptr() as *const i8 as PVOID,
             424u32,
             core::ptr::null_mut(),
@@ -1294,7 +1294,7 @@ pub unsafe extern "C" fn PciIdeXGetControllerDeviceId(FdoExtension: PFDO_DEVICE_
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8
                     as *const i8 as PVOID,
                 455 as ULONG,
@@ -1353,7 +1353,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 490u32,
                 core::ptr::null_mut::<i8>(),
@@ -1508,7 +1508,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             if !(Status >= 0i32) {
                 RtlAssert(
                     b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                    b"drivers/storage/ide/pciidex/pdo.c\0"
                         .as_ptr() as *const i8 as PVOID,
                     573u32,
                     core::ptr::null_mut::<i8>(),
@@ -1556,7 +1556,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             if !(Status >= 0i32) {
                 RtlAssert(
                     b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                    b"drivers/storage/ide/pciidex/pdo.c\0"
                         .as_ptr() as *const i8 as PVOID,
                     591u32,
                     core::ptr::null_mut::<i8>(),
@@ -1583,7 +1583,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             if !(Status >= 0i32) {
                 RtlAssert(
                     b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                    b"drivers/storage/ide/pciidex/pdo.c\0"
                         .as_ptr() as *const i8 as PVOID,
                     607u32,
                     core::ptr::null_mut::<i8>(),
@@ -1653,7 +1653,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             if !(Status >= 0i32) {
                 RtlAssert(
                     b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                    b"drivers/storage/ide/pciidex/pdo.c\0"
                         .as_ptr() as *const i8 as PVOID,
                     648u32,
                     core::ptr::null_mut::<i8>(),
@@ -1684,7 +1684,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8 as *const i8 as PVOID,
                 673 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -1744,7 +1744,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryDeviceUsageNotification(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     .as_ptr() as PVOID,
                 720u32,
                 core::ptr::null_mut::<i8>(),
@@ -1798,7 +1798,7 @@ pub unsafe extern "C" fn PciIdeXPdoDispatchPnp(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+                b"drivers/storage/ide/pciidex/pdo.c\0"
                     as *const u8 as *const i8 as PVOID,
                 761 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -1881,7 +1881,7 @@ pub unsafe extern "system" fn PciIdeXDispatchPnp(
         );
         RtlAssert(
             b"0\0" as *const u8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pdo.c\0"
+            b"drivers/storage/ide/pciidex/pdo.c\0"
                 as *const u8 as PVOID,
             844 as ULONG,
             core::ptr::null_mut::<CHAR>(),

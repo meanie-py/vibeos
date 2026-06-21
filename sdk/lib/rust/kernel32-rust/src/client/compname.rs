@@ -794,7 +794,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameA(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const i8,
         765i32,
         b"AddLocalAlternateComputerNameA\0" as *const u8 as *const i8,
@@ -802,7 +802,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameA(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const i8,
             765i32,
         );
@@ -817,7 +817,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameW(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as LPCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         773i32,
         b"AddLocalAlternateComputerNameW\0" as *const u8 as *const ::core::ffi::c_char,
@@ -825,7 +825,7 @@ pub unsafe extern "system" fn AddLocalAlternateComputerNameW(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as LPCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             773i32,
         );
@@ -843,7 +843,7 @@ pub unsafe extern "system" fn EnumerateLocalComputerNamesA(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             .as_ptr() as *const i8,
         781i32,
         b"EnumerateLocalComputerNamesA\0".as_ptr() as *const i8,
@@ -851,7 +851,7 @@ pub unsafe extern "system" fn EnumerateLocalComputerNamesA(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 .as_ptr() as *const i8,
             781i32,
         );
@@ -869,7 +869,7 @@ pub unsafe extern "system" fn EnumerateLocalComputerNamesW(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         789 as ::core::ffi::c_int,
         b"EnumerateLocalComputerNamesW\0" as *const u8 as *const ::core::ffi::c_char,
@@ -877,7 +877,7 @@ pub unsafe extern "system" fn EnumerateLocalComputerNamesW(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             789 as ::core::ffi::c_int,
         );
@@ -893,7 +893,7 @@ pub unsafe extern "system" fn RemoveLocalAlternateComputerNameA(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const i8,
         797i32,
         b"RemoveLocalAlternateComputerNameA\0" as *const u8 as *const i8,
@@ -901,7 +901,7 @@ pub unsafe extern "system" fn RemoveLocalAlternateComputerNameA(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const i8,
             797i32,
         );
@@ -917,7 +917,7 @@ pub unsafe extern "system" fn RemoveLocalAlternateComputerNameW(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const i8,
         805i32,
         b"RemoveLocalAlternateComputerNameW\0" as *const u8 as *const i8,
@@ -925,7 +925,7 @@ pub unsafe extern "system" fn RemoveLocalAlternateComputerNameW(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const i8,
             805i32,
         );
@@ -941,7 +941,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameA(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             .as_ptr() as *const ::core::ffi::c_char,
         817i32,
         b"SetLocalPrimaryComputerNameA\0".as_ptr() as *const ::core::ffi::c_char,
@@ -949,7 +949,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameA(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 .as_ptr() as *const ::core::ffi::c_char,
             817i32,
         );
@@ -965,7 +965,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameW(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+        b"dll/win32/kernel32/client/compname.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         829 as ::core::ffi::c_int,
         b"SetLocalPrimaryComputerNameW\0" as *const u8 as *const ::core::ffi::c_char,
@@ -973,7 +973,7 @@ pub unsafe extern "system" fn SetLocalPrimaryComputerNameW(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/compname.c\0"
+            b"dll/win32/kernel32/client/compname.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             829 as ::core::ffi::c_int,
         );

@@ -770,7 +770,7 @@ pub unsafe extern "system" fn PciIdeXDispatchWmi(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0"
+                b"drivers/storage/ide/pciidex/pciidex.c\0"
                     as *const u8 as *const i8 as PVOID,
                 24 as u32,
                 core::ptr::null_mut::<i8>(),
@@ -799,7 +799,7 @@ pub unsafe extern "system" fn PciIdeXUnload(DriverObject: PDRIVER_OBJECT) {
         );
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0"
+            b"drivers/storage/ide/pciidex/pciidex.c\0"
                 .as_ptr() as *mut core::ffi::c_void,
             50 as u32,
             core::ptr::null_mut::<i8>(),
@@ -821,7 +821,7 @@ pub unsafe extern "C" fn PciIdeXQueryInterface(
         );
         RtlAssert(
             0 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0"
+            b"drivers/storage/ide/pciidex/pciidex.c\0"
                 .as_ptr() as *const i8 as PVOID,
             70,
             core::ptr::null_mut(),
@@ -891,7 +891,7 @@ pub unsafe extern "C" fn PciIdeXGetConfigurationInfo(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PCSTR as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0".as_ptr() as PCSTR as PVOID,
+                b"drivers/storage/ide/pciidex/pciidex.c\0".as_ptr() as PCSTR as PVOID,
                 115 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -954,7 +954,7 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+                b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
                 167 as LVL,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -974,7 +974,7 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
     if !(Status >= 0) {
         RtlAssert(
             b"NT_SUCCESS(Status)\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+            b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
             173 as LVL,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -997,7 +997,7 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
     if DriverExtension.is_null() {
         RtlAssert(
             b"DriverExtension\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+            b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
             179 as LVL,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1011,14 +1011,14 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
     if !(Status >= 0) {
         if DbgPrint(
             b"(%s:%d) Invalid miniport extension size %lx\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+            b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
             187 as core::ffi::c_int,
             (*DriverExtension).MiniControllerExtensionSize,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                 187 as core::ffi::c_int,
             );
         }
@@ -1037,14 +1037,14 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
     if !(Status >= 0) {
         if DbgPrint(
             b"(%s:%d) Failed to create FDO 0x%lx\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+            b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
             200 as core::ffi::c_int,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                 200 as core::ffi::c_int,
             );
         }
@@ -1082,14 +1082,14 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
         if !(Status >= 0) {
             if DbgPrint(
                 b"(%s:%d) No bus interface 0x%lx\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                 231 as core::ffi::c_int,
                 Status,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                    b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                     231 as core::ffi::c_int,
                 );
             }
@@ -1098,14 +1098,14 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
             if !(Status >= 0) {
                 if DbgPrint(
                     b"(%s:%d) Unable to retrieve the configuration info %lx\n\0" as *const u8 as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                    b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                     238 as core::ffi::c_int,
                     Status,
                 ) != 0
                 {
                     DbgPrint(
                         b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
+                        b"drivers/storage/ide/pciidex/pciidex.c\0" as *const u8 as *const core::ffi::c_char,
                         238 as core::ffi::c_int,
                     );
                 }
@@ -1172,7 +1172,7 @@ pub unsafe extern "system" fn PciIdeXInitialize(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0"
+                b"drivers/storage/ide/pciidex/pciidex.c\0"
                     as *const u8 as PVOID,
                 298u32,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -1234,7 +1234,7 @@ pub unsafe extern "system" fn DriverEntry(
         if true {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/pciidex.c\0"
+                b"drivers/storage/ide/pciidex/pciidex.c\0"
                     .as_ptr() as PVOID,
                 336 as ULONG,
                 core::ptr::null_mut::<i8>(),

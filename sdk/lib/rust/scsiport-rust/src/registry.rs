@@ -142,13 +142,13 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     if DeviceExtension.is_null() {
         if DbgPrint(
             b"(%s:%d) Invalid parameter\n\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/registry.c\0".as_ptr() as *const i8,
+            b"drivers/storage/port/scsiport/registry.c\0".as_ptr() as *const i8,
             146i32,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/registry.c\0".as_ptr() as *const i8,
+                b"drivers/storage/port/scsiport/registry.c\0".as_ptr() as *const i8,
                 146i32,
             );
         }

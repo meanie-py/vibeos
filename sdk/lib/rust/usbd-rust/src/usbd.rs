@@ -77,7 +77,7 @@ pub unsafe extern "system" fn USBD_AllocateDeviceName(Unknown: u32) -> *mut core
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"USBD_AllocateDeviceName\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr()
+        b"drivers/usb/usbd/usbd.c\0".as_ptr()
             as *const core::ffi::c_char,
         104i32,
     );
@@ -116,7 +116,7 @@ pub unsafe extern "system" fn USBD_Dispatch(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"USBD_Dispatch\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0" as *const u8 as *const i8,
+        b"drivers/usb/usbd/usbd.c\0" as *const u8 as *const i8,
         142i32,
     );
     return 1u32;
@@ -127,7 +127,7 @@ pub unsafe extern "system" fn USBD_FreeDeviceMutex(Unknown: *mut core::ffi::c_vo
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const core::ffi::c_char,
         b"USBD_FreeDeviceMutex\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0" as *const u8 as *const core::ffi::c_char,
+        b"drivers/usb/usbd/usbd.c\0" as *const u8 as *const core::ffi::c_char,
         152 as core::ffi::c_int,
     );
 }
@@ -137,7 +137,7 @@ pub unsafe extern "system" fn USBD_FreeDeviceName(Unknown: PVOID) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char,
         b"USBD_FreeDeviceName\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr()
+        b"drivers/usb/usbd/usbd.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         161 as ::core::ffi::c_int,
     );
@@ -148,7 +148,7 @@ pub unsafe extern "system" fn USBD_WaitDeviceMutex(Unknown: *mut core::ffi::c_vo
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_WaitDeviceMutex\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         170 as i32,
     );
 }
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn USBD_GetSuspendPowerState(Unknown1: ULONG) -> ULON
     DbgPrint(
         c"WARNING:  %s at %s:%d is unimplemented!()\n".as_ptr(),
         c"USBD_GetSuspendPowerState".as_ptr(),
-        c"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c".as_ptr(),
+        c"drivers/usb/usbd/usbd.c".as_ptr(),
         179i32,
     );
     return 0u32;
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn USBD_InitializeDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_InitializeDevice\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         190i32,
     );
     return STATUS_NOT_SUPPORTED;
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn USBD_RegisterHostController(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"USBD_RegisterHostController\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0" as *const u8
+        b"drivers/usb/usbd/usbd.c\0" as *const u8
             as *const ::core::ffi::c_char,
         202 as ::core::ffi::c_int,
     );
@@ -214,7 +214,7 @@ pub unsafe extern "system" fn USBD_GetDeviceInformation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_GetDeviceInformation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         212i32,
     );
     STATUS_NOT_SUPPORTED
@@ -230,7 +230,7 @@ pub unsafe extern "system" fn USBD_CreateDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_CreateDevice\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         223i32,
     );
     return STATUS_NOT_SUPPORTED;
@@ -245,7 +245,7 @@ pub unsafe extern "system" fn USBD_RemoveDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_RemoveDevice\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         233i32,
     );
     return STATUS_NOT_SUPPORTED;
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn USBD_CompleteRequest(Unknown1: ULONG, Unknown2: UL
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
             b"USBD_CompleteRequest\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+            b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
             243i32,
         );
     }
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn USBD_RegisterHcFilter(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"USBD_RegisterHcFilter\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0" as *const u8
+        b"drivers/usb/usbd/usbd.c\0" as *const u8
             as *const i8,
         255 as ::core::ffi::c_int,
     );
@@ -282,7 +282,7 @@ pub unsafe extern "system" fn USBD_RegisterHcFilter(
 pub unsafe extern "system" fn USBD_SetSuspendPowerState(Unknown1: ULONG, Unknown2: ULONG) {
     let format_str = b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8;
     let func_name = b"USBD_SetSuspendPowerState\0".as_ptr() as *const i8;
-    let file_name = b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8;
+    let file_name = b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8;
     DbgPrint(format_str, func_name, file_name, 264 as core::ffi::c_int);
 }
 
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn USBD_MakePdoName(Unknown1: u32, Unknown2: u32) -> 
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_MakePdoName\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
+        b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8,
         273i32,
     );
     return STATUS_NOT_SUPPORTED;
@@ -305,7 +305,7 @@ pub unsafe extern "system" fn USBD_QueryBusTime(
 
     let fmt = b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8;
     let funcname = b"USBD_QueryBusTime\0".as_ptr() as *const i8;
-    let filename = b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr()
+    let filename = b"drivers/usb/usbd/usbd.c\0".as_ptr()
         as *const i8;
 
     DbgPrint(fmt, funcname, filename, 286i32);
@@ -347,7 +347,7 @@ pub unsafe extern "system" fn USBD_RegisterHcDeviceCapabilities(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_RegisterHcDeviceCapabilities\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr()
+        b"drivers/usb/usbd/usbd.c\0".as_ptr()
             as *const i8,
         322i32,
     );
@@ -570,7 +570,7 @@ pub unsafe extern "system" fn USBD_ParseConfigurationDescriptorEx(
         if (*InterfaceDescriptor).bLength == 0 {
             RtlAssert(
                 b"InterfaceDescriptor->bLength\0".as_ptr() as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/usb/usbd/usbd.c\0".as_ptr()
+                b"drivers/usb/usbd/usbd.c\0".as_ptr()
                     as *const core::ffi::c_void,
                 588u32,
                 core::ptr::null_mut(),

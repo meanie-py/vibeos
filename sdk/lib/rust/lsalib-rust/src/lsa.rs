@@ -54,13 +54,13 @@ pub unsafe extern "system" fn LsaCallAuthenticationPackage(
     let mut Status: NTSTATUS = 0;
     if DbgPrint(
         b"(%s:%d) LsaCallAuthenticationPackage()\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+        b"sdk/lib/lsalib/lsa.c\0" as *const u8
             as *const ::core::ffi::c_char,
         41 as ::core::ffi::c_int,
     ) != 0 {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8
                 as *const ::core::ffi::c_char,
             41 as ::core::ffi::c_int,
         );
@@ -96,14 +96,14 @@ pub unsafe extern "system" fn LsaCallAuthenticationPackage(
         if DbgPrint(
             b"(%s:%d) ZwRequestWaitReplyPort() failed (Status 0x%08lx)\n\0" as *const u8
                 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8
                 as *const ::core::ffi::c_char,
             57 as ::core::ffi::c_int,
             Status,
         ) != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8
                     as *const ::core::ffi::c_char,
                 57 as ::core::ffi::c_int,
             );
@@ -114,14 +114,14 @@ pub unsafe extern "system" fn LsaCallAuthenticationPackage(
         if DbgPrint(
             b"(%s:%d) ZwRequestWaitReplyPort() failed (ApiMessage.__bindgen_anon_1.Status 0x%08lx)\n\0"
                 as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8
                 as *const ::core::ffi::c_char,
             63 as ::core::ffi::c_int,
             ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Status,
         ) != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8
                     as *const ::core::ffi::c_char,
                 63 as ::core::ffi::c_int,
             );
@@ -167,14 +167,14 @@ pub unsafe extern "system" fn LsaDeregisterLogonProcess(LsaHandle: HANDLE) -> NT
     if !(Status >= 0) {
         if DbgPrint(
             b"(%s:%d) ZwRequestWaitReplyPort() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
+            b"sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
             97 as i32,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
                 97 as i32,
             );
         }
@@ -184,14 +184,14 @@ pub unsafe extern "system" fn LsaDeregisterLogonProcess(LsaHandle: HANDLE) -> NT
     if !(ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Status >= 0) {
         if DbgPrint(
             b"(%s:%d) ZwRequestWaitReplyPort() failed (ApiMessage.__bindgen_anon_1.Status 0x%08lx)\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
+            b"sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
             103 as i32,
             ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0".as_ptr() as *const i8,
                 103 as i32,
             );
         }
@@ -423,14 +423,14 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
         if !NT_SUCCESS(Status) {
             if DbgPrint(
                 b"(%s:%d) ZwCreateEvent failed (Status 0x%08lx)\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
                 290i32,
                 Status,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+                    b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
                     290i32,
                 );
             }
@@ -448,14 +448,14 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
     if !NT_SUCCESS(Status) {
         if DbgPrint(
             b"(%s:%d) ZwWaitForSingleObject failed (Status 0x%08lx)\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
             301i32,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
                 301i32,
             );
         }
@@ -496,14 +496,14 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
     if !NT_SUCCESS(Status) {
         if DbgPrint(
             b"(%s:%d) ZwConnectPort failed (Status 0x%08lx)\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
             332i32,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
                 332i32,
             );
         }
@@ -515,14 +515,14 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
     if !NT_SUCCESS(ConnectInfo.Status) {
         if DbgPrint(
             b"(%s:%d) ConnectInfo.__bindgen_anon_1.Status: 0x%08lx\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+            b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
             341i32,
             ConnectInfo.Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
+                b"sdk/lib/lsalib/lsa.c\0" as *const u8 as *const i8,
                 341i32,
             );
         }

@@ -260,7 +260,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8 as PVOID,
             82 as ULONG,
             core::ptr::null_mut::<i8>(),
         );
@@ -281,7 +281,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
         DbgPrint(
             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
             b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
             97 as i32,
         );
         DbgPrint((b"\0".as_ptr() as *const i8).cast());
@@ -299,7 +299,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
         DbgPrint(
             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
             b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
             114 as i32,
         );
         DbgPrint((b"\0".as_ptr() as *const i8).cast());
@@ -319,7 +319,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryRemoveDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciFdoIrpQueryRemoveDevice\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
         132i32,
     );
     STATUS_NOT_SUPPORTED
@@ -333,7 +333,7 @@ pub unsafe extern "system" fn PciFdoIrpRemoveDevice(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char).cast(),
         b"PciFdoIrpRemoveDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+        b"drivers/bus/pcix/fdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         146 as ::core::ffi::c_int,
     );
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn PciFdoIrpCancelRemoveDevice(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char).cast(),
         b"PciFdoIrpCancelRemoveDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+        b"drivers/bus/pcix/fdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         160i32,
     );
@@ -368,7 +368,7 @@ pub unsafe extern "system" fn PciFdoIrpStopDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr(),
         b"PciFdoIrpStopDevice\0".as_ptr(),
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr(),
+        b"drivers/bus/pcix/fdo.c\0".as_ptr(),
         174i32,
     );
     DbgPrint(b"\0".as_ptr());
@@ -386,7 +386,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryStopDevice(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const core::ffi::c_char).cast(),
         b"PciFdoIrpQueryStopDevice\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0" as *const u8 as *const core::ffi::c_char,
+        b"drivers/bus/pcix/fdo.c\0" as *const u8 as *const core::ffi::c_char,
         188 as core::ffi::c_int,
     );
     DbgPrint((b"\0" as *const u8 as *const core::ffi::c_char).cast());
@@ -403,7 +403,7 @@ pub unsafe extern "system" fn PciFdoIrpCancelStopDevice(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR).cast(),
         b"PciFdoIrpCancelStopDevice\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0" as *const u8
+        b"drivers/bus/pcix/fdo.c\0" as *const u8
             as *const ::core::ffi::c_char,
         202 as ::core::ffi::c_int,
     );
@@ -427,7 +427,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryDeviceRelations(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as PVOID,
                 213u32,
                 core::ptr::null_mut::<i8>(),
@@ -459,7 +459,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryInterface(
         );
         RtlAssert(
             b"0\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+            b"drivers/bus/pcix/fdo.c\0".as_ptr()
                 as *mut core::ffi::c_void,
             240u32,
             core::ptr::null_mut::<i8>(),
@@ -469,7 +469,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryInterface(
         RtlAssert(
             b"DeviceExtension->ExtensionType == PciFdoExtensionType\0".as_ptr()
                 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+            b"drivers/bus/pcix/fdo.c\0".as_ptr()
                 as *mut core::ffi::c_void,
             241u32,
             core::ptr::null_mut::<i8>(),
@@ -537,7 +537,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryCapabilities(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             315 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -547,7 +547,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryCapabilities(
     if !((*DeviceExtension).ExtensionType == (PciFdoExtensionType as ::core::ffi::c_int as ::core::ffi::c_ulong)) {
         RtlAssert(
             b"(DeviceExtension)->ExtensionType == PciFdoExtensionType\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             316 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -579,7 +579,7 @@ pub unsafe extern "system" fn PciFdoIrpDeviceUsageNotification(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciFdoIrpDeviceUsageNotification\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         345i32,
     );
     DbgPrint(b"\0".as_ptr() as *const u8);
@@ -598,7 +598,7 @@ pub unsafe extern "system" fn PciFdoIrpSurpriseRemoval(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char).cast(),
         b"PciFdoIrpSurpriseRemoval\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0" as *const u8 as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/fdo.c\0" as *const u8 as *const ::core::ffi::c_char,
         359i32,
     );
     DbgPrint(
@@ -617,7 +617,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryLegacyBusInformation(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8).cast(),
         b"PciFdoIrpQueryLegacyBusInformation\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0" as *const u8 as *const i8,
+        b"drivers/bus/pcix/fdo.c\0" as *const u8 as *const i8,
         373 as i32,
     );
     DbgPrint((b"\0" as *const u8 as *const i8).cast());
@@ -635,7 +635,7 @@ pub unsafe extern "system" fn PciGetHotPlugParameters(FdoExtension: PPCI_FDO_EXT
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             385 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -686,7 +686,7 @@ pub unsafe extern "system" fn PciGetHotPlugParameters(FdoExtension: PPCI_FDO_EXT
         DbgPrint(
             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
             b"PciGetHotPlugParameters\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
             424 as i32,
         );
         DbgPrint((b"\0".as_ptr() as PCSTR).cast());
@@ -758,7 +758,7 @@ pub unsafe extern "system" fn PciAddDevice(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 473 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -769,7 +769,7 @@ pub unsafe extern "system" fn PciAddDevice(
     // DPRINT1 for entry
     if DbgPrint(
         (b"(%s:%d) PCI - AddDevice (a new bus). PDO: %p (Driver: %wZ)\n\0".as_ptr() as PCSTR).cast(),
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
         475i32,
         PhysicalDeviceObject,
         &raw mut (*(*PhysicalDeviceObject).DriverObject).DriverName,
@@ -777,7 +777,7 @@ pub unsafe extern "system" fn PciAddDevice(
     {
         DbgPrint(
             (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+            b"drivers/bus/pcix/fdo.c\0".as_ptr()
                 as *const i8,
             475i32,
         );
@@ -801,7 +801,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 RtlAssert(
                     b"(PdoExtension)->ExtensionType == PciPdoExtensionType\0".as_ptr() as *const i8
                         as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8 as *mut core::ffi::c_void,
                     492 as ULONG,
                     core::ptr::null_mut::<i8>(),
@@ -814,7 +814,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 if DbgPrint(
                     (b"(%s:%d) PCI - PciAddDevice for Non-Root/Non-PCI-PCI bridge,\n      Class %02x, SubClass %02x, will not add.\n\0"
                         .as_ptr() as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8,
                     502i32,
                     (*PdoExtension).BaseClass as i32,
@@ -823,7 +823,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 {
                     DbgPrint(
                         (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                        b"drivers/bus/pcix/fdo.c\0"
                             .as_ptr() as *const i8,
                         502i32,
                     );
@@ -835,7 +835,7 @@ pub unsafe extern "system" fn PciAddDevice(
                     RtlAssert(
                         b"(PdoExtension->BaseClass == PCI_CLASS_BRIDGE_DEV) && (PdoExtension->SubClass == PCI_SUBCLASS_BR_PCI_TO_PCI)\0"
                             .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                        b"drivers/bus/pcix/fdo.c\0"
                             .as_ptr() as *const i8 as *mut core::ffi::c_void,
                         504 as ULONG,
                         core::ptr::null_mut::<i8>(),
@@ -847,7 +847,7 @@ pub unsafe extern "system" fn PciAddDevice(
             // DPRINT1 for child bus
             if DbgPrint(
                 (b"(%s:%d) PCI - AddDevice (new bus is child of bus 0x%x).\n\0".as_ptr() as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8,
                 513i32,
                 (*ParentExtension).BaseBus as i32,
@@ -855,7 +855,7 @@ pub unsafe extern "system" fn PciAddDevice(
             {
                 DbgPrint(
                     (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8,
                     513i32,
                 );
@@ -865,7 +865,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 if DbgPrint(
                     (b"(%s:%d) PCI - Bus numbers not configured for bridge (0x%x.0x%x.0x%x)\n\0"
                         .as_ptr() as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8,
                     522i32,
                     (*ParentExtension).BaseBus as i32,
@@ -875,7 +875,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 {
                     DbgPrint(
                         (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                        b"drivers/bus/pcix/fdo.c\0"
                             .as_ptr() as *const i8,
                         522i32,
                     );
@@ -907,7 +907,7 @@ pub unsafe extern "system" fn PciAddDevice(
             if AttachedTo.is_null() {
                 RtlAssert(
                     b"AttachedTo != NULL\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8 as *mut core::ffi::c_void,
                     550 as ULONG,
                     core::ptr::null_mut::<i8>(),
@@ -933,7 +933,7 @@ pub unsafe extern "system" fn PciAddDevice(
                         DbgPrint(
                             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
                             b"PciAddDevice\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                            b"drivers/bus/pcix/fdo.c\0"
                                 .as_ptr() as *const i8,
                             577i32,
                         );
@@ -945,7 +945,7 @@ pub unsafe extern "system" fn PciAddDevice(
                         DbgPrint(
                             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
                             b"PciAddDevice\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                            b"drivers/bus/pcix/fdo.c\0"
                                 .as_ptr() as *const i8,
                             584i32,
                         );
@@ -963,14 +963,14 @@ pub unsafe extern "system" fn PciAddDevice(
                         }
                         if DbgPrint(
                             (b"(%s:%d) PCI   Will use default configuration.\n\0".as_ptr() as PCSTR).cast(),
-                            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                            b"drivers/bus/pcix/fdo.c\0"
                                 .as_ptr() as *const i8,
                             600i32,
                         ) != 0
                         {
                             DbgPrint(
                                 (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0"
+                                b"drivers/bus/pcix/fdo.c\0"
                                     .as_ptr() as *const i8,
                                 600i32,
                             );
@@ -1040,7 +1040,7 @@ pub unsafe extern "system" fn PciAddDevice(
         if NT_SUCCESS(Status) {
             RtlAssert(
                 b"!NT_SUCCESS(Status)\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 658 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -1049,14 +1049,14 @@ pub unsafe extern "system" fn PciAddDevice(
         if !FdoExtension.is_null() {
             if DbgPrint(
                 (b"(%s:%d) Should destroy secondaries\n\0".as_ptr() as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8,
                 661i32,
             ) != 0
             {
                 DbgPrint(
                     (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/fdo.c\0".as_ptr()
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8,
                     661i32,
                 );

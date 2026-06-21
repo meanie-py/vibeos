@@ -42,7 +42,7 @@ pub unsafe extern "system" fn FsRecIsFatxVolume(BootSector: PFATX_BOOT_SECTOR) -
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fatx.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filesystems/fs_rec/fatx.c\0".as_ptr() as *const i8 as PVOID,
             37 as ULONG,
             core::ptr::null_mut::<i8>(),
         );
@@ -87,7 +87,7 @@ pub unsafe extern "system" fn FsRecFatxFsControl(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fatx.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filesystems/fs_rec/fatx.c\0".as_ptr() as *const i8 as PVOID,
             76u32,
             core::ptr::null_mut::<i8>(),
         );

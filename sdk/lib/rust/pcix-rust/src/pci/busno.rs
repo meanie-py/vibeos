@@ -24,7 +24,7 @@ pub unsafe extern "system" fn PciAreBusNumbersConfigured(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/busno.c\0"
+                b"drivers/bus/pcix/pci/busno.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 24 as ULONG,
                 core::ptr::null_mut::<CHAR>(),

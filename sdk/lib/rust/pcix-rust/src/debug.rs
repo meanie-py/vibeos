@@ -134,7 +134,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
         PdoDeviceExtension = DeviceExtension as PPCI_PDO_EXTENSION;
         if DbgPrint(
             b"(%s:%d) PDO(b=0x%x, d=0x%x, f=0x%x)<-%s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             179i32,
             (*(*PdoDeviceExtension).ParentFdoExtension).BaseBus as i32,
@@ -145,7 +145,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+                b"drivers/bus/pcix/debug.c\0".as_ptr()
                     as *const i8,
                 179i32,
             );
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
     } else if (*DeviceExtension).ExtensionType == PciFdoExtensionType as u32 {
         if DbgPrint(
             b"(%s:%d) FDO(%p)<-%s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             194i32,
             DeviceExtension,
@@ -162,7 +162,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+                b"drivers/bus/pcix/debug.c\0".as_ptr()
                     as *const i8,
                 194i32,
             );
@@ -172,7 +172,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
     if (*IoStackLocation).MinorFunction as i32 > MaxMinor as i32 {
         if DbgPrint(
             b"(%s:%d) Unknown IRP, minor = 0x%x\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             199i32,
             (*IoStackLocation).MinorFunction as i32,
@@ -180,7 +180,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+                b"drivers/bus/pcix/debug.c\0".as_ptr()
                     as *const i8,
                 199i32,
             );
@@ -197,7 +197,7 @@ pub unsafe extern "system" fn PciDebugDumpCommonConfig(PciData: PPCI_COMMON_HEAD
         let value: u32 = *value_ptr;
         let status = DbgPrint(
             b"(%s:%d) %02x - %08x\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
             215i32,
             i as i32,
             value,
@@ -205,7 +205,7 @@ pub unsafe extern "system" fn PciDebugDumpCommonConfig(PciData: PPCI_COMMON_HEAD
         if status != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
                 215i32,
             );
         }
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn PciDebugDumpQueryCapabilities(DeviceCaps: PDEVICE_
     let mut i: u32;
     if DbgPrint(
         b"(%s:%d) Capabilities\n  Lock:%u, Eject:%u, Remove:%u, Dock:%u, UniqueId:%u\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
         231i32,
         (*DeviceCaps).LockSupported() as i32,
         (*DeviceCaps).EjectSupported() as i32,
@@ -229,7 +229,7 @@ pub unsafe extern "system" fn PciDebugDumpQueryCapabilities(DeviceCaps: PDEVICE_
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as *const i8,
             231i32,
         );
     }
@@ -310,21 +310,21 @@ pub unsafe extern "system" fn PciDebugCmResourceTypeToText(Type: u8) -> PCHAR {
 pub unsafe extern "system" fn PciDebugPrintIoResource(Descriptor: PIO_RESOURCE_DESCRIPTOR) {
     DbgPrint(
         b"(%s:%d)      IoResource Descriptor dump:  Descriptor @0x%p\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+        b"drivers/bus/pcix/debug.c\0" as *const u8
             as *const ::core::ffi::c_char,
         285 as ::core::ffi::c_int,
         Descriptor,
     );
     DbgPrint(
         b"(%s:%d)         Option           = 0x%x\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+        b"drivers/bus/pcix/debug.c\0" as *const u8
             as *const ::core::ffi::c_char,
         286 as ::core::ffi::c_int,
         (*Descriptor).Option as ::core::ffi::c_int,
     );
     DbgPrint(
         b"(%s:%d)         Type             = %u (%s)\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+        b"drivers/bus/pcix/debug.c\0" as *const u8
             as *const ::core::ffi::c_char,
         287 as ::core::ffi::c_int,
         (*Descriptor).Type as ::core::ffi::c_int,
@@ -332,14 +332,14 @@ pub unsafe extern "system" fn PciDebugPrintIoResource(Descriptor: PIO_RESOURCE_D
     );
     DbgPrint(
         b"(%s:%d)         ShareDisposition = %u\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+        b"drivers/bus/pcix/debug.c\0" as *const u8
             as *const ::core::ffi::c_char,
         288 as ::core::ffi::c_int,
         (*Descriptor).ShareDisposition as ::core::ffi::c_int,
     );
     DbgPrint(
         b"(%s:%d)         Flags            = 0x%04X\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+        b"drivers/bus/pcix/debug.c\0" as *const u8
             as *const ::core::ffi::c_char,
         289 as ::core::ffi::c_int,
         (*Descriptor).Flags as ::core::ffi::c_int,
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResource(Descriptor: PIO_RESOURCE_D
     while i < 6 {
         DbgPrint(
             b"(%s:%d)         Data[%u] = %08x  %08x  %08x\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0" as *const u8
+            b"drivers/bus/pcix/debug.c\0" as *const u8
                 as *const ::core::ffi::c_char,
             296 as ::core::ffi::c_int,
             i,
@@ -376,21 +376,21 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
 
     if DbgPrint(
         b"(%s:%d)   IO_RESOURCE_REQUIREMENTS_LIST (PCI Bus Driver)\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         317i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             317i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)      InterfaceType        %d\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         318i32,
         (*Requirements).InterfaceType as i32,
@@ -398,14 +398,14 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             318i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)      BusNumber            0x%x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         319i32,
         (*Requirements).BusNumber,
@@ -413,7 +413,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             319i32,
         );
@@ -423,7 +423,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     let slot = &*slot_ptr;
     if DbgPrint(
         b"(%s:%d)      SlotNumber           %d (0x%x), (d/f = 0x%x/0x%x)\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         324i32,
         (*Requirements).SlotNumber,
@@ -434,14 +434,14 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             324i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)      AlternativeLists     %u\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         325i32,
         AlternativeLists,
@@ -449,7 +449,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             325i32,
         );
@@ -464,7 +464,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
         Count = (*List).Count;
         if DbgPrint(
             b"(%s:%d) \n     List[%u].Count = %u\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             335i32,
             AlternativeLists,
@@ -473,7 +473,7 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+                b"drivers/bus/pcix/debug.c\0".as_ptr()
                     as *const i8,
                 335i32,
             );
@@ -492,14 +492,14 @@ pub unsafe extern "system" fn PciDebugPrintIoResReqList(
     }
     if DbgPrint(
         b"(%s:%d) \n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+        b"drivers/bus/pcix/debug.c\0".as_ptr()
             as *const i8,
         343i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr()
+            b"drivers/bus/pcix/debug.c\0".as_ptr()
                 as *const i8,
             343i32,
         );
@@ -511,20 +511,20 @@ pub unsafe extern "system" fn PciDebugPrintPartialResource(
 ) {
     if DbgPrint(
         b"(%s:%d)      Partial Resource Descriptor @0x%p\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
         351i32,
         PartialResource,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
             351i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)         Type             = %u (%s)\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
         352i32,
         (*PartialResource).Type as i32,
         PciDebugCmResourceTypeToText((*PartialResource).Type),
@@ -532,39 +532,39 @@ pub unsafe extern "system" fn PciDebugPrintPartialResource(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
             352i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)         ShareDisposition = %u\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
         353i32,
         (*PartialResource).ShareDisposition as i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
             353i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)         Flags            = 0x%04X\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
         354i32,
         (*PartialResource).Flags as i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
             354i32,
         );
     }
     if DbgPrint(
         b"(%s:%d)         Data[%d] = %08x  %08x  %08x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
         359i32,
         0i32,
         (*PartialResource).u.Generic.Start.__bindgen_anon_1.LowPart,
@@ -574,7 +574,7 @@ pub unsafe extern "system" fn PciDebugPrintPartialResource(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/debug.c\0".as_ptr() as PCSTR,
             359i32,
         );
     }

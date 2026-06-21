@@ -620,7 +620,7 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
                             RtlAssert(
                                 b"DeviceInformation->SuggestedDriveLetter != (UCHAR)-1\0".as_ptr()
                                     as *const core::ffi::c_void,
-                                b"/home/curi/Projects/os-playground/vibeos-wt-mountmgr/drivers/storage/mountmgr/device.c\0".as_ptr()
+                                b"drivers/storage/mountmgr/device.c\0".as_ptr()
                                     as *const core::ffi::c_void,
                                 551,
                                 core::ptr::null_mut(),
