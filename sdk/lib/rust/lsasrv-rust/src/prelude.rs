@@ -77,7 +77,19 @@ pub use lsasrv_sys::{
     PLSA_STRING, PLSA_API_MSG,
     // notify.c
     POLICY_NOTIFICATION_INFORMATION_CLASS,
+    // srm.c SRM port messages
+    _SEP_RM_API_MESSAGE, SEP_RM_API_MESSAGE, PSEP_RM_API_MESSAGE,
+    _LSAP_RM_API_MESSAGE, LSAP_RM_API_MESSAGE, PLSAP_RM_API_MESSAGE,
+    _RM_API_NUMBER, _LSAP_API_NUMBER,
 };
+
+// Bare SRM/LSAP API-number enum-variant aliases (bindgen tags them).
+pub const RmAuditSetCommand: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmAuditSetCommand;
+pub const RmCreateLogonSession: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmCreateLogonSession;
+pub const RmDeleteLogonSession: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmDeleteLogonSession;
+pub const LsapAdtWriteLogApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapAdtWriteLogApi;
+pub const LsapComponentTestApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapComponentTestApi;
+pub const LsapAsyncApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapAsyncApi;
 
 // LSAPR_POLICY_INFORMATION is a union typedef'd directly (no `_`-tag form);
 // alias the `_`-name the c2rust output uses.
@@ -152,6 +164,15 @@ extern "system" {
     pub fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL;
     pub fn LockResource(hResData: HGLOBAL) -> *mut VOID;
     pub fn SizeofResource(hModule: HMODULE, hResInfo: HRSRC) -> DWORD;
+    pub fn CreateThread(
+        lpThreadAttributes: *mut VOID,
+        dwStackSize: usize,
+        lpStartAddress: Option<unsafe extern "system" fn(*mut VOID) -> DWORD>,
+        lpParameter: *mut VOID,
+        dwCreationFlags: DWORD,
+        lpThreadId: *mut DWORD,
+    ) -> HANDLE;
+    pub fn CloseHandle(hObject: HANDLE) -> i32;
 }
 
 // Resource handle aliases (winbase) — kernel32 resource API handle types.

@@ -217,6 +217,59 @@ pub union _PORT_MESSAGE__bindgen_ty_4 {
     pub CallbackId: ULONG,
 }
 pub type PORT_MESSAGE = _PORT_MESSAGE;
+pub const _RM_API_NUMBER_RmAuditSetCommand: _RM_API_NUMBER = 1;
+pub const _RM_API_NUMBER_RmCreateLogonSession: _RM_API_NUMBER = 2;
+pub const _RM_API_NUMBER_RmDeleteLogonSession: _RM_API_NUMBER = 3;
+pub type _RM_API_NUMBER = ::core::ffi::c_uint;
+pub use self::_RM_API_NUMBER as RM_API_NUMBER;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _SEP_RM_API_MESSAGE {
+    pub Header: PORT_MESSAGE,
+    pub ApiNumber: ULONG,
+    pub u: _SEP_RM_API_MESSAGE__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _SEP_RM_API_MESSAGE__bindgen_ty_1 {
+    pub Fill: [UCHAR; 472usize],
+    pub ResultStatus: NTSTATUS,
+    pub SetAuditEvent: _SEP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1,
+    pub LogonLuid: LUID,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SEP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1 {
+    pub Enabled: BOOLEAN,
+    pub Flags: [ULONG; 9usize],
+}
+pub type SEP_RM_API_MESSAGE = _SEP_RM_API_MESSAGE;
+pub type PSEP_RM_API_MESSAGE = *mut _SEP_RM_API_MESSAGE;
+pub const _LSAP_API_NUMBER_LsapAdtWriteLogApi: _LSAP_API_NUMBER = 1;
+pub const _LSAP_API_NUMBER_LsapComponentTestApi: _LSAP_API_NUMBER = 2;
+pub const _LSAP_API_NUMBER_LsapAsyncApi: _LSAP_API_NUMBER = 3;
+pub type _LSAP_API_NUMBER = ::core::ffi::c_uint;
+pub use self::_LSAP_API_NUMBER as LSAP_API_NUMBER;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _LSAP_RM_API_MESSAGE {
+    pub Header: PORT_MESSAGE,
+    pub ApiNumber: ULONG,
+    pub u: _LSAP_RM_API_MESSAGE__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSAP_RM_API_MESSAGE__bindgen_ty_1 {
+    pub Fill: [UCHAR; 472usize],
+    pub WriteLog: _LSAP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1 {
+    pub Info1: ULONG,
+}
+pub type LSAP_RM_API_MESSAGE = _LSAP_RM_API_MESSAGE;
+pub type PLSAP_RM_API_MESSAGE = *mut _LSAP_RM_API_MESSAGE;
 pub type LSA_UNICODE_STRING = UNICODE_STRING;
 pub type PLSA_UNICODE_STRING = *mut UNICODE_STRING;
 pub type LSA_STRING = STRING;

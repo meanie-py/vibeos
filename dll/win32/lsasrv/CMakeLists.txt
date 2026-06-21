@@ -35,7 +35,7 @@ list(APPEND SOURCE
     # security.c     — replaced by Rust (lsasrv-rust/src/lsasrv/security.rs)
     service.c
     # session.c     — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
-    srm.c
+    # srm.c         — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
     # utils.c        — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
     lsasrv.h
     ${CMAKE_CURRENT_BINARY_DIR}/dssetup_s.c

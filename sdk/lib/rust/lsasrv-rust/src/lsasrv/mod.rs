@@ -3,6 +3,7 @@ pub mod database;
 pub mod policy;
 pub mod session;
 pub mod notify;
+pub mod srm;
 // pub mod service;  // STAGED — needs the winsvc substrate (SERVICE_* types +
 // StartServiceCtrlDispatcherW/SetServiceStatus/… externs); next focused step.
 pub mod dssetup;
