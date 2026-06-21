@@ -173,9 +173,13 @@ typedef NTSTATUS (*PIO_COMPLETION_ROUTINE)(PVOID DevObj, PVOID Irp, PVOID Contex
 
 /* IO_STACK_LOCATION (minimal) */
 #define SL_PENDING_RETURNED  0x01
-#define SL_INVOKE_ON_SUCCESS 0x01
-#define SL_INVOKE_ON_ERROR   0x02
-#define SL_INVOKE_ON_CANCEL  0x04
+/* Real SL_INVOKE_ON_* values from wdm.h — were wrongly 0x01/0x02/0x04 (placeholders),
+ * which made IoSetCompletionRoutine write Control=0x07; the kernel checks Control&0x40
+ * (real SL_INVOKE_ON_SUCCESS) so the completion routine was never invoked → async FSD
+ * IRPs auto-completed+freed → FatMarkVolume double-freed them → BUGCHECK 0xC2. */
+#define SL_INVOKE_ON_CANCEL  0x20
+#define SL_INVOKE_ON_SUCCESS 0x40
+#define SL_INVOKE_ON_ERROR   0x80
 
 /* FIELD_OFFSET for CompletionRoutine in IO_STACK_LOCATION:
  * The IO_STACK_LOCATION.CompletionRoutine is at a large offset. We use
