@@ -74,6 +74,7 @@ MARK_TDI_SRV_LISTEN = "[NETSTACK] TDI server: listening on :8888"
 MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
 MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
+MARK_ICMP_IOCTL = "[NETSTACK] ICMP self-test: reply OK"
 
 _NET_CONFIGS = ("amd64-uefi-net", "arm64-net")
 
@@ -211,6 +212,24 @@ def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
     )
     assert _wait_for_marker(vm, MARK_TDI_RT), (
         "TDI SEND/RECEIVE round-trip did not complete (MDL data path)"
+    )
+
+
+def test_icmp_echo_ioctl(vm: QemuVM) -> None:
+    r"""M9(3): the ICMP echo (ping) IOCTL on \Device\Ip. The kernel self-test
+    opens \Device\Ip and issues IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED) to the
+    gateway, then validates the ICMP_ECHO_REPLY the worker writes back.
+
+    This is the exact path usermode `ping` / iphlpapi's IcmpSendEcho2 ride on:
+    dispatch parses the request → posts Cmd::IcmpEcho → the smoltcp worker emits
+    an echo on the management ICMP socket → matches the reply by sequence number
+    → fills ICMP_ECHO_REPLY (data at buffer end + Data back-pointer) → completes
+    the pended IRP. The marker fires only on IP_SUCCESS with a reply count >= 1.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_ICMP_IOCTL, timeout=120), (
+        "ICMP echo IOCTL round-trip did not complete (ping path: \\Device\\Ip "
+        "IOCTL_ICMP_ECHO_REQUEST dispatch + cross-thread ICMP plumbing)"
     )
 
 

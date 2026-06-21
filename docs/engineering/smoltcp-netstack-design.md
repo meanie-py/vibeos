@@ -348,10 +348,22 @@ dispatch reads. All struct layouts (IFEntry/IPSNMPInfo 92B, IPAddrEntry 24B, IPR
 the entity/class/id constants verified against `tcpioctl.h`/`tdiinfo.h`. **This unblocks
 `GetAdaptersInfo`/`GetIpAddrTable`/`GetIpForwardTable` → `ipconfig`.**
 
-Items (3) `IOCTL_ICMP_ECHO_REQUEST` (ping) and (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr
-programming) remain — item 3 needs cross-thread ICMP request/response plumbing into the engine;
-item 4 is optional (the engine self-configures via its own DHCP). Both best done with runtime
-validation available (post clock-fix). The findings below stand.
+Item (3) **`IOCTL_ICMP_ECHO_REQUEST` (ping) — ✅ IMPLEMENTED + RUNTIME-VALIDATED.** The
+METHOD_BUFFERED IOCTL (0x00120000) now dispatches on `\Device\Ip` (`tdidev.rs handle_icmp_echo`):
+it parses the `ICMP_ECHO_REQUEST` header from `SystemBuffer`, copies the payload out, and posts a
+`Cmd::IcmpEcho` to the worker (`tditrans.rs`). The worker owns a lazily-created management ICMP
+socket (bound to ident 0x4944, distinct from the boot self-test's 0x022b), emits an echo request
+with a unique sequence number, and on the matching `EchoReply` fills the `ICMP_ECHO_REPLY` exactly
+as the C transport's `ProcessEchoData` does — header at the front, echoed data appended at the END
+of the buffer, `Data` a back-pointer into the caller's `UserBuffer` (a value, never dereferenced in
+kernel) — then completes the pended IRP (timeout → zeroed reply + `IP_REQ_TIMED_OUT`/`STATUS_TIMEOUT`).
+All layouts (`IcmpEchoRequest` 20B, `IcmpEchoReply` 28B/40B per arch) are compile-time size-locked
+against `ipexport.h`. A kernel self-test (`icmptest.rs`, the path usermode `ping`/`IcmpSendEcho2`
+ride) drives the IOCTL to the gateway and validates the reply; **amd64-net 13/13** with serial proof
+`ICMP self-test: reply OK rtt=32ms data=20 bytes — ping round-trip OK`. **This unblocks `ping`.**
+
+Item (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr programming) remains — optional (the engine
+self-configures via its own DHCP). The findings below stand.
 
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because

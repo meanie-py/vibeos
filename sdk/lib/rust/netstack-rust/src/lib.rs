@@ -27,6 +27,7 @@ pub mod tdidev;
 pub mod tditest;
 pub mod tdidgtest;
 pub mod tdisrvtest;
+pub mod icmptest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -67,6 +68,10 @@ pub unsafe extern "system" fn DriverEntry(
     // accepts + echoes. Exercises the M8 listen/accept dispatch + completion
     // bridge over the exact IRP path AfdListenSocket/AfdAccept use.
     tdisrvtest::spawn();
+    // M9 verification: drive the ICMP echo (ping) IOCTL on \Device\Ip — opens the
+    // device, issues IOCTL_ICMP_ECHO_REQUEST to the gateway, validates the
+    // ICMP_ECHO_REPLY. Proves the path usermode ping/IcmpSendEcho2 ride on.
+    icmptest::spawn();
     0 // STATUS_SUCCESS
 }
 
