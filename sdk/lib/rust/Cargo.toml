@@ -99,6 +99,7 @@ members = [
     "serial-rust",
     "ramdisk-rust",
     "fltmgr-rust",
+    "ksecdd-rust",
     "i8042prt-rust",
     "handle",
     "interlck",

@@ -134,6 +134,7 @@ STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
 SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
+KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -788,6 +789,24 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # ksecdd.sys — Kernel Security Support Provider (drivers/crypto/ksecdd, ~1.6K LOC, 5 .c:
+    # ksecdd/dispatch/crypt/random/stubs). The SSPI provider; boot-loaded. EXPORT driver
+    # (ksecdd.spec: the stdcall Secur32-style SSPI API). Private KSEC_* structs in ksecdd.h;
+    # IOCTL structs in reactos/drivers/ksecdd/ksecioctl.h. Links the already-Rust cryptlib.
+    # NOT boot-loaded in smoke -> link-clean x3 bar. Multi-.c export cohab (fltmgr-style).
+    "ksecdd": Target(
+        name="ksecdd",
+        source_dir=KSECDD_DIR,
+        output_crate=RUST_DIR / "ksecdd-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KSECDD_DIR / "ksecdd.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1154,6 +1173,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["ramdisk"]
     if "/drivers/filters/fltmgr" in posix:
         return TARGETS["fltmgr"]
+    if "/drivers/crypto/ksecdd" in posix:
+        return TARGETS["ksecdd"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:
