@@ -16,14 +16,39 @@ dir for:
 Convention: <consumer crate>/data/<rc-stem>-<arch>.rc.res
 (matches reactos-link's committed-.res lookup).
 """
-import argparse, json, os, shlex, subprocess, sys
+
+import argparse
+import json
+import os
+import shlex
+import subprocess
 
 # (rc-stem, rc-path, cmake _res target, consumer data dir)
 CELLS = [
-    ("basesrv",  "subsystems/win/basesrv/basesrv.rc", "basesrv_res",  "sdk/lib/rust/basesrv-cargo/data"),
-    ("services", "base/system/services/services.rc",   "services_res", "sdk/lib/rust/services-cargo/data"),
-    ("userinit", "base/system/userinit/userinit.rc",   "userinit_res", "sdk/lib/rust/userinit-cargo/data"),
-    ("winlogon", "base/system/winlogon/winlogon.rc",   "winlogon_res", "sdk/lib/rust/winlogon-cargo/data"),
+    (
+        "basesrv",
+        "subsystems/win/basesrv/basesrv.rc",
+        "basesrv_res",
+        "sdk/lib/rust/basesrv-cargo/data",
+    ),
+    (
+        "services",
+        "base/system/services/services.rc",
+        "services_res",
+        "sdk/lib/rust/services-cargo/data",
+    ),
+    (
+        "userinit",
+        "base/system/userinit/userinit.rc",
+        "userinit_res",
+        "sdk/lib/rust/userinit-cargo/data",
+    ),
+    (
+        "winlogon",
+        "base/system/winlogon/winlogon.rc",
+        "winlogon_res",
+        "sdk/lib/rust/winlogon-cargo/data",
+    ),
 ]
 
 
@@ -32,7 +57,8 @@ def gen(arch):
     if not os.path.exists(db_path):
         print(f"  [{arch}] no {db_path} — configure+build that arch first; skipping")
         return
-    db = json.load(open(db_path))
+    with open(db_path) as f:
+        db = json.load(f)
     for stem, rc, target, datadir in CELLS:
         rc_base = rc.split("/")[-1]
         hits = [e for e in db if e["file"].endswith(rc_base) and f"{target}.dir" in e["command"]]
@@ -53,7 +79,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arch", action="append", help="arch(es) to regen (default: i386 amd64)")
     args = ap.parse_args()
-    for arch in (args.arch or ["i386", "amd64"]):
+    for arch in args.arch or ["i386", "amd64"]:
         gen(arch)
 
 

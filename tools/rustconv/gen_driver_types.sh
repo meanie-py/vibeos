@@ -347,6 +347,65 @@ case "$DRIVER" in
                -DUSE_COMPILER_EXCEPTIONS )
     EXTRA_INC=( -I"${SRC}/drivers/storage/ide/uniata/inc" )
     ;;
+  storahci)
+    # AHCI storport miniport (drivers/storage/port/storahci). Private structs (AHCI_ADAPTER_
+    # EXTENSION, AHCI_PORT, AHCI_CAP/GHC/PORT_CMD bitfield-union registers, AHCI_COMMAND_HEADER,
+    # AHCI_RECEIVED_FIS, AHCI_SRB_EXTENSION, AHCI_QUEUE, ...) live in storahci.h. It also pulls
+    # the storport.h miniport interface (HW_INITIALIZATION_DATA, PORT_CONFIGURATION_INFORMATION,
+    # STOR_DPC, STOR_PHYSICAL_ADDRESS) + ata.h (IDENTIFY_DEVICE_DATA), none in the kernel bindgen
+    # → allowlist all three so bindgen emits exact layouts. No version macros (only -DDEBUG) →
+    # NT 5.2 default.
+    DRIVER_DIR="${SRC}/drivers/storage/port/storahci"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ata.h>\n#include <storport.h>\n#include "storahci.h"'
+    ALLOW_FILES=( --allowlist-file '.*storahci[/\\]storahci\.h'
+                  --allowlist-file '.*[/\\]storport\.h'
+                  --allowlist-file '.*[/\\]ata\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DDEBUG )
+    ;;
+  storport)
+    # Storage port driver (drivers/storage/port/storport). Private structs (FDO_DEVICE_EXTENSION,
+    # PDO_DEVICE_EXTENSION, MINIPORT_DEVICE_EXTENSION, DRIVER_OBJECT_EXTENSION, DRIVER_INIT_DATA,
+    # MINIPORT, UNIT_DATA, EXTENSION_TYPE) live in precomp.h; the public storport.h miniport
+    # interface (HW_INITIALIZATION_DATA, SCSI_REQUEST_BLOCK, STOR_*) is not in the kernel bindgen
+    # → allowlist both. NT 5.2 default (no version macros).
+    DRIVER_DIR="${SRC}/drivers/storage/port/storport"
+    WRAPPER_INC=$'#include "precomp.h"'
+    ALLOW_FILES=( --allowlist-file '.*storport[/\\]precomp\.h'
+                  --allowlist-file '.*[/\\]storport\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  serial)
+    # 8250/16550 UART COM driver (drivers/serial/serial). Private SERIAL_DEVICE_EXTENSION +
+    # SERIAL_* config structs live in serial.h; ntddser.h carries the SERIAL_* IOCTL structs
+    # (SERIAL_BAUD_RATE, SERIAL_LINE_CONTROL, SERIAL_TIMEOUTS, SERIAL_STATUS, ...) not in the
+    # kernel bindgen → allowlist both. NT 5.2 default.
+    DRIVER_DIR="${SRC}/drivers/serial/serial"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ntddser.h>\n#include "serial.h"'
+    ALLOW_FILES=( --allowlist-file '.*serial[/\\]serial\.h'
+                  --allowlist-file '.*[/\\]ntddser\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  ramdisk)
+    # RAM-disk class driver (drivers/storage/class/ramdisk). Its private device-extension
+    # structs (RAMDISK_EXTENSION, RAMDISK_BUS_EXTENSION, RAMDISK_DRIVE_EXTENSION) are defined
+    # INLINE in ramdisk.c → translated directly from the .c, not bindgen'd. The only header
+    # types not in the kernel bindgen are the public IOCTL structs RAMDISK_CREATE_INPUT /
+    # RAMDISK_CREATE_OPTIONS in reactos/drivers/ntddrdsk.h → allowlist that one header. NT 5.2.
+    DRIVER_DIR="${SRC}/drivers/storage/class/ramdisk"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ntdddisk.h>\n#include <reactos/drivers/ntddrdsk.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ntddrdsk\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

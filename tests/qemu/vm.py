@@ -757,9 +757,7 @@ class QemuVM:
         QEMU connects back via WSL2 localhost forwarding). See backend.py."""
         from . import backend as be
 
-        if self.config.arch.startswith("arm64"):
-            raise RuntimeError("windows-host backend supports x86 only (arm64 stays native TCG)")
-
+        is_arm64 = self.config.arch.startswith("arm64")
         accel = self._win.get("accel", "tcg")
         # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
         # windows-host smokes across worktrees must not stomp each other's media — the per-arch
@@ -796,9 +794,13 @@ class QemuVM:
         self._win_uid = f"vibeos-{os.getpid()}-{ser_port}"
         win_bin = be.windows_qemu_bin(self.config.qemu_bin, self._win["qemu_dir"], accel)
 
-        arch_args = be.rewrite_accel(
-            be.stage_media_paths(self.config.qemu_args(self.work_dir), staging), accel
-        )
+        staged_arch_args = be.stage_media_paths(self.config.qemu_args(self.work_dir), staging)
+        # arm64 already boots TCG with a real -cpu MODEL (cortex-a72) and
+        # -accel tcg,thread=multi — exactly what we want on the Windows host.
+        # rewrite_accel is an x86 concept (swap KVM->whpx/tcg and drop the
+        # KVM-only `-cpu host`); on arm64 it would DROP the required -cpu model,
+        # so leave arm64's machine args untouched.
+        arch_args = staged_arch_args if is_arm64 else be.rewrite_accel(staged_arch_args, accel)
         # Net config (amd64-uefi-net): adapt the slirp fwds across the WSL<->Windows
         # boundary — hostfwd binds 0.0.0.0 (dialed via the gateway IP, see net_host) and
         # the `-cmd:cat` guestfwd echo is redirected to a chardev backed by a harness echo
@@ -831,8 +833,9 @@ class QemuVM:
             *be.stage_media_paths(self._scratch_device_args(), staging),
             "-monitor",
             "none",
-            "-debugcon",
-            f"file:{be.win_path(self.debugcon_path)}",
+            # debugcon = x86 ISA port 0xE9, absent on the arm64 `virt` machine
+            # (mirror the native path's arm64 skip in _build_native_cmd).
+            *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(self.debugcon_path)}"]),
             *echo_chardev,
             *arch_args,
         ]

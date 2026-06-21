@@ -15,6 +15,8 @@ import struct
 import sys
 from pathlib import Path
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 # ── C Header Catalog Builder ──────────────────────────────────────────
 
 
@@ -339,7 +341,7 @@ def main():
     )
     args = parser.parse_args()
 
-    reactos_root = Path(__file__).parent.parent.parent.parent  # tools/rustconv → reactos/
+    reactos_root = _RUSTCONV_REACTOS_ROOT  # tools/rustconv → reactos/
 
     catalog = build_c_catalog(reactos_root, include_enums=args.enums)
     print(f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""))
