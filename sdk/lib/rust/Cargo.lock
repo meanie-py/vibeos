@@ -867,6 +867,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "npfs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ntdll-cargo"
 version = "0.1.0"
 dependencies = [
