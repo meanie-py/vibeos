@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from . import build as build_mod
 from . import lints, provenance, repro, triage
 from .artifacts import Run, Stage
 
@@ -619,3 +620,23 @@ def test_repro_compare_localizes_changed_section():
     assert not rep.identical
     assert not rep.timestamp_differs
     assert rep.section_diffs == (".data",)
+
+
+# --- build: SOURCE_DATE_EPOCH commit-date derivation (det-plan rung 2b) -----
+
+
+def test_source_date_epoch_is_commit_ct(tiny_repo: Path):
+    sde = build_mod.source_date_epoch(tiny_repo)
+    assert sde is not None and sde.isdigit()
+    # must equal the HEAD commit's %ct (deterministic per commit, not wall-clock)
+    expected = subprocess.run(
+        ["git", "log", "-1", "--format=%ct"],
+        cwd=tiny_repo,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert sde == expected
+
+
+def test_source_date_epoch_none_outside_git(tmp_path: Path):
+    assert build_mod.source_date_epoch(tmp_path) is None

@@ -64,9 +64,18 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
   `*_LINKER_FLAGS_INIT`) and every cargo-driven link (`reactos-link` common PE-flag block, one
   place covering all 42 `*-cargo` modules incl. ntoskrnl.exe/win32k.sys). This kills the only
   leak measured live on all 3 arches. Verify post-build: `repro report` → `0 (deterministic)`.
-- **Pending ×3 cold gate** for the rung-1/2 build changes (can't ride a held gate; arm64 boots
-  held for media rebuild as of 2026-06-20). Rung 2b (SOURCE_DATE_EPOCH + version-resource
-  `__DATE__`/`__TIME__`) and rungs 3–5 still TODO.
+- **Rung 2b (SOURCE_DATE_EPOCH) ✅ implemented, gate-pending**: `vibeos-cli build` now derives
+  `SOURCE_DATE_EPOCH` from the HEAD commit date (`git log -1 --format=%ct`) and sets it in the
+  build env (`build.py:source_date_epoch` + `os.environ.setdefault`), so every subprocess (cmake
+  configure → version.cmake `string(TIMESTAMP)`, ninja → clang `__DATE__`/`__TIME__` in
+  xipdisp.c) inherits it. Commit-date (not wall-clock) → byte-identical across worktrees on the
+  same commit. `setdefault` lets a CI-pinned value win. No version.cmake source edit needed (the
+  env var pins it). Unit-tested (commit-`%ct` derivation + non-git → None).
+- **Rung 3 (build.rs/generator audit) ✅ done**: clean — see the date/time audit section.
+- **Pending ×3 cold gate** for the rung-1/2/2b build changes (can't ride a held gate; arm64
+  boots rebuilt + restored but the slot is contended by other lanes as of 2026-06-20). Determinism
+  *effect* (timestamps→0, date pinned) is verified separately with `vibeos-cli repro report` after
+  a clean build — the smoke gate only proves no boot regression. Rungs 4–5 still TODO.
 
 ## Sources of nondeterminism — the catalog (research notes)
 
@@ -138,6 +147,36 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
   flags above handle that); the ccache `basedir` already handles cache keys.
 - Generated inputs — `widl`, `windmc`, the `gen_*.py` NLS/data tables — must be stable. They
   are (committed deterministic generators), but any new generator must sort + avoid time/paths.
+
+## Date/time-macro audit (rung 2b — completed 2026-06-20)
+
+Swept the tree for `__DATE__`/`__TIME__`/`__TIMESTAMP__` + cmake `string(TIMESTAMP)` +
+build.rs `SystemTime`/`Instant`/`rand` + generator time/unsorted-iteration. Findings:
+
+- **`sdk/include/reactos/version.cmake:4`** — `string(TIMESTAMP KERNEL_VERSION_BUILD %Y%m%d UTC)`
+  bakes the *configure date* into `buildno.h` → every module's version resource (`.rsrc`). The
+  PE-timestamp fix (rung 2a) does NOT cover this (it's section content, not the header). **CMake's
+  `string(TIMESTAMP)` honors `SOURCE_DATE_EPOCH`** (≥3.8) → setting it pins this automatically.
+  `COMMIT_HASH` (git rev-parse) + `REVISION` (git describe) in the same file are deterministic
+  per commit already — not leaks.
+- **`ntoskrnl/ex/xipdisp.c:78-79`** — `__DATE__`/`__TIME__` compiled **into the kernel**. clang
+  honors `SOURCE_DATE_EPOCH` for these macros → same lever closes it.
+- Off-boot-path hits (not in core artifacts; lower priority): `drivers/network/dd/netkvm`,
+  `drivers/bus/acpi/acpica` apps, `modules/rosapps/*`, and the host tools `sdk/tools/wpp` +
+  `dll/directx/wine/d3dcompiler_43` (these *define* `__DATE__` for files they preprocess —
+  host-tool determinism, separate concern). `SOURCE_DATE_EPOCH` in the build env covers the
+  clang-compiled ones uniformly.
+- **build.rs: clean** — no `SystemTime`/`Instant::now`/`rand` in any `*-cargo/build.rs` or
+  `reactos-link`. **Generators: effectively clean** — dict-ordered + sorted; one `set()` in
+  `tools/gen_global_barrier.py:25` is a membership `seen` set (verify it doesn't drive output
+  order; low risk).
+
+**Net rung-2b fix = one lever:** export `SOURCE_DATE_EPOCH` (commit-date-derived,
+`git log -1 --format=%ct`) for cmake configure **and** the compile env. Commit-date (not
+wall-clock-0) makes it byte-identical across worktrees/agents on the same commit *and* keeps a
+meaningful date. Must be present at BOTH configure (version.cmake) and compile (xipdisp.c
+`__DATE__`); the natural home is the `vibeos-cli build` front door's subprocess env. Gate-pending
+(build change) — bundle with the rung-1/2 increment.
 
 ## vibeos-specific landmines
 
