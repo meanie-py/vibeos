@@ -6,11 +6,16 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import json
+import socket
 import struct
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import pytest
+
+from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
 from . import config as config_mod
@@ -676,3 +681,56 @@ def test_config_malformed_local_file_falls_back_to_defaults(tmp_path: Path):
     (tmp_path / config_mod.LOCAL_FILENAME).write_text("{ not valid json")
     cfg = config_mod.load(tmp_path, environ={})
     assert cfg.get("qemu.backend") == "native"
+
+
+# --- TCP transport (windows-host backend: WSL listens, QEMU connects) -------
+
+
+def test_serial_client_tcp_drains_and_reads_marker():
+    s = serial_client.SerialClient()
+    port = s.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(b"booting...\n[MARK] WORLD ready\n")
+        time.sleep(0.3)
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    s.accept(timeout=5)
+    out = s.read_until("WORLD", timeout=5)
+    assert "WORLD" in out
+    s.close()
+    t.join(timeout=5)
+
+
+def test_qmp_client_tcp_handshake_and_execute():
+    qmp = qmp_client.QmpClient()
+    port = qmp.listen_tcp("127.0.0.1", 0)
+    assert port > 0
+    greeting = {"QMP": {"version": {"qemu": {"major": 11}}, "capabilities": []}}
+
+    def fake_qemu():
+        c = socket.create_connection(("127.0.0.1", port), timeout=5)
+        c.sendall(json.dumps(greeting).encode() + b"\n")
+
+        def read_line() -> bytes:
+            buf = b""
+            while b"\n" not in buf:
+                buf += c.recv(4096)
+            return buf
+
+        read_line()  # qmp_capabilities
+        c.sendall(json.dumps({"return": {}}).encode() + b"\n")
+        read_line()  # query-status
+        c.sendall(json.dumps({"return": {"status": "running"}}).encode() + b"\n")
+        c.close()
+
+    t = threading.Thread(target=fake_qemu, daemon=True)
+    t.start()
+    assert qmp.accept(timeout=5) == greeting
+    assert qmp.execute("query-status")["return"]["status"] == "running"
+    qmp.close()
+    t.join(timeout=5)
