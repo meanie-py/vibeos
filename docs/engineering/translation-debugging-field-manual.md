@@ -1507,6 +1507,58 @@ for kernel-VA values works but is **polluted by stale frames** (the 100Hz clock 
 (x29) unwind from a big function like `KiDispatchException` does NOT work** (x29 isn't a
 clean FP there). **Source:** arm64 clock-fix lane, `arm64-clock-and-lpcexitthread-findings.md`.
 
+### 9.11 A nested `0x50` whose fault addr is one page above SP = STACK OVERFLOW — look for unbounded recursion (often a constant-placeholder), not a scheduler/LPC race
+
+**Symptom:** a deterministic `BUGCHECK 0x50` (PAGE_FAULT_IN_NONPAGED_AREA) late in boot that
+*looks* like a flaky scheduler/LPC race (it was mislabeled `arm64_lpcexitthread_race` for a
+whole session because the last serial line before it was `PspExitThread → LpcExitThread`).
+Tells that it's really a **kernel stack overflow**, not the thing the last log line names:
+- **`arg2 == 2` (write)** and **`arg1` (fault addr) is ~one page ABOVE the trap-frame / SP**
+  (here fault `0x..256050`, trapframe `0x..255e40`, SP `0x..255fa0` — all in the same
+  `0x..255/256xxx` page-pair). A heap/pool wild-write lands *anywhere*; a stack overflow
+  faults *adjacent to SP* in the guard page.
+- The faulting **Pc is `KiSynchronousExceptionEntry+0x4`** (the first `stp x0,x1,[sp,#…]` of
+  the exception prologue) while **Lr points into the real victim function**. That's a
+  *nested* fault: the first exception fired in the victim, then the handler couldn't even
+  save its own trapframe because the stack was already blown → the `0x50` you see is the
+  handler's store, not the original fault.
+
+**Why arm64 specifically:** `KERNEL_STACK_SIZE` is **12 KB on i386 *and* arm64** but **48 KB
+(0xC000) on amd64**. A 64-bit recursion (bigger frames) that amd64 absorbs, and that i386
+never reaches (it boots read-only media), blows arm64's inherited-from-i386 12 KB stack. So
+arm64 is the first arch to expose any unbounded-recursion / deep-chain bug in a *writable*-FS
+path (fastfat-on-ramdisk).
+
+**Diagnosis recipe (no DWARF needed):**
+1. From the bugcheck args, read the trap frame raw. arm64 `KTRAP_FRAME` offsets (from
+   `ndk/arm64/ketypes.h`): `FaultAddress@0x10`, `Sp@0xa8`, `X[0]@0xb0`, `Lr@0x148`,
+   `Fp@0x150`, `Pc@0x158`. `Esr@0xa4`: `EC = Esr>>26` (`0x25`=data abort), `WnR=(Esr>>6)&1`
+   (1=write), `DFSC=Esr&0x3f` (`0x07`=translation fault = page not mapped).
+2. **Walk the frame chain** off `Fp` (x29): `lr=*(fp+8)`, `next=*(fp)`. A short cycle of the
+   **same 3–5 return addresses repeating** = the recursion; that *is* the bug.
+3. **Symbolicate with the *right* binutils name** — it's `aarch64-w64-mingw32-nm`
+   (`.build-tools/llvm-mingw/bin/`), NOT `llvm-nm`/plain `objdump` (those silently print
+   nothing on the cargo PE). `qemu/symbols-<arch>.tsv` from `build-index.sh` is sparse/wrong
+   above the last named symbol — build your own map: `nm <exe> | awk 'NF==3&&$2~/[Tt]/'`.
+4. **If a frame's RVA is past ntoskrnl's `.text` end, it's in another module** (§9.x). Map
+   runtime→module by **walking `PsLoadedModuleList`** in gdb (KLDR_DATA_TABLE_ENTRY:
+   `DllBase@0x30`, `SizeOfImage@0x40`, `BaseDllName.Buffer@0x60`, `.Length@0x58`). Then for
+   that module: `PE_VA = ImageBase + (runtime − module_base)`; resolve against *its* nm map.
+   (Here the cycle resolved into **fastfat.sys**, not ntoskrnl.)
+
+**Root cause (this instance, 2026-06-20):** constant-placeholder bug class again (sibling to
+cdfs `BugCheckFileId`, scsiport LUNEX, fastfat `ChicagoMode`, find.rs cast-before-offset).
+fastfat's recursion-breaker is `FatSetFatEntry` setting `IRP_CONTEXT_FLAG_DISABLE_DIRTY`
+(canonical **0x00000001**, fatstruc.h) around its `FatPrepareWriteVolumeFile` writes, so the
+nested `FatSetDirtyBcb` skips re-marking the volume dirty. The local const inside
+`FatSetDirtyBcb` (cachesup.rs) was a placeholder **0x100**, so `Flags & DISABLE_DIRTY` never
+matched the 0x1 bit actually set → guard never fired → infinite cycle
+`FatSetDirtyBcb→FatMarkVolume→FatSetFatEntry→FatPrepareWriteVolumeFile→FatSetDirtyBcb`. Fix:
+`0x100→0x01` (commit `3b3f9744c0a`). **Lesson:** when a flag-guarded recursion-breaker is
+defeated, the *setter* and the *checker* of the flag are often in different files/functions —
+grep every definition of the flag constant and confirm they agree with the C header. **Source:**
+arm64-love lane; `arm64-clock-and-lpcexitthread-findings.md`.
+
 ---
 
 *Maintenance: this manual is the fast-lookup index distilled from the project's debug

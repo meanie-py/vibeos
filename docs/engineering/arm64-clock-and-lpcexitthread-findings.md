@@ -222,3 +222,39 @@ header gap) — but that only resolves exported symbols.
 
 Clean repro (committed `arm64-love`, no instrument): boot arm64 → deterministic 0xC2 at the
 System-thread-exit `ExFreePoolWithTag` of a corrupt `Irp ` block.
+
+---
+
+## RESOLVED (2026-06-20) — it was NOT an LPC/Cc race and NOT the 0xC2; it was a fastfat stack overflow
+
+Everything above (the `0xC2` "Irp " corruption hunt, the special-pool plan, the
+"LpcExitThread race" framing) was chasing the wrong layer. After the `0xC2` double-free was
+fixed (`fddff701ac9`, SL_INVOKE constants) the remaining deterministic late-boot bugcheck was
+a **`0x50` kernel STACK OVERFLOW from unbounded recursion in fastfat** — surfaced (made
+every-boot) by the periodic clock, which drives the writable-ramdisk dirty path.
+
+**The actual bug (commit `3b3f9744c0a`):** `cachesup.rs` `FatSetDirtyBcb` had a local
+`IRP_CONTEXT_FLAG_DISABLE_DIRTY = 0x100` placeholder; canonical value is `0x00000001`
+(fatstruc.h). `FatSetFatEntry` sets that flag (0x1) around its `FatPrepareWriteVolumeFile`
+writes precisely to stop the nested `FatSetDirtyBcb` from re-marking the volume dirty — but
+with the checker reading 0x100, the guard never fired:
+
+```
+FatSetDirtyBcb → FatMarkVolume → FatSetFatEntry → FatPrepareWriteVolumeFile → FatSetDirtyBcb → …∞
+```
+
+→ the 12 KB arm64 kernel stack (= i386's value; amd64 uses 48 KB) blew its guard page → a
+first data-abort in the Cc dirty-flush path, then `KiSynchronousExceptionEntry` faulted again
+saving its own trapframe on the exhausted stack → the nested `0x50` (fault addr one page above
+SP) that triage kept mislabeling.
+
+**How it was finally cracked (the technique that worked where everything above failed):** read
+the `KTRAP_FRAME` raw for `Pc`/`Lr`/`Sp`/`Fp`/`Esr`; **walk the x29 frame chain** → saw the
+same 4 return addresses repeating (the recursion); the addresses were **past ntoskrnl's last
+symbol** so **walked `PsLoadedModuleList`** to map them into **fastfat.sys**; resolved with
+`aarch64-w64-mingw32-nm` (NOT llvm-nm/objdump, which return empty). Distilled into field-manual
+**§9.11**.
+
+**Verified:** arm64 boots clean to the desktop (`shell ready`), 0 bugchecks, deterministically
+(was a deterministic `0x50` before). i386/amd64 unaffected (they never run this writable-FS
+path). This is the fix that unblocks the parked floor-completion stack.
