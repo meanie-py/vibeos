@@ -570,6 +570,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kbdhid-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "kdcom-cargo"
 version = "0.1.0"
 dependencies = [
@@ -808,6 +816,14 @@ dependencies = [
 name = "mouclass-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mouhid-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
  "ntkrnl-sys",
 ]
 

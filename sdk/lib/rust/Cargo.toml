@@ -90,6 +90,8 @@ members = [
     "framebuf-rust",
     "kbdclass-rust",
     "mouclass-rust",
+    "kbdhid-rust",
+    "mouhid-rust",
     "i8042prt-rust",
     "handle",
     "interlck",

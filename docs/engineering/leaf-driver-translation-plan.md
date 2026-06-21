@@ -138,11 +138,20 @@ centrally — the msfs/npfs playbook. Validation = **link-clean ×3** (these don
 smoke); functional check is an optional QEMU USB/SCSI-device opt-in, flagged not silently
 skipped.
 
-## Open scope decision (for the user)
+## Scope decision (settled 2026-06-20, user)
 
-- **buslogic**: recommend **DROP** from translation scope (legacy BT-958 SCSI, ~4.6K LOC
-  VERY HARD, zero QEMU exposure) — recoverable from ReactOS + rustconv later, same logic as
-  the nfs/udfs/vfatfs drop. Keeping the C is also fine (it links today); the question is
-  whether to spend Opus on it.
-- **storahci**: **DEFER** (already disabled). Translate when/if AHCI is re-enabled.
-- Everything else (ramdisk, serial, hidclass, hidusb, kbdhid, mouhid, storport): **translate**.
+- **storahci**: **DEFER** (keep the C, translate later). It's the modern real-hardware AHCI
+  path — valuable to have in Rust eventually — just currently disabled/unfinished in ReactOS.
+  Translate when/if AHCI is wired up. Do **not** delete.
+- **buslogic**: **DROP** from translation scope (legacy BT-958 SCSI, ~4.6K LOC VERY HARD,
+  zero QEMU exposure). Recoverable from ReactOS + rustconv later, same logic as the
+  nfs/udfs/vfatfs drop. (Physical deletion vs leave-as-inert-C is a follow-up nicety; it
+  links today.)
+- **Translate (7):** ramdisk, serial, hidclass, hidusb, kbdhid, mouhid, storport.
+
+## Execution log
+
+- 2026-06-20: HID cluster started (user pick). Substrate verified ready — `hid-sys`
+  (HIDP_*), `hidparse-rust` (HidP_* exports), and `ntkrnl-sys` bindgen already cover the
+  KEYBOARD_*/MOUSE_*/CONNECT_DATA/HIDP_KEYBOARD_MODIFIER_STATE types; only `USAGE_AND_PAGE`
+  (trivial 2×USAGE struct) defined locally. First batch: kbdhid + mouhid (MEDIUM twins).
