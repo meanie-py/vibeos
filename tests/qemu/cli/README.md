@@ -179,6 +179,34 @@ tree touched in the last N hours (recommended — the live gates are instantaneo
 so an actively-worked lane that just isn't building *this second* otherwise looks
 prunable). Only ever removes the build/target dirs, never source or the worktree.
 
+### Launch backend config (`native` vs `windows-host`)
+The smoke/boot runner picks a QEMU **backend** from layered config — committed
+`DEFAULTS` (in `config.py`) **<** a gitignored per-machine `<repo>/.vibeos-cli.local.json`
+**<** env (`VIBEOS_QEMU_*`). **Default is now `windows-host`** (the swarm runs on a Windows
+host — escapes WSL2 nested-virt contention). `native` (local `qemu-system-*` + Unix-socket
+QMP/serial + KVM/TCG) is the right choice on real Linux / CI — override via
+`VIBEOS_QEMU_BACKEND=native` or a `.vibeos-cli.local.json`. **`windows-host`** (WSL2 only) launches the *Windows* QEMU.exe via interop to
+escape WSL2 nested-virt contention (`docs/engineering/windows-host-qemu-spike.md`):
+media is staged to a Windows-visible dir, QMP+serial run over TCP (we listen on
+`0.0.0.0`, the Windows QEMU dials back `127.0.0.1` via WSL2 localhost forwarding), and
+the process is killed by a uid-scoped `Stop-Process`. To enable, copy
+`.vibeos-cli.local.example.json` → `.vibeos-cli.local.json` and set
+`qemu.backend="windows-host"` (+ `qemu.windows.{qemu_dir,staging_dir,accel,host_addr}`).
+`accel` is `tcg` (works today, no reboot — already beats nested-KVM under concurrency)
+or `whpx` (needs HypervisorPlatform + reboot; uses `qemu-system-x86_64.exe`). x86 only;
+arm64 stays native TCG. Validated under TCG: **i386 + amd64** both boot to `shell ready`
+(amd64 via `qemu-system-x86_64.exe`), and **QMP savevm/loadvm** (the snapshot fixture path)
+round-trips over the TCP transport. The backend choice is read wherever a `QemuVM` is
+constructed — the cli smoke path *and* every pytest path (the folded net stage,
+`test_snapshot_apps`, a direct `test_smoke`) via `conftest.py`. The KVM-only idle-cpu gate
+(`test_idle_cpu_not_spinning`) skips on windows-host (TCG, and `_proc.pid` is the WSL interop
+shim — same reason it skips arm64). The **net suite also runs on windows-host** (`test_net.py`
+11/11 validated): the slirp `hostfwd` binds `0.0.0.0` Windows-side and tests dial `vm.net_host`
+(the WSL default-gateway IP, not `127.0.0.1` — WSL's loopback is its own VM's), and the
+`guestfwd ...-cmd:cat` outbound echo (no `cat` on Windows) is redirected to a harness-run echo
+server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke — boot North Star
+*and* the folded netstack suite.
+
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
 lints the *kernel* source. Runs, over the whole vibeos-cli tool surface

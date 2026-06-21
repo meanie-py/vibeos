@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..vm import QemuVM, get_arch_config
 from . import archcfg, provenance, triage
+from . import config as cli_config
 from .artifacts import Run, Stage
 
 
@@ -89,8 +90,14 @@ def _one_boot(
     marker = until or config.boot_marker
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
-    vm = QemuVM(config, work)
+    # Launch backend from layered config (DEFAULTS < .vibeos-cli.local.json < env). Default
+    # "native"; a WSL user can set qemu.backend="windows-host" to escape nested-virt contention.
+    cli_cfg = cli_config.load(repo)
+    backend = cli_cfg.get("qemu.backend", "native")
+    vm = QemuVM(config, work, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
     label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
+    if backend != "native":
+        run.log(f"backend={backend} (qemu.windows={cli_cfg.get('qemu.windows', {})})", header=label)
     try:
         vm.start()
     except Exception as e:  # surface any launch failure

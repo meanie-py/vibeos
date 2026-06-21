@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to .vibeos-cli.local.json (gitignored) and edit. Deep-merged over the committed DEFAULTS in tests/qemu/cli/config.py. windows-host is now the DEFAULT (escapes WSL2 nested-virt contention). A non-Windows-host env (real Linux / CI) overrides back to native with the snippet below (or VIBEOS_QEMU_BACKEND=native).",
+  "qemu": {
+    "backend": "native",
+    "windows": {
+      "qemu_dir": "/mnt/c/Program Files/qemu",
+      "staging_dir": "/mnt/c/temp/vibeos-qemu",
+      "accel": "tcg",
+      "host_addr": "127.0.0.1"
+    }
+  }
+}
