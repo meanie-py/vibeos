@@ -110,8 +110,8 @@ fn main() {
     // docs/engineering/cargo-drive-unification-plan.md.
     let cntpr_residue: Vec<&str> = match arch.as_str() {
         "x86_64" => vec![
-            "sdk/lib/crt/except/amd64/ehandler.c",
-            "sdk/lib/crt/misc/fltused.c",
+            // ehandler.c (SEH personality) + fltused.c → moved to c_shims
+            // (WS1 LEAF, headerless; see ndll_shims).
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
             "sdk/lib/crt/printf/_swprintf.c",
@@ -130,12 +130,9 @@ fn main() {
         // exports (_vscwprintf + scanf trampolines). No SEH personality on i386
         // (DUMMY_PSEH).
         "x86" => vec![
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
-            "sdk/lib/crt/misc/fltused.c",
+            // ci*.c (_CIxxx x87 math wrappers) + fltused.c → moved to c_shims
+            // (WS1 LEAF, headerless; see ndll_shims). The 64-bit integer/ftol/
+            // chkstk asm stays in cntpr_asm below.
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
             "sdk/lib/crt/printf/_swprintf.c",
@@ -229,6 +226,33 @@ fn main() {
     // builds setjmp/longjmp from pre-expanded asm + Rust glue; i386/arm64 never
     // referenced it. libchkstk.a dropped — __chkstk comes from clang_rt.builtins.
 
+    // c_shims: the Tier-A header-free C floor compiled directly by cc-rs.
+    //   - dummy.c (DUMMY_PSEH dead-code globals)
+    //   - dbgprint_variadic.c (cmake-off spike, 2026-06-20)
+    //   - WS1 cmake-off LEAF batch (2026-06-21): the CRT-floor _CIxxx math
+    //     wrappers / SEH personality / _fltused, now self-contained/headerless
+    //     and moved out of the cntpr_residue c_from_compile_db list (each
+    //     verified symbol+disasm-identical vs the cmake object). i386 = ci*.c +
+    //     fltused; amd64 = ehandler.c + fltused; arm64 = none (no _CIxxx/SEH/
+    //     _fltused floor — see cntpr_residue).
+    let mut ndll_shims: Vec<&str> =
+        vec!["sdk/lib/pseh/dummy.c", "sdk/lib/rtl/dbgprint_variadic.c"];
+    match arch.as_str() {
+        "x86" => ndll_shims.extend_from_slice(&[
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/misc/fltused.c",
+        ]),
+        "x86_64" => ndll_shims.extend_from_slice(&[
+            "sdk/lib/crt/except/amd64/ehandler.c",
+            "sdk/lib/crt/misc/fltused.c",
+        ]),
+        _ => {}
+    }
+
     let mut linker = Linker::new(target_json);
     linker = linker
         .rust_staticlib("ntdll-rust") // default features = ntdll.dll proper
@@ -244,7 +268,7 @@ fn main() {
         // dbgprint_variadic.c: now self-contained/headerless (cmake-off spike
         // 2026-06-20) → compiled by cc-rs here, dropping the c_from_compile_db("rtl")
         // path that needed cmake's compile_commands.json.
-        .c_shims(&["sdk/lib/pseh/dummy.c", "sdk/lib/rtl/dbgprint_variadic.c"])
+        .c_shims(&ndll_shims)
         .asm(&asm_refs, AsmDefineSet::Kernel)
         // ntdllsys (Nt*/Zw* syscall stubs) as an in-group archive, replacing
         // the cmake libntdllsys.a — preserves the cmake archive link layout.

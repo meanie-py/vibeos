@@ -110,6 +110,25 @@ fn main() {
     if arch != "aarch64" {
         c_shims.push("ntoskrnl/kdbg/kdbg_rust_shims.c");
     }
+    // WS1 cmake-off LEAF batch (2026-06-21): CRT-floor files made
+    // self-contained/headerless (no precomp.h/winnt.h) → moved out of the
+    // cntpr_residue c_from_compile_db list into c_shims, dropping their
+    // dependency on cmake having generated compile_commands.json. Each verified
+    // symbol+disasm-identical vs the cmake object (WS1 verify harness). Per-arch:
+    //   i386  = the _CIxxx x87 math-intrinsic wrappers + _fltused
+    //   amd64 = the __C_specific_handler SEH personality (+ _fltused via shells)
+    match arch.as_str() {
+        "x86" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/misc/fltused.c",
+        ]),
+        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        _ => {}
+    }
 
     // cmake C / cohab static libs (the rust archives — libkernel_rust.a,
     // librtl_rust.a, libcntpr_rust.a — are emitted by the engine AFTER this
@@ -203,7 +222,7 @@ fn main() {
     // cover the whole surface; clang_rt.builtins-aarch64 covers __chkstk).
     let cntpr_residue: Vec<&str> = match arch.as_str() {
         "x86_64" => vec![
-            "sdk/lib/crt/except/amd64/ehandler.c",
+            // ehandler.c (SEH personality) → moved to c_shims (WS1 LEAF, headerless)
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
             "sdk/lib/crt/printf/vsprintf.c",
@@ -213,12 +232,9 @@ fn main() {
             "sdk/lib/crt/printf/_vsnwprintf.c",
         ],
         "x86" => vec![
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
-            "sdk/lib/crt/misc/fltused.c",
+            // ci*.c (_CIxxx x87 math wrappers) + fltused.c → moved to c_shims
+            // (WS1 LEAF, headerless). The 64-bit integer/ftol/chkstk asm stays in
+            // cntpr_asm below.
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
             "sdk/lib/crt/printf/vsprintf.c",
