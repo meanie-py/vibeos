@@ -410,7 +410,7 @@ pub unsafe extern "C" fn RetryTransferPacket(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
     if !((*Pkt).NumRetries > 0 || !(*Pkt).RetryHistory.is_null()) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/retry.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/retry.c\0".as_ptr()
                 as PCSTR,
             476i32,
             b"Pkt->NumRetries > 0 || Pkt->RetryHistory\0".as_ptr() as PCSTR,
@@ -505,7 +505,7 @@ pub unsafe extern "C" fn TransferPacketQueueRetryDpc(Pkt: PTRANSFER_PACKET) {
         if !((*Pkt).RetryIn100nsUnits < (100i64 * 1000 * 1000 * 10)) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/retry.c\0".as_ptr() as *const ::core::ffi::c_char,
+                b"drivers/storage/class/classpnp/retry.c\0".as_ptr() as *const ::core::ffi::c_char,
                 614i32,
                 b"Pkt->RetryIn100nsUnits < 100 * 1000 * 1000 * 10\0".as_ptr() as *const ::core::ffi::c_char,
             );
@@ -601,7 +601,7 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
             if (*Pkt).InLowMemRetry != 0u8 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
+                    b"drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
                     740i32,
                     b"!Pkt->InLowMemRetry\0".as_ptr() as PCSTR,
                 );
@@ -617,7 +617,7 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
                 if (PAGE_SIZE % ((*fdoExt).DiskGeometry.BytesPerSector) as usize) != 0 {
                     DbgPrint(
                         b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
+                        b"drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
                         754i32,
                         b"(PAGE_SIZE%fdoExt->DiskGeometry.BytesPerSector) == 0\0".as_ptr() as PCSTR,
                     );
@@ -649,7 +649,7 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
             if (*Pkt).InLowMemRetry == 0u8 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
+                    b"drivers/storage/class/classpnp/retry.c\0".as_ptr() as PCSTR,
                     767i32,
                     b"Pkt->InLowMemRetry\0".as_ptr() as PCSTR,
                 );

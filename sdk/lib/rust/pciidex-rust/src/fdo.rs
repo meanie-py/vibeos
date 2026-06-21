@@ -770,7 +770,7 @@ pub unsafe extern "C" fn PciIdeXFdoParseResources(
         if true {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as PVOID,
+                b"drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as PVOID,
                 25u32 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -843,7 +843,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
         );
         RtlAssert(
             b"0\0" as *const u8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as PVOID,
             91 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -855,7 +855,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     if !NT_SUCCESS((forward_status) as i32) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as PCSTR,
             93 as i32,
             b"IoForwardIrpSynchronously(FdoExtension->Ldo, Irp)\0" as *const u8 as PCSTR,
@@ -877,7 +877,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     if !NT_SUCCESS(parse_status) {
         DbgPrint(
             b"(%s:%d) Failed to parse resources 0x%lx\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as PCSTR,
             109 as i32,
             parse_status,
@@ -889,7 +889,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     if !NT_SUCCESS(miniport_status) {
         DbgPrint(
             b"(%s:%d) Miniport initialization failed 0x%lx\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as PCSTR,
             116 as i32,
             miniport_status,
@@ -909,7 +909,7 @@ pub unsafe extern "C" fn PciIdeXFdoFreeResources(FdoExtension: *mut FDO_DEVICE_E
         if false {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as *const i8 as *mut c_void,
+                b"drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as *const i8 as *mut c_void,
                 129u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -930,7 +930,7 @@ pub unsafe extern "C" fn PciIdeXFdoStopDevice(FdoExtension: *mut FDO_DEVICE_EXTE
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/storage/ide/pciidex/fdo.c\0".as_ptr() as *const i8 as PVOID,
                 144 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -956,7 +956,7 @@ pub unsafe extern "C" fn PciIdeXFdoRemoveDevice(
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     .as_ptr() as *const core::ffi::c_char as PVOID,
                 162 as ULONG,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -1004,7 +1004,7 @@ pub unsafe extern "C" fn PciIdeXFdoQueryPnpDeviceState(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 200u32,
                 core::ptr::null_mut::<i8>(),
@@ -1046,7 +1046,7 @@ pub unsafe extern "C" fn PciIdeXPdoCreateDevice(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 229,
                 core::ptr::null_mut::<i8>(),
@@ -1075,7 +1075,7 @@ pub unsafe extern "C" fn PciIdeXPdoCreateDevice(
     if !(Status >= 0) {
         RtlAssert(
             b"NT_SUCCESS(Status)\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             237,
             core::ptr::null_mut::<i8>(),
@@ -1099,7 +1099,7 @@ pub unsafe extern "C" fn PciIdeXPdoCreateDevice(
     if !(Status >= 0) {
         if DbgPrint(
             b"(%s:%d) Failed to create PDO 0x%lx\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 as *const u8 as *const i8,
             249i32,
             Status,
@@ -1107,7 +1107,7 @@ pub unsafe extern "C" fn PciIdeXPdoCreateDevice(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     as *const u8 as *const i8,
                 249i32,
             );
@@ -1152,7 +1152,7 @@ pub unsafe extern "C" fn PciIdeXFdoQueryBusRelations(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     .as_ptr() as *const core::ffi::c_char as PVOID,
                 284u32,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -1219,7 +1219,7 @@ pub unsafe extern "C" fn PciIdeXFdoQueryDeviceUsageNotification(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 .as_ptr() as *const core::ffi::c_char as PVOID,
             346 as ULONG,
             core::ptr::null_mut::<core::ffi::c_char>(),
@@ -1229,7 +1229,7 @@ pub unsafe extern "C" fn PciIdeXFdoQueryDeviceUsageNotification(
     if IoForwardIrpSynchronously((*FdoExtension).Ldo, Irp) == 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+            b"drivers/storage/ide/pciidex/fdo.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             348 as core::ffi::c_int,
             b"IoForwardIrpSynchronously(FdoExtension->Ldo, Irp)\0".as_ptr() as *const core::ffi::c_char,
@@ -1272,7 +1272,7 @@ pub unsafe extern "C" fn PciIdeXFdoQueryInterface(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/fdo.c\0"
+                b"drivers/storage/ide/pciidex/fdo.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 389 as ULONG,
                 core::ptr::null_mut::<i8>(),

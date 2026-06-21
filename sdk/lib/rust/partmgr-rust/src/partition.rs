@@ -52,7 +52,7 @@ pub unsafe extern "C" fn PartitionCreateDevice(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
+            b"drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
             22 as ULONG,
             core::ptr::null_mut::<i8>(),
         );
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn PartitionCreateDevice(
             DPFLTR_DISK_ID,
             DPFLTR_ERROR_LEVEL,
             b"(%s:%d) Unable to create device object %wZ\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as *const i8,
+            b"drivers/storage/partmgr/partition.c\0".as_ptr() as *const i8,
             55,
             &mut deviceName,
         );
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn PartitionCreateDevice(
         DPFLTR_DISK_ID,
         DPFLTR_INFO_LEVEL,
         b"(%s:%d) Created device object %p %wZ\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as *const i8,
+        b"drivers/storage/partmgr/partition.c\0".as_ptr() as *const i8,
         59,
         partitionDevice,
         &mut deviceName,
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0"
+                b"drivers/storage/partmgr/partition.c\0"
                     as *const u8 as *const i8 as PVOID,
                 110 as u32,
                 core::ptr::null_mut::<i8>(),
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
         DPFLTR_DISK_ID as u32,
         DPFLTR_INFO_LEVEL as u32,
         b"(%s:%d) Symlink created %wZ -> %wZ\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0"
+        b"drivers/storage/partmgr/partition.c\0"
             as *const u8 as *const i8,
         135 as i32,
         &raw mut partitionSymlink,
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
         DPFLTR_DISK_ID as u32,
         DPFLTR_INFO_LEVEL as u32,
         b"(%s:%d) Partition interface %wZ\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0"
+        b"drivers/storage/partmgr/partition.c\0"
             as *const u8 as *const i8,
         151 as i32,
         &raw mut interfaceName,
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
         DPFLTR_DISK_ID as u32,
         DPFLTR_INFO_LEVEL as u32,
         b"(%s:%d) Volume interface %wZ\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0"
+        b"drivers/storage/partmgr/partition.c\0"
             as *const u8 as *const i8,
         170 as i32,
         &raw mut interfaceName,
@@ -587,7 +587,7 @@ pub unsafe extern "C" fn PartitionHandleQueryId(
             if 0i32 == 0 {
                 RtlAssert(
                     b"0\0" as *const u8 as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0"
+                    b"drivers/storage/partmgr/partition.c\0"
                         as *const u8 as *const i8 as PVOID,
                     417u32,
                     core::ptr::null_mut::<i8>(),
@@ -716,7 +716,7 @@ pub unsafe extern "C" fn PartitionHandleQueryCapabilities(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
+                b"drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
                 493 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -727,7 +727,7 @@ pub unsafe extern "C" fn PartitionHandleQueryCapabilities(
     if devCaps.is_null() {
         RtlAssert(
             b"devCaps\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
+            b"drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
             494 as ULONG,
             core::ptr::null_mut::<i8>(),
         );
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn PartitionHandlePnp(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
+            b"drivers/storage/partmgr/partition.c\0".as_ptr() as PVOID,
             515 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );

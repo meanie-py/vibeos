@@ -52,13 +52,13 @@ pub unsafe extern "C" fn PdoCreateLunDevice(
     if Status < 0 {
         if DbgPrint(
             b"(%s:%d) Failed to create a Lun PDO, status: %x\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0" as *const u8 as *const i8,
+            b"drivers/storage/port/scsiport/pdo.c\0" as *const u8 as *const i8,
             36,
             Status,
         ) != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0" as *const u8 as *const i8,
+                b"drivers/storage/port/scsiport/pdo.c\0" as *const u8 as *const i8,
                 36,
             );
         }
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn GetLunByPath(
     if PathId as i32 >= (*DeviceExtension).NumberOfBuses as i32 {
         if DbgPrint(
             b"(%s:%d) Invalid PathId: %u\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 as *const u8 as *const i8,
             76i32,
             PathId as i32,
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn GetLunByPath(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+                b"drivers/storage/port/scsiport/pdo.c\0"
                     as *const u8 as *const i8,
                 76i32,
             );
@@ -382,7 +382,7 @@ unsafe fn ConvertToUnicodeString(
     if ResultBufferLength == 0 {
         RtlAssert(
             b"ResultBufferLength\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             320u32,
             core::ptr::null_mut::<i8>(),
@@ -392,7 +392,7 @@ unsafe fn ConvertToUnicodeString(
         RtlAssert(
             b"ResultBufferLength > ResultBufferOffset\0" as *const u8 as *const i8
                 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             321u32,
             core::ptr::null_mut::<i8>(),
@@ -410,7 +410,7 @@ unsafe fn ConvertToUnicodeString(
         RtlAssert(
             b"Status == STATUS_SUCCESS\0" as *const u8 as *const i8
                 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             335u32,
             core::ptr::null_mut::<i8>(),
@@ -463,7 +463,7 @@ unsafe fn PdoHandleQueryHardwareId(
     if GenericType.is_null() {
         RtlAssert(
             b"GenericType\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             363,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -748,7 +748,7 @@ unsafe fn PdoHandleQueryHardwareId(
     if !(Offset.wrapping_add(1) == Length) {
         RtlAssert(
             b"Offset + 1 == Length\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             449,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -907,7 +907,7 @@ pub unsafe extern "C" fn PdoDispatchPnp(
     if (*lunExt).Common.IsFDO != 0 {
         RtlAssert(
             b"!lunExt->Common.IsFDO\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
+            b"drivers/storage/port/scsiport/pdo.c\0"
                 as *const u8 as *const i8 as PVOID,
             564,
             core::ptr::null_mut::<i8>(),

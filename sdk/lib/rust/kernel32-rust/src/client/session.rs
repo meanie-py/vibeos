@@ -11,7 +11,7 @@ pub unsafe extern "system" fn DosPathToSessionPathW(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"DosPathToSessionPathW\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/session.c\0"
+        b"dll/win32/kernel32/client/session.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         27 as ::core::ffi::c_int,
     );
@@ -26,7 +26,7 @@ pub unsafe extern "system" fn DosPathToSessionPathA(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"DosPathToSessionPathA\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/session.c\0"
+        b"dll/win32/kernel32/client/session.c\0"
             .as_ptr() as *const i8,
         40i32,
     );

@@ -99,7 +99,7 @@ unsafe fn FltpAttachDeviceObject(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 69 as u32,
                 core::ptr::null_mut(),
@@ -142,7 +142,7 @@ unsafe fn FltpIsAttachedToDevice(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 102,
                 core::ptr::null_mut(),
             );
@@ -165,7 +165,7 @@ unsafe fn FltpIsAttachedToDevice(
             if (*CurrentDeviceObject).DeviceExtension.is_null() {
                 RtlAssert(
                     b"CurrentDeviceObject->DeviceExtension != ((void *)0)\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                    b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                     116,
                     core::ptr::null_mut(),
                 );
@@ -221,7 +221,7 @@ unsafe fn FltpEnumerateFileSystemVolumes(mut DeviceObject: PDEVICE_OBJECT) -> NT
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 158 as ULONG,
                 core::ptr::null_mut(),
@@ -319,7 +319,7 @@ unsafe fn FltpEnumerateFileSystemVolumes(mut DeviceObject: PDEVICE_OBJECT) -> NT
                                     RtlAssert(
                                         b"NewDeviceObject->DriverObject == DriverData.DriverObject\0"
                                             as *const u8 as *const i8 as *mut core::ffi::c_void,
-                                        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                                        b"drivers/filters/fltmgr/Interface.c\0"
                                             as *const u8 as *const i8 as *mut core::ffi::c_void,
                                         270 as ULONG,
                                         core::ptr::null_mut(),
@@ -504,7 +504,7 @@ unsafe fn FltpDetachFromFileSystemDevice(mut DeviceObject: PDEVICE_OBJECT) -> LO
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const core::ffi::c_char as PVOID,
                 431 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -521,7 +521,7 @@ unsafe fn FltpDetachFromFileSystemDevice(mut DeviceObject: PDEVICE_OBJECT) -> LO
         if AttachedDevice.is_null() {
             RtlAssert(
                 b"AttachedDevice != ((void *)0)\0" as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const core::ffi::c_char as PVOID,
                 439 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -669,7 +669,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 556 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -685,7 +685,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
             RtlAssert(
                 b"DeviceObject->DriverObject == DriverData.DriverObject\0" as *const u8
                     as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 563 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -696,7 +696,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
             RtlAssert(
                 b"DeviceExtension == ((void *)0)\0" as *const u8 as *const ::core::ffi::c_char
                     as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 564 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -717,7 +717,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
         RtlAssert(
             b"DeviceExtension && DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             581 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -727,7 +727,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
 
     if DbgPrint(
         b"(%s:%d) Received create from %wZ (%lu)\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+        b"drivers/filters/fltmgr/Interface.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         583 as ::core::ffi::c_int,
         ::core::ptr::addr_of_mut!((*DeviceExtension).DeviceName),
@@ -736,7 +736,7 @@ pub unsafe extern "system" fn FltpCreate(mut DeviceObject: PDEVICE_OBJECT, mut I
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             583 as ::core::ffi::c_int,
         );
@@ -762,7 +762,7 @@ pub unsafe extern "system" fn FltpFsControl(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as PVOID,
                 598 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -784,7 +784,7 @@ pub unsafe extern "system" fn FltpFsControl(
         RtlAssert(
             b"DeviceExtension && DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as PVOID,
             613 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -853,7 +853,7 @@ pub unsafe extern "system" fn FltpFastIoCheckIfPossible(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 673 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -873,7 +873,7 @@ pub unsafe extern "system" fn FltpFastIoCheckIfPossible(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             685 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -902,7 +902,7 @@ pub unsafe extern "system" fn FltpFastIoCheckIfPossible(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             706 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -935,7 +935,7 @@ pub unsafe extern "system" fn FltpFastIoRead(
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as PVOID,
                 726 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -954,7 +954,7 @@ pub unsafe extern "system" fn FltpFastIoRead(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as PVOID,
             738 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -981,7 +981,7 @@ pub unsafe extern "system" fn FltpFastIoRead(
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as PVOID,
             759 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -1017,7 +1017,7 @@ pub unsafe extern "system" fn FltpFastIoWrite(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 779 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -1037,7 +1037,7 @@ pub unsafe extern "system" fn FltpFastIoWrite(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             791 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1066,7 +1066,7 @@ pub unsafe extern "system" fn FltpFastIoWrite(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             812 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1096,7 +1096,7 @@ pub unsafe extern "system" fn FltpFastIoQueryBasicInfo(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 829u32,
                 core::ptr::null_mut(),
@@ -1117,7 +1117,7 @@ pub unsafe extern "system" fn FltpFastIoQueryBasicInfo(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             841u32,
             core::ptr::null_mut(),
@@ -1145,7 +1145,7 @@ pub unsafe extern "system" fn FltpFastIoQueryBasicInfo(
     if 0 == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             859u32,
             core::ptr::null_mut(),
@@ -1177,7 +1177,7 @@ pub unsafe extern "system" fn FltpFastIoQueryStandardInfo(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
                 876 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1195,7 +1195,7 @@ pub unsafe extern "system" fn FltpFastIoQueryStandardInfo(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             888 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1218,7 +1218,7 @@ pub unsafe extern "system" fn FltpFastIoQueryStandardInfo(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             906 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1253,7 +1253,7 @@ pub unsafe extern "system" fn FltpFastIoLock(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     .as_ptr() as *const ::core::ffi::c_char as PVOID,
                 927 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -1274,7 +1274,7 @@ pub unsafe extern "system" fn FltpFastIoLock(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
             939 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1306,7 +1306,7 @@ pub unsafe extern "system" fn FltpFastIoLock(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
             961 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1338,7 +1338,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockSingle(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 980 as ULONG,
                 core::ptr::null_mut(),
             );
@@ -1356,7 +1356,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockSingle(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             992 as ULONG,
             core::ptr::null_mut(),
         );
@@ -1381,7 +1381,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockSingle(
     if 0 == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             1012 as ULONG,
             core::ptr::null_mut(),
         );
@@ -1410,7 +1410,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAll(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const core::ffi::c_char as PVOID,
                 1029 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -1431,7 +1431,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAll(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             1041 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -1458,7 +1458,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAll(
     if 0 == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             1058 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -1488,7 +1488,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAllByKey(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
                 1075 as ULONG,
                 core::ptr::null_mut(),
             );
@@ -1508,7 +1508,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAllByKey(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
             1087 as ULONG,
             core::ptr::null_mut(),
         );
@@ -1535,7 +1535,7 @@ pub unsafe extern "system" fn FltpFastIoUnlockAllByKey(
     if 0 == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
             1105 as ULONG,
             core::ptr::null_mut(),
         );
@@ -1570,7 +1570,7 @@ pub unsafe extern "system" fn FltpFastIoDeviceControl(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
                 1126 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1588,7 +1588,7 @@ pub unsafe extern "system" fn FltpFastIoDeviceControl(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
             1136 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1619,7 +1619,7 @@ pub unsafe extern "system" fn FltpFastIoDeviceControl(
     if 0 == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
             1158 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1662,7 +1662,7 @@ pub unsafe extern "system" fn FltpFastIoDetachDevice(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as PVOID,
                 1189 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1716,7 +1716,7 @@ pub unsafe extern "system" fn FltpFastIoQueryNetworkOpenInfo(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 1235 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -1736,7 +1736,7 @@ pub unsafe extern "system" fn FltpFastIoQueryNetworkOpenInfo(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1247 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1762,7 +1762,7 @@ pub unsafe extern "system" fn FltpFastIoQueryNetworkOpenInfo(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1265 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -1796,7 +1796,7 @@ pub unsafe extern "system" fn FltpFastIoMdlRead(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 1284 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -1818,7 +1818,7 @@ pub unsafe extern "system" fn FltpFastIoMdlRead(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1296 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -1848,7 +1848,7 @@ pub unsafe extern "system" fn FltpFastIoMdlRead(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1316 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -1877,7 +1877,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadComplete(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
                 1332 as u32,
                 core::ptr::null_mut(),
             );
@@ -1895,7 +1895,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadComplete(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
             1342 as u32,
             core::ptr::null_mut(),
         );
@@ -1920,7 +1920,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadComplete(
     if 0 == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *mut core::ffi::c_void,
             1358 as u32,
             core::ptr::null_mut(),
         );
@@ -1953,7 +1953,7 @@ pub unsafe extern "system" fn FltpFastIoPrepareMdlWrite(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
                 1377 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1971,7 +1971,7 @@ pub unsafe extern "system" fn FltpFastIoPrepareMdlWrite(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             1389 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -1996,7 +1996,7 @@ pub unsafe extern "system" fn FltpFastIoPrepareMdlWrite(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             1409 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -2024,7 +2024,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteComplete(
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 1425 as u32,
                 core::ptr::null_mut(),
             );
@@ -2038,7 +2038,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteComplete(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             1435 as u32,
             core::ptr::null_mut(),
         );
@@ -2057,7 +2057,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteComplete(
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             1452 as u32,
             core::ptr::null_mut(),
         );
@@ -2091,7 +2091,7 @@ pub unsafe extern "system" fn FltpFastIoReadCompressed(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as PVOID,
                 1474 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -2110,7 +2110,7 @@ pub unsafe extern "system" fn FltpFastIoReadCompressed(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as PVOID,
             1484 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -2143,7 +2143,7 @@ pub unsafe extern "system" fn FltpFastIoReadCompressed(
     if 0 == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as PVOID,
             1507 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -2181,7 +2181,7 @@ pub unsafe extern "system" fn FltpFastIoWriteCompressed(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 1529 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -2201,7 +2201,7 @@ pub unsafe extern "system" fn FltpFastIoWriteCompressed(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1539 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -2236,7 +2236,7 @@ pub unsafe extern "system" fn FltpFastIoWriteCompressed(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1562 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -2266,7 +2266,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadCompleteCompressed(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 1577 as ULONG,
                 core::ptr::null_mut(),
             );
@@ -2283,7 +2283,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadCompleteCompressed(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             1586 as ULONG,
             core::ptr::null_mut(),
         );
@@ -2308,7 +2308,7 @@ pub unsafe extern "system" fn FltpFastIoMdlReadCompleteCompressed(
     if 0 == 0 {
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Interface.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             1602 as ULONG,
             core::ptr::null_mut(),
         );
@@ -2336,7 +2336,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteCompleteCompressed(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 1618 as u32,
                 core::ptr::null_mut(),
@@ -2353,7 +2353,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteCompleteCompressed(
     if (*DeviceExtension).AttachedToDeviceObject.is_null() {
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             1627 as u32,
             core::ptr::null_mut(),
@@ -2376,7 +2376,7 @@ pub unsafe extern "system" fn FltpFastIoMdlWriteCompleteCompressed(
     if 0 == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             1644 as u32,
             core::ptr::null_mut(),
@@ -2405,7 +2405,7 @@ pub unsafe extern "system" fn FltpFastIoQueryOpen(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 1660 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -2424,7 +2424,7 @@ pub unsafe extern "system" fn FltpFastIoQueryOpen(
         RtlAssert(
             b"DeviceExtension->AttachedToDeviceObject\0" as *const u8
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1669 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -2461,7 +2461,7 @@ pub unsafe extern "system" fn FltpFastIoQueryOpen(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+            b"drivers/filters/fltmgr/Interface.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             1694 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -2489,7 +2489,7 @@ pub unsafe extern "system" fn FltpFsNotification(mut DeviceObject: PDEVICE_OBJEC
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Interface.c\0"
+                b"drivers/filters/fltmgr/Interface.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 1710 as u32,
                 core::ptr::null_mut::<i8>(),

@@ -67,7 +67,7 @@ pub unsafe extern "C" fn ConnectToLsa(pgContext: *mut GINA_CONTEXT) -> NTSTATUS 
             ros_dbg_log(
                 __dbcl,
                 __dbch,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/lsa.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/lsa.c\0".as_ptr() as *const i8,
                 b"ConnectToLsa\0".as_ptr() as *const i8,
                 32,
                 b"LsaRegisterLogonProcess failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
@@ -95,7 +95,7 @@ pub unsafe extern "C" fn ConnectToLsa(pgContext: *mut GINA_CONTEXT) -> NTSTATUS 
             ros_dbg_log(
                 __dbcl_0,
                 __dbch_0,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/lsa.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/lsa.c\0".as_ptr() as *const i8,
                 b"ConnectToLsa\0".as_ptr() as *const i8,
                 45,
                 b"LsaLookupAuthenticationPackage failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,

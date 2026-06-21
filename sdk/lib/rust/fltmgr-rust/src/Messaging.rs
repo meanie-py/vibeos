@@ -201,7 +201,7 @@ pub unsafe extern "C" fn FltpMsgCreate(
     if !((*StackPtr).MajorFunction as core::ffi::c_int == IRP_MJ_CREATE as core::ffi::c_int) {
         RtlAssert(
             b"StackPtr->MajorFunction == 0x00\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Messaging.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"drivers/filters/fltmgr/Messaging.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             232 as u32,
             core::ptr::null_mut::<i8>(),
         );

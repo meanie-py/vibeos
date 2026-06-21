@@ -26,6 +26,7 @@ pub mod tditrans;
 pub mod tdidev;
 pub mod tditest;
 pub mod tdidgtest;
+pub mod tdisrvtest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -61,6 +62,11 @@ pub unsafe extern "system" fn DriverEntry(
     // TDI_EVENT_RECEIVE_DATAGRAM handler, send a DNS query datagram to slirp's DNS
     // forwarder, receive the reply via the datagram upcall.
     tdidgtest::spawn();
+    // M8 verification: the inbound/server analogue of tditest — a kernel TDI
+    // server that binds :8888, posts TDI_LISTEN (pends), and on a host connect
+    // accepts + echoes. Exercises the M8 listen/accept dispatch + completion
+    // bridge over the exact IRP path AfdListenSocket/AfdAccept use.
+    tdisrvtest::spawn();
     0 // STATUS_SUCCESS
 }
 

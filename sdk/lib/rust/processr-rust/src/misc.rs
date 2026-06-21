@@ -23,7 +23,7 @@ pub unsafe extern "system" fn ForwardIrpAndForget(
     if LowerDevice.is_null() {
         RtlAssert(
             b"LowerDevice\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/misc.c\0"
+            b"drivers/processor/processr/misc.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             27u32,
             core::ptr::null_mut::<core::ffi::c_char>(),

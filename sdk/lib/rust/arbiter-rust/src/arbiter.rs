@@ -55,7 +55,7 @@ pub unsafe extern "system" fn ArbTestAllocation(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
                     as *mut core::ffi::c_void,
                 30u32,
                 core::ptr::null_mut::<i8>(),
@@ -67,7 +67,7 @@ pub unsafe extern "system" fn ArbTestAllocation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbTestAllocation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
             as *const i8,
         32i32,
     );
@@ -90,7 +90,7 @@ pub unsafe extern "system" fn ArbRetestAllocation(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 43u32,
                 core::ptr::null_mut::<i8>(),
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn ArbRetestAllocation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"ArbRetestAllocation\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0" as *const u8 as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0" as *const u8 as *const i8,
         45i32,
     );
     return STATUS_NOT_IMPLEMENTED;
@@ -117,7 +117,7 @@ pub unsafe extern "system" fn ArbCommitAllocation(mut Arbiter: PARBITER_INSTANCE
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 55u32,
                 core::ptr::null_mut::<i8>(),
@@ -128,7 +128,7 @@ pub unsafe extern "system" fn ArbCommitAllocation(mut Arbiter: PARBITER_INSTANCE
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbCommitAllocation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr() as *const i8,
         57i32,
     );
@@ -147,7 +147,7 @@ pub unsafe extern "system" fn ArbRollbackAllocation(Arbiter: PARBITER_INSTANCE) 
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 67u32,
                 core::ptr::null_mut::<i8>(),
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn ArbRollbackAllocation(Arbiter: PARBITER_INSTANCE) 
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbRollbackAllocation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr() as *const i8,
         69i32,
     );
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn ArbAddReserved(_Arbiter: PARBITER_INSTANCE) -> NTS
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as PVOID,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as PVOID,
                 80u32,
                 core::ptr::null_mut(),
             );
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn ArbAddReserved(_Arbiter: PARBITER_INSTANCE) -> NTS
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"ArbAddReserved\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         82i32,
     );
     return STATUS_NOT_IMPLEMENTED;
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn ArbPreprocessEntry(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
                     as *mut core::ffi::c_void,
                 93,
                 core::ptr::null_mut::<i8>(),
@@ -228,7 +228,7 @@ pub unsafe extern "system" fn ArbAllocateEntry(
         if (0 as i32) == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *const i8 as *mut core::ffi::c_void,
                 105u32,
                 core::ptr::null_mut::<i8>(),
@@ -239,7 +239,7 @@ pub unsafe extern "system" fn ArbAllocateEntry(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0"
             .as_ptr() as *const i8 as *const i8,
         b"ArbAllocateEntry\0".as_ptr() as *const i8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr() as *const i8 as *const i8,
         107i32,
     );
@@ -260,7 +260,7 @@ pub unsafe extern "system" fn ArbGetNextAllocationRange(
             if 0 as i32 == 0 {
                 RtlAssert(
                     b"0\0" as *const u8 as *mut ::core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *mut ::core::ffi::c_void,
                     118,
                     core::ptr::null_mut::<i8>(),
@@ -271,7 +271,7 @@ pub unsafe extern "system" fn ArbGetNextAllocationRange(
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
             b"ArbGetNextAllocationRange\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+            b"sdk/lib/drivers/arbiter/arbiter.c\0"
                 as *const u8 as *const i8,
             120 as i32,
         );
@@ -292,7 +292,7 @@ pub unsafe extern "system" fn ArbFindSuitableRange(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 131 as u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -303,7 +303,7 @@ pub unsafe extern "system" fn ArbFindSuitableRange(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbFindSuitableRange\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         133 as i32,
     );
     return 0 as BOOLEAN;
@@ -322,7 +322,7 @@ pub unsafe extern "system" fn ArbAddAllocation(
         if 0i32 == 0 {
             RtlAssert(
                 (b"0\0".as_ptr() as *const i8) as *mut core::ffi::c_void, // PVOID from string
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *mut core::ffi::c_void,
                 144u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -331,7 +331,7 @@ pub unsafe extern "system" fn ArbAddAllocation(
     DbgPrint(
         (b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8),
         (b"ArbAddAllocation\0".as_ptr() as *const i8),
-        (b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8),
+        (b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8),
         146i32,
     );
 }
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 156 as u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -359,7 +359,7 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbBacktrackAllocation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         158 as i32,
     );
 }
@@ -374,7 +374,7 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 168 as u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"ArbOverrideConflict\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         170 as i32,
     );
     return STATUS_NOT_IMPLEMENTED;
@@ -402,7 +402,7 @@ pub unsafe extern "system" fn ArbBootAllocation(
         if 0i32 == 0 {
             RtlAssert(
                 (b"0\0".as_ptr() as *const i8) as *mut core::ffi::c_void,
-                (b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8) as *mut core::ffi::c_void,
+                (b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8) as *mut core::ffi::c_void,
                 181u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -412,7 +412,7 @@ pub unsafe extern "system" fn ArbBootAllocation(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbBootAllocation\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         183i32,
     );
     return STATUS_NOT_IMPLEMENTED;
@@ -429,7 +429,7 @@ pub unsafe extern "system" fn ArbQueryConflict(mut Arbiter: PARBITER_INSTANCE) -
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
                 194 as u32,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -440,7 +440,7 @@ pub unsafe extern "system" fn ArbQueryConflict(mut Arbiter: PARBITER_INSTANCE) -
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"ArbQueryConflict\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             as *const u8 as *const core::ffi::c_char,
         196 as i32,
     );
@@ -457,7 +457,7 @@ pub unsafe extern "system" fn ArbStartArbiter(Arbiter: PARBITER_INSTANCE) -> NTS
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 207 as u32,
                 core::ptr::null_mut::<i8>(),
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn ArbStartArbiter(Arbiter: PARBITER_INSTANCE) -> NTS
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbStartArbiter\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr() as *const i8,
         209 as core::ffi::c_int,
     );
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn ArbAddOrdering(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 221u32,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -501,7 +501,7 @@ pub unsafe extern "system" fn ArbAddOrdering(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbAddOrdering\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
             as *const i8,
         223i32,
     );
@@ -522,7 +522,7 @@ pub unsafe extern "system" fn ArbPruneOrdering(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 235u32,
                 core::ptr::null_mut::<i8>(),
@@ -533,7 +533,7 @@ pub unsafe extern "system" fn ArbPruneOrdering(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbPruneOrdering\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr() as *const i8,
         237i32,
     );
@@ -553,7 +553,7 @@ pub unsafe extern "system" fn ArbInitializeOrderingList(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 247,
                 core::ptr::null_mut::<i8>(),
@@ -565,7 +565,7 @@ pub unsafe extern "system" fn ArbInitializeOrderingList(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbInitializeOrderingList\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         249i32,
     );
 
@@ -584,7 +584,7 @@ pub unsafe extern "system" fn ArbFreeOrderingList(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     .as_ptr()
                     as *mut core::ffi::c_void,
                 259u32,
@@ -596,7 +596,7 @@ pub unsafe extern "system" fn ArbFreeOrderingList(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbFreeOrderingList\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+        b"sdk/lib/drivers/arbiter/arbiter.c\0"
             .as_ptr()
             as *const i8,
         261i32,
@@ -618,7 +618,7 @@ pub unsafe extern "system" fn ArbBuildAssignmentOrdering(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 273u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -627,7 +627,7 @@ pub unsafe extern "system" fn ArbBuildAssignmentOrdering(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ArbBuildAssignmentOrdering\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
         275i32,
     );
     return STATUS_SUCCESS;
@@ -655,7 +655,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             if 0 == 0 {
                 RtlAssert(
                     b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *const i8 as *mut core::ffi::c_void,
                     292,
                     core::ptr::null_mut::<i8>(),
@@ -668,7 +668,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->UnpackRequirement != NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 296,
                 core::ptr::null_mut::<i8>(),
@@ -678,7 +678,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->PackResource != NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 297,
                 core::ptr::null_mut::<i8>(),
@@ -688,7 +688,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->UnpackResource != NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 298,
                 core::ptr::null_mut::<i8>(),
@@ -698,7 +698,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->MutexEvent == NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 299,
                 core::ptr::null_mut::<i8>(),
@@ -708,7 +708,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->Allocation == NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 300,
                 core::ptr::null_mut::<i8>(),
@@ -718,7 +718,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->PossibleAllocation == NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 301,
                 core::ptr::null_mut::<i8>(),
@@ -728,7 +728,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             RtlAssert(
                 b"Arbiter->AllocationStack == NULL\0" as *const u8 as *const i8
                     as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 302,
                 core::ptr::null_mut::<i8>(),
@@ -747,14 +747,14 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             if DbgPrint(
                 b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
                     as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8,
                 310,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *const i8,
                     310,
                 );
@@ -777,14 +777,14 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             if DbgPrint(
                 b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
                     as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8,
                 319,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *const i8,
                     319,
                 );
@@ -804,14 +804,14 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             if DbgPrint(
                 b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
                     as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8,
                 329,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *const i8,
                     329,
                 );
@@ -833,14 +833,14 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
             if DbgPrint(
                 b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
                     as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8,
                 338,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
                         as *const u8 as *const i8,
                     338,
                 );
@@ -892,7 +892,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
 
         if DbgPrint(
             b"(%s:%d) ArbInitializeArbiterInstance: Status %X\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+            b"sdk/lib/drivers/arbiter/arbiter.c\0"
                 as *const u8 as *const i8,
             403,
             Status,
@@ -900,7 +900,7 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/arbiter/arbiter.c\0"
+                b"sdk/lib/drivers/arbiter/arbiter.c\0"
                     as *const u8 as *const i8,
                 403,
             );

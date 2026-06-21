@@ -269,7 +269,7 @@ several are independent and can run in parallel or be resequenced.
 > idle-poll-starvation class). **M11 (NDIS real-NIC)** is the big multi-week lane that builds on
 > M10's interrupt/IRQL discipline. **M12+** is completeness/perf, done as target apps demand it.
 
-### M8 — Server-side TCP (`TDI_LISTEN` / `TDI_ACCEPT`) — ✅ IMPLEMENTED (2026-06-21)
+### M8 — Server-side TCP (`TDI_LISTEN` / `TDI_ACCEPT`) — ✅ IMPLEMENTED + RUNTIME-VALIDATED (2026-06-21)
 
 **Status.** Implemented exactly per the plan below: `TDI_LISTEN` (0x04) + `TDI_ACCEPT` (0x05)
 now dispatch in `tdidev.rs`; a `Cmd::Listen` rides into the worker, which binds a fresh
@@ -278,10 +278,18 @@ the pended listen IRP once the socket reaches `Established` (smoltcp does the ha
 filling `ReturnConnectionInformation->RemoteAddress` with the peer (`fill_remote_address`).
 `TDI_ACCEPT` acknowledges synchronously (the connection is already established + bound). Two
 `Conn` fields added (`listen_irp`/`listen_ret`); the post-accept recv/disconnect path reuses the
-existing client machinery. Compile-validated (arm64 full body rebuild, arch-independent change).
-**Runtime validation pending** a usermode listen/accept test app (nettest is outbound-only) and,
-on arm64, the periodic-clock fix (an idle worker can't poll RX to absorb the inbound SYN — the
-#91/#92 idle-starvation blocker applies to the server path too).
+existing client machinery.
+
+**Runtime validation (✅ 2026-06-21, amd64-net).** A kernel TDI *server* self-test
+(`tdisrvtest.rs`, the inbound mirror of `tditest.rs`) binds `:8888`, registers a
+`TDI_EVENT_RECEIVE` handler, posts a `TDI_LISTEN` (long-window via `run_tdi_to`, since the host
+connects only after boot), and on a host connect `TDI_ACCEPT`s + echoes a fixed marker. The host
+side (`test_tdi_server_listen_accept`, a second hostfwd) connects, sends a probe, and reads the
+echo. **Green end to end:** `listening on :8888 → ACCEPTED from 10.0.2.2:<port> → received 24 bytes
+→ echoed 13 bytes — server round-trip OK`, and the full net suite is **12/12** (no regression).
+This exercises the whole M8 path live: `TDI_LISTEN` bind/pend → completion bridge on `Established`
+(peer address filled) → `TDI_ACCEPT` → post-accept receive-event → `TDI_SEND`. Now arch-independent
+and unblocked (the clock fix landed; #91/#92 idle-starvation no longer applies).
 
 **Why.** netstack is *outbound-client-only* at the TDI surface today — a usermode app can
 `connect()` but cannot `bind()`+`listen()`+`accept()`. That blocks every inbound service: SMB/CIFS

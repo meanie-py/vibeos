@@ -1005,7 +1005,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         if irp.is_null() {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     as *const u8 as *const i8,
                 1338i32,
                 b"irp\0" as *const u8 as *const i8,
@@ -1028,7 +1028,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         if status != REMOVE_COMPLETE {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     as *const u8 as *const i8,
                 1348i32,
                 b"status != REMOVE_COMPLETE\0" as *const u8 as *const i8,
@@ -1046,7 +1046,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         if status != NO_REMOVE {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     as *const u8 as *const i8,
                 1356i32,
                 b"status == NO_REMOVE\0" as *const u8 as *const i8,
@@ -1072,7 +1072,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
     if bufferLength as i32 <= 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+            b"drivers/storage/class/classpnp/autorun.c\0"
                 as *const u8 as *const i8,
             1396i32,
             b"bufferLength > 0\0" as *const u8 as *const i8,
@@ -1123,7 +1123,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         if (*Info).Gesn.Buffer.is_null() {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     as *const u8 as *const i8,
                 1444i32,
                 b"Info->Gesn.Buffer\0" as *const u8 as *const i8,
@@ -1153,7 +1153,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
             if false {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                    b"drivers/storage/class/classpnp/autorun.c\0"
                         as *const u8 as *const i8,
                     1471i32,
                     b"FALSE\0" as *const u8 as *const i8,
@@ -1585,7 +1585,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+            b"drivers/storage/class/classpnp/autorun.c\0"
                 .as_ptr() as *const i8,
             2006i32,
             b"0\0".as_ptr() as *const i8,
@@ -1597,7 +1597,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
     if !(Info == (*FdoExtension).MediaChangeDetectionInfo) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+            b"drivers/storage/class/classpnp/autorun.c\0"
                 .as_ptr() as *const i8,
             2007i32,
             b"Info == FdoExtension->MediaChangeDetectionInfo\0".as_ptr() as *const i8,
@@ -1674,7 +1674,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                         if (srbFlags & 0x100) == 0 {
                             DbgPrint(
                                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                                b"drivers/storage/class/classpnp/autorun.c\0"
                                     .as_ptr() as *const i8,
                                 2094i32,
                                 b"TEST_FLAG(srbFlags, SRB_FLAGS_NO_QUEUE_FREEZE)\0".as_ptr() as *const i8,
@@ -1709,7 +1709,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                             if !(status >= 0) {
                                 DbgPrint(
                                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                                    b"drivers/storage/class/classpnp/autorun.c\0"
                                         .as_ptr() as *const i8,
                                     2114i32,
                                     b"NT_SUCCESS(status)\0".as_ptr() as *const i8,
@@ -1943,7 +1943,7 @@ pub unsafe extern "system" fn ClasspDisableGesn(
         if 0i32 == 0i32 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as *const i8,
                 2381i32,
                 b"0\0".as_ptr() as *const i8,
@@ -1997,7 +1997,7 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 2474i32,
                 b"0\0".as_ptr() as *const core::ffi::c_char,
@@ -2105,7 +2105,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+            b"drivers/storage/class/classpnp/autorun.c\0"
                 .as_ptr() as PCSTR,
             2578i32,
             b"0\0".as_ptr() as PCSTR,
@@ -2218,7 +2218,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
         if !NT_SUCCESS(status) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as PCSTR,
                 2667i32,
                 b"NT_SUCCESS(status)\0".as_ptr() as PCSTR,
@@ -2237,7 +2237,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
         if !NT_SUCCESS(status) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as PCSTR,
                 2676i32,
                 b"NT_SUCCESS(status)\0".as_ptr() as PCSTR,
@@ -2256,7 +2256,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
         if !NT_SUCCESS(status) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as PCSTR,
                 2685i32,
                 b"NT_SUCCESS(status)\0".as_ptr() as PCSTR,
@@ -2612,7 +2612,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
         // NT_ASSERT(FALSE)
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCCHAR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
+            b"drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
             3109i32,
             b"0\0".as_ptr() as PCCHAR,
         );
@@ -2643,7 +2643,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
     if oldCount < 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCCHAR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
+            b"drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
             3125i32,
             b"oldCount >= 0\0".as_ptr() as PCCHAR,
         );
@@ -2691,7 +2691,7 @@ pub unsafe extern "system" fn ClassDisableMediaChangeDetection(
         if 0i32 == 0i32 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     .as_ptr() as *const u8 as *const i8,
                 3194i32,
                 b"0\0".as_ptr() as *const u8 as *const i8,
@@ -2738,7 +2738,7 @@ pub unsafe extern "system" fn ClassCleanupMediaChangeDetection(FdoExtension: PFU
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const ::core::ffi::c_char,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as *const ::core::ffi::c_char,
+                b"drivers/storage/class/classpnp/autorun.c\0".as_ptr() as *const ::core::ffi::c_char,
                 3241i32,
                 b"0\0".as_ptr() as *const ::core::ffi::c_char,
             );
@@ -2792,7 +2792,7 @@ pub unsafe extern "C" fn ClasspMcnControl(
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+            b"drivers/storage/class/classpnp/autorun.c\0"
                 .as_ptr() as *const i8,
             3293i32,
             b"0\0".as_ptr() as *const i8,
@@ -3327,7 +3327,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
         if true {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0"
+                b"drivers/storage/class/classpnp/autorun.c\0"
                     as *const u8 as *const i8,
                 4302,
                 b"0\0" as *const u8 as *const i8,

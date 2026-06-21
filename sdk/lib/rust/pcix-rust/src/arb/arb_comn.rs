@@ -25,14 +25,14 @@ pub static mut PciArbiterNames: [PCHAR; 4] = [
 pub const NDEBUG: bool = true;
 #[no_mangle]
 pub unsafe extern "system" fn PciArbiterDestructor(Arbiter: PPCI_ARBITER_INSTANCE) {
-    DbgPrint(b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR, b"PciArbiterDestructor\0".as_ptr() as *const c_char, b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0".as_ptr() as *const c_char, 34);
+    DbgPrint(b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR, b"PciArbiterDestructor\0".as_ptr() as *const c_char, b"drivers/bus/pcix/arb/arb_comn.c\0".as_ptr() as *const c_char, 34);
     loop {}
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciInitializeArbiters(
     FdoExtension: PPCI_FDO_EXTENSION,
 ) -> NTSTATUS {
-    const FILE_PATH: &[u8] = b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0";
+    const FILE_PATH: &[u8] = b"drivers/bus/pcix/arb/arb_comn.c\0";
     const FORMAT_SWPRINTF: [u16; 16] = [
         0x50, 0x43, 0x49, 0x20, 0x25, 0x53, 0x20, 0x28,
         0x62, 0x3D, 0x25, 0x30, 0x32, 0x78, 0x29, 0x00,
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
         if DbgPrint(
             b"(%s:%d) PCI Warning hot start FDOx %p, resource ranges not checked.\n\0"
                 .as_ptr() as *const core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+            b"drivers/bus/pcix/arb/arb_comn.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             142 as core::ffi::c_int,
             DeviceExtension,
@@ -206,7 +206,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const core::ffi::c_char,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                b"drivers/bus/pcix/arb/arb_comn.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 142 as core::ffi::c_int,
             );
@@ -220,7 +220,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
             RtlAssert(
                 b"(PdoExtension)->ExtensionType == PciPdoExtensionType\0"
                     .as_ptr() as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                b"drivers/bus/pcix/arb/arb_comn.c\0"
                     .as_ptr() as *const core::ffi::c_char as PVOID,
                 151 as ULONG,
                 core::ptr::null_mut::<core::ffi::c_char>(),
@@ -230,7 +230,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
             if DbgPrint(
                 b"(%s:%d) PCI Skipping arbiter initialization for subtractive bridge FDOX %p\n\0"
                     .as_ptr() as *const core::ffi::c_char,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                b"drivers/bus/pcix/arb/arb_comn.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 157 as core::ffi::c_int,
                 DeviceExtension,
@@ -238,7 +238,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const core::ffi::c_char,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                    b"drivers/bus/pcix/arb/arb_comn.c\0"
                         .as_ptr() as *const core::ffi::c_char,
                     157 as core::ffi::c_int,
                 );
@@ -261,14 +261,14 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
                 b"WARNING:  %s at %s:%d is unimplemented!()\n\0"
                     .as_ptr() as *const core::ffi::c_char,
                 b"PciInitializeArbiterRanges\0".as_ptr() as *const core::ffi::c_char,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                b"drivers/bus/pcix/arb/arb_comn.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 191 as core::ffi::c_int,
             );
         } else if DbgPrint(
             b"(%s:%d) PCI - FDO ext 0x%p %s arbiter (REQUIRED) is missing.\n\0"
                 .as_ptr() as *const core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+            b"drivers/bus/pcix/arb/arb_comn.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             199 as core::ffi::c_int,
             DeviceExtension,
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const core::ffi::c_char,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/arb_comn.c\0"
+                b"drivers/bus/pcix/arb/arb_comn.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 199 as core::ffi::c_int,
             );

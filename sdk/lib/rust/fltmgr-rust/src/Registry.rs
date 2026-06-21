@@ -111,7 +111,7 @@ pub unsafe extern "C" fn FltpReadRegistryValue(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Registry.c\0"
+                b"drivers/filters/fltmgr/Registry.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 78 as ULONG,
                 core::ptr::null_mut::<CHAR>(),

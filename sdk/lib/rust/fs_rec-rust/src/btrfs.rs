@@ -49,7 +49,7 @@ pub unsafe extern "system" fn FsRecBtrfsFsControl(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/btrfs.c\0"
+            b"drivers/filesystems/fs_rec/btrfs.c\0"
                 .as_ptr() as PVOID,
             40 as ULONG,
             core::ptr::null_mut::<c_char>(),

@@ -24,7 +24,7 @@ pub unsafe extern "C" fn InitializeCircularBuffer(
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) InitializeCircularBuffer(pBuffer %p, BufferSize %lu)\n\0" as *const u8
             as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+        b"drivers/serial/serial/circularbuffer.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         19 as ::core::ffi::c_int,
         pBuffer,
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn InitializeCircularBuffer(
     if pBuffer.is_null() {
         RtlAssert(
             b"pBuffer\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             20 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -63,7 +63,7 @@ pub unsafe extern "C" fn FreeCircularBuffer(pBuffer: PCIRCULAR_BUFFER) -> NTSTAT
         DPFLTR_SERIAL_ID as core::ffi::c_int as ULONG,
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) FreeCircularBuffer(pBuffer %p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+        b"drivers/serial/serial/circularbuffer.c\0"
             as *const u8 as *const core::ffi::c_char,
         33 as core::ffi::c_int,
         pBuffer,
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn FreeCircularBuffer(pBuffer: PCIRCULAR_BUFFER) -> NTSTAT
     if pBuffer.is_null() {
         RtlAssert(
             b"pBuffer\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             34 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -91,7 +91,7 @@ pub unsafe extern "C" fn IsCircularBufferEmpty(mut pBuffer: PCIRCULAR_BUFFER) ->
         DPFLTR_SERIAL_ID as ::core::ffi::c_int as ULONG,
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) IsCircularBufferEmpty(pBuffer %p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+        b"drivers/serial/serial/circularbuffer.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         44 as ::core::ffi::c_int,
         pBuffer,
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn IsCircularBufferEmpty(mut pBuffer: PCIRCULAR_BUFFER) ->
     if pBuffer.is_null() {
         RtlAssert(
             b"pBuffer\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             45 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn GetNumberOfElementsInCircularBuffer(
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) GetNumberOfElementsInCircularBuffer(pBuffer %p)\n\0" as *const u8
             as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+        b"drivers/serial/serial/circularbuffer.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         53 as ::core::ffi::c_int,
         pBuffer,
@@ -126,7 +126,7 @@ pub unsafe extern "C" fn GetNumberOfElementsInCircularBuffer(
     if pBuffer.is_null() {
         RtlAssert(
             b"pBuffer\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             54 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -154,7 +154,7 @@ pub unsafe extern "C" fn PushCircularBufferEntry(
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) PushCircularBufferEntry(pBuffer %p, Entry 0x%x)\n\0" as *const u8
             as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+        b"drivers/serial/serial/circularbuffer.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         64 as ::core::ffi::c_int,
         pBuffer,
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn PushCircularBufferEntry(
     if pBuffer.is_null() {
         RtlAssert(
             b"pBuffer\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             65 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn PushCircularBufferEntry(
     if (*pBuffer).Length == 0 {
         RtlAssert(
             b"pBuffer->Length\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/circularbuffer.c\0"
+            b"drivers/serial/serial/circularbuffer.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             66 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),

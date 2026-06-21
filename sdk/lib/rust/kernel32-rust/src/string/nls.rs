@@ -2718,14 +2718,14 @@ pub unsafe extern "system" fn IsValidUILanguage(langid: LANGID) -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
         2475 as ::core::ffi::c_int,
         b"IsValidUILanguage\0".as_ptr() as *const ::core::ffi::c_char,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
             2475 as ::core::ffi::c_int,
         );
     }
@@ -2742,14 +2742,14 @@ pub unsafe extern "system" fn NlsConvertIntegerToString(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
         2484 as ::core::ffi::c_int,
         b"NlsConvertIntegerToString\0".as_ptr() as *const ::core::ffi::c_char,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const ::core::ffi::c_char,
             2484 as ::core::ffi::c_int,
         );
     }
@@ -2760,14 +2760,14 @@ pub unsafe extern "system" fn SetCPGlobal(CodePage: UINT) -> UINT {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2492i32,
         b"SetCPGlobal\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2492i32,
         );
     }
@@ -2784,14 +2784,14 @@ pub unsafe extern "system" fn ValidateLCType(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as u32);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2503i32,
         b"ValidateLCType\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2503i32,
         );
     }
@@ -2803,14 +2803,14 @@ pub unsafe extern "system" fn NlsResetProcessLocale() -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2514i32,
         b"NlsResetProcessLocale\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2514i32,
         );
     }
@@ -2821,14 +2821,14 @@ pub unsafe extern "system" fn GetDefaultSortkeySize(mut lpUnknown: LPVOID) {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2525i32,
         b"GetDefaultSortkeySize\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2525i32,
         );
     }
@@ -2839,14 +2839,14 @@ pub unsafe extern "system" fn GetLinguistLangSize(mut lpUnknown: LPVOID) {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as u32);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2536i32,
         b"GetLinguistLangSize\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2536i32,
         );
     }
@@ -2858,14 +2858,14 @@ pub unsafe extern "system" fn ValidateLocale(LocaleId: ULONG) -> BOOL {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2547i32,
         b"ValidateLocale\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2547i32,
         );
     }
@@ -2877,14 +2877,14 @@ pub unsafe extern "system" fn NlsGetCacheUpdateCount() -> ULONG {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2558i32,
         b"NlsGetCacheUpdateCount\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2558i32,
         );
     }
@@ -2902,14 +2902,14 @@ pub unsafe extern "system" fn IsNLSDefinedString(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2573i32,
         b"IsNLSDefinedString\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2573i32,
         );
     }
@@ -2925,7 +2925,7 @@ pub unsafe extern "system" fn GetNLSVersion(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0"
+        b"dll/win32/kernel32/winnls/string/nls.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         2586 as ::core::ffi::c_int,
         b"GetNLSVersion\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2933,7 +2933,7 @@ pub unsafe extern "system" fn GetNLSVersion(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0"
+            b"dll/win32/kernel32/winnls/string/nls.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             2586 as ::core::ffi::c_int,
         );
@@ -2950,14 +2950,14 @@ pub unsafe extern "system" fn GetNLSVersionEx(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
         2599i32,
         b"GetNLSVersionEx\0".as_ptr() as *const i8,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
+            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
             2599i32,
         );
     }

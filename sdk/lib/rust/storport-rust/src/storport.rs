@@ -650,7 +650,7 @@ pub unsafe extern "system" fn DriverEntry(
 ) -> NTSTATUS {
     if DbgPrint(
         b"(%s:%d) DriverEntry(%p %p)\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         461 as ::core::ffi::c_int,
         DriverObject,
@@ -659,7 +659,7 @@ pub unsafe extern "system" fn DriverEntry(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             461 as ::core::ffi::c_int,
         );
@@ -700,14 +700,14 @@ pub unsafe extern "system" fn StorPortBusy(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortBuzy()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         492 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             492 as ::core::ffi::c_int,
         );
@@ -715,7 +715,7 @@ pub unsafe extern "system" fn StorPortBusy(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortBusy\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         493 as ::core::ffi::c_int,
     );
@@ -732,14 +732,14 @@ pub unsafe extern "system" fn StorPortCompleteRequest(
 ) {
     if DbgPrint(
         b"(%s:%d) StorPortCompleteRequest()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         511 as core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const core::ffi::c_char,
             511 as core::ffi::c_int,
         );
@@ -747,7 +747,7 @@ pub unsafe extern "system" fn StorPortCompleteRequest(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"StorPortCompleteRequest\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         512 as core::ffi::c_int,
     );
@@ -760,14 +760,14 @@ pub unsafe extern "system" fn StorPortConvertPhysicalAddressToUlong(
     if DbgPrint(
         b"(%s:%d) StorPortConvertPhysicalAddressToUlong()\n\0" as *const u8
             as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         525 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             525 as ::core::ffi::c_int,
         );
@@ -782,14 +782,14 @@ pub unsafe extern "system" fn StorPortConvertUlongToPhysicalAddress(
     let mut Address: STOR_PHYSICAL_ADDRESS = core::mem::zeroed();
     if DbgPrint(
         b"(%s:%d) StorPortConvertUlongToPhysicalAddress()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         542 as core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const core::ffi::c_char,
             542 as core::ffi::c_int,
         );
@@ -826,14 +826,14 @@ pub unsafe extern "system" fn StorPortDeviceBusy(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortDeviceBusy()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         580 as core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const core::ffi::c_char,
             580 as core::ffi::c_int,
         );
@@ -841,7 +841,7 @@ pub unsafe extern "system" fn StorPortDeviceBusy(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"StorPortDeviceBusy\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         581 as core::ffi::c_int,
     );
@@ -857,14 +857,14 @@ pub unsafe extern "system" fn StorPortDeviceReady(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortDeviceReady()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         598 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             598 as ::core::ffi::c_int,
         );
@@ -872,7 +872,7 @@ pub unsafe extern "system" fn StorPortDeviceReady(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortDeviceReady\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         599 as ::core::ffi::c_int,
     );
@@ -887,7 +887,7 @@ pub unsafe extern "C" fn StorPortExtendedFunction(
 ) -> ULONG {
     if DbgPrint(
         b"(%s:%d) StorPortExtendedFunction(%d %p ...)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         615 as core::ffi::c_int,
         FunctionCode as core::ffi::c_uint,
@@ -896,7 +896,7 @@ pub unsafe extern "C" fn StorPortExtendedFunction(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const core::ffi::c_char,
             615 as core::ffi::c_int,
         );
@@ -904,7 +904,7 @@ pub unsafe extern "C" fn StorPortExtendedFunction(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"StorPortExtendedFunction\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         616 as core::ffi::c_int,
     );
@@ -918,7 +918,7 @@ pub unsafe extern "system" fn StorPortFreeDeviceBase(
 ) {
     if DbgPrint(
         b"(%s:%d) StorPortFreeDeviceBase(%p %p)\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         632 as ::core::ffi::c_int,
         HwDeviceExtension,
@@ -927,7 +927,7 @@ pub unsafe extern "system" fn StorPortFreeDeviceBase(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             632 as ::core::ffi::c_int,
         );
@@ -941,14 +941,14 @@ pub unsafe extern "system" fn StorPortFreeRegistryBuffer(
 ) {
     if DbgPrint(
         b"(%s:%d) StorPortFreeRegistryBuffer()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         646 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             646 as ::core::ffi::c_int,
         );
@@ -956,7 +956,7 @@ pub unsafe extern "system" fn StorPortFreeRegistryBuffer(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortFreeRegistryBuffer\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         647 as ::core::ffi::c_int,
     );
@@ -1118,14 +1118,14 @@ pub unsafe extern "system" fn StorPortGetLogicalUnit(
 ) -> PVOID {
     if DbgPrint(
         b"(%s:%d) StorPortGetLogicalUnit()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         779 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             779 as ::core::ffi::c_int,
         );
@@ -1133,7 +1133,7 @@ pub unsafe extern "system" fn StorPortGetLogicalUnit(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortGetLogicalUnit\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         780 as ::core::ffi::c_int,
     );
@@ -1192,14 +1192,14 @@ pub unsafe extern "system" fn StorPortGetScatterGatherList(
 ) -> PSTOR_SCATTER_GATHER_LIST {
     if DbgPrint(
         b"(%s:%d) StorPortGetScatterGatherList()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         850 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             850 as ::core::ffi::c_int,
         );
@@ -1207,7 +1207,7 @@ pub unsafe extern "system" fn StorPortGetScatterGatherList(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortGetScatterGatherList\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         851 as ::core::ffi::c_int,
     );
@@ -1280,7 +1280,7 @@ pub unsafe extern "system" fn StorPortGetVirtualAddress(
 ) -> PVOID {
     if DbgPrint(
         b"(%s:%d) StorPortGetVirtualAddress(%p %I64x)\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         937 as ::core::ffi::c_int,
         HwDeviceExtension,
@@ -1289,7 +1289,7 @@ pub unsafe extern "system" fn StorPortGetVirtualAddress(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             937 as ::core::ffi::c_int,
         );
@@ -1297,7 +1297,7 @@ pub unsafe extern "system" fn StorPortGetVirtualAddress(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortGetVirtualAddress\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         938 as ::core::ffi::c_int,
     );
@@ -1486,14 +1486,14 @@ pub unsafe extern "system" fn StorPortLogError(
 ) {
     if DbgPrint(
         b"(%s:%d) ScsiPortLogError() called\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1065 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1065 as ::core::ffi::c_int,
         );
@@ -1501,7 +1501,7 @@ pub unsafe extern "system" fn StorPortLogError(
     if DbgPrint(
         b"(%s:%d) PathId: 0x%02x  TargetId: 0x%02x  Lun: 0x%02x  ErrorCode: 0x%08lx  UniqueId: 0x%08lx\n\0"
             as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1067 as ::core::ffi::c_int,
         PathId as ::core::ffi::c_int,
@@ -1513,21 +1513,21 @@ pub unsafe extern "system" fn StorPortLogError(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1067 as ::core::ffi::c_int,
         );
     }
     if DbgPrint(
         b"(%s:%d) ScsiPortLogError() done\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1069 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1069 as ::core::ffi::c_int,
         );
@@ -1647,14 +1647,14 @@ pub unsafe extern "system" fn StorPortPause(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortPause()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1219 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1219 as ::core::ffi::c_int,
         );
@@ -1662,7 +1662,7 @@ pub unsafe extern "system" fn StorPortPause(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"StorPortPause\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1220 as ::core::ffi::c_int,
     );
@@ -1679,14 +1679,14 @@ pub unsafe extern "system" fn StorPortPauseDevice(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortPauseDevice()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1238 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1238 as ::core::ffi::c_int,
         );
@@ -1694,7 +1694,7 @@ pub unsafe extern "system" fn StorPortPauseDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortPauseDevice\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1239 as ::core::ffi::c_int,
     );
@@ -1705,7 +1705,7 @@ pub unsafe extern "system" fn StorPortPauseDevice(
 pub unsafe extern "system" fn StorPortQuerySystemTime(mut CurrentTime: PLARGE_INTEGER) {
     if DbgPrint(
         b"(%s:%d) StorPortQuerySystemTime(%p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1256 as ::core::ffi::c_int,
         CurrentTime,
@@ -1713,7 +1713,7 @@ pub unsafe extern "system" fn StorPortQuerySystemTime(mut CurrentTime: PLARGE_IN
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1256 as ::core::ffi::c_int,
         );
@@ -1725,14 +1725,14 @@ pub unsafe extern "system" fn StorPortQuerySystemTime(mut CurrentTime: PLARGE_IN
 pub unsafe extern "system" fn StorPortReady(mut HwDeviceExtension: PVOID) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortReady()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1272 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1272 as ::core::ffi::c_int,
         );
@@ -1740,7 +1740,7 @@ pub unsafe extern "system" fn StorPortReady(mut HwDeviceExtension: PVOID) -> BOO
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortReady\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1273 as ::core::ffi::c_int,
     );
@@ -1788,20 +1788,20 @@ pub unsafe extern "system" fn StorPortRegistryWrite(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortRegistryWrite()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
+        b"drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
         1312 as core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
+            b"drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
             1312 as core::ffi::c_int,
         );
     }
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"StorPortRegistryWrite\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
+        b"drivers/storage/port/storport/storport.c\0".as_ptr() as *const i8,
         1313 as core::ffi::c_int,
     );
     return 0 as BOOLEAN;
@@ -1811,14 +1811,14 @@ pub unsafe extern "system" fn StorPortRegistryWrite(
 pub unsafe extern "system" fn StorPortResume(mut HwDeviceExtension: PVOID) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortResume()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1327 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1327 as ::core::ffi::c_int,
         );
@@ -1826,7 +1826,7 @@ pub unsafe extern "system" fn StorPortResume(mut HwDeviceExtension: PVOID) -> BO
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortResume\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1328 as ::core::ffi::c_int,
     );
@@ -1842,14 +1842,14 @@ pub unsafe extern "system" fn StorPortResumeDevice(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortResumeDevice()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1345 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1345 as ::core::ffi::c_int,
         );
@@ -1857,7 +1857,7 @@ pub unsafe extern "system" fn StorPortResumeDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortResumeDevice\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1346 as ::core::ffi::c_int,
     );
@@ -1961,14 +1961,14 @@ pub unsafe extern "system" fn StorPortSetDeviceQueueDepth(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortSetDeviceQueueDepth()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1405 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1405 as ::core::ffi::c_int,
         );
@@ -1976,7 +1976,7 @@ pub unsafe extern "system" fn StorPortSetDeviceQueueDepth(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortSetDeviceQueueDepth\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1406 as ::core::ffi::c_int,
     );
@@ -1996,14 +1996,14 @@ pub unsafe extern "system" fn StorPortSynchronizeAccess(
 ) {
     if DbgPrint(
         b"(%s:%d) StorPortSynchronizeAccess()\n\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1435 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             1435 as ::core::ffi::c_int,
         );
@@ -2011,7 +2011,7 @@ pub unsafe extern "system" fn StorPortSynchronizeAccess(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"StorPortSynchronizeAccess\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1436 as ::core::ffi::c_int,
     );
@@ -2028,14 +2028,14 @@ pub unsafe extern "system" fn StorPortValidateRange(
 ) -> BOOLEAN {
     if DbgPrint(
         b"(%s:%d) StorPortValidateRange()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+        b"drivers/storage/port/storport/storport.c\0"
             as *const u8 as *const core::ffi::c_char,
         1454 as core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/storport.c\0"
+            b"drivers/storage/port/storport/storport.c\0"
                 as *const u8 as *const core::ffi::c_char,
             1454 as core::ffi::c_int,
         );

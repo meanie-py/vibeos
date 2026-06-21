@@ -156,7 +156,7 @@ unsafe fn PdoHandleQueryProperty(
             b"ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY)\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+            b"drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
             156,
@@ -168,7 +168,7 @@ unsafe fn PdoHandleQueryProperty(
             b"Irp->AssociatedIrp.SystemBuffer\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+            b"drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
             157,
@@ -180,7 +180,7 @@ unsafe fn PdoHandleQueryProperty(
             b"!lunExt->Common.IsFDO\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+            b"drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
             158,
@@ -235,7 +235,7 @@ unsafe fn PdoHandleQueryProperty(
                             b"ioStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(STORAGE_DESCRIPTOR_HEADER)\0"
                                 .as_ptr()
                                 .cast::<i8>() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                            b"drivers/storage/port/scsiport/ioctl.c\0"
                                 .as_ptr()
                                 .cast::<i8>() as *const core::ffi::c_void,
                             211,
@@ -334,7 +334,7 @@ unsafe fn PdoHandleScsiPassthrough(
     if !((KeGetCurrentIrql() as i32) < (DISPATCH_LEVEL as i32)) {
         RtlAssert(
             b"KeGetCurrentIrql() < DISPATCH_LEVEL\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+            b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             300,
             core::ptr::null_mut::<u8>(),
         );
@@ -343,7 +343,7 @@ unsafe fn PdoHandleScsiPassthrough(
     if (*lunExt).Common.IsFDO != 0 {
         RtlAssert(
             b"!lunExt->Common.IsFDO\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+            b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             301,
             core::ptr::null_mut::<u8>(),
         );
@@ -376,7 +376,7 @@ unsafe fn FdoHandleScsiPassthrough(
     if !((KeGetCurrentIrql() as i32) < 2i32) {
         ((RtlAssert))(
             b"KeGetCurrentIrql() < DISPATCH_LEVEL\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+            b"drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             325u32,
             core::ptr::null_mut::<i8>(),
@@ -397,7 +397,7 @@ unsafe fn FdoHandleScsiPassthrough(
     if (*portExt).Common.IsFDO == 0 {
         ((RtlAssert))(
             b"portExt->Common.IsFDO\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+            b"drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             331u32,
             core::ptr::null_mut::<i8>(),
@@ -429,7 +429,7 @@ unsafe fn FdoHandleQueryProperty(
     {
         RtlAssert(
             b"ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY)\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+            b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             351,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -437,7 +437,7 @@ unsafe fn FdoHandleQueryProperty(
     if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
         RtlAssert(
             b"Irp->AssociatedIrp.SystemBuffer\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+            b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             352,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -445,7 +445,7 @@ unsafe fn FdoHandleQueryProperty(
     if (*portExt).Common.IsFDO == 0 {
         RtlAssert(
             b"portExt->Common.IsFDO\0".as_ptr(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+            b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             353,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -475,7 +475,7 @@ unsafe fn FdoHandleQueryProperty(
         {
             RtlAssert(
                 b"ioStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(STORAGE_DESCRIPTOR_HEADER)\0".as_ptr(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
+                b"drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
                 393,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -608,13 +608,13 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
         315400 /* IOCTL_SCSI_MINIPORT */ => {
             if DbgPrint(
                 b"(%s:%d) IOCTL_SCSI_MINIPORT unimplemented!\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                b"drivers/storage/port/scsiport/ioctl.c\0"
                     as *const u8 as *const i8,
                 584i32,
             ) != 0 {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                    b"drivers/storage/port/scsiport/ioctl.c\0"
                         as *const u8 as *const i8,
                     584i32,
                 );
@@ -631,14 +631,14 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
         315436 | 315440 /* ATA passthrough */ => {
             if DbgPrint(
                 b"(%s:%d) ATA passthrough IOCTLs not supported: 0x%lX\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                b"drivers/storage/port/scsiport/ioctl.c\0"
                     as *const u8 as *const i8,
                 604i32,
                 IoControlCode,
             ) != 0 {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                    b"drivers/storage/port/scsiport/ioctl.c\0"
                         as *const u8 as *const i8,
                     604i32,
                 );
@@ -648,14 +648,14 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
         _ => {
             if DbgPrint(
                 b"(%s:%d) unknown ioctl code: 0x%lX\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                b"drivers/storage/port/scsiport/ioctl.c\0"
                     as *const u8 as *const i8,
                 609i32,
                 IoControlCode,
             ) != 0 {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
+                    b"drivers/storage/port/scsiport/ioctl.c\0"
                         as *const u8 as *const i8,
                     609i32,
                 );
