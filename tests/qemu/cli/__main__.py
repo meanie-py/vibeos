@@ -156,20 +156,25 @@ def build_parser() -> argparse.ArgumentParser:
         "repro", help="reproducibility gauge: byte-identity + PE-timestamp/section diff"
     )
     rpsub = rp.add_subparsers(dest="repro_cmd")
-    _deep = dict(action="store_true", help="deep byte localization if diffoscope installed")
+
+    def _add_diffoscope(sp):
+        sp.add_argument(
+            "--diffoscope",
+            action="store_true",
+            help="deep byte localization if diffoscope installed",
+        )
+
     rp_c = rpsub.add_parser("compare", help="compare two PE files (localize the divergence)")
     rp_c.add_argument("file_a")
     rp_c.add_argument("file_b")
-    rp_c.add_argument("--diffoscope", **_deep)
+    _add_diffoscope(rp_c)
     rp_r = rpsub.add_parser("report", help="dump determinism metadata (timestamp/sections)")
     rp_r.add_argument("files", nargs="+")
     rp_d = rpsub.add_parser("diff-dirs", help="diff the staged artifact set across two build trees")
     rp_d.add_argument("dir_a")
     rp_d.add_argument("dir_b")
-    rp_d.add_argument(
-        "--artifacts", nargs="*", help="relative artifact paths (default: staged set)"
-    )
-    rp_d.add_argument("--diffoscope", **_deep)
+    rp_d.add_argument("--artifacts", nargs="*", help="relative artifact paths (default: staged)")
+    _add_diffoscope(rp_d)
     rp.set_defaults(fn=repro_mod.repro)
 
     return p
