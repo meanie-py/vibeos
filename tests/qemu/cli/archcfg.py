@@ -79,6 +79,13 @@ _CFGS = {
         # winlogon spawns. Building+staging them here ends the per-gate manual
         # `ninja <target>` + mcopy inject dance (the same false-green footgun the
         # staged-set was created to close). mkramdisk.sh copies them.
+        # fastfat is THE arm64 boot filesystem (the ramdisk is FAT32) — same trap:
+        # it was NOT in this set, so a fastfat source fix landed on mainline (e.g.
+        # arm64-love's FAT_DIRTY_VOLUME constant 0x0FFFFFF7→0xF0000001) never
+        # reached the boot — the staged ramdisk kept shipping a STALE fastfat.sys,
+        # whose old dirty-volume constant mismatched FatSetFatEntry's check and
+        # raised a spurious STATUS_FILE_CORRUPT_ERROR (0xC0000102) → BUGCHECK 0x1E
+        # during the registry hive-create. Rebuilding+staging fastfat clears it.
         ninja_targets=(
             "ntoskrnl",
             "hal",
@@ -86,6 +93,7 @@ _CFGS = {
             "win32k",
             "rust_kernel32",
             "dll/win32/kernel32/kernel32.dll",
+            "fastfat",
             "netstack",
             "livecd_hives",
             "afd",
@@ -102,6 +110,7 @@ _CFGS = {
             "boot/freeldr/uefildr/uefildr.efi",
             "win32ss/win32k.sys",
             "dll/win32/kernel32/kernel32.dll",
+            "drivers/filesystems/fastfat/fastfat.sys",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
             "drivers/network/netstack/netstack.sys",
