@@ -1,7 +1,7 @@
 {
-  "_comment": "Copy this to .vibeos-cli.local.json (gitignored) and edit. Deep-merged over the committed DEFAULTS in tests/qemu/cli/config.py. Only include keys you want to override. Example below switches the smoke/boot runner to the Windows-host QEMU backend (escapes WSL2 nested-virt contention; see docs/engineering/windows-host-qemu-spike.md). Leave backend at 'native' (the default) for real Linux or plain nested-WSL2 KVM.",
+  "_comment": "Copy to .vibeos-cli.local.json (gitignored) and edit. Deep-merged over the committed DEFAULTS in tests/qemu/cli/config.py. windows-host is now the DEFAULT (escapes WSL2 nested-virt contention). A non-Windows-host env (real Linux / CI) overrides back to native with the snippet below (or VIBEOS_QEMU_BACKEND=native).",
   "qemu": {
-    "backend": "windows-host",
+    "backend": "native",
     "windows": {
       "qemu_dir": "/mnt/c/Program Files/qemu",
       "staging_dir": "/mnt/c/temp/vibeos-qemu",
