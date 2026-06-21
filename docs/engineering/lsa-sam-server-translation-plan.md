@@ -14,9 +14,22 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **M2 (in progress)** — `security.c` ✅ (`00a7b6afc8f`, SD/ACL builders), `registry.c` ✅
 >   (`af3e0ba7e99`, Nt*Key wrappers). **6 of 16 units Rust** (lsa_s stub + dssetup + privileges +
 >   utils + security + registry); each ×3-link-verified + i386 boot-gated.
-> - **Next:** `lookup.c` (2534, SID predicates — big), then M3 (database/policy/session — incl. the
->   lone DUMMY_PSEH fix + NtAuthority/WorldSidAuthority globals consumed by security.rs),
->   M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out + ×3 gate). Then samsrv S0–S4.
+> - **`lookup.c` STAGED, not integrated (`50987ef26d1`)** — translated ($0.17) + on disk, but
+>   commented out of `mod.rs` (crate stays green). 376 integration errors revealed it
+>   **bridges LSA→SAM**: calls `SamrConnect`/`SamrOpenDomain`/`SamrLookupNamesInDomain`, uses
+>   `SAMPR_*` types + `SAM_SERVER_*`/`DOMAIN_*` masks + `SamIFree_SAMPR_*`; plus database.c globals
+>   (`NtAuthority`/`BuiltinDomainSid`/`AccountDomainSid`/…), a *different* c2rust wine-debug shape
+>   (`ros_dbg_log`/`__WINE_DBCL_*`/`trace` macro — needs a new shim), and `'done` labeled-block
+>   artifacts.
+> - **⚠️ REORDERED next steps** (lookup.c's LSA→SAM coupling reshapes the plan):
+>   1. **lsasrv M3** — `database.c` (the cross-file globals lookup/security need + the lone
+>      DUMMY_PSEH fix at :833), `policy.c`, `session.c`.
+>   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM access
+>      masks (lookup.c needs these; bring them into the lsasrv substrate or a shared sam-sys).
+>   3. **wine-debug-internals shim** in prelude (`ros_dbg_log` no-op + `__WINE_DBCL_*` consts +
+>      `trace`/`warn`/`err` lowercase macros) — some c2rust output uses the expanded form.
+>   4. **Finish lookup.c** (un-comment in mod.rs, resolve the now-available SAM/db symbols + the
+>      `'done` labels), then M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out + ×3 gate).
 >
 > **⚠️ Link is the oracle for cross-file exports.** rustconv occasionally emits a cross-file C
 > function as a private Rust fn (no `#[no_mangle]`) → undefined-symbol at DLL link (e.g.
