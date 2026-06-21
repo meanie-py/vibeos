@@ -93,7 +93,7 @@ pub unsafe extern "system" fn PciVerifierRetrieveFailureData(
         if !(verifier_data < (end_ptr).cast()) {
             RtlAssert(
                 b"VerifierData < &PciVerifierFailureTable[PCI_VERIFIER_CODES]\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pcivrify.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/pcivrify.c\0".as_ptr() as PVOID,
                 70 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn PciVerifierProfileChangeCallback(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"PciVerifierProfileChangeCallback\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pcivrify.c\0" as *const u8
+        b"drivers/bus/pcix/pcivrify.c\0" as *const u8
             as *const i8,
         88i32,
     );

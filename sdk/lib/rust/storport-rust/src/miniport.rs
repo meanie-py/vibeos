@@ -432,7 +432,7 @@ pub unsafe extern "C" fn MiniportHwInitialize(mut Miniport: PMINIPORT) -> NTSTAT
 
     if DbgPrint(
         b"(%s:%d) MiniportHwInitialize(%p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/miniport.c\0"
+        b"drivers/storage/port/storport/miniport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         342 as ::core::ffi::c_int,
         Miniport,
@@ -440,7 +440,7 @@ pub unsafe extern "C" fn MiniportHwInitialize(mut Miniport: PMINIPORT) -> NTSTAT
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/miniport.c\0"
+            b"drivers/storage/port/storport/miniport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             342 as ::core::ffi::c_int,
         );
@@ -454,7 +454,7 @@ pub unsafe extern "C" fn MiniportHwInitialize(mut Miniport: PMINIPORT) -> NTSTAT
 
     if DbgPrint(
         b"(%s:%d) HwInitialize() returned %u\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/miniport.c\0"
+        b"drivers/storage/port/storport/miniport.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         346 as ::core::ffi::c_int,
         Result as ::core::ffi::c_int,
@@ -462,7 +462,7 @@ pub unsafe extern "C" fn MiniportHwInitialize(mut Miniport: PMINIPORT) -> NTSTAT
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/miniport.c\0"
+            b"drivers/storage/port/storport/miniport.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             346 as ::core::ffi::c_int,
         );

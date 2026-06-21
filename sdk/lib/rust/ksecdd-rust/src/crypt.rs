@@ -205,7 +205,7 @@ unsafe fn KsecGetKeyData(mut KeyData: *mut UCHAR, mut OptionFlags: ULONG) {
         if 0 == 0 {
             RtlAssert(
                 b"FALSE\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/crypt.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+                b"drivers/crypto/ksecdd/crypt.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
                 122 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );

@@ -563,7 +563,7 @@ pub unsafe extern "system" fn OpenDataFile(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/file/create.c\0"
+        b"dll/win32/kernel32/client/file/create.c\0"
             .as_ptr() as *const i8,
         555i32,
         b"OpenDataFile\0".as_ptr() as *const i8,
@@ -571,7 +571,7 @@ pub unsafe extern "system" fn OpenDataFile(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/file/create.c\0"
+            b"dll/win32/kernel32/client/file/create.c\0"
                 .as_ptr() as *const i8,
             555i32,
         );
@@ -589,7 +589,7 @@ pub unsafe extern "system" fn ReOpenFile(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/file/create.c\0"
+        b"dll/win32/kernel32/client/file/create.c\0"
             .as_ptr() as *const i8,
         569i32,
         b"ReOpenFile\0".as_ptr() as *const i8,
@@ -597,7 +597,7 @@ pub unsafe extern "system" fn ReOpenFile(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/file/create.c\0"
+            b"dll/win32/kernel32/client/file/create.c\0"
                 .as_ptr() as *const i8,
             569i32,
         );

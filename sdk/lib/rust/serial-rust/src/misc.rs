@@ -30,7 +30,7 @@ pub unsafe extern "system" fn ForwardIrpAndForget(
     if LowerDevice.is_null() {
         RtlAssert(
             b"LowerDevice\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/misc.c\0"
+            b"drivers/serial/serial/misc.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             23 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -75,7 +75,7 @@ pub unsafe extern "system" fn SerialReceiveByte(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_INFO_LEVEL,
             b"(%s:%d) Byte received on COM%lu: 0x%02x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/misc.c\0"
+            b"drivers/serial/serial/misc.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             51 as ::core::ffi::c_int,
             (*DeviceExtension).ComPort,
@@ -155,7 +155,7 @@ pub unsafe extern "system" fn SerialSendByte(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_INFO_LEVEL,
             b"(%s:%d) Byte sent to COM%lu: 0x%02x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/misc.c\0"
+            b"drivers/serial/serial/misc.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             92 as ::core::ffi::c_int,
             (*DeviceExtension).ComPort,

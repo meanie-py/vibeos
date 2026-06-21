@@ -48,7 +48,7 @@ pub unsafe extern "system" fn tranirq_Initializer(Instance: PVOID) -> NTSTATUS {
     if (true) {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
+            b"drivers/bus/pcix/arb/tr_irq.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
             39u32,
             b"PCI tranirq_Initializer, unexpected call.\n\0".as_ptr() as *const core::ffi::c_char as PSTR,
         );
@@ -69,7 +69,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
     if (*FdoExtension).ExtensionType != PciFdoExtensionType as ULONG {
         RtlAssert(
             b"\"(FdoExtension)->ExtensionType == PciFdoExtensionType\"\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0"
+            b"drivers/bus/pcix/arb/tr_irq.c\0"
                 .as_ptr()
                 as PVOID,
             55 as ULONG,
@@ -85,7 +85,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
         if DbgPrint(
             b"(%s:%d) PCI - IRQ trans constructor doesn't like %p in InterfaceSpecificData\n\0"
                 .as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0"
+            b"drivers/bus/pcix/arb/tr_irq.c\0"
                 .as_ptr()
                 as *const i8,
             66 as i32,
@@ -94,7 +94,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0"
+                b"drivers/bus/pcix/arb/tr_irq.c\0"
                     .as_ptr()
                     as *const i8,
                 66 as i32,
@@ -113,7 +113,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
         ParentInterface = Internal;
         if DbgPrint(
             b"(%s:%d)       Is root FDO\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0"
+            b"drivers/bus/pcix/arb/tr_irq.c\0"
                 .as_ptr()
                 as *const i8,
             80 as i32,
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/tr_irq.c\0"
+                b"drivers/bus/pcix/arb/tr_irq.c\0"
                     .as_ptr()
                     as *const i8,
                 80 as i32,

@@ -163,7 +163,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                 as PCSTR,
             240i32,
             b"SrbGetOriginalRequest(Pkt->Srb) == Pkt->Irp\0".as_ptr() as PCSTR,
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                 as PCSTR,
             241i32,
             b"SrbGetDataBuffer(Pkt->Srb) == Pkt->BufPtrCopy\0".as_ptr() as PCSTR,
@@ -185,7 +185,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     if !(SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) <= (*Pkt).BufLenCopy) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                 as PCSTR,
             242i32,
             b"SrbGetDataTransferLength(Pkt->Srb) <= Pkt->BufLenCopy\0".as_ptr() as PCSTR,
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     if (*(*Pkt).Irp).CancelRoutine.is_some() {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                 as PCSTR,
             243i32,
             b"!Pkt->Irp->CancelRoutine\0".as_ptr() as PCSTR,
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         if !(srb_status == (SRB_STATUS_INTERNAL_ERROR) as i32) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+                b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                     as PCSTR,
                 315i32,
                 b"SRB_STATUS(Pkt->Srb->SrbStatus) == SRB_STATUS_INTERNAL_ERROR\0".as_ptr()
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/debug.c\0".as_ptr()
+                b"drivers/storage/class/classpnp/debug.c\0".as_ptr()
                     as PCSTR,
                 316i32,
                 b"SrbGetSystemStatus(Pkt->Srb) == STATUS_INSUFFICIENT_RESOURCES\0".as_ptr()

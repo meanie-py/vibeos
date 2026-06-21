@@ -29,7 +29,7 @@ pub unsafe extern "system" fn ForwardIrpAndForget(
     if lower_device.is_null() {
         RtlAssert(
             b"LowerDevice\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/utils.c\0"
+            b"drivers/storage/partmgr/utils.c\0"
                 .as_ptr() as PVOID,
             12 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn IssueSyncIoControlRequest(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/utils.c\0"
+                b"drivers/storage/partmgr/utils.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 32 as ULONG,
                 core::ptr::null_mut::<CHAR>(),

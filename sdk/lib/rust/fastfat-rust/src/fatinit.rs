@@ -524,7 +524,7 @@ pub unsafe extern "system" fn FatGetCompatibilityModeValue(
         if !(Status != STATUS_BUFFER_OVERFLOW) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/fatinit.c\0"
+                b"drivers/filesystems/fastfat/fatinit.c\0"
                     .as_ptr() as *const u8,
                 553 as core::ffi::c_int,
                 b"Status != STATUS_BUFFER_OVERFLOW\0".as_ptr() as *const u8,

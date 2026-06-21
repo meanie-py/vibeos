@@ -102,13 +102,13 @@ pub unsafe extern "system" fn PciPassIrpFromFdoToPdo(
 
     if DbgPrint(
         b"(%s:%d) Pci PassIrp ...\n\0".as_ptr() as PCHAR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0".as_ptr() as PCHAR,
+        b"drivers/bus/pcix/dispatch.c\0".as_ptr() as PCHAR,
         75i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCHAR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0".as_ptr() as PCHAR,
+            b"drivers/bus/pcix/dispatch.c\0".as_ptr() as PCHAR,
             75i32,
         );
     }
@@ -145,14 +145,14 @@ pub unsafe extern "system" fn PciDispatchIrp(
 
     if DbgPrint(
         b"(%s:%d) PCI: Dispatch IRP\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0".as_ptr()
+        b"drivers/bus/pcix/dispatch.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         111 as ::core::ffi::c_int,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0".as_ptr()
+            b"drivers/bus/pcix/dispatch.c\0".as_ptr()
                 as *const ::core::ffi::c_char,
             111 as ::core::ffi::c_int,
         );
@@ -167,7 +167,7 @@ pub unsafe extern "system" fn PciDispatchIrp(
         RtlAssert(
             b"(DeviceExtension->ExtensionType == PciPdoExtensionType) || (DeviceExtension->ExtensionType == PciFdoExtensionType)\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0"
+            b"drivers/bus/pcix/dispatch.c\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
             117 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -251,7 +251,7 @@ pub unsafe extern "system" fn PciDispatchIrp(
                 if 0 as ::core::ffi::c_int == 0 {
                     RtlAssert(
                         b"FALSE\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/dispatch.c\0"
+                        b"drivers/bus/pcix/dispatch.c\0"
                             .as_ptr() as *const ::core::ffi::c_char as PVOID,
                         226 as ULONG,
                         core::ptr::null_mut::<CHAR>(),

@@ -94,7 +94,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
     // DPRINT1 macro expansion
     if DbgPrint(
         b"(%s:%d) PCI Request to begin transition of Extension %p to %s ->\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+        b"drivers/bus/pcix/pci/state.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         104 as ::core::ffi::c_int,
         DeviceExtension,
@@ -103,7 +103,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char,
             104 as ::core::ffi::c_int,
         );
@@ -114,7 +114,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         RtlAssert(
             b"DeviceExtension->TentativeNextState == DeviceExtension->DeviceState\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             107 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -127,7 +127,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
     if !((CurrentState as u32) < (PciMaxObjectState as u32)) {
         RtlAssert(
             b"CurrentState < PciMaxObjectState\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             111 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -138,7 +138,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
     if !((NewState as u32) < (PciMaxObjectState as u32)) {
         RtlAssert(
             b"NewState < PciMaxObjectState\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             112 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         if DbgPrint(
             b"(%s:%d) ERROR\nPCI: Error trying to enter state \"%s\" from state \"%s\"\n\0"
                 .as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char,
             122 as ::core::ffi::c_int,
             PciTransitionText[NewState as usize],
@@ -163,7 +163,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+                b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                     as *const ::core::ffi::c_char,
                 122 as ::core::ffi::c_int,
             );
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         if DbgPrint(
             b"(%s:%d) ERROR\nPCI: Illegal request to try to enter state \"%s\" from state \"%s\", rejecting\0"
                 .as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char,
             131 as ::core::ffi::c_int,
             PciTransitionText[NewState as usize],
@@ -183,7 +183,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+                b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                     as *const ::core::ffi::c_char,
                 131 as ::core::ffi::c_int,
             );
@@ -197,7 +197,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
         RtlAssert(
             b"(NewState != DeviceExtension->DeviceState) || (!NT_SUCCESS(Status))\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             135 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
     if DbgPrint(
         b"(%s:%d) PCI Request to cancel transition of Extension %p to %s ->\0" as *const u8
             as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+        b"drivers/bus/pcix/pci/state.c\0" as *const u8
             as *const i8,
         151i32,
         DeviceExtension,
@@ -232,7 +232,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+            b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const i8,
             151i32,
         );
@@ -241,7 +241,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
         if !((StateNotEntered as u32) < PciMaxObjectState as u32) {
             RtlAssert(
                 b"StateNotEntered < PciMaxObjectState\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0"
+                b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 157u32,
                 core::ptr::null_mut::<i8>(),
@@ -251,7 +251,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
             RtlAssert(
                 b"PnpStateCancelArray[StateNotEntered] != STATUS_FAIL_CHECK\0" as *const u8
                     as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0"
+                b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 158u32,
                 core::ptr::null_mut::<i8>(),
@@ -264,7 +264,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
             RtlAssert(
                 b"DeviceExtension->TentativeNextState == StateNotEntered\0" as *const u8
                     as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0"
+                b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 167u32,
                 core::ptr::null_mut::<i8>(),
@@ -283,7 +283,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
 ) {
     if DbgPrint(
         b"(%s:%d) PCI Commit transition of Extension %p to %s\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+        b"drivers/bus/pcix/pci/state.c\0" as *const u8
             as *const core::ffi::c_char,
         185 as i32,
         DeviceExtension as *mut core::ffi::c_void,
@@ -292,7 +292,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+            b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const core::ffi::c_char,
             185 as i32,
         );
@@ -301,7 +301,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
         RtlAssert(
             b"NewState != PciSynchronizedOperation\0" as *const u8 as *const core::ffi::c_char
                 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+            b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const core::ffi::c_char as PVOID,
             188 as ULONG,
             core::ptr::null_mut::<core::ffi::c_char>(),
@@ -311,7 +311,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
         RtlAssert(
             b"DeviceExtension->TentativeNextState == NewState\0" as *const u8
                 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/state.c\0" as *const u8
+            b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const core::ffi::c_char as PVOID,
             189 as ULONG,
             core::ptr::null_mut::<core::ffi::c_char>(),

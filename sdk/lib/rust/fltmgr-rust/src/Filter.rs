@@ -445,7 +445,7 @@ pub unsafe extern "system" fn FltGetFilterFromName(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"FltGetFilterFromName\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Filter.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/filters/fltmgr/Filter.c\0".as_ptr() as *const ::core::ffi::c_char,
         406 as ::core::ffi::c_int,
     );
     let _ = FilterName;
@@ -464,7 +464,7 @@ pub unsafe extern "C" fn FltpAttachFrame(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"FltpAttachFrame\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Filter.c\0"
+        b"drivers/filters/fltmgr/Filter.c\0"
             .as_ptr() as *const i8,
         443 as i32,
     );
@@ -691,7 +691,7 @@ unsafe fn GetFilterFrame(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"GetFilterFrame\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Filter.c\0"
+        b"drivers/filters/fltmgr/Filter.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         588 as ::core::ffi::c_int,
     );

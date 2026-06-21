@@ -123,7 +123,7 @@ pub unsafe extern "C" fn DiskSaveDetectInfo(
         if 0i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 195i32,
                 b"0\0".as_ptr() as *const i8,
@@ -260,7 +260,7 @@ pub unsafe extern "system" fn DiskSaveGeometryDetectInfo(
         if 0i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     as *const u8 as *const i8,
                 322i32,
                 b"0\0" as *const u8 as *const i8,
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn DiskSaveBusDetectInfo(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 642i32,
                 b"0\0".as_ptr() as *const i8,
@@ -716,7 +716,7 @@ pub unsafe extern "system" fn DiskSaveBusDetectInfo(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 654i32,
                 b"FALSE\0".as_ptr() as *const i8,
@@ -897,7 +897,7 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
         if 0 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 809i32,
                 b"0\0".as_ptr() as *const i8,
@@ -910,7 +910,7 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
     if !((*(*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject).Characteristics as u32 & FILE_REMOVABLE_MEDIA == 0) {
         DbgPrint(
             (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
-            b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+            b"drivers/storage/class/disk/geometry.c\0"
                 .as_ptr() as *const i8,
             812i32,
             b"(FdoExtension->DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA) == 0\0"
@@ -930,7 +930,7 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
         if unsafe { DetectInfoList.is_null() } {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 830i32,
                 b"DetectInfoList != NULL\0".as_ptr() as *const i8,
@@ -1043,7 +1043,7 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
                         if !b"!\"BytesPerSector is still zero!\"\0".as_ptr().is_null() {
                             DbgPrint(
                                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
-                                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                                b"drivers/storage/class/disk/geometry.c\0"
                                     .as_ptr() as *const i8,
                                 949i32,
                                 b"!\"BytesPerSector is still zero!\"\0".as_ptr() as *const i8,
@@ -1080,7 +1080,7 @@ pub unsafe extern "system" fn DiskUpdateRemovableGeometry(
         if 0i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 1004i32,
                 b"0\0".as_ptr() as *const i8,
@@ -1099,7 +1099,7 @@ pub unsafe extern "system" fn DiskUpdateRemovableGeometry(
         if (*(*FdoExtension).DeviceDescriptor).RemovableMedia == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     .as_ptr() as *const i8,
                 1007i32,
                 b"FdoExtension->DeviceDescriptor->RemovableMedia\0".as_ptr() as *const i8,
@@ -1112,7 +1112,7 @@ pub unsafe extern "system" fn DiskUpdateRemovableGeometry(
     if ((*(*FdoExtension).LowerPdo).Characteristics as u32 & 0x1u32) == 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+            b"drivers/storage/class/disk/geometry.c\0"
                 .as_ptr() as *const i8,
             1010i32,
             b"TEST_FLAG(FdoExtension->DeviceObject->Characteristics, FILE_REMOVABLE_MEDIA)\0".as_ptr() as *const i8,
@@ -1220,7 +1220,7 @@ pub unsafe extern "C" fn DiskIsNT4Geometry(
         if 0 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     as *const u8 as *const u8,
                 1143 as i32,
                 b"0\0" as *const u8 as *const u8,
@@ -1416,7 +1416,7 @@ pub unsafe extern "C" fn DiskDriverReinitialization(
                         // NT_ASSERT(unmatchedDisk != NULL)
                         DbgPrint(
                             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                            b"drivers/storage/class/disk/geometry.c\0"
                                 .as_ptr() as *const i8,
                             1407i32,
                             b"unmatchedDisk != NULL\0".as_ptr() as *const i8,
@@ -1530,7 +1530,7 @@ pub unsafe extern "C" fn DiskDriverReinitialization(
             if !(b"RealGeometry not set to non-zero bps\n\0".as_ptr() as *const i8).is_null() {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                    b"drivers/storage/class/disk/geometry.c\0"
                         .as_ptr() as *const i8,
                     1526i32,
                     b"!\"RealGeometry not set to non-zero bps\n\"\0".as_ptr() as *const i8,
@@ -1567,7 +1567,7 @@ pub unsafe extern "C" fn DiskGetDetectInfo(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0".as_ptr()
+                b"drivers/storage/class/disk/geometry.c\0".as_ptr()
                     as *const i8,
                 1563i32,
                 b"0\0".as_ptr() as *const i8,
@@ -1592,7 +1592,7 @@ pub unsafe extern "C" fn DiskGetDetectInfo(
         if DetectInfoList.is_null() {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0".as_ptr()
+                b"drivers/storage/class/disk/geometry.c\0".as_ptr()
                     as *const i8,
                 1584i32,
                 b"DetectInfoList != NULL\0".as_ptr() as *const i8,
@@ -1680,7 +1680,7 @@ pub unsafe extern "C" fn DiskReadSignature(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     as *const u8 as *const i8,
                 1650i32,
                 b"0\0" as *const u8 as *const i8,
@@ -1710,7 +1710,7 @@ pub unsafe extern "C" fn DiskReadSignature(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/geometry.c\0"
+                b"drivers/storage/class/disk/geometry.c\0"
                     as *const u8 as *const i8,
                 1668i32,
                 b"FALSE\0" as *const u8 as *const i8,

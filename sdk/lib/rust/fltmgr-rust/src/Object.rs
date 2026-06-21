@@ -109,7 +109,7 @@ pub unsafe extern "system" fn FltClose(mut FileHandle: HANDLE) -> NTSTATUS {
         if 0 as core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Object.c\0"
+                b"drivers/filters/fltmgr/Object.c\0"
                     as *const u8 as *const core::ffi::c_char as PVOID,
                 142 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn FltCreateFileEx(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char,
         b"FltCreateFileEx\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Object.c\0"
+        b"drivers/filters/fltmgr/Object.c\0"
             .as_ptr() as *const ::core::ffi::c_char,
         167 as ::core::ffi::c_int,
     );
@@ -299,7 +299,7 @@ pub unsafe extern "C" fn FltpObjectPointerDereference(mut Object: PFLT_OBJECT) {
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Object.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/filters/fltmgr/Object.c\0".as_ptr() as *const i8 as PVOID,
                 340 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
