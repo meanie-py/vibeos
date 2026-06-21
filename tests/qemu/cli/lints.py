@@ -298,6 +298,37 @@ def run_cargo_link_guard(run: Run, repo: Path, arch: str | None = None) -> None:
             _one_cargo_link(run, repo, rust_ws, label, crate, binname, arch, floor)
 
 
+def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> None:
+    """Guard the cmake-off committed fallbacks (ks*.inc / cflags / .res / widl
+    `.rs`) against silent staleness.
+
+    Those artifacts are committed so a cargo build needs no cmake, but they are
+    NOT regenerated on a normal build — so an upstream change (a `.template.h`,
+    `.rc`, `.spec`/`.idl`, or cmake flags) silently staleens the committed copy
+    while the configured cmake build stays green (it uses the fresh copy). Only a
+    cmake-off build would then diverge. `tools/check_committed_drift.py`
+    regenerates each from the configured `build-<arch>/` and byte-compares; this
+    stage surfaces a DRIFT as a gate failure. Self-skips per artifact when the
+    build dir / inputs are absent (so it never blocks a tree without builds)."""
+    checker = repo / "tools" / "check_committed_drift.py"
+    if not checker.is_file():
+        run.add(Stage("committed_drift", status="skip", detail="checker absent"))
+        return
+    cmd = [sys.executable, str(checker)]
+    if arch:
+        cmd += ["--arch", arch]
+    cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+    tail = (cp.stdout or "").strip().splitlines()
+    summary = next((ln.strip() for ln in reversed(tail) if " OK," in ln), "")
+    if cp.returncode == 0:
+        if "0 OK," in summary and "skipped" in summary:
+            run.add(Stage("committed_drift", status="skip", detail="no build dir"))
+        else:
+            run.add(Stage("committed_drift", exit=0, status="ok", detail=summary or "no drift"))
+        return
+    run.add(Stage("committed_drift", exit=cp.returncode, status="fail", detail=summary or "DRIFT"))
+
+
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`). scan_ud2 + sacred primitives."""
     py = sys.executable

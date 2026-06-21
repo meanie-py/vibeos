@@ -158,6 +158,13 @@ regen + makes arm64 self-generating. Do later if regen-drift bites. A CI diff-ch
 
 ### WS3 — Host tools (spec2def / dlltool / windres / widl) — **kernel-critical DONE; usermode .res fallback added (2026-06-21)**
 
+> **Full host-tool inventory + self-hosting plan:** see
+> [build-tools-self-hosting.md](build-tools-self-hosting.md) — every tool cmake
+> produces with, its cmake-off status (self-hosted / committed-fallback /
+> toolchain / external), and the prioritized plan to self-host the rest
+> (gendib → geninc → windmc → widl). The committed fallbacks are kept honest by
+> `tools/check_committed_drift.py` (`vibeos-cli check --strict`).
+
 **Status:**
 - **`spec2def` — DONE (already self-hosted).** `reactos-link::generate_def` runs
   `compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def")`, which cc-compiles
