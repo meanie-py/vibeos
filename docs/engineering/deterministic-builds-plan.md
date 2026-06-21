@@ -9,14 +9,50 @@ our accumulated Rust/C best-practice notes. Split out of `build-cache-and-determ
 > per-file gotchas. Exhaustive is fine (it's pull-context, zero standing cost). Keep the
 > *push* channel (AGENTS.md/MEMORY.md) free of this.
 
-## Why determinism (three payoffs, ranked by our priorities)
+## ⚠️ Strategy pivot (2026-06-21): determinism is NOT the disk lever — cache-sharing is
 
-1. **Disk — the cross-worktree dedup multiplier (priority #1).** Measured 2026-06-20:
-   hardlink-dedup across 5 `build-i386` trees saved only **3.94 G / ~13 %**, because
+The original priority-#1 framing below ("determinism unlocks cross-worktree dedup from 13 %
+→ ~90 %") was **measured and disproven**. A post-fix dedup-yield measurement of a real
+`build-i386` (7.58 GB, all determinism fixes active — timestamps zeroed, C/Rust/cc-rs paths
+remapped, the 1307-path `__FILE__` sweep landed) found:
+
+| category | size | dedup-able cross-worktree? |
+|---|---|---|
+| determinism-clean **outputs** (`.a` 0.55, `.obj` 0.33, `.dll` 0.27, `.sys`/`.exe`/`.res`) | **1.28 GB (17 %)** | ✅ yes — determinism delivered this |
+| precompiled headers (`.pch`, 302 of them, one per module) | 2.56 GB | ❌ regenerable cache, path/env-bound |
+| cargo intermediate (`.rlib` 1.52 + `.rmeta` 1.51) | 3.03 GB | ❌ regenerable cache, path-bound |
+| `livecd.iso` (packages cross-worktree/stale binaries) | 0.43 GB | ❌ staging artifact |
+| ninja/json/scaffolding | ~0.1 GB | ❌ inherently abs-path |
+
+**Dedup yield 13 % → ~17 %.** The modest bump is because **~74 % of a build tree is regenerable
+build cache** (clang PCH — 302 per-module ASTs of the huge Win32/DDK header closure — plus cargo
+`rlib`/`rmeta`), which is inherently path/environment-bound and that determinism cannot make
+byte-identical. Determinism made the *outputs* dedup-able (the 1.28 GB), which is real but small.
+
+**Pivot: the per-worktree disk win is cache *sharing*, not hardlink-dedup of clean outputs.**
+A shared `CARGO_TARGET_DIR` collapses the ~3 GB of `rlib`/`rmeta` to one copy across all
+worktrees; shared ccache/PCH handling collapses the 2.56 GB of headers. That is the
+`build-cache-and-determinism-plan.md` disk lane's actual lever (task #39) and it dwarfs the
+~17 % dedup ceiling. **Determinism's real, retained value is therefore NOT disk** — it's
+payoffs #2 and #3 below (anti-stale de-risk + reproducibility), plus it makes a shared cache
+*safe* (identical inputs → identical, collision-free cache entries). The anti-stale value
+already paid off concretely: the genuinely-cold `--clean` (rung #41) unmasked two real arm64
+bugs (PTE-cache alignment + stale-fastfat) that warm builds had hidden all session → arm64 now
+cold-boots green in ~38 s.
+
+The original payoff list is kept below for history; read it through the pivot above.
+
+## Why determinism (three payoffs — ORIGINAL framing; see pivot above)
+
+1. **Disk — the cross-worktree dedup multiplier (priority #1 — DISPROVEN, see pivot).** Measured
+   2026-06-20: hardlink-dedup across 5 `build-i386` trees saved only **3.94 G / ~13 %**, because
    "identical" binaries aren't byte-identical — they embed the worktree's absolute path
    (debug info, `__FILE__`) and a PE build timestamp. Strip those and the dedup ceiling rises
-   from ~13 % toward the ~90 %-actually-unchanged reality. Determinism is the lever that makes
-   the disk plan's dedup real. (See `build-cache-and-determinism-plan.md` → Disk-first reframing.)
+   from ~13 % toward the ~90 %-actually-unchanged reality. ~~Determinism is the lever that makes
+   the disk plan's dedup real.~~ **Corrected 2026-06-21:** measured post-fix yield is ~17 %, not
+   ~90 % — the bulk of a tree is regenerable cache, so cache-SHARING (shared `CARGO_TARGET_DIR` +
+   ccache/PCH), not determinism dedup, is the disk lever. (See `build-cache-and-determinism-plan.md`
+   → Disk-first reframing.)
 2. **De-risk the non-standard ntoskrnl/win32k build (priority #2).** The cargo-driven kernel
    link doesn't go through the normal cmake DAG (field-manual §9.6b: `ninja livecd` doesn't
    relink the cargo kernel on a `.rs` edit), which is a perennial "did the right thing
