@@ -779,3 +779,21 @@ def test_backend_stage_media_paths_passthrough():
     # args without a file= token are returned unchanged (staging only touches file= paths)
     args = ["-M", "pc", "-vga", "std", "-display", "none", "-no-reboot"]
     assert be_mod.stage_media_paths(args, Path("/mnt/c/temp/vibeos-qemu")) == args
+
+
+def test_backend_rewrite_netdev_for_windows():
+    # the real amd64-uefi-net netdev: hostfwd 127.0.0.1 -> 0.0.0.0, guestfwd cmd:cat -> chardev
+    args = [
+        "-device",
+        "virtio-net-pci,netdev=net0",
+        "-netdev",
+        "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777,guestfwd=tcp:10.0.2.100:9999-cmd:cat",
+    ]
+    out, needs_echo = be_mod.rewrite_netdev_for_windows(args, "gf0")
+    assert needs_echo is True
+    assert "hostfwd=tcp:0.0.0.0:54321-:7777" in out[-1]
+    assert "guestfwd=tcp:10.0.2.100:9999-chardev:gf0" in out[-1]
+    assert "cmd:cat" not in out[-1]
+    # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
+    plain = ["-M", "pc", "-accel", "tcg"]
+    assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)

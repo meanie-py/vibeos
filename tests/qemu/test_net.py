@@ -130,8 +130,10 @@ def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
     _require_net_config(vm)
     assert MARK_ECHO_READY in vm._boot_output, "guest never announced the echo listener"
     payload = b"vibeos-netstack-echo-probe\n"
+    # net_host is 127.0.0.1 on native; on the windows-host backend it's the WSL
+    # default-gateway IP (the Windows QEMU's 0.0.0.0 hostfwd isn't on WSL's loopback).
     with socket.create_connection(
-        ("127.0.0.1", vm.config.echo_hostfwd_port), timeout=10.0
+        (vm.net_host, vm.config.echo_hostfwd_port), timeout=10.0
     ) as s:
         s.settimeout(10.0)
         s.sendall(payload)

@@ -87,6 +87,48 @@ def stage_media_paths(args: list[str], staging: Path) -> list[str]:
     return out
 
 
+def gateway_ip() -> str:
+    """WSL's default-gateway IP = the Windows host as seen from WSL. A Windows-side
+    service bound to `0.0.0.0` (e.g. a slirp hostfwd on the Windows QEMU) is reachable
+    from WSL via THIS address, NOT `127.0.0.1` — WSL's loopback is the WSL VM's own,
+    separate from the Windows host's. Mirror of the inbound rule (where the WSL listener
+    must bind `0.0.0.0` for the Windows QEMU to dial it back)."""
+    out = subprocess.run(
+        ["ip", "route", "show", "default"], capture_output=True, text=True, check=True
+    ).stdout
+    m = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", out)
+    if not m:
+        raise RuntimeError(f"could not parse WSL default gateway from {out!r}")
+    return m.group(1)
+
+
+def rewrite_netdev_for_windows(args: list[str], chardev_id: str) -> tuple[list[str], bool]:
+    """Adapt the slirp `-netdev user,...` for the windows-host boundary. Two rewrites,
+    mirror images of each other:
+
+    - **hostfwd** (host->guest, the test dials in): `127.0.0.1` -> `0.0.0.0`. A
+      127.0.0.1 hostfwd binds only the Windows loopback, invisible from WSL; bound to
+      the wildcard it's reachable via `gateway_ip()` (what `QemuVM.net_host` returns).
+    - **guestfwd** (guest->host echo): `-cmd:cat` runs a *Unix* program on the QEMU host
+      — which here is Windows (no `cat`). Redirect it to `-chardev:<id>`; the caller wires
+      that chardev to a harness-run echo server. Returns (new_args, needs_echo) where
+      needs_echo signals the caller to start the echo server + add the chardev arg.
+
+    No-op on a netdev without hostfwd/guestfwd; native never calls this (native keeps
+    `127.0.0.1` + `cmd:cat` unchanged)."""
+    out: list[str] = []
+    needs_echo = False
+    for a in args:
+        if a.startswith("user,") and ("hostfwd=" in a or "guestfwd=" in a):
+            a = a.replace("hostfwd=tcp:127.0.0.1:", "hostfwd=tcp:0.0.0.0:")
+            new_a = re.sub(r"(guestfwd=tcp:[\d.]+:\d+)-cmd:cat", rf"\1-chardev:{chardev_id}", a)
+            if new_a != a:
+                needs_echo = True
+            a = new_a
+        out.append(a)
+    return out, needs_echo
+
+
 def kill_by_uid(uid: str) -> None:
     """Kill the Windows QEMU process(es) whose command line carries our unique `-name <uid>`
     tag — precise, so a concurrent agent's QEMU is never touched. Best-effort."""

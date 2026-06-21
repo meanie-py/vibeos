@@ -9,6 +9,7 @@ import os
 import shutil
 import signal
 import socket
+import socketserver
 import subprocess
 import tempfile
 import threading
@@ -473,6 +474,28 @@ class Amd64UefiConfig(Amd64Config):
         ]
 
 
+def _start_echo_server() -> socketserver.BaseServer:
+    """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs the slirp
+    guestfwd on the windows-host backend: the guest's outbound connection (guest ->
+    virtio TX -> slirp guestfwd -> chardev -> here) gets its bytes echoed straight back,
+    replacing the `-cmd:cat` line echo that can't run on the Windows QEMU host. Bound to
+    the wildcard so the Windows QEMU's chardev reaches it via WSL2 localhost forwarding.
+    Daemon threads — never blocks interpreter exit; caller shuts it down in stop()."""
+
+    class _Echo(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            while True:
+                data = self.request.recv(4096)
+                if not data:
+                    return
+                self.request.sendall(data)
+
+    srv = socketserver.ThreadingTCPServer(("0.0.0.0", 0), _Echo)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
 def _free_tcp_port() -> int:
     """Pick a currently-free localhost TCP port for a slirp hostfwd rule.
 
@@ -654,6 +677,21 @@ class QemuVM:
         self._slot_fd: int | None = None
         self._slot_index: int | None = None
         self._arch_slot_fd: int | None = None  # per-arch sub-cap lock (KVM arches)
+        # windows-host only: harness echo server backing the slirp guestfwd when
+        # `-cmd:cat` can't run (Windows host has no `cat`). None on native / non-net.
+        self._echo_server: socketserver.BaseServer | None = None
+
+    @property
+    def net_host(self) -> str:
+        """Host address a TEST should dial to reach a slirp `hostfwd`. Native: loopback.
+        windows-host: the WSL default-gateway IP — a Windows-side `0.0.0.0` hostfwd is
+        reachable from WSL only via the gateway, not `127.0.0.1` (WSL's loopback is the
+        WSL VM's own). See backend.gateway_ip / rewrite_netdev_for_windows."""
+        if self._backend == "windows-host":
+            from . import backend as be
+
+            return be.gateway_ip()
+        return "127.0.0.1"
 
     def _scratch_device_args(self) -> list[str]:
         """Scratch disk + (non-i386) its virtio device. i386: bare if=none (FreeLDR
@@ -752,6 +790,21 @@ class QemuVM:
         arch_args = be.rewrite_accel(
             be.stage_media_paths(self.config.qemu_args(self.work_dir), staging), accel
         )
+        # Net config (amd64-uefi-net): adapt the slirp fwds across the WSL<->Windows
+        # boundary — hostfwd binds 0.0.0.0 (dialed via the gateway IP, see net_host) and
+        # the `-cmd:cat` guestfwd echo is redirected to a chardev backed by a harness echo
+        # server (Windows has no `cat`). No-op for non-net configs.
+        chardev_id = "gf0"
+        arch_args, needs_echo = be.rewrite_netdev_for_windows(arch_args, chardev_id)
+        echo_chardev: list[str] = []
+        if needs_echo:
+            self._echo_server = _start_echo_server()
+            echo_port = self._echo_server.server_address[1]
+            echo_chardev = [
+                "-chardev",
+                f"socket,id={chardev_id},host={host},port={echo_port},"
+                "server=off,reconnect-ms=1000",
+            ]
         return [
             win_bin,
             "-name",
@@ -771,6 +824,7 @@ class QemuVM:
             "none",
             "-debugcon",
             f"file:{be.win_path(self.debugcon_path)}",
+            *echo_chardev,
             *arch_args,
         ]
 
@@ -1082,6 +1136,12 @@ class QemuVM:
             self._watchdog = None
         self.serial.close()
         self.qmp.close()
+
+        # Tear down the guestfwd echo server (windows-host net config only).
+        if self._echo_server is not None:
+            self._echo_server.shutdown()
+            self._echo_server.server_close()
+            self._echo_server = None
 
         # windows-host: the Windows QEMU.exe runs behind WSL interop, so the Linux
         # pgroup kill below won't reach it — kill it precisely by our unique -name tag.

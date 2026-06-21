@@ -210,10 +210,12 @@ round-trips over the TCP transport. The backend choice is read wherever a `QemuV
 constructed — the cli smoke path *and* every pytest path (the folded net stage,
 `test_snapshot_apps`, a direct `test_smoke`) via `conftest.py`. The KVM-only idle-cpu gate
 (`test_idle_cpu_not_spinning`) skips on windows-host (TCG, and `_proc.pid` is the WSL interop
-shim — same reason it skips arm64). **Caveat:** the net suite's slirp `hostfwd` isn't yet
-adapted to windows-host — WSL→Windows reaches the QEMU only via the WSL default-gateway IP
-(`ip route show default`), not `127.0.0.1` (the mirror of the inbound `0.0.0.0` rule), so a
-windows-host user gets boot smoke but the folded net stage still needs native KVM for now.
+shim — same reason it skips arm64). The **net suite also runs on windows-host** (`test_net.py`
+11/11 validated): the slirp `hostfwd` binds `0.0.0.0` Windows-side and tests dial `vm.net_host`
+(the WSL default-gateway IP, not `127.0.0.1` — WSL's loopback is its own VM's), and the
+`guestfwd ...-cmd:cat` outbound echo (no `cat` on Windows) is redirected to a harness-run echo
+server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke — boot North Star
+*and* the folded netstack suite.
 
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
