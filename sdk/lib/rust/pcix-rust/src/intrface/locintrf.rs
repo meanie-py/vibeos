@@ -49,7 +49,7 @@ pub unsafe extern "system" fn locintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"locintrf_Constructor\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/locintrf.c\0".as_ptr()
+        b"drivers/bus/pcix/intrface/locintrf.c\0".as_ptr()
             as *const core::ffi::c_char,
         60 as core::ffi::c_int,
     );

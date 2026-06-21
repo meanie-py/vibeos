@@ -93,7 +93,7 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
         if !(TextLength as usize > core::mem::size_of::<WCHAR>()) {
             RtlAssert(
                 b"TextLength > sizeof(WCHAR)\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
+                b"drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
                 52u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -104,7 +104,7 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
         {
             RtlAssert(
                 b"Description[(TextLength / sizeof(WCHAR)) - 1] == L'\\n'\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
+                b"drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
                 53u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn PciIdPrintf(mut IdBuffer: PPCI_ID_BUFFER, Format: PCCH,
     if !((*IdBuffer).Count < 0x8u32) {
         RtlAssert(
             b"IdBuffer->Count < MAX_ANSI_STRINGS\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
+            b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             130u32,
             ::core::ptr::null_mut::<::core::ffi::c_char>(),
         );
@@ -268,7 +268,7 @@ pub unsafe extern "C" fn PciIdPrintfAppend(
     if (*IdBuffer).Count == 0 {
         RtlAssert(
             b"IdBuffer->Count\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/id.c\0".as_ptr()
                 as *const i8 as PVOID,
             167,
             core::ptr::null_mut::<i8>(),
@@ -288,7 +288,7 @@ pub unsafe extern "C" fn PciIdPrintfAppend(
     if !(Length < MaxLength) {
         RtlAssert(
             b"Length < MaxLength\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/id.c\0".as_ptr()
                 as *const i8 as PVOID,
             179,
             core::ptr::null_mut::<i8>(),
@@ -394,7 +394,7 @@ pub unsafe extern "system" fn PciQueryId(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
                 214 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -535,7 +535,7 @@ pub unsafe extern "system" fn PciQueryId(
     if !(IdBuffer.Count > 0) {
         RtlAssert(
             b"IdBuffer.Count > 0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
             359 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -562,7 +562,7 @@ pub unsafe extern "system" fn PciQueryId(
         if !(Status >= 0) {
             RtlAssert(
                 b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
                 379 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );

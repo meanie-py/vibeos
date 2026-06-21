@@ -213,7 +213,7 @@ pub unsafe extern "system" fn BasepLocateExeLdrEntry(
     if Entry.is_null() {
         RtlAssert(
             b"Entry\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
+            b"dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
             161u32,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -222,7 +222,7 @@ pub unsafe extern "system" fn BasepLocateExeLdrEntry(
     if Context.is_null() {
         RtlAssert(
             b"Context\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
+            b"dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
             162u32,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn BasepLocateExeLdrEntry(
     if StopEnumeration.is_null() {
         RtlAssert(
             b"StopEnumeration\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
+            b"dll/win32/kernel32/client/utils.c\0".as_ptr() as PVOID,
             163u32,
             core::ptr::null_mut::<CHAR>(),
         );

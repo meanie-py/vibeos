@@ -769,7 +769,7 @@ pub unsafe extern "C" fn PciIdeXStartMiniport(mut FdoExtension: PFDO_DEVICE_EXTE
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/miniport.c\0"
+                b"drivers/storage/ide/pciidex/miniport.c\0"
                     as *const u8 as *const i8 as PVOID,
                 24 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -789,7 +789,7 @@ pub unsafe extern "C" fn PciIdeXStartMiniport(mut FdoExtension: PFDO_DEVICE_EXTE
     if DriverExtension.is_null() {
         RtlAssert(
             b"DriverExtension\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/miniport.c\0"
+            b"drivers/storage/ide/pciidex/miniport.c\0"
                 as *const u8 as *const i8 as PVOID,
             33 as ULONG,
             core::ptr::null_mut::<i8>(),
@@ -826,7 +826,7 @@ pub unsafe extern "C" fn PciIdeXChannelState(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-ide/drivers/storage/ide/pciidex/miniport.c\0"
+                b"drivers/storage/ide/pciidex/miniport.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 54 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),

@@ -54,7 +54,7 @@ pub unsafe extern "system" fn FsRecIsUdfsVolume(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/udfs.c\0"
+                b"drivers/filesystems/fs_rec/udfs.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 30u32,
                 core::ptr::null_mut::<i8>(),
@@ -144,7 +144,7 @@ pub unsafe extern "system" fn FsRecUdfsFsControl(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/udfs.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/filesystems/fs_rec/udfs.c\0".as_ptr() as *const i8 as PVOID,
                 113 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );

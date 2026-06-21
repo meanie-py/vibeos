@@ -54,7 +54,7 @@ pub unsafe extern "system" fn busintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"busintrf_Constructor\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/busintrf.c\0"
+        b"drivers/bus/pcix/intrface/busintrf.c\0"
             .as_ptr() as *const core::ffi::c_char,
         60i32,
     );

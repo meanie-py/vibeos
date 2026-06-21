@@ -63,7 +63,7 @@ unsafe fn GetDeviceId(
         if (0 as i32) == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0"
+                b"drivers/processor/processr/pnp.c\0"
                     .as_ptr() as *const i8,
                 33,
                 core::ptr::null_mut(),
@@ -174,14 +174,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
     if !(Status >= 0) {
         if DbgPrint(
             b"(%s:%d) ZwOpenKey() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+            b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
             122 as i32,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                 122 as i32,
             );
         }
@@ -209,14 +209,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
     {
         if DbgPrint(
             b"(%s:%d) ZwQueryValueKey() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+            b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
             136 as i32,
             Status,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                 136 as i32,
             );
         }
@@ -228,13 +228,13 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
         if Buffer.is_null() {
             if DbgPrint(
                 b"(%s:%d) ExAllocatePool() failed\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                 144 as i32,
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                    b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                     144 as i32,
                 );
             }
@@ -250,14 +250,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
             if !(Status >= 0) {
                 if DbgPrint(
                     b"(%s:%d) ZwQueryValueKey() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                    b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                     156 as i32,
                     Status,
                 ) != 0
                 {
                     DbgPrint(
                         b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                        b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                         156 as i32,
                     );
                 }
@@ -269,14 +269,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
                 if !(Status >= 0) {
                     if DbgPrint(
                         b"(%s:%d) GetDeviceId() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                        b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                         170 as i32,
                         Status,
                     ) != 0
                     {
                         DbgPrint(
                             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                            b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                             170 as i32,
                         );
                     }
@@ -285,14 +285,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
                     if !(Status >= 0) {
                         if DbgPrint(
                             b"(%s:%d) GetDeviceId() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                            b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                             181 as i32,
                             Status,
                         ) != 0
                         {
                             DbgPrint(
                                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                 181 as i32,
                             );
                         }
@@ -310,13 +310,13 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
                         if KeyNameBuffer.is_null() {
                             if DbgPrint(
                                 b"(%s:%d) ExAllocatePool() failed\n\0".as_ptr() as *const i8,
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                 192 as i32,
                             ) != 0
                             {
                                 DbgPrint(
                                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                                    b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                    b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                     192 as i32,
                                 );
                             }
@@ -349,14 +349,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
                             if !(Status >= 0) {
                                 if DbgPrint(
                                     b"(%s:%d) ZwOpenKey() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-                                    b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                    b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                     209 as i32,
                                     Status,
                                 ) != 0
                                 {
                                     DbgPrint(
                                         b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                                        b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                        b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                         209 as i32,
                                     );
                                 }
@@ -378,14 +378,14 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
                                 if !(Status >= 0) {
                                     if DbgPrint(
                                         b"(%s:%d) ZwSetValueKey() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
-                                        b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                        b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                         223 as i32,
                                         Status,
                                     ) != 0
                                     {
                                         DbgPrint(
                                             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                                            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
+                                            b"drivers/processor/processr/pnp.c\0".as_ptr() as *const i8,
                                             223 as i32,
                                         );
                                     }
@@ -505,7 +505,7 @@ pub unsafe extern "system" fn ProcessorAddDevice(
     if DriverObject.is_null() {
         RtlAssert(
             b"DriverObject\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0"
+            b"drivers/processor/processr/pnp.c\0"
                 .as_ptr() as *const i8,
             374u32,
             core::ptr::null(),
@@ -514,7 +514,7 @@ pub unsafe extern "system" fn ProcessorAddDevice(
     if Pdo.is_null() {
         RtlAssert(
             b"Pdo\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0"
+            b"drivers/processor/processr/pnp.c\0"
                 .as_ptr() as *const i8,
             375u32,
             core::ptr::null(),
@@ -548,7 +548,7 @@ pub unsafe extern "system" fn ProcessorAddDevice(
             if DbgPrint(
                 b"(%s:%d) IoAttachDeviceToDeviceStackSafe() failed with status 0x%08lx\n\0"
                     .as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0"
+                b"drivers/processor/processr/pnp.c\0"
                     .as_ptr() as *const i8,
                 395i32,
                 Status,
@@ -556,7 +556,7 @@ pub unsafe extern "system" fn ProcessorAddDevice(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/processor/processr/pnp.c\0"
+                    b"drivers/processor/processr/pnp.c\0"
                         .as_ptr() as *const i8,
                     395i32,
                 );

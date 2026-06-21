@@ -53,7 +53,7 @@ pub unsafe extern "system" fn FatNtTimeToFatTime(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
+            b"drivers/filesystems/fastfat/timesup.c\0"
                 .as_ptr() as *const i8 as PVOID,
             66 as ULONG,
             (core::ptr::null_mut::<i8>()).cast(),
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn FatFatDateToNtTime(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
+                b"drivers/filesystems/fastfat/timesup.c\0"
                     .as_ptr() as *mut core::ffi::c_void,
                 197u32,
                 core::ptr::null_mut(),
@@ -183,7 +183,7 @@ pub unsafe extern "system" fn FatFatTimeToNtTime(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
+                b"drivers/filesystems/fastfat/timesup.c\0"
                     as *const u8 as *mut core::ffi::c_void,
                 262u32,
                 core::ptr::null_mut::<u8>() as *mut core::ffi::c_void,
@@ -244,7 +244,7 @@ pub unsafe extern "system" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> 
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
+                b"drivers/filesystems/fastfat/timesup.c\0"
                     .as_ptr() as *mut core::ffi::c_void,
                 340,
                 core::ptr::null_mut::<i8>() as *mut core::ffi::c_void,

@@ -1206,7 +1206,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         if !(b"PDO using ClasspPowerHandler\0".as_ptr() as *const i8).is_null() {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                b"drivers/storage/class/classpnp/power.c\0"
                     .as_ptr() as *const i8,
                 1585,
                 b"!\"PDO using ClasspPowerHandler\"\0".as_ptr() as *const i8,
@@ -1367,7 +1367,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         if (*context).InUse != 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                b"drivers/storage/class/classpnp/power.c\0"
                     .as_ptr() as *const i8,
                 1731,
                 b"context->InUse == FALSE\0".as_ptr() as *const i8,
@@ -1398,7 +1398,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
                 // NT_ASSERT(FALSE)
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                    b"drivers/storage/class/classpnp/power.c\0"
                         .as_ptr() as *const i8,
                     1752,
                     b"FALSE\0".as_ptr() as *const i8,
@@ -1437,7 +1437,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
             if (*context).Options.HandleSpinUp() == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                    b"drivers/storage/class/classpnp/power.c\0"
                         .as_ptr() as *const i8,
                     1779,
                     b"Options.HandleSpinUp\0".as_ptr() as *const i8,
@@ -1458,7 +1458,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
             if (*context).Options.HandleSpinDown() == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                    b"drivers/storage/class/classpnp/power.c\0"
                         .as_ptr() as *const i8,
                     1795,
                     b"Options.HandleSpinDown\0".as_ptr() as *const i8,
@@ -1491,7 +1491,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         if srb_flags & 0x400 != 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                b"drivers/storage/class/classpnp/power.c\0"
                     .as_ptr() as *const i8,
                 1823,
                 b"!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER)\0".as_ptr() as *const i8,
@@ -1502,7 +1502,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         if srb_flags & 0x200000 != 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                b"drivers/storage/class/classpnp/power.c\0"
                     .as_ptr() as *const i8,
                 1824,
                 b"!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)\0".as_ptr() as *const i8,
@@ -1705,7 +1705,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
     if !cond1 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/power.c\0".as_ptr()
                 as *const i8,
             2131,
             b"Context->DeviceObject == DeviceObject\0".as_ptr() as *const i8,
@@ -1717,7 +1717,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
     if srb_flags & SRB_FLAGS_FREE_SENSE_BUFFER != 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/power.c\0".as_ptr()
                 as *const i8,
             2133,
             b"!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER)\0".as_ptr() as *const i8,
@@ -1727,7 +1727,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
     if srb_flags & SRB_FLAGS_PORT_DRIVER_ALLOCSENSE != 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/power.c\0".as_ptr()
                 as *const i8,
             2134,
             b"!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)\0".as_ptr() as *const i8,
@@ -1904,7 +1904,7 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
         if 0 as ::core::ffi::c_int == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+                b"drivers/storage/class/classpnp/power.c\0"
                     .as_ptr() as *const ::core::ffi::c_char,
                 2436u32 as ULONG,
                 b"0\0".as_ptr() as *const ::core::ffi::c_char,
@@ -1989,7 +1989,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> 
     if (*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0 {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
+            b"drivers/storage/class/classpnp/power.c\0"
                 .as_ptr() as *const ::core::ffi::c_char,
             2582i32,
             b"fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled == FALSE\0"

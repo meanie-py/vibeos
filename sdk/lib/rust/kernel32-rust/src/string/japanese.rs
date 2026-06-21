@@ -304,7 +304,7 @@ unsafe fn JapaneseEra_ToSystemTime(
     if pEra.is_null() {
         RtlAssert(
             b"pEra != NULL\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/winnls/string/japanese.c\0"
+            b"dll/win32/kernel32/winnls/string/japanese.c\0"
                 .as_ptr() as *const i8 as PVOID,
             226u32,
             core::ptr::null_mut::<CHAR>(),
@@ -314,7 +314,7 @@ unsafe fn JapaneseEra_ToSystemTime(
     if pst.is_null() {
         RtlAssert(
             b"pst != NULL\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/winnls/string/japanese.c\0"
+            b"dll/win32/kernel32/winnls/string/japanese.c\0"
                 .as_ptr() as *const i8 as PVOID,
             227u32,
             core::ptr::null_mut::<CHAR>(),

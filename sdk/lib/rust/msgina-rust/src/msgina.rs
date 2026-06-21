@@ -217,7 +217,7 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
             ros_dbg_log(
                 __WINE_DBCL_WARN,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                 b"GetRegistrySettings\0".as_ptr() as *const i8,
                 167,
                 b"RegOpenKeyExW() failed with error %lu\n\0".as_ptr() as *const i8,
@@ -241,7 +241,7 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
             b"GetRegistrySettings\0".as_ptr() as *const i8,
             174,
             b"bAutoAdminLogon: %s\n\0".as_ptr() as *const i8,
@@ -269,7 +269,7 @@ unsafe fn GetRegistrySettings(pgContext: PGINA_CONTEXT) -> BOOL {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
             b"GetRegistrySettings\0".as_ptr() as *const i8,
             183,
             b"bDisableCAD: %s\n\0".as_ptr() as *const i8,
@@ -411,7 +411,7 @@ pub unsafe extern "system" fn WlxInitialize(
             ros_dbg_log(
                 __dbcl,
                 __dbch,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     as *const u8 as *const core::ffi::c_char,
                 b"WlxInitialize\0" as *const u8 as *const core::ffi::c_char,
                 275i32,
@@ -428,7 +428,7 @@ pub unsafe extern "system" fn WlxInitialize(
             ros_dbg_log(
                 __dbcl_0,
                 __dbch_0,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     as *const u8 as *const core::ffi::c_char,
                 b"WlxInitialize\0" as *const u8 as *const core::ffi::c_char,
                 281i32,
@@ -499,7 +499,7 @@ pub unsafe extern "system" fn WlxStartApplication(
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     .as_ptr() as *const ::core::ffi::c_char,
                 b"WlxStartApplication\0".as_ptr() as *const ::core::ffi::c_char,
                 417 as ::core::ffi::c_int,
@@ -525,7 +525,7 @@ pub unsafe extern "system" fn WlxStartApplication(
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     .as_ptr() as *const ::core::ffi::c_char,
                 b"WlxStartApplication\0".as_ptr() as *const ::core::ffi::c_char,
                 424 as ::core::ffi::c_int,
@@ -554,7 +554,7 @@ pub unsafe extern "system" fn WlxStartApplication(
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     .as_ptr() as *const ::core::ffi::c_char,
                 b"WlxStartApplication\0".as_ptr() as *const ::core::ffi::c_char,
                 439 as ::core::ffi::c_int,
@@ -590,7 +590,7 @@ pub unsafe extern "system" fn WlxStartApplication(
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+                b"dll/win32/msgina/msgina.c\0"
                     .as_ptr() as *const ::core::ffi::c_char,
                 b"WlxStartApplication\0".as_ptr() as *const ::core::ffi::c_char,
                 458 as ::core::ffi::c_int,
@@ -723,7 +723,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
         ros_dbg_log(
             __dbcl,
             __dbch,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
             b"WlxLoggedOnSAS\0".as_ptr() as *const i8,
             573 as i32,
             b"WlxLoggedOnSAS(0x%lx)\n\0".as_ptr() as *const i8,
@@ -742,7 +742,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
                 ros_dbg_log(
                     __dbcl,
                     __dbch,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                    b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                     b"WlxLoggedOnSAS\0".as_ptr() as *const i8,
                     587 as i32,
                     b"WlxLoggedOnSAS: SasType WLX_SAS_TYPE_SC_INSERT not supported!\n\0".as_ptr() as *const i8,
@@ -756,7 +756,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
                 ros_dbg_log(
                     __dbcl,
                     __dbch,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                    b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                     b"WlxLoggedOnSAS\0".as_ptr() as *const i8,
                     592 as i32,
                     b"WlxLoggedOnSAS: SasType WLX_SAS_TYPE_SC_REMOVE not supported!\n\0".as_ptr() as *const i8,
@@ -770,7 +770,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
                 ros_dbg_log(
                     __dbcl,
                     __dbch,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                    b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                     b"WlxLoggedOnSAS\0".as_ptr() as *const i8,
                     597 as i32,
                     b"WlxLoggedOnSAS: Unknown SasType: 0x%x\n\0".as_ptr() as *const i8,
@@ -797,7 +797,7 @@ pub unsafe extern "system" fn WlxDisplayStatusMessage(
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const c_char,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const c_char,
             b"WlxDisplayStatusMessage\0".as_ptr() as *const c_char,
             618i32,
             b"WlxDisplayStatusMessage(\"%S\")\n\0".as_ptr() as *const c_char,
@@ -833,7 +833,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
             b"DoAdminUnlock\0".as_ptr() as *const i8,
             653,
             b"(%S %S %S)\n\0".as_ptr() as *const i8,
@@ -849,7 +849,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
             ros_dbg_log(
                 __WINE_DBCL_WARN,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                 b"DoAdminUnlock\0".as_ptr() as *const i8,
                 658,
                 b"ConnectToLsa() failed\n\0".as_ptr() as *const i8,
@@ -872,7 +872,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
             ros_dbg_log(
                 __WINE_DBCL_WARN,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                 b"DoAdminUnlock\0".as_ptr() as *const i8,
                 671,
                 b"MyLogonUser() failed\n\0".as_ptr() as *const i8,
@@ -887,7 +887,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
             ros_dbg_log(
                 __WINE_DBCL_TRACE,
                 __wine_dbch___default,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                 b"DoAdminUnlock\0".as_ptr() as *const i8,
                 682,
                 b"NtQueryInformationToken() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
@@ -901,7 +901,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
                 ros_dbg_log(
                     __WINE_DBCL_TRACE,
                     __wine_dbch___default,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                    b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                     b"DoAdminUnlock\0".as_ptr() as *const i8,
                     689,
                     b"HeapAlloc() failed\n\0".as_ptr() as *const i8,
@@ -920,7 +920,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
                     ros_dbg_log(
                         __WINE_DBCL_TRACE,
                         __wine_dbch___default,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                        b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                         b"DoAdminUnlock\0".as_ptr() as *const i8,
                         700,
                         b"NtQueryInformationToken() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
@@ -935,7 +935,7 @@ pub unsafe extern "C" fn DoAdminUnlock(
                             ros_dbg_log(
                                 __WINE_DBCL_TRACE,
                                 __wine_dbch___default,
-                                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+                                b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
                                 b"DoAdminUnlock\0".as_ptr() as *const i8,
                                 708,
                                 b"Member of Admins group\n\0".as_ptr() as *const i8,
@@ -976,7 +976,7 @@ pub unsafe extern "C" fn DoLoginTasks(
             ros_dbg_log(
                 __dbcl,
                 __dbch,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr()
+                b"dll/win32/msgina/msgina.c\0".as_ptr()
                     as *const i8,
                 b"DoLoginTasks\0".as_ptr() as *const i8,
                 738i32,
@@ -1004,7 +1004,7 @@ pub unsafe extern "C" fn DoLoginTasks(
             ros_dbg_log(
                 __dbcl_0,
                 __dbch_0,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr()
+                b"dll/win32/msgina/msgina.c\0".as_ptr()
                     as *const i8,
                 b"DoLoginTasks\0".as_ptr() as *const i8,
                 751i32,
@@ -1052,7 +1052,7 @@ pub unsafe extern "C" fn CreateProfile(
             ros_dbg_log(
                 __dbcl,
                 __dbch,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
+                b"dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
                 b"CreateProfile\0" as *const u8 as *const i8,
                 805,
                 b"HeapAlloc() failed\n\0" as *const u8 as *const i8,
@@ -1077,7 +1077,7 @@ pub unsafe extern "C" fn CreateProfile(
                 ros_dbg_log(
                     __dbcl,
                     __dbch,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
+                    b"dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
                     b"CreateProfile\0" as *const u8 as *const i8,
                     868,
                     b"LocalAlloc() failed\n\0" as *const u8 as *const i8,
@@ -1093,7 +1093,7 @@ pub unsafe extern "C" fn CreateProfile(
             if wcslen(pEnvironment as *const u16) as u32 != (cbSize as u32 / core::mem::size_of::<WCHAR>() as u32) - 2 {
                 RtlAssert(
                     b"wcslen(pEnvironment) == cbSize / sizeof(WCHAR) - 2\0" as *const u8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0" as *const u8 as PVOID,
+                    b"dll/win32/msgina/msgina.c\0" as *const u8 as PVOID,
                     873,
                     core::ptr::null_mut(),
                 );
@@ -1114,7 +1114,7 @@ pub unsafe extern "C" fn CreateProfile(
                     ros_dbg_log(
                         __dbcl,
                         __dbch,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
+                        b"dll/win32/msgina/msgina.c\0" as *const u8 as *const i8,
                         b"CreateProfile\0" as *const u8 as *const i8,
                         885,
                         b"Couldn't get Authentication Id from user token!\n\0" as *const u8 as *const i8,
@@ -1151,7 +1151,7 @@ pub unsafe extern "system" fn WlxDisplaySASNotice(pWlxContext: PVOID) {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+            b"dll/win32/msgina/msgina.c\0"
                 .as_ptr() as *const i8,
             b"WlxDisplaySASNotice\0".as_ptr() as *const i8,
             916i32,
@@ -1199,7 +1199,7 @@ pub unsafe extern "system" fn WlxDisplaySASNotice(pWlxContext: PVOID) {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+            b"dll/win32/msgina/msgina.c\0"
                 .as_ptr() as *const i8,
             b"WlxDisplaySASNotice\0".as_ptr() as *const i8,
             946i32,
@@ -1230,7 +1230,7 @@ pub unsafe extern "system" fn WlxLoggedOutSAS(
         ros_dbg_log(
             __dbcl,
             __dbch,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+            b"dll/win32/msgina/msgina.c\0"
                 as *const u8 as *const core::ffi::c_char,
             b"WlxLoggedOutSAS\0" as *const u8 as *const core::ffi::c_char,
             966 as core::ffi::c_int,
@@ -1260,7 +1260,7 @@ pub unsafe extern "system" fn WlxWkstaLockedSAS(
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/msgina.c\0".as_ptr() as *const i8,
             b"WlxWkstaLockedSAS\0".as_ptr() as *const i8,
             995i32,
             b"WlxWkstaLockedSAS()\n\0".as_ptr() as *const i8,
@@ -1302,7 +1302,7 @@ pub unsafe extern "system" fn WlxLogoff(pWlxContext: *mut core::ffi::c_void) {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/msgina.c\0"
+            b"dll/win32/msgina/msgina.c\0"
                 .as_ptr() as *const i8,
             b"WlxLogoff\0".as_ptr() as *const i8,
             1046i32,

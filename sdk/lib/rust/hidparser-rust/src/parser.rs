@@ -470,7 +470,7 @@ pub unsafe extern "C" fn HidParser_UpdateCurrentCollectionReport(
             if !(Found as i32 == 0) {
                 RtlAssert(
                     b"Found == FALSE\0".as_ptr() as *const ::core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const ::core::ffi::c_void,
+                    b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const ::core::ffi::c_void,
                     619u32,
                     ::core::ptr::null_mut::<core::ffi::c_void>(),
                 );
@@ -518,7 +518,7 @@ pub unsafe extern "C" fn HidParser_AddMainItem(
         if Found == 0 {
             RtlAssert(
                 b"Found\0".as_ptr() as *const core::ffi::c_void as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
                 675 as ULONG,
                 core::ptr::null_mut(),
             );
@@ -528,7 +528,7 @@ pub unsafe extern "C" fn HidParser_AddMainItem(
     if !((*NewReport).ItemCount.wrapping_add((*GlobalItemState).ReportCount) <= (*NewReport).ItemAllocated) {
         RtlAssert(
             b"NewReport->ItemCount + GlobalItemState->ReportCount <= NewReport->ItemAllocated\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
             681 as ULONG,
             core::ptr::null_mut(),
         );
@@ -650,7 +650,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
         if !((*CurrentItem).Type() as i32 >= ITEM_TYPE_MAIN && (*CurrentItem).Type() as i32 <= ITEM_TYPE_LONG) {
             RtlAssert(
                 b"CurrentItem->Type >= ITEM_TYPE_MAIN && CurrentItem->Type <= ITEM_TYPE_LONG\0".as_ptr() as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                 827u32,
                 core::ptr::null_mut(),
             );
@@ -685,7 +685,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if Status != HIDP_STATUS_SUCCESS {
                         RtlAssert(
                             b"Status == HIDP_STATUS_SUCCESS\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             873u32,
                             core::ptr::null_mut(),
                         );
@@ -694,7 +694,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if Status != HIDP_STATUS_SUCCESS {
                         RtlAssert(
                             b"Status == HIDP_STATUS_SUCCESS\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             879u32,
                             core::ptr::null_mut(),
                         );
@@ -705,7 +705,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if !(CurrentCollection != (*ParserContext).RootCollection) {
                         RtlAssert(
                             b"CurrentCollection != ParserContext->RootCollection\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             891u32,
                             core::ptr::null_mut(),
                         );
@@ -714,7 +714,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if CurrentCollection.is_null() {
                         RtlAssert(
                             b"CurrentCollection\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             897u32,
                             core::ptr::null_mut(),
                         );
@@ -743,7 +743,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                             if FALSE == 0 {
                                 RtlAssert(
                                     b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-                                    b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                                    b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                                     918u32,
                                     core::ptr::null_mut(),
                                 );
@@ -764,7 +764,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                         if Status != HIDP_STATUS_SUCCESS {
                             RtlAssert(
                                 b"Status == HIDP_STATUS_SUCCESS\0".as_ptr() as *const core::ffi::c_void,
-                                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                                 929u32,
                                 core::ptr::null_mut(),
                             );
@@ -787,7 +787,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                         if Status != HIDP_STATUS_SUCCESS {
                             RtlAssert(
                                 b"Status == HIDP_STATUS_SUCCESS\0".as_ptr() as *const core::ffi::c_void,
-                                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                                 949u32,
                                 core::ptr::null_mut(),
                             );
@@ -884,7 +884,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if LinkedGlobalItemState.is_null() {
                         RtlAssert(
                             b"LinkedGlobalItemState\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             1030u32,
                             core::ptr::null_mut(),
                         );
@@ -902,7 +902,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                         if FALSE == 0 {
                             RtlAssert(
                                 b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-                                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                                 1051u32,
                                 core::ptr::null_mut(),
                             );
@@ -921,7 +921,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if FALSE == 0 {
                         RtlAssert(
                             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             1076u32,
                             core::ptr::null_mut(),
                         );
@@ -939,7 +939,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                         if NewUsageStack.is_null() {
                             RtlAssert(
                                 b"NewUsageStack\0".as_ptr() as *const core::ffi::c_void,
-                                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                                b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                                 1099u32,
                                 core::ptr::null_mut(),
                             );
@@ -1038,7 +1038,7 @@ pub unsafe extern "C" fn HidParser_ParseReportDescriptor(
                     if FALSE == 0 {
                         RtlAssert(
                             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-                            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
+                            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *const core::ffi::c_void,
                             1185u32,
                             core::ptr::null_mut(),
                         );
@@ -1089,7 +1089,7 @@ pub unsafe extern "C" fn HidParser_GetCollection(
     if ParserContext.is_null() {
         RtlAssert(
             b"ParserContext\0" as *const u8 as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0"
+            b"sdk/lib/drivers/hidparser/parser.c\0"
                 as *const u8 as *const core::ffi::c_void,
             1255,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1098,7 +1098,7 @@ pub unsafe extern "C" fn HidParser_GetCollection(
     if (*ParserContext).RootCollection.is_null() {
         RtlAssert(
             b"ParserContext->RootCollection\0" as *const u8 as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0"
+            b"sdk/lib/drivers/hidparser/parser.c\0"
                 as *const u8 as *const core::ffi::c_void,
             1256,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1107,7 +1107,7 @@ pub unsafe extern "C" fn HidParser_GetCollection(
     if (*(*ParserContext).RootCollection).NodeCount == 0 {
         RtlAssert(
             b"ParserContext->RootCollection->NodeCount\0" as *const u8 as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0"
+            b"sdk/lib/drivers/hidparser/parser.c\0"
                 as *const u8 as *const core::ffi::c_void,
             1257,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1129,7 +1129,7 @@ pub unsafe extern "C" fn HidParser_NumberOfTopCollections(ParserCtx: *mut core::
     if ParserContext.is_null() {
         RtlAssert(
             b"ParserContext\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
             1292u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1138,7 +1138,7 @@ pub unsafe extern "C" fn HidParser_NumberOfTopCollections(ParserCtx: *mut core::
     if (*ParserContext).RootCollection.is_null() {
         RtlAssert(
             b"ParserContext->RootCollection\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
             1293u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1147,7 +1147,7 @@ pub unsafe extern "C" fn HidParser_NumberOfTopCollections(ParserCtx: *mut core::
     if (*(*ParserContext).RootCollection).NodeCount == 0 {
         RtlAssert(
             b"ParserContext->RootCollection->NodeCount\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/parser.c\0".as_ptr() as *mut core::ffi::c_void,
             1294u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1169,7 +1169,7 @@ pub unsafe extern "C" fn HidParser_BuildContext(
     if Collection.is_null() {
         RtlAssert(
             b"Collection\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/parser.c\0"
+            b"sdk/lib/drivers/hidparser/parser.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             1317 as ULONG,
             core::ptr::null_mut::<core::ffi::c_void>(),

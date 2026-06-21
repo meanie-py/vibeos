@@ -172,7 +172,7 @@ unsafe fn KsecDeviceControl(
         _ => {
             if DbgPrint(
                 b"(%s:%d) Unhandled control code 0x%lx\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/dispatch.c\0"
+                b"drivers/crypto/ksecdd/dispatch.c\0"
                     as *const u8 as *const ::core::ffi::c_char,
                 174 as ::core::ffi::c_int,
                 IoControlCode,
@@ -180,7 +180,7 @@ unsafe fn KsecDeviceControl(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/dispatch.c\0"
+                    b"drivers/crypto/ksecdd/dispatch.c\0"
                         as *const u8 as *const ::core::ffi::c_char,
                     174 as ::core::ffi::c_int,
                 );

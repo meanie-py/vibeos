@@ -59,7 +59,7 @@ pub unsafe extern "system" fn FatOplockComplete(Context: *mut core::ffi::c_void,
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/workque.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"drivers/filesystems/fastfat/workque.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 62u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -87,7 +87,7 @@ pub unsafe extern "system" fn FatPrePostIrp(Context: *mut core::ffi::c_void, Irp
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/workque.c\0"
+                b"drivers/filesystems/fastfat/workque.c\0"
                     as *const u8 as *const i8 as *const core::ffi::c_void,
                 120u32,
                 core::ptr::null_mut::<i8>(),
@@ -177,7 +177,7 @@ pub unsafe extern "system" fn FatFsdPostRequest(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/workque.c\0"
+                b"drivers/filesystems/fastfat/workque.c\0"
                     as *const u8 as PVOID,
                 255 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -187,7 +187,7 @@ pub unsafe extern "system" fn FatFsdPostRequest(
     if Irp.is_null() {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/workque.c\0"
+            b"drivers/filesystems/fastfat/workque.c\0"
                 as *const u8 as *const i8,
             257 as i32,
             b"ARGUMENT_PRESENT(Irp)\0" as *const u8 as *const i8,
@@ -197,7 +197,7 @@ pub unsafe extern "system" fn FatFsdPostRequest(
     if !((*IrpContext).OriginatingIrp == Irp) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/workque.c\0"
+            b"drivers/filesystems/fastfat/workque.c\0"
                 as *const u8 as *const i8,
             258 as i32,
             b"IrpContext->OriginatingIrp == Irp\0" as *const u8 as *const i8,

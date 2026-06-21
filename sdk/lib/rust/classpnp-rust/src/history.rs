@@ -124,7 +124,7 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
     if (*Pkt).RetryHistory.is_null() {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
+            b"drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
             93i32,
             b"Pkt->RetryHistory != NULL\0".as_ptr() as PCSTR,
         );
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
     if !((*history).UsedHistoryCount <= (*history).TotalHistoryCount) {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
+            b"drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
             95i32,
             b"history->UsedHistoryCount <= history->TotalHistoryCount\0".as_ptr() as PCSTR,
         );
