@@ -137,7 +137,74 @@ i386 taskbar deadlock).
 Imports resolve at runtime to **gdi32, advapi32, kernel32, ntdll, win32k (NtUser*)**, delay
 `usp10`/`libpng`. We'll need an FFI decl crate (or reuse `ntdll-sys` + add a `win32u`/NtUser
 decl module). Most NtUser* signatures live in `win32ss/include` — candidate for a small
-`user32-sys` (bindgen) like `ntdll-sys`, decided in Wave 0.
+`user32-sys` (bindgen) like `ntdll-sys`, decided in Wave 0. **Settled in Wave 0/1: we reuse
+`win32k-sys` directly** (the bindgen `NtUser*`/Nt*/struct surface; the rustconv opus output
+targets `win32k_sys::win32k::*`), plus the hand-written `src/ntwrapper.rs` + `src/internal.rs`
+substrate. No separate `user32-sys` was needed.
+
+### 2.7 Cohab link-resolution traps (the Wave-2 learnings — read before any wave)
+The crate compiling 0-error ×3 is **necessary but not sufficient** — the cohab *link* of
+user32.dll exposes a whole class of cross-TU issues the compiler can't see (because the other
+half lives in the surviving C objects / the `.spec` / win32k). i386 is the strictest linker
+(decorated `_Name@N`), so **do the i386 cohab link first and iterate it to zero undefined
+symbols** before handing to the ×3 gate. The recurring traps, with the fix:
+
+- **Spec FORWARDERS are not linkable internal symbols.** ~128 user32 exports are
+  `@ stdcall Foo(..) NtUserFoo` in `user32.spec` — the `.def` resolves them at export time;
+  there is **no callable `_Foo@N`** inside user32. A translated body that calls `Foo(...)`
+  via a direct `extern "system" { fn Foo; }` → `undefined symbol _Foo@N`. **Fix:** route
+  through the `crate::ntwrapper` inline (which calls the `NtUser*` syscall). To classify a
+  name: `grep "stdcall NAME" user32.spec` — a trailing forward target (`… NtUserNAME`) ⇒
+  forwarder ⇒ use ntwrapper; no target ⇒ real own-export ⇒ keep the extern. Hit by
+  InvalidateRect, SetWindowPos, ShowWindow, Begin/EndPaint, SetFocus, SetCapture, KillTimer,
+  SetTimer, ShowScrollBar, DestroyWindow, MoveWindow, RedrawWindow, SetParent, DeleteMenu, …
+- **`*_builtin_class` are cross-TU DATA exports** that the still-C `controls/regcontrol.c`
+  reads by address (`&BUTTON_builtin_class` …). The control's Rust file must define a
+  `#[no_mangle] pub static NAME_builtin_class: builtin_class_descr` with the **exact C layout**
+  (`regcontrol.h`: name/style/procA/procW/extra/cursor/brush) and the WndProcs transmuted to
+  `WNDPROC` (`transmute::<extern "system" fn(..), WNDPROC>` — calling-convention-identical per
+  arch). The rustconv translator routinely **drops** these statics → re-add from the C.
+  Active ones: DIALOG/BUTTON/EDIT/COMBO/COMBOLBOX/LISTBOX/STATIC; **MENU** is active for Wave 3;
+  POPUPMENU/ICONTITLE are "moved to win32k" (commented out in regcontrol.c — skip).
+- **`IMM_FN(name)` is a runtime dispatch table, not imm32 imports.** `edit.c` calls IMM via
+  `IMM_FN(ImmGetContext)` = `gImmApiEntries.pImmGetContext` — a global `Imm32ApiTable` filled
+  at runtime in the still-C `misc/imm.c`; **user32 does not import imm32**. A direct
+  `extern "system" { fn ImmGetContext; }` → undefined. **Fix:** mirror the `Imm32ApiTable`
+  struct layout (`include/immtable.h` field order, up to the highest field used; unused slots
+  = pointer pads), `extern "C" { static gImmApiEntries; }`, and inline wrappers that call
+  through it.
+- **cdecl C helpers wrongly given stdcall.** `set_control_clipping` / `get_icon_size` are
+  plain-cdecl C (`_name`, no `@N`); declaring them `extern "system"` asks for `_name@8`.
+  **Fix:** `extern "C"`. (Note: `get_icon_size` lives in `cursoricon.c` → becomes a Rust
+  export when Wave 3 flips cursoricon; until then it's the surviving C symbol.)
+- **strsafe inlines have no exported symbol.** `RtlStringCchCopyNW` is a `strsafe.h __inline`,
+  not an ntdll export → reimplement locally (bounded copy + NUL-terminate).
+- **MSVC intrinsics have no extern symbol on amd64/arm64.** `InterlockedExchange` (and the
+  `_Interlocked*`/`_byteswap`/`_BitScan` family) are inline intrinsics on amd64/arm64 (only
+  i386 has the CRT stdcall export). A direct extern links on i386, **fails amd64/arm64**.
+  **Fix:** `core::sync::atomic::Atomic*` (e.g. `AtomicI32::swap`). Scan each wave for these
+  before the gate — i386-green does NOT imply amd64-green. (`memcpy`/`memset`/`strlen` are
+  fine — compiler-rt provides them on all arches.)
+- **i386 winuser.h macros vs the W-export.** `SetWindowLongPtrW` (i386: macro → `SetWindowLongW`),
+  generic `GetWindowLong`/`SendMessage`/`SystemParametersInfo` (UNICODE macros → the `…W`
+  export) — cfg-split to the W-variant / the `class.rs` forwarder; the generic decorated form
+  has no symbol on i386.
+
+### 2.8 The wave integration playbook (proven on Waves 1–2)
+1. `rustconv translate <file> -m opus -o ~/vibeos-rust-staging/...` per `.c` (parallel, in the
+   background; **never kill mid-run** — it re-pays per function). Stage out, integrate manually.
+2. Place files in the crate, register modules centrally (`mod.rs`/`lib.rs` — shared files, the
+   lead only). Build a small `shared.rs` for any genuinely cross-file consts/structs.
+3. Fan out **one integration subagent per file** (source-only, no build — they contend on the
+   crate target dir): swap `ntkrnl_sys::ddk`→usermode externs/`internal`, `#[no_mangle]` the
+   spec exports + cross-TU WndProcs/builtin_class, FASTCALL cfg-split, neutralize live SEH
+   except bodies, **reconstruct any translator-dropped function bodies faithfully from the C**.
+4. **Build centrally** (i386 first), then residual-fix rounds (extract per-file error slices →
+   targeted fix agents). Compile errors collapse from ~1000s to 0 in 2–3 rounds (most are a few
+   shared-symbol roots — fix the root, re-count; don't bail at the big number).
+5. **i386 cohab link**, iterate the §2.7 undefined-symbol classes to zero, then `smoke`.
+6. Scan for the amd64-intrinsic trap (§2.7); commit; hand the SHA to the control-plane ×3 gate
+   (amd64/arm64 cohab link + boot; arm64 needs the explicit user32.dll relink+inject).
 
 ---
 
@@ -169,10 +236,29 @@ in `wndproc_fixup.S`).
 `controls/listbox.c` (3290), `controls/scrollbar.c` (1755). Edit/listbox are the big control
 bodies; needed for any real dialog interaction.
 
-### Wave 3 — Desktop/menu/draw (explorer path)
+### Wave 3 — Desktop/menu/draw (explorer path) — **NEXT**
 `windows/menu.c` (1776), `draw.c` (1651), `cursoricon.c` (3095), `text.c` (467),
 `font.c` (497), `accel.c` (365), `rect.c` (288), `hook.c` (851), `input.c` (1124),
-`misc/desktop.c` (660), `display.c` (619).
+`misc/desktop.c` (660), `display.c` (619). **~11.4K LOC, 11 files.**
+
+This is the **explorer/desktop-render path** (Wave 1+2 were the winlogon path). Notes that
+shape the wave:
+- **Less SEH than Wave 1** — only `hook.c` (×4), `desktop.c` (×3), `text.c` (×2), `draw.c` (×1)
+  use `_SEH2_TRY`; menu/cursoricon/input/font/accel/rect have none. The §2.1 dead-except
+  discipline still applies to the four that do.
+- **Cross-TU exports to expect** (§2.7): `MENU_builtin_class` is **active** in regcontrol.c →
+  `menu.rs` needs the `#[no_mangle] pub static`. `cursoricon.c` **defines `get_icon_size`** —
+  the helper Wave-2 `static_.rs`/`edit.rs` currently `extern "C"` from the surviving C; when
+  cursoricon flips it becomes the Rust export (keep the symbol name + cdecl). `draw.c` provides
+  `DrawFrameControl`/`DrawEdge`/`DrawState*` and the internal `set_control_clipping` peers that
+  Wave-2 controls call — watch for the same forwarder/cdecl classification.
+- **`cursoricon.c` is the big/risky one** (3095 LOC): icon/cursor loading, the PNG path
+  (`libpng` delay-import — arm64 stubs it, see CMakeLists `arm64_user32_stubs.c`), animated
+  cursors, the icon cache. Highest translation risk in the wave; do it last and review.
+- **Suggested split:** **3a (small/leaf):** rect, accel, text, font, display (~1.9K, mostly
+  geometry + GDI marshalling, no SEH). **3b (core):** menu, draw, input, desktop, hook (~5.4K,
+  the explorer interaction path; menu has the builtin_class). **3c (heavy):** cursoricon (3.1K,
+  alone). Gate each sub-slice ×3 before the next, same as Wave 2a/2b would have been.
 
 ### Wave 4 — Secondary surface
 `windows/clipboard.c` (409), `prop.c` (489), `mdi.c` (2513), `spy.c` (2687),
@@ -247,8 +333,11 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 4 — secondary | clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain/+misc/+minor controls | ~12,000 | ☐ |
 | 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde | ~5,400 | ☐ |
 
-**Next action:** Wave 0 — stand up `user32-rust` crate + cohab CMake + flip one trivial leaf,
-prove ×3 smoke, before any bulk translation.
+**Next action:** Wave 3 — the explorer/desktop-render path (menu/draw/cursoricon/text/font/
+accel/rect/hook/input/desktop/display, ~11.4K LOC). Run it in 3 sub-slices (3a leaf →
+3b core → 3c cursoricon), gating each ×3, per the §2.8 playbook. Watch `MENU_builtin_class`
+(cross-TU), `cursoricon.c`'s `get_icon_size`/PNG path, and the §2.7 link classes.
+(Wave 2's amd64/arm64 cohab link is still owed to the control-plane ×3 gate.)
 
 > **Rules reminder (AGENTS.md):** never revert/delete/hide a Rust translation to dodge a
 > regression; a broken-but-integrated translation visible in smoke is the correct state.
