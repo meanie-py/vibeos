@@ -92,6 +92,8 @@ members = [
     "mouclass-rust",
     "kbdhid-rust",
     "mouhid-rust",
+    "hidclass-rust",
+    "hidusb-rust",
     "i8042prt-rust",
     "handle",
     "interlck",

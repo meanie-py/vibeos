@@ -503,6 +503,14 @@ name = "hid-sys"
 version = "0.1.0"
 
 [[package]]
+name = "hidclass-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "hidparse-cargo"
 version = "0.1.0"
 dependencies = [
@@ -519,6 +527,15 @@ version = "0.1.0"
 dependencies = [
  "hid-sys",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "hidusb-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+ "usb-sys",
 ]
 
 [[package]]

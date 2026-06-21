@@ -163,3 +163,16 @@ skipped.
   IRQL raise/lower (tier1 `*Internal` unlinkable on amd64; per-crate CR8-asm helper). Next:
   hidclass (Opus) → hidusb (Opus). Awaiting meaniepy ×3 cold-smoke gate (non-boot → link +
   no-regression bar, same as msfs/npfs).
+- 2026-06-21: ✅ **hidclass + hidusb DONE — link-clean ×3** (HID cluster complete: 4/4). 2
+  parallel Opus subagents (whole-driver each, for cross-file type coherence) → central
+  integration; both rlibs compiled ×3 on the FIRST pass (tighter than the Sonnet twins).
+  `hidclass-rust` (6 modules, exports `DllInitialize`+`HidRegisterMinidriver` via spec2def,
+  ENTRYPOINT 0) + `hidusb-rust` (5 modules, links hidclass+usbd import libs). Verified the
+  cross-driver link: hidclass.sys exports HidRegisterMinidriver → hidusb.sys imports it +
+  USBD_Create/ParseConfigurationRequestEx from usbd.sys. hidport.h class types defined locally
+  (not bindgen'd). Lint-clean; hidclass's lone ud2 is a benign compiler-rt abort (collection-
+  sizing division), not a fold. Integration fixes: hidusb DriverEntry needed `#[no_mangle]`
+  (Opus dropped it → `_DriverEntry@8` undefined); hidusb inlined the 4 UsbBuild* usbdlib macros
+  (not in usb-sys); `HidNotifyPresence` correctly NOT fabricated (declared in hidport.h, zero
+  implementation in ReactOS). **Remaining leaf drivers: serial, ramdisk, storport** (storahci
+  deferred, buslogic dropped).
