@@ -1165,6 +1165,15 @@ pub unsafe extern "system" fn KeBugCheckEx(
     BugCheckParameter3: ULONG_PTR,
     BugCheckParameter4: ULONG_PTR,
 ) -> ! {
+    // Capture the caller's return address (x30) as the VERY FIRST thing, before
+    // dbg_print!/any bl clobbers it — that's the bugcheck raise site. The later
+    // `mov x30` read (below) was post-dbg_print! so it printed garbage.
+    #[cfg(target_arch = "aarch64")]
+    let entry_lr: ULONG_PTR = {
+        let lr: ULONG_PTR;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack));
+        lr
+    };
     crate::dbg_print!(b"\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n\0",
         BugCheckCode,
         BugCheckParameter1 as PVOID,
@@ -1181,8 +1190,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
             *u = s[i] as ULONG;
             i += 1;
         }
-        let mut lr: ULONG_PTR;
-        core::arch::asm!("mov {}, x30", out(reg) lr);
+        let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
             *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
@@ -1269,6 +1277,13 @@ pub unsafe extern "system" fn KeBugCheckEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
+    // Capture caller x30 first, before any bl clobbers it (the raise site).
+    #[cfg(target_arch = "aarch64")]
+    let entry_lr: ULONG_PTR = {
+        let lr: ULONG_PTR;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack));
+        lr
+    };
     // Debugcon: dump return address so we can identify the caller
     #[cfg(target_arch = "x86")]
     {
@@ -1295,8 +1310,7 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
             *u = s[i] as ULONG;
             i += 1;
         }
-        let mut lr: ULONG_PTR;
-        core::arch::asm!("mov {}, x30", out(reg) lr);
+        let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
             *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
