@@ -400,10 +400,16 @@ after the `--no-insert-timestamp` fix, `repro report` must show `0 (deterministi
 - ✅ **Which lld driver / where's the wall-clock stamp?** gnu `ld.lld` everywhere
   (`-fuse-ld=lld`), which defaults to `--insert-timestamp` → fix is `-Wl,--no-insert-timestamp`
   (cmake links + cargo `-Clink-arg`). Not `/Brepro`. Resolved 2026-06-20.
-- The **C abs-path `-ffile-prefix-map` is hardcoded to main's path** — does a worktree build
-  still byte-match main (i.e. does everything route through the relative `../=` map, leaving no
-  absolute residual)? Verify with a two-path diff; if residual, switch the abs entry to
-  `${CMAKE_SOURCE_DIR}`.
+- ✅ **C abs-path `-ffile-prefix-map` per-worktree-correct (no residual).** The earlier "hardcoded
+  to main's path" worry was from reading *main's* generated `build.ninja`. Inspected a freshly-
+  configured **worktree** (`vibeos-wt-buildcache`) build.ninja 2026-06-21: the two maps are
+  `-ffile-prefix-map=../=` (relative, worktree-safe) and `-ffile-prefix-map=<THIS worktree's abs
+  path>=` — i.e. `${CMAKE_SOURCE_DIR}` expands to the worktree's OWN root, mapping it to empty.
+  No `…/vibeos`(main) hardcode present. Two worktrees each erase their own root → byte-identical.
+  Resolved. (Separate, still-deferred: `DW_AT_comp_dir` records the abs *build* dir
+  `<worktree>/build-<arch>`, which neither prefix-map covers → a possible debug-info-only residual.
+  Measure with `repro --diffoscope` on a real build-twice; add `-ffile-compilation-dir=.` only if
+  it actually shows. Don't widen the blast radius on spec.)
 - ✅ `trim-paths = "object"` vs `"all"` — picked `"object"` (the byte-identity requirement;
   `"all"` also cleans diagnostics, not needed). Resolved 2026-06-20.
 - ✅ **CodeView/build-id content-derived or random?** Content-derived — becomes deterministic
