@@ -63,12 +63,10 @@ class Cell:
 #
 # The usermode spine (ntdll → csr servers → the boot exes) is cmake-off via the
 # committed-`.res` fallback (WS3) + self-hosted import libs; ntdll's cntpr_residue
-# + static_libs are empty (no c_from_compile_db, no cmake `.a`). The ONE spine
-# hold-out is `winsrv`: it still reuses three cmake-built static libs
-# (libuuid.a = midl-generated, libwin32ksys.a = asm, libchkstk.a) which have no
-# in-cargo path yet (the "other static_libs" floor) — `static_libs()` has no
-# committed fallback, so winsrv needs a configured `build-<arch>/` until that
-# floor lands. It is listed (real cell) but excluded from the cmake-off set.
+# + static_libs are empty (no c_from_compile_db, no cmake `.a`). `winsrv` (the
+# last hold-out) is now cmake-off too: its 3 former cmake static libs are gone —
+# libuuid.a → a 3-GUID c_shim (winsrv_guids.c), libwin32ksys.a → asm_archive over
+# sys-stubs.S, libchkstk.a → dropped (inert). So the whole spine is cmake-off.
 CELLS: dict[str, Cell] = {
     c.target: c
     for c in (
@@ -80,7 +78,6 @@ CELLS: dict[str, Cell] = {
         Cell("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista.dll", "win32dll"),
         Cell("csrsrv", "csrsrv-cargo", "csrsrv.dll", "win32dll"),
         Cell("basesrv", "basesrv-cargo", "basesrv.dll", "win32dll"),
-        # winsrv: needs build-<arch>/ for libuuid/libwin32ksys/libchkstk (not cmake-off yet)
         Cell("winsrv", "winsrv-cargo", "winsrv.dll", "win32dll"),
         # usermode spine — EXEs
         Cell("csrss", "csrss-cargo", "csrss.exe", "native"),
@@ -93,13 +90,14 @@ CELLS: dict[str, Cell] = {
 }
 
 # The spine cells proven to build with NO configured build-<arch>/ (cmake-off).
-# winsrv is excluded (cmake static-lib floor); the kernel EXEs are proven
-# separately. Used by --spine.
+# The kernel EXEs are proven separately. Used by --spine. winsrv joined
+# 2026-06-21 (its 3 cmake static libs removed).
 CMAKE_OFF_SPINE = (
     "ntdll",
     "ntdll_vista",
     "csrsrv",
     "basesrv",
+    "winsrv",
     "csrss",
     "smss",
     "lsass",

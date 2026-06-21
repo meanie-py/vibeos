@@ -237,19 +237,31 @@ made this fall out cleanly:
 - **`resource_from_rc` already has a committed-`.res` fallback** (WS3), so
   basesrv/winlogon/services/userinit need no windres at build time cmake-off.
 
-**The one spine hold-out is `winsrv`** — it still reuses three cmake-built static
-libs (`libuuid.a` = midl-generated, `libwin32ksys.a` = asm, `libchkstk.a`); the
-engine's `static_libs()` has no committed fallback (panics "run ninja first"), so
-winsrv needs a configured `build-<arch>/` until the "other static_libs" floor
-(midl + the win32k asm/dib generators) lands. It's in `CELLS` but excluded from
-`--spine`.
+**`winsrv` is now cmake-off too (2026-06-21)** — the whole spine is done. Its
+three former cmake static libs were removed by scoping to what winsrv *actually*
+references (an offline link drop-test: drop the libs, read lld's undefined list —
+only **11 symbols** out of the libs' ~4200):
+- `libuuid.a` (2698 GUIDs) → just **3** shell GUIDs (`CLSID_ShellLink`,
+  `IID_IShellLinkW`, `IID_IPersistFile` — winsrv creates .lnk shortcuts). Provided
+  by a self-contained `winsrv_guids.c` `c_shim` (verbatim midl values + `selectany`
+  → byte-identical to libuuid.a's members; the linker GCs the rest just as before).
+- `libwin32ksys.a` (1474 win32k syscall stubs) → **8** `NtUser*` stubs, provided by
+  `asm_archive("win32ksys", &["win32ss/sys-stubs.S"])` (the ntdll `ntdllsys`
+  pattern; sys-stubs.S + its checked-in `w32ksvc32/64.h` + `syscalls.inc`).
+- `libchkstk.a` → **0** symbols — already inert (`__alloca`/`__chkstk` come from
+  cnt-rust-lib / clang_rt.builtins); dropped (the userinit `libwine.a` pattern).
+
+Verified i386: cmake-off `winsrv.dll` has a **byte-identical `.text`** (439296 B) to
+the cmake build, all 8 stubs defined, all 3 GUID byte-patterns present; the only
+delta is a **leaner** `.rdata` (−3376 B — it drops the ~211 dead unreferenced GUIDs
+cmake's coarse archive-member link dragged in). Built clean on all 3 arches.
 
 The `CELLS` table generalizes to the full 44-cell set — add a `Cell(...)` with its
 KIND (`deps` stays empty unless a future cell breaks the self-hosted-import-lib
 pattern). **Remaining:** per-arch fan-out (the workspace serializes today —
 blocker (1)), the drivers (kerneldll/kernelmodedriver — same shape, need their
-own cmake-off audit), the loaders' efi/native KINDs (need the *cross* llvm-strip,
-not host strip), and the `winsrv` static-lib floor.
+own cmake-off audit), and the loaders' efi/native KINDs (need the *cross*
+llvm-strip, not host strip).
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
