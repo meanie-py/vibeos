@@ -1471,6 +1471,42 @@ doesn't move, find who resets it.
   `socket()` still returns `WSAEINVAL (10022)` — ws2_32/msafd isn't consuming the netstack
   Winsock2 catalog entries. Boot-unblocked; catalog-loading issue, tracked on M5/task-77.
 
+### 9.x Symbolicating a cargo-built kernel crash address (when objdump/nm come back empty)
+
+**Symptom:** you have a runtime crash/return address (e.g. an unhandled-exception PC, a
+backtrace frame) on arm64 (or any cargo-linked module), but `aarch64-w64-mingw32-objdump
+-d/-t/-h`, `llvm-nm`, and `llvm-objdump` all return **empty** on `ntoskrnl.exe` — the
+cargo-linked PE is opaque to the GNU binutils, and the in-memory RVAs exceed the on-disk
+file size (large virtual layout), so file-offset reasoning fails.
+
+**Recipe:**
+1. **Get a symbol index:** `qemu/build-index.sh <arch>` → `qemu/symbols-<arch>.tsv`
+   (`<hex_RVA>\t<symbol>`). NB it covers **only that module's Rust+asm symbols** and tops
+   out at the highest such symbol — **C-object functions and *other modules* (hal, fastfat,
+   drivers) are absent**.
+2. **Find the runtime load base** — the kernel is relocated, so you must calibrate. Print a
+   *known* symbol's runtime address from inside the kernel (cheapest: temporarily
+   `ARM64_UART_TRACE_HEX("kdx=", KiDispatchException as usize)` in a path you'll hit; tsv
+   gives its RVA). Then **`base = runtime_addr − tsv_RVA`** (observed arm64 ≈
+   `0xFFFFF80041D91xxx`, shifts a few bytes per rebuild — recalibrate each build).
+3. **Resolve:** `rva = crash_addr − base`; nearest tsv symbol `≤ rva` names it.
+4. **Key inference:** if `rva` is **past the tsv's max symbol**, the address is **not in this
+   module** — it's in a module loaded *after* it (hal/fastfat/driver). That alone localizes
+   a raiser (e.g. confirmed an unhandled `STATUS_FILE_CORRUPT_ERROR` was raised in
+   *fastfat.sys*, not ntoskrnl Cc, because the `ExRaiseStatus` caller addr was past
+   ntoskrnl's last symbol).
+5. **Identify the raiser directly:** hook the **`ExRaiseStatus` shim** (`ntoskrnl-rust/src/
+   shim_exports.rs` — it exists expressly for this) to print `x30` (caller LR) when
+   `status == <the code>`. One clean address beats a stack scan.
+
+**Gotchas:** `strings <exe> | grep <marker>` MISSES `TrapPuts(b"...")`-style traces — the
+optimizer turns short byte-strings into **inline per-char immediate stores** (`mov w,#0x5b
+'['; …`), not rodata; disassemble (or just trust the build) instead. A raw **stack scan**
+for kernel-VA values works but is **polluted by stale frames** (the 100Hz clock leaves
+`KiIrqEntry`/`KiIrqHandler`/`KeUpdateRunTime` return addrs on every stack); **frame-pointer
+(x29) unwind from a big function like `KiDispatchException` does NOT work** (x29 isn't a
+clean FP there). **Source:** arm64 clock-fix lane, `arm64-clock-and-lpcexitthread-findings.md`.
+
 ---
 
 *Maintenance: this manual is the fast-lookup index distilled from the project's debug
