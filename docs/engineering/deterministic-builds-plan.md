@@ -276,6 +276,23 @@ fixes close both gaps without that overhead. Both are build-path changes → own
 - **Reproducibility smoke (rung 5)** — wire `repro diff-dirs` into a harness check; a non-repro
   binary turns it red, like any North-Star regression.
 
+### ✅ REAL-KERNEL build-twice byte-identity confirmed (i386, 2026-06-20)
+
+Two independent `vibeos-cli build --arch i386 --clean` runs in the **same** worktree path
+(outputs removed between to force genuine relinks — sidesteps the §41 stale-output trap),
+with rung-2a (`--no-insert-timestamp`) + rung-2b (`SOURCE_DATE_EPOCH`) active:
+
+- `repro report` build #1: ntoskrnl.exe / win32k.sys / kernel32.dll all **`TimeDateStamp 0
+  (deterministic)`** (was `0x6a37…` wall-clock pre-fix).
+- `repro compare` build #1 vs build #2: **`✓ identical`** on all three (kernel + cargo DLL +
+  cmake-C-link DLL). Fresh relink timestamps confirm they were genuinely rebuilt, not stale.
+
+So the build is reproducible at a fixed path. **Caveat:** this does NOT yet prove *cross-worktree*
+byte-identity (the dedup payoff) — Rust objects still embed the absolute worktree path, which is
+identical in a same-path rebuild but differs across worktrees. That last gap needs rung-1
+(`trim-paths`), toolchain-blocked on cargo 1.92. Net: timestamp + date determinism is **done and
+proven**; cross-path remap is the one remaining (deferred) piece for full dedup.
+
 ### Mechanism proof + rung-4 resolution (build-twice on the real toolchain, 2026-06-20)
 
 Verified the fix end-to-end with `repro` + a minimal DLL through the actual llvm-mingw
