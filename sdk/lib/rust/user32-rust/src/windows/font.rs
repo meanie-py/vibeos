@@ -13,6 +13,10 @@ extern "system" {
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: INT, lpWideCharStr: LPWSTR, cchWideChar: INT, ) -> INT;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT, lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL, ) -> INT;
+}
+
+// strlen is a CRT cdecl function — must be extern "C" (`_strlen`), not stdcall (`_strlen@4`).
+extern "C" {
     fn strlen(s: *const core::ffi::c_char) -> usize;
 }
 

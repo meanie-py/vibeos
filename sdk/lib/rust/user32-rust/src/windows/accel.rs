@@ -321,10 +321,10 @@ pub unsafe extern "system" fn TranslateAcceleratorA(hWnd: HWND, hAccTable: HACCE
         }
         WM_CHAR | WM_SYSCHAR => {
             let mut msgW: MSG = *lpMsg;
-            let ch: core::ffi::c_char = LOWORD((*lpMsg).wParam) as core::ffi::c_char;
+            let ch: core::ffi::c_char = LOWORD((*lpMsg).wParam as DWORD) as core::ffi::c_char;
             let mut wch: u16 = 0;
             MultiByteToWideChar(CP_ACP, 0, &ch, 1, &mut wch, 1);
-            msgW.wParam = MAKEWPARAM(wch, HIWORD((*lpMsg).wParam));
+            msgW.wParam = MAKEWPARAM(wch, HIWORD((*lpMsg).wParam as DWORD));
             TranslateAcceleratorW(hWnd, hAccTable, &mut msgW)
         }
         _ => 0,

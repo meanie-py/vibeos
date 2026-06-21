@@ -234,7 +234,7 @@ pub unsafe extern "system" fn EnumDisplaySettingsExA(
     lpExtendedDevMode = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (core::mem::size_of::<DEVMODEW>() + (*lpDevMode).dmDriverExtra as usize) as u32,
+        (core::mem::size_of::<DEVMODEW>() + (*lpDevMode).dmDriverExtra as usize) as SIZE_T,
     ) as LPDEVMODEW;
 
     if lpExtendedDevMode.is_null() {
@@ -377,7 +377,7 @@ pub unsafe extern "system" fn EnumDisplaySettingsExW(
     lpExtendedDevMode = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (core::mem::size_of::<DEVMODEW>() + (*lpDevMode).dmDriverExtra as usize) as u32,
+        (core::mem::size_of::<DEVMODEW>() + (*lpDevMode).dmDriverExtra as usize) as SIZE_T,
     ) as LPDEVMODEW;
     if lpExtendedDevMode.is_null() {
         return 0;
