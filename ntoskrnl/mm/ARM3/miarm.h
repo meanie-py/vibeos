@@ -181,11 +181,15 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 #define PTE_DIRTY               0x0000000000000080ULL   /* Bit 7 (NotDirty inverted) */
 
 //
-// Cache flags (CacheType bits 2-3)
+// Cache flags (CacheType = PTE bits[3:2] = AttrIndx into MAIR_EL1).
+// freeldr programs MAIR=0x004400FF (winldr.c): AttrIndx 0=Normal-WB,
+// 1=Device-nGnRnE, 2=Normal-NC. The values below were bit-swapped (cached
+// selected AttrIndx 1 = Device), which alignment-faulted unaligned accesses to
+// "cached" pages; corrected to match the MAIR (matches stubs.c's comment).
 //
-#define PTE_ENABLE_CACHE        0x0000000000000004ULL   /* CacheType=01 (Normal WB) */
-#define PTE_DISABLE_CACHE       0x0000000000000000ULL   /* CacheType=00 (Device) */
-#define PTE_WRITECOMBINED_CACHE 0x000000000000000CULL   /* CacheType=11 (Normal NC) */
+#define PTE_ENABLE_CACHE        0x0000000000000000ULL   /* AttrIndx 0 (Normal WB) */
+#define PTE_DISABLE_CACHE       0x0000000000000004ULL   /* AttrIndx 1 (Device) */
+#define PTE_WRITECOMBINED_CACHE 0x0000000000000008ULL   /* AttrIndx 2 (Normal NC) */
 #define PTE_PROTECT_MASK        0x01C0000000000C0FULL  /* Includes bit 1 (NotLargePage) */
 #else
 #error Define these please!

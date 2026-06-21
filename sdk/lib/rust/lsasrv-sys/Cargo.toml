@@ -1,0 +1,16 @@
+# lsasrv-sys — LSAPR_* RPC marshalled types + DSROLER/policy info types for the
+# lsasrv.dll C->Rust translation (lsasrv-rust). bindgen-generated
+# (generate_bindings.sh) from the module's lsa_s.h/dssetup_s.h + ntlsa/ntsam in
+# usermode win32+NDK context, allowlisted to the LSAPR_/DSROLE/POLICY_/LSA_
+# surface the Lsar* server methods take. Absent from ntkrnl-sys (usermode DLL).
+# Per-arch (pointer widths + RPC string layout differ). no_std.
+
+[package]
+name = "lsasrv-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

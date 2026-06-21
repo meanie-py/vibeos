@@ -179,6 +179,17 @@ tree touched in the last N hours (recommended — the live gates are instantaneo
 so an actively-worked lane that just isn't building *this second* otherwise looks
 prunable). Only ever removes the build/target dirs, never source or the worktree.
 
+### `repro {report <pe>… | compare <a> <b> | diff-dirs <buildA> <buildB>}`
+The reproducible-builds gauge (determinism lane, rung 0 —
+`docs/engineering/deterministic-builds-plan.md`). A self-contained PE parser (no
+`pefile`/`diffoscope` dependency) answers *are two builds byte-identical, and if
+not, where do they diverge?* — `report` dumps each artifact's COFF
+`TimeDateStamp` (flags `← LEAK` when non-zero) + sha256; `compare` localizes a
+mismatch to the timestamp and/or specific sections; `diff-dirs` runs `compare`
+over the staged artifact set (ntoskrnl.exe, win32k.sys, kernel32.dll) across two
+build trees — the build-twice-in-two-paths check in one command. `--diffoscope`
+shells out for byte-level depth if it's installed (optional).
+
 ### Launch backend config (`native` vs `windows-host`)
 The smoke/boot runner picks a QEMU **backend** from layered config — committed
 `DEFAULTS` (in `config.py`) **<** a gitignored per-machine `<repo>/.vibeos-cli.local.json`

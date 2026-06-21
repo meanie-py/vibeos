@@ -133,6 +133,8 @@ STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
 STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
 SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
+FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
+KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -191,6 +193,7 @@ NTDLL_DIR = REACTOS_ROOT / "dll" / "ntdll"
 # cmake-built kernel32.dll (proc.c was the first flip; see project memory).
 # Same user-mode substrate as ntdll/smss-csrss (ntdll-sys → ntdll_sys::nt).
 KERNEL32_DIR = REACTOS_ROOT / "dll" / "win32" / "kernel32"
+LSASRV_DIR = REACTOS_ROOT / "dll" / "win32" / "lsasrv"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
     "arm64": NTDLL_SYS_DIR / "bindgen_arm64.rs",
@@ -768,6 +771,43 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # fltmgr.sys — Filesystem Filter Manager (drivers/filters/fltmgr, ~5.4K LOC, 11 .c:
+    # Context/Dispatch/Filter/Interface/Lib/Messaging/Misc/Object/Registry/Volume). The layer
+    # IO-manager <-> filesystems where minifilters attach. EXPORT driver (fltmgr.spec: the Flt*
+    # API minifilters import). Private structs (FLT_FILTER/FLT_INSTANCE/FLTP_FRAME/
+    # STREAM_LIST_CTRL/FLT_PORT_OBJECT) in fltmgrint.h; public API in ddk/fltkernel.h. NTDDI
+    # WS03SP1. NOT boot-loaded in smoke -> link-clean x3 bar. Multi-.c cohab (npfs-style traps).
+    "fltmgr": Target(
+        name="fltmgr",
+        source_dir=FLTMGR_DIR,
+        output_crate=RUST_DIR / "fltmgr-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=FLTMGR_DIR / "fltmgr.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ksecdd.sys — Kernel Security Support Provider (drivers/crypto/ksecdd, ~1.6K LOC, 5 .c:
+    # ksecdd/dispatch/crypt/random/stubs). The SSPI provider; boot-loaded. EXPORT driver
+    # (ksecdd.spec: the stdcall Secur32-style SSPI API). Private KSEC_* structs in ksecdd.h;
+    # IOCTL structs in reactos/drivers/ksecdd/ksecioctl.h. Links the already-Rust cryptlib.
+    # NOT boot-loaded in smoke -> link-clean x3 bar. Multi-.c export cohab (fltmgr-style).
+    "ksecdd": Target(
+        name="ksecdd",
+        source_dir=KSECDD_DIR,
+        output_crate=RUST_DIR / "ksecdd-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KSECDD_DIR / "ksecdd.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -981,6 +1021,26 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # lsasrv.dll — Local Security Authority server. Own lsasrv-rust crate; same
+    # user-mode substrate as kernel32/ntdll (ntdll_sys::nt base, auto-collapsed).
+    # The LSAPR_*/SAMPR_*/DSROLER marshalled + policy info types live in
+    # lsasrv-sys and are imported per-file at integration (named, no glob clash).
+    "lsasrv": Target(
+        name="lsasrv",
+        source_dir=LSASRV_DIR,
+        output_crate=RUST_DIR / "lsasrv-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=LSASRV_DIR / "lsasrv.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # winsrv.dll — USER + Console server (consrv + usersrv + concfg
     # aggregated into winsrv.dll, loaded by csrss). Phase 5 of the
     # SMSS→CSRSS spine. CSR server DLL, NOT a standalone exe — entry
@@ -1102,6 +1162,11 @@ def detect_target(c_path: Path) -> Target:
     # user-mode substrate as ntdll. NLS/string family + client/* etc.
     if "/dll/win32/kernel32/" in posix:
         return TARGETS["kernel32"]
+    # lsasrv.dll body (LSA server). Own lsasrv-rust crate, same user-mode
+    # substrate as ntdll (ntdll_sys::nt base). LSAPR_*/DSROLER marshalled types
+    # come from lsasrv-sys, imported per-file at integration.
+    if "/dll/win32/lsasrv/" in posix:
+        return TARGETS["lsasrv"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
     if "/drivers/input/kbdclass" in posix:
@@ -1132,6 +1197,10 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["serial"]
     if "/drivers/storage/class/ramdisk" in posix:
         return TARGETS["ramdisk"]
+    if "/drivers/filters/fltmgr" in posix:
+        return TARGETS["fltmgr"]
+    if "/drivers/crypto/ksecdd" in posix:
+        return TARGETS["ksecdd"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

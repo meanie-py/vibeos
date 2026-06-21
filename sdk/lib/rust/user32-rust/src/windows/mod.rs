@@ -4,10 +4,15 @@
 pub mod accel;
 pub mod caret;
 pub mod class;
+pub mod cursoricon;
 pub mod dc;
 pub mod defwnd;
 pub mod dialog;
+pub mod draw;
 pub mod font;
+pub mod hook;
+pub mod input;
+pub mod menu;
 pub mod message;
 pub mod messagebox;
 pub mod nonclient;

@@ -46,9 +46,37 @@ cmake-configure-free.** After `46b48272a0f` (LEAF) + `f1e182c0f1d` (printf/scanf
   symbol+disasm-identical (i386+amd64) and i386/amd64 smoke green.
 - **winsrv-cargo**: the usersrv strsafe shim (already headerless) moved to `c_shims`
   (`55842b1d4d9`) → winsrv free of `compile_commands.json` too.
-- **Only remaining `c_from_compile_db` users:** `rosload`/`uefildr` (`blrtl_c` = the DEEP
-  loader engines — `bitmap.c`/`compress.c`/`image.c`/`unicode.c`, boot-only, deferred per
-  Phase 4). The entire **non-DEEP** WS1 C-floor surface is converted.
+- **DEEP loaders — DONE (2026-06-21).** `rosload`/`uefildr`'s `blrtl_c` (the boot-RTL C
+  floor: `bitmap/compress/crc32/image/largeint/random/unicode.c` + `nlsboot.c`, +amd64
+  `bitmap64/byteswap/mem.c`) no longer needs `compile_commands.json`. Rather than
+  headerless-ify ~5.5K LOC (the original Phase-4 fear), the cmake-off path keeps the
+  real `#include <rtl.h>` and supplies the compile env directly: a committed per-arch
+  **flag template** (`sdk/lib/rust/reactos-link/cflags/blrtl.<arch>.flags`, = cmake's
+  exact blrtl flags minus the inert PCH + build-dir `-I`) + the one generated header the
+  closure needs (`psdk/winnt.h`) regenerated in-build via **native-hpp** (`sdk/tools/hpp/
+  hpp.c`, self-hosted like spec2def, byte-identical to cmake's). `reactos-link`'s
+  `c_db_libs` loop now branches: compile_commands.json wins when configured (replay, can't
+  go stale), else `compile_c_db_committed` (the committed flags + native-hpp xdk headers).
+  Verified: blrtl objects are **code+data+reloc identical** to cmake's on all 3 arches
+  (only `.debug_*` comp_dir differs); cmake-off `uefildr.exe` (i386) has a **byte-identical
+  `.text`** to the replay/cmake loader; rosload i386 (NativeExe) + uefildr amd64
+  (EfiApplication) also build cmake-off. Regen: `tools/gen_cflags.py`.
+- **`c_from_compile_db` is now FULLY cmake-off (2026-06-21).** Precise enumeration of the
+  live `.c_from_compile_db(` calls: only `blrtl` (loaders, done above) + three
+  `("libcntpr", &cntpr_residue)` in ntoskrnl/ntkrnlmp/ntdll that are **empty-guarded**
+  (`cntpr_residue = Vec::new()`, never fire). Every i8042prt/kbdclass/basesrv/csrss/hal/
+  win32k/winsrv match is a *comment* (historical). So no other cell uses it.
+- **`libcntpr` static_lib → in-cargo c_db (loaders, 2026-06-21).** Generalized the
+  mechanism to a 2nd target: `rosload`/`uefildr` dropped the reused cmake
+  `sdk/lib/crt/liblibcntpr.a` for `c_from_compile_db("libcntpr", &libcntpr_c)` (the cntpr
+  C floor: math/printf/string/scanf + i386 x87 wrappers / amd64 ehandler). Its MSVC asm
+  intrinsics (`_alldiv`/`_ftol2`/`_chkstk`/`seh`) are GC'd by the gnu-target loaders, so
+  no asm_archive is needed (empirically confirmed: C-only links on all arches). The
+  engine `compile_c_db_committed` is target-agnostic; the gen script generalized to
+  `tools/gen_cflags.py <target>` (committed `cflags/libcntpr.<arch>.flags`). Verified:
+  uefildr i386 cmake-off `.text` byte-identical to the liblibcntpr.a build; rosload
+  i386/amd64 + uefildr i386/amd64/arm64 all build (replay + cmake-off). This leaves the
+  loaders free of reused cmake C `.a`'s (rosload keeps only `libchkstk.a` asm).
 
 **Shared-file guard pattern (printf):** `_sxprintf.c`/`_vscwprintf.c` are `#include`d by
 BOTH the cargo cells (non-secapi shells) and cmake's `crt.dll` (secapi `_s` shells), so
@@ -203,8 +231,13 @@ the import-lib DAG); the long pole, do last.
    `widl` (usermode RPC) + the WS1 DEEP loaders.
 4. **Phase 3 — orchestration (WS5):** the thin driver replacing ninja for the kernel +
    core cells; prove `ntoskrnl.exe` builds with no cmake/ninja.
-5. **Phase 4 (optional) — DEEP C (WS1) + WS2-B:** loader C engines + in-cargo ks*.inc,
-   for 100% cmake-off including loaders.
+5. **Phase 4 — DEEP loaders (WS1): DONE (2026-06-21).** `rosload`/`uefildr`'s `blrtl_c`
+   off `compile_commands.json` via committed flag templates + native-hpp-generated xdk
+   headers (`compile_c_db_committed` in `reactos-link`). Loaders now build cmake-off
+   (uefildr i386 `.text` byte-identical to the shipping loader). Remaining for 100%
+   cmake-off: `widl` (usermode RPC), the same committed-flags generalization for the
+   non-loader `c_from_compile_db` cells (driver/spine), WS2-B (in-cargo ks*.inc), and
+   WS5 (the ninja-replacement orchestrator).
 
 ## Constraints / notes
 - Every conversion is **symbol-identical** by construction (same clang, same C); always

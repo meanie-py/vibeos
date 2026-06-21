@@ -826,6 +826,20 @@ impl Linker {
         }
     }
 
+    /// Determinism (rung 1, cc-rs side): cc-rs compiles every shim/asm/stub with
+    /// its ABSOLUTE source path (`repo_root.join(rel)`), which clang embeds into
+    /// `__FILE__`/assert strings + debug info — so two worktrees building the same
+    /// commit at different paths produce different bytes → zero hardlink dedup
+    /// (measured: ntoskrnl.exe carried `…/<worktree>/ntoskrnl/mm_lock_outlines.c`).
+    /// cmake's own C TUs already remap via `-ffile-prefix-map`, and the cargo Rust
+    /// objects via `--remap-path-prefix=<root>=/vibeos` (det-remap.toml) — these
+    /// cc-rs compiles were the one path missing it. Map this worktree's root to the
+    /// same `/vibeos` token so all three (cmake-C, rustc, cc-rs) agree.
+    /// See docs/engineering/deterministic-builds-plan.md.
+    fn apply_prefix_map(&self, b: &mut cc::Build) {
+        b.flag(format!("-ffile-prefix-map={}=/vibeos", self.repo_root.display()));
+    }
+
     /// The per-arch generated kernel-offset include filename (geninc output):
     /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
     /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
@@ -906,6 +920,7 @@ impl Linker {
             }
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
+            self.apply_prefix_map(&mut b);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
             for f in &self.c_shim_flags {
                 b.flag(f);
@@ -925,6 +940,7 @@ impl Linker {
             }
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            self.apply_prefix_map(&mut b);
             // Caller-layered extra defines (e.g. ntkrnlmp's CONFIG_SMP) on top
             // of the asm_set list. Inert when empty (every non-ntkrnlmp module).
             for (n, v) in &self.asm_extra_defines {
@@ -1063,6 +1079,7 @@ impl Linker {
                 }
                 let mut b = cc::Build::new();
                 apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
+                self.apply_prefix_map(&mut b);
                 // module_stubs.c only `#include <stubs.h>` (self-contained).
                 b.file(&stubs)
                     .out_dir(self.obj_dir())
@@ -1108,6 +1125,18 @@ impl Linker {
         // residue that static_libs() used to reuse.
         if !self.c_db_libs.is_empty() {
             let db_path = self.build_dir.join("compile_commands.json");
+            if !db_path.exists() {
+                // cmake-off (WS1 DEEP): no compile_commands.json. Compile each
+                // c_db lib from its committed per-arch flag template
+                // (`sdk/lib/rust/reactos-link/cflags/<name>.<arch>.flags`) plus
+                // the native-hpp-generated xdk headers (`winnt.h` etc.). Mirrors
+                // the WS2 (`ks*.inc`) / WS3 (`.res`) committed-fallback pattern:
+                // cmake's compile_commands.json wins when a build is configured
+                // (the replay branch below — it can never go stale against the
+                // committed flags), the committed flags fill in only when there
+                // is no cmake build at all. Regen via `tools/gen_cflags.py`.
+                self.compile_c_db_committed(&clang, &ar);
+            } else {
             let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
                 panic!(
                     "c_from_compile_db needs {} — configure cmake with \
@@ -1173,6 +1202,7 @@ impl Linker {
                 }
                 println!("cargo:rustc-link-arg={}", lib_a.display());
             }
+            } // end else (cmake build configured → compile_commands.json replay)
         }
         // Pre-expanded asm assembled into on-demand archives, IN the group
         // alongside the cmake C archives (same archive semantics + layout
@@ -1180,6 +1210,7 @@ impl Linker {
         for (name, rels) in &self.asm_archives {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            self.apply_prefix_map(&mut b);
             for rel in rels {
                 let abs = self.repo_root.join(rel);
                 if !abs.exists() {
@@ -1724,6 +1755,124 @@ impl Linker {
             panic!("dlltool produced no {}", lib_a.display());
         }
         lib_a
+    }
+
+    /// cmake-off (WS1 DEEP): regenerate the xdk-derived SDK headers (`winnt.h`,
+    /// `ntdef.h`, the DDK headers, …) that the boot-RTL C floor's `#include
+    /// <rtl.h>` closure pulls. cmake produces these into `build-<arch>/sdk/
+    /// include/{psdk,ddk}/` via `add_xdk_header` (native-hpp over the
+    /// `sdk/include/xdk/*.template.h` sources, byte-stable + arch-independent);
+    /// with no cmake build we run the same transform ourselves. native-hpp
+    /// (`sdk/tools/hpp/hpp.c`) is self-hosted like spec2def. Returns the
+    /// generated-include base dir (with `psdk/` + `ddk/` subdirs) for the caller
+    /// to add as `-I` (appended AFTER the source-tree `-I`, matching cmake's
+    /// build-dir-after-source-dir order). Output proven byte-identical to cmake's.
+    fn generate_xdk_headers(&self) -> PathBuf {
+        let hpp = self.compile_host_tool("sdk/tools/hpp/hpp.c", "native-hpp");
+        let xdk_src = self.repo_root.join("sdk/include/xdk");
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("xdk-gen");
+        // (template, out-relative) — mirrors sdk/include/xdk/CMakeLists.txt.
+        const HEADERS: &[(&str, &str)] = &[
+            ("winnt.template.h", "psdk/winnt.h"),
+            ("ntdef.template.h", "psdk/ntdef.h"),
+            ("devioctl.template.h", "psdk/devioctl.h"),
+            ("wdm.template.h", "ddk/wdm.h"),
+            ("ntddk.template.h", "ddk/ntddk.h"),
+            ("ntifs.template.h", "ddk/ntifs.h"),
+        ];
+        for (tmpl, rel) in HEADERS {
+            let dst = out.join(rel);
+            std::fs::create_dir_all(dst.parent().unwrap()).expect("mkdir xdk-gen");
+            // native-hpp resolves the template name against its WORKING_DIR
+            // (the xdk source dir), exactly like the cmake custom_command.
+            let status = Command::new(&hpp)
+                .arg(tmpl)
+                .arg(&dst)
+                .current_dir(&xdk_src)
+                .status()
+                .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
+            if !status.success() {
+                panic!("native-hpp failed for {tmpl}");
+            }
+            println!("cargo:rerun-if-changed={}", xdk_src.join(tmpl).display());
+        }
+        out
+    }
+
+    /// cmake-off (WS1 DEEP): compile every `c_from_compile_db` lib from its
+    /// committed per-arch flag template instead of replaying cmake's recorded
+    /// command. Each `cflags/<name>.<arch>.flags` (repo-relative) is cmake's
+    /// exact blrtl flag set minus the (inert) PCH + build-dir `-I`, with the
+    /// repo root abstracted to `{REPO}`; we substitute it back, append the
+    /// native-hpp xdk include dirs, and run clang per source. Objects are
+    /// instruction/symbol/reloc identical to cmake's (only `.debug_*` comp_dir
+    /// strings differ). Same archive + link semantics as the replay branch.
+    fn compile_c_db_committed(&self, clang: &Path, ar: &Path) {
+        let xdk = self.generate_xdk_headers();
+        for (name, sources) in &self.c_db_libs {
+            let flags_rel =
+                format!("sdk/lib/rust/reactos-link/cflags/{name}.{}.flags", self.arch.name);
+            let flags_path = self.repo_root.join(&flags_rel);
+            let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
+                panic!(
+                    "cmake-off c_from_compile_db({name}) needs committed flags {} \
+                     (no compile_commands.json) — regen via tools/gen_cflags.py: {e}",
+                    flags_path.display()
+                )
+            });
+            println!("cargo:rerun-if-changed={}", flags_path.display());
+            let repo = self.repo_root.to_str().expect("utf8 repo root");
+            let flags: Vec<String> = raw
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.replace("{REPO}", repo))
+                .collect();
+            let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
+            std::fs::create_dir_all(&out_sub).ok();
+            let mut objs = Vec::new();
+            for rel in sources {
+                let abs = self.repo_root.join(rel);
+                if !abs.exists() {
+                    panic!("missing c_from_compile_db source {}", abs.display());
+                }
+                let stem = abs
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
+                let obj = out_sub.join(format!("{stem}.o"));
+                let status = Command::new(clang)
+                    .args(&flags)
+                    .arg("-I")
+                    .arg(xdk.join("psdk"))
+                    .arg("-I")
+                    .arg(xdk.join("ddk"))
+                    .arg(&abs)
+                    .arg("-o")
+                    .arg(&obj)
+                    .current_dir(&self.repo_root)
+                    .status()
+                    .unwrap_or_else(|e| {
+                        panic!("committed-flags clang for {rel} (lib {name}): {e}")
+                    });
+                if !status.success() {
+                    panic!("cmake-off c_from_compile_db: compile failed for {rel} (lib {name})");
+                }
+                objs.push(obj);
+                println!("cargo:rerun-if-changed={}", abs.display());
+            }
+            let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+            let _ = std::fs::remove_file(&lib_a);
+            let status = Command::new(ar)
+                .arg("rcs")
+                .arg(&lib_a)
+                .args(&objs)
+                .status()
+                .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+            if !status.success() {
+                panic!("ar failed for c_from_compile_db {name}");
+            }
+            println!("cargo:rustc-link-arg={}", lib_a.display());
+        }
     }
 
     /// Compile a single-.c host tool with the host cc, return its path.

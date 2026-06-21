@@ -215,6 +215,36 @@ def test_discover_rust_targets(tmp_path: Path):
     assert len(provenance.discover_rust_archives(bd)) == 1
 
 
+def test_workspace_cargo_target_per_arch(tmp_path: Path):
+    # the cargo workspace cache lives OUTSIDE build-<arch>; discover_rust_targets
+    # can't see it, so --clean needs this to be genuinely cold (§9.6b / task #41).
+    repo = tmp_path
+    assert provenance.workspace_cargo_target(repo, "i386") is None  # absent -> None
+    stem = repo / "sdk" / "lib" / "rust" / "target" / "i686-kernel"
+    stem.mkdir(parents=True)
+    assert provenance.workspace_cargo_target(repo, "i386") == stem
+    # arch alias + per-arch stem resolution
+    (repo / "sdk" / "lib" / "rust" / "target" / "x86_64-kernel").mkdir(parents=True)
+    amd64_stem = provenance.workspace_cargo_target(repo, "amd64-uefi")
+    assert amd64_stem is not None and amd64_stem.name == "x86_64-kernel"
+
+
+def test_discover_rust_module_outputs(tmp_path: Path):
+    # the copied cargo-module outputs --clean must delete so ninja re-links
+    # (§stale-cargo / task #41). Only existing files are returned.
+    repo = tmp_path
+    bd = repo / "build-i386"
+    (bd / "ntoskrnl").mkdir(parents=True)
+    (bd / "win32ss").mkdir(parents=True)
+    (bd / "ntoskrnl" / "ntoskrnl.exe").write_text("k")
+    (bd / "win32ss" / "win32k.sys").write_text("w")
+    # kernel32.dll absent -> not returned (no false unlink target)
+    outs = provenance.discover_rust_module_outputs(repo, "i386")
+    names = {p.name for p in outs}
+    assert names == {"ntoskrnl.exe", "win32k.sys"}, names
+    assert all(p.is_file() for p in outs)
+
+
 # --- triage classification --------------------------------------------------
 
 
@@ -560,6 +590,105 @@ def test_prune_attribute_longest_match_wins():
     assert prune._attribute("/elsewhere/x", wts) is None
 
 
+# --- repro: PE parser + reproducibility compare (det-plan rung 0) ----------
+
+
+def _mk_pe(timestamp: int, sections: list[tuple[str, bytes]], machine: int = 0x8664) -> bytes:
+    """Build a minimal valid PE image (COFF header + section table + bodies, no optional
+    header) for testing the determinism parser. Mirrors the layout parse_pe reads."""
+    n = len(sections)
+    pe_off = 0x40
+    head = bytearray(b"\x00" * pe_off)
+    head[0:2] = b"MZ"
+    head[0x3C:0x40] = struct.pack("<I", pe_off)
+    # COFF: machine, num_sections, timestamp, ptr_symtab, num_syms, size_opt, characteristics
+    coff = b"PE\x00\x00" + struct.pack("<HHIIIHH", machine, n, timestamp, 0, 0, 0, 0)
+    sec_table_off = pe_off + len(coff)
+    cursor = sec_table_off + 40 * n
+    headers = b""
+    bodies = b""
+    for name, body in sections:
+        nm = name.encode("latin-1")[:8].ljust(8, b"\x00")
+        # virtsize, virtaddr, rawsize, rawoff, then 12 zero bytes + characteristics
+        headers += nm + struct.pack("<IIII", len(body), 0x1000, len(body), cursor)
+        headers += b"\x00" * 12 + struct.pack("<I", 0)
+        bodies += body
+        cursor += len(body)
+    return bytes(head) + coff + headers + bodies
+
+
+def test_repro_parse_pe_fields():
+    img = _mk_pe(0x12345678, [(".text", b"\xc3" * 16), (".data", b"\x00" * 8)])
+    pe = repro.parse_pe(img)
+    assert pe.machine == 0x8664
+    assert pe.timestamp == 0x12345678
+    assert [s.name for s in pe.sections] == [".text", ".data"]
+    assert pe.sections[0].raw_size == 16
+
+
+def test_repro_parse_pe_rejects_non_pe():
+    with pytest.raises(ValueError):
+        repro.parse_pe(b"not a pe at all" * 8)
+
+
+def test_repro_compare_identical():
+    img = _mk_pe(0xCAFEBABE, [(".text", b"\x90" * 32)])
+    rep = repro.compare(img, img)
+    assert rep.identical
+    assert not rep.timestamp_differs
+    assert rep.section_diffs == ()
+
+
+def test_repro_compare_timestamp_only_is_the_leak_signature():
+    # Two builds identical except the PE TimeDateStamp — the measured live leak. The
+    # whole-file digest differs but NO section body does → localizes to the timestamp.
+    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
+    b = _mk_pe(0x20000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
+    rep = repro.compare(a, b)
+    assert not rep.identical
+    assert rep.timestamp_differs
+    assert rep.section_diffs == ()
+
+
+def test_repro_compare_localizes_changed_section():
+    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"old")])
+    b = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"new")])
+    rep = repro.compare(a, b)
+    assert not rep.identical
+    assert not rep.timestamp_differs
+    assert rep.section_diffs == (".data",)
+
+
+def test_repro_verify_parser_wires_arch_and_dispatch():
+    # rung 5: `repro verify --arch i386` routes to repro_mod.repro with repro_cmd=verify
+    from .__main__ import build_parser
+
+    ns = build_parser().parse_args(["repro", "verify", "--arch", "i386"])
+    assert ns.repro_cmd == "verify"
+    assert ns.arch == "i386"
+    assert ns.fn is repro.repro
+
+
+# --- build: SOURCE_DATE_EPOCH commit-date derivation (det-plan rung 2b) -----
+
+
+def test_source_date_epoch_is_commit_ct(tiny_repo: Path):
+    sde = build_mod.source_date_epoch(tiny_repo)
+    assert sde is not None and sde.isdigit()
+    # must equal the HEAD commit's %ct (deterministic per commit, not wall-clock)
+    expected = subprocess.run(
+        ["git", "log", "-1", "--format=%ct"],
+        cwd=tiny_repo,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert sde == expected
+
+
+def test_source_date_epoch_none_outside_git(tmp_path: Path):
+    assert build_mod.source_date_epoch(tmp_path) is None
+
+
 # --- config: layered defaults + local override + env (windows-host backend) -
 
 
@@ -708,105 +837,6 @@ def test_backend_rewrite_netdev_for_windows():
     # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
     plain = ["-M", "pc", "-accel", "tcg"]
     assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)
-
-
-# --- repro: PE parser + reproducibility compare (det-plan rung 0) ----------
-
-
-def _mk_pe(timestamp: int, sections: list[tuple[str, bytes]], machine: int = 0x8664) -> bytes:
-    """Build a minimal valid PE image (COFF header + section table + bodies, no optional
-    header) for testing the determinism parser. Mirrors the layout parse_pe reads."""
-    n = len(sections)
-    pe_off = 0x40
-    head = bytearray(b"\x00" * pe_off)
-    head[0:2] = b"MZ"
-    head[0x3C:0x40] = struct.pack("<I", pe_off)
-    # COFF: machine, num_sections, timestamp, ptr_symtab, num_syms, size_opt, characteristics
-    coff = b"PE\x00\x00" + struct.pack("<HHIIIHH", machine, n, timestamp, 0, 0, 0, 0)
-    sec_table_off = pe_off + len(coff)
-    cursor = sec_table_off + 40 * n
-    headers = b""
-    bodies = b""
-    for name, body in sections:
-        nm = name.encode("latin-1")[:8].ljust(8, b"\x00")
-        # virtsize, virtaddr, rawsize, rawoff, then 12 zero bytes + characteristics
-        headers += nm + struct.pack("<IIII", len(body), 0x1000, len(body), cursor)
-        headers += b"\x00" * 12 + struct.pack("<I", 0)
-        bodies += body
-        cursor += len(body)
-    return bytes(head) + coff + headers + bodies
-
-
-def test_repro_parse_pe_fields():
-    img = _mk_pe(0x12345678, [(".text", b"\xc3" * 16), (".data", b"\x00" * 8)])
-    pe = repro.parse_pe(img)
-    assert pe.machine == 0x8664
-    assert pe.timestamp == 0x12345678
-    assert [s.name for s in pe.sections] == [".text", ".data"]
-    assert pe.sections[0].raw_size == 16
-
-
-def test_repro_parse_pe_rejects_non_pe():
-    with pytest.raises(ValueError):
-        repro.parse_pe(b"not a pe at all" * 8)
-
-
-def test_repro_compare_identical():
-    img = _mk_pe(0xCAFEBABE, [(".text", b"\x90" * 32)])
-    rep = repro.compare(img, img)
-    assert rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_timestamp_only_is_the_leak_signature():
-    # Two builds identical except the PE TimeDateStamp — the measured live leak. The
-    # whole-file digest differs but NO section body does → localizes to the timestamp.
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    b = _mk_pe(0x20000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_localizes_changed_section():
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"old")])
-    b = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"new")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == (".data",)
-
-
-def test_repro_verify_parser_wires_arch_and_dispatch():
-    # rung 5: `repro verify --arch i386` routes to repro_mod.repro with repro_cmd=verify
-    from .__main__ import build_parser
-
-    ns = build_parser().parse_args(["repro", "verify", "--arch", "i386"])
-    assert ns.repro_cmd == "verify"
-    assert ns.arch == "i386"
-    assert ns.fn is repro.repro
-
-
-# --- build: SOURCE_DATE_EPOCH commit-date derivation (det-plan rung 2b) -----
-
-
-def test_source_date_epoch_is_commit_ct(tiny_repo: Path):
-    sde = build_mod.source_date_epoch(tiny_repo)
-    assert sde is not None and sde.isdigit()
-    # must equal the HEAD commit's %ct (deterministic per commit, not wall-clock)
-    expected = subprocess.run(
-        ["git", "log", "-1", "--format=%ct"],
-        cwd=tiny_repo,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    assert sde == expected
-
-
-def test_source_date_epoch_none_outside_git(tmp_path: Path):
-    assert build_mod.source_date_epoch(tmp_path) is None
 
 
 def test_backend_stage_media_paths_arm64_drives():
