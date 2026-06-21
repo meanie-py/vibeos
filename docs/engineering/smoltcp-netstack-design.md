@@ -1,6 +1,6 @@
 # smoltcp Net Stack — Design
 
-**Date:** 2026-06-07 (design) · **Updated:** 2026-06-20 (M7 arm64 net data path — core GREEN; one TX bug open)
+**Date:** 2026-06-07 (design) · **Updated:** 2026-06-20 (M7 arm64 net data path — core GREEN; #91/#92 root-caused to the arm64 no-preemption gap; **added the Post-Parity Roadmap (M8+)** — server TCP, management plane, interrupt-driven RX, NDIS, from a four-pass code audit)
 **Status:** **M0–M6 DONE + ON MAINLINE** (`c4911ea7c68`, master + continue-rust-port) — the
 C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
 all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
@@ -250,6 +250,173 @@ the TDI boundary. The only unproven hop is usermode `ws2_32`→AFD, gated on the
 
 ---
 
+## Post-Parity Roadmap (M8+)
+
+With M7 closing **arch parity** (the full data path + usermode winsock green on amd64/i386/
+arm64), netstack graduates from "MVP proven on three arches" to a stack that has to become
+*real*: serve inbound workloads, expose the management surface the OS's own tools depend on,
+stop busy-polling, and eventually drive real hardware. The milestones below are grounded in a
+**2026-06-20 code audit** (four parallel research passes over AFD, the Rust TDI dispatch, the
+`virtio-drivers` crate, `ndis.sys`, and the iphlpapi/services tree); each carries file:line
+evidence, an effort read, and its dependency/arch notes. They are roughly priority-ordered, but
+several are independent and can run in parallel or be resequenced.
+
+> **Recommended sequencing.** **M8 (server-side TCP)** and **M9 (management plane)** are the two
+> highest-value, *arch- and clock-independent* wins — do them first (they can even go in parallel;
+> both live in `tditrans.rs`/`tdidev.rs` but touch disjoint dispatch arms). **M10 (interrupt-driven
+> RX)** is the architectural cornerstone and is **doable on amd64 today**; its arm64 half folds in
+> when arm64-love's GIC work lands (and it's the robust, preemption-independent fix for the #91/#92
+> idle-poll-starvation class). **M11 (NDIS real-NIC)** is the big multi-week lane that builds on
+> M10's interrupt/IRQL discipline. **M12+** is completeness/perf, done as target apps demand it.
+
+### M8 — Server-side TCP (`TDI_LISTEN` / `TDI_ACCEPT`)
+
+**Why.** netstack is *outbound-client-only* at the TDI surface today — a usermode app can
+`connect()` but cannot `bind()`+`listen()`+`accept()`. That blocks every inbound service: SMB/CIFS
+file sharing, the RPC endpoint mapper (remote DCOM / service control / remote registry), and any
+HTTP/FTP/telnet-style server.
+
+**Key finding — much simpler than a generic TDI server.** ReactOS AFD does **not** register
+`TDI_EVENT_CONNECT`. `AfdRegisterEventHandlers` (`drivers/network/afd/afd/event.c:221-271`)
+registers only ERROR/DISCONNECT/RECEIVE/RECEIVE_EXPEDITED/CHAINED_RECEIVE. The server model is
+**pre-posted `TdiListen` IRPs**: `AfdListenSocket` (`listen.c:225-291`) opens a connection object,
+`TdiAssociateAddressFile`s it to the bound address, and posts a `TDI_LISTEN`
+(IRP_MJ_INTERNAL_DEVICE_CONTROL, MinorFunction `0x04`) that **pends** until a SYN arrives;
+`ListenComplete` (`listen.c:90-223`) queues the connection onto `FCB->PendingConnections` and
+immediately re-posts a fresh `TdiListen` to keep a backlog slot open. `accept()` (`AfdAccept`,
+`listen.c:337-406`) just hands an already-established connection object to a new socket. **So
+netstack needs no event-upcall subsystem** — only the pended listen IRP.
+
+**Delta.** `TDI_LISTEN (0x04)` + `TDI_ACCEPT (0x05)` currently fall to the `_ =>` arm in
+`handle_tdi` (`tdidev.rs:482-494`) → `STATUS_NOT_IMPLEMENTED`, so `listen()` fails synchronously.
+Already implemented (the client+datagram path): SET_EVENT_HANDLER, ASSOCIATE/DISASSOCIATE, CONNECT,
+SEND, RECEIVE, DISCONNECT, SEND/RECEIVE_DATAGRAM.
+
+**smoltcp ↔ TDI bridge.** smoltcp has no `accept()` — a `tcp::Socket.listen(port)` transitions
+LISTEN→SYN_RECEIVED→ESTABLISHED **in place**, absorbing exactly one connection. That maps **1:1**
+onto AFD's "one connection object per backlog slot": on `TDI_LISTEN`, create a `tcp::Socket`,
+`.listen(local_port)` (port from the *associated address object*, via `Conn.addr_id → Addr.local_port`,
+**not** an ephemeral port), store the handle + pend the listen IRP (mirror the existing
+`connect_irp` field in `tditrans.rs`); in `bridge()`, when that socket reaches Established, complete
+the listen IRP filling `ReturnConnectionInformation->RemoteAddress` from `socket.remote_endpoint()`
+(the `TaIpFull` builder already exists, `tdi.rs:192-213`). The post-accept recv/disconnect path is
+**already implemented**.
+
+**Effort: low-to-moderate** — one focused session in `tditrans.rs` + `tdidev.rs`: 2 dispatch arms,
+1-2 new `Cmd` variants, ~3 `Conn` fields, a listen branch in `apply`, a completion check in
+`bridge`; `TDI_ACCEPT` can start as a SUCCESS stub. **Independent of arch + the clock fix.** Backlog
+exhaustion → smoltcp RSTs the SYN (acceptable; matches Windows backlog behaviour).
+
+### M9 — The management plane (`ipconfig` / `ping` / `getsockname` / iphlpapi)
+
+**Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
+basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
+netstack returns `STATUS_NOT_IMPLEMENTED` for the query surface. The casualties — `ipconfig`,
+`GetAdaptersInfo`, `ping`, route/ARP tables, even `getsockname` — are exactly the visible tools a
+user reaches for. These are small, localized, high-leverage fixes.
+
+**Findings.**
+- **`getsockname` is broken:** `AfdGetSockName` (`afd/info.c:263`) issues `TDI_QUERY_INFORMATION`
+  (TDI_QUERY_ADDRESS_INFO), but `handle_tdi` has no arm for `TDI_QUERY_INFORMATION (0x0C)` /
+  `TDI_SET_INFORMATION (0x0D)` (constants exist, `tdi.rs:21-22`) → `NOT_IMPLEMENTED`
+  (`tdidev.rs:482-494`). (`getpeername` happens to work — it reads a cached FCB address, no TDI call.)
+- **iphlpapi is entirely broken:** built on TDI entity enumeration via `sdk/lib/tdilib`, issuing
+  `IOCTL_TCP_QUERY_INFORMATION_EX` for `IF_MIB_STATS_ID` / `IP_MIB_ADDRTABLE_ENTRY_ID` / ARP+route
+  table IDs (`ifenum_reactos.c:59-80`, `ipstats_reactos.c:237-276`). netstack's `handle_query_info_ex`
+  (`tdidev.rs:291`) implements only ENTITY_LIST + ENTITY_TYPE; all MIB classes return
+  `NOT_IMPLEMENTED` (`tdidev.rs:331-338`) → `GetAdaptersInfo`/`GetIpAddrTable`/`GetIpForwardTable`
+  all fail → `ipconfig`, netsh net views, dhcpcsvc address-readback all fail.
+- **`ping` is broken:** uses `IcmpSendEcho2` → `\Device\Ip` + `IOCTL_ICMP_ECHO_REQUEST`
+  (`iphlpapi/icmp.c:219-250`); netstack creates `\Device\Ip` (`tdidev.rs:54`) but has no ICMP-echo
+  IOCTL handler — even though the engine already does ICMP internally for self-test.
+
+**Work — a cluster of small items.** (1) a `TDI_QUERY_INFORMATION` arm returning the bound local
+`TA_IP_ADDRESS` (fixes `getsockname`); (2) the MIB classes in `handle_query_info_ex` (IF stats, addr
+table, route/ARP) — **the single highest-leverage item, unblocking all of iphlpapi at once**; (3)
+`IOCTL_ICMP_ECHO_REQUEST` on `\Device\Ip` (makes `ping` work, reusing the engine's ICMP); (4)
+optionally `IOCTL_TCP_SET_INFORMATION_EX` for address/route programming so dhcpcsvc can configure
+the interface (today the engine self-configures via its own DHCP). **Independent of arch + clock**;
+each item is small and individually testable.
+
+### M10 — Interrupt-driven RX (virtio IRQ → ISR → DPC → event)
+
+**Why.** The worker busy-polls with `delay_ms` today. Interrupt-driven RX buys lower CPU + latency,
+is **mandatory for real NICs** (you cannot poll real hardware efficiently), and is the
+**preemption-independent, robust fix** for the arm64 idle-poll-starvation class (#91/#92) — a
+DPC-set event wakes the worker without the periodic clock.
+
+**Findings.** `virtio-drivers` already exposes the primitive: `Transport::ack_interrupt()` returns
+`InterruptStatus` (QUEUE_INTERRUPT bit), re-exported as `VirtIONet::ack_interrupt()` +
+`enable/disable_interrupts()` (`virtio-drivers` `transport/mod.rs:69-72,191-205`,
+`device/net/dev.rs:45-55`) — netstack just never calls it. The device is already on **legacy INTx**
+(PciTransport never configures MSI-X; `enable_bus_master` leaves INTx enabled, `pci.rs:90`) so it
+*does* assert on used-ring advance. The kernel has the full plumbing — `IoConnectInterrupt` +
+`HalGetInterruptVector(PCIBus,…)` + `KeInitializeDpc`/`KeInsertQueueDpc`/`KeSetEvent`/
+`KeWaitForSingleObject` (all in `ntkrnl-sys` bindgen) — with **`scsiport-rust/src/fdo.rs:410-470`
+as a working copy-paste model**.
+
+**Design.** An RX `SynchronizationEvent`; ISR (at DIRQL) = `dev.ack_interrupt()`, if QUEUE_INTERRUPT
+queue the DPC + return TRUE (else FALSE for the shared INTx line); DPC (DISPATCH) = `KeSetEvent`;
+worker loop swaps `delay_ms` (`engine.rs:268`) for `KeWaitForSingleObject(&rx_event, …, &timeout)`
+where the **event is the primary wake** and the `poll_delay()` value is the fallback timeout. The
+ISR/DPC **only ack + signal**, never touch the Interface/SocketSet — preserving the single-owner-at-
+PASSIVE invariant.
+
+**Arch split + effort.** **amd64: doable now, ~1-2 days** — `HalGetInterruptVector` works on x86
+(`hal-rust/src/x86/bussupp.rs:1848`), IOAPIC routing works (scsiport/i8042 use it); add a
+config-space `0x3C` Interrupt-Line read to `pci.rs` + the ISR/DPC/event module + the `engine.rs`
+wait swap. **arm64: blocked on arm64-love** — `HalGetInterruptVector` is a stub returning `0`
+(`hal-rust/src/arm64/halstubs.rs:393-402`), the GIC/GPEX-INTx→SPI routing is unimplemented
+(net-new HAL work outside netstack's lane). Note: on arm64 even the `KeWaitForSingleObject`
+*timeout* fallback rides the dead clock, so there the event must be the **sole** wake. Risk:
+`HalGetInterruptVector(PCIBus)` must return the routed vector for the manually-enumerated NIC
+without a PnP resource assignment (netstack enumerates PCI itself in `pci.rs`, so it must read the
+Interrupt Line/Pin from config space).
+
+### M11 — Real-NIC support via an NDIS protocol shim
+
+**Why.** Drive actual hardware + non-virtio QEMU models (e1000/rtl8139) by sitting netstack as an
+NDIS *protocol* driver above existing miniports, instead of driving virtio directly.
+
+**Findings — better than expected.** `ndis.sys` **builds** (`drivers/network/ndis`, registered in
+the NDIS boot group, `hivesys.inf:1742`) and three QEMU-relevant miniports are present and kept as
+translation targets — **e1000, rtl8139, netkvm** (`drivers/network/dd/*/ndis.c`, all call
+`NdisMRegisterMiniport`). The old binding survives intact as a reference:
+`drivers/network/tcpip/datalink/lan.c` (full ProtocolReceive/Send/TransferData,
+`NdisRegisterProtocol` at :1688, `NdisOpenAdapter` at :1478, `NdisSend` at :1063). The netstack seam
+is clean: smoltcp's `phy::Device` is `VirtioPhy` (`device.rs:77-104`); an `NdisPhy` is a drop-in
+sibling, swapped at `engine.rs:74`.
+
+**The hard part — IRQL.** `ProtocolReceivePacket` runs at **DISPATCH_LEVEL** (`lan.c:427`) but the
+engine is a single PASSIVE worker that solely owns the Interface+SocketSet and allocates freely;
+smoltcp/the global allocator **cannot** run from the receive callback. So RX must be a lock-free,
+non-paged handoff: the callback only copies bytes into a ring (no smoltcp, no pageable alloc) and
+the worker drains it — exactly lan.c's `LanSubmitReceiveWork` model. Plus NDIS_PACKET/buffer-chain
+↔ flat `&[u8]` marshaling both ways and a per-arch (i386 stdcall `_Name@N`) FFI surface of ~6
+NdisXxx exports + ~8 ProtocolXxx callbacks.
+
+**Options/effort.** (a) full NDIS protocol shim — works with all in-tree miniports, **substantial
+multi-week lane** (get ndis.sys + one miniport onto the boot path = its own sub-task with its own
+bugs; then the Rust FFI + `NdisPhy` + DISPATCH-safe RX ring + `NdisSend`/SendComplete recycling);
+(b) more direct Rust backends per card (~1 card/week, doesn't scale); (c) virtio-only (current).
+The architecture already supports (a) cleanly (swappable `Device`, lan.c reference) — the cost is
+integration breadth, not redesign. **Depends on M10's interrupt/IRQL discipline.**
+
+### M12+ — Completeness & performance (as target apps demand)
+
+- **Transport sockopts plumbed to smoltcp:** `TCP_NODELAY`, `SO_KEEPALIVE`, `SO_BROADCAST`
+  enforcement, `SO_REUSEADDR` semantics (today stored in AFD's FCB only, not pushed to the
+  transport — `WSPSetSockOpt` even FIXME-comments this, `msafd dllmain.c:3100`).
+- **Multicast/IGMP** (`IP_ADD_MEMBERSHIP`) and **raw sockets** (`\Device\RawIp` is created at
+  `tdidev.rs:54` but has no handler; SOCK_RAW unsupported end-to-end).
+- **`ConnectEx`/`AcceptEx`:** `SIO_GET_EXTENSION_FUNCTION_POINTER` is UNIMPLEMENTED in `WSPIoctl`
+  (`msafd`) — needed by modern async apps.
+- **IPv6:** smoltcp already supports it; flip on dual-stack.
+- **Performance:** zero-copy RX/TX (copies every frame today, `device.rs`), checksum/TSO/GSO
+  offload, multi-queue.
+
+---
+
 ## Risks / open items
 
 Original risks — how each resolved:
@@ -332,8 +499,9 @@ Remaining open:
   - **OPEN (proper kernel fix):** wire a periodic arm64 clock interrupt → `KeUpdateSystemTime` so
     `InterruptTime`/`delay_ms`/all timer-based kernel paths work on arm64 (currently only the
     cntvct perf counter advances). Benefits all arm64 work, not just netstack.
-- **Later (v1+):** IPv6; NDIS `Device` for real NICs; multi-NIC/routing; zero-copy; offloads;
-  server-side TCP (TDI_LISTEN/TDI_ACCEPT — netstack is outbound-client-only today).
+- **Later (v1+):** see the **Post-Parity Roadmap (M8+)** section above — server-side TCP
+  (TDI_LISTEN/ACCEPT), the management plane (iphlpapi/ipconfig/ping), interrupt-driven RX,
+  NDIS real-NIC support, then completeness/perf (IPv6, multicast, zero-copy, offloads).
 
 ---
 
