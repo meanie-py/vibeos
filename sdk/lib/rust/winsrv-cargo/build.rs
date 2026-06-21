@@ -93,11 +93,16 @@ fn main() {
         // pulls concfg-rust as a Cargo dep, so all 50 of libconcfg_rust.a's syms
         // are provided by the cargo dep (offline residue: concfg_rust defs −
         // winsrv-rlib defs = EMPTY). Same pattern as libcntpr_rust→cnt-rust-lib.
+        // libbasesrv.a / libcsrsrv.a self-hosted via .import_lib below (2026-06-20)
+        // — both are cmake-built IMPORT libs (members basesrv.dll/csrsrv.dll +
+        // __imp_ thunks), NOT bodies (basesrv/csrsrv are 100% Rust DLLs now).
+        // winsrv genuinely imports them (basesrv: BaseSetProcessCreateNotify;
+        // csrsrv: 21 Csr* syms), so they're self-hosted from each .spec (the
+        // kdcom/bootvid/hal pattern), symbol-identical (the cmake .a is itself
+        // spec2def-generated from these specs).
         .static_libs(&[
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
-            "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
-            "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
             "sdk/lib/crt/libchkstk.a",
         ])
         // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
@@ -112,6 +117,8 @@ fn main() {
         .import_lib("dll/win32/ole32/ole32.spec", "ole32.dll", "ole32")
         .import_lib("dll/win32/psapi/psapi.spec", "psapi.dll", "psapi")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")
+        .import_lib("subsystems/win/basesrv/basesrv.spec", "basesrv.dll", "basesrv")
+        .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,
