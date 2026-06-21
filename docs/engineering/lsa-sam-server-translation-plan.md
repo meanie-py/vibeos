@@ -11,25 +11,49 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **M0b ✅ (`238dca6d6ee`)** — `lsasrv-sys` bindgen substrate + `dssetup.c` body; i386+amd64 boot.
 > - **M1 ✅ (`f9f54798af0`)** — substrate (`prelude.rs`/`consts.rs` + crate TRACE macros) + leaf
 >   cluster `privileges.c` + `utils.c` flipped; lsasrv-rust compiles ×3, DLL links ×3, i386 boots.
-> - **M2 (in progress)** — `security.c` ✅ (`00a7b6afc8f`, SD/ACL builders), `registry.c` ✅
->   (`af3e0ba7e99`, Nt*Key wrappers). **6 of 16 units Rust** (lsa_s stub + dssetup + privileges +
->   utils + security + registry); each ×3-link-verified + i386 boot-gated.
-> - **`lookup.c` STAGED, not integrated (`50987ef26d1`)** — translated ($0.17) + on disk, but
->   commented out of `mod.rs` (crate stays green). 376 integration errors revealed it
->   **bridges LSA→SAM**: calls `SamrConnect`/`SamrOpenDomain`/`SamrLookupNamesInDomain`, uses
->   `SAMPR_*` types + `SAM_SERVER_*`/`DOMAIN_*` masks + `SamIFree_SAMPR_*`; plus database.c globals
->   (`NtAuthority`/`BuiltinDomainSid`/`AccountDomainSid`/…), a *different* c2rust wine-debug shape
->   (`ros_dbg_log`/`__WINE_DBCL_*`/`trace` macro — needs a new shim), and `'done` labeled-block
->   artifacts.
-> - **⚠️ REORDERED next steps** (lookup.c's LSA→SAM coupling reshapes the plan):
->   1. **lsasrv M3** — `database.c` (the cross-file globals lookup/security need + the lone
->      DUMMY_PSEH fix at :833), `policy.c`, `session.c`.
->   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM access
->      masks (lookup.c needs these; bring them into the lsasrv substrate or a shared sam-sys).
->   3. **wine-debug-internals shim** in prelude (`ros_dbg_log` no-op + `__WINE_DBCL_*` consts +
->      `trace`/`warn`/`err` lowercase macros) — some c2rust output uses the expanded form.
->   4. **Finish lookup.c** (un-comment in mod.rs, resolve the now-available SAM/db symbols + the
->      `'done` labels), then M4 (LPC/port/authpackage), M5 (lsarpc.c 75-method fan-out + ×3 gate).
+> - **M2 ✅** — `security.c` (`00a7b6afc8f`), `registry.c` (`af3e0ba7e99`); landed to mainline batch-6.
+> - **M3 ✅ (kernel32-port)** — `database.c` (`53201b054b3`, cross-file globals NtAuthority/
+>   *SidAuthority/Builtin+AccountDomainSid/Name as `#[no_mangle]` + DB object model + DUMMY_PSEH
+>   :833 fix), `policy.c` (`4d2f788636e`, LsarQuery/SetInformationPolicy fan-out), `session.c`
+>   (`3e0dff6fbab`, logon-session table + LPC-msg accessors). database.c was pure-LLM (c2rust
+>   couldn't anchor its AST); policy/session were c2rust-anchored.
+> - **M4a ✅** — `notify.c` (`1bf67e64fb1`, policy-change notification + RPC handlers).
+> - **10 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
+>   database + policy + session + notify); each ×3-link-verified + i386 boot + amd64 boot+net gated.
+> - **wine-debug-internals shim ✅** (in prelude) — `ros_dbg_log` (real ReactOS variadic export,
+>   declared `extern` so the genuine debug path survives) + `__WINE_DBCL_*` consts + `__wine_debug_class`.
+>   This is the raw c2rust macro-expansion shape (`if dbch.flags & (1<<DBCL) { ros_dbg_log(..) }`).
+> - **`service.rs` STAGED, not integrated (`1bf67e64fb1`)** — translated, on disk, out of mod.rs.
+>   Needs a **winsvc substrate**: SERVICE_TABLE_ENTRYW/SERVICE_STATUS(_HANDLE) types +
+>   StartServiceCtrlDispatcherW/RegisterServiceCtrlHandlerW/SetServiceStatus/CreateThread/CreateEventW/
+>   OpenEventW/WaitForSingleObject/LoadLibraryW/GetProcAddress/FreeLibrary/CloseHandle/GetLastError/
+>   I_ScIsSecurityProcess externs + SERVICE_START_PENDING/RUNNING consts + fn-pointer ABI casts
+>   (declare ServiceMain/ControlHandler/DispatcherThread with extern "C"/"system").
+> - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
+>   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
+> - **⚠️ Next steps** (in order):
+>   1. **M4 rest** — `srm.c` (provides LsapRm* that session.rs externs), `lsasrv.c` (DLL init/
+>      ServiceMain — defines MIDL_user_allocate/free, careful), `authport.c`, then the winsvc
+>      substrate + finish `service.rs`, then `authpackage.c` (1856 LOC, defines LsapTerminateLogon).
+>   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
+>   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
+>   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
+>
+> ### Reusable substrate-growth + c2rust-fix patterns (validated M3/M4a)
+> - **bindgen is additive-safe to regrow:** add a type to `lsasrv-sys/generate_bindings.sh`
+>   allowlist + rerun (`bindgen` 0.72.1 on PATH) → diff confirms only the new type appears (did
+>   this for SECURITY_LOGON_SESSION_DATA). Substrate mirrors `_WIN32_WINNT=0x502`.
+> - **dual-crate type at FFI boundary** (lsasrv_sys struct field vs ntdll_sys callee — _LUID/
+>   _CLIENT_ID/_LARGE_INTEGER/SID): cast the `addr_of_mut!`/`&mut` pointer `as *mut <ntdll type>`,
+>   or `transmute` the Copy value. Same-layout, different crate path.
+> - **c2rust anon-union field naming:** c2rust emits `.c2rust_unnamed`, bindgen emits
+>   `.__bindgen_anon_1` — uniform rename (each struct has one anon member).
+> - **c2rust LUID access:** ntdll `_LUID` has named LowPart/HighPart, not `.__bindgen_anon_1.*`.
+> - **dangling wide-string statics:** transmute the REFERENCE `transmute::<&[u8;N],&[u16;K]>(b"..")`
+>   `.as_ptr()`, never the value `(*b"..")` (points into a dropped temporary — UB though it compiles).
+> - **MIDL_user_allocate takes size_t=usize** (not the c2rust SIZE_T/u64 cast); RtlAllocateHeap
+>   takes SIZE_T. **`(x as i32) < 0`** needs parens (else parsed as i32 generics). **u8 wine flags**
+>   need `as i32` before `& (1<<DBCL)`. **`let mut`** where c2rust reassigns an immutable binding.
 >
 > **⚠️ Link is the oracle for cross-file exports.** rustconv occasionally emits a cross-file C
 > function as a private Rust fn (no `#[no_mangle]`) → undefined-symbol at DLL link (e.g.
