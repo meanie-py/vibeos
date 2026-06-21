@@ -256,27 +256,98 @@ def map_field_type(ctype: str) -> str:
     return "*const core::ffi::c_void"
 
 
-def translate_expr_eval(body: str, fname: str):
-    """Translate one ExprEval routine body into a Rust unsafe extern fn body.
-    Only the bounded set of MIDL conformance idioms is accepted; anything else
-    hard-fails (a wrong ExprEval is a silent runtime buffer-size corruption)."""
-    # param struct
-    ms = re.search(r"struct\s+_PARAM_STRUCT\s*", body)
-    if not ms:
-        fail(f"{fname}: no _PARAM_STRUCT")
-    sblock = brace_block(body, ms.end())
+# Exact-width scalar map for synthesizing a `repr(C)` *view* of a real conformant
+# type whose leading fields an ExprEval reads (e.g. `LSAPR_ACL.AclSize`). Unlike
+# `map_field_type` (which is fine collapsing param-struct scalars to u32), the
+# view must reproduce the C layout byte-for-byte so the read lands at the right
+# offset — so widths are exact and anything unknown hard-fails.
+VIEW_SCALAR = {
+    "BYTE": "u8", "UCHAR": "u8", "CHAR": "u8", "CCHAR": "u8", "BOOLEAN": "u8",
+    "WORD": "u16", "USHORT": "u16", "SHORT": "u16", "WCHAR": "u16",
+    "DWORD": "u32", "ULONG": "u32", "LONG": "u32", "UINT": "u32",
+    "INT": "u32", "BOOL": "u32", "HRESULT": "u32",
+    "ULONG64": "u64", "LONGLONG": "u64", "ULONGLONG": "u64", "DWORD64": "u64",
+}
+
+
+def synth_view_from_header(type_name: str, header: str, fname: str):
+    """Build a `repr(C)` view of `type_name`'s LEADING scalar fields from its
+    definition in the companion `<iface>_s.h`. Used by the named-type ExprEval
+    idiom (`TYPE *pS = (TYPE *)(pStubMsg->StackTop - N)`), where widl reads a
+    real conformant type's header instead of a synthetic `_PARAM_STRUCT`. We
+    only model the leading scalar prefix (stop at the first array/pointer/
+    aggregate — the conformant tail), and hard-fail on anything non-scalar so a
+    layout mismatch can never silently corrupt a buffer size."""
+    found = None
+    for m in re.finditer(r"typedef\s+struct\s+\w*\s*(?=\{)", header):
+        blk = brace_block(header, m.end())
+        after = header[header.index(blk, m.end()) + len(blk):]
+        tm = re.match(r"\s*([A-Za-z_]\w*)", after)
+        if tm and tm.group(1) == type_name:
+            found = blk
+            break
+    if found is None:
+        fail(f"{fname}: ExprEval cast type {type_name} not found in companion header")
     fields = []
-    for line in sblock[1:-1].split(";"):
+    for line in found[1:-1].split(";"):
         line = line.strip()
         if not line:
             continue
-        mm = re.match(r"(.*?)([A-Za-z_]\w*)\s*$", line)
-        if not mm or not mm.group(1).strip():
-            fail(f"{fname}: bad param field {line!r}")
-        ctype, fname_f = mm.group(1).strip(), mm.group(2)
-        fields.append((fname_f, ctype))
+        mm = re.match(r"([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*(\[[^\]]*\])?$", line)
+        if not mm:
+            fail(f"{fname}: ExprEval view field unparseable {line!r}")
+        ctype, fld, arr = mm.group(1), mm.group(2), mm.group(3)
+        if arr:
+            break  # conformant/array tail — leading scalar header ends here
+        rty = VIEW_SCALAR.get(ctype)
+        if rty is None:
+            fail(f"{fname}: ExprEval view field {ctype} {fld} not a known scalar")
+        fields.append((fld, rty))
+    if not fields:
+        fail(f"{fname}: ExprEval view of {type_name} has no leading scalar fields")
+    return fields
 
-    # statements after the `*pS = (...)pStubMsg->StackTop;`, up to the closing
+
+def translate_expr_eval(body: str, fname: str, header: str = ""):
+    """Translate one ExprEval routine body into a Rust unsafe extern fn body.
+    Only the bounded set of MIDL conformance idioms is accepted; anything else
+    hard-fails (a wrong ExprEval is a silent runtime buffer-size corruption).
+
+    Two pointer-init idioms are recognized:
+      (a) inline    : `struct _PARAM_STRUCT { .. } *pS = (..)pStubMsg->StackTop;`
+      (b) named-type : `TYPE *pS = (TYPE *)(pStubMsg->StackTop [+-] N);`
+          (widl emits this when the conformant size_is references a real type's
+          field, e.g. `[size_is(AclSize - 4)]` inside `LSAPR_ACL`)."""
+    ms = re.search(r"struct\s+_PARAM_STRUCT\s*", body)
+    if ms:
+        # (a) inline _PARAM_STRUCT — StackTop with no offset, fields inline.
+        sblock = brace_block(body, ms.end())
+        fields = []
+        for line in sblock[1:-1].split(";"):
+            line = line.strip()
+            if not line:
+                continue
+            mm = re.match(r"(.*?)([A-Za-z_]\w*)\s*$", line)
+            if not mm or not mm.group(1).strip():
+                fail(f"{fname}: bad param field {line!r}")
+            ctype, fname_f = mm.group(1).strip(), mm.group(2)
+            fields.append((fname_f, map_field_type(ctype)))
+        stack_off = 0
+    else:
+        # (b) named-type cast over (StackTop [+-] N) — synthesize the view.
+        mi = re.search(
+            r"(\w+)\s*\*\s*pS\s*=\s*\(\s*\w+\s*\*\s*\)\s*\(?\s*pStubMsg->StackTop"
+            r"\s*(?:([+-])\s*(0x[0-9a-fA-F]+|\d+))?\s*\)?\s*;",
+            body,
+        )
+        if not mi:
+            fail(f"{fname}: no _PARAM_STRUCT and no recognized named-type StackTop cast")
+        type_name = mi.group(1)
+        sign, num = mi.group(2), mi.group(3)
+        stack_off = (int(num, 0) * (-1 if sign == "-" else 1)) if num else 0
+        fields = synth_view_from_header(type_name, header, fname)
+
+    # statements after the `*pS = (...)pStubMsg->StackTop...;`, up to the closing
     # brace of the function body.
     inner = body[: body.rindex("}")]
     stmts_src = inner[inner.index(";", inner.index("StackTop")) + 1 :]
@@ -287,14 +358,17 @@ def translate_expr_eval(body: str, fname: str):
             continue
         out_stmts.append(translate_expr_stmt(s, fname))
 
-    rust_fields = "\n".join(f"        {fn}: {map_field_type(ct)}," for fn, ct in fields)
+    ps_init = "(*p_stub_msg).stack_top"
+    if stack_off:
+        ps_init += f".offset({stack_off})"
+    rust_fields = "\n".join(f"        {fn}: {rty}," for fn, rty in fields)
     body_rs = "\n".join(f"    {st}" for st in out_stmts)
     return f"""unsafe extern "system" fn {fname}(p_stub_msg: *mut midl_rt::MIDL_STUB_MESSAGE) {{
     #[repr(C)]
     struct ParamStruct {{
 {rust_fields}
     }}
-    let ps = (*p_stub_msg).stack_top as *const ParamStruct;
+    let ps = {ps_init} as *const ParamStruct;
     let _ = &ps;
 {body_rs}
 }}"""
@@ -334,6 +408,10 @@ def translate_rhs(e: str, fname: str):
     m = re.match(r"(.+?)\s*\+\s*(\w+)$", e)
     if m:
         return f"({translate_rhs(m.group(1).strip(), fname)}).wrapping_add({int(m.group(2), 0)})"
+    # X - N
+    m = re.match(r"(.+?)\s*-\s*(\w+)$", e)
+    if m:
+        return f"({translate_rhs(m.group(1).strip(), fname)}).wrapping_sub({int(m.group(2), 0)})"
     # *pS->FIELD
     m = re.match(r"\*\s*pS->(\w+)$", e)
     if m:
@@ -348,7 +426,7 @@ def translate_rhs(e: str, fname: str):
     fail(f"{fname}: unhandled ExprEval expr {e!r}")
 
 
-def parse_expr_evals(c: str):
+def parse_expr_evals(c: str, header: str = ""):
     routines = []
     for m in re.finditer(
         r"static\s+void\s+__RPC_USER\s+(\w+)\s*\(\s*PMIDL_STUB_MESSAGE\s+pStubMsg\s*\)",
@@ -356,7 +434,7 @@ def parse_expr_evals(c: str):
     ):
         fname = m.group(1)
         body = brace_block(c, m.end())
-        routines.append((fname, translate_expr_eval(body, fname)))
+        routines.append((fname, translate_expr_eval(body, fname, header)))
     return routines
 
 
@@ -623,6 +701,10 @@ def main():
     args = ap.parse_args()
 
     c = Path(args.c_file).read_text()
+    # Companion <iface>_s.h — needed only for the named-type ExprEval idiom, to
+    # synthesize a layout-faithful view of the conformant type it reads.
+    hdr = Path(args.c_file).with_suffix(".h")
+    header = hdr.read_text() if hdr.exists() else ""
     deco = build_decoration_map(args.symobj, args.nm, args.arch)
 
     iface, maj, minr = parse_iface(c)
@@ -634,7 +716,7 @@ def main():
     routines = parse_server_routines(c, iface)
     rundowns = parse_named_array(c, r"NDR_RUNDOWN\s+RundownRoutines\s*\[\s*\]\s*=") or []
     expr_names = parse_named_array(c, r"EXPR_EVAL\s+ExprEvalRoutines\s*\[\s*\]\s*=") or []
-    expr_funcs = parse_expr_evals(c)
+    expr_funcs = parse_expr_evals(c, header)
     proc_fmt = parse_format_string(c, "MIDL_PROC_FORMAT_STRING", "__MIDL_ProcFormatString")
     type_fmt = parse_format_string(c, "MIDL_TYPE_FORMAT_STRING", "__MIDL_TypeFormatString")
 

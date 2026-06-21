@@ -195,6 +195,7 @@ members = [
     "services-rust",
     "midl-rt",
     "svcctl-stub",
+    "lsa-stub",
     "version-rust",
     "winreg-stub",
     "mlang-rust",
