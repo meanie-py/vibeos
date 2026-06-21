@@ -36,7 +36,7 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 | rung | buys | mechanism |
 |---|---|---|
 | 0. measurement harness ✅ | know what differs today | `vibeos-cli repro` (built-in PE parser; `diffoscope` optional) |
-| 1. path normalization | cross-worktree byte-identity + dedup | C: `-ffile-prefix-map` ✅ (in source); Rust: `trim-paths` ⛔ unstable in cargo 1.92 — deferred |
+| 1. path normalization | cross-worktree byte-identity + dedup | C: `-ffile-prefix-map` ✅ (in source); Rust: `--remap-path-prefix` via cargo `--config target.'cfg(all())'` ✅ (stable; joins, doesn't clobber the SSE guard) |
 | 2. timestamp elimination | kills `__DATE__`/`__TIME__` + PE-header time variance | `SOURCE_DATE_EPOCH`; lld no-timestamp; deterministic `ar` |
 | 3. build-script / generator audit | the cargo-link + widl/windmc/gen tables are path/time/order-free | audit the ~48 `*-cargo/build.rs` + generators |
 | 4. build-id / debug-GUID determinism | identical debug directory | content-hash (not random) build-id |
@@ -48,16 +48,31 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
 ### Progress (2026-06-20, build-cache lane)
 
 - **Rung 0 ✅ landed** (`f3e4abe9640`): `vibeos-cli repro` harness + validated baseline.
-- **Rung 1 (Rust) ⛔ TOOLCHAIN-BLOCKED** (corrected 2026-06-20). `trim-paths` is **NOT
-  stabilized in cargo 1.92** (our pinned stable) — confirmed empirically: the manifest fails to
-  parse with "feature `trim-paths` is required … not stabilized in this version of Cargo
-  (also not in 1.94.0-nightly)". It needs nightly + `cargo-features = ["trim-paths"]`. The plan's
-  earlier "stabilized 1.81" was wrong. Stable fallbacks don't fit: config.toml
-  `[target.*].rustflags` can't express the per-worktree *absolute* path statically (the exact
-  problem trim-paths solved), and env `RUSTFLAGS` clobbers the load-bearing i386 SSE guard. So
-  Rust path normalization is deferred until trim-paths stabilizes (or the toolchain moves to a
-  nightly that allows the opt-in). NOT a blocker for the dominant leaks — rung 2a/2b are
-  independent. (A `trim-paths` Cargo.toml change was tried and reverted; it broke the build.)
+- **Rung 1 (Rust) ✅ IMPLEMENTED on stable** (2026-06-21 — the "toolchain-blocked" wall was
+  surmountable after all). `trim-paths` IS unstable on cargo 1.92 (needs nightly + a manifest
+  `cargo-features` opt-in, which poisons every *stable* consumer of the shared workspace manifest —
+  that's why the manifest change broke the build and was reverted). But `--remap-path-prefix`
+  delivered via **cargo `--config "target.'cfg(all())'.rustflags=[…]"`** does the same job on
+  stable, and the earlier "stable fallbacks don't fit" verdict was wrong on two counts:
+  - **The per-worktree-path problem dissolves**: cmake already knows `${REACTOS_SOURCE_DIR}` per
+    worktree at configure time (it's what the C `-ffile-prefix-map` uses). So we `configure_file` a
+    per-worktree `det-remap.toml` and pass it via `--config`. Each worktree maps its OWN root to a
+    constant `/vibeos` token.
+  - **The SSE-guard clobber doesn't happen**: env `RUSTFLAGS` and `[target.<triple>].rustflags`
+    clobber, but `target.'cfg(all())'.rustflags` is **JOINED** with the per-triple rustflags
+    (cargo combines target.<cfg> + target.<triple>). **Verified empirically** (both inline `--config
+    key=val` and file `--config <path>` forms): a build carrying the i386 SSE guard
+    `-C target-feature=-sse,-sse2` AND the injected `--remap-path-prefix` shows BOTH on the rustc
+    cmdline. SSE guard intact.
+  Wired in `sdk/cmake/gcc.cmake:add_cargo_module` (the single cargo invocation funneling all KINDs
+  — kernel exe, win32k.sys, ntdll, every cargo DLL/driver), so all 40 cargo modules ×3 arches get
+  it. **Verified end-to-end:** real i386 `beep.sys` builds with the remap + SSE guard on the rustc
+  cmdline; and at the binary level a panic-bearing crate's embedded `…/<worktree>/src/lib.rs`
+  becomes `/vibeos/src/lib.rs` (worktree path gone). std/registry paths (`~/.rustup`, `~/.cargo`)
+  are home-relative = identical across worktrees on a machine, so remapping just the source root is
+  sufficient for the cross-worktree dedup goal. **Remaining:** the full cross-worktree build-twice
+  byte-identity proof on ntoskrnl/win32k/kernel32 (rung 5 gate) — deferred until mainline is stable
+  (gating needs a clean c-r-p base).
 - **Rung 1 (C) ✅ already correct in source** — no change needed. `CMakeLists.txt:97` maps
   `-ffile-prefix-map=${REACTOS_SOURCE_DIR}=`, which a *fresh per-worktree configure* expands to
   that worktree's own abs path → empty; main's generated `build.ninja` only *looks* hardcoded

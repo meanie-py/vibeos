@@ -623,6 +623,16 @@ function(add_cargo_module _target _crate _output)
     endif()
 
     set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+
+    # Determinism rung 1 (Rust path remap): generate a per-worktree cargo --config that
+    # maps THIS worktree's source root to a constant /vibeos token, so rustc-embedded
+    # paths (panic msgs, debug info, file!()) are byte-identical across worktrees building
+    # the same commit -> hardlink dedup actually works. Joined (not clobbered) with the
+    # per-triple i386 SSE-guard rustflags via target.'cfg(all())'. See
+    # docs/engineering/deterministic-builds-plan.md. Idempotent (configure-time, same path).
+    set(_det_remap "${CMAKE_BINARY_DIR}/det-remap.toml")
+    configure_file("${REACTOS_SOURCE_DIR}/sdk/cmake/det-remap.toml.in" "${_det_remap}" @ONLY)
+
     string(REGEX REPLACE "-cargo$" "" _bin "${_crate}")
     set(_cargo_exe "${_ws}/target/${_stem}/release/${_bin}.exe")
     set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
@@ -710,6 +720,7 @@ function(add_cargo_module _target _crate _output)
         # staticlib into the final PE, then the kind post-link runs.
         COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly
             cargo build --release
+                --config ${_det_remap}
                 --target ${_ws}/${_crate}/${_stem}.json
                 -Z build-std=core,alloc,compiler_builtins
                 -Z build-std-features=compiler-builtins-mem
