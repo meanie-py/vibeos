@@ -60,12 +60,63 @@ pub struct _LSAP_POLICY_AUDIT_EVENTS_DATA {
 pub type LSAP_POLICY_AUDIT_EVENTS_DATA = _LSAP_POLICY_AUDIT_EVENTS_DATA;
 pub type PLSAP_POLICY_AUDIT_EVENTS_DATA = *mut _LSAP_POLICY_AUDIT_EVENTS_DATA;
 
+// policy.c LSAPR_/POLICY_ marshalled info structs (all in lsasrv-sys bindgen).
+pub use lsasrv_sys::{
+    _LSAPR_POLICY_DNS_DOMAIN_INFO, PLSAPR_POLICY_DNS_DOMAIN_INFO,
+    _LSAPR_POLICY_ACCOUNT_DOM_INFO, PLSAPR_POLICY_ACCOUNT_DOM_INFO,
+    PLSAPR_POLICY_PRIMARY_DOM_INFO,
+    LSAPR_POLICY_PD_ACCOUNT_INFO, PLSAPR_POLICY_PD_ACCOUNT_INFO,
+    _POLICY_LSA_SERVER_ROLE_INFO, POLICY_LSA_SERVER_ROLE_INFO,
+    _POLICY_LSA_SERVER_ROLE, _POLICY_LSA_SERVER_ROLE_PolicyServerRolePrimary,
+    POLICY_MODIFICATION_INFO, POLICY_DEFAULT_QUOTA_INFO,
+    POLICY_AUDIT_LOG_INFO, POLICY_AUDIT_FULL_QUERY_INFO,
+    POLICY_LSA_REPLICA_SRCE_INFO, _POLICY_LSA_REPLICA_SRCE_INFO,
+    PRPC_SID,
+};
+
+// LSAPR_POLICY_INFORMATION is a union typedef'd directly (no `_`-tag form);
+// alias the `_`-name the c2rust output uses.
+pub type _LSAPR_POLICY_INFORMATION = LSAPR_POLICY_INFORMATION;
+// bindgen names the enum variant with the full `_POLICY_LSA_SERVER_ROLE_` tag;
+// the c2rust output drops `LSA_`.
+pub const _POLICY_SERVER_ROLE_PolicyServerRolePrimary: _POLICY_LSA_SERVER_ROLE =
+    _POLICY_LSA_SERVER_ROLE_PolicyServerRolePrimary;
+// PPOLICY_* pointer aliases bindgen did not emit (only the struct + bare alias).
+pub type PPOLICY_LSA_SERVER_ROLE_INFO = *mut _POLICY_LSA_SERVER_ROLE_INFO;
+pub type PPOLICY_DEFAULT_QUOTA_INFO = *mut _POLICY_DEFAULT_QUOTA_INFO;
+pub type PPOLICY_AUDIT_LOG_INFO = *mut _POLICY_AUDIT_LOG_INFO;
+pub type PPOLICY_AUDIT_FULL_QUERY_INFO = *mut _POLICY_AUDIT_FULL_QUERY_INFO;
+pub type PPOLICY_MODIFICATION_INFO = *mut _POLICY_MODIFICATION_INFO;
+pub type PPOLICY_LSA_REPLICA_SRCE_INFO = *mut _POLICY_LSA_REPLICA_SRCE_INFO;
+
 pub use crate::consts::*;
 
 // ---- universal type aliases the c2rust output uses ----
 pub type VOID = core::ffi::c_void;
 pub type size_t = usize;
-pub use core::ffi::{c_int, c_long, c_void};
+pub use core::ffi::{c_char, c_int, c_long, c_void};
+
+// ---- wine debug internals (wine/debug.h) ----
+// Some c2rust files expand the TRACE/WARN/ERR/FIXME macros to their raw form
+// (`if dbch.flags & (1<<__WINE_DBCL_x) { ros_dbg_log(...) }`) rather than the
+// crate's no-op TRACE! macros. ros_dbg_log is a real ReactOS export (variadic),
+// so declare it and let it resolve at link — preserving the real debug path.
+pub type __wine_debug_class = c_int;
+pub const __WINE_DBCL_FIXME: __wine_debug_class = 0;
+pub const __WINE_DBCL_ERR: __wine_debug_class = 1;
+pub const __WINE_DBCL_WARN: __wine_debug_class = 2;
+pub const __WINE_DBCL_TRACE: __wine_debug_class = 3;
+extern "C" {
+    pub fn ros_dbg_log(
+        cls: __wine_debug_class,
+        ch: *mut __wine_debug_channel,
+        file: *const c_char,
+        func: *const c_char,
+        line: c_int,
+        msg: *const c_char,
+        ...
+    ) -> c_int;
+}
 
 // ---- common NT/Win32 constants the translations bare-reference ----
 pub const UNICODE_NULL: u16 = 0;

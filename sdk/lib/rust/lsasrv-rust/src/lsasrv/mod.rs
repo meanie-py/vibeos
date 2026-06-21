@@ -1,5 +1,6 @@
 //! Translated lsasrv.dll bodies (cohab; namespaced by C source dir).
 pub mod database;
+pub mod policy;
 pub mod dssetup;
 pub mod privileges;
 pub mod security;
