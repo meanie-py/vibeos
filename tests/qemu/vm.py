@@ -532,6 +532,12 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     ECHO_GUEST_PORT: int = 7777
     # Host port forwarded to the guest echo port; allocated in qemu_args().
     echo_hostfwd_port: int = 0
+    # Guest-side TCP port netstack's M8 *kernel TDI server* self-test listens on
+    # (tdisrvtest.rs) — distinct from the engine's direct-smoltcp echo (:7777) so
+    # the TDI listen/accept dispatch is what's exercised. Host port allocated in
+    # qemu_args(); test_tdi_server_listen_accept dials it.
+    TDI_SRV_GUEST_PORT: int = 8888
+    tdi_srv_hostfwd_port: int = 0
     # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual
     # address:port, which slirp pipes through `cat` on the host (a built-in
     # line echo — no host-listener startup race). This is the path an outbound
@@ -542,6 +548,7 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
+        self.tdi_srv_hostfwd_port = _free_tcp_port()
         return [
             *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041, virtio 1.x): the
@@ -553,6 +560,8 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
+            f",hostfwd=tcp:127.0.0.1:{self.tdi_srv_hostfwd_port}"
+            f"-:{self.TDI_SRV_GUEST_PORT}"
             f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
         ]
 
@@ -637,6 +646,9 @@ class Arm64NetConfig(Arm64Config):
     arch: str = "arm64-net"
     ECHO_GUEST_PORT: int = 7777
     echo_hostfwd_port: int = 0
+    # M8 kernel TDI server self-test (tdisrvtest.rs) — see Amd64UefiNetConfig.
+    TDI_SRV_GUEST_PORT: int = 8888
+    tdi_srv_hostfwd_port: int = 0
     GUESTFWD_ADDR: str = "10.0.2.100"
     GUESTFWD_PORT: int = 9999
     # Modest extra settle so the netstack engine markers that DO complete on
@@ -649,6 +661,7 @@ class Arm64NetConfig(Arm64Config):
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
+        self.tdi_srv_hostfwd_port = _free_tcp_port()
         return [
             *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041), same contract as the
@@ -657,6 +670,8 @@ class Arm64NetConfig(Arm64Config):
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
+            f",hostfwd=tcp:127.0.0.1:{self.tdi_srv_hostfwd_port}"
+            f"-:{self.TDI_SRV_GUEST_PORT}"
             f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
         ]
 

@@ -70,6 +70,8 @@ MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
+MARK_TDI_SRV_LISTEN = "[NETSTACK] TDI server: listening on :8888"
+MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
 MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
 
@@ -227,6 +229,42 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     assert _wait_for_marker(vm, MARK_TDI_DGRAM), (
         "TDI SEND_DATAGRAM/RECEIVE_DATAGRAM round-trip did not complete "
         "(UDP datagram path + datagram event-indication upcall)"
+    )
+
+
+def test_tdi_server_listen_accept(vm: QemuVM) -> None:
+    r"""M8: the SERVER/inbound mirror of the TDI round-trip. netstack's kernel TDI
+    server self-test (tdisrvtest.rs) binds :8888, posts a TDI_LISTEN that PENDS,
+    and on a host connect ACCEPTs + echoes a marker back — the exact IRP path
+    AfdListenSocket/AfdAccept use (no event-upcall subsystem; a pended listen IRP).
+
+    The host connects through the second hostfwd, sends a probe, and reads the
+    fixed echo marker. Proves the M8 listen/accept dispatch + completion bridge
+    (TDI_LISTEN pends -> smoltcp finishes the handshake in place -> bridge
+    completes the pended listen IRP) plus the post-accept receive-event + TDI_SEND
+    on a server-accepted connection. This is the inbound counterpart to the
+    outbound client (test_tdi_selftest_roundtrip).
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_TDI_SRV_LISTEN, timeout=120), (
+        "netstack kernel TDI server never announced listening on :8888 "
+        "(M8 TDI_LISTEN dispatch / bind path)"
+    )
+    payload = b"vibeos-tdi-server-probe\n"
+    with socket.create_connection(
+        (vm.net_host, vm.config.tdi_srv_hostfwd_port), timeout=10.0
+    ) as s:
+        s.settimeout(15.0)
+        s.sendall(payload)
+        got = b""
+        while MARK_TDI_SRV_ECHO not in got:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            got += chunk
+    assert MARK_TDI_SRV_ECHO in got, (
+        "netstack TDI server accepted the connection but did not echo "
+        f"(M8 accept -> receive-event -> TDI_SEND): got {got!r}"
     )
 
 
