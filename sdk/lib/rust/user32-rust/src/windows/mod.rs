@@ -4,6 +4,7 @@
 pub mod accel;
 pub mod caret;
 pub mod class;
+pub mod cursoricon;
 pub mod dc;
 pub mod defwnd;
 pub mod dialog;

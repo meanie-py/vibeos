@@ -43,7 +43,7 @@ list(APPEND SOURCE
     # windows/caret.c — replaced by Rust (user32-rust/src/windows/caret.rs); cohab via libuser32_rust.a
     # windows/class.c — replaced by Rust (user32-rust/src/windows/class.rs); cohab via libuser32_rust.a
     windows/clipboard.c
-    windows/cursoricon.c
+    # windows/cursoricon.c — replaced by Rust (user32-rust/src/windows/cursoricon.rs); cohab via libuser32_rust.a
     # windows/dc.c — replaced by Rust (user32-rust/src/windows/dc.rs); cohab via libuser32_rust.a
     # windows/defwnd.c — replaced by Rust (user32-rust/src/windows/defwnd.rs); cohab via libuser32_rust.a
     # windows/dialog.c — replaced by Rust (user32-rust/src/windows/dialog.rs); cohab via libuser32_rust.a
