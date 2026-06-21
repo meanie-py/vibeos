@@ -35,6 +35,23 @@ Created **2026-06-20**.
 >
 > Status: **Wave 0 + Wave 1 core integrated, i386 cold-green; ×3 landing pending.**
 
+> **2026-06-20 — Wave 2 DONE (dialogs + logon controls; i386 link + boot GREEN).** 8 more
+> `.c` → Rust and cohab-linked: `windows/{dialog,messagebox}.c` + `controls/{button,static,
+> edit,combo,listbox,scrollbar}.c` (~19.4K LOC). user32.dll now runs **17 `.c` files in Rust**
+> (Wave 1's 9 + these 8) — the dialog/message-box path and the six standard built-in controls.
+> Crate compiles **0-error on all 3 arches**; i386 cohab **link clean** + **smoke ✓boot**.
+> rustconv **opus** translate: **$8.68** for all 8 files (edit.c the big one at 5.5K LOC).
+> amd64/arm64 cohab link pending the ×3 gate (control-plane). New reusable gotchas surfaced:
+> the `*_builtin_class` cross-TU data exports regcontrol.c reads (need `#[no_mangle] pub
+> static`); spec **forwarders** (`InvalidateRect`→`NtUserInvalidateRect` etc.) are NOT
+> linkable internal symbols → route through `crate::ntwrapper`; the `IMM_FN(name)` =
+> `gImmApiEntries.pname` runtime dispatch table (mirror the Imm32ApiTable layout, don't
+> direct-import imm32); `set_control_clipping`/`get_icon_size` are cdecl C (not stdcall);
+> `RtlStringCchCopyNW` is a strsafe inline (no ntdll export → reimplement); `InterlockedExchange`
+> is an amd64/arm64 intrinsic (no extern symbol → `AtomicI32::swap`).
+>
+> Status: **Wave 0 + 1 + 2 integrated, i386 link+boot green; amd64/arm64 ×3 landing pending.**
+
 > **What this lane is.** `win32ss/user/user32/` builds **user32.dll**, the usermode
 > Win32 windowing API DLL — windows, classes, messages, menus, dialogs, the built-in
 > controls (button/edit/listbox/combo/scrollbar/static), DDE, clipboard, MDI, hooks,
@@ -225,7 +242,7 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 |---|---|---:|---|
 | 0 — crate + FFI scaffold + 1 leaf | timer | ~40 | ✅ i386 cold-green |
 | 1 — window core | window/class/message/defwnd/nonclient/winpos/paint/dc/caret | ~8,200 | ✅ integrated, i386 cold-green; ×3 gate pending |
-| 2 — dialogs + logon controls | dialog/messagebox/button/static/edit/combo/listbox/scrollbar | ~19,400 | ☐ |
+| 2 — dialogs + logon controls | dialog/messagebox/button/static/edit/combo/listbox/scrollbar | ~19,400 | ✅ integrated, i386 link+boot green; amd64/arm64 ×3 gate pending |
 | 3 — desktop/menu/draw | menu/draw/cursoricon/text/font/accel/rect/hook/input/desktop/display | ~11,300 | ☐ |
 | 4 — secondary | clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain/+misc/+minor controls | ~12,000 | ☐ |
 | 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde | ~5,400 | ☐ |

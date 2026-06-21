@@ -10,15 +10,15 @@ include_directories(
 
 list(APPEND SOURCE
     controls/appswitch.c
-    controls/button.c
-    controls/combo.c
-    controls/edit.c
+    # controls/button.c — replaced by Rust (user32-rust/src/controls/button.rs); cohab via libuser32_rust.a
+    # controls/combo.c — replaced by Rust (user32-rust/src/controls/combo.rs); cohab via libuser32_rust.a
+    # controls/edit.c — replaced by Rust (user32-rust/src/controls/edit.rs); cohab via libuser32_rust.a
     controls/ghost.c
     controls/icontitle.c
-    controls/listbox.c
+    # controls/listbox.c — replaced by Rust (user32-rust/src/controls/listbox.rs); cohab via libuser32_rust.a
     controls/regcontrol.c
-    controls/scrollbar.c
-    controls/static.c
+    # controls/scrollbar.c — replaced by Rust (user32-rust/src/controls/scrollbar.rs); cohab via libuser32_rust.a
+    # controls/static.c — replaced by Rust (user32-rust/src/controls/static_.rs); cohab via libuser32_rust.a
     misc/dde.c
     misc/ddeclient.c
     misc/ddemisc.c
@@ -46,14 +46,14 @@ list(APPEND SOURCE
     windows/cursoricon.c
     # windows/dc.c — replaced by Rust (user32-rust/src/windows/dc.rs); cohab via libuser32_rust.a
     # windows/defwnd.c — replaced by Rust (user32-rust/src/windows/defwnd.rs); cohab via libuser32_rust.a
-    windows/dialog.c
+    # windows/dialog.c — replaced by Rust (user32-rust/src/windows/dialog.rs); cohab via libuser32_rust.a
     windows/draw.c
     windows/font.c
     windows/hook.c
     windows/input.c
     windows/mdi.c
     windows/menu.c
-    windows/messagebox.c
+    # windows/messagebox.c — replaced by Rust (user32-rust/src/windows/messagebox.rs); cohab via libuser32_rust.a
     # windows/message.c — replaced by Rust (user32-rust/src/windows/message.rs); cohab via libuser32_rust.a
     # windows/nonclient.c — replaced by Rust (user32-rust/src/windows/nonclient.rs); cohab via libuser32_rust.a
     # windows/paint.c — replaced by Rust (user32-rust/src/windows/paint.rs); cohab via libuser32_rust.a
