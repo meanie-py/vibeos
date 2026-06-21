@@ -406,6 +406,38 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  fltmgr)
+    # Filesystem Filter Manager (drivers/filters/fltmgr). Private structs (FLT_OBJECT,
+    # FLT_FILTER, FLT_INSTANCE, FLTP_FRAME, STREAM_LIST_CTRL, FLT_PORT_OBJECT, FLT_SERVER_
+    # PORT_OBJECT, FLT_MESSAGE_WAITER_QUEUE, ...) live in fltmgrint.h (a bare struct header,
+    # no includes -> needs fltmgr.h context first). The public minifilter API (FLT_REGISTRATION,
+    # FLT_OPERATION_REGISTRATION, FLT_RELATED_OBJECTS, FLT_CALLBACK_DATA, PFLT_FILTER/INSTANCE/
+    # VOLUME) is in ddk/fltkernel.h; the shared fltmgr<->minifilter structs in
+    # reactos/drivers/fltmgr/fltmgr_shared.h. Allowlist all three. NTDDI WS03SP1 (0x05020100).
+    DRIVER_DIR="${SRC}/drivers/filters/fltmgr"
+    WRAPPER_INC=$'#include "fltmgr.h"\n#include "fltmgrint.h"'
+    ALLOW_FILES=( --allowlist-file '.*fltmgr[/\\]fltmgrint\.h'
+                  --allowlist-file '.*[/\\]fltkernel\.h'
+                  --allowlist-file '.*[/\\]fltmgr_shared\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020100
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  ksecdd)
+    # Kernel Security Support Provider (drivers/crypto/ksecdd). Private structs
+    # (KSEC_CONNECTION_INFO, KSEC_ENTROPY_DATA, KSEC_MACHINE_SPECIFIC_COUNTERS) in ksecdd.h;
+    # IOCTL structs in reactos/drivers/ksecdd/ksecioctl.h. ksecdd.h also pulls tomcrypt/md4/md5
+    # (cryptlib) -> allowlist ONLY ksecdd.h + ksecioctl.h so bindgen emits just the KSEC types,
+    # not the whole crypto surface. NT 5.2.
+    DRIVER_DIR="${SRC}/drivers/crypto/ksecdd"
+    EXTRA_INC=( -I"${SRC}/sdk/include/reactos/drivers/ksecdd" -I"${SRC}/sdk/lib/cryptlib" )
+    WRAPPER_INC=$'#include <ntifs.h>\n#include <ksecioctl.h>\n#include "ksecdd.h"'
+    ALLOW_FILES=( --allowlist-file '.*ksecdd[/\\]ksecdd\.h'
+                  --allowlist-file '.*[/\\]ksecioctl\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
