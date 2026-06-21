@@ -241,7 +241,10 @@ fn main() {
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
         // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
-        .c_shims(&["sdk/lib/pseh/dummy.c"])
+        // dbgprint_variadic.c: now self-contained/headerless (cmake-off spike
+        // 2026-06-20) → compiled by cc-rs here, dropping the c_from_compile_db("rtl")
+        // path that needed cmake's compile_commands.json.
+        .c_shims(&["sdk/lib/pseh/dummy.c", "sdk/lib/rtl/dbgprint_variadic.c"])
         .asm(&asm_refs, AsmDefineSet::Kernel)
         // ntdllsys (Nt*/Zw* syscall stubs) as an in-group archive, replacing
         // the cmake libntdllsys.a — preserves the cmake archive link layout.
@@ -268,10 +271,9 @@ fn main() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
     // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
-    // dbgprint_variadic.c (C-variadic DbgPrint/wine_dbg_* trampolines) via
-    // c_from_compile_db (name = the cmake `rtl` target → CMakeFiles/rtl.dir),
-    // plus the per-arch asm floor via asm_archive (lazy in-group).
-    linker = linker.c_from_compile_db("rtl", &["sdk/lib/rtl/dbgprint_variadic.c"]);
+    // dbgprint_variadic.c → moved to .c_shims() above (cmake-off spike 2026-06-20:
+    // self-contained/headerless, no compile_commands.json needed). Only the
+    // per-arch asm floor remains via asm_archive (lazy in-group).
     if !rtl_asm.is_empty() {
         linker = linker.asm_archive("rtl_asm", rtl_asm);
     }

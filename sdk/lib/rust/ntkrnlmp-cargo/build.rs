@@ -95,6 +95,11 @@ fn main() {
         "ntoskrnl/ke/ke_rust_shims.c",
         "ntoskrnl/mm/mm_rust_shims.c",
         "ntoskrnl/variadic_shims.c",
+        // dbgprint_variadic.c: the rtl-floor C-variadic DbgPrint/DbgPrintEx/
+        // wine_dbg_* trampolines. SELF-CONTAINED/headerless (cmake-off spike,
+        // 2026-06-20) → compiled directly by cc-rs here, dropping the
+        // c_from_compile_db("rtl") path that needed cmake's compile_commands.json.
+        "sdk/lib/rtl/dbgprint_variadic.c",
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
@@ -346,12 +351,11 @@ fn main() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
     // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
-    //   - dbgprint_variadic.c (the C-variadic DbgPrint/DbgPrintEx/wine_dbg_*
-    //     trampolines) via c_from_compile_db — name = the cmake `rtl` target so
-    //     the engine finds CMakeFiles/rtl.dir in compile_commands.json.
+    //   - dbgprint_variadic.c → moved to .c_shims() above (cmake-off spike
+    //     2026-06-20): now self-contained/headerless, compiled by cc-rs directly,
+    //     no longer needs c_from_compile_db's compile_commands.json replay.
     //   - the per-arch asm floor via asm_archive (lazy in-group, Kernel define
     //     set + kernel asm -I chain).
-    linker = linker.c_from_compile_db("rtl", &["sdk/lib/rtl/dbgprint_variadic.c"]);
     if !rtl_asm.is_empty() {
         linker = linker.asm_archive("rtl_asm", rtl_asm);
     }
