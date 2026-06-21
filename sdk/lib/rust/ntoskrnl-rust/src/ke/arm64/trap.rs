@@ -22,6 +22,11 @@ use ntkrnl_sys::ddk::{
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
     static mut MmUserProbeAddress: ULONG_PTR;
+    /// GICv2 interrupt dispatch — implemented in the HAL (hal-rust
+    /// arm64/clock.rs). Acknowledges the GIC, services the periodic
+    /// virtual-timer clock tick (→ KeUpdateSystemTime), re-arms + EOIs.
+    /// No-op until HalInitializeClockArm64 runs in Phase 1.
+    fn HalClockInterruptArm64(TrapFrame: PKTRAP_FRAME);
 }
 use crate::ps::win32::KeGdiFlushUserBatch;
 use crate::ke::procobj::KeServiceDescriptorTable;
@@ -409,9 +414,9 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
 
 #[no_mangle]
 pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
-    TrapPuts(b"[IRQ] PC=");
-    TrapPutHex64((*TrapFrame).Pc);
-    TrapPuts(b"\r\n");
+    /* Dispatch the GIC interrupt: clock tick → KeUpdateSystemTime, then EOI.
+     * (No per-IRQ UART trace — the clock fires at 100Hz and would flood.) */
+    HalClockInterruptArm64(TrapFrame);
 }
 
 #[no_mangle]
