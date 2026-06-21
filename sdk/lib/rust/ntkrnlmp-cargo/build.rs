@@ -113,7 +113,11 @@ fn main() {
     // link line; the engine wraps the whole set in --start-group so inter-C
     // order is non-critical.
     let mut static_libs: Vec<&str> = vec![
-        "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista.a",
+        // libntoskrnl_vista.a DROP-TEST 2026-06-20 — offline residue (vista-defined
+        // ∩ kernel-truly-unresolved) = EMPTY on i386+amd64. Empirical build is the
+        // oracle. (If the link needs it, residue = IoSetMasterIrpStatus /
+        // KeGetCurrentNodeNumber / PoQueryWatchdogTime / RtlUTF8ToUnicodeN — all
+        // already translated in ntoskrnl-vista-rust + utf8.)
         // cportlib/csq/arbiter/lsalib/rossym cohab → cargo-native `.rust_lib`
         // (the 5 calls below) 2026-06-20. Both halves of each cohab dropped from
         // this cmake-.a list: the C bodies (libcportlib/libcsq/libarbiter/

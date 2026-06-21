@@ -128,8 +128,9 @@ amd64 cold — the cmlib #35 area held):** the 5 driver/serial cohabs
 cmake `.a` from the kernel `static_libs` (5 empty C-body stubs + 5 cmake-built
 `libX_rust.a`). The cmlib-rust no-prepopulate class-guard survived the layout
 shift (0 hivewrt failures, amd64 cold ✓boot ✓net). What remains on the kernel
-`static_libs` is the genuine cohab floor — libntoskrnl_vista, libcmlib
-(placeholder TU), librtl, libhal, libkdcom, libbootvid, libchkstk (i386/arm64) —
+`static_libs` is the genuine cohab floor — libcmlib
+(placeholder TU) — (libntoskrnl_vista/librtl/libhal/libkdcom/libbootvid/libchkstk
+all DROPPED from the kernel link 2026-06-20; see rows below) —
 plus boot-critical bootloader C (uefildr/rosload mini_hal+libcntpr) and the
 winsrv lane. NB: librtl is **not** a translation lane — the rtl `*.c` surface is
 100% Rust (`rtl-rust`); librtl.a is only the irreducible C-variadic+asm floor
@@ -183,7 +184,7 @@ Sorted roughly by how entrenched (consumer count / centrality):
 | `libpseh` | C/asm | DUMMY stub + i386 SEH runtime. ntdll/classpnp on `dummy.c` c_shim; csrsrv/basesrv/smss/winlogon/services dropped 2026-06-13; hal/winsrv 2026-06-14; **kernel ×2 → `pseh-rust` (global_asm! seh.s + Rust dummy volatiles), win32k dropped outright (vestigial) — 2026-06-19**. No cargo module reuses the `.a`. |
 | `libsetjmp` | C | **Rust** (`setjmp-rust`) for the kernel (amd64 global_asm!+Rust; i386/arm64 inert, dropped). hal still C. |
 | `libcportlib` | C | kernel/KD reuse; `cport-rust` exists (uefildr). Kernel pulls `libcport_rust.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
-| `libntoskrnl_vista` | C (~780) | **Rust** (`ntoskrnl-vista-rust`) for classpnp; kernel `.a` cohab. |
+| ~~`libntoskrnl_vista`~~ | — (kernel: none; drivers keep it) | ReactOS "Vista+ (NT 6.x) kernel API" static support lib — backfills APIs the XP/2003-era base ntoskrnl.exe doesn't export (PoFx power framework, Etw, FsRtl ECP, IoGet/SetDeviceProperty, node-topology) so newer DRIVERS can statically link them. **Kernel ×2 DROPPED 2026-06-20**: offline residue (vista-defined ∩ kernel-truly-unresolved) = EMPTY both arches, and the empirical drop-test (remove from `static_libs`, build+boot) is i386 ✓boot + amd64 ✓boot+net — vista.a was **inert in the kernel link** (its 35 syms either gc-section'd dead, or the 4 live refs — IoSetMasterIrpStatus/KeGetCurrentNodeNumber/PoQueryWatchdogTime/RtlUTF8ToUnicodeN — already covered by `ntoskrnl-vista-rust`+`utf8`; the 10 PoFx exports are `-version=0x602+`-gated out of this build's ntoskrnl.spec). **`ntoskrnl-vista-rust`** still serves classpnp; the cmake C `.a` stays for the real consumers (nfs/disk/cdrom/wdf/kmtests). arm64 full-ninja cold gate pending. |
 | `libcsq` | C (~440) | **Rust** (`csq-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
 | `libarbiter` | C (~406) | **Rust** (`arbiter-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`), hal still C. |
 | `libntlsalib` | C (~345) | **Rust** (`lsalib-rust`); kernel pulls Rust `.a` ×3 (x86 ungate landed `bacd1fc64d3`). |
