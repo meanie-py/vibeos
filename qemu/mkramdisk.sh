@@ -80,6 +80,13 @@ REQUIRED_FILES=(
     "$BUILD_DIR/dll/win32/rpcrt4/rpcrt4.dll"
     "$BUILD_DIR/dll/win32/ws2_32/ws2_32.dll"
     "$BUILD_DIR/dll/win32/ws2help/ws2help.dll"
+    # netstack usermode winsock chain (#92): afd.sys (Start=1 TDI client, loaded
+    # explicitly on arm64 — see iomgr/driver.rs) + msafd/mswsock providers +
+    # nettest.exe (winlogon spawns it; the ws2_32->msafd->AFD->netstack proof).
+    "$BUILD_DIR/drivers/network/afd/afd.sys"
+    "$BUILD_DIR/dll/win32/msafd/msafd.dll"
+    "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"
+    "$BUILD_DIR/base/applications/network/nettest/nettest.exe"
     "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"
     "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"
     "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"
@@ -209,6 +216,7 @@ RMC "$BUILD_DIR/boot/bootdata/software"                        ::/reactos/system
 RMC "$BUILD_DIR/drivers/storage/class/ramdisk/ramdisk.sys"     ::/reactos/system32/drivers/ramdisk.sys
 RMC "$BUILD_DIR/drivers/filesystems/fastfat/fastfat.sys"       ::/reactos/system32/drivers/fastfat.sys
 RMC "$BUILD_DIR/drivers/network/netstack/netstack.sys"         ::/reactos/system32/drivers/netstack.sys
+RMC "$BUILD_DIR/drivers/network/afd/afd.sys"                   ::/reactos/system32/drivers/afd.sys
 RMC "$BUILD_DIR/base/system/smss/smss.exe"                   ::/reactos/system32/smss.exe
 # Patch csrss.exe SizeOfStackCommit to 256KB — the PE default (4KB) is too small
 # for deep DLL initialization call chains on ARM64 where delay-imports become
@@ -227,6 +235,9 @@ RMC "$BUILD_DIR/dll/win32/advapi32/advapi32.dll"              ::/reactos/system3
 RMC "$BUILD_DIR/dll/win32/rpcrt4/rpcrt4.dll"                  ::/reactos/system32/rpcrt4.dll
 RMC "$BUILD_DIR/dll/win32/ws2_32/ws2_32.dll"                  ::/reactos/system32/ws2_32.dll
 RMC "$BUILD_DIR/dll/win32/ws2help/ws2help.dll"                ::/reactos/system32/ws2help.dll
+RMC "$BUILD_DIR/dll/win32/msafd/msafd.dll"                    ::/reactos/system32/msafd.dll
+RMC "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"                ::/reactos/system32/mswsock.dll
+RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system32/nettest.exe
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll

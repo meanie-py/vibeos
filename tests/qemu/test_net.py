@@ -73,9 +73,12 @@ MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
 MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
 
+_NET_CONFIGS = ("amd64-uefi-net", "arm64-net")
+
+
 def _require_net_config(vm: QemuVM) -> None:
-    if vm.config.arch != "amd64-uefi-net":
-        pytest.skip("net tests need the net-enabled config: --arch amd64-uefi-net")
+    if vm.config.arch not in _NET_CONFIGS:
+        pytest.skip(f"net tests need a net-enabled config: --arch {' / '.join(_NET_CONFIGS)}")
 
 
 # --------------------------------------------------------------------------- #

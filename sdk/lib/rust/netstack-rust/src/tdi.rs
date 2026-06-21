@@ -22,6 +22,10 @@ pub const TDI_QUERY_INFORMATION: u8 = 0x0C;
 pub const TDI_SET_INFORMATION: u8 = 0x0D;
 pub const TDI_ACTION: u8 = 0x0E;
 
+// TDI_QUERY_INFORMATION query types (tdi.h). ADDRESS_INFO is what AfdGetSockName
+// issues to learn a socket's local address (getsockname).
+pub const TDI_QUERY_ADDRESS_INFO: i32 = 0x0000_0003;
+
 // TDI event types (TDI_SET_EVENT_HANDLER), the upcalls into AFD.
 pub const TDI_EVENT_CONNECT: i32 = 0;
 pub const TDI_EVENT_DISCONNECT: i32 = 1;
@@ -113,6 +117,16 @@ pub struct TDI_REQUEST_KERNEL {
     pub RequestConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
     pub ReturnConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
     pub RequestSpecific: *mut c_void,
+}
+
+/// TDI_REQUEST_KERNEL_QUERY_INFORMATION — TDI_QUERY_INFORMATION parameter overlay
+/// (tdikrnl.h). For TDI_QUERY_ADDRESS_INFO the reply (a TDI_ADDRESS_INFO) is written
+/// into the IRP's MDL, not through this struct. Layout mirrors TDI_REQUEST_KERNEL:
+/// a leading LONG then a pointer (repr(C) pads the pointer to LP64/ILP32 alignment).
+#[repr(C)]
+pub struct TDI_REQUEST_KERNEL_QUERY {
+    pub QueryType: i32,
+    pub RequestConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
 }
 
 #[repr(C)]
@@ -211,6 +225,29 @@ impl TaIpFull {
         }
     }
 }
+
+/// TDI_ADDRESS_INFO (tdi.h): the reply to TDI_QUERY_ADDRESS_INFO — an activity
+/// count followed by a TRANSPORT_ADDRESS. msafd's WSPGetSockName reads `.Address`
+/// (skipping ActivityCount) as the local sockaddr. Byte-packed to lock-step with
+/// the embedded packed `TaIpFull`; sizeof == 26 (4 + 22), exactly the buffer msafd
+/// allocates (sizeof(TRANSPORT_ADDRESS) + SizeOfLocalAddress).
+#[repr(C, packed)]
+pub struct TdiAddressInfo {
+    pub activity_count: u32,
+    pub address: TaIpFull,
+}
+
+impl TdiAddressInfo {
+    pub fn new(ip: [u8; 4], port: u16) -> Self {
+        TdiAddressInfo { activity_count: 1, address: TaIpFull::new(ip, port) }
+    }
+}
+
+// Lock the on-wire TA layouts at compile time (all 3 arches) — these are read
+// byte-for-byte by msafd/AFD, so a layout drift would silently corrupt addresses.
+const _: () = assert!(core::mem::size_of::<TaIpFull>() == 22);
+const _: () = assert!(core::mem::size_of::<TdiAddressInfo>() == 26);
+const _: () = assert!(core::mem::size_of::<TDI_ADDRESS_IP>() == 14);
 
 /// Parse the first IPv4 endpoint out of a raw TRANSPORT_ADDRESS / TA_IP_ADDRESS
 /// (count + TA_ADDRESS + TDI_ADDRESS_IP). Returns (octets, port).
