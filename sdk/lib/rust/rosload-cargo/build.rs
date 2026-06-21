@@ -45,11 +45,12 @@ fn main() {
                 vec![
                     // drvmap: 16-bit gcc asm, reused directly.
                     "boot/freeldr/freeldr/drvmap_gcc.obj",
-                    // i386 mini-HAL's systimer.S asm (libmini_hal.a) still
-                    // reused; its Rust impl (was libhal_rust_mini.a) is now a
-                    // DIRECT cargo sibling — .rust_lib("hal-rust",["minihal"])
-                    // in the i386 block below.
-                    "hal/halx86/minihal/libmini_hal.a",
+                    // libmini_hal.a DROP-TEST 2026-06-20 — INERT: complete offline
+                    // residue across ALL rosload i686 rlibs = 0
+                    // (_HalpCalibrateStallExecution@0 unreferenced; the Rust
+                    // mini-HAL .rust_lib("hal-rust",["minihal"]) below covers it).
+                    // Empirical boot is the oracle.
+                    // "hal/halx86/minihal/libmini_hal.a",
                 ],
             )
         }

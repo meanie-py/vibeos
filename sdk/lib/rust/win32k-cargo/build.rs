@@ -89,7 +89,10 @@ fn main() {
         // the cmake reuse was vestigial. The SEH runtime export ABI lives in
         // ntoskrnl (pseh-rust), not here. C kept on disk. arm64 (volatiles-only,
         // same arch-independent refs as amd64) verified at the gate's cold link.
-        "sdk/lib/dxguid/libdxguid.a",
+        // libdxguid.a DROP-TEST 2026-06-20 — DirectX/Direct3DRM GUID *data* (1228
+        // .rdata CLSID_/IID_ consts, 0 text). Offline residue (win32k undefined ∩
+        // dxguid-defined) = EMPTY → win32k.sys doesn't reference these user-mode
+        // DX GUIDs. Empirical build+boot is the oracle (vista pattern).
         // liblibcntpr.a (cmake C CRT) DROPPED — cnt-rust-lib (.rust_lib below)
         // provides the whole translatable surface; the only irreducible C floor
         // win32k pulls is the C-variadic printf shells (Rust stable can't define

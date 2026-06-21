@@ -60,11 +60,13 @@ fn main() {
     let (target_json, entry, image_base, alignment): (&str, &str, Option<u64>, u64) =
         match arch.as_str() {
             "x86" => {
-                // i386: mini_hal's systimer.S asm (libmini_hal.a) is still
-                // reused; its Rust HAL impl (was libhal_rust_mini.a) is now a
-                // DIRECT cargo sibling — .rust_lib("hal-rust",["minihal"]) in
-                // the i386 block below, not a reused cmake copy.
-                libs.push("hal/halx86/minihal/libmini_hal.a");
+                // libmini_hal.a DROP-TEST 2026-06-20 — its Rust HAL impl is a
+                // direct cargo sibling (.rust_lib("hal-rust",["minihal"]) below).
+                // The cmake asm-half (systimer.S → _HalpCalibrateStallExecution@0)
+                // is INERT: complete offline residue across ALL uefildr i686 rlibs
+                // (incl hal-rust[minihal]) = 0 — nothing references it. Empirical
+                // UEFI-boot is the oracle.
+                // libs.push("hal/halx86/minihal/libmini_hal.a");
                 // uefiasm.S + i386trap.S flipped to Rust global_asm!
                 // (freeldr-rust/uefiasm.rs + loader_asm.rs) — no asm left here.
                 ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
@@ -103,7 +105,11 @@ fn main() {
         // .c_from_compile_db("blrtl", …) + its per-arch asm via
         // .asm_archive("blrtl_asm", …), not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",
-        "sdk/lib/crt/libchkstk.a",
+        // libchkstk.a DROP-TEST 2026-06-20 — INERT: complete offline residue
+        // (chkstk defs __chkstk/___alloca/__alloca_probe{,_16} ∩ truly-unresolved
+        // across ALL uefildr i686 rlibs) = 0, no >4KB-frame refs; clang_rt.builtins
+        // backstops __chkstk on all 3 arches. Empirical UEFI-boot is the oracle.
+        // "sdk/lib/crt/libchkstk.a",
         // cnt-rust-lib (the Rust cnt cohabitation twin) is now a DIRECT cargo
         // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);

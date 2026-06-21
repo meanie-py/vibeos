@@ -7,18 +7,17 @@ Usage:
     gen_kernel32_vista_lcid_table.py            # write the .rs
     gen_kernel32_vista_lcid_table.py --check    # verify the .rs is in sync (CI)
 """
+
+import pathlib
 import re
 import sys
-import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "dll/win32/kernel32/kernel32_vista/LocaleNameToLCID.c"
 OUT = ROOT / "sdk/lib/rust/kernel32-vista-rust/src/localenametolcid_table.rs"
 
 # Match:  case 0x0742C: return 0x0082C; // "az-Cyrl" -> "az-Cyrl-AZ"
-CASE_RE = re.compile(
-    r'case\s+(0x[0-9A-Fa-f]+)\s*:\s*return\s+(0x[0-9A-Fa-f]+)\s*;\s*//\s*(.*)$'
-)
+CASE_RE = re.compile(r"case\s+(0x[0-9A-Fa-f]+)\s*:\s*return\s+(0x[0-9A-Fa-f]+)\s*;\s*//\s*(.*)$")
 
 
 def extract():
