@@ -176,3 +176,24 @@ skipped.
   (not in usb-sys); `HidNotifyPresence` correctly NOT fabricated (declared in hidport.h, zero
   implementation in ReactOS). **Remaining leaf drivers: serial, ramdisk, storport** (storahci
   deferred, buslogic dropped).
+- 2026-06-21: ✅ **storport + serial + storahci DONE — link-clean ×3** (scope revised: user
+  pulled storahci forward — "sounds really valuable" — alongside storport+serial). First
+  **rustconv-pipeline** translations of this cluster (not hand-done): `python -m rustconv
+  translate <driver> -m opus --mode mechanical --c2rust` — Opus model, mechanical (faithful
+  transliteration), c2rust-anchored (feeds compiler-exact transpilation into the prompt so the
+  model can't silently stub). ~$6.85 total (storport ~110 fns, serial ~35, storahci ~35).
+  Outputs in `tools/rustconv/.responses/`. Then ~900 compile errors across the 3 crates —
+  confirmed the user's "few systematic roots cascading" read: cleared to 0×3 by parallel
+  compile-fix subagents (one missing-import glob; bindgen bitfield-union register access for
+  AHCI; c2rust phantom-extern macros -> glue inline fns; substrate import homes; lib-name
+  underscore bug). Cohab flips: storport keeps spec2def+guid.c -> `libstorport_rust.a`; serial
+  keeps guid.c -> `libserial_rust.a`; storahci stays disabled-from-shipping (`#add_cd_file`, as
+  in ReactOS) + `rust_cohab_stub.c` -> `libstorahci_rust.a`. **amd64-specific:** storport's
+  `StorPortReadRegister*`/`WritePort*` wrappers call the 24 x86 port/register I/O intrinsics
+  the i386/arm64 HAL exports but amd64 doesn't -> defined faithfully in storport `glue.rs`
+  (`#[cfg(target_arch="x86_64")]`: `in`/`out` asm for PORT, volatile MMIO for REGISTER, loops
+  for BUFFER). All 3 `.sys` link i386/amd64/arm64; lint-clean; only-ud2 is `core::panicking`
+  (expected, not a fold). Latent infidelity flagged for integrator review: storport
+  `AllocateAddressMapping` glue extern typed first param `*mut LIST_ENTRY` vs bindgen's correct
+  `*mut PMAPPED_ADDRESS` (warning-level, linked). **Leaf-driver cluster: only `ramdisk` left.**
+  Awaiting meaniepy ×3 cold-smoke gate (non-boot -> link + no-regression bar).
