@@ -80,17 +80,29 @@ def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
 def _clean(run: Run, repo: Path, arch: str) -> None:
     build_dir = repo / f"build-{arch}"
     targets = provenance.discover_rust_targets(build_dir)
+    # The cargo-driven links (ntoskrnl.exe/win32k.sys/kernel32.dll/*-cargo) build
+    # into the SHARED workspace cache sdk/lib/rust/target/<stem>, not build-<arch>,
+    # so discover_rust_targets misses it — add it so --clean is genuinely cold
+    # (automates the §9.6b manual `rm -rf sdk/lib/rust/target/<stem>`).
+    ws_target = provenance.workspace_cargo_target(repo, arch)
+    if ws_target is not None:
+        targets = [*targets, ws_target]
     archives = provenance.discover_rust_archives(build_dir)
+    # Cargo COPIES its build output into build-<arch>; nuking the caches above
+    # leaves those copies newer than their .rs → ninja "no work" → stale binary
+    # (det-plan §stale-cargo / task #41). Remove them so ninja re-runs the link.
+    outputs = provenance.discover_rust_module_outputs(repo, arch)
     for p in targets:
         shutil.rmtree(p, ignore_errors=True)
-    for a in archives:
+    for a in archives + outputs:
         a.unlink(missing_ok=True)
     run.log(
         f"--clean removed {len(targets)} rust target dirs + {len(archives)} "
-        f"lib*_rust.a:\n" + "\n".join(str(p) for p in targets + archives),
+        f"lib*_rust.a + {len(outputs)} cargo-module outputs:\n"
+        + "\n".join(str(p) for p in targets + archives + outputs),
         header="clean",
     )
-    run.add(Stage("clean", status="ok", detail=f"{len(targets)}t+{len(archives)}a"))
+    run.add(Stage("clean", status="ok", detail=f"{len(targets)}t+{len(archives)}a+{len(outputs)}o"))
 
 
 def _ccache_already_enabled(build_dir: Path) -> bool:

@@ -204,6 +204,14 @@ members = [
 ]
 resolver = "2"
 
+# NB: profile `trim-paths` (reproducible-builds rung 1, Rust path remap) is NOT usable
+# here — it is still UNSTABLE in cargo 1.92 (our pinned stable toolchain); it needs
+# nightly + `cargo-features = ["trim-paths"]`. The stable fallbacks don't fit either:
+# config.toml `[target.*].rustflags` can't express the per-worktree absolute path
+# statically, and env `RUSTFLAGS` clobbers the load-bearing i386 SSE guard. So Rust
+# path normalization is toolchain-blocked — revisit when trim-paths stabilizes. The PE
+# timestamp (rung 2a) + SOURCE_DATE_EPOCH (rung 2b) — the dominant, all-3-arch leaks —
+# do not depend on it. See docs/engineering/deterministic-builds-plan.md.
 [profile.dev]
 panic = "abort"
 

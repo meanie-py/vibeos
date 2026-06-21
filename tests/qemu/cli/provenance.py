@@ -75,6 +75,51 @@ def discover_rust_archives(build_dir: Path) -> list[Path]:
     return sorted(build_dir.rglob("lib*_rust.a"))
 
 
+# arch -> the cargo workspace target stem (add_cargo_module's custom-target json
+# stem == cargo's CARGO_TARGET_DIR subdir; gcc.cmake:add_cargo_module).
+_CARGO_STEM = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
+
+
+def workspace_cargo_target(repo: Path, arch: str) -> Path | None:
+    """The SHARED cargo cache the cargo-driven links (ntoskrnl.exe, win32k.sys,
+    kernel32.dll, the *-cargo modules) build into: `sdk/lib/rust/target/<stem>`.
+
+    It lives OUTSIDE build-<arch>, so discover_rust_targets (which only globs
+    build-<arch>) never sees it — that's why a `--clean` left cargo serving a
+    warm-cached object and agents had to `rm -rf sdk/lib/rust/target/<stem>` by
+    hand (field-manual §9.6b). Returns the per-arch stem dir if present."""
+    stem = _CARGO_STEM.get(archcfg.base_arch(arch))
+    if not stem:
+        return None
+    p = repo / "sdk" / "lib" / "rust" / "target" / stem
+    return p if p.is_dir() else None
+
+
+def discover_rust_module_outputs(repo: Path, arch: str) -> list[Path]:
+    """Copied cargo-module output binaries under build-<arch>. add_cargo_module
+    builds each into the workspace cargo cache then COPIES it in, so nuking the
+    target dirs alone leaves these copies NEWER than their .rs inputs → ninja
+    sees "no work" and serves a stale binary (deterministic-builds-plan.md
+    §stale-cargo / task #41). `--clean` removes them so ninja MUST re-run the
+    cargo link. Boot-critical set: the kernel(s) + the two non-standard cargo
+    links (win32k/kernel32) + the arm64 staged set (archcfg). Source-unchanged
+    modules not listed here rebuild byte-identically anyway (the determinism
+    invariant), so a stale copy of one is harmless; the listed ones are exactly
+    the frequently-edited boot-critical links whose staleness is a false-green."""
+    cfg = archcfg.arch_build(arch)
+    build_dir = repo / f"build-{archcfg.base_arch(arch)}"
+    rels = set(cfg.staged_bins_rel)  # arm64: ntoskrnl/hal/uefildr/win32k/kernel32/input/vid
+    rels.update(
+        (
+            "ntoskrnl/ntoskrnl.exe",
+            "ntoskrnl/ntkrnlmp.exe",  # amd64 MP kernel
+            "win32ss/win32k.sys",
+            "dll/win32/kernel32/kernel32.dll",
+        )
+    )
+    return [build_dir / r for r in sorted(rels) if (build_dir / r).is_file()]
+
+
 @dataclass
 class Stamp:
     arch: str
