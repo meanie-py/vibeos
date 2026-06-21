@@ -252,6 +252,7 @@ RMC "$BUILD_DIR/dll/win32/userenv/userenv.dll"                ::/reactos/system3
 RMC "$BUILD_DIR/dll/win32/secur32/secur32.dll"                ::/reactos/system32/secur32.dll
 RMC "$BUILD_DIR/dll/win32/mpr/mpr.dll"                        ::/reactos/system32/mpr.dll
 RMC "$BUILD_DIR/dll/win32/netapi32/netapi32.dll"              ::/reactos/system32/netapi32.dll
+RMC "$BUILD_DIR/dll/win32/samlib/samlib.dll"                  ::/reactos/system32/samlib.dll
 RMC "$BUILD_DIR/dll/win32/iphlpapi/iphlpapi.dll"              ::/reactos/system32/iphlpapi.dll
 RMC "$BUILD_DIR/base/shell/cmd/cmd.exe"                     ::/reactos/system32/cmd.exe
 RMC "$BUILD_DIR/win32ss/user/winsrv/winsrv.dll"              ::/reactos/system32/winsrv.dll
