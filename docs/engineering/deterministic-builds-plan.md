@@ -36,7 +36,7 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 | rung | buys | mechanism |
 |---|---|---|
 | 0. measurement harness ✅ | know what differs today | `vibeos-cli repro` (built-in PE parser; `diffoscope` optional) |
-| 1. path normalization | cross-worktree byte-identity + dedup | C: `-ffile-prefix-map`; Rust: `trim-paths` |
+| 1. path normalization | cross-worktree byte-identity + dedup | C: `-ffile-prefix-map` ✅ (in source); Rust: `trim-paths` ⛔ unstable in cargo 1.92 — deferred |
 | 2. timestamp elimination | kills `__DATE__`/`__TIME__` + PE-header time variance | `SOURCE_DATE_EPOCH`; lld no-timestamp; deterministic `ar` |
 | 3. build-script / generator audit | the cargo-link + widl/windmc/gen tables are path/time/order-free | audit the ~48 `*-cargo/build.rs` + generators |
 | 4. build-id / debug-GUID determinism | identical debug directory | content-hash (not random) build-id |
@@ -48,9 +48,16 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
 ### Progress (2026-06-20, build-cache lane)
 
 - **Rung 0 ✅ landed** (`f3e4abe9640`): `vibeos-cli repro` harness + validated baseline.
-- **Rung 1 (Rust) ✅ implemented, gate-pending**: `trim-paths = "object"` on both workspace
-  profiles (`sdk/lib/rust/Cargo.toml`). Profile setting → sidesteps the `[target.*].rustflags`
-  SSE-guard XOR clobber (the landmine that made env/build-rustflags remap unsafe).
+- **Rung 1 (Rust) ⛔ TOOLCHAIN-BLOCKED** (corrected 2026-06-20). `trim-paths` is **NOT
+  stabilized in cargo 1.92** (our pinned stable) — confirmed empirically: the manifest fails to
+  parse with "feature `trim-paths` is required … not stabilized in this version of Cargo
+  (also not in 1.94.0-nightly)". It needs nightly + `cargo-features = ["trim-paths"]`. The plan's
+  earlier "stabilized 1.81" was wrong. Stable fallbacks don't fit: config.toml
+  `[target.*].rustflags` can't express the per-worktree *absolute* path statically (the exact
+  problem trim-paths solved), and env `RUSTFLAGS` clobbers the load-bearing i386 SSE guard. So
+  Rust path normalization is deferred until trim-paths stabilizes (or the toolchain moves to a
+  nightly that allows the opt-in). NOT a blocker for the dominant leaks — rung 2a/2b are
+  independent. (A `trim-paths` Cargo.toml change was tried and reverted; it broke the build.)
 - **Rung 1 (C) ✅ already correct in source** — no change needed. `CMakeLists.txt:97` maps
   `-ffile-prefix-map=${REACTOS_SOURCE_DIR}=`, which a *fresh per-worktree configure* expands to
   that worktree's own abs path → empty; main's generated `build.ninja` only *looks* hardcoded
