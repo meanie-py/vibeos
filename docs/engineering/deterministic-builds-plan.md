@@ -269,6 +269,32 @@ fixes close both gaps without that overhead. Both are build-path changes → own
 - **Reproducibility smoke (rung 5)** — wire `repro diff-dirs` into a harness check; a non-repro
   binary turns it red, like any North-Star regression.
 
+### Mechanism proof + rung-4 resolution (build-twice on the real toolchain, 2026-06-20)
+
+Verified the fix end-to-end with `repro` + a minimal DLL through the actual llvm-mingw
+`x86_64-w64-mingw32-clang` (`-shared -nostdlib -fuse-ld=lld`):
+
+- **`--no-insert-timestamp` works**: TimeDateStamp `0x6a37394e` (wall-clock) → `0 (deterministic)`.
+- **build-twice (same output name, pinned timestamp) = BYTE-IDENTICAL** ✓. The whole approach
+  produces reproducible bytes on our toolchain.
+- **Rung 4 (build-id) RESOLVED — no flag needed.** lld's default `.buildid` is *content-derived*;
+  it only diverged across builds because the build-id hash includes the PE timestamp. Once
+  `--no-insert-timestamp` pins the timestamp, a same-name build-twice with the **default** build-id
+  is byte-identical. So `--no-insert-timestamp` is load-bearing twice over (header *and*
+  transitively the build-id). `--build-id=none` is unnecessary.
+- **Which artifacts carry `.buildid`**: only the **cargo/rust-linked** modules (kernel32.dll,
+  cdfs.sys — recognizable by the rustc `/4 /18 …` COMDAT sections). Pure-cmake-C links (win32k.sys,
+  ntdll.dll) and the kernel (ntoskrnl.exe, all 3 arches) carry none. Either way, rung 2a covers it.
+- **Filename caveat (test-only)**: different *output names* diverge in `.rdata` regardless —
+  `--enable-auto-image-base` hashes the output name into the image base, and the export directory
+  embeds the DLL name. Moot for real artifacts (each always links to the same name at a fixed
+  base; the kernel uses `--image-base 0x400000`). Don't mistake this for a real leak when
+  build-twice'ing into differently-named files — build into the *same* name (copy between).
+
+**Net: rungs 1 + 2a + 2b are sufficient for byte-identity on real artifacts** (same name/path,
+which the build always uses). Remaining: a real-kernel build-twice (via `repro diff-dirs`) to
+confirm on ntoskrnl/win32k/kernel32, gated alongside the ×3 cold smoke.
+
 ### Rung-0 baseline confirmed by the harness (2026-06-20)
 
 `repro report` on the three built kernels reproduces the measured PE-timestamp leak exactly —
@@ -312,12 +338,14 @@ after the `--no-insert-timestamp` fix, `repro report` must show `0 (deterministi
   still byte-match main (i.e. does everything route through the relative `../=` map, leaving no
   absolute residual)? Verify with a two-path diff; if residual, switch the abs entry to
   `${CMAKE_SOURCE_DIR}`.
-- `trim-paths = "object"` vs `"all"` — `"object"` is the byte-identity requirement; `"all"`
-  also cleans diagnostics. Pick `"object"` unless logs matter.
-- Is the CodeView debug GUID content-derived or random in our lld? (rung 4 hinges on this.)
-- Buildno strategy for the version resource — pin to 0, or derive from `SOURCE_DATE_EPOCH`?
-- Where is the wall-clock PE stamp coming from given mingw `ld.lld` often defaults to 0 — is a
-  flag forcing it, or is it the clang-driver default? (informs the exact rung-2 fix.)
+- ✅ `trim-paths = "object"` vs `"all"` — picked `"object"` (the byte-identity requirement;
+  `"all"` also cleans diagnostics, not needed). Resolved 2026-06-20.
+- ✅ **CodeView/build-id content-derived or random?** Content-derived — becomes deterministic
+  once the PE timestamp is pinned (no `--build-id` flag needed). Resolved 2026-06-20 (build-twice).
+- ✅ **Buildno strategy?** Derive from `SOURCE_DATE_EPOCH` = HEAD commit date (not 0 — keeps a
+  meaningful, per-commit-stable date). Implemented in `vibeos-cli build`. Resolved 2026-06-20.
+- ✅ **Where's the wall-clock PE stamp from?** The gnu `ld.lld` driver default `--insert-timestamp`
+  (confirmed by build-twice: TimeDateStamp = wall-clock without the flag, 0 with). Resolved.
 
 ## References
 
