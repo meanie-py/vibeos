@@ -9,36 +9,65 @@ our accumulated Rust/C best-practice notes. Split out of `build-cache-and-determ
 > per-file gotchas. Exhaustive is fine (it's pull-context, zero standing cost). Keep the
 > *push* channel (AGENTS.md/MEMORY.md) free of this.
 
-## ⚠️ Strategy pivot (2026-06-21): determinism is NOT the disk lever — cache-sharing is
+## ⚠️ Strategy pivot (2026-06-21): determinism is NOT the disk lever — identical-artifact hardlink-dedup of the *cargo target tree* is
 
 The original priority-#1 framing below ("determinism unlocks cross-worktree dedup from 13 %
-→ ~90 %") was **measured and disproven**. A post-fix dedup-yield measurement of a real
-`build-i386` (7.58 GB, all determinism fixes active — timestamps zeroed, C/Rust/cc-rs paths
-remapped, the 1307-path `__FILE__` sweep landed) found:
+→ ~90 %") was **measured and disproven** — but so was the *first* pivot ("share one
+`CARGO_TARGET_DIR`"). The corrected, **validated** finding:
 
-| category | size | dedup-able cross-worktree? |
+### 1. The ~17 % yield was measured on the wrong tree.
+
+A post-fix dedup-yield measurement on a `build-i386` (7.58 GB) found only ~17 % dedup-able. But
+`build-<arch>` is **not** the disk hog — the **`sdk/lib/rust/target` cargo tree is**: 9.7–26 GB
+*per worktree* (vibeos main 26 G, netstack 25 G, kernel32 23 G, filesystems 20 G …). Across 11
+worktrees the caches total **281 GB**, of which the cargo target trees dominate.
+
+### 2. A shared `CARGO_TARGET_DIR` is OFF the table — it's a *correctness* hazard, not a perf trade.
+
+`sdk/lib/rust/reactos-link/src/lib.rs` deliberately gives every cargo-EXE module its **own**
+per-crate target dir (`target/<pkg>-<crate>-rustlib`). Quoting its rationale:
+
+> PER-CRATE dir (not shared): a shared dir lets cargo feature-unify across crates and emit
+> duplicate symbols with different code that `--allow-multiple-definition` resolves first-match
+> to the wrong variant.
+
+So the ~98 per-crate target dirs each recompile build-std (core/alloc/compiler_builtins) and the
+shared rlibs — **that redundancy is the deliberate price of per-crate isolation**, and collapsing
+to one target dir would mis-link the kernel. Cache *sharing* via a single target dir is ruled out.
+
+### 3. The real, safe lever: hardlink byte-identical artifacts (`hardlink --ignore-time`).
+
+The per-crate build-std rlibs are **byte-identical** (same content, just built at different times),
+and post-determinism the per-worktree crates are byte-identical *across* worktrees too. Hardlinking
+them preserves per-crate isolation completely (each path still exists; they just share inodes).
+**`--ignore-time` is essential** — util-linux `hardlink` defaults to requiring identical mtime,
+which hid ~all of it (a default run found 767 KiB; `--ignore-time` found 6.4 GiB in one tree).
+
+**Measured (2026-06-21):**
+
+| scope | before | reclaim |
 |---|---|---|
-| determinism-clean **outputs** (`.a` 0.55, `.obj` 0.33, `.dll` 0.27, `.sys`/`.exe`/`.res`) | **1.28 GB (17 %)** | ✅ yes — determinism delivered this |
-| precompiled headers (`.pch`, 302 of them, one per module) | 2.56 GB | ❌ regenerable cache, path/env-bound |
-| cargo intermediate (`.rlib` 1.52 + `.rmeta` 1.51) | 3.03 GB | ❌ regenerable cache, path-bound |
-| `livecd.iso` (packages cross-worktree/stale binaries) | 0.43 GB | ❌ staging artifact |
-| ninja/json/scaffolding | ~0.1 GB | ❌ inherently abs-path |
+| intra-worktree (one cargo target tree) | 9.7 GB | **6.4 GiB → 3.3 GB** |
+| **FULL FLEET cargo target trees (11 worktrees)** | — | **113 GiB (60,899 files)** |
 
-**Dedup yield 13 % → ~17 %.** The modest bump is because **~74 % of a build tree is regenerable
-build cache** (clang PCH — 302 per-module ASTs of the huge Win32/DDK header closure — plus cargo
-`rlib`/`rmeta`), which is inherently path/environment-bound and that determinism cannot make
-byte-identical. Determinism made the *outputs* dedup-able (the 1.28 GB), which is real but small.
+ext4 has no reflink/CoW, so hardlink is the mechanism. **Safety validated end-to-end:** cargo
+always emits via tempfile + atomic rename (never in-place mutation), so a later rebuild gets a
+*new* inode and the link breaks cleanly — worst case a spurious rebuild, never wrong output.
+Proven: dedup → warm i386 build (7m41s, valid 433 MB iso) → **i386 smoke ✓ boot 83 s**. Re-bloat
+after a warm rebuild is partial (3.3 G → 4.9 G here) and recovered by re-running the dedup, so it
+is a **periodic maintenance pass**, not a permanent build-graph change.
 
-**Pivot: the per-worktree disk win is cache *sharing*, not hardlink-dedup of clean outputs.**
-A shared `CARGO_TARGET_DIR` collapses the ~3 GB of `rlib`/`rmeta` to one copy across all
-worktrees; shared ccache/PCH handling collapses the 2.56 GB of headers. That is the
-`build-cache-and-determinism-plan.md` disk lane's actual lever (task #39) and it dwarfs the
-~17 % dedup ceiling. **Determinism's real, retained value is therefore NOT disk** — it's
-payoffs #2 and #3 below (anti-stale de-risk + reproducibility), plus it makes a shared cache
-*safe* (identical inputs → identical, collision-free cache entries). The anti-stale value
-already paid off concretely: the genuinely-cold `--clean` (rung #41) unmasked two real arm64
-bugs (PTE-cache alignment + stale-fastfat) that warm builds had hidden all session → arm64 now
-cold-boots green in ~38 s.
+**Tool:** `tools/dedup-build-cache.sh` (dry-run by default; `--apply` to hardlink; auto-discovers
+all worktrees via `git worktree list`; skips trees with a recent write to dodge live-build races).
+
+### Determinism's retained value is therefore NOT disk directly
+
+It's payoffs #2 and #3 below (anti-stale de-risk + reproducibility), **plus it is what makes the
+cross-worktree hardlink-dedup actually land** — without the path/timestamp normalization the
+"identical" crates wouldn't be byte-identical across worktrees and only the (path-independent)
+build-std would dedup. The anti-stale value already paid off concretely: the genuinely-cold
+`--clean` (rung #41) unmasked two real arm64 bugs (PTE-cache alignment + stale-fastfat) that warm
+builds had hidden all session → arm64 now cold-boots green in ~38 s.
 
 The original payoff list is kept below for history; read it through the pivot above.
 
