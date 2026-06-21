@@ -1160,9 +1160,16 @@ class QemuVM:
             be.kill_by_uid(self._win_uid)
 
         # Remove this run's per-run Windows staging subdir (only ours — never the shared root,
-        # which other concurrent runs are using).
+        # which other concurrent runs are using). Bounded retry: on DrvFs the Windows QEMU
+        # releases the staged file handles asynchronously after the kill above, so an immediate
+        # rmtree can no-op and leak the (~400MB) dir; retry until it's gone.
         if self._win_staging is not None:
-            shutil.rmtree(self._win_staging, ignore_errors=True)
+            for _ in range(5):
+                shutil.rmtree(self._win_staging, ignore_errors=True)
+                if not self._win_staging.exists():
+                    break
+                time.sleep(0.3)
+            self._win_staging = None
 
         if self._proc is not None:
             try:
