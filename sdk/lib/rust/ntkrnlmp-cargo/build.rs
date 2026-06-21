@@ -95,6 +95,11 @@ fn main() {
         "ntoskrnl/ke/ke_rust_shims.c",
         "ntoskrnl/mm/mm_rust_shims.c",
         "ntoskrnl/variadic_shims.c",
+        // dbgprint_variadic.c: the rtl-floor C-variadic DbgPrint/DbgPrintEx/
+        // wine_dbg_* trampolines. SELF-CONTAINED/headerless (cmake-off spike,
+        // 2026-06-20) → compiled directly by cc-rs here, dropping the
+        // c_from_compile_db("rtl") path that needed cmake's compile_commands.json.
+        "sdk/lib/rtl/dbgprint_variadic.c",
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
@@ -105,6 +110,41 @@ fn main() {
     if arch != "aarch64" {
         c_shims.push("ntoskrnl/kdbg/kdbg_rust_shims.c");
     }
+    // WS1 cmake-off LEAF batch (2026-06-21): CRT-floor files made
+    // self-contained/headerless (no precomp.h/winnt.h) → moved out of the
+    // cntpr_residue c_from_compile_db list into c_shims, dropping their
+    // dependency on cmake having generated compile_commands.json. Each verified
+    // symbol+disasm-identical vs the cmake object (WS1 verify harness). Per-arch:
+    //   i386  = the _CIxxx x87 math-intrinsic wrappers + _fltused
+    //   amd64 = the __C_specific_handler SEH personality (+ _fltused via shells)
+    match arch.as_str() {
+        "x86" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/misc/fltused.c",
+        ]),
+        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        _ => {}
+    }
+    // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust
+    // stable can't DEFINE C variadics) all #include the shared _sxprintf.c engine,
+    // now self-contained/headerless behind -DCRT_PRINTF_HEADERLESS (see
+    // c_shim_flags below) so cc-rs compiles them directly — no compile_commands.json
+    // replay. Each shell verified disasm-identical vs the header build (WS1 harness).
+    // All arches (the kernel's cmlib hive code pulls these on every arch). Moving
+    // them empties cntpr_residue → the kernel drops c_from_compile_db entirely.
+    c_shims.extend_from_slice(&[
+        "sdk/lib/crt/printf/sprintf.c",
+        "sdk/lib/crt/printf/swprintf.c",
+        "sdk/lib/crt/printf/vsprintf.c",
+        "sdk/lib/crt/printf/_snprintf.c",
+        "sdk/lib/crt/printf/_snwprintf.c",
+        "sdk/lib/crt/printf/_vsnprintf.c",
+        "sdk/lib/crt/printf/_vsnwprintf.c",
+    ]);
 
     // cmake C / cohab static libs (the rust archives — libkernel_rust.a,
     // librtl_rust.a, libcntpr_rust.a — are emitted by the engine AFTER this
@@ -180,65 +220,17 @@ fn main() {
     // reactos-link. Building the crates cargo-native instead of reusing cmake's
     // copy keeps the same guard in force; the amd64 cold boot is the oracle.)
 
-    // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
-    // (enumerated by a drop-test against liblibcntpr.a). Compiled in-cargo via
-    // c_from_compile_db (replays compile_commands.json, symbol-identical to the
-    // cmake objects). i386 additionally needs an asm archive — see cntpr_asm.
-    //   - amd64: the variadic printf shells (Rust stable can't define C
-    //     variadics) + the amd64 SEH personality (except/amd64/ehandler.c →
-    //     __C_specific_handler/_local_unwind).
-    //   - i386: the _CIxxx x87 MSVC math intrinsic wrappers (ci*.c — they CALL
-    //     the now-Rust libm, e.g. _CIsqrt→sqrt) + the variadic printf shells +
-    //     _fltused. (No SEH personality — i386 uses DUMMY_PSEH.) The 64-bit
-    //     integer + ftol + chkstk asm go through cntpr_asm below.
-    // Archive members pull lazily, so the per-arch list is a SUPERSET safe for
-    // both ntoskrnl and ntdll (ntoskrnl gets _fltused/chkstk from hal etc., so
-    // those objects simply aren't pulled here). arm64 needs NO residue at all —
-    // its drop-test came back with zero undefined (cnt-rust-lib + kernel-rust
-    // cover the whole surface; clang_rt.builtins-aarch64 covers __chkstk).
-    let cntpr_residue: Vec<&str> = match arch.as_str() {
-        "x86_64" => vec![
-            "sdk/lib/crt/except/amd64/ehandler.c",
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        "x86" => vec![
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
-            "sdk/lib/crt/misc/fltused.c",
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        // arm64: the variadic printf shells only. The original 93d5ba8 drop-test
-        // found arm64 needed NOTHING — but that predated linking cmlib-rust here.
-        // cmlib's hive code pulls sprintf/swprintf/vsprintf/_sn*/_vsn*, which Rust
-        // stable can't define (C variadics), so compile the shells in-cargo. No
-        // SEH/_fltused/_CIxxx/chkstk (cdecl variadic ABI + clang_rt.builtins-aarch64
-        // + cnt-rust libm cover the rest), and no scanf/_vscwprintf (ntdll-only).
-        "aarch64" => vec![
-            "sdk/lib/crt/printf/sprintf.c",
-            "sdk/lib/crt/printf/swprintf.c",
-            "sdk/lib/crt/printf/vsprintf.c",
-            "sdk/lib/crt/printf/_snprintf.c",
-            "sdk/lib/crt/printf/_snwprintf.c",
-            "sdk/lib/crt/printf/_vsnprintf.c",
-            "sdk/lib/crt/printf/_vsnwprintf.c",
-        ],
-        _ => Vec::new(),
-    };
+    // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide.
+    // As of the WS1 cmake-off batches (2026-06-21) it is EMPTY for the kernel —
+    // every former member is now a self-contained/headerless c_shim:
+    //   - the amd64 SEH personality (ehandler.c) + i386 _CIxxx math wrappers +
+    //     _fltused → c_shims LEAF batch above;
+    //   - the C-variadic printf shells (all arches, pulled by cmlib hive code) →
+    //     c_shims printf batch above (-DCRT_PRINTF_HEADERLESS).
+    // So the kernel no longer calls c_from_compile_db at all — the cargo kernel
+    // link is free of cmake's compile_commands.json. (The i386 integer/ftol/
+    // chkstk asm floor remains, via the cntpr_asm asm_archive below — asm, not C.)
+    let cntpr_residue: Vec<&str> = Vec::new();
     // i386 asm floor: the 64-bit integer intrinsics (_alldiv/_allmul/…/_aullshr),
     // the float→int conversion (_ftol), and the stack probe (_chkstk /
     // _alloca_probe / ___alloca). Assembled from SOURCE .s via the engine's
@@ -323,6 +315,9 @@ fn main() {
         .rust_lib("rossym-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
+        // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
+        // _sxprintf.c (harmless to the other shims, which don't reference it).
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
         // kernel asm -I chain (asm.inc + the generated build-<arch> ks*.inc +
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch
@@ -346,12 +341,11 @@ fn main() {
         linker = linker.asm_archive("cntpr_asm", cntpr_asm);
     }
     // librtl.a residual, compiled in-cargo (replaces the dropped librtl.a):
-    //   - dbgprint_variadic.c (the C-variadic DbgPrint/DbgPrintEx/wine_dbg_*
-    //     trampolines) via c_from_compile_db — name = the cmake `rtl` target so
-    //     the engine finds CMakeFiles/rtl.dir in compile_commands.json.
+    //   - dbgprint_variadic.c → moved to .c_shims() above (cmake-off spike
+    //     2026-06-20): now self-contained/headerless, compiled by cc-rs directly,
+    //     no longer needs c_from_compile_db's compile_commands.json replay.
     //   - the per-arch asm floor via asm_archive (lazy in-group, Kernel define
     //     set + kernel asm -I chain).
-    linker = linker.c_from_compile_db("rtl", &["sdk/lib/rtl/dbgprint_variadic.c"]);
     if !rtl_asm.is_empty() {
         linker = linker.asm_archive("rtl_asm", rtl_asm);
     }

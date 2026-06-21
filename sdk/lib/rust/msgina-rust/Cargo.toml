@@ -1,0 +1,31 @@
+# msgina-rust — Rust translation of dll/win32/msgina (the GINA logon-UI DLL).
+# staticlib → libmsgina_rust.a, cohab-linked into the cmake-built msgina.dll with the
+# translated .c files commented out (per-file flip, like kernel32-rust / user32-rust).
+# User-mode DLL: builds for the STANDARD per-arch targets (i686/x86_64 gnu, aarch64
+# gnullvm) with i386 -sse,-sse2 (the user-mode no-SSE rule).
+#
+# msgina is loaded directly by winlogon (the Wlx* GINA dispatch ABI) and is on the
+# `shell ready` smoke chain: winlogon must load+call GINA before launching
+# userinit/explorer. The inbound Wlx ABI comes from winlogon-sys; outbound public
+# Win32 calls (user32/gdi32/advapi32/kernel32/secur32) resolve at link time via the
+# cmake importlibs and are declared as `extern "system"` in msgina_externs.rs.
+# dimmedwindow.cpp (C++) stays C. See docs/engineering/userland-translation-audit-part2.md.
+
+[package]
+name = "msgina-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+# Enable the wine/debug.h ERR/WARN/TRACE/FIXME channels (sets the default channel
+# flags to 0xFF). Off by default → traces compile but are runtime-gated silent.
+wine_debug = []
+
+[dependencies]
+# Nt*/Rtl* + base Win32 types (HANDLE/UNICODE_STRING/NTSTATUS, the NDK surface).
+ntdll-sys = { path = "../ntdll-sys" }
+# The winlogon↔GINA Wlx* dispatch ABI (WLX_DISPATCH_VERSION_1_*, WLX_PROFILE_*, etc.).
+winlogon-sys = { path = "../winlogon-sys" }

@@ -5,11 +5,105 @@
  * COPYRIGHT:   Copyright 2018-2021 Timo Kreuzer <timo.kreuzer@reactos.org>
 */
 
-#include <precomp.h>
-#include <winnt.h>
+/*
+ * SELF-CONTAINED / HEADERLESS (cmake-off WS1, 2026-06-21): was
+ * `#include <precomp.h>` + `#include <winnt.h>` (the full crt/psdk header
+ * chain) — now compiled directly by cc-rs via reactos-link's `.c_shims()`,
+ * NOT replayed from cmake's compile_commands.json. Every type/struct/const
+ * winnt.h provided is hand-defined below, LAYOUT-FAITHFUL to the amd64
+ * definitions in build-amd64/sdk/include/psdk/winnt.h (DISPATCHER_CONTEXT,
+ * SCOPE_TABLE_AMD64, EXCEPTION_RECORD, EXCEPTION_POINTERS) — verified
+ * symbol-identical AND disassembly-identical vs the cmake object via the WS1
+ * verify harness (nm + objdump -d). RtlUnwind/RtlUnwindEx keep __declspec
+ * (dllimport) so the object references the same `__imp_` thunks as before.
+ */
+
+/* ---- minimal hand-defined types/macros (was: precomp.h + winnt.h) ---- */
+typedef unsigned long      ULONG;      /* 32-bit on LLP64 amd64 */
+typedef unsigned long      DWORD;      /* 32-bit */
+typedef long               LONG;       /* 32-bit */
+typedef unsigned long long ULONG64;
+typedef unsigned long long ULONG_PTR;  /* pointer-sized on amd64 */
+typedef unsigned char      BOOLEAN;
+typedef void               VOID;
+typedef void              *PVOID;
+
+#define NTSYSAPI __declspec(dllimport)
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+#define EXCEPTION_UNWIND         0x66   /* UNWINDING|EXIT_UNWIND|TARGET|COLLIDED */
+#define EXCEPTION_TARGET_UNWIND  0x20
+#define EXCEPTION_EXECUTE_HANDLER 1
+#define TRUE  1
+#define NULL  ((PVOID)0)
+#define UlongToPtr(u) ((PVOID)(ULONG_PTR)(ULONG)(u))
+#define __debugbreak() __builtin_debugtrap()
+
+typedef enum _EXCEPTION_DISPOSITION
+{
+    ExceptionContinueExecution = 0,
+    ExceptionContinueSearch    = 1
+} EXCEPTION_DISPOSITION;
+
+typedef struct _EXCEPTION_RECORD
+{
+    DWORD ExceptionCode;
+    DWORD ExceptionFlags;
+    struct _EXCEPTION_RECORD *ExceptionRecord;
+    PVOID ExceptionAddress;
+    DWORD NumberParameters;
+    ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+
+typedef struct _EXCEPTION_POINTERS
+{
+    PEXCEPTION_RECORD ExceptionRecord;
+    struct _CONTEXT  *ContextRecord;
+} EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
+
+typedef struct _SCOPE_TABLE
+{
+    DWORD Count;
+    struct
+    {
+        DWORD BeginAddress;
+        DWORD EndAddress;
+        DWORD HandlerAddress;
+        DWORD JumpTarget;
+    } ScopeRecord[1];
+} SCOPE_TABLE, *PSCOPE_TABLE;
+
+/* DISPATCHER_CONTEXT (amd64): opaque pointers kept as PVOID to preserve the
+ * field offsets the handler reads (ControlPc@0 ImageBase@8 TargetIp@32
+ * ContextRecord@40 HandlerData@56 HistoryTable@64 ScopeIndex@72). */
+typedef struct _DISPATCHER_CONTEXT
+{
+    ULONG64 ControlPc;
+    ULONG64 ImageBase;
+    PVOID   FunctionEntry;
+    ULONG64 EstablisherFrame;
+    ULONG64 TargetIp;
+    struct _CONTEXT *ContextRecord;
+    PVOID   LanguageHandler;
+    PVOID   HandlerData;
+    PVOID   HistoryTable;
+    ULONG   ScopeIndex;
+    ULONG   Fill0;
+} DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
+
+typedef LONG (*PEXCEPTION_FILTER)(struct _EXCEPTION_POINTERS *ExceptionPointers,
+                                  PVOID EstablisherFrame);
+typedef VOID (*PTERMINATION_HANDLER)(BOOLEAN AbnormalTermination,
+                                     PVOID EstablisherFrame);
+
+NTSYSAPI VOID RtlUnwindEx(PVOID TargetFrame, PVOID TargetIp,
+                          struct _EXCEPTION_RECORD *ExceptionRecord,
+                          PVOID ReturnValue, struct _CONTEXT *ContextRecord,
+                          PVOID HistoryTable);
+NTSYSAPI VOID RtlUnwind(PVOID TargetFrame, PVOID TargetIp,
+                        struct _EXCEPTION_RECORD *ExceptionRecord,
+                        PVOID ReturnValue);
 
 
-_CRTIMP
 EXCEPTION_DISPOSITION
 __cdecl
 __C_specific_handler(

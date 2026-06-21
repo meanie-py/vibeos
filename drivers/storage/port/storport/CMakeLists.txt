@@ -1,28 +1,40 @@
 
+# fdo/miniport/misc/pdo/storport/stubs.c replaced by Rust (storport-rust); guid.c stays C
+# (GUID data TU). spec2def still exports the StorPort* API (satisfied by Rust #[no_mangle])
+# + the import lib storahci links. NOT boot-loaded in smoke -> link-clean x3 bar.
+
 spec2def(storport.sys storport.spec ADD_IMPORTLIB)
+include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/drivers/sptilib)
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/sptilib)
+set(STORPORT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(STORPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-storport-target")
+set(STORPORT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libstorport_rust.a")
+if(ARCH STREQUAL "i386")
+    set(STORPORT_RUST_TARGET "i686-pc-windows-gnu")
+    set(STORPORT_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(STORPORT_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(STORPORT_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(STORPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(STORPORT_RUST_RUSTFLAGS "")
+endif()
+file(GLOB_RECURSE STORPORT_RUST_SRCS ${STORPORT_RUST_WORKSPACE_DIR}/storport-rust/src/*.rs)
+add_custom_command(
+    OUTPUT ${STORPORT_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${STORPORT_RUST_TARGET_DIR} RUSTFLAGS=${STORPORT_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        cargo build --release --target ${STORPORT_RUST_TARGET} -p storport-rust --manifest-path ${STORPORT_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${STORPORT_RUST_TARGET_DIR}/${STORPORT_RUST_TARGET}/release/libstorport_rust.a ${STORPORT_RUST_LIB}
+    DEPENDS ${STORPORT_RUST_SRCS} ${STORPORT_RUST_WORKSPACE_DIR}/storport-rust/Cargo.toml
+    WORKING_DIRECTORY ${STORPORT_RUST_WORKSPACE_DIR}
+    COMMENT "Building storport-rust (${STORPORT_RUST_TARGET})" VERBATIM)
+add_custom_target(rust_storport DEPENDS ${STORPORT_RUST_LIB})
 
-list(APPEND SOURCE
-    fdo.c
-    miniport.c
-    misc.c
-    pdo.c
-    storport.c
-    stubs.c)
-
-list(APPEND PCH_SKIP_SOURCE
-    guid.c)
-
-add_library(storport MODULE
-    ${SOURCE}
-    ${PCH_SKIP_SOURCE}
-    storport.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
-
-add_pch(storport precomp.h "${PCH_SKIP_SOURCE}")
+add_library(storport MODULE guid.c storport.rc ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
 set_module_type(storport kernelmodedriver)
-target_link_libraries(storport sptilib ${PSEH_LIB})
 add_importlibs(storport ntoskrnl hal)
+add_dependencies(storport rust_storport)
+target_link_libraries(storport ${STORPORT_RUST_LIB})
 add_cd_file(TARGET storport DESTINATION reactos/system32/drivers NO_CAB FOR all)

@@ -18,6 +18,8 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
+
 
 @dataclass
 class LockPair:
@@ -268,7 +270,7 @@ def main():
     if not args.scan and not args.fix:
         args.scan = True
 
-    reactos_root = Path(__file__).parent.parent.parent.parent
+    reactos_root = _RUSTCONV_REACTOS_ROOT
 
     if args.files:
         rs_files = [Path(f) for f in args.files]

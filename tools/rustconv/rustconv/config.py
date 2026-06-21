@@ -7,15 +7,82 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Root paths
-REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 
-# Load API keys from the repo-root .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY).
-# rustconv historically relied on these being exported in the shell; load them
-# here so `python -m rustconv ...` Just Works from a clean shell. Existing
-# environment values win (override=False) so an explicit export still takes
-# precedence.
-load_dotenv(REACTOS_ROOT / ".env", override=False)
+# Root paths
+def _detect_reactos_root() -> Path:
+    """The ReactOS tree rustconv operates on.
+
+    Prefer the git worktree of the CURRENT directory, so a `pip install -e`'d
+    rustconv (whose module physically lives in ONE checkout) still reads
+    sources, writes the output crate, and caches paid responses in the tree you
+    invoke it FROM — not wherever the module happens to be installed. This kills
+    the silent "fell back to the main checkout" footgun that let a worktree
+    `python -m rustconv translate` assemble into the main repo (and park paid
+    .responses there).
+
+    Order: $RUSTCONV_REACTOS_ROOT → CWD's git toplevel (if it looks like a
+    ReactOS tree carrying this tool) → module-relative (historical behaviour).
+    """
+    import subprocess
+
+    env = os.environ.get("RUSTCONV_REACTOS_ROOT")
+    if env:
+        return Path(env).resolve()
+    module_root = Path(__file__).resolve().parents[3]
+    try:
+        top = subprocess.run(
+            ["git", "-C", os.getcwd(), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        top = ""
+    if top:
+        cwd_root = Path(top)
+        # Only trust CWD if it's actually a ReactOS tree carrying this tool —
+        # otherwise an unrelated git repo as CWD would mis-route everything.
+        if (cwd_root / "ntoskrnl").is_dir() and (
+            cwd_root / "tools" / "rustconv" / "rustconv"
+        ).is_dir():
+            return cwd_root
+    return module_root
+
+
+REACTOS_ROOT = _detect_reactos_root()  # the tree we operate on (CWD worktree, not install dir)
+
+
+# Load API keys from .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY). .env is
+# gitignored, so it lives in the MAIN checkout and is usually ABSENT from a
+# worktree. Try, in order (all override=False so a shell export always wins):
+#   1. the invoked tree's own .env (a worktree may carry its own keys),
+#   2. the MAIN checkout's .env, found via the shared git common-dir (the usual
+#      case: worktrees share MAIN's .git, and MAIN holds the gitignored .env),
+#   3. the module-install tree's .env (the pip-install-e location).
+def _load_env_keys(root: Path) -> None:
+    candidates = [root / ".env"]
+    import subprocess
+
+    try:
+        common = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if common:
+            candidates.append((root / common).resolve().parent / ".env")  # .git → checkout → .env
+    except Exception:
+        pass
+    candidates.append(Path(__file__).resolve().parents[3] / ".env")
+    seen: set[Path] = set()
+    for env in candidates:
+        if env not in seen and env.exists():
+            seen.add(env)
+            load_dotenv(env, override=False)
+
+
+_load_env_keys(REACTOS_ROOT)
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
 # On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
@@ -62,9 +129,13 @@ FASTFAT_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fastfat"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
+STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
+STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
+SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
+RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
-TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
+TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
 TEMPLATES_DIR = TOOLS_DIR / "templates"
 DATA_DIR = TOOLS_DIR / "data"
 
@@ -630,6 +701,73 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # storport.sys — the modern storage port driver (drivers/storage/port/storport, ~3.6K
+    # LOC, 7 .c: fdo/miniport/misc/pdo/storport/stubs; guid.c = GUID data TU stays C). EXPORT
+    # driver (storport.spec: StorPort* miniport API → storahci links it). WDM kernelmodedriver.
+    # NOT boot-loaded in the QEMU smoke path (IDE via uniata/atapi) → link-clean x3 + no
+    # regression is the bar. Leaf-driver lane (storport/serial/storahci), opus + c2rust anchor.
+    "storport": Target(
+        name="storport",
+        source_dir=STORPORT_DIR,
+        output_crate=RUST_DIR / "storport-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=STORPORT_DIR / "storport.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # storahci.sys — AHCI storport miniport (drivers/storage/port/storahci, ~2.6K LOC, 1 .c).
+    # Links storport. Disabled from shipping (re-enable later); translate-for-completeness.
+    # No spec. NOT boot-loaded → link-clean x3 bar.
+    "storahci": Target(
+        name="storahci",
+        source_dir=STORAHCI_DIR,
+        output_crate=RUST_DIR / "storahci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # serial.sys — 8250/16550 UART COM driver (drivers/serial/serial, ~2.7K LOC, 12 .c).
+    # No spec (kernelmodedriver). NOT boot-loaded in smoke (kernel owns the KD COM port) →
+    # link-clean x3 bar. Self-contained; the ISR/DPC/timeout files are the hard part.
+    "serial": Target(
+        name="serial",
+        source_dir=SERIAL_DIR,
+        output_crate=RUST_DIR / "serial-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ramdisk.sys — RAM-disk class driver (drivers/storage/class/ramdisk, ~2.5K LOC, 1 .c).
+    # EASY leaf: pure WDM class driver — no miniport / no ISR / no DPC / no HW register I/O.
+    # No spec (kernelmodedriver). NOT boot-loaded in smoke (boot ramdisk = freeldr, not this)
+    # → link-clean x3 bar. Self-contained single .c; driver-private types from ntddrdsk.h.
+    "ramdisk": Target(
+        name="ramdisk",
+        source_dir=RAMDISK_DIR,
+        output_crate=RUST_DIR / "ramdisk-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -986,6 +1124,14 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["pciidex"]
     if "/drivers/storage/port/scsiport" in posix:
         return TARGETS["scsiport"]
+    if "/drivers/storage/port/storport" in posix:
+        return TARGETS["storport"]
+    if "/drivers/storage/port/storahci" in posix:
+        return TARGETS["storahci"]
+    if "/drivers/serial/serial" in posix:
+        return TARGETS["serial"]
+    if "/drivers/storage/class/ramdisk" in posix:
+        return TARGETS["ramdisk"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

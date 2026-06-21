@@ -106,9 +106,11 @@ unsafe fn IS_INTRESOURCE(p: *const c_void) -> bool {
 }
 #[inline]
 unsafe fn IS_ATOM(p: *const c_void) -> bool {
-    // MAXINTATOM is 0xC000; IS_ATOM == (((ULONG_PTR)x) > 0 && ((ULONG_PTR)x) < MAXINTATOM)
+    // user32p.h: IS_ATOM(x) == (((ULONG_PTR)x) > 0 && ((ULONG_PTR)x) < 0x10000)
+    // Upper bound is 0x10000 (high bits clear), NOT MAXINTATOM (0xC000) — real
+    // class atoms are >= 0xC000, so a 0xC000 bound misclassifies them as strings.
     let v = p as usize;
-    v > 0 && v < 0xC000
+    v > 0 && v < 0x10000
 }
 
 // strcmpiW — wine unicode helper (host-only inline in C); case-insensitive UTF-16

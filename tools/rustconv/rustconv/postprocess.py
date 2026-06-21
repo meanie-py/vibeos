@@ -225,14 +225,26 @@ KNOWN_BOGUS_DDK_IMPORTS = {
 def fix_debug_macros(code: str) -> str:
     """Replace C debug macros with Rust equivalents.
 
-    DPRINT/DPRINT1 → no-op (debug printing, not needed in Rust translation).
+    DPRINT/DPRINT1/DbgPrint → no-op (ReactOS kernel debug print; no channel infra
+      on the usermode-DLL Rust side, so stripped).
+    Wine ERR/WARN/TRACE/FIXME/MESSAGE → KEPT, rewritten to the Rust macro form
+      (`ERR(` → `ERR!(`). The crate provides `macro_rules!` ERR/WARN/TRACE/FIXME
+      that expand to a channel-flag-gated `ros_dbg_log` call (libwine logger),
+      so the traces survive translation — invaluable on boot/logon paths — and
+      are controlled at one knob (the `wine_debug` cargo feature → channel flags).
+      This is the deliberate counterpart to c2rust's *anchored* form, which already
+      emits the gated `if (flags & class) { ros_dbg_log(...) }` expansion; both are
+      now driven by the same default flags. Predicate forms (TRACE_ON/ERR_ON) and
+      channel-qualified TRACE_/ERR_ forms are NOT matched (require `(` after name).
     UNIMPLEMENTED → unimplemented!() (already a Rust macro, just needs ! suffix).
-    DbgPrint → no-op (kernel debug print).
     offset_of → core::mem::offset_of (requires Rust 1.77+).
     """
-    # Replace entire lines containing DPRINT1!( or DPRINT!( with a no-op comment.
-    # The LLM generates complex macro calls with nested parens, format strings etc.
-    # that are hard to regex-match. Simplest safe fix: replace the entire statement.
+    # Strip ReactOS DPRINT/DPRINT1 statements (single- or multi-line).
+    _dprint_call = re.compile(r"^DPRINT1?\!?\(")
+    # Keep wine ERR/WARN/TRACE/FIXME/MESSAGE: rewrite `NAME(` → `NAME!(` so it
+    # invokes the crate's gated logging macro. `(` directly after the name keeps
+    # TRACE_ON(/ERR_ON(/TRACE_( predicates from matching.
+    _wine_call = re.compile(r"^(ERR|WARN|TRACE|FIXME|MESSAGE)\(")
     lines = code.split("\n")
     result_lines = []
     skip_until_semicolon = False
@@ -243,23 +255,16 @@ def fix_debug_macros(code: str) -> str:
                 skip_until_semicolon = False
             continue
 
-        if (
-            re.match(r"DPRINT1?\!?\(", stripped)
-            or stripped.startswith("DPRINT1!(")
-            or stripped.startswith("DPRINT!(")
-        ):
-            # Single-line case
-            if stripped.endswith(";") or stripped.endswith(");"):
-                indent = line[: len(line) - len(line.lstrip())]
-                result_lines.append(f"{indent}// DPRINT removed")
-            else:
-                # Multi-line: skip until semicolon
-                indent = line[: len(line) - len(line.lstrip())]
-                result_lines.append(f"{indent}// DPRINT removed")
+        if _dprint_call.match(stripped):
+            indent = line[: len(line) - len(line.lstrip())]
+            result_lines.append(f"{indent}// DPRINT removed")
+            if not (stripped.endswith(";") or stripped.endswith(");")):
                 skip_until_semicolon = True
+        elif _wine_call.match(stripped):
+            # Keep the trace: insert `!` after the macro name (first occurrence).
+            indent = line[: len(line) - len(line.lstrip())]
+            result_lines.append(indent + _wine_call.sub(r"\1!(", stripped, count=1))
         elif "/* DPRINT1 */" in stripped or "/* DPRINT */" in stripped:
-            # Previously partially mangled by old regex — replace entire line
-            # but only if it contains leftover garbage
             if stripped == "/* DPRINT1 */" or stripped == "/* DPRINT */":
                 result_lines.append(line)
             else:
@@ -269,6 +274,19 @@ def fix_debug_macros(code: str) -> str:
             result_lines.append(line)
 
     code = "\n".join(result_lines)
+
+    # Tame c2rust's wine-channel preamble: it hardcodes `flags: !(0) as c_uchar`
+    # (0xFF = every class on → serial spam). Route it through the crate's
+    # `WINE_DBG_DEFAULT_FLAGS` (0 normally, 0xFF under the `wine_debug` feature) so
+    # BOTH the anchored `if (flags & class)` form and the rewritten ERR!/TRACE!
+    # macros default to silent. Best-effort: only fires when the crate defines the
+    # const (wine-style DLLs); harmless elsewhere.
+    if "WINE_DBG_DEFAULT_FLAGS" in code or "ros_dbg_log" in code or "!(" in code:
+        code = re.sub(
+            r"flags:\s*!\(\s*0[^,]*?\)\s*as\s*(?:::core::ffi::)?c_uchar",
+            "flags: WINE_DBG_DEFAULT_FLAGS",
+            code,
+        )
 
     # UNIMPLEMENTED! → unimplemented!()
     code = code.replace("UNIMPLEMENTED!();", "unimplemented!();")
