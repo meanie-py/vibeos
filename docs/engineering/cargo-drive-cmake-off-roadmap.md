@@ -22,7 +22,7 @@ more hermetic build.
 |---|---|---|
 | **compile_commands.json** | `.c_from_compile_db()` replays cmake's clang for the irreducible C floor (~50 files across 10 cells) | **YES — biggest** |
 | **Generated asm includes** | `ks386.inc`/`ksamd64.inc`/`ksarm64.h` under `build-<arch>/sdk/include/asm/` (cmake `native-geninc`) | **YES** |
-| **Host tools** | `spec2def` (exports/import-libs), `widl` (RPC), `windres` (resources) | **PARTIAL** |
+| **Host tools** | `spec2def` (self-hosted) · `native-hpp` (self-hosted, xdk headers) · `windres` (committed `.res` fallback) · `widl` (committed `.rs`-stub fallback) | **DONE** |
 | **Resource `.res`** | `gen_ntoskrnl_res.py` needs cmake-built `bugcodes.rc` + `.bin` (windmc) | **YES (narrow)** |
 | **bindgen headers** | `ntkrnl-sys` FFI | **NO — already committed** |
 | **ninja orchestration** | `add_cargo_module()` in `sdk/cmake/gcc.cmake` sequences 44 cells | **YES** |
@@ -180,8 +180,18 @@ regen + makes arm64 self-generating. Do later if regen-drift bites. A CI diff-ch
   cmake windres command); regen via **`tools/gen_committed_res.py`**. Committed for
   **all three arches** (i386/amd64 smoke green; arm64 .res generated from a
   COPY+repoint build-arm64 and committed).
-- `widl` (RPC IDL→C, a few usermode cells) — cmake host-tool; kernel path doesn't need
-  it. Defer (pre-build + store, or port the stubs).
+- **`widl` (RPC IDL→C) — cmake-off DONE via committed-stub fallback (2026-06-21).** widl
+  is a real 15-file compiler (flex/bison parser + NDR codegen + `wpphost`), so rather than
+  self-host it (deferred — "option A"), `generate_rpc_stub_rust` gains a committed fallback:
+  the RPC stubs are already transliterated to Rust (`widl_to_rust.py` + `midl-rt`, so no C
+  links), and that `.rs` is the deterministic final artifact — so commit it per-arch
+  (`<stub-crate>/data/<name>.<arch>.rs`) and return it when there is no configured cmake
+  build (no `widl`/`build.ninja`/`compile_commands.json`). cmake regenerates it when
+  configured (can't go stale); the committed copy is used only cmake-off. 2 stubs
+  (`svcctl_s`→services, `winreg_s`→winlogon) × 3 arches. Verified: committed
+  `svcctl_s.i386.rs` == fresh replay; **services i386 builds cmake-off** (committed branch);
+  the change is inert on the cmake build (replay path untouched). Full widl self-host
+  ("option A") remains a future option if the IDLs ever need to change off-cmake.
 
 **Net:** every cargo cell's host-tool + resource dependency on cmake is removed on all
 three arches except `widl` (usermode RPC). spec2def/dlltool were already self-hosted.

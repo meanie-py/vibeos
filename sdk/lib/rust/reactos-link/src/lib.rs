@@ -1997,12 +1997,33 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
     let out_sub = PathBuf::from(env::var("OUT_DIR").unwrap()).join(format!("rpc-{name}"));
     std::fs::create_dir_all(&out_sub).ok();
 
+    // cmake-off (WS1 DEEP, RPC): with no configured cmake build there is no
+    // host-tools `widl`, no `build.ninja`, and no `compile_commands.json` — the
+    // three inputs the regenerate path below needs (widl codegen + the widl
+    // command + the decoration compile). Fall back to the committed per-arch stub
+    // `.rs` (the deterministic widl→widl_to_rust.py output), exactly the WS2/WS3
+    // pattern: the cmake build regenerates it below (so it can never go stale),
+    // the committed copy is used ONLY when there is no cmake build at all.
+    // Regen: build services-cargo / winlogon-cargo with a configured build-<arch>
+    // and copy `OUT_DIR/rpc-<name>/<name>.rs` → `<stub-crate>/data/<name>.<arch>.rs`.
     let widl = build_dir.join("host-tools/bin/widl");
-    if !widl.exists() {
-        panic!(
-            "generate_rpc_stub_rust needs {} — run a cmake build first (host-tools widl)",
-            widl.display()
-        );
+    if !widl.exists()
+        || !build_dir.join("build.ninja").exists()
+        || !build_dir.join("compile_commands.json").exists()
+    {
+        let committed = manifest_dir.join(format!("data/{name}.{}.rs", arch.name));
+        if !committed.exists() {
+            panic!(
+                "cmake-off generate_rpc_stub_rust({name}) needs committed stub {} \
+                 (no configured cmake build) — regen by building this cell with a \
+                 configured build-{} and copying OUT_DIR/rpc-{name}/{name}.rs there",
+                committed.display(),
+                arch.name
+            );
+        }
+        println!("cargo:rerun-if-changed={}", committed.display());
+        println!("cargo:rerun-if-changed={}", repo_root.join(idl_rel).display());
+        return committed;
     }
     let ninja_path = build_dir.join("build.ninja");
     let ninja = std::fs::read_to_string(&ninja_path)
