@@ -73,6 +73,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
     };
     let mut phy = VirtioPhy::new(dev);
     let mac = phy.mac();
+    // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
+    crate::netcfg::set_mac(mac);
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
     config.random_seed = (now().total_millis() as u64) ^ 0x9E37_79B9_7F4A_7C15;
@@ -138,6 +140,13 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     }
                     let o = cfg.address.address().octets();
                     nsprint!("[NETSTACK] dhcp lease {}.{}.{}.{}\n", o[0], o[1], o[2], o[3]);
+                    // Publish L3 config for the M9 management plane (ipconfig /
+                    // GetAdaptersInfo / GetIpAddrTable read it via the MIB queries).
+                    crate::netcfg::set_ipv4(
+                        o,
+                        cfg.address.prefix_len(),
+                        cfg.router.map(|r| r.octets()),
+                    );
                     dhcp_configured = true;
                     DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
                 }

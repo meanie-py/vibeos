@@ -326,10 +326,24 @@ now dispatches in `tdidev.rs`; for `TDI_QUERY_ADDRESS_INFO` it routes a `Cmd::Qu
 worker, which resolves the local endpoint (a connection object → its socket's `local_endpoint()`;
 an address object → its bound port + `iface.ipv4_addr()`) and writes a byte-exact `TdiAddressInfo`
 (`ActivityCount` + `TRANSPORT_ADDRESS`, sizeof 26 — the layout msafd's `WSPGetSockName` reads,
-verified against `dll/win32/msafd/misc/dllmain.c:2398-2440`) into the IRP's MDL. Items (2) MIB
-classes, (3) `IOCTL_ICMP_ECHO_REQUEST`, (4) `IOCTL_TCP_SET_INFORMATION_EX` remain — the moderate
-tier (need exact `IPSNMPInfo`/`IPAddrEntry`/`IFEntry` layouts + cross-thread ICMP plumbing) and
-are best tackled with runtime validation available (post clock-fix). The findings below stand.
+verified against `dll/win32/msafd/misc/dllmain.c:2398-2440`) into the IRP's MDL.
+
+Item (2) **MIB classes — ✅ IMPLEMENTED.** `handle_query_info_ex` now answers the PROTOCOL-class
+(`INFO_CLASS_PROTOCOL` 0x200) queries the iphlpapi `*_reactos.c` clients issue: `IF_MIB_STATS_ID`
+→ `IFEntry` (if_index/type/mtu/MAC/descr), `IP_MIB_STATS_ID` → `IPSNMPInfo` (numif/numaddr/
+numroutes), `IP_MIB_ADDRTABLE_ENTRY_ID` → one `IPAddrEntry` (DHCP addr/mask/bcast on if 1),
+`IP_MIB_ARPTABLE_ENTRY_ID` → one default `IPRouteEntry` via the gateway (CL_NL) / empty ARP table
+(AT), plus zeroed TCP/UDP stats. The AT entity is now advertised so `hasArp()` succeeds. Because
+these are **METHOD_NEITHER** (caller-context `UserBuffer`, can't be written by the worker), the
+worker publishes a lock-free `{MAC, IP, mask, gw}` snapshot (`netcfg.rs`) that the synchronous
+dispatch reads. All struct layouts (IFEntry/IPSNMPInfo 92B, IPAddrEntry 24B, IPRouteEntry 52B) and
+the entity/class/id constants verified against `tcpioctl.h`/`tdiinfo.h`. **This unblocks
+`GetAdaptersInfo`/`GetIpAddrTable`/`GetIpForwardTable` → `ipconfig`.**
+
+Items (3) `IOCTL_ICMP_ECHO_REQUEST` (ping) and (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr
+programming) remain — item 3 needs cross-thread ICMP request/response plumbing into the engine;
+item 4 is optional (the engine self-configures via its own DHCP). Both best done with runtime
+validation available (post clock-fix). The findings below stand.
 
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
