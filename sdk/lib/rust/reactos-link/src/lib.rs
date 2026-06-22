@@ -850,10 +850,11 @@ impl Linker {
     ///
     /// cmake-off (WS2): the generated `ks*.inc` normally lives in the cmake build
     /// dir. The build-dir copy is added FIRST so it always wins when a cmake build
-    /// is configured (the committed fallback can never make a configured build go
-    /// stale). When that copy is ABSENT (the cmake-off path — cargo kernel build
-    /// with no cmake configure/ninja), fall back to the committed byte-stable copy
-    /// in `sdk/include/asm/committed/` (see that dir's README + the roadmap WS2).
+    /// is configured (the self-host can never make a configured build go stale).
+    /// When that copy is ABSENT (the cmake-off path — cargo kernel build with no
+    /// cmake configure/ninja), self-host `geninc`: `generate_ks_inc()` compiles
+    /// `genincdata.c` and emits the per-arch ks*.inc into OUT_DIR, byte-identical
+    /// to cmake's `native-geninc` output. No committed ks*.inc needed.
     fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
         b.include(self.repo_root.join("sdk/include/asm"))
             .include(self.build_dir.join("sdk/include/asm"))
@@ -863,8 +864,18 @@ impl Linker {
             .join("sdk/include/asm")
             .join(self.ks_inc_name());
         if !generated.exists() {
-            b.include(self.repo_root.join("sdk/include/asm/committed"));
+            // cmake-off: self-host geninc — compile genincdata.c + emit ks*.inc
+            // into OUT_DIR/asm and assemble against that (byte-identical to the
+            // cmake-built copy). No committed ks*.inc needed.
+            b.include(self.generate_ks_inc());
         }
+    }
+
+    /// The per-arch cross clang the asm/C compiles use (matches `link()`).
+    fn clang_path(&self) -> PathBuf {
+        self.repo_root
+            .join(".build-tools/llvm-mingw")
+            .join(format!("bin/{}-clang", self.arch.triple))
     }
 
     /// The per-arch generated kernel-offset include filename (geninc output):
@@ -1920,6 +1931,72 @@ impl Linker {
         }
     }
 
+    /// cmake-off: self-host `geninc`. Cross-compile `genincdata.c` for this arch
+    /// (committed kernel flags + native-hpp xdk headers + committed `bugcodes.h`),
+    /// extract its `.asmdef` COFF section, and emit the per-arch ks*.inc to
+    /// `OUT_DIR/asm/`. Returns that dir for the kernel asm `#include` path. The
+    /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
+    /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
+    fn generate_ks_inc(&self) -> PathBuf {
+        let out_asm = PathBuf::from(env::var("OUT_DIR").unwrap()).join("asm");
+        std::fs::create_dir_all(&out_asm).expect("mkdir asm");
+        let dst = out_asm.join(self.ks_inc_name());
+        // Memoize: each module's asm build calls this once; reuse within a build.
+        if dst.exists() {
+            return out_asm;
+        }
+        let clang = self.clang_path();
+        let xdk = self.generate_xdk_headers();
+        let committed_hdrs = self
+            .repo_root
+            .join("sdk/lib/rust/reactos-link/committed-headers");
+        let flags_rel =
+            format!("sdk/lib/rust/reactos-link/cflags/genincdata.{}.flags", self.arch.name);
+        let flags_path = self.repo_root.join(&flags_rel);
+        let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
+            panic!(
+                "cmake-off geninc needs committed flags {} \
+                 (no compile_commands.json) — regen via tools/gen_cflags.py: {e}",
+                flags_path.display()
+            )
+        });
+        println!("cargo:rerun-if-changed={}", flags_path.display());
+        let repo = self.repo_root.to_str().expect("utf8 repo root");
+        let flags: Vec<String> = raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.replace("{REPO}", repo))
+            .collect();
+        let src = self.repo_root.join("sdk/include/asm/genincdata.c");
+        let obj = out_asm.join("genincdata.o");
+        // Same xdk/bugcodes include layering as compile_c_db_committed: xdk-gen
+        // base (psdk/-prefixed forms) + psdk + ddk (bare forms) + bugcodes.h.
+        let status = Command::new(&clang)
+            .args(&flags)
+            .arg("-I")
+            .arg(&xdk)
+            .arg("-I")
+            .arg(xdk.join("psdk"))
+            .arg("-I")
+            .arg(xdk.join("ddk"))
+            .arg("-I")
+            .arg(&committed_hdrs)
+            .arg(&src)
+            .arg("-o")
+            .arg(&obj)
+            .current_dir(&self.repo_root)
+            .status()
+            .unwrap_or_else(|e| panic!("cmake-off geninc clang for genincdata.c: {e}"));
+        if !status.success() {
+            panic!("cmake-off geninc: genincdata.c compile failed");
+        }
+        let asmdef = read_coff_section(&obj, ".asmdef");
+        std::fs::write(&dst, emit_ks_inc(&asmdef))
+            .unwrap_or_else(|e| panic!("write {}: {e}", dst.display()));
+        println!("cargo:rerun-if-changed={}", src.display());
+        out_asm
+    }
+
     /// Compile a single-.c host tool with the host cc, return its path.
     fn compile_host_tool(&self, src_rel: &str, name: &str) -> PathBuf {
         let host = env::var("HOST").expect("HOST");
@@ -1997,6 +2074,74 @@ fn emit_objs(build: &cc::Build, source: &Path) {
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+}
+
+// ---- geninc self-host (ks*.inc / ksarm64.h from genincdata's .asmdef) -----
+// The kernel asm offset constants (`ks386.inc`/`ksamd64.inc`/`ksarm64.h`) are
+// produced by compiling `sdk/include/asm/genincdata.c` to a PE object whose
+// `.asmdef` section is a flat `ASMGENDATA[]` table of compile-time constants
+// (FIELD_OFFSET/sizeof/enum values), then walking that table into assembler
+// text. cmake builds + runs the `geninc` host tool to do the walk; cmake-off we
+// extract + emit it directly (the `.asmdef` values are pure constants with no
+// relocations, so the `.obj`'s raw section bytes equal the linked module's).
+// This is the in-engine analogue of `tools/gen_ks386_inc.py`, generalized to
+// all three arches, and is byte-identical to cmake's `native-geninc` output.
+
+/// Read a named section's raw bytes out of a COFF object file. The COFF File
+/// Header is at offset 0 (no DOS stub for a `.obj`); section table follows the
+/// (here empty) optional header. Mirrors `read_coff_section` in gen_ks386_inc.py.
+fn read_coff_section(obj: &Path, section_name: &str) -> Vec<u8> {
+    let raw = std::fs::read(obj).unwrap_or_else(|e| panic!("read {}: {e}", obj.display()));
+    if raw.len() < 20 {
+        panic!("{} too small to be a COFF object", obj.display());
+    }
+    let u16le = |o: usize| u16::from_le_bytes([raw[o], raw[o + 1]]) as usize;
+    let u32le = |o: usize| {
+        u32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]) as usize
+    };
+    let num_sections = u16le(2);
+    let opt_header_size = u16le(16);
+    let sec_table = 20 + opt_header_size;
+    for i in 0..num_sections {
+        let off = sec_table + i * 40;
+        let nb = &raw[off..off + 8];
+        let nul = nb.iter().position(|&c| c == 0).unwrap_or(8);
+        if &nb[..nul] == section_name.as_bytes() {
+            let raw_size = u32le(off + 16);
+            let raw_addr = u32le(off + 20);
+            if raw_addr == 0 || raw_size == 0 {
+                panic!("section {section_name:?} has no raw data in {}", obj.display());
+            }
+            return raw[raw_addr..raw_addr + raw_size].to_vec();
+        }
+    }
+    panic!("section {section_name:?} not found in {}", obj.display());
+}
+
+/// Walk an `ASMGENDATA[]` `.asmdef` blob into ks*.inc text. Each record is 64
+/// bytes: `char Type; char Name[55]; u64 Value`. GNU (non-`-ms`) format — the
+/// only one cmake uses with the llvm-mingw (non-MSVC) toolchain. Mirrors
+/// `emit_ks386_inc` in gen_ks386_inc.py, identical for all arches.
+fn emit_ks_inc(asmdef: &[u8]) -> String {
+    let mut out = String::new();
+    let mut off = 0usize;
+    while off + 64 <= asmdef.len() {
+        let chunk = &asmdef[off..off + 64];
+        let ty = chunk[0];
+        let nul = chunk[1..56].iter().position(|&c| c == 0).unwrap_or(55);
+        let name = std::str::from_utf8(&chunk[1..1 + nul])
+            .unwrap_or_else(|_| panic!("non-utf8 ASMGENDATA name at offset {off}"));
+        let value = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
+        match ty {
+            0 => break,                                          // TYPE_END
+            1 => out.push_str(&format!("{name}\n")),             // TYPE_RAW
+            2 => out.push_str(&format!("{name} = 0x{value:x}\n")), // TYPE_CONSTANT
+            3 => out.push_str(&format!("\n/* {name} */\n")),     // TYPE_HEADER
+            other => panic!("unknown ASMGENDATA type {other} at offset {off}"),
+        }
+        off += 64;
+    }
+    out
 }
 
 // ---- compile_commands.json replay (c_from_compile_db) --------------------
