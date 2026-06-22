@@ -27,7 +27,7 @@ list(APPEND SOURCE
     # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
     lookup.c
     lsarpc.c
-    lsasrv.c
+    # lsasrv.c      — replaced by Rust (lsasrv-rust/src/lsasrv/lsasrv.rs)
     # notify.c      — replaced by Rust (lsasrv-rust/src/lsasrv/notify.rs)
     # policy.c      — replaced by Rust (lsasrv-rust/src/lsasrv/policy.rs)
     # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
