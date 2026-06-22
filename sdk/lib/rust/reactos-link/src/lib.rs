@@ -22,7 +22,81 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
+
+// ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
+// When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
+// appended (one shell-quoted line, prefixed `cd <dir> && ` when a working dir is
+// set) to `<dir>/<pkg>.trace` — a flat, inspectable record of the real cmake-off
+// build, the cargo-side analogue of `ninja -v`. Per-package files avoid garbled
+// lines when cells build in parallel; the orchestrator's `--trace` clears the dir
+// and concatenates them in cell order. No-op (zero overhead) when the var is
+// unset, so a normal build is never affected.
+
+/// Append one command line to this package's trace file (if tracing is on).
+fn trace_command(cmd: &Command) {
+    let dir = match env::var_os("VIBEOS_LINK_TRACE") {
+        Some(d) => PathBuf::from(d),
+        None => return,
+    };
+    // The trace dir is per-arch (the orchestrator points it at out_dir/.trace),
+    // so the package name alone is unique within one run.
+    let pkg = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "unknown".into());
+    let _ = std::fs::create_dir_all(&dir);
+    let file = dir.join(format!("{pkg}.trace"));
+    let mut line = String::new();
+    if let Some(d) = cmd.get_current_dir() {
+        line.push_str("cd ");
+        line.push_str(&shell_quote(d.as_os_str()));
+        line.push_str(" && ");
+    }
+    line.push_str(&shell_quote(cmd.get_program()));
+    for a in cmd.get_args() {
+        line.push(' ');
+        line.push_str(&shell_quote(a));
+    }
+    line.push('\n');
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+        use std::io::Write;
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+/// Trace a cc-rs compile by reconstructing its per-source command line (the
+/// configured compiler + flags + `-c <source>`). cc-rs runs the compile itself;
+/// this only records what it will run, so the trace covers the cc-rs compiles
+/// (asm, c-shims, the committed C floor) alongside the directly-spawned tools.
+fn trace_cc(build: &cc::Build, source: &Path) {
+    if env::var_os("VIBEOS_LINK_TRACE").is_none() {
+        return;
+    }
+    let mut c = build.get_compiler().to_command();
+    c.arg("-c").arg(source);
+    trace_command(&c);
+}
+
+fn shell_quote(s: &std::ffi::OsStr) -> String {
+    let s = s.to_string_lossy();
+    let needs = s.is_empty()
+        || s.chars()
+            .any(|c| c.is_whitespace() || "\"'\\$`*?[]{}()<>|&;#~!".contains(c));
+    if needs {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    } else {
+        s.into_owned()
+    }
+}
+
+/// `Command::status()` that records the command first when `--trace` is on.
+trait TracedStatus {
+    fn traced_status(&mut self) -> std::io::Result<ExitStatus>;
+}
+impl TracedStatus for Command {
+    fn traced_status(&mut self) -> std::io::Result<ExitStatus> {
+        trace_command(self);
+        self.status()
+    }
+}
 
 /// CRT-startup personality for `.msvcrtex_crt()` — selects which
 /// crt-startup-rust feature (+ overridable sibling) the consumer links,
@@ -830,7 +904,7 @@ impl Linker {
         std::fs::create_dir_all(&out).expect("mkdir gendib-gen");
         let status = Command::new(&tool)
             .arg(&out)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("native-gendib: {e}"));
         if !status.success() {
             panic!("native-gendib failed");
@@ -1037,7 +1111,7 @@ impl Linker {
                 let status = Command::new(&args[0])
                     .args(&args[1..])
                     .current_dir(&dir)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
                 if !status.success() {
                     panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
@@ -1216,7 +1290,7 @@ impl Linker {
                     let status = Command::new(&args[0])
                         .args(&args[1..])
                         .current_dir(&dir)
-                        .status()
+                        .traced_status()
                         .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
                     if !status.success() {
                         panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
@@ -1230,7 +1304,7 @@ impl Linker {
                     .arg("rcs")
                     .arg(&lib_a)
                     .args(&objs)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
                 if !status.success() {
                     panic!("ar failed for c_from_compile_db {name}");
@@ -1262,6 +1336,9 @@ impl Linker {
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
             self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
+            for rel in rels {
+                trace_cc(&b, &self.repo_root.join(rel));
+            }
             let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
@@ -1272,7 +1349,7 @@ impl Linker {
                 .arg("rcs")
                 .arg(&lib_a)
                 .args(&objs)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
             if !status.success() {
                 panic!("ar failed for asm_archive {name}");
@@ -1682,7 +1759,7 @@ impl Linker {
             }
         }
         let status = cmd
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("cargo build -p {crate_name}: {e}"));
         if !status.success() {
             panic!("cargo build -p {crate_name} failed");
@@ -1721,7 +1798,7 @@ impl Linker {
             .arg("--version=0x502")
             .arg("--dbg")
             .arg(&spec)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("spec2def: {e}"));
         if !status.success() {
             panic!("spec2def failed for {spec_rel}");
@@ -1754,7 +1831,7 @@ impl Linker {
             .arg("--implib")
             .arg(format!("-d={}", implib_def.display()))
             .arg(&spec)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("spec2def --implib: {e}"));
         if !status.success() {
             panic!("spec2def --implib failed for {spec_rel}");
@@ -1774,7 +1851,7 @@ impl Linker {
             .arg(&lib_a)
             .arg("-t")
             .arg(basename)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("dlltool ({}): {e}", dlltool.display()));
         if !status.success() {
             panic!("dlltool failed for {basename}");
@@ -1822,7 +1899,7 @@ impl Linker {
                 .arg(tmpl)
                 .arg(&tmp)
                 .current_dir(&xdk_src)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
             if !status.success() {
                 panic!("native-hpp failed for {tmpl}");
@@ -1920,7 +1997,7 @@ impl Linker {
                     .arg("-o")
                     .arg(&obj)
                     .current_dir(&self.repo_root)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| {
                         panic!("committed-flags clang for {rel} (lib {name}): {e}")
                     });
@@ -1936,7 +2013,7 @@ impl Linker {
                 .arg("rcs")
                 .arg(&lib_a)
                 .args(&objs)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
             if !status.success() {
                 panic!("ar failed for c_from_compile_db {name}");
@@ -2000,7 +2077,7 @@ impl Linker {
             .arg("-o")
             .arg(&obj)
             .current_dir(&self.repo_root)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("cmake-off geninc clang for genincdata.c: {e}"));
         if !status.success() {
             panic!("cmake-off geninc: genincdata.c compile failed");
@@ -2032,7 +2109,7 @@ impl Linker {
         cmd.args(cc_tool.args());
         cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
         let status = cmd
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("host cc ({}): {e}", cc_tool.path().display()));
         if !status.success() {
             panic!("host cc failed to compile {src_rel}");
@@ -2082,6 +2159,7 @@ fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &Arc
 }
 
 fn emit_objs(build: &cc::Build, source: &Path) {
+    trace_cc(build, source);
     let objs = build.compile_intermediates();
     if objs.is_empty() {
         panic!("cc-rs produced no objects for {}", source.display());
@@ -2273,7 +2351,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
     let cmd = rewrite_widl_outputs(
         &raw, name, gen_c.to_str().unwrap(), gen_h.to_str().unwrap(),
     );
-    let st = Command::new("sh").arg("-c").arg(&cmd).status()
+    let st = Command::new("sh").arg("-c").arg(&cmd).traced_status()
         .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
     assert!(st.success(), "widl codegen failed for {name}");
 
@@ -2288,7 +2366,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
             *a = gen_c.to_str().unwrap().to_string();
         }
     }
-    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).status()
+    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).traced_status()
         .unwrap_or_else(|e| panic!("compile {name}.c for decorations: {e}"));
     assert!(st.success(), "decoration compile failed for {name}");
 
@@ -2302,7 +2380,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
         .arg("--arch").arg(arch.name)
         .arg("--nm").arg(&nm)
         .arg("-o").arg(&gen_rs)
-        .status()
+        .traced_status()
         .unwrap_or_else(|e| panic!("run widl_to_rust.py for {name}: {e}"));
     assert!(st.success(), "widl_to_rust.py failed for {name}");
 

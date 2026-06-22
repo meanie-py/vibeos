@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -192,12 +193,24 @@ def log(msg: str) -> None:
     print(f"[ws5] {msg}", flush=True)
 
 
+# `--trace`: the orchestrator's own spawned commands, in order. The in-cargo
+# (reactos-link engine) commands are captured separately via VIBEOS_LINK_TRACE
+# (one file per cell) and stitched in by main().
+_TRACE_CMDS: list[str] = []
+
+
+def _trace(cmd: list[str], cwd: Path | None = None) -> None:
+    prefix = f"cd {cwd} && " if cwd else ""
+    _TRACE_CMDS.append(prefix + " ".join(shlex.quote(str(c)) for c in cmd))
+
+
 def run(cmd: list[str], cwd: Path | None = None, dry: bool = False) -> None:
     shown = " ".join(str(c) for c in cmd)
     if dry:
         log(f"DRY  {shown}")
         return
     log(f"exec {shown}")
+    _trace(cmd, cwd)
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
@@ -251,7 +264,9 @@ def built_exe(root: Path, cell: Cell, arch: str) -> Path:
     return root / "sdk/lib/rust" / "target" / stem / "release" / f"{bin_name}.exe"
 
 
-def cargo_build_many(root: Path, cells: list[Cell], arch: str, dry: bool = False) -> None:
+def cargo_build_many(
+    root: Path, cells: list[Cell], arch: str, dry: bool = False, trace_dir: Path | None = None
+) -> None:
     """ONE cargo +nightly build-std invocation building every cell (per-arch
     fan-out). All cells share the identical `<stem>.json` target, so a single
     `--target` + many `-p` lets cargo build the shared rlibs once and the
@@ -282,6 +297,10 @@ def cargo_build_many(root: Path, cells: list[Cell], arch: str, dry: bool = False
         log(f"DRY  RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}  (cwd={ws})")
         return
     env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
+    if trace_dir is not None:
+        # Engine appends each in-cargo command to <trace_dir>/<pkg>-<arch>.trace.
+        env["VIBEOS_LINK_TRACE"] = str(trace_dir)
+    _trace(env_cmd, ws)
     log(f"exec (fan-out) cargo build — {len(cells)} cells in one invocation")
     subprocess.run(env_cmd, cwd=ws, env=env, check=True)
 
@@ -372,6 +391,15 @@ def main(argv: list[str] | None = None) -> int:
         help="everything: kernel EXEs + spine + drivers + loaders",
     )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
+    ap.add_argument(
+        "--trace",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FILE",
+        help="record every command run (orchestrator + in-cargo engine) to FILE "
+        "(default <out-dir>/build-trace.txt) — the ninja-`-v`-style flat command list",
+    )
     args = ap.parse_args(argv)
 
     if args.list:
@@ -398,10 +426,18 @@ def main(argv: list[str] | None = None) -> int:
         log(f"skipping (not on {args.arch}): {', '.join(skipped)}")
     log(f"arch={args.arch} cells={' -> '.join(c.target for c in cells)}")
 
+    # `--trace`: clear a per-cell trace dir the engine appends to (VIBEOS_LINK_TRACE).
+    trace_dir: Path | None = None
+    if args.trace is not None and not args.dry_run:
+        trace_dir = Path(out_dir) / ".trace"
+        if trace_dir.exists():
+            shutil.rmtree(trace_dir)
+        trace_dir.mkdir(parents=True)
+
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
 
     # Phase 1: ONE fan-out cargo invocation builds every cell in parallel.
-    cargo_build_many(root, cells, args.arch, dry=args.dry_run)
+    cargo_build_many(root, cells, args.arch, dry=args.dry_run, trace_dir=trace_dir)
 
     # Phase 2: copy out + per-KIND post-link (cheap, sequential).
     for cell in cells:
@@ -416,6 +452,27 @@ def main(argv: list[str] | None = None) -> int:
         if not args.dry_run:
             sz = dest.stat().st_size if dest.exists() else 0
             log(f"OK   {cell.output}  ({sz} bytes, KIND {cell.kind})")
+
+    if trace_dir is not None:
+        trace_out = Path(args.trace) if args.trace else out_dir / "build-trace.txt"
+        lines = [
+            f"# cmake-off build trace — arch={args.arch}, cells: "
+            f"{' '.join(c.target for c in cells)}",
+            "# (no cmake configure, no ninja; every command this build ran)",
+            "",
+            "# === orchestrator-spawned commands ===",
+            *_TRACE_CMDS,
+            "",
+            "# === in-cargo (reactos-link engine) commands, per cell ===",
+        ]
+        for cell in cells:
+            f = trace_dir / f"{cell.crate}.trace"
+            body = f.read_text().rstrip("\n").splitlines() if f.exists() else []
+            lines.append(f"## {cell.target} ({cell.crate}) — {len(body)} commands")
+            lines.extend(body)
+        trace_out.write_text("\n".join(lines) + "\n")
+        n_engine = sum(1 for line in lines if line and not line.startswith("#"))
+        log(f"trace: {n_engine} commands -> {trace_out}")
 
     log("done — cmake-off build complete (no cmake configure, no ninja)")
     return 0

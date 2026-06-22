@@ -330,8 +330,21 @@ header via temp+atomic-rename (a partial concurrent write showed up as a spuriou
 ntoskrnl all 2-byte vs a fresh build-dir. The whole OS — kernel + spine + 25
 drivers + loaders — is now cmake-off byte-equivalent.
 
-**Remaining:** the optional media tools (full-ISO, Tier 4) + the `--trace`
-north-star. No kernel/spine/driver/loader blockers left.
+**`--trace` (ninja-`-v`-style command list) — DONE (2026-06-21).** `cargo_orchestrate.py
+--trace [FILE]` records *every* command the cmake-off build runs — the orchestrator's
+own spawns (the fan-out `cargo`, pefixup, the forwarder-fix) **and** every in-cargo
+command the reactos-link engine spawns (per-rlib `cargo build-std`, each `clang`
+compile with full flags, `ar`, `windres`, `spec2def`/`dlltool`/native-hpp/geninc/
+gendib) — to `<out-dir>/build-trace.txt` (or FILE). Mechanism: the engine appends to
+`$VIBEOS_LINK_TRACE/<pkg>.trace` (per-package files → no interleave under the parallel
+fan-out; `trace_command` + a `TracedStatus` trait on every spawn, `trace_cc` reconstructs
+the cc-rs per-source compiles); the orchestrator clears the dir, sets the env, and
+stitches the per-cell traces in cell order under its own command log. Off by default
+(env unset = zero overhead, codegen unaffected — the traced build stays byte-identical).
+A flat, copy-pasteable record of the real build with no cmake/ninja in sight.
+
+**Remaining:** only the optional media tools (full-ISO, Tier 4). No
+kernel/spine/driver/loader blockers left; the whole OS builds + traces cmake-off.
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
