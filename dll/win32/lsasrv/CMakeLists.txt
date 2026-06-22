@@ -22,7 +22,7 @@ spec2def(lsasrv.dll lsasrv.spec ADD_IMPORTLIB)
 # the precise symbol decorations (i386 _Lsar*@N). Mirrors the services_c pattern.
 list(APPEND SOURCE
     authpackage.c
-    authport.c
+    # authport.c    — replaced by Rust (lsasrv-rust/src/lsasrv/authport.rs)
     # database.c   — replaced by Rust (lsasrv-rust/src/lsasrv/database.rs)
     # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
     lookup.c

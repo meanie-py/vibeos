@@ -1,5 +1,25 @@
 use crate::prelude::*;
 
+// Cross-file LSA request handlers dispatched by AuthPortThreadRoutine.
+// 3 are Rust siblings (#[no_mangle]): LsapEnumLogonSessions/LsapGetLogonSessionData
+// (session.rs), LsapRegisterNotification (notify.rs). 3 are still C: Lsap{LogonUser,
+// CallAuthenticationPackage,LookupAuthenticationPackage} (authpackage.c). All cdecl
+// (no NTAPI in lsasrv.h prototypes) → extern "C".
+extern "C" {
+    fn LsapCallAuthenticationPackage(
+        RequestMsg: PLSA_API_MSG,
+        LogonContext: PLSAP_LOGON_CONTEXT,
+    ) -> NTSTATUS;
+    fn LsapLogonUser(RequestMsg: PLSA_API_MSG, LogonContext: PLSAP_LOGON_CONTEXT) -> NTSTATUS;
+    fn LsapLookupAuthenticationPackage(
+        RequestMsg: PLSA_API_MSG,
+        LogonContext: PLSAP_LOGON_CONTEXT,
+    ) -> NTSTATUS;
+    fn LsapEnumLogonSessions(RequestMsg: PLSA_API_MSG) -> NTSTATUS;
+    fn LsapGetLogonSessionData(RequestMsg: PLSA_API_MSG) -> NTSTATUS;
+    fn LsapRegisterNotification(RequestMsg: PLSA_API_MSG) -> NTSTATUS;
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch___default: *mut __wine_debug_channel =
@@ -47,7 +67,7 @@ unsafe fn LsapDeregisterLogonProcess(
         );
     }
 
-    RemoveHeadList(&raw mut (*LogonContext).Entry);
+    RemoveHeadList(&raw mut (*LogonContext).Entry as *mut _);
     NtClose((*LogonContext).ClientProcessHandle);
     NtClose((*LogonContext).ConnectionHandle);
     RtlFreeHeap(RtlGetProcessHeap(), 0, LogonContext as PVOID);
@@ -72,7 +92,7 @@ unsafe fn LsapIsTrustedClient(ProcessHandle: HANDLE) -> BOOL {
             break 'done 0;
         }
 
-        privileges = RtlAllocateHeap(RtlGetProcessHeap(), 0, size as usize) as PTOKEN_PRIVILEGES;
+        privileges = RtlAllocateHeap(RtlGetProcessHeap(), 0, size as SIZE_T) as PTOKEN_PRIVILEGES;
         if privileges.is_null() {
             break 'done 0;
         }
@@ -142,7 +162,7 @@ unsafe fn LsapCheckLogonProcess(
             | PROCESS_DUP_HANDLE
             | PROCESS_QUERY_INFORMATION) as u32,
         core::ptr::addr_of_mut!(ObjectAttributes),
-        core::ptr::addr_of_mut!((*RequestMsg).h.__bindgen_anon_1.ClientId),
+        core::ptr::addr_of_mut!((*RequestMsg).h.__bindgen_anon_1.ClientId) as *mut _,
     );
 
     if !NT_SUCCESS(Status) {
@@ -155,8 +175,8 @@ unsafe fn LsapCheckLogonProcess(
 
     Context = RtlAllocateHeap(
         RtlGetProcessHeap(),
-        HEAP_ZERO_MEMORY as u32,
-        core::mem::size_of::<LSAP_LOGON_CONTEXT>() as usize,
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<LSAP_LOGON_CONTEXT>() as SIZE_T,
     ) as PLSAP_LOGON_CONTEXT;
 
     if Context.is_null() {
@@ -173,10 +193,10 @@ unsafe fn LsapCheckLogonProcess(
 
     match (*RequestMsg).__bindgen_anon_1.ConnectInfo.TrustedCaller {
         0 => {
-            (*Context).TrustedCaller = 0u8;
+            (*Context).TrustedCaller = 0;
         }
         1 => {
-            (*Context).TrustedCaller = 1u8;
+            (*Context).TrustedCaller = 1;
         }
         _ => {
             (*Context).TrustedCaller = LsapIsTrustedClient(ProcessHandle);
@@ -199,7 +219,7 @@ unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
     let mut RemotePortView: REMOTE_PORT_VIEW = core::mem::zeroed();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    if (*RequestMsg).__bindgen_anon_1.ConnectInfo.CreateContext != 0u8 {
+    if (*RequestMsg).__bindgen_anon_1.ConnectInfo.CreateContext != 0 {
         Status = LsapCheckLogonProcess(RequestMsg, &raw mut LogonContext);
         (*RequestMsg).__bindgen_anon_1.ConnectInfo.OperationalMode = 0x43218765;
         (*RequestMsg).__bindgen_anon_1.ConnectInfo.Status = Status;
@@ -215,7 +235,7 @@ unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
     Status = NtAcceptConnectPort(
         &raw mut ConnectionHandle,
         LogonContext as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*RequestMsg).h),
+        core::ptr::addr_of_mut!((*RequestMsg).h) as *mut _,
         Accept,
         core::ptr::null_mut(),
         &raw mut RemotePortView,
@@ -229,7 +249,7 @@ unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
             (*LogonContext).ConnectionHandle = ConnectionHandle;
             InsertHeadList(
                 &raw mut LsapLogonContextList,
-                &raw mut (*LogonContext).Entry,
+                &raw mut (*LogonContext).Entry as *mut _,
             );
         }
         Status = NtCompleteConnectPort(ConnectionHandle);
@@ -241,7 +261,7 @@ unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_void) -> NTSTATUS {
+pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_void) -> DWORD {
     let mut LogonContext: PLSAP_LOGON_CONTEXT = core::ptr::null_mut::<_LSAP_LOGON_CONTEXT>();
     let mut ReplyMsg: PLSA_API_MSG = core::ptr::null_mut::<_LSA_API_MSG>();
     // C initializes RequestMsg to {0}; zeroed() is exactly equivalent and avoids
@@ -324,7 +344,7 @@ pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_voi
                 );
             }
 
-            match RequestMsg.h.u2.s2.Type as core::ffi::c_int {
+            match RequestMsg.h.u2.s2.Type as u32 {
                 LPC_CONNECTION_REQUEST => {
                     if (*__wine_dbch___default).flags as core::ffi::c_int
                         & (1 as core::ffi::c_int) << __WINE_DBCL_TRACE as core::ffi::c_int
@@ -402,44 +422,44 @@ pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_voi
 
                     match RequestMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber as core::ffi::c_uint {
                         0 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapCallAuthenticationPackage(&raw mut RequestMsg, LogonContext);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         1 => {
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                            NtReplyPort(AuthPortHandle, &raw mut (*ReplyMsg).h);
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
+                            NtReplyPort(AuthPortHandle, &raw mut (*ReplyMsg).h as *mut _);
                             LsapDeregisterLogonProcess(&raw mut RequestMsg, LogonContext);
                             ReplyMsg = core::ptr::null_mut::<_LSA_API_MSG>();
                         }
                         2 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapLogonUser(&raw mut RequestMsg, LogonContext);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         3 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapLookupAuthenticationPackage(&raw mut RequestMsg, LogonContext);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         4 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapEnumLogonSessions(&raw mut RequestMsg);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         5 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapGetLogonSessionData(&raw mut RequestMsg);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         6 => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 LsapRegisterNotification(&raw mut RequestMsg);
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
                         _ => {
-                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status =
+                            RequestMsg.__bindgen_anon_1.__bindgen_anon_1.Status =
                                 STATUS_INVALID_SYSTEM_SERVICE;
                             ReplyMsg = &raw mut RequestMsg as PLSA_API_MSG;
                         }
@@ -449,7 +469,7 @@ pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_voi
         }
     }
 
-    return STATUS_SUCCESS;
+    return STATUS_SUCCESS as DWORD;
 }
 #[no_mangle]
 pub unsafe extern "C" fn StartAuthenticationPort() -> NTSTATUS {

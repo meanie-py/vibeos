@@ -25,9 +25,20 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >   them lowercase but rpcndr.h `#define`s lowercase→UPPERCASE; Rust #[no_mangle] gets no macro
 >   → rename defs+calls to MIDL_user_allocate/free + ABI extern "system" (__RPC_USER=stdcall,
 >   i386 `@4`); local def shadows the prelude glob extern.
-> - **12 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
->   database + policy + session + notify + srm + lsasrv); each ×3-link-verified + i386 boot +
->   amd64 boot gated.
+> - **13 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
+>   database + policy + session + notify + srm + lsasrv + **authport**); each ×3-link-verified +
+>   i386 boot + amd64 boot gated. (12/16 LANDED on mainline `751cee96a32`; authport rides on top.)
+> - **✅ `authport.c` DONE (M4, 13/16)** — LPC auth-port server (logon-process registration +
+>   `AuthPortThreadRoutine` dispatch loop). The hard part was the deeply-nested `LSA_API_MSG`
+>   anon-union: bindgen lays `{ApiNumber, Status, union{LogonUser,…}}` as
+>   `__bindgen_anon_1.__bindgen_anon_1.{ApiNumber,Status}` with the per-API union one level
+>   *deeper* (`.__bindgen_anon_1`). c2rust had emitted `.Status` at the union level (one `.__bindgen_anon_1`
+>   too many) → 8 "no field Status" errors. **Fix:** drop the extra level so `Status` is a sibling of
+>   `ApiNumber`. Other fixes: thread-routine return `NTSTATUS`→`DWORD` (LPTHREAD_START_ROUTINE wants
+>   DWORD; fn-ptr `as`-cast can't change return repr); 6 cross-file handlers extern-"C" declared
+>   (3 Rust siblings session/notify, 3 still-C authpackage); cross-crate `_LIST_ENTRY`/`_CLIENT_ID`/
+>   `_PORT_MESSAGE` ptr args `as *mut _`; `RtlAllocateHeap` size `as SIZE_T`; BOOL/i32 literals
+>   (`0u8`→`0`); LPC match scrutinee `as u32`. Builds + links clean ×3; i386 boot ✓.
 > - **✅ GATE CAVEAT RESOLVED (amd64 net):** since M4c, amd64 net shows 10/11 — the one failure is
 >   `test_outbound_tcp_client`. **Confirmed by the netstack lane (2026-06-21) to be a PRE-EXISTING
 >   host `cmd:cat` guestfwd-echo flake, NOT netstack and NOT lsasrv** — it fails on netstack's own
@@ -51,7 +62,7 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
 >   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
 > - **⚠️ Next steps** (in order):
->   1. **M4 rest** — `authport.c` (420, LPC auth port), then the winsvc substrate
+>   1. **M4 rest** — ~~authport.c~~ ✅ done. Next: the winsvc substrate
 >      (SERVICE_TABLE_ENTRYW/SERVICE_STATUS types + StartServiceCtrlDispatcherW/SetServiceStatus/…
 >      externs + fn-ptr ABI casts) + finish staged `service.rs`, then `authpackage.c` (1856 LOC,
 >      defines LsapTerminateLogon that session.rs externs).
