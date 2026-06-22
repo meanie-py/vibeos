@@ -139,9 +139,7 @@ def check_geninc(arches: tuple[str, ...]) -> list[tuple]:
             rows.append(("geninc", ksf, SKIP, f"no build-{arch} / flags / clang"))
             continue
         flags = [
-            ln.replace("{REPO}", str(REPO))
-            for ln in flags_f.read_text().splitlines()
-            if ln.strip()
+            ln.replace("{REPO}", str(REPO)) for ln in flags_f.read_text().splitlines() if ln.strip()
         ]
         with tempfile.TemporaryDirectory() as td:
             # build-dir psdk/ddk == native-hpp xdk (byte-identical, deterministic);

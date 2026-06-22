@@ -98,9 +98,7 @@ def parse_mc(text: str):
         if not blk.startswith("MessageId"):
             continue
         field_re = r"^(MessageId|Severity|Facility|SymbolicName)\s*=\s*(.*)$"
-        fields = dict(
-            (m.group(1), m.group(2).strip()) for m in re.finditer(field_re, blk, re.M)
-        )
+        fields = dict((m.group(1), m.group(2).strip()) for m in re.finditer(field_re, blk, re.M))
         if "SymbolicName" not in fields:
             continue
         mid = int(fields["MessageId"], 0)
