@@ -37,17 +37,25 @@ from pathlib import Path
 
 # Pointer types that mean "this byte literal is consumed as a UTF-16 wide string".
 WIDE_CAST_TYPES = (
-    "PCWSTR", "LPCWSTR", "PWSTR", "LPWSTR", "LPWCH", "PWCH", "PWCHAR",
-    "LPCWCH", "*const u16", "*mut u16",
+    "PCWSTR",
+    "LPCWSTR",
+    "PWSTR",
+    "LPWSTR",
+    "LPWCH",
+    "PWCH",
+    "PWCHAR",
+    "LPCWCH",
+    "*const u16",
+    "*mut u16",
 )
 # A byte-string literal: b"..." with Rust escape handling (\" and \\ respected).
 # Capture a leading '*' (array deref, e.g. *b"Tag4" — NOT a string pointer) and any
 # immediately-following `.as_ptr() as <wide-type>` cast that BINDS to this literal.
 _BYTESTR_RE = re.compile(
     r'(?P<deref>\*?)b"(?P<body>(?:\\.|[^"\\])*)"'
-    r'(?P<cast>\s*(?:\.as_ptr\(\)\s*)?as\s+(?:'
+    r"(?P<cast>\s*(?:\.as_ptr\(\)\s*)?as\s+(?:"
     + "|".join(re.escape(t) for t in WIDE_CAST_TYPES)
-    + r'))?'
+    + r"))?"
 )
 
 # Source-text signature of the C-octal-confusion bug: \0 followed by 2+ digits.
@@ -55,8 +63,13 @@ _OCTAL_RE = re.compile(r"\\0[0-9][0-9]")
 
 # Simple Rust byte-string escapes -> byte value.
 _SIMPLE_ESC = {
-    "n": 0x0A, "r": 0x0D, "t": 0x09, "\\": 0x5C, "0": 0x00,
-    "'": 0x27, '"': 0x22,
+    "n": 0x0A,
+    "r": 0x0D,
+    "t": 0x09,
+    "\\": 0x5C,
+    "0": 0x00,
+    "'": 0x27,
+    '"': 0x22,
 }
 
 
@@ -120,21 +133,35 @@ def check_file(path: Path):
             raw, ok = decode_bytestr(body)
             if not ok:
                 continue
-            lit = "b\"" + body + "\""
+            lit = 'b"' + body + '"'
             # Rule 1: C-octal confusion (source-text signature).
             if _OCTAL_RE.search(body):
-                findings.append((lineno, "octal-escape", lit,
-                                 r"`\0`+digits is NUL+literal digits (Rust has no octal)"))
+                findings.append(
+                    (
+                        lineno,
+                        "octal-escape",
+                        lit,
+                        r"`\0`+digits is NUL+literal digits (Rust has no octal)",
+                    )
+                )
                 continue
             # Rule 2a: odd byte length — not a whole number of UTF-16 units.
             if len(raw) % 2 != 0:
-                findings.append((lineno, "odd-length", lit,
-                                 f"{len(raw)} bytes — not a whole number of UTF-16 code units (ANSI cast to wide?)"))
+                findings.append(
+                    (
+                        lineno,
+                        "odd-length",
+                        lit,
+                        f"{len(raw)} bytes — not a whole number of UTF-16 "
+                        "code units (ANSI cast to wide?)",
+                    )
+                )
                 continue
             # Rule 2b: missing UTF-16 NUL terminator (must end in 00 00).
             if raw[-2:] != b"\x00\x00":
-                findings.append((lineno, "no-terminator", lit,
-                                 "wide string does not end in a u16 NUL (00 00)"))
+                findings.append(
+                    (lineno, "no-terminator", lit, "wide string does not end in a u16 NUL (00 00)")
+                )
     return findings
 
 
@@ -150,7 +177,8 @@ def main():
             print(f"ERROR: {root} not found. Run from vibeos/ root.")
             sys.exit(2)
         files = sorted(
-            f for f in root.rglob("*.rs")
+            f
+            for f in root.rglob("*.rs")
             if "/target/" not in str(f) and "/.responses/" not in str(f)
         )
 
