@@ -134,16 +134,18 @@ DWARF_DUMP="$(find_llvm_dwarfdump || true)"
 
 count_dwarf_tags() {
     local file="$1" arch="$2"
+    # NB: `grep -c` already prints the count (0 on no match) AND exits 1 when the
+    # count is 0 — a trailing `|| echo 0` therefore printed a SECOND "0", so the
+    # caller saw "0\n0" and `[ "$count" -ge N ]` died with "integer expression
+    # expected". `|| true` swallows grep's exit-1 and keeps its single-line count.
     if [ -n "$DWARF_DUMP" ]; then
         "$DWARF_DUMP" --debug-info "$file" 2>/dev/null \
-            | grep -cE 'DW_TAG_variable|DW_TAG_subprogram' \
-            || echo 0
+            | grep -cE 'DW_TAG_variable|DW_TAG_subprogram' || true
     elif [ "$arch" != "arm64" ]; then
         objdump --dwarf=info "$file" 2>/dev/null \
-            | grep -cE 'DW_TAG_variable|DW_TAG_subprogram' \
-            || echo 0
+            | grep -cE 'DW_TAG_variable|DW_TAG_subprogram' || true
     else
-        echo "0"   # caller should have failed on dwarf-tool check first
+        echo "0"   # no DWARF tool available for the arm64 PE
     fi
 }
 
