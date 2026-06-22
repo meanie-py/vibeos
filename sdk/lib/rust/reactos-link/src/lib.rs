@@ -22,7 +22,81 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
+
+// ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
+// When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
+// appended (one shell-quoted line, prefixed `cd <dir> && ` when a working dir is
+// set) to `<dir>/<pkg>.trace` — a flat, inspectable record of the real cmake-off
+// build, the cargo-side analogue of `ninja -v`. Per-package files avoid garbled
+// lines when cells build in parallel; the orchestrator's `--trace` clears the dir
+// and concatenates them in cell order. No-op (zero overhead) when the var is
+// unset, so a normal build is never affected.
+
+/// Append one command line to this package's trace file (if tracing is on).
+fn trace_command(cmd: &Command) {
+    let dir = match env::var_os("VIBEOS_LINK_TRACE") {
+        Some(d) => PathBuf::from(d),
+        None => return,
+    };
+    // The trace dir is per-arch (the orchestrator points it at out_dir/.trace),
+    // so the package name alone is unique within one run.
+    let pkg = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "unknown".into());
+    let _ = std::fs::create_dir_all(&dir);
+    let file = dir.join(format!("{pkg}.trace"));
+    let mut line = String::new();
+    if let Some(d) = cmd.get_current_dir() {
+        line.push_str("cd ");
+        line.push_str(&shell_quote(d.as_os_str()));
+        line.push_str(" && ");
+    }
+    line.push_str(&shell_quote(cmd.get_program()));
+    for a in cmd.get_args() {
+        line.push(' ');
+        line.push_str(&shell_quote(a));
+    }
+    line.push('\n');
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+        use std::io::Write;
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+/// Trace a cc-rs compile by reconstructing its per-source command line (the
+/// configured compiler + flags + `-c <source>`). cc-rs runs the compile itself;
+/// this only records what it will run, so the trace covers the cc-rs compiles
+/// (asm, c-shims, the committed C floor) alongside the directly-spawned tools.
+fn trace_cc(build: &cc::Build, source: &Path) {
+    if env::var_os("VIBEOS_LINK_TRACE").is_none() {
+        return;
+    }
+    let mut c = build.get_compiler().to_command();
+    c.arg("-c").arg(source);
+    trace_command(&c);
+}
+
+fn shell_quote(s: &std::ffi::OsStr) -> String {
+    let s = s.to_string_lossy();
+    let needs = s.is_empty()
+        || s.chars()
+            .any(|c| c.is_whitespace() || "\"'\\$`*?[]{}()<>|&;#~!".contains(c));
+    if needs {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    } else {
+        s.into_owned()
+    }
+}
+
+/// `Command::status()` that records the command first when `--trace` is on.
+trait TracedStatus {
+    fn traced_status(&mut self) -> std::io::Result<ExitStatus>;
+}
+impl TracedStatus for Command {
+    fn traced_status(&mut self) -> std::io::Result<ExitStatus> {
+        trace_command(self);
+        self.status()
+    }
+}
 
 /// CRT-startup personality for `.msvcrtex_crt()` — selects which
 /// crt-startup-rust feature (+ overridable sibling) the consumer links,
@@ -830,7 +904,7 @@ impl Linker {
         std::fs::create_dir_all(&out).expect("mkdir gendib-gen");
         let status = Command::new(&tool)
             .arg(&out)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("native-gendib: {e}"));
         if !status.success() {
             panic!("native-gendib failed");
@@ -850,10 +924,11 @@ impl Linker {
     ///
     /// cmake-off (WS2): the generated `ks*.inc` normally lives in the cmake build
     /// dir. The build-dir copy is added FIRST so it always wins when a cmake build
-    /// is configured (the committed fallback can never make a configured build go
-    /// stale). When that copy is ABSENT (the cmake-off path — cargo kernel build
-    /// with no cmake configure/ninja), fall back to the committed byte-stable copy
-    /// in `sdk/include/asm/committed/` (see that dir's README + the roadmap WS2).
+    /// is configured (the self-host can never make a configured build go stale).
+    /// When that copy is ABSENT (the cmake-off path — cargo kernel build with no
+    /// cmake configure/ninja), self-host `geninc`: `generate_ks_inc()` compiles
+    /// `genincdata.c` and emits the per-arch ks*.inc into OUT_DIR, byte-identical
+    /// to cmake's `native-geninc` output. No committed ks*.inc needed.
     fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
         b.include(self.repo_root.join("sdk/include/asm"))
             .include(self.build_dir.join("sdk/include/asm"))
@@ -863,7 +938,10 @@ impl Linker {
             .join("sdk/include/asm")
             .join(self.ks_inc_name());
         if !generated.exists() {
-            b.include(self.repo_root.join("sdk/include/asm/committed"));
+            // cmake-off: self-host geninc — compile genincdata.c + emit ks*.inc
+            // into OUT_DIR/asm and assemble against that (byte-identical to the
+            // cmake-built copy). No committed ks*.inc needed.
+            b.include(self.generate_ks_inc());
         }
     }
 
@@ -879,6 +957,13 @@ impl Linker {
     /// See docs/engineering/deterministic-builds-plan.md.
     fn apply_prefix_map(&self, b: &mut cc::Build) {
         b.flag(format!("-ffile-prefix-map={}=/vibeos", self.repo_root.display()));
+    }
+
+    /// The per-arch cross clang the asm/C compiles use (matches `link()`).
+    fn clang_path(&self) -> PathBuf {
+        self.repo_root
+            .join(".build-tools/llvm-mingw")
+            .join(format!("bin/{}-clang", self.arch.triple))
     }
 
     /// The per-arch generated kernel-offset include filename (geninc output):
@@ -1042,7 +1127,7 @@ impl Linker {
                 let status = Command::new(&args[0])
                     .args(&args[1..])
                     .current_dir(&dir)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
                 if !status.success() {
                     panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
@@ -1222,7 +1307,7 @@ impl Linker {
                     let status = Command::new(&args[0])
                         .args(&args[1..])
                         .current_dir(&dir)
-                        .status()
+                        .traced_status()
                         .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
                     if !status.success() {
                         panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
@@ -1236,7 +1321,7 @@ impl Linker {
                     .arg("rcs")
                     .arg(&lib_a)
                     .args(&objs)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
                 if !status.success() {
                     panic!("ar failed for c_from_compile_db {name}");
@@ -1269,6 +1354,9 @@ impl Linker {
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
             self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
+            for rel in rels {
+                trace_cc(&b, &self.repo_root.join(rel));
+            }
             let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
@@ -1279,7 +1367,7 @@ impl Linker {
                 .arg("rcs")
                 .arg(&lib_a)
                 .args(&objs)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
             if !status.success() {
                 panic!("ar failed for asm_archive {name}");
@@ -1695,7 +1783,7 @@ impl Linker {
             }
         }
         let status = cmd
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("cargo build -p {crate_name}: {e}"));
         if !status.success() {
             panic!("cargo build -p {crate_name} failed");
@@ -1734,7 +1822,7 @@ impl Linker {
             .arg("--version=0x502")
             .arg("--dbg")
             .arg(&spec)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("spec2def: {e}"));
         if !status.success() {
             panic!("spec2def failed for {spec_rel}");
@@ -1767,7 +1855,7 @@ impl Linker {
             .arg("--implib")
             .arg(format!("-d={}", implib_def.display()))
             .arg(&spec)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("spec2def --implib: {e}"));
         if !status.success() {
             panic!("spec2def --implib failed for {spec_rel}");
@@ -1787,7 +1875,7 @@ impl Linker {
             .arg(&lib_a)
             .arg("-t")
             .arg(basename)
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("dlltool ({}): {e}", dlltool.display()));
         if !status.success() {
             panic!("dlltool failed for {basename}");
@@ -1824,17 +1912,24 @@ impl Linker {
         for (tmpl, rel) in HEADERS {
             let dst = out.join(rel);
             std::fs::create_dir_all(dst.parent().unwrap()).expect("mkdir xdk-gen");
-            // native-hpp resolves the template name against its WORKING_DIR
-            // (the xdk source dir), exactly like the cmake custom_command.
+            // Write to a temp path then atomically rename into place: a later
+            // compile (or a concurrent cell's build script) never sees a
+            // half-written header. (A partial `winnt.h` shows up as a spurious
+            // "unterminated conditional directive".) native-hpp resolves the
+            // template name against its WORKING_DIR (the xdk source dir), exactly
+            // like the cmake custom_command.
+            let tmp = dst.with_extension("h.tmp");
             let status = Command::new(&hpp)
                 .arg(tmpl)
-                .arg(&dst)
+                .arg(&tmp)
                 .current_dir(&xdk_src)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
             if !status.success() {
                 panic!("native-hpp failed for {tmpl}");
             }
+            std::fs::rename(&tmp, &dst)
+                .unwrap_or_else(|e| panic!("rename {} -> {}: {e}", tmp.display(), dst.display()));
             println!("cargo:rerun-if-changed={}", xdk_src.join(tmpl).display());
         }
         out
@@ -1903,10 +1998,16 @@ impl Linker {
                     .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
                 let obj = out_sub.join(format!("{stem}.o"));
                 let status = Command::new(clang)
-                    .args(&flags)
-                    // `-I xdk-gen` (base) resolves the `psdk/`-prefixed form
-                    // `<psdk/winnt.h>` (e.g. via wine/winnt.h in the loaders);
-                    // `-I xdk-gen/{psdk,ddk}` resolve the bare `<winnt.h>` form.
+                    // Generated-header dirs go FIRST (cmake interleaves its
+                    // `build-<arch>/` generated `-I` BEFORE the source `sdk/include/
+                    // wine` dir, so the generated `winnt.h`/`ddk/{wdm,ntddk}.h` win
+                    // over wine's competing copies — the loaders pull wine/winnt.h,
+                    // which else redefines `_EXCEPTION_REGISTRATION_RECORD` vs
+                    // ndk/rtltypes.h). The 6 native-hpp headers have no other source
+                    // `.h` (only `.template.h`), so front-placing them matches
+                    // cmake's resolution and leaves blrtl/win32k byte-identical.
+                    // `-I xdk-gen` (base) resolves the `<psdk/winnt.h>` prefixed form;
+                    // `-I xdk-gen/{psdk,ddk}` the bare `<winnt.h>`/`<wdm.h>` form.
                     .arg("-I")
                     .arg(&xdk)
                     .arg("-I")
@@ -1915,11 +2016,12 @@ impl Linker {
                     .arg(xdk.join("ddk"))
                     .arg("-I")
                     .arg(&committed_hdrs)
+                    .args(&flags)
                     .arg(&abs)
                     .arg("-o")
                     .arg(&obj)
                     .current_dir(&self.repo_root)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| {
                         panic!("committed-flags clang for {rel} (lib {name}): {e}")
                     });
@@ -1935,13 +2037,80 @@ impl Linker {
                 .arg("rcs")
                 .arg(&lib_a)
                 .args(&objs)
-                .status()
+                .traced_status()
                 .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
             if !status.success() {
                 panic!("ar failed for c_from_compile_db {name}");
             }
             println!("cargo:rustc-link-arg={}", lib_a.display());
         }
+    }
+
+    /// cmake-off: self-host `geninc`. Cross-compile `genincdata.c` for this arch
+    /// (committed kernel flags + native-hpp xdk headers + committed `bugcodes.h`),
+    /// extract its `.asmdef` COFF section, and emit the per-arch ks*.inc to
+    /// `OUT_DIR/asm/`. Returns that dir for the kernel asm `#include` path. The
+    /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
+    /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
+    fn generate_ks_inc(&self) -> PathBuf {
+        let out_asm = PathBuf::from(env::var("OUT_DIR").unwrap()).join("asm");
+        std::fs::create_dir_all(&out_asm).expect("mkdir asm");
+        let dst = out_asm.join(self.ks_inc_name());
+        // Memoize: each module's asm build calls this once; reuse within a build.
+        if dst.exists() {
+            return out_asm;
+        }
+        let clang = self.clang_path();
+        let xdk = self.generate_xdk_headers();
+        let committed_hdrs = self
+            .repo_root
+            .join("sdk/lib/rust/reactos-link/committed-headers");
+        let flags_rel =
+            format!("sdk/lib/rust/reactos-link/cflags/genincdata.{}.flags", self.arch.name);
+        let flags_path = self.repo_root.join(&flags_rel);
+        let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
+            panic!(
+                "cmake-off geninc needs committed flags {} \
+                 (no compile_commands.json) — regen via tools/gen_cflags.py: {e}",
+                flags_path.display()
+            )
+        });
+        println!("cargo:rerun-if-changed={}", flags_path.display());
+        let repo = self.repo_root.to_str().expect("utf8 repo root");
+        let flags: Vec<String> = raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.replace("{REPO}", repo))
+            .collect();
+        let src = self.repo_root.join("sdk/include/asm/genincdata.c");
+        let obj = out_asm.join("genincdata.o");
+        // Same xdk/bugcodes include layering as compile_c_db_committed: xdk-gen
+        // base (psdk/-prefixed forms) + psdk + ddk (bare forms) + bugcodes.h.
+        let status = Command::new(&clang)
+            // Generated-header dirs first (see compile_c_db_committed).
+            .arg("-I")
+            .arg(&xdk)
+            .arg("-I")
+            .arg(xdk.join("psdk"))
+            .arg("-I")
+            .arg(xdk.join("ddk"))
+            .arg("-I")
+            .arg(&committed_hdrs)
+            .args(&flags)
+            .arg(&src)
+            .arg("-o")
+            .arg(&obj)
+            .current_dir(&self.repo_root)
+            .traced_status()
+            .unwrap_or_else(|e| panic!("cmake-off geninc clang for genincdata.c: {e}"));
+        if !status.success() {
+            panic!("cmake-off geninc: genincdata.c compile failed");
+        }
+        let asmdef = read_coff_section(&obj, ".asmdef");
+        std::fs::write(&dst, emit_ks_inc(&asmdef))
+            .unwrap_or_else(|e| panic!("write {}: {e}", dst.display()));
+        println!("cargo:rerun-if-changed={}", src.display());
+        out_asm
     }
 
     /// Compile a single-.c host tool with the host cc, return its path.
@@ -1964,7 +2133,7 @@ impl Linker {
         cmd.args(cc_tool.args());
         cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
         let status = cmd
-            .status()
+            .traced_status()
             .unwrap_or_else(|e| panic!("host cc ({}): {e}", cc_tool.path().display()));
         if !status.success() {
             panic!("host cc failed to compile {src_rel}");
@@ -2014,6 +2183,7 @@ fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &Arc
 }
 
 fn emit_objs(build: &cc::Build, source: &Path) {
+    trace_cc(build, source);
     let objs = build.compile_intermediates();
     if objs.is_empty() {
         panic!("cc-rs produced no objects for {}", source.display());
@@ -2021,6 +2191,74 @@ fn emit_objs(build: &cc::Build, source: &Path) {
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+}
+
+// ---- geninc self-host (ks*.inc / ksarm64.h from genincdata's .asmdef) -----
+// The kernel asm offset constants (`ks386.inc`/`ksamd64.inc`/`ksarm64.h`) are
+// produced by compiling `sdk/include/asm/genincdata.c` to a PE object whose
+// `.asmdef` section is a flat `ASMGENDATA[]` table of compile-time constants
+// (FIELD_OFFSET/sizeof/enum values), then walking that table into assembler
+// text. cmake builds + runs the `geninc` host tool to do the walk; cmake-off we
+// extract + emit it directly (the `.asmdef` values are pure constants with no
+// relocations, so the `.obj`'s raw section bytes equal the linked module's).
+// This is the in-engine analogue of `tools/gen_ks386_inc.py`, generalized to
+// all three arches, and is byte-identical to cmake's `native-geninc` output.
+
+/// Read a named section's raw bytes out of a COFF object file. The COFF File
+/// Header is at offset 0 (no DOS stub for a `.obj`); section table follows the
+/// (here empty) optional header. Mirrors `read_coff_section` in gen_ks386_inc.py.
+fn read_coff_section(obj: &Path, section_name: &str) -> Vec<u8> {
+    let raw = std::fs::read(obj).unwrap_or_else(|e| panic!("read {}: {e}", obj.display()));
+    if raw.len() < 20 {
+        panic!("{} too small to be a COFF object", obj.display());
+    }
+    let u16le = |o: usize| u16::from_le_bytes([raw[o], raw[o + 1]]) as usize;
+    let u32le = |o: usize| {
+        u32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]) as usize
+    };
+    let num_sections = u16le(2);
+    let opt_header_size = u16le(16);
+    let sec_table = 20 + opt_header_size;
+    for i in 0..num_sections {
+        let off = sec_table + i * 40;
+        let nb = &raw[off..off + 8];
+        let nul = nb.iter().position(|&c| c == 0).unwrap_or(8);
+        if &nb[..nul] == section_name.as_bytes() {
+            let raw_size = u32le(off + 16);
+            let raw_addr = u32le(off + 20);
+            if raw_addr == 0 || raw_size == 0 {
+                panic!("section {section_name:?} has no raw data in {}", obj.display());
+            }
+            return raw[raw_addr..raw_addr + raw_size].to_vec();
+        }
+    }
+    panic!("section {section_name:?} not found in {}", obj.display());
+}
+
+/// Walk an `ASMGENDATA[]` `.asmdef` blob into ks*.inc text. Each record is 64
+/// bytes: `char Type; char Name[55]; u64 Value`. GNU (non-`-ms`) format — the
+/// only one cmake uses with the llvm-mingw (non-MSVC) toolchain. Mirrors
+/// `emit_ks386_inc` in gen_ks386_inc.py, identical for all arches.
+fn emit_ks_inc(asmdef: &[u8]) -> String {
+    let mut out = String::new();
+    let mut off = 0usize;
+    while off + 64 <= asmdef.len() {
+        let chunk = &asmdef[off..off + 64];
+        let ty = chunk[0];
+        let nul = chunk[1..56].iter().position(|&c| c == 0).unwrap_or(55);
+        let name = std::str::from_utf8(&chunk[1..1 + nul])
+            .unwrap_or_else(|_| panic!("non-utf8 ASMGENDATA name at offset {off}"));
+        let value = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
+        match ty {
+            0 => break,                                          // TYPE_END
+            1 => out.push_str(&format!("{name}\n")),             // TYPE_RAW
+            2 => out.push_str(&format!("{name} = 0x{value:x}\n")), // TYPE_CONSTANT
+            3 => out.push_str(&format!("\n/* {name} */\n")),     // TYPE_HEADER
+            other => panic!("unknown ASMGENDATA type {other} at offset {off}"),
+        }
+        off += 64;
+    }
+    out
 }
 
 // ---- compile_commands.json replay (c_from_compile_db) --------------------
@@ -2137,7 +2375,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
     let cmd = rewrite_widl_outputs(
         &raw, name, gen_c.to_str().unwrap(), gen_h.to_str().unwrap(),
     );
-    let st = Command::new("sh").arg("-c").arg(&cmd).status()
+    let st = Command::new("sh").arg("-c").arg(&cmd).traced_status()
         .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
     assert!(st.success(), "widl codegen failed for {name}");
 
@@ -2152,7 +2390,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
             *a = gen_c.to_str().unwrap().to_string();
         }
     }
-    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).status()
+    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).traced_status()
         .unwrap_or_else(|e| panic!("compile {name}.c for decorations: {e}"));
     assert!(st.success(), "decoration compile failed for {name}");
 
@@ -2166,7 +2404,7 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
         .arg("--arch").arg(arch.name)
         .arg("--nm").arg(&nm)
         .arg("-o").arg(&gen_rs)
-        .status()
+        .traced_status()
         .unwrap_or_else(|e| panic!("run widl_to_rust.py for {name}: {e}"));
     assert!(st.success(), "widl_to_rust.py failed for {name}");
 
