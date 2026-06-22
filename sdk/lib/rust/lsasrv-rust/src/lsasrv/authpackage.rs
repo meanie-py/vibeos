@@ -12,6 +12,10 @@ use crate::lsasrv::session::{
 // Account/builtin domain SIDs — already #[no_mangle] statics in database.rs.
 use crate::lsasrv::database::{AccountDomainSid, BuiltinDomainSid};
 
+// Rust siblings (#[no_mangle] in their modules).
+use crate::lsasrv::lsasrv::LsaIFree_LSAPR_PRIVILEGE_SET;
+use crate::lsasrv::session::LsapSetLogonSessionData;
+
 // Well-known SID globals defined in still-C lookup.c (`PSID LsapWorldSid = NULL;` …),
 // exported unmangled; extern as data. (When lookup.c flips to Rust they become
 // #[no_mangle] siblings and this block is replaced by a `use`.)
@@ -23,6 +27,47 @@ extern "C" {
     static mut LsapServiceSid: PSID;
     static mut LsapBatchSid: PSID;
     static mut LsapAdministratorsSid: PSID;
+}
+
+// LSA RPC server stubs (lsa_s.h, __stdcall/NTAPI → extern "system") + SAM/Win32
+// bridge fns. LsarOpenPolicy/OpenAccount/Close/EnumeratePrivilegesAccount are the
+// widl-generated server routines; SamIConnect is the samsrv NTAPI export; EqualSid
+// is the Win32 advapi32 export (authpackage.c calls EqualSid, not RtlEqualSid, here).
+extern "system" {
+    fn LsarOpenPolicy(
+        SystemName: PLSAPR_SERVER_NAME,
+        ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+        DesiredAccess: ACCESS_MASK,
+        PolicyHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+    fn LsarOpenAccount(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        DesiredAccess: ACCESS_MASK,
+        AccountHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+    fn LsarClose(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
+    fn LsarEnumeratePrivilegesAccount(
+        AccountHandle: LSAPR_HANDLE,
+        Privileges: *mut PLSAPR_PRIVILEGE_SET,
+    ) -> NTSTATUS;
+    fn SamIConnect(
+        ServerName: PSAMPR_SERVER_NAME,
+        ServerHandle: *mut SAMPR_HANDLE,
+        DesiredAccess: ACCESS_MASK,
+        Trusted: BOOLEAN,
+    ) -> NTSTATUS;
+    fn EqualSid(pSid1: PSID, pSid2: PSID) -> BOOL;
+}
+
+// LsapAppendRidToSid / LsapCreateTokenSd are plain C (cdecl) lsasrv-internal fns.
+extern "C" {
+    fn LsapAppendRidToSid(SrcSid: PSID, Rid: ULONG) -> PSID;
+    fn LsapCreateTokenSd(
+        User: *const TOKEN_USER,
+        TokenSd: *mut PSECURITY_DESCRIPTOR,
+        TokenSdSize: PULONG,
+    ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -44,7 +89,7 @@ static mut PackageListHead: LIST_ENTRY = LIST_ENTRY {
     Blink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
 };
 
-static mut PackageId: ULONG = 0;
+static mut LsapGlobalPackageId: ULONG = 0;
 
 static mut DispatchTable: LSA_DISPATCH_TABLE = LSA_DISPATCH_TABLE {
     CreateLogonSession: None,
@@ -75,11 +120,8 @@ static mut SeImpersonatePrivilege: LUID = _LUID {
     HighPart: 0 as LONG,
 };
 
-#[repr(C)]
-pub enum LSA_TOKEN_INFORMATION_TYPE {
-    LsaTokenInformationNull = 0,
-    LsaTokenInformationV1 = 1,
-}
+// LSA_TOKEN_INFORMATION_TYPE + LsaTokenInformation{Null,V1} come from the prelude
+// (c_uint typedef + consts), so == / != compares and the prelude consts line up.
 pub type PLSA_TOKEN_INFORMATION_TYPE = *mut LSA_TOKEN_INFORMATION_TYPE;
 
 #[repr(C)]
@@ -89,17 +131,12 @@ pub struct LSA_TOKEN_INFORMATION_NULL {
 }
 pub type PLSA_TOKEN_INFORMATION_NULL = *mut LSA_TOKEN_INFORMATION_NULL;
 
-#[repr(C)]
-pub struct LSA_TOKEN_INFORMATION_V1 {
-    pub ExpirationTime: LARGE_INTEGER,
-    pub User: TOKEN_USER,
-    pub Groups: PTOKEN_GROUPS,
-    pub PrimaryGroup: TOKEN_PRIMARY_GROUP,
-    pub Privileges: PTOKEN_PRIVILEGES,
-    pub Owner: TOKEN_OWNER,
-    pub DefaultDacl: TOKEN_DEFAULT_DACL,
-}
-pub type PLSA_TOKEN_INFORMATION_V1 = *mut LSA_TOKEN_INFORMATION_V1;
+// LSA_TOKEN_INFORMATION_V1 is the prelude's canonical _LSA_TOKEN_INFORMATION_V1
+// (same #[repr(C)] layout). Alias rather than redefine so the file's
+// PLSA_TOKEN_INFORMATION_V1 and the bindgen `*mut _LSA_TOKEN_INFORMATION_V1` used
+// elsewhere in this file are the *same* type (avoids cross-definition mismatches).
+pub use crate::prelude::_LSA_TOKEN_INFORMATION_V1 as LSA_TOKEN_INFORMATION_V1;
+pub type PLSA_TOKEN_INFORMATION_V1 = *mut _LSA_TOKEN_INFORMATION_V1;
 
 pub type PLSA_CLIENT_REQUEST = PVOID;
 
@@ -219,7 +256,7 @@ pub struct SAMPR_PSID_ARRAY {
 }
 pub type PSAMPR_PSID_ARRAY = *mut SAMPR_PSID_ARRAY;
 
-unsafe fn LsapAddAuthPackage(
+unsafe extern "system" fn LsapAddAuthPackage(
     ValueName: PWSTR,
     ValueType: ULONG,
     ValueData: PVOID,
@@ -255,7 +292,7 @@ unsafe fn LsapAddAuthPackage(
     Package = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY as ULONG,
-        core::mem::size_of::<AUTH_PACKAGE>(),
+        core::mem::size_of::<AUTH_PACKAGE>() as SIZE_T,
     ) as PAUTH_PACKAGE;
     if Package.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -416,12 +453,12 @@ unsafe fn LsapAddAuthPackage(
             }
         }
 
-        Status = ((*Package).LsaApInitializePackage)(
+        Status = ((*Package).LsaApInitializePackage).expect("non-null function pointer")(
             *Id,
             core::ptr::addr_of_mut!(DispatchTable),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            core::ptr::addr_of_mut!((*Package).Name),
+            core::ptr::addr_of_mut!((*Package).Name) as *mut PLSA_STRING,
         );
         if !(Status >= 0) {
             TRACE!(
@@ -483,12 +520,12 @@ unsafe fn LsapGetAuthenticationPackage(PackageId: ULONG) -> PAUTH_PACKAGE {
 
 #[no_mangle]
 pub unsafe extern "system" fn LsapAllocateHeap(Length: ULONG) -> PVOID {
-    RtlAllocateHeap(RtlGetProcessHeap(), 0u32, Length as usize)
+    RtlAllocateHeap(RtlGetProcessHeap(), 0u32, Length as SIZE_T)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsapAllocateHeapZero(Length: ULONG) -> PVOID {
-    RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, Length as usize)
+    RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, Length as SIZE_T)
 }
 
 #[no_mangle]
@@ -496,7 +533,7 @@ pub unsafe extern "system" fn LsapFreeHeap(Base: PVOID) {
     RtlFreeHeap(RtlGetProcessHeap(), 0u32, Base);
 }
 
-unsafe fn LsapAllocateClientBuffer(
+unsafe extern "system" fn LsapAllocateClientBuffer(
     ClientRequest: PLSA_CLIENT_REQUEST,
     LengthRequired: ULONG,
     ClientBaseAddress: *mut PVOID,
@@ -514,7 +551,7 @@ unsafe fn LsapAllocateClientBuffer(
     )
 }
 
-unsafe fn LsapFreeClientBuffer(
+unsafe extern "system" fn LsapFreeClientBuffer(
     mut ClientRequest: PLSA_CLIENT_REQUEST,
     mut ClientBaseAddress: PVOID,
 ) -> NTSTATUS {
@@ -531,7 +568,7 @@ unsafe fn LsapFreeClientBuffer(
     )
 }
 
-unsafe fn LsapCopyToClientBuffer(
+unsafe extern "system" fn LsapCopyToClientBuffer(
     ClientRequest: PLSA_CLIENT_REQUEST,
     Length: ULONG,
     ClientBaseAddress: PVOID,
@@ -542,12 +579,12 @@ unsafe fn LsapCopyToClientBuffer(
         (*LogonContext).ClientProcessHandle,
         ClientBaseAddress,
         BufferToCopy,
-        Length as usize,
-        core::ptr::null_mut::<usize>(),
+        Length as SIZE_T,
+        core::ptr::null_mut::<SIZE_T>(),
     )
 }
 
-unsafe fn LsapCopyFromClientBuffer(
+unsafe extern "system" fn LsapCopyFromClientBuffer(
     ClientRequest: PLSA_CLIENT_REQUEST,
     Length: ULONG,
     BufferToCopy: PVOID,
@@ -569,10 +606,15 @@ pub unsafe extern "C" fn LsapInitAuthPackages() -> NTSTATUS {
 
     let mut AuthPackageTable: [_RTL_QUERY_REGISTRY_TABLE; 2] = [
         _RTL_QUERY_REGISTRY_TABLE {
-            QueryRoutine: Some(
-                LsapAddAuthPackage
-                    as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
-            ),
+            // RtlQueryRegistryValues invokes QueryRoutine with the NT callback ABI
+            // (stdcall on i386, C on amd64/arm64) — exactly what extern "system"
+            // lowers to per-arch. rustc keeps "system" distinct from the bindgen
+            // field's literal "stdcall"/"C" ABI string, so transmute the (ABI-
+            // identical) fn pointer into the field's PRTL_QUERY_REGISTRY_ROUTINE type.
+            QueryRoutine: ::core::mem::transmute::<
+                unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+                PRTL_QUERY_REGISTRY_ROUTINE,
+            >(LsapAddAuthPackage),
             Flags: 0,
             Name: ::core::mem::transmute::<[u8; 48], [u16; 24]>(name_bytes).as_ptr() as PCWSTR,
             EntryContext: core::ptr::null_mut(),
@@ -592,7 +634,7 @@ pub unsafe extern "C" fn LsapInitAuthPackages() -> NTSTATUS {
     ];
 
     InitializeListHead(core::ptr::addr_of_mut!(PackageListHead));
-    PackageId = 0;
+    LsapGlobalPackageId = 0;
 
     DispatchTable.CreateLogonSession = Some(LsapCreateLogonSession as unsafe extern "system" fn(PLUID) -> NTSTATUS);
     DispatchTable.DeleteLogonSession = Some(LsapDeleteLogonSession as unsafe extern "system" fn(PLUID) -> NTSTATUS);
@@ -637,7 +679,7 @@ pub unsafe extern "C" fn LsapInitAuthPackages() -> NTSTATUS {
         RTL_REGISTRY_CONTROL,
         ::core::mem::transmute::<[u8; 8], [u16; 4]>(lsa_bytes).as_ptr() as PCWSTR,
         core::ptr::addr_of_mut!(AuthPackageTable) as PRTL_QUERY_REGISTRY_TABLE,
-        core::ptr::addr_of_mut!(PackageId) as PVOID,
+        core::ptr::addr_of_mut!(LsapGlobalPackageId) as PVOID,
         core::ptr::null_mut(),
     );
 
@@ -658,8 +700,8 @@ ros_dbg_log(
     RequestMsg,
     LogonContext,
 );
-let PackageNameLength = (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageNameLength;
-let PackageName = core::ptr::addr_of_mut!((*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageName) as PCHAR;
+let PackageNameLength = (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.__bindgen_anon_1.Request.PackageNameLength;
+let PackageName = core::ptr::addr_of_mut!((*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.__bindgen_anon_1.Request.PackageName) as PCHAR;
 ros_dbg_log(
     __WINE_DBCL_TRACE,
     __wine_dbch___default,
@@ -681,7 +723,7 @@ while ListEntry != head_ptr {
             (*(*Package).Name).Length as usize,
         ) == 0
     {
-        (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Reply.Package = (*Package).Id;
+        (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.__bindgen_anon_1.Reply.Package = (*Package).Id;
         return STATUS_SUCCESS;
     }
     ListEntry = (*ListEntry).Flink as PLIST_ENTRY;
@@ -694,7 +736,7 @@ pub unsafe extern "C" fn LsapTerminateLogon(LogonId: PLUID) {
     while list_entry != core::ptr::addr_of_mut!(PackageListHead) {
         let offset = core::mem::offset_of!(_AUTH_PACKAGE, Entry);
         let package = (list_entry as *mut u8).offset(-(offset as isize)) as PAUTH_PACKAGE;
-        (*package).LsaApLogonTerminated(LogonId);
+        ((*package).LsaApLogonTerminated).expect("non-null function pointer")(LogonId);
         list_entry = (*list_entry).Flink;
     }
 }
@@ -740,7 +782,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
                 .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
-                .SubmitBufferLength,
+                .SubmitBufferLength as SIZE_T,
         );
         if LocalBuffer.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -760,7 +802,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
                 .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
-                .SubmitBufferLength,
+                .SubmitBufferLength as SIZE_T,
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -879,17 +921,17 @@ unsafe fn LsapCopyLocalGroups(
     LogonContext: PLSAP_LOGON_CONTEXT,
     ClientGroups: PTOKEN_GROUPS,
     ClientGroupsCount: ULONG,
-    TokenGroups: *mut PTOKEN_GROUPS,
+    token_groups: *mut PTOKEN_GROUPS,
 ) -> NTSTATUS {
 
     let local_groups_length = core::mem::size_of::<TOKEN_GROUPS>() as ULONG
         + ((ClientGroupsCount - 1) as ULONG)
             * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
-    let mut local_groups = RtlAllocateHeap(
+    let mut local_groups: PTOKEN_GROUPS = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        local_groups_length as usize,
+        local_groups_length as SIZE_T,
     ) as PTOKEN_GROUPS;
     if local_groups.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -904,7 +946,7 @@ unsafe fn LsapCopyLocalGroups(
             (*LogonContext).ClientProcessHandle,
             ClientGroups as *mut c_void,
             local_groups as *mut c_void,
-            local_groups_length as usize,
+            local_groups_length as SIZE_T,
             core::ptr::null_mut(),
         );
         if status < 0 {
@@ -915,7 +957,7 @@ unsafe fn LsapCopyLocalGroups(
         sid_header = RtlAllocateHeap(
             RtlGetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            sid_header_length as usize,
+            sid_header_length as SIZE_T,
         ) as PSID;
         if sid_header.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
@@ -933,7 +975,7 @@ unsafe fn LsapCopyLocalGroups(
                 (*LogonContext).ClientProcessHandle,
                 src_sid as *mut c_void,
                 sid_header as *mut c_void,
-                sid_header_length as usize,
+                sid_header_length as SIZE_T,
                 core::ptr::null_mut(),
             );
             if status < 0 {
@@ -945,7 +987,7 @@ unsafe fn LsapCopyLocalGroups(
             let dst_sid = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                sid_length as usize,
+                sid_length as SIZE_T,
             ) as PSID;
             if dst_sid.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -956,7 +998,7 @@ unsafe fn LsapCopyLocalGroups(
                 (*LogonContext).ClientProcessHandle,
                 src_sid as *mut c_void,
                 dst_sid as *mut c_void,
-                sid_length as usize,
+                sid_length as SIZE_T,
                 core::ptr::null_mut(),
             );
             if status < 0 {
@@ -968,7 +1010,7 @@ unsafe fn LsapCopyLocalGroups(
             allocated_sids += 1;
         }
 
-        *TokenGroups = local_groups;
+        *token_groups = local_groups;
     }
 
     if !sid_header.is_null() {
@@ -1210,7 +1252,7 @@ unsafe fn LsapAddDefaultGroups(
 }
 
 unsafe fn LsapAppendSidToGroups(
-    TokenGroups: *mut PTOKEN_GROUPS,
+    token_groups: *mut PTOKEN_GROUPS,
     DomainSid: PSID,
     RelativeId: ULONG,
 ) -> NTSTATUS {
@@ -1238,7 +1280,7 @@ unsafe fn LsapAppendSidToGroups(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (*TokenGroups).is_null() {
+    if (*token_groups).is_null() {
         Length = (::core::mem::size_of::<TOKEN_GROUPS>() as ULONG).wrapping_add(
             ((1 as ULONG).wrapping_sub(ANYSIZE_ARRAY as ULONG))
                 .wrapping_mul(::core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG),
@@ -1275,12 +1317,12 @@ unsafe fn LsapAppendSidToGroups(
             .Attributes = (SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY)
             as DWORD;
 
-        *TokenGroups = Groups;
+        *token_groups = Groups;
     } else {
         i = 0 as ULONG;
-        while i < (**TokenGroups).GroupCount {
+        while i < (**token_groups).GroupCount {
             if RtlEqualSid(
-                (*(core::ptr::addr_of_mut!((**TokenGroups).Groups) as *mut SID_AND_ATTRIBUTES)
+                (*(core::ptr::addr_of_mut!((**token_groups).Groups) as *mut SID_AND_ATTRIBUTES)
                     .offset(i as isize))
                     .Sid,
                 Sid,
@@ -1297,7 +1339,7 @@ unsafe fn LsapAppendSidToGroups(
         }
 
         Length = (::core::mem::size_of::<TOKEN_GROUPS>() as ULONG).wrapping_add(
-            (((**TokenGroups).GroupCount as ULONG)
+            (((**token_groups).GroupCount as ULONG)
                 .wrapping_add(1 as ULONG)
                 .wrapping_sub(ANYSIZE_ARRAY as ULONG))
             .wrapping_mul(::core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG),
@@ -1327,18 +1369,15 @@ unsafe fn LsapAppendSidToGroups(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        (*Groups).GroupCount = (**TokenGroups).GroupCount;
+        (*Groups).GroupCount = (**token_groups).GroupCount;
 
         i = 0 as ULONG;
-        while i < (**TokenGroups).GroupCount {
-            let src_sid_ptr = core::ptr::addr_of_mut!(
-                (*core::ptr::addr_of_mut!((**TokenGroups).Groups) as *mut SID_AND_ATTRIBUTES)
-                    .offset(i as isize)
-            )
-            .as_ref()
-            .unwrap()
+        while i < (**token_groups).GroupCount {
+            let src_sid_ptr = (*(core::ptr::addr_of_mut!((**token_groups).Groups)
+                as *mut SID_AND_ATTRIBUTES)
+                .offset(i as isize))
             .Sid;
-            let src_attr = (*(core::ptr::addr_of_mut!((**TokenGroups).Groups)
+            let src_attr = (*(core::ptr::addr_of_mut!((**token_groups).Groups)
                 as *mut SID_AND_ATTRIBUTES)
                 .offset(i as isize))
             .Attributes;
@@ -1366,10 +1405,10 @@ unsafe fn LsapAppendSidToGroups(
         RtlFreeHeap(
             RtlGetProcessHeap() as HANDLE,
             0 as ULONG,
-            *TokenGroups as PVOID,
+            *token_groups as PVOID,
         );
 
-        *TokenGroups = Groups;
+        *token_groups = Groups;
     }
 
     return STATUS_SUCCESS;
@@ -1402,20 +1441,22 @@ unsafe fn LsapAddSamGroups(
         return STATUS_SUCCESS;
     }
     TokenInfo1 = TokenInformation as *mut _LSA_TOKEN_INFORMATION_V1;
-    SidArray.Count = (*TokenInfo1).Groups.GroupCount + 1;
+    SidArray.Count = (*(*TokenInfo1).Groups).GroupCount + 1;
     SidArray.Sids = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (SidArray.Count as usize) * core::mem::size_of::<PRPC_SID>(),
+        (SidArray.Count as SIZE_T) * core::mem::size_of::<PRPC_SID>() as SIZE_T,
     ) as PSAMPR_SID_INFORMATION;
     if SidArray.Sids.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     (*SidArray.Sids.add(0)).SidPointer = (*TokenInfo1).User.User.Sid as PRPC_SID;
     i = 0;
-    while i < (*TokenInfo1).Groups.GroupCount {
+    while i < (*(*TokenInfo1).Groups).GroupCount {
         (*SidArray.Sids.add((i + 1) as usize)).SidPointer =
-            (*(*TokenInfo1).Groups.Groups.add(i as usize)).Sid as PRPC_SID;
+            (*(core::ptr::addr_of_mut!((*(*TokenInfo1).Groups).Groups) as *mut SID_AND_ATTRIBUTES)
+                .add(i as usize))
+            .Sid as PRPC_SID;
         i += 1;
     }
     BuiltinMembership.Element = core::ptr::null_mut();
@@ -1426,7 +1467,7 @@ unsafe fn LsapAddSamGroups(
             core::ptr::null_mut(),
             &raw mut ServerHandle,
             (SAM_SERVER_CONNECT | SAM_SERVER_LOOKUP_DOMAIN) as ACCESS_MASK,
-            FALSE,
+            FALSE as BOOLEAN,
         );
         if !NT_SUCCESS(Status) {
             TRACE!(
@@ -1439,7 +1480,7 @@ unsafe fn LsapAddSamGroups(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_GET_ALIAS_MEMBERSHIP as ACCESS_MASK,
-            BuiltinDomainSid as PRPC_SID,
+            BuiltinDomainSid as *mut _,
             &raw mut BuiltinDomainHandle,
         );
         if !NT_SUCCESS(Status) {
@@ -1453,7 +1494,7 @@ unsafe fn LsapAddSamGroups(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_GET_ALIAS_MEMBERSHIP as ACCESS_MASK,
-            AccountDomainSid as PRPC_SID,
+            AccountDomainSid as *mut _,
             &raw mut AccountDomainHandle,
         );
         if !NT_SUCCESS(Status) {
@@ -1466,7 +1507,7 @@ unsafe fn LsapAddSamGroups(
 
         Status = SamrGetAliasMembership(
             BuiltinDomainHandle,
-            &raw mut SidArray,
+            &raw mut SidArray as *mut _,
             &raw mut BuiltinMembership,
         );
         if !NT_SUCCESS(Status) {
@@ -1479,7 +1520,7 @@ unsafe fn LsapAddSamGroups(
 
         Status = SamrGetAliasMembership(
             AccountDomainHandle,
-            &raw mut SidArray,
+            &raw mut SidArray as *mut _,
             &raw mut AccountMembership,
         );
         if !NT_SUCCESS(Status) {
@@ -1665,25 +1706,25 @@ unsafe fn LsapAddTokenDefaultDacl(
 }
 
 unsafe fn LsapAddPrivilegeToTokenPrivileges(
-    TokenPrivileges: *mut PTOKEN_PRIVILEGES,
+    token_privileges: *mut PTOKEN_PRIVILEGES,
     Privilege: PLSAPR_LUID_AND_ATTRIBUTES,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut local: PTOKEN_PRIVILEGES;
-    if (*TokenPrivileges).is_null() {
+    if (*token_privileges).is_null() {
         let length = core::mem::size_of::<TOKEN_PRIVILEGES>()
             + ((1usize - ANYSIZE_ARRAY as usize) * core::mem::size_of::<LUID_AND_ATTRIBUTES>());
-        local = RtlAllocateHeap(RtlGetProcessHeap(), 0u32, length) as PTOKEN_PRIVILEGES;
+        local = RtlAllocateHeap(RtlGetProcessHeap(), 0u32, length as SIZE_T) as PTOKEN_PRIVILEGES;
         if local.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         (*local).PrivilegeCount = 1;
         let priv_ptr = (*local).Privileges.as_mut_ptr();
-        (*priv_ptr).Luid = (*Privilege).Luid;
+        (*priv_ptr).Luid = core::mem::transmute((*Privilege).Luid);
         (*priv_ptr).Attributes = (*Privilege).Attributes;
     } else {
-        let token_priv_count = (**TokenPrivileges).PrivilegeCount;
-        let old_priv_ptr = (**TokenPrivileges).Privileges.as_ptr();
+        let token_priv_count = (**token_privileges).PrivilegeCount;
+        let old_priv_ptr = (**token_privileges).Privileges.as_ptr();
         let mut i: u32 = 0;
         while i < token_priv_count {
             let old_luid = &(*old_priv_ptr.add(i as usize)).Luid;
@@ -1696,7 +1737,7 @@ unsafe fn LsapAddPrivilegeToTokenPrivileges(
         let length = core::mem::size_of::<TOKEN_PRIVILEGES>()
             + ((token_priv_count as usize + 1usize - ANYSIZE_ARRAY as usize)
                 * core::mem::size_of::<LUID_AND_ATTRIBUTES>());
-        local = RtlAllocateHeap(RtlGetProcessHeap(), 0u32, length) as PTOKEN_PRIVILEGES;
+        local = RtlAllocateHeap(RtlGetProcessHeap(), 0u32, length as SIZE_T) as PTOKEN_PRIVILEGES;
         if local.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -1710,11 +1751,11 @@ unsafe fn LsapAddPrivilegeToTokenPrivileges(
                 (*old_priv_ptr.add(i as usize)).Attributes;
             i = i.wrapping_add(1);
         }
-        (*new_priv_ptr.add(token_priv_count as usize)).Luid = (*Privilege).Luid;
+        (*new_priv_ptr.add(token_priv_count as usize)).Luid = core::mem::transmute((*Privilege).Luid);
         (*new_priv_ptr.add(token_priv_count as usize)).Attributes = (*Privilege).Attributes;
-        RtlFreeHeap(RtlGetProcessHeap(), 0, *TokenPrivileges as _);
+        RtlFreeHeap(RtlGetProcessHeap(), 0, *token_privileges as _);
     }
-    *TokenPrivileges = local;
+    *token_privileges = local;
     status
 }
 
@@ -1735,7 +1776,7 @@ unsafe fn LsapSetPrivileges(
 
         Status = LsarOpenPolicy(
             core::ptr::null_mut::<WCHAR>(),
-            core::ptr::null_mut::<core::ffi::c_void>(),
+            core::ptr::null_mut::<core::ffi::c_void>() as PLSAPR_OBJECT_ATTRIBUTES,
             0,
             &raw mut PolicyHandle,
         );
@@ -1844,7 +1885,7 @@ pub unsafe extern "C" fn LsapLogonUser(
         LocalAuthInfo = RtlAllocateHeap(
             RtlGetProcessHeap() as HANDLE,
             HEAP_ZERO_MEMORY as ULONG,
-            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength as SIZE_T,
         );
         if LocalAuthInfo.is_null() {
             ERR!(b"RtlAllocateHeap() failed\n\0".as_ptr() as *const u8);
@@ -1855,7 +1896,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             (*LogonContext).ClientProcessHandle,
             (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformation,
             LocalAuthInfo,
-            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength as SIZE_T,
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -1868,7 +1909,7 @@ pub unsafe extern "C" fn LsapLogonUser(
     if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount > 0 {
         Status = LsapCopyLocalGroups(
             LogonContext,
-            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroups,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroups as *mut _ as PTOKEN_GROUPS,
             (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount,
             &mut LocalGroups,
         );
@@ -1886,8 +1927,7 @@ pub unsafe extern "C" fn LsapLogonUser(
     }
 
     // We'll use a 'done block' to simplify goto.
-    let result: NTSTATUS;
-    'done: {
+    let result: NTSTATUS = 'done: {
         if (*Package).LsaApLogonUserEx2.is_some() {
             Status = (*Package).LsaApLogonUserEx2.unwrap()(
                 LogonContext as PLSA_CLIENT_REQUEST,
@@ -1897,7 +1937,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
@@ -1916,7 +1956,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
@@ -1933,7 +1973,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
                 &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
@@ -1986,15 +2026,15 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
 
         if TokenInformationType == LsaTokenInformationNull {
-            let mut TokenUser: TOKEN_USER = core::mem::zeroed();
-            let mut TokenPrimaryGroup: TOKEN_PRIMARY_GROUP = core::mem::zeroed();
+            let mut token_user: TOKEN_USER = core::mem::zeroed();
+            let mut token_primary_group: TOKEN_PRIMARY_GROUP = core::mem::zeroed();
             let mut NoGroups: TOKEN_GROUPS = TOKEN_GROUPS { GroupCount: 0, Groups: [SID_AND_ATTRIBUTES { Sid: core::ptr::null_mut(), Attributes: 0 }; 1] };
             let mut NoPrivileges: TOKEN_PRIVILEGES = TOKEN_PRIVILEGES { PrivilegeCount: 0, Privileges: [LUID_AND_ATTRIBUTES { Luid: LUID { LowPart: 0, HighPart: 0 }, Attributes: 0 }; 1] };
 
             TokenInfo0 = TokenInformation as PLSA_TOKEN_INFORMATION_NULL;
-            TokenUser.User.Sid = LsapWorldSid;
-            TokenUser.User.Attributes = 0;
-            TokenPrimaryGroup.PrimaryGroup = LsapWorldSid;
+            token_user.User.Sid = LsapWorldSid;
+            token_user.User.Attributes = 0;
+            token_primary_group.PrimaryGroup = LsapWorldSid;
 
             Qos.Length = core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as u32;
             Qos.ImpersonationLevel = SecurityImpersonation;
@@ -2013,15 +2053,15 @@ pub unsafe extern "C" fn LsapLogonUser(
                 TOKEN_ALL_ACCESS,
                 &mut ObjectAttributes,
                 TokenImpersonation,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
                 &mut (*TokenInfo0).ExpirationTime,
-                &mut TokenUser,
+                &mut token_user,
                 &mut NoGroups,
                 &mut NoPrivileges,
                 core::ptr::null_mut(),
-                &mut TokenPrimaryGroup,
+                &mut token_primary_group,
                 core::ptr::null_mut(),
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext as *mut _,
             );
         } else if TokenInformationType == LsaTokenInformationV1 {
             let mut NoPrivileges: TOKEN_PRIVILEGES = TOKEN_PRIVILEGES { PrivilegeCount: 0, Privileges: [LUID_AND_ATTRIBUTES{ Luid: LUID { LowPart: 0, HighPart: 0 }, Attributes: 0}; 1] };
@@ -2053,7 +2093,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 TOKEN_ALL_ACCESS,
                 &mut ObjectAttributes,
                 token_type,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
                 &mut (*TokenInfo1).ExpirationTime,
                 &mut (*TokenInfo1).User,
                 (*TokenInfo1).Groups,
@@ -2061,7 +2101,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 &mut (*TokenInfo1).Owner,
                 &mut (*TokenInfo1).PrimaryGroup,
                 &mut (*TokenInfo1).DefaultDacl,
-                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext,
+                &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext as *mut _,
             );
 
             RtlFreeHeap(RtlGetProcessHeap(), 0, TokenSd as PVOID);
@@ -2084,7 +2124,7 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
 
         Status = LsapSetLogonSessionData(
-            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+            &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
             LogonType as ULONG,
             UserName,
             LogonDomainName,
@@ -2110,7 +2150,7 @@ pub unsafe extern "C" fn LsapLogonUser(
 
         // Success path; Status will be the result of the duplicate call.
         break 'done Status;
-    }
+    };
 
     // Post 'done' processing (error path and cleanup)
     let final_status: NTSTATUS;
@@ -2122,11 +2162,11 @@ pub unsafe extern "C" fn LsapLogonUser(
 
     // Error handling when status is not success
     if !NT_SUCCESS(final_status) {
-        (*(*Package)).LsaApLogonTerminated.unwrap()(
-            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+        (*Package).LsaApLogonTerminated.unwrap()(
+            &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
         );
         LsapDeleteLogonSession(
-            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+            &raw mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId as *mut _,
         );
         LsapFreeClientBuffer(
             LogonContext as PLSA_CLIENT_REQUEST,

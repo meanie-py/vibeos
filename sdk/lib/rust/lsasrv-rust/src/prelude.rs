@@ -256,6 +256,8 @@ pub use samsrv_sys::{
     SAMPR_SID_INFORMATION, SAMPR_ULONG_ARRAY,
 };
 pub type PSAMPR_SID_INFORMATION = *mut SAMPR_SID_INFORMATION;
+// authpackage.c LsarOpenPolicy bridge: server-name arg type (lsasrv-sys bindgen).
+pub use lsasrv_sys::PLSAPR_SERVER_NAME;
 pub const SAM_SERVER_CONNECT: u32 = 0x00000001;
 pub const SAM_SERVER_LOOKUP_DOMAIN: u32 = 0x00000020;
 pub const DOMAIN_GET_ALIAS_MEMBERSHIP: u32 = 0x00000080;
