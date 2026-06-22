@@ -291,10 +291,30 @@ shape the wave:
 `exit.c`, `dllmain.c` (739), `usrapihk.c`, `winhelp.c`, `logon.c`, `rtlstr.c`,
 `controls/{appswitch,ghost,icontitle,regcontrol}.c`, `misc/stubs.c`.
 
-### Wave 5 — DDE family (deferred — large, not boot-critical)
-`misc/ddemisc.c` (2511), `ddeclient.c` (1425), `ddeserver.c` (1114), `dde.c` (314). ~5.4K
-LOC of legacy IPC; translate last (or leave-as-C cohab indefinitely if cost/benefit is poor —
-user decision at the time).
+### Wave 5 — DDE family + spy.c (✅ DONE 2026-06-21 — the FINAL wave; user32 → 100% Rust)
+`misc/ddemisc.c` (2511), `ddeclient.c` (1425), `ddeserver.c` (1114), `dde.c` (314) +
+`windows/spy.c` (2687). ~8.1K LOC of legacy IPC + the (DEBUG_SPY=0) message spy. Translated
+via 5 parallel rustconv-opus agents against a shared cohab CONTRACT, integrated centrally.
+
+**Compile ×3 green** after ~10 small fixes: `size_of()` → `as SIZE_T` at `GlobalAlloc`/
+`GlobalSize` sites (i386 SIZE_T=u32 ≠ usize), `DDEDATA.cfFormat` (u16) → `as i16` for the
+`WINE_DDEHEAD.cfFormat` (SHORT) field, `pConv` → `let mut`, and the **window-proc ABI**:
+bindgen `WNDPROC`/`DLGPROC` is `extern "stdcall"` on i386 but `extern "C"` on amd64/arm64, so a
+proc declared `extern "system"` (correct portable choice) is *nominally* a different fn type and
+can't be `Some()`-assigned to `lpfnWndProc` — assign via `core::mem::transmute::<system-fn,
+WNDPROC>(proc)` (the messagebox.rs:1149 pattern). WDML_EventProc had been declared
+`extern "stdcall"` (i386-only) → made `extern "system"` + transmuted.
+
+**Cohab link ×3 green in ONE round** (vs Wave 4's four): the only link gap was
+`InterlockedIncrement` in ddemisc.rs — a kernel32 import on i386 but a compiler intrinsic (no
+link symbol) on amd64/arm64 → replaced the `extern` decl with the local Rust-atomic impl
+(`AtomicI32::fetch_add(1)+1`, mirrors imm.rs). The dense WDML_* cross-TU web (15 shared
+`#[repr(C)]` structs + ~40 `WDML_*` cdecl helpers + the class-name `[u16]` globals) resolved
+cleanly by symbol name across the 4 DDE modules (definitions `#[no_mangle]`, cross-refs `extern`).
+`DdeGetPair`/`DdeAddPair` (FASTCALL) resolve to the already-Rust `message.rs`. spy.c's 5 cross-TU
+`SPY_*` exports (cdecl, ANSI `*const c_char`) match message.rs's callers; the big name-tables
+became const-generic `static [*const c_char; N]` (length-checked at compile time — caught a
+dropped NULL in the C source).
 
 ---
 
@@ -358,10 +378,12 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 3b — core | menu/draw/input/hook/desktop | ~6,100 | ✅ integrated; cohab-link ×3 green, i386+amd64 boot green (arm64 compile/link green, flake-tolerant); ×3 gate pending |
 | 3c — cursoricon (heavy) | cursoricon | ~3,100 | ✅ integrated; compile + cohab-link ×3 green; ×3 gate pending — **Wave 3 COMPLETE** |
 | 4 — secondary | clipboard/prop/mdi/winsta/imm/exticon/dllmain/usrapihk/misc/object/exit/resources/rtlstr/winhelp/logon + appswitch/ghost/icontitle/regcontrol | ~11,200 | ✅ integrated (20 files); compile + cohab-link ×3 green; **i386 ✓ boot (explorer+taskbar), amd64 ✓ boot** (net-suite flake = windows-host NAT, not user32); arm64 pending — **spy.c deferred** (debug-only) |
-| 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde + spy | ~8,100 | ☐ |
+| 5 — DDE + spy (FINAL) | ddemisc/ddeclient/ddeserver/dde + spy | ~8,100 | ✅ integrated (5 files); compile + cohab-link ×3 green (1 link round); **i386 ✓ boot (90s), amd64 ✓ boot (143s; net-suite errors = windows-host hostfwd infra, branch predates netstack fix, zero user32 net surface), arm64 ✓ boot (48s)** — ×3 cold gate pending control-plane. **user32 → 100% Rust** |
 
-**Next action:** Wave 5 (DDE family ~5.4K + `spy.c` ~2.7K) — all non-boot-critical legacy/debug;
-translate last or leave-as-C cohab indefinitely (user decision). Wave 4 leaves user32 ~95% Rust.
+**Next action:** none — Wave 5 was the FINAL wave. **user32 client surface is 100% translated to Rust**
+(every `.c` under `win32ss/user/user32/` is cohab-flipped; only generated `user32_stubs.c` +
+`arm64_user32_stubs.c` and the shared `rtl/image.c`/`rtl/text.c` remain C, neither owned by user32).
+Awaiting control-plane cold ×3 gate + land.
 
 **Wave 4 done (2026-06-21):** 20 files (~11.2K LOC) translated via 8 parallel rustconv-opus agents
 ($4.99), integrated centrally. **`spy.c` (2.7K) deferred** — `#define DEBUG_SPY 0`, pure debug
