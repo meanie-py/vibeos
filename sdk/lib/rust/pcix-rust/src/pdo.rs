@@ -198,7 +198,7 @@ pub unsafe extern "system" fn PciPdoWaitWake(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"PciPdoWaitWake\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const i8,
         87i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn PciPdoSetPowerState(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"PciPdoSetPowerState\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const core::ffi::c_char,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const core::ffi::c_char,
         101 as core::ffi::c_int,
     );
 
@@ -233,7 +233,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryPower(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpQueryPower\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+        b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         115 as ::core::ffi::c_int,
     );
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn PciPdoIrpStartDevice(
         if false {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+                b"drivers/bus/pcix/pdo.c\0".as_ptr()
                     as PVOID,
                 128u32,
                 core::ptr::null_mut::<i8>(),
@@ -301,14 +301,14 @@ pub unsafe extern "system" fn PciPdoIrpStartDevice(
         (*DeviceExtension).MovedDevice = 1u8;
     } else if DbgPrint(
         b"(%s:%d) PCI - START not changing resource settings.\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+        b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const i8,
         171i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+            b"drivers/bus/pcix/pdo.c\0".as_ptr()
                 as *const i8,
             171i32,
         );
@@ -367,7 +367,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryRemoveDevice(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"PciPdoIrpQueryRemoveDevice\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+        b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const i8,
         228 as i32,
     );
@@ -382,7 +382,7 @@ pub unsafe extern "system" fn PciPdoIrpRemoveDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"PciPdoIrpRemoveDevice\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8
+        b"drivers/bus/pcix/pdo.c\0" as *const u8
             as *const core::ffi::c_char,
         242 as core::ffi::c_int,
     );
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn PciPdoIrpCancelRemoveDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpCancelRemoveDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+        b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         256 as ::core::ffi::c_int,
     );
@@ -424,7 +424,7 @@ pub unsafe extern "system" fn PciPdoIrpStopDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr()
+        b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         270 as ::core::ffi::c_int,
     );
@@ -440,7 +440,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryStopDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpQueryStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         284 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -456,7 +456,7 @@ pub unsafe extern "system" fn PciPdoIrpCancelStopDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpCancelStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         298 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -477,7 +477,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryInterface(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpQueryInterface\0".as_ptr() as *const c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const c_char,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const c_char,
         312 as c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -499,7 +499,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryDeviceRelations(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
             323u32,
             core::ptr::null_mut::<i8>(),
         );
@@ -539,7 +539,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryCapabilities(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
                 356u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -566,7 +566,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryResources(
         if true {
             RtlAssert(
                 core::ptr::null_mut::<u8>() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
                 372 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -591,7 +591,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryResourceRequirements(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const CHAR as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as *const CHAR as PVOID,
+                b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const CHAR as PVOID,
                 387u32,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -619,7 +619,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryDeviceText(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/pdo.c\0".as_ptr() as PVOID,
                 403 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -646,7 +646,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryId(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8
+                b"drivers/bus/pcix/pdo.c\0" as *const u8
                     as *const i8 as *mut core::ffi::c_void,
                 420 as u32,
                 core::ptr::null_mut(),
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryBusInformation(
         if (0 as i32) == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8
+                b"drivers/bus/pcix/pdo.c\0" as *const u8
                     as PVOID,
                 434 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn PciPdoIrpReadConfig(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpReadConfig\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         454 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -713,7 +713,7 @@ pub unsafe extern "system" fn PciPdoIrpWriteConfig(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpWriteConfig\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as PCSTR,
         468i32,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -736,7 +736,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryDeviceState(
     DbgPrint(
         (b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8).cast(),
         b"PciPdoIrpQueryDeviceState\0".as_ptr() as *const u8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0".as_ptr() as *const u8,
+        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const u8,
         482 as ::core::ffi::c_int,
     );
 
@@ -751,7 +751,7 @@ pub unsafe extern "system" fn PciPdoIrpDeviceUsageNotification(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"PciPdoIrpDeviceUsageNotification\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as PCSTR,
+        b"drivers/bus/pcix/pdo.c\0" as *const u8 as PCSTR,
         496i32,
     );
     DbgPrint(b"\0" as *const u8 as PCSTR);
@@ -779,7 +779,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryLegacyBusInformation(
 ) -> NTSTATUS {
     let error_msg = b"ERROR:  %s at %s:%d is unimplemented!()\n\0";
     let func_name = b"PciPdoIrpQueryLegacyBusInformation\0";
-    let file_name = b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0";
+    let file_name = b"drivers/bus/pcix/pdo.c\0";
     let line: i32 = 524;
     DbgPrint((error_msg.as_ptr() as *const u8).cast(),
              func_name.as_ptr() as *const i8,
@@ -814,7 +814,7 @@ pub unsafe extern "system" fn PciPdoCreate(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8 as PVOID,
+                b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8 as PVOID,
                 540 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -849,7 +849,7 @@ pub unsafe extern "system" fn PciPdoCreate(
     if !(Status >= 0) {
         RtlAssert(
             b"NT_SUCCESS(Status)\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8 as PVOID,
+            b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8 as PVOID,
             557 as ULONG,
             core::ptr::null_mut::<i8>(),
         );
@@ -859,7 +859,7 @@ pub unsafe extern "system" fn PciPdoCreate(
 
     if DbgPrint(
         b"(%s:%d) PCI: New PDO (b=0x%x, d=0x%x, f=0x%x) @ %p, ext @ %p\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
+        b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
         566 as i32,
         (*DeviceExtension).BaseBus as i32,
         Slot.u.bits.DeviceNumber() as i32,
@@ -870,7 +870,7 @@ pub unsafe extern "system" fn PciPdoCreate(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
+            b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
             566 as i32,
         );
     }

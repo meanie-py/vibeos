@@ -329,7 +329,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
     if DeviceExtension.is_null() {
         RtlAssert(
             b"DeviceExtension\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             163 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -341,7 +341,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) No allocated resources sent to driver\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             167 as ::core::ffi::c_int,
         );
@@ -352,7 +352,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) Wrong number of allocated resources sent to driver\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             172 as ::core::ffi::c_int,
         );
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) Revision mismatch: %u.%u != 1.1 or %u.%u != 1.1\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             184 as ::core::ffi::c_int,
             (*(&raw mut (*ResourceList).List as *mut CM_FULL_RESOURCE_DESCRIPTOR)
@@ -463,7 +463,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
         DPFLTR_SERIAL_ID as ULONG,
         DPFLTR_INFO_LEVEL,
         b"(%s:%d) New COM port. Base = 0x%lx, Irql = %u\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+        b"drivers/serial/serial/pnp.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         217 as ::core::ffi::c_int,
         (*DeviceExtension).BaseAddress,
@@ -481,7 +481,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
         DPFLTR_INFO_LEVEL,
         b"(%s:%d) Comparing addresses: KdComPortInUse: %p, ComPortBase: %p\n\0" as *const u8
             as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+        b"drivers/serial/serial/pnp.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         225 as ::core::ffi::c_int,
         KdComPortInUse,
@@ -493,7 +493,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_INFO_LEVEL,
             b"(%s:%d) Failing IRP_MN_START_DEVICE as this serial port is used for debugging\n\0"
                 as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             228 as ::core::ffi::c_int,
         );
@@ -513,7 +513,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) SerialSetBaudRate() failed with status 0x%08x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             244 as ::core::ffi::c_int,
             Status,
@@ -532,7 +532,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) SerialSetLineControl() failed with status 0x%08x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             255 as ::core::ffi::c_int,
             Status,
@@ -577,7 +577,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) IoCreateSymbolicLink() failed with status 0x%08x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             277 as ::core::ffi::c_int,
             Status,
@@ -606,7 +606,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_WARNING_LEVEL,
             b"(%s:%d) IoConnectInterrupt() failed with status 0x%08x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/pnp.c\0"
+            b"drivers/serial/serial/pnp.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             290 as ::core::ffi::c_int,
             Status,

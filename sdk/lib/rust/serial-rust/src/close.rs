@@ -26,7 +26,7 @@ pub unsafe extern "system" fn SerialClose(
         DPFLTR_SERIAL_ID,
         DPFLTR_TRACE_LEVEL,
         b"(%s:%d) IRP_MJ_CLOSE\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/close.c\0"
+        b"drivers/serial/serial/close.c\0"
             as *const u8 as *const core::ffi::c_char,
         21 as core::ffi::c_int,
     );

@@ -409,6 +409,12 @@ pub struct Linker {
     /// cportlib) — drops the `ninja <lib>` prerequisite.
     /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
+    /// c_db lib names whose source list includes the 3 gendib-GENERATED DIB
+    /// tables (`dib{8,16,32}gen.c`). In a cmake build they exist under
+    /// `build-<arch>/` (replay handles them via the generated-source fallback);
+    /// cmake-off they're produced in-build by the self-hosted `native-gendib`.
+    /// See `gendib`.
+    gendib_libs: Vec<String>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
     allow_stdcall_fixup: bool,
@@ -475,6 +481,7 @@ impl Linker {
             static_libs: Vec::new(),
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
+            gendib_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
@@ -798,6 +805,40 @@ impl Linker {
             sources.iter().map(|s| s.to_string()).collect(),
         ));
         self
+    }
+
+    /// Mark a `c_from_compile_db` lib whose source list includes the 3 gendib
+    /// DIB tables (`dib{8,16,32}gen.c`) — win32k's `libwin32k_residue`. List the
+    /// gendib sources by their `build-<arch>/`-relative path (e.g.
+    /// `win32ss/gdi/dib/dib8gen.c`): in a cmake build they exist there and the
+    /// replay branch compiles them via the generated-source fallback; cmake-off
+    /// they don't exist, so the committed branch runs the self-hosted
+    /// `native-gendib` (`sdk/tools/gendib/gendib.c`, the spec2def precedent) to
+    /// produce them in `OUT_DIR` first — byte-identical to cmake's. Chainable.
+    pub fn gendib(mut self, c_db_name: &str) -> Self {
+        self.gendib_libs.push(c_db_name.to_string());
+        self
+    }
+
+    /// Run the self-hosted `native-gendib` → the 3 `dib{8,16,32}gen.c` in
+    /// `OUT_DIR/gendib-gen/`; return a basename→path map for source resolution
+    /// in the cmake-off (committed) c_db compile. cmake's `native-gendib` takes
+    /// the output DIR as its sole argument.
+    fn generate_gendib(&self) -> std::collections::HashMap<String, PathBuf> {
+        let tool = self.compile_host_tool("sdk/tools/gendib/gendib.c", "native-gendib");
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("gendib-gen");
+        std::fs::create_dir_all(&out).expect("mkdir gendib-gen");
+        let status = Command::new(&tool)
+            .arg(&out)
+            .status()
+            .unwrap_or_else(|e| panic!("native-gendib: {e}"));
+        if !status.success() {
+            panic!("native-gendib failed");
+        }
+        ["dib8gen.c", "dib16gen.c", "dib32gen.c"]
+            .iter()
+            .map(|n| (n.to_string(), out.join(n)))
+            .collect()
     }
 
     /// Add the kernel asm `#include` search chain to a cc-rs asm build: asm.inc
@@ -1829,12 +1870,33 @@ impl Linker {
                 .collect();
             let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
             std::fs::create_dir_all(&out_sub).ok();
+            // gendib libs (win32k residue): produce the 3 generated DIB tables
+            // in-build (no compile_commands), keyed by basename for resolution.
+            let gendib = if self.gendib_libs.contains(name) {
+                self.generate_gendib()
+            } else {
+                std::collections::HashMap::new()
+            };
+            // bugcodes.h (windmc-generated, arch-identical) is committed next to
+            // the engine; win32k.h's closure needs it. Harmless for other libs.
+            let committed_hdrs = self
+                .repo_root
+                .join("sdk/lib/rust/reactos-link/committed-headers");
             let mut objs = Vec::new();
             for rel in sources {
-                let abs = self.repo_root.join(rel);
-                if !abs.exists() {
-                    panic!("missing c_from_compile_db source {}", abs.display());
-                }
+                // A GENERATED gendib source (dib*gen.c) resolves to its native-
+                // gendib OUT_DIR copy; everything else is repo-relative.
+                let base = Path::new(rel).file_name().and_then(|s| s.to_str()).unwrap_or("");
+                let abs = match gendib.get(base) {
+                    Some(p) => p.clone(),
+                    None => {
+                        let p = self.repo_root.join(rel);
+                        if !p.exists() {
+                            panic!("missing c_from_compile_db source {}", p.display());
+                        }
+                        p
+                    }
+                };
                 let stem = abs
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -1846,6 +1908,8 @@ impl Linker {
                     .arg(xdk.join("psdk"))
                     .arg("-I")
                     .arg(xdk.join("ddk"))
+                    .arg("-I")
+                    .arg(&committed_hdrs)
                     .arg(&abs)
                     .arg("-o")
                     .arg(&obj)
@@ -2021,12 +2085,33 @@ pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> Path
     let out_sub = PathBuf::from(env::var("OUT_DIR").unwrap()).join(format!("rpc-{name}"));
     std::fs::create_dir_all(&out_sub).ok();
 
+    // cmake-off (WS1 DEEP, RPC): with no configured cmake build there is no
+    // host-tools `widl`, no `build.ninja`, and no `compile_commands.json` — the
+    // three inputs the regenerate path below needs (widl codegen + the widl
+    // command + the decoration compile). Fall back to the committed per-arch stub
+    // `.rs` (the deterministic widl→widl_to_rust.py output), exactly the WS2/WS3
+    // pattern: the cmake build regenerates it below (so it can never go stale),
+    // the committed copy is used ONLY when there is no cmake build at all.
+    // Regen: build services-cargo / winlogon-cargo with a configured build-<arch>
+    // and copy `OUT_DIR/rpc-<name>/<name>.rs` → `<stub-crate>/data/<name>.<arch>.rs`.
     let widl = build_dir.join("host-tools/bin/widl");
-    if !widl.exists() {
-        panic!(
-            "generate_rpc_stub_rust needs {} — run a cmake build first (host-tools widl)",
-            widl.display()
-        );
+    if !widl.exists()
+        || !build_dir.join("build.ninja").exists()
+        || !build_dir.join("compile_commands.json").exists()
+    {
+        let committed = manifest_dir.join(format!("data/{name}.{}.rs", arch.name));
+        if !committed.exists() {
+            panic!(
+                "cmake-off generate_rpc_stub_rust({name}) needs committed stub {} \
+                 (no configured cmake build) — regen by building this cell with a \
+                 configured build-{} and copying OUT_DIR/rpc-{name}/{name}.rs there",
+                committed.display(),
+                arch.name
+            );
+        }
+        println!("cargo:rerun-if-changed={}", committed.display());
+        println!("cargo:rerun-if-changed={}", repo_root.join(idl_rel).display());
+        return committed;
     }
     let ninja_path = build_dir.join("build.ninja");
     let ninja = std::fs::read_to_string(&ninja_path)

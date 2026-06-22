@@ -77,7 +77,7 @@ pub unsafe extern "C" fn FltpRegisterContexts(
             if !((*ContextPtr).Size != -(1 as ::core::ffi::c_int) as _) {
                 RtlAssert(
                     b"ContextPtr->Size != ((SIZE_T)-1)\0" as *const u8 as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Context.c\0"
+                    b"drivers/filters/fltmgr/Context.c\0"
                         as *const u8 as *const i8 as PVOID,
                     95 as ULONG,
                     core::ptr::null_mut::<CHAR>(),

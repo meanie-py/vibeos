@@ -41,7 +41,7 @@ pub unsafe extern "system" fn FsRecLoadFileSystem(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 (b"0\0").as_ptr() as *const ::core::ffi::c_char as PVOID,
-                (b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0")
+                (b"drivers/filesystems/fs_rec/fs_rec.c\0")
                     .as_ptr() as *const ::core::ffi::c_char as PVOID,
                 30 as ULONG,
                 ::core::ptr::null_mut::<::core::ffi::c_char>(),
@@ -106,7 +106,7 @@ pub unsafe extern "system" fn FsRecCreate(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0"
+                b"drivers/filesystems/fs_rec/fs_rec.c\0"
                     .as_ptr() as *mut c_void,
                 86u32,
                 core::ptr::null_mut::<i8>(),
@@ -135,7 +135,7 @@ pub unsafe extern "system" fn FsRecClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0"
+                b"drivers/filesystems/fs_rec/fs_rec.c\0"
                     as *const u8 as *mut core::ffi::c_void,
                 115u32,
                 core::ptr::null_mut::<i8>(),
@@ -161,7 +161,7 @@ pub unsafe extern "system" fn FsRecFsControl(
         );
         RtlAssert(
             b"0\0" as *const u8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0"
+            b"drivers/filesystems/fs_rec/fs_rec.c\0"
                 as *const u8 as PVOID,
             132 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -215,7 +215,7 @@ pub unsafe extern "system" fn FsRecUnload(DriverObject: PDRIVER_OBJECT) {
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0"
+                b"drivers/filesystems/fs_rec/fs_rec.c\0"
                     as *const u8 as PVOID,
                 208,
                 core::ptr::null_mut::<CHAR>(),
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn DriverEntry(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fs_rec.c\0"
+            b"drivers/filesystems/fs_rec/fs_rec.c\0"
                 .as_ptr()
                 as *const i8 as PVOID,
             334 as ULONG,

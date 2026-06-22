@@ -186,7 +186,7 @@ pub unsafe extern "system" fn DiskAddDevice(
             if (0 as i32) == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
+                    b"drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
                     86i32,
                     b"0\0".as_ptr() as *const i8,
                 );
@@ -591,7 +591,7 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0"
                     .as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0"
+                b"drivers/storage/class/disk/pnp.c\0"
                     .as_ptr() as *const i8,
                 711i32,
                 b"0\0".as_ptr() as *const i8,
@@ -605,7 +605,7 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0"
                 .as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0"
+            b"drivers/storage/class/disk/pnp.c\0"
                 .as_ptr() as *const i8,
             718i32,
             b"commonExtension->DeviceName.Buffer\0"
@@ -703,7 +703,7 @@ pub unsafe extern "system" fn DiskRemoveDevice(
         if 0 as i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0"
+                b"drivers/storage/class/disk/pnp.c\0"
                     as *const u8 as *const i8,
                 869 as i32,
                 b"0\0" as *const u8 as *const i8,
@@ -774,7 +774,7 @@ pub unsafe extern "system" fn DiskStartFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
             if 0 == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
+                    b"drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
                     948i32,
                     b"0\0".as_ptr() as *const i8,
                 );
@@ -816,7 +816,7 @@ pub unsafe extern "system" fn DiskStartFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
         if !(status >= 0) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/pnp.c\0".as_ptr() as *const i8,
                 988i32,
                 b"NT_SUCCESS(status)\0".as_ptr() as *const i8,
             );

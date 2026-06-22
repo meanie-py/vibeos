@@ -351,7 +351,7 @@ pub unsafe extern "C" fn ClasspEnqueueIdleRequest(
         if (*fdoData).IdleIoCount != 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/clntirp.c\0"
+                b"drivers/storage/class/classpnp/clntirp.c\0"
                     .as_ptr() as PCSTR,
                 611i32,
                 b"fdoData->IdleIoCount == 0\0".as_ptr() as PCSTR,

@@ -22,7 +22,7 @@ more hermetic build.
 |---|---|---|
 | **compile_commands.json** | `.c_from_compile_db()` replays cmake's clang for the irreducible C floor (~50 files across 10 cells) | **YES — biggest** |
 | **Generated asm includes** | `ks386.inc`/`ksamd64.inc`/`ksarm64.h` under `build-<arch>/sdk/include/asm/` (cmake `native-geninc`) | **YES** |
-| **Host tools** | `spec2def` (exports/import-libs), `widl` (RPC), `windres` (resources) | **PARTIAL** |
+| **Host tools** | `spec2def` (self-hosted) · `native-hpp` (self-hosted, xdk headers) · `windres` (committed `.res` fallback) · `widl` (committed `.rs`-stub fallback) | **DONE** |
 | **Resource `.res`** | `gen_ntoskrnl_res.py` needs cmake-built `bugcodes.rc` + `.bin` (windmc) | **YES (narrow)** |
 | **bindgen headers** | `ntkrnl-sys` FFI | **NO — already committed** |
 | **ninja orchestration** | `add_cargo_module()` in `sdk/cmake/gcc.cmake` sequences 44 cells | **YES** |
@@ -158,6 +158,13 @@ regen + makes arm64 self-generating. Do later if regen-drift bites. A CI diff-ch
 
 ### WS3 — Host tools (spec2def / dlltool / windres / widl) — **kernel-critical DONE; usermode .res fallback added (2026-06-21)**
 
+> **Full host-tool inventory + self-hosting plan:** see
+> [build-tools-self-hosting.md](build-tools-self-hosting.md) — every tool cmake
+> produces with, its cmake-off status (self-hosted / committed-fallback /
+> toolchain / external), and the prioritized plan to self-host the rest
+> (gendib → geninc → windmc → widl). The committed fallbacks are kept honest by
+> `tools/check_committed_drift.py` (`vibeos-cli check --strict`).
+
 **Status:**
 - **`spec2def` — DONE (already self-hosted).** `reactos-link::generate_def` runs
   `compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def")`, which cc-compiles
@@ -180,8 +187,18 @@ regen + makes arm64 self-generating. Do later if regen-drift bites. A CI diff-ch
   cmake windres command); regen via **`tools/gen_committed_res.py`**. Committed for
   **all three arches** (i386/amd64 smoke green; arm64 .res generated from a
   COPY+repoint build-arm64 and committed).
-- `widl` (RPC IDL→C, a few usermode cells) — cmake host-tool; kernel path doesn't need
-  it. Defer (pre-build + store, or port the stubs).
+- **`widl` (RPC IDL→C) — cmake-off DONE via committed-stub fallback (2026-06-21).** widl
+  is a real 15-file compiler (flex/bison parser + NDR codegen + `wpphost`), so rather than
+  self-host it (deferred — "option A"), `generate_rpc_stub_rust` gains a committed fallback:
+  the RPC stubs are already transliterated to Rust (`widl_to_rust.py` + `midl-rt`, so no C
+  links), and that `.rs` is the deterministic final artifact — so commit it per-arch
+  (`<stub-crate>/data/<name>.<arch>.rs`) and return it when there is no configured cmake
+  build (no `widl`/`build.ninja`/`compile_commands.json`). cmake regenerates it when
+  configured (can't go stale); the committed copy is used only cmake-off. 2 stubs
+  (`svcctl_s`→services, `winreg_s`→winlogon) × 3 arches. Verified: committed
+  `svcctl_s.i386.rs` == fresh replay; **services i386 builds cmake-off** (committed branch);
+  the change is inert on the cmake build (replay path untouched). Full widl self-host
+  ("option A") remains a future option if the IDLs ever need to change off-cmake.
 
 **Net:** every cargo cell's host-tool + resource dependency on cmake is removed on all
 three arches except `widl` (usermode RPC). spec2def/dlltool were already self-hosted.
@@ -194,9 +211,97 @@ needs no cmake-generated headers at build time. `generate_bindings.sh` is a manu
 regen tool. Message headers (`ntstatus.h`/`bugcodes.h`) are NOT consumed by cargo
 (bindgen committed + constants hardcoded). **No work required.**
 
-### WS5 — Orchestration: replace ninja for the cells
+### WS5 — Orchestration: replace ninja for the cells — **MVP DONE (2026-06-21)**
 
-**Finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
+**MVP shipped:** `tools/cargo_orchestrate.py` — the thin cmake/ninja-free driver. It
+self-hosts the post-link host tool (`native-pefixup`, single `.c` like spec2def/
+native-hpp: `cc -O2 -DTARGET_<host> [-D_TARGET_PE64] -I sdk/include/host
+sdk/tools/pefixup.c`), runs the exact `cargo +nightly build-std` invocation
+`add_cargo_module()` emits per cell in dependency (topo) order, copies the `.exe`
+out, and applies the KIND post-link (`native-pefixup --kernel/--kerneldll/
+--kernelmodedriver`, i386 `fix_lld_forwarding.py`, efi strip). **Proof:** with
+`build-i386/compile_commands.json` moved aside (no cmake artifact consultable) and
+**zero ninja**, it builds `ntoskrnl.exe` (KIND kernelexe) → the result is
+**byte-identical to the cmake-built kernel except the 4-byte PE TimeDateStamp**
+(2 bytes at file off 0x80, two link runs at different wall-clock — runtime-irrelevant).
+ntoskrnl/ntkrnlmp need **no** cargo-cell deps: they synth their hal/kdcom/bootvid
+import libs in-cargo from `.spec` via the self-hosted spec2def, and (cntpr_residue
+empty) call no `c_from_compile_db`, so the kernel EXE has no cmake prerequisite at
+all.
+
+**Kernel + usermode spine proven (2026-06-21).** `--spine` builds **12 modules**
+cmake-off — `ntoskrnl` `ntkrnlmp` `ntdll` `ntdll_vista` `csrsrv` `basesrv` `csrss`
+`smss` `lsass` `winlogon` `services` `userinit` — in ~35s (warm) with
+`compile_commands.json` moved aside + no ninja; **all 12 byte-identical to their
+cmake-built twins except the 2-byte PE TimeDateStamp**. Two structural findings
+made this fall out cleanly:
+
+- **The inter-cell DAG is fully dissolved.** The roadmap's blocker (2) (import-lib
+  ordering) is gone: *every* spine cell synthesizes the import libs it needs from
+  `.spec` via `.import_lib()` (self-hosted spec2def+dlltool), so no cell consumes
+  another cell's built `.dll`/`.a`. `deps=()` for all — they build in any order /
+  in parallel.
+- **`resource_from_rc` already has a committed-`.res` fallback** (WS3), so
+  basesrv/winlogon/services/userinit need no windres at build time cmake-off.
+
+**`winsrv` is now cmake-off too (2026-06-21)** — the whole spine is done. Its
+three former cmake static libs were removed by scoping to what winsrv *actually*
+references (an offline link drop-test: drop the libs, read lld's undefined list —
+only **11 symbols** out of the libs' ~4200):
+- `libuuid.a` (2698 GUIDs) → just **3** shell GUIDs (`CLSID_ShellLink`,
+  `IID_IShellLinkW`, `IID_IPersistFile` — winsrv creates .lnk shortcuts). Provided
+  by a self-contained `winsrv_guids.c` `c_shim` (verbatim midl values + `selectany`
+  → byte-identical to libuuid.a's members; the linker GCs the rest just as before).
+- `libwin32ksys.a` (1474 win32k syscall stubs) → **8** `NtUser*` stubs, provided by
+  `asm_archive("win32ksys", &["win32ss/sys-stubs.S"])` (the ntdll `ntdllsys`
+  pattern; sys-stubs.S + its checked-in `w32ksvc32/64.h` + `syscalls.inc`).
+- `libchkstk.a` → **0** symbols — already inert (`__alloca`/`__chkstk` come from
+  cnt-rust-lib / clang_rt.builtins); dropped (the userinit `libwine.a` pattern).
+
+Verified i386: cmake-off `winsrv.dll` has a **byte-identical `.text`** (439296 B) to
+the cmake build, all 8 stubs defined, all 3 GUID byte-patterns present; the only
+delta is a **leaner** `.rdata` (−3376 B — it drops the ~211 dead unreferenced GUIDs
+cmake's coarse archive-member link dragged in). Built clean on all 3 arches.
+
+**Drivers — audited + proven cmake-off (2026-06-21).** Scanned all 25 driver cells
+(`kerneldll`/`kernelmodedriver`) for cmake-off blockers (cmake `static_libs`,
+`c_from_compile_db`, `resource_from_rc`): **24/25 are already clean** —
+`rust_staticlib` + self-hosted `.import_lib()` from `.spec`, no cmake `.a` / no
+`c_db` / no live windres (hal carries only a committed `.res`). Empirically built
+all **19 i386-applicable drivers** (`cargo_orchestrate.py --arch i386 --drivers`,
+`compile_commands.json` moved aside, zero ninja) — every one **byte-identical to
+its cmake artifact except the 2-byte PE TimeDateStamp** (hal, kdcom, bootvid,
+beep, null, nmidebug, pci, pciide, classpnp, condrv, hidparse, mouclass, kbdclass,
+i8042prt, swenum, usbd, processr, framebuf, netstack). The arm64-only
+`arm64vid`/`arm64input` self-filter to arm64 via `Cell.arches`. (Note: `kdcom.dll`
+has 4 alternative provider crates — `kdcom-cargo` is the configured default; the
+others are equally clean.)
+
+**`win32k` is now cmake-off too (2026-06-21) — the last cell.** Its only cmake
+`.a`, `win32ss/libwin32k_residue.a` (13 members), is compiled in-cargo:
+- **5 `*_rust_shims.c` + (i386) `floatobj.c`** → `c_from_compile_db("win32k_residue")`
+  (replay when cmake configured; committed-flags + native-hpp xdk + committed
+  `bugcodes.h` when cmake-off — the blrtl pattern). The `win32k.h` closure turned
+  out tiny: only `ntddk.h`/`ntifs.h`/`wdm.h`/`ntdef.h` (all already produced by
+  `generate_xdk_headers`) + `bugcodes.h` (the one windmc header, committed
+  arch-identical to `reactos-link/committed-headers/`).
+- **3 gendib DIB tables** (`dib{8,16,32}gen.c`, generated) → the new `.gendib()`
+  marker on the c_db lib: replay finds them under `build-<arch>/`; cmake-off runs
+  the self-hosted **native-gendib** (`sdk/tools/gendib/gendib.c`, the spec2def
+  precedent — byte-identical to cmake's).
+- **(i386) 4 asm** (3 `dib*_hline/colorfill.s` + `floatobj.S`) → `asm_archive`.
+
+Verified ×3: cmake-off `win32k.sys` is **byte-identical to the cmake build except
+the PE TimeDateStamp** (i386/amd64 2 bytes, arm64 3 — all inside the 4-byte
+stamp). So the **whole driver set (25/25) is cmake-off**.
+
+The `CELLS` table now covers kernel + spine + **all** drivers; it generalizes to
+the full 44-cell set — add a `Cell(...)` with its KIND (`deps` stays empty unless a
+future cell breaks the self-hosted-import-lib pattern). **Remaining:** per-arch
+fan-out (the workspace serializes today — blocker (1)), and the loaders' efi/native
+KINDs (need the *cross* llvm-strip, not host strip). No cell-level blockers left.
+
+**Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
 `ntoskrnl → hal → {kdcom, bootvid} → drivers`; `ntdll → {csrsrv, winsrv, basesrv} →
 {csrss, smss, lsass, winlogon, services, userinit}`; loaders (uefildr/rosload)
@@ -229,8 +334,11 @@ the import-lib DAG); the long pole, do last.
    committed; usermode-spine `.res` committed-fallback added (i386/amd64/arm64). The
    *kernel* cargo build now needs no cmake-generated artifact on any arch. Remaining:
    `widl` (usermode RPC) + the WS1 DEEP loaders.
-4. **Phase 3 — orchestration (WS5):** the thin driver replacing ninja for the kernel +
-   core cells; prove `ntoskrnl.exe` builds with no cmake/ninja.
+4. **Phase 3 — orchestration (WS5): MVP DONE (2026-06-21).** `tools/cargo_orchestrate.py`
+   replaces ninja for the cells; **proven** on `ntoskrnl.exe` — builds with
+   `compile_commands.json` moved aside + no ninja, byte-identical to cmake's kernel
+   bar the PE timestamp. Remaining: usermode-spine import-lib DAG + per-arch fan-out
+   (extend the `CELLS` table).
 5. **Phase 4 — DEEP loaders (WS1): DONE (2026-06-21).** `rosload`/`uefildr`'s `blrtl_c`
    off `compile_commands.json` via committed flag templates + native-hpp-generated xdk
    headers (`compile_c_db_committed` in `reactos-link`). Loaders now build cmake-off

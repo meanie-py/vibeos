@@ -107,7 +107,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
 
     if DbgPrint(
         b"(%s:%d) SwDispatchPnp ChildDevice %u Request %x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+        b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
             as *const core::ffi::c_char,
         107i32,
         ChildDevice as i32,
@@ -116,7 +116,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as *const core::ffi::c_char,
             107i32,
         );
@@ -134,7 +134,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
 
     if DbgPrint(
         b"(%s:%d) SwDispatchPnp KsServiceBusEnumPnpRequest Status %x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+        b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
             as *const core::ffi::c_char,
         128i32,
         Status,
@@ -142,7 +142,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as *const core::ffi::c_char,
             128i32,
         );
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
 
     if DbgPrint(
         b"(%s:%d) SwDispatchPnp KsGetBusEnumPnpDeviceObject Status %x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+        b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
             as *const core::ffi::c_char,
         141i32,
         Status,
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as *const core::ffi::c_char,
             141i32,
         );
@@ -181,7 +181,7 @@ pub unsafe extern "system" fn SwDispatchPnp(
     if PnpDeviceObject.is_null() {
         RtlAssert(
             b"PnpDeviceObject\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as PVOID,
             153u32,
             core::ptr::null_mut(),
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             if DbgPrint(
                 b"(%s:%d) SwDispatchDeviceControl IOCTL_SWENUM_INSTALL_INTERFACE %x\n\0" as *const u8
                     as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                b"drivers/ksfilter/swenum/swenum.c\0"
                     as *const u8 as *const i8,
                 270 as i32,
                 Status,
@@ -270,7 +270,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                    b"drivers/ksfilter/swenum/swenum.c\0"
                         as *const u8 as *const i8,
                     270 as i32,
                 );
@@ -282,7 +282,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             if DbgPrint(
                 b"(%s:%d) SwDispatchDeviceControl IOCTL_SWENUM_REMOVE_INTERFACE %x\n\0" as *const u8
                     as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                b"drivers/ksfilter/swenum/swenum.c\0"
                     as *const u8 as *const i8,
                 276 as i32,
                 Status,
@@ -290,7 +290,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                    b"drivers/ksfilter/swenum/swenum.c\0"
                         as *const u8 as *const i8,
                     276 as i32,
                 );
@@ -301,7 +301,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             if DbgPrint(
                 b"(%s:%d) SwDispatchDeviceControl IOCTL_SWENUM_GET_BUS_ID %x\n\0" as *const u8
                     as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                b"drivers/ksfilter/swenum/swenum.c\0"
                     as *const u8 as *const i8,
                 283 as i32,
                 Status,
@@ -309,7 +309,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                    b"drivers/ksfilter/swenum/swenum.c\0"
                         as *const u8 as *const i8,
                     283 as i32,
                 );
@@ -317,7 +317,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
         } else {
             if DbgPrint(
                 b"(%s:%d) SwDispatchDeviceControl Unknown IOCTL %x\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                b"drivers/ksfilter/swenum/swenum.c\0"
                     as *const u8 as *const i8,
                 287 as i32,
                 (*IoStack).Parameters.DeviceIoControl.IoControlCode,
@@ -325,7 +325,7 @@ pub unsafe extern "system" fn SwDispatchDeviceControl(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+                    b"drivers/ksfilter/swenum/swenum.c\0"
                         as *const u8 as *const i8,
                     287 as i32,
                 );
@@ -348,7 +348,7 @@ pub unsafe extern "system" fn SwDispatchCreate(
     Status = KsIsBusEnumChildDevice(DeviceObject, &raw mut ChildDevice);
     if DbgPrint(
         b"(%s:%d) SwDispatchCreate %x\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+        b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
             as *const core::ffi::c_char,
         314i32,
         Status,
@@ -356,7 +356,7 @@ pub unsafe extern "system" fn SwDispatchCreate(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as *const core::ffi::c_char,
             314i32,
         );
@@ -370,7 +370,7 @@ pub unsafe extern "system" fn SwDispatchCreate(
         Status = KsServiceBusEnumCreateRequest(DeviceObject, Irp);
         if DbgPrint(
             b"(%s:%d) SwDispatchCreate %x\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+            b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                 as *const core::ffi::c_char,
             328i32,
             Status,
@@ -378,7 +378,7 @@ pub unsafe extern "system" fn SwDispatchCreate(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0".as_ptr()
+                b"drivers/ksfilter/swenum/swenum.c\0".as_ptr()
                     as *const core::ffi::c_char,
                 328i32,
             );
@@ -412,7 +412,7 @@ pub unsafe extern "system" fn SwAddDevice(
     // DPRINT expansion (from c2rust anchor)
     if DbgPrint(
         b"(%s:%d) SWENUM AddDevice\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+        b"drivers/ksfilter/swenum/swenum.c\0"
             as *const u8
             as *const ::core::ffi::c_char,
         369 as i32,
@@ -420,7 +420,7 @@ pub unsafe extern "system" fn SwAddDevice(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+            b"drivers/ksfilter/swenum/swenum.c\0"
                 as *const u8
                 as *const ::core::ffi::c_char,
             369 as i32,
@@ -498,14 +498,14 @@ pub unsafe extern "system" fn DriverEntry(
 
     if DbgPrint(
         b"(%s:%d) SWENUM loaded\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+        b"drivers/ksfilter/swenum/swenum.c\0"
             as *const u8 as *const i8,
         428 as i32,
     ) != 0
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/ksfilter/swenum/swenum.c\0"
+            b"drivers/ksfilter/swenum/swenum.c\0"
                 as *const u8 as *const i8,
             428 as i32,
         );

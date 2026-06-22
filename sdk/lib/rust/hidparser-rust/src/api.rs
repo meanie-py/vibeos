@@ -129,7 +129,7 @@ pub unsafe extern "C" fn HidParser_GetReportLength(
         if (ReportLength as u32).wrapping_rem(8u32) != 0u32 {
             RtlAssert(
                 b"ReportLength % 8 == 0\0".as_ptr() as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const core::ffi::c_void,
                 125u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -317,7 +317,7 @@ pub unsafe extern "C" fn HidParser_GetUsagesWithReport(
         if !((*ReportItem).ByteOffset < ReportDescriptorLength) {
             RtlAssert(
                 b"ReportItem->ByteOffset < ReportDescriptorLength\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *mut core::ffi::c_void,
                 422,
                 core::ptr::null_mut(),
             );
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn HidParser_GetUsagesWithReport(
         if !((*ReportItem).BitCount as i32 <= 8) {
             RtlAssert(
                 b"ReportItem->BitCount <= 8\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *mut core::ffi::c_void,
                 423,
                 core::ptr::null_mut(),
             );
@@ -429,7 +429,7 @@ pub unsafe extern "C" fn HidParser_GetUsageValueWithReport(
                 if !((*ReportItem).ByteOffset < ReportDescriptorLength) {
                     RtlAssert(
                         b"ReportItem->ByteOffset < ReportDescriptorLength\0" as *const u8 as *const i8 as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0" as *const u8 as *const i8 as PVOID,
+                        b"sdk/lib/drivers/hidparser/api.c\0" as *const u8 as *const i8 as PVOID,
                         612,
                         core::ptr::null_mut::<core::ffi::c_void>() as PVOID,
                     );
@@ -489,7 +489,7 @@ pub unsafe extern "C" fn HidParser_GetScaledUsageValueWithReport(
                     RtlAssert(
                         b"ReportItem->ByteOffset < ReportDescriptorLength\0".as_ptr()
                             as *const core::ffi::c_void,
-                        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0"
+                        b"sdk/lib/drivers/hidparser/api.c\0"
                             .as_ptr() as *const core::ffi::c_void,
                         708u32,
                         core::ptr::null_mut::<core::ffi::c_void>(),
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn HidParser_TranslateKbdUsage(
         let dbg_str: *const i8 =
             b"(%s:%d) No Scan code for Usage %x\n\0".as_ptr() as *const i8;
         let dbg_file: *const i8 =
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0"
+            b"sdk/lib/drivers/hidparser/api.c\0"
                 .as_ptr() as *const i8;
         if DbgPrint(dbg_str, dbg_file, 871i32, Usage as i32) != 0 {
             let dbg_err: *const i8 =
@@ -666,13 +666,13 @@ pub unsafe extern "C" fn HidParser_TranslateCustUsage(
     if ScanCode == 0 {
         if DbgPrint(
             b"(%s:%d) No Scan code for Usage %x\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const i8,
+            b"sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const i8,
             931i32,
             Usage as i32,
         ) != 0 {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const i8,
+                b"sdk/lib/drivers/hidparser/api.c\0".as_ptr() as *const i8,
                 931i32,
             );
         }

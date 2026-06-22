@@ -659,7 +659,7 @@ pub unsafe extern "system" fn SetEnvironmentStringsA(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/environ.c\0"
+        b"dll/win32/kernel32/client/environ.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         553 as ::core::ffi::c_int,
         b"SetEnvironmentStringsA\0" as *const u8 as *const ::core::ffi::c_char,
@@ -667,7 +667,7 @@ pub unsafe extern "system" fn SetEnvironmentStringsA(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/environ.c\0"
+            b"dll/win32/kernel32/client/environ.c\0"
                 as *const u8 as *const ::core::ffi::c_char,
             553 as ::core::ffi::c_int,
         );
@@ -679,7 +679,7 @@ pub unsafe extern "system" fn SetEnvironmentStringsW(NewEnvironment: LPWCH) -> B
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/environ.c\0"
+        b"dll/win32/kernel32/client/environ.c\0"
             .as_ptr() as *const i8,
         564i32,
         b"SetEnvironmentStringsW\0".as_ptr() as *const i8,
@@ -687,7 +687,7 @@ pub unsafe extern "system" fn SetEnvironmentStringsW(NewEnvironment: LPWCH) -> B
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/environ.c\0"
+            b"dll/win32/kernel32/client/environ.c\0"
                 .as_ptr() as *const i8,
             564i32,
         );

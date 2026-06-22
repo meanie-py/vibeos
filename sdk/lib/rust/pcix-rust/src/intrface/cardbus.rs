@@ -33,7 +33,7 @@ pub unsafe extern "system" fn Cardbus_SaveCurrentSettings(Context: PPCI_CONFIGUR
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"Cardbus_SaveCurrentSettings\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const core::ffi::c_char,
+        b"drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const core::ffi::c_char,
         38i32,
     );
     DbgPrint(b"\0".as_ptr() as *const core::ffi::c_char);
@@ -44,7 +44,7 @@ pub unsafe extern "system" fn Cardbus_SaveLimits(Context: PPCI_CONFIGURATOR_CONT
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"Cardbus_SaveLimits\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const i8,
         46i32,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -58,7 +58,7 @@ pub unsafe extern "system" fn Cardbus_MassageHeaderForLimitsDetermination(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"Cardbus_MassageHeaderForLimitsDetermination\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const ::core::ffi::c_char,
         54 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
@@ -69,7 +69,7 @@ pub unsafe extern "system" fn Cardbus_RestoreCurrent(Context: PPCI_CONFIGURATOR_
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"Cardbus_RestoreCurrent\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/intrface/cardbus.c\0".as_ptr() as *const ::core::ffi::c_char,
         62 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -85,7 +85,7 @@ pub unsafe extern "system" fn Cardbus_GetAdditionalResourceDescriptors(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"Cardbus_GetAdditionalResourceDescriptors\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0"
+        b"drivers/bus/pcix/intrface/cardbus.c\0"
             as *const u8 as *const core::ffi::c_char,
         74 as core::ffi::c_int,
     );
@@ -100,7 +100,7 @@ pub unsafe extern "system" fn Cardbus_ResetDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"Cardbus_ResetDevice\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0"
+        b"drivers/bus/pcix/intrface/cardbus.c\0"
             as *const u8 as PCSTR,
         84i32,
     );
@@ -117,7 +117,7 @@ pub unsafe extern "system" fn Cardbus_ChangeResourceSettings(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"Cardbus_ChangeResourceSettings\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0".as_ptr()
+        b"drivers/bus/pcix/intrface/cardbus.c\0".as_ptr()
             as *const core::ffi::c_char,
         94i32,
     );
@@ -130,7 +130,7 @@ pub unsafe extern "system" fn pcicbintrf_Initializer(Instance: PVOID) -> NTSTATU
     if 0i32 == 0i32 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0"
+            b"drivers/bus/pcix/intrface/cardbus.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             103 as ULONG,
             b"PCI pcicbintrf_Initializer, unexpected call.\n\0" as *const u8
@@ -152,7 +152,7 @@ pub unsafe extern "system" fn pcicbintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"pcicbintrf_Constructor\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/cardbus.c\0"
+        b"drivers/bus/pcix/intrface/cardbus.c\0"
             .as_ptr() as *const ::core::ffi::c_char,
         124 as ::core::ffi::c_int,
     );

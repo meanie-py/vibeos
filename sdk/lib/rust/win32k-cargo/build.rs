@@ -79,8 +79,42 @@ fn main() {
     // archive-position-first preserves the C-first --allow-multiple-definition
     // cohab precedence over libwin32k_kernel_rust.a, which the engine emits
     // after this group via rust_staticlib).
+    // WS5 cmake-off (2026-06-21): libwin32k_residue.a is now compiled IN-cargo
+    // (the last win32k cmake .a). Its 13 members split by provenance:
+    //   - 5 *_rust_shims.c + (i386) floatobj.c → c_from_compile_db (replay when
+    //     cmake configured; committed-flags + native-hpp xdk + committed
+    //     bugcodes.h when cmake-off — the blrtl pattern).
+    //   - 3 gendib DIB tables (dib{8,16,32}gen.c, GENERATED) → the `.gendib()`
+    //     marker: replay finds them under build-<arch>/; cmake-off runs the
+    //     self-hosted native-gendib (byte-identical to cmake's).
+    //   - (i386) 4 asm (3 dib*_hline/colorfill.s + floatobj.S) → asm_archive.
+    // amd64/arm64 have only the 5 shims + 3 gendib (no floatobj/asm).
+    let mut residue_c: Vec<&str> = vec![
+        "win32ss/user/ntuser/main_rust_shims.c",
+        "win32ss/gdi/ntgdi/ntbitblt_rust_shims.c",
+        "win32ss/gdi/ntgdi/font_rust_shims.c",
+        "win32ss/gdi/ntgdi/path_rust_shims.c",
+        "win32ss/gdi/ntgdi/freetype_rust_shims.c",
+        // gendib-generated (build-<arch>-relative; resolved per branch):
+        "win32ss/gdi/dib/dib8gen.c",
+        "win32ss/gdi/dib/dib16gen.c",
+        "win32ss/gdi/dib/dib32gen.c",
+    ];
+    let residue_asm: &[&str] = if arch == "x86" {
+        residue_c.push("win32ss/gdi/eng/i386/floatobj.c");
+        &[
+            "win32ss/gdi/dib/i386/dib24bpp_hline.s",
+            "win32ss/gdi/dib/i386/dib32bpp_hline.s",
+            "win32ss/gdi/dib/i386/dib32bpp_colorfill.s",
+            "win32ss/gdi/eng/i386/floatobj.S",
+        ]
+    } else {
+        &[]
+    };
+
     let static_libs: Vec<&str> = vec![
-        "win32ss/libwin32k_residue.a",
+        // libwin32k_residue.a → c_from_compile_db("win32k_residue") + .gendib()
+        // + asm_archive (above/below) — 2026-06-21, the last win32k cmake .a.
         // libpseh.a DROPPED — win32k references NOTHING from it. Offline nm
         // drop-test (undefined across libwin32k_residue + libwin32k_kernel_rust
         // ∩ libpseh defs) = EMPTY on both i386 (full seh.s runtime + volatiles)
@@ -156,8 +190,19 @@ fn main() {
         // — kernel-mode code must not touch SSE state on i386.
         linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
     }
-    linker
+    linker = linker
         .static_libs(&static_libs)
+        // libwin32k_residue.a compiled in-cargo (WS5): the 5 shims + (i386)
+        // floatobj.c + 3 gendib tables, replay/committed dual-branch + native-
+        // gendib. C-first in the link group (before the Rust body), preserving
+        // the cohab precedence the old residue-archive-first reuse had.
+        .c_from_compile_db("win32k_residue", &residue_c)
+        .gendib("win32k_residue");
+    if !residue_asm.is_empty() {
+        // i386 dib/floatobj asm (was in libwin32k_residue.a) → in-group archive.
+        linker = linker.asm_archive("win32k_residue_asm", residue_asm);
+    }
+    linker
         // Compile the cntpr C-variadic printf floor in-cargo as self-contained
         // headerless c_shims (WS1 cmake-off, 2026-06-21): the shells #include the
         // shared _sxprintf.c / _vscwprintf.c engine, now headerless behind

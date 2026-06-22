@@ -132,7 +132,7 @@ pub unsafe extern "C" fn MountMgrSendSyncDeviceIoCtl(
     if KeGetCurrentIrql() != PASSIVE_LEVEL {
         RtlAssert(
             b"KeGetCurrentIrql()==(0)\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-mountmgr/drivers/storage/mountmgr/mountmgr.c\0"
+            b"drivers/storage/mountmgr/mountmgr.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             94 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn MountMgrSendSyncDeviceIoCtl(
     if KeAreAllApcsDisabled() != 0 {
         RtlAssert(
             b"!KeAreAllApcsDisabled()\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-mountmgr/drivers/storage/mountmgr/mountmgr.c\0"
+            b"drivers/storage/mountmgr/mountmgr.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             95 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),

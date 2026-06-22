@@ -126,7 +126,7 @@ pub unsafe extern "C" fn ClassFindInternalGuid(Guid: *const ::core::ffi::c_void,
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/classwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/classpnp/classwmi.c\0".as_ptr() as *const i8,
                 183i32,
                 b"0\0".as_ptr() as *const i8,
             );
@@ -164,7 +164,7 @@ pub unsafe extern "system" fn ClassSystemControl(
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
+            b"drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
             238i32,
             b"0\0" as *const u8 as *const i8,
         );
@@ -407,7 +407,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                             if !(bufferSize >= bufferNeeded) {
                                 DbgPrint(
                                     b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
+                                    b"drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
                                     463i32,
                                     b"bufferSize >= bufferNeeded\0" as *const u8 as *const i8,
                                 );
@@ -431,7 +431,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                         if !(bufferSize >= bufferNeeded) {
                             DbgPrint(
                                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
+                                b"drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
                                 477i32,
                                 b"bufferSize >= bufferNeeded\0" as *const u8 as *const i8,
                             );
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                         if !(bufferSize >= bufferNeeded) {
                             DbgPrint(
                                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
+                                b"drivers/storage/class/classpnp/classwmi.c\0" as *const u8 as *const i8,
                                 493i32,
                                 b"bufferSize >= bufferNeeded\0" as *const u8 as *const i8,
                             );

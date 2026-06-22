@@ -352,12 +352,12 @@ pub unsafe extern "system" fn PciGetAcpiTable(TableCode: u32) -> *mut core::ffi:
     if Status < 0 {
         if DbgPrint(
             (b"(%s:%d) AcpiFindRsdt() Failed!\n\0".as_ptr() as *const u8).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/init.c\0".as_ptr() as *const i8,
+            b"drivers/bus/pcix/init.c\0".as_ptr() as *const i8,
             214i32,
         ) != 0 {
             DbgPrint(
                 (b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/init.c\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/init.c\0".as_ptr() as *const i8,
                 214i32,
             );
         }
@@ -871,7 +871,7 @@ pub unsafe extern "system" fn PciGetDebugPorts(DebugKey: HANDLE) -> NTSTATUS {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"PciGetDebugPorts\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/init.c\0".as_ptr() as *const core::ffi::c_char,
+        b"drivers/bus/pcix/init.c\0".as_ptr() as *const core::ffi::c_char,
         683i32,
     );
     DbgPrint(b"\0".as_ptr() as *const core::ffi::c_char);
@@ -884,7 +884,7 @@ pub unsafe extern "system" fn PciDriverUnload(DriverObject: PDRIVER_OBJECT) {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciDriverUnload\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/init.c\0".as_ptr() as PCSTR,
+        b"drivers/bus/pcix/init.c\0".as_ptr() as PCSTR,
         695 as i32,
     );
     DbgPrint(b"PCI: Unload\n\0".as_ptr() as PCSTR);

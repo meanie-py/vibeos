@@ -27,7 +27,7 @@ pub unsafe extern "system" fn WlxIsLockOk(pWlxContext: PVOID) -> BOOL {
         ros_dbg_log(
             __dbcl,
             __dbch,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/stubs.c\0"
+            b"dll/win32/msgina/stubs.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             b"WlxIsLockOk\0".as_ptr() as *const core::ffi::c_char,
             23i32,
@@ -54,7 +54,7 @@ pub unsafe extern "system" fn WlxGetStatusMessage(
         ros_dbg_log(
             __WINE_DBCL_FIXME,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/stubs.c\0".as_ptr() as *const i8,
+            b"dll/win32/msgina/stubs.c\0".as_ptr() as *const i8,
             b"WlxGetStatusMessage\0".as_ptr() as *const i8,
             43,
             b"%s is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -77,7 +77,7 @@ pub unsafe extern "system" fn WlxNetworkProviderLoad(
         ros_dbg_log(
             __WINE_DBCL_FIXME,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/stubs.c\0"
+            b"dll/win32/msgina/stubs.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             b"WlxNetworkProviderLoad\0".as_ptr() as *const core::ffi::c_char,
             59i32,
@@ -93,7 +93,7 @@ pub unsafe extern "system" fn WlxDisconnectNotify(pWlxContext: PVOID) {
         ros_dbg_log(
             __WINE_DBCL_FIXME,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/stubs.c\0"
+            b"dll/win32/msgina/stubs.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             b"WlxDisconnectNotify\0".as_ptr() as *const core::ffi::c_char,
             73i32,
@@ -111,7 +111,7 @@ pub unsafe extern "system" fn WlxGetConsoleSwitchCredentials(
         ros_dbg_log(
             __WINE_DBCL_FIXME,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/stubs.c\0"
+            b"dll/win32/msgina/stubs.c\0"
                 .as_ptr() as *const i8,
             b"WlxGetConsoleSwitchCredentials\0".as_ptr() as *const i8,
             88i32,

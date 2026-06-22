@@ -73,6 +73,20 @@ unsafe extern "system" fn worker(_context: PVOID) {
     };
     let mut phy = VirtioPhy::new(dev);
     let mac = phy.mac();
+    // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
+    crate::netcfg::set_mac(mac);
+
+    // M10 (amd64): connect the virtio INTx so an arriving frame wakes this worker
+    // via an event instead of pure busy-polling. Null on any failure (or other
+    // arches) → the loop keeps the `delay_ms` poll fallback, no regression.
+    #[cfg(target_arch = "x86_64")]
+    let rx_event: *mut ntkrnl_sys::ddk::KEVENT = {
+        phy.enable_interrupts();
+        match crate::pci::find_virtio_net().and_then(crate::pci::read_interrupt_line) {
+            Some(line) => unsafe { crate::isr::connect(phy.dev_ptr(), line as u32) },
+            None => null_mut(),
+        }
+    };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
     config.random_seed = (now().total_millis() as u64) ^ 0x9E37_79B9_7F4A_7C15;
@@ -138,6 +152,13 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     }
                     let o = cfg.address.address().octets();
                     nsprint!("[NETSTACK] dhcp lease {}.{}.{}.{}\n", o[0], o[1], o[2], o[3]);
+                    // Publish L3 config for the M9 management plane (ipconfig /
+                    // GetAdaptersInfo / GetIpAddrTable read it via the MIB queries).
+                    crate::netcfg::set_ipv4(
+                        o,
+                        cfg.address.prefix_len(),
+                        cfg.router.map(|r| r.octets()),
+                    );
                     dhcp_configured = true;
                     DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
                 }
@@ -260,11 +281,32 @@ unsafe extern "system" fn worker(_context: PVOID) {
             }
         }
 
-        // Sleep until smoltcp's next deadline, capped at 10ms for echo latency.
-        let delay = iface
-            .poll_delay(ts, &sockets)
-            .map(|d| d.total_millis())
-            .unwrap_or(10);
-        delay_ms(delay.clamp(1, 10) as i64);
+        // Sleep until smoltcp's next deadline. A pending timer caps the wait at
+        // 10ms (TX completion / echo latency); when nothing is pending the RX
+        // event (amd64) lets us idle far longer since a frame wakes us instantly.
+        let pending = iface.poll_delay(ts, &sockets).map(|d| d.total_millis() as i64);
+        #[cfg(target_arch = "x86_64")]
+        {
+            if rx_event.is_null() {
+                delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
+            } else {
+                // Event = primary RX wake; the timeout is the timer/TX fallback.
+                // KeWaitForSingleObject auto-resets the synchronization event.
+                let ms = pending.map(|d| d.clamp(1, 10)).unwrap_or(100);
+                unsafe {
+                    let mut t: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
+                    t.QuadPart = -(ms * 10_000); // relative wait, 100ns units
+                    ntkrnl_sys::ddk::KeWaitForSingleObject(
+                        rx_event as ntkrnl_sys::ddk::PVOID,
+                        0, // Executive
+                        0, // KernelMode
+                        0, // not alertable
+                        &mut t,
+                    );
+                }
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
     }
 }

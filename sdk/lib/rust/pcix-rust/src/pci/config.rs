@@ -87,7 +87,7 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
     {
         RtlAssert(
             b"PCI_IS_ROOT_FDO(DeviceExtension->BusRootFdoExtension)\0" as *const u8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0" as *const u8
+            b"drivers/bus/pcix/pci/config.c\0" as *const u8
                 as PVOID,
             62,
             core::ptr::null_mut::<u8>() as PVOID,
@@ -99,7 +99,7 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
         DbgPrint(
             b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
             b"PciReadWriteConfigSpace\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0" as *const u8
+            b"drivers/bus/pcix/pci/config.c\0" as *const u8
                 as PCSTR,
             69,
         );
@@ -109,7 +109,7 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
         if (*DeviceExtension).BusHandler.is_null() {
             RtlAssert(
                 b"DeviceExtension->BusHandler\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                b"drivers/bus/pcix/pci/config.c\0"
                     as *const u8 as PVOID,
                 74,
                 core::ptr::null_mut::<u8>() as PVOID,
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
         if PciAssignBusNumbers != 0 {
             RtlAssert(
                 b"!PciAssignBusNumbers\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                b"drivers/bus/pcix/pci/config.c\0"
                     as *const u8 as PVOID,
                 77,
                 core::ptr::null_mut::<u8>() as PVOID,
@@ -206,7 +206,7 @@ pub unsafe extern "system" fn PciQueryForPciBusInterface(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr()
+                b"drivers/bus/pcix/pci/config.c\0".as_ptr()
                     as PVOID,
                 144u32,
                 core::ptr::null_mut(),
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn PciQueryForPciBusInterface(
     if !((*FdoExtension).BusRootFdoExtension == FdoExtension) {
         RtlAssert(
             b"PCI_IS_ROOT_FDO(FdoExtension)\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr()
+            b"drivers/bus/pcix/pci/config.c\0".as_ptr()
                 as PVOID,
             145u32,
             core::ptr::null_mut(),
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn PciQueryForPciBusInterface(
         if (*IoStackLocation).MajorFunction as i32 != IRP_MJ_PNP as i32 {
             RtlAssert(
                 b"IoStackLocation->MajorFunction == IRP_MJ_PNP\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                b"drivers/bus/pcix/pci/config.c\0"
                     .as_ptr() as PVOID,
                 173u32,
                 core::ptr::null_mut(),
@@ -311,7 +311,7 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
     if !((*FdoExtension).BusHandler).is_null() {
         RtlAssert(
             b"FdoExtension->BusHandler == NULL\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+            b"drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
             228u32,
             core::ptr::null_mut(),
         );
@@ -321,7 +321,7 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
         if !((*FdoExtension).PciBusInterface).is_null() {
             RtlAssert(
                 b"FdoExtension->PciBusInterface == NULL\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
                 234u32,
                 core::ptr::null_mut(),
             );
@@ -331,7 +331,7 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
             if PciAssignBusNumbers != 0 {
                 RtlAssert(
                     b"!PciAssignBusNumbers\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                    b"drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
                     239u32,
                     core::ptr::null_mut(),
                 );
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
         if Status != STATUS_NOT_SUPPORTED {
             RtlAssert(
                 b"Status == STATUS_NOT_SUPPORTED\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
                 264u32,
                 core::ptr::null_mut(),
             );
@@ -358,7 +358,7 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
         if PciAssignBusNumbers != 0 {
             RtlAssert(
                 b"!PciAssignBusNumbers\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
                 265u32,
                 core::ptr::null_mut(),
             );

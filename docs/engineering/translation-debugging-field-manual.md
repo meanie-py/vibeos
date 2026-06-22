@@ -1315,11 +1315,31 @@ never moved.
   `rm exes && ninja` relinked the **Jun-5 `aarch64-kernel` rlib**; `ntoskrnl.exe` mtime never
   moved. `rm -rf …/aarch64-kernel` + rm exes + `ninja` (mtime advanced) → clean boot. amd64/i386
   dodged it because their `--clean` path nukes the target; the standalone arm64 staged path does not.
-- **NOT affected:** driver/usermode cohab crates (e.g. `scsiport-rust`, `conutils-rust`)
+- **NOT affected:** driver/usermode **cohab** crates (e.g. `scsiport-rust`, `conutils-rust`)
   link via the **main-workspace** cargo step which *does* rerun on `.rs` edits — only
   the **kernel** (separate `rust-kernel-target`) has the missing edge. (Smoke's
   `--clean` nukes `rust-kernel-target` but the staleness is in the *ninja relink trigger*,
   not the cargo cache, so even clean can skip it.) Always verify-by-marker for kernel work.
+- **⚠️ DO affected (a separate target dir): cargo-DRIVEN `reactos_link` drivers**
+  (`netstack.sys`, `beep.sys`, `null.sys` — the `Linker::new(...).rust_staticlib("<body>")`
+  ones, *not* cohab `.a` crates). Their body crate is built by `reactos_link` inside the
+  driver's `build.rs` into its **own** dir `sdk/lib/rust/target/<driver>-cargo-<body>_rust-rustlib`
+  — **NOT** `target/<arch>-kernel`. So the §9.6b recipe (`rm -rf target/<arch>-kernel`) does
+  **not** rebuild the driver body: `ninja <driver>.sys` reuses the stale body rlib and the
+  `.sys` comes out **byte-identical**. Recipe (netstack/arm64, 2026-06-20 M7 — cost two stale
+  cycles):
+  ```bash
+  rm -rf sdk/lib/rust/target/netstack-cargo-netstack_rust-rustlib          # THE body crate
+  rm -f build-arm64/drivers/network/netstack/netstack.sys \
+        sdk/lib/rust/target/aarch64-kernel/release/netstack.exe
+  rm -rf sdk/lib/rust/target/aarch64-kernel/release/.fingerprint/netstack-cargo-*  # re-run build.rs (it drives the body build)
+  ninja -C build-arm64 drivers/network/netstack/netstack.sys
+  strings build-arm64/drivers/network/netstack/netstack.sys | grep '<marker>'  # verify BEFORE smoke
+  ```
+  🔑 **Never judge freshness by PE file size:** netstack.sys stayed **720896 = 0xB0000** across
+  a stale *and* a fresh build (PE is section-padded), so adding several `nsprint!` calls didn't
+  move the byte count. The only reliable signal is `strings … | grep <unique-marker>` (or a
+  fresh source string in the binary), exactly like the kernel case above.
 
 ### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
 

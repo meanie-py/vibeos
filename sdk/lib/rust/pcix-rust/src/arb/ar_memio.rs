@@ -49,7 +49,7 @@ pub unsafe extern "system" fn ario_Initializer(Instance: *mut core::ffi::c_void)
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"ario_Initializer\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const i8,
+        b"drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const i8,
         53 as i32,
     );
     STATUS_SUCCESS
@@ -76,7 +76,7 @@ pub unsafe extern "system" fn ario_Constructor(
         if 0_i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/bus/pcix/arb/ar_memio.c\0".as_ptr() as *const i8 as PVOID,
                 69 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -92,7 +92,7 @@ pub unsafe extern "system" fn ario_Constructor(
             DbgPrint(
                 b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
                 b"ario_Constructor\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/arb/ar_memio.c\0".as_ptr() as *const i8,
                 83 as i32,
             );
             loop {}
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn ario_ApplyBrokenVideoHack(FdoExtension: PPCI_FDO_E
     if (*FdoExtension).BrokenVideoHackApplied != 0 {
         RtlAssert(
             b"!FdoExtension->BrokenVideoHackApplied\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+            b"drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
             111,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn ario_ApplyBrokenVideoHack(FdoExtension: PPCI_FDO_E
     if (*FdoExtension).BusRootFdoExtension != FdoExtension {
         RtlAssert(
             b"PCI_IS_ROOT_FDO(FdoExtension)\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+            b"drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
             112,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn ario_ApplyBrokenVideoHack(FdoExtension: PPCI_FDO_E
     if PciArbiter.is_null() {
         RtlAssert(
             b"PciArbiter\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
+            b"drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char as PVOID,
             118,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -141,7 +141,7 @@ pub unsafe extern "system" fn ario_ApplyBrokenVideoHack(FdoExtension: PPCI_FDO_E
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"ario_ApplyBrokenVideoHack\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char,
+        b"drivers/bus/pcix/arb/ar_memio.c\0" as *const u8 as *const core::ffi::c_char,
         135,
     );
     loop {}
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn armem_Initializer(Instance: PVOID) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"armem_Initializer\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0".as_ptr()
+        b"drivers/bus/pcix/arb/ar_memio.c\0".as_ptr()
             as *const core::ffi::c_char,
         149i32,
     );
@@ -183,7 +183,7 @@ pub unsafe extern "system" fn armem_Constructor(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0"
+                b"drivers/bus/pcix/arb/ar_memio.c\0"
                     .as_ptr()
                     as PVOID,
                 165,
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn armem_Constructor(
             DbgPrint(
                 b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
                 b"armem_Constructor\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/arb/ar_memio.c\0"
+                b"drivers/bus/pcix/arb/ar_memio.c\0"
                     .as_ptr() as *const i8,
                 179,
             );

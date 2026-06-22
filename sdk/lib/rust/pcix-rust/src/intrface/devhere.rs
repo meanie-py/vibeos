@@ -34,7 +34,7 @@ pub unsafe extern "system" fn devpresent_Initializer(Instance: PVOID) -> NTSTATU
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/devhere.c\0"
+            b"drivers/bus/pcix/intrface/devhere.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             39u32 as ULONG,
             b"PCI devpresent_Initializer, unexpected call.\n\0" as *const u8
@@ -63,7 +63,7 @@ pub unsafe extern "system" fn devpresent_Constructor(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/devhere.c\0"
+                b"drivers/bus/pcix/intrface/devhere.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 52u32,
                 core::ptr::null_mut::<i8>(),
@@ -74,7 +74,7 @@ pub unsafe extern "system" fn devpresent_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"devpresent_Constructor\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/devhere.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/intrface/devhere.c\0".as_ptr() as *const i8,
         62i32,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);

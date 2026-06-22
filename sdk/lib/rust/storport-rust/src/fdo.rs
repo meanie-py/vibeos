@@ -35,7 +35,7 @@ unsafe extern "system" fn PortFdoInterruptRoutine(
     let mut DeviceExtension: PFDO_DEVICE_EXTENSION = core::ptr::null_mut();
     if DbgPrint(
         b"(%s:%d) PortFdoInterruptRoutine(%p %p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0"
+        b"drivers/storage/port/storport/fdo.c\0"
             as *const u8 as *const core::ffi::c_char,
         28 as core::ffi::c_int,
         Interrupt,
@@ -44,7 +44,7 @@ unsafe extern "system" fn PortFdoInterruptRoutine(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0"
+            b"drivers/storage/port/storport/fdo.c\0"
                 as *const u8 as *const core::ffi::c_char,
             28 as core::ffi::c_int,
         );
@@ -570,7 +570,7 @@ unsafe fn PortFdoFilterRequirements(
     let mut RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST = core::ptr::null_mut();
     if DbgPrint(
         b"(%s:%d) PortFdoFilterRequirements(%p %p)\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0"
+        b"drivers/storage/port/storport/fdo.c\0"
             as *const u8 as *const core::ffi::c_char,
         552 as core::ffi::c_int,
         DeviceExtension,
@@ -579,7 +579,7 @@ unsafe fn PortFdoFilterRequirements(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0"
+            b"drivers/storage/port/storport/fdo.c\0"
                 as *const u8 as *const core::ffi::c_char,
             552 as core::ffi::c_int,
         );
@@ -607,7 +607,7 @@ pub unsafe extern "system" fn PortFdoScsi(
     if DeviceExtension.is_null() {
         RtlAssert(
             b"DeviceExtension\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/storage/port/storport/fdo.c\0".as_ptr() as *const i8 as PVOID,
             580 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -618,7 +618,7 @@ pub unsafe extern "system" fn PortFdoScsi(
     {
         RtlAssert(
             b"DeviceExtension->ExtensionType == FdoExtension\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/storage/port/storport/fdo.c\0".as_ptr() as *const i8 as PVOID,
+            b"drivers/storage/port/storport/fdo.c\0".as_ptr() as *const i8 as PVOID,
             581 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );

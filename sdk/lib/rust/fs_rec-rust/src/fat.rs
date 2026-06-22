@@ -30,7 +30,7 @@ pub unsafe extern "system" fn FsRecIsFatVolume(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fat.c\0"
+                b"drivers/filesystems/fs_rec/fat.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 25u32,
                 core::ptr::null_mut::<i8>(),
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn FsRecVfatFsControl(
         DbgPrint(msg, KeGetCurrentIrql() as i32);
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/fat.c\0"
+            b"drivers/filesystems/fs_rec/fat.c\0"
                 .as_ptr() as *const i8 as PVOID,
             110u32,
             (0 as *mut i8 as PVOID).cast(),

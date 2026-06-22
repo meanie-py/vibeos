@@ -27,7 +27,7 @@ unsafe fn SerialGetUserBuffer(mut Irp: PIRP) -> PVOID {
     if Irp.is_null() {
         RtlAssert(
             b"Irp\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0"
+            b"drivers/serial/serial/rw.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             19 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -64,7 +64,7 @@ unsafe fn ReadBytes(
     if DeviceObject.is_null() {
         RtlAssert(
             b"DeviceObject\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as PVOID,
+            b"drivers/serial/serial/rw.c\0".as_ptr() as PVOID,
             44 as ULONG,
             core::ptr::null_mut(),
         );
@@ -73,7 +73,7 @@ unsafe fn ReadBytes(
     if WorkItemData.is_null() {
         RtlAssert(
             b"WorkItemData\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as PVOID,
+            b"drivers/serial/serial/rw.c\0".as_ptr() as PVOID,
             45 as ULONG,
             core::ptr::null_mut(),
         );
@@ -88,7 +88,7 @@ unsafe fn ReadBytes(
         DPFLTR_SERIAL_ID as ULONG,
         DPFLTR_INFO_LEVEL as ULONG,
         b"(%s:%d) UseIntervalTimeout = %s, IntervalTimeout = %lu\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+        b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
         53 as core::ffi::c_int,
         if (*WorkItemData).UseIntervalTimeout as core::ffi::c_int != 0 {
             b"YES\0".as_ptr() as *const core::ffi::c_char
@@ -105,7 +105,7 @@ unsafe fn ReadBytes(
         DPFLTR_SERIAL_ID as ULONG,
         DPFLTR_INFO_LEVEL as ULONG,
         b"(%s:%d) UseTotalTimeout = %s\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+        b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
         55 as core::ffi::c_int,
         if (*WorkItemData).UseTotalTimeout as core::ffi::c_int != 0 {
             b"YES\0".as_ptr() as *const core::ffi::c_char
@@ -140,7 +140,7 @@ unsafe fn ReadBytes(
                 DPFLTR_SERIAL_ID as ULONG,
                 DPFLTR_INFO_LEVEL as ULONG,
                 b"(%s:%d) Reading byte from buffer: 0x%02x\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+                b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
                 76 as core::ffi::c_int,
                 ReceivedByte as core::ffi::c_int,
             );
@@ -157,7 +157,7 @@ unsafe fn ReadBytes(
                 DPFLTR_SERIAL_ID as ULONG,
                 DPFLTR_INFO_LEVEL as ULONG,
                 b"(%s:%d) All bytes read\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+                b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
                 86 as core::ffi::c_int,
             );
             break;
@@ -169,7 +169,7 @@ unsafe fn ReadBytes(
                 DPFLTR_SERIAL_ID as ULONG,
                 DPFLTR_INFO_LEVEL as ULONG,
                 b"(%s:%d) Buffer empty. Don't wait more bytes\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+                b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
                 93 as core::ffi::c_int,
             );
             break;
@@ -197,7 +197,7 @@ unsafe fn ReadBytes(
                 DPFLTR_SERIAL_ID as ULONG,
                 DPFLTR_TRACE_LEVEL as ULONG,
                 b"(%s:%d) Timeout when reading bytes. Status = 0x%08lx\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
+                b"drivers/serial/serial/rw.c\0".as_ptr() as *const core::ffi::c_char,
                 110 as core::ffi::c_int,
                 Status,
             );

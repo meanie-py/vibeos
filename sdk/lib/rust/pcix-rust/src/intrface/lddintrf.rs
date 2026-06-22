@@ -32,7 +32,7 @@ pub static mut PciLegacyDeviceDetectionInterface: PCI_INTERFACE = unsafe {
 pub unsafe extern "system" fn lddintrf_Initializer(Instance: *mut core::ffi::c_void) -> NTSTATUS {
     RtlAssert(
         (b"FALSE\0" as *const u8) as *const core::ffi::c_char as *mut core::ffi::c_void,
-        (b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/lddintrf.c\0" as *const u8) as *const core::ffi::c_char as *mut core::ffi::c_void,
+        (b"drivers/bus/pcix/intrface/lddintrf.c\0" as *const u8) as *const core::ffi::c_char as *mut core::ffi::c_void,
         39 as u32,
         (b"PCI lddintrf_Initializer, unexpected call.\n\0" as *const u8) as *const core::ffi::c_char as *mut i8,
     );
@@ -51,7 +51,7 @@ pub unsafe extern "system" fn lddintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"lddintrf_Constructor\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/lddintrf.c\0"
+        b"drivers/bus/pcix/intrface/lddintrf.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         60i32,
     );

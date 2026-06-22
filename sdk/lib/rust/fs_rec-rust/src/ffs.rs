@@ -59,7 +59,7 @@ pub unsafe extern "system" fn FsRecFfsFsControl(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/ffs.c\0"
+                b"drivers/filesystems/fs_rec/ffs.c\0"
                     as *const u8 as *const i8 as PVOID,
                 56 as ULONG,
                 core::ptr::null_mut::<i8>(),

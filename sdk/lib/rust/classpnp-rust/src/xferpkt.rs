@@ -160,7 +160,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
         if 0 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                b"drivers/storage/class/classpnp/xferpkt.c\0"
                     as *const u8 as *const i8 as PCSTR,
                 63,
                 b"0\0" as *const u8 as PCSTR,
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
     if (*adapterDesc).MaximumTransferLength == 0 {
         DbgPrint(
             (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+            b"drivers/storage/class/classpnp/xferpkt.c\0"
                 as *const u8 as *const i8 as PCSTR,
             68,
             b"adapterDesc->MaximumTransferLength\0" as *const u8 as PCSTR,
@@ -223,7 +223,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
     if !NT_SUCCESS(status) {
         DbgPrint(
             (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+            b"drivers/storage/class/classpnp/xferpkt.c\0"
                 as *const u8 as *const i8 as PCSTR,
             104,
             b"NT_SUCCESS(status)\0" as *const u8 as PCSTR,
@@ -344,7 +344,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
                 if FALSE == 0 {
                     DbgPrint(
                         (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                        b"drivers/storage/class/classpnp/xferpkt.c\0"
                             as *const u8 as *const i8 as PCSTR,
                         264,
                         b"FALSE\0" as *const u8 as PCSTR,
@@ -399,7 +399,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
         );
         DbgPrint(
             (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
+            b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
             296,
             b"0\0".as_ptr() as *const i8,
         );
@@ -410,7 +410,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
         if !IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
                 304,
                 b"IsListEmpty(&fdoData->DeferredClientIrpList)\0".as_ptr() as *const i8,
             );
@@ -434,7 +434,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
             {
                 DbgPrint(
                     (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
+                    b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
                     315,
                     b"fdoData->FreeTransferPacketsLists[index].NumTotalTransferPackets == 0\0".as_ptr() as *const i8,
                 );
@@ -539,7 +539,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
         if !(transferLength != u32::MAX) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
+                b"drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
                 421 as i32,
                 b"transferLength != (ULONG)-1\0" as *const u8 as *const i8,
             );
@@ -567,7 +567,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
             {
                 DbgPrint(
                     (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
+                    b"drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
                     432 as i32,
                     b"newPkt->PartialMdl->Size >= (CSHORT)(sizeof(MDL) + BYTES_TO_PAGES(fdoData->HwMaxXferLen) * sizeof(PFN_NUMBER))\0" as *const u8 as *const i8,
                 );
@@ -584,7 +584,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
         if !((*(*fdoData).InterpretSenseInfo).HistoryCount != 0) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
+                b"drivers/storage/class/classpnp/xferpkt.c\0" as *const u8 as *const i8,
                 448 as i32,
                 b"fdoData->InterpretSenseInfo->HistoryCount != 0\0" as *const u8 as *const i8,
             );
@@ -918,7 +918,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
         if !((*((*Pkt).Srb as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                b"drivers/storage/class/classpnp/xferpkt.c\0"
                     .as_ptr() as *const i8,
                 752i32,
                 b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0"
@@ -1063,7 +1063,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS
     if !((*(*Pkt).Irp).CurrentLocation as i32 == (*(*Pkt).Irp).StackCount as i32 + 1) {
         DbgPrint(
             (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr()
+            b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr()
                 as *const ::core::ffi::c_char,
             859i32,
             b"Pkt->Irp->CurrentLocation == Pkt->Irp->StackCount+1\0".as_ptr()
@@ -1432,7 +1432,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
         if 0 as ::core::ffi::c_int == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                b"drivers/storage/class/classpnp/xferpkt.c\0"
                     as *const u8 as *const ::core::ffi::c_char,
                 1325 as ::core::ffi::c_int,
                 b"0\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1448,7 +1448,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
         if !((*((*Pkt).Srb as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                b"drivers/storage/class/classpnp/xferpkt.c\0"
                     as *const u8 as *const ::core::ffi::c_char,
                 1329 as ::core::ffi::c_int,
                 b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0"
@@ -1576,7 +1576,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
         if !((*((*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
                 1440i32,
                 b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0".as_ptr() as *const i8,
             );
@@ -1644,7 +1644,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
         if !((*((*Pkt).Srb as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
+                b"drivers/storage/class/classpnp/xferpkt.c\0"
                     .as_ptr(),
                 1495i32,
                 b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0".as_ptr(),
@@ -1688,7 +1688,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
             if !(ReadCapacityBufferLen as usize >= core::mem::size_of::<READ_CAPACITY_DATA_EX>()) {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr(),
+                    b"drivers/storage/class/classpnp/xferpkt.c\0".as_ptr(),
                     1516i32,
                     b"ReadCapacityBufferLen >= sizeof(READ_CAPACITY_DATA_EX)\0".as_ptr(),
                 );

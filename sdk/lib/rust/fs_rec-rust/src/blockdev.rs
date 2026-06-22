@@ -107,7 +107,7 @@ pub unsafe extern "system" fn FsRecGetDeviceSectorSize(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/blockdev.c\0"
+            b"drivers/filesystems/fs_rec/blockdev.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             89,
             core::ptr::null_mut::<i8>(),
@@ -191,7 +191,7 @@ pub unsafe extern "system" fn FsRecReadBlock(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/blockdev.c\0"
+                b"drivers/filesystems/fs_rec/blockdev.c\0"
                     .as_ptr() as PVOID,
                 163,
                 core::ptr::null_mut::<i8>(),
