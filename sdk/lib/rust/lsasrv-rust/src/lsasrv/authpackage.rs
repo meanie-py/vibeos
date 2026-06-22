@@ -1,5 +1,30 @@
 use crate::prelude::*;
 
+// c2rust named the dispatch-table struct `AUTH_PACKAGE`; the offset_of! call uses
+// the C struct-tag spelling `_AUTH_PACKAGE`.
+pub type _AUTH_PACKAGE = AUTH_PACKAGE;
+
+// Rust-sibling LSA logon-session + credential helpers (session.rs, #[no_mangle]).
+use crate::lsasrv::session::{
+    LsapAddCredential, LsapCreateLogonSession, LsapDeleteCredential, LsapDeleteLogonSession,
+    LsapGetCredentials,
+};
+// Account/builtin domain SIDs — already #[no_mangle] statics in database.rs.
+use crate::lsasrv::database::{AccountDomainSid, BuiltinDomainSid};
+
+// Well-known SID globals defined in still-C lookup.c (`PSID LsapWorldSid = NULL;` …),
+// exported unmangled; extern as data. (When lookup.c flips to Rust they become
+// #[no_mangle] siblings and this block is replaced by a `use`.)
+extern "C" {
+    static mut LsapWorldSid: PSID;
+    static mut LsapLocalSystemSid: PSID;
+    static mut LsapInteractiveSid: PSID;
+    static mut LsapNetworkSid: PSID;
+    static mut LsapServiceSid: PSID;
+    static mut LsapBatchSid: PSID;
+    static mut LsapAdministratorsSid: PSID;
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch_lsasrv: __wine_debug_channel = unsafe {
@@ -633,8 +658,8 @@ ros_dbg_log(
     RequestMsg,
     LogonContext,
 );
-let PackageNameLength = (*RequestMsg).__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageNameLength;
-let PackageName = core::ptr::addr_of_mut!((*RequestMsg).__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageName) as PCHAR;
+let PackageNameLength = (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageNameLength;
+let PackageName = core::ptr::addr_of_mut!((*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Request.PackageName) as PCHAR;
 ros_dbg_log(
     __WINE_DBCL_TRACE,
     __wine_dbch___default,
@@ -656,7 +681,7 @@ while ListEntry != head_ptr {
             (*(*Package).Name).Length as usize,
         ) == 0
     {
-        (*RequestMsg).__bindgen_anon_1.LookupAuthenticationPackage.Reply.Package = (*Package).Id;
+        (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LookupAuthenticationPackage.Reply.Package = (*Package).Id;
         return STATUS_SUCCESS;
     }
     ListEntry = (*ListEntry).Flink as PLIST_ENTRY;
@@ -686,7 +711,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
 
     let PackageId = (*RequestMsg)
         .__bindgen_anon_1
-        .CallAuthenticationPackage
+        .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
         .__bindgen_anon_1
         .Request
         .AuthenticationPackage;
@@ -701,7 +726,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
 
     if (*RequestMsg)
         .__bindgen_anon_1
-        .CallAuthenticationPackage
+        .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
         .__bindgen_anon_1
         .Request
         .SubmitBufferLength
@@ -712,7 +737,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             HEAP_ZERO_MEMORY,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .SubmitBufferLength,
@@ -725,14 +750,14 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             (*LogonContext).ClientProcessHandle,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .ProtocolSubmitBuffer,
             LocalBuffer,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .SubmitBufferLength,
@@ -756,20 +781,20 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             LocalBuffer,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .ProtocolSubmitBuffer,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .SubmitBufferLength,
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ProtocolReturnBuffer
@@ -777,7 +802,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ReturnBufferLength
@@ -785,7 +810,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ProtocolStatus
@@ -799,20 +824,20 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             LocalBuffer,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .ProtocolSubmitBuffer,
             (*RequestMsg)
                 .__bindgen_anon_1
-                .CallAuthenticationPackage
+                .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                 .__bindgen_anon_1
                 .Request
                 .SubmitBufferLength,
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ProtocolReturnBuffer
@@ -820,7 +845,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ReturnBufferLength
@@ -828,7 +853,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
             core::ptr::addr_of_mut!(
                 (*RequestMsg)
                     .__bindgen_anon_1
-                    .CallAuthenticationPackage
+                    .__bindgen_anon_1.__bindgen_anon_1.CallAuthenticationPackage
                     .__bindgen_anon_1
                     .Reply
                     .ProtocolStatus
@@ -1663,7 +1688,7 @@ unsafe fn LsapAddPrivilegeToTokenPrivileges(
         while i < token_priv_count {
             let old_luid = &(*old_priv_ptr.add(i as usize)).Luid;
             let priv_luid = &(*Privilege).Luid;
-            if old_luid.__bindgen_anon_1.HighPart == priv_luid.__bindgen_anon_1.HighPart && old_luid.__bindgen_anon_1.LowPart == priv_luid.__bindgen_anon_1.LowPart {
+            if old_luid.HighPart == priv_luid.HighPart && old_luid.LowPart == priv_luid.LowPart {
                 return STATUS_SUCCESS;
             }
             i = i.wrapping_add(1);
@@ -1762,12 +1787,12 @@ unsafe fn LsapSetPrivileges(
             while i < (*(*TokenInfo1).Privileges).PrivilegeCount {
                 let attrib = &raw mut (*(*TokenInfo1).Privileges).Privileges as *mut LUID_AND_ATTRIBUTES;
                 let luid = &(*attrib.offset(i as isize)).Luid;
-                if (luid.__bindgen_anon_1.HighPart == SeChangeNotifyPrivilege.__bindgen_anon_1.HighPart
-                    && luid.__bindgen_anon_1.LowPart == SeChangeNotifyPrivilege.__bindgen_anon_1.LowPart)
-                    || (luid.__bindgen_anon_1.HighPart == SeCreateGlobalPrivilege.__bindgen_anon_1.HighPart
-                        && luid.__bindgen_anon_1.LowPart == SeCreateGlobalPrivilege.__bindgen_anon_1.LowPart)
-                    || (luid.__bindgen_anon_1.HighPart == SeImpersonatePrivilege.__bindgen_anon_1.HighPart
-                        && luid.__bindgen_anon_1.LowPart == SeImpersonatePrivilege.__bindgen_anon_1.LowPart)
+                if (luid.HighPart == SeChangeNotifyPrivilege.HighPart
+                    && luid.LowPart == SeChangeNotifyPrivilege.LowPart)
+                    || (luid.HighPart == SeCreateGlobalPrivilege.HighPart
+                        && luid.LowPart == SeCreateGlobalPrivilege.LowPart)
+                    || (luid.HighPart == SeImpersonatePrivilege.HighPart
+                        && luid.LowPart == SeImpersonatePrivilege.LowPart)
                 {
                     let attrs = &raw mut (*attrib.offset(i as isize)).Attributes;
                     *attrs |= (SE_PRIVILEGE_ENABLED | SE_PRIVILEGE_ENABLED_BY_DEFAULT) as ULONG;
@@ -1806,8 +1831,8 @@ pub unsafe extern "C" fn LsapLogonUser(
 
     TRACE!(b"LsapLogonUser(%p %p)\n\0".as_ptr() as *const u8, RequestMsg, LogonContext);
 
-    PackageId = (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationPackage;
-    LogonType = (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LogonType;
+    PackageId = (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationPackage;
+    LogonType = (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LogonType;
 
     Package = LsapGetAuthenticationPackage(PackageId);
     if Package.is_null() {
@@ -1815,11 +1840,11 @@ pub unsafe extern "C" fn LsapLogonUser(
         return STATUS_NO_SUCH_PACKAGE;
     }
 
-    if (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength > 0 {
+    if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength > 0 {
         LocalAuthInfo = RtlAllocateHeap(
             RtlGetProcessHeap() as HANDLE,
             HEAP_ZERO_MEMORY as ULONG,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
         );
         if LocalAuthInfo.is_null() {
             ERR!(b"RtlAllocateHeap() failed\n\0".as_ptr() as *const u8);
@@ -1828,9 +1853,9 @@ pub unsafe extern "C" fn LsapLogonUser(
 
         Status = NtReadVirtualMemory(
             (*LogonContext).ClientProcessHandle,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformation,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformation,
             LocalAuthInfo,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -1840,11 +1865,11 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
     }
 
-    if (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LocalGroupsCount > 0 {
+    if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount > 0 {
         Status = LsapCopyLocalGroups(
             LogonContext,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LocalGroups,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LocalGroupsCount,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroups,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount,
             &mut LocalGroups,
         );
         if !NT_SUCCESS(Status) {
@@ -1866,14 +1891,14 @@ pub unsafe extern "C" fn LsapLogonUser(
         if (*Package).LsaApLogonUserEx2.is_some() {
             Status = (*Package).LsaApLogonUserEx2.unwrap()(
                 LogonContext as PLSA_CLIENT_REQUEST,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LogonType,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LogonType,
                 LocalAuthInfo,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformation,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBuffer,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.SubStatus,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformation,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
                 &mut AccountName,
@@ -1885,14 +1910,14 @@ pub unsafe extern "C" fn LsapLogonUser(
         } else if (*Package).LsaApLogonUserEx.is_some() {
             Status = (*Package).LsaApLogonUserEx.unwrap()(
                 LogonContext as PLSA_CLIENT_REQUEST,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LogonType,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LogonType,
                 LocalAuthInfo,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformation,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBuffer,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.SubStatus,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformation,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
                 &mut AccountName,
@@ -1902,14 +1927,14 @@ pub unsafe extern "C" fn LsapLogonUser(
         } else {
             Status = (*Package).LsaApLogonUser.unwrap()(
                 LogonContext as PLSA_CLIENT_REQUEST,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LogonType,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LogonType,
                 LocalAuthInfo,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformation,
-                (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.AuthenticationInformationLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBuffer,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBufferLength,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.SubStatus,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformation,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBufferLength,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.SubStatus,
                 &mut TokenInformationType,
                 &mut TokenInformation,
                 &mut AccountName,
@@ -1988,7 +2013,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 TOKEN_ALL_ACCESS,
                 &mut ObjectAttributes,
                 TokenImpersonation,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
                 &mut (*TokenInfo0).ExpirationTime,
                 &mut TokenUser,
                 &mut NoGroups,
@@ -1996,7 +2021,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 core::ptr::null_mut(),
                 &mut TokenPrimaryGroup,
                 core::ptr::null_mut(),
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.SourceContext,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext,
             );
         } else if TokenInformationType == LsaTokenInformationV1 {
             let mut NoPrivileges: TOKEN_PRIVILEGES = TOKEN_PRIVILEGES { PrivilegeCount: 0, Privileges: [LUID_AND_ATTRIBUTES{ Luid: LUID { LowPart: 0, HighPart: 0 }, Attributes: 0}; 1] };
@@ -2021,14 +2046,14 @@ pub unsafe extern "C" fn LsapLogonUser(
             ObjectAttributes.SecurityDescriptor = TokenSd as PVOID;
             ObjectAttributes.SecurityQualityOfService = &mut Qos as *mut _ as PVOID;
 
-            let token_type = if (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.LogonType == Network { TokenImpersonation } else { TokenPrimary };
+            let token_type = if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LogonType == Network { TokenImpersonation } else { TokenPrimary };
 
             Status = NtCreateToken(
                 &mut TokenHandle,
                 TOKEN_ALL_ACCESS,
                 &mut ObjectAttributes,
                 token_type,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
                 &mut (*TokenInfo1).ExpirationTime,
                 &mut (*TokenInfo1).User,
                 (*TokenInfo1).Groups,
@@ -2036,7 +2061,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 &mut (*TokenInfo1).Owner,
                 &mut (*TokenInfo1).PrimaryGroup,
                 &mut (*TokenInfo1).DefaultDacl,
-                &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Request.SourceContext,
+                &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.SourceContext,
             );
 
             RtlFreeHeap(RtlGetProcessHeap(), 0, TokenSd as PVOID);
@@ -2059,7 +2084,7 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
 
         Status = LsapSetLogonSessionData(
-            &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
+            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
             LogonType as ULONG,
             UserName,
             LogonDomainName,
@@ -2074,7 +2099,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             (-1i32 as LONG_PTR) as HANDLE,   // NtCurrentProcess()
             TokenHandle,
             (*LogonContext).ClientProcessHandle,
-            &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.Token,
+            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.Token,
             0,
             0,
             (DUPLICATE_SAME_ACCESS | DUPLICATE_SAME_ATTRIBUTES | DUPLICATE_CLOSE_SOURCE) as ULONG,
@@ -2098,16 +2123,16 @@ pub unsafe extern "C" fn LsapLogonUser(
     // Error handling when status is not success
     if !NT_SUCCESS(final_status) {
         (*(*Package)).LsaApLogonTerminated.unwrap()(
-            &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
+            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
         );
         LsapDeleteLogonSession(
-            &mut (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.LogonId,
+            &mut (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.LogonId,
         );
         LsapFreeClientBuffer(
             LogonContext as PLSA_CLIENT_REQUEST,
-            (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBuffer,
+            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer,
         );
-        (*RequestMsg).__bindgen_anon_0.__bindgen_anon_1.__bindgen_anon_2.LogonUserW.__bindgen_anon_3.Reply.ProfileBuffer = core::ptr::null_mut();
+        (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Reply.ProfileBuffer = core::ptr::null_mut();
     }
 
     if !TokenHandle.is_null() {

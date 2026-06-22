@@ -771,6 +771,7 @@ version = "0.1.0"
 dependencies = [
  "lsasrv-sys",
  "ntdll-sys",
+ "samsrv-sys",
 ]
 
 [[package]]

@@ -247,6 +247,75 @@ extern "system" {
     pub fn GetLastError() -> DWORD;
 }
 
+// ---- SAM substrate (authpackage.c SAM bridge → samsrv-sys) ----
+// SAMPR_* marshalled types + Samr* __stdcall client stubs from samsrv-sys
+// (bindgen over the widl sam_c.h). SamIFree_SAMPR_ULONG_ARRAY is a samsrv.dll
+// export (not in sam_c.h) — hand-declared. SAM access masks: ntsam.h (ddk).
+pub use samsrv_sys::{
+    SamrCloseHandle, SamrGetAliasMembership, SamrOpenDomain, SAMPR_HANDLE, SAMPR_PSID_ARRAY,
+    SAMPR_SID_INFORMATION, SAMPR_ULONG_ARRAY,
+};
+pub type PSAMPR_SID_INFORMATION = *mut SAMPR_SID_INFORMATION;
+pub const SAM_SERVER_CONNECT: u32 = 0x00000001;
+pub const SAM_SERVER_LOOKUP_DOMAIN: u32 = 0x00000020;
+pub const DOMAIN_GET_ALIAS_MEMBERSHIP: u32 = 0x00000080;
+pub const ACCOUNT_VIEW: u32 = 1; // ntlsa.h
+extern "stdcall" {
+    pub fn SamIFree_SAMPR_ULONG_ARRAY(ptr: *mut SAMPR_ULONG_ARRAY);
+}
+
+// ---- LSA token-info + logon types (authpackage.c LsapLogonUser token build) ----
+// ntsecpkg.h collides with the reduced NDK bindgen context (SSPI/SecBuffer), so
+// these few types are hand-written #[repr(C)] over the prelude TOKEN_*/UNICODE
+// types (which already carry the exact C layout). SECURITY_LOGON_TYPE + its
+// variants come from lsasrv-sys bindgen; alias the bare c2rust names.
+pub use lsasrv_sys::SECURITY_LOGON_TYPE;
+pub const Interactive: SECURITY_LOGON_TYPE = 2;
+pub const Network: SECURITY_LOGON_TYPE = 3;
+pub const Batch: SECURITY_LOGON_TYPE = 4;
+pub const Service: SECURITY_LOGON_TYPE = 5;
+
+// LSAPR privilege/luid marshalled types (lsasrv-sys bindgen) used by the token build.
+pub use lsasrv_sys::{
+    LSAPR_LUID_AND_ATTRIBUTES, LSAPR_PRIVILEGE_SET, PLSAPR_LUID_AND_ATTRIBUTES,
+    _LSAPR_PRIVILEGE_SET,
+}; // PLSAPR_PRIVILEGE_SET already re-exported above
+
+pub type LSA_TOKEN_INFORMATION_TYPE = core::ffi::c_uint;
+pub const LsaTokenInformationNull: LSA_TOKEN_INFORMATION_TYPE = 0;
+pub const LsaTokenInformationV1: LSA_TOKEN_INFORMATION_TYPE = 1;
+pub const LsaTokenInformationV2: LSA_TOKEN_INFORMATION_TYPE = 2;
+// c2rust also references the bindgen-style enum-const spelling.
+pub const _LSA_TOKEN_INFORMATION_TYPE_LsaTokenInformationNull: LSA_TOKEN_INFORMATION_TYPE = 0;
+pub const _LSA_TOKEN_INFORMATION_TYPE_LsaTokenInformationV1: LSA_TOKEN_INFORMATION_TYPE = 1;
+pub const _LSA_TOKEN_INFORMATION_TYPE_LsaTokenInformationV2: LSA_TOKEN_INFORMATION_TYPE = 2;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct _LSA_TOKEN_INFORMATION_V1 {
+    pub ExpirationTime: LARGE_INTEGER,
+    pub User: TOKEN_USER,
+    pub Groups: PTOKEN_GROUPS,
+    pub PrimaryGroup: TOKEN_PRIMARY_GROUP,
+    pub Privileges: PTOKEN_PRIVILEGES,
+    pub Owner: TOKEN_OWNER,
+    pub DefaultDacl: TOKEN_DEFAULT_DACL,
+}
+pub type LSA_TOKEN_INFORMATION_V1 = _LSA_TOKEN_INFORMATION_V1;
+pub type PLSA_TOKEN_INFORMATION_V1 = *mut _LSA_TOKEN_INFORMATION_V1;
+
+pub type MSV1_0_LOGON_SUBMIT_TYPE = core::ffi::c_uint;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct _MSV1_0_INTERACTIVE_LOGON {
+    pub MessageType: MSV1_0_LOGON_SUBMIT_TYPE,
+    pub LogonDomainName: _UNICODE_STRING,
+    pub UserName: _UNICODE_STRING,
+    pub Password: _UNICODE_STRING,
+}
+pub type MSV1_0_INTERACTIVE_LOGON = _MSV1_0_INTERACTIVE_LOGON;
+pub type PMSV1_0_INTERACTIVE_LOGON = *mut _MSV1_0_INTERACTIVE_LOGON;
+
 // ---- CRT functions (cdecl → extern "C"); resolve against ntdll/CRT at link ----
 extern "C" {
     pub fn memcpy(d: *mut VOID, s: *const VOID, n: usize) -> *mut VOID;
@@ -255,6 +324,7 @@ extern "C" {
     pub fn memcmp(a: *const VOID, b: *const VOID, n: usize) -> c_int;
     pub fn wcslen(s: *const u16) -> usize;
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    pub fn _strnicmp(a: *const c_char, b: *const c_char, n: usize) -> c_int;
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int;
     pub fn wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
