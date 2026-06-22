@@ -265,7 +265,12 @@ def built_exe(root: Path, cell: Cell, arch: str) -> Path:
 
 
 def cargo_build_many(
-    root: Path, cells: list[Cell], arch: str, dry: bool = False, trace_dir: Path | None = None
+    root: Path,
+    cells: list[Cell],
+    arch: str,
+    dry: bool = False,
+    trace_dir: Path | None = None,
+    force_off: bool = False,
 ) -> None:
     """ONE cargo +nightly build-std invocation building every cell (per-arch
     fan-out). All cells share the identical `<stem>.json` target, so a single
@@ -298,8 +303,11 @@ def cargo_build_many(
         return
     env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
     if trace_dir is not None:
-        # Engine appends each in-cargo command to <trace_dir>/<pkg>-<arch>.trace.
+        # Engine appends each in-cargo command to <trace_dir>/<pkg>.trace.
         env["VIBEOS_LINK_TRACE"] = str(trace_dir)
+    if force_off:
+        # Engine takes the cmake-OFF paths even though build-<arch>/ is present.
+        env["VIBEOS_FORCE_CMAKE_OFF"] = "1"
     _trace(env_cmd, ws)
     log(f"exec (fan-out) cargo build — {len(cells)} cells in one invocation")
     subprocess.run(env_cmd, cwd=ws, env=env, check=True)
@@ -339,6 +347,66 @@ def post_link(
         pass  # rosload's POST_BUILD was a no-op
     else:
         raise SystemExit(f"unknown KIND {cell.kind!r} for cell {cell.target}")
+
+
+def stage_build(
+    root: Path, cells: list[Cell], arch: str, out_dir: Path, pefixup: Path, force_off: bool
+) -> dict[str, Path]:
+    """Build every cell (one fan-out invocation) + copy out + post-link into
+    out_dir. force_off=True passes VIBEOS_FORCE_CMAKE_OFF so the engine takes the
+    cmake-OFF paths. Returns {cell.target: staged path}."""
+    cargo_build_many(root, cells, arch, force_off=force_off)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, Path] = {}
+    for cell in cells:
+        dest = out_dir / cell.output
+        shutil.copy2(built_exe(root, cell, arch), dest)
+        post_link(root, cell, arch, dest, pefixup)
+        staged[cell.target] = dest
+    return staged
+
+
+def diff_offsets(a: Path, b: Path) -> tuple[int, int]:
+    """(number of differing bytes, max differing file offset) between two files.
+    A length mismatch counts every trailing byte as differing."""
+    da, db = a.read_bytes(), b.read_bytes()
+    n, last = 0, -1
+    for i in range(min(len(da), len(db))):
+        if da[i] != db[i]:
+            n += 1
+            last = i
+    extra = abs(len(da) - len(db))
+    if extra:
+        n += extra
+        last = max(len(da), len(db)) - 1
+    return n, last
+
+
+def verify_cmake_off(root: Path, cells: list[Cell], arch: str, out_dir: Path, pefixup: Path) -> int:
+    """Byte-identity gate: build every cell twice from the SAME source — once the
+    normal replay (cmake-present) path, once the forced cmake-OFF path — and
+    compare. They must differ only in the PE header (the TimeDateStamp, < 0x400);
+    any later-offset diff means the cmake-off path diverged from cmake. Comparing
+    the two engine builds (not a possibly-stale build-<arch>/ artifact) avoids
+    false drift from baseline staleness. exit 1 on any DRIFT."""
+    log(f"verify: pass 1/2 — replay (cmake-present) build of {len(cells)} cells")
+    rep = stage_build(root, cells, arch, out_dir / ".verify-replay", pefixup, force_off=False)
+    log(f"verify: pass 2/2 — forced cmake-OFF build of {len(cells)} cells")
+    off = stage_build(root, cells, arch, out_dir / ".verify-off", pefixup, force_off=True)
+    HEADER = 0x400  # PE-header region: TimeDateStamp/checksum live here
+    fails = []
+    for cell in cells:
+        n, last = diff_offsets(rep[cell.target], off[cell.target])
+        ok = last < HEADER
+        where = "identical" if n == 0 else f"{n} diff bytes, max off 0x{last:x}"
+        log(f"  {'OK   ' if ok else 'DRIFT'} {cell.output:22} {where}")
+        if not ok:
+            fails.append(cell.target)
+    if fails:
+        log(f"verify: {len(fails)}/{len(cells)} DRIFT — cmake-off ≠ cmake: {', '.join(fails)}")
+        return 1
+    log(f"verify: all {len(cells)} cells cmake-off byte-identical to cmake (PE-timestamp only)")
+    return 0
 
 
 def topo(targets: list[str]) -> list[Cell]:
@@ -392,6 +460,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
     ap.add_argument(
+        "--verify",
+        action="store_true",
+        help="byte-identity gate: build each cell replay vs forced-cmake-off and "
+        "diff (must match bar the PE timestamp) — catches cmake-off regressions",
+    )
+    ap.add_argument(
         "--trace",
         nargs="?",
         const="",
@@ -435,6 +509,9 @@ def main(argv: list[str] | None = None) -> int:
         trace_dir.mkdir(parents=True)
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
+
+    if args.verify:
+        return verify_cmake_off(root, cells, args.arch, out_dir, pefixup)
 
     # Phase 1: ONE fan-out cargo invocation builds every cell in parallel.
     cargo_build_many(root, cells, args.arch, dry=args.dry_run, trace_dir=trace_dir)

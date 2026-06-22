@@ -33,6 +33,16 @@ use std::process::{Command, ExitStatus};
 // and concatenates them in cell order. No-op (zero overhead) when the var is
 // unset, so a normal build is never affected.
 
+/// `VIBEOS_FORCE_CMAKE_OFF`: make the engine take the cmake-OFF paths (self-host
+/// geninc, committed `.res`, committed-flags C compile) even when a configured
+/// `build-<arch>/` is present — i.e. treat compile_commands.json / the build-dir
+/// ks*.inc as absent. Lets the cmake-off path be exercised + byte-verified against
+/// the cmake artifact without physically moving build-dir files aside (what the
+/// `--verify` gate and manual testing otherwise need). Off → normal behaviour.
+fn cmake_off_forced() -> bool {
+    env::var_os("VIBEOS_FORCE_CMAKE_OFF").is_some()
+}
+
 /// Append one command line to this package's trace file (if tracing is on).
 fn trace_command(cmd: &Command) {
     let dir = match env::var_os("VIBEOS_LINK_TRACE") {
@@ -937,7 +947,7 @@ impl Linker {
             .build_dir
             .join("sdk/include/asm")
             .join(self.ks_inc_name());
-        if !generated.exists() {
+        if cmake_off_forced() || !generated.exists() {
             // cmake-off: self-host geninc — compile genincdata.c + emit ks*.inc
             // into OUT_DIR/asm and assemble against that (byte-identical to the
             // cmake-built copy). No committed ks*.inc needed.
@@ -1088,7 +1098,7 @@ impl Linker {
         if let Some((rc_rel, res_target)) = &self.resource_from_rc {
             let db_path = self.build_dir.join("compile_commands.json");
             let dst = self.obj_dir().join("module.rc.res");
-            if db_path.exists() {
+            if !cmake_off_forced() && db_path.exists() {
                 // cmake build present: replay cmake's flag-exact windres.
                 let db_text = std::fs::read_to_string(&db_path)
                     .unwrap_or_else(|e| panic!("read {}: {e}", db_path.display()));
@@ -1234,7 +1244,7 @@ impl Linker {
         // residue that static_libs() used to reuse.
         if !self.c_db_libs.is_empty() {
             let db_path = self.build_dir.join("compile_commands.json");
-            if !db_path.exists() {
+            if cmake_off_forced() || !db_path.exists() {
                 // cmake-off (WS1 DEEP): no compile_commands.json. Compile each
                 // c_db lib from its committed per-arch flag template
                 // (`sdk/lib/rust/reactos-link/cflags/<name>.<arch>.flags`) plus
