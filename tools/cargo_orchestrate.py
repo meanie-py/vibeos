@@ -122,6 +122,13 @@ CELLS: dict[str, Cell] = {
         # in-cargo: c_from_compile_db + native-gendib + asm_archive). KIND
         # kernelmodedriver. byte-identical to cmake ×3 (bar the PE timestamp).
         Cell("win32k", "win32k-cargo", "win32k.sys", "kernelmodedriver"),
+        # ---- boot loaders ---------------------------------------------------
+        # Already cmake-off via WS1 DEEP (blrtl/libcntpr c_from_compile_db
+        # committed-flags; no cmake static_libs — libmini_hal.a drop-tested out).
+        # uefildr (efi, all 3 arches); rosload (native exe, i386+amd64 — arm64 is
+        # UEFI-only). The efi post-link strips via the cross llvm-mingw strip.
+        Cell("uefildr", "uefildr-cargo", "uefildr.efi", "efi"),
+        Cell("rosload", "rosload-cargo", "rosload.exe", "native", arches=("i386", "amd64")),
     )
 }
 
@@ -172,6 +179,10 @@ CMAKE_OFF_DRIVERS = (
     "arm64input",
 )
 
+# Boot loaders, cmake-off via WS1 DEEP. uefildr (efi) builds on all 3 arches;
+# rosload (native) self-filters to i386+amd64 via Cell.arches. Used by --loaders.
+CMAKE_OFF_LOADERS = ("uefildr", "rosload")
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -195,8 +206,13 @@ def host_cc() -> str:
     return os.environ.get("CC", "cc")
 
 
-def host_strip() -> str:
-    """A PE-capable strip for the efi KIND (llvm-strip handles cross PE)."""
+def cross_strip(root: Path) -> str:
+    """The CROSS strip for the efi KIND — the llvm-mingw `llvm-strip` (== cmake's
+    CMAKE_STRIP). A host `strip` mis-handles the cross PE/EFI; the toolchain copy
+    is what the loaders' cmake POST_BUILD used. Falls back to PATH llvm-strip."""
+    tc = root / ".build-tools/llvm-mingw/bin/llvm-strip"
+    if tc.is_file():
+        return str(tc)
     for cand in (os.environ.get("STRIP"), "llvm-strip", "strip"):
         if cand and shutil.which(cand):
             return cand
@@ -228,35 +244,46 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     return exe
 
 
-def cargo_build(root: Path, cell: Cell, arch: str, dry: bool = False) -> Path:
-    """Run the cargo +nightly build-std drive for one cell; return its .exe."""
-    ws = root / "sdk/lib/rust"
+def built_exe(root: Path, cell: Cell, arch: str) -> Path:
+    """Where cargo drops a cell's linked .exe."""
     stem = ARCH_STEM[arch]
     bin_name = cell.crate.removesuffix("-cargo")
+    return root / "sdk/lib/rust" / "target" / stem / "release" / f"{bin_name}.exe"
+
+
+def cargo_build_many(root: Path, cells: list[Cell], arch: str, dry: bool = False) -> None:
+    """ONE cargo +nightly build-std invocation building every cell (per-arch
+    fan-out). All cells share the identical `<stem>.json` target, so a single
+    `--target` + many `-p` lets cargo build the shared rlibs once and the
+    per-cell links in parallel — far better than N sequential invocations (each
+    re-resolves the 190-member workspace and links serially). Concurrent cargo
+    invocations can't help (cargo locks the target dir), so the in-process
+    parallelism of one build is the win."""
+    ws = root / "sdk/lib/rust"
+    stem = ARCH_STEM[arch]
+    # All cells' <stem>.json are byte-identical; use the first cell's copy.
+    target_json = ws / cells[0].crate / f"{stem}.json"
     env_cmd = [
         "cargo",
         "build",
         "--release",
         "--target",
-        str(ws / cell.crate / f"{stem}.json"),
+        str(target_json),
         "-Z",
         "build-std=core,alloc,compiler_builtins",
         "-Z",
         "build-std-features=compiler-builtins-mem",
-        "-p",
-        cell.crate,
-        "--bin",
-        bin_name,
         "--manifest-path",
         str(ws / "Cargo.toml"),
     ]
+    for c in cells:
+        env_cmd += ["-p", c.crate]  # each cell package builds its single [[bin]]
     if dry:
         log(f"DRY  RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}  (cwd={ws})")
-    else:
-        env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
-        log(f"exec RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}")
-        subprocess.run(env_cmd, cwd=ws, env=env, check=True)
-    return ws / "target" / stem / "release" / f"{bin_name}.exe"
+        return
+    env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
+    log(f"exec (fan-out) cargo build — {len(cells)} cells in one invocation")
+    subprocess.run(env_cmd, cwd=ws, env=env, check=True)
 
 
 def post_link(
@@ -286,7 +313,7 @@ def post_link(
         if is_i386:
             run(fix_fwd, dry=dry)
     elif cell.kind == "efi":
-        strip = host_strip()
+        strip = cross_strip(root)
         run([strip, "--remove-section=.rossym", str(out)], dry=dry)
         run([strip, "--strip-all", str(out)], dry=dry)
     elif cell.kind == "native":
@@ -332,7 +359,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--drivers",
         action="store_true",
-        help="build the cmake-off-ready drivers (24/25; win32k excluded)",
+        help="build the complete cmake-off driver set (25/25, incl. win32k)",
+    )
+    ap.add_argument(
+        "--loaders",
+        action="store_true",
+        help="build the boot loaders (uefildr efi ×3, rosload native i386+amd64)",
+    )
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help="everything: kernel EXEs + spine + drivers + loaders",
     )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
     args = ap.parse_args(argv)
@@ -345,10 +382,12 @@ def main(argv: list[str] | None = None) -> int:
 
     root = repo_root()
     targets: list[str] = list(args.targets)
-    if args.spine:
+    if args.spine or args.all:
         targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *targets]
-    if args.drivers:
+    if args.drivers or args.all:
         targets += list(CMAKE_OFF_DRIVERS)
+    if args.loaders or args.all:
+        targets += list(CMAKE_OFF_LOADERS)
     if not targets:
         targets = ["ntoskrnl"]
     out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
@@ -361,20 +400,22 @@ def main(argv: list[str] | None = None) -> int:
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
 
+    # Phase 1: ONE fan-out cargo invocation builds every cell in parallel.
+    cargo_build_many(root, cells, args.arch, dry=args.dry_run)
+
+    # Phase 2: copy out + per-KIND post-link (cheap, sequential).
     for cell in cells:
-        log(f"=== {cell.target} ({cell.output}, KIND {cell.kind}) ===")
-        built = cargo_build(root, cell, args.arch, dry=args.dry_run)
+        built = built_exe(root, cell, args.arch)
         dest = out_dir / cell.output
         if args.dry_run:
-            log(f"DRY  copy {built} -> {dest}")
+            log(f"DRY  copy {built} -> {dest}; post-link KIND {cell.kind}")
         else:
             out_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(built, dest)
-            log(f"copied -> {dest}")
         post_link(root, cell, args.arch, dest, pefixup, dry=args.dry_run)
         if not args.dry_run:
             sz = dest.stat().st_size if dest.exists() else 0
-            log(f"OK   {cell.output}  ({sz} bytes)")
+            log(f"OK   {cell.output}  ({sz} bytes, KIND {cell.kind})")
 
     log("done — cmake-off build complete (no cmake configure, no ninja)")
     return 0
