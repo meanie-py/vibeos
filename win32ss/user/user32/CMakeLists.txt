@@ -63,8 +63,8 @@ list(APPEND SOURCE
     # windows/text.c — replaced by Rust (user32-rust/src/windows/text.rs); cohab via libuser32_rust.a
     # windows/window.c — replaced by Rust (user32-rust/src/windows/window.rs); cohab via libuser32_rust.a
     # windows/winpos.c — replaced by Rust (user32-rust/src/windows/winpos.rs); cohab via libuser32_rust.a
-    ${REACTOS_SOURCE_DIR}/win32ss/user/rtl/image.c
-    ${REACTOS_SOURCE_DIR}/win32ss/user/rtl/text.c
+    # win32ss/user/rtl/image.c — replaced by Rust (user32-rust/src/misc/image.rs); cohab via libuser32_rust.a (shared w/ win32k; usermode #else half)
+    # win32ss/user/rtl/text.c — replaced by Rust (user32-rust/src/misc/rtltext.rs); cohab via libuser32_rust.a (shared w/ win32k; usermode #else half)
     ${CMAKE_CURRENT_BINARY_DIR}/user32_stubs.c
     include/user32.h)
 

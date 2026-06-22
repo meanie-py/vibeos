@@ -316,6 +316,38 @@ cleanly by symbol name across the 4 DDE modules (definitions `#[no_mangle]`, cro
 became const-generic `static [*const c_char; N]` (length-checked at compile time — caught a
 dropped NULL in the C source).
 
+### Wave 5b — shared user32↔win32k rtl source, usermode half (✅ DONE 2026-06-21)
+`win32ss/user/rtl/image.c` (46) + `win32ss/user/rtl/text.c` (1402). These two are **shared
+source dual-compiled into BOTH user32.dll AND win32k.sys** (switched by `#ifdef _WIN32K_`); the
+header says so literally. The win32k (`_WIN32K_`) half was already Rust (`win32k-rust/src/
+image.rs` + `rtl_text.rs`); Wave 5b ports the usermode (`#else`) half into `user32-rust`
+(`misc/image.rs` + `misc/rtltext.rs`), so **every `.c` under `win32ss/user/user32/`'s build is
+now Rust — including the shared TUs.**
+
+- **image.rs** = `RtlGetExpWinVer` (reads an app module's PE OptionalHeader subsystem version).
+  No kernel/usermode divergence in the body → mirrors win32k's `image.rs` verbatim (`RtlImageNtHeader`
+  is an ntdll export available in usermode); cdecl, matches window.rs's forward-decl.
+- **rtltext.rs** = `DrawTextExWorker` (the Wine DrawText layout engine: ellipsis/path-ellipsis/
+  word-break/tab-expansion/prefix/kinsoku-CJK) — cribbed from win32k's `rtl_text.rs` with the
+  ~25 `#ifdef _WIN32K_` GDI sites swapped kernel→usermode: `GreGetTextExtentExW`→
+  `GetTextExtentExPointW`, `GreGetTextMetricsW`→`GetTextMetricsW`, `UserExtTextOutW`→`ExtTextOutW`,
+  `NtGdiCreatePen/GreMoveTo/NtGdiLineTo`→`CreatePen/MoveToEx/LineTo`, clip-region setup→
+  `CreateRectRgn/IntersectClipRect/SelectClipRgn`, etc. The kernel-only `UserExtTextOutW` (LPK
+  usermode-callback) + its deps (KeUserModeCallback/Ex*Pool/UserEnterCo) are **dropped** —
+  usermode calls `ExtTextOutW` directly. `DrawTextExWorker` exported `#[no_mangle] extern "system"`,
+  matching font.rs's forward-decl; all `TEXT_*` helpers stay private.
+
+**Compile + cohab-link ×3 green in ONE round** (zero undefined/duplicate; `RtlGetExpWinVer` +
+`DrawTextExWorker` are the shared exports). Unlike DDE/spy, **`DrawTextExWorker` is boot-exercised**
+(every menu/dialog/taskbar/control text render) — so smoke genuinely runs the new Rust DrawText
+engine. **Boot: i386 ✓ shell-ready (86s), amd64 ✓ shell-ready (net = the 1 known windows-host
+outbound flake, 13/14), arm64 ✓ shell-ready (45s on a quiet host; a first warm/contended run hit
+the known `PspExitThread→LpcExitThread` arm64 flake — harness-classified `KNOWN_FLAKE`, in kernel
+space, unrelated to this usermode flip — and a re-run booted clean)** (cold ×3 gate pending control-plane).
+
+This is the only translation that crosses the user32↔win32k boundary; option (b) — factoring the
+existing win32k Rust into one crate built for both targets — remains a future DRY cleanup.
+
 ---
 
 ## 4. Build Integration (the cohab recipe — mirror kernel32)
@@ -379,6 +411,7 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 3c — cursoricon (heavy) | cursoricon | ~3,100 | ✅ integrated; compile + cohab-link ×3 green; ×3 gate pending — **Wave 3 COMPLETE** |
 | 4 — secondary | clipboard/prop/mdi/winsta/imm/exticon/dllmain/usrapihk/misc/object/exit/resources/rtlstr/winhelp/logon + appswitch/ghost/icontitle/regcontrol | ~11,200 | ✅ integrated (20 files); compile + cohab-link ×3 green; **i386 ✓ boot (explorer+taskbar), amd64 ✓ boot** (net-suite flake = windows-host NAT, not user32); arm64 pending — **spy.c deferred** (debug-only) |
 | 5 — DDE + spy (FINAL) | ddemisc/ddeclient/ddeserver/dde + spy | ~8,100 | ✅ integrated (5 files); compile + cohab-link ×3 green (1 link round); **i386 ✓ boot (90s), amd64 ✓ boot (143s; net-suite errors = windows-host hostfwd infra, branch predates netstack fix, zero user32 net surface), arm64 ✓ boot (48s)** — ×3 cold gate pending control-plane. **user32 → 100% Rust** |
+| 5b — shared rtl (usermode half) | rtl/image (RtlGetExpWinVer) + rtl/text (DrawTextExWorker engine) | ~1,450 | ✅ integrated (2 files, cribbed from win32k Rust w/ usermode GDI substrate); compile + cohab-link ×3 green (1 round); **i386 ✓ boot (86s), amd64 ✓ boot (net 13/14 known flake), arm64 ✓ boot (45s)** — DrawText is boot-exercised so smoke runs the new engine; ×3 cold gate pending. **Every .c in user32's build now Rust incl. shared TUs** |
 
 **Next action:** none — Wave 5 was the FINAL wave. **user32 client surface is 100% translated to Rust**
 (every `.c` under `win32ss/user/user32/` is cohab-flipped; only generated `user32_stubs.c` +

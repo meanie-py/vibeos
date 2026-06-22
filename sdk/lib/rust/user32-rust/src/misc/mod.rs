@@ -5,6 +5,10 @@ pub mod timer;
 pub mod display;
 pub mod desktop;
 
+// Wave 5b — shared user32/win32k rtl source, usermode half (rtl/image.c, rtl/text.c).
+pub mod image;
+pub mod rtltext;
+
 // Wave 5 — DDE family (legacy IPC: dde/ddeclient/ddemisc/ddeserver).
 pub mod dde;
 pub mod ddeclient;
