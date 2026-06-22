@@ -1880,6 +1880,11 @@ impl Linker {
                 let obj = out_sub.join(format!("{stem}.o"));
                 let status = Command::new(clang)
                     .args(&flags)
+                    // `-I xdk-gen` (base) resolves the `psdk/`-prefixed form
+                    // `<psdk/winnt.h>` (e.g. via wine/winnt.h in the loaders);
+                    // `-I xdk-gen/{psdk,ddk}` resolve the bare `<winnt.h>` form.
+                    .arg("-I")
+                    .arg(&xdk)
                     .arg("-I")
                     .arg(xdk.join("psdk"))
                     .arg("-I")
