@@ -311,28 +311,27 @@ help — cargo locks the target dir). Validated: the 13-cell spine via one fan-o
 invocation is byte-identical to the sequential build (heavy parallelism: ~4.5 min
 user / 1.5 min wall). `--spine`/`--drivers`/`--loaders`/`--all` all use it.
 
-**Loaders (uefildr/rosload) — orchestrator-wired; committed-branch cmake-off is a
-header-closure chapter.** Added to `CELLS` (uefildr efi ×3, rosload native
-i386+amd64) + a cross-strip (`.build-tools/llvm-mingw/bin/llvm-strip`, == cmake's
-CMAKE_STRIP) for the efi KIND. They build via the **replay** branch (cmake
-configured). The pure **committed** branch revealed the loaders' C-floor
-(blrtl/libcntpr) header closure is broader than the kernel's: (1) it pulls the
-`psdk/`-prefixed form `<psdk/winnt.h>` (via `sdk/include/wine/winnt.h`) — fixed by
-adding `-I <xdk-gen>` (the base) to `compile_c_db_committed` (win32k re-verified
-byte-identical); (2) it then hits a `_EXCEPTION_REGISTRATION_RECORD` redefinition
-(`wine/winnt.h`'s `<psdk/winnt.h>` ↔ `ndk/rtltypes.h` under `NTOS_MODE_USER`) — an
-`-I`-**ordering** mismatch: cmake interleaves the generated `build-<arch>/`
-include dirs among the source `-I` at a specific priority, while the committed
-path strips all build-dir `-I` and appends the xdk-gen dirs at the end, so a
-generated-vs-source header resolves differently and the guard state diverges.
-Closing it needs the committed path to reproduce cmake's generated-first `-I`
-ordering for the loaders (or supply the few extra generated headers their closure
-touches). **Lowest-ROI (boot-loader-only), deferred — the kernel/spine/driver
-surface is unaffected.**
+**Loaders (uefildr/rosload) — cmake-off DONE ×3 (2026-06-21).** Added to `CELLS`
+(uefildr efi ×3, rosload native i386+amd64) + a cross-strip
+(`.build-tools/llvm-mingw/bin/llvm-strip`, == cmake's CMAKE_STRIP) for the efi
+KIND. The committed-branch closure (broader than the kernel's because the loaders'
+blrtl/libcntpr pull `sdk/include/wine/winnt.h`) needed two fixes in
+`compile_c_db_committed`: (1) `-I <xdk-gen>` (base) for the `<psdk/winnt.h>`
+prefixed form; (2) **generated-header dirs placed FIRST** (before the source `-I`),
+matching cmake's interleave of the `build-<arch>/` generated `-I` ahead of
+`sdk/include/wine` — so the generated `winnt.h`/`ddk/{wdm,ntddk}.h` win over wine's
+competing copies (else `ndk/rtltypes.h` redefines `_EXCEPTION_REGISTRATION_RECORD`
+vs wine's). The 6 native-hpp headers have no other real source `.h` (only
+`.template.h`), so front-placing them matches cmake's resolution everywhere and
+leaves blrtl/win32k/ntoskrnl byte-identical. `generate_xdk_headers` now writes each
+header via temp+atomic-rename (a partial concurrent write showed up as a spurious
+"unterminated conditional directive"). Verified **replay-vs-committed byte-identical
+(1-byte PE timestamp)** ×3 for win32k + uefildr; i386 uefildr/rosload + win32k +
+ntoskrnl all 2-byte vs a fresh build-dir. The whole OS — kernel + spine + 25
+drivers + loaders — is now cmake-off byte-equivalent.
 
-**Remaining:** the loader committed-branch header closure (above), and the
-optional self-hosts (geninc/windmc) + the media tools (full-ISO). No
-kernel/spine/driver blockers left.
+**Remaining:** the optional media tools (full-ISO, Tier 4) + the `--trace`
+north-star. No kernel/spine/driver/loader blockers left.
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:

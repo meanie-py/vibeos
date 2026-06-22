@@ -1811,17 +1811,24 @@ impl Linker {
         for (tmpl, rel) in HEADERS {
             let dst = out.join(rel);
             std::fs::create_dir_all(dst.parent().unwrap()).expect("mkdir xdk-gen");
-            // native-hpp resolves the template name against its WORKING_DIR
-            // (the xdk source dir), exactly like the cmake custom_command.
+            // Write to a temp path then atomically rename into place: a later
+            // compile (or a concurrent cell's build script) never sees a
+            // half-written header. (A partial `winnt.h` shows up as a spurious
+            // "unterminated conditional directive".) native-hpp resolves the
+            // template name against its WORKING_DIR (the xdk source dir), exactly
+            // like the cmake custom_command.
+            let tmp = dst.with_extension("h.tmp");
             let status = Command::new(&hpp)
                 .arg(tmpl)
-                .arg(&dst)
+                .arg(&tmp)
                 .current_dir(&xdk_src)
                 .status()
                 .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
             if !status.success() {
                 panic!("native-hpp failed for {tmpl}");
             }
+            std::fs::rename(&tmp, &dst)
+                .unwrap_or_else(|e| panic!("rename {} -> {}: {e}", tmp.display(), dst.display()));
             println!("cargo:rerun-if-changed={}", xdk_src.join(tmpl).display());
         }
         out
@@ -1890,10 +1897,16 @@ impl Linker {
                     .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
                 let obj = out_sub.join(format!("{stem}.o"));
                 let status = Command::new(clang)
-                    .args(&flags)
-                    // `-I xdk-gen` (base) resolves the `psdk/`-prefixed form
-                    // `<psdk/winnt.h>` (e.g. via wine/winnt.h in the loaders);
-                    // `-I xdk-gen/{psdk,ddk}` resolve the bare `<winnt.h>` form.
+                    // Generated-header dirs go FIRST (cmake interleaves its
+                    // `build-<arch>/` generated `-I` BEFORE the source `sdk/include/
+                    // wine` dir, so the generated `winnt.h`/`ddk/{wdm,ntddk}.h` win
+                    // over wine's competing copies — the loaders pull wine/winnt.h,
+                    // which else redefines `_EXCEPTION_REGISTRATION_RECORD` vs
+                    // ndk/rtltypes.h). The 6 native-hpp headers have no other source
+                    // `.h` (only `.template.h`), so front-placing them matches
+                    // cmake's resolution and leaves blrtl/win32k byte-identical.
+                    // `-I xdk-gen` (base) resolves the `<psdk/winnt.h>` prefixed form;
+                    // `-I xdk-gen/{psdk,ddk}` the bare `<winnt.h>`/`<wdm.h>` form.
                     .arg("-I")
                     .arg(&xdk)
                     .arg("-I")
@@ -1902,6 +1915,7 @@ impl Linker {
                     .arg(xdk.join("ddk"))
                     .arg("-I")
                     .arg(&committed_hdrs)
+                    .args(&flags)
                     .arg(&abs)
                     .arg("-o")
                     .arg(&obj)
@@ -1972,7 +1986,7 @@ impl Linker {
         // Same xdk/bugcodes include layering as compile_c_db_committed: xdk-gen
         // base (psdk/-prefixed forms) + psdk + ddk (bare forms) + bugcodes.h.
         let status = Command::new(&clang)
-            .args(&flags)
+            // Generated-header dirs first (see compile_c_db_committed).
             .arg("-I")
             .arg(&xdk)
             .arg("-I")
@@ -1981,6 +1995,7 @@ impl Linker {
             .arg(xdk.join("ddk"))
             .arg("-I")
             .arg(&committed_hdrs)
+            .args(&flags)
             .arg(&src)
             .arg("-o")
             .arg(&obj)
