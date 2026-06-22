@@ -68,9 +68,19 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
 >   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
 > - **⚠️ Next steps** (in order):
->   1. **M4 rest** — ~~authport.c~~ ✅ ~~service.c (winsvc substrate)~~ ✅ done. Next:
->      `authpackage.c` (1856 LOC, defines LsapTerminateLogon that session.rs externs + the 3
->      Lsap{LogonUser,CallAuthenticationPackage,LookupAuthenticationPackage} authport.rs externs).
+>   1. **M4 rest** — ~~authport.c~~ ✅ ~~service.c (winsvc substrate)~~ ✅ done.
+>      **`authpackage.c` TRANSLATED + STAGED** (`3624a8fe139`, $0.16, 23 fns, 2209 LOC; head→prelude,
+>      parse-artifact fixed) — but **BLOCKED on samsrv S0**: its LsapLogonUser/LsapAddSamGroups
+>      bridge into SAM (SAMPR_HANDLE/SAMPR_ULONG_ARRAY/SAMPR_PSID_ARRAY/SAMPR_SID_INFORMATION from
+>      the widl-generated `build-<arch>/dll/win32/samlib/sam_c.h`; Samr{OpenDomain,GetAliasMembership,
+>      CloseHandle}/SamIFree_SAMPR_ULONG_ARRAY externs; SAM masks SAM_SERVER_CONNECT/LOOKUP_DOMAIN,
+>      DOMAIN_GET_ALIAS_MEMBERSHIP, ACCOUNT_VIEW) + LSA-token-info types (_LSA_TOKEN_INFORMATION_V1/
+>      SECURITY_LOGON_TYPE from ntsecpkg.h) + _MSV1_0_INTERACTIVE_LOGON. ~199 compile errors are
+>      dominated by these. The SID globals it reads (LsapWorldSid/LsapLocalSystemSid/…) live in
+>      still-C lookup.c → extern them; BuiltinDomainSid/AccountDomainSid are already #[no_mangle] in
+>      database.rs → `use`. **⇒ samsrv S0 is now the critical-path unblocker for BOTH authpackage and
+>      lookup.c.** Do S0 next, then un-stage authpackage (`pub mod authpackage;` in mod.rs) → fix ×3
+>      → cohab-flip authpackage.c → boot-gate.
 >   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
 >   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
