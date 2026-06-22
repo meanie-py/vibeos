@@ -138,6 +138,9 @@ KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
 USBSTOR_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbstor"
 USBCCGP_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbccgp"
 USBHUB_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbhub"
+USBEHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbehci"
+USBOHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbohci"
+USBUHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbuhci"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -867,6 +870,56 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # usbehci.sys — USB 2.0 EHCI host-controller miniport (drivers/usb/usbehci, ~4.5K LOC,
+    # 3 .c: debug/roothub/usbehci + guid). Registers a USBPORT_REGISTRATION_PACKET with usbport
+    # (usbmport.h); drives EHCI hardware registers/queue-heads/TDs (hardware.h). kernelmodedriver
+    # MODULE, no spec (imports usbport/usbd/hal/ntoskrnl). NOT boot-loaded in smoke -> link-clean
+    # x3 bar. First of the 3 host-controller miniports.
+    "usbehci": Target(
+        name="usbehci",
+        source_dir=USBEHCI_DIR,
+        output_crate=RUST_DIR / "usbehci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbohci.sys — USB 1.1 OHCI host-controller miniport (drivers/usb/usbohci, ~3.2K LOC,
+    # 2 .c: roothub/usbohci + guid). Same usbport-miniport shape as usbehci; OHCI EDs/TDs
+    # (hardware.h). kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbohci": Target(
+        name="usbohci",
+        source_dir=USBOHCI_DIR,
+        output_crate=RUST_DIR / "usbohci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbuhci.sys — USB 1.1 UHCI host-controller miniport (drivers/usb/usbuhci, ~3.3K LOC,
+    # 2 .c: roothub/usbuhci + guid). Same usbport-miniport shape; UHCI QHs/TDs (hardware.h).
+    # kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbuhci": Target(
+        name="usbuhci",
+        source_dir=USBUHCI_DIR,
+        output_crate=RUST_DIR / "usbuhci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1266,6 +1319,12 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["usbccgp"]
     if "/drivers/usb/usbhub" in posix:
         return TARGETS["usbhub"]
+    if "/drivers/usb/usbehci" in posix:
+        return TARGETS["usbehci"]
+    if "/drivers/usb/usbohci" in posix:
+        return TARGETS["usbohci"]
+    if "/drivers/usb/usbuhci" in posix:
+        return TARGETS["usbuhci"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

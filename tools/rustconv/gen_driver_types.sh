@@ -502,6 +502,25 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]usbmport\.h' )
     VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
     ;;
+  usbehci|usbohci|usbuhci)
+    # USB host-controller miniports (drivers/usb/usb{ehci,ohci,uhci}). Each registers a
+    # USBPORT_REGISTRATION_PACKET with usbport (drivers/usbport/usbmport.h) and drives its
+    # controller hardware. Driver-private structs live in BOTH the main header (usbXhci.h:
+    # endpoint/transfer/extension structs) and hardware.h (HW register/descriptor layouts:
+    # EHCI QH/TD, OHCI ED/TD, UHCI QH/TD). Allowlist the whole driver dir + the USB headers +
+    # usbmport.h so types.rs carries the full miniport + hardware surface. USB stack = Vista.
+    DRIVER_DIR="${SRC}/drivers/usb/${DRIVER}"
+    WRAPPER_INC=$'#include "'"${DRIVER}"'.h"'
+    ALLOW_FILES=( --allowlist-file ".*${DRIVER}[/\\\\].*\\.h"
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
