@@ -187,6 +187,66 @@ extern "system" {
 pub type HRSRC = HANDLE;
 pub type HGLOBAL = HANDLE;
 
+// ---- winsvc substrate (service.rs / service.c) ----
+// SCM types + the advapi32/kernel32 service entry points. All WINAPI = stdcall
+// on i386 → extern "system" (the service-main + control-handler fn-ptr types are
+// WINAPI in winsvc.h; a wrong cdecl cast would drift ESP on i386 — see lane lore).
+pub const SERVICE_START_PENDING: DWORD = 2;
+pub const SERVICE_RUNNING: DWORD = 4;
+
+pub type LPSERVICE_MAIN_FUNCTIONW = Option<unsafe extern "system" fn(DWORD, *mut LPWSTR)>;
+pub type LPHANDLER_FUNCTION = Option<unsafe extern "system" fn(DWORD)>;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct _SERVICE_TABLE_ENTRYW {
+    pub lpServiceName: LPWSTR,
+    pub lpServiceProc: LPSERVICE_MAIN_FUNCTIONW,
+}
+pub type SERVICE_TABLE_ENTRYW = _SERVICE_TABLE_ENTRYW;
+pub type LPSERVICE_TABLE_ENTRYW = *mut _SERVICE_TABLE_ENTRYW;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SERVICE_STATUS {
+    pub dwServiceType: DWORD,
+    pub dwCurrentState: DWORD,
+    pub dwControlsAccepted: DWORD,
+    pub dwWin32ExitCode: DWORD,
+    pub dwServiceSpecificExitCode: DWORD,
+    pub dwCheckPoint: DWORD,
+    pub dwWaitHint: DWORD,
+}
+pub type LPSERVICE_STATUS = *mut SERVICE_STATUS;
+pub type SERVICE_STATUS_HANDLE = HANDLE; // DECLARE_HANDLE → opaque pointer
+
+extern "system" {
+    pub fn StartServiceCtrlDispatcherW(lpServiceStartTable: *const SERVICE_TABLE_ENTRYW) -> BOOL;
+    pub fn RegisterServiceCtrlHandlerW(
+        lpServiceName: LPCWSTR,
+        lpHandlerProc: LPHANDLER_FUNCTION,
+    ) -> SERVICE_STATUS_HANDLE;
+    pub fn SetServiceStatus(
+        hServiceStatus: SERVICE_STATUS_HANDLE,
+        lpServiceStatus: LPSERVICE_STATUS,
+    ) -> BOOL;
+    pub fn I_ScIsSecurityProcess();
+
+    // kernel32 module/event/wait helpers used by the service dispatcher thread.
+    pub fn LoadLibraryW(lpLibFileName: *const u16) -> HINSTANCE;
+    pub fn GetProcAddress(hModule: HMODULE, lpProcName: *const c_char) -> FARPROC;
+    pub fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
+    pub fn CreateEventW(
+        lpEventAttributes: *mut _SECURITY_ATTRIBUTES,
+        bManualReset: BOOL,
+        bInitialState: BOOL,
+        lpName: *const u16,
+    ) -> HANDLE;
+    pub fn OpenEventW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: *const u16) -> HANDLE;
+    pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+    pub fn GetLastError() -> DWORD;
+}
+
 // ---- CRT functions (cdecl → extern "C"); resolve against ntdll/CRT at link ----
 extern "C" {
     pub fn memcpy(d: *mut VOID, s: *const VOID, n: usize) -> *mut VOID;

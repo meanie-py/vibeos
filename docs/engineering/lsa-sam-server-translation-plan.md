@@ -25,9 +25,10 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >   them lowercase but rpcndr.h `#define`s lowercase→UPPERCASE; Rust #[no_mangle] gets no macro
 >   → rename defs+calls to MIDL_user_allocate/free + ABI extern "system" (__RPC_USER=stdcall,
 >   i386 `@4`); local def shadows the prelude glob extern.
-> - **13 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
->   database + policy + session + notify + srm + lsasrv + **authport**); each ×3-link-verified +
->   i386 boot + amd64 boot gated. (12/16 LANDED on mainline `751cee96a32`; authport rides on top.)
+> - **14 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
+>   database + policy + session + notify + srm + lsasrv + **authport** + **service**); each
+>   ×3-link-verified + i386 boot + amd64 boot gated. (12/16 LANDED on mainline `751cee96a32`;
+>   authport + service ride on top. Remaining C: authpackage.c, lookup.c, lsarpc.c.)
 > - **✅ `authport.c` DONE (M4, 13/16)** — LPC auth-port server (logon-process registration +
 >   `AuthPortThreadRoutine` dispatch loop). The hard part was the deeply-nested `LSA_API_MSG`
 >   anon-union: bindgen lays `{ApiNumber, Status, union{LogonUser,…}}` as
@@ -53,19 +54,23 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **wine-debug-internals shim ✅** (in prelude) — `ros_dbg_log` (real ReactOS variadic export,
 >   declared `extern` so the genuine debug path survives) + `__WINE_DBCL_*` consts + `__wine_debug_class`.
 >   This is the raw c2rust macro-expansion shape (`if dbch.flags & (1<<DBCL) { ros_dbg_log(..) }`).
-> - **`service.rs` STAGED, not integrated (`1bf67e64fb1`)** — translated, on disk, out of mod.rs.
->   Needs a **winsvc substrate**: SERVICE_TABLE_ENTRYW/SERVICE_STATUS(_HANDLE) types +
->   StartServiceCtrlDispatcherW/RegisterServiceCtrlHandlerW/SetServiceStatus/CreateThread/CreateEventW/
->   OpenEventW/WaitForSingleObject/LoadLibraryW/GetProcAddress/FreeLibrary/CloseHandle/GetLastError/
->   I_ScIsSecurityProcess externs + SERVICE_START_PENDING/RUNNING consts + fn-pointer ABI casts
->   (declare ServiceMain/ControlHandler/DispatcherThread with extern "C"/"system").
+> - **✅ `service.rs` DONE (14/16)** — security service (SCM dispatcher: NETLOGON+SAMSS
+>   ServiceMains + DispatcherThread waiting on `SECURITY_SERVICES_STARTED`). Added a **winsvc
+>   substrate to prelude**: SERVICE_TABLE_ENTRYW/SERVICE_STATUS/SERVICE_STATUS_HANDLE types +
+>   LPSERVICE_MAIN_FUNCTIONW/LPHANDLER_FUNCTION fn-ptr types + StartServiceCtrlDispatcherW/
+>   RegisterServiceCtrlHandlerW/SetServiceStatus/I_ScIsSecurityProcess + LoadLibraryW/GetProcAddress/
+>   FreeLibrary/CreateEventW/OpenEventW/WaitForSingleObject/GetLastError externs +
+>   SERVICE_START_PENDING(2)/SERVICE_RUNNING(4) consts. **i386-ABI fix:** the translation declared
+>   the WINAPI service-mains as `extern "C"` (cdecl) — fixed to `extern "system"` (stdcall) so the
+>   SCM dispatch through ServiceTable doesn't drift ESP on i386 (same class as the kernel32 RPC
+>   bug). Also: ServiceTable name strings → `static` (stable address, was dangling-prone transmute);
+>   DispatcherThread → `extern "system"` (CreateThread routine). Builds + links clean ×3.
 > - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
 >   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
 > - **⚠️ Next steps** (in order):
->   1. **M4 rest** — ~~authport.c~~ ✅ done. Next: the winsvc substrate
->      (SERVICE_TABLE_ENTRYW/SERVICE_STATUS types + StartServiceCtrlDispatcherW/SetServiceStatus/…
->      externs + fn-ptr ABI casts) + finish staged `service.rs`, then `authpackage.c` (1856 LOC,
->      defines LsapTerminateLogon that session.rs externs).
+>   1. **M4 rest** — ~~authport.c~~ ✅ ~~service.c (winsvc substrate)~~ ✅ done. Next:
+>      `authpackage.c` (1856 LOC, defines LsapTerminateLogon that session.rs externs + the 3
+>      Lsap{LogonUser,CallAuthenticationPackage,LookupAuthenticationPackage} authport.rs externs).
 >   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
 >   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.

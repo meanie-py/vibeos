@@ -6,8 +6,7 @@ pub mod notify;
 pub mod srm;
 pub mod lsasrv;
 pub mod authport;
-// pub mod service;  // STAGED — needs the winsvc substrate (SERVICE_* types +
-// StartServiceCtrlDispatcherW/SetServiceStatus/… externs); next focused step.
+pub mod service;
 pub mod dssetup;
 pub mod privileges;
 pub mod security;
