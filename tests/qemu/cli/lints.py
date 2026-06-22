@@ -88,8 +88,13 @@ def _lint_stage(
         st = "fail" if strict else "warn"
         salient = [ln for ln in text.splitlines() if "*** BUG" in ln or "FAIL" in ln][:3]
         return run.add(
-            Stage(name, exit=cp.returncode, status=st, detail=f"exit {cp.returncode}",
-                  salient=salient or text.splitlines()[:3])
+            Stage(
+                name,
+                exit=cp.returncode,
+                status=st,
+                detail=f"exit {cp.returncode}",
+                salient=salient or text.splitlines()[:3],
+            )
         )
     text = cp.stdout if findings_from == "stdout" else (cp.stdout + "\n" + cp.stderr)
     text = _rel(text, repo)

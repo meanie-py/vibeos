@@ -88,11 +88,11 @@ KNOWN_CGU_UD2 = {
 # an infinite loop, which boots as a hard-to-diagnose "idle hang". Substring
 # match (mangled Rust names embed the symbol), same as EXPECTED_UD2.
 EXPECTED_SPIN = {
-    "rust_begin_unwind",   # Rust panic handler (panic=abort → loop {})
-    "KeBugCheckWithTf",    # bugcheck terminal halt
-    "KeBugCheck",          # bugcheck family
-    "xHalHaltSystem",      # HAL halt
-    "HvValidateHive",      # fatal hive-corruption terminal path
+    "rust_begin_unwind",  # Rust panic handler (panic=abort → loop {})
+    "KeBugCheckWithTf",  # bugcheck terminal halt
+    "KeBugCheck",  # bugcheck family
+    "xHalHaltSystem",  # HAL halt
+    "HvValidateHive",  # fatal hive-corruption terminal path
 }
 
 
