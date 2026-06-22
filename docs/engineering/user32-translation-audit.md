@@ -376,7 +376,7 @@ fastcall), globals (User32Instance/gSharedInfo/gpsi/gImmApiEntries/RegisterDefau
 local Rust-atomic impl (imm.rs + usrapihk.rs). **Boot blocker fixed: mis-encoded UTF-16 literals
 in imm.rs (`User32InitializeImmEntryTable`) → BUGCHECK 0x4C on all arches** — see the new field-
 manual entry "Hand-encoded UTF-16 (wide) byte-string literals" + the `tools/lint_wide_strings.py`
-linter it produced (project-wide it found 76 more in 31 other crates — flagged to swarm).
+linter it produced (project-wide it found 67 in 22 other crates — flagged to swarm).
 
 **Wave 3c done (2026-06-21):** `cursoricon.rs` (90 fns, 3.4K LOC) integrated; compile + cohab-link
 ×3 green. **libpng was a non-issue:** delay-load was never functional in vibeos (see

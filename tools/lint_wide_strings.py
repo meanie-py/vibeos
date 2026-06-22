@@ -112,13 +112,60 @@ def decode_bytestr(body: str):
     return bytes(out), True
 
 
+def strip_comments(line: str, in_block: bool):
+    """Blank out `//` line-comments and `/* */` block-comments (respecting string
+    literals) so byte-string examples inside comments aren't scanned. Returns
+    (code_only_line, in_block_after). Char literals aren't tracked (rare edge)."""
+    out = []
+    i, n = 0, len(line)
+    in_str = False
+    while i < n:
+        c = line[i]
+        if in_block:
+            if c == "*" and i + 1 < n and line[i + 1] == "/":
+                in_block = False
+                out.append("  ")
+                i += 2
+                continue
+            out.append(" ")
+            i += 1
+            continue
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(line[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and line[i + 1] == "/":
+            break  # rest of line is a comment
+        if c == "/" and i + 1 < n and line[i + 1] == "*":
+            in_block = True
+            out.append("  ")
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), in_block
+
+
 def check_file(path: Path):
     try:
         text = path.read_text(errors="replace")
     except OSError:
         return []
     findings = []
-    for lineno, line in enumerate(text.splitlines(), 1):
+    in_block = False
+    for lineno, raw_line in enumerate(text.splitlines(), 1):
+        line, in_block = strip_comments(raw_line, in_block)
         for m in _BYTESTR_RE.finditer(line):
             body = m.group("body")
             # A leading '*' makes this a byte-array deref (e.g. u32::from_be_bytes(*b"Tag4"))
@@ -169,18 +216,20 @@ def main():
     check_mode = "--check" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
-    if args:
-        files = [Path(a) for a in args]
-    else:
-        root = Path("sdk/lib/rust")
-        if not root.exists():
-            print(f"ERROR: {root} not found. Run from vibeos/ root.")
+    roots = [Path(a) for a in args] if args else [Path("sdk/lib/rust")]
+    files: list[Path] = []
+    for p in roots:
+        if p.is_dir():
+            files.extend(
+                f for f in p.rglob("*.rs")
+                if "/target/" not in str(f) and "/.responses/" not in str(f)
+            )
+        elif p.exists():
+            files.append(p)
+        else:
+            print(f"ERROR: {p} not found. Run from vibeos/ root.")
             sys.exit(2)
-        files = sorted(
-            f
-            for f in root.rglob("*.rs")
-            if "/target/" not in str(f) and "/.responses/" not in str(f)
-        )
+    files = sorted(set(files))
 
     by_file: dict[str, list] = {}
     total = 0
