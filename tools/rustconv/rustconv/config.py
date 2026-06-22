@@ -136,6 +136,8 @@ RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
 KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
 USBSTOR_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbstor"
+USBCCGP_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbccgp"
+USBHUB_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbhub"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -828,6 +830,43 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # usbccgp.sys — USB composite-device (generic parent) class driver (drivers/usb/usbccgp,
+    # ~3.6K LOC, 7 .c: descriptor/fdo/function/misc/pdo/usbccgp + guid). Splits a composite USB
+    # device into per-interface child PDOs. kernelmodedriver MODULE, no spec (imports ntoskrnl/
+    # hal/usbd). Private structs in usbccgp.h (pulls hubbusif/usbbusif/usb100/usbdlib). Vista
+    # (_WIN32_WINNT=0x600). NOT boot-loaded in smoke -> link-clean x3 bar. USB-only (no SCSI/SRB).
+    "usbccgp": Target(
+        name="usbccgp",
+        source_dir=USBCCGP_DIR,
+        output_crate=RUST_DIR / "usbccgp-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbhub.sys — USB hub class driver (drivers/usb/usbhub, ~10.4K LOC, 6 .c: debug/guid/ioctl/
+    # pnp/power/usbhub). Enumerates/powers/resets downstream ports, bridges to the USB miniport
+    # (usbmport.h) + WMI (wmilib). kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/wmilib/
+    # usbd). Many private structs in usbhub.h (USBHUB_FDO_EXTENSION/PORT_PDO_EXTENSION + contexts;
+    # pulls usb/usbioctl/hubbusif/usbbusif/usbdlib/ks/usbport/usbmport). NOT boot-loaded in smoke
+    # -> link-clean x3 bar. The heaviest USB leaf; do after usbccgp.
+    "usbhub": Target(
+        name="usbhub",
+        source_dir=USBHUB_DIR,
+        output_crate=RUST_DIR / "usbhub-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1223,6 +1262,10 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["ksecdd"]
     if "/drivers/usb/usbstor" in posix:
         return TARGETS["usbstor"]
+    if "/drivers/usb/usbccgp" in posix:
+        return TARGETS["usbccgp"]
+    if "/drivers/usb/usbhub" in posix:
+        return TARGETS["usbhub"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

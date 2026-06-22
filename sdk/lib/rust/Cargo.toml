@@ -101,6 +101,8 @@ members = [
     "fltmgr-rust",
     "ksecdd-rust",
     "usbstor-rust",
+    "usbccgp-rust",
+    "usbhub-rust",
     "i8042prt-rust",
     "handle",
     "interlck",

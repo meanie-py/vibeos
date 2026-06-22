@@ -466,6 +466,42 @@ case "$DRIVER" in
     UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
+  usbccgp)
+    # USB composite-device (generic parent) driver (drivers/usb/usbccgp). Private structs are
+    # in usbccgp.h (FDO/PDO/function-descriptor extensions); it pulls hubbusif/usbbusif/usb100/
+    # usbdlib. USB-only (no SCSI). Allowlist usbccgp.h + the USB definition headers so the crate
+    # types.rs carries the USB descriptor/interface surface. Vista (_WIN32_WINNT=0x600).
+    DRIVER_DIR="${SRC}/drivers/usb/usbccgp"
+    WRAPPER_INC=$'#include "usbccgp.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbccgp[/\\]usbccgp\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usb200\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]usbioctl\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
+  usbhub)
+    # USB hub class driver (drivers/usb/usbhub). Many private structs in usbhub.h (USBHUB_FDO_
+    # EXTENSION/PORT_PDO_EXTENSION + URB/status/idle/reset contexts); it pulls usb/usbioctl/
+    # hubbusif/usbbusif/usbdlib + the miniport interface (drivers/usbport/usbmport.h) + ks/wmilib.
+    # Allowlist usbhub.h + the USB headers + usbmport.h so the crate types.rs carries the hub +
+    # miniport surface. _WIN32_WINNT default for the USB stack = Vista (0x600).
+    DRIVER_DIR="${SRC}/drivers/usb/usbhub"
+    WRAPPER_INC=$'#include "usbhub.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbhub[/\\]usbhub\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbioctl\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
