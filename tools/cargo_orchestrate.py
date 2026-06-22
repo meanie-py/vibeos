@@ -92,8 +92,7 @@ CELLS: dict[str, Cell] = {
         # .import_lib() from .spec, no cmake static_libs / c_from_compile_db /
         # resource_from_rc (hal carries only a committed .res). The kernel's
         # import-dep DLLs (hal/kdcom/bootvid) + the leaf drivers all qualify.
-        # win32k is the SOLE blocker (libwin32k_residue.a → the win32k.h header
-        # closure cmake-off; see build-tools-self-hosting.md) — listed, excluded.
+        # win32k joined 2026-06-21 (libwin32k_residue.a compiled in-cargo).
         Cell("hal", "hal-cargo", "hal.dll", "kerneldll"),
         # kdcom.dll has 4 alternative provider crates (kdcom/kdgdb/kdcom-serial/
         # kdrosdbg) selected by config; kdcom-cargo is the default the standard
@@ -119,7 +118,9 @@ CELLS: dict[str, Cell] = {
         # arm64-only video/input drivers
         Cell("arm64vid", "arm64vid-cargo", "arm64vid.sys", "kerneldll", arches=("arm64",)),
         Cell("arm64input", "arm64input-cargo", "arm64input.sys", "kerneldll", arches=("arm64",)),
-        # win32k — BLOCKED (libwin32k_residue.a); not in the cmake-off set.
+        # win32k — cmake-off as of 2026-06-21 (libwin32k_residue.a compiled
+        # in-cargo: c_from_compile_db + native-gendib + asm_archive). KIND
+        # kernelmodedriver. byte-identical to cmake ×3 (bar the PE timestamp).
         Cell("win32k", "win32k-cargo", "win32k.sys", "kernelmodedriver"),
     )
 }
@@ -141,11 +142,13 @@ CMAKE_OFF_SPINE = (
     "userinit",
 )
 
-# Drivers proven cmake-off-clean by the 2026-06-21 audit (rust_staticlib +
-# self-hosted import libs, no cmake static_libs/c_db/resource_from_rc). win32k is
-# excluded (libwin32k_residue.a blocker). arm64vid/arm64input self-filter to
-# arm64 via their Cell.arches. Used by --drivers.
+# Drivers proven cmake-off (2026-06-21 audit). 24 were already clean
+# (rust_staticlib + self-hosted import libs); win32k joined once its
+# libwin32k_residue.a was compiled in-cargo (c_from_compile_db + native-gendib +
+# asm_archive). arm64vid/arm64input self-filter to arm64 via Cell.arches. Used by
+# --drivers — the COMPLETE driver set is now cmake-off.
 CMAKE_OFF_DRIVERS = (
+    "win32k",
     "hal",
     "kdcom",
     "bootvid",
