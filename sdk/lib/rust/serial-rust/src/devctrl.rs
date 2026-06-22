@@ -31,7 +31,7 @@ unsafe fn SerialGetUserBuffers(
     if Irp.is_null() {
         RtlAssert(
             b"Irp\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             23 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -41,7 +41,7 @@ unsafe fn SerialGetUserBuffers(
     if BufferIn.is_null() {
         RtlAssert(
             b"BufferIn\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             24 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -51,7 +51,7 @@ unsafe fn SerialGetUserBuffers(
     if BufferOut.is_null() {
         RtlAssert(
             b"BufferOut\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             25 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn SerialSetBaudRate(
     Status = IoAcquireRemoveLockEx(
         core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
         ULongToPtr((*DeviceExtension).ComPort as core::ffi::c_ulong) as PVOID,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+        b"drivers/serial/serial/devctrl.c\0"
             as *const u8 as PCSTR,
         65 as ULONG,
         core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG,
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn SerialSetBaudRate(
             DPFLTR_SERIAL_ID as ULONG,
             DPFLTR_TRACE_LEVEL as ULONG,
             b"(%s:%d) SerialSetBaudRate(COM%lu, %lu Bauds)\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const core::ffi::c_char,
             69 as core::ffi::c_int,
             (*DeviceExtension).ComPort,
@@ -167,7 +167,7 @@ pub unsafe extern "system" fn SerialSetLineControl(
     if DeviceExtension.is_null() {
         RtlAssert(
             b"DeviceExtension\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             96 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -177,7 +177,7 @@ pub unsafe extern "system" fn SerialSetLineControl(
     if NewSettings.is_null() {
         RtlAssert(
             b"NewSettings\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             97 as ULONG,
             ::core::ptr::null_mut::<CHAR>(),
@@ -188,7 +188,7 @@ pub unsafe extern "system" fn SerialSetLineControl(
         DPFLTR_SERIAL_ID as ::core::ffi::c_int as ULONG,
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) SerialSetLineControl(COM%lu, Settings { %lu %lu %lu })\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+        b"drivers/serial/serial/devctrl.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         100 as ::core::ffi::c_int,
         (*DeviceExtension).ComPort,
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn SerialSetLineControl(
     Status = IoAcquireRemoveLockEx(
         core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
         ULongToPtr((*DeviceExtension).ComPort as ::core::ffi::c_ulong) as PVOID,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+        b"drivers/serial/serial/devctrl.c\0"
             as *const u8 as PCSTR,
         146 as ULONG,
         ::core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG,
@@ -284,7 +284,7 @@ unsafe extern "system" fn SerialClearPerfStats(mut SynchronizeContext: PVOID) ->
     if DeviceExtension.is_null() {
         RtlAssert(
             b"DeviceExtension\0".as_ptr() as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
+            b"drivers/serial/serial/devctrl.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
             167 as ULONG,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -305,7 +305,7 @@ unsafe extern "system" fn SerialGetPerfStats(SynchronizeContext: PVOID) -> BOOLE
     if pIrp.is_null() {
         RtlAssert(
             b"pIrp\0" as *const u8 as *const core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const core::ffi::c_char as PVOID,
             181 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -330,7 +330,7 @@ unsafe fn SerialGetCommProp(
     if pCommProp.is_null() {
         RtlAssert(
             b"pCommProp\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/devctrl.c\0"
+            b"drivers/serial/serial/devctrl.c\0"
                 as *const u8 as *const i8 as PVOID,
             199 as ULONG,
             core::ptr::null_mut::<CHAR>(),

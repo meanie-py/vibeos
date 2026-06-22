@@ -1802,6 +1802,18 @@ pub unsafe extern "system" fn SetWindowLongPtrW(
     NtUserSetWindowLongPtr(hWnd, nIndex as DWORD, dwNewLong as _, 0u8 as BOOL) as isize
 }
 
+// On i386 SetWindowLongPtrW is a macro alias for SetWindowLongW (winuser.h). One real
+// export forwarder satisfies the cross-TU `extern { fn SetWindowLongPtrW }` callers.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn SetWindowLongPtrW(
+    hWnd: HWND,
+    nIndex: core::ffi::c_int,
+    dwNewLong: isize,
+) -> isize {
+    SetWindowLongW(hWnd, nIndex, dwNewLong as core::ffi::c_long) as isize
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn UnregisterClassA(
     lpClassName: LPCSTR,

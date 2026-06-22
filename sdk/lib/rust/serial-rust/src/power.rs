@@ -26,7 +26,7 @@ pub unsafe extern "system" fn SerialPower(
         DPFLTR_SERIAL_ID as ULONG,
         DPFLTR_TRACE_LEVEL as ULONG,
         b"(%s:%d) IRP_MJ_POWER dispatch\n\0" as *const u8 as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/serial/serial/power.c\0"
+        b"drivers/serial/serial/power.c\0"
             as *const u8 as *const core::ffi::c_char,
         21 as core::ffi::c_int,
     );

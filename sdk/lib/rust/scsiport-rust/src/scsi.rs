@@ -115,7 +115,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
 
     // DPRINT entry
     {
-        let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
+        let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
         if crate::glue::dprint_noop(
             b"ScsiPortDispatchScsi(DeviceObject %p  Irp %p)\n\0".as_ptr() as *const i8,
             DeviceObject,
@@ -134,7 +134,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     if !((*lunExt).Common.IsFDO == 0) {
         RtlAssert(
             b"!lunExt->Common.IsFDO\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+            b"drivers/storage/port/scsiport/scsi.c\0"
                 .as_ptr() as *const i8,
             141u32,
             core::ptr::null_mut::<i8>(),
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     portExt = (*(*lunExt).Common.LowerDevice).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
 
     if Srb.is_null() {
-        let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
+        let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
         if DbgPrint(
             b"(%s:%d) ScsiPortDispatchScsi() called with Srb = NULL!\n\0".as_ptr() as *const i8,
             file,
@@ -160,7 +160,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     }
 
     // DPRINT: "Srb: %p, Srb->Function: %lu"
-    let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
+    let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
     if crate::glue::dprint_noop(
         b"Srb: %p, Srb->Function: %lu\n\0".as_ptr() as *const i8,
         Srb,
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     (*Srb).Lun = (*lunExt).Lun;
 
     if lunExt.is_null() {
-        let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
+        let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
         if DbgPrint(
             b"(%s:%d) ScsiPortDispatchScsi() called with an invalid LUN\n\0".as_ptr()
                 as *const i8,
@@ -241,7 +241,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
                 if !(*lunExt).SrbInfo.Srb.is_null() {
                     RtlAssert(
                         b"lunExt->SrbInfo.Srb == NULL\0".as_ptr() as *const i8,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                        b"drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const i8,
                         290u32,
                         core::ptr::null_mut::<i8>(),
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
             }
         }
         _ => {
-            let file: *const i8 = b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
+            let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
             if DbgPrint(
                 b"(%s:%d) SRB function not implemented (Function %lu)\n\0".as_ptr()
                     as *const i8,
@@ -362,7 +362,7 @@ pub unsafe extern "system" fn SpiSenseCompletionRoutine(
     if (*InitialSrb).SrbStatus as i32 & (SRB_STATUS_QUEUE_FROZEN) as i32 == 0 {
         RtlAssert(
             b"InitialSrb->SrbStatus & SRB_STATUS_QUEUE_FROZEN\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *mut core::ffi::c_void,
             496 as u32,
             core::ptr::null_mut::<i8>(),
         );
@@ -376,7 +376,7 @@ pub unsafe extern "system" fn SpiSenseCompletionRoutine(
         if (*lunExt).Flags & LUNEX_FROZEN_QUEUE == 0 {
             RtlAssert(
                 b"lunExt->Flags & LUNEX_FROZEN_QUEUE\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *mut core::ffi::c_void,
+                b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *mut core::ffi::c_void,
                 506 as u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -525,7 +525,7 @@ pub unsafe extern "system" fn ScsiPortStartPacket(Context: *mut core::ffi::c_voi
         if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
             RtlAssert(
                 b"LunExtension && !LunExtension->Common.IsFDO\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8,
                 1008u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -593,7 +593,7 @@ pub unsafe extern "system" fn ScsiPortStartPacket(Context: *mut core::ffi::c_voi
             if !(*SrbInfo).Requests.Blink.is_null() {
                 RtlAssert(
                     b"SrbInfo->Requests.Blink == NULL\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8,
+                    b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8,
                     1120u32,
                     core::ptr::null_mut::<core::ffi::c_void>(),
                 );
@@ -883,7 +883,7 @@ unsafe fn SpiAllocateSrbStructures(
                     RtlAssert(
                         b"!(LunExtension->Flags & LUNEX_REQUEST_PENDING)\0".as_ptr()
                             as *const core::ffi::c_char as *mut core::ffi::c_void,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                        b"drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                         1505 as ULONG,
                         core::ptr::null_mut::<core::ffi::c_void>(),
@@ -899,7 +899,7 @@ unsafe fn SpiAllocateSrbStructures(
                 RtlAssert(
                     b"LunExtension->SrbInfo.Srb == NULL\0".as_ptr() as *const core::ffi::c_char
                         as *mut core::ffi::c_void,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                    b"drivers/storage/port/scsiport/scsi.c\0"
                         .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                     1515 as ULONG,
                     core::ptr::null_mut::<core::ffi::c_void>(),
@@ -928,7 +928,7 @@ unsafe fn SpiAllocateSrbStructures(
                     RtlAssert(
                         b"!(LunExtension->Flags & LUNEX_REQUEST_PENDING)\0".as_ptr()
                             as *const core::ffi::c_char as *mut core::ffi::c_void,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                        b"drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                         1543 as ULONG,
                         core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1124,7 +1124,7 @@ pub unsafe extern "system" fn SpiSaveInterruptData(Context: *mut core::ffi::c_vo
         if (*SrbInfo).Srb.is_null() {
             RtlAssert(
                 b"SrbInfo->Srb\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                b"drivers/storage/port/scsiport/scsi.c\0"
                     .as_ptr() as *const i8,
                 1175u32,
                 core::ptr::null() as *const i8,
@@ -1139,7 +1139,7 @@ pub unsafe extern "system" fn SpiSaveInterruptData(Context: *mut core::ffi::c_vo
         if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
             RtlAssert(
                 b"LunExtension && !LunExtension->Common.IsFDO\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                b"drivers/storage/port/scsiport/scsi.c\0"
                     .as_ptr() as *const i8,
                 1182u32,
                 core::ptr::null() as *const i8,
@@ -1163,7 +1163,7 @@ pub unsafe extern "system" fn SpiSaveInterruptData(Context: *mut core::ffi::c_vo
                 if 0 == 0 {
                     RtlAssert(
                         b"FALSE\0".as_ptr() as *const i8,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                        b"drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const i8,
                         1212u32,
                         core::ptr::null() as *const i8,
@@ -1219,7 +1219,7 @@ unsafe fn SpiProcessCompletedRequest(
     if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
         RtlAssert(
             b"LunExtension && !LunExtension->Common.IsFDO\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+            b"drivers/storage/port/scsiport/scsi.c\0"
                 .as_ptr() as *const i8,
             663u32,
             core::ptr::null::<core::ffi::c_void>(),
@@ -1306,7 +1306,7 @@ unsafe fn SpiProcessCompletedRequest(
                 RtlAssert(
                     b"Srb->SenseInfoBuffer == NULL || SrbInfo->SaveSenseRequest != NULL\0"
                         .as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                    b"drivers/storage/port/scsiport/scsi.c\0"
                         .as_ptr() as *const i8,
                     755u32,
                     core::ptr::null::<core::ffi::c_void>(),
@@ -1413,7 +1413,7 @@ unsafe fn SpiProcessCompletedRequest(
                 if 0i32 == 0 {
                     RtlAssert(
                         b"FALSE\0".as_ptr() as *const i8,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                        b"drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const i8,
                         881u32,
                         core::ptr::null::<core::ffi::c_void>(),
@@ -1500,7 +1500,7 @@ unsafe fn SpiProcessCompletedRequest(
                     if 0i32 == 0 {
                         RtlAssert(
                             b"FALSE\0".as_ptr() as *const i8,
-                            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
+                            b"drivers/storage/port/scsiport/scsi.c\0"
                                 .as_ptr() as *const i8,
                             954u32,
                             core::ptr::null::<core::ffi::c_void>(),

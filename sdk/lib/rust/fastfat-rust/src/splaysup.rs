@@ -53,7 +53,7 @@ pub unsafe extern "system" fn FatInsertName(
             // always true
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0"
+                b"drivers/filesystems/fastfat/splaysup.c\0"
                     .as_ptr() as *const i8 as *mut core::ffi::c_void,
                 70u32,
                 core::ptr::null_mut(),
@@ -165,7 +165,7 @@ pub unsafe extern "system" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB
         if 0i32 == 0 {
             RtlAssert(
                 0 as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0".as_ptr() as *const core::ffi::c_void,
+                b"drivers/filesystems/fastfat/splaysup.c\0".as_ptr() as *const core::ffi::c_void,
                 248u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -214,7 +214,7 @@ pub unsafe extern "system" fn FatFindFcb(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0"
+                b"drivers/filesystems/fastfat/splaysup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 340,
                 core::ptr::null_mut::<core::ffi::c_void>(),
@@ -276,7 +276,7 @@ pub unsafe extern "system" fn FatCompareNames(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/splaysup.c\0"
+                b"drivers/filesystems/fastfat/splaysup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 453 as u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),

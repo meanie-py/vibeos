@@ -449,6 +449,14 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Symptom (2026-06-21, user32-rust):** `IS_ATOM(x)` coded `v > 0 && v < 0xC000` with a comment "MAXINTATOM is 0xC000". The C macro (`user32p.h`) is `(x > 0) && (x < 0x10000)` — the upper bound is **0x10000** (high 48 bits clear), NOT `MAXINTATOM`. MAXINTATOM (0xC000) is the *base* of registered-class atoms; they start at 0xC000 and increment. So once the shell registers ~100 window classes, a real class atom (e.g. `0xC06A`) is `>= 0xC000` and `IS_ATOM` returns false → it flows into `RtlInitUnicodeString`, whose `wcslen` derefs the tiny integer → **AV 0xC0000005 in explorer at "taskbar: creating tray window"**, crash-looping the shell post-`shell ready` (so the smoke gate stays green; only the *desktop* is broken). Two copies (`window.rs:42` `User32CreateWindowEx`, `class.rs:111`) had the bug; `message.rs:224` had it right (0x10000). Fixed in `67c9e5849c7`.
 **Why the literal-scanner misses it:** the literal `0xC000` *matches* its naming comment (`MAXINTATOM` really is 0xC000) — so `scan_inline_flag_literals.py` sees a consistent literal/label pair and stays silent. The defect is one level up: the translator picked the **wrong named constant** for an *unnamed* numeric bound in the source (the C `0x10000` had no symbol). This is the residual "correct value, wrong concept" class. **Tell:** a range/threshold compare (`< CONST`, `>= CONST`, `>> N`) where the C original used a bare numeric literal — re-derive the bound from the C, don't trust a plausible-looking named-constant comment. **Cross-arch:** `user32-rust` (and most usermode `*-rust` crates) are cohab'd on all 3 arches, so a usermode-DLL translation bug breaks amd64/i386 identically — it just hides *past* their `shell ready` gate. To see it, boot past the gate and watch for `[UEXC]`/`PspExitThread ExitStatus=0xC0000005`.
 
+### Hand-encoded UTF-16 (wide) byte-string literals — three silent mis-encodings
+**Symptom (2026-06-21, user32-rust Wave 4):** rustconv emits `L"..."` wide strings as Rust byte-string literals (`b"i\0m\0m\03\02\0.\0d\0l\0l\0\0\0"` == `L"imm32.dll"`). Three ways it silently corrupts them, all compile clean (the bytes are well-formed Rust), all manifest only as a wrong *runtime* string:
+- **(a) C-octal confusion.** Rust has **no octal escapes**: `\0` is NUL and any following digits are LITERAL. The translator writes a C octal (`\000`, `\0NN`) → `b"...m\0003\0002..."` is `m \0 '0' '0' '3' ...` = garbage, not `...m32...`. (A single `\0`+one-digit, e.g. `\03`, is *fine* — that's the NUL high-byte of one char then the next char's low byte; only `\0`+**two-or-more** digits is the bug.)
+- **(b) Missing u16 NUL terminator.** A wide literal must be even-length and end in bytes `00 00`. `b"\\\0"` (intended `L"\\"`) is `[5C 00]` — the `'\'` char with **no terminator**; read as a `PCWSTR` it walks off the literal into adjacent `.rodata`. `b"\0"` (intended empty `L""`) is one byte `[00]` — odd, half a code unit. Correct: `b"\\\0\0\0"` and `b"\0\0"`.
+- **(c) ANSI literal cast straight to a wide pointer.** `CreateWindowW(b"TuiConsoleWindowClass\0".as_ptr() as *const u16)` / `RegisterWindowMessageW(b"HardError\0".as_ptr() as *const u16)` — an ASCII byte string (no `\0` interleaving) cast to `*const u16` reads as UTF-16 garbage (`"Tui"` → `[0x7554, 0x6975, ...]`). The string should have been wide-encoded.
+**Real boot impact:** (a)+(b) together broke `User32GetSystemFilePath` in `imm.rs`/`dllmain.rs` — the `b"\\\0"` path-separator appended garbage after `%SystemRoot%\system32` → `LoadLibraryW("imm32.dll")` failed → `User32InitializeImmEntryTable` returned FALSE → imm32 `DllMain` failed → `[LDR] FAILED` → **BUGCHECK 0x4C (0xc0000142)** on the first GUI process, on **all 3 arches** (the encoding is arch-independent). Cohab'd usermode DLLs hit it identically. Found via `[U32IMM]` `DbgPrint` probes (`ghImm32=NULL`, `LoadLibrary` returned NULL); fixed by `b"\\\0"`→`b"\\\0\0\0"`.
+**Oracle:** `tools/lint_wide_strings.py [path…]` (`--check` for CI exit-1). Decodes every `b"..."`, flags: source `\0`+2-digits (octal); and — for literals **directly** cast `.as_ptr() as {PCWSTR,LPCWSTR,PWSTR,*const u16,…}` — odd length or missing `00 00` terminator. Binds the cast to *this* literal and skips `*`-deref'd tags (`*b"IpcA"`) so pool-tags/FourCCs/ANSI-used-as-ANSI don't false-positive. A 2026-06-21 project-wide run found **67 hits in 22 crates** (win32k, winsrv, smss-csrss, ntoskrnl, kernel32, classpnp, …) — mostly class (c) in non-boot-exercised paths, so they boot but are real defects. **`verify_constants.py`/`scan_inline_flag_literals.py` are blind to this** (it's string DATA, not a named const). Candidate rustconv `postprocess` transform: emit wide literals via a `wstr!()` helper instead of hand-encoding.
+
 ### C `if (!Fn())` → Rust `if !Fn() != 0` — bitwise-NOT on an integer BOOLEAN makes the condition ALWAYS TRUE
 **Symptom:** a guard that should fire "only when the predicate is false" fires unconditionally. Real case (fastfat write.rs:382): `if !FatIsIoRangeValid(Vcb, byte, count) != 0 { return STATUS_DISK_FULL; }` → **every** non-paging, non-write-to-EOF user-file write returned `STATUS_DISK_FULL`, which killed the registry hive flush (`cmlib hivewrt.c:360/649` "Failed to write the base block header / alternate hive"). Boots otherwise (the path is only one of several), so it reads as a narrow "some writes fail" bug.
 **Root cause:** the callee returns a C `BOOLEAN`/`BOOL` (Rust `u8`/`i32`/`KPROCESSOR_MODE`, NOT `bool`). C's `!x` is logical; Rust's `!x` on an integer is **bitwise NOT**. So `!Fn()` is `0xFE`(from 1) or `0xFF`(from 0), and the appended `!= 0` (the LLM's truthiness cast) is then *always* satisfied: `(!Fn()) != 0` ≡ `true` for any value except all-ones. Net: the negation AND the truthiness-cast both got applied and the predicate is dead.
@@ -1307,11 +1315,31 @@ never moved.
   `rm exes && ninja` relinked the **Jun-5 `aarch64-kernel` rlib**; `ntoskrnl.exe` mtime never
   moved. `rm -rf …/aarch64-kernel` + rm exes + `ninja` (mtime advanced) → clean boot. amd64/i386
   dodged it because their `--clean` path nukes the target; the standalone arm64 staged path does not.
-- **NOT affected:** driver/usermode cohab crates (e.g. `scsiport-rust`, `conutils-rust`)
+- **NOT affected:** driver/usermode **cohab** crates (e.g. `scsiport-rust`, `conutils-rust`)
   link via the **main-workspace** cargo step which *does* rerun on `.rs` edits — only
   the **kernel** (separate `rust-kernel-target`) has the missing edge. (Smoke's
   `--clean` nukes `rust-kernel-target` but the staleness is in the *ninja relink trigger*,
   not the cargo cache, so even clean can skip it.) Always verify-by-marker for kernel work.
+- **⚠️ DO affected (a separate target dir): cargo-DRIVEN `reactos_link` drivers**
+  (`netstack.sys`, `beep.sys`, `null.sys` — the `Linker::new(...).rust_staticlib("<body>")`
+  ones, *not* cohab `.a` crates). Their body crate is built by `reactos_link` inside the
+  driver's `build.rs` into its **own** dir `sdk/lib/rust/target/<driver>-cargo-<body>_rust-rustlib`
+  — **NOT** `target/<arch>-kernel`. So the §9.6b recipe (`rm -rf target/<arch>-kernel`) does
+  **not** rebuild the driver body: `ninja <driver>.sys` reuses the stale body rlib and the
+  `.sys` comes out **byte-identical**. Recipe (netstack/arm64, 2026-06-20 M7 — cost two stale
+  cycles):
+  ```bash
+  rm -rf sdk/lib/rust/target/netstack-cargo-netstack_rust-rustlib          # THE body crate
+  rm -f build-arm64/drivers/network/netstack/netstack.sys \
+        sdk/lib/rust/target/aarch64-kernel/release/netstack.exe
+  rm -rf sdk/lib/rust/target/aarch64-kernel/release/.fingerprint/netstack-cargo-*  # re-run build.rs (it drives the body build)
+  ninja -C build-arm64 drivers/network/netstack/netstack.sys
+  strings build-arm64/drivers/network/netstack/netstack.sys | grep '<marker>'  # verify BEFORE smoke
+  ```
+  🔑 **Never judge freshness by PE file size:** netstack.sys stayed **720896 = 0xB0000** across
+  a stale *and* a fresh build (PE is section-padded), so adding several `nsprint!` calls didn't
+  move the byte count. The only reliable signal is `strings … | grep <unique-marker>` (or a
+  fresh source string in the binary), exactly like the kernel case above.
 
 ### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
 

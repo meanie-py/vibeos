@@ -1727,6 +1727,30 @@ def strip_user_inline_redeclarations(code: str) -> str:
     return code
 
 
+def strip_embedded_abspaths(code: str) -> str:
+    """Determinism guard (deterministic-builds-plan.md rung 1).
+
+    c2rust expands the C ``__FILE__`` macro to the ABSOLUTE path it was invoked
+    with, so a translated .rs ends up carrying the build host's worktree root as
+    string-literal DATA, e.g.::
+
+        b"/home/me/.../<worktree>/dll/win32/kernel32/winnls/string/nls.c\\0"
+
+    That data is invisible to ``--remap-path-prefix`` (which only rewrites
+    rustc's own file refs), so it breaks cross-worktree byte-identity AND leaks
+    the host's filesystem layout into every shipped translated binary. (A 1307-
+    path sweep cleaned the historical ones; this keeps fresh translations clean.)
+
+    Strip the repo-root prefix so ``__FILE__`` stays repo-relative + deterministic.
+    Uses the config-detected ``REACTOS_ROOT`` (the worktree c2rust ran in), so it
+    is portable across machines — not a hardcoded path.
+    """
+    from .config import REACTOS_ROOT
+
+    root = str(REACTOS_ROOT).rstrip("/") + "/"
+    return code.replace(root, "")
+
+
 def postprocess(
     code: str,
     exports: dict[str, SpecEntry] | None = None,
@@ -1760,6 +1784,7 @@ def postprocess(
     context-dependent and handled by the system prompt.  Only the
     universally-safe cases above are done here.
     """
+    code = strip_embedded_abspaths(code)
     code = fix_imports(code, target_name=target_name)
     code = fix_bogus_ddk_imports(code)
     code = fix_debug_macros(code)

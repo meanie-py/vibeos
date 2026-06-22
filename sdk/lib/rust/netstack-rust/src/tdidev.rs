@@ -250,13 +250,25 @@ const ENTITY_TYPE_ID: u32 = 1;
 const INFO_CLASS_GENERIC: u32 = 0x100;
 
 const IF_ENTITY: u32 = 0x200;
+const AT_ENTITY: u32 = 0x280;
 const CL_NL_ENTITY: u32 = 0x301;
 const CO_TL_ENTITY: u32 = 0x400;
 const CL_TL_ENTITY: u32 = 0x401;
 const IF_GENERIC: u32 = 0x200;
+const AT_ARP: u32 = 0x280;
 const CL_NL_IP: u32 = 0x303;
 const CO_TL_TCP: u32 = 0x404;
 const CL_TL_UDP: u32 = 0x403;
+
+// PROTOCOL-class MIB query ids (tcpioctl.h) — the iphlpapi management surface
+// (ipconfig / GetAdaptersInfo / GetIpAddrTable / GetIpForwardTable / GetIpNetTable).
+const INFO_CLASS_PROTOCOL: u32 = 0x200;
+const IF_MIB_STATS_ID: u32 = 1; // on IF_ENTITY → IFEntry
+const IP_MIB_STATS_ID: u32 = 1; // on CL_NL_ENTITY → IPSNMPInfo
+const IP_MIB_ARPTABLE_ENTRY_ID: u32 = 0x101; // CL_NL → routes; AT → ARP
+const IP_MIB_ADDRTABLE_ENTRY_ID: u32 = 0x102; // CL_NL → IPAddrEntry[]
+const MIB_TCPSTATS_LEN: usize = 60; // MIB_TCPSTATS (tcpmib.h)
+const MIB_UDPSTATS_LEN: usize = 20; // MIB_UDPSTATS (udpmib.h)
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -276,11 +288,14 @@ struct TdiObjectId {
 /// The TDI entities netstack advertises: TCP (connection-oriented transport),
 /// UDP (connectionless transport), IP (connectionless network) and one
 /// interface — all instance 0 (single smoltcp interface).
-const ENTITIES: [TdiEntityId; 4] = [
+const ENTITIES: [TdiEntityId; 5] = [
     TdiEntityId { tei_entity: CO_TL_ENTITY, tei_instance: 0 },
     TdiEntityId { tei_entity: CL_TL_ENTITY, tei_instance: 0 },
     TdiEntityId { tei_entity: CL_NL_ENTITY, tei_instance: 0 },
     TdiEntityId { tei_entity: IF_ENTITY, tei_instance: 0 },
+    // ARP/address-translation entity — lets iphlpapi's hasArp() detect the
+    // adapter supports ARP (GetAdaptersInfo enumeration) + GetIpNetTable.
+    TdiEntityId { tei_entity: AT_ENTITY, tei_instance: 0 },
 ];
 
 /// Handle IOCTL_TCP_QUERY_INFORMATION_EX (METHOD_NEITHER): input is a
@@ -323,9 +338,33 @@ unsafe fn handle_query_info_ex(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS
             CL_TL_ENTITY => CL_TL_UDP,
             CL_NL_ENTITY => CL_NL_IP,
             IF_ENTITY => IF_GENERIC,
+            AT_ENTITY => AT_ARP,
             _ => 0,
         };
         return complete_query(irp, out_buf, out_len, &ty.to_ne_bytes());
+    }
+
+    // PROTOCOL-class MIB queries — the iphlpapi management plane. Each returns a
+    // fixed struct (or a size-probe count for the table queries) via complete_query.
+    if id.toi_class == INFO_CLASS_PROTOCOL {
+        match (ent, id.toi_id) {
+            (IF_ENTITY, IF_MIB_STATS_ID) => return mib_if_entry(irp, out_buf, out_len),
+            (CL_NL_ENTITY, IP_MIB_STATS_ID) => return mib_ip_stats(irp, out_buf, out_len),
+            (CL_NL_ENTITY, IP_MIB_ADDRTABLE_ENTRY_ID) => {
+                return mib_ip_addrtable(irp, out_buf, out_len)
+            }
+            (CL_NL_ENTITY, IP_MIB_ARPTABLE_ENTRY_ID) => {
+                return mib_ip_routetable(irp, out_buf, out_len)
+            }
+            (AT_ENTITY, IP_MIB_ARPTABLE_ENTRY_ID) => {
+                // ARP table: empty (smoltcp owns its neighbour cache internally and
+                // doesn't expose it; an empty GetIpNetTable is valid).
+                return complete_query(irp, out_buf, out_len, &[]);
+            }
+            (CO_TL_ENTITY, 1) => return complete_query(irp, out_buf, out_len, &[0u8; MIB_TCPSTATS_LEN]),
+            (CL_TL_ENTITY, 1) => return complete_query(irp, out_buf, out_len, &[0u8; MIB_UDPSTATS_LEN]),
+            _ => {}
+        }
     }
 
     // IP MIB stats / address table / per-protocol classes — not yet implemented.
@@ -353,6 +392,244 @@ unsafe fn complete_query(irp: PIRP, out_buf: *mut u8, out_len: usize, data: &[u8
     STATUS_SUCCESS
 }
 
+// ---- MIB response structs (tcpioctl.h). All natural-aligned ULONG/UCHAR, so
+// repr(C) matches the C layout exactly; fields are serialized whole via as_bytes,
+// hence #[allow(dead_code)] (rustc can't see the byte-cast read).
+
+unsafe fn as_bytes<T>(v: &T) -> &[u8] {
+    core::slice::from_raw_parts(v as *const T as *const u8, core::mem::size_of::<T>())
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+struct IfEntryFixed {
+    if_index: u32,
+    if_type: u32,
+    if_mtu: u32,
+    if_speed: u32,
+    if_physaddrlen: u32,
+    if_physaddr: [u8; 8],
+    if_adminstatus: u32,
+    if_operstatus: u32,
+    if_lastchange: u32,
+    if_inoctets: u32,
+    if_inucastpkts: u32,
+    if_innucastpkts: u32,
+    if_indiscards: u32,
+    if_inerrors: u32,
+    if_inunknownprotos: u32,
+    if_outoctets: u32,
+    if_outucastpkts: u32,
+    if_outnucastpkts: u32,
+    if_outdiscards: u32,
+    if_outerrors: u32,
+    if_outqlen: u32,
+    if_descrlen: u32,
+    // if_descr[if_descrlen] is appended after this fixed part (92 bytes).
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+struct IpSnmpInfo {
+    ipsi_forwarding: u32,
+    ipsi_defaultttl: u32,
+    ipsi_inreceives: u32,
+    ipsi_inhdrerrors: u32,
+    ipsi_inaddrerrors: u32,
+    ipsi_forwdatagrams: u32,
+    ipsi_inunknownprotos: u32,
+    ipsi_indiscards: u32,
+    ipsi_indelivers: u32,
+    ipsi_outrequests: u32,
+    ipsi_routingdiscards: u32,
+    ipsi_outdiscards: u32,
+    ipsi_outnoroutes: u32,
+    ipsi_reasmtimeout: u32,
+    ipsi_reasmreqds: u32,
+    ipsi_reasmoks: u32,
+    ipsi_reasmfails: u32,
+    ipsi_fragoks: u32,
+    ipsi_fragfails: u32,
+    ipsi_fragcreates: u32,
+    ipsi_numif: u32,
+    ipsi_numaddr: u32,
+    ipsi_numroutes: u32,
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+struct IpAddrEntry {
+    iae_addr: u32,
+    iae_index: u32,
+    iae_mask: u32,
+    iae_bcastaddr: u32,
+    iae_reasmsize: u32,
+    iae_context: u16,
+    iae_pad: u16,
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+struct IpRouteEntry {
+    ire_dest: u32,
+    ire_index: u32,
+    ire_metric1: u32,
+    ire_metric2: u32,
+    ire_metric3: u32,
+    ire_metric4: u32,
+    ire_gw: u32,
+    ire_type: u32,
+    ire_proto: u32,
+    ire_age: u32,
+    ire_mask: u32,
+    ire_metric5: u32,
+    ire_info: u32,
+}
+
+// Lock the MIB struct layouts at compile time (all 3 arches) — iphlpapi reads
+// these by exact field offset, so a layout drift would mangle ipconfig output.
+const _: () = assert!(core::mem::size_of::<IfEntryFixed>() == 92);
+const _: () = assert!(core::mem::size_of::<IpSnmpInfo>() == 92);
+const _: () = assert!(core::mem::size_of::<IpAddrEntry>() == 24);
+const _: () = assert!(core::mem::size_of::<IpRouteEntry>() == 52);
+
+/// IFEntry — the adapter's interface MIB (ifenum reads index/type/mtu/physaddr/descr).
+unsafe fn mib_if_entry(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
+    let mac = crate::netcfg::mac();
+    const DESCR: &[u8] = b"netstack smoltcp adapter";
+    let e = IfEntryFixed {
+        if_index: 1,
+        if_type: 6, // MIB_IF_TYPE_ETHERNET
+        if_mtu: 1500,
+        if_speed: 100_000_000,
+        if_physaddrlen: 6,
+        if_physaddr: [mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0, 0],
+        if_adminstatus: 1,
+        if_operstatus: 5, // IF_OPER_STATUS_OPERATIONAL
+        if_lastchange: 0,
+        if_inoctets: 0,
+        if_inucastpkts: 0,
+        if_innucastpkts: 0,
+        if_indiscards: 0,
+        if_inerrors: 0,
+        if_inunknownprotos: 0,
+        if_outoctets: 0,
+        if_outucastpkts: 0,
+        if_outnucastpkts: 0,
+        if_outdiscards: 0,
+        if_outerrors: 0,
+        if_outqlen: 0,
+        if_descrlen: DESCR.len() as u32,
+    };
+    let fixed = core::mem::size_of::<IfEntryFixed>();
+    let mut buf = [0u8; core::mem::size_of::<IfEntryFixed>() + 32];
+    core::ptr::copy_nonoverlapping(&e as *const _ as *const u8, buf.as_mut_ptr(), fixed);
+    let dl = DESCR.len().min(buf.len() - fixed);
+    core::ptr::copy_nonoverlapping(DESCR.as_ptr(), buf.as_mut_ptr().add(fixed), dl);
+    complete_query(irp, out_buf, out_len, &buf[..fixed + dl])
+}
+
+/// IPSNMPInfo — IP protocol stats; iphlpapi reads numif/numaddr/numroutes to size
+/// the address + route table queries.
+unsafe fn mib_ip_stats(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
+    let n = if crate::netcfg::configured() { 1 } else { 0 };
+    let mut info: IpSnmpInfo = core::mem::zeroed();
+    info.ipsi_forwarding = 2; // not forwarding
+    info.ipsi_defaultttl = 128;
+    info.ipsi_numif = 1;
+    info.ipsi_numaddr = n;
+    info.ipsi_numroutes = n;
+    complete_query(irp, out_buf, out_len, as_bytes(&info))
+}
+
+/// IPAddrEntry[] — the IP address table (one entry: our DHCP address on if 1).
+unsafe fn mib_ip_addrtable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
+    if !crate::netcfg::configured() {
+        return complete_query(irp, out_buf, out_len, &[]);
+    }
+    let e = IpAddrEntry {
+        iae_addr: crate::netcfg::ipv4_naddr(),
+        iae_index: 1,
+        iae_mask: crate::netcfg::mask_naddr(),
+        iae_bcastaddr: crate::netcfg::broadcast_naddr(),
+        iae_reasmsize: 0xffff,
+        iae_context: 0,
+        iae_pad: 0,
+    };
+    complete_query(irp, out_buf, out_len, as_bytes(&e))
+}
+
+/// IPRouteEntry[] — the route table (one default route via the DHCP gateway).
+unsafe fn mib_ip_routetable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
+    if !crate::netcfg::configured() || crate::netcfg::gateway_naddr() == 0 {
+        return complete_query(irp, out_buf, out_len, &[]);
+    }
+    let mut e: IpRouteEntry = core::mem::zeroed();
+    e.ire_dest = 0; // 0.0.0.0 default
+    e.ire_index = 1;
+    e.ire_metric1 = 1;
+    e.ire_gw = crate::netcfg::gateway_naddr();
+    e.ire_type = 4; // MIB_IPROUTE_TYPE_INDIRECT (remote)
+    e.ire_proto = 3; // MIB_IPPROTO_NETMGMT
+    e.ire_mask = 0; // 0.0.0.0 mask for the default route
+    complete_query(irp, out_buf, out_len, as_bytes(&e))
+}
+
+/// Handle IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED) on \Device\Ip. Input and
+/// output share `AssociatedIrp.SystemBuffer`; the request header is parsed here,
+/// the actual echo + reply is plumbed cross-thread to the smoltcp worker (which
+/// alone owns the ICMP socket), and the IRP pends until a reply or the timeout.
+/// `UserBuffer` is captured so the worker can compute the reply's `Data`
+/// back-pointer into the caller's address space (a value, never dereferenced).
+unsafe fn handle_icmp_echo(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
+    let dic = &(*stack).Parameters.DeviceIoControl;
+    let in_len = dic.InputBufferLength as usize;
+    let out_len = dic.OutputBufferLength as usize;
+    let sysbuf = (*irp).AssociatedIrp.SystemBuffer as *const u8;
+    let user_buffer = (*irp).UserBuffer as usize;
+
+    // Match the C transport's DispEchoRequest validation exactly.
+    if sysbuf.is_null()
+        || out_len < core::mem::size_of::<tdi::IcmpEchoReply>()
+        || in_len < core::mem::size_of::<tdi::IcmpEchoRequest>()
+    {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let req = &*(sysbuf as *const tdi::IcmpEchoRequest);
+    let data_off = req.data_offset as usize;
+    let data_size = req.data_size as usize;
+    let dst = req.address.to_ne_bytes(); // IPAddr network-order octets a.b.c.d
+    let timeout_ms = req.timeout;
+    // DataOffset + DataSize must stay inside the (copied-in) input buffer.
+    if data_off.checked_add(data_size).map(|e| e > in_len).unwrap_or(true) {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Copy the request payload out of SystemBuffer now: the worker emits it on a
+    // later poll iteration, and SystemBuffer is the *output* the worker overwrites.
+    let mut data = alloc::vec::Vec::with_capacity(data_size);
+    data.extend_from_slice(core::slice::from_raw_parts(sysbuf.add(data_off), data_size));
+
+    nsprint!(
+        "[NETSTACK] ICMP echo -> {}.{}.{}.{} ({} bytes, timeout {}ms)\n",
+        dst[0], dst[1], dst[2], dst[3], data_size, timeout_ms
+    );
+    IoMarkIrpPending(irp);
+    tditrans::post(tditrans::Cmd::IcmpEcho {
+        irp: irp as usize,
+        sysbuf: sysbuf as usize,
+        out_len,
+        user_buffer,
+        dst,
+        timeout_ms,
+        data,
+    });
+    STATUS_PENDING
+}
+
 /// Route a TDI request (IRP_MJ_INTERNAL_DEVICE_CONTROL, MinorFunction) into the
 /// data path. Connect/Send/Receive/Disconnect pend (worker completes); the rest
 /// complete synchronously.
@@ -368,6 +645,13 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         && (*stack).Parameters.DeviceIoControl.IoControlCode == IOCTL_TCP_QUERY_INFORMATION_EX
     {
         return handle_query_info_ex(irp, stack);
+    }
+
+    // ICMP echo (ping) — \Device\Ip, METHOD_BUFFERED. iphlpapi's IcmpSendEcho2.
+    if (*stack).MajorFunction == IRP_MJ_DEVICE_CONTROL
+        && (*stack).Parameters.DeviceIoControl.IoControlCode == tdi::IOCTL_ICMP_ECHO_REQUEST
+    {
+        return handle_icmp_echo(irp, stack);
     }
 
     match minor {
@@ -407,6 +691,46 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 tditrans::post(tditrans::Cmd::Connect { conn_id: id, ip, port, irp: irp as usize });
                 STATUS_PENDING
             } else {
+                complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
+                STATUS_NOT_IMPLEMENTED
+            }
+        }
+        tdi::TDI_LISTEN => {
+            // Server-side: AFD pre-posts this (after associate+bind) and it pends
+            // until an inbound connection is established. ReturnConnectionInformation
+            // receives the peer address on completion.
+            let p = params as *const tdi::TDI_REQUEST_KERNEL;
+            let ret_info = (*p).ReturnConnectionInformation as usize;
+            nsprint!("[NETSTACK] TDI LISTEN conn {}\n", id);
+            IoMarkIrpPending(irp);
+            tditrans::post(tditrans::Cmd::Listen { conn_id: id, irp: irp as usize, ret_info });
+            STATUS_PENDING
+        }
+        tdi::TDI_ACCEPT => {
+            // smoltcp completes the handshake during listen, so by the time AFD
+            // accepts, the connection is already established + bound to this conn
+            // object. Acknowledge synchronously.
+            nsprint!("[NETSTACK] TDI ACCEPT conn {}\n", id);
+            complete_now(irp, STATUS_SUCCESS, 0);
+            STATUS_SUCCESS
+        }
+        tdi::TDI_QUERY_INFORMATION => {
+            // getsockname: AfdGetSockName issues TDI_QUERY_ADDRESS_INFO and reads
+            // the reply (a TDI_ADDRESS_INFO) from the IRP's MDL.
+            let p = params as *const tdi::TDI_REQUEST_KERNEL_QUERY;
+            if (*p).QueryType == tdi::TDI_QUERY_ADDRESS_INFO {
+                let va = mdl_va(irp);
+                if va == 0 {
+                    complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+                    return STATUS_INVALID_PARAMETER;
+                }
+                IoMarkIrpPending(irp);
+                tditrans::post(tditrans::Cmd::QueryAddress {
+                    id, irp: irp as usize, out: va, out_len: mdl_len(irp),
+                });
+                STATUS_PENDING
+            } else {
+                nsprint!("[NETSTACK] TDI QUERY_INFORMATION type {} unhandled\n", (*p).QueryType);
                 complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
                 STATUS_NOT_IMPLEMENTED
             }
@@ -519,4 +843,13 @@ unsafe fn mdl_va(irp: PIRP) -> usize {
     }
     // NormalPagePriority = 16.
     ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe(mdl, 16) as usize
+}
+
+/// Byte length of the IRP's data MDL (TDI_QUERY output buffer), or 0.
+unsafe fn mdl_len(irp: PIRP) -> usize {
+    let mdl = (*irp).MdlAddress;
+    if mdl.is_null() {
+        return 0;
+    }
+    (*(mdl as *const ntkrnl_sys::ddk::_MDL)).ByteCount as usize
 }

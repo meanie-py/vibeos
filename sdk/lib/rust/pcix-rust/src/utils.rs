@@ -219,7 +219,7 @@ pub unsafe extern "system" fn PciIsDatacenter() -> BOOLEAN {
         DbgPrint(
             (b"UNRECOVERABLE ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR).cast(),
             b"PciIsDatacenter\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+            b"drivers/bus/pcix/utils.c\0" as *const u8
                 as *const i8,
             156 as i32,
         );
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn PciOpenKey(
         if true {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr()
+                b"drivers/bus/pcix/utils.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 174u32,
                 core::ptr::null_mut::<i8>(),
@@ -542,7 +542,7 @@ pub unsafe extern "system" fn PciInsertEntryAtTail(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as *const i8 as PVOID,
                 405 as ULONG,
                 core::ptr::null_mut::<i8>(),
             );
@@ -586,7 +586,7 @@ pub unsafe extern "system" fn PciInsertEntryAtHead(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr()
+                b"drivers/bus/pcix/utils.c\0".as_ptr()
                     as PVOID,
                 434 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -627,7 +627,7 @@ pub unsafe extern "system" fn PcipLinkSecondaryExtension(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr()
+                b"drivers/bus/pcix/utils.c\0".as_ptr()
                     as PVOID,
                 465u32,
                 core::ptr::null_mut::<i8>(),
@@ -665,7 +665,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
         if DbgPrint(
             (b"(%s:%d) PCI - Unexpected status from GetDeviceProperty, saw %08X, expected %08X.\n\0"
                 as *const u8 as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+            b"drivers/bus/pcix/utils.c\0" as *const u8
                 as *const i8,
             495i32,
             Status,
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
         {
             DbgPrint(
                 (b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+                b"drivers/bus/pcix/utils.c\0" as *const u8
                     as *const i8,
                 495i32,
             );
@@ -683,7 +683,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
         if 0i32 == 0 {
             RtlAssert(
                 b"FALSE\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+                b"drivers/bus/pcix/utils.c\0" as *const u8
                     as *const i8 as PVOID,
                 497u32,
                 b"PCI Successfully did the impossible!\n\0" as *const u8 as *const i8 as PSTR,
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
         if DbgPrint(
             (b"(%s:%d) PCI - Failed to allocate DeviceProperty buffer (%u bytes).\n\0" as *const u8
                 as PCSTR).cast(),
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+            b"drivers/bus/pcix/utils.c\0" as *const u8
                 as *const i8,
             506i32,
             BufferLength,
@@ -705,7 +705,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
         {
             DbgPrint(
                 (b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+                b"drivers/bus/pcix/utils.c\0" as *const u8
                     as *const i8,
                 506i32,
             );
@@ -723,7 +723,7 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
             if BufferLength != ResultLength {
                 RtlAssert(
                     b"BufferLength == ResultLength\0" as *const u8 as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+                    b"drivers/bus/pcix/utils.c\0"
                         as *const u8 as *const i8 as PVOID,
                     520u32,
                     core::ptr::null_mut::<i8>(),
@@ -760,7 +760,7 @@ pub unsafe extern "system" fn PciSendIoctl(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const i8 as PVOID,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as *const i8 as PVOID,
                 543u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -839,7 +839,7 @@ pub unsafe extern "system" fn PciGetHackFlags(
     if PciHackTable.is_null() {
         RtlAssert(
             b"PciHackTable\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
             621u32,
             core::ptr::null_mut::<CHAR>(),
         );
@@ -947,7 +947,7 @@ pub unsafe extern "system" fn PciIsDeviceOnDebugPath(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
                 753u32,
                 core::ptr::null_mut(),
             );
@@ -956,7 +956,7 @@ pub unsafe extern "system" fn PciIsDeviceOnDebugPath(
     if !(PciDebugPortsCount <= 4u32) {
         RtlAssert(
             b"PciDebugPortsCount <= MAX_DEBUGGING_DEVICES_SUPPORTED\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
             758u32,
             core::ptr::null_mut(),
         );
@@ -967,7 +967,7 @@ pub unsafe extern "system" fn PciIsDeviceOnDebugPath(
     DbgPrint(
         (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
         b"PciIsDeviceOnDebugPath\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/utils.c\0".as_ptr() as *const i8,
         762i32,
     );
     DbgPrint((b"\0".as_ptr() as PCSTR).cast());
@@ -1009,7 +1009,7 @@ pub unsafe extern "system" fn PciGetBiosConfig(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+                b"drivers/bus/pcix/utils.c\0" as *const u8
                     as *const i8 as PVOID,
                 779 as ULONG,
                 core::ptr::null_mut(),
@@ -1089,7 +1089,7 @@ pub unsafe extern "system" fn PciGetBiosConfig(
     if (*PartialInfo).DataLength != PCI_COMMON_HDR_LENGTH as ULONG {
         RtlAssert(
             b"PartialInfo->DataLength == PCI_COMMON_HDR_LENGTH\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+            b"drivers/bus/pcix/utils.c\0" as *const u8
                 as *const i8 as PVOID,
             824 as ULONG,
             core::ptr::null_mut(),
@@ -1141,7 +1141,7 @@ pub unsafe extern "system" fn PciSaveBiosConfig(
         if true {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0" as *const u8
+                b"drivers/bus/pcix/utils.c\0" as *const u8
                     as *const i8 as PVOID,
                 839u32,
                 core::ptr::null_mut::<i8>(),
@@ -1257,7 +1257,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
         RtlAssert(
             b"DeviceExtension->ExtensionType == PciPdoExtensionType\0"
                 .as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+            b"drivers/bus/pcix/utils.c\0"
                 .as_ptr() as *const i8 as PVOID,
             898u32,
             core::ptr::null_mut::<i8>(),
@@ -1267,7 +1267,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
         RtlAssert(
             b"DeviceExtension->CapabilitiesPtr != 0\0"
                 .as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+            b"drivers/bus/pcix/utils.c\0"
                 .as_ptr() as *const i8 as PVOID,
             899u32,
             core::ptr::null_mut::<i8>(),
@@ -1276,7 +1276,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
     if Buffer.is_null() {
         RtlAssert(
             b"Buffer\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+            b"drivers/bus/pcix/utils.c\0"
                 .as_ptr() as *const i8 as PVOID,
             900u32,
             core::ptr::null_mut::<i8>(),
@@ -1286,7 +1286,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
         RtlAssert(
             b"Length >= sizeof(PCI_CAPABILITIES_HEADER)\0"
                 .as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+            b"drivers/bus/pcix/utils.c\0"
                 .as_ptr() as *const i8 as PVOID,
             901u32,
             core::ptr::null_mut::<i8>(),
@@ -1297,7 +1297,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
             RtlAssert(
                 b"(Offset >= PCI_COMMON_HDR_LENGTH) && ((Offset & 0x3) == 0)\0"
                     .as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+                b"drivers/bus/pcix/utils.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 907u32,
                 core::ptr::null_mut::<i8>(),
@@ -1320,7 +1320,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
                     RtlAssert(
                         b"Length <= (sizeof(PCI_COMMON_CONFIG) - Offset)\0"
                             .as_ptr() as *const i8 as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+                        b"drivers/bus/pcix/utils.c\0"
                             .as_ptr() as *const i8 as PVOID,
                         922u32,
                         core::ptr::null_mut::<i8>(),
@@ -1343,7 +1343,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
             if DbgPrint(
                 (b"(%s:%d) PCI device %p capabilities list is broken.\n\0"
                     .as_ptr() as PCSTR).cast(),
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+                b"drivers/bus/pcix/utils.c\0"
                     .as_ptr() as *const i8,
                 944i32,
                 DeviceExtension,
@@ -1352,7 +1352,7 @@ pub unsafe extern "system" fn PciReadDeviceCapability(
                 DbgPrint(
                     (b"(%s:%d) DbgPrint() failed!\n\0"
                         .as_ptr() as PCSTR).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0"
+                    b"drivers/bus/pcix/utils.c\0"
                         .as_ptr() as *const i8,
                     944i32,
                 );
@@ -1380,7 +1380,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
         if HackFlags != 0 {
             RtlAssert(
                 b"HackFlags == 0\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr()
+                b"drivers/bus/pcix/utils.c\0".as_ptr()
                     as *mut core::ffi::c_void,
                 970 as ULONG,
                 (core::ptr::null_mut::<core::ffi::c_void>()).cast(),
@@ -1393,7 +1393,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
         if Config.is_null() {
             RtlAssert(
                 b"Config != NULL\0".as_ptr() as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr()
+                b"drivers/bus/pcix/utils.c\0".as_ptr()
                     as *mut core::ffi::c_void,
                 980 as ULONG,
                 (core::ptr::null_mut::<core::ffi::c_void>()).cast(),
@@ -1503,7 +1503,7 @@ pub unsafe extern "system" fn PciIsSlotPresentInParentMethod(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
                 1103 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1708,7 +1708,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
 
     if DbgPrint(
         b"(%s:%d) Slot lookup for %d.%u.%u\n\0".as_ptr() as *const u8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+        b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
         1352i32,
         if !ParentExtension.is_null() {
             (*ParentExtension).BaseBus as i32
@@ -1721,7 +1721,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const u8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+            b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
             1352i32,
         );
     }
@@ -1730,7 +1730,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
         let mut SlotInfo: PSLOT_INFO = &raw mut (*PciIrqRoutingTable).Slot as *mut SLOT_INFO;
         if DbgPrint(
             b"(%s:%d) PIR$ %p is %lx bytes, slot 0 is at: %p\n\0".as_ptr() as *const u8,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+            b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
             1358i32,
             PciIrqRoutingTable,
             (*PciIrqRoutingTable).TableSize as i32,
@@ -1739,7 +1739,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const u8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
                 1358i32,
             );
         }
@@ -1748,7 +1748,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
         while SlotInfo < table_end {
             if DbgPrint(
                 b"(%s:%d) Slot Info: %u.%u->#%u\n\0".as_ptr() as *const u8,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
                 1365i32,
                 (*SlotInfo).BusNumber as i32,
                 (*SlotInfo).DeviceNumber as i32,
@@ -1757,7 +1757,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const u8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
+                    b"drivers/bus/pcix/utils.c\0".as_ptr() as *const u8,
                     1365i32,
                 );
             }
@@ -1898,7 +1898,7 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
     if !NT_SUCCESS(Status) {
         RtlAssert(
             b"NT_SUCCESS(Status)\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
             1494,
             core::ptr::null_mut(),
         );
@@ -1946,7 +1946,7 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
             DbgPrint(
                 (b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
                 b"PciQueryPowerCapabilities\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PCSTR,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as PCSTR,
                 1559,
             );
         }
@@ -2038,7 +2038,7 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
         if (*DeviceCapability).DeviceState[PowerSystemWorking as usize] != PowerDeviceD0 {
             RtlAssert(
                 b"DeviceCapability->DeviceState[PowerSystemWorking] == PowerDeviceD0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
+                b"drivers/bus/pcix/utils.c\0".as_ptr() as PVOID,
                 1712,
                 core::ptr::null_mut(),
             );

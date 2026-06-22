@@ -22,6 +22,10 @@ pub const TDI_QUERY_INFORMATION: u8 = 0x0C;
 pub const TDI_SET_INFORMATION: u8 = 0x0D;
 pub const TDI_ACTION: u8 = 0x0E;
 
+// TDI_QUERY_INFORMATION query types (tdi.h). ADDRESS_INFO is what AfdGetSockName
+// issues to learn a socket's local address (getsockname).
+pub const TDI_QUERY_ADDRESS_INFO: i32 = 0x0000_0003;
+
 // TDI event types (TDI_SET_EVENT_HANDLER), the upcalls into AFD.
 pub const TDI_EVENT_CONNECT: i32 = 0;
 pub const TDI_EVENT_DISCONNECT: i32 = 1;
@@ -113,6 +117,16 @@ pub struct TDI_REQUEST_KERNEL {
     pub RequestConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
     pub ReturnConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
     pub RequestSpecific: *mut c_void,
+}
+
+/// TDI_REQUEST_KERNEL_QUERY_INFORMATION — TDI_QUERY_INFORMATION parameter overlay
+/// (tdikrnl.h). For TDI_QUERY_ADDRESS_INFO the reply (a TDI_ADDRESS_INFO) is written
+/// into the IRP's MDL, not through this struct. Layout mirrors TDI_REQUEST_KERNEL:
+/// a leading LONG then a pointer (repr(C) pads the pointer to LP64/ILP32 alignment).
+#[repr(C)]
+pub struct TDI_REQUEST_KERNEL_QUERY {
+    pub QueryType: i32,
+    pub RequestConnectionInformation: *mut TDI_CONNECTION_INFORMATION,
 }
 
 #[repr(C)]
@@ -212,6 +226,29 @@ impl TaIpFull {
     }
 }
 
+/// TDI_ADDRESS_INFO (tdi.h): the reply to TDI_QUERY_ADDRESS_INFO — an activity
+/// count followed by a TRANSPORT_ADDRESS. msafd's WSPGetSockName reads `.Address`
+/// (skipping ActivityCount) as the local sockaddr. Byte-packed to lock-step with
+/// the embedded packed `TaIpFull`; sizeof == 26 (4 + 22), exactly the buffer msafd
+/// allocates (sizeof(TRANSPORT_ADDRESS) + SizeOfLocalAddress).
+#[repr(C, packed)]
+pub struct TdiAddressInfo {
+    pub activity_count: u32,
+    pub address: TaIpFull,
+}
+
+impl TdiAddressInfo {
+    pub fn new(ip: [u8; 4], port: u16) -> Self {
+        TdiAddressInfo { activity_count: 1, address: TaIpFull::new(ip, port) }
+    }
+}
+
+// Lock the on-wire TA layouts at compile time (all 3 arches) — these are read
+// byte-for-byte by msafd/AFD, so a layout drift would silently corrupt addresses.
+const _: () = assert!(core::mem::size_of::<TaIpFull>() == 22);
+const _: () = assert!(core::mem::size_of::<TdiAddressInfo>() == 26);
+const _: () = assert!(core::mem::size_of::<TDI_ADDRESS_IP>() == 14);
+
 /// Parse the first IPv4 endpoint out of a raw TRANSPORT_ADDRESS / TA_IP_ADDRESS
 /// (count + TA_ADDRESS + TDI_ADDRESS_IP). Returns (octets, port).
 pub unsafe fn parse_ta(ta: *const u8) -> Option<([u8; 4], u16)> {
@@ -247,6 +284,71 @@ pub unsafe fn parse_remote_ip(
     }
     parse_ta((*conn_info).RemoteAddress as *const u8)
 }
+
+// --------------------------------------------------------------------------- #
+// ICMP echo (ping) — IOCTL_ICMP_ECHO_REQUEST on \Device\Ip (M9 item 3).
+// iphlpapi's IcmpSendEcho2 (dll/win32/iphlpapi/icmp.c) issues this METHOD_BUFFERED
+// IOCTL: input = ICMP_ECHO_REQUEST header + payload, output = ICMP_ECHO_REPLY +
+// echoed data appended at the END of the buffer. Layouts mirror sdk/include/psdk/
+// ipexport.h byte-for-byte; the reply construction mirrors the C transport's
+// ProcessEchoData (drivers/network/tcpip/tcpip/icmp.c).
+// --------------------------------------------------------------------------- #
+
+/// _TCP_CTL_CODE(0, METHOD_BUFFERED, FILE_ANY_ACCESS) — FILE_DEVICE_NETWORK 0x12.
+pub const IOCTL_ICMP_ECHO_REQUEST: u32 = 0x0012_0000;
+
+// IP_STATUS values (ipexport.h). Surfaced in ICMP_ECHO_REPLY.Status.
+pub const IP_SUCCESS: u32 = 0;
+pub const IP_REQ_TIMED_OUT: u32 = 11010; // IP_STATUS_BASE(11000) + 10
+
+/// ICMP_ECHO_REQUEST (ipexport.h) — the IOCTL input header. sizeof == 20 (no
+/// pointers), identical on all three arches.
+#[repr(C)]
+pub struct IcmpEchoRequest {
+    pub address: u32, // IPAddr, network byte order
+    pub timeout: u32, // milliseconds
+    pub data_offset: u16,
+    pub data_size: u16,
+    pub has_options: u8,
+    pub ttl: u8,
+    pub tos: u8,
+    pub flags: u8,
+    pub options_offset: u16,
+    pub options_size: u8,
+    pub padding: u8,
+}
+
+/// IP_OPTION_INFORMATION (ipexport.h) — embedded in the reply. The trailing
+/// pointer makes this arch-sized (i386: 8, amd64/arm64: 16).
+#[repr(C)]
+pub struct IpOptionInformation {
+    pub ttl: u8,
+    pub tos: u8,
+    pub flags: u8,
+    pub options_size: u8,
+    pub options_data: *mut u8,
+}
+
+/// ICMP_ECHO_REPLY (ipexport.h) — the IOCTL output header. `Data` is a back-pointer
+/// into the *user* output buffer (computed arithmetically, never dereferenced in
+/// the kernel). sizeof: i386 == 28, amd64/arm64 == 40.
+#[repr(C)]
+pub struct IcmpEchoReply {
+    pub address: u32, // IPAddr of the responder, network byte order
+    pub status: u32,  // IP_STATUS
+    pub round_trip_time: u32,
+    pub data_size: u16,
+    pub reserved: u16, // IcmpParseReplies reads this as the reply count
+    pub data: *mut u8,
+    pub options: IpOptionInformation,
+}
+
+// Lock the IOCTL layouts at compile time (read byte-for-byte by iphlpapi).
+const _: () = assert!(core::mem::size_of::<IcmpEchoRequest>() == 20);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<IcmpEchoReply>() == 28);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<IcmpEchoReply>() == 40);
 
 /// Human-readable name for a TDI minor function (logging).
 pub fn minor_name(m: u8) -> &'static str {

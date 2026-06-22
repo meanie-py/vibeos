@@ -29113,7 +29113,7 @@ pub unsafe extern "system" fn GetUserGeoID(GeoClass: GEOCLASS) -> GEOID {
                 gDebugChannel,
                 DPFLTR_WARNING_LEVEL,
                 b"(%s:%d) GEOCLASS_REGION not handled yet\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/dll/win32/kernel32/winnls/string/locale.c\0".as_ptr() as PCSTR,
+                b"dll/win32/kernel32/winnls/string/locale.c\0".as_ptr() as PCSTR,
                 4866,
             );
         }

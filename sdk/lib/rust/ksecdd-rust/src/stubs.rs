@@ -29,7 +29,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"AcceptSecurityContext\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         33 as ::core::ffi::c_int,
     );
@@ -52,7 +52,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"AcquireCredentialsHandleW\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         50 as ::core::ffi::c_int,
     );
@@ -74,7 +74,7 @@ pub unsafe extern "system" fn AddCredentialsW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"AddCredentialsW\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         66 as ::core::ffi::c_int,
     );
@@ -90,7 +90,7 @@ pub unsafe extern "system" fn ApplyControlToken(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"ApplyControlToken\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         76 as ::core::ffi::c_int,
     );
@@ -103,7 +103,7 @@ pub unsafe extern "system" fn CredMarshalTargetInfo() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"CredMarshalTargetInfo\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         84 as i32,
     );
@@ -115,7 +115,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut phContext: PCtxtHandle) 
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"DeleteSecurityContext\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         92 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -127,7 +127,7 @@ pub unsafe extern "system" fn EfsDecryptFek() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"EfsDecryptFek\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         100 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -138,7 +138,7 @@ pub unsafe extern "system" fn EfsGenerateKey() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"EfsGenerateKey\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         107 as i32,
     );
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"EnumerateSecurityPackagesW\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const core::ffi::c_char,
         116 as core::ffi::c_int,
     );
@@ -171,7 +171,7 @@ pub unsafe extern "system" fn ExportSecurityContext(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"ExportSecurityContext\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const core::ffi::c_char,
         128 as core::ffi::c_int,
     );
@@ -184,7 +184,7 @@ pub unsafe extern "system" fn FreeContextBuffer(mut pvContextBuffer: PVOID) -> S
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"FreeContextBuffer\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         137 as ::core::ffi::c_int,
     );
@@ -197,7 +197,7 @@ pub unsafe extern "system" fn FreeCredentialsHandle(mut phCredential: PCredHandl
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"FreeCredentialsHandle\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         146 as core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn GenerateDirEfs() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"GenerateDirEfs\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         154 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -220,7 +220,7 @@ pub unsafe extern "system" fn GenerateSessionKey() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"GenerateSessionKey\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         161 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -235,7 +235,7 @@ pub unsafe extern "system" fn GetSecurityUserInfo(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"GetSecurityUserInfo\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         171 as i32,
     );
     *UserInformation = core::ptr::null_mut() as PSecurityUserData;
@@ -248,7 +248,7 @@ pub unsafe extern "system" fn ImpersonateSecurityContext(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"ImpersonateSecurityContext\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         181 as i32,
     );
@@ -266,7 +266,7 @@ pub unsafe extern "system" fn ImportSecurityContextW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"ImportSecurityContextW\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const core::ffi::c_char,
         193 as core::ffi::c_int,
     );
@@ -292,7 +292,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"InitializeSecurityContextW\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         213 as core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTable
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char,
         b"InitSecurityInterfaceW\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const ::core::ffi::c_char,
         222 as ::core::ffi::c_int,
     );
@@ -317,7 +317,7 @@ pub unsafe extern "system" fn KSecRegisterSecurityProvider() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"KSecRegisterSecurityProvider\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         230 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -328,7 +328,7 @@ pub unsafe extern "system" fn KSecValidateBuffer() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"KSecValidateBuffer\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         237 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn LsaEnumerateLogonSessions() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"LsaEnumerateLogonSessions\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         244 as i32,
     );
@@ -351,7 +351,7 @@ pub unsafe extern "system" fn LsaGetLogonSessionData() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"LsaGetLogonSessionData\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         251 as i32,
     );
@@ -368,7 +368,7 @@ pub unsafe extern "system" fn MakeSignature(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"MakeSignature\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         262 as ::core::ffi::c_int,
     );
@@ -381,7 +381,7 @@ pub unsafe extern "system" fn MapSecurityError() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"MapSecurityError\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         270 as i32,
     );
@@ -397,7 +397,7 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"QueryContextAttributesW\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         280 as ::core::ffi::c_int,
     );
@@ -414,7 +414,7 @@ pub unsafe extern "system" fn QueryCredentialsAttributesW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"QueryCredentialsAttributesW\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         291 as i32,
     );
@@ -430,7 +430,7 @@ pub unsafe extern "system" fn QuerySecurityContextToken(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"QuerySecurityContextToken\0" as *const u8 as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const core::ffi::c_char,
         301 as core::ffi::c_int,
     );
@@ -446,7 +446,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"QuerySecurityPackageInfoW\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         311 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -458,7 +458,7 @@ pub unsafe extern "system" fn RevertSecurityContext(mut phContext: PCtxtHandle) 
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"RevertSecurityContext\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         320 as ::core::ffi::c_int,
     );
@@ -471,7 +471,7 @@ pub unsafe extern "system" fn SealMessage() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"SealMessage\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         328 as i32,
     );
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn SecLookupAccountName(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"SecLookupAccountName\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         341 as ::core::ffi::c_int,
     );
@@ -510,7 +510,7 @@ pub unsafe extern "system" fn SecLookupAccountSid(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"SecLookupAccountSid\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         355 as ::core::ffi::c_int,
     );
@@ -528,7 +528,7 @@ pub unsafe extern "system" fn SecLookupWellKnownSid(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"SecLookupWellKnownSid\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         367 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -550,7 +550,7 @@ pub unsafe extern "system" fn SecMakeSPN(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"SecMakeSPN\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         383 as ::core::ffi::c_int,
     );
@@ -574,7 +574,7 @@ pub unsafe extern "system" fn SecMakeSPNEx(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
         b"SecMakeSPNEx\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             as *const u8 as *const i8,
         400 as i32,
     );
@@ -587,7 +587,7 @@ pub unsafe extern "system" fn SecSetPagingMode() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"SecSetPagingMode\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         408 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -598,7 +598,7 @@ pub unsafe extern "system" fn UnsealMessage() {
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"UnsealMessage\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
+        b"drivers/crypto/ksecdd/stubs.c\0".as_ptr() as *const i8,
         414 as i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);
@@ -614,7 +614,7 @@ pub unsafe extern "system" fn VerifySignature(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"VerifySignature\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/crypto/ksecdd/stubs.c\0"
+        b"drivers/crypto/ksecdd/stubs.c\0"
             .as_ptr() as *const i8,
         425 as i32,
     );

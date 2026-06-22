@@ -453,7 +453,7 @@ pub unsafe extern "system" fn DiskReadSmartLog(
         if 0 as i32 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr()
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr()
                     as *const u8,
                 391 as i32,
                 b"0\0".as_ptr() as *const u8,
@@ -536,7 +536,7 @@ pub unsafe extern "system" fn DiskWriteSmartLog(
         if 0i32 == 0i32 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
                 441i32,
                 b"0\0".as_ptr() as *const i8,
             );
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn DiskPerformSmartCommand(
         if 0 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8,
                 536i32,
                 b"0\0" as *const u8,
@@ -710,7 +710,7 @@ pub unsafe extern "C" fn DiskPerformSmartCommand(
             if 0 == 0 {
                 DbgPrint(
                     (b"Assertion failed at %s(%d): %s\n\0" as *const u8).cast(),
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         as *const u8,
                     642i32,
                     b"FALSE\0" as *const u8,
@@ -722,7 +722,7 @@ pub unsafe extern "C" fn DiskPerformSmartCommand(
         if controlCode != SrbControlCode {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8,
                 645i32,
                 b"controlCode == SrbControlCode\0" as *const u8,
@@ -733,7 +733,7 @@ pub unsafe extern "C" fn DiskPerformSmartCommand(
         if availableBufferSize < lengthNeeded {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8,
                 646i32,
                 b"availableBufferSize >= lengthNeeded\0" as *const u8,
@@ -878,7 +878,7 @@ pub unsafe extern "system" fn DiskGetIdentifyInfo(
         if 0 as i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8 as *const i8,
                 822 as i32,
                 b"0\0" as *const u8 as *const i8,
@@ -946,7 +946,7 @@ pub unsafe extern "system" fn DiskSendFailurePredictIoctl(
         if 0i32 == 0i32 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8,
                 865i32,
                 b"0\0" as *const u8,
@@ -1224,7 +1224,7 @@ pub unsafe extern "C" fn DiskEnableDisableFailurePrediction(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8 as *const i8,
                 1152i32,
                 b"0\0" as *const u8 as *const i8,
@@ -1273,7 +1273,7 @@ pub unsafe extern "C" fn DiskEnableDisableFailurePredictPolling(
         if 0i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
                 1222i32,
                 b"0\0".as_ptr() as *const i8,
             );
@@ -1317,7 +1317,7 @@ pub unsafe extern "C" fn DiskReadFailurePredictStatus(
         if 0i32 == 0i32 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8 as *const i8,
                 1277i32,
                 b"0\0" as *const u8 as *const i8,
@@ -1376,7 +1376,7 @@ pub unsafe extern "C" fn DiskReadFailurePredictData(
         if 0 as i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     .as_ptr() as *const i8,
                 1354 as i32,
                 b"0\0".as_ptr() as *const i8,
@@ -1481,7 +1481,7 @@ pub unsafe extern "system" fn DiskReadFailurePredictThresholds(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
                 1444i32,
                 b"0\0" as *const u8 as *const i8,
             );
@@ -1580,7 +1580,7 @@ pub unsafe extern "system" fn DiskReregWorker(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
                 1509i32,
                 b"0\0" as *const u8 as *const i8,
             );
@@ -1592,7 +1592,7 @@ pub unsafe extern "system" fn DiskReregWorker(
     if Context.is_null() {
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
+            b"drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
             1512i32,
             b"Context != NULL\0" as *const u8 as *const i8,
         );
@@ -1625,7 +1625,7 @@ pub unsafe extern "system" fn DiskReregWorker(
             if 0 == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
+                    b"drivers/storage/class/disk/diskwmi.c\0" as *const u8 as *const i8,
                     1542i32,
                     b"Disk Re-registration request list should not be empty\0" as *const u8 as *const i8,
                 );
@@ -1667,7 +1667,7 @@ pub unsafe extern "C" fn DiskInitializeReregistration() -> NTSTATUS {
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
                 1564i32,
                 b"0\0".as_ptr() as PCSTR,
             );
@@ -2081,7 +2081,7 @@ pub unsafe extern "system" fn DiskInfoExceptionCheck(
     isRemoved = ClassAcquireRemoveLockEx(
         (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         (irp).cast(),
-        b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+        b"drivers/storage/class/disk/diskwmi.c\0"
             .as_ptr() as *const i8,
         2003u32,
     );
@@ -2201,7 +2201,7 @@ pub unsafe extern "system" fn DiskInfoExceptionCheck(
             if (0i32 == 0) {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2144i32,
                     b"FALSE\0".as_ptr() as *const i8,
@@ -2294,7 +2294,7 @@ pub unsafe extern "C" fn DiskDetectFailurePrediction(
         if 0i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8 as *const i8,
                 2278i32,
                 b"0\0" as *const u8 as *const i8,
@@ -2392,7 +2392,7 @@ pub unsafe extern "system" fn DiskWmiFunctionControl(
         if 0 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     as *const u8 as *const i8,
                 2416i32,
                 b"0\0" as *const u8 as *const i8,
@@ -2513,7 +2513,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiRegInfo(
         if 0 == 0 {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr()).cast(),
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
                 2521i32,
                 b"0\0".as_ptr() as *const i8,
             );
@@ -2602,7 +2602,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
             if 0 as ::core::ffi::c_int == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2681 as i32,
                     b"0\0".as_ptr() as *const i8,
@@ -2667,7 +2667,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
             {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2729 as i32,
                     b"diskData->FailurePredictionCapability != FailurePredictionNone\0"
@@ -2707,7 +2707,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
             {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2766 as i32,
                     b"(diskData->FailurePredictionCapability == FailurePredictionSmart) || (diskData->FailurePredictionCapability == FailurePredictionIoctl)\0"
@@ -2735,7 +2735,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
             {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2794 as i32,
                     b"(diskData->FailurePredictionCapability == FailurePredictionSmart)\0"
@@ -2762,7 +2762,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
             {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         .as_ptr() as *const i8,
                     2822 as i32,
                     b"(diskData->FailurePredictionCapability == FailurePredictionSense)\0"
@@ -2866,7 +2866,7 @@ pub unsafe extern "system" fn DiskFdoSetWmiDataBlock(
         if 0 as i32 == 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
+                b"drivers/storage/class/disk/diskwmi.c\0".as_ptr() as *const i8,
                 2910i32,
                 b"0\0".as_ptr() as *const i8,
             );
@@ -2960,7 +2960,7 @@ pub unsafe extern "system" fn DiskFdoSetWmiDataItem(
         if 0i32 == 0i32 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                b"drivers/storage/class/disk/diskwmi.c\0"
                     .as_ptr() as *const i8,
                 3016i32,
                 b"0\0".as_ptr() as *const i8,
@@ -3059,7 +3059,7 @@ pub unsafe extern "system" fn DiskFdoExecuteWmiMethod(
             {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-disk/drivers/storage/class/disk/diskwmi.c\0"
+                    b"drivers/storage/class/disk/diskwmi.c\0"
                         as *const u8 as *const i8,
                     3112i32,
                     b"(diskData->FailurePredictionCapability == FailurePredictionSmart) || (diskData->FailurePredictionCapability == FailurePredictionIoctl) || (diskData->FailurePredictionCapability == FailurePredictionSense)\0"

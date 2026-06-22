@@ -129,7 +129,7 @@ pub unsafe extern "system" fn FltEnumerateVolumes(
         if 0 as ::core::ffi::c_int == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Volume.c\0"
+                b"drivers/filters/fltmgr/Volume.c\0"
                     as *const u8 as *const ::core::ffi::c_char as PVOID,
                 125 as ULONG,
                 ::core::ptr::null_mut::<CHAR>(),
@@ -206,7 +206,7 @@ pub unsafe extern "system" fn FltDetachVolume(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const ::core::ffi::c_char,
         b"FltDetachVolume\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Volume.c\0"
+        b"drivers/filters/fltmgr/Volume.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         189 as ::core::ffi::c_int,
     );
@@ -222,7 +222,7 @@ pub unsafe extern "system" fn FltAttachVolume(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"FltAttachVolume\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-filesystems/drivers/filters/fltmgr/Volume.c\0".as_ptr() as *const i8,
+        b"drivers/filters/fltmgr/Volume.c\0".as_ptr() as *const i8,
         201 as i32,
     );
     return STATUS_NOT_IMPLEMENTED;

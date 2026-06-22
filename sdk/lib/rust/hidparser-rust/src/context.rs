@@ -117,7 +117,7 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
     if !(CurrentOffset < (*CollectionContext).Size) {
         RtlAssert(
             b"CurrentOffset < CollectionContext->Size\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             122u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
         if !(CurrentOffset.wrapping_add(ReportSize) < (*CollectionContext).Size) {
             RtlAssert(
                 b"CurrentOffset + ReportSize < CollectionContext->Size\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 137u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
     if !(CurrentOffset <= (*CollectionContext).Size) {
         RtlAssert(
             b"CurrentOffset <= CollectionContext->Size\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             155u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
         if !(CurrentOffset < (*CollectionContext).Size) {
             RtlAssert(
                 b"CurrentOffset < CollectionContext->Size\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+                b"sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
                 175u32,
                 core::ptr::null_mut::<core::ffi::c_void>(),
             );
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn HidParser_BuildCollectionContext(
     if !((CollectionSize as usize).wrapping_add(core::mem::size_of::<HID_COLLECTION_CONTEXT>()) == ContextSize as usize) {
         RtlAssert(
             b"CollectionSize + sizeof(HID_COLLECTION_CONTEXT) == ContextSize\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/context.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             207u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );

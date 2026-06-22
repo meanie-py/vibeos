@@ -130,7 +130,7 @@ pub unsafe extern "system" fn GetSystemTimePreciseAsFileTime(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as u32);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/time.c\0"
+        b"dll/win32/kernel32/client/time.c\0"
             as *const u8 as *const i8,
         150i32,
         b"GetSystemTimePreciseAsFileTime\0" as *const u8 as *const i8,
@@ -138,7 +138,7 @@ pub unsafe extern "system" fn GetSystemTimePreciseAsFileTime(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/time.c\0"
+            b"dll/win32/kernel32/client/time.c\0"
                 as *const u8 as *const i8,
             150i32,
         );
@@ -610,7 +610,7 @@ pub unsafe extern "system" fn SetClientTimeZoneInformation(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     if DbgPrint(
         b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/time.c\0"
+        b"dll/win32/kernel32/client/time.c\0"
             .as_ptr() as *const ::core::ffi::c_char,
         624 as ::core::ffi::c_int,
         b"SetClientTimeZoneInformation\0".as_ptr() as *const ::core::ffi::c_char,
@@ -618,7 +618,7 @@ pub unsafe extern "system" fn SetClientTimeZoneInformation(
     {
         DbgPrint(
             b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/time.c\0"
+            b"dll/win32/kernel32/client/time.c\0"
                 .as_ptr() as *const ::core::ffi::c_char,
             624 as ::core::ffi::c_int,
         );

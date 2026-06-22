@@ -68,7 +68,7 @@ pub unsafe extern "system" fn PciQueryInterface(
     RtlStringFromGUID(InterfaceType, &raw mut GuidString);
     DbgPrint(
         b"(%s:%d) PCI - PciQueryInterface TYPE = %wZ\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
+        b"drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
             as *const core::ffi::c_char,
         58 as core::ffi::c_int,
         &raw mut GuidString,
@@ -78,7 +78,7 @@ pub unsafe extern "system" fn PciQueryInterface(
     DbgPrint(
         b"(%s:%d)       Size = %u, Version = %u, InterfaceData = %p, LastChance = %s\n\0".as_ptr()
             as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
+        b"drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
             as *const core::ffi::c_char,
         64 as core::ffi::c_int,
         Size,
@@ -107,7 +107,7 @@ pub unsafe extern "system" fn PciQueryInterface(
                 DbgPrint(
                     b"(%s:%d) PCI - PciQueryInterface: guid = %wZ only for FDOs\n\0".as_ptr()
                         as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+                    b"drivers/bus/pcix/intrface/intrface.c\0"
                         .as_ptr() as *const core::ffi::c_char,
                     85 as core::ffi::c_int,
                     &raw mut GuidString,
@@ -122,7 +122,7 @@ pub unsafe extern "system" fn PciQueryInterface(
                 DbgPrint(
                     b"(%s:%d) PCI - PciQueryInterface: guid = %wZ only for ROOT\n\0".as_ptr()
                         as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+                    b"drivers/bus/pcix/intrface/intrface.c\0"
                         .as_ptr() as *const core::ffi::c_char,
                     96 as core::ffi::c_int,
                     &raw mut GuidString,
@@ -136,7 +136,7 @@ pub unsafe extern "system" fn PciQueryInterface(
                 DbgPrint(
                     b"(%s:%d) PCI - PciQueryInterface: guid = %wZ only for PDOs\n\0".as_ptr()
                         as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+                    b"drivers/bus/pcix/intrface/intrface.c\0"
                         .as_ptr() as *const core::ffi::c_char,
                     108 as core::ffi::c_int,
                     &raw mut GuidString,
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn PciQueryInterface(
 
         DbgPrint(
             b"(%s:%d) PCI - PciQueryInterface looking at guid = %wZ\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+            b"drivers/bus/pcix/intrface/intrface.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             115 as core::ffi::c_int,
             &raw mut GuidString,
@@ -173,7 +173,7 @@ pub unsafe extern "system" fn PciQueryInterface(
                 DbgPrint(
                     b"(%s:%d) PCI - PciQueryInterface - Constructor %p = %08lx\n\0".as_ptr()
                         as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+                    b"drivers/bus/pcix/intrface/intrface.c\0"
                         .as_ptr() as *const core::ffi::c_char,
                     135 as core::ffi::c_int,
                     (*PciInterface).Constructor,
@@ -186,7 +186,7 @@ pub unsafe extern "system" fn PciQueryInterface(
             ((*Interface).InterfaceReference).unwrap()((*Interface).Context);
             DbgPrint(
                 b"(%s:%d) PCI - PciQueryInterface returning SUCCESS\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0"
+                b"drivers/bus/pcix/intrface/intrface.c\0"
                     .as_ptr() as *const core::ffi::c_char,
                 141 as core::ffi::c_int,
             );
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn PciQueryInterface(
 
     DbgPrint(
         b"(%s:%d) PCI - PciQueryInterface FAILED TO FIND INTERFACE\n\0".as_ptr() as PCSTR,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
+        b"drivers/bus/pcix/intrface/intrface.c\0".as_ptr()
             as *const core::ffi::c_char,
         147 as core::ffi::c_int,
     );

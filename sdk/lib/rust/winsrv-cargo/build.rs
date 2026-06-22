@@ -71,10 +71,23 @@ fn main() {
         .c_shims(&[
             "sdk/lib/pseh/dummy.c",
             "win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c",
+            // WS5 cmake-off: the 3 shell GUIDs winsrv pulls from the cmake
+            // libuuid.a (CLSID_ShellLink / IID_IShellLinkW / IID_IPersistFile —
+            // shortcut creation). Verbatim midl values, selectany → byte- and
+            // section-identical to libuuid.a's members. See the file header.
+            "sdk/lib/rust/winsrv-cargo/winsrv_guids.c",
         ])
         // Exports via spec2def-generated winsrv.def (ConServerDllInitialization
         // / UserServerDllInitialization / _UserSoundSentry / …).
         .spec2def("win32ss/user/winsrv/winsrv.spec", "winsrv.dll")
+        // WS5 cmake-off: the win32k syscall stubs (was cmake `libwin32ksys.a` =
+        // sys-stubs.S). winsrv calls 8 NtUser* stubs (Initialize/ProcessConnect/
+        // ConsoleControl/…). Assemble sys-stubs.S IN-cargo as an in-group archive
+        // (the ntdll `ntdllsys` pattern): it #includes the checked-in syscall
+        // tables (w32ksvc32.h/w32ksvc64.h, quote-resolved next to the .S) +
+        // syscalls.inc (kernel asm -I chain, WS2 committed ks*.inc fallback). The
+        // linker GCs the 1466 unreferenced stubs, same as the cmake archive.
+        .asm_archive("win32ksys", &["win32ss/sys-stubs.S"])
         // The genuine shared leaf/runtime statics, reused from cmake (the same
         // tier every spine binary reuses). libwinsrv_rust.a is emitted first by
         // the engine (rust_staticlib). --allow-multiple-definition (engine)
@@ -98,11 +111,14 @@ fn main() {
         // csrsrv: 21 Csr* syms), so they're self-hosted from each .spec (the
         // kdcom/bootvid/hal pattern), symbol-identical (the cmake .a is itself
         // spec2def-generated from these specs).
-        .static_libs(&[
-            "sdk/lib/uuid/libuuid.a",
-            "win32ss/libwin32ksys.a",
-            "sdk/lib/crt/libchkstk.a",
-        ])
+        //
+        // WS5 cmake-off (2026-06-21): the LAST 3 cmake static libs are gone, so
+        // winsrv joins the cmake-off spine. libuuid.a → winsrv_guids.c c_shim
+        // (3 GUIDs); libwin32ksys.a → asm_archive(sys-stubs.S) above; libchkstk.a
+        // DROPPED — an offline drop-test shows winsrv references NO chkstk symbol
+        // (__alloca/__chkstk come from cnt-rust-lib / clang_rt.builtins), so the
+        // cmake libchkstk.a was already inert (the userinit libwine.a pattern).
+        .static_libs(&[])
         // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
         // not reused as cmake lib<dll>.a — same as the other 6 spine binaries.
         // (shell32/ole32/psapi were cmake DELAY imports; delay-imports collapse

@@ -839,6 +839,24 @@ def test_backend_rewrite_netdev_for_windows():
     assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)
 
 
+def test_free_tcp_port_windows_picker_hook():
+    # Native (no hook): a WSL-stack bind picks a real ephemeral port.
+    assert vm._windows_port_picker is None
+    p = vm._free_tcp_port()
+    assert 1024 < p < 65536
+    # windows-host: _free_tcp_port delegates to the injected picker (which, in the
+    # real backend, picks a Windows-stack-free port so QEMU.exe's 0.0.0.0 hostfwd
+    # binds — the WSL stack is a different stack under NAT). Mock it; restore after.
+    try:
+        vm._windows_port_picker = lambda: 49999
+        assert vm._free_tcp_port() == 49999
+    finally:
+        vm._windows_port_picker = None
+    # restored -> back to the WSL pick
+    assert vm._windows_port_picker is None
+    assert 1024 < vm._free_tcp_port() < 65536
+
+
 def test_backend_stage_media_paths_arm64_drives():
     # arm64 boot media rides on pflash (QEMU_EFI.fd + efivars) and a virtio -drive
     # whose value carries a trailing `file.locking=off`. Staging must rewrite each

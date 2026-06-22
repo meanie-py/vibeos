@@ -33,7 +33,7 @@ pub unsafe extern "system" fn PciPmeInterfaceInitializer(Instance: PVOID) -> NTS
     if (0 as i32) == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/pmeintf.c\0".as_ptr() as PVOID,
+            b"drivers/bus/pcix/intrface/pmeintf.c\0".as_ptr() as PVOID,
             39u32,
             b"PCI PciPmeInterfaceInitializer, unexpected call.\n\0".as_ptr() as *const core::ffi::c_char as PSTR,
         );
@@ -56,7 +56,7 @@ pub unsafe extern "system" fn PciPmeInterfaceConstructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"PciPmeInterfaceConstructor\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/pmeintf.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/intrface/pmeintf.c\0".as_ptr() as *const i8,
         62i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);

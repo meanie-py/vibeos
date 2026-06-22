@@ -107,7 +107,7 @@ pub unsafe extern "system" fn HidP_MaxUsageListLength(
         RtlAssert(
             b"ReportType == HidP_Input || ReportType == HidP_Output || ReportType == HidP_Feature\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const ::core::ffi::c_char as PVOID,
             87 as ULONG,
             ::core::ptr::null_mut::<core::ffi::c_void>(),
@@ -133,7 +133,7 @@ pub unsafe extern "system" fn HidP_GetSpecificValueCaps(
         RtlAssert(
             b"ReportType == HidP_Input || ReportType == HidP_Output || ReportType == HidP_Feature\0"
                 .as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const core::ffi::c_void,
             110u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn HidP_GetUsages(
         RtlAssert(
             b"ReportType == HidP_Input || ReportType == HidP_Output || ReportType == HidP_Feature\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             134u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn HidP_GetScaledUsageValue(
         RtlAssert(
             (b"ReportType == HidP_Input || ReportType == HidP_Output || ReportType == HidP_Feature\0"
                 as *const u8 as *const core::ffi::c_char) as *mut core::ffi::c_void,
-            (b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            (b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const core::ffi::c_char) as *mut core::ffi::c_void,
             202 as ULONG,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -302,7 +302,7 @@ pub unsafe extern "system" fn HidP_GetUsageValue(
         RtlAssert(
             b"ReportType == HidP_Input || ReportType == HidP_Output || ReportType == HidP_Feature\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const ::core::ffi::c_char as PVOID,
             226 as ULONG,
             ::core::ptr::null_mut::<core::ffi::c_void>(),
@@ -375,7 +375,7 @@ pub unsafe extern "system" fn HidP_GetSpecificButtonCaps(
     if (0 as i32) == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             277u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -403,7 +403,7 @@ pub unsafe extern "system" fn HidP_GetData(
     if 0 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *mut core::ffi::c_void,
             293u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -427,7 +427,7 @@ pub unsafe extern "system" fn HidP_GetExtendedAttributes(
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
             308u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -450,7 +450,7 @@ pub unsafe extern "system" fn HidP_GetLinkCollectionNodes(
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             321u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -473,7 +473,7 @@ pub unsafe extern "system" fn HidP_SysPowerEvent(
     if 0_i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const i8 as PVOID,
+            b"sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const i8 as PVOID,
             334_u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -494,7 +494,7 @@ pub unsafe extern "system" fn HidP_SysPowerCaps(
     if 0_i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             345 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -523,7 +523,7 @@ pub unsafe extern "system" fn HidP_GetUsageValueArray(
     if 0 as i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as *mut ::core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const i8 as *mut ::core::ffi::c_void,
             364 as u32,
             ::core::ptr::null_mut::<core::ffi::c_void>(),
@@ -551,7 +551,7 @@ pub unsafe extern "system" fn HidP_UnsetUsages(
     if 0 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0".as_ptr()
+            b"sdk/lib/drivers/hidparser/hidp.c\0".as_ptr()
                 as *const core::ffi::c_void,
             383,
             core::ptr::null_mut(),
@@ -578,7 +578,7 @@ pub unsafe extern "system" fn HidP_TranslateUsagesToI8042ScanCodes(
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             c"FALSE".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
             399 as ULONG,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -608,7 +608,7 @@ pub unsafe extern "system" fn HidP_SetUsages(
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const core::ffi::c_void,
             417u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -638,7 +638,7 @@ pub unsafe extern "system" fn HidP_SetUsageValueArray(
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const i8 as PVOID,
             436u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -666,7 +666,7 @@ pub unsafe extern "system" fn HidP_SetUsageValue(
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *mut core::ffi::c_void,
             454u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -694,7 +694,7 @@ pub unsafe extern "system" fn HidP_SetScaledUsageValue(
     if 0 as i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidp.c\0".as_ptr() as *const core::ffi::c_void,
             472 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -719,7 +719,7 @@ pub unsafe extern "system" fn HidP_SetData(
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *mut core::ffi::c_void,
             488 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -741,7 +741,7 @@ pub unsafe extern "system" fn HidP_MaxDataListLength(
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 .as_ptr() as *const core::ffi::c_void,
             500 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -768,7 +768,7 @@ pub unsafe extern "system" fn HidP_InitializeReportForID(
     if 0 as i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidp.c\0"
+            b"sdk/lib/drivers/hidparser/hidp.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             515 as ULONG,
             core::ptr::null_mut::<core::ffi::c_void>(),

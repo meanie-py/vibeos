@@ -2782,7 +2782,7 @@ pub unsafe extern "system" fn GetWindowsDirectoryA(
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
             b"GetWindowsDirectoryA\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/path.c\0"
+            b"dll/win32/kernel32/client/path.c\0"
                 .as_ptr() as *const i8,
             2341i32,
         );
@@ -2802,7 +2802,7 @@ pub unsafe extern "system" fn GetWindowsDirectoryW(
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
             b"GetWindowsDirectoryW\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/path.c\0"
+            b"dll/win32/kernel32/client/path.c\0"
                 .as_ptr() as *const i8,
             2356i32,
         );
@@ -2877,7 +2877,7 @@ pub unsafe extern "system" fn GetSystemWow64DirectoryW(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"GetSystemWow64DirectoryW\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/path.c\0"
+        b"dll/win32/kernel32/client/path.c\0"
             .as_ptr() as *const i8,
         2425i32,
     );
@@ -2893,7 +2893,7 @@ pub unsafe extern "system" fn GetSystemWow64DirectoryA(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"GetSystemWow64DirectoryA\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/kernel32/client/path.c\0"
+        b"dll/win32/kernel32/client/path.c\0"
             .as_ptr() as *const i8,
         2442i32,
     );

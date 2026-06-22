@@ -990,12 +990,32 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
+    // [AFFPROBE task#10] capture caller x30 FIRST (before PsGetCurrentThread's bl)
+    // so we can pin who passes an affinity excluding all active CPUs. ASSERT! is a
+    // no-op here, so a bad mask is silently accepted and only trips the scheduler's
+    // INVALID_AFFINITY_SET (0x3) later — probing the setter catches the root caller
+    // far more reliably than the rare non-deterministic bugcheck.
+    #[cfg(target_arch = "aarch64")]
+    let caller_lr: ULONG_PTR = {
+        let lr: ULONG_PTR;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack));
+        lr
+    };
     let OldIrql: KIRQL;
     let Prcb: PKPRCB;
     let mut NextThread: PKTHREAD;
     let CurrentThread = PsGetCurrentThread();
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
     ASSERT!((Affinity & KeActiveProcessors) != 0);
+    #[cfg(target_arch = "aarch64")]
+    if (Affinity & KeActiveProcessors) == 0 {
+        extern "C" {
+            fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+        }
+        ARM64_UART_TRACE_HEX(b"[AFFPROBE] KeSetSystemAffinityThread BAD lr=\0".as_ptr(), caller_lr);
+        ARM64_UART_TRACE_HEX(b"[AFFPROBE]   Affinity=\0".as_ptr(), Affinity as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[AFFPROBE]   KeActiveProcessors=\0".as_ptr(), KeActiveProcessors as ULONG_PTR);
+    }
 
     OldIrql = KiAcquireDispatcherLock();
 
