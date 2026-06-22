@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,7 @@ class Cell:
     output: str  # produced filename (ntoskrnl.exe, win32k.sys, …)
     kind: str  # kernelexe|kerneldll|kernelmodedriver|win32dll|win32exe|efi|native
     deps: tuple[str, ...] = field(default=())  # cargo cells that must build first
+    arches: tuple[str, ...] = ("i386", "amd64", "arm64")  # arches this cell exists on
 
 
 # Verified cmake-off cells. KINDs mirror the add_cargo_module() calls. **deps is
@@ -63,12 +65,10 @@ class Cell:
 #
 # The usermode spine (ntdll → csr servers → the boot exes) is cmake-off via the
 # committed-`.res` fallback (WS3) + self-hosted import libs; ntdll's cntpr_residue
-# + static_libs are empty (no c_from_compile_db, no cmake `.a`). The ONE spine
-# hold-out is `winsrv`: it still reuses three cmake-built static libs
-# (libuuid.a = midl-generated, libwin32ksys.a = asm, libchkstk.a) which have no
-# in-cargo path yet (the "other static_libs" floor) — `static_libs()` has no
-# committed fallback, so winsrv needs a configured `build-<arch>/` until that
-# floor lands. It is listed (real cell) but excluded from the cmake-off set.
+# + static_libs are empty (no c_from_compile_db, no cmake `.a`). `winsrv` (the
+# last hold-out) is now cmake-off too: its 3 former cmake static libs are gone —
+# libuuid.a → a 3-GUID c_shim (winsrv_guids.c), libwin32ksys.a → asm_archive over
+# sys-stubs.S, libchkstk.a → dropped (inert). So the whole spine is cmake-off.
 CELLS: dict[str, Cell] = {
     c.target: c
     for c in (
@@ -80,7 +80,6 @@ CELLS: dict[str, Cell] = {
         Cell("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista.dll", "win32dll"),
         Cell("csrsrv", "csrsrv-cargo", "csrsrv.dll", "win32dll"),
         Cell("basesrv", "basesrv-cargo", "basesrv.dll", "win32dll"),
-        # winsrv: needs build-<arch>/ for libuuid/libwin32ksys/libchkstk (not cmake-off yet)
         Cell("winsrv", "winsrv-cargo", "winsrv.dll", "win32dll"),
         # usermode spine — EXEs
         Cell("csrss", "csrss-cargo", "csrss.exe", "native"),
@@ -89,17 +88,60 @@ CELLS: dict[str, Cell] = {
         Cell("winlogon", "winlogon-cargo", "winlogon.exe", "win32exe"),
         Cell("services", "services-cargo", "services.exe", "win32exe"),
         Cell("userinit", "userinit-cargo", "userinit.exe", "win32exe"),
+        # ---- drivers (audit 2026-06-21) -------------------------------------
+        # 24/25 driver cells are cmake-off-clean: rust_staticlib + self-hosted
+        # .import_lib() from .spec, no cmake static_libs / c_from_compile_db /
+        # resource_from_rc (hal carries only a committed .res). The kernel's
+        # import-dep DLLs (hal/kdcom/bootvid) + the leaf drivers all qualify.
+        # win32k joined 2026-06-21 (libwin32k_residue.a compiled in-cargo).
+        Cell("hal", "hal-cargo", "hal.dll", "kerneldll"),
+        # kdcom.dll has 4 alternative provider crates (kdcom/kdgdb/kdcom-serial/
+        # kdrosdbg) selected by config; kdcom-cargo is the default the standard
+        # build ships. The others are cmake-off-clean too (same shape).
+        Cell("kdcom", "kdcom-cargo", "kdcom.dll", "kerneldll"),
+        Cell("bootvid", "bootvid-cargo", "bootvid.dll", "kerneldll"),
+        Cell("beep", "beep-cargo", "beep.sys", "kerneldll"),
+        Cell("null", "null-cargo", "null.sys", "kerneldll"),
+        Cell("nmidebug", "nmidebug-cargo", "nmidebug.sys", "kerneldll"),
+        Cell("pci", "pci-cargo", "pci.sys", "kerneldll"),
+        Cell("pciide", "pciide-cargo", "pciide.sys", "kerneldll"),
+        Cell("classpnp", "classpnp-cargo", "classpnp.sys", "kerneldll"),
+        Cell("condrv", "condrv-cargo", "condrv.sys", "kerneldll"),
+        Cell("hidparse", "hidparse-cargo", "hidparse.sys", "kerneldll"),
+        Cell("mouclass", "mouclass-cargo", "mouclass.sys", "kerneldll"),
+        Cell("kbdclass", "kbdclass-cargo", "kbdclass.sys", "kerneldll"),
+        Cell("i8042prt", "i8042prt-cargo", "i8042prt.sys", "kerneldll"),
+        Cell("swenum", "swenum-cargo", "swenum.sys", "kerneldll"),
+        Cell("usbd", "usbd-cargo", "usbd.sys", "kerneldll"),
+        Cell("processr", "processr-cargo", "processr.sys", "kerneldll"),
+        Cell("framebuf", "framebuf-cargo", "framebuf.dll", "kerneldll"),
+        Cell("netstack", "netstack-cargo", "netstack.sys", "kerneldll"),
+        # arm64-only video/input drivers
+        Cell("arm64vid", "arm64vid-cargo", "arm64vid.sys", "kerneldll", arches=("arm64",)),
+        Cell("arm64input", "arm64input-cargo", "arm64input.sys", "kerneldll", arches=("arm64",)),
+        # win32k — cmake-off as of 2026-06-21 (libwin32k_residue.a compiled
+        # in-cargo: c_from_compile_db + native-gendib + asm_archive). KIND
+        # kernelmodedriver. byte-identical to cmake ×3 (bar the PE timestamp).
+        Cell("win32k", "win32k-cargo", "win32k.sys", "kernelmodedriver"),
+        # ---- boot loaders ---------------------------------------------------
+        # Already cmake-off via WS1 DEEP (blrtl/libcntpr c_from_compile_db
+        # committed-flags; no cmake static_libs — libmini_hal.a drop-tested out).
+        # uefildr (efi, all 3 arches); rosload (native exe, i386+amd64 — arm64 is
+        # UEFI-only). The efi post-link strips via the cross llvm-mingw strip.
+        Cell("uefildr", "uefildr-cargo", "uefildr.efi", "efi"),
+        Cell("rosload", "rosload-cargo", "rosload.exe", "native", arches=("i386", "amd64")),
     )
 }
 
 # The spine cells proven to build with NO configured build-<arch>/ (cmake-off).
-# winsrv is excluded (cmake static-lib floor); the kernel EXEs are proven
-# separately. Used by --spine.
+# The kernel EXEs are proven separately. Used by --spine. winsrv joined
+# 2026-06-21 (its 3 cmake static libs removed).
 CMAKE_OFF_SPINE = (
     "ntdll",
     "ntdll_vista",
     "csrsrv",
     "basesrv",
+    "winsrv",
     "csrss",
     "smss",
     "lsass",
@@ -107,6 +149,40 @@ CMAKE_OFF_SPINE = (
     "services",
     "userinit",
 )
+
+# Drivers proven cmake-off (2026-06-21 audit). 24 were already clean
+# (rust_staticlib + self-hosted import libs); win32k joined once its
+# libwin32k_residue.a was compiled in-cargo (c_from_compile_db + native-gendib +
+# asm_archive). arm64vid/arm64input self-filter to arm64 via Cell.arches. Used by
+# --drivers — the COMPLETE driver set is now cmake-off.
+CMAKE_OFF_DRIVERS = (
+    "win32k",
+    "hal",
+    "kdcom",
+    "bootvid",
+    "beep",
+    "null",
+    "nmidebug",
+    "pci",
+    "pciide",
+    "classpnp",
+    "condrv",
+    "hidparse",
+    "mouclass",
+    "kbdclass",
+    "i8042prt",
+    "swenum",
+    "usbd",
+    "processr",
+    "framebuf",
+    "netstack",
+    "arm64vid",
+    "arm64input",
+)
+
+# Boot loaders, cmake-off via WS1 DEEP. uefildr (efi) builds on all 3 arches;
+# rosload (native) self-filters to i386+amd64 via Cell.arches. Used by --loaders.
+CMAKE_OFF_LOADERS = ("uefildr", "rosload")
 
 
 def repo_root() -> Path:
@@ -117,12 +193,24 @@ def log(msg: str) -> None:
     print(f"[ws5] {msg}", flush=True)
 
 
+# `--trace`: the orchestrator's own spawned commands, in order. The in-cargo
+# (reactos-link engine) commands are captured separately via VIBEOS_LINK_TRACE
+# (one file per cell) and stitched in by main().
+_TRACE_CMDS: list[str] = []
+
+
+def _trace(cmd: list[str], cwd: Path | None = None) -> None:
+    prefix = f"cd {cwd} && " if cwd else ""
+    _TRACE_CMDS.append(prefix + " ".join(shlex.quote(str(c)) for c in cmd))
+
+
 def run(cmd: list[str], cwd: Path | None = None, dry: bool = False) -> None:
     shown = " ".join(str(c) for c in cmd)
     if dry:
         log(f"DRY  {shown}")
         return
     log(f"exec {shown}")
+    _trace(cmd, cwd)
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
@@ -131,8 +219,13 @@ def host_cc() -> str:
     return os.environ.get("CC", "cc")
 
 
-def host_strip() -> str:
-    """A PE-capable strip for the efi KIND (llvm-strip handles cross PE)."""
+def cross_strip(root: Path) -> str:
+    """The CROSS strip for the efi KIND — the llvm-mingw `llvm-strip` (== cmake's
+    CMAKE_STRIP). A host `strip` mis-handles the cross PE/EFI; the toolchain copy
+    is what the loaders' cmake POST_BUILD used. Falls back to PATH llvm-strip."""
+    tc = root / ".build-tools/llvm-mingw/bin/llvm-strip"
+    if tc.is_file():
+        return str(tc)
     for cand in (os.environ.get("STRIP"), "llvm-strip", "strip"):
         if cand and shutil.which(cand):
             return cand
@@ -164,35 +257,60 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     return exe
 
 
-def cargo_build(root: Path, cell: Cell, arch: str, dry: bool = False) -> Path:
-    """Run the cargo +nightly build-std drive for one cell; return its .exe."""
-    ws = root / "sdk/lib/rust"
+def built_exe(root: Path, cell: Cell, arch: str) -> Path:
+    """Where cargo drops a cell's linked .exe."""
     stem = ARCH_STEM[arch]
     bin_name = cell.crate.removesuffix("-cargo")
+    return root / "sdk/lib/rust" / "target" / stem / "release" / f"{bin_name}.exe"
+
+
+def cargo_build_many(
+    root: Path,
+    cells: list[Cell],
+    arch: str,
+    dry: bool = False,
+    trace_dir: Path | None = None,
+    force_off: bool = False,
+) -> None:
+    """ONE cargo +nightly build-std invocation building every cell (per-arch
+    fan-out). All cells share the identical `<stem>.json` target, so a single
+    `--target` + many `-p` lets cargo build the shared rlibs once and the
+    per-cell links in parallel — far better than N sequential invocations (each
+    re-resolves the 190-member workspace and links serially). Concurrent cargo
+    invocations can't help (cargo locks the target dir), so the in-process
+    parallelism of one build is the win."""
+    ws = root / "sdk/lib/rust"
+    stem = ARCH_STEM[arch]
+    # All cells' <stem>.json are byte-identical; use the first cell's copy.
+    target_json = ws / cells[0].crate / f"{stem}.json"
     env_cmd = [
         "cargo",
         "build",
         "--release",
         "--target",
-        str(ws / cell.crate / f"{stem}.json"),
+        str(target_json),
         "-Z",
         "build-std=core,alloc,compiler_builtins",
         "-Z",
         "build-std-features=compiler-builtins-mem",
-        "-p",
-        cell.crate,
-        "--bin",
-        bin_name,
         "--manifest-path",
         str(ws / "Cargo.toml"),
     ]
+    for c in cells:
+        env_cmd += ["-p", c.crate]  # each cell package builds its single [[bin]]
     if dry:
         log(f"DRY  RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}  (cwd={ws})")
-    else:
-        env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
-        log(f"exec RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}")
-        subprocess.run(env_cmd, cwd=ws, env=env, check=True)
-    return ws / "target" / stem / "release" / f"{bin_name}.exe"
+        return
+    env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
+    if trace_dir is not None:
+        # Engine appends each in-cargo command to <trace_dir>/<pkg>.trace.
+        env["VIBEOS_LINK_TRACE"] = str(trace_dir)
+    if force_off:
+        # Engine takes the cmake-OFF paths even though build-<arch>/ is present.
+        env["VIBEOS_FORCE_CMAKE_OFF"] = "1"
+    _trace(env_cmd, ws)
+    log(f"exec (fan-out) cargo build — {len(cells)} cells in one invocation")
+    subprocess.run(env_cmd, cwd=ws, env=env, check=True)
 
 
 def post_link(
@@ -222,13 +340,73 @@ def post_link(
         if is_i386:
             run(fix_fwd, dry=dry)
     elif cell.kind == "efi":
-        strip = host_strip()
+        strip = cross_strip(root)
         run([strip, "--remove-section=.rossym", str(out)], dry=dry)
         run([strip, "--strip-all", str(out)], dry=dry)
     elif cell.kind == "native":
         pass  # rosload's POST_BUILD was a no-op
     else:
         raise SystemExit(f"unknown KIND {cell.kind!r} for cell {cell.target}")
+
+
+def stage_build(
+    root: Path, cells: list[Cell], arch: str, out_dir: Path, pefixup: Path, force_off: bool
+) -> dict[str, Path]:
+    """Build every cell (one fan-out invocation) + copy out + post-link into
+    out_dir. force_off=True passes VIBEOS_FORCE_CMAKE_OFF so the engine takes the
+    cmake-OFF paths. Returns {cell.target: staged path}."""
+    cargo_build_many(root, cells, arch, force_off=force_off)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, Path] = {}
+    for cell in cells:
+        dest = out_dir / cell.output
+        shutil.copy2(built_exe(root, cell, arch), dest)
+        post_link(root, cell, arch, dest, pefixup)
+        staged[cell.target] = dest
+    return staged
+
+
+def diff_offsets(a: Path, b: Path) -> tuple[int, int]:
+    """(number of differing bytes, max differing file offset) between two files.
+    A length mismatch counts every trailing byte as differing."""
+    da, db = a.read_bytes(), b.read_bytes()
+    n, last = 0, -1
+    for i in range(min(len(da), len(db))):
+        if da[i] != db[i]:
+            n += 1
+            last = i
+    extra = abs(len(da) - len(db))
+    if extra:
+        n += extra
+        last = max(len(da), len(db)) - 1
+    return n, last
+
+
+def verify_cmake_off(root: Path, cells: list[Cell], arch: str, out_dir: Path, pefixup: Path) -> int:
+    """Byte-identity gate: build every cell twice from the SAME source — once the
+    normal replay (cmake-present) path, once the forced cmake-OFF path — and
+    compare. They must differ only in the PE header (the TimeDateStamp, < 0x400);
+    any later-offset diff means the cmake-off path diverged from cmake. Comparing
+    the two engine builds (not a possibly-stale build-<arch>/ artifact) avoids
+    false drift from baseline staleness. exit 1 on any DRIFT."""
+    log(f"verify: pass 1/2 — replay (cmake-present) build of {len(cells)} cells")
+    rep = stage_build(root, cells, arch, out_dir / ".verify-replay", pefixup, force_off=False)
+    log(f"verify: pass 2/2 — forced cmake-OFF build of {len(cells)} cells")
+    off = stage_build(root, cells, arch, out_dir / ".verify-off", pefixup, force_off=True)
+    HEADER = 0x400  # PE-header region: TimeDateStamp/checksum live here
+    fails = []
+    for cell in cells:
+        n, last = diff_offsets(rep[cell.target], off[cell.target])
+        ok = last < HEADER
+        where = "identical" if n == 0 else f"{n} diff bytes, max off 0x{last:x}"
+        log(f"  {'OK   ' if ok else 'DRIFT'} {cell.output:22} {where}")
+        if not ok:
+            fails.append(cell.target)
+    if fails:
+        log(f"verify: {len(fails)}/{len(cells)} DRIFT — cmake-off ≠ cmake: {', '.join(fails)}")
+        return 1
+    log(f"verify: all {len(cells)} cells cmake-off byte-identical to cmake (PE-timestamp only)")
+    return 0
 
 
 def topo(targets: list[str]) -> list[Cell]:
@@ -265,7 +443,37 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="build the full cmake-off kernel+spine set (kernel EXEs + the proven spine)",
     )
+    ap.add_argument(
+        "--drivers",
+        action="store_true",
+        help="build the complete cmake-off driver set (25/25, incl. win32k)",
+    )
+    ap.add_argument(
+        "--loaders",
+        action="store_true",
+        help="build the boot loaders (uefildr efi ×3, rosload native i386+amd64)",
+    )
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help="everything: kernel EXEs + spine + drivers + loaders",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
+    ap.add_argument(
+        "--verify",
+        action="store_true",
+        help="byte-identity gate: build each cell replay vs forced-cmake-off and "
+        "diff (must match bar the PE timestamp) — catches cmake-off regressions",
+    )
+    ap.add_argument(
+        "--trace",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FILE",
+        help="record every command run (orchestrator + in-cargo engine) to FILE "
+        "(default <out-dir>/build-trace.txt) — the ninja-`-v`-style flat command list",
+    )
     args = ap.parse_args(argv)
 
     if args.list:
@@ -275,30 +483,73 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     root = repo_root()
-    if args.spine:
-        targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *args.targets]
-    else:
-        targets = args.targets or ["ntoskrnl"]
+    targets: list[str] = list(args.targets)
+    if args.spine or args.all:
+        targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *targets]
+    if args.drivers or args.all:
+        targets += list(CMAKE_OFF_DRIVERS)
+    if args.loaders or args.all:
+        targets += list(CMAKE_OFF_LOADERS)
+    if not targets:
+        targets = ["ntoskrnl"]
     out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
-    cells = topo(targets)
+    # Drop cells this arch doesn't build (e.g. arm64-only video/input on x86).
+    cells = [c for c in topo(targets) if args.arch in c.arches]
+    skipped = [c.target for c in topo(targets) if args.arch not in c.arches]
+    if skipped:
+        log(f"skipping (not on {args.arch}): {', '.join(skipped)}")
     log(f"arch={args.arch} cells={' -> '.join(c.target for c in cells)}")
+
+    # `--trace`: clear a per-cell trace dir the engine appends to (VIBEOS_LINK_TRACE).
+    trace_dir: Path | None = None
+    if args.trace is not None and not args.dry_run:
+        trace_dir = Path(out_dir) / ".trace"
+        if trace_dir.exists():
+            shutil.rmtree(trace_dir)
+        trace_dir.mkdir(parents=True)
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
 
+    if args.verify:
+        return verify_cmake_off(root, cells, args.arch, out_dir, pefixup)
+
+    # Phase 1: ONE fan-out cargo invocation builds every cell in parallel.
+    cargo_build_many(root, cells, args.arch, dry=args.dry_run, trace_dir=trace_dir)
+
+    # Phase 2: copy out + per-KIND post-link (cheap, sequential).
     for cell in cells:
-        log(f"=== {cell.target} ({cell.output}, KIND {cell.kind}) ===")
-        built = cargo_build(root, cell, args.arch, dry=args.dry_run)
+        built = built_exe(root, cell, args.arch)
         dest = out_dir / cell.output
         if args.dry_run:
-            log(f"DRY  copy {built} -> {dest}")
+            log(f"DRY  copy {built} -> {dest}; post-link KIND {cell.kind}")
         else:
             out_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(built, dest)
-            log(f"copied -> {dest}")
         post_link(root, cell, args.arch, dest, pefixup, dry=args.dry_run)
         if not args.dry_run:
             sz = dest.stat().st_size if dest.exists() else 0
-            log(f"OK   {cell.output}  ({sz} bytes)")
+            log(f"OK   {cell.output}  ({sz} bytes, KIND {cell.kind})")
+
+    if trace_dir is not None:
+        trace_out = Path(args.trace) if args.trace else out_dir / "build-trace.txt"
+        lines = [
+            f"# cmake-off build trace — arch={args.arch}, cells: "
+            f"{' '.join(c.target for c in cells)}",
+            "# (no cmake configure, no ninja; every command this build ran)",
+            "",
+            "# === orchestrator-spawned commands ===",
+            *_TRACE_CMDS,
+            "",
+            "# === in-cargo (reactos-link engine) commands, per cell ===",
+        ]
+        for cell in cells:
+            f = trace_dir / f"{cell.crate}.trace"
+            body = f.read_text().rstrip("\n").splitlines() if f.exists() else []
+            lines.append(f"## {cell.target} ({cell.crate}) — {len(body)} commands")
+            lines.extend(body)
+        trace_out.write_text("\n".join(lines) + "\n")
+        n_engine = sum(1 for line in lines if line and not line.startswith("#"))
+        log(f"trace: {n_engine} commands -> {trace_out}")
 
     log("done — cmake-off build complete (no cmake configure, no ninja)")
     return 0

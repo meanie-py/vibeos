@@ -9,14 +9,14 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libpng)
 
 list(APPEND SOURCE
-    controls/appswitch.c
+    # controls/appswitch.c — replaced by Rust (user32-rust/src/controls/appswitch.rs); cohab via libuser32_rust.a
     # controls/button.c — replaced by Rust (user32-rust/src/controls/button.rs); cohab via libuser32_rust.a
     # controls/combo.c — replaced by Rust (user32-rust/src/controls/combo.rs); cohab via libuser32_rust.a
     # controls/edit.c — replaced by Rust (user32-rust/src/controls/edit.rs); cohab via libuser32_rust.a
-    controls/ghost.c
-    controls/icontitle.c
+    # controls/ghost.c — replaced by Rust (user32-rust/src/controls/ghost.rs); cohab via libuser32_rust.a
+    # controls/icontitle.c — replaced by Rust (user32-rust/src/controls/icontitle.rs); cohab via libuser32_rust.a
     # controls/listbox.c — replaced by Rust (user32-rust/src/controls/listbox.rs); cohab via libuser32_rust.a
-    controls/regcontrol.c
+    # controls/regcontrol.c — replaced by Rust (user32-rust/src/controls/regcontrol.rs); cohab via libuser32_rust.a
     # controls/scrollbar.c — replaced by Rust (user32-rust/src/controls/scrollbar.rs); cohab via libuser32_rust.a
     # controls/static.c — replaced by Rust (user32-rust/src/controls/static_.rs); cohab via libuser32_rust.a
     misc/dde.c
@@ -25,24 +25,24 @@ list(APPEND SOURCE
     misc/ddeserver.c
     # misc/desktop.c — replaced by Rust (user32-rust/src/misc/desktop.rs); cohab via libuser32_rust.a
     # misc/display.c — replaced by Rust (user32-rust/src/misc/display.rs); cohab via libuser32_rust.a
-    misc/dllmain.c
-    misc/exit.c
-    misc/exticon.c
-    misc/imm.c
-    misc/logon.c
-    misc/misc.c
-    misc/object.c
-    misc/resources.c
-    misc/rtlstr.c
-    misc/stubs.c
+    # misc/dllmain.c — replaced by Rust (user32-rust/src/misc/dllmain.rs); cohab via libuser32_rust.a
+    # misc/exit.c — replaced by Rust (user32-rust/src/misc/exit.rs); cohab via libuser32_rust.a
+    # misc/exticon.c — replaced by Rust (user32-rust/src/misc/exticon.rs); cohab via libuser32_rust.a
+    # misc/imm.c — replaced by Rust (user32-rust/src/misc/imm.rs); cohab via libuser32_rust.a
+    # misc/logon.c — replaced by Rust (user32-rust/src/misc/logon.rs); cohab via libuser32_rust.a
+    # misc/misc.c — replaced by Rust (user32-rust/src/misc/misc.rs); cohab via libuser32_rust.a
+    # misc/object.c — replaced by Rust (user32-rust/src/misc/object.rs); cohab via libuser32_rust.a
+    # misc/resources.c — replaced by Rust (user32-rust/src/misc/resources.rs); cohab via libuser32_rust.a
+    # misc/rtlstr.c — replaced by Rust (user32-rust/src/misc/rtlstr.rs); cohab via libuser32_rust.a
+    # misc/stubs.c — replaced by Rust (user32-rust/src/misc/stubs.rs); cohab via libuser32_rust.a
     # misc/timer.c — replaced by Rust (user32-rust/src/misc/timer.rs); cohab-linked via libuser32_rust.a
-    misc/usrapihk.c
-    misc/winhelp.c
-    misc/winsta.c
+    # misc/usrapihk.c — replaced by Rust (user32-rust/src/misc/usrapihk.rs); cohab via libuser32_rust.a
+    # misc/winhelp.c — replaced by Rust (user32-rust/src/misc/winhelp.rs); cohab via libuser32_rust.a
+    # misc/winsta.c — replaced by Rust (user32-rust/src/misc/winsta.rs); cohab via libuser32_rust.a
     # windows/accel.c — replaced by Rust (user32-rust/src/windows/accel.rs); cohab via libuser32_rust.a
     # windows/caret.c — replaced by Rust (user32-rust/src/windows/caret.rs); cohab via libuser32_rust.a
     # windows/class.c — replaced by Rust (user32-rust/src/windows/class.rs); cohab via libuser32_rust.a
-    windows/clipboard.c
+    # windows/clipboard.c — replaced by Rust (user32-rust/src/windows/clipboard.rs); cohab via libuser32_rust.a
     # windows/cursoricon.c — replaced by Rust (user32-rust/src/windows/cursoricon.rs); cohab via libuser32_rust.a
     # windows/dc.c — replaced by Rust (user32-rust/src/windows/dc.rs); cohab via libuser32_rust.a
     # windows/defwnd.c — replaced by Rust (user32-rust/src/windows/defwnd.rs); cohab via libuser32_rust.a
@@ -51,13 +51,13 @@ list(APPEND SOURCE
     # windows/font.c — replaced by Rust (user32-rust/src/windows/font.rs); cohab via libuser32_rust.a
     # windows/hook.c — replaced by Rust (user32-rust/src/windows/hook.rs); cohab via libuser32_rust.a
     # windows/input.c — replaced by Rust (user32-rust/src/windows/input.rs); cohab via libuser32_rust.a
-    windows/mdi.c
+    # windows/mdi.c — replaced by Rust (user32-rust/src/windows/mdi.rs); cohab via libuser32_rust.a
     # windows/menu.c — replaced by Rust (user32-rust/src/windows/menu.rs); cohab via libuser32_rust.a
     # windows/messagebox.c — replaced by Rust (user32-rust/src/windows/messagebox.rs); cohab via libuser32_rust.a
     # windows/message.c — replaced by Rust (user32-rust/src/windows/message.rs); cohab via libuser32_rust.a
     # windows/nonclient.c — replaced by Rust (user32-rust/src/windows/nonclient.rs); cohab via libuser32_rust.a
     # windows/paint.c — replaced by Rust (user32-rust/src/windows/paint.rs); cohab via libuser32_rust.a
-    windows/prop.c
+    # windows/prop.c — replaced by Rust (user32-rust/src/windows/prop.rs); cohab via libuser32_rust.a
     # windows/rect.c — replaced by Rust (user32-rust/src/windows/rect.rs); cohab via libuser32_rust.a
     windows/spy.c
     # windows/text.c — replaced by Rust (user32-rust/src/windows/text.rs); cohab via libuser32_rust.a

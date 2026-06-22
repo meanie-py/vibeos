@@ -401,6 +401,21 @@ LOC), only if/when the user green-lights it; it is legacy IPC, not boot-critical
 stay left-as-C cohab indefinitely. spy.c stays C (debug-only). With those two carve-outs the
 functional surface of user32 is complete in Rust.
 
+**Wave 4 done (2026-06-21):** 20 files (~11.2K LOC) translated via 8 parallel rustconv-opus agents
+($4.99), integrated centrally. **`spy.c` (2.7K) deferred** — `#define DEBUG_SPY 0`, pure debug
+message-name string tables compiled to near-no-ops; high-cost/zero-boot-value, leave-as-C like DDE.
+Fixup: per-file substrate imports + local debug-macros + ABI; one amd64/arm64 pass for ULONG_PTR
+width + the USERAPIHOOK fn-pointer per-arch ABI (`extern "stdcall"` i386 / `extern "C"` 64-bit,
+cfg-gated `_impl`+wrapper). **Cohab link = 4 rounds of `#[no_mangle]`/ABI export fixes** (the
+compile-only agents can't see link gaps): validators (ValidateHwnd/Handle/CallProc, misc.rs,
+fastcall), globals (User32Instance/gSharedInfo/gpsi/gImmApiEntries/RegisterDefaultClasses), and
+~14 `ntwrapper` inlines a few controls wrongly declared `extern` (→ `use crate::ntwrapper::`).
+`Interlocked{Inc,Dec}rement` = kernel32 import on i386 but compiler intrinsic on amd64/arm64 →
+local Rust-atomic impl (imm.rs + usrapihk.rs). **Boot blocker fixed: mis-encoded UTF-16 literals
+in imm.rs (`User32InitializeImmEntryTable`) → BUGCHECK 0x4C on all arches** — see the new field-
+manual entry "Hand-encoded UTF-16 (wide) byte-string literals" + the `tools/lint_wide_strings.py`
+linter it produced (project-wide it found 67 in 22 other crates — flagged to swarm).
+
 **Wave 3c done (2026-06-21):** `cursoricon.rs` (90 fns, 3.4K LOC) integrated; compile + cohab-link
 ×3 green. **libpng was a non-issue:** delay-load was never functional in vibeos (see
 `delay-import-llvm-mingw-design.md` §1 — `add_delay_importlibs` silently degrades to a regular

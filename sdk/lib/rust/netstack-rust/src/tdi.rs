@@ -285,6 +285,71 @@ pub unsafe fn parse_remote_ip(
     parse_ta((*conn_info).RemoteAddress as *const u8)
 }
 
+// --------------------------------------------------------------------------- #
+// ICMP echo (ping) — IOCTL_ICMP_ECHO_REQUEST on \Device\Ip (M9 item 3).
+// iphlpapi's IcmpSendEcho2 (dll/win32/iphlpapi/icmp.c) issues this METHOD_BUFFERED
+// IOCTL: input = ICMP_ECHO_REQUEST header + payload, output = ICMP_ECHO_REPLY +
+// echoed data appended at the END of the buffer. Layouts mirror sdk/include/psdk/
+// ipexport.h byte-for-byte; the reply construction mirrors the C transport's
+// ProcessEchoData (drivers/network/tcpip/tcpip/icmp.c).
+// --------------------------------------------------------------------------- #
+
+/// _TCP_CTL_CODE(0, METHOD_BUFFERED, FILE_ANY_ACCESS) — FILE_DEVICE_NETWORK 0x12.
+pub const IOCTL_ICMP_ECHO_REQUEST: u32 = 0x0012_0000;
+
+// IP_STATUS values (ipexport.h). Surfaced in ICMP_ECHO_REPLY.Status.
+pub const IP_SUCCESS: u32 = 0;
+pub const IP_REQ_TIMED_OUT: u32 = 11010; // IP_STATUS_BASE(11000) + 10
+
+/// ICMP_ECHO_REQUEST (ipexport.h) — the IOCTL input header. sizeof == 20 (no
+/// pointers), identical on all three arches.
+#[repr(C)]
+pub struct IcmpEchoRequest {
+    pub address: u32, // IPAddr, network byte order
+    pub timeout: u32, // milliseconds
+    pub data_offset: u16,
+    pub data_size: u16,
+    pub has_options: u8,
+    pub ttl: u8,
+    pub tos: u8,
+    pub flags: u8,
+    pub options_offset: u16,
+    pub options_size: u8,
+    pub padding: u8,
+}
+
+/// IP_OPTION_INFORMATION (ipexport.h) — embedded in the reply. The trailing
+/// pointer makes this arch-sized (i386: 8, amd64/arm64: 16).
+#[repr(C)]
+pub struct IpOptionInformation {
+    pub ttl: u8,
+    pub tos: u8,
+    pub flags: u8,
+    pub options_size: u8,
+    pub options_data: *mut u8,
+}
+
+/// ICMP_ECHO_REPLY (ipexport.h) — the IOCTL output header. `Data` is a back-pointer
+/// into the *user* output buffer (computed arithmetically, never dereferenced in
+/// the kernel). sizeof: i386 == 28, amd64/arm64 == 40.
+#[repr(C)]
+pub struct IcmpEchoReply {
+    pub address: u32, // IPAddr of the responder, network byte order
+    pub status: u32,  // IP_STATUS
+    pub round_trip_time: u32,
+    pub data_size: u16,
+    pub reserved: u16, // IcmpParseReplies reads this as the reply count
+    pub data: *mut u8,
+    pub options: IpOptionInformation,
+}
+
+// Lock the IOCTL layouts at compile time (read byte-for-byte by iphlpapi).
+const _: () = assert!(core::mem::size_of::<IcmpEchoRequest>() == 20);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<IcmpEchoReply>() == 28);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<IcmpEchoReply>() == 40);
+
 /// Human-readable name for a TDI minor function (logging).
 pub fn minor_name(m: u8) -> &'static str {
     match m {

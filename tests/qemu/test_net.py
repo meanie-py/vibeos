@@ -70,8 +70,13 @@ MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
+MARK_TDI_SRV_LISTEN = "[NETSTACK] TDI server: listening on :8888"
+MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
 MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
+MARK_ICMP_IOCTL = "[NETSTACK] ICMP self-test: reply OK"
+MARK_M10_CONNECTED = "[NETSTACK] M10: interrupt-driven RX connected"
+MARK_M10_IRQ = "[NETSTACK] M10: first RX interrupt serviced"
 
 _NET_CONFIGS = ("amd64-uefi-net", "arm64-net")
 
@@ -183,13 +188,16 @@ def test_outbound_tcp_client(vm: QemuVM) -> None:
     """The netstack engine connects OUT through the stack and round-trips data.
 
     Proves the smoltcp connect/send/recv client path (the path the TDI/AFD layer
-    will sit on): guest -> virtio TX -> slirp guestfwd -> `cat` echo on the host
-    -> back. The connect happens at boot (after DHCP), so the markers land in the
-    boot output. A full client round-trip = connect + send + recv all work.
+    will sit on): guest -> virtio TX -> slirp guestfwd -> host echo -> back. The
+    connect happens at boot, but the engine retries on no-echo (the windows-host
+    backend's shared-chardev guestfwd drops the FIRST connection's return), so the
+    success can land slightly after the boot snapshot — poll the live log.
     """
     _require_net_config(vm)
-    assert MARK_OUT_SENT in vm._boot_output, "outbound TCP connect/send did not complete"
-    assert MARK_OUT_RECV in vm._boot_output, "outbound TCP recv (echo back) did not complete"
+    assert _wait_for_marker(vm, MARK_OUT_SENT), "outbound TCP connect/send did not complete"
+    assert _wait_for_marker(vm, MARK_OUT_RECV), (
+        "outbound TCP recv (echo back) did not complete"
+    )
 
 
 def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
@@ -212,6 +220,48 @@ def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
     )
 
 
+def test_icmp_echo_ioctl(vm: QemuVM) -> None:
+    r"""M9(3): the ICMP echo (ping) IOCTL on \Device\Ip. The kernel self-test
+    opens \Device\Ip and issues IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED) to the
+    gateway, then validates the ICMP_ECHO_REPLY the worker writes back.
+
+    This is the exact path usermode `ping` / iphlpapi's IcmpSendEcho2 ride on:
+    dispatch parses the request → posts Cmd::IcmpEcho → the smoltcp worker emits
+    an echo on the management ICMP socket → matches the reply by sequence number
+    → fills ICMP_ECHO_REPLY (data at buffer end + Data back-pointer) → completes
+    the pended IRP. The marker fires only on IP_SUCCESS with a reply count >= 1.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_ICMP_IOCTL, timeout=120), (
+        "ICMP echo IOCTL round-trip did not complete (ping path: \\Device\\Ip "
+        "IOCTL_ICMP_ECHO_REQUEST dispatch + cross-thread ICMP plumbing)"
+    )
+
+
+def test_interrupt_driven_rx(vm: QemuVM) -> None:
+    r"""M10 (amd64): the virtio-net legacy INTx is connected to netstack's ISR and
+    actually fires. The ISR acks the device (reads+clears the ISR status, deasserts
+    INTx) and queues a DPC; the DPC sets the worker's RX event; the worker wakes on
+    that event instead of busy-polling.
+
+    Two proofs: (1) the interrupt CONNECTED (IoConnectInterrupt +
+    HalGetInterruptVector resolved a real vector for the manually-enumerated NIC);
+    (2) it FIRED — the one-shot marker is emitted from the DPC, so it can only
+    appear if a real device IRQ drove the ISR→DPC→event path (not the worker's
+    fallback timeout). amd64 only (arm64 HalGetInterruptVector is a stub).
+    """
+    _require_net_config(vm)
+    if "amd64" not in vm.config.arch:
+        pytest.skip("M10 interrupt-driven RX is amd64-only (arm64 HAL vector stub)")
+    assert _wait_for_marker(vm, MARK_M10_CONNECTED, timeout=90), (
+        "virtio RX interrupt was not connected "
+        "(IoConnectInterrupt / HalGetInterruptVector(PCIBus))"
+    )
+    assert _wait_for_marker(vm, MARK_M10_IRQ, timeout=90), (
+        "RX interrupt never fired (ISR->DPC->event path) — worker is polling-only"
+    )
+
+
 def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     r"""M5: the UDP/connectionless analogue of the TDI round-trip — a kernel TDI
     client drives netstack's own \Device\Udp through the EXACT path AFD uses for
@@ -227,6 +277,42 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     assert _wait_for_marker(vm, MARK_TDI_DGRAM), (
         "TDI SEND_DATAGRAM/RECEIVE_DATAGRAM round-trip did not complete "
         "(UDP datagram path + datagram event-indication upcall)"
+    )
+
+
+def test_tdi_server_listen_accept(vm: QemuVM) -> None:
+    r"""M8: the SERVER/inbound mirror of the TDI round-trip. netstack's kernel TDI
+    server self-test (tdisrvtest.rs) binds :8888, posts a TDI_LISTEN that PENDS,
+    and on a host connect ACCEPTs + echoes a marker back — the exact IRP path
+    AfdListenSocket/AfdAccept use (no event-upcall subsystem; a pended listen IRP).
+
+    The host connects through the second hostfwd, sends a probe, and reads the
+    fixed echo marker. Proves the M8 listen/accept dispatch + completion bridge
+    (TDI_LISTEN pends -> smoltcp finishes the handshake in place -> bridge
+    completes the pended listen IRP) plus the post-accept receive-event + TDI_SEND
+    on a server-accepted connection. This is the inbound counterpart to the
+    outbound client (test_tdi_selftest_roundtrip).
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_TDI_SRV_LISTEN, timeout=120), (
+        "netstack kernel TDI server never announced listening on :8888 "
+        "(M8 TDI_LISTEN dispatch / bind path)"
+    )
+    payload = b"vibeos-tdi-server-probe\n"
+    with socket.create_connection(
+        (vm.net_host, vm.config.tdi_srv_hostfwd_port), timeout=10.0
+    ) as s:
+        s.settimeout(15.0)
+        s.sendall(payload)
+        got = b""
+        while MARK_TDI_SRV_ECHO not in got:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            got += chunk
+    assert MARK_TDI_SRV_ECHO in got, (
+        "netstack TDI server accepted the connection but did not echo "
+        f"(M8 accept -> receive-event -> TDI_SEND): got {got!r}"
     )
 
 

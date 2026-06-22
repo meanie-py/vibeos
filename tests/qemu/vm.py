@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -496,13 +497,26 @@ def _start_echo_server() -> socketserver.BaseServer:
     return srv
 
 
-def _free_tcp_port() -> int:
-    """Pick a currently-free localhost TCP port for a slirp hostfwd rule.
+# When set (by the windows-host backend, around the config's qemu_args() call),
+# _free_tcp_port() delegates to this so hostfwd ports are picked on the Windows
+# TCP stack — where QEMU.exe actually binds them. None on the native backend.
+_windows_port_picker: Callable[[], int] | None = None
 
-    Bind-to-0 then release: there's a tiny reuse race, but QEMU rebinding it
-    moments later in practice never collides, and it keeps parallel net VMs
-    (multiple agents/worktrees) from fighting over a fixed port.
+
+def _free_tcp_port() -> int:
+    """Pick a currently-free TCP port for a slirp hostfwd rule.
+
+    Native: bind-to-0 on the WSL stack then release (tiny reuse race, but QEMU
+    rebinding it moments later in practice never collides; keeps parallel net VMs
+    across agents/worktrees from fighting over a fixed port).
+
+    Windows-host: the hostfwd binds `0.0.0.0:<port>` on the *Windows* stack, a
+    different stack from WSL under NAT — so a WSL-free port can be unbindable on
+    Windows (→ `Could not set up host forwarding rule`). When `_windows_port_picker`
+    is set, delegate to it to pick a Windows-side-free port instead.
     """
+    if _windows_port_picker is not None:
+        return _windows_port_picker()
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -532,6 +546,12 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     ECHO_GUEST_PORT: int = 7777
     # Host port forwarded to the guest echo port; allocated in qemu_args().
     echo_hostfwd_port: int = 0
+    # Guest-side TCP port netstack's M8 *kernel TDI server* self-test listens on
+    # (tdisrvtest.rs) — distinct from the engine's direct-smoltcp echo (:7777) so
+    # the TDI listen/accept dispatch is what's exercised. Host port allocated in
+    # qemu_args(); test_tdi_server_listen_accept dials it.
+    TDI_SRV_GUEST_PORT: int = 8888
+    tdi_srv_hostfwd_port: int = 0
     # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual
     # address:port, which slirp pipes through `cat` on the host (a built-in
     # line echo — no host-listener startup race). This is the path an outbound
@@ -542,6 +562,7 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
+        self.tdi_srv_hostfwd_port = _free_tcp_port()
         return [
             *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041, virtio 1.x): the
@@ -553,6 +574,8 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
+            f",hostfwd=tcp:127.0.0.1:{self.tdi_srv_hostfwd_port}"
+            f"-:{self.TDI_SRV_GUEST_PORT}"
             f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
         ]
 
@@ -637,6 +660,9 @@ class Arm64NetConfig(Arm64Config):
     arch: str = "arm64-net"
     ECHO_GUEST_PORT: int = 7777
     echo_hostfwd_port: int = 0
+    # M8 kernel TDI server self-test (tdisrvtest.rs) — see Amd64UefiNetConfig.
+    TDI_SRV_GUEST_PORT: int = 8888
+    tdi_srv_hostfwd_port: int = 0
     GUESTFWD_ADDR: str = "10.0.2.100"
     GUESTFWD_PORT: int = 9999
     # Modest extra settle so the netstack engine markers that DO complete on
@@ -649,6 +675,7 @@ class Arm64NetConfig(Arm64Config):
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
+        self.tdi_srv_hostfwd_port = _free_tcp_port()
         return [
             *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041), same contract as the
@@ -657,6 +684,8 @@ class Arm64NetConfig(Arm64Config):
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
+            f",hostfwd=tcp:127.0.0.1:{self.tdi_srv_hostfwd_port}"
+            f"-:{self.TDI_SRV_GUEST_PORT}"
             f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
         ]
 
@@ -837,7 +866,17 @@ class QemuVM:
         self._win_uid = f"vibeos-{os.getpid()}-{ser_port}"
         win_bin = be.windows_qemu_bin(self.config.qemu_bin, self._win["qemu_dir"], accel)
 
-        staged_arch_args = be.stage_media_paths(self.config.qemu_args(self.work_dir), staging)
+        # Pick hostfwd ports on the WINDOWS stack (where QEMU.exe binds them), not
+        # WSL's — see _free_tcp_port / be.windows_free_tcp_port. The hook is read by
+        # _free_tcp_port inside the net configs' qemu_args(); scoped tightly so the
+        # native path and non-net configs are untouched.
+        global _windows_port_picker
+        _windows_port_picker = be.windows_free_tcp_port
+        try:
+            raw_arch_args = self.config.qemu_args(self.work_dir)
+        finally:
+            _windows_port_picker = None
+        staged_arch_args = be.stage_media_paths(raw_arch_args, staging)
         # arm64 already boots TCG with a real -cpu MODEL (cortex-a72) and
         # -accel tcg,thread=multi — exactly what we want on the Windows host.
         # rewrite_accel is an x86 concept (swap KVM->whpx/tcg and drop the

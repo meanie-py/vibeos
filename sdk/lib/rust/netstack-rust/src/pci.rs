@@ -90,6 +90,20 @@ pub fn find_virtio_net() -> Option<DeviceFunction> {
 pub fn enable_bus_master(df: DeviceFunction) {
     let mut access = HalPciAccess;
     let cmd_status = access.read_word(df, 0x04);
-    // Low 16 bits = command; bit1 = MEMORY_SPACE, bit2 = BUS_MASTER.
-    access.write_word(df, 0x04, cmd_status | 0x0006);
+    // Low 16 bits = command; bit1 = MEMORY_SPACE, bit2 = BUS_MASTER. Also clear
+    // bit10 (INTERRUPT_DISABLE) so the device can assert legacy INTx — M10's
+    // interrupt-driven RX depends on it (a no-op when firmware left it clear).
+    access.write_word(df, 0x04, (cmd_status | 0x0006) & !0x0400);
+}
+
+/// Read the PCI Interrupt Line (config byte 0x3C) — the IRQ the firmware routed
+/// this function's INTx pin to. 0xFF means "unrouted" → None. M10 (amd64) feeds
+/// this to `HalGetInterruptVector` to connect the RX interrupt.
+pub fn read_interrupt_line(df: DeviceFunction) -> Option<u8> {
+    let line = (HalPciAccess.read_word(df, 0x3C) & 0xFF) as u8;
+    if line == 0xFF {
+        None
+    } else {
+        Some(line)
+    }
 }
