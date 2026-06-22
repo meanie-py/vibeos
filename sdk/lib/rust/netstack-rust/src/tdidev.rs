@@ -575,6 +575,61 @@ unsafe fn mib_ip_routetable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTST
     complete_query(irp, out_buf, out_len, as_bytes(&e))
 }
 
+/// Handle IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED) on \Device\Ip. Input and
+/// output share `AssociatedIrp.SystemBuffer`; the request header is parsed here,
+/// the actual echo + reply is plumbed cross-thread to the smoltcp worker (which
+/// alone owns the ICMP socket), and the IRP pends until a reply or the timeout.
+/// `UserBuffer` is captured so the worker can compute the reply's `Data`
+/// back-pointer into the caller's address space (a value, never dereferenced).
+unsafe fn handle_icmp_echo(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
+    let dic = &(*stack).Parameters.DeviceIoControl;
+    let in_len = dic.InputBufferLength as usize;
+    let out_len = dic.OutputBufferLength as usize;
+    let sysbuf = (*irp).AssociatedIrp.SystemBuffer as *const u8;
+    let user_buffer = (*irp).UserBuffer as usize;
+
+    // Match the C transport's DispEchoRequest validation exactly.
+    if sysbuf.is_null()
+        || out_len < core::mem::size_of::<tdi::IcmpEchoReply>()
+        || in_len < core::mem::size_of::<tdi::IcmpEchoRequest>()
+    {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let req = &*(sysbuf as *const tdi::IcmpEchoRequest);
+    let data_off = req.data_offset as usize;
+    let data_size = req.data_size as usize;
+    let dst = req.address.to_ne_bytes(); // IPAddr network-order octets a.b.c.d
+    let timeout_ms = req.timeout;
+    // DataOffset + DataSize must stay inside the (copied-in) input buffer.
+    if data_off.checked_add(data_size).map(|e| e > in_len).unwrap_or(true) {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Copy the request payload out of SystemBuffer now: the worker emits it on a
+    // later poll iteration, and SystemBuffer is the *output* the worker overwrites.
+    let mut data = alloc::vec::Vec::with_capacity(data_size);
+    data.extend_from_slice(core::slice::from_raw_parts(sysbuf.add(data_off), data_size));
+
+    nsprint!(
+        "[NETSTACK] ICMP echo -> {}.{}.{}.{} ({} bytes, timeout {}ms)\n",
+        dst[0], dst[1], dst[2], dst[3], data_size, timeout_ms
+    );
+    IoMarkIrpPending(irp);
+    tditrans::post(tditrans::Cmd::IcmpEcho {
+        irp: irp as usize,
+        sysbuf: sysbuf as usize,
+        out_len,
+        user_buffer,
+        dst,
+        timeout_ms,
+        data,
+    });
+    STATUS_PENDING
+}
+
 /// Route a TDI request (IRP_MJ_INTERNAL_DEVICE_CONTROL, MinorFunction) into the
 /// data path. Connect/Send/Receive/Disconnect pend (worker completes); the rest
 /// complete synchronously.
@@ -590,6 +645,13 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         && (*stack).Parameters.DeviceIoControl.IoControlCode == IOCTL_TCP_QUERY_INFORMATION_EX
     {
         return handle_query_info_ex(irp, stack);
+    }
+
+    // ICMP echo (ping) — \Device\Ip, METHOD_BUFFERED. iphlpapi's IcmpSendEcho2.
+    if (*stack).MajorFunction == IRP_MJ_DEVICE_CONTROL
+        && (*stack).Parameters.DeviceIoControl.IoControlCode == tdi::IOCTL_ICMP_ECHO_REQUEST
+    {
+        return handle_icmp_echo(irp, stack);
     }
 
     match minor {

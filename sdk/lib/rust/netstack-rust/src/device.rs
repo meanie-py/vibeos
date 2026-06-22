@@ -43,6 +43,31 @@ impl VirtioPhy {
     pub fn mac(&self) -> [u8; 6] {
         self.dev.mac_address()
     }
+    /// Enable the device's queue interrupts (clears the avail-ring NO_INTERRUPT
+    /// suppression so the used-ring advance asserts INTx). Called once at PASSIVE
+    /// before the ISR is connected (M10).
+    pub fn enable_interrupts(&mut self) {
+        self.dev.enable_interrupts();
+    }
+    /// Raw pointer to the underlying device, for the M10 ISR's `ack_interrupt`.
+    /// This is the ONLY cross-thread access to the device; see `ack_interrupt`.
+    pub fn dev_ptr(&mut self) -> *mut NetDev {
+        &mut self.dev
+    }
+}
+
+/// Acknowledge a virtio interrupt from ISR context and report the raw ISR status
+/// bits (bit0 = QUEUE_INTERRUPT — the used ring advanced). The read clears the
+/// device's ISR status register, deasserting legacy INTx.
+///
+/// SAFETY / aliasing: `dev` is the worker's device, which the worker also holds
+/// `&mut` to during `iface.poll`. This is sound because (a) the underlying
+/// operation is a single volatile read of the ISR *MMIO register*, which is
+/// disjoint from every queue descriptor / `NetDev` field the worker mutates, and
+/// (b) on QEMU's single vCPU the ISR preempts the worker — they never execute
+/// concurrently. The ISR must touch nothing else on the device.
+pub unsafe fn ack_interrupt(dev: *mut NetDev) -> u32 {
+    (*dev).ack_interrupt().bits()
 }
 
 pub struct VirtioRxToken {

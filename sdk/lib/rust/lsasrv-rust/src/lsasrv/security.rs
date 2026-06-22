@@ -1,8 +1,8 @@
 use crate::prelude::*;
-extern "C" {
-    static mut NtAuthority: SID_IDENTIFIER_AUTHORITY;
-    static mut WorldSidAuthority: SID_IDENTIFIER_AUTHORITY;
-}
+// NtAuthority/WorldSidAuthority are now defined in the Rust database module
+// (same crate) — import them rather than re-declaring extern (which would clash
+// with the in-crate #[no_mangle] definitions).
+use crate::lsasrv::database::{NtAuthority, WorldSidAuthority};
 #[no_mangle]
 pub unsafe extern "C" fn LsapCreatePolicySd(
     PolicySd: *mut PSECURITY_DESCRIPTOR,

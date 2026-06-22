@@ -53,6 +53,7 @@ class Cell:
     output: str  # produced filename (ntoskrnl.exe, win32k.sys, …)
     kind: str  # kernelexe|kerneldll|kernelmodedriver|win32dll|win32exe|efi|native
     deps: tuple[str, ...] = field(default=())  # cargo cells that must build first
+    arches: tuple[str, ...] = ("i386", "amd64", "arm64")  # arches this cell exists on
 
 
 # Verified cmake-off cells. KINDs mirror the add_cargo_module() calls. **deps is
@@ -86,6 +87,41 @@ CELLS: dict[str, Cell] = {
         Cell("winlogon", "winlogon-cargo", "winlogon.exe", "win32exe"),
         Cell("services", "services-cargo", "services.exe", "win32exe"),
         Cell("userinit", "userinit-cargo", "userinit.exe", "win32exe"),
+        # ---- drivers (audit 2026-06-21) -------------------------------------
+        # 24/25 driver cells are cmake-off-clean: rust_staticlib + self-hosted
+        # .import_lib() from .spec, no cmake static_libs / c_from_compile_db /
+        # resource_from_rc (hal carries only a committed .res). The kernel's
+        # import-dep DLLs (hal/kdcom/bootvid) + the leaf drivers all qualify.
+        # win32k joined 2026-06-21 (libwin32k_residue.a compiled in-cargo).
+        Cell("hal", "hal-cargo", "hal.dll", "kerneldll"),
+        # kdcom.dll has 4 alternative provider crates (kdcom/kdgdb/kdcom-serial/
+        # kdrosdbg) selected by config; kdcom-cargo is the default the standard
+        # build ships. The others are cmake-off-clean too (same shape).
+        Cell("kdcom", "kdcom-cargo", "kdcom.dll", "kerneldll"),
+        Cell("bootvid", "bootvid-cargo", "bootvid.dll", "kerneldll"),
+        Cell("beep", "beep-cargo", "beep.sys", "kerneldll"),
+        Cell("null", "null-cargo", "null.sys", "kerneldll"),
+        Cell("nmidebug", "nmidebug-cargo", "nmidebug.sys", "kerneldll"),
+        Cell("pci", "pci-cargo", "pci.sys", "kerneldll"),
+        Cell("pciide", "pciide-cargo", "pciide.sys", "kerneldll"),
+        Cell("classpnp", "classpnp-cargo", "classpnp.sys", "kerneldll"),
+        Cell("condrv", "condrv-cargo", "condrv.sys", "kerneldll"),
+        Cell("hidparse", "hidparse-cargo", "hidparse.sys", "kerneldll"),
+        Cell("mouclass", "mouclass-cargo", "mouclass.sys", "kerneldll"),
+        Cell("kbdclass", "kbdclass-cargo", "kbdclass.sys", "kerneldll"),
+        Cell("i8042prt", "i8042prt-cargo", "i8042prt.sys", "kerneldll"),
+        Cell("swenum", "swenum-cargo", "swenum.sys", "kerneldll"),
+        Cell("usbd", "usbd-cargo", "usbd.sys", "kerneldll"),
+        Cell("processr", "processr-cargo", "processr.sys", "kerneldll"),
+        Cell("framebuf", "framebuf-cargo", "framebuf.dll", "kerneldll"),
+        Cell("netstack", "netstack-cargo", "netstack.sys", "kerneldll"),
+        # arm64-only video/input drivers
+        Cell("arm64vid", "arm64vid-cargo", "arm64vid.sys", "kerneldll", arches=("arm64",)),
+        Cell("arm64input", "arm64input-cargo", "arm64input.sys", "kerneldll", arches=("arm64",)),
+        # win32k — cmake-off as of 2026-06-21 (libwin32k_residue.a compiled
+        # in-cargo: c_from_compile_db + native-gendib + asm_archive). KIND
+        # kernelmodedriver. byte-identical to cmake ×3 (bar the PE timestamp).
+        Cell("win32k", "win32k-cargo", "win32k.sys", "kernelmodedriver"),
     )
 }
 
@@ -104,6 +140,36 @@ CMAKE_OFF_SPINE = (
     "winlogon",
     "services",
     "userinit",
+)
+
+# Drivers proven cmake-off (2026-06-21 audit). 24 were already clean
+# (rust_staticlib + self-hosted import libs); win32k joined once its
+# libwin32k_residue.a was compiled in-cargo (c_from_compile_db + native-gendib +
+# asm_archive). arm64vid/arm64input self-filter to arm64 via Cell.arches. Used by
+# --drivers — the COMPLETE driver set is now cmake-off.
+CMAKE_OFF_DRIVERS = (
+    "win32k",
+    "hal",
+    "kdcom",
+    "bootvid",
+    "beep",
+    "null",
+    "nmidebug",
+    "pci",
+    "pciide",
+    "classpnp",
+    "condrv",
+    "hidparse",
+    "mouclass",
+    "kbdclass",
+    "i8042prt",
+    "swenum",
+    "usbd",
+    "processr",
+    "framebuf",
+    "netstack",
+    "arm64vid",
+    "arm64input",
 )
 
 
@@ -263,6 +329,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="build the full cmake-off kernel+spine set (kernel EXEs + the proven spine)",
     )
+    ap.add_argument(
+        "--drivers",
+        action="store_true",
+        help="build the cmake-off-ready drivers (24/25; win32k excluded)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
     args = ap.parse_args(argv)
 
@@ -273,12 +344,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     root = repo_root()
+    targets: list[str] = list(args.targets)
     if args.spine:
-        targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *args.targets]
-    else:
-        targets = args.targets or ["ntoskrnl"]
+        targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *targets]
+    if args.drivers:
+        targets += list(CMAKE_OFF_DRIVERS)
+    if not targets:
+        targets = ["ntoskrnl"]
     out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
-    cells = topo(targets)
+    # Drop cells this arch doesn't build (e.g. arm64-only video/input on x86).
+    cells = [c for c in topo(targets) if args.arch in c.arches]
+    skipped = [c.target for c in topo(targets) if args.arch not in c.arches]
+    if skipped:
+        log(f"skipping (not on {args.arch}): {', '.join(skipped)}")
     log(f"arch={args.arch} cells={' -> '.join(c.target for c in cells)}")
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)

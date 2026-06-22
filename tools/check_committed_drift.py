@@ -4,7 +4,9 @@
 The cargo-drive-cmake-off effort keeps several artifacts *committed* so a cargo
 build needs no cmake configure/ninja: the per-arch asm offset includes
 (`ks*.inc`), the C-floor flag templates (`cflags/*.flags`), the usermode
-resource blobs (`*.rc.res`), and the RPC server stubs (`*_s.<arch>.rs`). Each is
+resource blobs (`*.rc.res`), the RPC server stubs (`*_s.<arch>.rs`), the
+committed `bugcodes.h` (win32k residue), and — as a tool guard — the self-hosted
+native-gendib output (win32k DIB tables). Each is
 "correct by construction" the moment it's generated — but it is NOT regenerated
 on a normal build, so if an upstream input changes (a `.template.h`, a `.rc`, a
 `.spec`/`.idl`, or cmake's recorded flags), cmake regenerates while the committed
@@ -79,6 +81,45 @@ def check_ks(arches: tuple[str, ...]) -> list[tuple]:
         same = committed.read_bytes() == generated.read_bytes()
         rows.append(("ks*.inc", fname, OK if same else DRIFT, "byte-diff vs build dir"))
     return rows
+
+
+def check_bugcodes(arches: tuple[str, ...]) -> list[tuple]:
+    """The committed bugcodes.h (windmc-generated, arch-identical) used by the
+    win32k_residue cmake-off compile — diff vs any configured build's copy."""
+    committed = REPO / "sdk/lib/rust/reactos-link/committed-headers/bugcodes.h"
+    for arch in arches:
+        gen = REPO / f"build-{arch}/sdk/include/reactos/mc/bugcodes.h"
+        if not gen.exists():
+            continue
+        if not committed.exists():
+            return [("bugcodes.h", "committed", DRIFT, "committed copy MISSING")]
+        same = committed.read_bytes() == gen.read_bytes()
+        return [("bugcodes.h", f"vs {arch}", OK if same else DRIFT, "byte-diff vs build dir")]
+    return [("bugcodes.h", "committed", SKIP, "no build dir")]
+
+
+def check_gendib(arches: tuple[str, ...]) -> list[tuple]:
+    """The self-hosted native-gendib output (win32k DIB tables) — build the tool
+    + run it, diff the 3 .c vs any configured build's cmake-generated copies."""
+    src = REPO / "sdk/tools/gendib/gendib.c"
+    cc = os.environ.get("CC", "cc")
+    for arch in arches:
+        cmdir = REPO / f"build-{arch}/win32ss/gdi/dib"
+        if not (cmdir / "dib8gen.c").exists() or not src.exists():
+            continue
+        with tempfile.TemporaryDirectory() as td:
+            tool = os.path.join(td, "native-gendib")
+            if subprocess.run([cc, "-O2", "-o", tool, str(src)], capture_output=True).returncode:
+                return [("gendib", arch, SKIP, "tool build failed")]
+            if subprocess.run([tool, td], capture_output=True).returncode:
+                return [("gendib", arch, SKIP, "gendib run failed")]
+            bad = [
+                f
+                for f in ("dib8gen.c", "dib16gen.c", "dib32gen.c")
+                if Path(td, f).read_bytes() != (cmdir / f).read_bytes()
+            ]
+            return [("gendib", arch, DRIFT if bad else OK, ",".join(bad) or "3 .c vs build dir")]
+    return [("gendib", "*", SKIP, "no build dir")]
 
 
 def check_cflags(arches: tuple[str, ...]) -> list[tuple]:
@@ -176,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     rows += check_cflags(arches)
     rows += check_res(arches)
     rows += check_widl(arches)
+    rows += check_bugcodes(arches)
+    rows += check_gendib(arches)
 
     drift = [r for r in rows if r[2] == DRIFT]
     checked = [r for r in rows if r[2] == OK]

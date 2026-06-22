@@ -348,10 +348,22 @@ dispatch reads. All struct layouts (IFEntry/IPSNMPInfo 92B, IPAddrEntry 24B, IPR
 the entity/class/id constants verified against `tcpioctl.h`/`tdiinfo.h`. **This unblocks
 `GetAdaptersInfo`/`GetIpAddrTable`/`GetIpForwardTable` → `ipconfig`.**
 
-Items (3) `IOCTL_ICMP_ECHO_REQUEST` (ping) and (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr
-programming) remain — item 3 needs cross-thread ICMP request/response plumbing into the engine;
-item 4 is optional (the engine self-configures via its own DHCP). Both best done with runtime
-validation available (post clock-fix). The findings below stand.
+Item (3) **`IOCTL_ICMP_ECHO_REQUEST` (ping) — ✅ IMPLEMENTED + RUNTIME-VALIDATED.** The
+METHOD_BUFFERED IOCTL (0x00120000) now dispatches on `\Device\Ip` (`tdidev.rs handle_icmp_echo`):
+it parses the `ICMP_ECHO_REQUEST` header from `SystemBuffer`, copies the payload out, and posts a
+`Cmd::IcmpEcho` to the worker (`tditrans.rs`). The worker owns a lazily-created management ICMP
+socket (bound to ident 0x4944, distinct from the boot self-test's 0x022b), emits an echo request
+with a unique sequence number, and on the matching `EchoReply` fills the `ICMP_ECHO_REPLY` exactly
+as the C transport's `ProcessEchoData` does — header at the front, echoed data appended at the END
+of the buffer, `Data` a back-pointer into the caller's `UserBuffer` (a value, never dereferenced in
+kernel) — then completes the pended IRP (timeout → zeroed reply + `IP_REQ_TIMED_OUT`/`STATUS_TIMEOUT`).
+All layouts (`IcmpEchoRequest` 20B, `IcmpEchoReply` 28B/40B per arch) are compile-time size-locked
+against `ipexport.h`. A kernel self-test (`icmptest.rs`, the path usermode `ping`/`IcmpSendEcho2`
+ride) drives the IOCTL to the gateway and validates the reply; **amd64-net 13/13** with serial proof
+`ICMP self-test: reply OK rtt=32ms data=20 bytes — ping round-trip OK`. **This unblocks `ping`.**
+
+Item (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr programming) remains — optional (the engine
+self-configures via its own DHCP). The findings below stand.
 
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
@@ -383,6 +395,21 @@ the interface (today the engine self-configures via its own DHCP). **Independent
 each item is small and individually testable.
 
 ### M10 — Interrupt-driven RX (virtio IRQ → ISR → DPC → event)
+
+**Status (2026-06-21). amd64 — ✅ IMPLEMENTED + RUNTIME-VALIDATED.** `isr.rs` (amd64-gated) connects
+the virtio-net legacy INTx: `pci.rs read_interrupt_line` reads the routed IRQ from config 0x3C,
+`HalGetInterruptVector(PCIBus, …)` maps it, `IoConnectInterrupt` wires the ISR. The ISR (DIRQL)
+`ack_interrupt`s the device (a volatile read of the ISR status register — clears it + deasserts
+INTx, disjoint from all queue state) and queues a DPC on QUEUE_INTERRUPT; the DPC (DISPATCH)
+`KeSetEvent`s the worker's RX `SynchronizationEvent`; the worker (`engine.rs`) swaps `delay_ms` for
+`KeWaitForSingleObject(rx_event, …)` with the smoltcp poll deadline as the fallback timeout (so a
+pending timer still caps the wait at 10ms, but an idle stack sleeps up to 100ms and a frame wakes it
+instantly). The ISR/DPC touch nothing but the ISR register + event, preserving the single-owner-at-
+PASSIVE invariant. Validated on amd64-net: `M10: interrupt-driven RX connected (line 11, vector 144,
+irql 9)` + `first RX interrupt serviced` (one-shot marker emitted from the DPC, so it can only fire on
+a real device IRQ), and RX latency dropped (ICMP rtt 32ms→15ms vs the poll-only path). i386 keeps
+polling (no i386 net smoke config to validate against — likely an easy follow-up, same x86 HAL path);
+arm64 keeps polling (blocked, see below).
 
 **Why.** The worker busy-polls with `delay_ms` today. Interrupt-driven RX buys lower CPU + latency,
 is **mandatory for real NICs** (you cannot poll real hardware efficiently), and is the

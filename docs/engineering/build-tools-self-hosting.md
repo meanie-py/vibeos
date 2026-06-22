@@ -37,7 +37,7 @@ workstreams: WS1–WS3 are largely *about* these tools, and the
 | **windres `.res`** | compiled resource blobs | (llvm-mingw windres) | — | — | 📦 committed (`<crate>/data/*.rc.res`) | ntoskrnl/hal/ntdll/win32k + basesrv/services/userinit/winlogon |
 | **widl** | IDL → RPC stub C (`_s.c`/`_c.c`) + GUID `_i.c` | `sdk/tools/widl/` (17 files) | ~22 360 (+ wpp) | **no** | 📦 committed `.rs` (`{svcctl,winreg}-stub/data/*.rs`) | services (svcctl), winlogon (winreg), libuuid GUIDs |
 | **windmc** | `.mc` message file → `.rc` + `.bin` | host mingw-w64 (`x86_64-w64-mingw32-windmc`) | — | — | 🌐 external; pre-baked into committed kernel `.res` | ntoskrnl.rc (bugcodes), ntstatus |
-| **gendib** | win32k DIB dispatch tables (`dib{8,16,32}gen.c`) | `sdk/tools/gendib/gendib.c` | 1037 | yes | ⛔ cmake-only | win32k (`libwin32k_residue`) |
+| **gendib** | win32k DIB dispatch tables (`dib{8,16,32}gen.c`) | `sdk/tools/gendib/gendib.c` | 1037 | yes | ✅ self-hosted (`reactos-link::generate_gendib`, via `.gendib()`) | win32k (`libwin32k_residue`) |
 | **bin2c / obj2bin / mkshelllink / utf16le** | misc build helpers (single-file each) | `sdk/tools/…` | 180 / 178 / 428 / 315 | yes | 🔧/⛔ as needed | media/build glue |
 | **mkisofs / mkhive / cabman / hhpcomp** | ISO image / registry hive / cab / help | `sdk/tools/…` (multi-file) | 2.6K–27.7K | no | ⛔ cmake-only | **final image** packaging, not the cell links |
 
@@ -52,11 +52,12 @@ of scope until full-ISO cmake-off.
 
 ### Already self-hosted (✅)
 
-`spec2def`, `native-hpp`, `pefixup` are each a single `.c` compiled on the host
-toolchain via the spec2def precedent. `reactos-link` builds + runs spec2def
-(exports, import libs) and native-hpp (xdk headers) inside `build.rs`;
-`cargo_orchestrate.py` builds + runs pefixup as the post-link. No cmake at any
-point. **These are the template for self-hosting the rest.**
+`spec2def`, `native-hpp`, `pefixup`, `gendib` are each a single `.c` compiled on
+the host toolchain via the spec2def precedent. `reactos-link` builds + runs
+spec2def (exports, import libs), native-hpp (xdk headers), and gendib (win32k DIB
+tables, via `.gendib()`) inside `build.rs`; `cargo_orchestrate.py` builds + runs
+pefixup as the post-link. No cmake at any point. **These are the template for
+self-hosting the rest.**
 
 ### Committed-fallback, drift-guarded (📦)
 
@@ -129,14 +130,23 @@ regenerate `libuuid` wholesale cmake-off. Until then the committed `.rs` (tiny,
 deterministic, drift-guarded) dominates. **Recommendation: keep option B; revisit
 option A only if an IDL changes or full-`libuuid` cmake-off is needed.**
 
-### gendib — the next easy self-host (⛔ → ✅ candidate)
+### gendib — self-hosted (2026-06-21, with the win32k residue)
 
 `gendib` (single `.c`, 1037 LOC) generates win32k's DIB blit dispatch tables
 (`dib8gen.c`/`dib16gen.c`/`dib32gen.c`) via `native-gendib <outdir>`. It's the
-direct analogue of spec2def/geninc — a single-file generator — so self-hosting it
-(compile + run in `reactos-link`, emit the 3 `.c` to `OUT_DIR`) is
-straightforward and would remove a cmake dependency for win32k's
-`libwin32k_residue` static lib. **High ROI, low effort.**
+direct analogue of spec2def/geninc — fully self-contained (only
+`stdio`/`stdlib`/`string`). **Now self-hosted:** `reactos-link::generate_gendib`
+(`compile_host_tool` + run → the 3 `.c` in `OUT_DIR`), driven by the `.gendib()`
+marker on a `c_from_compile_db` lib. Output is **byte-identical** to cmake's.
+
+It landed *with* its only consumer — the **win32k `libwin32k_residue.a`**
+conversion (the last cmake `.a` in the tree). That residue (13 members: 5
+`*_rust_shims.c` + `floatobj.c` + the 3 gendib `.c` + 4 asm) is now compiled
+in-cargo: the C via `c_from_compile_db("win32k_residue")` (committed-flags +
+native-hpp xdk + committed `bugcodes.h`), the gendib via `.gendib()`, the i386 asm
+via `asm_archive`. The `win32k.h` closure turned out small — only `ntddk/ntifs/
+wdm/ntdef` (already from `generate_xdk_headers`) + `bugcodes.h`. Result: cmake-off
+`win32k.sys` byte-identical to cmake ×3 (bar the PE timestamp).
 
 ## Plan / priority
 
@@ -148,8 +158,9 @@ all drift-guarded by `check_committed_drift.py` in `vibeos-cli check --strict`.
 This is the safety net that lets the committed copies be trusted.
 
 **Tier 2 — self-host the single-file generators (remove committed fallbacks / unlock cells).** In rough ROI order:
-1. **gendib** → self-host (single `.c`); unlocks win32k's `libwin32k_residue` for
-   driver/win32k cmake-off. Cheapest meaningful win.
+1. ✅ **gendib** → DONE (2026-06-21): `reactos-link::generate_gendib` + the win32k
+   `libwin32k_residue` conversion. `bugcodes.h` committed (arch-identical) rather
+   than self-hosting windmc; `win32k.sys` cmake-off byte-identical ×3.
 2. **geninc** → WS2 "Option B": compile `genincdata.c` in-cargo, parse `.asmdef`,
    emit `ks*.inc` to `OUT_DIR` (~200 LOC; `tools/gen_ks386_inc.py` is the i386
    reference). Removes the committed `ks*.inc` and makes arm64 self-generating.

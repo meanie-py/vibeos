@@ -209,8 +209,8 @@ unsafe fn ISWIN31() -> bool {
     crate::internal::LOWORD(GetVersion()) == 0x0a03
 }
 // WIN_GetFullHandle(h) := ((HWND)(h))   (user_x.h)
-#[inline]
-fn WIN_GetFullHandle(h: HWND) -> HWND {
+#[no_mangle]
+pub unsafe extern "C" fn WIN_GetFullHandle(h: HWND) -> HWND {
     h
 }
 
