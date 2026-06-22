@@ -357,11 +357,26 @@ if win32k lane wants to share. Low priority — not boot-blocking.
 | 3a — leaf (landed) | rect/accel/text/font/display | ~1,900 | ✅ landed on mainline (LAND TRAIN 1) |
 | 3b — core | menu/draw/input/hook/desktop | ~6,100 | ✅ integrated; cohab-link ×3 green, i386+amd64 boot green (arm64 compile/link green, flake-tolerant); ×3 gate pending |
 | 3c — cursoricon (heavy) | cursoricon | ~3,100 | ✅ integrated; compile + cohab-link ×3 green; ×3 gate pending — **Wave 3 COMPLETE** |
-| 4 — secondary | clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain/+misc/+minor controls | ~12,000 | ☐ |
-| 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde | ~5,400 | ☐ |
+| 4 — secondary | clipboard/prop/mdi/winsta/imm/exticon/dllmain/usrapihk/misc/object/exit/resources/rtlstr/winhelp/logon + appswitch/ghost/icontitle/regcontrol | ~11,200 | ✅ integrated (20 files); compile + cohab-link ×3 green; **i386 ✓ boot (explorer+taskbar), amd64 ✓ boot** (net-suite flake = windows-host NAT, not user32); arm64 pending — **spy.c deferred** (debug-only) |
+| 5 — DDE (deferred) | ddemisc/ddeclient/ddeserver/dde + spy | ~8,100 | ☐ |
 
-**Next action:** Wave 4 — secondary surface (clipboard/prop/mdi/spy/winsta/imm/exticon/dllmain
-+ misc + minor controls, ~12K LOC). Not boot-critical; can be batched.
+**Next action:** Wave 5 (DDE family ~5.4K + `spy.c` ~2.7K) — all non-boot-critical legacy/debug;
+translate last or leave-as-C cohab indefinitely (user decision). Wave 4 leaves user32 ~95% Rust.
+
+**Wave 4 done (2026-06-21):** 20 files (~11.2K LOC) translated via 8 parallel rustconv-opus agents
+($4.99), integrated centrally. **`spy.c` (2.7K) deferred** — `#define DEBUG_SPY 0`, pure debug
+message-name string tables compiled to near-no-ops; high-cost/zero-boot-value, leave-as-C like DDE.
+Fixup: per-file substrate imports + local debug-macros + ABI; one amd64/arm64 pass for ULONG_PTR
+width + the USERAPIHOOK fn-pointer per-arch ABI (`extern "stdcall"` i386 / `extern "C"` 64-bit,
+cfg-gated `_impl`+wrapper). **Cohab link = 4 rounds of `#[no_mangle]`/ABI export fixes** (the
+compile-only agents can't see link gaps): validators (ValidateHwnd/Handle/CallProc, misc.rs,
+fastcall), globals (User32Instance/gSharedInfo/gpsi/gImmApiEntries/RegisterDefaultClasses), and
+~14 `ntwrapper` inlines a few controls wrongly declared `extern` (→ `use crate::ntwrapper::`).
+`Interlocked{Inc,Dec}rement` = kernel32 import on i386 but compiler intrinsic on amd64/arm64 →
+local Rust-atomic impl (imm.rs + usrapihk.rs). **Boot blocker fixed: mis-encoded UTF-16 literals
+in imm.rs (`User32InitializeImmEntryTable`) → BUGCHECK 0x4C on all arches** — see the new field-
+manual entry "Hand-encoded UTF-16 (wide) byte-string literals" + the `tools/lint_wide_strings.py`
+linter it produced (project-wide it found 76 more in 31 other crates — flagged to swarm).
 
 **Wave 3c done (2026-06-21):** `cursoricon.rs` (90 fns, 3.4K LOC) integrated; compile + cohab-link
 ×3 green. **libpng was a non-issue:** delay-load was never functional in vibeos (see
