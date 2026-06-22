@@ -102,6 +102,10 @@ def check(args, repo: Path) -> int:
         # off-default-path replacement links drifting. Self-skips when their
         # prerequisites (target json / build-<arch> / nightly) are absent.
         lints.run_cargo_link_guard(run, repo, getattr(args, "arch", None))
+        # Guard the cmake-off committed fallbacks (ks*.inc/cflags/.res/widl .rs)
+        # against silent staleness vs cmake regeneration. Self-skips without a
+        # configured build-<arch>/.
+        lints.run_committed_drift_guard(run, repo, getattr(args, "arch", None))
         if getattr(args, "arch", None):
             lints.run_binary_lints(run, repo, args.arch, strict=True)
     return run.finalize(repo)

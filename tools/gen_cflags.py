@@ -73,11 +73,19 @@ def candidate_flags(toks, arch, repo):
     return out
 
 
-def gen(target, arch, repo):
+def committed_path(target, arch):
+    """The committed flag template path for a (target, arch)."""
+    return f"{OUTDIR}/{target}.{arch}.flags"
+
+
+def gen_content(target, arch, repo):
+    """Regenerate the flag-template TEXT for (target, arch) from a configured
+    build, or None when the build dir / entries are absent (skip). This is the
+    single source of truth shared by `gen()` (writes it) and the drift-check
+    (compares it) — keep all generation logic here."""
     db_path = f"build-{arch}/compile_commands.json"
     if not os.path.exists(db_path):
-        print(f"  [{target} {arch}] no {db_path} — configure+build that arch first; skipping")
-        return
+        return None
     with open(db_path) as fh:
         db = json.load(fh)
     marker = f"CMakeFiles/{target}.dir"
@@ -89,8 +97,7 @@ def gen(target, arch, repo):
         if marker in e["command"] and e["file"].endswith(".c") and "cmake_pch" not in e["file"]
     ]
     if not hits:
-        print(f"  [{target} {arch}] no entries")
-        return
+        return None
     templates = {}
     for e in hits:
         flags = candidate_flags(shlex.split(e["command"]), arch, repo)
@@ -98,16 +105,24 @@ def gen(target, arch, repo):
     # Invariant: all of the target's C sources share one flag set.
     uniq = {tuple(v) for v in templates.values()}
     if len(uniq) != 1:
-        print(f"  [{target} {arch}] WARNING: {len(uniq)} distinct flag sets across sources")
-        for f, v in templates.items():
-            print(f"    {f}: {len(v)} flags")
-        return
+        raise SystemExit(
+            f"[{target} {arch}] {len(uniq)} distinct flag sets across sources — "
+            "the single-flag-set invariant broke"
+        )
     flags = next(iter(uniq))
+    return "\n".join(flags) + "\n"
+
+
+def gen(target, arch, repo):
+    content = gen_content(target, arch, repo)
+    if content is None:
+        print(f"  [{target} {arch}] no build / entries — configure+build that arch first; skipping")
+        return
     os.makedirs(OUTDIR, exist_ok=True)
-    out = f"{OUTDIR}/{target}.{arch}.flags"
+    out = committed_path(target, arch)
     with open(out, "w") as fh:
-        fh.write("\n".join(flags) + "\n")
-    print(f"  [{target} {arch}] OK -> {out} ({len(flags)} flags, {len(hits)} sources)")
+        fh.write(content)
+    print(f"  [{target} {arch}] OK -> {out} ({content.count(chr(10))} flags)")
 
 
 def main():

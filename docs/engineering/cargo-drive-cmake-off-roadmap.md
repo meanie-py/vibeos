@@ -158,6 +158,13 @@ regen + makes arm64 self-generating. Do later if regen-drift bites. A CI diff-ch
 
 ### WS3 — Host tools (spec2def / dlltool / windres / widl) — **kernel-critical DONE; usermode .res fallback added (2026-06-21)**
 
+> **Full host-tool inventory + self-hosting plan:** see
+> [build-tools-self-hosting.md](build-tools-self-hosting.md) — every tool cmake
+> produces with, its cmake-off status (self-hosted / committed-fallback /
+> toolchain / external), and the prioritized plan to self-host the rest
+> (gendib → geninc → windmc → widl). The committed fallbacks are kept honest by
+> `tools/check_committed_drift.py` (`vibeos-cli check --strict`).
+
 **Status:**
 - **`spec2def` — DONE (already self-hosted).** `reactos-link::generate_def` runs
   `compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def")`, which cc-compiles
@@ -256,12 +263,36 @@ the cmake build, all 8 stubs defined, all 3 GUID byte-patterns present; the only
 delta is a **leaner** `.rdata` (−3376 B — it drops the ~211 dead unreferenced GUIDs
 cmake's coarse archive-member link dragged in). Built clean on all 3 arches.
 
-The `CELLS` table generalizes to the full 44-cell set — add a `Cell(...)` with its
-KIND (`deps` stays empty unless a future cell breaks the self-hosted-import-lib
-pattern). **Remaining:** per-arch fan-out (the workspace serializes today —
-blocker (1)), the drivers (kerneldll/kernelmodedriver — same shape, need their
-own cmake-off audit), and the loaders' efi/native KINDs (need the *cross*
-llvm-strip, not host strip).
+**Drivers — audited + proven cmake-off (2026-06-21).** Scanned all 25 driver cells
+(`kerneldll`/`kernelmodedriver`) for cmake-off blockers (cmake `static_libs`,
+`c_from_compile_db`, `resource_from_rc`): **24/25 are already clean** —
+`rust_staticlib` + self-hosted `.import_lib()` from `.spec`, no cmake `.a` / no
+`c_db` / no live windres (hal carries only a committed `.res`). Empirically built
+all **19 i386-applicable drivers** (`cargo_orchestrate.py --arch i386 --drivers`,
+`compile_commands.json` moved aside, zero ninja) — every one **byte-identical to
+its cmake artifact except the 2-byte PE TimeDateStamp** (hal, kdcom, bootvid,
+beep, null, nmidebug, pci, pciide, classpnp, condrv, hidparse, mouclass, kbdclass,
+i8042prt, swenum, usbd, processr, framebuf, netstack). The arm64-only
+`arm64vid`/`arm64input` self-filter to arm64 via `Cell.arches`. (Note: `kdcom.dll`
+has 4 alternative provider crates — `kdcom-cargo` is the configured default; the
+others are equally clean.)
+
+**The SOLE driver blocker is `win32k`** — it reuses `win32ss/libwin32k_residue.a`
+(13 members: 5 `*_rust_shims.c` + `floatobj.c` + 3 gendib-generated + 4 asm), an
+atomic cmake static lib whose every source `#include`s `win32k.h`. Freeing it =
+compiling the residue in-cargo, which needs the **`win32k.h` header closure**
+cmake-off (7 generated include dirs incl. `bugcodes.h`/windmc + psdk/ddk/dxsdk —
+broader than blrtl's lone `winnt.h`). The gendib tool self-host is **proven
+byte-identical** (see [build-tools-self-hosting.md](build-tools-self-hosting.md));
+the residue conversion (gendib primitive + committed-flags C + asm_archive +
+header closure) is the win32k chapter.
+
+The `CELLS` table now covers kernel + spine + drivers; it generalizes to the full
+44-cell set — add a `Cell(...)` with its KIND (`deps` stays empty unless a future
+cell breaks the self-hosted-import-lib pattern). **Remaining:** per-arch fan-out
+(the workspace serializes today — blocker (1)), the loaders' efi/native KINDs
+(need the *cross* llvm-strip, not host strip), and the **win32k residue** (the one
+non-trivial cell — the win32k.h closure + windmc).
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
