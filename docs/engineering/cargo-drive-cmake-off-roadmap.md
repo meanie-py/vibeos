@@ -277,22 +277,29 @@ i8042prt, swenum, usbd, processr, framebuf, netstack). The arm64-only
 has 4 alternative provider crates — `kdcom-cargo` is the configured default; the
 others are equally clean.)
 
-**The SOLE driver blocker is `win32k`** — it reuses `win32ss/libwin32k_residue.a`
-(13 members: 5 `*_rust_shims.c` + `floatobj.c` + 3 gendib-generated + 4 asm), an
-atomic cmake static lib whose every source `#include`s `win32k.h`. Freeing it =
-compiling the residue in-cargo, which needs the **`win32k.h` header closure**
-cmake-off (7 generated include dirs incl. `bugcodes.h`/windmc + psdk/ddk/dxsdk —
-broader than blrtl's lone `winnt.h`). The gendib tool self-host is **proven
-byte-identical** (see [build-tools-self-hosting.md](build-tools-self-hosting.md));
-the residue conversion (gendib primitive + committed-flags C + asm_archive +
-header closure) is the win32k chapter.
+**`win32k` is now cmake-off too (2026-06-21) — the last cell.** Its only cmake
+`.a`, `win32ss/libwin32k_residue.a` (13 members), is compiled in-cargo:
+- **5 `*_rust_shims.c` + (i386) `floatobj.c`** → `c_from_compile_db("win32k_residue")`
+  (replay when cmake configured; committed-flags + native-hpp xdk + committed
+  `bugcodes.h` when cmake-off — the blrtl pattern). The `win32k.h` closure turned
+  out tiny: only `ntddk.h`/`ntifs.h`/`wdm.h`/`ntdef.h` (all already produced by
+  `generate_xdk_headers`) + `bugcodes.h` (the one windmc header, committed
+  arch-identical to `reactos-link/committed-headers/`).
+- **3 gendib DIB tables** (`dib{8,16,32}gen.c`, generated) → the new `.gendib()`
+  marker on the c_db lib: replay finds them under `build-<arch>/`; cmake-off runs
+  the self-hosted **native-gendib** (`sdk/tools/gendib/gendib.c`, the spec2def
+  precedent — byte-identical to cmake's).
+- **(i386) 4 asm** (3 `dib*_hline/colorfill.s` + `floatobj.S`) → `asm_archive`.
 
-The `CELLS` table now covers kernel + spine + drivers; it generalizes to the full
-44-cell set — add a `Cell(...)` with its KIND (`deps` stays empty unless a future
-cell breaks the self-hosted-import-lib pattern). **Remaining:** per-arch fan-out
-(the workspace serializes today — blocker (1)), the loaders' efi/native KINDs
-(need the *cross* llvm-strip, not host strip), and the **win32k residue** (the one
-non-trivial cell — the win32k.h closure + windmc).
+Verified ×3: cmake-off `win32k.sys` is **byte-identical to the cmake build except
+the PE TimeDateStamp** (i386/amd64 2 bytes, arm64 3 — all inside the 4-byte
+stamp). So the **whole driver set (25/25) is cmake-off**.
+
+The `CELLS` table now covers kernel + spine + **all** drivers; it generalizes to
+the full 44-cell set — add a `Cell(...)` with its KIND (`deps` stays empty unless a
+future cell breaks the self-hosted-import-lib pattern). **Remaining:** per-arch
+fan-out (the workspace serializes today — blocker (1)), and the loaders' efi/native
+KINDs (need the *cross* llvm-strip, not host strip). No cell-level blockers left.
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
