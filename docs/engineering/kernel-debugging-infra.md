@@ -192,6 +192,24 @@ Restore skips the cold boot for every debug cycle against a fixed kernel. Two lo
 - **Snapshot at a QUIESCENT point, not mid-churn.** Migration-to-file is faithful when the guest is settled (idle loop, well past `shell ready`), but capturing during high activity (e.g. exactly at `shell ready`, while explorer is spawning threads) perturbs **~20% of restores** into a spurious post-resume `BUGCHECK 0x50` that *does not occur on fresh boots* (verified arm64-virt, 2026-06: 0/5 fresh vs 2/9 mid-churn restores, fault clustered at a kernel-stack VA; 0/10 idle-snapshot restores). Wait for serial to go quiet before `save`. This is a property of live-migration consistency, not a guest bug — so the snapshot path is **not** a substitute for record/replay when the goal is to *re-roll* a mid-churn heisenbug (that's what `-icount rr=` is for).
 - **Stale = refused (fail loud).** The snapshot embeds the OLD kernel in RAM; gdb symbolication uses the on-disk image. If the kernel was rebuilt since `save`, `restore` refuses (symbols would mislead) unless `--allow-stale`. Mirrors smoke's stale-media refusal. `.mig` files (~350M) live in the gitignored `qemu/snapshots/`.
 
+#### Record/replay (`-icount rr=`) — attempted, BLOCKED on arm64 (2026-06)
+
+The bit-exact deterministic-replay path (`-icount shift=N,rr=record,rrfile=…` +
+`blkreplay` on the boot disk) is the textbook tool for re-rolling a mid-churn
+heisenbug under gdb, where snapshot-restore can't (see the quiescent-point rule
+above). The QEMU substrate is present (record launches and writes an rr log), but
+**`-icount` hangs our arm64 early boot before the kernel ever loads, at every
+shift tried:** `shift=auto` reaches freeldr's "Switching stack…" then hangs;
+`shift=3`/`shift=7` (with `sleep=off`) stall even earlier, in UEFI firmware. A
+recording that doesn't move resets at 300s via the EFI boot-services watchdog.
+This is a firmware/loader-under-icount incompatibility (almost certainly a
+hardware-timer poll loop that starves when time is coupled to instruction count),
+not fixable from the tooling layer — and even if the early-boot hang were fixed,
+reaching a *post-shell-ready* heisenbug under icount would be punishingly slow and
+watchdog-limited. **Deferred, not abandoned:** revisit if/when someone makes the
+arm64 boot path icount-tolerant; until then the snapshot tool above is the
+determinism/fast-iteration mechanism for arm64.
+
 ### Offline tools (no kernel needed)
 
 | Command | Purpose |
