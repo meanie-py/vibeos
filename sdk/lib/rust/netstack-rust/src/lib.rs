@@ -18,6 +18,10 @@ pub mod time;
 pub mod hal;
 pub mod pci;
 pub mod device;
+// M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). amd64 only —
+// arm64's HalGetInterruptVector is a stub, and there is no i386 net smoke config.
+#[cfg(target_arch = "x86_64")]
+pub mod isr;
 pub mod netcfg;
 pub mod selftest;
 pub mod engine;

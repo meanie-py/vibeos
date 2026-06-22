@@ -396,6 +396,21 @@ each item is small and individually testable.
 
 ### M10 — Interrupt-driven RX (virtio IRQ → ISR → DPC → event)
 
+**Status (2026-06-21). amd64 — ✅ IMPLEMENTED + RUNTIME-VALIDATED.** `isr.rs` (amd64-gated) connects
+the virtio-net legacy INTx: `pci.rs read_interrupt_line` reads the routed IRQ from config 0x3C,
+`HalGetInterruptVector(PCIBus, …)` maps it, `IoConnectInterrupt` wires the ISR. The ISR (DIRQL)
+`ack_interrupt`s the device (a volatile read of the ISR status register — clears it + deasserts
+INTx, disjoint from all queue state) and queues a DPC on QUEUE_INTERRUPT; the DPC (DISPATCH)
+`KeSetEvent`s the worker's RX `SynchronizationEvent`; the worker (`engine.rs`) swaps `delay_ms` for
+`KeWaitForSingleObject(rx_event, …)` with the smoltcp poll deadline as the fallback timeout (so a
+pending timer still caps the wait at 10ms, but an idle stack sleeps up to 100ms and a frame wakes it
+instantly). The ISR/DPC touch nothing but the ISR register + event, preserving the single-owner-at-
+PASSIVE invariant. Validated on amd64-net: `M10: interrupt-driven RX connected (line 11, vector 144,
+irql 9)` + `first RX interrupt serviced` (one-shot marker emitted from the DPC, so it can only fire on
+a real device IRQ), and RX latency dropped (ICMP rtt 32ms→15ms vs the poll-only path). i386 keeps
+polling (no i386 net smoke config to validate against — likely an easy follow-up, same x86 HAL path);
+arm64 keeps polling (blocked, see below).
+
 **Why.** The worker busy-polls with `delay_ms` today. Interrupt-driven RX buys lower CPU + latency,
 is **mandatory for real NICs** (you cannot poll real hardware efficiently), and is the
 **preemption-independent, robust fix** for the arm64 idle-poll-starvation class (#91/#92) — a
