@@ -284,6 +284,18 @@ fn main() {
         _ => &[],
     };
 
+    // [TRAP-PROBE] build var (task #9): VIBEOS_ARM64_TRAP_DEBUG=1 compiles the
+    // `bl KiTrapReturnProbe` in ke/arm64/trap.S (gated on ARM64_TRAP_DEBUG).
+    // trap.S is cargo-assembled here, not by cmake, so the define is plumbed
+    // through reactos-link's asm_extra_defines. OFF by default.
+    println!("cargo:rerun-if-env-changed=VIBEOS_ARM64_TRAP_DEBUG");
+    let asm_extra: Vec<(&str, Option<&str>)> =
+        if arch == "aarch64" && env::var("VIBEOS_ARM64_TRAP_DEBUG").is_ok() {
+            vec![("ARM64_TRAP_DEBUG", None)]
+        } else {
+            vec![]
+        };
+
     let mut linker = Linker::new(rust_target);
     linker = linker
         .rust_staticlib("kernel-rust")
@@ -323,6 +335,7 @@ fn main() {
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch
         // (see the match above).
         .asm(&asm, AsmDefineSet::Kernel)
+        .asm_extra_defines(&asm_extra)
         .resource(&format!("data/{res}"))
         .spec2def("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe");
     // cnt-rust integration: compile the cntpr C floor in-cargo (C-first, before

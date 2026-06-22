@@ -60,7 +60,7 @@ pub unsafe extern "system" fn Device_SaveCurrentSettings(Context: PPCI_CONFIGURA
                 if (*CmDescriptor).Type as u32 != CmResourceTypePort {
                     RtlAssert(
                         b"CmDescriptor->Type == CmResourceTypePort\0".as_ptr() as *const i8 as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
+                        b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
                         59u32,
                         core::ptr::null_mut::<i8>(),
                     );
@@ -71,7 +71,7 @@ pub unsafe extern "system" fn Device_SaveCurrentSettings(Context: PPCI_CONFIGURA
                 if (*CmDescriptor).Type as u32 != CmResourceTypeMemory {
                     RtlAssert(
                         b"CmDescriptor->Type == CmResourceTypeMemory\0".as_ptr() as *const i8 as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
+                        b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
                         65u32,
                         core::ptr::null_mut::<i8>(),
                     );
@@ -157,13 +157,13 @@ pub unsafe extern "system" fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTE
                 *BarArray.add(i as usize) = 0xFC000000u32;
                 if DbgPrint(
                     b"(%s:%d) PCI - Adjusted broken S3 requirement from 32MB to 64MB\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                    b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                     163i32,
                 ) != 0
                 {
                     DbgPrint(
                         b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                        b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                         163i32,
                     );
                 }
@@ -178,40 +178,40 @@ pub unsafe extern "system" fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTE
                 *BarArray.add(1) = 0u32;
                 if DbgPrint(
                     b"(%s:%d) PCI - Ignored Cirrus GD54xx broken IO requirement (400 ports)\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                    b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                     179i32,
                 ) != 0
                 {
                     DbgPrint(
                         b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                        b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                         179i32,
                     );
                 }
             } else if DbgPrint(
                 b"(%s:%d) PCI - Cirrus GD54xx 400 port IO requirement has a valid setting (%08x)\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                 185i32,
                 (*Current).u.type0.BaseAddresses[1usize],
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                    b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                     185i32,
                 );
             }
         } else if *BarArray.add(1) != 0 {
             if DbgPrint(
                 b"(%s:%d) PCI - Warning Cirrus Adapter 101300a0 has unexpected resource requirement (%08x)\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                 192i32,
                 *BarArray.add(1),
             ) != 0
             {
                 DbgPrint(
                     b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
+                    b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8,
                     192i32,
                 );
             }
@@ -230,7 +230,7 @@ pub unsafe extern "system" fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTE
             if !(i.wrapping_add(1u32) < PCI_TYPE0_ADDRESSES) {
                 RtlAssert(
                     b"(i + 1) < PCI_TYPE0_ADDRESSES\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
+                    b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
                     204u32,
                     core::ptr::null_mut::<i8>(),
                 );
@@ -285,7 +285,7 @@ pub unsafe extern "system" fn Device_GetAdditionalResourceDescriptors(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"Device_GetAdditionalResourceDescriptors\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0" as *const u8
+        b"drivers/bus/pcix/device.c\0" as *const u8
             as *const ::core::ffi::c_char,
         267 as ::core::ffi::c_int,
     );
@@ -301,7 +301,7 @@ pub unsafe extern "system" fn Device_ResetDevice(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"Device_ResetDevice\0".as_ptr() as *const core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr()
+        b"drivers/bus/pcix/device.c\0".as_ptr()
             as *const core::ffi::c_char,
         278i32,
     );
@@ -319,7 +319,7 @@ pub unsafe extern "system" fn Device_ChangeResourceSettings(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"Device_ChangeResourceSettings\0".as_ptr() as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/device.c\0".as_ptr() as *const ::core::ffi::c_char,
+        b"drivers/bus/pcix/device.c\0".as_ptr() as *const ::core::ffi::c_char,
         289 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);

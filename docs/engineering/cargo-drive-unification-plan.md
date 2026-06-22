@@ -111,6 +111,110 @@ precompiled `compiler_builtins` doesn't carry `mem*`, and nothing may rely on UC
 - **Exact `-nostdlib` link args per kind.** Confirm a single strip recipe (e.g.
   `-nostdlib`/`-nodefaultlibs` + explicit needed libs) cleanly removes UCRT for
   *all* kinds, not just KernelExe. KernelExe's current recipe is the starting point.
+  → **RESOLVED for KernelDll** (see PoC below). The engine already passes
+  `-nostdlib` as a *common* link flag for every ModuleKind (reactos-link
+  `link()`), so no per-kind work was needed; the real requirement is that the
+  *crate be self-contained* (no referenced UCRT symbol) — then lld emits no UCRT
+  import even though the triple's late-link-args still list `-lmsvcrt`.
+
+## PoC results — bootvid KernelDll on the builtin triple (2026-06-06)
+
+Validated the recipe on `bootvid.dll` (KernelDll), the first per-cell cut.
+
+**1. Clean imports — open question #3 settled.** bootvid built on the builtin
+precompiled-std triple (stable, NO build-std) imports **only `ntoskrnl.exe` +
+`hal.dll`** — zero `api-ms-win-crt-*`, zero `kernel32` — byte-for-byte the same
+import set as the json/build-std build. Verified by `llvm-readobj --coff-imports`
+on both amd64 and arm64, via a manual `cargo build` *and* end-to-end through cmake.
+
+**2. Mechanism.** lld only creates an IAT entry for a symbol that is actually
+*referenced*. A self-contained crate references nothing from `-lmsvcrt`/
+`-lkernel32`, so those late-link-args produce no imports despite being on the
+link line. The earlier (this-session) failed migration pulled UCRT only because
+the *old* bootvid-rust referenced `Rtl*`/string symbols; once bootvid-rust was
+made self-contained (local `memcpy/memset/memcmp/_stricmp` + `core::ptr`
+intrinsics), the builtin link is clean. **`-nostdlib` + self-containment = clean;
+no `-nostdlib` json target needed.**
+
+**3. CRITICAL refinement — use the GNULLVM flavor, not `-gnu`.** The builtin
+triple MUST be the `*-pc-windows-gnullvm` flavor (compiler-rt), not
+`*-pc-windows-gnu`. The `-gnu` flavor's `late-link-args` reference `libgcc`/
+`libgcc_eh` (real mingw), which llvm-mingw does not ship → hard link error
+`lld: unable to find library -lgcc`. `-nostdlib`/`-nodefaultlibs` do NOT strip
+those (they precede the strip in the arg order). So the matrix's "builtin"
+column means: arm64 `aarch64-pc-windows-gnullvm`, amd64 `x86_64-pc-windows-gnullvm`.
+amd64's gnullvm std is **not installed by default** → `rustup target add
+x86_64-pc-windows-gnullvm` is a CI prereq (arm64's was already present). Note the
+kernel-rust *library* build uses `x86_64-pc-windows-gnu` and is fine — because a
+staticlib build invokes no linker, so libgcc is never sought. The flavor only
+matters at the *drive's* final link.
+
+**4. Mechanism implemented: per-cell `BUILTIN` opt-in.** `add_cargo_module`
+(gcc.cmake) gained a `BUILTIN` option: amd64/arm64 link against the gnullvm
+triple (stable, no build-std), i386 stays on the softfloat json. This is the
+incremental tool for the full unification — flip cells one at a time, boot-
+validating each, instead of a global switch. bootvid is opted in
+(`drivers/base/bootvid/CMakeLists.txt`); linkers pinned in `.cargo/config.toml`.
+
+**5. Boot validation: ❌ FAILED — clean imports are NOT sufficient.** On a
+*clean* baseline (amd64-null cold-green), the builtin-gnullvm bootvid **hangs
+deterministically at boot** (amd64, ~6 min, right after "ACPI … detected" — i.e.
+when early ntoskrnl first drives inbv/bootvid). bootvid.dll has zero `ud2` and
+clean imports, yet it hangs. `-C no-prepopulate-passes` (the guard cnt-rust/
+rtl-rust use for the captures(none)/whole-pipeline miscompile) **does NOT fix
+it** → the miscompile is in the **precompiled-std interaction**, not bootvid-rust's
+own codegen. The json/build-std path boots because the **workspace profile
+firewall** (`lto=false`, `codegen-units=256`, panic=abort, build-std rebuilding
+core/compiler_builtins under that firewall) suppresses the exact miscompile class
+that **precompiled std re-exposes**.
+
+(arm64 could not be used as a second data point: the fresh-crp arm64 baseline
+itself hangs at Phase 1 — a separate, in-progress regression another agent is
+debugging — so arm64 boot was unattributable.)
+
+**Clean A/B attribution (same HEAD, both cold, amd64):** null/json bootvid →
+OK (2m28s); PoC/gnullvm bootvid → HANG (6m). So the builtin bootvid is
+*definitively* the cause, not baseline flakiness.
+
+**Root-cause so far (gdb):** the hang is a *tight infinite spin* at a stable PC,
+symbolicated to `CmpInitDelayDerefKCBEngine` (`ntoskrnl_rust::config::cmdelay`) —
+i.e. **config-manager init, NOT bootvid code**. bootvid has ENTRYPOINT 0 (no
+DllMain), so nothing of bootvid's runs at load; the corruption/perturbation is
+indirect. Leading hypotheses (unconfirmed): (a) a miscompiled Vid* blit writes
+out-of-bounds and corrupts kernel heap/structures that Cmp init later spins on;
+(b) the different-sized gnullvm bootvid perturbs the early memory layout and
+surfaces a latent layout-sensitive bug in Cmp init. Pinning it further needs
+reliable kbase symbolication (the find-kbase heuristic was shaky) + watchpoints,
+or a codegen diff of the Vid* functions — expensive, deferred pending a decision
+on whether to keep drilling vs accept the builtin-for-drives BLOCKED conclusion.
+
+### ⚠️ Revised conclusion — the builtin-drive migration is BLOCKED for now
+
+The plan's central move ("amd64/arm64 cargo-drives → builtin + precompiled +
+`-nostdlib`") is **not a free swap**. Builtin precompiled std gives clean imports
+(✅) but **re-introduces a boot-time miscompile** that the build-std workspace
+firewall is precisely what suppresses. So the two std providers trade one
+miscompile for another:
+
+| | build-std (json) | precompiled (builtin) |
+|---|---|---|
+| arm64 `compiler_builtins` outline-atomics | ❌ miscompiles (the ntoskrnl bug) | ✅ correct |
+| captures(none)/whole-pipeline on a drive | ✅ suppressed by firewall | ❌ **re-exposed → boot hang (bootvid amd64)** |
+
+**Neither is universally safe.** Before the unification can move drives to
+builtin, the precompiled-std boot miscompile must be **root-caused** (why does a
+self-contained KernelDll hang under precompiled core when it boots under build-std
+core + the firewall? candidates: precompiled core/compiler_builtins built with
+LTO/few-CGU defeating the cgu=256 firewall across the std boundary; panic=unwind
+objects from precompiled std vs the kernel's panic=abort). Until then, **keep
+KernelDll drives on the json/build-std path.** The only proven-booting builtin
+user today is ntoskrnl-cargo (KernelExe, via boot-swap) — and KernelExe differs
+(own panic/eh/mem runtime; not `-shared`), so it does NOT generalize to KernelDll.
+
+**Net for the unification:** open Q#3 (UCRT-strip) is genuinely resolved, but the
+bigger prerequisite is now the precompiled-vs-build-std miscompile question, which
+this PoC newly surfaced. The `BUILTIN` opt-in mechanism + gnullvm-flavor finding
+remain useful groundwork for if/when that's solved.
 
 ## Why one agent, and when
 

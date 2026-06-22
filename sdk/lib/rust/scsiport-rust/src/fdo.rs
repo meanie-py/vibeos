@@ -372,14 +372,14 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
         (*DeviceExtension).InterruptCount = 0u32;
         if DbgPrint(
             b"(%s:%d) Interrupt Count: 0\n\0" as *const u8 as *const u8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+            b"drivers/storage/port/scsiport/fdo.c\0"
                 as *const u8 as *const i8,
             376i32,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const u8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+                b"drivers/storage/port/scsiport/fdo.c\0"
                     as *const u8 as *const i8,
                 376i32,
             );
@@ -387,7 +387,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const u8,
             b"FdoCallHWInitialize\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+            b"drivers/storage/port/scsiport/fdo.c\0"
                 as *const u8 as *const i8,
             378i32,
         );
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
             if !(Status >= 0) {
                 if DbgPrint(
                     b"(%s:%d) Could not connect interrupt %d\n\0" as *const u8 as *const u8,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+                    b"drivers/storage/port/scsiport/fdo.c\0"
                         as *const u8 as *const i8,
                     448i32,
                     InterruptVector[i as usize],
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
                 {
                     DbgPrint(
                         b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const u8,
-                        b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+                        b"drivers/storage/port/scsiport/fdo.c\0"
                             as *const u8 as *const i8,
                         448i32,
                     );
@@ -518,14 +518,14 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
     {
         if DbgPrint(
             b"(%s:%d) HwInitialize() failed!\n\0" as *const u8 as *const u8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+            b"drivers/storage/port/scsiport/fdo.c\0"
                 as *const u8 as *const i8,
             487i32,
         ) != 0
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const u8,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+                b"drivers/storage/port/scsiport/fdo.c\0"
                     as *const u8 as *const i8,
                 487i32,
             );
@@ -717,7 +717,7 @@ unsafe fn FdoHandleDeviceRelations(
         if !((*Irp).IoStatus.Information == (0 as ULONG_PTR) as _) {
             RtlAssert(
                 b"Irp->IoStatus.Information == 0\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
+                b"drivers/storage/port/scsiport/fdo.c\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
                 664,
                 core::ptr::null_mut::<i8>(),
             );
@@ -759,7 +759,7 @@ unsafe fn FdoHandleDeviceRelations(
         if !((*deviceRelations).Count == (*PortExtension).TotalLUCount as u32) {
             RtlAssert(
                 b"deviceRelations->Count == PortExtension->TotalLUCount\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
+                b"drivers/storage/port/scsiport/fdo.c\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
                 698,
                 core::ptr::null_mut::<i8>(),
             );
@@ -836,7 +836,7 @@ pub unsafe extern "C" fn FdoDispatchPnp(
     if (*portExt).Common.IsFDO == 0 {
         RtlAssert(
             b"portExt->Common.IsFDO\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0"
+            b"drivers/storage/port/scsiport/fdo.c\0"
                 .as_ptr() as *const i8 as PVOID,
             762 as ULONG,
             core::ptr::null_mut::<i8>() as PCHAR,

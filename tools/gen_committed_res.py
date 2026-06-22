@@ -23,56 +23,58 @@ import os
 import shlex
 import subprocess
 
-# (rc-stem, rc-path, cmake _res target, consumer data dir)
+# (rc-stem, rc-path) — the cmake `<stem>_res` target and the consumer data dir
+# `sdk/lib/rust/<stem>-cargo/data` are both pure functions of the stem.
 CELLS = [
-    (
-        "basesrv",
-        "subsystems/win/basesrv/basesrv.rc",
-        "basesrv_res",
-        "sdk/lib/rust/basesrv-cargo/data",
-    ),
-    (
-        "services",
-        "base/system/services/services.rc",
-        "services_res",
-        "sdk/lib/rust/services-cargo/data",
-    ),
-    (
-        "userinit",
-        "base/system/userinit/userinit.rc",
-        "userinit_res",
-        "sdk/lib/rust/userinit-cargo/data",
-    ),
-    (
-        "winlogon",
-        "base/system/winlogon/winlogon.rc",
-        "winlogon_res",
-        "sdk/lib/rust/winlogon-cargo/data",
-    ),
+    ("basesrv", "subsystems/win/basesrv/basesrv.rc"),
+    ("services", "base/system/services/services.rc"),
+    ("userinit", "base/system/userinit/userinit.rc"),
+    ("winlogon", "base/system/winlogon/winlogon.rc"),
 ]
 
 
-def gen(arch):
+def committed_path(stem, arch):
+    """The committed .res path for a (cell, arch)."""
+    return f"sdk/lib/rust/{stem}-cargo/data/{stem}-{arch}.rc.res"
+
+
+def res_jobs(arch):
+    """Yield (stem, committed_rel, toks, cwd) per cell for a configured build,
+    where running `toks` in `cwd` with toks[-1] replaced by a dest path emits the
+    .res. None when the build dir is absent (skip). Single source of truth shared
+    by `gen()` (writes to the committed path) and the drift-check (writes to a
+    temp + diffs)."""
     db_path = f"build-{arch}/compile_commands.json"
     if not os.path.exists(db_path):
-        print(f"  [{arch}] no {db_path} — configure+build that arch first; skipping")
-        return
+        return None
     with open(db_path) as f:
         db = json.load(f)
-    for stem, rc, target, datadir in CELLS:
+    jobs = []
+    for stem, rc in CELLS:
+        target = f"{stem}_res"
         rc_base = rc.split("/")[-1]
         hits = [e for e in db if e["file"].endswith(rc_base) and f"{target}.dir" in e["command"]]
         if not hits:
             print(f"  [{arch}] {stem}: NO compile_commands entry")
             continue
         e = hits[0]
-        os.makedirs(datadir, exist_ok=True)
-        out = os.path.abspath(f"{datadir}/{stem}-{arch}.rc.res")
-        toks = shlex.split(e["command"])
+        jobs.append((stem, committed_path(stem, arch), shlex.split(e["command"]), e["directory"]))
+    return jobs
+
+
+def gen(arch):
+    jobs = res_jobs(arch)
+    if jobs is None:
+        print(f"  [{arch}] no build-{arch}/compile_commands.json — build that arch first; skipping")
+        return
+    for stem, committed_rel, toks, cwd in jobs:
+        out = os.path.abspath(committed_rel)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        toks = list(toks)
         toks[-1] = out  # windres output is the last positional token
-        r = subprocess.run(toks, cwd=e["directory"])
+        r = subprocess.run(toks, cwd=cwd)
         ok = r.returncode == 0 and os.path.exists(out)
-        print(f"  [{arch}] {stem}: {'OK' if ok else 'FAIL'} -> {datadir}/{stem}-{arch}.rc.res")
+        print(f"  [{arch}] {stem}: {'OK' if ok else 'FAIL'} -> {committed_rel}")
 
 
 def main():

@@ -443,7 +443,7 @@ pub unsafe extern "system" fn HidParser_MaxUsageListLength(
         DbgPrint(
             b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
             b"HidParser_MaxUsageListLength\0".as_ptr() as *const ::core::ffi::c_char,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const ::core::ffi::c_char,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const ::core::ffi::c_char,
             266 as ::core::ffi::c_int,
         );
         return 0u32;
@@ -504,7 +504,7 @@ pub unsafe extern "system" fn HidParser_GetSpecificValueCaps(
     if LinkCollection != 0 {
         RtlAssert(
             b"LinkCollection == HIDP_LINK_COLLECTION_UNSPECIFIED\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
             335u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -666,7 +666,7 @@ pub unsafe extern "system" fn HidParser_GetUsages(
     if LinkCollection as i32 != 0 {
         RtlAssert(
             b"LinkCollection == HIDP_LINK_COLLECTION_UNSPECIFIED\0".as_ptr() as *mut ::core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut ::core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut ::core::ffi::c_void,
             519 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -733,7 +733,7 @@ pub unsafe extern "system" fn HidParser_GetScaledUsageValue(
                 .as_ptr()
                 .cast::<i8>()
                 .cast::<core::ffi::c_void>(),
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 .as_ptr()
                 .cast::<i8>()
                 .cast::<core::ffi::c_void>(),
@@ -959,13 +959,13 @@ pub unsafe extern "system" fn HidParser_GetSpecificButtonCaps(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetSpecificButtonCaps\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         827 as core::ffi::c_int,
     );
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             828 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -986,13 +986,13 @@ pub unsafe extern "system" fn HidParser_GetData(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetData\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         844i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             845u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1013,14 +1013,14 @@ pub unsafe extern "system" fn HidParser_GetExtendedAttributes(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetExtendedAttributes\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
             .as_ptr() as *const i8,
         859i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             860u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1039,13 +1039,13 @@ pub unsafe extern "system" fn HidParser_GetLinkCollectionNodes(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetLinkCollectionNodes\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         872i32,
     );
     if 0i32 == 0i32 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *const core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as *const core::ffi::c_void,
             873u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1069,7 +1069,7 @@ pub unsafe extern "system" fn HidParser_GetUsageValue(
     if !(LinkCollection as i32 == (0 as u16) as i32) {
         RtlAssert(
             b"LinkCollection == HIDP_LINK_COLLECTION_UNSPECIFIED\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
             895u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1121,14 +1121,14 @@ pub unsafe extern "system" fn HidParser_SysPowerEvent(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SysPowerEvent\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
            .as_ptr() as *const i8,
         940i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 as *const u8 as *const i8 as *mut core::ffi::c_void,
             941u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1145,14 +1145,14 @@ pub unsafe extern "system" fn HidParser_SysPowerCaps(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SysPowerCaps\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         951 as ::core::ffi::c_int,
     );
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
             952 as ULONG,
             ::core::ptr::null_mut(),
         );
@@ -1176,14 +1176,14 @@ pub unsafe extern "system" fn HidParser_GetUsageValueArray(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetUsageValueArray\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
             .as_ptr() as *const i8,
         970i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 .as_ptr() as *mut core::ffi::c_void,
             971u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1206,14 +1206,14 @@ pub unsafe extern "system" fn HidParser_UnsetUsages(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_UnsetUsages\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
            .as_ptr() as *const i8,
         988i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
             989u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1233,13 +1233,13 @@ pub unsafe extern "system" fn HidParser_TranslateUsagesToI8042ScanCodes(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_TranslateUsagesToI8042ScanCodes\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         1004_i32,
     );
     if 0 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as PVOID,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as PVOID,
             1005u32,
             core::ptr::null_mut(),
         );
@@ -1261,14 +1261,14 @@ pub unsafe extern "system" fn HidParser_SetUsages(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SetUsages\0" as *const u8 as *const ::core::ffi::c_char,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
             as *const u8 as *const ::core::ffi::c_char,
         1022 as ::core::ffi::c_int,
     );
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *mut core::ffi::c_void,
             1023 as ULONG,
             ::core::ptr::null_mut(),
         );
@@ -1292,13 +1292,13 @@ pub unsafe extern "system" fn HidParser_SetUsageValueArray(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SetUsageValueArray\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         1041i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
             1042u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
@@ -1320,14 +1320,14 @@ pub unsafe extern "system" fn HidParser_SetUsageValue(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SetUsageValue\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
             .as_ptr() as *const i8,
         1059 as core::ffi::c_int,
     );
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
             1060 as core::ffi::c_ulong,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1352,13 +1352,13 @@ pub unsafe extern "system" fn HidParser_SetScaledUsageValue(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_SetScaledUsageValue\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         1077i32,
     );
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const core::ffi::c_void,
             1078u32,
             core::ptr::null_mut(),
         );
@@ -1379,14 +1379,14 @@ pub unsafe extern "system" fn HidParser_SetData(
     DbgPrint(
         c"WARNING:  %s at %s:%d is unimplemented!()\n".as_ptr() as *const i8,
         c"HidParser_SetData".as_ptr() as *const i8,
-        c"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c".as_ptr()
+        c"sdk/lib/drivers/hidparser/hidparser.c".as_ptr()
             as *const core::ffi::c_void,
         1093i32,
     );
     if 0i32 == 0i32 {
         RtlAssert(
             c"FALSE".as_ptr() as *const i8 as *mut core::ffi::c_void,
-            c"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c"
+            c"sdk/lib/drivers/hidparser/hidparser.c"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
             1094u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1403,14 +1403,14 @@ pub unsafe extern "system" fn HidParser_MaxDataListLength(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_MaxDataListLength\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr()
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr()
             as *const core::ffi::c_void,
         1105 as core::ffi::c_int,
     );
     if 0 as core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as *const core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr()
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr()
                 as *const i8 as *const core::ffi::c_void,
             1106 as u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1430,14 +1430,14 @@ pub unsafe extern "system" fn HidParser_InitializeReportForID(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_InitializeReportForID\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+        b"sdk/lib/drivers/hidparser/hidparser.c\0"
            .as_ptr() as *const i8,
         1120 as i32,
     );
     if 0 as i32 == 0 {
         RtlAssert(
             b"FALSE\0" as *const u8 as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0"
+            b"sdk/lib/drivers/hidparser/hidparser.c\0"
                 as *const u8 as *const i8 as PVOID,
             1121 as ULONG,
             core::ptr::null_mut::<core::ffi::c_void>(),
@@ -1457,14 +1457,14 @@ pub unsafe extern "system" fn HidParser_GetValueCaps(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"HidParser_GetValueCaps\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
+        b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8,
         1136i32,
     );
 
     if 0i32 == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as PVOID,
+            b"sdk/lib/drivers/hidparser/hidparser.c\0".as_ptr() as *const i8 as PVOID,
             1137u32,
             core::ptr::null_mut::<core::ffi::c_void>(),
         );

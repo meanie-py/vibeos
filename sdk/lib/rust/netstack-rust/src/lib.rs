@@ -18,6 +18,11 @@ pub mod time;
 pub mod hal;
 pub mod pci;
 pub mod device;
+// M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). amd64 only —
+// arm64's HalGetInterruptVector is a stub, and there is no i386 net smoke config.
+#[cfg(target_arch = "x86_64")]
+pub mod isr;
+pub mod netcfg;
 pub mod selftest;
 pub mod engine;
 pub mod tdi;
@@ -25,6 +30,8 @@ pub mod tditrans;
 pub mod tdidev;
 pub mod tditest;
 pub mod tdidgtest;
+pub mod tdisrvtest;
+pub mod icmptest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -60,6 +67,15 @@ pub unsafe extern "system" fn DriverEntry(
     // TDI_EVENT_RECEIVE_DATAGRAM handler, send a DNS query datagram to slirp's DNS
     // forwarder, receive the reply via the datagram upcall.
     tdidgtest::spawn();
+    // M8 verification: the inbound/server analogue of tditest — a kernel TDI
+    // server that binds :8888, posts TDI_LISTEN (pends), and on a host connect
+    // accepts + echoes. Exercises the M8 listen/accept dispatch + completion
+    // bridge over the exact IRP path AfdListenSocket/AfdAccept use.
+    tdisrvtest::spawn();
+    // M9 verification: drive the ICMP echo (ping) IOCTL on \Device\Ip — opens the
+    // device, issues IOCTL_ICMP_ECHO_REQUEST to the gateway, validates the
+    // ICMP_ECHO_REPLY. Proves the path usermode ping/IcmpSendEcho2 ride on.
+    icmptest::spawn();
     0 // STATUS_SUCCESS
 }
 

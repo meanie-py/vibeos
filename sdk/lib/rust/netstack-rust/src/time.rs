@@ -12,6 +12,8 @@ use core::ptr::read_volatile;
 use smoltcp::time::Instant;
 
 use ntkrnl_sys::ddk::{KeDelayExecutionThread, LARGE_INTEGER};
+#[cfg(target_arch = "aarch64")]
+use ntkrnl_sys::ddk::KeQueryPerformanceCounter;
 
 #[cfg(target_arch = "x86_64")]
 const KUSER_SHARED_DATA: usize = 0xFFFF_F780_0000_0000;
@@ -39,6 +41,25 @@ fn interrupt_time_100ns() -> u64 {
 }
 
 /// Monotonic `Instant` for smoltcp.
+///
+/// **arm64:** `KUSER_SHARED_DATA.InterruptTime` does NOT advance on this port —
+/// there is no periodic clock interrupt wired to `KeUpdateSystemTime`, so it sits
+/// at 0. Reading it would freeze smoltcp's clock and break every time-based path
+/// (neighbour-cache ARP for a new on-link host, ARP/DNS/TCP retransmit timers) —
+/// which is exactly why reply-driven exchanges (DHCP/ICMP) worked but DNS +
+/// outbound TCP stalled. Use the ARM generic timer (`cntvct_el0`, exposed via
+/// `KeQueryPerformanceCounter`), a real always-advancing 62.5 MHz counter.
+#[cfg(target_arch = "aarch64")]
+pub fn now() -> Instant {
+    let mut freq: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+    let count = unsafe { KeQueryPerformanceCounter(&mut freq) };
+    let f = unsafe { freq.QuadPart }.max(1) as i128;
+    let c = unsafe { count.QuadPart } as i128;
+    Instant::from_millis((c * 1000 / f) as i64)
+}
+
+/// Monotonic `Instant` for smoltcp (x86: KUSER `InterruptTime`, which advances).
+#[cfg(not(target_arch = "aarch64"))]
 pub fn now() -> Instant {
     Instant::from_millis((interrupt_time_100ns() / 10_000) as i64)
 }

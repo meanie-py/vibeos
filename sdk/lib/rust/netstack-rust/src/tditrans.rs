@@ -14,16 +14,23 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
-use smoltcp::socket::{tcp, udp};
-use smoltcp::wire::IpAddress;
+use smoltcp::phy::ChecksumCapabilities;
+use smoltcp::socket::{icmp, tcp, udp};
+use smoltcp::wire::{Icmpv4Packet, Icmpv4Repr, IpAddress};
 
 use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
 use ntkrnl_sys::guards::IrqlGuard;
 
 use crate::serial::nsprint;
+use crate::time::now;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
+const STATUS_TIMEOUT: NTSTATUS = 0x0000_0102;
 const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC000_0236u32 as NTSTATUS;
+
+/// Identifier the management ICMP socket binds to (distinct from the boot
+/// self-test's 0x022b) — replies are correlated back to pending pings by seq.
+const MGMT_ICMP_IDENT: u16 = 0x4944;
 
 /// Worker→IRP completion. Safe to call at PASSIVE with no engine lock held.
 unsafe fn complete(irp: usize, status: NTSTATUS, info: usize) {
@@ -46,6 +53,12 @@ pub enum Cmd {
     SetEvent { addr_id: u64, ev_type: u32, handler: usize, context: usize },
     Associate { conn_id: u64, addr_id: u64 },
     Connect { conn_id: u64, ip: [u8; 4], port: u16, irp: usize },
+    /// Server-side: bind a fresh socket to the connection's associated local port
+    /// and listen; the IRP completes when an inbound connection is established.
+    Listen { conn_id: u64, irp: usize, ret_info: usize },
+    /// getsockname: report the local address of a connection or address object
+    /// into the IRP's MDL (out/out_len), then complete.
+    QueryAddress { id: u64, irp: usize, out: usize, out_len: usize },
     Send { conn_id: u64, irp: usize, data: usize, len: usize },
     Receive { conn_id: u64, irp: usize, buf: usize, len: usize },
     Disconnect { conn_id: u64, irp: usize },
@@ -54,6 +67,20 @@ pub enum Cmd {
     ReceiveDatagram { addr_id: u64, irp: usize, buf: usize, len: usize },
     CloseConn { id: u64 },
     CloseAddr { id: u64 },
+    /// ICMP echo (ping): emit an echo request on the management ICMP socket and
+    /// complete the IRP with the ICMP_ECHO_REPLY once a reply arrives (or on
+    /// timeout). `sysbuf` is the METHOD_BUFFERED SystemBuffer (kernel, written by
+    /// the worker); `user_buffer` is the caller's output VA (used only to compute
+    /// the reply's `Data` back-pointer — never dereferenced in the kernel).
+    IcmpEcho {
+        irp: usize,
+        sysbuf: usize,
+        out_len: usize,
+        user_buffer: usize,
+        dst: [u8; 4],
+        timeout_ms: u32,
+        data: Vec<u8>,
+    },
 }
 
 /// The inbox is guarded by raising IRQL to DISPATCH_LEVEL across the brief
@@ -121,19 +148,50 @@ struct Conn {
     conn_ctx: usize,
     handle: Option<SocketHandle>,
     connect_irp: usize,
+    /// Pended TDI_LISTEN IRP + the caller's ReturnConnectionInformation (filled
+    /// with the remote address on accept). 0 when not listening.
+    listen_irp: usize,
+    listen_ret: usize,
     recv: Vec<(usize, usize, usize)>, // (irp, buf_va, buf_len)
     connected: bool,
+}
+
+/// An in-flight ICMP echo IOCTL awaiting its reply (or timeout).
+struct PendingPing {
+    irp: usize,
+    sysbuf: usize,
+    out_len: usize,
+    user_buffer: usize,
+    dst: [u8; 4],
+    seq: u16,
+    /// Request payload to echo (copied out of SystemBuffer at dispatch time).
+    data: Vec<u8>,
+    /// False until the echo request has actually been emitted (socket may be full).
+    sent: bool,
+    start_ms: i64,
+    deadline_ms: i64,
 }
 
 pub struct TdiState {
     addrs: Vec<Addr>,
     conns: Vec<Conn>,
     cmds: Vec<Cmd>,
+    /// Lazily-created management ICMP socket backing the ping IOCTL.
+    icmp: Option<SocketHandle>,
+    icmp_seq: u16,
+    pings: Vec<PendingPing>,
 }
 
 impl TdiState {
     pub fn new() -> Self {
-        Self { addrs: Vec::new(), conns: Vec::new(), cmds: Vec::new() }
+        Self {
+            addrs: Vec::new(),
+            conns: Vec::new(),
+            cmds: Vec::new(),
+            icmp: None,
+            icmp_seq: 0,
+            pings: Vec::new(),
+        }
     }
 
     fn conn(&mut self, id: u64) -> Option<&mut Conn> {
@@ -153,6 +211,7 @@ pub fn pump(iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut
         apply(cmd, iface, sockets, state);
     }
     bridge(sockets, state);
+    pump_icmp(sockets, state);
 }
 
 fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut TdiState) {
@@ -175,6 +234,8 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 conn_ctx,
                 handle: None,
                 connect_irp: 0,
+                listen_irp: 0,
+                listen_ret: 0,
                 recv: Vec::new(),
                 connected: false,
             });
@@ -219,6 +280,67 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             } else {
                 unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
             }
+        }
+        Cmd::Listen { conn_id, irp, ret_info } => {
+            // The bound local port comes from the address object AFD associated to
+            // this connection before posting TDI_LISTEN (port 0 = no bind = reject).
+            let local_port = state
+                .conn(conn_id)
+                .map(|c| c.addr_id)
+                .and_then(|aid| state.addrs.iter().find(|a| a.id == aid))
+                .map(|a| a.local_port)
+                .unwrap_or(0);
+            // smoltcp absorbs exactly one connection per listening socket (a backlog
+            // of N is N sockets listening on the same port — AFD re-posts a fresh
+            // TdiListen on a new connection object after each accept).
+            let sock = tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0u8; 8192]),
+                tcp::SocketBuffer::new(vec![0u8; 8192]),
+            );
+            let handle = sockets.add(sock);
+            let ok = local_port != 0 && sockets.get_mut::<tcp::Socket>(handle).listen(local_port).is_ok();
+            match (state.conn(conn_id), ok) {
+                (Some(c), true) => {
+                    c.handle = Some(handle);
+                    c.listen_irp = irp;
+                    c.listen_ret = ret_info;
+                    nsprint!("[NETSTACK] TDI LISTEN conn {} on :{}\n", conn_id, local_port);
+                }
+                (maybe_c, _) => {
+                    sockets.remove(handle);
+                    if let Some(c) = maybe_c {
+                        c.handle = None;
+                    }
+                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+                }
+            }
+        }
+        Cmd::QueryAddress { id, irp, out, out_len } => {
+            // A connection object reports its socket's local endpoint; an address
+            // object reports its bound port + the interface IP. ids are unique
+            // across both tables (single allocator), so a lookup miss is benign.
+            let (ip, port) = if let Some(c) = state.conns.iter().find(|c| c.id == id) {
+                match c.handle.and_then(|h| sockets.get::<tcp::Socket>(h).local_endpoint()) {
+                    Some(e) => (ip_octets(e.addr, iface), e.port),
+                    None => (iface_ipv4(iface), 0),
+                }
+            } else if let Some(a) = state.addrs.iter().find(|a| a.id == id) {
+                (iface_ipv4(iface), a.local_port)
+            } else {
+                (iface_ipv4(iface), 0)
+            };
+            let info = crate::tdi::TdiAddressInfo::new(ip, port);
+            let need = core::mem::size_of::<crate::tdi::TdiAddressInfo>();
+            if out != 0 && out_len >= need {
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &info as *const _ as *const u8,
+                        out as *mut u8,
+                        need,
+                    );
+                }
+            }
+            unsafe { complete(irp, STATUS_SUCCESS, need) };
         }
         Cmd::Send { conn_id, irp, data, len } => {
             let handle = state.conn(conn_id).and_then(|c| c.handle);
@@ -293,7 +415,186 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 state.addrs.swap_remove(pos);
             }
         }
+        Cmd::IcmpEcho { irp, sysbuf, out_len, user_buffer, dst, timeout_ms, data } => {
+            ensure_icmp(state, sockets);
+            // Unique non-zero sequence number to correlate the reply.
+            state.icmp_seq = state.icmp_seq.wrapping_add(1);
+            if state.icmp_seq == 0 {
+                state.icmp_seq = 1;
+            }
+            let seq = state.icmp_seq;
+            let now_ms = now().total_millis();
+            // A 0 (or absurd) timeout must neither wedge the IRP nor fire instantly.
+            let to = (timeout_ms as i64).clamp(1, 60_000);
+            state.pings.push(PendingPing {
+                irp,
+                sysbuf,
+                out_len,
+                user_buffer,
+                dst,
+                seq,
+                data,
+                sent: false,
+                start_ms: now_ms,
+                deadline_ms: now_ms + to,
+            });
+            try_send_pings(state, sockets);
+        }
     }
+}
+
+/// Lazily create + bind the management ICMP socket (the ping IOCTL backing).
+fn ensure_icmp(state: &mut TdiState, sockets: &mut SocketSet<'static>) -> SocketHandle {
+    if let Some(h) = state.icmp {
+        return h;
+    }
+    let sock = icmp::Socket::new(
+        icmp::PacketBuffer::new(vec![icmp::PacketMetadata::EMPTY; 8], vec![0u8; 2048]),
+        icmp::PacketBuffer::new(vec![icmp::PacketMetadata::EMPTY; 8], vec![0u8; 2048]),
+    );
+    let h = sockets.add(sock);
+    let _ = sockets
+        .get_mut::<icmp::Socket>(h)
+        .bind(icmp::Endpoint::Ident(MGMT_ICMP_IDENT));
+    state.icmp = Some(h);
+    h
+}
+
+/// Emit echo requests for any not-yet-sent pending pings (the ICMP send buffer
+/// may have been full when the command was first applied — retry each poll).
+fn try_send_pings(state: &mut TdiState, sockets: &mut SocketSet<'static>) {
+    let Some(h) = state.icmp else { return };
+    for p in state.pings.iter_mut() {
+        if p.sent {
+            continue;
+        }
+        let s = sockets.get_mut::<icmp::Socket>(h);
+        if !s.can_send() {
+            break;
+        }
+        let dst = IpAddress::v4(p.dst[0], p.dst[1], p.dst[2], p.dst[3]);
+        let mut sent_ok = false;
+        {
+            let repr = Icmpv4Repr::EchoRequest {
+                ident: MGMT_ICMP_IDENT,
+                seq_no: p.seq,
+                data: &p.data,
+            };
+            if let Ok(buf) = s.send(repr.buffer_len(), dst) {
+                let mut pkt = Icmpv4Packet::new_unchecked(buf);
+                repr.emit(&mut pkt, &ChecksumCapabilities::default());
+                sent_ok = true;
+            }
+        }
+        if sent_ok {
+            p.sent = true;
+        } else {
+            break; // buffer full mid-batch — try again next poll
+        }
+    }
+}
+
+/// ICMP management path: flush pending echo requests, deliver replies to their
+/// pending IRPs (matched by sequence number), and time out the rest.
+fn pump_icmp(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
+    if state.icmp.is_none() {
+        return;
+    }
+    try_send_pings(state, sockets);
+    let h = state.icmp.unwrap();
+
+    // Drain all available replies into owned tuples (so the socket borrow ends
+    // before we touch the pending table / SystemBuffers).
+    let mut replies: Vec<(u16, [u8; 4], Vec<u8>)> = Vec::new();
+    loop {
+        let s = sockets.get_mut::<icmp::Socket>(h);
+        if !s.can_recv() {
+            break;
+        }
+        let Ok((payload, src)) = s.recv() else { break };
+        let Ok(pkt) = Icmpv4Packet::new_checked(payload) else { continue };
+        let Ok(repr) = Icmpv4Repr::parse(&pkt, &ChecksumCapabilities::default()) else {
+            continue;
+        };
+        if let Icmpv4Repr::EchoReply { ident, seq_no, data } = repr {
+            if ident == MGMT_ICMP_IDENT {
+                let octets = match src {
+                    IpAddress::Ipv4(a) => a.octets(),
+                };
+                replies.push((seq_no, octets, data.to_vec()));
+            }
+        }
+    }
+
+    let now_ms = now().total_millis();
+    for (seq, octets, data) in replies {
+        if let Some(pos) = state.pings.iter().position(|p| p.sent && p.seq == seq) {
+            let p = state.pings.swap_remove(pos);
+            let rtt = (now_ms - p.start_ms).max(0) as u32;
+            unsafe { complete_ping_success(&p, octets, &data, rtt) };
+        }
+    }
+
+    // Time out pings whose deadline has passed.
+    let mut i = 0;
+    while i < state.pings.len() {
+        if now_ms >= state.pings[i].deadline_ms {
+            let p = state.pings.swap_remove(i);
+            unsafe { complete_ping_timeout(&p) };
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Fill the ICMP_ECHO_REPLY for a successful ping and complete the IRP. Mirrors
+/// the C transport's ProcessEchoData: header at the front, echoed data at the END
+/// of the output buffer, `Data` a back-pointer into the caller's address space.
+unsafe fn complete_ping_success(p: &PendingPing, octets: [u8; 4], data: &[u8], rtt_ms: u32) {
+    use crate::tdi::{IcmpEchoReply, IpOptionInformation, IP_SUCCESS};
+    let reply_sz = core::mem::size_of::<IcmpEchoReply>();
+    // Zero the header region (the tail data area is filled below; the gap between
+    // is irrelevant — only `Data`/`DataSize` bytes are read by the caller).
+    core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
+
+    let reply = p.sysbuf as *mut IcmpEchoReply;
+    (*reply).address = u32::from_ne_bytes(octets);
+    (*reply).status = IP_SUCCESS;
+    (*reply).round_trip_time = rtt_ms;
+    (*reply).reserved = 1; // nReplies — IcmpParseReplies returns this
+    (*reply).options = IpOptionInformation {
+        // smoltcp's ICMP socket doesn't surface the reply's IP TTL; report a
+        // plausible default (cosmetic — ping's TTL column only).
+        ttl: 128,
+        tos: 0,
+        flags: 0,
+        options_size: 0,
+        options_data: core::ptr::null_mut(),
+    };
+
+    let remaining = p.out_len - reply_sz;
+    let dsize = remaining.min(data.len());
+    if dsize > 0 {
+        // data sits at the very end of the buffer (out_len - dsize >= reply_sz).
+        let dst = (p.sysbuf + p.out_len - dsize) as *mut u8;
+        core::ptr::copy_nonoverlapping(data.as_ptr(), dst, dsize);
+        (*reply).data = (p.user_buffer + p.out_len - dsize) as *mut u8;
+    } else {
+        (*reply).data = core::ptr::null_mut();
+    }
+    (*reply).data_size = dsize as u16;
+
+    complete(p.irp, STATUS_SUCCESS, p.out_len);
+}
+
+/// Complete a timed-out ping: a zeroed ICMP_ECHO_REPLY with Status = IP_REQ_TIMED_OUT
+/// (Reserved stays 0, so IcmpSendEcho2 reports the failure). Mirrors EndRequestHandler.
+unsafe fn complete_ping_timeout(p: &PendingPing) {
+    use crate::tdi::{IcmpEchoReply, IP_REQ_TIMED_OUT};
+    let reply_sz = core::mem::size_of::<IcmpEchoReply>();
+    core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
+    (*(p.sysbuf as *mut IcmpEchoReply)).status = IP_REQ_TIMED_OUT;
+    complete(p.irp, STATUS_TIMEOUT, reply_sz);
 }
 
 /// Lazily create + bind the UDP socket backing an address object (connectionless
@@ -327,6 +628,38 @@ fn ep_to_v4(ep: smoltcp::wire::IpEndpoint) -> ([u8; 4], u16) {
         IpAddress::Ipv4(a) => a.octets(),
     };
     (octets, ep.port)
+}
+
+/// The interface's first IPv4 address (0.0.0.0 if unconfigured).
+fn iface_ipv4(iface: &Interface) -> [u8; 4] {
+    iface.ipv4_addr().map(|a| a.octets()).unwrap_or([0, 0, 0, 0])
+}
+
+/// An IpAddress's octets, falling back to the interface IP when unspecified
+/// (a socket's local endpoint can read 0.0.0.0 until traffic flows).
+fn ip_octets(a: IpAddress, iface: &Interface) -> [u8; 4] {
+    match a {
+        IpAddress::Ipv4(v4) => {
+            let o = v4.octets();
+            if o == [0, 0, 0, 0] { iface_ipv4(iface) } else { o }
+        }
+    }
+}
+
+/// Fill a TDI_CONNECTION_INFORMATION's RemoteAddress with a TA_IP_ADDRESS (the
+/// accepted peer), updating RemoteAddressLength to the bytes written. AFD's
+/// ListenComplete reads this to cache the connection's remote (getpeername).
+unsafe fn fill_remote_address(ret_info: usize, octets: [u8; 4], port: u16) {
+    let ci = ret_info as *mut crate::tdi::TDI_CONNECTION_INFORMATION;
+    let dst = (*ci).RemoteAddress as *mut u8;
+    if dst.is_null() {
+        return;
+    }
+    let cap = (*ci).RemoteAddressLength as usize;
+    let ta = crate::tdi::TaIpFull::new(octets, port);
+    let n = core::mem::size_of::<crate::tdi::TaIpFull>().min(cap);
+    core::ptr::copy_nonoverlapping(&ta as *const _ as *const u8, dst, n);
+    (*ci).RemoteAddressLength = n as i32;
 }
 
 /// Deliver all queued datagrams on `s` via the AFD datagram event-indication
@@ -417,6 +750,36 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
                 State::Closed | State::TimeWait | State::Closing => {
                     let irp = state.conns[ci].connect_irp;
                     state.conns[ci].connect_irp = 0;
+                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+                }
+                _ => {}
+            }
+        }
+
+        // Listen completion (server-side accept). A listening socket reaches
+        // ESTABLISHED once smoltcp absorbs an inbound SYN + completes the handshake
+        // in place — that IS the accept; we fill the peer into the caller's
+        // ReturnConnectionInformation and complete the pended TDI_LISTEN.
+        if state.conns[ci].listen_irp != 0 {
+            use tcp::State;
+            match s.state() {
+                State::Established => {
+                    let irp = state.conns[ci].listen_irp;
+                    let ret_info = state.conns[ci].listen_ret;
+                    state.conns[ci].listen_irp = 0;
+                    state.conns[ci].connected = true;
+                    if ret_info != 0 {
+                        if let Some(ep) = s.remote_endpoint() {
+                            let (octets, port) = ep_to_v4(ep);
+                            unsafe { fill_remote_address(ret_info, octets, port) };
+                        }
+                    }
+                    nsprint!("[NETSTACK] TDI LISTEN accepted (conn {})\n", state.conns[ci].id);
+                    unsafe { complete(irp, STATUS_SUCCESS, 0) };
+                }
+                State::Closed | State::TimeWait | State::Closing => {
+                    let irp = state.conns[ci].listen_irp;
+                    state.conns[ci].listen_irp = 0;
                     unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
                 }
                 _ => {}

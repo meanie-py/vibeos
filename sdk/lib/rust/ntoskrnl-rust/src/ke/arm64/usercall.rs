@@ -46,7 +46,7 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
     let CurrentThread: PKTHREAD = KiGetCurrentThread();
 
     let TrapFrameSize = core::mem::size_of::<KTRAP_FRAME>() as ULONG_PTR;
-    let InitialStack: ULONG_PTR = ALIGN_DOWN_BY(CalloutFrame as ULONG_PTR, 16) - TrapFrameSize;
+    let InitialStack: ULONG_PTR = ALIGN_DOWN_BY(CalloutFrame as ULONG_PTR, 16);
 
     if (InitialStack - KERNEL_STACK_SIZE) < (*CurrentThread).StackLimit as ULONG_PTR {
         let Status = MmGrowKernelStack(InitialStack as PVOID);

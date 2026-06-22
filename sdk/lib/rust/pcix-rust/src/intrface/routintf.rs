@@ -39,7 +39,7 @@ pub unsafe extern "system" fn routeintrf_Initializer(Instance: PVOID) -> NTSTATU
     if 0 as ::core::ffi::c_int == 0 {
         RtlAssert(
             b"FALSE\0".as_ptr() as *mut ::core::ffi::c_void,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/routintf.c\0"
+            b"drivers/bus/pcix/intrface/routintf.c\0"
                 .as_ptr() as *mut ::core::ffi::c_void,
             41u32,
             b"PCI routeintrf_Initializer, unexpected call.\n\0".as_ptr() as *mut i8,
@@ -62,7 +62,7 @@ pub unsafe extern "system" fn routeintrf_Constructor(
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"routeintrf_Constructor\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/intrface/routintf.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/intrface/routintf.c\0".as_ptr() as *const i8,
         64i32,
     );
     DbgPrint(b"\0".as_ptr() as *const i8);

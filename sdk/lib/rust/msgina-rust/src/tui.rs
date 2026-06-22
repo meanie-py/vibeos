@@ -57,7 +57,7 @@ pub(crate) unsafe extern "C" fn TUIInitialize(pgContext: PGINA_CONTEXT) -> BOOL 
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/tui.c\0"
+            b"dll/win32/msgina/tui.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             b"TUIInitialize\0".as_ptr() as *const core::ffi::c_char,
             16i32,
@@ -88,7 +88,7 @@ pub(crate) unsafe extern "C" fn TUIDisplayStatusMessage(
         ros_dbg_log(
             __dbcl,
             __dbch,
-            c"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/tui.c".as_ptr(),
+            c"dll/win32/msgina/tui.c".as_ptr(),
             c"TUIDisplayStatusMessage".as_ptr(),
             32i32,
             c"TUIDisplayStatusMessage(%ws)\n".as_ptr(),
@@ -172,7 +172,7 @@ pub(crate) unsafe extern "C" fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasTy
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/tui.c\0".as_ptr() as *const core::ffi::c_char,
+            b"dll/win32/msgina/tui.c\0".as_ptr() as *const core::ffi::c_char,
             b"TUILoggedOnSAS\0".as_ptr() as *const core::ffi::c_char,
             112 as core::ffi::c_int,
             b"TUILoggedOnSAS()\n\0".as_ptr() as *const core::ffi::c_char,
@@ -189,7 +189,7 @@ pub(crate) unsafe extern "C" fn TUILoggedOnSAS(pgContext: PGINA_CONTEXT, dwSasTy
         ros_dbg_log(
             __WINE_DBCL_FIXME,
             __wine_dbch___default,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/msgina/tui.c\0".as_ptr() as *const core::ffi::c_char,
+            b"dll/win32/msgina/tui.c\0".as_ptr() as *const core::ffi::c_char,
             b"TUILoggedOnSAS\0".as_ptr() as *const core::ffi::c_char,
             122 as core::ffi::c_int,
             b"FIXME: TUILoggedOnSAS(): Let's suppose the user wants to log off...\n\0".as_ptr() as *const core::ffi::c_char,

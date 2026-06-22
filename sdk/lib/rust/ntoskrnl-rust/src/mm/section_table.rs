@@ -130,17 +130,19 @@ unsafe fn MiSectionPageTableGet(
     ) as PCACHE_SECTION_PAGE_TABLE
 }
 
-unsafe fn MiSectionPageTableGetOrAllocate(
+// The insert path needs a zeroed `_CACHE_SECTION_PAGE_TABLE` (~2KB, dominated by
+// `PageEntries: [ULONG_PTR; 256]`) as the scratch buffer that
+// `RtlInsertElementGenericTable` copies into freshly-allocated table memory. Kept
+// in its own `#[inline(never)]` function so the 2KB stack frame is reserved ONLY on
+// the rare allocate path — never on the common GET-hit path, and never folded into
+// the caller (`_MmSetPageEntrySectionSegment`) where it would inflate every call's
+// frame. Stack frugality matters: the page-table path runs deep inside the Cc dirty
+// flush chain on a kernel stack.
+#[inline(never)]
+unsafe fn MiSectionPageTableInsert(
     Table: PRTL_GENERIC_TABLE,
     FileOffset: PLARGE_INTEGER,
 ) -> PCACHE_SECTION_PAGE_TABLE {
-    let existing = MiSectionPageTableGet(Table, FileOffset);
-    if !existing.is_null() {
-        return existing;
-    }
-
-    // Build a zeroed slice descriptor on the stack; `RtlInsertElementGenericTable`
-    // will copy it into freshly-allocated table memory.
     let mut zero: _CACHE_SECTION_PAGE_TABLE = core::mem::zeroed();
     zero.FileOffset.QuadPart = round_down(
         (*FileOffset).QuadPart,
@@ -154,6 +156,17 @@ unsafe fn MiSectionPageTableGetOrAllocate(
         core::mem::size_of::<_CACHE_SECTION_PAGE_TABLE>() as ULONG,
         core::ptr::null_mut(),
     ) as PCACHE_SECTION_PAGE_TABLE
+}
+
+unsafe fn MiSectionPageTableGetOrAllocate(
+    Table: PRTL_GENERIC_TABLE,
+    FileOffset: PLARGE_INTEGER,
+) -> PCACHE_SECTION_PAGE_TABLE {
+    let existing = MiSectionPageTableGet(Table, FileOffset);
+    if !existing.is_null() {
+        return existing;
+    }
+    MiSectionPageTableInsert(Table, FileOffset)
 }
 
 #[no_mangle]

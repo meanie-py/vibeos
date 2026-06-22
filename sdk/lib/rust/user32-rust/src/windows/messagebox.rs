@@ -777,7 +777,7 @@ pub unsafe extern "system" fn SoftModalMessageBox(lpMsgBoxData: LPMSGBOXDATA) ->
             caplen = wcslen((*lpMsgBoxParams).lpszCaption) as INT;
         }
         if (*lpMsgBoxParams).lpszCaption.is_null() {
-            (*lpMsgBoxParams).lpszCaption = b"\0".as_ptr() as LPCWSTR;
+            (*lpMsgBoxParams).lpszCaption = b"\0\0".as_ptr() as LPCWSTR;
             caplen = 0;
         }
 
@@ -795,7 +795,7 @@ pub unsafe extern "system" fn SoftModalMessageBox(lpMsgBoxData: LPMSGBOXDATA) ->
             textlen = wcslen((*lpMsgBoxParams).lpszText) as INT;
         }
         if (*lpMsgBoxParams).lpszText.is_null() {
-            (*lpMsgBoxParams).lpszText = b"\0".as_ptr() as LPCWSTR;
+            (*lpMsgBoxParams).lpszText = b"\0\0".as_ptr() as LPCWSTR;
             textlen = 0;
         }
 
@@ -853,7 +853,7 @@ pub unsafe extern "system" fn SoftModalMessageBox(lpMsgBoxData: LPMSGBOXDATA) ->
         i = 0;
         while i < mbd.dwButtons as INT {
             if (*mbd.ppszButtonText.add(i as usize)).is_null() || **mbd.ppszButtonText.add(i as usize) == 0 {
-                *mbd.ppszButtonText.add(i as usize) = b"\0".as_ptr() as PWSTR;
+                *mbd.ppszButtonText.add(i as usize) = b"\0\0".as_ptr() as PWSTR;
                 ButtonLen = 0;
             } else {
                 ButtonLen = wcslen(*mbd.ppszButtonText.add(i as usize));

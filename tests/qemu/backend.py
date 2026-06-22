@@ -102,6 +102,34 @@ def gateway_ip() -> str:
     return m.group(1)
 
 
+def windows_free_tcp_port() -> int:
+    """Pick a TCP port free ON THE WINDOWS HOST — the stack where a windows-host
+    slirp hostfwd actually binds (`0.0.0.0:<port>`).
+
+    The native `_free_tcp_port` binds on the WSL TCP stack, which is a DIFFERENT
+    stack from Windows under NAT: a WSL-free port says nothing about Windows-side
+    bindability, so QEMU.exe's hostfwd bind fails with `Could not set up host
+    forwarding rule 'tcp:0.0.0.0:<port>'` (exit 1, before any guest code). A
+    Windows `TcpListener` on port 0 lets the Windows OS assign a port free on its
+    own stack, eliminating the cross-stack collision (a small bind-time TOCTOU
+    window remains, as with any pick-then-bind scheme)."""
+    ps = (
+        "$l=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,0);"
+        "$l.Start();$p=$l.LocalEndpoint.Port;$l.Stop();$p"
+    )
+    out = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", ps],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout
+    digits = re.sub(r"\D", "", out)
+    if not digits:
+        raise RuntimeError(f"windows_free_tcp_port: no port in powershell output {out!r}")
+    return int(digits)
+
+
 def rewrite_netdev_for_windows(args: list[str], chardev_id: str) -> tuple[list[str], bool]:
     """Adapt the slirp `-netdev user,...` for the windows-host boundary. Two rewrites,
     mirror images of each other:

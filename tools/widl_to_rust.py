@@ -262,11 +262,26 @@ def map_field_type(ctype: str) -> str:
 # view must reproduce the C layout byte-for-byte so the read lands at the right
 # offset — so widths are exact and anything unknown hard-fails.
 VIEW_SCALAR = {
-    "BYTE": "u8", "UCHAR": "u8", "CHAR": "u8", "CCHAR": "u8", "BOOLEAN": "u8",
-    "WORD": "u16", "USHORT": "u16", "SHORT": "u16", "WCHAR": "u16",
-    "DWORD": "u32", "ULONG": "u32", "LONG": "u32", "UINT": "u32",
-    "INT": "u32", "BOOL": "u32", "HRESULT": "u32",
-    "ULONG64": "u64", "LONGLONG": "u64", "ULONGLONG": "u64", "DWORD64": "u64",
+    "BYTE": "u8",
+    "UCHAR": "u8",
+    "CHAR": "u8",
+    "CCHAR": "u8",
+    "BOOLEAN": "u8",
+    "WORD": "u16",
+    "USHORT": "u16",
+    "SHORT": "u16",
+    "WCHAR": "u16",
+    "DWORD": "u32",
+    "ULONG": "u32",
+    "LONG": "u32",
+    "UINT": "u32",
+    "INT": "u32",
+    "BOOL": "u32",
+    "HRESULT": "u32",
+    "ULONG64": "u64",
+    "LONGLONG": "u64",
+    "ULONGLONG": "u64",
+    "DWORD64": "u64",
 }
 
 
@@ -281,7 +296,7 @@ def synth_view_from_header(type_name: str, header: str, fname: str):
     found = None
     for m in re.finditer(r"typedef\s+struct\s+\w*\s*(?=\{)", header):
         blk = brace_block(header, m.end())
-        after = header[header.index(blk, m.end()) + len(blk):]
+        after = header[header.index(blk, m.end()) + len(blk) :]
         tm = re.match(r"\s*([A-Za-z_]\w*)", after)
         if tm and tm.group(1) == type_name:
             found = blk

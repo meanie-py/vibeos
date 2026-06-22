@@ -220,23 +220,31 @@ pub const PTE_PROTOTYPE: ULONG_PTR = 0x400;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 pub const PTE_TRANSITION: ULONG_PTR = 0x800;
 
-// PTE_ENABLE_CACHE — enable cache (0 on x86/x64, specific value on arm64)
+// PTE_ENABLE_CACHE — enable cache (0 on x86/x64; arm64 AttrIndx in bits[3:2]).
+// freeldr programs MAIR_EL1=0x004400FF: AttrIndx 0=Normal-WB, 1=Device-nGnRnE,
+// 2=Normal-NC (winldr.c WinLdrSetProcessorContext). So cached normal memory is
+// AttrIndx 0 → value 0x0. The previous 0x4 selected AttrIndx 1 = Device, which
+// mapped every "cached" kernel page (pool, NLS tables) as Device memory: aligned
+// accesses worked but any *unaligned* access alignment-faulted (DFSC 0x21, A=0) —
+// the cold-build 0x1E cascade (RtlInitCodePageTable, ObpAllocateObject SIMD store).
+// stubs.c's comment had the correct mapping; miarm.h/here had it bit-swapped.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub const PTE_ENABLE_CACHE: ULONG_PTR = 0x0;
 #[cfg(target_arch = "aarch64")]
-pub const PTE_ENABLE_CACHE: ULONG_PTR = 0x4;
+pub const PTE_ENABLE_CACHE: ULONG_PTR = 0x0;
 
-// PTE_DISABLE_CACHE — disable cache (PWT+PCD on x86, device memory on arm64)
+// PTE_DISABLE_CACHE — disable cache (PWT+PCD on x86; AttrIndx 1 = Device on arm64).
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub const PTE_DISABLE_CACHE: ULONG_PTR = 0x10;
 #[cfg(target_arch = "aarch64")]
-pub const PTE_DISABLE_CACHE: ULONG_PTR = 0x0;
+pub const PTE_DISABLE_CACHE: ULONG_PTR = 0x4;
 
-// PTE_WRITECOMBINED_CACHE — write-combined (same as disable on x86, NC on arm64)
+// PTE_WRITECOMBINED_CACHE — write-combined (same as disable on x86; AttrIndx 2 =
+// Normal-NC on arm64).
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub const PTE_WRITECOMBINED_CACHE: ULONG_PTR = 0x10;
 #[cfg(target_arch = "aarch64")]
-pub const PTE_WRITECOMBINED_CACHE: ULONG_PTR = 0xC;
+pub const PTE_WRITECOMBINED_CACHE: ULONG_PTR = 0x8;
 
 // ============================================================================
 // InterlockedExchangePte — atomic swap of PTE value

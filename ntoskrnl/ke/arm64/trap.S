@@ -165,6 +165,13 @@
  * restore SP_EL0 from TfSp before eret.
  */
 KiTrapReturn:
+#ifdef ARM64_TRAP_DEBUG
+    /* [TRAP-PROBE] inspect the frame for a bad EL0-return state (Spsr/Pc) at
+     * the point of use, just before the eret. x0/x1/x30 are dead here (all
+     * reloaded from the frame below; KiTrapReturn never returns to its caller). */
+    mov x0, sp
+    bl KiTrapReturnProbe
+#endif
     /* Restore ELR_EL1 */
     ldr x1, [sp, #TfPc]
     msr elr_el1, x1

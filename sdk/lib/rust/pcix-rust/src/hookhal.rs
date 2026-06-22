@@ -45,7 +45,7 @@ pub unsafe extern "system" fn PciTranslateBusAddress(
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"PciTranslateBusAddress\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0".as_ptr() as *const i8,
+        b"drivers/bus/pcix/hookhal.c\0".as_ptr() as *const i8,
         36i32,
     );
 
@@ -89,7 +89,7 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
     if DeviceExtension.is_null() {
         if DbgPrint(
             b"(%s:%d) Pci: Could not find PCI bus FDO. Bus Number = 0x%x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0" as *const u8
+            b"drivers/bus/pcix/hookhal.c\0" as *const u8
                 as *const core::ffi::c_char,
             74 as core::ffi::c_int,
             BusNumber,
@@ -97,7 +97,7 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                b"drivers/bus/pcix/hookhal.c\0"
                     as *const u8 as *const core::ffi::c_char,
                 74 as core::ffi::c_int,
             );
@@ -125,7 +125,7 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
                 RtlAssert(
                     b"PdoExtension->Slot.u.AsULONG == PciSlot.u.AsULONG\0" as *const u8
                         as *const core::ffi::c_char as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                    b"drivers/bus/pcix/hookhal.c\0"
                         as *const u8 as *const core::ffi::c_char as PVOID,
                     96 as ULONG,
                     core::ptr::null_mut::<core::ffi::c_char>(),
@@ -146,7 +146,7 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
     if PdoExtension.is_null() {
         if DbgPrint(
             b"(%s:%d) Pci: Could not find PDO for device @ %x.%x.%x\n\0" as *const u8 as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0" as *const u8
+            b"drivers/bus/pcix/hookhal.c\0" as *const u8
                 as *const core::ffi::c_char,
             112 as core::ffi::c_int,
             BusNumber,
@@ -156,7 +156,7 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
         {
             DbgPrint(
                 b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                b"drivers/bus/pcix/hookhal.c\0"
                     as *const u8 as *const core::ffi::c_char,
                 112 as core::ffi::c_int,
             );
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0".as_ptr()
+                b"drivers/bus/pcix/hookhal.c\0".as_ptr()
                     as *const i8 as PVOID,
                 136 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -195,7 +195,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
     if PcipSavedAssignSlotResources.is_none() {
         RtlAssert(
             b"PcipSavedAssignSlotResources\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0".as_ptr()
+            b"drivers/bus/pcix/hookhal.c\0".as_ptr()
                 as *const i8 as PVOID,
             137 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
     if !(BusType as i32 == PCIBus as i32) {
         RtlAssert(
             b"BusType == PCIBus\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0".as_ptr()
+            b"drivers/bus/pcix/hookhal.c\0".as_ptr()
                 as *const i8 as PVOID,
             138 as ULONG,
             core::ptr::null_mut::<CHAR>(),
@@ -242,7 +242,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
             RtlAssert(
                 b"DeviceObject != PdoExtension->PhysicalDeviceObject\0".as_ptr() as *const i8
                     as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0".as_ptr()
+                b"drivers/bus/pcix/hookhal.c\0".as_ptr()
                     as *const i8 as PVOID,
                 154 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -318,7 +318,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
                 if !((*Resources).Count == 1) {
                     RtlAssert(
                         b"Resources->Count == 1\0".as_ptr() as *const i8 as PVOID,
-                        b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                        b"drivers/bus/pcix/hookhal.c\0"
                             .as_ptr() as *const i8 as PVOID,
                         200 as ULONG,
                         core::ptr::null_mut::<CHAR>(),
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
                 DbgPrint(
                     b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8 as PCSTR,
                     b"PciAssignSlotResources\0".as_ptr() as *const u8,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                    b"drivers/bus/pcix/hookhal.c\0"
                         .as_ptr() as *const u8,
                     203 as i32,
                 );
@@ -340,7 +340,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
             if !Resources.is_null() {
                 RtlAssert(
                     b"Resources == NULL\0".as_ptr() as *const i8 as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/hookhal.c\0"
+                    b"drivers/bus/pcix/hookhal.c\0"
                         .as_ptr() as *const i8 as PVOID,
                     214 as ULONG,
                     core::ptr::null_mut::<CHAR>(),

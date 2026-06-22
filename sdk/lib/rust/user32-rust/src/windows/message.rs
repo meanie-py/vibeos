@@ -285,7 +285,8 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 /// user_x.h inline `GetW32ThreadInfo()` — `(PTHREADINFO)GetWin32ClientInfo()->pClientThreadInfo`'s
 /// owning ti; in the C it is `(PTHREADINFO)(NtCurrentTeb()->Win32ThreadInfo)`.
 #[inline]
-unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
+#[no_mangle]
+pub unsafe extern "C" fn GetW32ThreadInfo() -> PTHREADINFO {
     (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO
 }
 /// user_x.h inline `DesktopPtrToUser(p)` — server→client desktop heap mapping.

@@ -334,6 +334,19 @@ pub unsafe extern "system" fn KiInitializeKernel(
     let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut PageDirectory: [u64; 2] = [0, 0];
 
+    // One-time SCTLR_EL1 dump: bit 1 (0x2) = A (strict alignment check). If set,
+    // every unaligned access faults (DFSC 0x21) — which is the cascade of
+    // vectorized wide-store alignment faults seen in early init (NLS, ObpAllocate).
+    // If clear, the faults come from Device/strict-mapped early regions instead.
+    {
+        extern "C" {
+            fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+        }
+        let sctlr: u64;
+        core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr);
+        ARM64_UART_TRACE_HEX(b"[KISTART] SCTLR_EL1=\0".as_ptr(), sctlr as ULONG_PTR);
+    }
+
     (*Prcb).MultiThreadSetMaster = Prcb;
 
     InitializeListHead(core::ptr::addr_of_mut!(KeBugcheckCallbackListHead));

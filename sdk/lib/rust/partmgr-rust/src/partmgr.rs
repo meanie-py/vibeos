@@ -49,7 +49,7 @@ pub unsafe extern "C" fn PartMgrConvertExtendedToLayout(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     .as_ptr() as PVOID,
                 27 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn PartMgrConvertExtendedToLayout(
     if LayoutEx.is_null() {
         RtlAssert(
             b"LayoutEx\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             29 as ULONG,
             core::ptr::null_mut::<i8>(),
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn PartMgrConvertExtendedToLayout(
         if 0 == 0 {
             RtlAssert(
                 b"FALSE\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     .as_ptr() as PVOID,
                 33 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn PartMgrConvertLayoutToExtended(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     .as_ptr() as PVOID,
                 77u32,
                 core::ptr::null_mut::<i8>(),
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn PartMgrConvertLayoutToExtended(
     if Layout.is_null() {
         RtlAssert(
             b"Layout != NULL\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             79u32,
             core::ptr::null_mut::<i8>(),
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             140u32,
             core::ptr::null_mut::<CHAR>(),
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
     if !( (*FdoExtension).LayoutValid != 0 && !(*FdoExtension).LayoutCache.is_null() ) {
         RtlAssert(
             b"FdoExtension->LayoutValid && FdoExtension->LayoutCache\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             142u32,
             core::ptr::null_mut::<CHAR>(),
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
         RtlAssert(
             b"FdoExtension->DiskData.PartitionStyle == FdoExtension->LayoutCache->PartitionStyle\0"
                 .as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             145u32,
             core::ptr::null_mut::<CHAR>(),
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
         RtlAssert(
             b"FdoExtension->DiskData.PartitionStyle == PartitionInfo->PartitionStyle\0"
                 .as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             153u32,
             core::ptr::null_mut::<CHAR>(),
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
         RtlAssert(
             b"FdoExtension->DiskData.Mbr.Signature == FdoExtension->LayoutCache->Mbr.Signature\0"
                 .as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             163u32,
             core::ptr::null_mut::<CHAR>(),
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
             DPFLTR_DISK_ID as u32 as ULONG,
             DPFLTR_WARNING_LEVEL as ULONG,
             b"(%s:%d) Super-Floppy disk %lu signature %08x != 1!\n\0".as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             167i32,
             (*FdoExtension).DiskData.DeviceNumber,
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
             DPFLTR_WARNING_LEVEL as ULONG,
             b"(%s:%d) Super-Floppy disk %lu does not return default settings!\n    RecognizedPartition = %s, expected TRUE\n    PartitionType = 0x%02x, expected 0x04 (PARTITION_FAT_16)\n    BootIndicator = %s, expected FALSE\n\0"
                 .as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             182i32,
             (*FdoExtension).DiskData.DeviceNumber,
@@ -317,7 +317,7 @@ pub unsafe extern "C" fn PartMgrIsDiskSuperFloppy(FdoExtension: PFDO_EXTENSION) 
             DPFLTR_WARNING_LEVEL as ULONG,
             b"(%s:%d) PartitionLength = %I64u is different from DiskSize = %I64u\n\0"
                 .as_ptr() as PCSTR,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             189i32,
             (*PartitionInfo).PartitionLength.QuadPart,
@@ -495,7 +495,7 @@ pub unsafe extern "C" fn PartMgrGetDriveLayout(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as *mut core::ffi::c_void,
                 411u32,
                 core::ptr::null_mut::<i8>(),
@@ -550,7 +550,7 @@ pub unsafe extern "C" fn FdoIoctlDiskGetDriveGeometryEx(
         );
         RtlAssert(
             b"0\0".as_ptr() as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as PVOID,
             456 as ULONG,
             core::ptr::null_mut::<i8>(),
@@ -629,7 +629,7 @@ pub unsafe extern "C" fn FdoIoctlDiskGetPartitionInfo(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as *const i8 as PVOID,
                 519 as ULONG,
                 core::ptr::null_mut::<i8>(),
@@ -668,7 +668,7 @@ pub unsafe extern "C" fn FdoIoctlDiskGetPartitionInfoEx(FdoExtension: PFDO_EXTEN
         );
         RtlAssert(
             b"0\0".as_ptr() as *const u8 as *const i8 as *mut c_void,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as *const u8 as *mut c_void,
             554,
             core::ptr::null_mut(),
@@ -697,7 +697,7 @@ pub unsafe extern "C" fn FdoIoctlDiskGetDriveLayout(
         );
         RtlAssert(
             b"0\0".as_ptr() as *const i8 as PVOID,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 .as_ptr() as *const i8 as PVOID,
             582,
             core::ptr::null_mut(),
@@ -784,7 +784,7 @@ pub unsafe extern "C" fn FdoIoctlDiskSetDriveLayout(FdoExtension: PFDO_EXTENSION
             if 0 == 0 {
                 RtlAssert(
                     b"0\0".as_ptr() as *const core::ffi::c_char as PVOID,
-                    b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
+                    b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const core::ffi::c_char as PVOID,
                     672 as ULONG,
                     core::ptr::null_mut::<CHAR>(),
                 );
@@ -893,7 +893,7 @@ pub unsafe extern "C" fn FdoIoctlDiskSetDriveLayoutEx(
         if 0 as i32 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as PVOID,
                 767 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
@@ -1017,7 +1017,7 @@ pub unsafe extern "C" fn FdoIoctlDiskUpdateProperties(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const u8 as *const core::ffi::c_char as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const u8 as *const core::ffi::c_char as PVOID,
+                b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const u8 as *const core::ffi::c_char as PVOID,
                 885u32,
                 core::ptr::null_mut::<i8>(),
             );
@@ -1043,7 +1043,7 @@ pub unsafe extern "C" fn FdoIoctlDiskCreateDisk(
         if 0 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr()
+                b"drivers/storage/partmgr/partmgr.c\0".as_ptr()
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 902u32,
                 (core::ptr::null_mut::<core::ffi::c_char>() as *mut core::ffi::c_void).cast(),
@@ -1135,7 +1135,7 @@ pub unsafe extern "C" fn FdoHandleStartDevice(
             DPFLTR_DISK_ID as u32,
             DPFLTR_ERROR_LEVEL as u32,
             b"(%s:%d) Failed to register GUID_DEVINTERFACE_DISK, status %x\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
+            b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
             976i32,
             status,
         );
@@ -1146,7 +1146,7 @@ pub unsafe extern "C" fn FdoHandleStartDevice(
         DPFLTR_DISK_ID as u32,
         DPFLTR_INFO_LEVEL as u32,
         b"(%s:%d) Disk interface %wZ\n\0".as_ptr() as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
+        b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
         980i32,
         &raw mut interfaceName,
     );
@@ -1176,7 +1176,7 @@ pub unsafe extern "C" fn PartMgrRefreshDiskData(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as PVOID,
                 1007,
                 core::ptr::null_mut::<CHAR>(),
@@ -1254,7 +1254,7 @@ pub unsafe extern "C" fn FdoHandleDeviceRelations(
             DPFLTR_DISK_ID,
             DPFLTR_INFO_LEVEL,
             b"(%s:%d) Partition style %u\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 as *const u8 as *const i8,
             1059i32,
             (*FdoExtension).DiskData.PartitionStyle as u32,
@@ -1269,7 +1269,7 @@ pub unsafe extern "C" fn FdoHandleDeviceRelations(
             DPFLTR_DISK_ID,
             DPFLTR_TRACE_LEVEL,
             b"(%s:%d) Reporting %u partitions\n\0" as *const u8 as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+            b"drivers/storage/partmgr/partmgr.c\0"
                 as *const u8 as *const i8,
             1069i32,
             (*FdoExtension).EnumeratedPartitionsTotal,
@@ -1314,7 +1314,7 @@ pub unsafe extern "C" fn FdoHandleDeviceRelations(
             RtlAssert(
                 b"deviceRelations->Count == FdoExtension->EnumeratedPartitionsTotal\0"
                     as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as *const i8 as PVOID,
                 1104u32,
                 core::ptr::null_mut::<i8>(),
@@ -1343,7 +1343,7 @@ pub unsafe extern "C" fn FdoHandleRemoveDevice(
         if true {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as *const i8 as PVOID,
                 1123u32,
                 core::ptr::null_mut::<i8>(),
@@ -1382,7 +1382,7 @@ pub unsafe extern "C" fn FdoHandleSurpriseRemoval(
         if (0 as i32) == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *const i8 as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     .as_ptr() as *const i8 as PVOID,
                 1149u32,
                 core::ptr::null_mut::<i8>(),
@@ -1419,7 +1419,7 @@ pub unsafe extern "system" fn PartMgrAddDevice(
         if 0i32 == 0i32 {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as PVOID,
+                b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as PVOID,
                 1183 as ULONG,
                 core::ptr::null_mut::<CHAR>(),
             );
@@ -1443,7 +1443,7 @@ pub unsafe extern "system" fn PartMgrAddDevice(
             DPFLTR_DISK_ID as ULONG,
             DPFLTR_ERROR_LEVEL as ULONG,
             b"(%s:%d) Failed to create FDO 0x%x\n\0".as_ptr() as *const i8,
-            b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
+            b"drivers/storage/partmgr/partmgr.c\0".as_ptr() as *const i8,
             1201 as i32,
             status,
         );
@@ -1489,7 +1489,7 @@ pub unsafe extern "system" fn PartMgrDeviceControl(
         DPFLTR_DISK_ID as u32,
         DPFLTR_INFO_LEVEL as u32,
         (b"(%s:%d) IRP_MJ_DEVICE_CONTROL %p Irp %p IOCTL %x isFdo: %u\n\0" as *const u8 as *const u8).cast(),
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+        b"drivers/storage/partmgr/partmgr.c\0"
             as *const u8 as *const i8,
         1245i32,
         DeviceObject,
@@ -1554,7 +1554,7 @@ pub unsafe extern "system" fn PartMgrPnp(
         if 0 == 0 {
             RtlAssert(
                 b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+                b"drivers/storage/partmgr/partmgr.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 1311u32,
                 core::ptr::null_mut::<i8>(),
@@ -1569,7 +1569,7 @@ pub unsafe extern "system" fn PartMgrPnp(
         DPFLTR_DISK_ID,
         DPFLTR_INFO_LEVEL,
         b"(%s:%d) IRP_MJ_PNP %p Irp %p %s isFDO: %u\n\0" as *const u8 as *const i8,
-        b"/home/curi/Projects/os-playground/vibeos-wt-win32k/drivers/storage/partmgr/partmgr.c\0"
+        b"drivers/storage/partmgr/partmgr.c\0"
             as *const u8 as *const i8,
         1317i32,
         DeviceObject,

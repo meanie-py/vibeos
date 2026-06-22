@@ -29,7 +29,7 @@ pub unsafe extern "system" fn FsRecIsNtfsVolume(
         if 0i32 == 0 {
             RtlAssert(
                 b"0\0".as_ptr() as *mut ::core::ffi::c_void,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/ntfs.c\0".as_ptr() as *mut ::core::ffi::c_void,
+                b"drivers/filesystems/fs_rec/ntfs.c\0".as_ptr() as *mut ::core::ffi::c_void,
                 31u32,
                 ::core::ptr::null_mut::<i8>(),
             );
@@ -74,7 +74,7 @@ pub unsafe extern "system" fn FsRecNtfsFsControl(
         if true {
             RtlAssert(
                 b"0\0".as_ptr() as PVOID,
-                b"/home/curi/Projects/os-playground/vibeos-wt-fsrec/drivers/filesystems/fs_rec/ntfs.c\0"
+                b"drivers/filesystems/fs_rec/ntfs.c\0"
                     .as_ptr() as PVOID,
                 61u32,
                 core::ptr::null_mut::<i8>(),
