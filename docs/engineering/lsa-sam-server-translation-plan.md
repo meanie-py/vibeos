@@ -81,7 +81,13 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >      database.rs → `use`. **⇒ samsrv S0 is now the critical-path unblocker for BOTH authpackage and
 >      lookup.c.** Do S0 next, then un-stage authpackage (`pub mod authpackage;` in mod.rs) → fix ×3
 >      → cohab-flip authpackage.c → boot-gate.
->   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
+>   2. **samsrv S0** — ✅ DONE (`0bf96e33677`): `samsrv-sys` crate (bindgen over widl sam_c.h →
+>      SAMPR_* types + Samr* __stdcall client stubs), builds ×3. SAM masks/LSA-token types added
+>      to lsasrv-rust prelude. **authpackage integration now 199→92** (`45752ad85be`, still staged;
+>      DLL must keep linking). Remaining 92 are mechanical (≈10 fn externs: Lsar* from lsa_s.h +
+>      Lsap{AppendRidToSid,CreateTokenSd} + EqualSid/SamIConnect + sibling uses; PackageId/TokenUser
+>      shadow renames; ~18 derefs; ~33 casts; ~8 binops; ~5 fn-ptr casts) — see mod.rs note. Finish:
+>      un-stage authpackage → fix → cohab-flip authpackage.c → boot-gate (15/16).
 >   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
 >
