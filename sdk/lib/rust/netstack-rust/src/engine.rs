@@ -129,6 +129,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
     let mut client_sent = false;
     let mut client_done = false;
     let mut client_attempts = 0u32;
+    let mut client_sent_ms: i64 = 0;
+    let mut client_sends = 0u32;
     // TDI transport state (connections/addresses driven by AFD via tdidev).
     let mut tdi_state = crate::tditrans::TdiState::new();
 
@@ -247,6 +249,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
             } else if s.may_send() && !client_sent {
                 if s.send_slice(b"VIBEOS-NETSTACK-OUTBOUND\n").is_ok() {
                     client_sent = true;
+                    client_sent_ms = now().total_millis() as i64;
+                    client_sends += 1;
                     nsprint!("[NETSTACK] outbound TCP connected -> 10.0.2.100:9999, probe sent\n");
                 }
             }
@@ -259,6 +263,20 @@ unsafe extern "system" fn worker(_context: PVOID) {
                         s.close();
                     }
                 }
+            } else if client_sent
+                && client_sends < 10
+                && (now().total_millis() as i64 - client_sent_ms) > 2500
+            {
+                // No echo within the window — retry as a fresh connection. The
+                // windows-host smoke backend forwards this guestfwd through a single
+                // shared chardev whose FIRST guest connection loses its return bytes
+                // (later connections echo fine; native's per-connection `cmd:cat`
+                // doesn't have this); and on any backend the host echo can be
+                // transiently unavailable. abort() (RST -> immediate Closed, no
+                // TIME-WAIT) then reconnect; the shared chardev stays up, so a guest
+                // reconnect is safe.
+                s.abort();
+                client_sent = false;
             }
         }
 
