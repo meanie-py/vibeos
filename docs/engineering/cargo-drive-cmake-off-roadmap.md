@@ -343,8 +343,30 @@ stitches the per-cell traces in cell order under its own command log. Off by def
 (env unset = zero overhead, codegen unaffected — the traced build stays byte-identical).
 A flat, copy-pasteable record of the real build with no cmake/ninja in sight.
 
-**Remaining:** only the optional media tools (full-ISO, Tier 4). No
-kernel/spine/driver/loader blockers left; the whole OS builds + traces cmake-off.
+**`--verify` byte-identity gate + `VIBEOS_FORCE_CMAKE_OFF` — DONE (2026-06-21).**
+The cmake-off byte-identity of all ~35 cells was, until now, only ever confirmed by
+*manually* moving `compile_commands.json`/`ks*.inc` aside and running `cmp` — slow,
+error-prone, and unguarded against regression. Two additions fix that:
+- **`VIBEOS_FORCE_CMAKE_OFF`** (engine env): makes reactos-link take the cmake-OFF
+  paths (self-host geninc, committed `.res`, committed-flags C compile) *even when a
+  configured `build-<arch>/` is present* — it treats compile_commands.json + the
+  build-dir ks*.inc as absent. So the cmake-off path is exercisable without touching
+  the build dir. Guards the three cmake-presence branch points; off → normal.
+- **`cargo_orchestrate.py --verify`**: builds every cell **twice from the same
+  source** — the normal replay (cmake-present) path and the forced cmake-OFF path —
+  and diffs them. They must agree except in the PE header (TimeDateStamp, < 0x400);
+  any later-offset diff = the cmake-off path diverged → exit 1. Comparing the two
+  engine builds (not a possibly-stale `build-<arch>/` artifact) sidesteps false drift
+  from baseline staleness. **Result ×3: all 35 cells byte-identical** — kernel/spine/
+  loaders bit-identical (deterministic link), drivers a 1-byte timestamp at 0x80.
+  This is the repeatable cmake-off regression gate (runs anywhere a build is
+  configured; ready to wire into CI / `vibeos-cli check`).
+
+**Remaining:** only the optional media tools (full-ISO, Tier 4) — itself gated on the
+~900 usermode modules in the livecd manifest not yet being cmake-off cells (the
+orchestrator covers ~35; a *pure* cmake-off ISO needs them all). No
+kernel/spine/driver/loader blockers left; the whole OS builds, traces, and
+self-verifies cmake-off.
 
 **Original finding:** 44 cargo cells are sequenced by `add_cargo_module()` (`sdk/cmake/gcc.cmake`)
 + ninja. The inter-cell DAG is derived from `.import_lib()`/`.spec2def()`:
