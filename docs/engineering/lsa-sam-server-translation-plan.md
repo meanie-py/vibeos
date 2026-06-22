@@ -28,12 +28,14 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **12 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
 >   database + policy + session + notify + srm + lsasrv); each ×3-link-verified + i386 boot +
 >   amd64 boot gated.
-> - **⚠️ GATE CAVEAT (amd64 net):** since M4c, amd64 net is 10/11 — the one failure is
->   `test_outbound_tcp_client` (REAL public-internet echo): TCP *connects* to the internet fine,
->   only the remote echo-back times out. lsass/lsasrv is OFF the socket path (usermode→ws2_32→AFD
->   →kernel netstack; MIDL_user_allocate is lsasrv-local) and this branch trails mainline's
->   NAT-artifact fix → environmental, not a regression. **Re-confirm 11/11 on a mainline-synced
->   tree at the landing gate.** The 10 local net tests + i386/amd64 boot are green.
+> - **✅ GATE CAVEAT RESOLVED (amd64 net):** since M4c, amd64 net shows 10/11 — the one failure is
+>   `test_outbound_tcp_client`. **Confirmed by the netstack lane (2026-06-21) to be a PRE-EXISTING
+>   host `cmd:cat` guestfwd-echo flake, NOT netstack and NOT lsasrv** — it fails on netstack's own
+>   M9-only ISO too, the echo never arrives even in the full log (not a snapshot-timing miss), and
+>   inbound RX is provably healthy (connect reaches ESTABLISHED). Aggravated by host contention
+>   (many concurrent QEMUs). lsass/lsasrv is OFF the socket path entirely (usermode→ws2_32→AFD→
+>   kernel netstack; MIDL_user_allocate is lsasrv-local). **Not a regression** — a serialized gate
+>   hits it less. The 10 local net tests + i386/amd64 boot are green.
 > - **🔑 grep gotcha:** count rustc errors with `grep -cE '^error'` NOT `'^error\['` — plain
 >   `error:` (static-mut-refs edition-2024 hard errors, parse errors) have no `[code]` bracket and
 >   were silently missed; the DLL-missing link check caught it but the per-file count lied.
