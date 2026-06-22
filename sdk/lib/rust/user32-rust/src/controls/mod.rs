@@ -12,3 +12,9 @@ pub mod edit;
 pub mod listbox;
 pub mod scrollbar;
 pub mod static_;
+
+// Wave 4 — secondary controls.
+pub mod appswitch;
+pub mod ghost;
+pub mod icontitle;
+pub mod regcontrol;
