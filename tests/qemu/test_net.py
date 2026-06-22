@@ -188,13 +188,16 @@ def test_outbound_tcp_client(vm: QemuVM) -> None:
     """The netstack engine connects OUT through the stack and round-trips data.
 
     Proves the smoltcp connect/send/recv client path (the path the TDI/AFD layer
-    will sit on): guest -> virtio TX -> slirp guestfwd -> `cat` echo on the host
-    -> back. The connect happens at boot (after DHCP), so the markers land in the
-    boot output. A full client round-trip = connect + send + recv all work.
+    will sit on): guest -> virtio TX -> slirp guestfwd -> host echo -> back. The
+    connect happens at boot, but the engine retries on no-echo (the windows-host
+    backend's shared-chardev guestfwd drops the FIRST connection's return), so the
+    success can land slightly after the boot snapshot — poll the live log.
     """
     _require_net_config(vm)
-    assert MARK_OUT_SENT in vm._boot_output, "outbound TCP connect/send did not complete"
-    assert MARK_OUT_RECV in vm._boot_output, "outbound TCP recv (echo back) did not complete"
+    assert _wait_for_marker(vm, MARK_OUT_SENT), "outbound TCP connect/send did not complete"
+    assert _wait_for_marker(vm, MARK_OUT_RECV), (
+        "outbound TCP recv (echo back) did not complete"
+    )
 
 
 def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:

@@ -40,7 +40,7 @@ import shlex
 OUTDIR = "sdk/lib/rust/reactos-link/cflags"
 # The c_from_compile_db targets whose C sources are source-tree (so a committed
 # flag template + native-hpp xdk headers fully reproduce cmake's compile).
-DEFAULT_TARGETS = ["blrtl", "libcntpr", "win32k_residue"]
+DEFAULT_TARGETS = ["blrtl", "libcntpr", "win32k_residue", "genincdata"]
 
 
 def candidate_flags(toks, arch, repo):
