@@ -179,6 +179,19 @@ The `--then` flag chains inspect commands to run after the breakpoint hits, so t
 |---------|---------|
 | `qemu/kdb-cmd.sh <run-id> --cmd <name>...` | Batch wrapper for the in-kernel debugger. KDB auto-activates on bugcheck without GDB needing to be attached, so it stays valuable as the always-available fallback. |
 
+### Snapshots — fast-iteration restore
+
+| Command | Purpose |
+|---------|---------|
+| `qemu/snapshot.sh save <run-id> [--name <n>]` | Capture a running VM's full state (RAM + devices) to `qemu/snapshots/<n>.mig` via QMP `stop` + `migrate "exec:cat > file"`. Stamps a `.meta` sidecar with the kernel sha for staleness detection; stops the source VM after. |
+| `qemu/snapshot.sh restore <n> [--gdb] [--allow-stale]` | Launch a new run via `start.sh --incoming` and resume at the captured point — ~1-2s vs a ~50s arm64 cold boot. Returns a normal run-id, so `inspect.sh`/`run-until.sh`/`wait-for.sh` all work against it unchanged. |
+| `qemu/snapshot.sh list` / `rm <n>` | List snapshots with staleness, or delete one. |
+
+Restore skips the cold boot for every debug cycle against a fixed kernel. Two load-bearing rules:
+
+- **Snapshot at a QUIESCENT point, not mid-churn.** Migration-to-file is faithful when the guest is settled (idle loop, well past `shell ready`), but capturing during high activity (e.g. exactly at `shell ready`, while explorer is spawning threads) perturbs **~20% of restores** into a spurious post-resume `BUGCHECK 0x50` that *does not occur on fresh boots* (verified arm64-virt, 2026-06: 0/5 fresh vs 2/9 mid-churn restores, fault clustered at a kernel-stack VA; 0/10 idle-snapshot restores). Wait for serial to go quiet before `save`. This is a property of live-migration consistency, not a guest bug — so the snapshot path is **not** a substitute for record/replay when the goal is to *re-roll* a mid-churn heisenbug (that's what `-icount rr=` is for).
+- **Stale = refused (fail loud).** The snapshot embeds the OLD kernel in RAM; gdb symbolication uses the on-disk image. If the kernel was rebuilt since `save`, `restore` refuses (symbols would mislead) unless `--allow-stale`. Mirrors smoke's stale-media refusal. `.mig` files (~350M) live in the gitignored `qemu/snapshots/`.
+
 ### Offline tools (no kernel needed)
 
 | Command | Purpose |
