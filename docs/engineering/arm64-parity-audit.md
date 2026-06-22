@@ -1,35 +1,67 @@
-# ARM64 Platform-Parity Audit (2026-06-21)
+# ARM64 Platform-Parity Audit (re-verified 2026-06-21)
 
 Where the **arm64** target is weaker than / diverges from **amd64** and **i386**, and
 what it would take to close each gap. Produced by a fan-out audit (kernel config, Rust/HAL
 stubs, test harness, boot/driver/HAL coverage) after the arm64 fastfat stack-overflow fix
-(`3b3f9744c0a`).
+(`3b3f9744c0a`), re-verified against the tree 2026-06-21.
+
+**Status line (2026-06-21):** arm64 **cold-boots green to the graphical desktop in QEMU virt
+(~47s)** on mainline — the same real smoke marker as x86. Boot is **not** a current blocker.
+Resolved this cycle: PTE-cache alignment fix + fastfat staging + the `ke/arm64`
+KiDispatchException EL0 user-AV fixup (`ke/arm64/trap.rs`). Remaining: **(1) a regressed
+kernel-stack-size fix that needs re-landing — see ⚠️ below; (2)** a non-blocking flaky arm64
+taskbar/netstack `0xF4` (smss EL0 sysreg-write under net load, post-marker); **(3)** the Tier-2
+real-hardware HAL stubs (GIC ISR connect, DMA, SMP, reboot) — all still `UNIMPLEMENTED` in the
+tree. No GICv2/HAL-interrupt rewrite is landed on mainline yet (in-flight elsewhere).
 
 **Reality check up front:** arm64 currently **boots to the graphical desktop in QEMU virt**,
 reaching the *same* real smoke marker as x86 (`[EXPLORER] _tWinMain entered` + `shell ready`;
 see `tests/qemu/vm.py:Arm64Config`). It is **not** "idle-detection only" — that lore is
-stale. The clock IRQ runs through the `ke/arm64` GIC path, and virtio-mmio devices (input,
-block) work. So the "no interrupts / no DMA" items below are **real-hardware / expanded-driver**
-gaps, not boot blockers today.
+stale (now corrected in `AGENTS.md` § Smoke Tests). The clock IRQ runs through the `ke/arm64`
+GIC path, and virtio-mmio devices (input, block) work. So the "no interrupts / no DMA" items
+below are **real-hardware / expanded-driver** gaps, not boot blockers today.
 
 ---
 
 ## Tier 1 — Real parity gaps on the platform we actually run
 
-### ✅ LANDED this pass
+### ⚠️ REGRESSED — kernel-stack-size fix is NOT in the tree (needs re-landing)
 - **Kernel stack was half-size.** `KERNEL_STACK_SIZE`/`KERNEL_LARGE_STACK_COMMIT` were 12 KB
   (the i386 value) vs amd64's 48 KB; `KERNEL_LARGE_STACK_SIZE` 60 KB vs 72 KB. A 64-bit arch
   on a 32-bit-sized kernel stack — and the direct reason the fastfat dirty-path recursion
-  *overflowed* instead of being absorbed. Bumped to amd64 parity (0xC000 / 0x12000) in
-  `sdk/include/xdk/arm64/ke.h`. De-risks every deep arm64 path.
-- **2 KB stack temporary on the hot section-table path.** `MiSectionPageTableGetOrAllocate`
-  held a `_CACHE_SECTION_PAGE_TABLE` (`[ULONG_PTR; 256]`) local that, when inlined into
-  `_MmSetPageEntrySectionSegment`, reserved ~2 KB on *every* call (incl. the common GET-hit).
-  Extracted into `#[inline(never)] MiSectionPageTableInsert` so it's reserved only on the rare
-  allocate path (`sdk/lib/rust/ntoskrnl-rust/src/mm/section_table.rs`). Cross-arch stack win.
-- **Stale "idle detection" lore corrected** in `AGENTS.md` (arm64 uses the real marker).
+  *overflowed* instead of being absorbed. The fix bumped it to amd64 parity (0xC000 / 0x12000)
+  in `sdk/include/xdk/arm64/ke.h` in commit `26408b0f33a`.
+  **🔴 TREE CONTRADICTS THIS (verified 2026-06-21):** `sdk/include/xdk/arm64/ke.h` on both
+  `build-cache` and mainline `continue-rust-port` currently reads `KERNEL_STACK_SIZE 12288`,
+  `KERNEL_LARGE_STACK_SIZE 61440`, `KERNEL_LARGE_STACK_COMMIT = KERNEL_STACK_SIZE` — i.e. the
+  **old undersized values are back**. `26408b0f33a` is an ancestor of mainline but came in via
+  a merge *side* branch, and a later merge resolution silently dropped the ke.h hunk (the
+  section_table.rs `#[inline(never)] MiSectionPageTableInsert` half of that commit *did*
+  survive — it's in the tree). **Action: re-apply the 0xC000 / 0x12000 bump.** Without it the
+  deep-path overflow risk that motivated this whole audit is still live on arm64.
+
+### ✅ LANDED this pass (survived in the tree)
+- **2 KB stack temporary off the hot section-table path.** (The second half of `26408b0f33a` —
+  present in the tree; see Tier-1 detail below.)
+- **2 KB stack temporary on the hot section-table path (verified in tree).**
+  `MiSectionPageTableGetOrAllocate` held a `_CACHE_SECTION_PAGE_TABLE` (`[ULONG_PTR; 256]`)
+  local that, when inlined into `_MmSetPageEntrySectionSegment`, reserved ~2 KB on *every* call
+  (incl. the common GET-hit). Extracted into `#[inline(never)] MiSectionPageTableInsert` so it's
+  reserved only on the rare allocate path
+  (`sdk/lib/rust/ntoskrnl-rust/src/mm/section_table.rs:141`, confirmed present). Cross-arch win.
+- **Stale "idle detection" lore corrected** in `AGENTS.md` (arm64 uses the real marker) —
+  confirmed in `AGENTS.md` § Smoke Tests.
+
+### 🐛 NON-BLOCKING flaky arm64 `0xF4` under net load (post-marker)
+A flaky `0xF4` is seen on **arm64-net under network load** — an smss EL0 sysreg-write fault.
+It is **post-`shell ready`** and intermittent, so it does **not** gate the standard smoke
+(which has no arm64-net config yet — see the tracked follow-up below). Tracked, not a boot
+blocker. (Distinct from the taskbar `0x50` below, which is a win32k child-control read-fault.)
 
 ### 🐛 SURFACED by the stack fix — arm64 taskbar BUGCHECK 0x50 (pre-existing win32k bug)
+**Caveat (2026-06-21):** the stack-size half of the fix that *surfaced* this is currently
+regressed out of the tree (⚠️ above), so on today's mainline arm64 boot does not necessarily
+reach the deeper taskbar path that triggers 0x50 — re-landing the stack bump will re-expose it.
 With the 48 KB stack, arm64 boot now **progresses further** — explorer's taskbar tray window
 + child controls actually get created (like amd64), and that reaches a **win32k taskbar
 read-fault 0x50** (`[EXPLORER] taskbar: child controls created` → `BUGCHECK 0x50`, arg2=0
@@ -90,5 +122,5 @@ Correct per-arch differences, not bugs: `MM_LOWEST_SYSTEM_ADDRESS` / VA layout (
 
 ---
 
-*Source: arm64-love lane, 2026-06-21. Companion to
-`arm64-clock-and-lpcexitthread-findings.md` and field-manual §9.11.*
+*Source: arm64-love lane; re-verified against the tree on `build-cache`/mainline 2026-06-21.
+Companion to `arm64-clock-and-lpcexitthread-findings.md` and field-manual §9.11.*

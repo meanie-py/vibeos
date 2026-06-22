@@ -1,6 +1,8 @@
 # NTDLL C→Rust Translation Audit
 
-> **Ground-truth re-verified 2026-06-14** against `dll/ntdll/CMakeLists.txt` + code — accurate: ntdll PE body 100% Rust; only active non-Rust inputs are the per-arch `dispatch/{i386,amd64,arm64}/dispatch.S` trap trampolines (asm by design), generated `ntdll_stubs.c` (spec2def syscall stubs), and the empty cohab stub TUs (`rtl_um_rust_stub.c`, `etwtrace_rust_stub.c`).
+> **Ground-truth re-verified 2026-06-21** against `dll/ntdll/CMakeLists.txt` + the Rust tree — still accurate: ntdll PE body 100% Rust; the only active non-Rust inputs are the per-arch `dispatch/{i386,amd64,arm64}/dispatch.S` trap trampolines (asm by design, 708 LOC), the generated `ntdll_stubs.c` (spec2def syscall stubs), pre-expanded setjmp/longjmp asm (`ntdll-cargo/data/asm/*-amd64.s`), and the empty cohab stub TUs (`rtl_um_rust_stub.c`, `etwtrace_rust_stub.c`, `nt_0600/ldr/ldrnotify_rust_stub.c`, `nt_0600/ntdll_vista_rust_stub.c`).
+>
+> **Translation: ~97% of the ntdll PE body (by LOC).** Methodology: ntdll-rust is **24 `.rs` files / ~20.1K LOC** (`sdk/lib/rust/ntdll-rust/src`, measured 2026-06-21); the entire C body of `dll/ntdll/` is commented out of the cmake source lists (10 `# replaced by Rust` markers) with `#[no_mangle]` Rust taking over. The ~3% non-Rust remainder is the irreducible glue floor: the 708 LOC of per-arch `dispatch.S` (kernel→user trap trampolines, asm **by design**), generated syscall stubs, and the amd64 setjmp/longjmp register save/restore halves (asm by design; the C logic body *is* in `setjmp.rs`). Shared `librtl.a`/`libcntpr.a` static-lib surface is out of scope (tracked in the rtl/static-libs audits). **Two new since 2026-06-14:** ntdll graduated to a **cargo-driven link** (`add_cargo_module` / `ntdll-cargo/build.rs` via reactos-link — the old cmake `libntdll_rust.a` custom_commands were removed), and three previously-*reused* cmake static libs were pulled into the crate as Rust (`apisets.rs`, `uuid.rs`, `setjmp.rs`).
 
 Created 2026-05-24. **Status (updated 2026-06-01): the ntdll PE body is
 100% flipped to Rust and boots to `shell ready` on all 3 arches.** All
@@ -28,7 +30,7 @@ Companion to:
 
 ## TL;DR
 
-- **ntdll's own PE body is small: ~11.7K LOC across 14 files.** What
+- **ntdll's own PE body, now in Rust: ~20.1K LOC across 24 `.rs` files** (was ~11.7K C across 14 files at plan time; the Rust grew larger after absorbing apisets/uuid/setjmp and from translation expansion). What
   *sounds* huge (ntdll links ~59K LOC of `rtl` + ~59K of `libcntpr`)
   is shared static-lib surface tracked separately. This audit scopes
   ntdll's own body only, mirroring `ntoskrnl-translation-audit.md`'s
@@ -66,13 +68,31 @@ Companion to:
   more state. Neither is a substrate blocker; both are coordination
   calls.
 
-## Current state (2026-06-01)
+## Current state (re-verified 2026-06-21; flip completed 2026-06-01)
 
 The track ran in worktree `vibeos-wt-ntdll`, branch `ntdll-rust-port`
-(10 commits, audit steps 1→14). The Rust crate `sdk/lib/rust/ntdll-rust/`
-(`libntdll_rust.a`, default features → ntdll.dll; `--features vista` →
-ntdll_vista.dll) carries the whole flipped body. **All 3 arches cold-build
-clean and smoke to `shell ready` (arm64 reaches `[EXPLORER] _tWinMain`).**
+(10 commits, audit steps 1→14), and has since landed on mainline
+(`continue-rust-port` == `master`). The Rust crate `sdk/lib/rust/ntdll-rust/`
+(default features → ntdll.dll; `--features vista` → ntdll_vista.dll) carries
+the whole flipped body. **All 3 arches cold-build clean and smoke to
+`shell ready` (arm64 reaches `[EXPLORER] _tWinMain`).**
+
+**Link path graduated to cargo (since 2026-06-14):** ntdll.dll is now built
+by `add_cargo_module(ntdll ntdll-cargo ntdll.dll …)` driving
+`ntdll-cargo/build.rs` (reactos-link) — it compiles ntdll-rust +
+csrlib_only smss-csrss-rust + rtl-rust + cnt-rust-lib itself and links them
+with the pre-expanded dispatch/setjmp asm and spec2def stubs. The old cmake
+`libntdll_rust.a` / `libcsrlib_rust.a` custom_commands were **removed**. The
+`rtl_um` and `etwtrace` OBJECT/static stubs survive only because
+`rtl_unittest` (links `rtl_um`) and `advapi32` (links `etwtrace` at
+`DLL_EXPORT_VERSION>=0x600`) still reference them.
+
+**Three cmake static libs absorbed into Rust** (previously *reused*, not
+translated): `apisets.rs` (124 LOC, `ApiSetResolveToHost` + a ~624-entry
+data table generated at build time by the crate's `build.rs`, replacing
+reuse of `libapisets.a`), `uuid.rs` (41 LOC, the 3 COM IIDs ntdll
+references — replaces `libuuid.a`), and `setjmp.rs` (62 LOC, amd64 `longjmp`
+logic — the register save/restore halves stay pre-expanded asm by design).
 
 | File | LOC | Status | Commit |
 |---|--:|---|---|
@@ -91,8 +111,11 @@ clean and smoke to `shell ready` (arm64 reaches `[EXPLORER] _tWinMain`).**
 | `nt_0600/ldr/ldrnotify.c` | 154 | ✅ Rust (`nt_0600/ldr/ldrnotify.rs`, ungated) — **COMMITTED b3252b81c5a** | b3252b81c5a |
 | `dispatch/dispatch.c` | 89 | ✅ Rust (`dispatch/mod.rs`, `#[cfg(aarch64)]`) — arm64 only (KiRaise/KiUserCallbackDispatcher); **COMMITTED b3252b81c5a** | b3252b81c5a |
 | `dispatch/{i386,amd64,arm64}/dispatch.S` | 708 | ⏸ **stays asm** (cmake-compiled, untouched) | — |
+| `sdk/lib/apisets/apisets.c` (reuse → Rust) | — | ✅ Rust (`apisets.rs` + build.rs data table) — replaces `libapisets.a` reuse | (post-flip) |
+| `libuuid.a` 3 IIDs (reuse → Rust) | — | ✅ Rust (`uuid.rs`) — replaces `libuuid.a` reuse | (post-flip) |
+| `vcruntime/amd64/longjmp.c` (reuse → Rust) | — | ✅ Rust (`setjmp.rs`, amd64) — register halves stay pre-expanded asm | (post-flip) |
 
-**ntdll PE body 100% Rust (committed b3252b81c5a); only the per-arch `dispatch.S` asm remains C by design.**
+**ntdll PE body 100% Rust (committed b3252b81c5a, now on mainline); only the per-arch `dispatch.S` asm + amd64 setjmp register halves remain asm by design.** Current Rust footprint: **24 `.rs` files / ~20.1K LOC** (`sdk/lib/rust/ntdll-rust/src`, 2026-06-21).
 
 ### How reality diverged from the plan
 

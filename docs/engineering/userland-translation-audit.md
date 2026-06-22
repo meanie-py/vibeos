@@ -9,14 +9,26 @@ missing.
 **Last updated:** 2026-06-21. Built from a fan-out research pass over the
 ReactOS-native client DLLs (LOC/native-vs-Wine/problem-points per target).
 
+**Translation: ~3% of the *native-target* userland C surface (by LOC).** Methodology:
+the boot spine (ntdll, **kernel32 — now 100% Rust body**, the EXE spine, CSR servers,
+and the done libs) is already Rust and is **excluded** from the denominator; this %
+measures only the ~455K LOC of *remaining native-target* userland C this 3-part map
+covers (Part 1's ~160K + Part 2's ~295K). Against that, the landed native-client work
+is **user32** (~68% of its 60K C body Rust, Wave 4 in progress) + **msgina** (landed)
++ **lsasrv** (M0–M2, ~13% of its 14.9K) — ≈55K LOC done ≈ ~12% of the native
+remainder, but the big-ticket Part-1 DLLs (gdi32/advapi32/userenv/ws2_32/…) are all
+still 0%, so the *whole* native frontier is barely scratched. The Wine tier
+(`userland-wine-libs-audit.md`, ~1.23M LOC) is deliberately out of scope.
+
 **The 3-part userland map** (read together):
 1. **this doc** — the 10 highest-value native client DLLs, deep-scoped + ranked.
 2. `userland-translation-audit-part2.md` — the rest of the native residue
    (124 modules / ~295K LOC; only lsasrv/samsrv/msgina are High).
 3. `userland-wine-libs-audit.md` — the Wine-imported tier (186 / ~1.23M LOC;
    mostly skip — not ReactOS code).
-Together they account for the full `.spec` exported-DLL surface (~467): ~10 done
-+ 185 Wine + 88 keyboard/NLS data + 6 vendored 3rd-party + 10 (here) + 124 (part 2).
+Together they account for the full `.spec` exported-DLL surface (~467): ~13 done
+(+ user32 ~68% & lsasrv ~13% in flight) + 185 Wine + 88 keyboard/NLS data + 6 vendored
+3rd-party + 10 (here) + 124 (part 2).
 
 **Why this doc exists:** agents kept re-flagging finished or low-value work as
 "remaining userland C" (dnslib's empty stubs, basesrv/csrsrv already-done). This
@@ -28,15 +40,24 @@ ports (low value — translating CodeWeavers' code isn't translating *our* OS).
 
 ## What's already Rust (the runtime spine — DONE)
 
-- **`ntdll`** (ntdll-rust, cargo-driven) and **`kernel32`** (kernel32-rust +
-  kernel32-shared-rust + kernel32-vista-rust) — the two core client DLLs, 100%
-  Rust body at link (only irreducible DllMain/asm/stubs floor remains).
+- **`ntdll`** (ntdll-rust, cargo-driven) and **`kernel32`** (kernel32-rust [96 .rs /
+  ~161K LOC] + kernel32-shared-rust + kernel32-vista-rust) — the two core client DLLs,
+  **100% Rust body at link** (only irreducible DllMain/asm/stubs floor remains). The
+  kernel32 wave is **fully landed**: the once-deferred heavy-FFI files
+  (console/comm/lzexpand/profile/tape/toolhelp/res) and the NLS/locale family
+  (locale/casemap/collation/lcformat/sortkey/…) are **all now Rust** — the only active
+  `.c` left in `kernel32/CMakeLists.txt` are `kernel32.rc` + the generated
+  `kernel32_stubs.c`; every source `.c` is commented out with a `# replaced by Rust`
+  cohab line (54 such lines).
 - **EXE spine:** `smss / csrss / services / lsass / winlogon / userinit` (all Rust).
 - **CSR servers:** `winsrv`, `csrsrv`, `basesrv` (all Rust, cargo-driven).
-- **Libs:** version, mlang, mscms, cabinet, dnslib (effectively — see its note),
-  conutils, concfg, guids, lsalib, evtlib, …
-- **🔄 In flight:** **`user32`** (`win32ss/user/user32`, ~60K LOC, Wave-1/2
-  landing via `user32-rust`).
+- **Libs:** version, mlang, mscms, cabinet, dnslib (effectively — empty C stub dir),
+  conutils, concfg, guids, lsalib, evtlib, **msgina** (logon UI, landed), …
+- **🔄 In flight:** **`user32`** (`win32ss/user/user32`, ~60K LOC) — **~68% Rust by
+  LOC** (39 .rs / ~46K in `user32-rust`; ~19K C / 26 files still active: DDE,
+  IMM, clipboard, MDI, prop/spy, logon, exit, the leaf controls). **`lsasrv`** —
+  M0–M2 landed (dssetup/privileges/registry/security/utils → Rust, ~5/16 units, ~13%
+  of the 14.9K C body; `lsasrv-rust` 9 .rs / ~4.3K LOC).
 
 So the boot-to-desktop spine is Rust. The remaining userland is the **win32
 client-DLL tail** — mostly *not* boot-critical, and a large fraction Wine-imported.
