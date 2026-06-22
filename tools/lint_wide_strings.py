@@ -221,7 +221,8 @@ def main():
     for p in roots:
         if p.is_dir():
             files.extend(
-                f for f in p.rglob("*.rs")
+                f
+                for f in p.rglob("*.rs")
                 if "/target/" not in str(f) and "/.responses/" not in str(f)
             )
         elif p.exists():
