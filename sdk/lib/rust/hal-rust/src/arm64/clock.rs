@@ -38,8 +38,12 @@ use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 const GICD_CTLR: usize = 0x000;
 /// Set-enable, 1 bit per interrupt, 32 per 32-bit register.
 const GICD_ISENABLER: usize = 0x100;
+/// Clear-enable, 1 bit per interrupt, 32 per 32-bit register.
+const GICD_ICENABLER: usize = 0x180;
 /// Priority, 1 byte per interrupt.
 const GICD_IPRIORITYR: usize = 0x400;
+/// Interrupt processor targets, 1 byte per interrupt (SPIs only; SGIs/PPIs RO).
+const GICD_ITARGETSR: usize = 0x800;
 
 /// CPU-interface control register (bit0 = Enable).
 const GICC_CTLR: usize = 0x000;
@@ -82,6 +86,46 @@ extern "C" {
     /// `KeUpdateSystemTime`; matches the `extern "C"` definition in
     /// `ntoskrnl-rust ke/time.rs`.
     fn KeUpdateSystemTime(TrapFrame: *mut core::ffi::c_void, Increment: u32, Irql: u8);
+}
+
+extern "system" {
+    /// ntoskrnl export (ke/arm64/stubs.rs): dispatch a non-timer GIC INTID to
+    /// the ISR connected via IoConnectInterrupt/KeConnectInterrupt. The HAL owns
+    /// the GIC (ack/EOI here); ntoskrnl owns the KINTERRUPT registry + ISR call.
+    fn KiDispatchInterruptArm64(Intid: u32) -> u8;
+}
+
+// ---------------------------------------------------------------------------
+// Device-interrupt GIC line control (SPIs), used by HalEnableSystemInterrupt /
+// HalDisableSystemInterrupt. The clock module owns GICD_BASE, so the SPI
+// enable/disable lives here next to the distributor programming it mirrors.
+// ---------------------------------------------------------------------------
+
+/// Enable a device interrupt line (SPI) in the GIC distributor: mid priority,
+/// routed to CPU0, then set-enable. No-op until the GIC is mapped (clock init).
+pub(crate) unsafe fn enable_gic_interrupt(intid: u32) {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    if gicd == 0 || intid as usize >= 1020 {
+        return;
+    }
+    let id = intid as usize;
+    // Mid priority (numerically below GICC_PMR=0xF0 so it is deliverable).
+    core::ptr::write_volatile((gicd + GICD_IPRIORITYR + id) as *mut u8, 0x80u8);
+    // SPIs (>=32) need an explicit CPU target; SGI/PPI target registers are RO.
+    if id >= 32 {
+        core::ptr::write_volatile((gicd + GICD_ITARGETSR + id) as *mut u8, 0x01u8);
+    }
+    mmio_write(gicd, GICD_ISENABLER + (id / 32) * 4, 1u32 << (id % 32));
+}
+
+/// Disable (clear-enable) a device interrupt line in the GIC distributor.
+pub(crate) unsafe fn disable_gic_interrupt(intid: u32) {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    if gicd == 0 || intid as usize >= 1020 {
+        return;
+    }
+    let id = intid as usize;
+    mmio_write(gicd, GICD_ICENABLER + (id / 32) * 4, 1u32 << (id % 32));
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +243,12 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         // timer-expiration raises is retired by `KiIdleLoop`.
         let old_irql = super::halstubs::KeGetCurrentIrql();
         KeUpdateSystemTime(trap_frame, CLOCK_INCREMENT_100NS, old_irql);
+    } else {
+        // Device interrupt (SPI etc.): dispatch to the ISR connected via
+        // IoConnectInterrupt. ntoskrnl owns the KINTERRUPT registry; we EOI
+        // below regardless of whether an ISR claimed it (an unconnected line
+        // that somehow fired is acked-and-dropped, same as before).
+        KiDispatchInterruptArm64(intid);
     }
 
     // EOI (write the acknowledged IAR value back).

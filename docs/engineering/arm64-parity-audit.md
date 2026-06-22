@@ -63,6 +63,30 @@ win32k bug** (fix helps amd64 + arm64). Next investigation for this lane.
 - **idle-CPU-spin detector disabled on arm64** (`test_smoke.py:611`): TCG has no real idle
   (always ~90% host CPU), so the "boots green but 20× slow" detector can't run.
   **Unfixable on an x86 host** — document only; would need aarch64 hardware + KVM.
+- **arm64 device-interrupt delivery — GIC dispatch infra LANDED, `HalGetInterruptVector`
+  routing still TODO.** Before this pass arm64 drivers couldn't receive IRQs at all:
+  `KeConnectInterrupt` was a stub returning FALSE (so `IoConnectInterrupt` always failed),
+  `HalEnableSystemInterrupt` was a `TRUE` no-op (GIC line never enabled), and the IRQ
+  handler (`HalClockInterruptArm64`) dropped every non-timer INTID → drivers polled
+  (netstack M10 RX, scsiport, etc.). **Landed:** a GICv2 device-dispatch path —
+  `KeConnectInterrupt`/`KeDisconnectInterrupt` register a KINTERRUPT in a vector→ISR table
+  (`ke/arm64/stubs.rs`), `HalEnableSystemInterrupt`/`Disable` program the distributor
+  set/clear-enable + priority + CPU0 target for the SPI (`hal-rust/arm64/clock.rs`
+  `enable_gic_interrupt`), and `KiIrqHandler → HalClockInterruptArm64` now calls
+  `KiDispatchInterruptArm64(intid)` (exported arm64-only in `ntoskrnl.spec`) for non-timer
+  INTIDs, which calls the connected ISR. **Boot-safe / inert until the next piece:** the
+  ONLY remaining stub is **`HalGetInterruptVector`** (`hal-rust/arm64/halstubs.rs`, returns
+  0) — so every driver still bails *before* `IoConnectInterrupt` (e.g. netstack
+  `isr.rs::connect` returns null → polls). The real-hardware-routing reason it's hard: on
+  QEMU `virt` the virtio-net-pci NIC sits behind the GPEX bridge, whose `interrupt-map`
+  routes PCI INTx pins to GIC **SPI 3-6 (INTID 35-38)** with the slot swizzle
+  `intid = 35 + ((slot + pin) % 4)`. `HalGetInterruptVector` only receives
+  `(InterfaceType, BusNumber, BusInterruptLevel, BusInterruptVector)` — NOT the device
+  slot/pin — and `interrupt_line` (PCI cfg 0x3C) is typically `0xFF`/unrouted under EDK2 on
+  ARM. So the vector translation needs the PCI `_PRT` / device-tree interrupt-map (or the
+  caller must pass slot+pin). Next step to light up interrupt-driven RX on arm64. Bounded
+  risk: a wrong vector just means the consumer keeps polling (netstack treats IRQ as an
+  optimization), not a boot regression.
 
 ---
 
