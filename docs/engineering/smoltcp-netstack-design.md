@@ -362,8 +362,21 @@ against `ipexport.h`. A kernel self-test (`icmptest.rs`, the path usermode `ping
 ride) drives the IOCTL to the gateway and validates the reply; **amd64-net 13/13** with serial proof
 `ICMP self-test: reply OK rtt=32ms data=20 bytes — ping round-trip OK`. **This unblocks `ping`.**
 
-Item (4) `IOCTL_TCP_SET_INFORMATION_EX` (route/addr programming) remains — optional (the engine
-self-configures via its own DHCP). The findings below stand.
+Item (4) **`IOCTL_TCP_SET_INFORMATION_EX` (route/sockopt programming) — ✅ IMPLEMENTED +
+RUNTIME-VALIDATED (amd64-net).** The METHOD_BUFFERED IOCTL (0x0012_8004) now dispatches on
+`\Device\Tcp` (`tdidev.rs handle_set_info_ex`): it parses `TCP_REQUEST_SET_INFORMATION_EX`
+(`TDIObjectID` + `BufferSize` + `Buffer`), and for an `IPRouteEntry` default-route add/del on the
+IP network-layer entity (`CL_NL_ENTITY` / `IP_MIB_ARPTABLE_ENTRY_ID`, `ire_type` `IP_FORWARD_ADD`/
+`_DEL`) posts a `Cmd::SetDefaultRoute` to the worker, which reprograms the smoltcp default route
+(`iface.routes_mut()`). All other well-formed SET requests (wshtcpip sockopts — `TCP_NODELAY`/
+`IP_TTL`/…) are acknowledged with `STATUS_SUCCESS` rather than erroring (netstack self-manages its
+L2/L3 config; AFD/wshtcpip flush these best-effort, so a hard error would surface spuriously to
+`setsockopt()`/`route` callers — transport-sockopt-to-smoltcp plumbing stays roadmap M12+). A kernel
+self-test (`settest.rs`, the path `createIpForwardEntry` / the usermode `route` command / dhcpcsvc
+ride) issues the IOCTL to program a default route and validates the ack; **amd64-net 15/15** with
+serial proof `SET_INFO self-test: route program OK — IOCTL_TCP_SET_INFORMATION_EX OK`. This unblocks
+`ipconfig`/`route` address+route programming. **M9 is now complete (items 1–4).** The findings below
+stand.
 
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
@@ -407,9 +420,24 @@ pending timer still caps the wait at 10ms, but an idle stack sleeps up to 100ms 
 instantly). The ISR/DPC touch nothing but the ISR register + event, preserving the single-owner-at-
 PASSIVE invariant. Validated on amd64-net: `M10: interrupt-driven RX connected (line 11, vector 144,
 irql 9)` + `first RX interrupt serviced` (one-shot marker emitted from the DPC, so it can only fire on
-a real device IRQ), and RX latency dropped (ICMP rtt 32ms→15ms vs the poll-only path). i386 keeps
-polling (no i386 net smoke config to validate against — likely an easy follow-up, same x86 HAL path);
-arm64 keeps polling (blocked, see below).
+a real device IRQ), and RX latency dropped (ICMP rtt 32ms→15ms vs the poll-only path).
+
+**i386 — ✅ CODE COMPLETE (ABI-correct, builds ×3, gated-boot-safe); runtime validation blocked on a
+separate i386 net-bringup gap.** `isr.rs` is now gated `any(x86_64, x86)` (was x86_64-only) — i386
+shares the working x86 HAL `HalGetInterruptVector` + IOAPIC path. The fix was ABI: the ISR
+(`PKSERVICE_ROUTINE`) and DPC (`PKDEFERRED_ROUTINE`) callbacks are NTAPI = **stdcall on i386**, cdecl
+on amd64 — so both are `extern "system"` now and passed to `IoConnectInterrupt`/`KeInitializeDpc` via
+the same `transmute` idiom engine.rs uses for `PKSTART_ROUTINE` (a plain `Some(fn)` is nominally
+distinct from the bindgen stdcall alias and won't coerce). The interrupt path only activates when a
+NIC is present, so the **gated i386 boot smoke (no NIC) is unaffected** — `find_virtio_net()` returns
+None → no ISR connect → polling fallback. An `i386-uefi-net` QEMU config + the `test_interrupt_driven_rx`
+i386 enablement were added to validate it, BUT **i386-net does not boot yet**: the virtio-net bringup
+hangs in `VirtIONet::new` (the modern virtio device reset / feature negotiation) **before any DMA
+alloc** — `PciTransport::new` maps all 4 capability BARs fine, then the handshake spins. This is the
+**i386 net data path being brought up for the very first time** (default i386 smoke has no NIC, so the
+self-test always skipped) — the i386 analogue of the multi-fix arm64 M7 bringup lane, NOT an M10
+regression. So i386 interrupt-RX is ready and will validate for free once i386 virtio bringup works
+(a separate net-bringup milestone). arm64 keeps polling (blocked, see below).
 
 **Why.** The worker busy-polls with `delay_ms` today. Interrupt-driven RX buys lower CPU + latency,
 is **mandatory for real NICs** (you cannot poll real hardware efficiently), and is the
@@ -445,6 +473,32 @@ without a PnP resource assignment (netstack enumerates PCI itself in `pci.rs`, s
 Interrupt Line/Pin from config space).
 
 ### M11 — Real-NIC support via an NDIS protocol shim
+
+**Status (2026-06-21) — 🟡 SCAFFOLD LANDED (compile-verified ×3, behind `feature = "ndis"`, OFF by
+default); runtime bring-up is the remaining sub-task.** The swappable backend the architecture
+promised is now built and integrated:
+- **`ndisphy.rs` — the `NdisPhy` smoltcp `phy::Device` + the DISPATCH-safe lock-free RX ring** (the
+  design's named "hard part"): a single-producer/single-consumer ring in non-paged `.bss` whose
+  producer (`ProtocolReceive[Packet]` at DISPATCH) only **copies frame bytes in — no smoltcp, no
+  pageable alloc** — and whose consumer (the PASSIVE worker) drains it. This is exactly lan.c's
+  `LanSubmitReceiveWork` model, preserving the single-owner-at-PASSIVE invariant.
+- **`ndis.rs` — the NDIS protocol FFI + lifecycle**: NDIS40 protocol characteristics, the
+  `NdisRegisterProtocol`/`NdisOpenAdapter`/`NdisSend`/`NdisRequest` imports + the ~13 `ProtocolXxx`
+  callbacks (faithful NTAPI signatures), the register→bind→open→OID-MAC-query lifecycle, RX both
+  ways (lookahead-`Receive` and packet-mode `ReceivePacket` walking the `NDIS_BUFFER`/MDL chain into
+  the ring), and TX marshaling a flat frame into an `NDIS_PACKET` + `NDIS_BUFFER` chain for `NdisSend`
+  with `SendComplete` recycling.
+- **`engine.rs` seam**: a `cfg(feature = "ndis")` swap of `device::bringup()→VirtioPhy` for
+  `ndisphy::bringup()→NdisPhy` at the worker's device construction (the interrupt path stays gated to
+  the virtio backend; NDIS RX rides `ProtocolReceive`). The default build is untouched — virtio is the
+  shipping path and `ninja netstack` ×3 + the gated boot smoke are unaffected; the `ndis` feature is
+  compile-verified for all 3 kernel targets via `cargo build --features ndis` (a staticlib leaves the
+  `NdisXxx` externs unresolved, as expected — they resolve at the `netstack.sys` link once an ndis
+  import lib is wired).
+
+**Remaining sub-task (the multi-week part):** get ndis.sys + one miniport (e1000/rtl8139/netkvm) onto
+the QEMU boot path, add the ndis import lib to the `netstack-cargo` link, flip `feature = "ndis"` on,
+and debug the live binding. That is its own lane with its own bring-up bugs (design unchanged below).
 
 **Why.** Drive actual hardware + non-virtio QEMU models (e1000/rtl8139) by sitting netstack as an
 NDIS *protocol* driver above existing miniports, instead of driving virtio directly.

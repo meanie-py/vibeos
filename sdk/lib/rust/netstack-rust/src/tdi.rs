@@ -297,6 +297,17 @@ pub unsafe fn parse_remote_ip(
 /// _TCP_CTL_CODE(0, METHOD_BUFFERED, FILE_ANY_ACCESS) — FILE_DEVICE_NETWORK 0x12.
 pub const IOCTL_ICMP_ECHO_REQUEST: u32 = 0x0012_0000;
 
+/// _TCP_CTL_CODE(1, METHOD_BUFFERED, FILE_WRITE_ACCESS) — the SET counterpart of
+/// IOCTL_TCP_QUERY_INFORMATION_EX (M9 item 4). iphlpapi's route APIs
+/// (createIpForwardEntry/deleteIpForwardEntry, dll/win32/iphlpapi/route_reactos.c)
+/// and wshtcpip's sockopt path (dll/win32/wshtcpip/wshtcpip.c — IP_TTL/TCP_NODELAY)
+/// write the transport's management state through it.
+pub const IOCTL_TCP_SET_INFORMATION_EX: u32 = 0x0012_8004;
+
+/// IPRouteEntry.ire_type values for a SET (route_reactos.c).
+pub const IP_FORWARD_ADD: u32 = 3;
+pub const IP_FORWARD_DEL: u32 = 2;
+
 // IP_STATUS values (ipexport.h). Surfaced in ICMP_ECHO_REPLY.Status.
 pub const IP_SUCCESS: u32 = 0;
 pub const IP_REQ_TIMED_OUT: u32 = 11010; // IP_STATUS_BASE(11000) + 10

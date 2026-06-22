@@ -75,10 +75,11 @@ MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
 MARK_USERMODE_UDP = "[NETTEST] usermode winsock UDP DNS OK"
 MARK_ICMP_IOCTL = "[NETSTACK] ICMP self-test: reply OK"
+MARK_SET_IOCTL = "[NETSTACK] SET_INFO self-test: route program OK"
 MARK_M10_CONNECTED = "[NETSTACK] M10: interrupt-driven RX connected"
 MARK_M10_IRQ = "[NETSTACK] M10: first RX interrupt serviced"
 
-_NET_CONFIGS = ("amd64-uefi-net", "arm64-net")
+_NET_CONFIGS = ("amd64-uefi-net", "i386-uefi-net", "arm64-net")
 
 
 def _require_net_config(vm: QemuVM) -> None:
@@ -238,21 +239,39 @@ def test_icmp_echo_ioctl(vm: QemuVM) -> None:
     )
 
 
+def test_set_info_ex_ioctl(vm: QemuVM) -> None:
+    r"""M9(4): the management-plane SET IOCTL on \Device\Tcp. The kernel self-test
+    opens \Device\Tcp and issues IOCTL_TCP_SET_INFORMATION_EX (METHOD_BUFFERED)
+    carrying a default-route IPRouteEntry — the exact request iphlpapi's
+    createIpForwardEntry / the usermode `route` command / dhcpcsvc emit.
+
+    Proves the dispatch arm parses TCP_REQUEST_SET_INFORMATION_EX, posts
+    Cmd::SetDefaultRoute to the worker (which reprograms the smoltcp default
+    route), and acknowledges the IRP. The marker fires only on STATUS_SUCCESS.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_SET_IOCTL, timeout=120), (
+        "SET_INFORMATION_EX route-program IOCTL did not complete "
+        "(\\Device\\Tcp IOCTL_TCP_SET_INFORMATION_EX dispatch + worker route program)"
+    )
+
+
 def test_interrupt_driven_rx(vm: QemuVM) -> None:
-    r"""M10 (amd64): the virtio-net legacy INTx is connected to netstack's ISR and
-    actually fires. The ISR acks the device (reads+clears the ISR status, deasserts
-    INTx) and queues a DPC; the DPC sets the worker's RX event; the worker wakes on
-    that event instead of busy-polling.
+    r"""M10 (x86 — i386 + amd64): the virtio-net legacy INTx is connected to
+    netstack's ISR and actually fires. The ISR acks the device (reads+clears the
+    ISR status, deasserts INTx) and queues a DPC; the DPC sets the worker's RX
+    event; the worker wakes on that event instead of busy-polling.
 
     Two proofs: (1) the interrupt CONNECTED (IoConnectInterrupt +
     HalGetInterruptVector resolved a real vector for the manually-enumerated NIC);
     (2) it FIRED — the one-shot marker is emitted from the DPC, so it can only
     appear if a real device IRQ drove the ISR→DPC→event path (not the worker's
-    fallback timeout). amd64 only (arm64 HalGetInterruptVector is a stub).
+    fallback timeout). i386 + amd64 share the x86 HAL vector path; arm64's
+    HalGetInterruptVector is a stub, so it stays on polling.
     """
     _require_net_config(vm)
-    if "amd64" not in vm.config.arch:
-        pytest.skip("M10 interrupt-driven RX is amd64-only (arm64 HAL vector stub)")
+    if "arm64" in vm.config.arch:
+        pytest.skip("M10 interrupt-driven RX needs the x86 HAL vector path (arm64 stub)")
     assert _wait_for_marker(vm, MARK_M10_CONNECTED, timeout=90), (
         "virtio RX interrupt was not connected "
         "(IoConnectInterrupt / HalGetInterruptVector(PCIBus))"

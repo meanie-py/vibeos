@@ -18,10 +18,17 @@ pub mod time;
 pub mod hal;
 pub mod pci;
 pub mod device;
-// M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). amd64 only —
-// arm64's HalGetInterruptVector is a stub, and there is no i386 net smoke config.
-#[cfg(target_arch = "x86_64")]
+// M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). x86 (i386 +
+// amd64) — both share the working x86 HAL HalGetInterruptVector + IOAPIC routing.
+// arm64's HalGetInterruptVector is a stub returning 0, so it stays on polling.
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 pub mod isr;
+// M11: real-NIC backend via an NDIS protocol shim (off by default — virtio is the
+// shipping path). Selecting it swaps VirtioPhy -> NdisPhy in engine.rs.
+#[cfg(feature = "ndis")]
+pub mod ndis;
+#[cfg(feature = "ndis")]
+pub mod ndisphy;
 pub mod netcfg;
 pub mod selftest;
 pub mod engine;
@@ -32,6 +39,7 @@ pub mod tditest;
 pub mod tdidgtest;
 pub mod tdisrvtest;
 pub mod icmptest;
+pub mod settest;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -76,6 +84,10 @@ pub unsafe extern "system" fn DriverEntry(
     // device, issues IOCTL_ICMP_ECHO_REQUEST to the gateway, validates the
     // ICMP_ECHO_REPLY. Proves the path usermode ping/IcmpSendEcho2 ride on.
     icmptest::spawn();
+    // M9 item 4 verification: drive IOCTL_TCP_SET_INFORMATION_EX on \Device\Tcp —
+    // program a default route (the path iphlpapi's createIpForwardEntry / the
+    // usermode `route` command and dhcpcsvc ride on) and assert the ack.
+    settest::spawn();
     0 // STATUS_SUCCESS
 }
 
