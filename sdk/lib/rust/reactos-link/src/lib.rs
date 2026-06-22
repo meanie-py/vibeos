@@ -1427,6 +1427,17 @@ impl Linker {
         ] {
             println!("cargo:rustc-link-arg={f}");
         }
+        // Ship/disk strip (release-strip opt-out for `[profile.release] debug=1`):
+        // debug=1 (arm64 line-table symbolication) embeds DWARF in every linked PE
+        // → fat artifacts that defeat cross-worktree dedup. VIBEOS_STRIP_RELEASE=1
+        // (set by ship/release/disk-GC builds) drops the debug sections at link
+        // time; dev/smoke leave them in for gdb symbolication. No-op when debug=0
+        // (nothing to strip) — so this is inert on the current default build.
+        // The EFI/native loaders below strip UNCONDITIONALLY (firmware can't load a
+        // DWARF-fat EFI image — EDK2 StartImage rejects it as Unsupported).
+        if env::var_os("VIBEOS_STRIP_RELEASE").is_some() {
+            println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+        }
         // By default disable lld's stdcall-fixup (a decorated-vs-undecorated
         // symbol mismatch is a real ABI bug, not something to paper over). But
         // winsrv.dll's cmake link relies on the fixup to resolve winsrv-rust's
@@ -1506,6 +1517,12 @@ impl Linker {
                     a = alignment
                 );
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                // EDK2's StartImage rejects a DWARF-fat EFI image ("Image start
+                // failed: Unsupported"). With `[profile.release] debug=1` the
+                // cargo bin embeds line tables → uefildr won't boot. Strip them
+                // unconditionally (the loader is symbolicated via offset math in
+                // qemu/sym.sh, not DWARF, so nothing is lost). No-op at debug=0.
+                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
                 (entry, *image_base)
             }
             ModuleKind::NativeExe { entry, image_base } => {
@@ -1516,6 +1533,9 @@ impl Linker {
                 // 0x1000). exports flow from .spec2def()'s rosload.def.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                // Strip DWARF unconditionally (same firmware/early-loader reason
+                // as EfiApplication above; debug=1 line tables aren't used here).
+                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
                 (entry, Some(*image_base))
             }
             ModuleKind::Win32Exe { entry, subsystem } => {
