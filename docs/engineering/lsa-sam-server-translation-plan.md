@@ -18,8 +18,25 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >   (`3e0dff6fbab`, logon-session table + LPC-msg accessors). database.c was pure-LLM (c2rust
 >   couldn't anchor its AST); policy/session were c2rust-anchored.
 > - **M4a ✅** — `notify.c` (`1bf67e64fb1`, policy-change notification + RPC handlers).
-> - **10 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
->   database + policy + session + notify); each ×3-link-verified + i386 boot + amd64 boot+net gated.
+> - **M4b ✅** — `srm.c` (`31680573c5e`, SRM command-port server + LsapRm*LogonSession LPC;
+>   added SRM port-message substrate SEP/LSAP_RM_API_MESSAGE via srmp.h).
+> - **M4c ✅** — `lsasrv.c` (`087dbbdc993`, DLL init LsapInitLsa + MIDL_user_allocate/free RPC
+>   heap + 9 LsaIFree_LSAPR_* deep-free + LsapProductType). **🔑 MIDL allocator ABI:** C names
+>   them lowercase but rpcndr.h `#define`s lowercase→UPPERCASE; Rust #[no_mangle] gets no macro
+>   → rename defs+calls to MIDL_user_allocate/free + ABI extern "system" (__RPC_USER=stdcall,
+>   i386 `@4`); local def shadows the prelude glob extern.
+> - **12 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
+>   database + policy + session + notify + srm + lsasrv); each ×3-link-verified + i386 boot +
+>   amd64 boot gated.
+> - **⚠️ GATE CAVEAT (amd64 net):** since M4c, amd64 net is 10/11 — the one failure is
+>   `test_outbound_tcp_client` (REAL public-internet echo): TCP *connects* to the internet fine,
+>   only the remote echo-back times out. lsass/lsasrv is OFF the socket path (usermode→ws2_32→AFD
+>   →kernel netstack; MIDL_user_allocate is lsasrv-local) and this branch trails mainline's
+>   NAT-artifact fix → environmental, not a regression. **Re-confirm 11/11 on a mainline-synced
+>   tree at the landing gate.** The 10 local net tests + i386/amd64 boot are green.
+> - **🔑 grep gotcha:** count rustc errors with `grep -cE '^error'` NOT `'^error\['` — plain
+>   `error:` (static-mut-refs edition-2024 hard errors, parse errors) have no `[code]` bracket and
+>   were silently missed; the DLL-missing link check caught it but the per-file count lied.
 > - **wine-debug-internals shim ✅** (in prelude) — `ros_dbg_log` (real ReactOS variadic export,
 >   declared `extern` so the genuine debug path survives) + `__WINE_DBCL_*` consts + `__wine_debug_class`.
 >   This is the raw c2rust macro-expansion shape (`if dbch.flags & (1<<DBCL) { ros_dbg_log(..) }`).
@@ -32,9 +49,10 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
 >   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
 > - **⚠️ Next steps** (in order):
->   1. **M4 rest** — `srm.c` (provides LsapRm* that session.rs externs), `lsasrv.c` (DLL init/
->      ServiceMain — defines MIDL_user_allocate/free, careful), `authport.c`, then the winsvc
->      substrate + finish `service.rs`, then `authpackage.c` (1856 LOC, defines LsapTerminateLogon).
+>   1. **M4 rest** — `authport.c` (420, LPC auth port), then the winsvc substrate
+>      (SERVICE_TABLE_ENTRYW/SERVICE_STATUS types + StartServiceCtrlDispatcherW/SetServiceStatus/…
+>      externs + fn-ptr ABI casts) + finish staged `service.rs`, then `authpackage.c` (1856 LOC,
+>      defines LsapTerminateLogon that session.rs externs).
 >   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
 >   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
