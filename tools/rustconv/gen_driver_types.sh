@@ -438,6 +438,34 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  usbstor)
+    # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
+    # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
+    # __COMMON_DEVICE_EXTENSION__ + the FDO/PDO device extensions, ERRORHANDLER_WORKITEM_DATA,
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8. usbstor.h pulls wdm/ntstrsafe/usbdi/usbbusif/usbdlib/
+    # classpnp -> allowlist ONLY usbstor.h so bindgen emits just the driver-private types, not
+    # the whole USBDI/classpnp surface (those come from the kernel ddk bindgen). Includes
+    # classpnp.h -> match classpnp's Win8 (0x602) version profile.
+    DRIVER_DIR="${SRC}/drivers/usb/usbstor"
+    WRAPPER_INC=$'#include "usbstor.h"'
+    # usbstor function bodies use raw SCSI/USB types directly (INQUIRYDATA, SENSE_DATA,
+    # SCSI_ADDRESS, USB_*_DESCRIPTOR, USBD_INTERFACE_LIST_ENTRY) that aren't transitively
+    # reachable from the device-extension structs and aren't in the kernel ddk bindgen ->
+    # allowlist their definition headers (scsi.h, usb.h, usbdi.h, usbdlib.h) alongside
+    # usbstor.h so the crate types.rs carries the full SCSI/USB surface.
+    ALLOW_FILES=( --allowlist-file '.*usbstor[/\\]usbstor\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h' )
+    # _SCSI_REQUEST_BLOCK is OPAQUE in the kernel ddk bindgen ({ _address: u8 }) — unblock
+    # it (and its aliases) so usbstor's own bindgen (which includes scsi.h) emits the FULL
+    # SRB (SrbStatus/Cdb/DataBuffer/SrbFlags/DataTransferLength/...). Same as scsiport/atapi.
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

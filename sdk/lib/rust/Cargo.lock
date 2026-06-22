@@ -1720,6 +1720,13 @@ name = "usbdex-rust"
 version = "0.1.0"
 
 [[package]]
+name = "usbstor-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "user32-rust"
 version = "0.1.0"
 dependencies = [
