@@ -125,3 +125,9 @@ pub const SECRET_ALL_ACCESS: UINT = STANDARD_RIGHTS_REQUIRED  |  3;
 pub const SECRET_READ: UINT = STANDARD_RIGHTS_READ  |  2;
 pub const SECRET_WRITE: UINT = STANDARD_RIGHTS_WRITE  |  1;
 pub const SECRET_EXECUTE: UINT = STANDARD_RIGHTS_EXECUTE;
+
+// ---- database.c internal #defines (lsasrv.h) ----
+pub const LSAP_DB_SIGNATURE: u32 = 0x12345678;
+// POLICY_AUDIT_EVENT_TYPE_COUNT = AuditCategoryAccountLogon(8) - AuditCategorySystem(0) + 1.
+// u32 (used in DWORD comparisons/assignments); cast `as usize` at array-length sites.
+pub const POLICY_AUDIT_EVENT_TYPE_COUNT: u32 = 9;

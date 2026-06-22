@@ -217,6 +217,59 @@ pub union _PORT_MESSAGE__bindgen_ty_4 {
     pub CallbackId: ULONG,
 }
 pub type PORT_MESSAGE = _PORT_MESSAGE;
+pub const _RM_API_NUMBER_RmAuditSetCommand: _RM_API_NUMBER = 1;
+pub const _RM_API_NUMBER_RmCreateLogonSession: _RM_API_NUMBER = 2;
+pub const _RM_API_NUMBER_RmDeleteLogonSession: _RM_API_NUMBER = 3;
+pub type _RM_API_NUMBER = ::core::ffi::c_uint;
+pub use self::_RM_API_NUMBER as RM_API_NUMBER;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _SEP_RM_API_MESSAGE {
+    pub Header: PORT_MESSAGE,
+    pub ApiNumber: ULONG,
+    pub u: _SEP_RM_API_MESSAGE__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _SEP_RM_API_MESSAGE__bindgen_ty_1 {
+    pub Fill: [UCHAR; 472usize],
+    pub ResultStatus: NTSTATUS,
+    pub SetAuditEvent: _SEP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1,
+    pub LogonLuid: LUID,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SEP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1 {
+    pub Enabled: BOOLEAN,
+    pub Flags: [ULONG; 9usize],
+}
+pub type SEP_RM_API_MESSAGE = _SEP_RM_API_MESSAGE;
+pub type PSEP_RM_API_MESSAGE = *mut _SEP_RM_API_MESSAGE;
+pub const _LSAP_API_NUMBER_LsapAdtWriteLogApi: _LSAP_API_NUMBER = 1;
+pub const _LSAP_API_NUMBER_LsapComponentTestApi: _LSAP_API_NUMBER = 2;
+pub const _LSAP_API_NUMBER_LsapAsyncApi: _LSAP_API_NUMBER = 3;
+pub type _LSAP_API_NUMBER = ::core::ffi::c_uint;
+pub use self::_LSAP_API_NUMBER as LSAP_API_NUMBER;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _LSAP_RM_API_MESSAGE {
+    pub Header: PORT_MESSAGE,
+    pub ApiNumber: ULONG,
+    pub u: _LSAP_RM_API_MESSAGE__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSAP_RM_API_MESSAGE__bindgen_ty_1 {
+    pub Fill: [UCHAR; 472usize],
+    pub WriteLog: _LSAP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAP_RM_API_MESSAGE__bindgen_ty_1__bindgen_ty_1 {
+    pub Info1: ULONG,
+}
+pub type LSAP_RM_API_MESSAGE = _LSAP_RM_API_MESSAGE;
+pub type PLSAP_RM_API_MESSAGE = *mut _LSAP_RM_API_MESSAGE;
 pub type LSA_UNICODE_STRING = UNICODE_STRING;
 pub type PLSA_UNICODE_STRING = *mut UNICODE_STRING;
 pub type LSA_STRING = STRING;
@@ -285,6 +338,24 @@ pub const _SECURITY_LOGON_TYPE_Proxy: _SECURITY_LOGON_TYPE = 6;
 pub const _SECURITY_LOGON_TYPE_Unlock: _SECURITY_LOGON_TYPE = 7;
 pub type _SECURITY_LOGON_TYPE = ::core::ffi::c_uint;
 pub use self::_SECURITY_LOGON_TYPE as SECURITY_LOGON_TYPE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _SECURITY_LOGON_SESSION_DATA {
+    pub Size: ULONG,
+    pub LogonId: LUID,
+    pub UserName: LSA_UNICODE_STRING,
+    pub LogonDomain: LSA_UNICODE_STRING,
+    pub AuthenticationPackage: LSA_UNICODE_STRING,
+    pub LogonType: ULONG,
+    pub Session: ULONG,
+    pub Sid: PSID,
+    pub LogonTime: LARGE_INTEGER,
+    pub LogonServer: LSA_UNICODE_STRING,
+    pub DnsDomainName: LSA_UNICODE_STRING,
+    pub Upn: LSA_UNICODE_STRING,
+}
+pub type SECURITY_LOGON_SESSION_DATA = _SECURITY_LOGON_SESSION_DATA;
+pub type PSECURITY_LOGON_SESSION_DATA = *mut _SECURITY_LOGON_SESSION_DATA;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainNameInformation: _TRUSTED_INFORMATION_CLASS = 1;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedControllersInformation: _TRUSTED_INFORMATION_CLASS = 2;
 pub const _TRUSTED_INFORMATION_CLASS_TrustedPosixOffsetInformation: _TRUSTED_INFORMATION_CLASS = 3;

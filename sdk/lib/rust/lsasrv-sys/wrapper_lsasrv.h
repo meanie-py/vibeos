@@ -17,3 +17,5 @@
 #define _USE_DUMMY_PSEH 1
 #include "lsasrv.h"
 #include "dssetup_s.h"
+/* SRM port message types (srm.c) — needs PORT_MESSAGE from the NDK above. */
+#include "srmp.h"

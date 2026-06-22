@@ -28,14 +28,116 @@ pub use lsasrv_sys::{
     POLICY_INFORMATION_CLASS,
     DSROLE_PRIMARY_DOMAIN_INFO_LEVEL,
     PDSROLER_PRIMARY_DOMAIN_INFORMATION,
+    // database.c LSA DB object model + policy-info structs
+    LSA_DB_OBJECT, _LSA_DB_OBJECT, PLSA_DB_OBJECT,
+    LSA_DB_OBJECT_TYPE, _LSA_DB_OBJECT_TYPE, PLSA_DB_OBJECT_TYPE,
+    _LSA_DB_OBJECT_TYPE_LsaDbIgnoreObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbAccountObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbDomainObject,
+    _LSA_DB_OBJECT_TYPE_LsaDbSecretObject,
+    _POLICY_AUDIT_LOG_INFO, _POLICY_DEFAULT_QUOTA_INFO,
+    _POLICY_MODIFICATION_INFO, _POLICY_AUDIT_FULL_QUERY_INFO,
 };
+
+// Bare enum-variant aliases (bindgen names them `_LSA_DB_OBJECT_TYPE_<v>`; the
+// translation uses both the bindgen form and the bare C name).
+pub const LsaDbIgnoreObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbIgnoreObject;
+pub const LsaDbPolicyObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject;
+pub const LsaDbAccountObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbAccountObject;
+pub const LsaDbDomainObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbDomainObject;
+pub const LsaDbSecretObject: LSA_DB_OBJECT_TYPE = _LSA_DB_OBJECT_TYPE_LsaDbSecretObject;
+
+// lsasrv-internal type (its `_LSAP_` prefix dodged the lsasrv-sys bindgen
+// allowlist) — hand-declared to match lsasrv.h. AuditEvents length is
+// POLICY_AUDIT_EVENT_TYPE_COUNT.
+#[repr(C)]
+pub struct _LSAP_POLICY_AUDIT_EVENTS_DATA {
+    pub AuditingMode: BOOLEAN,
+    pub AuditEvents: [DWORD; crate::consts::POLICY_AUDIT_EVENT_TYPE_COUNT as usize],
+    pub MaximumAuditEventCount: DWORD,
+}
+pub type LSAP_POLICY_AUDIT_EVENTS_DATA = _LSAP_POLICY_AUDIT_EVENTS_DATA;
+pub type PLSAP_POLICY_AUDIT_EVENTS_DATA = *mut _LSAP_POLICY_AUDIT_EVENTS_DATA;
+
+// policy.c LSAPR_/POLICY_ marshalled info structs (all in lsasrv-sys bindgen).
+pub use lsasrv_sys::{
+    _LSAPR_POLICY_DNS_DOMAIN_INFO, PLSAPR_POLICY_DNS_DOMAIN_INFO,
+    _LSAPR_POLICY_ACCOUNT_DOM_INFO, PLSAPR_POLICY_ACCOUNT_DOM_INFO,
+    PLSAPR_POLICY_PRIMARY_DOM_INFO,
+    LSAPR_POLICY_PD_ACCOUNT_INFO, PLSAPR_POLICY_PD_ACCOUNT_INFO,
+    _POLICY_LSA_SERVER_ROLE_INFO, POLICY_LSA_SERVER_ROLE_INFO,
+    _POLICY_LSA_SERVER_ROLE, _POLICY_LSA_SERVER_ROLE_PolicyServerRolePrimary,
+    POLICY_MODIFICATION_INFO, POLICY_DEFAULT_QUOTA_INFO,
+    POLICY_AUDIT_LOG_INFO, POLICY_AUDIT_FULL_QUERY_INFO,
+    POLICY_LSA_REPLICA_SRCE_INFO, _POLICY_LSA_REPLICA_SRCE_INFO,
+    PRPC_SID,
+    // session.c logon-session types
+    _SECURITY_LOGON_SESSION_DATA, SECURITY_LOGON_SESSION_DATA, PSECURITY_LOGON_SESSION_DATA,
+    PLSA_STRING, PLSA_API_MSG,
+    // notify.c
+    POLICY_NOTIFICATION_INFORMATION_CLASS,
+    // srm.c SRM port messages
+    _SEP_RM_API_MESSAGE, SEP_RM_API_MESSAGE, PSEP_RM_API_MESSAGE,
+    _LSAP_RM_API_MESSAGE, LSAP_RM_API_MESSAGE, PLSAP_RM_API_MESSAGE,
+    _RM_API_NUMBER, _LSAP_API_NUMBER,
+    // lsasrv.c LsaIFree* marshalled-type helpers
+    _LSAPR_SR_SECURITY_DESCRIPTOR, _LSAPR_PRIVILEGE_ENUM_BUFFER,
+    PLSAPR_TRANSLATED_SIDS, PLSAPR_TRANSLATED_NAMES, PLSAPR_PRIVILEGE_SET,
+    PLSAPR_CR_CIPHER_VALUE, PLSAPR_ACCOUNT_ENUM_BUFFER,
+};
+
+// Bare SRM/LSAP API-number enum-variant aliases (bindgen tags them).
+pub const RmAuditSetCommand: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmAuditSetCommand;
+pub const RmCreateLogonSession: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmCreateLogonSession;
+pub const RmDeleteLogonSession: _RM_API_NUMBER = lsasrv_sys::_RM_API_NUMBER_RmDeleteLogonSession;
+pub const LsapAdtWriteLogApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapAdtWriteLogApi;
+pub const LsapComponentTestApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapComponentTestApi;
+pub const LsapAsyncApi: _LSAP_API_NUMBER = lsasrv_sys::_LSAP_API_NUMBER_LsapAsyncApi;
+
+// LSAPR_POLICY_INFORMATION is a union typedef'd directly (no `_`-tag form);
+// alias the `_`-name the c2rust output uses.
+pub type _LSAPR_POLICY_INFORMATION = LSAPR_POLICY_INFORMATION;
+// bindgen names the enum variant with the full `_POLICY_LSA_SERVER_ROLE_` tag;
+// the c2rust output drops `LSA_`.
+pub const _POLICY_SERVER_ROLE_PolicyServerRolePrimary: _POLICY_LSA_SERVER_ROLE =
+    _POLICY_LSA_SERVER_ROLE_PolicyServerRolePrimary;
+// PPOLICY_* pointer aliases bindgen did not emit (only the struct + bare alias).
+pub type PPOLICY_LSA_SERVER_ROLE_INFO = *mut _POLICY_LSA_SERVER_ROLE_INFO;
+pub type PPOLICY_DEFAULT_QUOTA_INFO = *mut _POLICY_DEFAULT_QUOTA_INFO;
+pub type PPOLICY_AUDIT_LOG_INFO = *mut _POLICY_AUDIT_LOG_INFO;
+pub type PPOLICY_AUDIT_FULL_QUERY_INFO = *mut _POLICY_AUDIT_FULL_QUERY_INFO;
+pub type PPOLICY_MODIFICATION_INFO = *mut _POLICY_MODIFICATION_INFO;
+pub type PPOLICY_LSA_REPLICA_SRCE_INFO = *mut _POLICY_LSA_REPLICA_SRCE_INFO;
 
 pub use crate::consts::*;
 
 // ---- universal type aliases the c2rust output uses ----
 pub type VOID = core::ffi::c_void;
 pub type size_t = usize;
-pub use core::ffi::{c_int, c_long, c_void};
+pub use core::ffi::{c_char, c_int, c_long, c_void};
+
+// ---- wine debug internals (wine/debug.h) ----
+// Some c2rust files expand the TRACE/WARN/ERR/FIXME macros to their raw form
+// (`if dbch.flags & (1<<__WINE_DBCL_x) { ros_dbg_log(...) }`) rather than the
+// crate's no-op TRACE! macros. ros_dbg_log is a real ReactOS export (variadic),
+// so declare it and let it resolve at link — preserving the real debug path.
+pub type __wine_debug_class = c_int;
+pub const __WINE_DBCL_FIXME: __wine_debug_class = 0;
+pub const __WINE_DBCL_ERR: __wine_debug_class = 1;
+pub const __WINE_DBCL_WARN: __wine_debug_class = 2;
+pub const __WINE_DBCL_TRACE: __wine_debug_class = 3;
+extern "C" {
+    pub fn ros_dbg_log(
+        cls: __wine_debug_class,
+        ch: *mut __wine_debug_channel,
+        file: *const c_char,
+        func: *const c_char,
+        line: c_int,
+        msg: *const c_char,
+        ...
+    ) -> c_int;
+}
 
 // ---- common NT/Win32 constants the translations bare-reference ----
 pub const UNICODE_NULL: u16 = 0;
@@ -66,6 +168,15 @@ extern "system" {
     pub fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL;
     pub fn LockResource(hResData: HGLOBAL) -> *mut VOID;
     pub fn SizeofResource(hModule: HMODULE, hResInfo: HRSRC) -> DWORD;
+    pub fn CreateThread(
+        lpThreadAttributes: *mut VOID,
+        dwStackSize: usize,
+        lpStartAddress: Option<unsafe extern "system" fn(*mut VOID) -> DWORD>,
+        lpParameter: *mut VOID,
+        dwCreationFlags: DWORD,
+        lpThreadId: *mut DWORD,
+    ) -> HANDLE;
+    pub fn CloseHandle(hObject: HANDLE) -> i32;
 }
 
 // Resource handle aliases (winbase) — kernel32 resource API handle types.
@@ -97,6 +208,18 @@ extern "C" {
 #[inline]
 pub unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
+}
+
+// RtlInitEmptyUnicodeString is a FORCEINLINE in rtlfuncs.h (not an export).
+#[inline]
+pub unsafe fn RtlInitEmptyUnicodeString(
+    UnicodeString: PUNICODE_STRING,
+    Buffer: *mut u16,
+    BufferSize: u16,
+) {
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
 }
 
 // ---- STUB / UNIMPLEMENTED markers (ReactOS `STUB;` statements → no-op) ----
