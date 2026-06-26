@@ -1,0 +1,23 @@
+# afd-rust — Rust translation of drivers/network/afd/afd (the Ancillary Function
+# Driver: usermode Winsock → TDI bridge). Keystone of the netstack→winsock
+# vertical: ws2_32 → msafd IRPs land here and become TDI requests down to the
+# transport netstack exposes (\Device\Tcp|Udp|Ip). Sonnet translate, ntkrnl-sys
+# + driver_ddk substrate. Cohab flip per .c file (same model as cdfs/cdrom).
+[package]
+name = "afd-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "afd_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[features]
+# ReactOS build: the C source's `#ifdef __REACTOS__` paths are the correct ones,
+# so `reactos` is on by default (unify the grind's __REACTOS__/reactos cfgs here).
+default = ["reactos"]
+reactos = []
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

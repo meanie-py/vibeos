@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -149,6 +149,27 @@ case "$DRIVER" in
     # #includes it too but the kernel bindgen doesn't, so allowlist it here for cdfs.
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' --allowlist-file '.*[/\\]cd\.h' --allowlist-file '.*ntddcdrm\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
+    ;;
+  afd)
+    # Ancillary Function Driver (drivers/network/afd) — the usermode Winsock→TDI
+    # bridge, keystone of the netstack→winsock vertical. Driver-PRIVATE structs
+    # (AFD_FCB, AFD_DEVICE_EXTENSION, AFD_TDI_OBJECT[_QELT], AFD_ACTIVE_POLL,
+    # AFD_STORED_DATAGRAM, AFD_DATA_WINDOW, AFD_MAPBUF, AFD_IN_FLIGHT_REQUEST) live in
+    # the driver's own include/afd.h. The usermode<->afd IOCTL-shared structs
+    # (AFD_RECV/SEND/POLL_INFO, AFD_WSABUF, AFD_HANDLE, AFD_EVENT_*, AFD_CONNECT_INFO,
+    # AFD_TDI_CONNECTION_INFORMATION) live in sdk/include/reactos/drivers/afd/shared.h
+    # (#included as <afd/shared.h>); the TDI connection helpers in
+    # tdihelpers/include/{tdiconn,tdi_proto}.h. Allowlist all of those local; tdi.h /
+    # ntifs.h kernel+TDI types stay on the single ntkrnl-sys ddk identity (blocklisted).
+    # afd.h also pulls winsock2.h/windef.h for SOCKADDR (shared.h's transport addresses).
+    DRIVER_DIR="${SRC}/drivers/network/afd/include"
+    EXTRA_INC=( -I"${SRC}/drivers/network/tdihelpers/include"
+                -I"${SRC}/sdk/include/reactos/drivers" )
+    WRAPPER_INC=$'#include "afd.h"'
+    ALLOW_FILES=( --allowlist-file '.*afd[/\\]include[/\\]afd\.h' --allowlist-file '.*afd[/\\]shared\.h'
+                  --allowlist-file '.*tdiconn\.h' --allowlist-file '.*tdi_proto\.h'
+                  --allowlist-file '.*tcpioctl\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 )
     ;;
   partmgr)
     # The partition manager (drivers/storage/partmgr). Driver-PRIVATE structs

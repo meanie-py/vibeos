@@ -113,6 +113,10 @@ I8042PRT_DIR = REACTOS_ROOT / "drivers" / "input" / "i8042prt"
 CLASSPNP_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "classpnp"
 CDROM_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "cdrom"
 CDFS_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "cdfs"
+# afd.sys — the Ancillary Function Driver: the kernel bridge from usermode
+# Winsock (ws2_32 → msafd) down to TDI, which netstack now provides
+# (\Device\Tcp|Udp|Ip). The keystone of the netstack→winsock vertical.
+AFD_DIR = REACTOS_ROOT / "drivers" / "network" / "afd" / "afd"
 SWENUM_DIR = REACTOS_ROOT / "drivers" / "ksfilter" / "swenum"
 USBD_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbd"
 HIDPARSER_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "hidparser"
@@ -531,6 +535,26 @@ TARGETS = {
         name="cdfs",
         source_dir=CDFS_DIR,
         output_crate=RUST_DIR / "cdfs-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # afd.sys — Ancillary Function Driver (drivers/network/afd/afd, ~5.8K LOC:
+    # main/connect/read/write/select/listen/event/info/bind/lock/context.c). The
+    # kernel keystone of the netstack→winsock vertical: usermode Winsock
+    # (ws2_32 → msafd) IRPs land here and are translated into TDI requests down to
+    # the transport netstack exposes (\Device\Tcp|Udp|Ip). Not boot-loaded
+    # (Start=auto), so the integration bar is cohab link-clean ×3 + a winsock
+    # round-trip, not a boot marker. Kernel/TDI types from ntkrnl-sys ddk.
+    "afd": Target(
+        name="afd",
+        source_dir=AFD_DIR,
+        output_crate=RUST_DIR / "afd-rust",
         bindgen_files=BINDGEN_FILES,
         hal_bindgen_files={},
         spec_file=None,
@@ -1177,6 +1201,9 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["i8042prt"]
     if "/drivers/storage/class/disk" in posix:
         return TARGETS["disk"]
+    # afd.sys — keystone of the netstack→winsock vertical (usermode sockets → TDI).
+    if "/drivers/network/afd" in posix:
+        return TARGETS["afd"]
     if "/drivers/storage/partmgr" in posix:
         return TARGETS["partmgr"]
     if "/drivers/filesystems/fs_rec" in posix:
