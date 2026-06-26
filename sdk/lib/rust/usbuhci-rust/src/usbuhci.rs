@@ -201,7 +201,7 @@ pub unsafe extern "system" fn UhciCleanupFrameList(
     DPRINT_UHCI(
         b"UhciCleanupFrameList: [%p] All - %x\n\0".as_ptr() as *const i8,
         UhciExtension,
-        IsAllEntries,
+        IsAllEntries as core::ffi::c_int,
     );
 
     // FIXME: using UhciExtension->LockFrameList after supporting ISOs.
@@ -210,7 +210,7 @@ pub unsafe extern "system" fn UhciCleanupFrameList(
     OldFrameNumber = (*UhciExtension).FrameNumber;
 
     if NewFrameNumber.wrapping_sub(OldFrameNumber) < UHCI_FRAME_LIST_MAX_ENTRIES as ULONG
-        && IsAllEntries as i32 == FALSE
+        && IsAllEntries as i32 == (FALSE as i32)
     {
         ix = OldFrameNumber & UHCI_FRAME_LIST_INDEX_MASK as ULONG;
         while ix != (NewFrameNumber & UHCI_FRAME_LIST_INDEX_MASK as ULONG) {
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn UhciOpenEndpoint(
         (*UhciEndpoint).Flags |= UHCI_ENDPOINT_FLAG_CONTROL_OR_ISO as ULONG;
     }
 
-    BufferVA = (*EndpointProperties).BufferVA;
+    BufferVA = ((*EndpointProperties).BufferVA as usize);
     BufferPA = (*EndpointProperties).BufferPA;
 
     BufferLength = (*EndpointProperties).BufferLength as SIZE_T;
@@ -309,7 +309,7 @@ pub unsafe extern "system" fn UhciOpenEndpoint(
         BufferVA = BufferVA.wrapping_add(core::mem::size_of::<UHCI_HCD_QH>() as ULONG_PTR);
         BufferPA = BufferPA.wrapping_add(core::mem::size_of::<UHCI_HCD_QH>() as ULONG);
 
-        BufferLength = BufferLength.wrapping_sub(core::mem::size_of::<UHCI_HCD_QH>() as SIZE_T);
+        BufferLength = BufferLength.wrapping_sub(core::mem::size_of::<UHCI_HCD_QH>() as _);
     }
 
     TdCount = (BufferLength as usize).wrapping_div(core::mem::size_of::<UHCI_HCD_TD>()) as ULONG;
@@ -320,7 +320,7 @@ pub unsafe extern "system" fn UhciOpenEndpoint(
 
     RtlZeroMemory(
         (*UhciEndpoint).FirstTD as *mut core::ffi::c_void,
-        (TdCount as SIZE_T).wrapping_mul(core::mem::size_of::<UHCI_HCD_TD>() as SIZE_T),
+        (TdCount as usize).wrapping_mul(core::mem::size_of::<UHCI_HCD_TD>()),
     );
 
     ix = 0;
@@ -391,7 +391,7 @@ pub unsafe extern "system" fn UhciQueryEndpointRequirements(
 
         USBPORT_TRANSFER_TYPE_BULK => {
             TdCount = (2 * UHCI_MAX_BULK_TRANSFER_SIZE
-                / (*EndpointProperties).TotalMaxPacketSize as core::ffi::c_int)
+                / ((*EndpointProperties).TotalMaxPacketSize as core::ffi::c_int as u32))
                 as ULONG;
 
             (*EndpointRequirements).HeaderBufferSize =
@@ -411,7 +411,7 @@ pub unsafe extern "system" fn UhciQueryEndpointRequirements(
                 ) as ULONG;
 
             (*EndpointRequirements).MaxTransferSize = (UHCI_MAX_INTERRUPT_TD_COUNT
-                * (*EndpointProperties).TotalMaxPacketSize as core::ffi::c_int)
+                * ((*EndpointProperties).TotalMaxPacketSize as core::ffi::c_int as u32))
                 as ULONG;
         }
 
@@ -620,7 +620,7 @@ pub unsafe extern "system" fn UhciInitializeSchedule(
     /* Build structure (tree) of static QHs
        for interrupt and isochronous transfers */
     FrameIdx = 0;
-    while (FrameIdx as i32) < INTERRUPT_ENDPOINTs {
+    while (FrameIdx as i32) < (INTERRUPT_ENDPOINTs as i32) {
         IntQH = (core::ptr::addr_of_mut!((*HcResourcesVA).StaticIntHead) as *mut UHCI_HCD_QH)
             .offset(FrameIdx as isize) as PUHCI_HCD_QH;
         IntQhPA = hcResourcesPA
@@ -782,7 +782,7 @@ pub unsafe extern "system" fn UhciStartController(
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
     let BaseRegister: PUHCI_HW_REGISTERS;
     let mut MpStatus: MPSTATUS;
-    let PortControlRegister: PUSHORT;
+    let mut PortControlRegister: PUSHORT;
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
     let mut Command: UHCI_USB_COMMAND = core::mem::zeroed();
     let mut Port: USHORT;
@@ -829,7 +829,7 @@ pub unsafe extern "system" fn UhciStartController(
         );
 
         Port = 0;
-        while (Port as core::ffi::c_int) < UHCI_NUM_ROOT_HUB_PORTS {
+        while (Port as core::ffi::c_int) < (UHCI_NUM_ROOT_HUB_PORTS as i32) {
             let pc = (core::ptr::addr_of_mut!((*BaseRegister).PortControl)
                 as *mut UHCI_PORT_STATUS_CONTROL)
                 .offset(Port as isize);
@@ -883,7 +883,7 @@ pub unsafe extern "system" fn UhciStopController(
     WRITE_PORT_USHORT(CommandReg, Command.AsUSHORT);
 
     // KeQuerySystemTime(&EndTime)
-    *(core::ptr::addr_of_mut!(EndTime) as *mut u64) = *(SharedSystemTime as *mut u64);
+    *(core::ptr::addr_of_mut!(EndTime) as *mut u64) = *(SharedSystemTimePtr() as *mut u64);
     EndTime.QuadPart += 100 * 1000;
 
     loop {
@@ -893,7 +893,7 @@ pub unsafe extern "system" fn UhciStopController(
         }
 
         // KeQuerySystemTime(&CurrentTime)
-        *(core::ptr::addr_of_mut!(CurrentTime) as *mut u64) = *(SharedSystemTime as *mut u64);
+        *(core::ptr::addr_of_mut!(CurrentTime) as *mut u64) = *(SharedSystemTimePtr() as *mut u64);
 
         if CurrentTime.QuadPart >= EndTime.QuadPart {
             DbgBreakPoint();
@@ -954,7 +954,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
         return 0;
     }
 
-    HcStatus.AsUSHORT = (READ_PORT_USHORT(StatusReg) as i32 & UHCI_USB_STATUS_MASK) as USHORT;
+    HcStatus.AsUSHORT = (READ_PORT_USHORT(StatusReg) as i32 & (UHCI_USB_STATUS_MASK as i32)) as USHORT;
 
     if HcStatus.HostSystemError() != 0 || HcStatus.HcProcessError() != 0 {
         // DPRINT removed
@@ -978,7 +978,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
 
     if HcStatus.HcHalted() != 0 {
         DPRINT_UHCI(
-            "UhciInterruptService: Hc Halted [%p] HcStatus %X\n",
+            b"UhciInterruptService: Hc Halted [%p] HcStatus %X\n\0".as_ptr() as *const i8,
             UhciExtension,
             HcStatus.AsUSHORT as i32
         );
@@ -1069,7 +1069,7 @@ pub unsafe extern "system" fn UhciInterruptDpc(
     DPRINT_UHCI(
         b"UhciInterruptDpc: [%p] EnableInt %x, HcStatus %X\n\0".as_ptr() as *const i8,
         uhciExtension,
-        IsDoEnableInterrupts,
+        IsDoEnableInterrupts as core::ffi::c_int,
         (*UhciExtension).HcStatus,
     );
 
@@ -1120,9 +1120,9 @@ pub unsafe extern "system" fn UhciQueueTransfer(
             | UHCI_TD_LINK_PTR_QH
             | UHCI_TD_LINK_PTR_DEPTH_FIRST) as ULONG;
 
-        if (*FirstTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & UHCI_TD_STS_ACTIVE != 0 {
+        if (*FirstTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & (UHCI_TD_STS_ACTIVE as i32) != 0 {
             if PhysicalAddress == (*TailTD).PhysicalAddress
-                && (*TailTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & UHCI_TD_STS_ACTIVE
+                && (*TailTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & (UHCI_TD_STS_ACTIVE as i32)
                     == 0
             {
                 (*QH).HwQH.NextElement = (*FirstTD).PhysicalAddress;
@@ -1219,7 +1219,7 @@ pub unsafe extern "system" fn UhciMapAsyncTransferToTDs(
     let mut TransferLength: SIZE_T = 0 as SIZE_T;
     let mut LengthMapped: SIZE_T = 0 as SIZE_T;
     let mut BytesRemaining: SIZE_T;
-    let mut LengthThisTD: SIZE_T;
+    let mut LengthThisTD: SIZE_T = 0;
     let mut ix: ULONG;
     let mut DataToggle: BOOL;
     let mut PIDCode: UCHAR;
@@ -1247,7 +1247,7 @@ pub unsafe extern "system" fn UhciMapAsyncTransferToTDs(
         }
         DataToggle = UHCI_TD_PID_DATA1 as BOOL;
     } else {
-        if EndpointAddress as i32 & USB_ENDPOINT_DIRECTION_MASK == 0 {
+        if EndpointAddress as i32 & (USB_ENDPOINT_DIRECTION_MASK as i32) == 0 {
             PIDCode = UHCI_TD_PID_OUT as UCHAR;
         } else {
             PIDCode = UHCI_TD_PID_IN as UCHAR;
@@ -1350,10 +1350,10 @@ pub unsafe extern "system" fn UhciMapAsyncTransferToTDs(
             (*TD)
                 .HwTD
                 .Token
-                .set_DataToggle((DataToggle == UHCI_TD_PID_DATA1) as i32 as ULONG);
+                .set_DataToggle((DataToggle == (UHCI_TD_PID_DATA1 as i32)) as i32 as ULONG);
 
             (*TD).NextHcdTD = core::ptr::null_mut();
-            (*TD).UhciTransfer = UhciTransfer as PUHCI_TRANSFER;
+            (*TD).__bindgen_anon_1.UhciTransfer = UhciTransfer as PUHCI_TRANSFER;
 
             if IsLastTd == 0 {
                 if 0 as i32 == 0 {
@@ -1380,7 +1380,7 @@ pub unsafe extern "system" fn UhciMapAsyncTransferToTDs(
             }
 
             LastTD = TD;
-            DataToggle = (DataToggle == UHCI_TD_PID_DATA0) as i32 as BOOL;
+            DataToggle = (DataToggle == (UHCI_TD_PID_DATA0 as i32)) as i32 as BOOL;
         }
 
         ix = ix.wrapping_add(1);
@@ -1462,7 +1462,7 @@ pub unsafe extern "system" fn UhciControlTransfer(
         as ULONG;
 
     (*FirstTD).NextHcdTD = core::ptr::null_mut();
-    (*FirstTD).UhciTransfer = UhciTransfer;
+    (*FirstTD).__bindgen_anon_1.UhciTransfer = UhciTransfer;
 
     /* Allocate and setup last TD */
     (*UhciTransfer).PendingTds += 1;
@@ -1486,7 +1486,7 @@ pub unsafe extern "system" fn UhciControlTransfer(
     (*LastTD).HwTD.Token.set_Endpoint(EndpointAddress as ULONG);
     (*LastTD).HwTD.Token.set_DeviceAddress(DeviceAddress as ULONG);
 
-    (*LastTD).UhciTransfer = UhciTransfer;
+    (*LastTD).__bindgen_anon_1.UhciTransfer = UhciTransfer;
     (*LastTD).NextHcdTD = core::ptr::null_mut();
 
     /* Allocate and setup TDs for data */
@@ -1670,7 +1670,7 @@ pub unsafe extern "system" fn UhciSubmitTransfer(
 
     RtlZeroMemory(
         UhciTransfer as PVOID,
-        core::mem::size_of::<UHCI_TRANSFER>() as ULONG,
+        (core::mem::size_of::<UHCI_TRANSFER>() as ULONG as usize),
     );
 
     (*UhciTransfer).TransferParameters = TransferParameters;
@@ -1717,8 +1717,8 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
 
     TdStatus = (*TD).HwTD.ControlStatus.__bindgen_anon_1.Status() as UCHAR;
 
-    if TdStatus as i32 == UHCI_TD_STS_ACTIVE {
-        if (*TD).HwTD.Token.MaximumLength() as i32 == UHCI_TD_LENGTH_NULL {
+    if TdStatus as i32 == (UHCI_TD_STS_ACTIVE as i32) {
+        if (*TD).HwTD.Token.MaximumLength() as i32 == (UHCI_TD_LENGTH_NULL as i32) {
             return USBD_STATUS_SUCCESS;
         }
 
@@ -1735,8 +1735,8 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
         return USBD_STATUS_ERROR_SHORT_TRANSFER;
     }
 
-    if TdStatus as i32 & UHCI_TD_STS_BABBLE_DETECTED != 0
-        && TdStatus as i32 & UHCI_TD_STS_STALLED != 0
+    if TdStatus as i32 & (UHCI_TD_STS_BABBLE_DETECTED as i32) != 0
+        && TdStatus as i32 & (UHCI_TD_STS_STALLED as i32) != 0
     {
         if DbgPrint(
             b"(%s:%d) UhciGetErrorFromTD: USBD_STATUS_BUFFER_OVERRUN, TD - %p\n\0" as *const u8
@@ -1755,8 +1755,8 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
         return USBD_STATUS_BUFFER_OVERRUN;
     }
 
-    if TdStatus as i32 & UHCI_TD_STS_TIMEOUT_CRC_ERROR != 0
-        && TdStatus as i32 & UHCI_TD_STS_STALLED != 0
+    if TdStatus as i32 & (UHCI_TD_STS_TIMEOUT_CRC_ERROR as i32) != 0
+        && TdStatus as i32 & (UHCI_TD_STS_STALLED as i32) != 0
     {
         if DbgPrint(
             b"(%s:%d) UhciGetErrorFromTD: USBD_STATUS_DEV_NOT_RESPONDING, TD - %p\n\0" as *const u8
@@ -1775,8 +1775,8 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
         return USBD_STATUS_DEV_NOT_RESPONDING;
     }
 
-    if TdStatus as i32 & UHCI_TD_STS_TIMEOUT_CRC_ERROR != 0 {
-        if (*TD).HwTD.ControlStatus.ActualLength() as i32 == UHCI_TD_LENGTH_NULL {
+    if TdStatus as i32 & (UHCI_TD_STS_TIMEOUT_CRC_ERROR as i32) != 0 {
+        if (*TD).HwTD.ControlStatus.ActualLength() as i32 == (UHCI_TD_LENGTH_NULL as i32) {
             if DbgPrint(
                 b"(%s:%d) UhciGetErrorFromTD: USBD_STATUS_DEV_NOT_RESPONDING, TD - %p\n\0"
                     as *const u8 as PCSTR,
@@ -1808,7 +1808,7 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
             }
             return USBD_STATUS_CRC;
         }
-    } else if TdStatus as i32 & UHCI_TD_STS_DATA_BUFFER_ERROR != 0 {
+    } else if TdStatus as i32 & (UHCI_TD_STS_DATA_BUFFER_ERROR as i32) != 0 {
         if DbgPrint(
             b"(%s:%d) UhciGetErrorFromTD: USBD_STATUS_DATA_OVERRUN, TD - %p\n\0" as *const u8
                 as PCSTR,
@@ -1824,7 +1824,7 @@ pub unsafe extern "system" fn UhciGetErrorFromTD(
             );
         }
         USBDStatus = USBD_STATUS_DATA_OVERRUN;
-    } else if TdStatus as i32 & UHCI_TD_STS_STALLED != 0 {
+    } else if TdStatus as i32 & (UHCI_TD_STS_STALLED as i32) != 0 {
         if DbgPrint(
             b"(%s:%d) UhciGetErrorFromTD: USBD_STATUS_STALL_PID, TD - %p\n\0" as *const u8 as PCSTR,
             b"usbuhci.c\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1873,7 +1873,7 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
 
     DPRINT_UHCI(b"UhciProcessDoneNonIsoTD: TD - %p\n\0".as_ptr() as *const i8, TD);
 
-    UhciTransfer = (*TD).UhciTransfer as PUHCI_TRANSFER;
+    UhciTransfer = (*TD).__bindgen_anon_1.UhciTransfer as PUHCI_TRANSFER;
     (*UhciTransfer).PendingTds = (*UhciTransfer).PendingTds.wrapping_sub(1);
 
     TransferParameters = (*UhciTransfer).TransferParameters;
@@ -1885,19 +1885,19 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
         }
 
         if USBDStatus != USBD_STATUS_SUCCESS
-            || ((*TD).HwTD.ControlStatus.ActualLength() as i32 == UHCI_TD_LENGTH_NULL)
+            || ((*TD).HwTD.ControlStatus.ActualLength() as i32 == (UHCI_TD_LENGTH_NULL as i32))
         {
             TransferedLen = 0 as SIZE_T;
         } else {
             TransferedLen = ((*TD).HwTD.ControlStatus.ActualLength() as i32 + 1) as SIZE_T;
         }
 
-        if (*TD).HwTD.Token.PIDCode() as i32 != UHCI_TD_PID_SETUP {
+        if (*TD).HwTD.Token.PIDCode() as i32 != (UHCI_TD_PID_SETUP as i32) {
             (*UhciTransfer).TransferLen =
-                (*UhciTransfer).TransferLen.wrapping_add(TransferedLen);
+                (*UhciTransfer).TransferLen.wrapping_add(((TransferedLen as u32) as _));
         }
 
-        if (*TD).HwTD.Token.PIDCode() as i32 == UHCI_TD_PID_IN
+        if (*TD).HwTD.Token.PIDCode() as i32 == (UHCI_TD_PID_IN as i32)
             && (*TD).Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER != 0
         {
             DPRINT_IMPL(b"UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
@@ -1915,7 +1915,7 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
     (*UhciEndpoint).AllocatedTDs = (*UhciEndpoint).AllocatedTDs.wrapping_sub(1);
 
     (*TD).HwTD.NextElement = 0 as ULONG;
-    (*TD).UhciTransfer = core::ptr::null_mut();
+    (*TD).__bindgen_anon_1.UhciTransfer = core::ptr::null_mut();
     (*TD).Flags = 0 as ULONG;
 
     if (*UhciTransfer).PendingTds == 0 {
@@ -1970,7 +1970,7 @@ pub unsafe extern "system" fn UhciAbortNonIsoTransfer(
     let mut IsHeadTD: BOOLEAN = FALSE as BOOLEAN;
 
     TD = (*UhciEndpoint).HeadTD;
-    while !TD.is_null() && (*TD).UhciTransfer != UhciTransfer {
+    while !TD.is_null() && (*TD).__bindgen_anon_1.UhciTransfer != UhciTransfer {
         PrevTD = TD;
         TD = (*TD).NextHcdTD as PUHCI_HCD_TD;
     }
@@ -1981,8 +1981,8 @@ pub unsafe extern "system" fn UhciAbortNonIsoTransfer(
         IsHeadTD = TRUE as BOOLEAN;
     }
 
-    while !TD.is_null() && (*TD).UhciTransfer == UhciTransfer {
-        if (*TD).HwTD.ControlStatus.__bindgen_anon_1.Status() as i32 & UHCI_TD_STS_ACTIVE != 0 {
+    while !TD.is_null() && (*TD).__bindgen_anon_1.UhciTransfer == UhciTransfer {
+        if (*TD).HwTD.ControlStatus.__bindgen_anon_1.Status() as i32 & (UHCI_TD_STS_ACTIVE as i32) != 0 {
             if (*TD).Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER != 0 {
                 // DPRINT_IMPL("UhciAbortNonIsoTransfer: UNIMPLEMENTED. FIXME\n");
             }
@@ -1991,7 +1991,7 @@ pub unsafe extern "system" fn UhciAbortNonIsoTransfer(
 
             (*TD).HwTD.NextElement = 0 as ULONG;
             (*TD).Flags = 0 as ULONG;
-            (*TD).UhciTransfer = core::ptr::null_mut();
+            (*TD).__bindgen_anon_1.UhciTransfer = core::ptr::null_mut();
         } else {
             UhciProcessDoneNonIsoTD(UhciExtension, TD);
         }
@@ -2031,7 +2031,7 @@ pub unsafe extern "system" fn UhciAbortNonIsoTransfer(
         (*UhciEndpoint).TailTD = PrevTD;
     }
 
-    *CompletedLength = (*UhciTransfer).TransferLen;
+    *CompletedLength = ((*UhciTransfer).TransferLen as u32);
 }
 
 #[no_mangle]
@@ -2309,7 +2309,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
     UhciExtension: PUHCI_EXTENSION,
     UhciEndpoint: PUHCI_ENDPOINT,
 ) {
-    let current_block: u64;
+    let mut current_block: u64;
     let mut QH: PUHCI_HCD_QH;
     let mut NextTD: PUHCI_HCD_TD;
     let mut TD: PUHCI_HCD_TD;
@@ -2380,15 +2380,15 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
             } else {
                 TdStatus = (*NextTD).HwTD.ControlStatus.__bindgen_anon_1.Status() as UCHAR;
 
-                if TdStatus as i32 & UHCI_TD_STS_ACTIVE != 0 {
+                if TdStatus as i32 & (UHCI_TD_STS_ACTIVE as i32) != 0 {
                     current_block = 16549844112612896618;
                 } else {
-                    if (*NextTD).HwTD.Token.PIDCode() as i32 == UHCI_TD_PID_IN
-                        && TdStatus as i32 & UHCI_TD_STS_STALLED != 0
-                        && TdStatus as i32 & UHCI_TD_STS_TIMEOUT_CRC_ERROR != 0
-                        && TdStatus as i32 & UHCI_TD_STS_NAK_RECEIVED == 0
-                        && TdStatus as i32 & UHCI_TD_STS_BABBLE_DETECTED == 0
-                        && TdStatus as i32 & UHCI_TD_STS_BITSTUFF_ERROR == 0
+                    if (*NextTD).HwTD.Token.PIDCode() as i32 == (UHCI_TD_PID_IN as i32)
+                        && TdStatus as i32 & (UHCI_TD_STS_STALLED as i32) != 0
+                        && TdStatus as i32 & (UHCI_TD_STS_TIMEOUT_CRC_ERROR as i32) != 0
+                        && TdStatus as i32 & (UHCI_TD_STS_NAK_RECEIVED as i32) == 0
+                        && TdStatus as i32 & (UHCI_TD_STS_BABBLE_DETECTED as i32) == 0
+                        && TdStatus as i32 & (UHCI_TD_STS_BITSTUFF_ERROR as i32) == 0
                     {
                         UhciDumpHcdTD(NextTD);
 
@@ -2418,11 +2418,11 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                         16549844112612896618 => {}
                         _ => {
                             if TdStatus as i32
-                                & (UHCI_TD_STS_STALLED
+                                & ((UHCI_TD_STS_STALLED
                                     | UHCI_TD_STS_DATA_BUFFER_ERROR
                                     | UHCI_TD_STS_BABBLE_DETECTED
                                     | UHCI_TD_STS_TIMEOUT_CRC_ERROR
-                                    | UHCI_TD_STS_BITSTUFF_ERROR)
+                                    | UHCI_TD_STS_BITSTUFF_ERROR) as i32)
                                 != 0
                             {
                                 UhciDumpHcdTD(NextTD);
@@ -2435,13 +2435,13 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                     core::ptr::addr_of_mut!((*NextTD).TdLink),
                                 );
 
-                                if (*TD).UhciTransfer != (*NextTD).UhciTransfer {
-                                    ASSERT(((*TD).UhciTransfer == (*NextTD).UhciTransfer) as i32);
+                                if (*TD).__bindgen_anon_1.UhciTransfer != (*NextTD).__bindgen_anon_1.UhciTransfer {
+                                    ASSERT(((*TD).__bindgen_anon_1.UhciTransfer == (*NextTD).__bindgen_anon_1.UhciTransfer) as i32);
                                 }
 
                                 while !TD.is_null()
-                                    && (*(*(*TD).UhciTransfer).TransferParameters).TransferCounter
-                                        == (*(*(*NextTD).UhciTransfer).TransferParameters)
+                                    && (*(*(*TD).__bindgen_anon_1.UhciTransfer).TransferParameters).TransferCounter
+                                        == (*(*(*NextTD).__bindgen_anon_1.UhciTransfer).TransferParameters)
                                             .TransferCounter
                                 {
                                     if (*TD).Flags & UHCI_HCD_TD_FLAG_DONE == 0 {
@@ -2479,7 +2479,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                     TransferedLen += 1;
                                 }
 
-                                if (*NextTD).HwTD.Token.MaximumLength() as i32 == UHCI_TD_LENGTH_NULL
+                                if (*NextTD).HwTD.Token.MaximumLength() as i32 == (UHCI_TD_LENGTH_NULL as i32)
                                     || TransferedLen
                                         >= ((*NextTD).HwTD.Token.MaximumLength() as i32 + 1) as SIZE_T
                                 {
@@ -2508,13 +2508,13 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                     );
 
                                     while !TD.is_null()
-                                        && (*(*(*TD).UhciTransfer).TransferParameters)
+                                        && (*(*(*TD).__bindgen_anon_1.UhciTransfer).TransferParameters)
                                             .TransferCounter
-                                            == (*(*(*NextTD).UhciTransfer).TransferParameters)
+                                            == (*(*(*NextTD).__bindgen_anon_1.UhciTransfer).TransferParameters)
                                                 .TransferCounter
                                     {
                                         if (*TD).Flags & UHCI_HCD_TD_FLAG_CONTROLL != 0
-                                            && (*(*(*NextTD).UhciTransfer).TransferParameters)
+                                            && (*(*(*NextTD).__bindgen_anon_1.UhciTransfer).TransferParameters)
                                                 .TransferFlags
                                                 & USBD_SHORT_TRANSFER_OK
                                                 != 0
@@ -2547,7 +2547,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                         );
                                     }
 
-                                    if (*(*(*NextTD).UhciTransfer).TransferParameters).TransferFlags
+                                    if (*(*(*NextTD).__bindgen_anon_1.UhciTransfer).TransferParameters).TransferFlags
                                         & USBD_SHORT_TRANSFER_OK
                                         == 0
                                     {
@@ -2589,7 +2589,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
 
     ListTDs = core::ptr::addr_of_mut!((*UhciEndpoint).ListTDs);
 
-    while IsListEmpty(ListTDs) == 0 {
+    while !IsListEmpty(ListTDs) {
         TD = ((*ListTDs).Flink as ULONG_PTR)
             .wrapping_sub(core::mem::offset_of!(UHCI_HCD_TD, TdLink.Flink) as ULONG_PTR)
             as *mut UHCI_HCD_TD;
@@ -2681,12 +2681,12 @@ pub unsafe extern "system" fn UhciGet32BitFrameNumber(uhciExtension: PVOID) -> U
     let Hp: ULONG;
 
     Fn = READ_PORT_USHORT(core::ptr::addr_of_mut!((*(*UhciExtension).BaseRegister).FrameNumber));
-    Fn = (Fn as i32 & UHCI_FRNUM_FRAME_MASK) as USHORT;
+    Fn = (Fn as i32 & (UHCI_FRNUM_FRAME_MASK as i32)) as USHORT;
     Hp = (*UhciExtension).FrameHighPart;
 
     Uhci32BitFrame = Hp;
     Uhci32BitFrame = (Uhci32BitFrame as core::ffi::c_ulong).wrapping_add(
-        ((Hp as USHORT as i32 ^ Fn as i32) & UHCI_FRNUM_OVERFLOW_LIST) as core::ffi::c_ulong,
+        ((Hp as USHORT as i32 ^ Fn as i32) & (UHCI_FRNUM_OVERFLOW_LIST as i32)) as core::ffi::c_ulong,
     ) as ULONG;
     Uhci32BitFrame |= Fn as core::ffi::c_ulong as ULONG;
 
@@ -2718,19 +2718,19 @@ pub unsafe extern "system" fn UhciInterruptNextSOF(uhciExtension: PVOID) {
 
     ix = 0;
     while ix < UHCI_MAX_STATIC_SOF_TDS as ULONG {
-        SofFrame = (*SOF_HcdTDs).Frame;
+        SofFrame = (*SOF_HcdTDs).__bindgen_anon_1.Frame;
 
         if SofFrame == NextFrame {
             break;
         }
 
         if SofFrame < CurrentFrame {
-            (*SOF_HcdTDs).Frame = NextFrame;
+            (*SOF_HcdTDs).__bindgen_anon_1.Frame = NextFrame;
             (*SOF_HcdTDs).Flags |= UHCI_HCD_TD_FLAG_GOOD_FRAME as ULONG;
 
             /* Insert SOF_HcdTD (InterruptOnComplete = TRUE) in Frame List */
             UhciResources = (*UhciExtension).HcResourcesVA;
-            Idx = (*SOF_HcdTDs).Frame & UHCI_FRAME_LIST_INDEX_MASK as ULONG;
+            Idx = (*SOF_HcdTDs).__bindgen_anon_1.Frame & UHCI_FRAME_LIST_INDEX_MASK as ULONG;
 
             InterlockedExchange(
                 core::ptr::addr_of_mut!((*SOF_HcdTDs).HwTD.NextElement) as PLONG,
@@ -2750,12 +2750,12 @@ pub unsafe extern "system" fn UhciInterruptNextSOF(uhciExtension: PVOID) {
     while ix < UHCI_MAX_STATIC_SOF_TDS as ULONG {
         SOF_HcdTDs = core::ptr::addr_of_mut!((*(*UhciExtension).SOF_HcdTDs.offset(ix as isize)));
 
-        if (*SOF_HcdTDs).Frame != 0
-            && ((*SOF_HcdTDs).Frame < CurrentFrame
-                || (*SOF_HcdTDs).Frame.wrapping_sub(CurrentFrame)
+        if (*SOF_HcdTDs).__bindgen_anon_1.Frame != 0
+            && ((*SOF_HcdTDs).__bindgen_anon_1.Frame < CurrentFrame
+                || (*SOF_HcdTDs).__bindgen_anon_1.Frame.wrapping_sub(CurrentFrame)
                     > UHCI_FRAME_LIST_MAX_ENTRIES as ULONG)
         {
-            (*SOF_HcdTDs).Frame = 0;
+            (*SOF_HcdTDs).__bindgen_anon_1.Frame = 0;
         }
 
         ix = ix.wrapping_add(1);
@@ -2855,7 +2855,7 @@ pub unsafe extern "system" fn UhciPollController(uhciExtension: PVOID) {
     }
 
     Port = 0;
-    while (Port as i32) < UHCI_NUM_ROOT_HUB_PORTS {
+    while (Port as i32) < (UHCI_NUM_ROOT_HUB_PORTS as i32) {
         PortRegister = (core::ptr::addr_of_mut!((*BaseRegister).PortControl)
             as *mut UHCI_PORT_STATUS_CONTROL)
             .offset(Port as isize) as *mut UHCI_PORT_STATUS_CONTROL
@@ -2959,10 +2959,10 @@ pub unsafe extern "system" fn DriverEntry(
 
     RegPacket.MiniPortBusBandwidth = TOTAL_USB11_BUS_BANDWIDTH as ULONG;
 
-    RegPacket.MiniPortExtensionSize = core::mem::size_of::<UHCI_EXTENSION>() as SIZE_T;
-    RegPacket.MiniPortEndpointSize = core::mem::size_of::<UHCI_ENDPOINT>() as SIZE_T;
-    RegPacket.MiniPortTransferSize = core::mem::size_of::<UHCI_TRANSFER>() as SIZE_T;
-    RegPacket.MiniPortResourcesSize = core::mem::size_of::<UHCI_HC_RESOURCES>() as SIZE_T;
+    RegPacket.MiniPortExtensionSize = ((core::mem::size_of::<UHCI_EXTENSION>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortEndpointSize = ((core::mem::size_of::<UHCI_ENDPOINT>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortTransferSize = ((core::mem::size_of::<UHCI_TRANSFER>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortResourcesSize = ((core::mem::size_of::<UHCI_HC_RESOURCES>() as SIZE_T as u32) as _);
 
     RegPacket.OpenEndpoint = Some(UhciOpenEndpoint);
     RegPacket.ReopenEndpoint = Some(UhciReopenEndpoint);

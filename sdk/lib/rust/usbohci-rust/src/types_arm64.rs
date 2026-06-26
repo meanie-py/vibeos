@@ -10284,3 +10284,509 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn OHCI_ReadRhDescriptorA(OhciExtension: POHCI_EXTENSION) -> OHCI_REG_RH_DESCRIPTORA;
 }
+
+// @flatten-forwarders
+impl _SYSTEM_POWER_STATE_CONTEXT {
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn TargetSystemState(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.TargetSystemState() } }
+    #[inline] pub fn set_TargetSystemState(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_TargetSystemState(val) } }
+    #[inline] pub fn EffectiveSystemState(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.EffectiveSystemState() } }
+    #[inline] pub fn set_EffectiveSystemState(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_EffectiveSystemState(val) } }
+    #[inline] pub fn CurrentSystemState(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.CurrentSystemState() } }
+    #[inline] pub fn set_CurrentSystemState(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_CurrentSystemState(val) } }
+    #[inline] pub fn IgnoreHibernationPath(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.IgnoreHibernationPath() } }
+    #[inline] pub fn set_IgnoreHibernationPath(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_IgnoreHibernationPath(val) } }
+    #[inline] pub fn PseudoTransition(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PseudoTransition() } }
+    #[inline] pub fn set_PseudoTransition(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PseudoTransition(val) } }
+    #[inline] pub fn Reserved2(&self) -> ULONG { unsafe { self.__bindgen_anon_1.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: ULONG) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_Reserved2(val) } }
+}
+impl _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1 {
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn TargetSystemState(&self) -> ULONG { unsafe { self.c2rust_unnamed.TargetSystemState() } }
+    #[inline] pub fn set_TargetSystemState(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_TargetSystemState(val) } }
+    #[inline] pub fn EffectiveSystemState(&self) -> ULONG { unsafe { self.c2rust_unnamed.EffectiveSystemState() } }
+    #[inline] pub fn set_EffectiveSystemState(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_EffectiveSystemState(val) } }
+    #[inline] pub fn CurrentSystemState(&self) -> ULONG { unsafe { self.c2rust_unnamed.CurrentSystemState() } }
+    #[inline] pub fn set_CurrentSystemState(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_CurrentSystemState(val) } }
+    #[inline] pub fn IgnoreHibernationPath(&self) -> ULONG { unsafe { self.c2rust_unnamed.IgnoreHibernationPath() } }
+    #[inline] pub fn set_IgnoreHibernationPath(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_IgnoreHibernationPath(val) } }
+    #[inline] pub fn PseudoTransition(&self) -> ULONG { unsafe { self.c2rust_unnamed.PseudoTransition() } }
+    #[inline] pub fn set_PseudoTransition(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_PseudoTransition(val) } }
+    #[inline] pub fn Reserved2(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+}
+impl _USB_20_PORT_STATUS {
+    #[inline] pub fn CurrentConnectStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.CurrentConnectStatus() } }
+    #[inline] pub fn set_CurrentConnectStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_CurrentConnectStatus(val) } }
+    #[inline] pub fn PortEnabledDisabled(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortEnabledDisabled() } }
+    #[inline] pub fn set_PortEnabledDisabled(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortEnabledDisabled(val) } }
+    #[inline] pub fn Suspend(&self) -> USHORT { unsafe { self.c2rust_unnamed.Suspend() } }
+    #[inline] pub fn set_Suspend(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Suspend(val) } }
+    #[inline] pub fn OverCurrent(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrent() } }
+    #[inline] pub fn set_OverCurrent(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrent(val) } }
+    #[inline] pub fn Reset(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reset() } }
+    #[inline] pub fn set_Reset(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reset(val) } }
+    #[inline] pub fn L1(&self) -> USHORT { unsafe { self.c2rust_unnamed.L1() } }
+    #[inline] pub fn set_L1(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_L1(val) } }
+    #[inline] pub fn Reserved0(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved0() } }
+    #[inline] pub fn set_Reserved0(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved0(val) } }
+    #[inline] pub fn PortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortPower() } }
+    #[inline] pub fn set_PortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortPower(val) } }
+    #[inline] pub fn LowSpeedDeviceAttached(&self) -> USHORT { unsafe { self.c2rust_unnamed.LowSpeedDeviceAttached() } }
+    #[inline] pub fn set_LowSpeedDeviceAttached(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_LowSpeedDeviceAttached(val) } }
+    #[inline] pub fn HighSpeedDeviceAttached(&self) -> USHORT { unsafe { self.c2rust_unnamed.HighSpeedDeviceAttached() } }
+    #[inline] pub fn set_HighSpeedDeviceAttached(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_HighSpeedDeviceAttached(val) } }
+    #[inline] pub fn PortTestMode(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortTestMode() } }
+    #[inline] pub fn set_PortTestMode(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortTestMode(val) } }
+    #[inline] pub fn PortIndicatorControl(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortIndicatorControl() } }
+    #[inline] pub fn set_PortIndicatorControl(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortIndicatorControl(val) } }
+    #[inline] pub fn Reserved1(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+}
+impl _USB_20_PORT_CHANGE {
+    #[inline] pub fn ConnectStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.ConnectStatusChange() } }
+    #[inline] pub fn set_ConnectStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_ConnectStatusChange(val) } }
+    #[inline] pub fn PortEnableDisableChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortEnableDisableChange() } }
+    #[inline] pub fn set_PortEnableDisableChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortEnableDisableChange(val) } }
+    #[inline] pub fn SuspendChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.SuspendChange() } }
+    #[inline] pub fn set_SuspendChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_SuspendChange(val) } }
+    #[inline] pub fn OverCurrentIndicatorChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrentIndicatorChange() } }
+    #[inline] pub fn set_OverCurrentIndicatorChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrentIndicatorChange(val) } }
+    #[inline] pub fn ResetChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.ResetChange() } }
+    #[inline] pub fn set_ResetChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_ResetChange(val) } }
+    #[inline] pub fn Reserved2(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+}
+impl _USB_30_PORT_STATUS {
+    #[inline] pub fn CurrentConnectStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.CurrentConnectStatus() } }
+    #[inline] pub fn set_CurrentConnectStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_CurrentConnectStatus(val) } }
+    #[inline] pub fn PortEnabledDisabled(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortEnabledDisabled() } }
+    #[inline] pub fn set_PortEnabledDisabled(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortEnabledDisabled(val) } }
+    #[inline] pub fn Reserved0(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved0() } }
+    #[inline] pub fn set_Reserved0(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved0(val) } }
+    #[inline] pub fn OverCurrent(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrent() } }
+    #[inline] pub fn set_OverCurrent(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrent(val) } }
+    #[inline] pub fn Reset(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reset() } }
+    #[inline] pub fn set_Reset(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reset(val) } }
+    #[inline] pub fn PortLinkState(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortLinkState() } }
+    #[inline] pub fn set_PortLinkState(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortLinkState(val) } }
+    #[inline] pub fn PortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortPower() } }
+    #[inline] pub fn set_PortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortPower(val) } }
+    #[inline] pub fn NegotiatedDeviceSpeed(&self) -> USHORT { unsafe { self.c2rust_unnamed.NegotiatedDeviceSpeed() } }
+    #[inline] pub fn set_NegotiatedDeviceSpeed(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_NegotiatedDeviceSpeed(val) } }
+    #[inline] pub fn Reserved1(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+}
+impl _USB_30_PORT_CHANGE {
+    #[inline] pub fn ConnectStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.ConnectStatusChange() } }
+    #[inline] pub fn set_ConnectStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_ConnectStatusChange(val) } }
+    #[inline] pub fn Reserved2(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+    #[inline] pub fn OverCurrentIndicatorChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrentIndicatorChange() } }
+    #[inline] pub fn set_OverCurrentIndicatorChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrentIndicatorChange(val) } }
+    #[inline] pub fn ResetChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.ResetChange() } }
+    #[inline] pub fn set_ResetChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_ResetChange(val) } }
+    #[inline] pub fn BHResetChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.BHResetChange() } }
+    #[inline] pub fn set_BHResetChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_BHResetChange(val) } }
+    #[inline] pub fn PortLinkStateChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortLinkStateChange() } }
+    #[inline] pub fn set_PortLinkStateChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortLinkStateChange(val) } }
+    #[inline] pub fn PortConfigErrorChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortConfigErrorChange() } }
+    #[inline] pub fn set_PortConfigErrorChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortConfigErrorChange(val) } }
+    #[inline] pub fn Reserved3(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved3() } }
+    #[inline] pub fn set_Reserved3(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved3(val) } }
+}
+impl _USB_HUB_STATUS {
+    #[inline] pub fn LocalPowerLost(&self) -> USHORT { unsafe { self.c2rust_unnamed.LocalPowerLost() } }
+    #[inline] pub fn set_LocalPowerLost(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_LocalPowerLost(val) } }
+    #[inline] pub fn OverCurrent(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrent() } }
+    #[inline] pub fn set_OverCurrent(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrent(val) } }
+    #[inline] pub fn Reserved(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+}
+impl _USB_HUB_CHANGE {
+    #[inline] pub fn LocalPowerChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.LocalPowerChange() } }
+    #[inline] pub fn set_LocalPowerChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_LocalPowerChange(val) } }
+    #[inline] pub fn OverCurrentChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrentChange() } }
+    #[inline] pub fn set_OverCurrentChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrentChange(val) } }
+    #[inline] pub fn Reserved(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+}
+impl _USBPORT_HUB_11_CHARACTERISTICS {
+    #[inline] pub fn PowerControlMode(&self) -> USHORT { unsafe { self.c2rust_unnamed.PowerControlMode() } }
+    #[inline] pub fn set_PowerControlMode(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PowerControlMode(val) } }
+    #[inline] pub fn NoPowerSwitching(&self) -> USHORT { unsafe { self.c2rust_unnamed.NoPowerSwitching() } }
+    #[inline] pub fn set_NoPowerSwitching(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_NoPowerSwitching(val) } }
+    #[inline] pub fn PartOfCompoundDevice(&self) -> USHORT { unsafe { self.c2rust_unnamed.PartOfCompoundDevice() } }
+    #[inline] pub fn set_PartOfCompoundDevice(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PartOfCompoundDevice(val) } }
+    #[inline] pub fn OverCurrentProtectionMode(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrentProtectionMode() } }
+    #[inline] pub fn set_OverCurrentProtectionMode(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrentProtectionMode(val) } }
+    #[inline] pub fn NoOverCurrentProtection(&self) -> USHORT { unsafe { self.c2rust_unnamed.NoOverCurrentProtection() } }
+    #[inline] pub fn set_NoOverCurrentProtection(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_NoOverCurrentProtection(val) } }
+    #[inline] pub fn Reserved1(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+}
+impl _USBPORT_HUB_20_CHARACTERISTICS {
+    #[inline] pub fn PowerControlMode(&self) -> USHORT { unsafe { self.c2rust_unnamed.PowerControlMode() } }
+    #[inline] pub fn set_PowerControlMode(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PowerControlMode(val) } }
+    #[inline] pub fn NoPowerSwitching(&self) -> USHORT { unsafe { self.c2rust_unnamed.NoPowerSwitching() } }
+    #[inline] pub fn set_NoPowerSwitching(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_NoPowerSwitching(val) } }
+    #[inline] pub fn PartOfCompoundDevice(&self) -> USHORT { unsafe { self.c2rust_unnamed.PartOfCompoundDevice() } }
+    #[inline] pub fn set_PartOfCompoundDevice(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PartOfCompoundDevice(val) } }
+    #[inline] pub fn OverCurrentProtectionMode(&self) -> USHORT { unsafe { self.c2rust_unnamed.OverCurrentProtectionMode() } }
+    #[inline] pub fn set_OverCurrentProtectionMode(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_OverCurrentProtectionMode(val) } }
+    #[inline] pub fn NoOverCurrentProtection(&self) -> USHORT { unsafe { self.c2rust_unnamed.NoOverCurrentProtection() } }
+    #[inline] pub fn set_NoOverCurrentProtection(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_NoOverCurrentProtection(val) } }
+    #[inline] pub fn TtThinkTime(&self) -> USHORT { unsafe { self.c2rust_unnamed.TtThinkTime() } }
+    #[inline] pub fn set_TtThinkTime(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_TtThinkTime(val) } }
+    #[inline] pub fn PortIndicatorsSupported(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortIndicatorsSupported() } }
+    #[inline] pub fn set_PortIndicatorsSupported(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortIndicatorsSupported(val) } }
+    #[inline] pub fn Reserved1(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+}
+impl _OHCI_TRANSFER_CONTROL {
+    #[inline] pub fn Reserved(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+    #[inline] pub fn BufferRounding(&self) -> ULONG { unsafe { self.c2rust_unnamed.BufferRounding() } }
+    #[inline] pub fn set_BufferRounding(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_BufferRounding(val) } }
+    #[inline] pub fn DirectionPID(&self) -> ULONG { unsafe { self.c2rust_unnamed.DirectionPID() } }
+    #[inline] pub fn set_DirectionPID(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DirectionPID(val) } }
+    #[inline] pub fn DelayInterrupt(&self) -> ULONG { unsafe { self.c2rust_unnamed.DelayInterrupt() } }
+    #[inline] pub fn set_DelayInterrupt(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DelayInterrupt(val) } }
+    #[inline] pub fn DataToggle(&self) -> ULONG { unsafe { self.c2rust_unnamed.DataToggle() } }
+    #[inline] pub fn set_DataToggle(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DataToggle(val) } }
+    #[inline] pub fn ErrorCount(&self) -> ULONG { unsafe { self.c2rust_unnamed.ErrorCount() } }
+    #[inline] pub fn set_ErrorCount(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ErrorCount(val) } }
+    #[inline] pub fn ConditionCode(&self) -> ULONG { unsafe { self.c2rust_unnamed.ConditionCode() } }
+    #[inline] pub fn set_ConditionCode(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ConditionCode(val) } }
+}
+impl _OHCI_ISO_TRANSFER_CONTROL {
+    #[inline] pub fn StartingFrame(&self) -> ULONG { unsafe { self.c2rust_unnamed.StartingFrame() } }
+    #[inline] pub fn set_StartingFrame(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_StartingFrame(val) } }
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn DelayInterrupt(&self) -> ULONG { unsafe { self.c2rust_unnamed.DelayInterrupt() } }
+    #[inline] pub fn set_DelayInterrupt(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DelayInterrupt(val) } }
+    #[inline] pub fn FrameCount(&self) -> ULONG { unsafe { self.c2rust_unnamed.FrameCount() } }
+    #[inline] pub fn set_FrameCount(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FrameCount(val) } }
+    #[inline] pub fn Reserved2(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+    #[inline] pub fn ConditionCode(&self) -> ULONG { unsafe { self.c2rust_unnamed.ConditionCode() } }
+    #[inline] pub fn set_ConditionCode(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ConditionCode(val) } }
+}
+impl _OHCI_ENDPOINT_CONTROL {
+    #[inline] pub fn FunctionAddress(&self) -> ULONG { unsafe { self.c2rust_unnamed.FunctionAddress() } }
+    #[inline] pub fn set_FunctionAddress(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FunctionAddress(val) } }
+    #[inline] pub fn EndpointNumber(&self) -> ULONG { unsafe { self.c2rust_unnamed.EndpointNumber() } }
+    #[inline] pub fn set_EndpointNumber(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_EndpointNumber(val) } }
+    #[inline] pub fn Direction(&self) -> ULONG { unsafe { self.c2rust_unnamed.Direction() } }
+    #[inline] pub fn set_Direction(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Direction(val) } }
+    #[inline] pub fn Speed(&self) -> ULONG { unsafe { self.c2rust_unnamed.Speed() } }
+    #[inline] pub fn set_Speed(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Speed(val) } }
+    #[inline] pub fn sKip(&self) -> ULONG { unsafe { self.c2rust_unnamed.sKip() } }
+    #[inline] pub fn set_sKip(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_sKip(val) } }
+    #[inline] pub fn Format(&self) -> ULONG { unsafe { self.c2rust_unnamed.Format() } }
+    #[inline] pub fn set_Format(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Format(val) } }
+    #[inline] pub fn MaximumPacketSize(&self) -> ULONG { unsafe { self.c2rust_unnamed.MaximumPacketSize() } }
+    #[inline] pub fn set_MaximumPacketSize(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_MaximumPacketSize(val) } }
+    #[inline] pub fn Reserved(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+}
+impl _OHCI_REG_CONTROL {
+    #[inline] pub fn ControlBulkServiceRatio(&self) -> ULONG { unsafe { self.c2rust_unnamed.ControlBulkServiceRatio() } }
+    #[inline] pub fn set_ControlBulkServiceRatio(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ControlBulkServiceRatio(val) } }
+    #[inline] pub fn PeriodicListEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.PeriodicListEnable() } }
+    #[inline] pub fn set_PeriodicListEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_PeriodicListEnable(val) } }
+    #[inline] pub fn IsochronousEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.IsochronousEnable() } }
+    #[inline] pub fn set_IsochronousEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_IsochronousEnable(val) } }
+    #[inline] pub fn ControlListEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.ControlListEnable() } }
+    #[inline] pub fn set_ControlListEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ControlListEnable(val) } }
+    #[inline] pub fn BulkListEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.BulkListEnable() } }
+    #[inline] pub fn set_BulkListEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_BulkListEnable(val) } }
+    #[inline] pub fn HostControllerFunctionalState(&self) -> ULONG { unsafe { self.c2rust_unnamed.HostControllerFunctionalState() } }
+    #[inline] pub fn set_HostControllerFunctionalState(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_HostControllerFunctionalState(val) } }
+    #[inline] pub fn InterruptRouting(&self) -> ULONG { unsafe { self.c2rust_unnamed.InterruptRouting() } }
+    #[inline] pub fn set_InterruptRouting(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_InterruptRouting(val) } }
+    #[inline] pub fn RemoteWakeupConnected(&self) -> ULONG { unsafe { self.c2rust_unnamed.RemoteWakeupConnected() } }
+    #[inline] pub fn set_RemoteWakeupConnected(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_RemoteWakeupConnected(val) } }
+    #[inline] pub fn RemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.RemoteWakeupEnable() } }
+    #[inline] pub fn set_RemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_RemoteWakeupEnable(val) } }
+    #[inline] pub fn Reserved(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+}
+impl _OHCI_REG_COMMAND_STATUS {
+    #[inline] pub fn HostControllerReset(&self) -> ULONG { unsafe { self.c2rust_unnamed.HostControllerReset() } }
+    #[inline] pub fn set_HostControllerReset(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_HostControllerReset(val) } }
+    #[inline] pub fn ControlListFilled(&self) -> ULONG { unsafe { self.c2rust_unnamed.ControlListFilled() } }
+    #[inline] pub fn set_ControlListFilled(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ControlListFilled(val) } }
+    #[inline] pub fn BulkListFilled(&self) -> ULONG { unsafe { self.c2rust_unnamed.BulkListFilled() } }
+    #[inline] pub fn set_BulkListFilled(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_BulkListFilled(val) } }
+    #[inline] pub fn OwnershipChangeRequest(&self) -> ULONG { unsafe { self.c2rust_unnamed.OwnershipChangeRequest() } }
+    #[inline] pub fn set_OwnershipChangeRequest(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OwnershipChangeRequest(val) } }
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn SchedulingOverrunCount(&self) -> ULONG { unsafe { self.c2rust_unnamed.SchedulingOverrunCount() } }
+    #[inline] pub fn set_SchedulingOverrunCount(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_SchedulingOverrunCount(val) } }
+    #[inline] pub fn Reserved2(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+}
+impl _OHCI_REG_INTERRUPT_STATUS {
+    #[inline] pub fn SchedulingOverrun(&self) -> ULONG { unsafe { self.c2rust_unnamed.SchedulingOverrun() } }
+    #[inline] pub fn set_SchedulingOverrun(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_SchedulingOverrun(val) } }
+    #[inline] pub fn WritebackDoneHead(&self) -> ULONG { unsafe { self.c2rust_unnamed.WritebackDoneHead() } }
+    #[inline] pub fn set_WritebackDoneHead(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_WritebackDoneHead(val) } }
+    #[inline] pub fn StartofFrame(&self) -> ULONG { unsafe { self.c2rust_unnamed.StartofFrame() } }
+    #[inline] pub fn set_StartofFrame(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_StartofFrame(val) } }
+    #[inline] pub fn ResumeDetected(&self) -> ULONG { unsafe { self.c2rust_unnamed.ResumeDetected() } }
+    #[inline] pub fn set_ResumeDetected(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ResumeDetected(val) } }
+    #[inline] pub fn UnrecoverableError(&self) -> ULONG { unsafe { self.c2rust_unnamed.UnrecoverableError() } }
+    #[inline] pub fn set_UnrecoverableError(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_UnrecoverableError(val) } }
+    #[inline] pub fn FrameNumberOverflow(&self) -> ULONG { unsafe { self.c2rust_unnamed.FrameNumberOverflow() } }
+    #[inline] pub fn set_FrameNumberOverflow(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FrameNumberOverflow(val) } }
+    #[inline] pub fn RootHubStatusChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.RootHubStatusChange() } }
+    #[inline] pub fn set_RootHubStatusChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_RootHubStatusChange(val) } }
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn OwnershipChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.OwnershipChange() } }
+    #[inline] pub fn set_OwnershipChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OwnershipChange(val) } }
+    #[inline] pub fn Reserved2(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved2() } }
+    #[inline] pub fn set_Reserved2(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved2(val) } }
+}
+impl _OHCI_REG_INTERRUPT_ENABLE_DISABLE {
+    #[inline] pub fn SchedulingOverrun(&self) -> ULONG { unsafe { self.c2rust_unnamed.SchedulingOverrun() } }
+    #[inline] pub fn set_SchedulingOverrun(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_SchedulingOverrun(val) } }
+    #[inline] pub fn WritebackDoneHead(&self) -> ULONG { unsafe { self.c2rust_unnamed.WritebackDoneHead() } }
+    #[inline] pub fn set_WritebackDoneHead(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_WritebackDoneHead(val) } }
+    #[inline] pub fn StartofFrame(&self) -> ULONG { unsafe { self.c2rust_unnamed.StartofFrame() } }
+    #[inline] pub fn set_StartofFrame(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_StartofFrame(val) } }
+    #[inline] pub fn ResumeDetected(&self) -> ULONG { unsafe { self.c2rust_unnamed.ResumeDetected() } }
+    #[inline] pub fn set_ResumeDetected(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_ResumeDetected(val) } }
+    #[inline] pub fn UnrecoverableError(&self) -> ULONG { unsafe { self.c2rust_unnamed.UnrecoverableError() } }
+    #[inline] pub fn set_UnrecoverableError(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_UnrecoverableError(val) } }
+    #[inline] pub fn FrameNumberOverflow(&self) -> ULONG { unsafe { self.c2rust_unnamed.FrameNumberOverflow() } }
+    #[inline] pub fn set_FrameNumberOverflow(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FrameNumberOverflow(val) } }
+    #[inline] pub fn RootHubStatusChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.RootHubStatusChange() } }
+    #[inline] pub fn set_RootHubStatusChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_RootHubStatusChange(val) } }
+    #[inline] pub fn Reserved1(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved1() } }
+    #[inline] pub fn set_Reserved1(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved1(val) } }
+    #[inline] pub fn OwnershipChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.OwnershipChange() } }
+    #[inline] pub fn set_OwnershipChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OwnershipChange(val) } }
+    #[inline] pub fn MasterInterruptEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.MasterInterruptEnable() } }
+    #[inline] pub fn set_MasterInterruptEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_MasterInterruptEnable(val) } }
+}
+impl _OHCI_REG_FRAME_INTERVAL {
+    #[inline] pub fn FrameInterval(&self) -> ULONG { unsafe { self.c2rust_unnamed.FrameInterval() } }
+    #[inline] pub fn set_FrameInterval(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FrameInterval(val) } }
+    #[inline] pub fn Reserved(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+    #[inline] pub fn FSLargestDataPacket(&self) -> ULONG { unsafe { self.c2rust_unnamed.FSLargestDataPacket() } }
+    #[inline] pub fn set_FSLargestDataPacket(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FSLargestDataPacket(val) } }
+    #[inline] pub fn FrameIntervalToggle(&self) -> ULONG { unsafe { self.c2rust_unnamed.FrameIntervalToggle() } }
+    #[inline] pub fn set_FrameIntervalToggle(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_FrameIntervalToggle(val) } }
+}
+impl _OHCI_REG_RH_DESCRIPTORA {
+    #[inline] pub fn NumberDownstreamPorts(&self) -> ULONG { unsafe { self.c2rust_unnamed.NumberDownstreamPorts() } }
+    #[inline] pub fn set_NumberDownstreamPorts(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_NumberDownstreamPorts(val) } }
+    #[inline] pub fn PowerSwitchingMode(&self) -> ULONG { unsafe { self.c2rust_unnamed.PowerSwitchingMode() } }
+    #[inline] pub fn set_PowerSwitchingMode(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_PowerSwitchingMode(val) } }
+    #[inline] pub fn NoPowerSwitching(&self) -> ULONG { unsafe { self.c2rust_unnamed.NoPowerSwitching() } }
+    #[inline] pub fn set_NoPowerSwitching(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_NoPowerSwitching(val) } }
+    #[inline] pub fn DeviceType(&self) -> ULONG { unsafe { self.c2rust_unnamed.DeviceType() } }
+    #[inline] pub fn set_DeviceType(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DeviceType(val) } }
+    #[inline] pub fn OverCurrentProtectionMode(&self) -> ULONG { unsafe { self.c2rust_unnamed.OverCurrentProtectionMode() } }
+    #[inline] pub fn set_OverCurrentProtectionMode(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OverCurrentProtectionMode(val) } }
+    #[inline] pub fn NoOverCurrentProtection(&self) -> ULONG { unsafe { self.c2rust_unnamed.NoOverCurrentProtection() } }
+    #[inline] pub fn set_NoOverCurrentProtection(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_NoOverCurrentProtection(val) } }
+    #[inline] pub fn Reserved(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved() } }
+    #[inline] pub fn set_Reserved(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved(val) } }
+    #[inline] pub fn PowerOnToPowerGoodTime(&self) -> ULONG { unsafe { self.c2rust_unnamed.PowerOnToPowerGoodTime() } }
+    #[inline] pub fn set_PowerOnToPowerGoodTime(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_PowerOnToPowerGoodTime(val) } }
+}
+impl _OHCI_REG_RH_STATUS {
+    #[inline] pub fn LocalPowerStatus(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.LocalPowerStatus() } }
+    #[inline] pub fn set_LocalPowerStatus(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_LocalPowerStatus(val) } }
+    #[inline] pub fn OverCurrentIndicator(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.OverCurrentIndicator() } }
+    #[inline] pub fn set_OverCurrentIndicator(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_OverCurrentIndicator(val) } }
+    #[inline] pub fn Reserved10(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.Reserved10() } }
+    #[inline] pub fn set_Reserved10(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_Reserved10(val) } }
+    #[inline] pub fn DeviceRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.DeviceRemoteWakeupEnable() } }
+    #[inline] pub fn set_DeviceRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_DeviceRemoteWakeupEnable(val) } }
+    #[inline] pub fn LocalPowerStatusChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.LocalPowerStatusChange() } }
+    #[inline] pub fn set_LocalPowerStatusChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_LocalPowerStatusChange(val) } }
+    #[inline] pub fn OverCurrentIndicatorChangeR(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.OverCurrentIndicatorChangeR() } }
+    #[inline] pub fn set_OverCurrentIndicatorChangeR(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_OverCurrentIndicatorChangeR(val) } }
+    #[inline] pub fn Reserved20(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed.Reserved20() } }
+    #[inline] pub fn set_Reserved20(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed.set_Reserved20(val) } }
+    #[inline] pub fn ClearGlobalPower(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.ClearGlobalPower() } }
+    #[inline] pub fn set_ClearGlobalPower(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_ClearGlobalPower(val) } }
+    #[inline] pub fn Reserved11(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.Reserved11() } }
+    #[inline] pub fn set_Reserved11(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_Reserved11(val) } }
+    #[inline] pub fn SetRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.SetRemoteWakeupEnable() } }
+    #[inline] pub fn set_SetRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_SetRemoteWakeupEnable(val) } }
+    #[inline] pub fn SetGlobalPower(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.SetGlobalPower() } }
+    #[inline] pub fn set_SetGlobalPower(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_SetGlobalPower(val) } }
+    #[inline] pub fn OverCurrentIndicatorChangeW(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.OverCurrentIndicatorChangeW() } }
+    #[inline] pub fn set_OverCurrentIndicatorChangeW(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_OverCurrentIndicatorChangeW(val) } }
+    #[inline] pub fn Reserved22(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.Reserved22() } }
+    #[inline] pub fn set_Reserved22(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_Reserved22(val) } }
+    #[inline] pub fn ClearRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.ClearRemoteWakeupEnable() } }
+    #[inline] pub fn set_ClearRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.c2rust_unnamed_1.set_ClearRemoteWakeupEnable(val) } }
+}
+impl _OHCI_REG_RH_STATUS__bindgen_ty_1 {
+    #[inline] pub fn LocalPowerStatus(&self) -> ULONG { unsafe { self.c2rust_unnamed.LocalPowerStatus() } }
+    #[inline] pub fn set_LocalPowerStatus(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_LocalPowerStatus(val) } }
+    #[inline] pub fn OverCurrentIndicator(&self) -> ULONG { unsafe { self.c2rust_unnamed.OverCurrentIndicator() } }
+    #[inline] pub fn set_OverCurrentIndicator(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OverCurrentIndicator(val) } }
+    #[inline] pub fn Reserved10(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved10() } }
+    #[inline] pub fn set_Reserved10(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved10(val) } }
+    #[inline] pub fn DeviceRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed.DeviceRemoteWakeupEnable() } }
+    #[inline] pub fn set_DeviceRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_DeviceRemoteWakeupEnable(val) } }
+    #[inline] pub fn LocalPowerStatusChange(&self) -> ULONG { unsafe { self.c2rust_unnamed.LocalPowerStatusChange() } }
+    #[inline] pub fn set_LocalPowerStatusChange(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_LocalPowerStatusChange(val) } }
+    #[inline] pub fn OverCurrentIndicatorChangeR(&self) -> ULONG { unsafe { self.c2rust_unnamed.OverCurrentIndicatorChangeR() } }
+    #[inline] pub fn set_OverCurrentIndicatorChangeR(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_OverCurrentIndicatorChangeR(val) } }
+    #[inline] pub fn Reserved20(&self) -> ULONG { unsafe { self.c2rust_unnamed.Reserved20() } }
+    #[inline] pub fn set_Reserved20(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed.set_Reserved20(val) } }
+    #[inline] pub fn ClearGlobalPower(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.ClearGlobalPower() } }
+    #[inline] pub fn set_ClearGlobalPower(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_ClearGlobalPower(val) } }
+    #[inline] pub fn Reserved11(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.Reserved11() } }
+    #[inline] pub fn set_Reserved11(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_Reserved11(val) } }
+    #[inline] pub fn SetRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.SetRemoteWakeupEnable() } }
+    #[inline] pub fn set_SetRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_SetRemoteWakeupEnable(val) } }
+    #[inline] pub fn SetGlobalPower(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.SetGlobalPower() } }
+    #[inline] pub fn set_SetGlobalPower(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_SetGlobalPower(val) } }
+    #[inline] pub fn OverCurrentIndicatorChangeW(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.OverCurrentIndicatorChangeW() } }
+    #[inline] pub fn set_OverCurrentIndicatorChangeW(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_OverCurrentIndicatorChangeW(val) } }
+    #[inline] pub fn Reserved22(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.Reserved22() } }
+    #[inline] pub fn set_Reserved22(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_Reserved22(val) } }
+    #[inline] pub fn ClearRemoteWakeupEnable(&self) -> ULONG { unsafe { self.c2rust_unnamed_1.ClearRemoteWakeupEnable() } }
+    #[inline] pub fn set_ClearRemoteWakeupEnable(&mut self, val: ULONG) { unsafe { self.c2rust_unnamed_1.set_ClearRemoteWakeupEnable(val) } }
+}
+impl _OHCI_REG_RH_PORT_STATUS {
+    #[inline] pub fn ConnectStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.ConnectStatusChange() } }
+    #[inline] pub fn set_ConnectStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_ConnectStatusChange(val) } }
+    #[inline] pub fn PortEnableStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortEnableStatusChange() } }
+    #[inline] pub fn set_PortEnableStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortEnableStatusChange(val) } }
+    #[inline] pub fn PortSuspendStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortSuspendStatusChange() } }
+    #[inline] pub fn set_PortSuspendStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortSuspendStatusChange(val) } }
+    #[inline] pub fn PortOverCurrentIndicatorChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortOverCurrentIndicatorChange() } }
+    #[inline] pub fn set_PortOverCurrentIndicatorChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortOverCurrentIndicatorChange(val) } }
+    #[inline] pub fn PortResetStatusChange(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortResetStatusChange() } }
+    #[inline] pub fn set_PortResetStatusChange(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortResetStatusChange(val) } }
+    #[inline] pub fn Reserved3(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved3() } }
+    #[inline] pub fn set_Reserved3(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved3(val) } }
+    #[inline] pub fn CurrentConnectStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.CurrentConnectStatus() } }
+    #[inline] pub fn set_CurrentConnectStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_CurrentConnectStatus(val) } }
+    #[inline] pub fn PortEnableStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.PortEnableStatus() } }
+    #[inline] pub fn set_PortEnableStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_PortEnableStatus(val) } }
+    #[inline] pub fn PortSuspendStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.PortSuspendStatus() } }
+    #[inline] pub fn set_PortSuspendStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_PortSuspendStatus(val) } }
+    #[inline] pub fn PortOverCurrentIndicator(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.PortOverCurrentIndicator() } }
+    #[inline] pub fn set_PortOverCurrentIndicator(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_PortOverCurrentIndicator(val) } }
+    #[inline] pub fn PortResetStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.PortResetStatus() } }
+    #[inline] pub fn set_PortResetStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_PortResetStatus(val) } }
+    #[inline] pub fn Reserved1r(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.Reserved1r() } }
+    #[inline] pub fn set_Reserved1r(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_Reserved1r(val) } }
+    #[inline] pub fn PortPowerStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.PortPowerStatus() } }
+    #[inline] pub fn set_PortPowerStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_PortPowerStatus(val) } }
+    #[inline] pub fn LowSpeedDeviceAttached(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.LowSpeedDeviceAttached() } }
+    #[inline] pub fn set_LowSpeedDeviceAttached(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_LowSpeedDeviceAttached(val) } }
+    #[inline] pub fn Reserved2r(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.Reserved2r() } }
+    #[inline] pub fn set_Reserved2r(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed.set_Reserved2r(val) } }
+    #[inline] pub fn ClearPortEnable(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.ClearPortEnable() } }
+    #[inline] pub fn set_ClearPortEnable(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_ClearPortEnable(val) } }
+    #[inline] pub fn SetPortEnable(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.SetPortEnable() } }
+    #[inline] pub fn set_SetPortEnable(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortEnable(val) } }
+    #[inline] pub fn SetPortSuspend(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.SetPortSuspend() } }
+    #[inline] pub fn set_SetPortSuspend(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortSuspend(val) } }
+    #[inline] pub fn ClearSuspendStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.ClearSuspendStatus() } }
+    #[inline] pub fn set_ClearSuspendStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_ClearSuspendStatus(val) } }
+    #[inline] pub fn SetPortReset(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.SetPortReset() } }
+    #[inline] pub fn set_SetPortReset(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortReset(val) } }
+    #[inline] pub fn Reserved1w(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.Reserved1w() } }
+    #[inline] pub fn set_Reserved1w(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_Reserved1w(val) } }
+    #[inline] pub fn SetPortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.SetPortPower() } }
+    #[inline] pub fn set_SetPortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortPower(val) } }
+    #[inline] pub fn ClearPortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.ClearPortPower() } }
+    #[inline] pub fn set_ClearPortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_ClearPortPower(val) } }
+    #[inline] pub fn Reserved2w(&self) -> USHORT { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.Reserved2w() } }
+    #[inline] pub fn set_Reserved2w(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.__bindgen_anon_1.c2rust_unnamed_1.set_Reserved2w(val) } }
+}
+impl _OHCI_REG_RH_PORT_STATUS__bindgen_ty_1 {
+    #[inline] pub fn CurrentConnectStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.CurrentConnectStatus() } }
+    #[inline] pub fn set_CurrentConnectStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_CurrentConnectStatus(val) } }
+    #[inline] pub fn PortEnableStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PortEnableStatus() } }
+    #[inline] pub fn set_PortEnableStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PortEnableStatus(val) } }
+    #[inline] pub fn PortSuspendStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PortSuspendStatus() } }
+    #[inline] pub fn set_PortSuspendStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PortSuspendStatus(val) } }
+    #[inline] pub fn PortOverCurrentIndicator(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PortOverCurrentIndicator() } }
+    #[inline] pub fn set_PortOverCurrentIndicator(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PortOverCurrentIndicator(val) } }
+    #[inline] pub fn PortResetStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PortResetStatus() } }
+    #[inline] pub fn set_PortResetStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PortResetStatus(val) } }
+    #[inline] pub fn Reserved1r(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.Reserved1r() } }
+    #[inline] pub fn set_Reserved1r(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_Reserved1r(val) } }
+    #[inline] pub fn PortPowerStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.PortPowerStatus() } }
+    #[inline] pub fn set_PortPowerStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_PortPowerStatus(val) } }
+    #[inline] pub fn LowSpeedDeviceAttached(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.LowSpeedDeviceAttached() } }
+    #[inline] pub fn set_LowSpeedDeviceAttached(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_LowSpeedDeviceAttached(val) } }
+    #[inline] pub fn Reserved2r(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed.Reserved2r() } }
+    #[inline] pub fn set_Reserved2r(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed.set_Reserved2r(val) } }
+    #[inline] pub fn ClearPortEnable(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.ClearPortEnable() } }
+    #[inline] pub fn set_ClearPortEnable(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_ClearPortEnable(val) } }
+    #[inline] pub fn SetPortEnable(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.SetPortEnable() } }
+    #[inline] pub fn set_SetPortEnable(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortEnable(val) } }
+    #[inline] pub fn SetPortSuspend(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.SetPortSuspend() } }
+    #[inline] pub fn set_SetPortSuspend(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortSuspend(val) } }
+    #[inline] pub fn ClearSuspendStatus(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.ClearSuspendStatus() } }
+    #[inline] pub fn set_ClearSuspendStatus(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_ClearSuspendStatus(val) } }
+    #[inline] pub fn SetPortReset(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.SetPortReset() } }
+    #[inline] pub fn set_SetPortReset(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortReset(val) } }
+    #[inline] pub fn Reserved1w(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.Reserved1w() } }
+    #[inline] pub fn set_Reserved1w(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_Reserved1w(val) } }
+    #[inline] pub fn SetPortPower(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.SetPortPower() } }
+    #[inline] pub fn set_SetPortPower(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_SetPortPower(val) } }
+    #[inline] pub fn ClearPortPower(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.ClearPortPower() } }
+    #[inline] pub fn set_ClearPortPower(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_ClearPortPower(val) } }
+    #[inline] pub fn Reserved2w(&self) -> USHORT { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.Reserved2w() } }
+    #[inline] pub fn set_Reserved2w(&mut self, val: USHORT) { unsafe { self.__bindgen_anon_1.c2rust_unnamed_1.set_Reserved2w(val) } }
+}
+impl _OHCI_REG_RH_PORT_STATUS__bindgen_ty_1__bindgen_ty_1 {
+    #[inline] pub fn CurrentConnectStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.CurrentConnectStatus() } }
+    #[inline] pub fn set_CurrentConnectStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_CurrentConnectStatus(val) } }
+    #[inline] pub fn PortEnableStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortEnableStatus() } }
+    #[inline] pub fn set_PortEnableStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortEnableStatus(val) } }
+    #[inline] pub fn PortSuspendStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortSuspendStatus() } }
+    #[inline] pub fn set_PortSuspendStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortSuspendStatus(val) } }
+    #[inline] pub fn PortOverCurrentIndicator(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortOverCurrentIndicator() } }
+    #[inline] pub fn set_PortOverCurrentIndicator(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortOverCurrentIndicator(val) } }
+    #[inline] pub fn PortResetStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortResetStatus() } }
+    #[inline] pub fn set_PortResetStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortResetStatus(val) } }
+    #[inline] pub fn Reserved1r(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved1r() } }
+    #[inline] pub fn set_Reserved1r(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved1r(val) } }
+    #[inline] pub fn PortPowerStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed.PortPowerStatus() } }
+    #[inline] pub fn set_PortPowerStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_PortPowerStatus(val) } }
+    #[inline] pub fn LowSpeedDeviceAttached(&self) -> USHORT { unsafe { self.c2rust_unnamed.LowSpeedDeviceAttached() } }
+    #[inline] pub fn set_LowSpeedDeviceAttached(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_LowSpeedDeviceAttached(val) } }
+    #[inline] pub fn Reserved2r(&self) -> USHORT { unsafe { self.c2rust_unnamed.Reserved2r() } }
+    #[inline] pub fn set_Reserved2r(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed.set_Reserved2r(val) } }
+    #[inline] pub fn ClearPortEnable(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.ClearPortEnable() } }
+    #[inline] pub fn set_ClearPortEnable(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_ClearPortEnable(val) } }
+    #[inline] pub fn SetPortEnable(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.SetPortEnable() } }
+    #[inline] pub fn set_SetPortEnable(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_SetPortEnable(val) } }
+    #[inline] pub fn SetPortSuspend(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.SetPortSuspend() } }
+    #[inline] pub fn set_SetPortSuspend(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_SetPortSuspend(val) } }
+    #[inline] pub fn ClearSuspendStatus(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.ClearSuspendStatus() } }
+    #[inline] pub fn set_ClearSuspendStatus(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_ClearSuspendStatus(val) } }
+    #[inline] pub fn SetPortReset(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.SetPortReset() } }
+    #[inline] pub fn set_SetPortReset(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_SetPortReset(val) } }
+    #[inline] pub fn Reserved1w(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.Reserved1w() } }
+    #[inline] pub fn set_Reserved1w(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_Reserved1w(val) } }
+    #[inline] pub fn SetPortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.SetPortPower() } }
+    #[inline] pub fn set_SetPortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_SetPortPower(val) } }
+    #[inline] pub fn ClearPortPower(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.ClearPortPower() } }
+    #[inline] pub fn set_ClearPortPower(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_ClearPortPower(val) } }
+    #[inline] pub fn Reserved2w(&self) -> USHORT { unsafe { self.c2rust_unnamed_1.Reserved2w() } }
+    #[inline] pub fn set_Reserved2w(&mut self, val: USHORT) { unsafe { self.c2rust_unnamed_1.set_Reserved2w(val) } }
+}

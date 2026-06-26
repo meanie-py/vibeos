@@ -100,14 +100,14 @@ pub static mut RegPacket: USBPORT_REGISTRATION_PACKET = USBPORT_REGISTRATION_PAC
 };
 
 static mut Index: [UCHAR; 8] = [
-    (ENDPOINT_INTERRUPT_1ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_2ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_4ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_8ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_16ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_32ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_32ms - 1 as ::core::ffi::c_int) as UCHAR,
-    (ENDPOINT_INTERRUPT_32ms - 1 as ::core::ffi::c_int) as UCHAR,
+    (ENDPOINT_INTERRUPT_1ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_2ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_4ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_8ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_16ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_32ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_32ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
+    (ENDPOINT_INTERRUPT_32ms - (1 as ::core::ffi::c_int as u32)) as UCHAR,
 ];
 
 static mut Balance: [UCHAR; 32] = [
@@ -225,7 +225,7 @@ pub unsafe extern "system" fn OHCI_InsertEndpointInSchedule(OhciEndpoint: POHCI_
     HeadED = (*OhciEndpoint).HeadED;
     HeadLink = core::ptr::addr_of_mut!((*HeadED).Link) as PLIST_ENTRY;
 
-    if IsListEmpty(HeadLink) != 0 {
+    if IsListEmpty(HeadLink) {
         InsertHeadList(HeadLink, core::ptr::addr_of_mut!((*ED).HcdEDLink));
 
         if (*HeadED).Type == OHCI_STATIC_ED_TYPE_CONTROL as ULONG
@@ -849,9 +849,9 @@ pub unsafe extern "system" fn OHCI_StartController(
         } else {
             HeadIndex = (ix.wrapping_sub(1) / 2) as UCHAR;
 
-            if !((HeadIndex as i32 >= (ENDPOINT_INTERRUPT_1ms - 1))
+            if !((HeadIndex as i32 >= ((ENDPOINT_INTERRUPT_1ms - 1) as i32))
                 && ((HeadIndex as i32)
-                    < (INTERRUPT_ENDPOINTs - ENDPOINT_INTERRUPT_32ms)))
+                    < ((INTERRUPT_ENDPOINTs - ENDPOINT_INTERRUPT_32ms) as i32)))
             {
                 DbgBreakPoint();
             }
@@ -937,7 +937,7 @@ pub unsafe extern "system" fn OHCI_StartController(
 
     /* OHCI_MAXIMUM_OVERHEAD is the maximum overhead per frame */
     FrameInterval.set_FSLargestDataPacket(
-        ((FrameInterval.FrameInterval() as i32 - OHCI_MAXIMUM_OVERHEAD) * 6 / 7) as ULONG,
+        ((FrameInterval.FrameInterval() as i32 - (OHCI_MAXIMUM_OVERHEAD as i32)) * 6 / 7) as ULONG,
     );
 
     (*OhciExtension).FrameInterval = FrameInterval;
@@ -1465,7 +1465,7 @@ pub unsafe extern "system" fn OHCI_AllocateTD(
 
     RtlSecureZeroMemory(
         core::ptr::addr_of_mut!((*TD).HwTD) as PVOID,
-        core::mem::size_of::<OHCI_HW_TRANSFER_DESCRIPTOR>() as SIZE_T,
+        ((core::mem::size_of::<OHCI_HW_TRANSFER_DESCRIPTOR>() as SIZE_T as u32) as _),
     );
 
     return TD;
@@ -1531,7 +1531,7 @@ unsafe fn OHCI_ControlTransfer(
     SetupTD = (*OhciEndpoint).HcdTailP;
     RtlSecureZeroMemory(
         core::ptr::addr_of_mut!((*SetupTD).HwTD) as PVOID,
-        core::mem::size_of::<OHCI_HW_TRANSFER_DESCRIPTOR>() as SIZE_T,
+        ((core::mem::size_of::<OHCI_HW_TRANSFER_DESCRIPTOR>() as SIZE_T as u32) as _),
     );
 
     (*SetupTD).Flags |= OHCI_HCD_TD_FLAG_PROCESSED as ULONG;
@@ -1541,7 +1541,7 @@ unsafe fn OHCI_ControlTransfer(
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*SetupTD).HwTD.c2rust_unnamed.SetupPacket) as PVOID,
-        core::ptr::addr_of!((*TransferParameters).c2rust_unnamed.SetupPacket) as PVOID,
+        core::ptr::addr_of!((*TransferParameters).SetupPacket) as PVOID,
         core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>() as SIZE_T,
     );
 
@@ -2075,7 +2075,7 @@ pub unsafe extern "system" fn OHCI_AbortTransfer(
         (*(*LastTD).OhciTransfer).NextTD = TD;
 
         (*LastTD).NextTDVa = TD as *mut _OHCI_HCD_TD;
-        (*LastTD).HwTD.c2rust_unnamed.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
+        (*LastTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
     }
 
     *CompletedLength = (*OhciTransfer).TransferLen as ULONG;
@@ -2206,7 +2206,7 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
     let mut IsResetOnHalt: BOOLEAN = 0;
 
     ED = (*OhciEndpoint).HcdED;
-    NextTdPA = (*ED).HwED.HeadPointer & OHCI_ED_HEAD_POINTER_MASK;
+    NextTdPA = ((((*ED).HwED.HeadPointer & (OHCI_ED_HEAD_POINTER_MASK as usize as usize) as u32)) as usize);
 
     if NextTdPA == 0 {
         OHCI_DumpHcdED(ED);
@@ -2270,10 +2270,10 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
                         if (*TD).Flags & OHCI_HCD_TD_FLAG_CONTROL_STATUS == 0
                             && !ControlStatusTD.is_null()
                         {
-                            PhysicalAddress = (*ControlStatusTD).PhysicalAddress;
-                            PhysicalAddress |= (*ED).HwED.HeadPointer & OHCI_ED_HEAD_POINTER_FLAGS_MASK;
+                            PhysicalAddress = ((*ControlStatusTD).PhysicalAddress as usize);
+                            PhysicalAddress |= ((((*ED).HwED.HeadPointer & (OHCI_ED_HEAD_POINTER_FLAGS_MASK as usize as usize) as u32)) as usize);
 
-                            (*ED).HwED.HeadPointer = PhysicalAddress;
+                            (*ED).HwED.HeadPointer = (PhysicalAddress as u32);
 
                             NextTD = (*OhciTransfer).ControlStatusTD;
                         } else {
@@ -2293,15 +2293,15 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
                                     }
                                 }
 
-                                PhysicalAddress = (*NextTD).PhysicalAddress;
-                                PhysicalAddress |= (*ED).HwED.HeadPointer & OHCI_ED_HEAD_POINTER_FLAGS_MASK;
+                                PhysicalAddress = ((*NextTD).PhysicalAddress as usize);
+                                PhysicalAddress |= ((((*ED).HwED.HeadPointer & (OHCI_ED_HEAD_POINTER_FLAGS_MASK as usize as usize) as u32)) as usize);
 
-                                (*ED).HwED.HeadPointer = PhysicalAddress;
+                                (*ED).HwED.HeadPointer = (PhysicalAddress as u32);
                             } else {
-                                PhysicalAddress = (*(*OhciTransfer).NextTD).PhysicalAddress;
-                                PhysicalAddress |= (*ED).HwED.HeadPointer & OHCI_ED_HEAD_POINTER_FLAGS_MASK;
+                                PhysicalAddress = ((*(*OhciTransfer).NextTD).PhysicalAddress as usize);
+                                PhysicalAddress |= ((((*ED).HwED.HeadPointer & (OHCI_ED_HEAD_POINTER_FLAGS_MASK as usize as usize) as u32)) as usize);
 
-                                (*ED).HwED.HeadPointer = PhysicalAddress;
+                                (*ED).HwED.HeadPointer = (PhysicalAddress as u32);
 
                                 NextTD = (*OhciTransfer).NextTD;
                             }
@@ -2342,7 +2342,7 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
 
     DoneList = core::ptr::addr_of_mut!((*OhciEndpoint).TDList);
 
-    while IsListEmpty(DoneList) == 0 {
+    while !IsListEmpty(DoneList) {
         TD = ((*DoneList).Flink as ULONG_PTR)
             .wrapping_sub(core::mem::offset_of!(OHCI_HCD_TD, DoneLink) as ULONG_PTR)
             as POHCI_HCD_TD;
@@ -2913,10 +2913,10 @@ pub unsafe extern "system" fn DriverEntry(
 
     RegPacket.MiniPortBusBandwidth = TOTAL_USB11_BUS_BANDWIDTH as ULONG;
 
-    RegPacket.MiniPortExtensionSize = core::mem::size_of::<OHCI_EXTENSION>() as SIZE_T;
-    RegPacket.MiniPortEndpointSize = core::mem::size_of::<OHCI_ENDPOINT>() as SIZE_T;
-    RegPacket.MiniPortTransferSize = core::mem::size_of::<OHCI_TRANSFER>() as SIZE_T;
-    RegPacket.MiniPortResourcesSize = core::mem::size_of::<OHCI_HC_RESOURCES>() as SIZE_T;
+    RegPacket.MiniPortExtensionSize = ((core::mem::size_of::<OHCI_EXTENSION>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortEndpointSize = ((core::mem::size_of::<OHCI_ENDPOINT>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortTransferSize = ((core::mem::size_of::<OHCI_TRANSFER>() as SIZE_T as u32) as _);
+    RegPacket.MiniPortResourcesSize = ((core::mem::size_of::<OHCI_HC_RESOURCES>() as SIZE_T as u32) as _);
 
     RegPacket.OpenEndpoint = Some(OHCI_OpenEndpoint);
     RegPacket.ReopenEndpoint = Some(OHCI_ReopenEndpoint);
@@ -2968,7 +2968,7 @@ pub unsafe extern "system" fn DriverEntry(
     RegPacket.PassThru = Some(OHCI_PassThru);
     RegPacket.FlushInterrupts = Some(OHCI_FlushInterrupts);
 
-    (*DriverObject).DriverUnload = Some(OHCI_Unload);
+    (*DriverObject).DriverUnload = core::mem::transmute(Some(OHCI_Unload as unsafe extern "system" fn(PDRIVER_OBJECT)));
 
     Status = USBPORT_RegisterUSBPortDriver(
         DriverObject,

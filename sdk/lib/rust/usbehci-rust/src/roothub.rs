@@ -433,7 +433,7 @@ pub unsafe extern "system" fn EHCI_RH_PortResetComplete(ehciExtension: PVOID, Co
         EhciExtension as PVOID,
         50,
         Port as PVOID,
-        core::mem::size_of::<u16>() as ULONG,
+        (core::mem::size_of::<u16>() as _),
         Some(EHCI_RH_FinishReset as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 }
@@ -480,7 +480,7 @@ pub unsafe extern "system" fn EHCI_RH_SetFeaturePortReset(
         EhciExtension as PVOID,
         50 as ULONG,
         core::ptr::addr_of_mut!(Port) as PVOID,
-        core::mem::size_of::<USHORT>() as ULONG,
+        (core::mem::size_of::<USHORT>() as _),
         Some(EHCI_RH_PortResetComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 
@@ -695,7 +695,7 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortSuspend(
         EhciExtension as PVOID,
         50,
         core::ptr::addr_of_mut!(Port) as PVOID,
-        core::mem::size_of::<USHORT>() as ULONG,
+        (core::mem::size_of::<USHORT>() as _),
         Some(EHCI_RH_PortResumeComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 

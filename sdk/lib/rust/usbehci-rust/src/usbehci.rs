@@ -699,7 +699,7 @@ pub unsafe extern "system" fn EHCI_OpenBulkOrControlEndpoint(
 
     ix = 0;
     while ix < TdCount {
-        RtlZeroMemory(TdVA as PVOID, core::mem::size_of::<EHCI_HCD_TD>() as SIZE_T);
+        RtlZeroMemory(TdVA as PVOID, core::mem::size_of::<EHCI_HCD_TD>() as _);
 
         // ASSERT((TdPA & ~LINK_POINTER_MASK) == 0);
 
@@ -4401,10 +4401,10 @@ pub unsafe extern "system" fn DriverEntry(
 
     RegPacket.MiniPortBusBandwidth = TOTAL_USB20_BUS_BANDWIDTH as ULONG;
 
-    RegPacket.MiniPortExtensionSize = core::mem::size_of::<EHCI_EXTENSION>() as ULONG;
-    RegPacket.MiniPortEndpointSize = core::mem::size_of::<EHCI_ENDPOINT>() as ULONG;
-    RegPacket.MiniPortTransferSize = core::mem::size_of::<EHCI_TRANSFER>() as ULONG;
-    RegPacket.MiniPortResourcesSize = core::mem::size_of::<EHCI_HC_RESOURCES>() as ULONG;
+    RegPacket.MiniPortExtensionSize = (core::mem::size_of::<EHCI_EXTENSION>() as _);
+    RegPacket.MiniPortEndpointSize = (core::mem::size_of::<EHCI_ENDPOINT>() as _);
+    RegPacket.MiniPortTransferSize = (core::mem::size_of::<EHCI_TRANSFER>() as _);
+    RegPacket.MiniPortResourcesSize = (core::mem::size_of::<EHCI_HC_RESOURCES>() as _);
 
     RegPacket.OpenEndpoint = Some(EHCI_OpenEndpoint);
     RegPacket.ReopenEndpoint = Some(EHCI_ReopenEndpoint);

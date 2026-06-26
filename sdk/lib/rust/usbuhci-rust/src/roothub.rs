@@ -16,7 +16,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-(no declarations to translate; `NDEBUG` is a function-like/empty object macro skipped)
+// (no declarations to translate; `NDEBUG` is a function-like/empty object macro skipped)
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciRHGetRootHubData(uhciExtension: PVOID, rootHubData: PVOID) {
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn UhciRHPortResetComplete(uhciExtension: PVOID, pPor
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
     let mut ix: ULONG;
     let BaseRegister: PUHCI_HW_REGISTERS;
-    let PortControlRegister: PUSHORT;
+    let mut PortControlRegister: PUSHORT;
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
     let Port: USHORT;
 
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn UhciRHSetFeaturePortResetWorker(
         UhciExtension as PVOID,
         10 as ULONG,
         pPort as PVOID,
-        core::mem::size_of::<u16>() as SIZE_T,
+        ((core::mem::size_of::<u16>() as SIZE_T as u32) as _),
         Some(UhciRHPortResetComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 }
@@ -356,7 +356,7 @@ pub unsafe extern "system" fn UhciRHPortEnable(
 
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
     let BaseRegister: PUHCI_HW_REGISTERS;
-    let PortControlRegister: PUSHORT;
+    let mut PortControlRegister: PUSHORT;
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
     if Port == 0 {
@@ -492,7 +492,7 @@ pub unsafe extern "system" fn UhciRHClearFeaturePortEnableChange(
 
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
     let mut BaseRegister: PUHCI_HW_REGISTERS;
-    let PortControlRegister: PUSHORT;
+    let mut PortControlRegister: PUSHORT;
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
     if Port == 0 {
@@ -528,7 +528,7 @@ pub unsafe extern "system" fn UhciRHClearFeaturePortConnectChange(
 
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
     let mut BaseRegister: PUHCI_HW_REGISTERS;
-    let PortControlRegister: PUSHORT;
+    let mut PortControlRegister: PUSHORT;
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
     if Port == 0 {

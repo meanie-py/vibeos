@@ -3,6 +3,7 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments, improper_ctypes, improper_ctypes_definitions)]
 #![allow(clippy::all)]
+#![allow(dangerous_implicit_autorefs)]
 
 //! usbehci.sys — USB 2.0 EHCI host-controller miniport. Faithful C→Rust cohab (rustconv
 //! opus + c2rust-anchored). 3 .c (debug/roothub/usbehci) -> 3 modules. Registers a

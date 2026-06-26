@@ -84,7 +84,7 @@ pub unsafe extern "system" fn OHCI_RH_GetRootHubData(ohciExtension: PVOID, rootH
 
     /* Waiting time (in 2 ms intervals) */
     PowerOnToPowerGoodTime = DescriptorA.c2rust_unnamed.PowerOnToPowerGoodTime() as UCHAR;
-    if PowerOnToPowerGoodTime as i32 <= OHCI_MINIMAL_POTPGT {
+    if PowerOnToPowerGoodTime as i32 <= (OHCI_MINIMAL_POTPGT as i32) {
         PowerOnToPowerGoodTime = OHCI_MINIMAL_POTPGT as UCHAR;
     }
     (*RootHubData).PowerOnToPowerGood = PowerOnToPowerGoodTime as ULONG;
@@ -170,8 +170,8 @@ pub unsafe extern "system" fn OHCI_RH_GetPortStatus(
     while ix < 10 {
         OhciPortStatus.AsULONG = READ_REGISTER_ULONG(PortStatusReg as *mut ULONG);
 
-        Reserved = (OhciPortStatus.c2rust_unnamed.c2rust_unnamed.c2rust_unnamed.Reserved1r() as i32
-            | OhciPortStatus.c2rust_unnamed.c2rust_unnamed.c2rust_unnamed.Reserved2r() as i32
+        Reserved = (OhciPortStatus.Reserved1r() as i32
+            | OhciPortStatus.Reserved2r() as i32
             | OhciPortStatus.c2rust_unnamed.Reserved3() as i32) as ULONG;
 
         if OhciPortStatus.AsULONG != 0 && Reserved == 0 {

@@ -40,7 +40,6 @@ use ntkrnl_sys::ddk::{UCHAR, ULONG, USHORT};
 #[inline] pub unsafe fn WRITE_REGISTER_USHORT(r: *mut USHORT, v: USHORT) { core::ptr::write_volatile(r, v) }
 
 // ---- KeQuerySystemTime — wdm.h macro reading KI_USER_SHARED_DATA.SystemTime (i386 only). ----
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEGER) {
     extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
@@ -60,3 +59,23 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 unsafe extern "C" fn DPRINT_IMPL(_fmt: *const ::core::ffi::c_char) {}
 #[no_mangle]
 unsafe extern "C" fn DPRINT_UHCI(_fmt: *const ::core::ffi::c_char) {}
+
+// ---- uhci-specific shims ----
+pub const MAXUSHORT: ::core::ffi::c_int = 0xFFFF;
+#[inline] pub fn ASSERT(_cond: i32) {} // NT_ASSERT — no-op in retail (NDEBUG)
+#[inline] pub unsafe fn SharedSystemTimePtr() -> *mut ULONG64 {
+    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ULONG64
+}
+// InterlockedExchange — atomic swap intrinsic (no ntoskrnl export); inline, no symbol.
+#[inline] pub unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
+    (*(target as *const core::sync::atomic::AtomicI32)).swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+// ---- USB_CONTROLLER_FLAVOR enum members (bindgen names them `_USB_CONTROLLER_FLAVOR_*`) ----
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_Piix4 as UHCI_Piix4;
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA as UHCI_VIA;
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x01 as UHCI_VIA_x01;
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x02 as UHCI_VIA_x02;
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x03 as UHCI_VIA_x03;
+pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x04 as UHCI_VIA_x04;

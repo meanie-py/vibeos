@@ -61,7 +61,6 @@ use ntkrnl_sys::ddk::{UCHAR, ULONG, USHORT};
 // ---- KeQuerySystemTime — wdm.h macro reading KI_USER_SHARED_DATA.SystemTime. ntkrnl-sys
 // only provides it for non-x86 (i386 expects a real export, which we don't have here), so
 // supply the faithful inline on i386. SharedSystemTime (below) is the same source pointer. ----
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEGER) {
     extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
