@@ -11,19 +11,25 @@ arbitrating by hand in #swarm ("taking the host" / "host free").
 Two flock-based locks, both under a shared `/tmp` dir so every worktree sees them and the
 kernel auto-releases them when the holding process dies (no stale-lock cleanup needed):
 
-- **`cpuheavy`** — a counting LEASE (default 1 permit). Held for the duration of a cold
-  build / `repro verify`, and by TCG (arm64) boots. Accelerated x86 boots do NOT take it
-  (they keep the per-arch QEMU cap, so cross-arch boot parallelism is preserved). At the
-  default 1 permit this serializes {build, build} and {build, TCG-boot} and {TCG-boot,
-  TCG-boot} — every CPU-starvation/thrash class we hit.
-- **`builddir:<canonical-path>`** — exclusive per-build-dir lock. Redundant while
-  `cpuheavy` is a 1-permit mutex, but makes raising `VIBEOS_HOST_CPU_LEASES` corruption-safe
-  (two concurrent builds then can't land on the same dir).
+- **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4), used
+  WRITER-TAKES-ALL so we fix starvation *without* over-serializing boots:
+    * a cold **build** / `repro verify` grabs **ALL** permits → exclusive host (a build wants
+      every core via `ninja -j`; sharing with a TCG boot starves the boot into a false
+      `HANG_TIMEOUT`, the documented incident);
+    * a **TCG boot** grabs **1** permit → up to K TCG boots run in parallel (a ×3 gate keeps
+      its boot parallelism) but a build still excludes them all.
+  A boot takes a permit iff its EFFECTIVE accelerator is `tcg` (CPU-bound emulation). KVM /
+  WHPX boots are hardware-accelerated → they take none and stay on the per-arch QEMU cap.
+  (Note: with WHPX shelved, today's windows-host x86 boots ARE tcg, so they're covered too —
+  the physical CPU is shared between WSL and the Windows-host QEMU.)
+- **`builddir:<canonical-path>`** — exclusive per-build-dir lock. Cheap insurance that two
+  builds never land on the same dir (the determinism-verify-vs-gate corruption class), held
+  *under* the cpuheavy grant.
 
-Acquire order is always `cpuheavy` → `builddir` (cpuheavy outermost) so there is no lock-
-ordering deadlock. Timeouts fail SOFT (warn + proceed unlocked) rather than wedge a build
-forever — a generous default ceiling means hitting it implies a stuck holder, not real
-contention.
+Acquire order is always `cpuheavy` → `builddir`, and a build grabs the K permits IN ORDER
+(0,1,…) so two builds can't deadlock. Timeouts fail SOFT (warn + proceed unlocked) rather
+than wedge a build forever — a generous default ceiling means hitting it implies a stuck
+holder, not real contention.
 """
 
 from __future__ import annotations
@@ -40,9 +46,9 @@ from pathlib import Path
 
 # Shared with the qemu slot locks (vm.py LOCK_DIR) so `reap.sh`/`ps` live in one tree.
 HOSTLOCK_DIR = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host"))
-# Default 1 = full serialize (matches the manual "one heavy thing at a time"). Raise on a
-# beefy host to allow N concurrent CPU-heavy ops; the builddir lock keeps that safe.
-DEFAULT_CPU_LEASES = max(1, int(os.environ.get("VIBEOS_HOST_CPU_LEASES", "1")))
+# Pool size = max concurrent TCG boots (a build grabs ALL of them → exclusive). 4 suits a
+# ~32-core box (≈4×4 vCPU boots leaves headroom); raise/lower via the env.
+DEFAULT_CPU_LEASES = max(1, int(os.environ.get("VIBEOS_HOST_CPU_LEASES", "4")))
 # Generous ceiling: a real cold build + queue is minutes; hitting an hour = a stuck holder.
 ACQUIRE_TIMEOUT = float(os.environ.get("VIBEOS_HOST_LOCK_TIMEOUT", "3600"))
 _POLL = 0.5
@@ -138,6 +144,49 @@ def acquire_cpu_lease(
     return _acquire_one(_cpu_lease_files(leases), timeout, _self_meta(kind, **extra))
 
 
+def acquire_cpu_exclusive(
+    kind: str,
+    *,
+    leases: int = DEFAULT_CPU_LEASES,
+    timeout: float = ACQUIRE_TIMEOUT,
+    **extra: object,
+) -> list[int] | None:
+    """Grab ALL `leases` CPU permits (a build → exclusive host). Permits are taken IN ORDER
+    (0,1,…) so two concurrent builds can't deadlock. Returns the list of held fds, or None on
+    timeout (releasing whatever it had partially acquired)."""
+    meta = _self_meta(kind, exclusive=True, **extra)
+    deadline = time.monotonic() + timeout
+    held: list[int] = []
+    HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
+    announced = False
+    for p in _cpu_lease_files(leases):
+        while True:
+            fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                os.close(fd)
+                if time.monotonic() >= deadline:
+                    for h in held:
+                        release(h)
+                    return None
+                if not announced:
+                    print(f"[hostlock] waiting for exclusive host ({kind})...")
+                    announced = True
+                time.sleep(_POLL)
+                continue
+            _write_meta(fd, meta)
+            held.append(fd)
+            break
+    return held
+
+
+def release_all(fds: list[int] | None) -> None:
+    """Release every fd from an exclusive grant."""
+    for fd in fds or []:
+        release(fd)
+
+
 def acquire_build_dir(
     build_dir: str | Path, *, timeout: float = ACQUIRE_TIMEOUT, **extra: object
 ) -> int | None:
@@ -166,6 +215,38 @@ def cpu_lease(kind: str, **kw: object) -> Iterator[int | None]:
         yield fd
     finally:
         release(fd)
+
+
+@contextmanager
+def cpu_exclusive(kind: str, **kw: object) -> Iterator[list[int] | None]:
+    """Context manager: grab the WHOLE CPU pool (a build → exclusive host). No-op when the
+    broker is off; warn + proceed UNLOCKED on timeout."""
+    if not enabled():
+        yield None
+        return
+    fds = acquire_cpu_exclusive(kind, **kw)  # type: ignore[arg-type]
+    if fds is None:
+        print(
+            f"[hostlock] WARNING: exclusive-host timeout ({kind}) — proceeding UNLOCKED "
+            "(a holder looks stuck; check `vibeos-cli host-status`)",
+            file=sys.stderr,
+        )
+    try:
+        yield fds
+    finally:
+        release_all(fds)
+
+
+@contextmanager
+def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[None]:
+    """The build front-door grant: exclusive CPU host (excludes all boots + other builds)
+    AND the per-build-dir lock, acquired cpuheavy→builddir. Use around a cold build /
+    `repro verify`. No-op when the broker is disabled."""
+    if not enabled():
+        yield None
+        return
+    with cpu_exclusive(f"build:{arch}", **kw), build_dir_lock(build_dir, arch=arch):
+        yield None
 
 
 @contextmanager
@@ -262,11 +343,18 @@ def render_status(st: dict) -> str:
     held_cpu = [e for e in st["cpuheavy"] if e["held"]]
     if not held_cpu:
         lines.append("  cpuheavy : FREE — no cold build / TCG boot running")
-    for e in held_cpu:
-        h = e["holder"]
-        dead = "" if e["holder_alive"] else "  ⚠STALE(holder gone)"
-        kind = str(h.get("kind", "?"))
-        lines.append(f"  cpuheavy : {kind:<14} pid={h.get('pid', '?')}{dead}  {h.get('cwd', '')}")
+    else:
+        # Group permits by holder pid so an exclusive build (holds ALL K) shows one line.
+        by_pid: dict = {}
+        for e in held_cpu:
+            by_pid.setdefault(e["holder"].get("pid"), []).append(e)
+        for pid, entries in by_pid.items():
+            h = entries[0]["holder"]
+            kind = str(h.get("kind", "?"))
+            n = len(entries)
+            tag = "EXCLUSIVE" if h.get("exclusive") else f"{n} permit{'s' if n > 1 else ''}"
+            dead = "" if entries[0]["holder_alive"] else "  ⚠STALE(holder gone)"
+            lines.append(f"  cpuheavy : {kind:<14} pid={pid} ({tag}){dead}  {h.get('cwd', '')}")
     for e in (e for e in st["builddir"] if e["held"]):
         h = e["holder"]
         lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")

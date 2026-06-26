@@ -1096,8 +1096,55 @@ def test_hostlock_disabled_is_noop(tmp_path, monkeypatch):
     assert hl_mod.enabled() is False
     with hl_mod.cpu_lease("build:i386", leases=1) as fd:
         assert fd is None  # context manager is a no-op when disabled
+    with hl_mod.cpu_exclusive("build:i386") as fds:
+        assert fds is None
     with hl_mod.build_dir_lock(tmp_path / "build-i386") as fd:
         assert fd is None
+    with hl_mod.build_lock(tmp_path / "build-i386", "i386"):
+        pass  # no-op grant, must not raise
+
+
+def test_hostlock_exclusive_build_excludes_boots(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=4, timeout=0.0)
+    assert fds is not None and len(fds) == 4  # a build grabs the WHOLE pool
+    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.3) is None  # boots excluded
+    hl_mod.release_all(fds)
+    b = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.3)
+    assert b is not None  # freed → a boot runs
+    hl_mod.release(b)
+
+
+def test_hostlock_boots_parallelize_but_block_a_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    # pool of 2: two TCG boots run in parallel...
+    b1 = hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.0)
+    b2 = hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.0)
+    assert b1 is not None and b2 is not None
+    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.2) is None  # pool full
+    # ...but a build (needs ALL permits) can't start while any boot holds one
+    assert hl_mod.acquire_cpu_exclusive("build:i386", leases=2, timeout=0.3) is None
+    hl_mod.release(b1)
+    hl_mod.release(b2)
+    fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=2, timeout=0.3)
+    assert fds is not None and len(fds) == 2  # boots gone → build goes exclusive
+    hl_mod.release_all(fds)
+
+
+def test_hostlock_build_lock_cm_excludes_boot(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    bd = tmp_path / "build-i386"
+    bd.mkdir()
+    k = hl_mod.DEFAULT_CPU_LEASES
+    with hl_mod.build_lock(bd, "i386"):
+        # the build holds the exclusive host → a boot can't get a permit
+        assert hl_mod.acquire_cpu_lease("boot:arm64", leases=k, timeout=0.2) is None
+    b = hl_mod.acquire_cpu_lease("boot:arm64", leases=k, timeout=0.2)
+    assert b is not None  # released when the cm exited
+    hl_mod.release(b)
 
 
 def test_hostlock_cpu_lease_cm_acquires_and_releases(tmp_path, monkeypatch):
