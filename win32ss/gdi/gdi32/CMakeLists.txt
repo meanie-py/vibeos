@@ -15,11 +15,11 @@ if(ARCH STREQUAL "i386")
 endif()
 
 list(APPEND SOURCE
-    main/dllmain.c
+    # main/dllmain.c — replaced by Rust (gdi32-rust/src/main/dllmain.rs); cohab via libgdi32_rust.a
     misc/heap.c
     misc/gdientry.c
     misc/historic.c
-    misc/misc.c
+    # misc/misc.c — replaced by Rust (gdi32-rust/src/misc/misc.rs); cohab via libgdi32_rust.a
     misc/wingl.c
     objects/arc.c
     objects/bitmap.c
@@ -31,7 +31,7 @@ list(APPEND SOURCE
     objects/eng.c
     objects/enhmfile.c
     objects/font.c
-    objects/gdiobj.c
+    # objects/gdiobj.c — replaced by Rust (gdi32-rust/src/objects/gdiobj.rs); cohab via libgdi32_rust.a
     objects/icm.c
     # objects/linedda.c — replaced by Rust (gdi32-rust/src/objects/linedda.rs); cohab via libgdi32_rust.a
     objects/metafile.c

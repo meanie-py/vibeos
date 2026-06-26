@@ -91,7 +91,28 @@ post-boot refinement.
 
 | Wave | Commit | i386 | amd64 | arm64 |
 |------|--------|------|-------|-------|
-| 0 (linedda) | _pending_ | build ✓ (cohab relink clean) / smoke: known-flake under host contention, re-run pending | _pending_ | _pending_ |
+| 0 (linedda) | `0c811db111a` | build+boot ✓ (81s/73s quiet) | (gate) | (gate) |
+| 1a (dllmain+misc+gdiobj) | _pending_ | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
+
+### Wave 1a notes (substrate)
+3 files via parallel opus agents against `~/vibeos-rust-staging/gdi32-wave1a/CONTRACT.md`, integrated centrally:
+- **misc.rs** (29 fns) — the handle-table substrate root + `GdiHandleTable`/`GdiSharedHandleTable`/
+  `CurrentProcessId`/`GDI_BatchLimit` globals (`#[no_mangle] pub static mut`), escapes, batch-limit,
+  language pack. **gdihelp.rs** — the gdi32p.h FORCEINLINE helpers (`GdiAllocBatchCommand`,
+  `GdiGetDcAttr`, `GdiGetRgnAttr`) + `GDI_HANDLE_*` macros + `NtCurrentTeb`, `pub(crate)`.
+- **dllmain.rs** (4 fns) — DllMain/GdiProcessSetup + `gbLpk`/`SetStockObjects`/`GdiDevCaps`/
+  `GdiHandleCache`/`semLocal` globals.
+- **gdiobj.rs** (7 fns) — `stock_objects[]` + GetStockObject/GetObjectType/GetObject(A/W)/DeleteObject.
+
+Integration fixes (440→0): the big root was **E0659 glob ambiguity** (`crate::types::*` vs
+`win32k_sys::win32k::*` both export `BOOL`/`INT`/`DWORD`/… ) → dropped the `crate::types` glob in
+the files that glob win32k_sys (lean on win32k_sys for scalars, like user32-rust). Then: win32k_sys
+`FALSE`/`TRUE` are bindgen `u32` but `BOOL` is `i32` → shadowed with `BOOL`-typed locals in gdiobj.rs;
+`GdiBCDelObj` doubly-defined (gdihelp alias + win32k_sys enum_alias) → qualified the use. Link fix:
+`METADC_ExtEscape` is plain cdecl in gdi32p.h (`_METADC_ExtEscape`, not `@24`) → moved its extern
+decl from the `extern "system"` block to `extern "C"`. Decorations verified: `_DllMain@12`,
+`_GetStockObject@4`, `_DeleteObject@4`, `_GdiValidateHandle@4`, cdecl `_GdiGetHandleUserData`,
+fastcall `@GdiGetLDC@4`; globals as data syms.
 
 Notes: Wave-0 i386 build relinked gdi32.dll clean with the Rust `LineDDA`; first i386 smoke
 hit the **documented kernel-space winlogon/explorer-handoff race (BUGCHECK 0x1E @ ntoskrnl

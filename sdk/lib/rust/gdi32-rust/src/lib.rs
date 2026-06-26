@@ -12,11 +12,22 @@
 //! win32k via NtGdi* syscalls (the win32ksys importlib) or queue a GdiAllocBatchCommand.
 //! See docs/engineering/gdi32-translation-audit.md for the per-wave plan.
 
-// Foundation: minimal Win32 type aliases (grows as waves land; will gain an ntwrapper
-// NtGdi* surface + internal PEB/handle-table substrate at Wave 1a, mirroring user32-rust).
+// Foundation: minimal Win32 type aliases (grows as waves land).
 pub mod types;
 
-// objects/ — GDI object & drawing bodies. Wave 0 leaf: linedda.rs (pure algorithm).
+// Wave 1a substrate: the shared gdi32p.h FORCEINLINE helpers (GdiAllocBatchCommand,
+// GdiGetDcAttr, GdiGetRgnAttr) + the GDI_HANDLE_* macros + NtCurrentTeb. Called by
+// misc/objects bodies; not exported.
+pub mod gdihelp;
+
+// main/ — DLL entry. Wave 1a: dllmain (DllMain/GdiProcessSetup, gbLpk global).
+pub mod main;
+
+// misc/ — client substrate. Wave 1a: misc (handle-table primitives + GdiHandleTable/
+// CurrentProcessId/GDI_BatchLimit globals, escapes, batch-limit, language pack).
+pub mod misc;
+
+// objects/ — GDI object & drawing bodies. Wave 0: linedda. Wave 1a: gdiobj.
 pub mod objects;
 
 #[panic_handler]
