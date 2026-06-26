@@ -1,0 +1,18 @@
+# samsrv-sys — SAM RPC marshalled types (SAMPR_*) + Samr* client stubs for the
+# SAM substrate (samsrv S0). bindgen-generated (generate_bindings.sh) from the
+# widl-generated sam_c.h (build-<arch>/dll/win32/samlib/sam_c.h) in its native
+# rpc.h/windows.h context — kept separate from lsasrv-sys to avoid the
+# windows.h/ole2.h vs NDK/ntlsa header-world collision. Consumed by lsasrv-rust
+# (authpackage.c's LsapLogonUser/LsapAddSamGroups SAM bridge) and, later, by
+# samsrv-rust. Allowlisted to SAMPR_/Samr/SamIFree_. Per-arch (pointer widths +
+# RPC string layout differ). no_std.
+
+[package]
+name = "samsrv-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

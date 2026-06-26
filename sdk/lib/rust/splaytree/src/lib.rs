@@ -132,7 +132,14 @@ unsafe fn swap_splay_links(mut link_a: *mut SplayLinks, mut link_b: *mut SplayLi
         }
     }
 
-    fixup_child_links(link_a, false, left_b);
+    // When A was B's parent, the special case above already wired A in under B
+    // (and repointed A's old parent at B). A's recorded parent (tb.parent) is
+    // A's *own* address, so letting fixup relink A into "its parent" runs
+    // set_left/right(A, A) and self-corrupts A's child pointer (orphaning A's
+    // real child). Treat A as not-needing-a-parent-relink in that case. (Bug:
+    // two-children delete where the predecessor is n's direct left child.)
+    let a_was_parent_of_b = tb.parent == link_a;
+    fixup_child_links(link_a, a_was_parent_of_b, left_b);
     fixup_child_links(link_b, root_a, left_a);
 
     // A was root: B becomes root (parent = self)
@@ -758,6 +765,134 @@ mod tests {
             assert_eq!(order_after.len(), 7);
             // In-order traversal should be preserved
             assert_eq!(order_before, order_after);
+        }
+    }
+
+    #[test]
+    fn test_delete_two_children() {
+        // The two-children delete path (subtree_predecessor + swap_splay_links)
+        // was previously untested. Build a balanced BST (in-order A..G) and
+        // delete the root D, which has two children.
+        //         D
+        //       /   \
+        //      B     F
+        //     / \   / \
+        //    A  C  E   G
+        let mut tree = TestTree::new();
+        let d = tree.alloc_node();
+        unsafe {
+            let b = tree.insert_left(d);
+            let a = tree.insert_left(b);
+            let c = tree.insert_right(b);
+            let f = tree.insert_right(d);
+            let e = tree.insert_left(f);
+            let g = tree.insert_right(f);
+
+            assert_eq!(inorder(d), vec![a, b, c, d, e, f, g]);
+
+            let new_root = delete(d);
+            verify_links(new_root);
+            // D is gone; the in-order of the remaining nodes is preserved.
+            assert_eq!(inorder(new_root), vec![a, b, c, e, f, g]);
+        }
+    }
+
+    #[test]
+    fn test_delete_two_children_pred_is_left_child() {
+        // Two-children delete where the predecessor is n's DIRECT left child
+        // (the "A was parent of B" branch of swap_splay_links). In-order A B D F.
+        //       D
+        //      / \
+        //     B   F
+        //    /
+        //   A
+        let mut tree = TestTree::new();
+        let d = tree.alloc_node();
+        unsafe {
+            let b = tree.insert_left(d);
+            let a = tree.insert_left(b);
+            let f = tree.insert_right(d);
+            assert_eq!(inorder(d), vec![a, b, d, f]);
+
+            let new_root = delete(d);
+            verify_links(new_root);
+            assert_eq!(inorder(new_root), vec![a, b, f]);
+        }
+    }
+
+    #[test]
+    fn random_insert_delete_model() {
+        // Drive splay/delete as a keyed BST against a BTreeMap reference, with a
+        // full link + in-order check after EVERY operation. Nodes are never
+        // freed/reused, so any corruption is a genuine link bug (not memory
+        // reuse). This is the first test to exercise the two-children delete
+        // path (swap_splay_links) under random structures.
+        use std::collections::BTreeMap;
+        use std::collections::HashMap;
+
+        // SplitMix64 — deterministic, dependency-free.
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            }
+        }
+
+        let mut tree = TestTree::new();
+        let mut rng = Rng(0x5EED);
+        let mut model: BTreeMap<u32, *mut SplayLinks> = BTreeMap::new();
+        let mut keyof: HashMap<usize, u32> = HashMap::new();
+        let mut root: *mut SplayLinks = core::ptr::null_mut();
+
+        unsafe {
+            for step in 0..4000usize {
+                let k = (rng.next() % 64) as u32;
+                if rng.next() & 1 == 0 {
+                    // insert if absent
+                    if model.contains_key(&k) {
+                        continue;
+                    }
+                    let node = tree.alloc_node(); // parent = self (root marker)
+                    keyof.insert(node as usize, k);
+                    if root.is_null() {
+                        root = node;
+                    } else {
+                        let mut cur = root;
+                        loop {
+                            let ck = keyof[&(cur as usize)];
+                            if k < ck {
+                                if left(cur).is_null() {
+                                    (*cur).left_child = node;
+                                    (*node).parent = cur;
+                                    break;
+                                }
+                                cur = left(cur);
+                            } else {
+                                if right(cur).is_null() {
+                                    (*cur).right_child = node;
+                                    (*node).parent = cur;
+                                    break;
+                                }
+                                cur = right(cur);
+                            }
+                        }
+                        root = splay(node);
+                    }
+                    model.insert(k, node);
+                } else if let Some(&node) = model.get(&k) {
+                    root = delete(node);
+                    model.remove(&k);
+                }
+
+                verify_links(root);
+                let got: Vec<u32> = inorder(root).iter().map(|&n| keyof[&(n as usize)]).collect();
+                let want: Vec<u32> = model.keys().copied().collect();
+                assert_eq!(got, want, "mismatch after step {step} (key {k})");
+            }
         }
     }
 }

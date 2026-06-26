@@ -38,6 +38,19 @@ from pathlib import Path
 # Functions where ud2 is expected (unreachable panic/abort paths)
 EXPECTED_UD2 = {
     "unwrap_unchecked",
+    # `core::hint::unreachable_unchecked` — the intrinsic whose entire body IS
+    # the `ud2` (reaching it is UB by contract). It is the callee of the
+    # already-trusted `unwrap_unchecked`: `Option::unwrap_unchecked` tail-calls
+    # `unreachable_unchecked` on the `None` arm. Normally it inlines to nothing,
+    # but with `-C debug-assertions` it gains a `check_language_ub` +
+    # `precondition_check` wrapper, so LLVM keeps an out-of-line copy (plus a
+    # `.llvm.<hash>` CGU-local clone). A cnt-rust CGU partition shift surfaced
+    # those copies into the linked image as standalone symbols — same mechanism
+    # as `NeverShortCircuit`/`copy_from_slice_impl` below. Verified i386: all
+    # callers are `Option::unwrap_unchecked` monomorphizations (avltable
+    # RtlAvlTable types); no kernel function tail-calls it. Unreachable-by-
+    # construction, NOT a captures(none) miscompile.
+    "unreachable_unchecked",
     "panic_cold",
     "panic_cold_display",
     "panic_nounwind_cold",

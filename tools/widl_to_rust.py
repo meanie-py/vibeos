@@ -282,6 +282,24 @@ VIEW_SCALAR = {
     "LONGLONG": "u64",
     "ULONGLONG": "u64",
     "DWORD64": "u64",
+    # Raw C spellings — widl-generated headers emit these (e.g. SAMPR_LOGON_HOURS
+    # `unsigned short UnitsPerWeek`), not the SDK typedefs. Whitespace-normalized.
+    "char": "u8",
+    "signed char": "u8",
+    "unsigned char": "u8",
+    "short": "u16",
+    "short int": "u16",
+    "unsigned short": "u16",
+    "unsigned short int": "u16",
+    "int": "u32",
+    "unsigned": "u32",
+    "unsigned int": "u32",
+    "long": "u32",
+    "long int": "u32",
+    "unsigned long": "u32",
+    "unsigned long int": "u32",
+    "long long": "u64",
+    "unsigned long long": "u64",
 }
 
 
@@ -308,10 +326,14 @@ def synth_view_from_header(type_name: str, header: str, fname: str):
         line = line.strip()
         if not line:
             continue
-        mm = re.match(r"([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*(\[[^\]]*\])?$", line)
+        if "*" in line:
+            break  # pointer field — conformant tail (e.g. PUCHAR LogonHours); leading scalar header ends here
+        # Greedy type capture: field name is the last identifier, the C type is
+        # everything before it (may be multi-word, e.g. `unsigned short`).
+        mm = re.match(r"(.+?)\s+([A-Za-z_]\w*)\s*(\[[^\]]*\])?$", line)
         if not mm:
             fail(f"{fname}: ExprEval view field unparseable {line!r}")
-        ctype, fld, arr = mm.group(1), mm.group(2), mm.group(3)
+        ctype, fld, arr = re.sub(r"\s+", " ", mm.group(1).strip()), mm.group(2), mm.group(3)
         if arr:
             break  # conformant/array tail — leading scalar header ends here
         rty = VIEW_SCALAR.get(ctype)
@@ -405,8 +427,52 @@ def translate_expr_stmt(s: str, fname: str):
     fail(f"{fname}: unhandled ExprEval statement {s!r}")
 
 
-def translate_rhs(e: str, fname: str):
+def _strip_outer_parens(e: str) -> str:
+    """Strip a fully-enclosing balanced paren pair (repeatedly)."""
     e = e.strip()
+    while e.startswith("(") and e.endswith(")"):
+        depth = 0
+        wraps = True
+        for i, ch in enumerate(e):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and i != len(e) - 1:
+                    wraps = False
+                    break
+        if wraps:
+            e = e[1:-1].strip()
+        else:
+            break
+    return e
+
+
+def _split_top_op(e: str, ops: str):
+    """(index, op) of the LAST top-level (paren-depth 0) binary operator in `ops`,
+    skipping a leading-unary occurrence (depth-0 op at the very start, e.g. the
+    `*` of `*pS->X`). None if no such operator."""
+    depth = 0
+    found = None
+    for i, ch in enumerate(e):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif depth == 0 and ch in ops and e[:i].strip():
+            # don't mistake the `-` of a `->` member-access arrow for subtraction
+            if ch == "-" and i + 1 < len(e) and e[i + 1] == ">":
+                continue
+            found = (i, ch)
+    return found
+
+
+def translate_rhs(e: str, fname: str):
+    # All sub-expressions are normalized to u32 so mixed-width field arithmetic
+    # (e.g. a u16 UnitsPerWeek count) can't type-mismatch; the result is cast to
+    # usize at the MaxCount site. Precedence-correct: split at the lowest-binding
+    # top-level operator first (additive, then multiplicative).
+    e = _strip_outer_parens(e)
     # ternary:  pS->X ? *pS->X : 0   /  pS->X ? <a> : <b>
     m = re.match(r"(.+?)\s*\?\s*(.+?)\s*:\s*(.+)$", e)
     if m:
@@ -419,22 +485,26 @@ def translate_rhs(e: str, fname: str):
             f"if !(*ps).{cm.group(1)}.is_null() {{ {translate_rhs(a, fname)} }} "
             f"else {{ {translate_rhs(b, fname)} }}"
         )
-    # X + N
-    m = re.match(r"(.+?)\s*\+\s*(\w+)$", e)
-    if m:
-        return f"({translate_rhs(m.group(1).strip(), fname)}).wrapping_add({int(m.group(2), 0)})"
-    # X - N
-    m = re.match(r"(.+?)\s*-\s*(\w+)$", e)
-    if m:
-        return f"({translate_rhs(m.group(1).strip(), fname)}).wrapping_sub({int(m.group(2), 0)})"
+    # additive (lowest precedence): last top-level + or -
+    op = _split_top_op(e, "+-")
+    if op:
+        i, o = op
+        fn = "wrapping_add" if o == "+" else "wrapping_sub"
+        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1:], fname)})"
+    # multiplicative: last top-level * or /
+    op = _split_top_op(e, "*/")
+    if op:
+        i, o = op
+        fn = "wrapping_mul" if o == "*" else "wrapping_div"
+        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1:], fname)})"
     # *pS->FIELD
     m = re.match(r"\*\s*pS->(\w+)$", e)
     if m:
-        return f"*(*ps).{m.group(1)}"
+        return f"(*(*ps).{m.group(1)} as u32)"
     # pS->FIELD
     m = re.match(r"pS->(\w+)$", e)
     if m:
-        return f"(*ps).{m.group(1)}"
+        return f"((*ps).{m.group(1)} as u32)"
     # integer literal
     if re.match(r"^(0x[0-9a-fA-F]+|\d+)$", e):
         return f"{int(e, 0)}u32"

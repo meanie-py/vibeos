@@ -21,6 +21,7 @@ pub mod nonclient;
 pub mod paint;
 pub mod prop;
 pub mod rect;
+pub mod spy;
 pub mod text;
 pub mod window;
 pub mod winpos;

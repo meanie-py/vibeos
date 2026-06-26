@@ -1,32 +1,37 @@
 
-remove_definitions(-D_WIN32_WINNT=0x502)
-add_definitions(-D_WIN32_WINNT=0x600)
-
-add_definitions(-DDEBUG_MODE)
 include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 
-list(APPEND SOURCE
-    descriptor.c
-    fdo.c
-    function.c
-    misc.c
-    pdo.c
-    usbccgp.c)
+# The usbccgp .c bodies are replaced by Rust (usbccgp-rust). .c files kept on disk (never-delete).
+# Bar: link-clean x3 (NOT boot-loaded in smoke -- boots from CD/ramdisk, not USB).
+set(USBCCGP_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(USBCCGP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbccgp-target")
+set(USBCCGP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbccgp_rust.a")
+if(ARCH STREQUAL "i386")
+    set(USBCCGP_RUST_TARGET "i686-pc-windows-gnu")
+    set(USBCCGP_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(USBCCGP_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(USBCCGP_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(USBCCGP_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(USBCCGP_RUST_RUSTFLAGS "")
+endif()
+file(GLOB_RECURSE USBCCGP_RUST_SRCS ${USBCCGP_RUST_WORKSPACE_DIR}/usbccgp-rust/src/*.rs)
+add_custom_command(
+    OUTPUT ${USBCCGP_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${USBCCGP_RUST_TARGET_DIR} RUSTFLAGS=${USBCCGP_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        cargo build --release --target ${USBCCGP_RUST_TARGET} -p usbccgp-rust --manifest-path ${USBCCGP_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${USBCCGP_RUST_TARGET_DIR}/${USBCCGP_RUST_TARGET}/release/libusbccgp_rust.a ${USBCCGP_RUST_LIB}
+    DEPENDS ${USBCCGP_RUST_SRCS} ${USBCCGP_RUST_WORKSPACE_DIR}/usbccgp-rust/Cargo.toml
+    WORKING_DIRECTORY ${USBCCGP_RUST_WORKSPACE_DIR}
+    COMMENT "Building usbccgp-rust (${USBCCGP_RUST_TARGET})" VERBATIM)
+add_custom_target(rust_usbccgp DEPENDS ${USBCCGP_RUST_LIB})
 
-list(APPEND PCH_SKIP_SOURCE
-    guid.c)
-
-add_library(usbccgp MODULE
-    ${SOURCE}
-    ${PCH_SKIP_SOURCE}
-    usbccgp.rc)
-
-target_compile_definitions(usbccgp
-    # HACK: Disabled until USB Stack is reinvestigated.
-    PRIVATE NO_KERNEL_LIST_ENTRY_CHECKS)
-
-target_link_libraries(usbccgp ${PSEH_LIB})
+add_library(usbccgp MODULE rust_cohab_stub.c usbccgp.rc)
 set_module_type(usbccgp kernelmodedriver)
+add_dependencies(usbccgp rust_usbccgp)
+target_link_libraries(usbccgp ${USBCCGP_RUST_LIB} ${PSEH_LIB})
 add_importlibs(usbccgp ntoskrnl hal usbd)
-add_pch(usbccgp usbccgp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET usbccgp DESTINATION reactos/system32/drivers NO_CAB FOR all)

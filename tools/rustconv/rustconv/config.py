@@ -135,6 +135,12 @@ SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
 KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
+USBSTOR_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbstor"
+USBCCGP_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbccgp"
+USBHUB_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbhub"
+USBEHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbehci"
+USBOHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbohci"
+USBUHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbuhci"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -808,6 +814,113 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # usbstor.sys — USB mass-storage class driver (drivers/usb/usbstor, ~3.9K LOC, 9 .c:
+    # descriptor/disk/error/fdo/misc/pdo/queue/scsi/usbstor + guid). Bridges the USB stack
+    # (URB/USBDI) to the SCSI/disk class — adjacent to the already-Rust disk/classpnp/scsiport
+    # storage lane. kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/usbd, links sptilib).
+    # Private structs (CBW/CSW/IRP_CONTEXT/FDO+PDO device extensions/
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8) in usbstor.h. NOT boot-loaded in smoke
+    # (boots from CD/ramdisk, not USB) -> link-clean x3 bar.
+    "usbstor": Target(
+        name="usbstor",
+        source_dir=USBSTOR_DIR,
+        output_crate=RUST_DIR / "usbstor-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbccgp.sys — USB composite-device (generic parent) class driver (drivers/usb/usbccgp,
+    # ~3.6K LOC, 7 .c: descriptor/fdo/function/misc/pdo/usbccgp + guid). Splits a composite USB
+    # device into per-interface child PDOs. kernelmodedriver MODULE, no spec (imports ntoskrnl/
+    # hal/usbd). Private structs in usbccgp.h (pulls hubbusif/usbbusif/usb100/usbdlib). Vista
+    # (_WIN32_WINNT=0x600). NOT boot-loaded in smoke -> link-clean x3 bar. USB-only (no SCSI/SRB).
+    "usbccgp": Target(
+        name="usbccgp",
+        source_dir=USBCCGP_DIR,
+        output_crate=RUST_DIR / "usbccgp-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbhub.sys — USB hub class driver (drivers/usb/usbhub, ~10.4K LOC, 6 .c: debug/guid/ioctl/
+    # pnp/power/usbhub). Enumerates/powers/resets downstream ports, bridges to the USB miniport
+    # (usbmport.h) + WMI (wmilib). kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/wmilib/
+    # usbd). Many private structs in usbhub.h (USBHUB_FDO_EXTENSION/PORT_PDO_EXTENSION + contexts;
+    # pulls usb/usbioctl/hubbusif/usbbusif/usbdlib/ks/usbport/usbmport). NOT boot-loaded in smoke
+    # -> link-clean x3 bar. The heaviest USB leaf; do after usbccgp.
+    "usbhub": Target(
+        name="usbhub",
+        source_dir=USBHUB_DIR,
+        output_crate=RUST_DIR / "usbhub-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbehci.sys — USB 2.0 EHCI host-controller miniport (drivers/usb/usbehci, ~4.5K LOC,
+    # 3 .c: debug/roothub/usbehci + guid). Registers a USBPORT_REGISTRATION_PACKET with usbport
+    # (usbmport.h); drives EHCI hardware registers/queue-heads/TDs (hardware.h). kernelmodedriver
+    # MODULE, no spec (imports usbport/usbd/hal/ntoskrnl). NOT boot-loaded in smoke -> link-clean
+    # x3 bar. First of the 3 host-controller miniports.
+    "usbehci": Target(
+        name="usbehci",
+        source_dir=USBEHCI_DIR,
+        output_crate=RUST_DIR / "usbehci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbohci.sys — USB 1.1 OHCI host-controller miniport (drivers/usb/usbohci, ~3.2K LOC,
+    # 2 .c: roothub/usbohci + guid). Same usbport-miniport shape as usbehci; OHCI EDs/TDs
+    # (hardware.h). kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbohci": Target(
+        name="usbohci",
+        source_dir=USBOHCI_DIR,
+        output_crate=RUST_DIR / "usbohci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbuhci.sys — USB 1.1 UHCI host-controller miniport (drivers/usb/usbuhci, ~3.3K LOC,
+    # 2 .c: roothub/usbuhci + guid). Same usbport-miniport shape; UHCI QHs/TDs (hardware.h).
+    # kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbuhci": Target(
+        name="usbuhci",
+        source_dir=USBUHCI_DIR,
+        output_crate=RUST_DIR / "usbuhci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1201,6 +1314,18 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["fltmgr"]
     if "/drivers/crypto/ksecdd" in posix:
         return TARGETS["ksecdd"]
+    if "/drivers/usb/usbstor" in posix:
+        return TARGETS["usbstor"]
+    if "/drivers/usb/usbccgp" in posix:
+        return TARGETS["usbccgp"]
+    if "/drivers/usb/usbhub" in posix:
+        return TARGETS["usbhub"]
+    if "/drivers/usb/usbehci" in posix:
+        return TARGETS["usbehci"]
+    if "/drivers/usb/usbohci" in posix:
+        return TARGETS["usbohci"]
+    if "/drivers/usb/usbuhci" in posix:
+        return TARGETS["usbuhci"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

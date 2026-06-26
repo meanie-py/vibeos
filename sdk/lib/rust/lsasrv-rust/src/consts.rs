@@ -125,6 +125,12 @@ pub const SECRET_ALL_ACCESS: UINT = STANDARD_RIGHTS_REQUIRED  |  3;
 pub const SECRET_READ: UINT = STANDARD_RIGHTS_READ  |  2;
 pub const SECRET_WRITE: UINT = STANDARD_RIGHTS_WRITE  |  1;
 pub const SECRET_EXECUTE: UINT = STANDARD_RIGHTS_EXECUTE;
+// ACCOUNT_* adjust masks (ntsam.h) + POLICY_AUDIT_LOG_ADMIN (ntlsa.h), verified
+// against sdk/include headers.
+pub const ACCOUNT_ADJUST_PRIVILEGES: UINT = 2;
+pub const ACCOUNT_ADJUST_QUOTAS: UINT = 4;
+pub const ACCOUNT_ADJUST_SYSTEM_ACCESS: UINT = 8;
+pub const POLICY_AUDIT_LOG_ADMIN: UINT = 512;
 
 // ---- database.c internal #defines (lsasrv.h) ----
 pub const LSAP_DB_SIGNATURE: u32 = 0x12345678;
