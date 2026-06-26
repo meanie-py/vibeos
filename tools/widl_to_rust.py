@@ -327,7 +327,8 @@ def synth_view_from_header(type_name: str, header: str, fname: str):
         if not line:
             continue
         if "*" in line:
-            break  # pointer field — conformant tail (e.g. PUCHAR LogonHours); leading scalar header ends here
+            # pointer field — conformant tail (e.g. PUCHAR LogonHours); scalar header ends here
+            break
         # Greedy type capture: field name is the last identifier, the C type is
         # everything before it (may be multi-word, e.g. `unsigned short`).
         mm = re.match(r"(.+?)\s+([A-Za-z_]\w*)\s*(\[[^\]]*\])?$", line)
@@ -490,13 +491,13 @@ def translate_rhs(e: str, fname: str):
     if op:
         i, o = op
         fn = "wrapping_add" if o == "+" else "wrapping_sub"
-        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1:], fname)})"
+        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1 :], fname)})"
     # multiplicative: last top-level * or /
     op = _split_top_op(e, "*/")
     if op:
         i, o = op
         fn = "wrapping_mul" if o == "*" else "wrapping_div"
-        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1:], fname)})"
+        return f"({translate_rhs(e[:i], fname)}).{fn}({translate_rhs(e[i + 1 :], fname)})"
     # *pS->FIELD
     m = re.match(r"\*\s*pS->(\w+)$", e)
     if m:
