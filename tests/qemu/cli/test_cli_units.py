@@ -1046,3 +1046,80 @@ def test_backend_rewrite_accel_would_break_arm64():
     out = be_mod.rewrite_accel(arm64, "tcg")
     assert "cortex-a72" not in out  # the model loss we avoid by NOT calling it
     assert out == ["-M", "virt", "-accel", "tcg"]
+
+
+# --- host broker: cross-worktree CPU-heavy locks ---------------------------
+from . import hostlock as hl_mod  # noqa: E402
+
+
+def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    fd1 = hl_mod.acquire_cpu_lease("build:i386", leases=1, timeout=0.0)
+    assert fd1 is not None
+    # 1 permit held → a second CPU-heavy op (e.g. a TCG boot) is serialized
+    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=1, timeout=0.3) is None
+    hl_mod.release(fd1)
+    fd3 = hl_mod.acquire_cpu_lease("build:amd64", leases=1, timeout=0.5)
+    assert fd3 is not None  # freed on release
+    hl_mod.release(fd3)
+
+
+def test_hostlock_cpu_lease_pool_of_two(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    a = hl_mod.acquire_cpu_lease("x", leases=2, timeout=0.0)
+    b = hl_mod.acquire_cpu_lease("y", leases=2, timeout=0.0)
+    assert a is not None and b is not None  # both permits available
+    assert hl_mod.acquire_cpu_lease("z", leases=2, timeout=0.3) is None  # pool exhausted
+    hl_mod.release(a)
+    hl_mod.release(b)
+
+
+def test_hostlock_build_dir_same_blocks_different_ok(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    d1 = tmp_path / "build-amd64"
+    d2 = tmp_path / "build-arm64"
+    d1.mkdir()
+    d2.mkdir()
+    f1 = hl_mod.acquire_build_dir(d1, timeout=0.0)
+    assert f1 is not None
+    assert hl_mod.acquire_build_dir(d1, timeout=0.3) is None  # same dir → corruption guard
+    f2 = hl_mod.acquire_build_dir(d2, timeout=0.0)
+    assert f2 is not None  # a different dir is independent
+    hl_mod.release(f1)
+    hl_mod.release(f2)
+
+
+def test_hostlock_disabled_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
+    assert hl_mod.enabled() is False
+    with hl_mod.cpu_lease("build:i386", leases=1) as fd:
+        assert fd is None  # context manager is a no-op when disabled
+    with hl_mod.build_dir_lock(tmp_path / "build-i386") as fd:
+        assert fd is None
+
+
+def test_hostlock_cpu_lease_cm_acquires_and_releases(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    with hl_mod.cpu_lease("build:i386", leases=1) as fd:
+        assert fd is not None
+        assert hl_mod.acquire_cpu_lease("other", leases=1, timeout=0.2) is None  # held
+    fd2 = hl_mod.acquire_cpu_lease("after", leases=1, timeout=0.2)
+    assert fd2 is not None  # released when the cm exited
+    hl_mod.release(fd2)
+
+
+def test_hostlock_status_reports_live_holder(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    fd = hl_mod.acquire_cpu_lease("build:i386", leases=1, timeout=0.0)
+    st = hl_mod.status()
+    assert st["cpu_leases_held"] == 1
+    held = [e for e in st["cpuheavy"] if e["held"]]
+    assert len(held) == 1
+    assert held[0]["holder"]["kind"] == "build:i386"
+    assert held[0]["holder_alive"] is True  # this very process holds it
+    hl_mod.release(fd)
+    assert hl_mod.status()["cpu_leases_held"] == 0
