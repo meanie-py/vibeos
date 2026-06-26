@@ -435,3 +435,244 @@ mod tests {
         assert_eq!(large_integer_subtract(i64::MIN, 1), i64::MAX); // wrapping
     }
 }
+
+// ============================================================================
+// Model-based randomized tests — each operation cross-checked against an
+// independent native oracle (i128 / u64 / u128). Complements the hand-written
+// `tests` above with broad random coverage of the edge cases the RTL semantics
+// hinge on: wrapping arithmetic, signed/unsigned remainder asymmetry, shift
+// count masking, and the 128-bit magic-divide multiply (verified against u128).
+// Deterministic SplitMix64 PRNG — no external dependency.
+// ============================================================================
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+        fn i64(&mut self) -> i64 {
+            self.next() as i64
+        }
+        fn i32(&mut self) -> i32 {
+            self.next() as i32
+        }
+        fn u32(&mut self) -> u32 {
+            self.next() as u32
+        }
+    }
+
+    const ITERS: usize = 20_000;
+
+    #[test]
+    fn convert_widening() {
+        let mut r = Rng(1);
+        for _ in 0..ITERS {
+            let s = r.i32();
+            assert_eq!(convert_long_to_large_integer(s), s as i64);
+            let u = r.u32();
+            assert_eq!(convert_ulong_to_large_integer(u), u as i64);
+            assert!(convert_ulong_to_large_integer(u) >= 0, "ulong zero-extends");
+        }
+    }
+
+    #[test]
+    fn multiplies_vs_widening() {
+        let mut r = Rng(2);
+        for _ in 0..ITERS {
+            let (a, b) = (r.i32(), r.i32());
+            assert_eq!(enlarged_integer_multiply(a, b), a as i64 * b as i64);
+            let (ua, ub) = (r.u32(), r.u32());
+            assert_eq!(enlarged_unsigned_multiply(ua, ub) as u64, ua as u64 * ub as u64);
+            let (big, m) = (r.i64(), r.i32());
+            assert_eq!(extended_integer_multiply(big, m), (big as i128 * m as i128) as i64);
+        }
+    }
+
+    #[test]
+    fn unsigned_divide_reconstructs() {
+        let mut r = Rng(3);
+        for _ in 0..ITERS {
+            let divisor = r.u32() | 1; // non-zero
+            let q_target = r.u32();
+            let rem_in = r.u32() % divisor;
+            let dividend = q_target as u64 * divisor as u64 + rem_in as u64;
+            let mut rem: u32 = 0;
+            assert_eq!(enlarged_unsigned_divide(dividend, divisor, &mut rem), q_target);
+            assert_eq!(rem, rem_in);
+            // null remainder pointer path still returns the quotient
+            assert_eq!(
+                enlarged_unsigned_divide(dividend, divisor, core::ptr::null_mut()),
+                q_target
+            );
+        }
+    }
+
+    #[test]
+    fn extended_divide_signed_quotient_unsigned_rem() {
+        let mut r = Rng(4);
+        for _ in 0..ITERS {
+            let dividend = r.i64();
+            let divisor = r.u32() | 1;
+            let mut rem: u32 = 0;
+            let q = extended_large_integer_divide(dividend, divisor, &mut rem);
+            assert_eq!(q, dividend / divisor as i64); // signed quotient
+            assert_eq!(rem, (dividend as u64 % divisor as u64) as u32); // unsigned rem
+        }
+    }
+
+    #[test]
+    fn add_sub_negate_wrapping() {
+        let mut r = Rng(5);
+        for _ in 0..ITERS {
+            let (a, b) = (r.i64(), r.i64());
+            assert_eq!(large_integer_add(a, b), (a as i128 + b as i128) as i64);
+            assert_eq!(large_integer_subtract(a, b), (a as i128 - b as i128) as i64);
+            assert_eq!(large_integer_negate(a), (-(a as i128)) as i64);
+        }
+    }
+
+    #[test]
+    fn signed_divide_reconstructs() {
+        let mut r = Rng(6);
+        for _ in 0..ITERS {
+            let dividend = r.i64();
+            let mut divisor = r.i64();
+            if divisor == 0 {
+                divisor = 1;
+            }
+            if dividend == i64::MIN && divisor == -1 {
+                continue; // the one overflowing signed division
+            }
+            let mut rem: i64 = 0;
+            let q = large_integer_divide(dividend, divisor, &mut rem);
+            assert_eq!(q, dividend / divisor);
+            assert_eq!(rem, dividend % divisor);
+            assert_eq!(q.wrapping_mul(divisor).wrapping_add(rem), dividend);
+        }
+    }
+
+    #[test]
+    fn shifts_vs_independent_oracle() {
+        let mut r = Rng(7);
+        for _ in 0..ITERS {
+            let v = r.i64();
+            let sc = r.i32() as i8; // full i8 range, incl negative (rem_euclid masking)
+            let s = (sc as i32).rem_euclid(64) as u32;
+            assert_eq!(large_integer_shift_left(v, sc), (v as u64).wrapping_shl(s) as i64);
+            assert_eq!(large_integer_shift_right(v, sc), (v as i128 >> s) as i64);
+        }
+    }
+
+    #[test]
+    fn arithmetic_shift_matches_right_below_32() {
+        let mut r = Rng(8);
+        for _ in 0..ITERS {
+            let v = r.i64();
+            let sc = (r.u32() % 32) as i8; // 0..=31 → plain arithmetic right shift
+            assert_eq!(large_integer_arithmetic_shift(v, sc), v >> sc as u32);
+        }
+    }
+
+    #[test]
+    fn arithmetic_shift_high_mode() {
+        // For 32..=63 the C code emulates the i386 two-register SAR: the high
+        // dword collapses to its sign bit and the low dword is the old high
+        // dword shifted (x86 masks the count to 5 bits). Lock that behavior in.
+        let mut r = Rng(9);
+        for _ in 0..ITERS {
+            let v = r.i64();
+            let sc = (32 + r.u32() % 32) as i8; // 32..=63
+            let high = (v >> 32) as i32;
+            let sign_only = (high as u32 & 0x8000_0000) as i32;
+            let low = (high as u32).wrapping_shr(sc as u32);
+            let expected = ((sign_only as i64) << 32) | (low as i64);
+            assert_eq!(large_integer_arithmetic_shift(v, sc), expected);
+        }
+    }
+
+    #[test]
+    fn magic_divide_vs_u128() {
+        // The hand-rolled 32-bit-decomposed 128-bit multiply must equal the high
+        // 64 bits of a real u128 product, then shifted, then re-signed.
+        let mut r = Rng(10);
+        for _ in 0..ITERS {
+            let dividend = r.i64();
+            let magic = r.i64();
+            let shift = (r.u32() % 64) as i8; // 0..=63
+            let positive = dividend >= 0;
+            let abs = dividend.unsigned_abs();
+            let hi = ((abs as u128 * (magic as u64) as u128) >> 64) as u64;
+            let res = (hi >> shift) as i64;
+            if !positive && res == i64::MIN {
+                continue; // impl negates `result`; i64::MIN can't be negated
+            }
+            let expected = if positive { res } else { -res };
+            assert_eq!(extended_magic_divide(dividend, magic, shift), expected);
+        }
+    }
+}
+
+// ============================================================================
+// Kani exhaustive proofs (run with `cargo kani -p largeint`; inert otherwise).
+// Same class as the model tests above but proved over the entire input domain.
+// ============================================================================
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn enlarged_multiplies_are_widening() {
+        let (a, b): (i32, i32) = (kani::any(), kani::any());
+        assert_eq!(enlarged_integer_multiply(a, b), a as i64 * b as i64);
+        let (ua, ub): (u32, u32) = (kani::any(), kani::any());
+        assert_eq!(enlarged_unsigned_multiply(ua, ub) as u64, ua as u64 * ub as u64);
+    }
+
+    #[kani::proof]
+    fn add_sub_negate_wrap() {
+        let (a, b): (i64, i64) = (kani::any(), kani::any());
+        assert_eq!(large_integer_add(a, b), (a as i128 + b as i128) as i64);
+        assert_eq!(large_integer_subtract(a, b), (a as i128 - b as i128) as i64);
+        assert_eq!(large_integer_negate(a), (-(a as i128)) as i64);
+        assert_eq!(large_integer_negate(large_integer_negate(a)), a); // involution
+    }
+
+    #[kani::proof]
+    fn shift_left_masks_count() {
+        let v: i64 = kani::any();
+        let sc: i8 = kani::any();
+        let s = (sc as i32).rem_euclid(64) as u32;
+        assert_eq!(large_integer_shift_left(v, sc), (v as u64).wrapping_shl(s) as i64);
+    }
+
+    #[kani::proof]
+    fn unsigned_divide_reconstructs() {
+        let dividend: u64 = kani::any();
+        let divisor: u32 = kani::any();
+        kani::assume(divisor != 0);
+        kani::assume(dividend / divisor as u64 <= u32::MAX as u64); // quotient fits u32
+        let mut rem: u32 = 0;
+        let q = enlarged_unsigned_divide(dividend, divisor, &mut rem);
+        assert_eq!(q as u64 * divisor as u64 + rem as u64, dividend);
+        assert!(rem < divisor);
+    }
+
+    #[kani::proof]
+    fn magic_divide_matches_u128_positive() {
+        let dividend: i64 = kani::any();
+        kani::assume(dividend >= 0);
+        let magic: i64 = kani::any();
+        let shift: i8 = kani::any();
+        kani::assume(shift >= 0 && shift < 64);
+        let hi = ((dividend as u128 * (magic as u64) as u128) >> 64) as u64;
+        let expected = (hi >> shift) as i64;
+        assert_eq!(extended_magic_divide(dividend, magic, shift), expected);
+    }
+}
