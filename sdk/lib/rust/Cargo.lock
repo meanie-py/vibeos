@@ -1423,6 +1423,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sam-stub"
+version = "0.1.0"
+dependencies = [
+ "midl-rt",
+ "reactos-link",
+]
+
+[[package]]
+name = "samsrv-rust"
+version = "0.1.0"
+dependencies = [
+ "lsasrv-sys",
+ "ntdll-sys",
+ "samsrv-sys",
+]
+
+[[package]]
 name = "samsrv-sys"
 version = "0.1.0"
 
