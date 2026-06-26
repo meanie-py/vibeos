@@ -164,6 +164,7 @@ members = [
     "kernel32-shared-rust",
     "kernel32-vista-rust",
     "user32-rust",
+    "gdi32-rust",
     "msgina-rust",
     "uniata-rust",
     "dxg-rust",

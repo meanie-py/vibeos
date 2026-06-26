@@ -33,7 +33,7 @@ list(APPEND SOURCE
     objects/font.c
     objects/gdiobj.c
     objects/icm.c
-    objects/linedda.c
+    # objects/linedda.c — replaced by Rust (gdi32-rust/src/objects/linedda.rs); cohab via libgdi32_rust.a
     objects/metafile.c
     objects/painting.c
     objects/printdrv.c
@@ -44,6 +44,42 @@ list(APPEND SOURCE
     objects/utils.c
     objects/path.c
     include/precomp.h)
+
+# --- gdi32-rust cohab staticlib (libgdi32_rust.a) --------------------------------------
+# Rust translation of the gdi32 sources, built as a staticlib and cohab-linked into
+# gdi32.dll with the translated .c commented out of SOURCE above (per-file flip, mirrors
+# dll/win32/kernel32 / win32ss/user/user32). User-mode STANDARD per-arch targets; i386
+# gets -sse,-sse2 via sdk/lib/rust/.cargo/config.toml (user-mode no-SSE rule). The crate's
+# #[no_mangle] symbols are the sole providers of the commented-out .c functions, so no
+# --allow-multiple-definition is needed. NtGdi* imports resolve via the win32ksys importlib.
+set(GDI32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(GDI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-gdi32-target")
+set(GDI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libgdi32_rust.a")
+if(ARCH STREQUAL "i386")
+    set(GDI32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(GDI32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(GDI32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+# GLOB_RECURSE so .rs under src/<subdir>/ also retrigger the libgdi32_rust.a rebuild.
+file(GLOB_RECURSE GDI32_RUST_SRCS "${GDI32_RUST_WORKSPACE_DIR}/gdi32-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${GDI32_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${GDI32_RUST_TARGET_DIR}
+        cargo build --release --target ${GDI32_RUST_TARGET}
+            -p gdi32-rust
+            --manifest-path ${GDI32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${GDI32_RUST_TARGET_DIR}/${GDI32_RUST_TARGET}/release/libgdi32_rust.a
+        ${GDI32_RUST_LIB}
+    DEPENDS ${GDI32_RUST_SRCS}
+            ${GDI32_RUST_WORKSPACE_DIR}/gdi32-rust/Cargo.toml
+    WORKING_DIRECTORY ${GDI32_RUST_WORKSPACE_DIR}
+    COMMENT "Building gdi32-rust (${GDI32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_gdi32 DEPENDS ${GDI32_RUST_LIB})
 
 add_library(gdi32 MODULE
     ${SOURCE}
@@ -59,9 +95,10 @@ target_link_libraries(gdi32
     win32ksys
     dxguid
     atan2
-    ${PSEH_LIB})
+    ${PSEH_LIB}
+    ${GDI32_RUST_LIB})
 
 add_importlibs(gdi32 user32 advapi32 kernel32 ntdll)
 add_pch(gdi32 include/precomp.h SOURCE)
-add_dependencies(gdi32 psdk)
+add_dependencies(gdi32 psdk rust_gdi32)
 add_cd_file(TARGET gdi32 DESTINATION reactos/system32 FOR all)

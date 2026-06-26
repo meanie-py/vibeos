@@ -446,6 +446,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdi32-rust"
+version = "0.1.0"
+dependencies = [
+ "win32k-sys",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
