@@ -133,3 +133,16 @@ pub mod misc_sysfunc;
 pub mod reg_hkcr;
 #[path = "service/sctrl.rs"]
 pub mod service_sctrl;
+// Wave 3 — large files.
+#[path = "misc/logon.rs"]
+pub mod misc_logon;
+#[path = "service/eventlog.rs"]
+pub mod service_eventlog;
+#[path = "sec/misc.rs"]
+pub mod sec_misc;
+#[path = "wine/cred.rs"]
+pub mod wine_cred;
+#[path = "sec/lsa.rs"]
+pub mod sec_lsa;
+#[path = "wine/crypt.rs"]
+pub mod wine_crypt;

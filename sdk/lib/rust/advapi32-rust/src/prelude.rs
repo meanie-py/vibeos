@@ -11,6 +11,14 @@
 
 pub use ntdll_sys::nt::*;
 
+// Win32 handle types exist in BOTH ntdll-sys and advapi32-sys as distinct nominal
+// types (same layout, different HINSTANCE__/opaque tag). advapi32-sys structs
+// (e.g. CRYPTPROV.hModule) embed the advapi32-sys versions, so standardize the
+// whole crate on those (explicit `use` wins over the nt::* glob above — no
+// ambiguity). This makes GetProcAddress/LoadLibraryW etc. interoperate with the
+// advapi32-sys struct fields without per-call casts.
+pub use advapi32_sys::{HMODULE, HINSTANCE, HWND, HINSTANCE__};
+
 // TRUE/FALSE: bindgen types the bare `#define TRUE 1` macro as u32, but BOOL is
 // c_int (i32) → `return FALSE` in a `-> BOOL` fn mismatches. Explicit defs here
 // (correct BOOL type) shadow the nt glob's u32 versions. Files import ONLY this
@@ -69,7 +77,123 @@ pub use advapi32_sys::{
     // winsvc / services.h service-control codes (Wave 2)
     SERVICE_CONTROL_NETBINDDISABLE, SERVICE_CONTROL_DEVICEEVENT,
     SERVICE_CONTROL_START_SHARE, SERVICE_CONTROL_START_OWN,
+    // ---- Wave 3 ----
+    // wincrypt provider/key/hash handles + algorithm id (wine/crypt.rs)
+    ALG_ID, CRYPTHASH, CRYPTKEY, CRYPTPROV, HCRYPTHASH, HCRYPTKEY, HCRYPTPROV,
+    PCRYPTHASH, PCRYPTKEY, PCRYPTPROV,
+    // eventlogrpc RPC client marshalling (service/eventlog.rs)
+    EVENTLOG_HANDLE_A, EVENTLOG_HANDLE_W, IELF_HANDLE, RPC_STRING, PRPC_STRING,
+    RPC_CLIENT_ID, RPC_CSTR, RPC_WSTR,
+    // aclapi progress callbacks (sec/misc.rs) — A/W variants (FN_PROGRESS in Wave 1)
+    FN_PROGRESSA, FN_PROGRESSW, PPROG_INVOKE_SETTING,
+    // ntmarta dynamic-load table (sec/misc.rs)
+    NTMARTA, PNTMARTA,
+    // ntsecapi MSV1_0 logon (misc/logon.rs)
+    MSV1_0_INTERACTIVE_LOGON, MSV1_0_INTERACTIVE_PROFILE, SECURITY_LOGON_TYPE,
+    // ntsecapi LSA public types (sec/lsa.rs)
+    LSA_HANDLE, PLSA_HANDLE, LSA_STRING, LSA_UNICODE_STRING, PLSA_UNICODE_STRING,
+    LSA_OBJECT_ATTRIBUTES, LSA_OPERATIONAL_MODE, PLSA_ENUMERATION_HANDLE,
+    PLSA_REFERENCED_DOMAIN_LIST, PLSA_TRANSLATED_NAME, PLSA_TRANSLATED_SID,
+    PLSA_TRANSLATED_SID2, PLSA_TRUST_INFORMATION, PLSA_OBJECT_ATTRIBUTES,
+    PLSA_FOREST_TRUST_COLLISION_INFORMATION, PLSA_FOREST_TRUST_INFORMATION,
+    POLICY_INFORMATION_CLASS, POLICY_DOMAIN_INFORMATION_CLASS,
+    TRUSTED_INFORMATION_CLASS, PTRUSTED_DOMAIN_AUTH_INFORMATION,
+    PTRUSTED_DOMAIN_INFORMATION_EX, PRPC_SID,
+    // lsa_c RPC-marshalled LSAPR_* types (sec/lsa.rs)
+    LSAPR_HANDLE, PLSAPR_HANDLE, LSAPR_ACCOUNT_ENUM_BUFFER, LSAPR_CR_CIPHER_VALUE,
+    PLSAPR_CR_CIPHER_VALUE, LSAPR_PRIVILEGE_ENUM_BUFFER, LSAPR_PRIVILEGE_SET,
+    PLSAPR_PRIVILEGE_SET, LSAPR_SID_ENUM_BUFFER, LSAPR_SR_SECURITY_DESCRIPTOR,
+    PLSAPR_SR_SECURITY_DESCRIPTOR, LSAPR_TRANSLATED_NAMES, LSAPR_TRANSLATED_SIDS,
+    LSAPR_TRANSLATED_SIDS_EX2, LSAPR_TRUSTED_ENUM_BUFFER, LSAPR_TRUSTED_ENUM_BUFFER_EX,
+    LSAPR_USER_RIGHT_SET, PLSAPR_OBJECT_ATTRIBUTES, PLSAPR_POLICY_DOMAIN_INFORMATION,
+    PLSAPR_POLICY_INFORMATION, PLSAPR_REFERENCED_DOMAIN_LIST, PLSAPR_SERVER_NAME,
+    PLSAPR_SID_INFORMATION, PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+    PLSAPR_TRUSTED_DOMAIN_INFO, PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    PLSAPR_TRUST_INFORMATION,
+    // lsa_c lookup-level enum (sec/lsa.rs)
+    LSAP_LOOKUP_LEVEL,
+    // ---- Wave 3 consts (present in bindgen) ----
+    // wincrypt provider magic numbers + key/keyset flags (wine/crypt.rs)
+    MAGIC_CRYPTPROV, MAGIC_CRYPTKEY, MAGIC_CRYPTHASH,
+    CRYPT_USER_DEFAULT, CRYPT_MACHINE_DEFAULT, CRYPT_DELETE_DEFAULT, CRYPT_DELETEKEYSET,
+    // ntsecapi policy lookup flag (sec/lsa.rs)
+    POLICY_LOOKUP_NAMES,
+    // wincred.h credential types + consts (wine/cred.rs)
+    CREDENTIALW, CREDENTIALA, PCREDENTIALW, PCREDENTIALA,
+    CERT_CREDENTIAL_INFO, PCERT_CREDENTIAL_INFO, USERNAME_TARGET_CREDENTIAL_INFO,
+    CREDENTIAL_TARGET_INFORMATIONW, CREDENTIAL_TARGET_INFORMATIONA,
+    PCREDENTIAL_TARGET_INFORMATIONW, PCREDENTIAL_TARGET_INFORMATIONA,
+    CRED_MARSHAL_TYPE, PCRED_MARSHAL_TYPE,
+    CRED_TYPE_GENERIC, CRED_TYPE_DOMAIN_PASSWORD,
+    CRED_PERSIST_NONE, CRED_PERSIST_SESSION, CRED_PERSIST_LOCAL_MACHINE,
+    CRED_PERSIST_ENTERPRISE, CRED_PRESERVE_CREDENTIAL_BLOB,
+    CERT_HASH_LENGTH, CP_UTF8,
 };
+
+// PROVFUNCS / VTableProvStruc: bindgen names the structs `tagPROVFUNCS` /
+// `_VTableProvStruc` (no bare typedef alias emitted) — alias them (wine/crypt.rs).
+pub use advapi32_sys::tagPROVFUNCS as PROVFUNCS;
+pub use advapi32_sys::_VTableProvStruc as VTableProvStruc;
+
+// NOTE: enum-variant bare-name consts (SECURITY_LOGON_TYPE Interactive/Network/
+// Batch/Service, MsV1_0InteractiveLogon, LsapLookupWksta, ForestTrustDomainInfo,
+// TrustedDomain*Internal) are defined module-LOCALLY in their owning files
+// (misc/logon.rs, sec/lsa.rs) rather than here: common identifiers like `Service`
+// in the global prelude get treated as const-patterns by `let Service = ...`
+// bindings in sibling modules (sctrl.rs), breaking them.
+
+// ---- Wave 3 hand-defined consts (cast-macros bindgen can't evaluate) ----
+// NTE_* crypto error HRESULTs (winerror.h _HRESULT_TYPEDEF_) — passed to
+// SetLastError(ULONG) in wine/crypt.rs, so typed as DWORD.
+pub const NTE_BAD_UID: DWORD = 0x8009_0001;
+pub const NTE_BAD_FLAGS: DWORD = 0x8009_0009;
+pub const NTE_BAD_PROVIDER: DWORD = 0x8009_0013;
+pub const NTE_BAD_PROV_TYPE: DWORD = 0x8009_0014;
+pub const NTE_PROV_TYPE_NOT_DEF: DWORD = 0x8009_0017;
+pub const NTE_PROV_TYPE_ENTRY_BAD: DWORD = 0x8009_0018;
+pub const NTE_KEYSET_NOT_DEF: DWORD = 0x8009_0019;
+pub const NTE_PROV_TYPE_NO_MATCH: DWORD = 0x8009_001B;
+pub const NTE_PROVIDER_DLL_FAIL: DWORD = 0x8009_001D;
+pub const NTE_PROV_DLL_NOT_FOUND: DWORD = 0x8009_001E;
+pub const NTE_FAIL: DWORD = 0x8009_0020;
+// ntstatus.h cast macros (sec/lsa.rs, sec/misc.rs) — NTSTATUS-typed.
+pub const STATUS_SOME_NOT_MAPPED: NTSTATUS = 0x0000_0107;
+pub const RPC_NT_SERVER_UNAVAILABLE: NTSTATUS = 0xC002_0017u32 as i32;
+// wine/crypt.h: #define MAXPROVTYPES 999 (not in allowlist-var) — DWORD compare.
+pub const MAXPROVTYPES: DWORD = 999;
+// wincrypt.h provider-param ids (PP_*) not bindgen'd (allowlist) (wine/crypt.rs).
+pub const PP_CLIENT_HWND: DWORD = 1;
+pub const PP_USE_HARDWARE_RNG: DWORD = 38;
+// crt/fcntl.h _O_RDONLY (wine/crypt.rs file open flag).
+pub const O_RDONLY: c_int = 0;
+// winnls.h string-compare consts not in allowlist-var (wine/cred.rs).
+pub const NORM_IGNORECASE: DWORD = 1;
+pub const CSTR_EQUAL: c_int = 2;
+
+// advapi32.h heap helpers: static inline heap_alloc/heap_free →
+// HeapAlloc/HeapFree(GetProcessHeap(),0,..). Used crate-wide (wine/cred.rs).
+// Takes `usize` (not SIZE_T, which is u32 on i386) to match the translation's
+// `... as usize` length expressions; converted to SIZE_T at the HeapAlloc call.
+#[inline]
+pub unsafe fn heap_alloc(len: usize) -> PVOID {
+    HeapAlloc(GetProcessHeap(), 0, len as SIZE_T)
+}
+#[inline]
+pub unsafe fn heap_free(mem: PVOID) -> BOOL {
+    HeapFree(GetProcessHeap(), 0, mem)
+}
+// setypes.h SID_IDENTIFIER_AUTHORITY initializers {0,0,0,0,0,N}. The C uses them
+// as brace-initializers; the translation flattened each to its sole nonzero
+// trailing byte `[0,0,0,0,0, X as u8]`, so X is that trailing byte value.
+pub const SECURITY_LOCAL_SID_AUTHORITY: u8 = 2;
+pub const SECURITY_NT_AUTHORITY: u8 = 5;
+
+// wine/unicode.h: #define sprintfW _swprintf — link to the CRT _swprintf symbol
+// (variadic, cdecl). Used by wine/crypt.rs to format a UUID container name.
+extern "C" {
+    #[link_name = "_swprintf"]
+    pub fn sprintfW(buffer: *mut u16, format: *const u16, ...) -> c_int;
+}
 
 // UlongToPtr (basetsd.h inline cast)
 #[inline]
@@ -208,6 +332,31 @@ pub unsafe fn InterlockedCompareExchangePointer(
         Ok(v) => v,
         Err(v) => v,
     }
+}
+
+// ---- Interlocked* intrinsics (winnt.h inline, no exported symbol) ----
+#[inline]
+pub unsafe fn InterlockedIncrement(addend: *mut LONG) -> LONG {
+    (&*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        + 1
+}
+#[inline]
+pub unsafe fn InterlockedDecrement(addend: *mut LONG) -> LONG {
+    (&*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        - 1
+}
+#[inline]
+pub unsafe fn InterlockedExchangePointer(target: *mut PVOID, value: PVOID) -> PVOID {
+    (&*(target as *const core::sync::atomic::AtomicPtr<c_void>))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+// ---- HandleToUlong (basetsd.h: ((ULONG)(ULONG_PTR)(h))) ----
+#[inline]
+pub fn HandleToUlong(h: HANDLE) -> ULONG {
+    h as usize as ULONG
 }
 
 // ---- STATUS_LOCAL_USER_SESSION_KEY (ntstatus.h cast macro — not bindgen'd) ----

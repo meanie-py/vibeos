@@ -20,7 +20,7 @@ list(APPEND SOURCE
     # misc/efs.c — replaced by Rust (advapi32-rust)
     # misc/evntrace.c — replaced by Rust (advapi32-rust)
     # misc/hwprofiles.c — replaced by Rust (advapi32-rust)
-    misc/logon.c
+    # misc/logon.c — replaced by Rust (advapi32-rust)
     # misc/msi.c — replaced by Rust (advapi32-rust)
     # misc/shutdown.c — replaced by Rust (advapi32-rust)
     # misc/sysfunc.c — replaced by Rust (advapi32-rust)
@@ -29,19 +29,19 @@ list(APPEND SOURCE
     reg/reg.c
     sec/ac.c
     # sec/audit.c — replaced by Rust (advapi32-rust)
-    sec/lsa.c
-    sec/misc.c
+    # sec/lsa.c — replaced by Rust (advapi32-rust)
+    # sec/misc.c — replaced by Rust (advapi32-rust)
     # sec/safer.c — replaced by Rust (advapi32-rust)
     # sec/sec.c — replaced by Rust (advapi32-rust)
     # sec/trustee.c — replaced by Rust (advapi32-rust)
-    service/eventlog.c
+    # service/eventlog.c — replaced by Rust (advapi32-rust)
     service/rpc.c
     service/scm.c
     # service/sctrl.c — replaced by Rust (advapi32-rust)
     # service/winreg.c — replaced by Rust (advapi32-rust)
     # token/token.c — replaced by Rust (advapi32-rust)
-    wine/cred.c
-    wine/crypt.c
+    # wine/cred.c — replaced by Rust (advapi32-rust)
+    # wine/crypt.c — replaced by Rust (advapi32-rust)
     # wine/crypt_des.c — replaced by Rust (advapi32-rust)
     # wine/crypt_lmhash.c — replaced by Rust (advapi32-rust)
     wine/security.c)

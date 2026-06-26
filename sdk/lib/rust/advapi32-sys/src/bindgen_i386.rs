@@ -132,6 +132,7 @@ pub const SERVICE_ERROR_IGNORE: u32 = 0;
 pub const SERVICE_ERROR_NORMAL: u32 = 1;
 pub const SERVICE_ERROR_SEVERE: u32 = 2;
 pub const SERVICE_ERROR_CRITICAL: u32 = 3;
+pub const POLICY_AUDIT_SUBCATEGORY_COUNT: u32 = 56;
 pub const CP_NONE: u32 = 0;
 pub const CP_RECTANGLE: u32 = 1;
 pub const CP_REGION: u32 = 2;
@@ -277,6 +278,356 @@ pub const TRUSTEE_ACCESS_WRITE: u32 = 4;
 pub const TRUSTEE_ACCESS_EXPLICIT: u32 = 1;
 pub const TRUSTEE_ACCESS_READ_WRITE: u32 = 6;
 pub const TRUSTEE_ACCESS_ALL: u32 = 4294967295;
+pub const CRYPT_IPSEC_HMAC_KEY: u32 = 256;
+pub const CRYPT_X942_COUNTER_BYTE_LENGTH: u32 = 4;
+pub const CRYPT_X942_KEY_LENGTH_BYTE_LENGTH: u32 = 4;
+pub const CRYPT_X942_PUB_INFO_BYTE_LENGTH: u32 = 64;
+pub const CRYPT_RC2_40BIT_VERSION: u32 = 160;
+pub const CRYPT_RC2_56BIT_VERSION: u32 = 52;
+pub const CRYPT_RC2_64BIT_VERSION: u32 = 120;
+pub const CRYPT_RC2_128BIT_VERSION: u32 = 58;
+pub const CRYPT_MATCH_ANY_ENCODING_TYPE: u32 = 4294967295;
+pub const CALG_OID_INFO_CNG_ONLY: u32 = 4294967295;
+pub const CALG_OID_INFO_PARAMETERS: u32 = 4294967294;
+pub const CRYPT_OID_INFO_HASH_PARAMETERS_ALGORITHM: &[u8; 27] = b"CryptOIDInfoHashParameters\0";
+pub const CRYPT_OID_INFO_ECC_PARAMETERS_ALGORITHM: &[u8; 26] = b"CryptOIDInfoECCParameters\0";
+pub const CRYPT_OID_INFO_MGF1_PARAMETERS_ALGORITHM: &[u8; 27] = b"CryptOIDInfoMgf1Parameters\0";
+pub const CRYPT_OID_INFO_NO_SIGN_ALGORITHM: &[u8; 19] = b"CryptOIDInfoNoSign\0";
+pub const CRYPT_OID_INFO_OAEP_PARAMETERS_ALGORITHM: &[u8; 27] = b"CryptOIDInfoOAEPParameters\0";
+pub const CRYPT_OID_INFO_ECC_WRAP_PARAMETERS_ALGORITHM: &[u8; 30] =
+    b"CryptOIDInfoECCWrapParameters\0";
+pub const CRYPT_OID_INFO_NO_PARAMETERS_ALGORITHM: &[u8; 25] = b"CryptOIDInfoNoParameters\0";
+pub const CRYPT_MESSAGE_BARE_CONTENT_OUT_FLAG: u32 = 1;
+pub const CRYPT_MESSAGE_ENCAPSULATED_CONTENT_OUT_FLAG: u32 = 2;
+pub const CRYPT_MESSAGE_KEYID_SIGNER_FLAG: u32 = 4;
+pub const CRYPT_MESSAGE_SILENT_KEYSET_FLAG: u32 = 8;
+pub const CRYPT_MESSAGE_KEYID_RECIPIENT_FLAG: u32 = 4;
+pub const CRYPT_RETRIEVE_MULTIPLE_OBJECTS: u32 = 1;
+pub const CRYPT_CACHE_ONLY_RETRIEVAL: u32 = 2;
+pub const CRYPT_WIRE_ONLY_RETRIEVAL: u32 = 4;
+pub const CRYPT_DONT_CACHE_RESULT: u32 = 8;
+pub const CRYPT_ASYNC_RETRIEVAL: u32 = 16;
+pub const CRYPT_STICKY_CACHE_RETRIEVAL: u32 = 4096;
+pub const CRYPT_LDAP_SCOPE_BASE_ONLY_RETRIEVAL: u32 = 8192;
+pub const CRYPT_OFFLINE_CHECK_RETRIEVAL: u32 = 16384;
+pub const CRYPT_LDAP_INSERT_ENTRY_ATTRIBUTE: u32 = 32768;
+pub const CRYPT_LDAP_SIGN_RETRIEVAL: u32 = 65536;
+pub const CRYPT_NO_AUTH_RETRIEVAL: u32 = 131072;
+pub const CRYPT_LDAP_AREC_EXCLUSIVE_RETRIEVAL: u32 = 262144;
+pub const CRYPT_AIA_RETRIEVAL: u32 = 524288;
+pub const CRYPT_VERIFY_CONTEXT_SIGNATURE: u32 = 32;
+pub const CRYPT_VERIFY_DATA_HASH: u32 = 64;
+pub const CRYPT_KEEP_TIME_VALID: u32 = 128;
+pub const CRYPT_DONT_VERIFY_SIGNATURE: u32 = 256;
+pub const CRYPT_DONT_CHECK_TIME_VALIDITY: u32 = 512;
+pub const CRYPT_CHECK_FRESHNESS_TIME_VALIDITY: u32 = 1024;
+pub const CRYPT_ACCUMULATIVE_TIMEOUT: u32 = 2048;
+pub const CRYPT_HASH_ALG_OID_GROUP_ID: u32 = 1;
+pub const CRYPT_ENCRYPT_ALG_OID_GROUP_ID: u32 = 2;
+pub const CRYPT_PUBKEY_ALG_OID_GROUP_ID: u32 = 3;
+pub const CRYPT_SIGN_ALG_OID_GROUP_ID: u32 = 4;
+pub const CRYPT_RDN_ATTR_OID_GROUP_ID: u32 = 5;
+pub const CRYPT_EXT_OR_ATTR_OID_GROUP_ID: u32 = 6;
+pub const CRYPT_ENHKEY_USAGE_OID_GROUP_ID: u32 = 7;
+pub const CRYPT_POLICY_OID_GROUP_ID: u32 = 8;
+pub const CRYPT_TEMPLATE_OID_GROUP_ID: u32 = 9;
+pub const CRYPT_LAST_OID_GROUP_ID: u32 = 9;
+pub const CRYPT_FIRST_ALG_OID_GROUP_ID: u32 = 1;
+pub const CRYPT_LAST_ALG_OID_GROUP_ID: u32 = 4;
+pub const CRYPT_OID_INHIBIT_SIGNATURE_FORMAT_FLAG: u32 = 1;
+pub const CRYPT_OID_USE_PUBKEY_PARA_FOR_PKCS7_FLAG: u32 = 2;
+pub const CRYPT_OID_NO_NULL_ALGORITHM_PARA_FLAG: u32 = 4;
+pub const CRYPT_OID_INFO_OID_KEY: u32 = 1;
+pub const CRYPT_OID_INFO_NAME_KEY: u32 = 2;
+pub const CRYPT_OID_INFO_ALGID_KEY: u32 = 3;
+pub const CRYPT_OID_INFO_SIGN_KEY: u32 = 4;
+pub const ALG_CLASS_ANY: u32 = 0;
+pub const ALG_CLASS_SIGNATURE: u32 = 8192;
+pub const ALG_CLASS_MSG_ENCRYPT: u32 = 16384;
+pub const ALG_CLASS_DATA_ENCRYPT: u32 = 24576;
+pub const ALG_CLASS_HASH: u32 = 32768;
+pub const ALG_CLASS_KEY_EXCHANGE: u32 = 40960;
+pub const ALG_CLASS_ALL: u32 = 57344;
+pub const ALG_TYPE_ANY: u32 = 0;
+pub const ALG_TYPE_DSS: u32 = 512;
+pub const ALG_TYPE_RSA: u32 = 1024;
+pub const ALG_TYPE_BLOCK: u32 = 1536;
+pub const ALG_TYPE_STREAM: u32 = 2048;
+pub const ALG_TYPE_DH: u32 = 2560;
+pub const ALG_TYPE_SECURECHANNEL: u32 = 3072;
+pub const ALG_TYPE_ECDH: u32 = 3584;
+pub const ALG_SID_ANY: u32 = 0;
+pub const ALG_SID_RSA_ANY: u32 = 0;
+pub const ALG_SID_RSA_PKCS: u32 = 1;
+pub const ALG_SID_RSA_MSATWORK: u32 = 2;
+pub const ALG_SID_RSA_ENTRUST: u32 = 3;
+pub const ALG_SID_RSA_PGP: u32 = 4;
+pub const ALG_SID_DSS_ANY: u32 = 0;
+pub const ALG_SID_DSS_PKCS: u32 = 1;
+pub const ALG_SID_DSS_DMS: u32 = 2;
+pub const ALG_SID_ECDSA: u32 = 3;
+pub const ALG_SID_DES: u32 = 1;
+pub const ALG_SID_3DES: u32 = 3;
+pub const ALG_SID_DESX: u32 = 4;
+pub const ALG_SID_IDEA: u32 = 5;
+pub const ALG_SID_CAST: u32 = 6;
+pub const ALG_SID_SAFERSK64: u32 = 7;
+pub const ALG_SID_SAFERSK128: u32 = 8;
+pub const ALG_SID_3DES_112: u32 = 9;
+pub const ALG_SID_CYLINK_MEK: u32 = 12;
+pub const ALG_SID_RC5: u32 = 13;
+pub const ALG_SID_AES_128: u32 = 14;
+pub const ALG_SID_AES_192: u32 = 15;
+pub const ALG_SID_AES_256: u32 = 16;
+pub const ALG_SID_AES: u32 = 17;
+pub const ALG_SID_SKIPJACK: u32 = 10;
+pub const ALG_SID_TEK: u32 = 11;
+pub const ALG_SID_DH_SANDF: u32 = 1;
+pub const ALG_SID_DH_EPHEM: u32 = 2;
+pub const ALG_SID_AGREED_KEY_ANY: u32 = 3;
+pub const ALG_SID_KEA: u32 = 4;
+pub const ALG_SID_ECDH: u32 = 5;
+pub const ALG_SID_ECDH_EPHEM: u32 = 6;
+pub const ALG_SID_RC4: u32 = 1;
+pub const ALG_SID_RC2: u32 = 2;
+pub const ALG_SID_SEAL: u32 = 2;
+pub const ALG_SID_MD2: u32 = 1;
+pub const ALG_SID_MD4: u32 = 2;
+pub const ALG_SID_MD5: u32 = 3;
+pub const ALG_SID_SHA: u32 = 4;
+pub const ALG_SID_SHA1: u32 = 4;
+pub const ALG_SID_MAC: u32 = 5;
+pub const ALG_SID_RIPEMD: u32 = 6;
+pub const ALG_SID_RIPEMD160: u32 = 7;
+pub const ALG_SID_SSL3SHAMD5: u32 = 8;
+pub const ALG_SID_HMAC: u32 = 9;
+pub const ALG_SID_TLS1PRF: u32 = 10;
+pub const ALG_SID_HASH_REPLACE_OWF: u32 = 11;
+pub const ALG_SID_SHA_256: u32 = 12;
+pub const ALG_SID_SHA_384: u32 = 13;
+pub const ALG_SID_SHA_512: u32 = 14;
+pub const ALG_SID_SSL3_MASTER: u32 = 1;
+pub const ALG_SID_SCHANNEL_MASTER_HASH: u32 = 2;
+pub const ALG_SID_SCHANNEL_MAC_KEY: u32 = 3;
+pub const ALG_SID_PCT1_MASTER: u32 = 4;
+pub const ALG_SID_SSL2_MASTER: u32 = 5;
+pub const ALG_SID_TLS1_MASTER: u32 = 6;
+pub const ALG_SID_SCHANNEL_ENC_KEY: u32 = 7;
+pub const ALG_SID_EXAMPLE: u32 = 80;
+pub const ALG_SID_ECMQV: u32 = 1;
+pub const CALG_MD2: u32 = 32769;
+pub const CALG_MD4: u32 = 32770;
+pub const CALG_MD5: u32 = 32771;
+pub const CALG_SHA: u32 = 32772;
+pub const CALG_SHA1: u32 = 32772;
+pub const CALG_MAC: u32 = 32773;
+pub const CALG_SSL3_SHAMD5: u32 = 32776;
+pub const CALG_HMAC: u32 = 32777;
+pub const CALG_TLS1PRF: u32 = 32778;
+pub const CALG_HASH_REPLACE_OWF: u32 = 32779;
+pub const CALG_SHA_256: u32 = 32780;
+pub const CALG_SHA_384: u32 = 32781;
+pub const CALG_SHA_512: u32 = 32782;
+pub const CALG_RSA_SIGN: u32 = 9216;
+pub const CALG_DSS_SIGN: u32 = 8704;
+pub const CALG_NO_SIGN: u32 = 8192;
+pub const CALG_ECDSA: u32 = 8707;
+pub const CALG_DH_SF: u32 = 43521;
+pub const CALG_DH_EPHEM: u32 = 43522;
+pub const CALG_AGREEDKEY_ANY: u32 = 43523;
+pub const CALG_KEA_KEYX: u32 = 43524;
+pub const CALG_HUGHES_MD5: u32 = 40963;
+pub const CALG_ECDH: u32 = 43525;
+pub const CALG_ECDH_EPHEM: u32 = 44550;
+pub const CALG_RSA_KEYX: u32 = 41984;
+pub const CALG_ECMQV: u32 = 40961;
+pub const CALG_DES: u32 = 26113;
+pub const CALG_RC2: u32 = 26114;
+pub const CALG_3DES: u32 = 26115;
+pub const CALG_3DES_112: u32 = 26121;
+pub const CALG_DESX: u32 = 26116;
+pub const CALG_AES_128: u32 = 26126;
+pub const CALG_AES_192: u32 = 26127;
+pub const CALG_AES_256: u32 = 26128;
+pub const CALG_AES: u32 = 26129;
+pub const CALG_RC4: u32 = 26625;
+pub const CALG_SEAL: u32 = 26626;
+pub const CALG_RC5: u32 = 26637;
+pub const CALG_SKIPJACK: u32 = 26122;
+pub const CALG_TEK: u32 = 26123;
+pub const CALG_CYLINK_MEK: u32 = 26124;
+pub const CALG_SSL3_MASTER: u32 = 19457;
+pub const CALG_SCHANNEL_MASTER_HASH: u32 = 19458;
+pub const CALG_SCHANNEL_MAC_KEY: u32 = 19459;
+pub const CALG_SCHANNEL_ENC_KEY: u32 = 19463;
+pub const CALG_PCT1_MASTER: u32 = 19460;
+pub const CALG_SSL2_MASTER: u32 = 19461;
+pub const CALG_TLS1_MASTER: u32 = 19462;
+pub const CRYPT_FLAG_PCT1: u32 = 1;
+pub const CRYPT_FLAG_SSL2: u32 = 2;
+pub const CRYPT_FLAG_SSL3: u32 = 4;
+pub const CRYPT_FLAG_TLS1: u32 = 8;
+pub const CRYPT_FLAG_IPSEC: u32 = 16;
+pub const CRYPT_FLAG_SIGNING: u32 = 32;
+pub const PROV_RSA_FULL: u32 = 1;
+pub const PROV_RSA_SIG: u32 = 2;
+pub const PROV_DSS: u32 = 3;
+pub const PROV_FORTEZZA: u32 = 4;
+pub const PROV_MS_EXCHANGE: u32 = 5;
+pub const PROV_SSL: u32 = 6;
+pub const PROV_RSA_SCHANNEL: u32 = 12;
+pub const PROV_DSS_DH: u32 = 13;
+pub const PROV_EC_ECDSA_SIG: u32 = 14;
+pub const PROV_EC_ECNRA_SIG: u32 = 15;
+pub const PROV_EC_ECDSA_FULL: u32 = 16;
+pub const PROV_EC_ECNRA_FULL: u32 = 17;
+pub const PROV_DH_SCHANNEL: u32 = 18;
+pub const PROV_SPYRUS_LYNKS: u32 = 20;
+pub const PROV_RNG: u32 = 21;
+pub const PROV_INTEL_SEC: u32 = 22;
+pub const PROV_REPLACE_OWF: u32 = 23;
+pub const PROV_RSA_AES: u32 = 24;
+pub const CRYPT_FIRST: u32 = 1;
+pub const CRYPT_NEXT: u32 = 2;
+pub const CRYPT_IMPL_HARDWARE: u32 = 1;
+pub const CRYPT_IMPL_SOFTWARE: u32 = 2;
+pub const CRYPT_IMPL_MIXED: u32 = 3;
+pub const CRYPT_IMPL_UNKNOWN: u32 = 4;
+pub const CRYPT_VERIFYCONTEXT: u32 = 4026531840;
+pub const CRYPT_NEWKEYSET: u32 = 8;
+pub const CRYPT_DELETEKEYSET: u32 = 16;
+pub const CRYPT_MACHINE_KEYSET: u32 = 32;
+pub const CRYPT_SILENT: u32 = 64;
+pub const CRYPT_MACHINE_DEFAULT: u32 = 1;
+pub const CRYPT_USER_DEFAULT: u32 = 2;
+pub const CRYPT_DELETE_DEFAULT: u32 = 4;
+pub const CRYPT_SEC_DESCR: u32 = 1;
+pub const CRYPT_PSTORE: u32 = 2;
+pub const CRYPT_UI_PROMPT: u32 = 4;
+pub const CRYPT_NOHASHOID: u32 = 1;
+pub const CRYPT_TYPE2_FORMAT: u32 = 2;
+pub const CRYPT_X931_FORMAT: u32 = 4;
+pub const CRYPT_MODE_CBC: u32 = 1;
+pub const CRYPT_MODE_ECB: u32 = 2;
+pub const CRYPT_MODE_OFB: u32 = 3;
+pub const CRYPT_MODE_CFB: u32 = 4;
+pub const CRYPT_ENCRYPT: u32 = 1;
+pub const CRYPT_DECRYPT: u32 = 2;
+pub const CRYPT_EXPORT: u32 = 4;
+pub const CRYPT_READ: u32 = 8;
+pub const CRYPT_WRITE: u32 = 16;
+pub const CRYPT_MAC: u32 = 32;
+pub const CRYPT_EXPORT_KEY: u32 = 64;
+pub const CRYPT_IMPORT_KEY: u32 = 128;
+pub const CRYPT_ARCHIVE: u32 = 256;
+pub const CRYPT_EXPORTABLE: u32 = 1;
+pub const CRYPT_USER_PROTECTED: u32 = 2;
+pub const CRYPT_CREATE_SALT: u32 = 4;
+pub const CRYPT_UPDATE_KEY: u32 = 8;
+pub const CRYPT_NO_SALT: u32 = 16;
+pub const CRYPT_PREGEN: u32 = 64;
+pub const CRYPT_SERVER: u32 = 1024;
+pub const CRYPT_ARCHIVABLE: u32 = 16384;
+pub const CRYPT_SSL2_FALLBACK: u32 = 2;
+pub const CRYPT_DESTROYKEY: u32 = 4;
+pub const CRYPT_OAEP: u32 = 64;
+pub const CRYPT_LITTLE_ENDIAN: u32 = 1;
+pub const CRYPT_ASN_ENCODING: u32 = 1;
+pub const CRYPT_NDR_ENCODING: u32 = 2;
+pub const CRYPT_OID_OPEN_STORE_PROV_FUNC: &[u8; 21] = b"CertDllOpenStoreProv\0";
+pub const CRYPT_OID_ENCODE_OBJECT_FUNC: &[u8; 21] = b"CryptDllEncodeObject\0";
+pub const CRYPT_OID_DECODE_OBJECT_FUNC: &[u8; 21] = b"CryptDllDecodeObject\0";
+pub const CRYPT_OID_ENCODE_OBJECT_EX_FUNC: &[u8; 23] = b"CryptDllEncodeObjectEx\0";
+pub const CRYPT_OID_DECODE_OBJECT_EX_FUNC: &[u8; 23] = b"CryptDllDecodeObjectEx\0";
+pub const CRYPT_OID_CREATE_COM_OBJECT_FUNC: &[u8; 24] = b"CryptDllCreateComObject\0";
+pub const CRYPT_OID_VERIFY_REVOCATION_FUNC: &[u8; 24] = b"CertDllVerifyRevocation\0";
+pub const CRYPT_OID_VERIFY_CTL_USAGE_FUNC: &[u8; 22] = b"CertDllVerifyCTLUsage\0";
+pub const CRYPT_OID_FORMAT_OBJECT_FUNC: &[u8; 21] = b"CryptDllFormatObject\0";
+pub const CRYPT_OID_FIND_OID_INFO_FUNC: &[u8; 20] = b"CryptDllFindOIDInfo\0";
+pub const CRYPT_OID_FIND_LOCALIZED_NAME_FUNC: &[u8; 26] = b"CryptDllFindLocalizedName\0";
+pub const CRYPT_OID_EXPORT_PUBLIC_KEY_INFO_FUNC: &[u8; 30] = b"CryptDllExportPublicKeyInfoEx\0";
+pub const CRYPT_OID_IMPORT_PUBLIC_KEY_INFO_FUNC: &[u8; 30] = b"CryptDllImportPublicKeyInfoEx\0";
+pub const CRYPT_OID_EXPORT_PRIVATE_KEY_INFO_FUNC: &[u8; 31] = b"CryptDllExportPrivateKeyInfoEx\0";
+pub const CRYPT_OID_IMPORT_PRIVATE_KEY_INFO_FUNC: &[u8; 31] = b"CryptDllImportPrivateKeyInfoEx\0";
+pub const CRYPT_OID_VERIFY_CERTIFICATE_CHAIN_POLICY_FUNC: &[u8; 36] =
+    b"CertDllVerifyCertificateChainPolicy\0";
+pub const CRYPT_OID_CONVERT_PUBLIC_KEY_INFO_FUNC: &[u8; 29] = b"CryptDllConvertPublicKeyInfo\0";
+pub const CRYPT_OID_REGPATH: &[u8; 36] = b"Software\\Microsoft\\Cryptography\\OID\0";
+pub const CRYPT_OID_REG_ENCODING_TYPE_PREFIX: &[u8; 14] = b"EncodingType \0";
+pub const CRYPT_OID_REG_DLL_VALUE_NAME: &[u8; 4] = b"Dll\0";
+pub const CRYPT_OID_REG_FUNC_NAME_VALUE_NAME: &[u8; 9] = b"FuncName\0";
+pub const CRYPT_OID_REG_FLAGS_VALUE_NAME: &[u8; 11] = b"CryptFlags\0";
+pub const CRYPT_OID_REG_FUNC_NAME_VALUE_NAME_A: &[u8; 9] = b"FuncName\0";
+pub const CRYPT_DEFAULT_OID: &[u8; 8] = b"DEFAULT\0";
+pub const CRYPT_INSTALL_OID_FUNC_BEFORE_FLAG: u32 = 1;
+pub const CRYPT_INSTALL_OID_INFO_BEFORE_FLAG: u32 = 1;
+pub const CRYPT_GET_INSTALLED_OID_FUNC_FLAG: u32 = 1;
+pub const CRYPT_REGISTER_FIRST_INDEX: u32 = 0;
+pub const CRYPT_REGISTER_LAST_INDEX: u32 = 4294967295;
+pub const CRYPT_STRING_BASE64HEADER: u32 = 0;
+pub const CRYPT_STRING_BASE64: u32 = 1;
+pub const CRYPT_STRING_BINARY: u32 = 2;
+pub const CRYPT_STRING_BASE64REQUESTHEADER: u32 = 3;
+pub const CRYPT_STRING_HEX: u32 = 4;
+pub const CRYPT_STRING_HEXASCII: u32 = 5;
+pub const CRYPT_STRING_BASE64_ANY: u32 = 6;
+pub const CRYPT_STRING_ANY: u32 = 7;
+pub const CRYPT_STRING_HEX_ANY: u32 = 8;
+pub const CRYPT_STRING_BASE64X509CRLHEADER: u32 = 9;
+pub const CRYPT_STRING_HEXADDR: u32 = 10;
+pub const CRYPT_STRING_HEXASCIIADDR: u32 = 11;
+pub const CRYPT_STRING_HEXRAW: u32 = 12;
+pub const CRYPT_STRING_BASE64URI: u32 = 13;
+pub const CRYPT_STRING_PERCENTESCAPE: u32 = 134217728;
+pub const CRYPT_STRING_HASHDATA: u32 = 268435456;
+pub const CRYPT_STRING_STRICT: u32 = 536870912;
+pub const CRYPT_STRING_NOCRLF: u32 = 1073741824;
+pub const CRYPT_STRING_NOCR: u32 = 2147483648;
+pub const CRYPT_ENCODE_DECODE_NONE: u32 = 0;
+pub const CRYPT_ENCODE_NO_SIGNATURE_BYTE_REVERSAL_FLAG: u32 = 8;
+pub const CRYPT_ENCODE_ALLOC_FLAG: u32 = 32768;
+pub const CRYPT_SORTED_CTL_ENCODE_HASHED_SUBJECT_IDENTIFIER_FLAG: u32 = 65536;
+pub const CRYPT_UNICODE_NAME_ENCODE_ENABLE_T61_UNICODE_FLAG: u32 = 2147483648;
+pub const CRYPT_UNICODE_NAME_ENCODE_ENABLE_UTF8_UNICODE_FLAG: u32 = 33554432;
+pub const CRYPT_UNICODE_NAME_ENCODE_DISABLE_CHECK_TYPE_FLAG: u32 = 67108864;
+pub const CRYPT_DECODE_NOCOPY_FLAG: u32 = 1;
+pub const CRYPT_DECODE_TO_BE_SIGNED_FLAG: u32 = 2;
+pub const CRYPT_DECODE_SHARE_OID_STRING_FLAG: u32 = 4;
+pub const CRYPT_DECODE_NO_SIGNATURE_BYTE_REVERSAL_FLAG: u32 = 8;
+pub const CRYPT_DECODE_ALLOC_FLAG: u32 = 32768;
+pub const CRYPT_UNICODE_NAME_DECODE_DISABLE_IE4_UTF8_FLAG: u32 = 1048576;
+pub const CRYPT_VERIFY_CERT_SIGN_SUBJECT_BLOB: u32 = 1;
+pub const CRYPT_VERIFY_CERT_SIGN_SUBJECT_CERT: u32 = 2;
+pub const CRYPT_VERIFY_CERT_SIGN_SUBJECT_CRL: u32 = 3;
+pub const CRYPT_VERIFY_CERT_SIGN_ISSUER_PUBKEY: u32 = 1;
+pub const CRYPT_VERIFY_CERT_SIGN_ISSUER_CERT: u32 = 2;
+pub const CRYPT_VERIFY_CERT_SIGN_ISSUER_CHAIN: u32 = 3;
+pub const CRYPT_VERIFY_CERT_SIGN_ISSUER_NULL: u32 = 4;
+pub const CRYPT_GET_URL_FROM_PROPERTY: u32 = 1;
+pub const CRYPT_GET_URL_FROM_EXTENSION: u32 = 2;
+pub const CRYPT_GET_URL_FROM_UNAUTH_ATTRIBUTE: u32 = 4;
+pub const CRYPT_GET_URL_FROM_AUTH_ATTRIBUTE: u32 = 8;
+pub const CRYPT_FORMAT_STR_MULTI_LINE: u32 = 1;
+pub const CRYPT_FORMAT_STR_NO_HEX: u32 = 16;
+pub const CRYPT_FORMAT_SIMPLE: u32 = 1;
+pub const CRYPT_FORMAT_X509: u32 = 2;
+pub const CRYPT_FORMAT_OID: u32 = 4;
+pub const CRYPT_FORMAT_RDN_SEMICOLON: u32 = 256;
+pub const CRYPT_FORMAT_RDN_CRLF: u32 = 512;
+pub const CRYPT_FORMAT_RDN_UNQUOTE: u32 = 1024;
+pub const CRYPT_FORMAT_RDN_REVERSE: u32 = 2048;
+pub const CRYPT_FORMAT_COMMA: u32 = 4096;
+pub const CRYPT_FORMAT_SEMICOLON: u32 = 256;
+pub const CRYPT_FORMAT_CRLF: u32 = 512;
+pub const CRYPT_ACQUIRE_CACHE_FLAG: u32 = 1;
+pub const CRYPT_ACQUIRE_USE_PROV_INFO_FLAG: u32 = 2;
+pub const CRYPT_ACQUIRE_COMPARE_KEY_FLAG: u32 = 4;
+pub const CRYPT_ACQUIRE_SILENT_FLAG: u32 = 64;
+pub const CRYPT_FIND_USER_KEYSET_FLAG: u32 = 1;
+pub const CRYPT_FIND_MACHINE_KEYSET_FLAG: u32 = 2;
+pub const CRYPT_FIND_SILENT_KEYSET_FLAG: u32 = 64;
+pub const CRYPT_USER_KEYSET: u32 = 4096;
+pub const CRYPT_USERDATA: u32 = 1;
 pub const SAFER_SCOPEID_MACHINE: u32 = 1;
 pub const SAFER_SCOPEID_USER: u32 = 2;
 pub const SAFER_LEVELID_DISALLOWED: u32 = 0;
@@ -315,6 +666,50 @@ pub const SERVICE_TABLE_SHIFT: u32 = 8;
 pub const SERVICE_TABLE_MASK: u32 = 16;
 pub const SERVICE_NUMBER_MASK: u32 = 4095;
 pub const SERVICE_TABLE_TEST: u32 = 16;
+pub const LSA_MODE_PASSWORD_PROTECTED: u32 = 1;
+pub const LSA_MODE_INDIVIDUAL_ACCOUNTS: u32 = 2;
+pub const LSA_MODE_MANDATORY_ACCESS: u32 = 3;
+pub const LSA_MODE_LOG_FULL: u32 = 4;
+pub const POLICY_VIEW_LOCAL_INFORMATION: u32 = 1;
+pub const POLICY_VIEW_AUDIT_INFORMATION: u32 = 2;
+pub const POLICY_GET_PRIVATE_INFORMATION: u32 = 4;
+pub const POLICY_TRUST_ADMIN: u32 = 8;
+pub const POLICY_CREATE_ACCOUNT: u32 = 16;
+pub const POLICY_CREATE_SECRET: u32 = 32;
+pub const POLICY_CREATE_PRIVILEGE: u32 = 64;
+pub const POLICY_SET_DEFAULT_QUOTA_LIMITS: u32 = 128;
+pub const POLICY_SET_AUDIT_REQUIREMENTS: u32 = 256;
+pub const POLICY_AUDIT_LOG_ADMIN: u32 = 512;
+pub const POLICY_SERVER_ADMIN: u32 = 1024;
+pub const POLICY_LOOKUP_NAMES: u32 = 2048;
+pub const POLICY_NOTIFICATION: u32 = 4096;
+pub const POLICY_READ: u32 = 131078;
+pub const POLICY_WRITE: u32 = 133112;
+pub const POLICY_EXECUTE: u32 = 133121;
+pub const POLICY_ALL_ACCESS: u32 = 987135;
+pub const POLICY_AUDIT_EVENT_UNCHANGED: u32 = 0;
+pub const POLICY_AUDIT_EVENT_SUCCESS: u32 = 1;
+pub const POLICY_AUDIT_EVENT_FAILURE: u32 = 2;
+pub const POLICY_AUDIT_EVENT_NONE: u32 = 4;
+pub const POLICY_AUDIT_EVENT_MASK: u32 = 7;
+pub const POLICY_LOCATION_LOCAL: u32 = 1;
+pub const POLICY_LOCATION_DS: u32 = 2;
+pub const POLICY_MACHINE_POLICY_LOCAL: u32 = 0;
+pub const POLICY_MACHINE_POLICY_DEFAULTED: u32 = 1;
+pub const POLICY_MACHINE_POLICY_EXPLICIT: u32 = 2;
+pub const POLICY_MACHINE_POLICY_UNKNOWN: u32 = 4294967295;
+pub const POLICY_QOS_SCHANEL_REQUIRED: u32 = 1;
+pub const POLICY_QOS_OUTBOUND_INTEGRITY: u32 = 2;
+pub const POLICY_QOS_OUTBOUND_CONFIDENTIALITY: u32 = 4;
+pub const POLICY_QOS_INBOUND_INTEGREITY: u32 = 8;
+pub const POLICY_QOS_INBOUND_CONFIDENTIALITY: u32 = 16;
+pub const POLICY_QOS_ALLOW_LOCAL_ROOT_CERT_STORE: u32 = 32;
+pub const POLICY_QOS_RAS_SERVER_ALLOWED: u32 = 64;
+pub const POLICY_QOS_DHCP_SERVER_ALLOWD: u32 = 128;
+pub const POLICY_KERBEROS_FORWARDABLE: u32 = 1;
+pub const POLICY_KERBEROS_PROXYABLE: u32 = 2;
+pub const POLICY_KERBEROS_RENEWABLE: u32 = 4;
+pub const POLICY_KERBEROS_POSTDATEABLE: u32 = 8;
 pub const RTL_ENCRYPT_MEMORY_SIZE: u32 = 8;
 pub const RTL_ENCRYPT_OPTION_SAME_PROCESS: u32 = 0;
 pub const RTL_ENCRYPT_OPTION_CROSS_PROCESS: u32 = 1;
@@ -344,16 +739,51 @@ pub const SC_MAX_ACCOUNT_NAME_LENGTH: u32 = 2048;
 pub const SC_MAX_COMMENT_LENGTH: u32 = 128;
 pub const SC_MAX_ARGUMENT_LENGTH: u32 = 1024;
 pub const SC_MAX_ARGUMENTS: u32 = 1024;
+pub const MAGIC_CRYPTPROV: u32 = 2745070623;
+pub const MAGIC_CRYPTKEY: u32 = 2745070622;
+pub const MAGIC_CRYPTHASH: u32 = 2745070621;
+pub const CERT_HASH_LENGTH: u32 = 20;
+pub const CRED_MAX_STRING_LENGTH: u32 = 256;
+pub const CRED_MAX_USERNAME_LENGTH: u32 = 513;
+pub const CRED_MAX_GENERIC_TARGET_NAME_LENGTH: u32 = 32767;
+pub const CRED_MAX_DOMAIN_TARGET_NAME_LENGTH: u32 = 337;
+pub const CRED_MAX_VALUE_SIZE: u32 = 256;
+pub const CRED_MAX_ATTRIBUTES: u32 = 64;
+pub const CRED_MAX_BLOB_SIZE: u32 = 512;
+pub const CRED_MAX_CREDENTIAL_BLOB_SIZE: u32 = 2560;
+pub const CRED_FLAGS_PASSWORD_FOR_CERT: u32 = 1;
+pub const CRED_FLAGS_PROMPT_NOW: u32 = 2;
+pub const CRED_FLAGS_USERNAME_TARGET: u32 = 4;
+pub const CRED_FLAGS_OWF_CRED_BLOB: u32 = 8;
+pub const CRED_FLAGS_VALID_FLAGS: u32 = 15;
+pub const CRED_TYPE_GENERIC: u32 = 1;
+pub const CRED_TYPE_DOMAIN_PASSWORD: u32 = 2;
+pub const CRED_TYPE_DOMAIN_CERTIFICATE: u32 = 3;
+pub const CRED_TYPE_DOMAIN_VISIBLE_PASSWORD: u32 = 4;
+pub const CRED_TYPE_GENERIC_CERTIFICATE: u32 = 5;
+pub const CRED_TYPE_MAXIMUM: u32 = 6;
+pub const CRED_TYPE_MAXIMUM_EX: u32 = 1006;
+pub const CRED_PERSIST_NONE: u32 = 0;
+pub const CRED_PERSIST_SESSION: u32 = 1;
+pub const CRED_PERSIST_LOCAL_MACHINE: u32 = 2;
+pub const CRED_PERSIST_ENTERPRISE: u32 = 3;
+pub const CRED_TI_SERVER_FORMAT_UNKNOWN: u32 = 1;
+pub const CRED_TI_DOMAIN_FORMAT_UNKNOWN: u32 = 2;
+pub const CRED_TI_ONLY_PASSWORD_REQUIRED: u32 = 4;
+pub const CRED_PRESERVE_CREDENTIAL_BLOB: u32 = 1;
 pub type wchar_t = ::core::ffi::c_ushort;
 pub type ULONG = ::core::ffi::c_ulong;
 pub type PULONG = *mut ULONG;
 pub type USHORT = ::core::ffi::c_ushort;
 pub type UCHAR = ::core::ffi::c_uchar;
+pub type PUCHAR = *mut UCHAR;
 pub type BOOL = ::core::ffi::c_int;
 pub type BYTE = ::core::ffi::c_uchar;
 pub type WORD = ::core::ffi::c_ushort;
 pub type DWORD = ::core::ffi::c_ulong;
 pub type PBYTE = *mut BYTE;
+pub type LPBYTE = *mut BYTE;
+pub type LPDWORD = *mut DWORD;
 pub type LPVOID = *mut ::core::ffi::c_void;
 pub type ULONG_PTR = ::core::ffi::c_ulong;
 pub type SIZE_T = ULONG_PTR;
@@ -371,8 +801,10 @@ pub type PVOID = *mut ::core::ffi::c_void;
 pub type HANDLE = *mut ::core::ffi::c_void;
 pub type CHAR = ::core::ffi::c_char;
 pub type LONG = ::core::ffi::c_long;
+pub type BOOLEAN = ::core::ffi::c_uchar;
 pub type LONGLONG = ::core::ffi::c_longlong;
 pub type ULONGLONG = ::core::ffi::c_ulonglong;
+pub type PCHAR = *mut CHAR;
 pub type LPSTR = *mut CHAR;
 pub type LPCSTR = *const CHAR;
 pub type WCHAR = wchar_t;
@@ -401,6 +833,15 @@ pub struct _LARGE_INTEGER__bindgen_ty_2 {
     pub HighPart: LONG,
 }
 pub type LARGE_INTEGER = _LARGE_INTEGER;
+pub type PLARGE_INTEGER = *mut _LARGE_INTEGER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LUID {
+    pub LowPart: DWORD,
+    pub HighPart: LONG,
+}
+pub type LUID = _LUID;
+pub type PLUID = *mut _LUID;
 pub type PSECURITY_DESCRIPTOR = PVOID;
 pub type SECURITY_INFORMATION = DWORD;
 pub type ACCESS_MASK = DWORD;
@@ -424,6 +865,22 @@ pub struct _ACL {
     pub Sbz2: WORD,
 }
 pub type PACL = *mut _ACL;
+pub const _SECURITY_IMPERSONATION_LEVEL_SecurityAnonymous: _SECURITY_IMPERSONATION_LEVEL = 0;
+pub const _SECURITY_IMPERSONATION_LEVEL_SecurityIdentification: _SECURITY_IMPERSONATION_LEVEL = 1;
+pub const _SECURITY_IMPERSONATION_LEVEL_SecurityImpersonation: _SECURITY_IMPERSONATION_LEVEL = 2;
+pub const _SECURITY_IMPERSONATION_LEVEL_SecurityDelegation: _SECURITY_IMPERSONATION_LEVEL = 3;
+pub type _SECURITY_IMPERSONATION_LEVEL = ::core::ffi::c_uint;
+pub use self::_SECURITY_IMPERSONATION_LEVEL as SECURITY_IMPERSONATION_LEVEL;
+pub type SECURITY_CONTEXT_TRACKING_MODE = BOOLEAN;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SECURITY_QUALITY_OF_SERVICE {
+    pub Length: DWORD,
+    pub ImpersonationLevel: SECURITY_IMPERSONATION_LEVEL,
+    pub ContextTrackingMode: SECURITY_CONTEXT_TRACKING_MODE,
+    pub EffectiveOnly: BOOLEAN,
+}
+pub type PSECURITY_QUALITY_OF_SERVICE = *mut _SECURITY_QUALITY_OF_SERVICE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SID_IDENTIFIER_AUTHORITY {
@@ -452,6 +909,7 @@ pub const _SID_NAME_USE_SidTypeLabel: _SID_NAME_USE = 10;
 pub type _SID_NAME_USE = ::core::ffi::c_uint;
 pub use self::_SID_NAME_USE as SID_NAME_USE;
 pub type PSID_NAME_USE = *mut _SID_NAME_USE;
+pub type SECURITY_DESCRIPTOR_CONTROL = WORD;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _QUOTA_LIMITS {
@@ -463,6 +921,7 @@ pub struct _QUOTA_LIMITS {
     pub TimeLimit: LARGE_INTEGER,
 }
 pub type QUOTA_LIMITS = _QUOTA_LIMITS;
+pub type PQUOTA_LIMITS = *mut _QUOTA_LIMITS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _EVENTLOGRECORD {
@@ -519,6 +978,7 @@ pub struct HINSTANCE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type HINSTANCE = *mut HINSTANCE__;
+pub type HMODULE = HINSTANCE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _FILETIME {
@@ -1180,7 +1640,509 @@ pub type POBJECTS_AND_NAME_ = *mut OBJECTS_AND_NAME_W;
 pub type INHERITED_FROM = INHERITED_FROMW;
 pub type PINHERITED_FROM = *mut INHERITED_FROMW;
 pub type FN_PROGRESS = FN_PROGRESSW;
+pub type NTSTATUS = LONG;
 pub type ALG_ID = ::core::ffi::c_uint;
+pub type HCRYPTPROV = ULONG_PTR;
+pub type HCRYPTPROV_OR_NCRYPT_KEY_HANDLE = ULONG_PTR;
+pub type HCRYPTPROV_LEGACY = ULONG_PTR;
+pub type HCRYPTKEY = ULONG_PTR;
+pub type HCRYPTHASH = ULONG_PTR;
+pub type HCERTSTORE = *mut ::core::ffi::c_void;
+pub type HCRYPTMSG = *mut ::core::ffi::c_void;
+pub type HCRYPTOIDFUNCSET = *mut ::core::ffi::c_void;
+pub type HCRYPTOIDFUNCADDR = *mut ::core::ffi::c_void;
+pub type HCRYPTDEFAULTCONTEXT = *mut ::core::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPTOAPI_BLOB {
+    pub cbData: DWORD,
+    pub pbData: *mut BYTE,
+}
+pub type CRYPT_INTEGER_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_INTEGER_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_UINT_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_UINT_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_OBJID_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_OBJID_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CERT_NAME_BLOB = _CRYPTOAPI_BLOB;
+pub type CRYPT_DATA_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_DATA_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_HASH_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_HASH_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_DIGEST_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_DIGEST_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_DER_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_DER_BLOB = *mut _CRYPTOAPI_BLOB;
+pub type CRYPT_ATTR_BLOB = _CRYPTOAPI_BLOB;
+pub type PCRYPT_ATTR_BLOB = *mut _CRYPTOAPI_BLOB;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPTPROTECT_PROMPTSTRUCT {
+    pub cbSize: DWORD,
+    pub dwPromptFlags: DWORD,
+    pub hwndApp: HWND,
+    pub szPrompt: LPCWSTR,
+}
+pub type CRYPTPROTECT_PROMPTSTRUCT = _CRYPTPROTECT_PROMPTSTRUCT;
+pub type PCRYPTPROTECT_PROMPTSTRUCT = *mut _CRYPTPROTECT_PROMPTSTRUCT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ALGORITHM_IDENTIFIER {
+    pub pszObjId: LPSTR,
+    pub Parameters: CRYPT_OBJID_BLOB,
+}
+pub type CRYPT_ALGORITHM_IDENTIFIER = _CRYPT_ALGORITHM_IDENTIFIER;
+pub type PCRYPT_ALGORITHM_IDENTIFIER = *mut _CRYPT_ALGORITHM_IDENTIFIER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ATTRIBUTE_TYPE_VALUE {
+    pub pszObjId: LPSTR,
+    pub Value: CRYPT_OBJID_BLOB,
+}
+pub type CRYPT_ATTRIBUTE_TYPE_VALUE = _CRYPT_ATTRIBUTE_TYPE_VALUE;
+pub type PCRYPT_ATTRIBUTE_TYPE_VALUE = *mut _CRYPT_ATTRIBUTE_TYPE_VALUE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_BIT_BLOB {
+    pub cbData: DWORD,
+    pub pbData: *mut BYTE,
+    pub cUnusedBits: DWORD,
+}
+pub type CRYPT_BIT_BLOB = _CRYPT_BIT_BLOB;
+pub type PCRYPT_BIT_BLOB = *mut _CRYPT_BIT_BLOB;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_KEY_PROV_PARAM {
+    pub dwParam: DWORD,
+    pub pbData: *mut BYTE,
+    pub cbData: DWORD,
+    pub dwFlags: DWORD,
+}
+pub type CRYPT_KEY_PROV_PARAM = _CRYPT_KEY_PROV_PARAM;
+pub type PCRYPT_KEY_PROV_PARAM = *mut _CRYPT_KEY_PROV_PARAM;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_KEY_PROV_INFO {
+    pub pwszContainerName: LPWSTR,
+    pub pwszProvName: LPWSTR,
+    pub dwProvType: DWORD,
+    pub dwFlags: DWORD,
+    pub cProvParam: DWORD,
+    pub rgProvParam: PCRYPT_KEY_PROV_PARAM,
+    pub dwKeySpec: DWORD,
+}
+pub type CRYPT_KEY_PROV_INFO = _CRYPT_KEY_PROV_INFO;
+pub type PCRYPT_KEY_PROV_INFO = *mut _CRYPT_KEY_PROV_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CERT_PUBLIC_KEY_INFO {
+    pub Algorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub PublicKey: CRYPT_BIT_BLOB,
+}
+pub type CERT_PUBLIC_KEY_INFO = _CERT_PUBLIC_KEY_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CERT_EXTENSION {
+    pub pszObjId: LPSTR,
+    pub fCritical: BOOL,
+    pub Value: CRYPT_OBJID_BLOB,
+}
+pub type PCERT_EXTENSION = *mut _CERT_EXTENSION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CERT_INFO {
+    pub dwVersion: DWORD,
+    pub SerialNumber: CRYPT_INTEGER_BLOB,
+    pub SignatureAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub Issuer: CERT_NAME_BLOB,
+    pub NotBefore: FILETIME,
+    pub NotAfter: FILETIME,
+    pub Subject: CERT_NAME_BLOB,
+    pub SubjectPublicKeyInfo: CERT_PUBLIC_KEY_INFO,
+    pub IssuerUniqueId: CRYPT_BIT_BLOB,
+    pub SubjectUniqueId: CRYPT_BIT_BLOB,
+    pub cExtension: DWORD,
+    pub rgExtension: PCERT_EXTENSION,
+}
+pub type PCERT_INFO = *mut _CERT_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_CONTENT_INFO_SEQUENCE_OF_ANY {
+    pub pszObjId: LPSTR,
+    pub cValue: DWORD,
+    pub rgValue: PCRYPT_DER_BLOB,
+}
+pub type CRYPT_CONTENT_INFO_SEQUENCE_OF_ANY = _CRYPT_CONTENT_INFO_SEQUENCE_OF_ANY;
+pub type PCRYPT_CONTENT_INFO_SEQUENCE_OF_ANY = *mut _CRYPT_CONTENT_INFO_SEQUENCE_OF_ANY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_CONTENT_INFO {
+    pub pszObjId: LPSTR,
+    pub Content: CRYPT_DER_BLOB,
+}
+pub type CRYPT_CONTENT_INFO = _CRYPT_CONTENT_INFO;
+pub type PCRYPT_CONTENT_INFO = *mut _CRYPT_CONTENT_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_SEQUENCE_OF_ANY {
+    pub cValue: DWORD,
+    pub rgValue: PCRYPT_DER_BLOB,
+}
+pub type CRYPT_SEQUENCE_OF_ANY = _CRYPT_SEQUENCE_OF_ANY;
+pub type PCRYPT_SEQUENCE_OF_ANY = *mut _CRYPT_SEQUENCE_OF_ANY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CERT_CONTEXT {
+    pub dwCertEncodingType: DWORD,
+    pub pbCertEncoded: *mut BYTE,
+    pub cbCertEncoded: DWORD,
+    pub pCertInfo: PCERT_INFO,
+    pub hCertStore: HCERTSTORE,
+}
+pub type CERT_CONTEXT = _CERT_CONTEXT;
+pub type PCCERT_CONTEXT = *const CERT_CONTEXT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRL_ENTRY {
+    pub SerialNumber: CRYPT_INTEGER_BLOB,
+    pub RevocationDate: FILETIME,
+    pub cExtension: DWORD,
+    pub rgExtension: PCERT_EXTENSION,
+}
+pub type PCRL_ENTRY = *mut _CRL_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRL_INFO {
+    pub dwVersion: DWORD,
+    pub SignatureAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub Issuer: CERT_NAME_BLOB,
+    pub ThisUpdate: FILETIME,
+    pub NextUpdate: FILETIME,
+    pub cCRLEntry: DWORD,
+    pub rgCRLEntry: PCRL_ENTRY,
+    pub cExtension: DWORD,
+    pub rgExtension: PCERT_EXTENSION,
+}
+pub type PCRL_INFO = *mut _CRL_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ATTRIBUTE {
+    pub pszObjId: LPSTR,
+    pub cValue: DWORD,
+    pub rgValue: PCRYPT_DATA_BLOB,
+}
+pub type CRYPT_ATTRIBUTE = _CRYPT_ATTRIBUTE;
+pub type PCRYPT_ATTRIBUTE = *mut _CRYPT_ATTRIBUTE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ATTRIBUTES {
+    pub cAttr: DWORD,
+    pub rgAttr: PCRYPT_ATTRIBUTE,
+}
+pub type CRYPT_ATTRIBUTES = _CRYPT_ATTRIBUTES;
+pub type PCRYPT_ATTRIBUTES = *mut _CRYPT_ATTRIBUTES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRL_CONTEXT {
+    pub dwCertEncodingType: DWORD,
+    pub pbCrlEncoded: *mut BYTE,
+    pub cbCrlEncoded: DWORD,
+    pub pCrlInfo: PCRL_INFO,
+    pub hCertStore: HCERTSTORE,
+}
+pub type CRL_CONTEXT = _CRL_CONTEXT;
+pub type PCCRL_CONTEXT = *const CRL_CONTEXT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_X942_OTHER_INFO {
+    pub pszContentEncryptionObjId: LPSTR,
+    pub rgbCounter: [BYTE; 4usize],
+    pub rgbKeyLength: [BYTE; 4usize],
+    pub PubInfo: CRYPT_DATA_BLOB,
+}
+pub type CRYPT_X942_OTHER_INFO = _CRYPT_X942_OTHER_INFO;
+pub type PCRYPT_X942_OTHER_INFO = *mut _CRYPT_X942_OTHER_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_RC2_CBC_PARAMETERS {
+    pub dwVersion: DWORD,
+    pub fIV: BOOL,
+    pub rgbIV: [BYTE; 4usize],
+}
+pub type CRYPT_RC2_CBC_PARAMETERS = _CRYPT_RC2_CBC_PARAMETERS;
+pub type PCRYPT_RC2_CBC_PARAMETERS = *mut _CRYPT_RC2_CBC_PARAMETERS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_SMIME_CAPABILITY {
+    pub pszObjId: LPSTR,
+    pub Parameters: CRYPT_OBJID_BLOB,
+}
+pub type CRYPT_SMIME_CAPABILITY = _CRYPT_SMIME_CAPABILITY;
+pub type PCRYPT_SMIME_CAPABILITY = *mut _CRYPT_SMIME_CAPABILITY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_SMIME_CAPABILITIES {
+    pub cCapability: DWORD,
+    pub rgCapability: PCRYPT_SMIME_CAPABILITY,
+}
+pub type CRYPT_SMIME_CAPABILITIES = _CRYPT_SMIME_CAPABILITIES;
+pub type PCRYPT_SMIME_CAPABILITIES = *mut _CRYPT_SMIME_CAPABILITIES;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _VTableProvStruc {
+    pub Version: DWORD,
+    pub FuncVerifyImage:
+        ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPCSTR, arg2: *mut BYTE) -> BOOL>,
+    pub FuncReturnhWnd: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut HWND)>,
+    pub dwProvType: DWORD,
+    pub pbContextInfo: *mut BYTE,
+    pub cbContextInfo: DWORD,
+    pub pszProvName: LPSTR,
+}
+pub type PVTableProvStruc = *mut _VTableProvStruc;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_TIME_STAMP_REQUEST_INFO {
+    pub pszTimeStampAlgorithm: LPSTR,
+    pub pszContentType: LPSTR,
+    pub Content: CRYPT_OBJID_BLOB,
+    pub cAttribute: DWORD,
+    pub rgAttribute: PCRYPT_ATTRIBUTE,
+}
+pub type CRYPT_TIME_STAMP_REQUEST_INFO = _CRYPT_TIME_STAMP_REQUEST_INFO;
+pub type PCRYPT_TIME_STAMP_REQUEST_INFO = *mut _CRYPT_TIME_STAMP_REQUEST_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ENROLLMENT_NAME_VALUE_PAIR {
+    pub pwszName: LPWSTR,
+    pub pwszValue: LPWSTR,
+}
+pub type CRYPT_ENROLLMENT_NAME_VALUE_PAIR = _CRYPT_ENROLLMENT_NAME_VALUE_PAIR;
+pub type PCRYPT_ENROLLMENT_NAME_VALUE_PAIR = *mut _CRYPT_ENROLLMENT_NAME_VALUE_PAIR;
+pub type PFN_CRYPT_ALLOC =
+    ::core::option::Option<unsafe extern "stdcall" fn(cbsize: usize) -> LPVOID>;
+pub type PFN_CRYPT_FREE = ::core::option::Option<unsafe extern "stdcall" fn(pv: LPVOID)>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _CRYPT_ENCODE_PARA {
+    pub cbSize: DWORD,
+    pub pfnAlloc: PFN_CRYPT_ALLOC,
+    pub pfnFree: PFN_CRYPT_FREE,
+}
+pub type CRYPT_ENCODE_PARA = _CRYPT_ENCODE_PARA;
+pub type PCRYPT_ENCODE_PARA = *mut _CRYPT_ENCODE_PARA;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _CRYPT_DECODE_PARA {
+    pub cbSize: DWORD,
+    pub pfnAlloc: PFN_CRYPT_ALLOC,
+    pub pfnFree: PFN_CRYPT_FREE,
+}
+pub type CRYPT_DECODE_PARA = _CRYPT_DECODE_PARA;
+pub type PCRYPT_DECODE_PARA = *mut _CRYPT_DECODE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_OID_FUNC_ENTRY {
+    pub pszOID: LPCSTR,
+    pub pvFuncAddr: *mut ::core::ffi::c_void,
+}
+pub type CRYPT_OID_FUNC_ENTRY = _CRYPT_OID_FUNC_ENTRY;
+pub type PCRYPT_OID_FUNC_ENTRY = *mut _CRYPT_OID_FUNC_ENTRY;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _CRYPT_OID_INFO {
+    pub cbSize: DWORD,
+    pub pszOID: LPCSTR,
+    pub pwszName: LPCWSTR,
+    pub dwGroupId: DWORD,
+    pub __bindgen_anon_1: _CRYPT_OID_INFO__bindgen_ty_1,
+    pub ExtraInfo: CRYPT_DATA_BLOB,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _CRYPT_OID_INFO__bindgen_ty_1 {
+    pub dwValue: DWORD,
+    pub Algid: ALG_ID,
+    pub dwLength: DWORD,
+}
+pub type CRYPT_OID_INFO = _CRYPT_OID_INFO;
+pub type PCRYPT_OID_INFO = *mut _CRYPT_OID_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_SIGN_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgEncodingType: DWORD,
+    pub pSigningCert: PCCERT_CONTEXT,
+    pub HashAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub pvHashAuxInfo: *mut ::core::ffi::c_void,
+    pub cMsgCert: DWORD,
+    pub rgpMsgCert: *mut PCCERT_CONTEXT,
+    pub cMsgCrl: DWORD,
+    pub rgpMsgCrl: *mut PCCRL_CONTEXT,
+    pub cAuthAttr: DWORD,
+    pub rgAuthAttr: PCRYPT_ATTRIBUTE,
+    pub cUnauthAttr: DWORD,
+    pub rgUnauthAttr: PCRYPT_ATTRIBUTE,
+    pub dwFlags: DWORD,
+    pub dwInnerContentType: DWORD,
+}
+pub type CRYPT_SIGN_MESSAGE_PARA = _CRYPT_SIGN_MESSAGE_PARA;
+pub type PCRYPT_SIGN_MESSAGE_PARA = *mut _CRYPT_SIGN_MESSAGE_PARA;
+pub type PFN_CRYPT_GET_SIGNER_CERTIFICATE = ::core::option::Option<
+    unsafe extern "stdcall" fn(
+        pvGetArg: *mut ::core::ffi::c_void,
+        dwCertEncodingType: DWORD,
+        pSignerId: PCERT_INFO,
+        hMsgCertStore: HCERTSTORE,
+    ) -> PCCERT_CONTEXT,
+>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _CRYPT_VERIFY_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgAndCertEncodingType: DWORD,
+    pub hCryptProv: HCRYPTPROV_LEGACY,
+    pub pfnGetSignerCertificate: PFN_CRYPT_GET_SIGNER_CERTIFICATE,
+    pub pvGetArg: *mut ::core::ffi::c_void,
+}
+pub type CRYPT_VERIFY_MESSAGE_PARA = _CRYPT_VERIFY_MESSAGE_PARA;
+pub type PCRYPT_VERIFY_MESSAGE_PARA = *mut _CRYPT_VERIFY_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_ENCRYPT_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgEncodingType: DWORD,
+    pub hCryptProv: HCRYPTPROV_LEGACY,
+    pub ContentEncryptionAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub pvEncryptionAuxInfo: *mut ::core::ffi::c_void,
+    pub dwFlags: DWORD,
+    pub dwInnerContentType: DWORD,
+}
+pub type CRYPT_ENCRYPT_MESSAGE_PARA = _CRYPT_ENCRYPT_MESSAGE_PARA;
+pub type PCRYPT_ENCRYPT_MESSAGE_PARA = *mut _CRYPT_ENCRYPT_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_DECRYPT_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgAndCertEncodingType: DWORD,
+    pub cCertStore: DWORD,
+    pub rghCertStore: *mut HCERTSTORE,
+}
+pub type CRYPT_DECRYPT_MESSAGE_PARA = _CRYPT_DECRYPT_MESSAGE_PARA;
+pub type PCRYPT_DECRYPT_MESSAGE_PARA = *mut _CRYPT_DECRYPT_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_HASH_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgEncodingType: DWORD,
+    pub hCryptProv: HCRYPTPROV_LEGACY,
+    pub HashAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub pvHashAuxInfo: *mut ::core::ffi::c_void,
+}
+pub type CRYPT_HASH_MESSAGE_PARA = _CRYPT_HASH_MESSAGE_PARA;
+pub type PCRYPT_HASH_MESSAGE_PARA = *mut _CRYPT_HASH_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_KEY_SIGN_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgAndCertEncodingType: DWORD,
+    pub hCryptProv: HCRYPTPROV,
+    pub dwKeySpec: DWORD,
+    pub HashAlgorithm: CRYPT_ALGORITHM_IDENTIFIER,
+    pub pvHashAuxInfo: *mut ::core::ffi::c_void,
+}
+pub type CRYPT_KEY_SIGN_MESSAGE_PARA = _CRYPT_KEY_SIGN_MESSAGE_PARA;
+pub type PCRYPT_KEY_SIGN_MESSAGE_PARA = *mut _CRYPT_KEY_SIGN_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_KEY_VERIFY_MESSAGE_PARA {
+    pub cbSize: DWORD,
+    pub dwMsgEncodingType: DWORD,
+    pub hCryptProv: HCRYPTPROV_LEGACY,
+}
+pub type CRYPT_KEY_VERIFY_MESSAGE_PARA = _CRYPT_KEY_VERIFY_MESSAGE_PARA;
+pub type PCRYPT_KEY_VERIFY_MESSAGE_PARA = *mut _CRYPT_KEY_VERIFY_MESSAGE_PARA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_URL_ARRAY {
+    pub cUrl: DWORD,
+    pub rgwszUrl: *mut LPWSTR,
+}
+pub type CRYPT_URL_ARRAY = _CRYPT_URL_ARRAY;
+pub type PCRYPT_URL_ARRAY = *mut _CRYPT_URL_ARRAY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_URL_INFO {
+    pub cbSize: DWORD,
+    pub dwSyncDeltaTime: DWORD,
+    pub cGroup: DWORD,
+    pub rgcGroupEntry: *mut DWORD,
+}
+pub type CRYPT_URL_INFO = _CRYPT_URL_INFO;
+pub type PCRYPT_URL_INFO = *mut _CRYPT_URL_INFO;
+pub type HCRYPTASYNC = HANDLE;
+pub type PHCRYPTASYNC = *mut HANDLE;
+pub type PFN_CRYPT_ASYNC_RETRIEVAL_COMPLETION_FUNC = ::core::option::Option<
+    unsafe extern "stdcall" fn(
+        pvCompletion: *mut ::core::ffi::c_void,
+        dwCompletionCode: DWORD,
+        pszURL: LPCSTR,
+        pszObjectOid: LPSTR,
+        pvObject: *mut ::core::ffi::c_void,
+    ),
+>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _CRYPT_ASYNC_RETRIEVAL_COMPLETION {
+    pub pfnCompletion: PFN_CRYPT_ASYNC_RETRIEVAL_COMPLETION_FUNC,
+    pub pvCompletion: *mut ::core::ffi::c_void,
+}
+pub type CRYPT_ASYNC_RETRIEVAL_COMPLETION = _CRYPT_ASYNC_RETRIEVAL_COMPLETION;
+pub type PCRYPT_ASYNC_RETRIEVAL_COMPLETION = *mut _CRYPT_ASYNC_RETRIEVAL_COMPLETION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_BLOB_ARRAY {
+    pub cBlob: DWORD,
+    pub rgBlob: PCRYPT_DATA_BLOB,
+}
+pub type CRYPT_BLOB_ARRAY = _CRYPT_BLOB_ARRAY;
+pub type PCRYPT_BLOB_ARRAY = *mut _CRYPT_BLOB_ARRAY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_CREDENTIALS {
+    pub cbSize: DWORD,
+    pub pszCredentialsOid: LPCSTR,
+    pub pvCredentials: LPVOID,
+}
+pub type CRYPT_CREDENTIALS = _CRYPT_CREDENTIALS;
+pub type PCRYPT_CREDENTIALS = *mut _CRYPT_CREDENTIALS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_PASSWORD_CREDENTIALSA {
+    pub cbSize: DWORD,
+    pub pszUsername: LPSTR,
+    pub pszPassword: LPSTR,
+}
+pub type CRYPT_PASSWORD_CREDENTIALSA = _CRYPT_PASSWORD_CREDENTIALSA;
+pub type PCRYPT_PASSWORD_CREDENTIALSA = *mut _CRYPT_PASSWORD_CREDENTIALSA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_PASSWORD_CREDENTIALSW {
+    pub cbSize: DWORD,
+    pub pszUsername: LPWSTR,
+    pub pszPassword: LPWSTR,
+}
+pub type CRYPT_PASSWORD_CREDENTIALSW = _CRYPT_PASSWORD_CREDENTIALSW;
+pub type PCRYPT_PASSWORD_CREDENTIALSW = *mut _CRYPT_PASSWORD_CREDENTIALSW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CRYPT_RETRIEVE_AUX_INFO {
+    pub cbSize: DWORD,
+    pub pLastSyncTime: *mut FILETIME,
+    pub dwMaxUrlRetrievalByteCount: DWORD,
+}
+pub type CRYPT_RETRIEVE_AUX_INFO = _CRYPT_RETRIEVE_AUX_INFO;
+pub type PCRYPT_RETRIEVE_AUX_INFO = *mut _CRYPT_RETRIEVE_AUX_INFO;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct SAFER_LEVEL_HANDLE__ {
@@ -1308,6 +2270,571 @@ pub type SAFER_URLZONE_IDENTIFICATION = _SAFER_URLZONE_IDENTIFICATION;
 pub type PSAFER_URLZONE_IDENTIFICATION = *mut _SAFER_URLZONE_IDENTIFICATION;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _UNICODE_STRING {
+    pub Length: USHORT,
+    pub MaximumLength: USHORT,
+    pub Buffer: PWSTR,
+}
+pub type UNICODE_STRING = _UNICODE_STRING;
+pub type PUNICODE_STRING = *mut _UNICODE_STRING;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _STRING {
+    pub Length: USHORT,
+    pub MaximumLength: USHORT,
+    pub Buffer: PCHAR,
+}
+pub type STRING = _STRING;
+pub type PSTRING = *mut _STRING;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _OBJECT_ATTRIBUTES {
+    pub Length: ULONG,
+    pub RootDirectory: HANDLE,
+    pub ObjectName: PUNICODE_STRING,
+    pub Attributes: ULONG,
+    pub SecurityDescriptor: PVOID,
+    pub SecurityQualityOfService: PVOID,
+}
+pub type OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES;
+pub type LSA_UNICODE_STRING = UNICODE_STRING;
+pub type PLSA_UNICODE_STRING = *mut UNICODE_STRING;
+pub type LSA_STRING = STRING;
+pub type PLSA_STRING = *mut STRING;
+pub type LSA_OBJECT_ATTRIBUTES = OBJECT_ATTRIBUTES;
+pub type PLSA_OBJECT_ATTRIBUTES = *mut OBJECT_ATTRIBUTES;
+pub const _MSV1_0_LOGON_SUBMIT_TYPE_MsV1_0InteractiveLogon: _MSV1_0_LOGON_SUBMIT_TYPE = 2;
+pub const _MSV1_0_LOGON_SUBMIT_TYPE_MsV1_0Lm20Logon: _MSV1_0_LOGON_SUBMIT_TYPE = 3;
+pub const _MSV1_0_LOGON_SUBMIT_TYPE_MsV1_0NetworkLogon: _MSV1_0_LOGON_SUBMIT_TYPE = 4;
+pub const _MSV1_0_LOGON_SUBMIT_TYPE_MsV1_0SubAuthLogon: _MSV1_0_LOGON_SUBMIT_TYPE = 5;
+pub const _MSV1_0_LOGON_SUBMIT_TYPE_MsV1_0WorkstationUnlockLogon: _MSV1_0_LOGON_SUBMIT_TYPE = 7;
+pub type _MSV1_0_LOGON_SUBMIT_TYPE = ::core::ffi::c_uint;
+pub use self::_MSV1_0_LOGON_SUBMIT_TYPE as MSV1_0_LOGON_SUBMIT_TYPE;
+pub type PMSV1_0_LOGON_SUBMIT_TYPE = *mut _MSV1_0_LOGON_SUBMIT_TYPE;
+pub const _MSV1_0_PROFILE_BUFFER_TYPE_MsV1_0InteractiveProfile: _MSV1_0_PROFILE_BUFFER_TYPE = 2;
+pub const _MSV1_0_PROFILE_BUFFER_TYPE_MsV1_0Lm20LogonProfile: _MSV1_0_PROFILE_BUFFER_TYPE = 3;
+pub const _MSV1_0_PROFILE_BUFFER_TYPE_MsV1_0SmartCardProfile: _MSV1_0_PROFILE_BUFFER_TYPE = 4;
+pub type _MSV1_0_PROFILE_BUFFER_TYPE = ::core::ffi::c_uint;
+pub use self::_MSV1_0_PROFILE_BUFFER_TYPE as MSV1_0_PROFILE_BUFFER_TYPE;
+pub type PMSV1_0_PROFILE_BUFFER_TYPE = *mut _MSV1_0_PROFILE_BUFFER_TYPE;
+pub const MSV1_0_AVID_MsvAvEOL: MSV1_0_AVID = 0;
+pub const MSV1_0_AVID_MsvAvNbComputerName: MSV1_0_AVID = 1;
+pub const MSV1_0_AVID_MsvAvNbDomainName: MSV1_0_AVID = 2;
+pub const MSV1_0_AVID_MsvAvDnsComputerName: MSV1_0_AVID = 3;
+pub const MSV1_0_AVID_MsvAvDnsDomainName: MSV1_0_AVID = 4;
+pub type MSV1_0_AVID = ::core::ffi::c_uint;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0Lm20ChallengeRequest: _MSV1_0_PROTOCOL_MESSAGE_TYPE =
+    0;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0Lm20GetChallengeResponse:
+    _MSV1_0_PROTOCOL_MESSAGE_TYPE = 1;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0EnumerateUsers: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 2;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0GetUserInfo: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 3;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0ReLogonUsers: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 4;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0ChangePassword: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 5;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0ChangeCachedPassword: _MSV1_0_PROTOCOL_MESSAGE_TYPE =
+    6;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0GenericPassthrough: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 7;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0CacheLogon: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 8;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0SubAuth: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 9;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0DeriveCredential: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 10;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0CacheLookup: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 11;
+pub const _MSV1_0_PROTOCOL_MESSAGE_TYPE_MsV1_0SetProcessOption: _MSV1_0_PROTOCOL_MESSAGE_TYPE = 12;
+pub type _MSV1_0_PROTOCOL_MESSAGE_TYPE = ::core::ffi::c_uint;
+pub use self::_MSV1_0_PROTOCOL_MESSAGE_TYPE as MSV1_0_PROTOCOL_MESSAGE_TYPE;
+pub type PMSV1_0_PROTOCOL_MESSAGE_TYPE = *mut _MSV1_0_PROTOCOL_MESSAGE_TYPE;
+pub const _POLICY_LSA_SERVER_ROLE_PolicyServerRoleBackup: _POLICY_LSA_SERVER_ROLE = 2;
+pub const _POLICY_LSA_SERVER_ROLE_PolicyServerRolePrimary: _POLICY_LSA_SERVER_ROLE = 3;
+pub type _POLICY_LSA_SERVER_ROLE = ::core::ffi::c_uint;
+pub use self::_POLICY_LSA_SERVER_ROLE as POLICY_LSA_SERVER_ROLE;
+pub const _POLICY_INFORMATION_CLASS_PolicyAuditLogInformation: _POLICY_INFORMATION_CLASS = 1;
+pub const _POLICY_INFORMATION_CLASS_PolicyAuditEventsInformation: _POLICY_INFORMATION_CLASS = 2;
+pub const _POLICY_INFORMATION_CLASS_PolicyPrimaryDomainInformation: _POLICY_INFORMATION_CLASS = 3;
+pub const _POLICY_INFORMATION_CLASS_PolicyPdAccountInformation: _POLICY_INFORMATION_CLASS = 4;
+pub const _POLICY_INFORMATION_CLASS_PolicyAccountDomainInformation: _POLICY_INFORMATION_CLASS = 5;
+pub const _POLICY_INFORMATION_CLASS_PolicyLsaServerRoleInformation: _POLICY_INFORMATION_CLASS = 6;
+pub const _POLICY_INFORMATION_CLASS_PolicyReplicaSourceInformation: _POLICY_INFORMATION_CLASS = 7;
+pub const _POLICY_INFORMATION_CLASS_PolicyDefaultQuotaInformation: _POLICY_INFORMATION_CLASS = 8;
+pub const _POLICY_INFORMATION_CLASS_PolicyModificationInformation: _POLICY_INFORMATION_CLASS = 9;
+pub const _POLICY_INFORMATION_CLASS_PolicyAuditFullSetInformation: _POLICY_INFORMATION_CLASS = 10;
+pub const _POLICY_INFORMATION_CLASS_PolicyAuditFullQueryInformation: _POLICY_INFORMATION_CLASS = 11;
+pub const _POLICY_INFORMATION_CLASS_PolicyDnsDomainInformation: _POLICY_INFORMATION_CLASS = 12;
+pub const _POLICY_INFORMATION_CLASS_PolicyDnsDomainInformationInt: _POLICY_INFORMATION_CLASS = 13;
+pub const _POLICY_INFORMATION_CLASS_PolicyLocalAccountDomainInformation: _POLICY_INFORMATION_CLASS =
+    14;
+pub const _POLICY_INFORMATION_CLASS_PolicyLastEntry: _POLICY_INFORMATION_CLASS = 15;
+pub type _POLICY_INFORMATION_CLASS = ::core::ffi::c_uint;
+pub use self::_POLICY_INFORMATION_CLASS as POLICY_INFORMATION_CLASS;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainIPSecReferenceInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 1;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainQualityOfServiceInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 2;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainEfsInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 3;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainPublicKeyInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 4;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainPasswordPolicyInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 5;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainLockoutInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 6;
+pub const _POLICY_DOMAIN_INFORMATION_CLASS_PolicyDomainKerberosTicketInformation:
+    _POLICY_DOMAIN_INFORMATION_CLASS = 7;
+pub type _POLICY_DOMAIN_INFORMATION_CLASS = ::core::ffi::c_uint;
+pub use self::_POLICY_DOMAIN_INFORMATION_CLASS as POLICY_DOMAIN_INFORMATION_CLASS;
+pub const _SECURITY_LOGON_TYPE_Interactive: _SECURITY_LOGON_TYPE = 2;
+pub const _SECURITY_LOGON_TYPE_Network: _SECURITY_LOGON_TYPE = 3;
+pub const _SECURITY_LOGON_TYPE_Batch: _SECURITY_LOGON_TYPE = 4;
+pub const _SECURITY_LOGON_TYPE_Service: _SECURITY_LOGON_TYPE = 5;
+pub const _SECURITY_LOGON_TYPE_Proxy: _SECURITY_LOGON_TYPE = 6;
+pub const _SECURITY_LOGON_TYPE_Unlock: _SECURITY_LOGON_TYPE = 7;
+pub type _SECURITY_LOGON_TYPE = ::core::ffi::c_uint;
+pub use self::_SECURITY_LOGON_TYPE as SECURITY_LOGON_TYPE;
+pub type PSECURITY_LOGON_TYPE = *mut _SECURITY_LOGON_TYPE;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainNameInformation: _TRUSTED_INFORMATION_CLASS = 1;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedControllersInformation: _TRUSTED_INFORMATION_CLASS = 2;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedPosixOffsetInformation: _TRUSTED_INFORMATION_CLASS = 3;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedPasswordInformation: _TRUSTED_INFORMATION_CLASS = 4;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainInformationBasic: _TRUSTED_INFORMATION_CLASS = 5;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainInformationEx: _TRUSTED_INFORMATION_CLASS = 6;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainAuthInformation: _TRUSTED_INFORMATION_CLASS = 7;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainFullInformation: _TRUSTED_INFORMATION_CLASS = 8;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainAuthInformationInternal:
+    _TRUSTED_INFORMATION_CLASS = 9;
+pub const _TRUSTED_INFORMATION_CLASS_TrustedDomainFullInformationInternal:
+    _TRUSTED_INFORMATION_CLASS = 10;
+pub type _TRUSTED_INFORMATION_CLASS = ::core::ffi::c_uint;
+pub use self::_TRUSTED_INFORMATION_CLASS as TRUSTED_INFORMATION_CLASS;
+pub const _LSA_FOREST_TRUST_RECORD_TYPE_ForestTrustTopLevelName: _LSA_FOREST_TRUST_RECORD_TYPE = 0;
+pub const _LSA_FOREST_TRUST_RECORD_TYPE_ForestTrustTopLevelNameEx: _LSA_FOREST_TRUST_RECORD_TYPE =
+    1;
+pub const _LSA_FOREST_TRUST_RECORD_TYPE_ForestTrustDomainInfo: _LSA_FOREST_TRUST_RECORD_TYPE = 2;
+pub const _LSA_FOREST_TRUST_RECORD_TYPE_ForestTrustRecordTypeLast: _LSA_FOREST_TRUST_RECORD_TYPE =
+    2;
+pub type _LSA_FOREST_TRUST_RECORD_TYPE = ::core::ffi::c_uint;
+pub use self::_LSA_FOREST_TRUST_RECORD_TYPE as LSA_FOREST_TRUST_RECORD_TYPE;
+pub const _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE_CollisionTdo:
+    _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE = 0;
+pub const _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE_CollisionXref:
+    _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE = 1;
+pub const _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE_CollisionOther:
+    _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE = 2;
+pub type _LSA_FOREST_TRUST_COLLISION_RECORD_TYPE = ::core::ffi::c_uint;
+pub use self::_LSA_FOREST_TRUST_COLLISION_RECORD_TYPE as LSA_FOREST_TRUST_COLLISION_RECORD_TYPE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _DOMAIN_PASSWORD_INFORMATION {
+    pub MinPasswordLength: USHORT,
+    pub PasswordHistoryLength: USHORT,
+    pub PasswordProperties: ULONG,
+    pub MaxPasswordAge: LARGE_INTEGER,
+    pub MinPasswordAge: LARGE_INTEGER,
+}
+pub type DOMAIN_PASSWORD_INFORMATION = _DOMAIN_PASSWORD_INFORMATION;
+pub type LSA_ENUMERATION_HANDLE = ULONG;
+pub type PLSA_ENUMERATION_HANDLE = *mut ULONG;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_ENUMERATION_INFORMATION {
+    pub Sid: PSID,
+}
+pub type LSA_ENUMERATION_INFORMATION = _LSA_ENUMERATION_INFORMATION;
+pub type PLSA_ENUMERATION_INFORMATION = *mut _LSA_ENUMERATION_INFORMATION;
+pub type LSA_OPERATIONAL_MODE = ULONG;
+pub type PLSA_OPERATIONAL_MODE = *mut ULONG;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_DOMAIN_INFO {
+    pub Sid: PSID,
+    pub DnsName: LSA_UNICODE_STRING,
+    pub NetbiosName: LSA_UNICODE_STRING,
+}
+pub type LSA_FOREST_TRUST_DOMAIN_INFO = _LSA_FOREST_TRUST_DOMAIN_INFO;
+pub type PLSA_FOREST_TRUST_DOMAIN_INFO = *mut _LSA_FOREST_TRUST_DOMAIN_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_BINARY_DATA {
+    pub Length: ULONG,
+    pub Buffer: PUCHAR,
+}
+pub type LSA_FOREST_TRUST_BINARY_DATA = _LSA_FOREST_TRUST_BINARY_DATA;
+pub type PLSA_FOREST_TRUST_BINARY_DATA = *mut _LSA_FOREST_TRUST_BINARY_DATA;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_RECORD {
+    pub Flags: ULONG,
+    pub ForestTrustType: LSA_FOREST_TRUST_RECORD_TYPE,
+    pub Time: LARGE_INTEGER,
+    pub ForestTrustData: _LSA_FOREST_TRUST_RECORD__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSA_FOREST_TRUST_RECORD__bindgen_ty_1 {
+    pub TopLevelName: LSA_UNICODE_STRING,
+    pub DomainInfo: LSA_FOREST_TRUST_DOMAIN_INFO,
+    pub Data: LSA_FOREST_TRUST_BINARY_DATA,
+}
+pub type LSA_FOREST_TRUST_RECORD = _LSA_FOREST_TRUST_RECORD;
+pub type PLSA_FOREST_TRUST_RECORD = *mut _LSA_FOREST_TRUST_RECORD;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_INFORMATION {
+    pub RecordCount: ULONG,
+    pub Entries: *mut PLSA_FOREST_TRUST_RECORD,
+}
+pub type LSA_FOREST_TRUST_INFORMATION = _LSA_FOREST_TRUST_INFORMATION;
+pub type PLSA_FOREST_TRUST_INFORMATION = *mut _LSA_FOREST_TRUST_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_COLLISION_RECORD {
+    pub Index: ULONG,
+    pub Type: LSA_FOREST_TRUST_COLLISION_RECORD_TYPE,
+    pub Flags: ULONG,
+    pub Name: LSA_UNICODE_STRING,
+}
+pub type LSA_FOREST_TRUST_COLLISION_RECORD = _LSA_FOREST_TRUST_COLLISION_RECORD;
+pub type PLSA_FOREST_TRUST_COLLISION_RECORD = *mut _LSA_FOREST_TRUST_COLLISION_RECORD;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_FOREST_TRUST_COLLISION_INFORMATION {
+    pub RecordCount: ULONG,
+    pub Entries: *mut PLSA_FOREST_TRUST_COLLISION_RECORD,
+}
+pub type LSA_FOREST_TRUST_COLLISION_INFORMATION = _LSA_FOREST_TRUST_COLLISION_INFORMATION;
+pub type PLSA_FOREST_TRUST_COLLISION_INFORMATION = *mut _LSA_FOREST_TRUST_COLLISION_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_TRUST_INFORMATION {
+    pub Name: LSA_UNICODE_STRING,
+    pub Sid: PSID,
+}
+pub type LSA_TRUST_INFORMATION = _LSA_TRUST_INFORMATION;
+pub type PLSA_TRUST_INFORMATION = *mut _LSA_TRUST_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_REFERENCED_DOMAIN_LIST {
+    pub Entries: ULONG,
+    pub Domains: PLSA_TRUST_INFORMATION,
+}
+pub type LSA_REFERENCED_DOMAIN_LIST = _LSA_REFERENCED_DOMAIN_LIST;
+pub type PLSA_REFERENCED_DOMAIN_LIST = *mut _LSA_REFERENCED_DOMAIN_LIST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_TRANSLATED_SID {
+    pub Use: SID_NAME_USE,
+    pub RelativeId: ULONG,
+    pub DomainIndex: LONG,
+}
+pub type LSA_TRANSLATED_SID = _LSA_TRANSLATED_SID;
+pub type PLSA_TRANSLATED_SID = *mut _LSA_TRANSLATED_SID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_TRANSLATED_SID2 {
+    pub Use: SID_NAME_USE,
+    pub Sid: PSID,
+    pub DomainIndex: LONG,
+    pub Flags: ULONG,
+}
+pub type LSA_TRANSLATED_SID2 = _LSA_TRANSLATED_SID2;
+pub type PLSA_TRANSLATED_SID2 = *mut _LSA_TRANSLATED_SID2;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSA_TRANSLATED_NAME {
+    pub Use: SID_NAME_USE,
+    pub Name: LSA_UNICODE_STRING,
+    pub DomainIndex: LONG,
+}
+pub type LSA_TRANSLATED_NAME = _LSA_TRANSLATED_NAME;
+pub type PLSA_TRANSLATED_NAME = *mut _LSA_TRANSLATED_NAME;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_INTERACTIVE_LOGON {
+    pub MessageType: MSV1_0_LOGON_SUBMIT_TYPE,
+    pub LogonDomainName: UNICODE_STRING,
+    pub UserName: UNICODE_STRING,
+    pub Password: UNICODE_STRING,
+}
+pub type MSV1_0_INTERACTIVE_LOGON = _MSV1_0_INTERACTIVE_LOGON;
+pub type PMSV1_0_INTERACTIVE_LOGON = *mut _MSV1_0_INTERACTIVE_LOGON;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _MSV1_0_INTERACTIVE_PROFILE {
+    pub MessageType: MSV1_0_PROFILE_BUFFER_TYPE,
+    pub LogonCount: USHORT,
+    pub BadPasswordCount: USHORT,
+    pub LogonTime: LARGE_INTEGER,
+    pub LogoffTime: LARGE_INTEGER,
+    pub KickOffTime: LARGE_INTEGER,
+    pub PasswordLastSet: LARGE_INTEGER,
+    pub PasswordCanChange: LARGE_INTEGER,
+    pub PasswordMustChange: LARGE_INTEGER,
+    pub LogonScript: UNICODE_STRING,
+    pub HomeDirectory: UNICODE_STRING,
+    pub FullName: UNICODE_STRING,
+    pub ProfilePath: UNICODE_STRING,
+    pub HomeDirectoryDrive: UNICODE_STRING,
+    pub LogonServer: UNICODE_STRING,
+    pub UserFlags: ULONG,
+}
+pub type MSV1_0_INTERACTIVE_PROFILE = _MSV1_0_INTERACTIVE_PROFILE;
+pub type PMSV1_0_INTERACTIVE_PROFILE = *mut _MSV1_0_INTERACTIVE_PROFILE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_LM20_LOGON {
+    pub MessageType: MSV1_0_LOGON_SUBMIT_TYPE,
+    pub LogonDomainName: UNICODE_STRING,
+    pub UserName: UNICODE_STRING,
+    pub Workstation: UNICODE_STRING,
+    pub ChallengeToClient: [UCHAR; 8usize],
+    pub CaseSensitiveChallengeResponse: STRING,
+    pub CaseInsensitiveChallengeResponse: STRING,
+    pub ParameterControl: ULONG,
+}
+pub type MSV1_0_LM20_LOGON = _MSV1_0_LM20_LOGON;
+pub type PMSV1_0_LM20_LOGON = *mut _MSV1_0_LM20_LOGON;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_SUBAUTH_LOGON {
+    pub MessageType: MSV1_0_LOGON_SUBMIT_TYPE,
+    pub LogonDomainName: UNICODE_STRING,
+    pub UserName: UNICODE_STRING,
+    pub Workstation: UNICODE_STRING,
+    pub ChallengeToClient: [UCHAR; 8usize],
+    pub AuthenticationInfo1: STRING,
+    pub AuthenticationInfo2: STRING,
+    pub ParameterControl: ULONG,
+    pub SubAuthPackageId: ULONG,
+}
+pub type MSV1_0_SUBAUTH_LOGON = _MSV1_0_SUBAUTH_LOGON;
+pub type PMSV1_0_SUBAUTH_LOGON = *mut _MSV1_0_SUBAUTH_LOGON;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _MSV1_0_LM20_LOGON_PROFILE {
+    pub MessageType: MSV1_0_PROFILE_BUFFER_TYPE,
+    pub KickOffTime: LARGE_INTEGER,
+    pub LogoffTime: LARGE_INTEGER,
+    pub UserFlags: ULONG,
+    pub UserSessionKey: [UCHAR; 16usize],
+    pub LogonDomainName: UNICODE_STRING,
+    pub LanmanSessionKey: [UCHAR; 8usize],
+    pub LogonServer: UNICODE_STRING,
+    pub UserParameters: UNICODE_STRING,
+}
+pub type MSV1_0_LM20_LOGON_PROFILE = _MSV1_0_LM20_LOGON_PROFILE;
+pub type PMSV1_0_LM20_LOGON_PROFILE = *mut _MSV1_0_LM20_LOGON_PROFILE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_SUPPLEMENTAL_CREDENTIAL {
+    pub Version: ULONG,
+    pub Flags: ULONG,
+    pub LmPassword: [UCHAR; 16usize],
+    pub NtPassword: [UCHAR; 16usize],
+}
+pub type MSV1_0_SUPPLEMENTAL_CREDENTIAL = _MSV1_0_SUPPLEMENTAL_CREDENTIAL;
+pub type PMSV1_0_SUPPLEMENTAL_CREDENTIAL = *mut _MSV1_0_SUPPLEMENTAL_CREDENTIAL;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_NTLM3_RESPONSE {
+    pub Response: [UCHAR; 16usize],
+    pub RespType: UCHAR,
+    pub HiRespType: UCHAR,
+    pub Flags: USHORT,
+    pub MsgWord: ULONG,
+    pub TimeStamp: ULONGLONG,
+    pub ChallengeFromClient: [UCHAR; 8usize],
+    pub AvPairsOff: ULONG,
+    pub Buffer: [UCHAR; 1usize],
+}
+pub type MSV1_0_NTLM3_RESPONSE = _MSV1_0_NTLM3_RESPONSE;
+pub type PMSV1_0_NTLM3_RESPONSE = *mut _MSV1_0_NTLM3_RESPONSE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_AV_PAIR {
+    pub AvId: USHORT,
+    pub AvLen: USHORT,
+}
+pub type MSV1_0_AV_PAIR = _MSV1_0_AV_PAIR;
+pub type PMSV1_0_AV_PAIR = *mut _MSV1_0_AV_PAIR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_CHANGEPASSWORD_REQUEST {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub DomainName: UNICODE_STRING,
+    pub AccountName: UNICODE_STRING,
+    pub OldPassword: UNICODE_STRING,
+    pub NewPassword: UNICODE_STRING,
+    pub Impersonating: BOOLEAN,
+}
+pub type MSV1_0_CHANGEPASSWORD_REQUEST = _MSV1_0_CHANGEPASSWORD_REQUEST;
+pub type PMSV1_0_CHANGEPASSWORD_REQUEST = *mut _MSV1_0_CHANGEPASSWORD_REQUEST;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _MSV1_0_CHANGEPASSWORD_RESPONSE {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub PasswordInfoValid: BOOLEAN,
+    pub DomainPasswordInfo: DOMAIN_PASSWORD_INFORMATION,
+}
+pub type MSV1_0_CHANGEPASSWORD_RESPONSE = _MSV1_0_CHANGEPASSWORD_RESPONSE;
+pub type PMSV1_0_CHANGEPASSWORD_RESPONSE = *mut _MSV1_0_CHANGEPASSWORD_RESPONSE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_SUBAUTH_REQUEST {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub SubAuthPackageId: ULONG,
+    pub SubAuthInfoLength: ULONG,
+    pub SubAuthSubmitBuffer: PUCHAR,
+}
+pub type MSV1_0_SUBAUTH_REQUEST = _MSV1_0_SUBAUTH_REQUEST;
+pub type PMSV1_0_SUBAUTH_REQUEST = *mut _MSV1_0_SUBAUTH_REQUEST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_SUBAUTH_RESPONSE {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub SubAuthInfoLength: ULONG,
+    pub SubAuthReturnBuffer: PUCHAR,
+}
+pub type MSV1_0_SUBAUTH_RESPONSE = _MSV1_0_SUBAUTH_RESPONSE;
+pub type PMSV1_0_SUBAUTH_RESPONSE = *mut _MSV1_0_SUBAUTH_RESPONSE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_DERIVECRED_REQUEST {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub LogonId: LUID,
+    pub DeriveCredType: ULONG,
+    pub DeriveCredInfoLength: ULONG,
+    pub DeriveCredSubmitBuffer: [UCHAR; 1usize],
+}
+pub type MSV1_0_DERIVECRED_REQUEST = _MSV1_0_DERIVECRED_REQUEST;
+pub type PMSV1_0_DERIVECRED_REQUEST = *mut _MSV1_0_DERIVECRED_REQUEST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MSV1_0_DERIVECRED_RESPONSE {
+    pub MessageType: MSV1_0_PROTOCOL_MESSAGE_TYPE,
+    pub DeriveCredInfoLength: ULONG,
+    pub DeriveCredReturnBuffer: [UCHAR; 1usize],
+}
+pub type MSV1_0_DERIVECRED_RESPONSE = _MSV1_0_DERIVECRED_RESPONSE;
+pub type PMSV1_0_DERIVECRED_RESPONSE = *mut _MSV1_0_DERIVECRED_RESPONSE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _POLICY_AUDIT_LOG_INFO {
+    pub AuditLogPercentFull: ULONG,
+    pub MaximumLogSize: ULONG,
+    pub AuditRetentionPeriod: LARGE_INTEGER,
+    pub AuditLogFullShutdownInProgress: BOOLEAN,
+    pub TimeToShutdown: LARGE_INTEGER,
+    pub NextAuditRecordId: ULONG,
+}
+pub type POLICY_AUDIT_LOG_INFO = _POLICY_AUDIT_LOG_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POLICY_LSA_SERVER_ROLE_INFO {
+    pub LsaServerRole: POLICY_LSA_SERVER_ROLE,
+}
+pub type POLICY_LSA_SERVER_ROLE_INFO = _POLICY_LSA_SERVER_ROLE_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _POLICY_DEFAULT_QUOTA_INFO {
+    pub QuotaLimits: QUOTA_LIMITS,
+}
+pub type POLICY_DEFAULT_QUOTA_INFO = _POLICY_DEFAULT_QUOTA_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _POLICY_MODIFICATION_INFO {
+    pub ModifiedId: LARGE_INTEGER,
+    pub DatabaseCreationTime: LARGE_INTEGER,
+}
+pub type POLICY_MODIFICATION_INFO = _POLICY_MODIFICATION_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POLICY_AUDIT_FULL_SET_INFO {
+    pub ShutDownOnFull: BOOLEAN,
+}
+pub type POLICY_AUDIT_FULL_SET_INFO = _POLICY_AUDIT_FULL_SET_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POLICY_AUDIT_FULL_QUERY_INFO {
+    pub ShutDownOnFull: BOOLEAN,
+    pub LogIsFull: BOOLEAN,
+}
+pub type POLICY_AUDIT_FULL_QUERY_INFO = _POLICY_AUDIT_FULL_QUERY_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POLICY_LOCAL_QUALITY_OF_SERVICE_INFO {
+    pub QualityOfService: ULONG,
+}
+pub type POLICY_DOMAIN_QUALITY_OF_SERVICE_INFO = _POLICY_LOCAL_QUALITY_OF_SERVICE_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _POLICY_DOMAIN_KERBEROS_TICKET_INFO {
+    pub AuthenticationOptions: ULONG,
+    pub MinTicketAge: LARGE_INTEGER,
+    pub MaxTicketAge: LARGE_INTEGER,
+    pub MaxRenewAge: LARGE_INTEGER,
+    pub ProxyLifetime: LARGE_INTEGER,
+    pub ForceLogoff: LARGE_INTEGER,
+}
+pub type POLICY_DOMAIN_KERBEROS_TICKET_INFO = _POLICY_DOMAIN_KERBEROS_TICKET_INFO;
+pub type LSA_HANDLE = PVOID;
+pub type PLSA_HANDLE = *mut PVOID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_DOMAIN_NAME_INFO {
+    pub Name: LSA_UNICODE_STRING,
+}
+pub type TRUSTED_DOMAIN_NAME_INFO = _TRUSTED_DOMAIN_NAME_INFO;
+pub type PTRUSTED_DOMAIN_NAME_INFO = *mut _TRUSTED_DOMAIN_NAME_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_POSIX_OFFSET_INFO {
+    pub Offset: ULONG,
+}
+pub type TRUSTED_POSIX_OFFSET_INFO = _TRUSTED_POSIX_OFFSET_INFO;
+pub type TRUSTED_DOMAIN_INFORMATION_BASIC = LSA_TRUST_INFORMATION;
+pub type PTRUSTED_DOMAIN_INFORMATION_BASIC = *mut PLSA_TRUST_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_DOMAIN_INFORMATION_EX {
+    pub Name: LSA_UNICODE_STRING,
+    pub FlatName: LSA_UNICODE_STRING,
+    pub Sid: PSID,
+    pub TrustDirection: ULONG,
+    pub TrustType: ULONG,
+    pub TrustAttributes: ULONG,
+}
+pub type TRUSTED_DOMAIN_INFORMATION_EX = _TRUSTED_DOMAIN_INFORMATION_EX;
+pub type PTRUSTED_DOMAIN_INFORMATION_EX = *mut _TRUSTED_DOMAIN_INFORMATION_EX;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _LSA_AUTH_INFORMATION {
+    pub LastUpdateTime: LARGE_INTEGER,
+    pub AuthType: ULONG,
+    pub AuthInfoLength: ULONG,
+    pub AuthInfo: PUCHAR,
+}
+pub type LSA_AUTH_INFORMATION = _LSA_AUTH_INFORMATION;
+pub type PLSA_AUTH_INFORMATION = *mut _LSA_AUTH_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_DOMAIN_AUTH_INFORMATION {
+    pub IncomingAuthInfos: ULONG,
+    pub IncomingAuthenticationInformation: PLSA_AUTH_INFORMATION,
+    pub IncomingPreviousAuthenticationInformation: PLSA_AUTH_INFORMATION,
+    pub OutgoingAuthInfos: ULONG,
+    pub OutgoingAuthenticationInformation: PLSA_AUTH_INFORMATION,
+    pub OutgoingPreviousAuthenticationInformation: PLSA_AUTH_INFORMATION,
+}
+pub type TRUSTED_DOMAIN_AUTH_INFORMATION = _TRUSTED_DOMAIN_AUTH_INFORMATION;
+pub type PTRUSTED_DOMAIN_AUTH_INFORMATION = *mut _TRUSTED_DOMAIN_AUTH_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_DOMAIN_FULL_INFORMATION {
+    pub Information: TRUSTED_DOMAIN_INFORMATION_EX,
+    pub PosixOffset: TRUSTED_POSIX_OFFSET_INFO,
+    pub AuthInformation: TRUSTED_DOMAIN_AUTH_INFORMATION,
+}
+pub type TRUSTED_DOMAIN_FULL_INFORMATION = _TRUSTED_DOMAIN_FULL_INFORMATION;
+pub type PTRUSTED_DOMAIN_FULL_INFORMATION = *mut _TRUSTED_DOMAIN_FULL_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _SCM_CONTROL_PACKET {
     pub dwSize: DWORD,
     pub dwControl: DWORD,
@@ -1342,6 +2869,16 @@ pub struct _RPC_UNICODE_STRING {
 }
 pub type RPC_UNICODE_STRING = _RPC_UNICODE_STRING;
 pub type PRPC_UNICODE_STRING = *mut _RPC_UNICODE_STRING;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RPC_SID {
+    pub Revision: UCHAR,
+    pub SubAuthorityCount: UCHAR,
+    pub IdentifierAuthority: SID_IDENTIFIER_AUTHORITY,
+    pub SubAuthority: [DWORD; 1usize],
+}
+pub type RPC_SID = _RPC_SID;
+pub type PRPC_SID = *mut _RPC_SID;
 pub type RPC_SERVICE_STATUS_HANDLE = ULONG_PTR;
 pub type SC_RPC_HANDLE = PVOID;
 pub type SC_RPC_LOCK = PVOID;
@@ -1463,6 +3000,250 @@ pub type SC_RPC_NOTIFY_PARAMS_LIST = _SC_RPC_NOTIFY_PARAMS_LIST;
 pub type PSC_RPC_NOTIFY_PARAMS_LIST = *mut _SC_RPC_NOTIFY_PARAMS_LIST;
 pub type PREGISTRY_SERVER_NAME = PWCHAR;
 #[repr(C)]
+#[derive(Copy, Clone)]
+pub struct tagPROVFUNCS {
+    pub pCPAcquireContext: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            phProv: *mut HCRYPTPROV,
+            pszContainer: LPSTR,
+            dwFlags: DWORD,
+            pVTable: PVTableProvStruc,
+        ) -> BOOL,
+    >,
+    pub pCPCreateHash: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            Algid: ALG_ID,
+            hKey: HCRYPTKEY,
+            dwFlags: DWORD,
+            phHash: *mut HCRYPTHASH,
+        ) -> BOOL,
+    >,
+    pub pCPDecrypt: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            hHash: HCRYPTHASH,
+            Final: BOOL,
+            dwFlags: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPDeriveKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            Algid: ALG_ID,
+            hBaseData: HCRYPTHASH,
+            dwFlags: DWORD,
+            phKey: *mut HCRYPTKEY,
+        ) -> BOOL,
+    >,
+    pub pCPDestroyHash: ::core::option::Option<
+        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, hHash: HCRYPTHASH) -> BOOL,
+    >,
+    pub pCPDestroyKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, hKey: HCRYPTKEY) -> BOOL,
+    >,
+    pub pCPDuplicateHash: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hUID: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            pdwReserved: *mut DWORD,
+            dwFlags: DWORD,
+            phHash: *mut HCRYPTHASH,
+        ) -> BOOL,
+    >,
+    pub pCPDuplicateKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hUID: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            pdwReserved: *mut DWORD,
+            dwFlags: DWORD,
+            phKey: *mut HCRYPTKEY,
+        ) -> BOOL,
+    >,
+    pub pCPEncrypt: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            hHash: HCRYPTHASH,
+            Final: BOOL,
+            dwFlags: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+            dwBufLen: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPExportKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            hPubKey: HCRYPTKEY,
+            dwBlobType: DWORD,
+            dwFlags: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPGenKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            Algid: ALG_ID,
+            dwFlags: DWORD,
+            phKey: *mut HCRYPTKEY,
+        ) -> BOOL,
+    >,
+    pub pCPGenRandom: ::core::option::Option<
+        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, dwLen: DWORD, pbBuffer: *mut BYTE) -> BOOL,
+    >,
+    pub pCPGetHashParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            dwParam: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPGetKeyParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            dwParam: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPGetProvParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            dwParam: DWORD,
+            pbData: *mut BYTE,
+            pdwDataLen: *mut DWORD,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPGetUserKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            dwKeySpec: DWORD,
+            phUserKey: *mut HCRYPTKEY,
+        ) -> BOOL,
+    >,
+    pub pCPHashData: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            pbData: *const BYTE,
+            dwDataLen: DWORD,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPHashSessionKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            hKey: HCRYPTKEY,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPImportKey: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            pbData: *const BYTE,
+            dwDataLen: DWORD,
+            hPubKey: HCRYPTKEY,
+            dwFlags: DWORD,
+            phKey: *mut HCRYPTKEY,
+        ) -> BOOL,
+    >,
+    pub pCPReleaseContext: ::core::option::Option<
+        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, dwFlags: DWORD) -> BOOL,
+    >,
+    pub pCPSetHashParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            dwParam: DWORD,
+            pbData: *const BYTE,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPSetKeyParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hKey: HCRYPTKEY,
+            dwParam: DWORD,
+            pbData: *const BYTE,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPSetProvParam: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            dwParam: DWORD,
+            pbData: *const BYTE,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPSignHash: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            dwKeySpec: DWORD,
+            sDescription: LPCWSTR,
+            dwFlags: DWORD,
+            pbSignature: *mut BYTE,
+            pdwSigLen: *mut DWORD,
+        ) -> BOOL,
+    >,
+    pub pCPVerifySignature: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            hProv: HCRYPTPROV,
+            hHash: HCRYPTHASH,
+            pbSignature: *const BYTE,
+            dwSigLen: DWORD,
+            hPubKey: HCRYPTKEY,
+            sDescription: LPCWSTR,
+            dwFlags: DWORD,
+        ) -> BOOL,
+    >,
+}
+pub type PPROVFUNCS = *mut tagPROVFUNCS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCRYPTPROV {
+    pub dwMagic: DWORD,
+    pub refcount: LONG,
+    pub hModule: HMODULE,
+    pub pFuncs: PPROVFUNCS,
+    pub hPrivate: HCRYPTPROV,
+    pub pVTable: PVTableProvStruc,
+}
+pub type CRYPTPROV = tagCRYPTPROV;
+pub type PCRYPTPROV = *mut tagCRYPTPROV;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCRYPTKEY {
+    pub dwMagic: DWORD,
+    pub pProvider: PCRYPTPROV,
+    pub hPrivate: HCRYPTKEY,
+}
+pub type CRYPTKEY = tagCRYPTKEY;
+pub type PCRYPTKEY = *mut tagCRYPTKEY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCRYPTHASH {
+    pub dwMagic: DWORD,
+    pub pProvider: PCRYPTPROV,
+    pub hPrivate: HCRYPTHASH,
+}
+pub type CRYPTHASH = tagCRYPTHASH;
+pub type PCRYPTHASH = *mut tagCRYPTHASH;
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ustring {
     pub Length: DWORD,
@@ -1576,6 +3357,1328 @@ pub struct _NTMARTA {
 }
 pub type NTMARTA = _NTMARTA;
 pub type PNTMARTA = *mut _NTMARTA;
+pub type PLSAPR_SERVER_NAME = LPWSTR;
+pub type LSAPR_HANDLE = PVOID;
+pub type PLSAPR_HANDLE = *mut LSAPR_HANDLE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_ACL {
+    pub AclRevision: BYTE,
+    pub Sbz1: BYTE,
+    pub AclSize: WORD,
+    pub Dummy1: [BYTE; 1usize],
+}
+pub type LSAPR_ACL = _LSAPR_ACL;
+pub type PLSAPR_ACL = *mut _LSAPR_ACL;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_SECURITY_DESCRIPTOR {
+    pub Revision: BYTE,
+    pub Sbz1: BYTE,
+    pub Control: SECURITY_DESCRIPTOR_CONTROL,
+    pub Owner: PRPC_SID,
+    pub Group: PRPC_SID,
+    pub Sacl: *mut LSAPR_ACL,
+    pub Dacl: *mut LSAPR_ACL,
+}
+pub type LSAPR_SECURITY_DESCRIPTOR = _LSAPR_SECURITY_DESCRIPTOR;
+pub type PLSAPR_SECURITY_DESCRIPTOR = *mut _LSAPR_SECURITY_DESCRIPTOR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_OBJECT_ATTRIBUTES {
+    pub Length: DWORD,
+    pub RootDirectory: *mut BYTE,
+    pub ObjectName: PSTRING,
+    pub Attributes: DWORD,
+    pub SecurityDescriptor: PLSAPR_SECURITY_DESCRIPTOR,
+    pub SecurityQualityOfService: PSECURITY_QUALITY_OF_SERVICE,
+}
+pub type LSAPR_OBJECT_ATTRIBUTES = _LSAPR_OBJECT_ATTRIBUTES;
+pub type PLSAPR_OBJECT_ATTRIBUTES = *mut _LSAPR_OBJECT_ATTRIBUTES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_PRIVILEGE_DEF {
+    pub Name: RPC_UNICODE_STRING,
+    pub LocalValue: LUID,
+}
+pub type LSAPR_POLICY_PRIVILEGE_DEF = _LSAPR_POLICY_PRIVILEGE_DEF;
+pub type PLSAPR_POLICY_PRIVILEGE_DEF = *mut _LSAPR_POLICY_PRIVILEGE_DEF;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_PRIVILEGE_ENUM_BUFFER {
+    pub Entries: DWORD,
+    pub Privileges: PLSAPR_POLICY_PRIVILEGE_DEF,
+}
+pub type LSAPR_PRIVILEGE_ENUM_BUFFER = _LSAPR_PRIVILEGE_ENUM_BUFFER;
+pub type PLSAPR_PRIVILEGE_ENUM_BUFFER = *mut _LSAPR_PRIVILEGE_ENUM_BUFFER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_ACCOUNT_INFORMATION {
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_ACCOUNT_INFORMATION = _LSAPR_ACCOUNT_INFORMATION;
+pub type PLSAPR_ACCOUNT_INFORMATION = *mut _LSAPR_ACCOUNT_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_ACCOUNT_ENUM_BUFFER {
+    pub EntriesRead: DWORD,
+    pub Information: PLSAPR_ACCOUNT_INFORMATION,
+}
+pub type LSAPR_ACCOUNT_ENUM_BUFFER = _LSAPR_ACCOUNT_ENUM_BUFFER;
+pub type PLSAPR_ACCOUNT_ENUM_BUFFER = *mut _LSAPR_ACCOUNT_ENUM_BUFFER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUST_INFORMATION {
+    pub Name: RPC_UNICODE_STRING,
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_TRUST_INFORMATION = _LSAPR_TRUST_INFORMATION;
+pub type PLSAPR_TRUST_INFORMATION = *mut _LSAPR_TRUST_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_REFERENCED_DOMAIN_LIST {
+    pub Entries: DWORD,
+    pub Domains: PLSAPR_TRUST_INFORMATION,
+    pub MaxEntries: DWORD,
+}
+pub type LSAPR_REFERENCED_DOMAIN_LIST = _LSAPR_REFERENCED_DOMAIN_LIST;
+pub type PLSAPR_REFERENCED_DOMAIN_LIST = *mut _LSAPR_REFERENCED_DOMAIN_LIST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_SIDS {
+    pub Entries: DWORD,
+    pub Sids: PLSA_TRANSLATED_SID,
+}
+pub type LSAPR_TRANSLATED_SIDS = _LSAPR_TRANSLATED_SIDS;
+pub type PLSAPR_TRANSLATED_SIDS = *mut _LSAPR_TRANSLATED_SIDS;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupWksta: _LSAP_LOOKUP_LEVEL = 1;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupPDC: _LSAP_LOOKUP_LEVEL = 2;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupTDL: _LSAP_LOOKUP_LEVEL = 3;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupGC: _LSAP_LOOKUP_LEVEL = 4;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupXForestReferral: _LSAP_LOOKUP_LEVEL = 5;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupXForestResolve: _LSAP_LOOKUP_LEVEL = 6;
+pub const _LSAP_LOOKUP_LEVEL_LsapLookupRODCReferralToFullDC: _LSAP_LOOKUP_LEVEL = 7;
+pub type _LSAP_LOOKUP_LEVEL = ::core::ffi::c_uint;
+pub use self::_LSAP_LOOKUP_LEVEL as LSAP_LOOKUP_LEVEL;
+pub type PLSAP_LOOKUP_LEVEL = *mut _LSAP_LOOKUP_LEVEL;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_SID_INFORMATION {
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_SID_INFORMATION = _LSAPR_SID_INFORMATION;
+pub type PLSAPR_SID_INFORMATION = *mut _LSAPR_SID_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_SID_ENUM_BUFFER {
+    pub Entries: DWORD,
+    pub SidInfo: PLSAPR_SID_INFORMATION,
+}
+pub type LSAPR_SID_ENUM_BUFFER = _LSAPR_SID_ENUM_BUFFER;
+pub type PLSAPR_SID_ENUM_BUFFER = *mut _LSAPR_SID_ENUM_BUFFER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_NAME {
+    pub Use: SID_NAME_USE,
+    pub Name: RPC_UNICODE_STRING,
+    pub DomainIndex: LONG,
+}
+pub type LSAPR_TRANSLATED_NAME = _LSAPR_TRANSLATED_NAME;
+pub type PLSAPR_TRANSLATED_NAME = *mut _LSAPR_TRANSLATED_NAME;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_NAMES {
+    pub Entries: DWORD,
+    pub Names: PLSAPR_TRANSLATED_NAME,
+}
+pub type LSAPR_TRANSLATED_NAMES = _LSAPR_TRANSLATED_NAMES;
+pub type PLSAPR_TRANSLATED_NAMES = *mut _LSAPR_TRANSLATED_NAMES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_NAME_EX {
+    pub Use: SID_NAME_USE,
+    pub Name: RPC_UNICODE_STRING,
+    pub DomainIndex: LONG,
+    pub Flags: DWORD,
+}
+pub type LSAPR_TRANSLATED_NAME_EX = _LSAPR_TRANSLATED_NAME_EX;
+pub type PLSAPR_TRANSLATED_NAME_EX = *mut _LSAPR_TRANSLATED_NAME_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_NAMES_EX {
+    pub Entries: DWORD,
+    pub Names: PLSAPR_TRANSLATED_NAME_EX,
+}
+pub type LSAPR_TRANSLATED_NAMES_EX = _LSAPR_TRANSLATED_NAMES_EX;
+pub type PLSAPR_TRANSLATED_NAMES_EX = *mut _LSAPR_TRANSLATED_NAMES_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_SID_EX {
+    pub Use: SID_NAME_USE,
+    pub RelativeId: DWORD,
+    pub DomainIndex: LONG,
+    pub Flags: DWORD,
+}
+pub type LSAPR_TRANSLATED_SID_EX = _LSAPR_TRANSLATED_SID_EX;
+pub type PLSAPR_TRANSLATED_SID_EX = *mut _LSAPR_TRANSLATED_SID_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_SIDS_EX {
+    pub Entries: DWORD,
+    pub Sids: PLSAPR_TRANSLATED_SID_EX,
+}
+pub type LSAPR_TRANSLATED_SIDS_EX = _LSAPR_TRANSLATED_SIDS_EX;
+pub type PLSAPR_TRANSLATED_SIDS_EX = *mut _LSAPR_TRANSLATED_SIDS_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_SID_EX2 {
+    pub Use: SID_NAME_USE,
+    pub Sid: PRPC_SID,
+    pub DomainIndex: LONG,
+    pub Flags: DWORD,
+}
+pub type LSAPR_TRANSLATED_SID_EX2 = _LSAPR_TRANSLATED_SID_EX2;
+pub type PLSAPR_TRANSLATED_SID_EX2 = *mut _LSAPR_TRANSLATED_SID_EX2;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRANSLATED_SIDS_EX2 {
+    pub Entries: DWORD,
+    pub Sids: PLSAPR_TRANSLATED_SID_EX2,
+}
+pub type LSAPR_TRANSLATED_SIDS_EX2 = _LSAPR_TRANSLATED_SIDS_EX2;
+pub type PLSAPR_TRANSLATED_SIDS_EX2 = *mut _LSAPR_TRANSLATED_SIDS_EX2;
+pub type LSAPR_TRUSTED_DOMAIN_INFORMATION_BASIC = LSAPR_TRUST_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_SR_SECURITY_DESCRIPTOR {
+    pub Length: DWORD,
+    pub SecurityDescriptor: *mut BYTE,
+}
+pub type LSAPR_SR_SECURITY_DESCRIPTOR = _LSAPR_SR_SECURITY_DESCRIPTOR;
+pub type PLSAPR_SR_SECURITY_DESCRIPTOR = *mut _LSAPR_SR_SECURITY_DESCRIPTOR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_AUDIT_EVENTS_INFO {
+    pub AuditingMode: BOOLEAN,
+    pub EventAuditingOptions: *mut DWORD,
+    pub MaximumAuditEventCount: DWORD,
+}
+pub type LSAPR_POLICY_AUDIT_EVENTS_INFO = _LSAPR_POLICY_AUDIT_EVENTS_INFO;
+pub type PLSAPR_POLICY_AUDIT_EVENTS_INFO = *mut _LSAPR_POLICY_AUDIT_EVENTS_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_PRIMARY_DOM_INFO {
+    pub Name: RPC_UNICODE_STRING,
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_POLICY_PRIMARY_DOM_INFO = _LSAPR_POLICY_PRIMARY_DOM_INFO;
+pub type PLSAPR_POLICY_PRIMARY_DOM_INFO = *mut _LSAPR_POLICY_PRIMARY_DOM_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_ACCOUNT_DOM_INFO {
+    pub DomainName: RPC_UNICODE_STRING,
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_POLICY_ACCOUNT_DOM_INFO = _LSAPR_POLICY_ACCOUNT_DOM_INFO;
+pub type PLSAPR_POLICY_ACCOUNT_DOM_INFO = *mut _LSAPR_POLICY_ACCOUNT_DOM_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_PD_ACCOUNT_INFO {
+    pub Name: RPC_UNICODE_STRING,
+}
+pub type LSAPR_POLICY_PD_ACCOUNT_INFO = _LSAPR_POLICY_PD_ACCOUNT_INFO;
+pub type PLSAPR_POLICY_PD_ACCOUNT_INFO = *mut _LSAPR_POLICY_PD_ACCOUNT_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POLICY_LSA_REPLICA_SRCE_INFO {
+    pub ReplicaSource: RPC_UNICODE_STRING,
+    pub ReplicaAccountName: RPC_UNICODE_STRING,
+}
+pub type POLICY_LSA_REPLICA_SRCE_INFO = _POLICY_LSA_REPLICA_SRCE_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_DNS_DOMAIN_INFO {
+    pub Name: RPC_UNICODE_STRING,
+    pub DnsDomainName: RPC_UNICODE_STRING,
+    pub DnsForestName: RPC_UNICODE_STRING,
+    pub DomainGuid: GUID,
+    pub Sid: PRPC_SID,
+}
+pub type LSAPR_POLICY_DNS_DOMAIN_INFO = _LSAPR_POLICY_DNS_DOMAIN_INFO;
+pub type PLSAPR_POLICY_DNS_DOMAIN_INFO = *mut _LSAPR_POLICY_DNS_DOMAIN_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSAPR_POLICY_INFORMATION {
+    pub PolicyAuditLogInfo: POLICY_AUDIT_LOG_INFO,
+    pub PolicyAuditEventsInfo: LSAPR_POLICY_AUDIT_EVENTS_INFO,
+    pub PolicyPrimaryDomInfo: LSAPR_POLICY_PRIMARY_DOM_INFO,
+    pub PolicyPdAccountInfo: LSAPR_POLICY_PD_ACCOUNT_INFO,
+    pub PolicyAccountDomainInfo: LSAPR_POLICY_ACCOUNT_DOM_INFO,
+    pub PolicyServerRoleInfo: POLICY_LSA_SERVER_ROLE_INFO,
+    pub PolicyReplicaSourceInfo: POLICY_LSA_REPLICA_SRCE_INFO,
+    pub PolicyDefaultQuotaInfo: POLICY_DEFAULT_QUOTA_INFO,
+    pub PolicyModificationInfo: POLICY_MODIFICATION_INFO,
+    pub PolicyAuditFullSetInfo: POLICY_AUDIT_FULL_SET_INFO,
+    pub PolicyAuditFullQueryInfo: POLICY_AUDIT_FULL_QUERY_INFO,
+    pub PolicyDnsDomainInfo: LSAPR_POLICY_DNS_DOMAIN_INFO,
+    pub PolicyDnsDomainInfoInt: LSAPR_POLICY_DNS_DOMAIN_INFO,
+    pub PolicyLocalAccountDomainInfo: LSAPR_POLICY_ACCOUNT_DOM_INFO,
+}
+pub type LSAPR_POLICY_INFORMATION = _LSAPR_POLICY_INFORMATION;
+pub type PLSAPR_POLICY_INFORMATION = *mut _LSAPR_POLICY_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_ENUM_BUFFER {
+    pub EntriesRead: DWORD,
+    pub Information: PLSAPR_TRUST_INFORMATION,
+}
+pub type LSAPR_TRUSTED_ENUM_BUFFER = _LSAPR_TRUSTED_ENUM_BUFFER;
+pub type PLSAPR_TRUSTED_ENUM_BUFFER = *mut _LSAPR_TRUSTED_ENUM_BUFFER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_NAME_INFO {
+    pub Name: RPC_UNICODE_STRING,
+}
+pub type LSAPR_TRUSTED_DOMAIN_NAME_INFO = _LSAPR_TRUSTED_DOMAIN_NAME_INFO;
+pub type PLSAPR_TRUSTED_DOMAIN_NAME_INFO = *mut _LSAPR_TRUSTED_DOMAIN_NAME_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_CONTROLLERS_INFO {
+    pub Entries: DWORD,
+    pub Names: PRPC_UNICODE_STRING,
+}
+pub type LSAPR_TRUSTED_CONTROLLERS_INFO = _LSAPR_TRUSTED_CONTROLLERS_INFO;
+pub type PLSAPR_TRUSTED_CONTROLLERS_INFO = *mut _LSAPR_TRUSTED_CONTROLLERS_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_CR_CIPHER_VALUE {
+    pub Length: DWORD,
+    pub MaximumLength: DWORD,
+    pub Buffer: *mut BYTE,
+}
+pub type LSAPR_CR_CIPHER_VALUE = _LSAPR_CR_CIPHER_VALUE;
+pub type PLSAPR_CR_CIPHER_VALUE = *mut _LSAPR_CR_CIPHER_VALUE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_PASSWORD_INFO {
+    pub Password: PLSAPR_CR_CIPHER_VALUE,
+    pub OldPassword: PLSAPR_CR_CIPHER_VALUE,
+}
+pub type LSAPR_TRUSTED_PASSWORD_INFO = _LSAPR_TRUSTED_PASSWORD_INFO;
+pub type PLSAPR_TRUSTED_PASSWORD_INFO = *mut _LSAPR_TRUSTED_PASSWORD_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_USER_RIGHT_SET {
+    pub Entries: DWORD,
+    pub UserRights: PRPC_UNICODE_STRING,
+}
+pub type LSAPR_USER_RIGHT_SET = _LSAPR_USER_RIGHT_SET;
+pub type PLSAPR_USER_RIGHT_SET = *mut _LSAPR_USER_RIGHT_SET;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_POLICY_DOMAIN_EFS_INFO {
+    pub InfoLength: DWORD,
+    pub EfsBlob: *mut BYTE,
+}
+pub type LSAPR_POLICY_DOMAIN_EFS_INFO = _LSAPR_POLICY_DOMAIN_EFS_INFO;
+pub type PLSAPR_POLICY_DOMAIN_EFS_INFO = *mut _LSAPR_POLICY_DOMAIN_EFS_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSAPR_POLICY_DOMAIN_INFORMATION {
+    pub PolicyDomainQualityOfServiceInfo: POLICY_DOMAIN_QUALITY_OF_SERVICE_INFO,
+    pub PolicyDomainEfsInfo: LSAPR_POLICY_DOMAIN_EFS_INFO,
+    pub PolicyDomainKerbTicketInfo: POLICY_DOMAIN_KERBEROS_TICKET_INFO,
+}
+pub type LSAPR_POLICY_DOMAIN_INFORMATION = _LSAPR_POLICY_DOMAIN_INFORMATION;
+pub type PLSAPR_POLICY_DOMAIN_INFORMATION = *mut _LSAPR_POLICY_DOMAIN_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX {
+    pub Name: RPC_UNICODE_STRING,
+    pub FlatName: RPC_UNICODE_STRING,
+    pub Sid: PRPC_SID,
+    pub TrustDirection: DWORD,
+    pub TrustType: DWORD,
+    pub TrustAttributes: DWORD,
+}
+pub type LSAPR_TRUSTED_DOMAIN_INFORMATION_EX = _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX;
+pub type PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX = *mut _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_ENUM_BUFFER_EX {
+    pub EntriesRead: DWORD,
+    pub EnumerationBuffer: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+}
+pub type LSAPR_TRUSTED_ENUM_BUFFER_EX = _LSAPR_TRUSTED_ENUM_BUFFER_EX;
+pub type PLSAPR_TRUSTED_ENUM_BUFFER_EX = *mut _LSAPR_TRUSTED_ENUM_BUFFER_EX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 {
+    pub Name: RPC_UNICODE_STRING,
+    pub FlatName: RPC_UNICODE_STRING,
+    pub Sid: PRPC_SID,
+    pub TrustDirection: DWORD,
+    pub TrustType: DWORD,
+    pub TrustAttributes: DWORD,
+    pub ForestTrustLength: DWORD,
+    pub ForestTrustInfo: *mut BYTE,
+}
+pub type LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 = _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2;
+pub type PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 = *mut _LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _LSAPR_AUTH_INFORMATION {
+    pub LastUpdateTime: LARGE_INTEGER,
+    pub AuthType: DWORD,
+    pub AuthInfoLength: DWORD,
+    pub AuthInfo: *mut BYTE,
+}
+pub type LSAPR_AUTH_INFORMATION = _LSAPR_AUTH_INFORMATION;
+pub type PLSAPR_AUTH_INFORMATION = *mut _LSAPR_AUTH_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION {
+    pub IncomingAuthInfos: DWORD,
+    pub IncomingAuthenticationInformation: PLSAPR_AUTH_INFORMATION,
+    pub IncomingPreviousAuthenticationInformation: PLSAPR_AUTH_INFORMATION,
+    pub OutgoingAuthInfos: DWORD,
+    pub OutgoingAuthenticationInformation: PLSAPR_AUTH_INFORMATION,
+    pub OutgoingPreviousAuthenticationInformation: PLSAPR_AUTH_INFORMATION,
+}
+pub type LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION = _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION;
+pub type PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION = *mut _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_AUTH_BLOB {
+    pub AuthSize: DWORD,
+    pub AuthBlob: *mut BYTE,
+}
+pub type LSAPR_TRUSTED_DOMAIN_AUTH_BLOB = _LSAPR_TRUSTED_DOMAIN_AUTH_BLOB;
+pub type PLSAPR_TRUSTED_DOMAIN_AUTH_BLOB = *mut _LSAPR_TRUSTED_DOMAIN_AUTH_BLOB;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL {
+    pub AuthBlob: LSAPR_TRUSTED_DOMAIN_AUTH_BLOB,
+}
+pub type LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL =
+    _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL;
+pub type PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL =
+    *mut _LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION {
+    pub Information: LSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    pub PosixOffset: TRUSTED_POSIX_OFFSET_INFO,
+    pub AuthInformation: LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
+}
+pub type LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION = _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION;
+pub type PLSAPR_TRUSTED_DOMAIN_FULL_INFORMATION = *mut _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL {
+    pub Information: LSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    pub PosixOffset: TRUSTED_POSIX_OFFSET_INFO,
+    pub AuthInformation: LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+}
+pub type LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL =
+    _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL;
+pub type PLSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL =
+    *mut _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2 {
+    pub Information: LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2,
+    pub PosixOffset: TRUSTED_POSIX_OFFSET_INFO,
+    pub AuthInformation: LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
+}
+pub type LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2 = _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2;
+pub type PLSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2 = *mut _LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES {
+    pub SupportedEncryptionTypes: DWORD,
+}
+pub type TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES = _TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES;
+pub type PTRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES =
+    *mut _TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _LSAPR_TRUSTED_DOMAIN_INFO {
+    pub TrustedDomainNameInfo: LSAPR_TRUSTED_DOMAIN_NAME_INFO,
+    pub TrustedControllersInfo: LSAPR_TRUSTED_CONTROLLERS_INFO,
+    pub TrustedPosixOffsetInfo: TRUSTED_POSIX_OFFSET_INFO,
+    pub TrustedPasswordInfo: LSAPR_TRUSTED_PASSWORD_INFO,
+    pub TrustedDomainInfoBasic: LSAPR_TRUSTED_DOMAIN_INFORMATION_BASIC,
+    pub TrustedDomainInfoEx: LSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    pub TrustedAuthInfo: LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
+    pub TrustedFullInfo: LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION,
+    pub TrustedAuthInfoInternal: LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+    pub TrustedFullInfoInternal: LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL,
+    pub TrustedDomainInfoEx2: LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2,
+    pub TrustedFullInfo2: LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2,
+    pub TrustedDomainSETs: TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES,
+}
+pub type LSAPR_TRUSTED_DOMAIN_INFO = _LSAPR_TRUSTED_DOMAIN_INFO;
+pub type PLSAPR_TRUSTED_DOMAIN_INFO = *mut _LSAPR_TRUSTED_DOMAIN_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_LUID_AND_ATTRIBUTES {
+    pub Luid: LUID,
+    pub Attributes: DWORD,
+}
+pub type LSAPR_LUID_AND_ATTRIBUTES = _LSAPR_LUID_AND_ATTRIBUTES;
+pub type PLSAPR_LUID_AND_ATTRIBUTES = *mut _LSAPR_LUID_AND_ATTRIBUTES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAPR_PRIVILEGE_SET {
+    pub PrivilegeCount: DWORD,
+    pub Control: DWORD,
+    pub Privilege: [LSAPR_LUID_AND_ATTRIBUTES; 1usize],
+}
+pub type LSAPR_PRIVILEGE_SET = _LSAPR_PRIVILEGE_SET;
+pub type PLSAPR_PRIVILEGE_SET = *mut _LSAPR_PRIVILEGE_SET;
+unsafe extern "stdcall" {
+    pub fn LsarClose(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarDelete(ObjectHandle: LSAPR_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumeratePrivileges(
+        PolicyHandle: LSAPR_HANDLE,
+        EnumerationContext: *mut DWORD,
+        EnumerationBuffer: PLSAPR_PRIVILEGE_ENUM_BUFFER,
+        PreferedMaximumLength: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQuerySecurityObject(
+        ObjectHandle: LSAPR_HANDLE,
+        SecurityInformation: SECURITY_INFORMATION,
+        SecurityDescriptor: *mut PLSAPR_SR_SECURITY_DESCRIPTOR,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetSecurityObject(
+        ObjectHandle: LSAPR_HANDLE,
+        SecurityInformation: SECURITY_INFORMATION,
+        SecurityDescriptor: PLSAPR_SR_SECURITY_DESCRIPTOR,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarChangePassword(
+        IDL_handle: handle_t,
+        String1: PRPC_UNICODE_STRING,
+        String2: PRPC_UNICODE_STRING,
+        String3: PRPC_UNICODE_STRING,
+        String4: PRPC_UNICODE_STRING,
+        String5: PRPC_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenPolicy(
+        SystemName: PLSAPR_SERVER_NAME,
+        ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+        DesiredAccess: ACCESS_MASK,
+        PolicyHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryInformationPolicy(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetInformationPolicy(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: PLSAPR_POLICY_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarClearAuditLog(ObjectHandle: LSAPR_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarCreateAccount(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        DesiredAccess: ACCESS_MASK,
+        AccountHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumerateAccounts(
+        PolicyHandle: LSAPR_HANDLE,
+        EnumerationContext: *mut DWORD,
+        EnumerationBuffer: PLSAPR_ACCOUNT_ENUM_BUFFER,
+        PreferedMaximumLength: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarCreateTrustedDomain(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainInformation: PLSAPR_TRUST_INFORMATION,
+        DesiredAccess: ACCESS_MASK,
+        TrustedDomainHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumerateTrustedDomains(
+        PolicyHandle: LSAPR_HANDLE,
+        EnumerationContext: *mut DWORD,
+        EnumerationBuffer: PLSAPR_TRUSTED_ENUM_BUFFER,
+        PreferedMaximumLength: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupNames(
+        PolicyHandle: LSAPR_HANDLE,
+        Count: DWORD,
+        Names: PRPC_UNICODE_STRING,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedSids: PLSAPR_TRANSLATED_SIDS,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupSids(
+        PolicyHandle: LSAPR_HANDLE,
+        SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedNames: PLSAPR_TRANSLATED_NAMES,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarCreateSecret(
+        PolicyHandle: LSAPR_HANDLE,
+        SecretName: PRPC_UNICODE_STRING,
+        DesiredAccess: ACCESS_MASK,
+        SecretHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenAccount(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        DesiredAccess: ACCESS_MASK,
+        AccountHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumeratePrivilegesAccount(
+        AccountHandle: LSAPR_HANDLE,
+        Privileges: *mut PLSAPR_PRIVILEGE_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarAddPrivilegesToAccount(
+        AccountHandle: LSAPR_HANDLE,
+        Privileges: PLSAPR_PRIVILEGE_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarRemovePrivilegesFromAccount(
+        AccountHandle: LSAPR_HANDLE,
+        AllPrivileges: BOOLEAN,
+        Privileges: PLSAPR_PRIVILEGE_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarGetQuotasForAccount(
+        AccountHandle: LSAPR_HANDLE,
+        QuotaLimits: PQUOTA_LIMITS,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetQuotasForAccount(
+        AccountHandle: LSAPR_HANDLE,
+        QuotaLimits: PQUOTA_LIMITS,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarGetSystemAccessAccount(
+        AccountHandle: LSAPR_HANDLE,
+        SystemAccess: *mut ACCESS_MASK,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetSystemAccessAccount(
+        AccountHandle: LSAPR_HANDLE,
+        SystemAccess: ACCESS_MASK,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenTrustedDomain(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainSid: PRPC_SID,
+        DesiredAccess: ACCESS_MASK,
+        TrustedDomainHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryInfoTrustedDomain(
+        TrustedDomainHandle: LSAPR_HANDLE,
+        InformationClass: TRUSTED_INFORMATION_CLASS,
+        TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetInformationTrustedDomain(
+        TrustedDomainHandle: LSAPR_HANDLE,
+        InformationClass: TRUSTED_INFORMATION_CLASS,
+        TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenSecret(
+        PolicyHandle: LSAPR_HANDLE,
+        SecretName: PRPC_UNICODE_STRING,
+        DesiredAccess: ACCESS_MASK,
+        SecretHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetSecret(
+        SecretHandle: LSAPR_HANDLE,
+        EncryptedCurrentValue: PLSAPR_CR_CIPHER_VALUE,
+        EncryptedOldValue: PLSAPR_CR_CIPHER_VALUE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQuerySecret(
+        SecretHandle: LSAPR_HANDLE,
+        EncryptedCurrentValue: *mut PLSAPR_CR_CIPHER_VALUE,
+        CurrentValueSetTime: PLARGE_INTEGER,
+        EncryptedOldValue: *mut PLSAPR_CR_CIPHER_VALUE,
+        OldValueSetTime: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupPrivilegeValue(
+        PolicyHandle: LSAPR_HANDLE,
+        Name: PRPC_UNICODE_STRING,
+        Value: PLUID,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupPrivilegeName(
+        PolicyHandle: LSAPR_HANDLE,
+        Value: PLUID,
+        Name: *mut PRPC_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupPrivilegeDisplayName(
+        PolicyHandle: LSAPR_HANDLE,
+        Name: PRPC_UNICODE_STRING,
+        ClientLanguage: USHORT,
+        ClientSystemDefaultLanguage: USHORT,
+        DisplayName: *mut PRPC_UNICODE_STRING,
+        LanguageReturned: *mut USHORT,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarDeleteObject(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumerateAccountsWithUserRight(
+        PolicyHandle: LSAPR_HANDLE,
+        UserRight: PRPC_UNICODE_STRING,
+        EnumerationBuffer: PLSAPR_ACCOUNT_ENUM_BUFFER,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumerateAccountRights(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        UserRights: PLSAPR_USER_RIGHT_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarAddAccountRights(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        UserRights: PLSAPR_USER_RIGHT_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarRemoveAccountRights(
+        PolicyHandle: LSAPR_HANDLE,
+        AccountSid: PRPC_SID,
+        AllRights: BOOLEAN,
+        UserRights: PLSAPR_USER_RIGHT_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryTrustedDomainInfo(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainSid: PRPC_SID,
+        InformationClass: TRUSTED_INFORMATION_CLASS,
+        TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetTrustedDomainInfo(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainSid: PRPC_SID,
+        InformationClass: TRUSTED_INFORMATION_CLASS,
+        TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarDeleteTrustedDomain(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainSid: PRPC_SID,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarStorePrivateData(
+        PolicyHandle: LSAPR_HANDLE,
+        KeyName: PRPC_UNICODE_STRING,
+        EncryptedData: PLSAPR_CR_CIPHER_VALUE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarRetrievePrivateData(
+        PolicyHandle: LSAPR_HANDLE,
+        KeyName: PRPC_UNICODE_STRING,
+        EncryptedData: *mut PLSAPR_CR_CIPHER_VALUE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenPolicy2(
+        SystemName: PLSAPR_SERVER_NAME,
+        ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+        DesiredAccess: ACCESS_MASK,
+        PolicyHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarGetUserName(
+        SystemName: PLSAPR_SERVER_NAME,
+        UserName: *mut PRPC_UNICODE_STRING,
+        DomainName: *mut PRPC_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryInformationPolicy2(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetInformationPolicy2(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: PLSAPR_POLICY_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryTrustedDomainInfoByName(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainName: PRPC_UNICODE_STRING,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetTrustedDomainInfoByName(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainName: PRPC_UNICODE_STRING,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarEnumerateTrustedDomainsEx(
+        PolicyHandle: LSAPR_HANDLE,
+        EnumerationContext: *mut DWORD,
+        EnumerationBuffer: PLSAPR_TRUSTED_ENUM_BUFFER_EX,
+        PreferedMaximumLength: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarCreateTrustedDomainEx(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+        AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
+        DesiredAccess: ACCESS_MASK,
+        TrustedDomainHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetPolicyReplicationHandle(PolicyHandle: PLSAPR_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryDomainInformationPolicy(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: *mut PLSAPR_POLICY_DOMAIN_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetDomainInformationPolicy(
+        PolicyHandle: LSAPR_HANDLE,
+        InformationClass: POLICY_INFORMATION_CLASS,
+        PolicyInformation: PLSAPR_POLICY_DOMAIN_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenTrustedDomainByName(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainName: PRPC_UNICODE_STRING,
+        DesiredAccess: ACCESS_MASK,
+        TrustedDomainHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarTestCall(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupSids2(
+        PolicyHandle: LSAPR_HANDLE,
+        SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedNames: PLSAPR_TRANSLATED_NAMES_EX,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+        LookupOptions: DWORD,
+        ClientRevision: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupNames2(
+        PolicyHandle: LSAPR_HANDLE,
+        Count: DWORD,
+        Names: PRPC_UNICODE_STRING,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedSids: PLSAPR_TRANSLATED_SIDS_EX,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+        LookupOptions: DWORD,
+        ClientRevision: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarCreateTrustedDomainEx2(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+        AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+        DesiredAccess: ACCESS_MASK,
+        TrustedDomainHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupNames3(
+        PolicyHandle: LSAPR_HANDLE,
+        Count: DWORD,
+        Names: PRPC_UNICODE_STRING,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedSids: PLSAPR_TRANSLATED_SIDS_EX2,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+        LookupOptions: DWORD,
+        ClientRevision: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarRegisterAuditEvent(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarGenAuditEvent(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarUnregisterAuditEvent(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarQueryForestTrustInformation(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainName: PLSA_UNICODE_STRING,
+        HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
+        ForestTrustInfo: *mut PLSA_FOREST_TRUST_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarSetForestTrustInformation(
+        PolicyHandle: LSAPR_HANDLE,
+        TrustedDomainName: PLSA_UNICODE_STRING,
+        HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
+        ForestTrustInfo: PLSA_FOREST_TRUST_INFORMATION,
+        CheckOnly: BOOLEAN,
+        CollisionInfo: *mut PLSA_FOREST_TRUST_COLLISION_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupSids3(
+        PolicyHandle: LSAPR_HANDLE,
+        SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedNames: PLSAPR_TRANSLATED_NAMES_EX,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+        LookupOptions: DWORD,
+        ClientRevision: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarLookupNames4(
+        PolicyHandle: LSAPR_HANDLE,
+        Count: DWORD,
+        Names: PRPC_UNICODE_STRING,
+        ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
+        TranslatedSids: PLSAPR_TRANSLATED_SIDS_EX2,
+        LookupLevel: LSAP_LOOKUP_LEVEL,
+        MappedCount: *mut DWORD,
+        LookupOptions: DWORD,
+        ClientRevision: DWORD,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarOpenPolicySce(
+        SystemName: PLSAPR_SERVER_NAME,
+        ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+        DesiredAccess: ACCESS_MASK,
+        PolicyHandle: *mut LSAPR_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarAdtRegisterSecurityEventSource(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarAdtUnregisterSecurityEventSource(hBinding: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn LsarAdtReportSecurityEvent(hBinding: handle_t) -> NTSTATUS;
+}
+pub type RULONG = ULONG;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RPC_STRING {
+    pub Length: USHORT,
+    pub MaximumLength: USHORT,
+    pub Buffer: LPSTR,
+}
+pub type RPC_STRING = _RPC_STRING;
+pub type PRPC_STRING = *mut _RPC_STRING;
+pub type IELF_HANDLE = PVOID;
+pub type PIELF_HANDLE = *mut IELF_HANDLE;
+pub type EVENTLOG_HANDLE_W = LPWSTR;
+pub type EVENTLOG_HANDLE_A = LPSTR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RPC_CLIENT_ID {
+    pub UniqueProcess: ULONG,
+    pub UniqueThread: ULONG,
+}
+pub type RPC_CLIENT_ID = _RPC_CLIENT_ID;
+pub type PRPC_CLIENT_ID = *mut _RPC_CLIENT_ID;
+unsafe extern "stdcall" {
+    pub fn ElfrClearELFW(LogHandle: IELF_HANDLE, BackupFileName: PRPC_UNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrBackupELFW(LogHandle: IELF_HANDLE, BackupFileName: PRPC_UNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrCloseEL(LogHandle: PIELF_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrDeregisterEventSource(LogHandle: PIELF_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrNumberOfRecords(LogHandle: IELF_HANDLE, NumberOfRecords: PULONG) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrOldestRecord(LogHandle: IELF_HANDLE, OldestRecordNumber: PULONG) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrChangeNotify(
+        LogHandle: IELF_HANDLE,
+        ClientId: RPC_CLIENT_ID,
+        Event: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrOpenELW(
+        UNCServerName: EVENTLOG_HANDLE_W,
+        ModuleName: PRPC_UNICODE_STRING,
+        RegModuleName: PRPC_UNICODE_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrRegisterEventSourceW(
+        UNCServerName: EVENTLOG_HANDLE_W,
+        ModuleName: PRPC_UNICODE_STRING,
+        RegModuleName: PRPC_UNICODE_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrOpenBELW(
+        UNCServerName: EVENTLOG_HANDLE_W,
+        BackupFileName: PRPC_UNICODE_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrReadELW(
+        LogHandle: IELF_HANDLE,
+        ReadFlags: ULONG,
+        RecordOffset: ULONG,
+        NumberOfBytesToRead: RULONG,
+        Buffer: PBYTE,
+        NumberOfBytesRead: PULONG,
+        MinNumberOfBytesNeeded: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrReportEventW(
+        LogHandle: IELF_HANDLE,
+        Time: ULONG,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        ComputerName: PRPC_UNICODE_STRING,
+        UserSID: PRPC_SID,
+        Strings: *mut PRPC_UNICODE_STRING,
+        Data: PBYTE,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrClearELFA(LogHandle: IELF_HANDLE, BackupFileName: PRPC_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrBackupELFA(LogHandle: IELF_HANDLE, BackupFileName: PRPC_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrOpenELA(
+        UNCServerName: EVENTLOG_HANDLE_A,
+        ModuleName: PRPC_STRING,
+        RegModuleName: PRPC_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrRegisterEventSourceA(
+        UNCServerName: EVENTLOG_HANDLE_A,
+        ModuleName: PRPC_STRING,
+        RegModuleName: PRPC_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrOpenBELA(
+        UNCServerName: EVENTLOG_HANDLE_A,
+        BackupFileName: PRPC_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: PIELF_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrReadELA(
+        LogHandle: IELF_HANDLE,
+        ReadFlags: ULONG,
+        RecordOffset: ULONG,
+        NumberOfBytesToRead: RULONG,
+        Buffer: PBYTE,
+        NumberOfBytesRead: PULONG,
+        MinNumberOfBytesNeeded: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrReportEventA(
+        LogHandle: IELF_HANDLE,
+        Time: ULONG,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        ComputerName: PRPC_STRING,
+        UserSID: PRPC_SID,
+        Strings: *mut PRPC_STRING,
+        Data: PBYTE,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrRegisterClusterSvc(BindingHandle: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrDeregisterClusterSvc(BindingHandle: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrWriteClusterEvents(BindingHandle: handle_t) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrGetLogInformation(
+        LogHandle: IELF_HANDLE,
+        InfoLevel: ULONG,
+        Buffer: PBYTE,
+        cbBufSize: ULONG,
+        pcbBytesNeeded: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrFlushEL(LogHandle: IELF_HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfrReportEventAndSourceW(
+        LogHandle: IELF_HANDLE,
+        Time: ULONG,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        SourceName: PRPC_UNICODE_STRING,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        ComputerName: PRPC_UNICODE_STRING,
+        UserSID: PRPC_SID,
+        Strings: *mut PRPC_UNICODE_STRING,
+        Data: PBYTE,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIAL_ATTRIBUTEA {
+    pub Keyword: LPSTR,
+    pub Flags: DWORD,
+    pub ValueSize: DWORD,
+    pub Value: LPBYTE,
+}
+pub type CREDENTIAL_ATTRIBUTEA = _CREDENTIAL_ATTRIBUTEA;
+pub type PCREDENTIAL_ATTRIBUTEA = *mut _CREDENTIAL_ATTRIBUTEA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIAL_ATTRIBUTEW {
+    pub Keyword: LPWSTR,
+    pub Flags: DWORD,
+    pub ValueSize: DWORD,
+    pub Value: LPBYTE,
+}
+pub type CREDENTIAL_ATTRIBUTEW = _CREDENTIAL_ATTRIBUTEW;
+pub type PCREDENTIAL_ATTRIBUTEW = *mut _CREDENTIAL_ATTRIBUTEW;
+pub type CREDENTIAL_ATTRIBUTE = CREDENTIAL_ATTRIBUTEW;
+pub type PCREDENTIAL_ATTRIBUTE = PCREDENTIAL_ATTRIBUTEW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIALA {
+    pub Flags: DWORD,
+    pub Type: DWORD,
+    pub TargetName: LPSTR,
+    pub Comment: LPSTR,
+    pub LastWritten: FILETIME,
+    pub CredentialBlobSize: DWORD,
+    pub CredentialBlob: LPBYTE,
+    pub Persist: DWORD,
+    pub AttributeCount: DWORD,
+    pub Attributes: PCREDENTIAL_ATTRIBUTEA,
+    pub TargetAlias: LPSTR,
+    pub UserName: LPSTR,
+}
+pub type CREDENTIALA = _CREDENTIALA;
+pub type PCREDENTIALA = *mut _CREDENTIALA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIALW {
+    pub Flags: DWORD,
+    pub Type: DWORD,
+    pub TargetName: LPWSTR,
+    pub Comment: LPWSTR,
+    pub LastWritten: FILETIME,
+    pub CredentialBlobSize: DWORD,
+    pub CredentialBlob: LPBYTE,
+    pub Persist: DWORD,
+    pub AttributeCount: DWORD,
+    pub Attributes: PCREDENTIAL_ATTRIBUTEW,
+    pub TargetAlias: LPWSTR,
+    pub UserName: LPWSTR,
+}
+pub type CREDENTIALW = _CREDENTIALW;
+pub type PCREDENTIALW = *mut _CREDENTIALW;
+pub type CREDENTIAL = CREDENTIALW;
+pub type PCREDENTIAL = PCREDENTIALW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIAL_TARGET_INFORMATIONA {
+    pub TargetName: LPSTR,
+    pub NetbiosServerName: LPSTR,
+    pub DnsServerName: LPSTR,
+    pub NetbiosDomainName: LPSTR,
+    pub DnsDomainName: LPSTR,
+    pub DnsTreeName: LPSTR,
+    pub PackageName: LPSTR,
+    pub Flags: DWORD,
+    pub CredTypeCount: DWORD,
+    pub CredTypes: LPDWORD,
+}
+pub type CREDENTIAL_TARGET_INFORMATIONA = _CREDENTIAL_TARGET_INFORMATIONA;
+pub type PCREDENTIAL_TARGET_INFORMATIONA = *mut _CREDENTIAL_TARGET_INFORMATIONA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CREDENTIAL_TARGET_INFORMATIONW {
+    pub TargetName: LPWSTR,
+    pub NetbiosServerName: LPWSTR,
+    pub DnsServerName: LPWSTR,
+    pub NetbiosDomainName: LPWSTR,
+    pub DnsDomainName: LPWSTR,
+    pub DnsTreeName: LPWSTR,
+    pub PackageName: LPWSTR,
+    pub Flags: DWORD,
+    pub CredTypeCount: DWORD,
+    pub CredTypes: LPDWORD,
+}
+pub type CREDENTIAL_TARGET_INFORMATIONW = _CREDENTIAL_TARGET_INFORMATIONW;
+pub type PCREDENTIAL_TARGET_INFORMATIONW = *mut _CREDENTIAL_TARGET_INFORMATIONW;
+pub type CREDENTIAL_TARGET_INFORMATION = CREDENTIAL_TARGET_INFORMATIONW;
+pub type PCREDENTIAL_TARGET_INFORMATION = PCREDENTIAL_TARGET_INFORMATIONW;
+pub const _CRED_MARSHAL_TYPE_CertCredential: _CRED_MARSHAL_TYPE = 1;
+pub const _CRED_MARSHAL_TYPE_UsernameTargetCredential: _CRED_MARSHAL_TYPE = 2;
+pub const _CRED_MARSHAL_TYPE_BinaryBlobCredential: _CRED_MARSHAL_TYPE = 3;
+pub type _CRED_MARSHAL_TYPE = ::core::ffi::c_uint;
+pub use self::_CRED_MARSHAL_TYPE as CRED_MARSHAL_TYPE;
+pub type PCRED_MARSHAL_TYPE = *mut _CRED_MARSHAL_TYPE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _CERT_CREDENTIAL_INFO {
+    pub cbSize: ULONG,
+    pub rgbHashOfCert: [UCHAR; 20usize],
+}
+pub type CERT_CREDENTIAL_INFO = _CERT_CREDENTIAL_INFO;
+pub type PCERT_CREDENTIAL_INFO = *mut _CERT_CREDENTIAL_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _USERNAME_TARGET_CREDENTIAL_INFO {
+    pub UserName: LPWSTR,
+}
+pub type USERNAME_TARGET_CREDENTIAL_INFO = _USERNAME_TARGET_CREDENTIAL_INFO;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CERTIFICATE_BLOB {

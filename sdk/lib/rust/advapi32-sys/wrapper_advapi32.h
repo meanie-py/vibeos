@@ -19,6 +19,9 @@
 #define _USE_DUMMY_PSEH 1
 #define _ADVAPI32_
 #include "advapi32.h"
+#include <lsa_c.h>
+#include <eventlogrpc_c.h>
+#include <wincred.h>
 #include <winefs.h>
 #include "wine/crypt.h"
 #include <md4.h>
