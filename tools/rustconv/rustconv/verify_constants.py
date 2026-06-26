@@ -431,8 +431,12 @@ def parse_rust_const(line: str) -> tuple[str, int] | None:
 
 def fix_const_line(line: str, name: str, c_val: int) -> str:
     """Rewrite a const definition line with the correct C value."""
-    # Match the const pattern and replace the value
-    m = re.match(r"(const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
+    # Match the const pattern and replace the value. The leading `\s*` (captured
+    # in the prefix) preserves indentation so FUNCTION-LOCAL consts get fixed too —
+    # parse_rust_const strips the line so it detects them, but without this the
+    # rewrite silently no-op'd on any `    const NAME = ...` (e.g. cdrom-rust's
+    # IOCTL_CDROM_GET_INQUIRY_DATA / IOCTL_SCSI_PASS_THROUGH_DIRECT_EX).
+    m = re.match(r"(\s*const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
     if not m:
         return line
     prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
@@ -512,12 +516,25 @@ def main():
     reactos_root = _RUSTCONV_REACTOS_ROOT  # tools/rustconv → reactos/
 
     catalog = build_c_catalog(reactos_root, include_enums=args.enums)
-    print(f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""))
+    # Volatile summary → stderr so the gate baseline (stdout-only) captures just the
+    # stable `MISMATCH:` finding lines. Otherwise the catalog/file counts (which move
+    # on any header or workspace-file change) read as new findings on every edit.
+    print(
+        f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""),
+        file=sys.stderr,
+    )
 
     if args.files:
         rs_files = [Path(f) for f in args.files]
     else:
-        rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
+        # Whole Rust kernel/driver workspace — IOCTL/FSCTL garbage consts live in the
+        # driver crates (ramdisk, cdrom, fastfat, …), not just ntoskrnl-rust. Skip
+        # build output under target/.
+        rs_files = sorted(
+            p
+            for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
+            if "/target/" not in p.as_posix()
+        )
 
     total_mismatches = 0
     files_fixed = 0
@@ -534,10 +551,12 @@ def main():
             if args.fix:
                 files_fixed += 1
 
-    if args.fix:
-        print(f"\nFixed {total_mismatches} constants in {files_fixed} files")
-    else:
-        print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
+    summary = (
+        f"Fixed {total_mismatches} constants in {files_fixed} files"
+        if args.fix
+        else f"{total_mismatches} mismatches found across {len(rs_files)} files"
+    )
+    print(summary, file=sys.stderr)
     return 1 if total_mismatches > 0 and not args.fix else 0
 
 

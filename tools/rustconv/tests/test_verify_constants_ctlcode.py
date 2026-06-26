@@ -16,6 +16,7 @@ from rustconv.verify_constants import (
     _eval_int_expr,
     _split_top_commas,
     build_c_catalog,
+    fix_const_line,
     parse_ctl_code_defines,
     verify_file,
 )
@@ -105,6 +106,26 @@ class TestRealCatalog:
         cat = build_c_catalog(REACTOS_ROOT)
         codes = [k for k in cat if k.startswith(("IOCTL_", "FSCTL_"))]
         assert len(codes) > 100  # ~326 today; guards against the pass silently no-op'ing
+
+
+class TestFixConstLine:
+    def test_fixes_module_level(self):
+        out = fix_const_line("const IOCTL_X: u32 = 0x00000000;", "IOCTL_X", 0x24064)
+        assert out == "const IOCTL_X: u32 = 0x00024064;"
+
+    def test_fixes_indented_function_local(self):
+        # parse_rust_const strips the line so it DETECTS local consts; fix_const_line
+        # must preserve the indentation and actually rewrite (was a silent no-op).
+        out = fix_const_line("    const IOCTL_X: u32 = 0x0004D054;", "IOCTL_X", 0x4D048)
+        assert out == "    const IOCTL_X: u32 = 0x0004D048;"
+
+    def test_fix_via_verify_file(self, tmp_path: Path):
+        cat = build_c_catalog(REACTOS_ROOT)
+        rs = tmp_path / "drv.rs"
+        rs.write_text("fn f() {\n    const FSCTL_CREATE_RAM_DISK: u32 = 0x000900C4;\n}\n")
+        assert verify_file(rs, cat, fix=True)  # one mismatch, fixed
+        assert "0x00240000" in rs.read_text()
+        assert verify_file(rs, cat) == []  # clean on re-scan
 
 
 class TestVerifyFileFlagsGarbageIoctl:

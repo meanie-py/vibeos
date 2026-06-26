@@ -1454,13 +1454,27 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
     `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
     *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`
     (fn 3 not 2), `FSCTL_OPLOCK_BREAK_NOTIFY` `0x9000C`→`0x90014` (fn 5 not 3).
-  - **Still open (routed to lanes, not yet gated):** a tree-wide scan surfaced **~60 more garbage
-    IOCTL/FSCTL consts** in driver crates (cdrom, fastfat, disk, mountmgr, classpnp, scsiport,
-    usbhub, …) — all latent (on non-boot paths). The gate's `verify_constants` only scans
-    `ntoskrnl-rust/src`; **extending its scope to the driver crates (+ baseline) is the remaining
-    work** to make this prevention reach where ramdisk actually lived. Two halves still uncovered:
-    function-**local** `const NAME = <garbage>` (verify_constants only parses one-line module defs),
-    and non-CTL driver-crate consts (TAG_*/STATUS_*) the default ntoskrnl-only scan never visits.
+  - **Gate scope now WHOLE-WORKSPACE (2026-06-26):** `verify_constants` main() default + the gate
+    spec (`tests/qemu/cli/lints.py`) now scan **all of `sdk/lib/rust/**` (driver crates included)**,
+    not just `ntoskrnl-rust/src` — so the prevention finally reaches where ramdisk actually lived.
+    Its volatile catalog/file-count summary moved to **stderr** (gate reads stdout only) so the
+    baseline stays stable as workspace files come and go. The tree-wide scan found **57 latent
+    garbage IOCTL/FSCTL consts**: **cdrom-rust's 26 are FIXED mechanically** (`verify_constants
+    --fix` — it rewrites each to the computed CTL_CODE value); the rest (fastfat 24, disk/mountmgr/
+    classpnp/cdfs/usbhub) are **baselined** in `tools/lint-baseline/verify_constants.txt` (75 lines
+    = 31 residual CTL + 44 non-CTL) as accepted debt for the owning lanes to burn down — the gate now
+    blocks any NEW garbage const tree-wide.
+  - **`--fix` now rewrites function-LOCAL consts too:** `parse_rust_const` strips the line so it
+    *detected* `    const NAME = …` inside fns, but `fix_const_line` anchored its rewrite regex at
+    column 0 → silently no-op'd on any indented const (e.g. cdrom's `IOCTL_CDROM_GET_INQUIRY_DATA`).
+    Fixed by capturing leading whitespace in the prefix (indentation preserved). This closes the
+    function-local half of the mechanization.
+  - **Triage of the non-CTL findings (the holistic-fix question):** they split three ways —
+    **CTL codes** are mechanically `--fix`-able (header-authoritative ABI values); **pool `TAG_*`**
+    mismatches are *harmless translation divergences* (arbitrary 4-char debug labels, e.g. `TAG_KERNEL`
+    "Kern" vs C "Ke  ") → baseline, do NOT auto-fix; **`STATUS_*`/flag** mismatches are *case-by-case*
+    (a wrong NTSTATUS is a real bug, but the name can collide across status enums → FP risk) → review
+    before fixing, never blanket `--fix`. So a blind tree-wide `--fix` is UNSAFE; fix per-class.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

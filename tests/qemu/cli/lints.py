@@ -154,10 +154,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     for tool, rel in (
         ("verify_abi", "verify_abi.py"),
         ("verify_ffi", "verify_ffi.py"),
-        ("verify_constants", "verify_constants.py"),
     ):
         f = rc / rel
         specs.append((tool, [py, str(f)] if f.is_file() else ["MISSING"], "both"))
+    # verify_constants reads stdout only: it now scans the whole rust workspace
+    # (driver crates included), so its volatile catalog/file-count summary goes to
+    # stderr to keep the baseline stable — only `MISMATCH:` finding lines on stdout.
+    vc = rc / "verify_constants.py"
+    specs.append(("verify_constants", [py, str(vc)] if vc.is_file() else ["MISSING"], "stdout"))
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
