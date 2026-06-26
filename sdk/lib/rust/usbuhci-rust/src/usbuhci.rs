@@ -10,16 +10,18 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{LARGE_INTEGER, PDRIVER_OBJECT, PUNICODE_STRING};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn READ_PORT_USHORT(Register: *mut USHORT) -> USHORT;
 }
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
+    fn DPRINT_IMPL(format: *const i8, ...);
+    fn DPRINT_UHCI(format: *const i8, ...);
+}
+extern "system" {
     fn READ_PORT_UCHAR(Port: *mut UCHAR) -> UCHAR;
     fn WRITE_PORT_UCHAR(Port: *mut UCHAR, Value: UCHAR);
     fn WRITE_PORT_USHORT(Port: *mut USHORT, Value: USHORT);
-    fn DPRINT_IMPL(format: *const i8, ...);
-    fn DPRINT_UHCI(format: *const i8, ...);
     fn USBPORT_RegisterUSBPortDriver( DriverObject: PDRIVER_OBJECT, Version: ULONG, RegPacket: *mut USBPORT_REGISTRATION_PACKET, ) -> NTSTATUS;
     fn RtlAssert( VoidFailedAssertion: *mut core::ffi::c_void, VoidFileName: *mut core::ffi::c_void, LineNumber: u32, MutableMessage: *mut i8, );
     fn WRITE_PORT_ULONG(Register: PULONG, Value: ULONG);
@@ -27,6 +29,7 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut RegPacket: USBPORT_REGISTRATION_PACKET = USBPORT_REGISTRATION_PACKET {
     MiniPortVersion: 0,
     MiniPortFlags: 0,

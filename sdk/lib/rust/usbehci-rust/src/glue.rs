@@ -13,7 +13,7 @@ pub use crate::types::EHCI_QUEUE_TD as EHCI_HW_TD; // EHCI_HCD_TD.HwTD type (Nex
 // ---- SharedSystemTime — &KI_USER_SHARED_DATA.SystemTime (the KeQuerySystemTime macro source) ----
 #[inline]
 pub unsafe fn SharedSystemTimePtr() -> *mut ntkrnl_sys::ddk::ULONG64 {
-    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ntkrnl_sys::ddk::ULONG64
 }
 
@@ -63,7 +63,7 @@ use ntkrnl_sys::ddk::{UCHAR, ULONG, USHORT};
 // supply the faithful inline on i386. SharedSystemTime (below) is the same source pointer. ----
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEGER) {
-    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     loop {
         let high1 = core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time).read_volatile();
         let low = core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart).read_volatile();

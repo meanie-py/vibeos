@@ -7,8 +7,10 @@ use ntkrnl_sys::ddk::{KeStallExecutionProcessor};
 use core::ffi::c_void;
 
 extern "C" {
-    fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn DPRINT_RH(format: *const ::core::ffi::c_char, ...);
+}
+extern "system" {
+    fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
 }
 
 // ---- file-scope preamble (translated) ----

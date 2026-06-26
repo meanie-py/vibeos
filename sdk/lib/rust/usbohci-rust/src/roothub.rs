@@ -8,6 +8,8 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
+}
+extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
 }
 

@@ -11,6 +11,8 @@ use core::ffi::c_void;
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn DPRINT_EHCI(format: *const ::core::ffi::c_char, ...);
+}
+extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR);
     fn USBPORT_GetHciMn() -> ULONG;
     fn USBPORT_RegisterUSBPortDriver( DriverObject: PDRIVER_OBJECT, Version: ULONG, RegPacket: *mut USBPORT_REGISTRATION_PACKET, ) -> NTSTATUS;
@@ -18,6 +20,7 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut RegPacket: USBPORT_REGISTRATION_PACKET = USBPORT_REGISTRATION_PACKET {
     MiniPortVersion: 0,
     MiniPortFlags: 0,

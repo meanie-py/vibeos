@@ -42,7 +42,7 @@ use ntkrnl_sys::ddk::{UCHAR, ULONG, USHORT};
 // ---- KeQuerySystemTime — wdm.h macro reading KI_USER_SHARED_DATA.SystemTime (i386 only). ----
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEGER) {
-    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     loop {
         let high1 = core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time).read_volatile();
         let low = core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart).read_volatile();
@@ -64,7 +64,7 @@ unsafe extern "C" fn DPRINT_UHCI(_fmt: *const ::core::ffi::c_char) {}
 pub const MAXUSHORT: ::core::ffi::c_int = 0xFFFF;
 #[inline] pub fn ASSERT(_cond: i32) {} // NT_ASSERT — no-op in retail (NDEBUG)
 #[inline] pub unsafe fn SharedSystemTimePtr() -> *mut ULONG64 {
-    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ULONG64
 }
 // InterlockedExchange — atomic swap intrinsic (no ntoskrnl export); inline, no symbol.
@@ -79,3 +79,30 @@ pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x01 as UHCI_VIA_x01;
 pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x02 as UHCI_VIA_x02;
 pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x03 as UHCI_VIA_x03;
 pub use crate::types::_USB_CONTROLLER_FLAVOR_UHCI_VIA_x04 as UHCI_VIA_x04;
+
+// READ/WRITE_PORT_* — real HAL exports on i386; on amd64 they are inline x86 port I/O;
+// on arm64 UHCI (x86-era) is inert, so a 0/no-op stub satisfies the link.
+#[cfg(target_arch = "x86_64")]
+mod uhci_port_io {
+    #[no_mangle] unsafe extern "system" fn READ_PORT_UCHAR(p: *mut u8) -> u8 {
+        let v: u8; core::arch::asm!("in al, dx", out("al") v, in("dx") p as u16, options(nomem, nostack, preserves_flags)); v }
+    #[no_mangle] unsafe extern "system" fn READ_PORT_USHORT(p: *mut u16) -> u16 {
+        let v: u16; core::arch::asm!("in ax, dx", out("ax") v, in("dx") p as u16, options(nomem, nostack, preserves_flags)); v }
+    #[no_mangle] unsafe extern "system" fn READ_PORT_ULONG(p: *mut u32) -> u32 {
+        let v: u32; core::arch::asm!("in eax, dx", out("eax") v, in("dx") p as u16, options(nomem, nostack, preserves_flags)); v }
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_UCHAR(p: *mut u8, v: u8) {
+        core::arch::asm!("out dx, al", in("dx") p as u16, in("al") v, options(nomem, nostack, preserves_flags)); }
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_USHORT(p: *mut u16, v: u16) {
+        core::arch::asm!("out dx, ax", in("dx") p as u16, in("ax") v, options(nomem, nostack, preserves_flags)); }
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_ULONG(p: *mut u32, v: u32) {
+        core::arch::asm!("out dx, eax", in("dx") p as u16, in("eax") v, options(nomem, nostack, preserves_flags)); }
+}
+#[cfg(target_arch = "aarch64")]
+mod uhci_port_io {
+    #[no_mangle] unsafe extern "system" fn READ_PORT_UCHAR(_p: *mut u8) -> u8 { 0 }
+    #[no_mangle] unsafe extern "system" fn READ_PORT_USHORT(_p: *mut u16) -> u16 { 0 }
+    #[no_mangle] unsafe extern "system" fn READ_PORT_ULONG(_p: *mut u32) -> u32 { 0 }
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_UCHAR(_p: *mut u8, _v: u8) {}
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_USHORT(_p: *mut u16, _v: u16) {}
+    #[no_mangle] unsafe extern "system" fn WRITE_PORT_ULONG(_p: *mut u32, _v: u32) {}
+}

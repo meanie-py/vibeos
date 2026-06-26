@@ -11,12 +11,15 @@ use core::ffi::c_void;
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn DPRINT_OHCI(format: *const ::core::ffi::c_char, ...);
+}
+extern "system" {
     fn RtlAssert( VoidFailedAssertion: PVOID, VoidFileName: PVOID, LineNumber: ULONG, MutableMessage: *mut CHAR, );
     fn OHCI_ReadRhDescriptorA(OhciExtension: POHCI_EXTENSION) -> OHCI_REG_RH_DESCRIPTORA;
 }
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut RegPacket: USBPORT_REGISTRATION_PACKET = USBPORT_REGISTRATION_PACKET {
     MiniPortVersion: 0,
     MiniPortFlags: 0,

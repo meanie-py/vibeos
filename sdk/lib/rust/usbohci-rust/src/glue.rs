@@ -43,7 +43,7 @@ use ntkrnl_sys::ddk::{UCHAR, ULONG, USHORT};
 // ntkrnl-sys provides it for non-x86). ----
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEGER) {
-    extern "C" { static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA; }
+    let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     loop {
         let high1 = core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time).read_volatile();
         let low = core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart).read_volatile();
@@ -60,4 +60,21 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 unsafe extern "C" fn DPRINT_OHCI(_fmt: *const ::core::ffi::c_char) {}
 
 // KeQueryTickCount — ntoskrnl export (PLARGE_INTEGER out). Body passes *mut i64 (== PLARGE_INTEGER).
+#[cfg(target_arch = "x86")]
 extern "system" { pub fn KeQueryTickCount(CurrentCount: *mut i64); }
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn KeQueryTickCount(CurrentCount: *mut i64) {
+    // KUSER_SHARED_DATA.TickCountQuad lives at offset 0x320 on amd64/arm64.
+    let tcq = (ntkrnl_sys::mm::KI_USER_SHARED_DATA + 0x320) as *const i64;
+    *CurrentCount = core::ptr::read_volatile(tcq);
+}
+
+// RtlSecureZeroMemory — winnt.h FORCEINLINE (volatile memset, not optimized away); no export.
+#[no_mangle]
+unsafe extern "C" fn RtlSecureZeroMemory(ptr: *mut core::ffi::c_void, cnt: usize) -> *mut core::ffi::c_void {
+    let mut p = ptr as *mut u8;
+    let mut i = 0usize;
+    while i < cnt { core::ptr::write_volatile(p, 0); p = p.add(1); i += 1; }
+    ptr
+}

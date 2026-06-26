@@ -8,11 +8,13 @@ use ntkrnl_sys::ddk::{KeStallExecutionProcessor};
 use core::ffi::c_void;
 
 extern "C" {
+    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
+}
+extern "system" {
     fn READ_PORT_USHORT(Register: PUSHORT) -> USHORT;
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn WRITE_PORT_USHORT(Port: PUSHORT, Value: USHORT);
     fn UhciHardwarePresent(UhciExtension: PUHCI_EXTENSION) -> BOOLEAN;
-    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
 }
 
 // ---- file-scope preamble (translated) ----
