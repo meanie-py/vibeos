@@ -7,11 +7,8 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
-use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
-
-// ---- file-scope preamble (translated) ----
-pub type PIO_COMPLETION_ROUTINE = Option<IO_COMPLETION_ROUTINE>;
 
 unsafe fn SatisfyAccept(
     DeviceExt: PAFD_DEVICE_EXTENSION,
@@ -22,25 +19,25 @@ unsafe fn SatisfyAccept(
     let FCB = (*NewFileObject).FsContext as PAFD_FCB;
     let mut Status: NTSTATUS;
 
-    UNREFERENCED_PARAMETER(DeviceExt);
+    let _ = DeviceExt;
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Completing a real accept (FCB %p)\n\0".as_ptr() as PCHAR,
         FCB,
     );
 
-    (*FCB).Connection = (*Qelt).Object;
+    (*FCB).Connection = core::ptr::read(core::ptr::addr_of!((*Qelt).Object));
 
     if !(*FCB).RemoteAddress.is_null() {
         ExFreePoolWithTag((*FCB).RemoteAddress as PVOID, TAG_AFD_TRANSPORT_ADDRESS);
     }
 
-    (*FCB).RemoteAddress = TaCopyTransportAddress((*(*Qelt).ConnInfo).RemoteAddress);
+    (*FCB).RemoteAddress = TaCopyTransportAddress((*(*Qelt).ConnInfo).RemoteAddress as PTRANSPORT_ADDRESS);
 
     if (*FCB).RemoteAddress.is_null() {
         Status = STATUS_NO_MEMORY;
@@ -48,14 +45,14 @@ unsafe fn SatisfyAccept(
         Status = MakeSocketIntoConnection(FCB);
     }
 
-    if NT_SUCCESS(Status) != 0 {
+    if NT_SUCCESS(Status) {
         Status = TdiBuildConnectionInfo(
             core::ptr::addr_of_mut!((*FCB).ConnectCallInfo),
             (*FCB).RemoteAddress,
         );
     }
 
-    if NT_SUCCESS(Status) != 0 {
+    if NT_SUCCESS(Status) {
         Status = TdiBuildConnectionInfo(
             core::ptr::addr_of_mut!((*FCB).ConnectReturnInfo),
             (*FCB).RemoteAddress,
@@ -66,43 +63,43 @@ unsafe fn SatisfyAccept(
 }
 
 unsafe fn SatisfyPreAccept(Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
-    let ListenReceive = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PAFD_RECEIVED_ACCEPT_DATA;
+    let ListenReceive = (*Irp).AssociatedIrp.SystemBuffer as PAFD_RECEIVED_ACCEPT_DATA;
     let mut IPAddr: PTA_IP_ADDRESS;
 
     (*ListenReceive).SequenceNumber = (*Qelt).Seq;
 
-    AFD_DbgPrint(MID_TRACE, b"Giving SEQ %u to userland\n\0".as_ptr() as PCHAR, (*Qelt).Seq);
-    AFD_DbgPrint(MID_TRACE, b"Socket Address (K) %p (U) %p\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"Giving SEQ %u to userland\n\0".as_ptr() as PCHAR, (*Qelt).Seq);
+    AFD_DbgPrint!(MID_TRACE, b"Socket Address (K) %p (U) %p\n\0".as_ptr() as PCHAR,
                  core::ptr::addr_of_mut!((*ListenReceive).Address),
                  (*(*Qelt).ConnInfo).RemoteAddress);
 
     TaCopyTransportAddressInPlace(core::ptr::addr_of_mut!((*ListenReceive).Address),
-                                  (*(*Qelt).ConnInfo).RemoteAddress);
+                                  (*(*Qelt).ConnInfo).RemoteAddress as PTRANSPORT_ADDRESS);
 
     IPAddr = core::ptr::addr_of_mut!((*ListenReceive).Address) as PTA_IP_ADDRESS;
 
-    AFD_DbgPrint(MID_TRACE, b"IPAddr->TAAddressCount %d\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"IPAddr->TAAddressCount %d\n\0".as_ptr() as PCHAR,
                  (*IPAddr).TAAddressCount);
-    AFD_DbgPrint(MID_TRACE, b"IPAddr->Address[0].AddressType %u\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"IPAddr->Address[0].AddressType %u\n\0".as_ptr() as PCHAR,
                  (*IPAddr).Address[0].AddressType);
-    AFD_DbgPrint(MID_TRACE, b"IPAddr->Address[0].AddressLength %u\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"IPAddr->Address[0].AddressLength %u\n\0".as_ptr() as PCHAR,
                  (*IPAddr).Address[0].AddressLength);
-    AFD_DbgPrint(MID_TRACE, b"IPAddr->Address[0].Address[0].sin_port %x\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"IPAddr->Address[0].Address[0].sin_port %x\n\0".as_ptr() as PCHAR,
                  (*IPAddr).Address[0].Address[0].sin_port);
-    AFD_DbgPrint(MID_TRACE, b"IPAddr->Address[0].Address[0].sin_addr %x\n\0".as_ptr() as PCHAR,
+    AFD_DbgPrint!(MID_TRACE, b"IPAddr->Address[0].Address[0].sin_addr %x\n\0".as_ptr() as PCHAR,
                  (*IPAddr).Address[0].Address[0].in_addr);
 
     if !(*Irp).MdlAddress.is_null() {
         UnlockRequest(Irp, IoGetCurrentIrpStackLocation(Irp));
     }
 
-    (*Irp).IoStatus.__bindgen_anon_1.Information = (IPAddr.offset(1) as PCHAR).offset_from(ListenReceive as PCHAR) as usize;
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-    IoSetCancelRoutine(Irp, core::ptr::null_mut());
+    (*Irp).IoStatus.Information = (IPAddr.offset(1) as PCHAR).offset_from(ListenReceive as PCHAR) as _;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    IoSetCancelRoutine(Irp, None);
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
     STATUS_SUCCESS
 }
-unsafe fn ListenComplete(
+unsafe extern "system" fn ListenComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -113,7 +110,7 @@ unsafe fn ListenComplete(
     let mut NextIrpEntry: PLIST_ENTRY;
     let mut NextIrp: PIRP;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    let _ = DeviceObject;
 
     if SocketAcquireStateLock(FCB) == 0 {
         return STATUS_FILE_CLOSED;
@@ -123,10 +120,10 @@ unsafe fn ListenComplete(
     (*FCB).ListenIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
-        while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT])) == 0 {
-            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT]));
-            NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.ListEntry)) as PIRP;
-            (*NextIrp).IoStatus.Anonymous.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
+        while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT as usize])) {
+            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT as usize]));
+            NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
+            (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             if !(*NextIrp).MdlAddress.is_null() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
@@ -157,12 +154,12 @@ unsafe fn ListenComplete(
         return STATUS_FILE_CLOSED;
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Completing listen request.\n\0".as_ptr() as PCHAR);
-    AFD_DbgPrint(MID_TRACE, b"IoStatus was %x\n\0".as_ptr() as PCHAR, (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status);
+    AFD_DbgPrint!(MID_TRACE, b"Completing listen request.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"IoStatus was %x\n\0".as_ptr() as PCHAR, (*Irp).IoStatus.__bindgen_anon_1.Status);
 
-    if (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status != STATUS_SUCCESS {
+    if (*Irp).IoStatus.__bindgen_anon_1.Status != STATUS_SUCCESS {
         SocketStateUnlock(FCB);
-        return (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status;
+        return (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
     Qelt = ExAllocatePoolWithTag(
@@ -176,21 +173,21 @@ unsafe fn ListenComplete(
     } else {
         let AddressType = (*(*FCB).LocalAddress).Address[0].AddressType;
 
-        (*Qelt).Object = (*FCB).Connection;
+        (*Qelt).Object = core::ptr::read(core::ptr::addr_of!((*FCB).Connection));
         (*Qelt).Seq = (*FCB).ConnSeq;
         (*FCB).ConnSeq = (*FCB).ConnSeq.wrapping_add(1);
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Address Type: %u (RA %p)\n\0".as_ptr() as PCHAR,
             AddressType,
             (*(*FCB).ListenIrp.ConnectionReturnInfo).RemoteAddress,
         );
 
-        Status = TdiBuildNullConnectionInfo(core::ptr::addr_of_mut!((*Qelt).ConnInfo), AddressType);
+        Status = TdiBuildNullConnectionInfo(core::ptr::addr_of_mut!((*Qelt).ConnInfo), AddressType as u32);
         if NT_SUCCESS(Status) {
             TaCopyTransportAddressInPlace(
-                (*(*Qelt).ConnInfo).RemoteAddress,
-                (*(*FCB).ListenIrp.ConnectionReturnInfo).RemoteAddress,
+                (*(*Qelt).ConnInfo).RemoteAddress as PTRANSPORT_ADDRESS,
+                (*(*FCB).ListenIrp.ConnectionReturnInfo).RemoteAddress as PTRANSPORT_ADDRESS,
             );
             InsertTailList(
                 core::ptr::addr_of_mut!((*FCB).PendingConnections),
@@ -199,13 +196,13 @@ unsafe fn ListenComplete(
         }
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT])) == 0
-        && IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0
+    if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT as usize]))
+        && !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections))
     {
-        let PendingIrp = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT]));
+        let PendingIrp = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT as usize]));
         let PendingConn = (*FCB).PendingConnections.Flink;
         SatisfyPreAccept(
-            (PendingIrp as usize - core::mem::offset_of!(IRP, Tail.Overlay.ListEntry)) as PIRP,
+            (PendingIrp as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP,
             (PendingConn as usize - core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry)) as PAFD_TDI_OBJECT_QELT,
         );
     }
@@ -215,13 +212,13 @@ unsafe fn ListenComplete(
     if NT_SUCCESS(Status) {
         Status = TdiBuildNullConnectionInfoInPlace(
             (*FCB).ListenIrp.ConnectionCallInfo,
-            (*(*FCB).LocalAddress).Address[0].AddressType,
+            (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
         ASSERT(Status == STATUS_SUCCESS);
 
         Status = TdiBuildNullConnectionInfoInPlace(
             (*FCB).ListenIrp.ConnectionReturnInfo,
-            (*(*FCB).LocalAddress).Address[0].AddressType,
+            (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
         ASSERT(Status == STATUS_SUCCESS);
 
@@ -230,7 +227,7 @@ unsafe fn ListenComplete(
             (*FCB).Connection.Object,
             core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionCallInfo),
             core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionReturnInfo),
-            Some(ListenComplete),
+            Some(core::mem::transmute(ListenComplete as *const ())),
             FCB as PVOID,
         );
 
@@ -239,9 +236,9 @@ unsafe fn ListenComplete(
         }
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0 {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) {
         (*FCB).PollState |= AFD_EVENT_ACCEPT;
-        (*FCB).PollStatus[FD_ACCEPT_BIT] = STATUS_SUCCESS;
+        (*FCB).PollStatus[FD_ACCEPT_BIT as usize] = STATUS_SUCCESS;
         PollReeval((*FCB).DeviceExt, (*FCB).FileObject);
     } else {
         (*FCB).PollState &= !AFD_EVENT_ACCEPT;
@@ -262,52 +259,52 @@ pub unsafe extern "C" fn AfdListenSocket(
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let ListenReq: PAFD_LISTEN_DATA;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    let _ = DeviceObject;
 
-    AFD_DbgPrint(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
+    AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
     }
 
-    ListenReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
+    ListenReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_LISTEN_DATA;
     if ListenReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
 
     if (*FCB).SharedData.State != SOCKET_STATE_BOUND {
         Status = STATUS_INVALID_PARAMETER;
-        AFD_DbgPrint(MIN_TRACE, b"Could not listen an unbound socket\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Could not listen an unbound socket\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
     }
 
     (*FCB).DelayedAccept = (*ListenReq).UseDelayedAcceptance;
 
-    AFD_DbgPrint(MID_TRACE, b"ADDRESSFILE: %p\n\0".as_ptr() as PCHAR, (*FCB).AddressFile.Handle);
+    AFD_DbgPrint!(MID_TRACE, b"ADDRESSFILE: %p\n\0".as_ptr() as PCHAR, (*FCB).AddressFile.Handle);
 
     Status = WarmSocketForConnection(FCB);
 
-    AFD_DbgPrint(MID_TRACE, b"Status from warmsocket %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Status from warmsocket %x\n\0".as_ptr() as PCHAR, Status);
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
     }
 
     Status = TdiBuildNullConnectionInfo(
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionCallInfo),
-        (*(*FCB).LocalAddress).Address[0].AddressType,
+        (*(*FCB).LocalAddress).Address[0].AddressType as u32,
     );
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
     }
 
     Status = TdiBuildNullConnectionInfo(
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionReturnInfo),
-        (*(*FCB).LocalAddress).Address[0].AddressType,
+        (*(*FCB).LocalAddress).Address[0].AddressType as u32,
     );
 
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         ExFreePoolWithTag(
             (*FCB).ListenIrp.ConnectionCallInfo as PVOID,
             TAG_AFD_TDI_CONNECTION_INFORMATION,
@@ -324,7 +321,7 @@ pub unsafe extern "C" fn AfdListenSocket(
         (*FCB).Connection.Object,
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionCallInfo),
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionReturnInfo),
-        Some(ListenComplete),
+        Some(core::mem::transmute(ListenComplete as *const ())),
         FCB as PVOID,
     );
 
@@ -332,7 +329,7 @@ pub unsafe extern "C" fn AfdListenSocket(
         Status = STATUS_SUCCESS;
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
     UnlockAndMaybeComplete(FCB, Status, Irp, 0)
 }
 #[no_mangle]
@@ -345,13 +342,13 @@ pub unsafe extern "C" fn AfdWaitForListen(
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut Status: NTSTATUS;
 
-    AFD_DbgPrint(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0 {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) {
         let PendingConn: PLIST_ENTRY = (*FCB).PendingConnections.Flink;
 
         Status = SatisfyPreAccept(
@@ -359,9 +356,9 @@ pub unsafe extern "C" fn AfdWaitForListen(
             ((PendingConn as usize) - core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry)) as PAFD_TDI_OBJECT_QELT,
         );
 
-        AFD_DbgPrint(MID_TRACE, b"Completed a wait for accept\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MID_TRACE, b"Completed a wait for accept\n\0".as_ptr() as PCHAR);
 
-        if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0 {
+        if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) {
             (*FCB).PollState |= AFD_EVENT_ACCEPT;
             (*FCB).PollStatus[FD_ACCEPT_BIT as usize] = STATUS_SUCCESS;
             PollReeval((*FCB).DeviceExt, (*FCB).FileObject);
@@ -372,11 +369,11 @@ pub unsafe extern "C" fn AfdWaitForListen(
         SocketStateUnlock(FCB);
         return Status;
     } else if (*FCB).NonBlocking != 0 {
-        AFD_DbgPrint(MIN_TRACE, b"No connection ready on a non-blocking socket\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"No connection ready on a non-blocking socket\n\0".as_ptr() as PCHAR);
 
         return UnlockAndMaybeComplete(FCB, STATUS_CANT_WAIT, Irp, 0);
     } else {
-        AFD_DbgPrint(MID_TRACE, b"Holding\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MID_TRACE, b"Holding\n\0".as_ptr() as PCHAR);
 
         return LeaveIrpUntilLater(FCB, Irp, FUNCTION_PREACCEPT);
     }
@@ -393,7 +390,7 @@ pub unsafe extern "C" fn AfdAccept(
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let AcceptData: PAFD_ACCEPT_DATA = (*Irp).AssociatedIrp.SystemBuffer as PAFD_ACCEPT_DATA;
 
-    AFD_DbgPrint(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -406,7 +403,7 @@ pub unsafe extern "C" fn AfdAccept(
         let PendingConnObj: PAFD_TDI_OBJECT_QELT =
             ((PendingConn as usize) - core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry)) as PAFD_TDI_OBJECT_QELT;
 
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Comparing Seq %u to Q %u\n\0".as_ptr() as PCHAR,
             (*AcceptData).SequenceNumber,
@@ -423,11 +420,11 @@ pub unsafe extern "C" fn AfdAccept(
                 FILE_ALL_ACCESS,
                 core::ptr::null_mut(),
                 0i32 as i8,
-                core::ptr::addr_of_mut!(NewFileObject) as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!(NewFileObject) as *mut *mut core::ffi::c_void,
                 core::ptr::null_mut(),
             );
 
-            if NT_SUCCESS(Status) == 0 {
+            if !NT_SUCCESS(Status) {
                 return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
             }
 
@@ -435,11 +432,11 @@ pub unsafe extern "C" fn AfdAccept(
 
             ObDereferenceObject(NewFileObject as *mut core::ffi::c_void);
 
-            AFD_DbgPrint(MID_TRACE, b"Completed a wait for accept\n\0".as_ptr() as PCHAR);
+            AFD_DbgPrint!(MID_TRACE, b"Completed a wait for accept\n\0".as_ptr() as PCHAR);
 
             ExFreePoolWithTag(PendingConnObj as *mut core::ffi::c_void, TAG_AFD_ACCEPT_QUEUE);
 
-            if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0 {
+            if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) {
                 (*FCB).PollState |= AFD_EVENT_ACCEPT;
                 (*FCB).PollStatus[FD_ACCEPT_BIT as usize] = STATUS_SUCCESS;
                 PollReeval((*FCB).DeviceExt, (*FCB).FileObject);
@@ -454,7 +451,7 @@ pub unsafe extern "C" fn AfdAccept(
         PendingConn = (*PendingConn).Flink;
     }
 
-    AFD_DbgPrint(MIN_TRACE, b"No connection waiting\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MIN_TRACE, b"No connection waiting\n\0".as_ptr() as PCHAR);
 
     UnlockAndMaybeComplete(FCB, STATUS_UNSUCCESSFUL, Irp, 0)
 }
@@ -489,7 +486,7 @@ pub unsafe extern "C" fn AfdAccept(
 //         return LostSocket( Irp );
 //
 //     /* Transfer the connection to the new socket, launch the opening read */
-//     AFD_DbgPrint(MID_TRACE,("Completing a real accept (FCB %p)\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("Completing a real accept (FCB %p)\n", FCB));
 //
 //     FCB->Connection = Qelt->Object;
 //
@@ -522,8 +519,8 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //     ListenReceive->SequenceNumber = Qelt->Seq;
 //
-//     AFD_DbgPrint(MID_TRACE,("Giving SEQ %u to userland\n", Qelt->Seq));
-//     AFD_DbgPrint(MID_TRACE,("Socket Address (K) %p (U) %p\n",
+//     AFD_DbgPrint!(MID_TRACE,("Giving SEQ %u to userland\n", Qelt->Seq));
+//     AFD_DbgPrint!(MID_TRACE,("Socket Address (K) %p (U) %p\n",
 //                             &ListenReceive->Address,
 //                             Qelt->ConnInfo->RemoteAddress));
 //
@@ -532,15 +529,15 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //     IPAddr = (PTA_IP_ADDRESS)&ListenReceive->Address;
 //
-//     AFD_DbgPrint(MID_TRACE,("IPAddr->TAAddressCount %d\n",
+//     AFD_DbgPrint!(MID_TRACE,("IPAddr->TAAddressCount %d\n",
 //                             IPAddr->TAAddressCount));
-//     AFD_DbgPrint(MID_TRACE,("IPAddr->Address[0].AddressType %u\n",
+//     AFD_DbgPrint!(MID_TRACE,("IPAddr->Address[0].AddressType %u\n",
 //                             IPAddr->Address[0].AddressType));
-//     AFD_DbgPrint(MID_TRACE,("IPAddr->Address[0].AddressLength %u\n",
+//     AFD_DbgPrint!(MID_TRACE,("IPAddr->Address[0].AddressLength %u\n",
 //                             IPAddr->Address[0].AddressLength));
-//     AFD_DbgPrint(MID_TRACE,("IPAddr->Address[0].Address[0].sin_port %x\n",
+//     AFD_DbgPrint!(MID_TRACE,("IPAddr->Address[0].Address[0].sin_port %x\n",
 //                             IPAddr->Address[0].Address[0].sin_port));
-//     AFD_DbgPrint(MID_TRACE,("IPAddr->Address[0].Address[0].sin_addr %x\n",
+//     AFD_DbgPrint!(MID_TRACE,("IPAddr->Address[0].Address[0].sin_addr %x\n",
 //                             IPAddr->Address[0].Address[0].in_addr));
 //
 //     if( Irp->MdlAddress ) UnlockRequest( Irp, IoGetCurrentIrpStackLocation( Irp ) );
@@ -603,8 +600,8 @@ pub unsafe extern "C" fn AfdAccept(
 //         return STATUS_FILE_CLOSED;
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Completing listen request.\n"));
-//     AFD_DbgPrint(MID_TRACE,("IoStatus was %x\n", Irp->IoStatus.Status));
+//     AFD_DbgPrint!(MID_TRACE,("Completing listen request.\n"));
+//     AFD_DbgPrint!(MID_TRACE,("IoStatus was %x\n", Irp->IoStatus.Status));
 //
 //     if (Irp->IoStatus.Status != STATUS_SUCCESS)
 //     {
@@ -624,7 +621,7 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //         Qelt->Object = FCB->Connection;
 //         Qelt->Seq = FCB->ConnSeq++;
-//         AFD_DbgPrint(MID_TRACE,("Address Type: %u (RA %p)\n",
+//         AFD_DbgPrint!(MID_TRACE,("Address Type: %u (RA %p)\n",
 //                                 AddressType,
 //                                 FCB->ListenIrp.
 //                                 ConnectionReturnInfo->RemoteAddress));
@@ -697,7 +694,7 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called on %p\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("Called on %p\n", FCB));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
 //
@@ -707,17 +704,17 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //     if( FCB->SharedData.State != SOCKET_STATE_BOUND ) {
 //         Status = STATUS_INVALID_PARAMETER;
-//         AFD_DbgPrint(MIN_TRACE,("Could not listen an unbound socket\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Could not listen an unbound socket\n"));
 //         return UnlockAndMaybeComplete( FCB, Status, Irp, 0 );
 //     }
 //
 //     FCB->DelayedAccept = ListenReq->UseDelayedAcceptance;
 //
-//     AFD_DbgPrint(MID_TRACE,("ADDRESSFILE: %p\n", FCB->AddressFile.Handle));
+//     AFD_DbgPrint!(MID_TRACE,("ADDRESSFILE: %p\n", FCB->AddressFile.Handle));
 //
 //     Status = WarmSocketForConnection( FCB );
 //
-//     AFD_DbgPrint(MID_TRACE,("Status from warmsocket %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Status from warmsocket %x\n", Status));
 //
 //     if( !NT_SUCCESS(Status) ) return UnlockAndMaybeComplete( FCB, Status, Irp, 0 );
 //
@@ -752,7 +749,7 @@ pub unsafe extern "C" fn AfdAccept(
 //     if( Status == STATUS_PENDING )
 //         Status = STATUS_SUCCESS;
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //     return UnlockAndMaybeComplete( FCB, Status, Irp, 0 );
 // }
 //
@@ -764,7 +761,7 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Called\n"));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
 //
@@ -777,7 +774,7 @@ pub unsafe extern "C" fn AfdAccept(
 //               CONTAINING_RECORD
 //               ( PendingConn, AFD_TDI_OBJECT_QELT, ListEntry ) );
 //
-//         AFD_DbgPrint(MID_TRACE,("Completed a wait for accept\n"));
+//         AFD_DbgPrint!(MID_TRACE,("Completed a wait for accept\n"));
 //
 //         if ( !IsListEmpty( &FCB->PendingConnections ) )
 //         {
@@ -790,11 +787,11 @@ pub unsafe extern "C" fn AfdAccept(
 //         SocketStateUnlock( FCB );
 //         return Status;
 //     } else if (FCB->NonBlocking) {
-//         AFD_DbgPrint(MIN_TRACE,("No connection ready on a non-blocking socket\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("No connection ready on a non-blocking socket\n"));
 //
 //         return UnlockAndMaybeComplete(FCB, STATUS_CANT_WAIT, Irp, 0);
 //     } else {
-//         AFD_DbgPrint(MID_TRACE,("Holding\n"));
+//         AFD_DbgPrint!(MID_TRACE,("Holding\n"));
 //
 //         return LeaveIrpUntilLater( FCB, Irp, FUNCTION_PREACCEPT );
 //     }
@@ -810,7 +807,7 @@ pub unsafe extern "C" fn AfdAccept(
 //     PAFD_ACCEPT_DATA AcceptData = Irp->AssociatedIrp.SystemBuffer;
 //     PLIST_ENTRY PendingConn;
 //
-//     AFD_DbgPrint(MID_TRACE,("Called\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Called\n"));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
 //
@@ -822,7 +819,7 @@ pub unsafe extern "C" fn AfdAccept(
 //         PAFD_TDI_OBJECT_QELT PendingConnObj =
 //             CONTAINING_RECORD( PendingConn, AFD_TDI_OBJECT_QELT, ListEntry );
 //
-//         AFD_DbgPrint(MID_TRACE,("Comparing Seq %u to Q %u\n",
+//         AFD_DbgPrint!(MID_TRACE,("Comparing Seq %u to Q %u\n",
 //                                 AcceptData->SequenceNumber,
 //                                 PendingConnObj->Seq));
 //
@@ -849,7 +846,7 @@ pub unsafe extern "C" fn AfdAccept(
 //
 //             ObDereferenceObject( NewFileObject );
 //
-//             AFD_DbgPrint(MID_TRACE,("Completed a wait for accept\n"));
+//             AFD_DbgPrint!(MID_TRACE,("Completed a wait for accept\n"));
 //
 //             ExFreePoolWithTag(PendingConnObj, TAG_AFD_ACCEPT_QUEUE);
 //
@@ -866,7 +863,7 @@ pub unsafe extern "C" fn AfdAccept(
 //         }
 //     }
 //
-//     AFD_DbgPrint(MIN_TRACE,("No connection waiting\n"));
+//     AFD_DbgPrint!(MIN_TRACE,("No connection waiting\n"));
 //
 //     return UnlockAndMaybeComplete( FCB, STATUS_UNSUCCESSFUL, Irp, 0 );
 // }

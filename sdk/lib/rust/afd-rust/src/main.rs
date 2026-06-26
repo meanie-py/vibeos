@@ -9,11 +9,10 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, DRIVER_UNLOAD, FILE_FS_DEVICE_INFORMATION, FileFsDeviceInformation, IO_COMPLETION_ROUTINE, IRP, IoCancelIrp, IoCreateDevice, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInitializeMutex, KeInitializeSpinLock, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, ZwClose};
+use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInformation, IRP, IoCancelIrp, IoCreateDevice, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInitializeMutex, KeInitializeSpinLock, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PIO_COMPLETION_ROUTINE, PUNICODE_STRING, ZwClose};
 use core::ffi::c_void;
 
 extern "C" {
-    fn AFD_DbgPrint(level: u32, fmt: PCHAR, ...);
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn UNREFERENCED_PARAMETER(x: PDEVICE_OBJECT);
@@ -88,7 +87,7 @@ pub unsafe extern "system" fn AfdGetDisconnectOptions(
     }
 
     if (*FCB).DisconnectOptionsSize == 0 {
-        AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
@@ -165,7 +164,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptionsSize(
     let DisconnectOptionsSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -176,7 +175,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptionsSize(
     }
 
     if BufferSize < core::mem::size_of::<UINT>() as u32 {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
     }
 
@@ -219,7 +218,7 @@ pub unsafe extern "system" fn AfdGetDisconnectData(
     }
 
     if (*FCB).DisconnectDataSize == 0 {
-        AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
@@ -307,7 +306,7 @@ pub unsafe extern "system" fn AfdSetDisconnectDataSize(
     }
 
     if BufferSize < core::mem::size_of::<UINT>() as u32 {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
     }
 
@@ -321,7 +320,7 @@ pub unsafe extern "system" fn AfdSetDisconnectDataSize(
         PagedPool,
         *DisconnectDataSize as usize,
         TAG_AFD_DISCONNECT_DATA,
-    ) as *mut u8;
+    ) as *mut core::ffi::c_void;
 
     if (*FCB).DisconnectData.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
@@ -342,7 +341,7 @@ unsafe fn AfdGetTdiHandles(
     let HandleFlags = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PULONG;
     let HandleData = (*Irp).UserBuffer as PAFD_TDI_HANDLE_DATA;
 
-    UNREFERENCED_PARAMETER(DeviceObject as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -355,7 +354,7 @@ unsafe fn AfdGetTdiHandles(
     if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<ULONG>() as u32
         || (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<AFD_TDI_HANDLE_DATA>() as u32
     {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
     }
 
@@ -384,7 +383,7 @@ unsafe fn AfdCreateSocket(
     let i: UINT;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"AfdCreate(DeviceObject %p Irp %p)\n\0".as_ptr() as PCHAR,
         DeviceObject,
@@ -405,7 +404,7 @@ unsafe fn AfdCreateSocket(
         EaInfoValue = ((ConnectInfo as PCHAR) as usize + core::mem::size_of::<AFD_CREATE_PACKET>())
             as PWCHAR;
 
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"EaInfo: %p, EaInfoValue: %p\n\0".as_ptr() as PCHAR,
             EaInfo,
@@ -413,7 +412,7 @@ unsafe fn AfdCreateSocket(
         );
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"About to allocate the new FCB\n\0".as_ptr() as PCHAR,
     );
@@ -429,7 +428,7 @@ unsafe fn AfdCreateSocket(
         return STATUS_NO_MEMORY;
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Initializing the new FCB @ %p (FileObject %p Flags %x)\n\0".as_ptr() as PCHAR,
         FCB,
@@ -457,8 +456,8 @@ unsafe fn AfdCreateSocket(
     (*FCB).SharedData.State = SOCKET_STATE_CREATED;
     (*FCB).FileObject = FileObject;
     (*FCB).DeviceExt = DeviceExt;
-    (*FCB).AddressFile.Handle = INVALID_HANDLE_VALUE;
-    (*FCB).Connection.Handle = INVALID_HANDLE_VALUE;
+    (*FCB).AddressFile.Handle = INVALID_HANDLE_VALUE as HANDLE;
+    (*FCB).Connection.Handle = INVALID_HANDLE_VALUE as HANDLE;
     (*FCB).Recv.Size = AfdReceiveWindowSize;
     (*FCB).Send.Size = AfdSendWindowSize;
 
@@ -471,10 +470,10 @@ unsafe fn AfdCreateSocket(
     InitializeListHead(core::ptr::addr_of_mut!((*FCB).DatagramList));
     InitializeListHead(core::ptr::addr_of_mut!((*FCB).PendingConnections));
 
-    AFD_DbgPrint(MID_TRACE, b"%p: Checking command channel\n\0".as_ptr() as PCHAR, FCB);
+    AFD_DbgPrint!(MID_TRACE, b"%p: Checking command channel\n\0".as_ptr() as PCHAR, FCB);
 
     if !ConnectInfo.is_null() {
-        (*FCB).TdiDeviceName.Length = (*ConnectInfo).SizeOfTransportName;
+        (*FCB).TdiDeviceName.Length = (*ConnectInfo).SizeOfTransportName as u16;
         (*FCB).TdiDeviceName.MaximumLength = (*FCB).TdiDeviceName.Length;
         (*FCB).TdiDeviceName.Buffer = ExAllocatePoolWithTag(
             NonPagedPool,
@@ -484,7 +483,7 @@ unsafe fn AfdCreateSocket(
 
         if (*FCB).TdiDeviceName.Buffer.is_null() {
             ExFreePoolWithTag(FCB as *mut core::ffi::c_void, TAG_AFD_FCB);
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MID_TRACE,
                 b"Could not copy target string\n\0".as_ptr() as PCHAR,
             );
@@ -499,14 +498,14 @@ unsafe fn AfdCreateSocket(
             (*FCB).TdiDeviceName.Length as SIZE_T,
         );
 
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Success: %s %wZ\n\0".as_ptr() as PCHAR,
             (*EaInfo).EaName.as_ptr(),
             core::ptr::addr_of!((*FCB).TdiDeviceName),
         );
     } else {
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Success: Control connection\n\0".as_ptr() as PCHAR,
         );
@@ -515,7 +514,7 @@ unsafe fn AfdCreateSocket(
     (*FileObject).FsContext = FCB as *mut core::ffi::c_void;
 
     if ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0 {
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Packet oriented socket\n\0".as_ptr() as PCHAR,
         );
@@ -565,8 +564,8 @@ unsafe fn AfdCleanupSocket(
         CurrentEntry = (*FCB).PendingIrpList[Function as usize].Flink;
         while CurrentEntry != core::ptr::addr_of_mut!((*FCB).PendingIrpList[Function as usize]) {
             NextEntry = (*CurrentEntry).Flink;
-            CurrentIrp = (CurrentEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize)) as PIRP;
+            CurrentIrp = (CurrentEntry as *mut u8)
+                .offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
             IoCancelIrp(CurrentIrp);
 
@@ -589,11 +588,11 @@ unsafe fn AfdCloseSocket(
     let FileObject = (*IrpSp).FileObject;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut i: UINT;
-    let mut InFlightRequest: [PAFD_IN_FLIGHT_REQUEST; 5];
+    let mut InFlightRequest: [PAFD_IN_FLIGHT_REQUEST; 5] = [core::ptr::null_mut(); 5];
     let mut Qelt: PAFD_TDI_OBJECT_QELT;
     let mut QeltEntry: PLIST_ENTRY;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"AfdClose(DeviceObject %p Irp %p)\n\0".as_ptr() as PCHAR,
         DeviceObject,
@@ -615,7 +614,7 @@ unsafe fn AfdCloseSocket(
     i = 0;
     while i < 5 {
         if !(*InFlightRequest[i as usize]).InFlightRequest.is_null() {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MID_TRACE,
                 b"Cancelling in flight irp %u (%p)\n\0".as_ptr() as PCHAR,
                 i,
@@ -628,12 +627,12 @@ unsafe fn AfdCloseSocket(
 
     KillSelectsForFCB((*FCB).DeviceExt, FileObject, 0);
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingConnections)) {
         QeltEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingConnections));
         Qelt = (QeltEntry as *mut u8).offset(-(core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry) as isize)) as PAFD_TDI_OBJECT_QELT;
 
-        TdiDisassociateAddressFile((*Qelt).Object.Object);
-        ObDereferenceObject((*Qelt).Object.Object);
+        TdiDisassociateAddressFile((*Qelt).Object.Object as PVOID);
+        ObDereferenceObject((*Qelt).Object.Object as PVOID);
         ZwClose((*Qelt).Object.Handle);
 
         ExFreePoolWithTag(Qelt as PVOID, TAG_AFD_ACCEPT_QUEUE);
@@ -642,7 +641,7 @@ unsafe fn AfdCloseSocket(
     SocketStateUnlock(FCB);
 
     if !(*FCB).EventSelect.is_null() {
-        ObDereferenceObject((*FCB).EventSelect);
+        ObDereferenceObject((*FCB).EventSelect as PVOID);
     }
 
     if !(*FCB).Context.is_null() {
@@ -698,12 +697,12 @@ unsafe fn AfdCloseSocket(
     }
 
     if !(*FCB).Connection.Object.is_null() {
-        TdiDisassociateAddressFile((*FCB).Connection.Object);
-        ObDereferenceObject((*FCB).Connection.Object);
+        TdiDisassociateAddressFile((*FCB).Connection.Object as PVOID);
+        ObDereferenceObject((*FCB).Connection.Object as PVOID);
     }
 
     if !(*FCB).AddressFile.Object.is_null() {
-        ObDereferenceObject((*FCB).AddressFile.Object);
+        ObDereferenceObject((*FCB).AddressFile.Object as PVOID);
     }
 
     if (*FCB).AddressFile.Handle != INVALID_HANDLE_VALUE as HANDLE {
@@ -736,7 +735,7 @@ unsafe fn AfdCloseSocket(
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT as i8);
 
-    AFD_DbgPrint(MID_TRACE, b"Returning success.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Returning success.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }
@@ -755,12 +754,12 @@ unsafe fn DisconnectComplete(
 
     (*FCB).DisconnectIrp.InFlightRequest = core::ptr::null_mut();
 
-    if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) != 0
-        && ((*FCB).DisconnectFlags & TDI_DISCONNECT_RELEASE) != 0
+    if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status)
+        && ((*FCB).DisconnectFlags & TDI_DISCONNECT_RELEASE as u16) != 0
     {
         (*FCB).FilledDisconnectData = MIN(
             (*FCB).DisconnectDataSize,
-            (*(*FCB).ConnectReturnInfo).UserDataLength,
+            (*(*FCB).ConnectReturnInfo).UserDataLength as u32,
         );
         if (*FCB).FilledDisconnectData != 0 {
             RtlCopyMemory(
@@ -772,7 +771,7 @@ unsafe fn DisconnectComplete(
 
         (*FCB).FilledDisconnectOptions = MIN(
             (*FCB).DisconnectOptionsSize,
-            (*(*FCB).ConnectReturnInfo).OptionsLength,
+            (*(*FCB).ConnectReturnInfo).OptionsLength as u32,
         );
         if (*FCB).FilledDisconnectOptions != 0 {
             RtlCopyMemory(
@@ -785,15 +784,15 @@ unsafe fn DisconnectComplete(
 
     (*FCB).DisconnectPending = 0u8;
 
-    while IsListEmpty(core::ptr::addr_of_mut!(
+    while !IsListEmpty(core::ptr::addr_of_mut!(
         (*FCB).PendingIrpList[FUNCTION_DISCONNECT as usize]
-    )) == 0
+    ))
     {
         CurrentEntry = RemoveHeadList(core::ptr::addr_of_mut!(
             (*FCB).PendingIrpList[FUNCTION_DISCONNECT as usize]
         ));
         CurrentIrp = (CurrentEntry as *mut u8).sub(
-            core::mem::offset_of!(IRP, Tail) + core::mem::offset_of!(_IRP__bindgen_ty_1, Overlay)
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)
         ) as PIRP;
         (*CurrentIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         (*CurrentIrp).IoStatus.Information = 0;
@@ -802,7 +801,7 @@ unsafe fn DisconnectComplete(
         IoCompleteRequest(CurrentIrp, IO_NETWORK_INCREMENT);
     }
 
-    if ((*FCB).DisconnectFlags & TDI_DISCONNECT_RELEASE) == 0 {
+    if ((*FCB).DisconnectFlags & TDI_DISCONNECT_RELEASE as u16) == 0 {
         (*FCB).PollState |= AFD_EVENT_ABORT;
         (*FCB).PollStatus[FD_CLOSE_BIT as usize] = (*Irp).IoStatus.__bindgen_anon_1.Status;
         (*FCB).LastReceiveStatus = STATUS_FILE_CLOSED;
@@ -819,9 +818,9 @@ unsafe fn DoDisconnect(FCB: PAFD_FCB) -> NTSTATUS {
     let Status: NTSTATUS;
 
     (*(*FCB).ConnectCallInfo).UserData = (*FCB).DisconnectData;
-    (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).DisconnectDataSize;
+    (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).DisconnectDataSize as i32;
     (*(*FCB).ConnectCallInfo).Options = (*FCB).DisconnectOptions;
-    (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).DisconnectOptionsSize;
+    (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).DisconnectOptionsSize as i32;
 
     if (*FCB).DisconnectIrp.InFlightRequest != core::ptr::null_mut() {
         return STATUS_PENDING;
@@ -829,10 +828,10 @@ unsafe fn DoDisconnect(FCB: PAFD_FCB) -> NTSTATUS {
 
     Status = TdiDisconnect(
         core::ptr::addr_of_mut!((*FCB).DisconnectIrp.InFlightRequest),
-        (*FCB).Connection.Object,
+        (*FCB).Connection.Object as PVOID,
         core::ptr::addr_of_mut!((*FCB).DisconnectTimeout),
         (*FCB).DisconnectFlags,
-        Some(DisconnectComplete),
+        Some(core::mem::transmute(DisconnectComplete as *const ())),
         FCB as PVOID,
         (*FCB).ConnectCallInfo,
         (*FCB).ConnectReturnInfo,
@@ -846,8 +845,8 @@ unsafe fn DoDisconnect(FCB: PAFD_FCB) -> NTSTATUS {
 }
 #[no_mangle]
 pub unsafe extern "C" fn RetryDisconnectCompletion(FCB: PAFD_FCB) {
-    if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize])) != 0
-        && (*FCB).SendIrp.InFlightRequest == 0
+    if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]))
+        && (*FCB).SendIrp.InFlightRequest.is_null()
         && (*FCB).DisconnectPending != 0
     {
         DoDisconnect(FCB);
@@ -873,7 +872,7 @@ unsafe fn AfdDisconnect(
         return LostSocket(Irp);
     }
 
-    DisReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
+    DisReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_DISCONNECT_INFO;
     if DisReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
@@ -881,7 +880,7 @@ unsafe fn AfdDisconnect(
     if ((*DisReq).DisconnectType & AFD_DISCONNECT_SEND) != 0
         && ((*DisReq).DisconnectType & AFD_DISCONNECT_RECV) == 0
     {
-        Flags = TDI_DISCONNECT_RELEASE;
+        Flags = TDI_DISCONNECT_RELEASE as u16;
     } else {
         (*FCB).TdiReceiveClosed = 1u8;
 
@@ -901,13 +900,13 @@ unsafe fn AfdDisconnect(
         {
             return UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, 0);
         } else {
-            Flags = TDI_DISCONNECT_ABORT;
+            Flags = TDI_DISCONNECT_ABORT as u16;
         }
     }
 
     if ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) == 0 {
         if (*FCB).ConnectCallInfo.is_null() {
-            AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+            AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
             return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
         }
 
@@ -915,21 +914,20 @@ unsafe fn AfdDisconnect(
             if !(*FCB).DisconnectIrp.InFlightRequest.is_null() {
                 IoCancelIrp((*FCB).DisconnectIrp.InFlightRequest);
             } else {
-                while IsListEmpty(core::ptr::addr_of_mut!(
+                while !IsListEmpty(core::ptr::addr_of_mut!(
                     (*FCB).PendingIrpList[FUNCTION_DISCONNECT as usize]
-                )) == 0
+                ))
                 {
                     CurrentEntry = RemoveHeadList(core::ptr::addr_of_mut!(
                         (*FCB).PendingIrpList[FUNCTION_DISCONNECT as usize]
                     ));
                     CurrentIrp = (CurrentEntry as *mut u8)
-                        .offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                        .offset(-(core::mem::offset_of!(_IO_STATUS_BLOCK, Pointer) as isize))
+                        .offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize))
                         as PIRP;
                     (*CurrentIrp).IoStatus.Information = 0;
                     (*CurrentIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
                     UnlockRequest(CurrentIrp, IoGetCurrentIrpStackLocation(CurrentIrp));
-                    IoSetCancelRoutine(CurrentIrp, core::ptr::null_mut());
+                    IoSetCancelRoutine(CurrentIrp, None);
                     IoCompleteRequest(CurrentIrp, IO_NETWORK_INCREMENT);
                 }
             }
@@ -945,15 +943,15 @@ unsafe fn AfdDisconnect(
         if Status == STATUS_PENDING {
             if (IsListEmpty(core::ptr::addr_of_mut!(
                 (*FCB).PendingIrpList[FUNCTION_SEND as usize]
-            )) != 0
+            ))
                 && (*FCB).SendIrp.InFlightRequest.is_null())
-                || ((*FCB).DisconnectFlags & TDI_DISCONNECT_ABORT) != 0
+                || ((*FCB).DisconnectFlags & TDI_DISCONNECT_ABORT as u16) != 0
             {
                 Status = DoDisconnect(FCB);
             }
 
             if Status != STATUS_PENDING {
-                RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry));
+                RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
             }
         }
 
@@ -963,9 +961,9 @@ unsafe fn AfdDisconnect(
             return Status;
         }
     } else {
-        if (Flags & TDI_DISCONNECT_RELEASE) == 0 {
+        if (Flags & TDI_DISCONNECT_RELEASE as u16) == 0 {
             if (*FCB).RemoteAddress.is_null() {
-                AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+                AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
                 return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
             }
 
@@ -1013,17 +1011,17 @@ unsafe fn AfdQueryVolumeInformation(
 
     Buffer = (*Irp).AssociatedIrp.SystemBuffer;
     Length = (*IrpSp).Parameters.QueryVolume.Length;
-    InfoClass = (*IrpSp).Parameters.QueryVolume.FsInformationClass;
+    InfoClass = (*IrpSp).Parameters.QueryVolume.FsInformationClass as i32;
 
     match InfoClass {
-        FileFsDeviceInformation => {
+        _ if InfoClass == _FSINFOCLASS_FileFsDeviceInformation as i32 => {
             Status = AfdQueryFsDeviceInfo(DeviceObject, Buffer as PFILE_FS_DEVICE_INFORMATION, &mut Length);
         }
         _ => {}
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as usize;
+    (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT as i8);
 
     Status
@@ -1068,19 +1066,19 @@ const IOCTL_AFD_GET_TDI_HANDLES: u32 = 0x1203E;
 const IOCTL_AFD_DEFER_ACCEPT: u32 = 0x1203F;
 const IOCTL_AFD_GET_PENDING_CONNECT_DATA: u32 = 0x12040;
 const IOCTL_AFD_VALIDATE_GROUP: u32 = 0x12041;
-unsafe fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let mut Status: NTSTATUS = STATUS_NOT_IMPLEMENTED;
     let FileObject = (*IrpSp).FileObject;
 
-    AFD_DbgPrint(MID_TRACE, b"AfdDispatch: %u\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
+    AFD_DbgPrint!(MID_TRACE, b"AfdDispatch: %u\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
     if (*IrpSp).MajorFunction != IRP_MJ_CREATE {
-        AFD_DbgPrint(MID_TRACE, b"FO %p, IrpSp->FO %p\n\0".as_ptr() as *const i8, FileObject, (*IrpSp).FileObject);
+        AFD_DbgPrint!(MID_TRACE, b"FO %p, IrpSp->FO %p\n\0".as_ptr() as *const i8, FileObject, (*IrpSp).FileObject);
     }
 
     (*Irp).IoStatus.Information = 0;
 
-    match (*IrpSp).MajorFunction as u32 {
+    match (*IrpSp).MajorFunction {
         IRP_MJ_CREATE => {
             return AfdCreateSocket(DeviceObject, Irp, IrpSp);
         }
@@ -1264,12 +1262,12 @@ unsafe fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
 
         _ => {
             Status = STATUS_NOT_IMPLEMENTED;
-            AFD_DbgPrint(MIN_TRACE, b"Irp: Unknown Major code was %x\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
+            AFD_DbgPrint!(MIN_TRACE, b"Irp: Unknown Major code was %x\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
         }
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as *const i8, Status);
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as *const i8, Status);
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     Status
@@ -1306,25 +1304,25 @@ pub unsafe extern "C" fn CleanupPendingIrp(FCB: PAFD_FCB, Irp: PIRP, IrpSp: PIO_
     let mut PollReq: PAFD_POLL_INFO;
 
     if (*IrpSp).MajorFunction == IRP_MJ_READ as u8 {
-        RecvReq = GetLockedData(Irp, IrpSp);
-        UnlockBuffers((*RecvReq).BufferArray, (*RecvReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+        RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
+        UnlockBuffers((*RecvReq).BufferArray, (*RecvReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
     } else if (*IrpSp).MajorFunction == IRP_MJ_WRITE as u8 {
-        SendReq = GetLockedData(Irp, IrpSp);
-        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+        SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
+        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
     } else {
         debug_assert!((*IrpSp).MajorFunction == IRP_MJ_DEVICE_CONTROL as u8);
 
         if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_RECV {
-            RecvReq = GetLockedData(Irp, IrpSp);
-            UnlockBuffers((*RecvReq).BufferArray, (*RecvReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+            RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
+            UnlockBuffers((*RecvReq).BufferArray, (*RecvReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
         } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SEND {
-            SendReq = GetLockedData(Irp, IrpSp);
-            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+            SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
+            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
         } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SELECT {
             debug_assert!(!Poll.is_null());
 
             PollReq = (*Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
-            ZeroEvents((*PollReq).Handles, (*PollReq).HandleCount);
+            ZeroEvents(core::ptr::addr_of_mut!((*PollReq).Handles) as PAFD_HANDLE, (*PollReq).HandleCount);
             SignalSocket(Poll, core::ptr::null_mut(), PollReq, STATUS_CANCELLED);
         }
     }
@@ -1393,7 +1391,7 @@ pub unsafe extern "system" fn AfdCancelHandler(
         }
 
         IOCTL_AFD_SELECT => {
-            KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), core::ptr::addr_of_mut!(OldIrql));
+            KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize, core::ptr::addr_of_mut!(OldIrql));
 
             CurrentEntry = (*DeviceExt).Polls.Flink;
             while CurrentEntry != core::ptr::addr_of_mut!((*DeviceExt).Polls) {
@@ -1401,7 +1399,7 @@ pub unsafe extern "system" fn AfdCancelHandler(
 
                 if Irp == (*Poll).Irp {
                     CleanupPendingIrp(FCB, Irp, IrpSp, Poll);
-                    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), OldIrql);
+                    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize, OldIrql);
                     SocketStateUnlock(FCB);
                     return;
                 } else {
@@ -1409,7 +1407,7 @@ pub unsafe extern "system" fn AfdCancelHandler(
                 }
             }
 
-            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), OldIrql);
+            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize, OldIrql);
 
             SocketStateUnlock(FCB);
 
@@ -1429,7 +1427,7 @@ pub unsafe extern "system" fn AfdCancelHandler(
 
     CurrentEntry = (*FCB).PendingIrpList[Function as usize].Flink;
     while CurrentEntry != core::ptr::addr_of_mut!((*FCB).PendingIrpList[Function as usize]) {
-        CurrentIrp = (CurrentEntry as *mut u8).offset(-(core::mem::offset_of!(_IRP, Tail.Overlay.ListEntry) as isize)) as PIRP;
+        CurrentIrp = (CurrentEntry as *mut u8).offset(-(core::mem::offset_of!(_IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
         if CurrentIrp == Irp {
             RemoveEntryList(CurrentEntry);
@@ -1446,7 +1444,7 @@ pub unsafe extern "system" fn AfdCancelHandler(
     DbgPrint(b"WARNING!!! IRP cancellation race could lead to a process hang! (Function: %u)\n\0".as_ptr() as PCHAR, Function);
 }
 
-unsafe fn AfdUnload(DriverObject: PDRIVER_OBJECT) {
+unsafe extern "system" fn AfdUnload(DriverObject: PDRIVER_OBJECT) {
     let _ = DriverObject;
 }
 
@@ -1464,14 +1462,14 @@ pub unsafe extern "system" fn DriverEntry(
     let DeviceExt: PAFD_DEVICE_EXTENSION;
     let Status: NTSTATUS;
 
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(AfdDispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] = Some(AfdDispatch);
-    (*DriverObject).DriverUnload = Some(AfdUnload);
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] = Some(core::mem::transmute(AfdDispatch as *const ()));
+    (*DriverObject).DriverUnload = Some(core::mem::transmute(AfdUnload as *const ()));
 
     Status = IoCreateDevice(
         DriverObject,
@@ -1491,7 +1489,7 @@ pub unsafe extern "system" fn DriverEntry(
     KeInitializeSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock));
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceExt).Polls));
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Device created: object %p ext %p\n\0".as_ptr() as PCHAR,
         DeviceObject,
@@ -1562,7 +1560,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (FCB->DisconnectOptionsSize == 0)
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
 //     }
 //
@@ -1637,7 +1635,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (BufferSize < sizeof(UINT))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
 //     }
 //
@@ -1673,7 +1671,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (FCB->DisconnectDataSize == 0)
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
 //     }
 //
@@ -1749,7 +1747,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (BufferSize < sizeof(UINT))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
 //     }
 //
@@ -1791,7 +1789,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     if (IrpSp->Parameters.DeviceIoControl.InputBufferLength < sizeof(ULONG) ||
 //         IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(*HandleData))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
 //     }
 //
@@ -1818,7 +1816,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UINT i;
 //     NTSTATUS Status = STATUS_SUCCESS;
 //
-//     AFD_DbgPrint(MID_TRACE,("AfdCreate(DeviceObject %p Irp %p)\n",
+//     AFD_DbgPrint!(MID_TRACE,("AfdCreate(DeviceObject %p Irp %p)\n",
 //                             DeviceObject, Irp));
 //
 //     DeviceExt = DeviceObject->DeviceExtension;
@@ -1836,11 +1834,11 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //         //EaLength = sizeof(FILE_FULL_EA_INFORMATION) + EaInfo->EaNameLength + EaInfo->EaValueLength;
 //
-//         AFD_DbgPrint(MID_TRACE,("EaInfo: %p, EaInfoValue: %p\n",
+//         AFD_DbgPrint!(MID_TRACE,("EaInfo: %p, EaInfoValue: %p\n",
 //                                 EaInfo, EaInfoValue));
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("About to allocate the new FCB\n"));
+//     AFD_DbgPrint!(MID_TRACE,("About to allocate the new FCB\n"));
 //
 //     FCB = ExAllocatePoolWithTag(NonPagedPool, sizeof(AFD_FCB), TAG_AFD_FCB);
 //     if( FCB == NULL ) {
@@ -1849,7 +1847,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         return STATUS_NO_MEMORY;
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Initializing the new FCB @ %p (FileObject %p Flags %x)\n",
+//     AFD_DbgPrint!(MID_TRACE,("Initializing the new FCB @ %p (FileObject %p Flags %x)\n",
 //                             FCB, FileObject, ConnectInfo ? ConnectInfo->EndpointFlags : 0));
 //
 //     RtlZeroMemory( FCB, sizeof( *FCB ) );
@@ -1874,7 +1872,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     InitializeListHead( &FCB->DatagramList );
 //     InitializeListHead( &FCB->PendingConnections );
 //
-//     AFD_DbgPrint(MID_TRACE,("%p: Checking command channel\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("%p: Checking command channel\n", FCB));
 //
 //     if( ConnectInfo ) {
 //         FCB->TdiDeviceName.Length = ConnectInfo->SizeOfTransportName;
@@ -1885,7 +1883,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //         if( !FCB->TdiDeviceName.Buffer ) {
 //             ExFreePoolWithTag(FCB, TAG_AFD_FCB);
-//             AFD_DbgPrint(MID_TRACE,("Could not copy target string\n"));
+//             AFD_DbgPrint!(MID_TRACE,("Could not copy target string\n"));
 //             Irp->IoStatus.Status = STATUS_NO_MEMORY;
 //             IoCompleteRequest( Irp, IO_NETWORK_INCREMENT );
 //             return STATUS_NO_MEMORY;
@@ -1895,17 +1893,17 @@ pub unsafe extern "system" fn DriverEntry(
 //                        ConnectInfo->TransportName,
 //                        FCB->TdiDeviceName.Length );
 //
-//         AFD_DbgPrint(MID_TRACE,("Success: %s %wZ\n",
+//         AFD_DbgPrint!(MID_TRACE,("Success: %s %wZ\n",
 //                                 EaInfo->EaName, &FCB->TdiDeviceName));
 //     } else {
-//         AFD_DbgPrint(MID_TRACE,("Success: Control connection\n"));
+//         AFD_DbgPrint!(MID_TRACE,("Success: Control connection\n"));
 //     }
 //
 //     FileObject->FsContext = FCB;
 //
 //     /* It seems that UDP sockets are writable from inception */
 //     if( FCB->Flags & AFD_ENDPOINT_CONNECTIONLESS ) {
-//         AFD_DbgPrint(MID_TRACE,("Packet oriented socket\n"));
+//         AFD_DbgPrint!(MID_TRACE,("Packet oriented socket\n"));
 //
 //         /* A datagram socket is always sendable */
 //         FCB->PollState |= AFD_EVENT_SEND;
@@ -1974,7 +1972,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PLIST_ENTRY QeltEntry;
 //
 //
-//     AFD_DbgPrint(MID_TRACE,("AfdClose(DeviceObject %p Irp %p)\n",
+//     AFD_DbgPrint!(MID_TRACE,("AfdClose(DeviceObject %p Irp %p)\n",
 //                             DeviceObject, Irp));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return STATUS_FILE_CLOSED;
@@ -1990,7 +1988,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     /* Cancel our pending requests */
 //     for( i = 0; i < IN_FLIGHT_REQUESTS; i++ ) {
 //         if( InFlightRequest[i]->InFlightRequest ) {
-//             AFD_DbgPrint(MID_TRACE,("Cancelling in flight irp %u (%p)\n",
+//             AFD_DbgPrint!(MID_TRACE,("Cancelling in flight irp %u (%p)\n",
 //                                     i, InFlightRequest[i]->InFlightRequest));
 //             IoCancelIrp(InFlightRequest[i]->InFlightRequest);
 //         }
@@ -2098,7 +2096,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     Irp->IoStatus.Information = 0;
 //     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
 //
-//     AFD_DbgPrint(MID_TRACE, ("Returning success.\n"));
+//     AFD_DbgPrint!(MID_TRACE, ("Returning success.\n"));
 //
 //     return STATUS_SUCCESS;
 // }
@@ -2285,7 +2283,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     {
 //         if (!FCB->ConnectCallInfo)
 //         {
-//             AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//             AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //             return UnlockAndMaybeComplete( FCB, STATUS_INVALID_PARAMETER,
 //                                            Irp, 0 );
 //         }
@@ -2345,7 +2343,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         {
 //             if (!FCB->RemoteAddress)
 //             {
-//                 AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//                 AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //                 return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
 //             }
 //
@@ -2416,9 +2414,9 @@ pub unsafe extern "system" fn DriverEntry(
 //     NTSTATUS Status = STATUS_NOT_IMPLEMENTED;
 //     PFILE_OBJECT FileObject = IrpSp->FileObject;
 //
-//     AFD_DbgPrint(MID_TRACE,("AfdDispatch: %u\n", IrpSp->MajorFunction));
+//     AFD_DbgPrint!(MID_TRACE,("AfdDispatch: %u\n", IrpSp->MajorFunction));
 //     if( IrpSp->MajorFunction != IRP_MJ_CREATE) {
-//         AFD_DbgPrint(MID_TRACE,("FO %p, IrpSp->FO %p\n",
+//         AFD_DbgPrint!(MID_TRACE,("FO %p, IrpSp->FO %p\n",
 //                                 FileObject, IrpSp->FileObject));
 //         ASSERT(FileObject == IrpSp->FileObject);
 //     }
@@ -2583,14 +2581,14 @@ pub unsafe extern "system" fn DriverEntry(
 //     default:
 //     {
 //         Status = STATUS_NOT_IMPLEMENTED;
-//         AFD_DbgPrint(MIN_TRACE,
+//         AFD_DbgPrint!(MIN_TRACE,
 //                      ("Irp: Unknown Major code was %x\n",
 //                       IrpSp->MajorFunction));
 //         break;
 //     }
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE, ("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE, ("Returning %x\n", Status));
 //     Irp->IoStatus.Status = Status;
 //     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 //
@@ -2654,13 +2652,13 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (IrpSp->MajorFunction == IRP_MJ_READ)
 //     {
-//         RecvReq = GetLockedData(Irp, IrpSp);
-//         UnlockBuffers(RecvReq->BufferArray, RecvReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+//         RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
+//         UnlockBuffers(RecvReq->BufferArray, RecvReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
 //     }
 //     else if (IrpSp->MajorFunction == IRP_MJ_WRITE)
 //     {
-//         SendReq = GetLockedData(Irp, IrpSp);
-//         UnlockBuffers(SendReq->BufferArray, SendReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+//         SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
+//         UnlockBuffers(SendReq->BufferArray, SendReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
 //     }
 //     else
 //     {
@@ -2668,13 +2666,13 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //         if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_RECV)
 //         {
-//             RecvReq = GetLockedData(Irp, IrpSp);
-//             UnlockBuffers(RecvReq->BufferArray, RecvReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+//             RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
+//             UnlockBuffers(RecvReq->BufferArray, RecvReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
 //         }
 //         else if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SEND)
 //         {
-//             SendReq = GetLockedData(Irp, IrpSp);
-//             UnlockBuffers(SendReq->BufferArray, SendReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp));
+//             SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
+//             UnlockBuffers(SendReq->BufferArray, SendReq->BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
 //         }
 //         else if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SELECT)
 //         {
@@ -2856,7 +2854,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     KeInitializeSpinLock( &DeviceExt->Lock );
 //     InitializeListHead( &DeviceExt->Polls );
 //
-//     AFD_DbgPrint(MID_TRACE,("Device created: object %p ext %p\n",
+//     AFD_DbgPrint!(MID_TRACE,("Device created: object %p ext %p\n",
 //                             DeviceObject, DeviceExt));
 //
 //     return Status;

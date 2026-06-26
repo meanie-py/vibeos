@@ -11,18 +11,18 @@ use core::ffi::c_void;
 pub unsafe extern "C" fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Called (AF %u)\n\0".as_ptr() as PCHAR,
         (*(*FCB).LocalAddress).Address[0].AddressType,
     );
 
     if (*FCB).TdiDeviceName.Length == 0 || (*FCB).TdiDeviceName.Buffer.is_null() {
-        AFD_DbgPrint(MIN_TRACE, b"Null Device\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Null Device\n\0".as_ptr() as PCHAR);
         return STATUS_NO_SUCH_DEVICE;
     }
     if (*FCB).LocalAddress.is_null() {
-        AFD_DbgPrint(MIN_TRACE, b"No local address\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"No local address\n\0".as_ptr() as PCHAR);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -48,9 +48,9 @@ pub unsafe extern "C" fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> N
         if NT_SUCCESS(Status) && (*FCB).Recv.Window.is_null() {
             (*FCB).Recv.Window = ExAllocatePoolWithTag(
                 PagedPool,
-                (*FCB).Recv.Size,
+                (*FCB).Recv.Size as usize,
                 TAG_AFD_DATA_BUFFER,
-            ) as *mut core::ffi::c_void;
+            ) as PCHAR;
 
             if (*FCB).Recv.Window.is_null() {
                 Status = STATUS_NO_MEMORY;
@@ -65,7 +65,7 @@ pub unsafe extern "C" fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> N
                 (*FCB).Recv.Window,
                 (*FCB).Recv.Size,
                 (*FCB).AddressFrom,
-                PacketSocketRecvComplete,
+                Some(PacketSocketRecvComplete),
                 FCB as *mut core::ffi::c_void,
             );
 
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> N
         }
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
     Status
 }
@@ -92,15 +92,15 @@ pub unsafe extern "system" fn AfdBindSocket(
     let mut BindReq: PAFD_BIND_DATA;
     let mut UserHandle: HANDLE = core::ptr::null_mut();
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    let _ = DeviceObject;
 
-    AFD_DbgPrint(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
     }
 
-    BindReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
+    BindReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_BIND_DATA;
     if BindReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
@@ -121,15 +121,15 @@ pub unsafe extern "system" fn AfdBindSocket(
     if NT_SUCCESS(Status) {
         Status = WarmSocketForBind(FCB, (*BindReq).ShareType);
     }
-    AFD_DbgPrint(MID_TRACE, b"FCB->Flags %x\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"FCB->Flags %x\n\0".as_ptr() as PCHAR);
 
     if NT_SUCCESS(Status) {
         Status = ObOpenObjectByPointer(
-            (*FCB).AddressFile.Object,
+            (*FCB).AddressFile.Object as PVOID,
             0,
             core::ptr::null_mut(),
             MAXIMUM_ALLOWED,
-            *IoFileObjectType,
+            *(IoFileObjectType as *mut ntkrnl_sys::ddk::POBJECT_TYPE),
             (*Irp).RequestorMode,
             core::ptr::addr_of_mut!(UserHandle),
         );
@@ -138,7 +138,7 @@ pub unsafe extern "system" fn AfdBindSocket(
         }
     }
 
-    UnlockAndMaybeComplete(FCB, Status, Irp, UserHandle as ULONG_PTR)
+    UnlockAndMaybeComplete(FCB, Status, Irp, UserHandle as ULONG_PTR as u32)
 }
 
 
@@ -161,15 +161,15 @@ pub unsafe extern "system" fn AfdBindSocket(
 // NTSTATUS WarmSocketForBind( PAFD_FCB FCB, ULONG ShareType ) {
 //     NTSTATUS Status;
 //
-//     AFD_DbgPrint(MID_TRACE,("Called (AF %u)\n",
+//     AFD_DbgPrint!(MID_TRACE,("Called (AF %u)\n",
 //                             FCB->LocalAddress->Address[0].AddressType));
 //
 //     if( !FCB->TdiDeviceName.Length || !FCB->TdiDeviceName.Buffer ) {
-//         AFD_DbgPrint(MIN_TRACE,("Null Device\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Null Device\n"));
 //         return STATUS_NO_SUCH_DEVICE;
 //     }
 //     if( !FCB->LocalAddress ) {
-//         AFD_DbgPrint(MIN_TRACE,("No local address\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("No local address\n"));
 //         return STATUS_INVALID_PARAMETER;
 //     }
 //
@@ -215,7 +215,7 @@ pub unsafe extern "system" fn AfdBindSocket(
 //         }
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return Status;
 // }
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn AfdBindSocket(
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Called\n"));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
 //     if( !(BindReq = LockRequest( Irp, IrpSp, FALSE, NULL )) )
@@ -251,7 +251,7 @@ pub unsafe extern "system" fn AfdBindSocket(
 //
 //     if( NT_SUCCESS(Status) )
 //         Status = WarmSocketForBind( FCB, BindReq->ShareType );
-//     AFD_DbgPrint(MID_TRACE,("FCB->Flags %x\n", FCB->Flags));
+//     AFD_DbgPrint!(MID_TRACE,("FCB->Flags %x\n", FCB->Flags));
 //
 //     if (NT_SUCCESS(Status))
 //     {

@@ -7,12 +7,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 
 extern "C" {
-    fn AFD_DbgPrint(level: u32, format: *const i8, ...);
-    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut usize) -> *mut core::ffi::c_void;
+    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut KPROCESSOR_MODE) -> *mut core::ffi::c_void;
+    fn UNREFERENCED_PARAMETER(x: PDEVICE_OBJECT);
     fn LostSocket(Irp: PIRP) -> i32;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
     fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: i32, Irp: PIRP, Information: usize) -> i32;
@@ -21,7 +21,6 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub type PIO_COMPLETION_ROUTINE = IO_COMPLETION_ROUTINE;
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetConnectOptions(
@@ -40,7 +39,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
     }
 
     if (*FCB).ConnectOptionsSize == 0 {
-        AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
@@ -56,7 +55,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as usize)
 }
 
 #[no_mangle]
@@ -128,7 +127,7 @@ pub unsafe extern "system" fn AfdSetConnectOptionsSize(
     }
 
     if BufferSize < core::mem::size_of::<u32>() as u32 {
-        AFD_DbgPrint(0, b"Buffer too small\n\0".as_ptr() as *const i8);
+        AFD_DbgPrint!(0, b"Buffer too small\n\0".as_ptr() as *const i8);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
     }
 
@@ -142,7 +141,7 @@ pub unsafe extern "system" fn AfdSetConnectOptionsSize(
         PagedPool,
         *ConnectOptionsSize as usize,
         TAG_AFD_CONNECT_OPTIONS,
-    ) as *mut u8;
+    );
 
     if (*FCB).ConnectOptions.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
@@ -168,7 +167,7 @@ pub unsafe extern "system" fn AfdGetConnectData(
     }
 
     if (*FCB).ConnectDataSize == 0 {
-        AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
@@ -182,7 +181,7 @@ pub unsafe extern "system" fn AfdGetConnectData(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as usize)
 }
 
 #[no_mangle]
@@ -256,7 +255,7 @@ pub unsafe extern "system" fn AfdSetConnectDataSize(
     }
 
     if BufferSize < core::mem::size_of::<UINT>() as u32 {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
     }
 
@@ -270,7 +269,7 @@ pub unsafe extern "system" fn AfdSetConnectDataSize(
         PagedPool,
         *ConnectDataSize as usize,
         TAG_AFD_CONNECT_DATA,
-    ) as *mut u8;
+    );
 
     if (*FCB).ConnectData.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
@@ -282,10 +281,10 @@ pub unsafe extern "system" fn AfdSetConnectDataSize(
 }
 #[no_mangle]
 pub unsafe extern "C" fn WarmSocketForConnection(FCB: PAFD_FCB) -> NTSTATUS {
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     if (*FCB).TdiDeviceName.Length == 0 || (*FCB).TdiDeviceName.Buffer.is_null() {
-        AFD_DbgPrint(MIN_TRACE, b"Null Device\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Null Device\n\0".as_ptr() as PCHAR);
         return STATUS_NO_SUCH_DEVICE;
     }
 
@@ -331,9 +330,9 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     if (*FCB).Recv.Window.is_null() {
         (*FCB).Recv.Window = ExAllocatePoolWithTag(
             PagedPool,
-            (*FCB).Recv.Size,
+            (*FCB).Recv.Size as usize,
             TAG_AFD_DATA_BUFFER,
-        ) as *mut core::ffi::c_void;
+        ) as *mut i8;
 
         if (*FCB).Recv.Window.is_null() {
             return STATUS_NO_MEMORY;
@@ -343,9 +342,9 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     if (*FCB).Send.Window.is_null() {
         (*FCB).Send.Window = ExAllocatePoolWithTag(
             PagedPool,
-            (*FCB).Send.Size,
+            (*FCB).Send.Size as usize,
             TAG_AFD_DATA_BUFFER,
-        ) as *mut core::ffi::c_void;
+        ) as *mut i8;
 
         if (*FCB).Send.Window.is_null() {
             return STATUS_NO_MEMORY;
@@ -358,7 +357,7 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status = TdiReceive(
         core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
         (*FCB).Connection.Object,
-        TDI_RECEIVE_NORMAL,
+        TDI_RECEIVE_NORMAL as u16,
         (*FCB).Recv.Window,
         (*FCB).Recv.Size,
         Some(ReceiveComplete),
@@ -377,7 +376,7 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status
 }
 
-unsafe fn StreamSocketConnectSendComplete(
+unsafe extern "system" fn StreamSocketConnectSendComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -390,19 +389,19 @@ unsafe fn StreamSocketConnectSendComplete(
         return STATUS_FILE_CLOSED;
     }
 
-    FCB.SendIrp.InFlightRequest = core::ptr::null_mut();
+    (*FCB).SendIrp.InFlightRequest = core::ptr::null_mut();
 
-    while IsListEmpty(&mut (*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]) == 0 {
+    while !IsListEmpty(&mut (*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]) {
         NextIrpEntry = RemoveHeadList(&mut (*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]);
-        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.ListEntry) as isize)) as PIRP;
+        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
-        AFD_DbgPrint(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
-        (*NextIrp).IoStatus.Anonymous.__bindgen_anon_1.Status = (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status;
+        AFD_DbgPrint!(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
+        (*NextIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         (*NextIrp).IoStatus.Information = (*Irp).IoStatus.Information;
         if !(*NextIrp).MdlAddress.is_null() {
             UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
         }
-        IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+        IoSetCancelRoutine(NextIrp, None);
         IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT as i8);
     }
 
@@ -416,17 +415,17 @@ unsafe fn StreamSocketConnectSendComplete(
 
     STATUS_SUCCESS
 }
-unsafe fn StreamSocketConnectComplete(
+unsafe extern "system" fn StreamSocketConnectComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut Status = (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status;
+    let mut Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     let FCB = Context as PAFD_FCB;
     let mut NextIrpEntry: PLIST_ENTRY;
     let mut NextIrp: PIRP;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Called: FCB %p, FO %p\n\0".as_ptr() as PCHAR,
         Context,
@@ -437,101 +436,93 @@ unsafe fn StreamSocketConnectComplete(
         return STATUS_FILE_CLOSED;
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Irp->IoStatus.__bindgen_anon_1.Status = %x\n\0".as_ptr() as PCHAR,
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+        (*Irp).IoStatus.__bindgen_anon_1.Status,
     );
 
     (*FCB).ConnectIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
-        while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT])) == 0 {
-            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT]));
-            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-                as PIRP;
-            (*NextIrp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
+        while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT as usize])) {
+            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT as usize]));
+            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+            (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             if !(*NextIrp).MdlAddress.is_null() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             }
-            IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+            IoSetCancelRoutine(NextIrp, None);
             IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
         }
-        while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX])) == 0 {
-            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX]));
-            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-                as PIRP;
-            (*NextIrp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
+        while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize])) {
+            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]));
+            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+            (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = (*Irp).IoStatus.Information;
             if !(*NextIrp).MdlAddress.is_null() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             }
-            IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+            IoSetCancelRoutine(NextIrp, None);
             IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
         }
         SocketStateUnlock(FCB);
         return STATUS_FILE_CLOSED;
     }
 
-    if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status) == 0 {
+    if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
         (*FCB).PollState |= AFD_EVENT_CONNECT_FAIL;
-        (*FCB).PollStatus[FD_CONNECT_BIT] = (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status;
-        AFD_DbgPrint(MID_TRACE, b"Going to bound state\n\0".as_ptr() as PCHAR);
+        (*FCB).PollStatus[FD_CONNECT_BIT as usize] = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        AFD_DbgPrint!(MID_TRACE, b"Going to bound state\n\0".as_ptr() as PCHAR);
         (*FCB).SharedData.State = SOCKET_STATE_BOUND;
         PollReeval((*FCB).DeviceExt, (*FCB).FileObject);
     }
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT])) == 0 {
-        NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT]));
-        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-            .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-            as PIRP;
-        AFD_DbgPrint(MID_TRACE, b"Completing connect %p\n\0".as_ptr() as PCHAR, NextIrp);
-        (*NextIrp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
-        (*NextIrp).IoStatus.Information = if NT_SUCCESS(Status) != 0 {
-            (*FCB).Connection.Handle as ULONG_PTR
+    while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT as usize])) {
+        NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECT as usize]));
+        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        AFD_DbgPrint!(MID_TRACE, b"Completing connect %p\n\0".as_ptr() as PCHAR, NextIrp);
+        (*NextIrp).IoStatus.__bindgen_anon_1.Status = Status;
+        (*NextIrp).IoStatus.Information = if NT_SUCCESS(Status) {
+            (*FCB).Connection.Handle as ULONG_PTR as _
         } else {
             0
         };
         if !(*NextIrp).MdlAddress.is_null() {
             UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
         }
-        IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+        IoSetCancelRoutine(NextIrp, None);
         IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
     }
 
-    if NT_SUCCESS(Status) != 0 {
+    if NT_SUCCESS(Status) {
         Status = MakeSocketIntoConnection(FCB);
 
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             'end: loop {
-                while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX])) == 0 {
-                    NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX]));
-                    NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                        .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-                        as PIRP;
+                while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize])) {
+                    NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]));
+                    NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
-                    AFD_DbgPrint(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
-                    (*NextIrp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
+                    AFD_DbgPrint!(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
+                    (*NextIrp).IoStatus.__bindgen_anon_1.Status = Status;
                     (*NextIrp).IoStatus.Information = 0;
                     if !(*NextIrp).MdlAddress.is_null() {
                         UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
                     }
-                    IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+                    IoSetCancelRoutine(NextIrp, None);
                     IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
                 }
                 SocketStateUnlock(FCB);
 
-                AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+                AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
                 return Status;
             }
         }
 
-        (*FCB).FilledConnectData = MIN((*(*FCB).ConnectReturnInfo).UserDataLength, (*FCB).ConnectDataSize);
+        (*FCB).FilledConnectData = MIN((*(*FCB).ConnectReturnInfo).UserDataLength as u32, (*FCB).ConnectDataSize);
         if (*FCB).FilledConnectData != 0 {
             core::ptr::copy_nonoverlapping(
                 (*(*FCB).ConnectReturnInfo).UserData,
@@ -540,7 +531,7 @@ unsafe fn StreamSocketConnectComplete(
             );
         }
 
-        (*FCB).FilledConnectOptions = MIN((*(*FCB).ConnectReturnInfo).OptionsLength, (*FCB).ConnectOptionsSize);
+        (*FCB).FilledConnectOptions = MIN((*(*FCB).ConnectReturnInfo).OptionsLength as u32, (*FCB).ConnectOptionsSize);
         if (*FCB).FilledConnectOptions != 0 {
             core::ptr::copy_nonoverlapping(
                 (*(*FCB).ConnectReturnInfo).Options,
@@ -549,12 +540,10 @@ unsafe fn StreamSocketConnectComplete(
             );
         }
 
-        if IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND])) == 0 {
-            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND]));
-            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-                .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-                as PIRP;
-            AFD_DbgPrint(MID_TRACE, b"Launching send request %p\n\0".as_ptr() as PCHAR, NextIrp);
+        if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize])) {
+            NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]));
+            NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+            AFD_DbgPrint!(MID_TRACE, b"Launching send request %p\n\0".as_ptr() as PCHAR, NextIrp);
             Status = AfdConnectedSocketWriteData(
                 DeviceObject,
                 NextIrp,
@@ -576,10 +565,10 @@ unsafe fn StreamSocketConnectComplete(
             Status = TdiSend(
                 core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
                 object,
-                AFD_OVERLAPPED,
-                sendBuffer,
+                AFD_OVERLAPPED as u16,
+                sendBuffer as PCHAR,
                 sendBufferLength,
-                Some(StreamSocketConnectSendComplete),
+                Some(core::mem::transmute(StreamSocketConnectSendComplete as *const ())),
                 FCB as PVOID,
             );
 
@@ -587,24 +576,22 @@ unsafe fn StreamSocketConnectComplete(
         }
     }
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX])) == 0 {
-        NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX]));
-        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize))
-            .offset(-(core::mem::offset_of!(_IO_STACK_LOCATION, __bindgen_anon_1) as isize))
-            as PIRP;
+    while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize])) {
+        NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]));
+        NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
-        AFD_DbgPrint(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
-        (*NextIrp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
+        AFD_DbgPrint!(MID_TRACE, b"Completing connectex %p\n\0".as_ptr() as PCHAR, NextIrp);
+        (*NextIrp).IoStatus.__bindgen_anon_1.Status = Status;
         (*NextIrp).IoStatus.Information = 0;
         if !(*NextIrp).MdlAddress.is_null() {
             UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
         }
-        IoSetCancelRoutine(NextIrp, core::ptr::null_mut());
+        IoSetCancelRoutine(NextIrp, None);
         IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
     }
     SocketStateUnlock(FCB);
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
     Status
 }
@@ -620,7 +607,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let ConnectReq: PAFD_CONNECT_INFO;
 
-    AFD_DbgPrint(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
+    AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
     UNREFERENCED_PARAMETER(DeviceObject);
 
@@ -628,12 +615,12 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
         return LostSocket(Irp);
     }
 
-    ConnectReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
+    ConnectReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_CONNECT_INFO;
     if ConnectReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Connect request:\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Connect request:\n\0".as_ptr() as PCHAR);
 
     if ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0 {
         if !(*FCB).RemoteAddress.is_null() {
@@ -665,7 +652,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
                 ExFreePoolWithTag((*FCB).LocalAddress as PVOID, TAG_AFD_TRANSPORT_ADDRESS);
             }
 
-            (*FCB).LocalAddress = TaBuildNullTransportAddress((*ConnectReq).RemoteAddress.Address[0].AddressType);
+            (*FCB).LocalAddress = TaBuildNullTransportAddress((*ConnectReq).RemoteAddress.Address[0].AddressType as u32);
 
             if !(*FCB).LocalAddress.is_null() {
                 Status = WarmSocketForBind(FCB, AFD_SHARE_WILDCARD);
@@ -714,13 +701,13 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
                     if NT_SUCCESS(Status) {
                         (*(*FCB).ConnectCallInfo).UserData = (*FCB).ConnectData;
-                        (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).ConnectDataSize;
+                        (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).ConnectDataSize as i32;
                         (*(*FCB).ConnectCallInfo).Options = (*FCB).ConnectOptions;
-                        (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize;
+                        (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize as i32;
 
                         (*FCB).SharedData.State = SOCKET_STATE_CONNECTING;
 
-                        AFD_DbgPrint(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
+                        AFD_DbgPrint!(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
                         Status = QueueUserModeIrp(FCB, Irp, FUNCTION_CONNECT);
                         if Status == STATUS_PENDING {
                             Status = TdiConnect(
@@ -728,7 +715,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
                                 (*FCB).Connection.Object,
                                 (*FCB).ConnectCallInfo,
                                 (*FCB).ConnectReturnInfo,
-                                Some(StreamSocketConnectComplete),
+                                Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
                                 FCB as PVOID,
                             );
                         }
@@ -780,13 +767,13 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
                     if NT_SUCCESS(Status) {
                         (*(*FCB).ConnectCallInfo).UserData = (*FCB).ConnectData;
-                        (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).ConnectDataSize;
+                        (*(*FCB).ConnectCallInfo).UserDataLength = (*FCB).ConnectDataSize as i32;
                         (*(*FCB).ConnectCallInfo).Options = (*FCB).ConnectOptions;
-                        (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize;
+                        (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize as i32;
 
                         (*FCB).SharedData.State = SOCKET_STATE_CONNECTING;
 
-                        AFD_DbgPrint(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
+                        AFD_DbgPrint!(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
                         Status = QueueUserModeIrp(FCB, Irp, FUNCTION_CONNECT);
                         if Status == STATUS_PENDING {
                             Status = TdiConnect(
@@ -794,7 +781,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
                                 (*FCB).Connection.Object,
                                 (*FCB).ConnectCallInfo,
                                 (*FCB).ConnectReturnInfo,
-                                Some(StreamSocketConnectComplete),
+                                Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
                                 FCB as PVOID,
                             );
                         }
@@ -812,7 +799,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
         }
 
         _ => {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MIN_TRACE,
                 b"Inappropriate socket state %u for connect\n\0".as_ptr() as PCHAR,
                 (*FCB).SharedData.State,
@@ -836,7 +823,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
     let mut LockMode: KPROCESSOR_MODE = 0;
     let BufferSize: u32 = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    AFD_DbgPrint(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
+    AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
     UNREFERENCED_PARAMETER(DeviceObject);
 
@@ -844,12 +831,12 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
         return LostSocket(Irp);
     }
 
-    ConnectReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::addr_of_mut!(LockMode));
+    ConnectReq = LockRequest(Irp, IrpSp, 0u8, core::ptr::addr_of_mut!(LockMode)) as PAFD_SUPER_CONNECT_INFO;
     if ConnectReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Connect request:\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Connect request:\n\0".as_ptr() as PCHAR);
     OskitDumpBuffer(
         ConnectReq as PCHAR,
         (*IrpSp).Parameters.DeviceIoControl.InputBufferLength,
@@ -881,7 +868,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
     }
 
     if ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0 {
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MIN_TRACE,
             b"Cannot call IOCTL_CONNECTEX on connectionless socket\n\0".as_ptr() as PCHAR,
             (*FCB).SharedData.State,
@@ -957,15 +944,15 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
                             };
                             (*(*FCB).ConnectCallInfo).UserDataLength =
                                 if !(*FCB).ConnectData.is_null() {
-                                    (*FCB).ConnectDataSize
+                                    (*FCB).ConnectDataSize as i32
                                 } else {
-                                    (*FCB).OnConnectSendBufferSize
+                                    (*FCB).OnConnectSendBufferSize as i32
                                 };
                             (*(*FCB).ConnectCallInfo).Options = (*FCB).ConnectOptions;
-                            (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize;
+                            (*(*FCB).ConnectCallInfo).OptionsLength = (*FCB).ConnectOptionsSize as i32;
                             (*FCB).SharedData.State = SOCKET_STATE_CONNECTING;
 
-                            AFD_DbgPrint(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
+                            AFD_DbgPrint!(MID_TRACE, b"Queueing IRP %p\n\0".as_ptr() as PCHAR, Irp);
                             Status = QueueUserModeIrp(FCB, Irp, FUNCTION_CONNECTEX);
                             if Status == STATUS_PENDING {
                                 Status = TdiConnect(
@@ -973,7 +960,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
                                     (*FCB).Connection.Object,
                                     (*FCB).ConnectCallInfo,
                                     (*FCB).ConnectReturnInfo,
-                                    StreamSocketConnectComplete,
+                                    Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
                                     FCB as PVOID,
                                 );
                             }
@@ -992,7 +979,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
         }
 
         _ => {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MIN_TRACE,
                 b"Inappropriate socket state %u for connect\n\0".as_ptr() as PCHAR,
                 (*FCB).SharedData.State,
@@ -1035,7 +1022,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if (FCB->ConnectOptionsSize == 0)
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
 //     }
 //
@@ -1110,7 +1097,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if (BufferSize < sizeof(UINT))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
 //     }
 //
@@ -1147,7 +1134,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if (FCB->ConnectDataSize == 0)
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
 //     }
 //
@@ -1221,7 +1208,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if (BufferSize < sizeof(UINT))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, 0);
 //     }
 //
@@ -1249,7 +1236,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     NTSTATUS Status;
 //
 //     if( !FCB->TdiDeviceName.Length || !FCB->TdiDeviceName.Buffer ) {
-//         AFD_DbgPrint(MIN_TRACE,("Null Device\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Null Device\n"));
 //         return STATUS_NO_SUCH_DEVICE;
 //     }
 //
@@ -1348,12 +1335,12 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     ASSERT(FCB->SendIrp.InFlightRequest == Irp);
 //     FCB->SendIrp.InFlightRequest = NULL;
 //
-//     while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX]))
+//     while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]))
 //     {
-//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX]);
+//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]);
 //         NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP, Tail.Overlay.ListEntry);
 //
-//         AFD_DbgPrint(MID_TRACE,("Completing connectex %p\n", NextIrp));
+//         AFD_DbgPrint!(MID_TRACE,("Completing connectex %p\n", NextIrp));
 //         NextIrp->IoStatus.Status = Irp->IoStatus.Status;
 //         NextIrp->IoStatus.Information = Irp->IoStatus.Information;
 //         if (NextIrp->MdlAddress)
@@ -1385,7 +1372,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     PLIST_ENTRY NextIrpEntry;
 //     PIRP NextIrp;
 //
-//     AFD_DbgPrint(MID_TRACE,("Called: FCB %p, FO %p\n",
+//     AFD_DbgPrint!(MID_TRACE,("Called: FCB %p, FO %p\n",
 //                             Context, FCB->FileObject));
 //
 //     /* I was wrong about this before as we can have pending writes to a not
@@ -1393,7 +1380,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     if( !SocketAcquireStateLock( FCB ) )
 //         return STATUS_FILE_CLOSED;
 //
-//     AFD_DbgPrint(MID_TRACE,("Irp->IoStatus.Status = %x\n",
+//     AFD_DbgPrint!(MID_TRACE,("Irp->IoStatus.Status = %x\n",
 //                             Irp->IoStatus.Status));
 //
 //     ASSERT(FCB->ConnectIrp.InFlightRequest == Irp);
@@ -1401,8 +1388,8 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if( FCB->SharedData.State == SOCKET_STATE_CLOSED ) {
 //         /* Cleanup our IRP queue because the FCB is being destroyed */
-//         while( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_CONNECT] ) ) {
-//                NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECT]);
+//         while( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_CONNECT as usize] ) ) {
+//                NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECT as usize]);
 //                NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP, Tail.Overlay.ListEntry);
 //                NextIrp->IoStatus.Status = STATUS_FILE_CLOSED;
 //                NextIrp->IoStatus.Information = 0;
@@ -1410,9 +1397,9 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //                (void)IoSetCancelRoutine(NextIrp, NULL);
 //                IoCompleteRequest( NextIrp, IO_NETWORK_INCREMENT );
 //         }
-//         while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX]))
+//         while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]))
 //         {
-//                NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX]);
+//                NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]);
 //                NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP, Tail.Overlay.ListEntry);
 //                NextIrp->IoStatus.Status = STATUS_FILE_CLOSED;
 //                NextIrp->IoStatus.Information = Irp->IoStatus.Information;
@@ -1428,16 +1415,16 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     if( !NT_SUCCESS(Irp->IoStatus.Status) ) {
 //         FCB->PollState |= AFD_EVENT_CONNECT_FAIL;
 //         FCB->PollStatus[FD_CONNECT_BIT] = Irp->IoStatus.Status;
-//         AFD_DbgPrint(MID_TRACE,("Going to bound state\n"));
+//         AFD_DbgPrint!(MID_TRACE,("Going to bound state\n"));
 //         FCB->SharedData.State = SOCKET_STATE_BOUND;
 //         PollReeval( FCB->DeviceExt, FCB->FileObject );
 //     }
 //
 //     /* Succeed pending irps on the FUNCTION_CONNECT list */
-//     while( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_CONNECT] ) ) {
-//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECT]);
+//     while( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_CONNECT as usize] ) ) {
+//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECT as usize]);
 //         NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP, Tail.Overlay.ListEntry);
-//         AFD_DbgPrint(MID_TRACE,("Completing connect %p\n", NextIrp));
+//         AFD_DbgPrint!(MID_TRACE,("Completing connect %p\n", NextIrp));
 //         NextIrp->IoStatus.Status = Status;
 //         NextIrp->IoStatus.Information = NT_SUCCESS(Status) ? ((ULONG_PTR)FCB->Connection.Handle) : 0;
 //         if( NextIrp->MdlAddress ) UnlockRequest( NextIrp, IoGetCurrentIrpStackLocation( NextIrp ) );
@@ -1468,11 +1455,11 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //                           FCB->FilledConnectOptions);
 //         }
 //
-//         if( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_SEND] ) ) {
-//             NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_SEND]);
+//         if( !IsListEmpty( &FCB->PendingIrpList[FUNCTION_SEND as usize] ) ) {
+//             NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_SEND as usize]);
 //             NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP,
 //                                         Tail.Overlay.ListEntry);
-//             AFD_DbgPrint(MID_TRACE,("Launching send request %p\n", NextIrp));
+//             AFD_DbgPrint!(MID_TRACE,("Launching send request %p\n", NextIrp));
 //             Status = AfdConnectedSocketWriteData
 //                 ( DeviceObject,
 //                   NextIrp,
@@ -1503,12 +1490,12 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     }
 //
 // end:
-//     while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX]))
+//     while (!IsListEmpty(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]))
 //     {
-//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX]);
+//         NextIrpEntry = RemoveHeadList(&FCB->PendingIrpList[FUNCTION_CONNECTEX as usize]);
 //         NextIrp = CONTAINING_RECORD(NextIrpEntry, IRP, Tail.Overlay.ListEntry);
 //
-//         AFD_DbgPrint(MID_TRACE,("Completing connectex %p\n", NextIrp));
+//         AFD_DbgPrint!(MID_TRACE,("Completing connectex %p\n", NextIrp));
 //         NextIrp->IoStatus.Status = Status;
 //         NextIrp->IoStatus.Information = 0;
 //         if (NextIrp->MdlAddress)
@@ -1518,7 +1505,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     }
 //     SocketStateUnlock( FCB );
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return Status;
 // }
@@ -1533,7 +1520,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     PFILE_OBJECT FileObject = IrpSp->FileObject;
 //     PAFD_FCB FCB = FileObject->FsContext;
 //     PAFD_CONNECT_INFO ConnectReq;
-//     AFD_DbgPrint(MID_TRACE,("Called on %p\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("Called on %p\n", FCB));
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
@@ -1542,7 +1529,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //         return UnlockAndMaybeComplete( FCB, STATUS_NO_MEMORY, Irp,
 //                                        0 );
 //
-//     AFD_DbgPrint(MID_TRACE,("Connect request:\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Connect request:\n"));
 //
 //    if( FCB->Flags & AFD_ENDPOINT_CONNECTIONLESS )
 //    {
@@ -1642,7 +1629,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //             FCB->SharedData.State = SOCKET_STATE_CONNECTING;
 //
-//             AFD_DbgPrint(MID_TRACE,("Queueing IRP %p\n", Irp));
+//             AFD_DbgPrint!(MID_TRACE,("Queueing IRP %p\n", Irp));
 //             Status = QueueUserModeIrp(FCB, Irp, FUNCTION_CONNECT);
 //             if (Status == STATUS_PENDING)
 //             {
@@ -1664,7 +1651,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //         break;
 //
 //     default:
-//         AFD_DbgPrint(MIN_TRACE,("Inappropriate socket state %u for connect\n",
+//         AFD_DbgPrint!(MIN_TRACE,("Inappropriate socket state %u for connect\n",
 //                                 FCB->SharedData.State));
 //         break;
 //     }
@@ -1686,7 +1673,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     PAFD_SUPER_CONNECT_INFO ConnectReq;
 //     KPROCESSOR_MODE LockMode;
 //     UINT BufferSize = IrpSp->Parameters.DeviceIoControl.OutputBufferLength;
-//     AFD_DbgPrint(MID_TRACE,("Called on %p\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("Called on %p\n", FCB));
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
@@ -1697,7 +1684,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //     if (!ConnectReq)
 //         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
 //
-//     AFD_DbgPrint(MID_TRACE,("Connect request:\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Connect request:\n"));
 //     OskitDumpBuffer((PCHAR)ConnectReq,
 //                     IrpSp->Parameters.DeviceIoControl.InputBufferLength);
 //
@@ -1723,7 +1710,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //
 //     if (FCB->Flags & AFD_ENDPOINT_CONNECTIONLESS)
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Cannot call IOCTL_CONNECTEX on connectionless socket\n",
+//         AFD_DbgPrint!(MIN_TRACE,("Cannot call IOCTL_CONNECTEX on connectionless socket\n",
 //                                  FCB->SharedData.State));
 //          if (FCB->RemoteAddress)
 //          {
@@ -1796,7 +1783,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //         FCB->ConnectCallInfo->OptionsLength = FCB->ConnectOptionsSize;
 //         FCB->SharedData.State = SOCKET_STATE_CONNECTING;
 //
-//         AFD_DbgPrint(MID_TRACE,("Queueing IRP %p\n", Irp));
+//         AFD_DbgPrint!(MID_TRACE,("Queueing IRP %p\n", Irp));
 //         Status = QueueUserModeIrp( FCB, Irp, FUNCTION_CONNECTEX );
 //         if (Status == STATUS_PENDING)
 //         {
@@ -1816,7 +1803,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 //         return Status;
 //
 //     default:
-//         AFD_DbgPrint(MIN_TRACE,("Inappropriate socket state %u for connect\n",
+//         AFD_DbgPrint!(MIN_TRACE,("Inappropriate socket state %u for connect\n",
 //                                 FCB->SharedData.State));
 //         break;
 //     }

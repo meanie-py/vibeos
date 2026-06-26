@@ -9,11 +9,10 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine, KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSetTimer, NotificationTimer, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PRKDPC};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine, KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSetTimer, _TIMER_TYPE_NotificationTimer, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PRKDPC};
 use core::ffi::c_void;
 
 extern "C" {
-    fn AFD_DbgPrint(level: u32, format: *const i8, ...);
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut u32) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
@@ -23,7 +22,20 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub static SelectTimeout: KDEFERRED_ROUTINE = Some(SelectTimeout_impl);
+// AFD_HANDLES / SET_AFD_HANDLES (afd.h macros) and FIELD_OFFSET: provided locally.
+// (The C `static KDEFERRED_ROUTINE SelectTimeout;` is just a forward declaration;
+//  the real definition is the NTAPI fn `SelectTimeout` below.)
+macro_rules! FIELD_OFFSET {
+    ($t:ty, $f:ident) => { core::mem::offset_of!($t, $f) };
+}
+#[inline]
+unsafe fn AFD_HANDLES(x: PAFD_POLL_INFO) -> PAFD_HANDLE {
+    (*x).Exclusive as usize as PAFD_HANDLE
+}
+#[inline]
+unsafe fn SET_AFD_HANDLES(x: PAFD_POLL_INFO, y: PAFD_HANDLE) {
+    (*x).Exclusive = y as usize as _;
+}
 
 unsafe fn PrintEvents(Events: ULONG) {
     let events_list: [*const i8; 12] = [
@@ -44,7 +56,7 @@ unsafe fn PrintEvents(Events: ULONG) {
 
     while !events_list[i as usize].is_null() {
         if (Events & (1 << i)) != 0 {
-            AFD_DbgPrint(MID_TRACE, b"(%s )\0".as_ptr() as *const i8, events_list[i as usize]);
+            AFD_DbgPrint!(MID_TRACE, b"(%s )\0".as_ptr() as *const i8, events_list[i as usize]);
         }
         i += 1;
     }
@@ -57,8 +69,8 @@ unsafe fn CopyBackStatus(
     let mut i: UINT = 0;
 
     while i < HandleCount {
-        (*HandleArray.offset(i as isize)).Events = (*HandleArray.offset(i as isize)).__bindgen_anon_1.Status;
-        (*HandleArray.offset(i as isize)).__bindgen_anon_1.Status = 0;
+        (*HandleArray.offset(i as isize)).Events = (*HandleArray.offset(i as isize)).Status as u32;
+        (*HandleArray.offset(i as isize)).Status = 0;
         i += 1;
     }
 }
@@ -69,7 +81,7 @@ pub unsafe extern "C" fn ZeroEvents(
 ) {
     let mut i: UINT = 0;
     while i < HandleCount {
-        (*HandleArray.add(i as usize)).__bindgen_anon_1.Status = 0;
+        (*HandleArray.add(i as usize)).Status = 0;
         (*HandleArray.add(i as usize)).Events = 0;
         i += 1;
     }
@@ -84,7 +96,7 @@ pub unsafe extern "C" fn SignalSocket(
     let mut i: UINT;
     let Irp: PIRP = if !_Irp.is_null() { _Irp } else { (*Poll).Irp };
 
-    AFD_DbgPrint(MID_TRACE, b"Called (Status %x)\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Called (Status %x)\n\0".as_ptr() as PCHAR, Status);
 
     if !Poll.is_null() {
         KeCancelTimer(core::ptr::addr_of_mut!((*Poll).Timer));
@@ -94,7 +106,7 @@ pub unsafe extern "C" fn SignalSocket(
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     (*Irp).IoStatus.Information =
-        FIELD_OFFSET!(AFD_POLL_INFO, Handles) + (core::mem::size_of::<AFD_HANDLE>() * (*PollReq).HandleCount as usize) as ULONG_PTR;
+        (FIELD_OFFSET!(AFD_POLL_INFO, Handles) + core::mem::size_of::<AFD_HANDLE>() * (*PollReq).HandleCount as usize) as _;
 
     CopyBackStatus(
         (*PollReq).Handles.as_mut_ptr(),
@@ -103,7 +115,7 @@ pub unsafe extern "C" fn SignalSocket(
 
     i = 0;
     while i < (*PollReq).HandleCount {
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MAX_TRACE,
             b"Handle(%x): Got %x,%x\n\0".as_ptr() as PCHAR,
             (*PollReq).Handles[i as usize].Handle,
@@ -119,12 +131,12 @@ pub unsafe extern "C" fn SignalSocket(
         UnlockRequest(Irp, IoGetCurrentIrpStackLocation(Irp));
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Completing\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Completing\n\0".as_ptr() as PCHAR);
     IoSetCancelRoutine(Irp, None);
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT as CCHAR);
-    AFD_DbgPrint(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
 }
-unsafe fn SelectTimeout(
+unsafe extern "system" fn SelectTimeout(
     Dpc: PKDPC,
     DeferredContext: PVOID,
     SystemArgument1: PVOID,
@@ -140,11 +152,11 @@ unsafe fn SelectTimeout(
     DeviceExt = (*Poll).DeviceExt;
     PollReq = (*Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
 
-    ZeroEvents((*PollReq).Handles, (*PollReq).HandleCount);
+    ZeroEvents((*PollReq).Handles.as_mut_ptr(), (*PollReq).HandleCount);
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), &mut OldIrql);
+    KeAcquireSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), &mut OldIrql);
     SignalSocket(Poll, core::ptr::null_mut(), PollReq, STATUS_TIMEOUT);
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), OldIrql);
+    KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), OldIrql);
 }
 #[no_mangle]
 pub unsafe extern "C" fn KillSelectsForFCB(
@@ -160,9 +172,9 @@ pub unsafe extern "C" fn KillSelectsForFCB(
     let mut HandleArray: PAFD_HANDLE;
     let mut i: UINT;
 
-    AFD_DbgPrint(MID_TRACE, b"Killing selects that refer to %p\n\0".as_ptr() as PCHAR, FileObject);
+    AFD_DbgPrint!(MID_TRACE, b"Killing selects that refer to %p\n\0".as_ptr() as PCHAR, FileObject);
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), core::ptr::addr_of_mut!(OldIrql));
+    KeAcquireSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), core::ptr::addr_of_mut!(OldIrql));
 
     ListEntry = (*DeviceExt).Polls.Flink;
     while ListEntry != core::ptr::addr_of_mut!((*DeviceExt).Polls) {
@@ -174,19 +186,19 @@ pub unsafe extern "C" fn KillSelectsForFCB(
 
         i = 0;
         while i < (*PollReq).HandleCount {
-            AFD_DbgPrint(MAX_TRACE, b"Req: %u, This %p\n\0".as_ptr() as PCHAR, (*HandleArray.offset(i as isize)).Handle, FileObject);
+            AFD_DbgPrint!(MAX_TRACE, b"Req: %u, This %p\n\0".as_ptr() as PCHAR, (*HandleArray.offset(i as isize)).Handle, FileObject);
             if (*HandleArray.offset(i as isize)).Handle as PVOID == FileObject as PVOID &&
                 (OnlyExclusive == 0 || (OnlyExclusive != 0 && (*Poll).Exclusive != 0)) {
-                ZeroEvents((*PollReq).Handles, (*PollReq).HandleCount);
+                ZeroEvents((*PollReq).Handles.as_mut_ptr(), (*PollReq).HandleCount);
                 SignalSocket(Poll, core::ptr::null_mut(), PollReq, STATUS_CANCELLED);
             }
             i += 1;
         }
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock), OldIrql);
+    KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), OldIrql);
 
-    AFD_DbgPrint(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
 }
 
 #[no_mangle]
@@ -198,13 +210,13 @@ pub unsafe extern "system" fn AfdSelect(
     let mut Status: NTSTATUS = STATUS_NO_MEMORY;
     let mut FCB: PAFD_FCB;
     let mut FileObject: PFILE_OBJECT;
-    let PollReq: PAFD_POLL_INFO = (*Irp).__bindgen_anon_1.SystemBuffer as PAFD_POLL_INFO;
+    let PollReq: PAFD_POLL_INFO = (*Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
     let DeviceExt: PAFD_DEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;
     let mut OldIrql: KIRQL = 0;
     let mut Signalled: UINT = 0;
-    let Exclusive: ULONG = (*PollReq).Exclusive;
+    let Exclusive: ULONG = (*PollReq).Exclusive as ULONG;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Called (HandleCount %u Timeout %d)\n\0".as_ptr() as PCHAR,
         (*PollReq).HandleCount,
@@ -220,7 +232,7 @@ pub unsafe extern "system" fn AfdSelect(
     );
 
     if AFD_HANDLES(PollReq).is_null() {
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
         (*Irp).IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
         return STATUS_NO_MEMORY;
@@ -228,7 +240,7 @@ pub unsafe extern "system" fn AfdSelect(
 
     if Exclusive != 0 {
         for i in 0..(*PollReq).HandleCount as usize {
-            if (*AFD_HANDLES(PollReq).add(i)).Handle.is_null() {
+            if (*AFD_HANDLES(PollReq).add(i)).Handle == 0 {
                 continue;
             }
 
@@ -240,23 +252,23 @@ pub unsafe extern "system" fn AfdSelect(
         }
     }
 
-    KeAcquireSpinLock(&mut (*DeviceExt).Lock, &mut OldIrql);
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize,&mut OldIrql);
 
     for i in 0..(*PollReq).HandleCount as usize {
-        if (*AFD_HANDLES(PollReq).add(i)).Handle.is_null() {
+        if (*AFD_HANDLES(PollReq).add(i)).Handle == 0 {
             continue;
         }
 
         FileObject = (*AFD_HANDLES(PollReq).add(i)).Handle as PFILE_OBJECT;
         FCB = (*FileObject).FsContext as PAFD_FCB;
 
-        AFD_DbgPrint(MID_TRACE, b"AFD: Select Events: \0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MID_TRACE, b"AFD: Select Events: \0".as_ptr() as PCHAR);
         PrintEvents((*PollReq).Handles[i].Events);
-        AFD_DbgPrint(MID_TRACE, b"\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MID_TRACE, b"\n\0".as_ptr() as PCHAR);
 
-        (*PollReq).Handles[i].Status = (*PollReq).Handles[i].Events & (*FCB).PollState;
+        (*PollReq).Handles[i].Status = ((*PollReq).Handles[i].Events & (*FCB).PollState) as NTSTATUS;
         if (*PollReq).Handles[i].Status != 0 {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,
                 FCB,
@@ -268,7 +280,7 @@ pub unsafe extern "system" fn AfdSelect(
 
     if Signalled != 0 {
         Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         SignalSocket(core::ptr::null_mut(), Irp, PollReq, Status);
     } else {
         let Poll: PAFD_ACTIVE_POLL = ExAllocatePoolWithTag(
@@ -280,13 +292,13 @@ pub unsafe extern "system" fn AfdSelect(
         if !Poll.is_null() {
             (*Poll).Irp = Irp;
             (*Poll).DeviceExt = DeviceExt;
-            (*Poll).Exclusive = Exclusive;
+            (*Poll).Exclusive = Exclusive as u8;
 
-            KeInitializeTimerEx(&mut (*Poll).Timer, NotificationTimer);
+            KeInitializeTimerEx(&mut (*Poll).Timer, _TIMER_TYPE_NotificationTimer);
 
             KeInitializeDpc(
                 &mut (*Poll).TimeoutDpc as *mut _ as PRKDPC,
-                Some(SelectTimeout),
+                Some(core::mem::transmute(SelectTimeout as *const ())),
                 Poll as PVOID,
             );
 
@@ -305,7 +317,7 @@ pub unsafe extern "system" fn AfdSelect(
             IoMarkIrpPending(Irp);
             IoSetCancelRoutine(Irp, Some(AfdCancelHandler));
         } else {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MAX_TRACE,
                 b"FIXME: do something with the IRP!\n\0".as_ptr() as PCHAR,
             );
@@ -313,9 +325,9 @@ pub unsafe extern "system" fn AfdSelect(
         }
     }
 
-    KeReleaseSpinLock(&mut (*DeviceExt).Lock, OldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize,OldIrql);
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Returning %x\n\0".as_ptr() as PCHAR,
         Status,
@@ -335,7 +347,7 @@ pub unsafe extern "system" fn AfdEventSelect(
     let EventSelectInfo = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_EVENT_SELECT_INFO;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -345,7 +357,7 @@ pub unsafe extern "system" fn AfdEventSelect(
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Called (Event %p Triggers %u)\n\0".as_ptr() as PCHAR,
         (*EventSelectInfo).EventObject,
@@ -361,14 +373,14 @@ pub unsafe extern "system" fn AfdEventSelect(
         Status = ObReferenceObjectByHandle(
             (*EventSelectInfo).EventObject as PVOID,
             EVENT_ALL_ACCESS,
-            *ExEventObjectType,
-            1i32 as KPROCESSOR_MODE,
+            *ExEventObjectType as *mut _,
+            1i8,
             core::ptr::addr_of_mut!((*FCB).EventSelect) as *mut PVOID,
             core::ptr::null_mut(),
         );
 
         if !NT_SUCCESS(Status) {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MIN_TRACE,
                 b"Failed reference event (0x%x)\n\0".as_ptr() as PCHAR,
                 Status,
@@ -386,16 +398,16 @@ pub unsafe extern "system" fn AfdEventSelect(
     if !(*FCB).EventSelect.is_null()
         && ((*FCB).PollState & ((*FCB).EventSelectTriggers & !(*FCB).EventSelectDisabled)) != 0
     {
-        AFD_DbgPrint(
+        AFD_DbgPrint!(
             MID_TRACE,
             b"Setting event %p\n\0".as_ptr() as PCHAR,
             (*FCB).EventSelect,
         );
 
-        KeSetEvent((*FCB).EventSelect, IO_NETWORK_INCREMENT, 0u8);
+        KeSetEvent((*FCB).EventSelect as PVOID, IO_NETWORK_INCREMENT as i32, 0u8);
     }
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Returning %x\n\0".as_ptr() as PCHAR,
         Status,
@@ -418,7 +430,7 @@ pub unsafe extern "system" fn AfdEnumEvents(
 
     UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
 
-    AFD_DbgPrint(MID_TRACE, b"Called (FCB %p)\n\0".as_ptr() as *const i8, FCB);
+    AFD_DbgPrint!(MID_TRACE, b"Called (FCB %p)\n\0".as_ptr() as *const i8, FCB);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -432,17 +444,17 @@ pub unsafe extern "system" fn AfdEnumEvents(
         Status = ObReferenceObjectByHandle(
             (*EnumReq).Event,
             EVENT_ALL_ACCESS,
-            *ExEventObjectType,
-            1i32 as i8,
+            *ExEventObjectType as *mut _,
+            1i8,
             &mut UserEvent as *mut PKEVENT as *mut *mut core::ffi::c_void,
             core::ptr::null_mut()
         );
         if !NT_SUCCESS(Status) {
-            AFD_DbgPrint(MIN_TRACE, b"Unable to reference event %x\n\0".as_ptr() as *const i8, Status);
+            AFD_DbgPrint!(MIN_TRACE, b"Unable to reference event %x\n\0".as_ptr() as *const i8, Status);
             return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
         }
 
-        KeClearEvent(UserEvent);
+        KeClearEvent(UserEvent as PVOID);
         ObDereferenceObject(UserEvent as *mut core::ffi::c_void);
     }
 
@@ -466,7 +478,7 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, FileObject: PFILE_OBJECT) ->
 
     i = 0;
     while i < (*PollReq).HandleCount {
-        if (*(AFD_HANDLES(PollReq).offset(i as isize))).Handle.is_null() {
+        if (*(AFD_HANDLES(PollReq).offset(i as isize))).Handle == 0 {
             i += 1;
             continue;
         }
@@ -475,10 +487,10 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, FileObject: PFILE_OBJECT) ->
         FCB = (*FileObject).FsContext as PAFD_FCB;
 
         (*PollReq).Handles[i as usize].Status =
-            (*PollReq).Handles[i as usize].Events & (*FCB).PollState;
+            ((*PollReq).Handles[i as usize].Events & (*FCB).PollState) as NTSTATUS;
 
         if (*PollReq).Handles[i as usize].Status != 0 {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,
                 FCB,
@@ -498,16 +510,16 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
     let mut ThePollEnt: PLIST_ENTRY = core::ptr::null_mut();
     let FCB: PAFD_FCB;
     let mut OldIrql: KIRQL = 0;
-    let PollReq: PAFD_POLL_INFO;
+    let mut PollReq: PAFD_POLL_INFO;
 
-    AFD_DbgPrint(MID_TRACE, b"Called: DeviceExt %p FileObject %p\n\0".as_ptr() as PCHAR, DeviceExt, FileObject);
+    AFD_DbgPrint!(MID_TRACE, b"Called: DeviceExt %p FileObject %p\n\0".as_ptr() as PCHAR, DeviceExt, FileObject);
 
-    KeAcquireSpinLock(&mut (*DeviceExt).Lock, &mut OldIrql);
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize,&mut OldIrql);
 
     FCB = (*FileObject).FsContext as PAFD_FCB;
 
     if FCB.is_null() {
-        KeReleaseSpinLock(&mut (*DeviceExt).Lock, OldIrql);
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize,OldIrql);
         return;
     }
 
@@ -516,28 +528,28 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
     while ThePollEnt != &mut (*DeviceExt).Polls as PLIST_ENTRY {
         Poll = (ThePollEnt as *mut u8).offset(-(core::mem::offset_of!(AFD_ACTIVE_POLL, ListEntry) as isize)) as PAFD_ACTIVE_POLL;
         PollReq = (*(*Poll).Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
-        AFD_DbgPrint(MID_TRACE, b"Checking poll %p\n\0".as_ptr() as PCHAR, Poll);
+        AFD_DbgPrint!(MID_TRACE, b"Checking poll %p\n\0".as_ptr() as PCHAR, Poll);
 
         if UpdatePollWithFCB(Poll, FileObject) != 0 {
             ThePollEnt = (*ThePollEnt).Flink;
-            AFD_DbgPrint(MID_TRACE, b"Signalling socket\n\0".as_ptr() as PCHAR);
+            AFD_DbgPrint!(MID_TRACE, b"Signalling socket\n\0".as_ptr() as PCHAR);
             SignalSocket(Poll, core::ptr::null_mut(), PollReq, STATUS_SUCCESS);
         } else {
             ThePollEnt = (*ThePollEnt).Flink;
         }
     }
 
-    KeReleaseSpinLock(&mut (*DeviceExt).Lock, OldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize,OldIrql);
 
     if !(*FCB).EventSelect.is_null() &&
        ((*FCB).PollState & ((*FCB).EventSelectTriggers & !(*FCB).EventSelectDisabled)) != 0
     {
-        AFD_DbgPrint(MID_TRACE, b"Setting event %p\n\0".as_ptr() as PCHAR, (*FCB).EventSelect);
+        AFD_DbgPrint!(MID_TRACE, b"Setting event %p\n\0".as_ptr() as PCHAR, (*FCB).EventSelect);
 
-        KeSetEvent((*FCB).EventSelect, IO_NETWORK_INCREMENT, 0u8);
+        KeSetEvent((*FCB).EventSelect as PVOID, IO_NETWORK_INCREMENT as i32, 0u8);
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Leaving\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MID_TRACE, b"Leaving\n\0".as_ptr() as PCHAR);
 }
 
 
@@ -573,7 +585,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     int i;
 //
 //     for( i = 0; events_list[i]; i++ )
-//         if( Events & (1 << i) ) AFD_DbgPrint(MID_TRACE,("%s ", events_list[i] ));
+//         if( Events & (1 << i) ) AFD_DbgPrint!(MID_TRACE,("%s ", events_list[i] ));
 // }
 //
 // static VOID CopyBackStatus( PAFD_HANDLE HandleArray,
@@ -607,7 +619,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 // {
 //     UINT i;
 //     PIRP Irp = _Irp ? _Irp : Poll->Irp;
-//     AFD_DbgPrint(MID_TRACE,("Called (Status %x)\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Called (Status %x)\n", Status));
 //
 //     if (Poll)
 //     {
@@ -631,10 +643,10 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     }
 //     UnlockHandles( AFD_HANDLES(PollReq), PollReq->HandleCount );
 //     if( Irp->MdlAddress ) UnlockRequest( Irp, IoGetCurrentIrpStackLocation( Irp ) );
-//     AFD_DbgPrint(MID_TRACE,("Completing\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Completing\n"));
 //     (void)IoSetCancelRoutine(Irp, NULL);
 //     IoCompleteRequest( Irp, IO_NETWORK_INCREMENT );
-//     AFD_DbgPrint(MID_TRACE,("Done\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Done\n"));
 // }
 //
 // static KDEFERRED_ROUTINE SelectTimeout;
@@ -652,7 +664,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     UNREFERENCED_PARAMETER(SystemArgument1);
 //     UNREFERENCED_PARAMETER(SystemArgument2);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Called\n"));
 //
 //     Irp = Poll->Irp;
 //     DeviceExt = Poll->DeviceExt;
@@ -664,7 +676,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     SignalSocket( Poll, NULL, PollReq, STATUS_TIMEOUT );
 //     KeReleaseSpinLock( &DeviceExt->Lock, OldIrql );
 //
-//     AFD_DbgPrint(MID_TRACE,("Timeout\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Timeout\n"));
 // }
 //
 // VOID KillSelectsForFCB( PAFD_DEVICE_EXTENSION DeviceExt,
@@ -678,7 +690,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     PAFD_HANDLE HandleArray;
 //     UINT i;
 //
-//     AFD_DbgPrint(MID_TRACE,("Killing selects that refer to %p\n", FileObject));
+//     AFD_DbgPrint!(MID_TRACE,("Killing selects that refer to %p\n", FileObject));
 //
 //     KeAcquireSpinLock( &DeviceExt->Lock, &OldIrql );
 //
@@ -691,7 +703,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //         HandleArray = AFD_HANDLES(PollReq);
 //
 //         for( i = 0; i < PollReq->HandleCount; i++ ) {
-//             AFD_DbgPrint(MAX_TRACE,("Req: %u, This %p\n",
+//             AFD_DbgPrint!(MAX_TRACE,("Req: %u, This %p\n",
 //                                     HandleArray[i].Handle, FileObject));
 //             if( (PVOID)HandleArray[i].Handle == FileObject &&
 //                 (!OnlyExclusive || (OnlyExclusive && Poll->Exclusive)) ) {
@@ -703,7 +715,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //
 //     KeReleaseSpinLock( &DeviceExt->Lock, OldIrql );
 //
-//     AFD_DbgPrint(MID_TRACE,("Done\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Done\n"));
 // }
 //
 // NTSTATUS NTAPI
@@ -720,7 +732,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //
 //     UNREFERENCED_PARAMETER(IrpSp);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called (HandleCount %u Timeout %d)\n",
+//     AFD_DbgPrint!(MID_TRACE,("Called (HandleCount %u Timeout %d)\n",
 //                             PollReq->HandleCount,
 //                             (INT)(PollReq->Timeout.QuadPart)));
 //
@@ -752,14 +764,14 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //         FileObject = (PFILE_OBJECT)AFD_HANDLES(PollReq)[i].Handle;
 //         FCB = FileObject->FsContext;
 //
-//         AFD_DbgPrint(MID_TRACE, ("AFD: Select Events: "));
+//         AFD_DbgPrint!(MID_TRACE, ("AFD: Select Events: "));
 //         PrintEvents( PollReq->Handles[i].Events );
-//         AFD_DbgPrint(MID_TRACE,("\n"));
+//         AFD_DbgPrint!(MID_TRACE,("\n"));
 //
 //         PollReq->Handles[i].Status =
 //             PollReq->Handles[i].Events & FCB->PollState;
 //         if( PollReq->Handles[i].Status ) {
-//             AFD_DbgPrint(MID_TRACE,("Signalling %p with %x\n",
+//             AFD_DbgPrint!(MID_TRACE,("Signalling %p with %x\n",
 //                                     FCB, FCB->PollState));
 //             Signalled++;
 //         }
@@ -794,14 +806,14 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //           IoMarkIrpPending( Irp );
 //           (void)IoSetCancelRoutine(Irp, AfdCancelHandler);
 //        } else {
-//           AFD_DbgPrint(MAX_TRACE, ("FIXME: do something with the IRP!\n"));
+//           AFD_DbgPrint!(MAX_TRACE, ("FIXME: do something with the IRP!\n"));
 //           Status = STATUS_NO_MEMORY;
 //        }
 //     }
 //
 //     KeReleaseSpinLock( &DeviceExt->Lock, OldIrql );
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return Status;
 // }
@@ -825,7 +837,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //          return UnlockAndMaybeComplete( FCB, STATUS_NO_MEMORY, Irp,
 //                                         0 );
 //     }
-//     AFD_DbgPrint(MID_TRACE,("Called (Event %p Triggers %u)\n",
+//     AFD_DbgPrint!(MID_TRACE,("Called (Event %p Triggers %u)\n",
 //                             EventSelectInfo->EventObject,
 //                             EventSelectInfo->Events));
 //
@@ -843,7 +855,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //
 //         if( !NT_SUCCESS(Status) )
 //         {
-//             AFD_DbgPrint(MIN_TRACE,("Failed reference event (0x%x)\n", Status));
+//             AFD_DbgPrint!(MIN_TRACE,("Failed reference event (0x%x)\n", Status));
 //             FCB->EventSelect = NULL;
 //         }
 //         else
@@ -857,13 +869,13 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     if((FCB->EventSelect) &&
 //        (FCB->PollState & (FCB->EventSelectTriggers & ~FCB->EventSelectDisabled)))
 //     {
-//         AFD_DbgPrint(MID_TRACE,("Setting event %p\n", FCB->EventSelect));
+//         AFD_DbgPrint!(MID_TRACE,("Setting event %p\n", FCB->EventSelect));
 //
 //         /* Set the application's event */
 //         KeSetEvent( FCB->EventSelect, IO_NETWORK_INCREMENT, FALSE );
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return UnlockAndMaybeComplete( FCB, Status, Irp,
 //                                    0 );
@@ -881,7 +893,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called (FCB %p)\n", FCB));
+//     AFD_DbgPrint!(MID_TRACE,("Called (FCB %p)\n", FCB));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) {
 //         return LostSocket( Irp );
@@ -902,7 +914,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //                                            NULL);
 //         if (!NT_SUCCESS(Status))
 //         {
-//             AFD_DbgPrint(MIN_TRACE,("Unable to reference event %x\n", Status));
+//             AFD_DbgPrint!(MIN_TRACE,("Unable to reference event %x\n", Status));
 //             return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
 //         }
 //
@@ -940,7 +952,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //
 //         PollReq->Handles[i].Status = PollReq->Handles[i].Events & FCB->PollState;
 //         if( PollReq->Handles[i].Status ) {
-//             AFD_DbgPrint(MID_TRACE,("Signalling %p with %x\n",
+//             AFD_DbgPrint!(MID_TRACE,("Signalling %p with %x\n",
 //                                     FCB, FCB->PollState));
 //             Signalled++;
 //         }
@@ -956,7 +968,7 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     KIRQL OldIrql;
 //     PAFD_POLL_INFO PollReq;
 //
-//     AFD_DbgPrint(MID_TRACE,("Called: DeviceExt %p FileObject %p\n",
+//     AFD_DbgPrint!(MID_TRACE,("Called: DeviceExt %p FileObject %p\n",
 //                             DeviceExt, FileObject));
 //
 //     KeAcquireSpinLock( &DeviceExt->Lock, &OldIrql );
@@ -975,11 +987,11 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     while( ThePollEnt != &DeviceExt->Polls ) {
 //         Poll = CONTAINING_RECORD( ThePollEnt, AFD_ACTIVE_POLL, ListEntry );
 //         PollReq = Poll->Irp->AssociatedIrp.SystemBuffer;
-//         AFD_DbgPrint(MID_TRACE,("Checking poll %p\n", Poll));
+//         AFD_DbgPrint!(MID_TRACE,("Checking poll %p\n", Poll));
 //
 //         if( UpdatePollWithFCB( Poll, FileObject ) ) {
 //             ThePollEnt = ThePollEnt->Flink;
-//             AFD_DbgPrint(MID_TRACE,("Signalling socket\n"));
+//             AFD_DbgPrint!(MID_TRACE,("Signalling socket\n"));
 //             SignalSocket( Poll, NULL, PollReq, STATUS_SUCCESS );
 //         } else
 //             ThePollEnt = ThePollEnt->Flink;
@@ -990,13 +1002,13 @@ pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject
 //     if((FCB->EventSelect) &&
 //        (FCB->PollState & (FCB->EventSelectTriggers & ~FCB->EventSelectDisabled)))
 //     {
-//         AFD_DbgPrint(MID_TRACE,("Setting event %p\n", FCB->EventSelect));
+//         AFD_DbgPrint!(MID_TRACE,("Setting event %p\n", FCB->EventSelect));
 //
 //         /* Set the application's event */
 //         KeSetEvent( FCB->EventSelect, IO_NETWORK_INCREMENT, FALSE );
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Leaving\n"));
+//     AFD_DbgPrint!(MID_TRACE,("Leaving\n"));
 // }
 //
 // ============================================================================

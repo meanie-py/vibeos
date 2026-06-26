@@ -8,7 +8,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoModifyAccess, IoReadAccess, IoReleaseCancelSpinLock, IoSetCancelRoutine, KPROCESSOR_MODE, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, NormalPagePriority, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, IoGetCurrentIrpStackLocation, IoMarkIrpPending, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, IoSetCancelRoutine, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
 use core::ffi::c_void;
 
 extern "system" {
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn LockRequest(
 
     (*Irp).MdlAddress = core::ptr::null_mut();
 
-    match (*IrpSp).MajorFunction as u32 {
+    match (*IrpSp).MajorFunction as u8 {
         IRP_MJ_DEVICE_CONTROL | IRP_MJ_INTERNAL_DEVICE_CONTROL => {
             (*Irp).MdlAddress = IoAllocateMdl(
                 (*IrpSp).Parameters.DeviceIoControl.Type3InputBuffer,
@@ -63,22 +63,22 @@ pub unsafe extern "C" fn LockRequest(
                     return core::ptr::null_mut();
                 }
 
-                (*Irp).Tail.Overlay.DriverContext[1] =
+                (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1] =
                     MmGetSystemAddressForMdlSafe((*Irp).MdlAddress, NormalPagePriority);
-                if (*Irp).Tail.Overlay.DriverContext[1].is_null() {
+                if (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1].is_null() {
                     MmUnlockPages((*Irp).MdlAddress);
                     IoFreeMdl((*Irp).MdlAddress);
                     (*Irp).MdlAddress = core::ptr::null_mut();
                     return core::ptr::null_mut();
                 }
 
-                (*Irp).Tail.Overlay.DriverContext[0] = ExAllocatePoolWithTag(
+                (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = ExAllocatePoolWithTag(
                     NonPagedPool,
-                    MmGetMdlByteCount((*Irp).MdlAddress),
+                    MmGetMdlByteCount((*Irp).MdlAddress) as usize,
                     TAG_AFD_DATA_BUFFER,
                 );
 
-                if (*Irp).Tail.Overlay.DriverContext[0].is_null() {
+                if (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0].is_null() {
                     MmUnlockPages((*Irp).MdlAddress);
                     IoFreeMdl((*Irp).MdlAddress);
                     (*Irp).MdlAddress = core::ptr::null_mut();
@@ -86,17 +86,17 @@ pub unsafe extern "C" fn LockRequest(
                 }
 
                 RtlCopyMemory(
-                    (*Irp).Tail.Overlay.DriverContext[0],
-                    (*Irp).Tail.Overlay.DriverContext[1],
+                    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0],
+                    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1],
                     MmGetMdlByteCount((*Irp).MdlAddress) as usize,
                 );
 
                 if Output == 0 {
-                    (*Irp).Tail.Overlay.DriverContext[1] = core::ptr::null_mut();
+                    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1] = core::ptr::null_mut();
                 }
 
                 if !LockMode.is_null() {
-                    *LockMode = 1i32;
+                    *LockMode = 1i8;
                 }
             } else {
                 return core::ptr::null_mut();
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn LockRequest(
         IRP_MJ_READ | IRP_MJ_WRITE => {
             (*Irp).MdlAddress = IoAllocateMdl(
                 (*Irp).UserBuffer,
-                if (*IrpSp).MajorFunction as u32 == IRP_MJ_READ {
+                if (*IrpSp).MajorFunction as u8 == IRP_MJ_READ {
                     (*IrpSp).Parameters.Read.Length
                 } else {
                     (*IrpSp).Parameters.Write.Length
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn LockRequest(
                 let AfdInfo = ExAllocatePoolWithTag(
                     NonPagedPool,
                     (core::mem::size_of::<AFD_RECV_INFO>() + core::mem::size_of::<AFD_WSABUF>())
-                        as u32,
+                        as usize,
                     TAG_AFD_DATA_BUFFER,
                 ) as PAFD_RECV_INFO;
 
@@ -146,15 +146,15 @@ pub unsafe extern "C" fn LockRequest(
                 (*AfdInfo).TdiFlags = 0;
 
                 (*(*AfdInfo).BufferArray.offset(0)).buf =
-                    MmGetSystemAddressForMdl((*Irp).MdlAddress);
+                    MmGetSystemAddressForMdl((*Irp).MdlAddress) as PCHAR;
                 (*(*AfdInfo).BufferArray.offset(0)).len = MmGetMdlByteCount((*Irp).MdlAddress);
 
-                (*Irp).Tail.Overlay.DriverContext[0] = AfdInfo as PVOID;
+                (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = AfdInfo as PVOID;
 
-                (*Irp).Tail.Overlay.DriverContext[1] = core::ptr::null_mut();
+                (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1] = core::ptr::null_mut();
 
                 if !LockMode.is_null() {
-                    *LockMode = 0i32;
+                    *LockMode = 0i8;
                 }
             } else {
                 return core::ptr::null_mut();
@@ -172,16 +172,16 @@ pub unsafe extern "C" fn LockRequest(
 pub unsafe extern "C" fn UnlockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION) {
     let _ = IrpSp;
 
-    if !(*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.DriverContext[1].is_null() {
+    if !(*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1].is_null() {
         RtlCopyMemory(
-            (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.DriverContext[1],
-            (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.DriverContext[0],
+            (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1],
+            (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0],
             MmGetMdlByteCount((*Irp).MdlAddress) as usize,
         );
     }
 
     ExFreePoolWithTag(
-        (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.DriverContext[0],
+        (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0],
         TAG_AFD_DATA_BUFFER,
     );
     MmUnlockPages((*Irp).MdlAddress);
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn LockBuffers(
     let mut LockFailed: BOOLEAN = 0;
     let MapBuf: PAFD_MAPBUF;
 
-    AFD_DbgPrint(MID_TRACE, b"Called(%p)\n\0".as_ptr() as PCHAR, NewBuf);
+    AFD_DbgPrint!(MID_TRACE, b"Called(%p)\n\0".as_ptr() as PCHAR, NewBuf);
 
     if !NewBuf.is_null() {
         RtlZeroMemory(NewBuf as PVOID, Size);
@@ -220,16 +220,16 @@ pub unsafe extern "C" fn LockBuffers(
             let mut Count = Count;
             if LockAddress != 0 {
                 if !AddressBuf.is_null() && !AddressLen.is_null() {
-                    (*NewBuf.offset(Count as isize)).buf = AddressBuf;
-                    (*NewBuf.offset(Count as isize)).len = *AddressLen;
-                    (*NewBuf.offset((Count + 1) as isize)).buf = AddressLen as PVOID;
+                    (*NewBuf.offset(Count as isize)).buf = AddressBuf as PCHAR;
+                    (*NewBuf.offset(Count as isize)).len = *AddressLen as u32;
+                    (*NewBuf.offset((Count + 1) as isize)).buf = AddressLen as PCHAR;
                     (*NewBuf.offset((Count + 1) as isize)).len = core::mem::size_of::<INT>() as u32;
                 }
                 Count += 2;
             }
 
             for i in 0..Count {
-                AFD_DbgPrint(
+                AFD_DbgPrint!(
                     MID_TRACE,
                     b"Locking buffer %u (%p:%u)\n\0".as_ptr() as PCHAR,
                     i,
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn LockBuffers(
 
                 if !(*NewBuf.offset(i as isize)).buf.is_null() && (*NewBuf.offset(i as isize)).len != 0 {
                     (*MapBuf.offset(i as isize)).Mdl = IoAllocateMdl(
-                        (*NewBuf.offset(i as isize)).buf,
+                        (*NewBuf.offset(i as isize)).buf as PVOID,
                         (*NewBuf.offset(i as isize)).len,
                         0,
                         0,
@@ -250,10 +250,10 @@ pub unsafe extern "C" fn LockBuffers(
                     continue;
                 }
 
-                AFD_DbgPrint(MID_TRACE, b"NewMdl @ %p\n\0".as_ptr() as PCHAR, (*MapBuf.offset(i as isize)).Mdl);
+                AFD_DbgPrint!(MID_TRACE, b"NewMdl @ %p\n\0".as_ptr() as PCHAR, (*MapBuf.offset(i as isize)).Mdl);
 
                 if !(*MapBuf.offset(i as isize)).Mdl.is_null() {
-                    AFD_DbgPrint(MID_TRACE, b"Probe and lock pages\n\0".as_ptr() as PCHAR);
+                    AFD_DbgPrint!(MID_TRACE, b"Probe and lock pages\n\0".as_ptr() as PCHAR);
                     {
                         MmProbeAndLockPages(
                             (*MapBuf.offset(i as isize)).Mdl,
@@ -261,10 +261,10 @@ pub unsafe extern "C" fn LockBuffers(
                             if Write != 0 { IoModifyAccess } else { IoReadAccess },
                         );
                     }
-                    AFD_DbgPrint(MID_TRACE, b"MmProbeAndLock finished\n\0".as_ptr() as PCHAR);
+                    AFD_DbgPrint!(MID_TRACE, b"MmProbeAndLock finished\n\0".as_ptr() as PCHAR);
 
                     if LockFailed != 0 {
-                        AFD_DbgPrint(MIN_TRACE, b"Failed to lock pages\n\0".as_ptr() as PCHAR);
+                        AFD_DbgPrint!(MIN_TRACE, b"Failed to lock pages\n\0".as_ptr() as PCHAR);
                         IoFreeMdl((*MapBuf.offset(i as isize)).Mdl);
                         (*MapBuf.offset(i as isize)).Mdl = core::ptr::null_mut();
                         ExFreePoolWithTag(NewBuf as PVOID, TAG_AFD_WSA_BUFFER);
@@ -278,7 +278,7 @@ pub unsafe extern "C" fn LockBuffers(
         }
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Leaving %p\n\0".as_ptr() as PCHAR, NewBuf);
+    AFD_DbgPrint!(MID_TRACE, b"Leaving %p\n\0".as_ptr() as PCHAR, NewBuf);
     NewBuf
 }
 #[no_mangle]
@@ -313,10 +313,10 @@ pub unsafe extern "C" fn LockHandles(HandleArray: PAFD_HANDLE, HandleCount: UINT
 
     i = 0;
     while !FileObjects.is_null() && i < HandleCount {
-        (*FileObjects.offset(i as isize)).__bindgen_anon_1.Status = 0;
+        (*FileObjects.offset(i as isize)).Status = 0;
         (*FileObjects.offset(i as isize)).Events = (*HandleArray.offset(i as isize)).Events;
-        (*FileObjects.offset(i as isize)).Handle = core::ptr::null_mut();
-        if (*HandleArray.offset(i as isize)).Handle.is_null() {
+        (*FileObjects.offset(i as isize)).Handle = 0;
+        if (*HandleArray.offset(i as isize)).Handle == 0 {
             i += 1;
             continue;
         }
@@ -332,8 +332,8 @@ pub unsafe extern "C" fn LockHandles(HandleArray: PAFD_HANDLE, HandleCount: UINT
         }
 
         if !NT_SUCCESS(Status) {
-            AFD_DbgPrint(MIN_TRACE, b"Failed to reference handles (0x%x)\n\0".as_ptr() as PCHAR, Status);
-            (*FileObjects.offset(i as isize)).Handle = core::ptr::null_mut();
+            AFD_DbgPrint!(MIN_TRACE, b"Failed to reference handles (0x%x)\n\0".as_ptr() as PCHAR, Status);
+            (*FileObjects.offset(i as isize)).Handle = 0;
         }
         i += 1;
     }
@@ -351,7 +351,7 @@ pub unsafe extern "C" fn UnlockHandles(HandleArray: PAFD_HANDLE, HandleCount: UI
 
     i = 0;
     while i < HandleCount {
-        if (*HandleArray.offset(i as isize)).Handle != core::ptr::null_mut() {
+        if (*HandleArray.offset(i as isize)).Handle != 0 {
             ObDereferenceObject((*HandleArray.offset(i as isize)).Handle as PVOID);
         }
         i += 1;
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN {
     let result = KeWaitForMutexObject(
         core::ptr::addr_of_mut!((*FCB).Mutex) as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
@@ -387,8 +387,8 @@ pub unsafe extern "system" fn UnlockAndMaybeComplete(
     Irp: PIRP,
     Information: UINT,
 ) -> NTSTATUS {
-    (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = Information;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    (*Irp).IoStatus.Information = Information as _;
     if !(*Irp).MdlAddress.is_null() {
         UnlockRequest(Irp, IoGetCurrentIrpStackLocation(Irp));
     }
@@ -400,7 +400,7 @@ pub unsafe extern "system" fn UnlockAndMaybeComplete(
 #[no_mangle]
 pub unsafe extern "C" fn LostSocket(Irp: PIRP) -> NTSTATUS {
     let Status = STATUS_FILE_CLOSED;
-    AFD_DbgPrint(MIN_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MIN_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
     (*Irp).IoStatus.Information = 0;
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     if !(*Irp).MdlAddress.is_null() {
@@ -415,12 +415,17 @@ pub unsafe extern "C" fn QueueUserModeIrp(FCB: PAFD_FCB, Irp: PIRP, Function: UI
 
     InsertTailList(
         &mut (*FCB).PendingIrpList[Function as usize],
-        &mut (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry
+        &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry
     );
 
     IoAcquireCancelSpinLock(&mut (*Irp).CancelIrql);
     if (*Irp).Cancel == 0 {
-        IoSetCancelRoutine(Irp, Some(AfdCancelHandler));
+        IoSetCancelRoutine(
+            Irp,
+            core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP), PDRIVER_CANCEL>(
+                AfdCancelHandler,
+            ),
+        );
         IoReleaseCancelSpinLock((*Irp).CancelIrql);
         IoMarkIrpPending(Irp);
         Status = STATUS_PENDING;
@@ -503,7 +508,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //                 } _SEH2_END;
 //
 //                 if( LockFailed ) {
-//                     AFD_DbgPrint(MIN_TRACE,("Failed to lock pages\n"));
+//                     AFD_DbgPrint!(MIN_TRACE,("Failed to lock pages\n"));
 //                     IoFreeMdl( Irp->MdlAddress );
 //                     Irp->MdlAddress = NULL;
 //                     return NULL;
@@ -513,7 +518,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //                 Irp->Tail.Overlay.DriverContext[1] = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 //                 if (!Irp->Tail.Overlay.DriverContext[1])
 //                 {
-//                     AFD_DbgPrint(MIN_TRACE,("Failed to get mapped address\n"));
+//                     AFD_DbgPrint!(MIN_TRACE,("Failed to get mapped address\n"));
 //                     MmUnlockPages(Irp->MdlAddress);
 //                     IoFreeMdl( Irp->MdlAddress );
 //                     Irp->MdlAddress = NULL;
@@ -527,7 +532,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //
 //                 if (!Irp->Tail.Overlay.DriverContext[0])
 //                 {
-//                     AFD_DbgPrint(MIN_TRACE,("Failed to allocate memory\n"));
+//                     AFD_DbgPrint!(MIN_TRACE,("Failed to allocate memory\n"));
 //                     MmUnlockPages(Irp->MdlAddress);
 //                     IoFreeMdl( Irp->MdlAddress );
 //                     Irp->MdlAddress = NULL;
@@ -574,7 +579,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //                 } _SEH2_END;
 //
 //                 if( LockFailed ) {
-//                     AFD_DbgPrint(MIN_TRACE,("Failed to lock pages\n"));
+//                     AFD_DbgPrint!(MIN_TRACE,("Failed to lock pages\n"));
 //                     IoFreeMdl( Irp->MdlAddress );
 //                     Irp->MdlAddress = NULL;
 //                     return NULL;
@@ -587,7 +592,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //
 //                 if (!AfdInfo)
 //                 {
-//                     AFD_DbgPrint(MIN_TRACE,("Failed to allocate memory\n"));
+//                     AFD_DbgPrint!(MIN_TRACE,("Failed to allocate memory\n"));
 //                     MmUnlockPages(Irp->MdlAddress);
 //                     IoFreeMdl( Irp->MdlAddress );
 //                     Irp->MdlAddress = NULL;
@@ -666,7 +671,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //     BOOLEAN LockFailed = FALSE;
 //     PAFD_MAPBUF MapBuf;
 //
-//     AFD_DbgPrint(MID_TRACE,("Called(%p)\n", NewBuf));
+//     AFD_DbgPrint!(MID_TRACE,("Called(%p)\n", NewBuf));
 //
 //     if( NewBuf ) {
 //         RtlZeroMemory(NewBuf, Size);
@@ -685,7 +690,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //                 Count += 2;
 //             }
 //         } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-//             AFD_DbgPrint(MIN_TRACE,("Access violation copying buffer info "
+//             AFD_DbgPrint!(MIN_TRACE,("Access violation copying buffer info "
 //                                     "from userland (%p %p)\n",
 //                                     Buf, AddressLen));
 //             ExFreePoolWithTag(NewBuf, TAG_AFD_WSA_BUFFER);
@@ -693,7 +698,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //         } _SEH2_END;
 //
 //         for( i = 0; i < Count; i++ ) {
-//             AFD_DbgPrint(MID_TRACE,("Locking buffer %u (%p:%u)\n",
+//             AFD_DbgPrint!(MID_TRACE,("Locking buffer %u (%p:%u)\n",
 //                                     i, NewBuf[i].buf, NewBuf[i].len));
 //
 //             if( NewBuf[i].buf && NewBuf[i].len ) {
@@ -707,20 +712,20 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //                 continue;
 //             }
 //
-//             AFD_DbgPrint(MID_TRACE,("NewMdl @ %p\n", MapBuf[i].Mdl));
+//             AFD_DbgPrint!(MID_TRACE,("NewMdl @ %p\n", MapBuf[i].Mdl));
 //
 //             if( MapBuf[i].Mdl ) {
-//                 AFD_DbgPrint(MID_TRACE,("Probe and lock pages\n"));
+//                 AFD_DbgPrint!(MID_TRACE,("Probe and lock pages\n"));
 //                 _SEH2_TRY {
 //                     MmProbeAndLockPages( MapBuf[i].Mdl, LockMode,
 //                                          Write ? IoModifyAccess : IoReadAccess );
 //                 } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
 //                     LockFailed = TRUE;
 //                 } _SEH2_END;
-//                 AFD_DbgPrint(MID_TRACE,("MmProbeAndLock finished\n"));
+//                 AFD_DbgPrint!(MID_TRACE,("MmProbeAndLock finished\n"));
 //
 //                 if( LockFailed ) {
-//             AFD_DbgPrint(MIN_TRACE,("Failed to lock pages\n"));
+//             AFD_DbgPrint!(MIN_TRACE,("Failed to lock pages\n"));
 //                     IoFreeMdl( MapBuf[i].Mdl );
 //                     MapBuf[i].Mdl = NULL;
 //                     ExFreePoolWithTag(NewBuf, TAG_AFD_WSA_BUFFER);
@@ -733,7 +738,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //         }
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Leaving %p\n", NewBuf));
+//     AFD_DbgPrint!(MID_TRACE,("Leaving %p\n", NewBuf));
 //
 //     return NewBuf;
 // }
@@ -784,7 +789,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //
 //         if( !NT_SUCCESS(Status) )
 //         {
-//             AFD_DbgPrint(MIN_TRACE,("Failed to reference handles (0x%x)\n", Status));
+//             AFD_DbgPrint!(MIN_TRACE,("Failed to reference handles (0x%x)\n", Status));
 //             FileObjects[i].Handle = 0;
 //         }
 //     }
@@ -838,7 +843,7 @@ pub unsafe extern "C" fn LeaveIrpUntilLater(FCB: PAFD_FCB, Irp: PIRP, Function: 
 //
 // NTSTATUS LostSocket( PIRP Irp ) {
 //     NTSTATUS Status = STATUS_FILE_CLOSED;
-//     AFD_DbgPrint(MIN_TRACE,("Called.\n"));
+//     AFD_DbgPrint!(MIN_TRACE,("Called.\n"));
 //     Irp->IoStatus.Information = 0;
 //     Irp->IoStatus.Status = Status;
 //     if ( Irp->MdlAddress ) UnlockRequest( Irp, IoGetCurrentIrpStackLocation( Irp ) );

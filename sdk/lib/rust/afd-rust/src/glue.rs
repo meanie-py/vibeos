@@ -6,9 +6,95 @@
 //! bindgen skips, the debug trace levels, and the release-noop ASSERT/MIN/MAX macros
 //! the C source uses as call expressions).
 
+use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::driver_ddk::{MmGetSystemAddressForMdlSafe, NormalPagePriority};
+
 // --- base type aliases not in the kernel bindgen ---------------------------
 pub type CCHAR = i8;
 pub type UINT = u32;
+pub type INT = i32;
+pub type DWORD = u32;
+
+// bindgen raw struct names the translation uses (ntkrnl-sys re-exports only the
+// non-underscore aliases). Map them back onto the single shared ddk identity.
+pub type _IO_STACK_LOCATION = IO_STACK_LOCATION;
+pub type _IO_STATUS_BLOCK = IO_STATUS_BLOCK;
+pub type _IRP = IRP;
+pub type _MDL = MDL;
+pub type _LIST_ENTRY = LIST_ENTRY;
+pub type _UNICODE_STRING = UNICODE_STRING;
+pub type _FILE_OBJECT = FILE_OBJECT;
+
+// --- TDI flags (tdi.h) — not in the kernel bindgen -------------------------
+pub const TDI_RECEIVE_NORMAL: u32 = 0x00000020;
+pub const TDI_RECEIVE_PEEK: u32 = 0x00000080;
+pub const TDI_DISCONNECT_ABORT: u32 = 0x0002;
+pub const TDI_DISCONNECT_RELEASE: u32 = 0x0004;
+pub const TDI_QUERY_ADDRESS_INFO: u32 = 0x00000003;
+
+// --- winsock FD_* event bit indices (winsock2.h) ---------------------------
+pub const FD_READ_BIT: u32 = 0;
+pub const FD_WRITE_BIT: u32 = 1;
+pub const FD_OOB_BIT: u32 = 2;
+pub const FD_ACCEPT_BIT: u32 = 3;
+pub const FD_CONNECT_BIT: u32 = 4;
+pub const FD_CLOSE_BIT: u32 = 5;
+
+// --- NTSTATUS / access masks not exported by ntkrnl-sys --------------------
+pub const STATUS_NO_SUCH_DEVICE: i32 = 0xC000000Eu32 as i32;
+pub const STATUS_CANT_WAIT: i32 = 0xC00000D8u32 as i32;
+pub const STATUS_INVALID_CONNECTION: i32 = 0xC0000140u32 as i32;
+pub const EVENT_ALL_ACCESS: u32 = 0x1F0003;
+
+// --- misc kernel consts only in ntkrnl-sys's hal bindgen, not ddk ----------
+pub const FO_NAMED_PIPE: u32 = 0x00000080;
+pub const FILE_DEVICE_NAMED_PIPE: u32 = 0x00000011;
+pub const IRP_MJ_QUERY_VOLUME_INFORMATION: u8 = 0x0a;
+
+// --- MDL macros the C source uses (mm.h FORCEINLINE) -----------------------
+#[inline(always)]
+pub unsafe fn MmGetMdlByteCount(mdl: *mut MDL) -> u32 {
+    (*mdl).ByteCount
+}
+// Non-"Safe" MdL system-VA macro: ntkrnl-sys only exposes the Safe variant, so
+// map onto it with NormalPagePriority (afd always probes+locks first, so the VA
+// is resident — the priority/NULL-return distinction is moot here).
+#[inline(always)]
+pub unsafe fn MmGetSystemAddressForMdl(mdl: *mut MDL) -> *mut core::ffi::c_void {
+    MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority as u32)
+}
+
+// --- TDI IP transport address (tdi.h) — blocklisted out of the substrate ----
+// Layout is load-bearing: SatisfyPreAccept does ptr arithmetic on &Address[1].
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct TDI_ADDRESS_IP {
+    pub sin_port: u16,
+    pub in_addr: u32,
+    pub sin_zero: [u8; 8],
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct TA_IP_ADDRESS_AddrIp {
+    pub AddressLength: u16,
+    pub AddressType: u16,
+    pub Address: [TDI_ADDRESS_IP; 1],
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct TA_IP_ADDRESS {
+    pub TAAddressCount: i32,
+    pub Address: [TA_IP_ADDRESS_AddrIp; 1],
+}
+pub type PTA_IP_ADDRESS = *mut TA_IP_ADDRESS;
+
+// AFD_DbgPrint is a debug-only macro (empty under release/NDEBUG, which is the
+// ReactOS build config). Make it a no-op macro — faithful to the C #define and
+// avoids any link symbol. #[macro_use] on `mod glue` puts it in scope crate-wide.
+#[macro_export]
+macro_rules! AFD_DbgPrint {
+    ($($arg:tt)*) => {{}};
+}
 
 // --- debug trace levels (debug.h) ------------------------------------------
 pub const MIN_TRACE: u32 = 0x00000001;

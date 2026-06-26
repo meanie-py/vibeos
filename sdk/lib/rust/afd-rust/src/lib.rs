@@ -11,7 +11,8 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
 pub mod types; // afd-private + TDI/shared struct layouts (gen_driver_types.sh, per-arch)
-pub mod glue; // CTL_CODE IOCTL_AFD_* + #define consts bindgen doesn't expand
+#[macro_use] // AFD_DbgPrint! no-op macro must be in scope for the modules below
+pub mod glue; // #define consts/type-aliases/macros bindgen doesn't expand
 
 // The 10 compiled translation units, mirroring drivers/network/afd/CMakeLists.txt
 // SOURCE exactly. NOTE: event.c is NOT in the C build (vestigial: AfdRegisterEventHandlers

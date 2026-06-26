@@ -7,6 +7,9 @@
 name = "afd-rust"
 version = "0.1.0"
 edition = "2021"
+# staticlib cohab crate — only the [lib] target. Stop Cargo auto-discovering
+# src/main.rs as a binary (afd's main.c → main.rs is a module, not a `fn main`).
+autobins = false
 
 [lib]
 name = "afd_rust"

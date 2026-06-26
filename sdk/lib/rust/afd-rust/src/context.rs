@@ -14,7 +14,7 @@ extern "C" {
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn UNREFERENCED_PARAMETER(x: PDEVICE_OBJECT);
-    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Information: ULONG_PTR) -> NTSTATUS;
+    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Information: UINT) -> NTSTATUS;
 }
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetContext(
@@ -41,7 +41,7 @@ pub unsafe extern "system" fn AfdGetContext(
         );
         Status = STATUS_SUCCESS;
     } else if !(*FCB).Context.is_null() {
-        ContextSize = min(ContextSize, (*FCB).ContextSize);
+        ContextSize = core::cmp::min(ContextSize, (*FCB).ContextSize);
         RtlCopyMemory(
             (*Irp).UserBuffer,
             (*FCB).Context as PVOID,
@@ -50,7 +50,7 @@ pub unsafe extern "system" fn AfdGetContext(
         Status = STATUS_SUCCESS;
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
     return UnlockAndMaybeComplete(FCB, Status, Irp, ContextSize);
 }
@@ -71,7 +71,7 @@ pub unsafe extern "system" fn AfdGetContextSize(
     }
 
     if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<ULONG>() as u32 {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, core::mem::size_of::<ULONG>() as u32);
     }
 
@@ -112,7 +112,7 @@ pub unsafe extern "system" fn AfdSetContext(
 
     (*FCB).Context = ExAllocatePoolWithTag(
         PagedPool,
-        (*IrpSp).Parameters.DeviceIoControl.InputBufferLength,
+        (*IrpSp).Parameters.DeviceIoControl.InputBufferLength as usize,
         TAG_AFD_SOCKET_CONTEXT,
     );
 
@@ -176,7 +176,7 @@ pub unsafe extern "system" fn AfdSetContext(
 //         Status = STATUS_SUCCESS;
 //     }
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return UnlockAndMaybeComplete( FCB, Status, Irp, ContextSize );
 // }
@@ -194,7 +194,7 @@ pub unsafe extern "system" fn AfdSetContext(
 //
 //     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(ULONG))
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         return UnlockAndMaybeComplete(FCB, STATUS_BUFFER_TOO_SMALL, Irp, sizeof(ULONG));
 //     }
 //

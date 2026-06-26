@@ -6,7 +6,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoAllocateMdl, IoFreeMdl, IoModifyAccess, MmProbeAndLockPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PMDL};
+use ntkrnl_sys::ddk::{IoAllocateMdl, IoFreeMdl, MmProbeAndLockPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PMDL};
 use core::ffi::c_void;
 
 #[no_mangle]
@@ -16,14 +16,14 @@ pub unsafe extern "system" fn AfdGetInfo(
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut());
+    let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PAFD_INFO;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut CurrentEntry: PLIST_ENTRY;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    let _ = DeviceObject;
 
-    AFD_DbgPrint(
+    AFD_DbgPrint!(
         MID_TRACE,
         b"Called %p %x\n\0".as_ptr() as PCHAR,
         InfoReq,
@@ -45,12 +45,12 @@ pub unsafe extern "system" fn AfdGetInfo(
     {
         match (*InfoReq).InformationClass {
             AFD_INFO_RECEIVE_WINDOW_SIZE => {
-                (*InfoReq).Information.Ulong = (*FCB).Recv.Size;
+                *(*InfoReq).Information.Ulong.as_mut() = (*FCB).Recv.Size;
             }
 
             AFD_INFO_SEND_WINDOW_SIZE => {
-                (*InfoReq).Information.Ulong = (*FCB).Send.Size;
-                AFD_DbgPrint(
+                *(*InfoReq).Information.Ulong.as_mut() = (*FCB).Send.Size;
+                AFD_DbgPrint!(
                     MID_TRACE,
                     b"Send window size %u\n\0".as_ptr() as PCHAR,
                     (*FCB).Send.Size,
@@ -58,9 +58,9 @@ pub unsafe extern "system" fn AfdGetInfo(
             }
 
             AFD_INFO_GROUP_ID_TYPE => {
-                (*InfoReq).Information.LargeInteger.u.__bindgen_anon_1.HighPart = (*FCB).GroupType;
-                (*InfoReq).Information.LargeInteger.u.__bindgen_anon_1.LowPart = (*FCB).GroupID;
-                AFD_DbgPrint(
+                (*InfoReq).Information.LargeInteger.as_mut().u.HighPart = (*FCB).GroupType as LONG;
+                (*InfoReq).Information.LargeInteger.as_mut().u.LowPart = (*FCB).GroupID;
+                AFD_DbgPrint!(
                     MID_TRACE,
                     b"Group ID: %u Group Type: %u\n\0".as_ptr() as PCHAR,
                     (*FCB).GroupID,
@@ -69,33 +69,33 @@ pub unsafe extern "system" fn AfdGetInfo(
             }
 
             AFD_INFO_BLOCKING_MODE => {
-                (*InfoReq).Information.Boolean = (*FCB).NonBlocking;
+                *(*InfoReq).Information.Boolean.as_mut() = (*FCB).NonBlocking;
             }
 
             AFD_INFO_INLINING_MODE => {
-                (*InfoReq).Information.Boolean = (*FCB).OobInline;
+                *(*InfoReq).Information.Boolean.as_mut() = (*FCB).OobInline;
             }
 
             AFD_INFO_RECEIVE_CONTENT_SIZE => {
-                (*InfoReq).Information.Ulong = (*FCB).Recv.Content - (*FCB).Recv.BytesUsed;
+                *(*InfoReq).Information.Ulong.as_mut() = (*FCB).Recv.Content - (*FCB).Recv.BytesUsed;
             }
 
             AFD_INFO_SENDS_IN_PROGRESS => {
-                (*InfoReq).Information.Ulong = 0;
+                *(*InfoReq).Information.Ulong.as_mut() = 0;
 
                 CurrentEntry = (*FCB).PendingIrpList[FUNCTION_SEND as usize].Flink;
                 while CurrentEntry != core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]) {
-                    (*InfoReq).Information.Ulong += 1;
+                    *(*InfoReq).Information.Ulong.as_mut() += 1;
                     CurrentEntry = (*CurrentEntry).Flink;
                 }
 
-                if (*FCB).SendIrp.InFlightRequest != 0 {
-                    (*InfoReq).Information.Ulong += 1;
+                if !(*FCB).SendIrp.InFlightRequest.is_null() {
+                    *(*InfoReq).Information.Ulong.as_mut() += 1;
                 }
             }
 
             _ => {
-                AFD_DbgPrint(
+                AFD_DbgPrint!(
                     MIN_TRACE,
                     b"Unknown info id %x\n\0".as_ptr() as PCHAR,
                     (*InfoReq).InformationClass,
@@ -105,7 +105,7 @@ pub unsafe extern "system" fn AfdGetInfo(
         }
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
     UnlockAndMaybeComplete(FCB, Status, Irp, 0)
 }
@@ -117,12 +117,12 @@ pub unsafe extern "system" fn AfdSetInfo(
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
+    let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_INFO;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut NewBuffer: PCHAR;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    let _ = DeviceObject;
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -134,33 +134,33 @@ pub unsafe extern "system" fn AfdSetInfo(
 
     match (*InfoReq).InformationClass {
         AFD_INFO_BLOCKING_MODE => {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MID_TRACE,
                 b"Blocking mode set to %u\n\0".as_ptr() as PCHAR,
-                (*InfoReq).Information.Boolean,
+                *(*InfoReq).Information.Boolean.as_ref(),
             );
-            (*FCB).NonBlocking = (*InfoReq).Information.Boolean;
+            (*FCB).NonBlocking = *(*InfoReq).Information.Boolean.as_ref();
         }
         AFD_INFO_INLINING_MODE => {
-            (*FCB).OobInline = (*InfoReq).Information.Boolean;
+            (*FCB).OobInline = *(*InfoReq).Information.Boolean.as_ref();
         }
         AFD_INFO_RECEIVE_WINDOW_SIZE => {
             if (*FCB).SharedData.State == SOCKET_STATE_CONNECTED
                 || ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0
             {
-                if (*InfoReq).Information.Ulong > 0
-                    && (*InfoReq).Information.Ulong < 0xFFFF
-                    && (*InfoReq).Information.Ulong != (*FCB).Recv.Size
+                if *(*InfoReq).Information.Ulong.as_ref() > 0
+                    && *(*InfoReq).Information.Ulong.as_ref() < 0xFFFF
+                    && *(*InfoReq).Information.Ulong.as_ref() != (*FCB).Recv.Size
                 {
                     NewBuffer = ExAllocatePoolWithTag(
                         PagedPool,
-                        (*InfoReq).Information.Ulong as usize,
+                        *(*InfoReq).Information.Ulong.as_ref() as usize,
                         TAG_AFD_DATA_BUFFER,
                     ) as PCHAR;
 
                     if !NewBuffer.is_null() {
-                        if (*FCB).Recv.Content > (*InfoReq).Information.Ulong {
-                            (*FCB).Recv.Content = (*InfoReq).Information.Ulong;
+                        if (*FCB).Recv.Content > *(*InfoReq).Information.Ulong.as_ref() {
+                            (*FCB).Recv.Content = *(*InfoReq).Information.Ulong.as_ref();
                         }
 
                         if !(*FCB).Recv.Window.is_null() {
@@ -173,7 +173,7 @@ pub unsafe extern "system" fn AfdSetInfo(
                             ExFreePoolWithTag((*FCB).Recv.Window as *mut core::ffi::c_void, TAG_AFD_DATA_BUFFER);
                         }
 
-                        (*FCB).Recv.Size = (*InfoReq).Information.Ulong;
+                        (*FCB).Recv.Size = *(*InfoReq).Information.Ulong.as_ref();
                         (*FCB).Recv.Window = NewBuffer;
 
                         Status = STATUS_SUCCESS;
@@ -191,19 +191,19 @@ pub unsafe extern "system" fn AfdSetInfo(
             if (*FCB).SharedData.State == SOCKET_STATE_CONNECTED
                 || ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0
             {
-                if (*InfoReq).Information.Ulong > 0
-                    && (*InfoReq).Information.Ulong < 0xFFFF
-                    && (*InfoReq).Information.Ulong != (*FCB).Send.Size
+                if *(*InfoReq).Information.Ulong.as_ref() > 0
+                    && *(*InfoReq).Information.Ulong.as_ref() < 0xFFFF
+                    && *(*InfoReq).Information.Ulong.as_ref() != (*FCB).Send.Size
                 {
                     NewBuffer = ExAllocatePoolWithTag(
                         PagedPool,
-                        (*InfoReq).Information.Ulong as usize,
+                        *(*InfoReq).Information.Ulong.as_ref() as usize,
                         TAG_AFD_DATA_BUFFER,
                     ) as PCHAR;
 
                     if !NewBuffer.is_null() {
-                        if (*FCB).Send.BytesUsed > (*InfoReq).Information.Ulong {
-                            (*FCB).Send.BytesUsed = (*InfoReq).Information.Ulong;
+                        if (*FCB).Send.BytesUsed > *(*InfoReq).Information.Ulong.as_ref() {
+                            (*FCB).Send.BytesUsed = *(*InfoReq).Information.Ulong.as_ref();
                         }
 
                         if !(*FCB).Send.Window.is_null() {
@@ -216,7 +216,7 @@ pub unsafe extern "system" fn AfdSetInfo(
                             ExFreePoolWithTag((*FCB).Send.Window as *mut core::ffi::c_void, TAG_AFD_DATA_BUFFER);
                         }
 
-                        (*FCB).Send.Size = (*InfoReq).Information.Ulong;
+                        (*FCB).Send.Size = *(*InfoReq).Information.Ulong.as_ref();
                         (*FCB).Send.Window = NewBuffer;
 
                         Status = STATUS_SUCCESS;
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn AfdSetInfo(
             }
         }
         _ => {
-            AFD_DbgPrint(
+            AFD_DbgPrint!(
                 MIN_TRACE,
                 b"Unknown request %u\n\0".as_ptr() as PCHAR,
                 (*InfoReq).InformationClass,
@@ -239,7 +239,7 @@ pub unsafe extern "system" fn AfdSetInfo(
         }
     }
 
-    AFD_DbgPrint(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
+    AFD_DbgPrint!(MID_TRACE, b"Returning %x\n\0".as_ptr() as PCHAR, Status);
 
     UnlockAndMaybeComplete(FCB, Status, Irp, 0)
 }
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn AfdGetSockName(
     );
 
     if Mdl != core::ptr::null_mut() {
-        MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, IoModifyAccess);
+        MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, 2 /* IoModifyAccess */);
 
         if NT_SUCCESS(Status) {
             Status = TdiQueryInformation(
@@ -281,7 +281,7 @@ pub unsafe extern "system" fn AfdGetSockName(
                 } else {
                     (*FCB).AddressFile.Object
                 },
-                TDI_QUERY_ADDRESS_INFO,
+                TDI_QUERY_ADDRESS_INFO as LONG,
                 Mdl,
             );
         }
@@ -310,7 +310,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
     }
 
     if (*FCB).RemoteAddress == core::ptr::null_mut() {
-        AFD_DbgPrint(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Invalid parameter\n\0".as_ptr() as PCHAR);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
         );
         Status = STATUS_SUCCESS;
     } else {
-        AFD_DbgPrint(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MIN_TRACE, b"Buffer too small\n\0".as_ptr() as PCHAR);
         Status = STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -358,7 +358,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
-//     AFD_DbgPrint(MID_TRACE,("Called %p %x\n", InfoReq,
+//     AFD_DbgPrint!(MID_TRACE,("Called %p %x\n", InfoReq,
 //                             InfoReq ? InfoReq->InformationClass : 0));
 //
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
@@ -374,13 +374,13 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //
 //         case AFD_INFO_SEND_WINDOW_SIZE:
 //             InfoReq->Information.Ulong = FCB->Send.Size;
-//             AFD_DbgPrint(MID_TRACE,("Send window size %u\n", FCB->Send.Size));
+//             AFD_DbgPrint!(MID_TRACE,("Send window size %u\n", FCB->Send.Size));
 //             break;
 //
 //         case AFD_INFO_GROUP_ID_TYPE:
 //             InfoReq->Information.LargeInteger.u.HighPart = FCB->GroupType;
 //             InfoReq->Information.LargeInteger.u.LowPart = FCB->GroupID;
-//             AFD_DbgPrint(MID_TRACE, ("Group ID: %u Group Type: %u\n", FCB->GroupID, FCB->GroupType));
+//             AFD_DbgPrint!(MID_TRACE, ("Group ID: %u Group Type: %u\n", FCB->GroupID, FCB->GroupType));
 //             break;
 //
 //         case AFD_INFO_BLOCKING_MODE:
@@ -420,17 +420,17 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //         break;
 //
 //         default:
-//             AFD_DbgPrint(MIN_TRACE,("Unknown info id %x\n",
+//             AFD_DbgPrint!(MIN_TRACE,("Unknown info id %x\n",
 //                                     InfoReq->InformationClass));
 //             Status = STATUS_INVALID_PARAMETER;
 //             break;
 //         }
 //     } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-//         AFD_DbgPrint(MIN_TRACE,("Exception executing GetInfo\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Exception executing GetInfo\n"));
 //         Status = STATUS_INVALID_PARAMETER;
 //     } _SEH2_END;
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return UnlockAndMaybeComplete( FCB, Status, Irp, 0 );
 // }
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //     _SEH2_TRY {
 //         switch (InfoReq->InformationClass) {
 //             case AFD_INFO_BLOCKING_MODE:
-//                 AFD_DbgPrint(MID_TRACE,("Blocking mode set to %u\n", InfoReq->Information.Boolean));
+//                 AFD_DbgPrint!(MID_TRACE,("Blocking mode set to %u\n", InfoReq->Information.Boolean));
 //                 FCB->NonBlocking = InfoReq->Information.Boolean;
 //                 break;
 //             case AFD_INFO_INLINING_MODE:
@@ -552,15 +552,15 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //                 }
 //                 break;
 //             default:
-//                 AFD_DbgPrint(MIN_TRACE,("Unknown request %u\n", InfoReq->InformationClass));
+//                 AFD_DbgPrint!(MIN_TRACE,("Unknown request %u\n", InfoReq->InformationClass));
 //                 break;
 //         }
 //     } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-//         AFD_DbgPrint(MIN_TRACE,("Exception executing SetInfo\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Exception executing SetInfo\n"));
 //         Status = STATUS_INVALID_PARAMETER;
 //     } _SEH2_END;
 //
-//     AFD_DbgPrint(MID_TRACE,("Returning %x\n", Status));
+//     AFD_DbgPrint!(MID_TRACE,("Returning %x\n", Status));
 //
 //     return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
 // }
@@ -592,7 +592,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //         _SEH2_TRY {
 //             MmProbeAndLockPages( Mdl, Irp->RequestorMode, IoModifyAccess );
 //         } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-//             AFD_DbgPrint(MIN_TRACE, ("MmProbeAndLockPages() failed.\n"));
+//             AFD_DbgPrint!(MIN_TRACE, ("MmProbeAndLockPages() failed.\n"));
 //             Status = _SEH2_GetExceptionCode();
 //         } _SEH2_END;
 //
@@ -626,7 +626,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //     if( !SocketAcquireStateLock( FCB ) ) return LostSocket( Irp );
 //
 //     if (FCB->RemoteAddress == NULL) {
-//         AFD_DbgPrint(MIN_TRACE,("Invalid parameter\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Invalid parameter\n"));
 //         return UnlockAndMaybeComplete( FCB, STATUS_INVALID_PARAMETER, Irp, 0 );
 //     }
 //
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn AfdGetPeerName(
 //     }
 //     else
 //     {
-//         AFD_DbgPrint(MIN_TRACE,("Buffer too small\n"));
+//         AFD_DbgPrint!(MIN_TRACE,("Buffer too small\n"));
 //         Status = STATUS_BUFFER_TOO_SMALL;
 //     }
 //
