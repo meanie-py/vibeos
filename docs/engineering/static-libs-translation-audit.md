@@ -228,15 +228,21 @@ translation for the "all-Rust, no-headers" endpoint:
 - **libcntpr i386 float residual** — the no-SSE tail (`nexttowardf`, dead
   `exp2f`/`_invoke_matherr`, `winesup`/`wctype`) → **step 8**. (Possible tie-in:
   the cnt-rust x87-return/`floatbits.rs` softfloat shim.)
-- **Kernel deep-C cohab floor** — the 16 `.a`s in `ntoskrnl-cargo`/`ntkrnlmp`.
-  Each (arbiter/csq/ntlsalib/rossym/cmlib-C/libhal/setjmp/…) is its own arc.
-  The single biggest remaining cmake-built-C surface. **Note:** cportlib/csq/
-  arbiter/lsalib/rossym are already Rust-translated and the kernel pulls the Rust
-  archive on **arm64 only**; the i386/amd64 ungate (swapping C→Rust there too) is
-  blocked by the cmlib `Hv*` hive-path layout-sensitive miscompile — the ungate is
-  *not* the right mechanism to chase that (crp `672b9808345`); the C body stays on
-  x86 until that miscompile is root-caused. So on x86 these are "translated but the
-  flip is layout-gated", not "un-translated debt".
+- ✅ **Kernel deep-C cohab floor — DONE (quest #35, 2026-06-2x).** The
+  `ntoskrnl-cargo`/`ntkrnlmp` `static_libs` vec is now **empty** — the kernel
+  cargo link consumes **zero cmake-built static libs**. cportlib/csq/arbiter/
+  lsalib/rossym + cmlib are cargo-native `.rust_lib` on **all 3 arches uniformly**
+  (`7570856899f` ungated the 5 cohab libs + cmlib on x86 — i386+amd64; the prior
+  arm64-only gate is gone). libhal/kdcom/bootvid are self-hosted import libs
+  (`.import_lib` from their `.spec`); setjmp → `setjmp-rust` (amd64); the empty
+  `libcmlib.a`/`libchkstk.a` placeholders were dropped (`a812475681a`). **The
+  "layout-sensitive `Hv*` miscompile" theory (crp `672b9808345`) was WRONG** — the
+  real x86 blocker was a **cmlib i386 stdcall/cdecl ABI mismatch** that surfaced as
+  smss BUGCHECK 0x1E (`5606e62282a`); once fixed, the ungate is deterministic. The
+  temporary `cmlib-rust` no-prepopulate-passes class-guard added during the chase
+  was later **removed** as unnecessary (`d2b4da26e85`, quest #38) plus follow-on
+  cmlib faithfulness fixes (`ffa82ba5ac0`, `e6763a90db3`). No remaining deep-C debt
+  in the kernel cargo link.
 
 ## Forward path (priority)
 
