@@ -521,6 +521,24 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]usbmport\.h' )
     VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
     ;;
+  usbport)
+    # USB host-controller PORT framework (drivers/usb/usbport). The miniport substrate the
+    # ehci/ohci/uhci miniports register WITH. All driver-private structs live in usbport.h
+    # (USBPORT_DEVICE_EXTENSION/ENDPOINT/TRANSFER/PIPE_HANDLE, roothub, USB2 scheduler, ...)
+    # + usbdebug.h. usbport DEFINES usbmport.h (the registration packet) so allowlist it local.
+    # Allowlist the whole driver dir + the USB headers + usbmport.h. USB stack = Vista.
+    DRIVER_DIR="${SRC}/drivers/usb/usbport"
+    WRAPPER_INC=$'#include "usbport.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbport[/\\].*\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

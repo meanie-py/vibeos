@@ -141,6 +141,7 @@ USBHUB_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbhub"
 USBEHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbehci"
 USBOHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbohci"
 USBUHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbuhci"
+USBPORT_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbport"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -920,6 +921,26 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # usbport.sys — USB host-controller PORT framework (drivers/usb/usbport, ~17K LOC, 14 .c:
+    # debug/device/endpoint/iface/ioctl/iso/pnp/power/queue/roothub/trfsplit/urb/usb2/usbport
+    # + guid). The miniport substrate the 3 host-controller miniports (ehci/ohci/uhci) register
+    # WITH via USBPORT_RegisterUSBPortDriver; owns the URB queue, endpoint/transfer state, PnP
+    # FDO/PDO, roothub PDO, USB2 bandwidth scheduler. kernelmodedriver MODULE WITH a .spec
+    # (exports USBPORT_* to the miniports) -> cohab flip must keep usbport.spec/def + the export
+    # surface. NOT boot-loaded in smoke -> link-clean x3 bar.
+    "usbport": Target(
+        name="usbport",
+        source_dir=USBPORT_DIR,
+        output_crate=RUST_DIR / "usbport-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=USBPORT_DIR / "usbport.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1325,6 +1346,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["usbohci"]
     if "/drivers/usb/usbuhci" in posix:
         return TARGETS["usbuhci"]
+    if "/drivers/usb/usbport" in posix:
+        return TARGETS["usbport"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:
