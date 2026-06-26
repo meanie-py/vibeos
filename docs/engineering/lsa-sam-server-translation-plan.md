@@ -28,7 +28,7 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **14 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
 >   database + policy + session + notify + srm + lsasrv + **authport** + **service**); each
 >   ×3-link-verified + i386 boot + amd64 boot gated. (12/16 LANDED on mainline `751cee96a32`;
->   authport + service ride on top. Remaining C: authpackage.c, lookup.c, lsarpc.c.)
+>   authport + service ride on top. **16/16 bodies now Rust; only lsarpc.c (RPC fan-out) remains C.**)
 > - **✅ `authport.c` DONE (M4, 13/16)** — LPC auth-port server (logon-process registration +
 >   `AuthPortThreadRoutine` dispatch loop). The hard part was the deeply-nested `LSA_API_MSG`
 >   anon-union: bindgen lays `{ApiNumber, Status, union{LogonUser,…}}` as
@@ -91,7 +91,14 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >      typed u32 → deref cascade), local LSA_TOKEN_INFORMATION_V1/_TYPE dedup vs prelude,
 >      cross-crate as*mut/transmute bridges, SIZE_T casts, fn-ptr ABI. No stubs. Cohab-flipped,
 >      links clean ×3, i386 ✓boot + amd64 ✓boot. **15/16 units Rust; only lookup.c remains.**
->   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
+>   3. **lookup.c → Rust ✅ DONE (16/16)** — integration finished (246→0 ×3): LsapLoadString
+>      + database globals (NtAuthority/BuiltinDomainSid/…) imports, lowercase trace! no-op macros,
+>      `'done` labeled-block rewrites, LSAPR/SAMPR substrate re-exports in prelude (LSAP_LOOKUP_LEVEL
+>      consts, Samr* client stubs, SamIFree_SAMPR_RETURNED_USTRING_ARRAY), cross-crate ptr bridges,
+>      `__wine_dbch___default` move-out fix, LocalFree void* cast. **Well-known SID globals
+>      (LsapWorldSid/…) flipped from extern-to-C to `#[no_mangle]` defs in lookup.rs; authpackage.rs
+>      extern block → `use`.** No stubs. Cohab-flipped, links clean ×3 (i386 847K / amd64 945K /
+>      arm64 1040K lsasrv.dll, 0 undefined). **16/16 units Rust; only lsarpc.c (RPC fan-out) remains.**
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
 >
 > ### Reusable substrate-growth + c2rust-fix patterns (validated M3/M4a)

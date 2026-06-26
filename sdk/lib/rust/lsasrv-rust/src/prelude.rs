@@ -266,6 +266,49 @@ extern "stdcall" {
     pub fn SamIFree_SAMPR_ULONG_ARRAY(ptr: *mut SAMPR_ULONG_ARRAY);
 }
 
+// ---- lookup.c marshalled types + SAM bridge ----
+// LSAPR_* translated-name/SID marshalled structs + referenced-domain-list +
+// SID-enum-buffer + trust-info (all in lsasrv-sys bindgen). _RPC_SID is the
+// marshalled SID. Samr* client stubs + SAMPR arrays come from samsrv-sys.
+pub use lsasrv_sys::{
+    _LSAPR_TRANSLATED_NAME_EX, LSAPR_TRANSLATED_NAME_EX, PLSAPR_TRANSLATED_NAME_EX,
+    _LSAPR_TRANSLATED_NAMES_EX, PLSAPR_TRANSLATED_NAMES_EX,
+    _LSAPR_TRANSLATED_SID_EX2, LSAPR_TRANSLATED_SID_EX2, PLSAPR_TRANSLATED_SID_EX2,
+    _LSAPR_TRANSLATED_SIDS_EX2, LSAPR_TRANSLATED_SIDS_EX2, PLSAPR_TRANSLATED_SIDS_EX2,
+    _LSAPR_REFERENCED_DOMAIN_LIST,
+    _LSAPR_SID_ENUM_BUFFER, PLSAPR_SID_ENUM_BUFFER,
+    _LSAPR_TRUST_INFORMATION, PLSAPR_TRUST_INFORMATION,
+    _LSA_TRUST_INFORMATION, LSA_TRUST_INFORMATION,
+    _RPC_SID,
+};
+
+// LSAP_LOOKUP_LEVEL enum (lsa.idl _LSAP_LOOKUP_LEVEL) — its `_LSAP_` prefix
+// dodged the lsasrv-sys bindgen allowlist; hand-declared to match the IDL.
+pub type LSAP_LOOKUP_LEVEL = core::ffi::c_int;
+pub type PLSAP_LOOKUP_LEVEL = *mut LSAP_LOOKUP_LEVEL;
+pub const LsapLookupWksta: LSAP_LOOKUP_LEVEL = 1;
+pub const LsapLookupPDC: LSAP_LOOKUP_LEVEL = 2;
+pub const LsapLookupTDL: LSAP_LOOKUP_LEVEL = 3;
+pub const LsapLookupGC: LSAP_LOOKUP_LEVEL = 4;
+pub const LsapLookupXForestReferral: LSAP_LOOKUP_LEVEL = 5;
+pub const LsapLookupXForestResolve: LSAP_LOOKUP_LEVEL = 6;
+pub const LsapLookupRODCReferralToFullDC: LSAP_LOOKUP_LEVEL = 7;
+
+// SAM bridge for lookup.c name/id lookups. Samr* are __stdcall client stubs.
+pub use samsrv_sys::{
+    SamrConnect, SamrLookupNamesInDomain, SamrLookupIdsInDomain,
+    _SAMPR_ULONG_ARRAY, _SAMPR_RETURNED_USTRING_ARRAY as SamSrvSAMPR_RETURNED_USTRING_ARRAY,
+    SAMPR_RETURNED_USTRING_ARRAY,
+};
+// SamIFree_SAMPR_RETURNED_USTRING_ARRAY is a samsrv.dll export (not in sam_c.h).
+extern "stdcall" {
+    pub fn SamIFree_SAMPR_RETURNED_USTRING_ARRAY(
+        ptr: *mut samsrv_sys::SAMPR_RETURNED_USTRING_ARRAY,
+    );
+}
+// SAM domain-lookup access mask (ddk/ntsam.h).
+pub const DOMAIN_LOOKUP: u32 = 0x00000200;
+
 // ---- LSA token-info + logon types (authpackage.c LsapLogonUser token build) ----
 // ntsecpkg.h collides with the reduced NDK bindgen context (SSPI/SecBuffer), so
 // these few types are hand-written #[repr(C)] over the prelude TOKEN_*/UNICODE

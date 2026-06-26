@@ -16,18 +16,12 @@ use crate::lsasrv::database::{AccountDomainSid, BuiltinDomainSid};
 use crate::lsasrv::lsasrv::LsaIFree_LSAPR_PRIVILEGE_SET;
 use crate::lsasrv::session::LsapSetLogonSessionData;
 
-// Well-known SID globals defined in still-C lookup.c (`PSID LsapWorldSid = NULL;` …),
-// exported unmangled; extern as data. (When lookup.c flips to Rust they become
-// #[no_mangle] siblings and this block is replaced by a `use`.)
-extern "C" {
-    static mut LsapWorldSid: PSID;
-    static mut LsapLocalSystemSid: PSID;
-    static mut LsapInteractiveSid: PSID;
-    static mut LsapNetworkSid: PSID;
-    static mut LsapServiceSid: PSID;
-    static mut LsapBatchSid: PSID;
-    static mut LsapAdministratorsSid: PSID;
-}
+// Well-known SID globals — now #[no_mangle] siblings in the flipped-to-Rust
+// lookup.rs (was extern-to-C lookup.c). Bound here by Rust path.
+use crate::lsasrv::lookup::{
+    LsapWorldSid, LsapLocalSystemSid, LsapInteractiveSid, LsapNetworkSid,
+    LsapServiceSid, LsapBatchSid, LsapAdministratorsSid,
+};
 
 // LSA RPC server stubs (lsa_s.h, __stdcall/NTAPI → extern "system") + SAM/Win32
 // bridge fns. LsarOpenPolicy/OpenAccount/Close/EnumeratePrivilegesAccount are the

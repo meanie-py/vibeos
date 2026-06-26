@@ -17,6 +17,11 @@ macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
 macro_rules! WARN { ($($arg:tt)*) => {{}}; }
 macro_rules! ERR { ($($arg:tt)*) => {{}}; }
 macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+// Lowercase aliases — some translated files (lookup.rs) emit `trace!`/`warn!`/etc.
+macro_rules! trace { ($($arg:tt)*) => {{}}; }
+macro_rules! warn { ($($arg:tt)*) => {{}}; }
+macro_rules! err { ($($arg:tt)*) => {{}}; }
+macro_rules! fixme { ($($arg:tt)*) => {{}}; }
 
 mod consts;
 mod prelude;

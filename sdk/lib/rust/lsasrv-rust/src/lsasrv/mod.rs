@@ -12,5 +12,5 @@ pub mod dssetup;
 pub mod privileges;
 pub mod security;
 pub mod registry;
-// pub mod lookup;  // STAGED WIP — translated, integration pending (needs SAM substrate; see plan doc)
+pub mod lookup;
 pub mod utils;

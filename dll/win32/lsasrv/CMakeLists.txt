@@ -25,7 +25,7 @@ list(APPEND SOURCE
     # authport.c    — replaced by Rust (lsasrv-rust/src/lsasrv/authport.rs)
     # database.c   — replaced by Rust (lsasrv-rust/src/lsasrv/database.rs)
     # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
-    lookup.c
+    # lookup.c      — replaced by Rust (lsasrv-rust/src/lsasrv/lookup.rs)
     lsarpc.c
     # lsasrv.c      — replaced by Rust (lsasrv-rust/src/lsasrv/lsasrv.rs)
     # notify.c      — replaced by Rust (lsasrv-rust/src/lsasrv/notify.rs)
