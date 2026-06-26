@@ -42,14 +42,23 @@ clean, same `extern "C"` path).
 
 ## Core substrate (translate/understand first)
 
-Everything funnels through the **boot trio** — these define the shared infrastructure the
-rest call into, so they anchor Wave 1a:
-- **main/dllmain.c** — `GdiProcessSetup`, PEB GDI-handle-cache mapping, batch init.
-- **objects/gdiobj.c** — the GDI handle table (`GdiHandleTable`/`GdiSharedHandleTable`,
-  `GDI_TABLE_ENTRY`), `stock_objects[]` cache (`GetStockObject`), `GdiAllocBatchCommand`,
-  the `GdiGetHandleUserData`/handle-validation helpers.
-- **objects/dc.c** — DC creation/lifecycle (`CreateDC`/`DeleteDC`/`SaveDC`/`RestoreDC`),
-  the DC_ATTR client cache. ~1.6K LOC, the critical substrate for all drawing.
+**Correction (verified by reading the bodies):** the *true* substrate root is **misc/misc.c**,
+not gdiobj.c. gdiobj.c (only 369 LOC) sits **on top of** the handle-table/batch primitives,
+which are defined in misc/misc.c over the PEB-mapped `GdiSharedHandleTable` (`GDI_TABLE_ENTRY`
+layout in `win32ss/include/ntgdihdl.h`; client-table defs in `include/gdi32p.h`). So Wave 1a
+anchors on:
+- **misc/misc.c** (~1.1K LOC, ~42 fns) — the substrate root: `GdiValidateHandle` (712),
+  `GdiFixUpHandle` (734), `GdiQueryTable` (756), `GdiGetHandleUserData` (761), `GdiFlush` (44),
+  `GdiSAPCallback`, `GdiInitializeLanguagePack`. The PEB-mapped handle-table accessors that
+  everything in objects/ calls. **Most error-prone → hand-review the translation.**
+- **main/dllmain.c** (140) — `GdiProcessSetup`, PEB GDI-handle-cache mapping, batch init.
+- **objects/gdiobj.c** (369) — `stock_objects[]` cache (`GetStockObject`), `GetObjectType/A/W`,
+  `DeleteObject` dispatch. Thin layer over the misc.c primitives + `NtGdi*`.
+- **objects/dc.c** (~1.6K) — DC creation/lifecycle (`CreateDC`/`DeleteDC`/`SaveDC`/`RestoreDC`),
+  the DC_ATTR client cache. The critical substrate for all drawing.
+
+`GdiAllocBatchCommand` (TEB batch ring) is referenced from gdiobj.c/dc.c/text.c but defined
+as an inline/helper in the gdi32 headers — must be hand-wrapped in the gdi32-rust substrate.
 
 ## Wave plan (leaf-first, each independently buildable + smoke-testable)
 
