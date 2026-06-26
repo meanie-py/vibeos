@@ -19,10 +19,10 @@ list(APPEND SOURCE
     # controls/regcontrol.c — replaced by Rust (user32-rust/src/controls/regcontrol.rs); cohab via libuser32_rust.a
     # controls/scrollbar.c — replaced by Rust (user32-rust/src/controls/scrollbar.rs); cohab via libuser32_rust.a
     # controls/static.c — replaced by Rust (user32-rust/src/controls/static_.rs); cohab via libuser32_rust.a
-    misc/dde.c
-    misc/ddeclient.c
-    misc/ddemisc.c
-    misc/ddeserver.c
+    # misc/dde.c — replaced by Rust (user32-rust/src/misc/dde.rs); cohab via libuser32_rust.a
+    # misc/ddeclient.c — replaced by Rust (user32-rust/src/misc/ddeclient.rs); cohab via libuser32_rust.a
+    # misc/ddemisc.c — replaced by Rust (user32-rust/src/misc/ddemisc.rs); cohab via libuser32_rust.a
+    # misc/ddeserver.c — replaced by Rust (user32-rust/src/misc/ddeserver.rs); cohab via libuser32_rust.a
     # misc/desktop.c — replaced by Rust (user32-rust/src/misc/desktop.rs); cohab via libuser32_rust.a
     # misc/display.c — replaced by Rust (user32-rust/src/misc/display.rs); cohab via libuser32_rust.a
     # misc/dllmain.c — replaced by Rust (user32-rust/src/misc/dllmain.rs); cohab via libuser32_rust.a
@@ -59,12 +59,12 @@ list(APPEND SOURCE
     # windows/paint.c — replaced by Rust (user32-rust/src/windows/paint.rs); cohab via libuser32_rust.a
     # windows/prop.c — replaced by Rust (user32-rust/src/windows/prop.rs); cohab via libuser32_rust.a
     # windows/rect.c — replaced by Rust (user32-rust/src/windows/rect.rs); cohab via libuser32_rust.a
-    windows/spy.c
+    # windows/spy.c — replaced by Rust (user32-rust/src/windows/spy.rs); cohab via libuser32_rust.a
     # windows/text.c — replaced by Rust (user32-rust/src/windows/text.rs); cohab via libuser32_rust.a
     # windows/window.c — replaced by Rust (user32-rust/src/windows/window.rs); cohab via libuser32_rust.a
     # windows/winpos.c — replaced by Rust (user32-rust/src/windows/winpos.rs); cohab via libuser32_rust.a
-    ${REACTOS_SOURCE_DIR}/win32ss/user/rtl/image.c
-    ${REACTOS_SOURCE_DIR}/win32ss/user/rtl/text.c
+    # win32ss/user/rtl/image.c — replaced by Rust (user32-rust/src/misc/image.rs); cohab via libuser32_rust.a (shared w/ win32k; usermode #else half)
+    # win32ss/user/rtl/text.c — replaced by Rust (user32-rust/src/misc/rtltext.rs); cohab via libuser32_rust.a (shared w/ win32k; usermode #else half)
     ${CMAKE_CURRENT_BINARY_DIR}/user32_stubs.c
     include/user32.h)
 
