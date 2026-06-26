@@ -4,7 +4,7 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 pub static mut __wine_dbch_advapi: () = ();
 #[no_mangle]
-pub unsafe extern "C" fn PREGISTRY_SERVER_NAME_bind(pszServerName: PREGISTRY_SERVER_NAME) -> handle_t {
+pub unsafe extern "system" fn PREGISTRY_SERVER_NAME_bind(pszServerName: PREGISTRY_SERVER_NAME) -> handle_t {
     let mut hBinding: handle_t = core::ptr::null_mut();
     let mut pszStringBinding: LPWSTR = core::ptr::null_mut();
     let mut status: RPC_STATUS;
@@ -30,7 +30,7 @@ pub unsafe extern "C" fn PREGISTRY_SERVER_NAME_bind(pszServerName: PREGISTRY_SER
     hBinding
 }
 #[no_mangle]
-pub unsafe extern "C" fn PREGISTRY_SERVER_NAME_unbind(
+pub unsafe extern "system" fn PREGISTRY_SERVER_NAME_unbind(
     pszServerName: PREGISTRY_SERVER_NAME,
     mut hBinding: handle_t,
 ) {

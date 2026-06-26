@@ -1,16 +1,12 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// WINAPI imports (Reg*/UuidCreate/SetLastError) come from crate::prelude (extern
+// "system" — correct i386 stdcall decoration). Only the CRT cdecl helpers stay
+// local here.
 extern "C" {
-    fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn RegOpenKeyExW( hKey: HKEY, lpSubKey: *const u16, ulOptions: DWORD, samDesired: DWORD, phkResult: *mut HKEY, ) -> LONG;
-    fn RegQueryValueExW( hKey: HKEY, lpValueName: *const u16, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD, ) -> LONG;
-    fn RegSetValueExW( hKey: HKEY, lpValueName: *const u16, Reserved: DWORD, dwType: DWORD, lpData: LPBYTE, cbData: DWORD, ) -> LONG;
-    fn SetLastError(dwErrCode: DWORD);
-    fn UuidCreate(Uuid: *mut UUID) -> LONG;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn wcslen(s: *const u16) -> usize;
 }
 
 // ---- file-scope preamble (translated) ----

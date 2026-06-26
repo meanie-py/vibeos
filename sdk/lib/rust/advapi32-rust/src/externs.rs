@@ -44,6 +44,32 @@ extern "system" {
         Binding: *mut *mut core::ffi::c_void,
     ) -> RPC_STATUS;
     pub fn RpcBindingFree(Binding: *mut *mut core::ffi::c_void) -> RPC_STATUS;
+    pub fn UuidCreate(Uuid: *mut crate::prelude::UUID) -> LONG;
+    // advapi32's own reg exports (reg/reg.c, Wave 4) — WINAPI = stdcall.
+    pub fn RegCloseKey(hKey: HKEY) -> LONG;
+    pub fn RegOpenKeyExW(
+        hKey: HKEY,
+        lpSubKey: *const u16,
+        ulOptions: DWORD,
+        samDesired: DWORD,
+        phkResult: *mut HKEY,
+    ) -> LONG;
+    pub fn RegQueryValueExW(
+        hKey: HKEY,
+        lpValueName: *const u16,
+        lpReserved: *mut DWORD,
+        lpType: *mut DWORD,
+        lpData: LPBYTE,
+        lpcbData: *mut DWORD,
+    ) -> LONG;
+    pub fn RegSetValueExW(
+        hKey: HKEY,
+        lpValueName: *const u16,
+        Reserved: DWORD,
+        dwType: DWORD,
+        lpData: LPBYTE,
+        cbData: DWORD,
+    ) -> LONG;
     // winreg_c.c RPC client stubs (generated C, never flipped) — __stdcall.
     pub fn BaseInitiateSystemShutdown(
         ServerName: PREGISTRY_SERVER_NAME,

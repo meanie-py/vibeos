@@ -16,34 +16,34 @@ add_rpc_files(client
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 
 list(APPEND SOURCE
-    misc/dllmain.c
-    misc/efs.c
-    misc/evntrace.c
-    misc/hwprofiles.c
+    # misc/dllmain.c — replaced by Rust (advapi32-rust)
+    # misc/efs.c — replaced by Rust (advapi32-rust)
+    # misc/evntrace.c — replaced by Rust (advapi32-rust)
+    # misc/hwprofiles.c — replaced by Rust (advapi32-rust)
     misc/logon.c
-    misc/msi.c
-    misc/shutdown.c
+    # misc/msi.c — replaced by Rust (advapi32-rust)
+    # misc/shutdown.c — replaced by Rust (advapi32-rust)
     misc/sysfunc.c
-    misc/unicode.c
+    # misc/unicode.c — replaced by Rust (advapi32-rust)
     reg/hkcr.c
     reg/reg.c
     sec/ac.c
     sec/audit.c
     sec/lsa.c
     sec/misc.c
-    sec/safer.c
+    # sec/safer.c — replaced by Rust (advapi32-rust)
     sec/sec.c
-    sec/trustee.c
+    # sec/trustee.c — replaced by Rust (advapi32-rust)
     service/eventlog.c
     service/rpc.c
     service/scm.c
     service/sctrl.c
-    service/winreg.c
-    token/token.c
+    # service/winreg.c — replaced by Rust (advapi32-rust)
+    # token/token.c — replaced by Rust (advapi32-rust)
     wine/cred.c
     wine/crypt.c
-    wine/crypt_des.c
-    wine/crypt_lmhash.c
+    # wine/crypt_des.c — replaced by Rust (advapi32-rust)
+    # wine/crypt_lmhash.c — replaced by Rust (advapi32-rust)
     wine/security.c)
 
 list(APPEND PCH_SKIP_SOURCE

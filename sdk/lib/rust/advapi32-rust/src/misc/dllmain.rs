@@ -3,6 +3,10 @@ use core::ffi::c_void;
 
 extern "system" {
     fn DisableThreadLibraryCalls(hLibModule: HINSTANCE) -> i32;
+}
+// CloseLogonLsaHandle (logon.c, Wave 3) is plain C (cdecl), NOT WINAPI →
+// extern "C" (i386: `_CloseLogonLsaHandle`, no @N stdcall decoration).
+extern "C" {
     fn CloseLogonLsaHandle();
 }
 
