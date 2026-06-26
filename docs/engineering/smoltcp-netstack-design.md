@@ -378,6 +378,19 @@ serial proof `SET_INFO self-test: route program OK — IOCTL_TCP_SET_INFORMATION
 `ipconfig`/`route` address+route programming. **M9 is now complete (items 1–4).** The findings below
 stand.
 
+> **arm64 validation + the `0x50` non-issue (2026-06-26).** An earlier 1-run-each A/B (mainline
+> netstack vs this branch on arm64) saw a `BUGCHECK 0x50` at explorer startup on the my-netstack
+> run only, raising a suspicion that `settest.rs`'s post-DHCP IOCTL surfaced/introduced an arm64
+> fault. **Disproven.** Static review of the only arm64-active new code (`handle_set_info_ex` +
+> `Cmd::SetDefaultRoute` + `settest.rs`) found nothing arch-specific (the route apply is pure
+> smoltcp; the IOCTL completes synchronously then posts to the PASSIVE worker). Empirically, **4/4
+> fresh arm64 boots** (1 gdb-attached + 3 `vibeos-cli smoke`) reached `[EXPLORER] _tWinMain entered`
+> + `[WIN32K] shell ready` with **zero bugchecks**, and the M9(4) self-test passed on arm64 every
+> time (`SET_INFO self-test: route program OK`, ICMP ping round-trip OK). Against the **known
+> ~1/3-nondeterministic win32k taskbar `0x50` class** (memory `project_amd64_taskbar_bugcheck_0x50`),
+> P(4 greens | netstack adds a 1/3 crash) ≈ 0.20 — the single earlier crash was that pre-existing
+> class caught by chance, **not** netstack. M9(4)/M10-i386/M11-scaffold are clean on arm64.
+
 **Why.** There's a clean split in what works: **AFD/winsock-served paths work** (dnsapi resolves,
 basic TCP/UDP sockets), but **everything routed through iphlpapi / `\Device\Ip` is broken** because
 netstack returns `STATUS_NOT_IMPLEMENTED` for the query surface. The casualties — `ipconfig`,
