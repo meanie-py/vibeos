@@ -99,7 +99,19 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >      (LsapWorldSid/…) flipped from extern-to-C to `#[no_mangle]` defs in lookup.rs; authpackage.rs
 >      extern block → `use`.** No stubs. Cohab-flipped, links clean ×3 (i386 847K / amd64 945K /
 >      arm64 1040K lsasrv.dll, 0 undefined). **16/16 units Rust; only lsarpc.c (RPC fan-out) remains.**
->   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
+>   4. **M5 — `lsarpc.c` → Rust ✅ DONE** — the 86-fn RPC method fan-out (Lsar* server methods).
+>      Opus translate ($1.90, 86 fns topo-sorted), integration 922→0 ×3: opening `use` fix
+>      (ntdll_sys::nt::* → crate::prelude::*), `wide!`/`wstr!` compile-time UTF-16 literal macros
+>      (lib.rs) replacing 34 alloc/Vec key-name use-after-frees, ~40 LSAPR/POLICY/TRUSTED type
+>      re-exports + POLICY_INFORMATION_CLASS variant consts (prelude), hand-decls (handle_t,
+>      PLSAPR_SID, _CREDPR_TARGET_INFORMATION, midl_user_alloc/free wrappers), ACCOUNT_*/POLICY_*
+>      access masks (consts.rs, header-verified), ~55 sibling helper imports, cross-crate LUID/SID/
+>      UNICODE_STRING bridges, SIZE_T width casts. `LSAPR_HANDLE_rundown` __RPC_USER→extern "system"
+>      (i386 `@4`). No stubs. Faithfully preserved a latent upstream under-alloc in LsarLookupNames2
+>      (matches ReactOS lsarpc.c:1231). Cohab-flipped (lsarpc.c out of CMakeLists — **last C body**).
+>      Links clean ×3 (i386 760K / amd64 830K / arm64 919K lsasrv.dll, 0 undefined).
+>      **lsasrv.dll is now FULLY Rust — all 16 bodies + RPC fan-out; only generated MIDL
+>      marshalling (dssetup_s.c) + spec stubs remain C glue.** Then samsrv S1–S4.
 >
 > ### Reusable substrate-growth + c2rust-fix patterns (validated M3/M4a)
 > - **bindgen is additive-safe to regrow:** add a type to `lsasrv-sys/generate_bindings.sh`

@@ -23,6 +23,30 @@ macro_rules! warn { ($($arg:tt)*) => {{}}; }
 macro_rules! err { ($($arg:tt)*) => {{}}; }
 macro_rules! fixme { ($($arg:tt)*) => {{}}; }
 
+// Compile-time UTF-16 NUL-terminated literal: `wide!("Accounts")` → &'static [u16; N]
+// (no alloc; the #![no_std] crate has no Vec). Replaces the c2rust
+// `"X\0".encode_utf16().collect::<Vec<u16>>().as_ptr()` idiom (which both needed
+// alloc AND was a use-after-free of the dropped Vec). ASCII literals only.
+#[macro_export]
+macro_rules! wide {
+    ($s:literal) => {{
+        const B: &[u8] = $s.as_bytes();
+        const N: usize = B.len() + 1;
+        const W: [u16; N] = {
+            let mut a = [0u16; N];
+            let mut i = 0;
+            while i < B.len() {
+                a[i] = B[i] as u16;
+                i += 1;
+            }
+            a
+        };
+        &W
+    }};
+}
+#[macro_export]
+macro_rules! wstr { ($s:literal) => { $crate::wide!($s) }; }
+
 mod consts;
 mod prelude;
 mod lsasrv;

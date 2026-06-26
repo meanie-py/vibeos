@@ -273,6 +273,7 @@ extern "stdcall" {
 pub use lsasrv_sys::{
     _LSAPR_TRANSLATED_NAME_EX, LSAPR_TRANSLATED_NAME_EX, PLSAPR_TRANSLATED_NAME_EX,
     _LSAPR_TRANSLATED_NAMES_EX, PLSAPR_TRANSLATED_NAMES_EX,
+    _LSAPR_TRANSLATED_SID_EX, LSAPR_TRANSLATED_SID_EX, PLSAPR_TRANSLATED_SID_EX,
     _LSAPR_TRANSLATED_SID_EX2, LSAPR_TRANSLATED_SID_EX2, PLSAPR_TRANSLATED_SID_EX2,
     _LSAPR_TRANSLATED_SIDS_EX2, LSAPR_TRANSLATED_SIDS_EX2, PLSAPR_TRANSLATED_SIDS_EX2,
     _LSAPR_REFERENCED_DOMAIN_LIST,
@@ -308,6 +309,95 @@ extern "stdcall" {
 }
 // SAM domain-lookup access mask (ddk/ntsam.h).
 pub const DOMAIN_LOOKUP: u32 = 0x00000200;
+
+// ---- lsarpc.c marshalled types (the LSA RPC server methods) ----
+// LSAPR_*/RPC_*/POLICY_*/TRUSTED_*/LSA_FOREST_* marshalled types from the
+// lsasrv-sys bindgen (lsa_s.h widl output). The enum *-class types alias their
+// bindgen `_`-tagged form via `pub use self::_X as X` inside lsasrv-sys.
+pub use lsasrv_sys::{
+    PLSAPR_HANDLE,
+    LSAPR_ACCOUNT_INFORMATION, PLSAPR_ACCOUNT_INFORMATION, LSAPR_ACCOUNT_ENUM_BUFFER,
+    PLSAPR_USER_RIGHT_SET,
+    LSAPR_CR_CIPHER_VALUE, // PLSAPR_CR_CIPHER_VALUE already re-exported above
+    LSAPR_TRANSLATED_NAME, LSAPR_TRANSLATED_NAMES_EX,
+    PLSAPR_TRANSLATED_SIDS_EX,
+    LSA_TRANSLATED_SID,
+    PLSA_UNICODE_STRING,
+    PLSAPR_TRUSTED_DOMAIN_INFO, PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION, PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+    PLSAPR_TRUSTED_ENUM_BUFFER, PLSAPR_TRUSTED_ENUM_BUFFER_EX,
+    PLSAPR_POLICY_DOMAIN_INFORMATION,
+    TRUSTED_INFORMATION_CLASS,
+    PLSA_FOREST_TRUST_INFORMATION, PLSA_FOREST_TRUST_COLLISION_INFORMATION,
+    LSA_FOREST_TRUST_RECORD_TYPE,
+};
+// POLICY_INFORMATION_CLASS already re-exported at top of file.
+
+// POLICY_INFORMATION_CLASS / POLICY_NOTIFICATION_INFORMATION_CLASS enum *variants*:
+// the c2rust match arms reference them by the bare C name (`POLICY_INFORMATION_CLASS_PolicyX`,
+// without bindgen's leading `_`). Alias the bindgen consts so the patterns resolve.
+pub use lsasrv_sys::{
+    _POLICY_INFORMATION_CLASS_PolicyAccountDomainInformation as POLICY_INFORMATION_CLASS_PolicyAccountDomainInformation,
+    _POLICY_INFORMATION_CLASS_PolicyAuditEventsInformation as POLICY_INFORMATION_CLASS_PolicyAuditEventsInformation,
+    _POLICY_INFORMATION_CLASS_PolicyAuditFullQueryInformation as POLICY_INFORMATION_CLASS_PolicyAuditFullQueryInformation,
+    _POLICY_INFORMATION_CLASS_PolicyAuditFullSetInformation as POLICY_INFORMATION_CLASS_PolicyAuditFullSetInformation,
+    _POLICY_INFORMATION_CLASS_PolicyAuditLogInformation as POLICY_INFORMATION_CLASS_PolicyAuditLogInformation,
+    _POLICY_INFORMATION_CLASS_PolicyDefaultQuotaInformation as POLICY_INFORMATION_CLASS_PolicyDefaultQuotaInformation,
+    _POLICY_INFORMATION_CLASS_PolicyDnsDomainInformation as POLICY_INFORMATION_CLASS_PolicyDnsDomainInformation,
+    _POLICY_INFORMATION_CLASS_PolicyDnsDomainInformationInt as POLICY_INFORMATION_CLASS_PolicyDnsDomainInformationInt,
+    _POLICY_INFORMATION_CLASS_PolicyLocalAccountDomainInformation as POLICY_INFORMATION_CLASS_PolicyLocalAccountDomainInformation,
+    _POLICY_INFORMATION_CLASS_PolicyLsaServerRoleInformation as POLICY_INFORMATION_CLASS_PolicyLsaServerRoleInformation,
+    _POLICY_INFORMATION_CLASS_PolicyModificationInformation as POLICY_INFORMATION_CLASS_PolicyModificationInformation,
+    _POLICY_INFORMATION_CLASS_PolicyPdAccountInformation as POLICY_INFORMATION_CLASS_PolicyPdAccountInformation,
+    _POLICY_INFORMATION_CLASS_PolicyPrimaryDomainInformation as POLICY_INFORMATION_CLASS_PolicyPrimaryDomainInformation,
+    _POLICY_INFORMATION_CLASS_PolicyReplicaSourceInformation as POLICY_INFORMATION_CLASS_PolicyReplicaSourceInformation,
+    _POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyAccountDomainInformation as POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyAccountDomainInformation,
+    _POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyAuditEventsInformation as POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyAuditEventsInformation,
+    _POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyDnsDomainInformation as POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyDnsDomainInformation,
+    _POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyServerRoleInformation as POLICY_NOTIFICATION_INFORMATION_CLASS_PolicyNotifyServerRoleInformation,
+};
+
+// PLSAPR_SID = LSAPR_SID* (LSAPR_SID is the marshalled RPC_SID — lsa.idl); the
+// `_RPC_SID` form is what lsasrv-sys emits, so its pointer is PRPC_SID.
+pub type PLSAPR_SID = PRPC_SID;
+
+// RPC binding handle (rpcdce.h: `typedef void* handle_t`).
+pub type handle_t = *mut VOID;
+
+// _CREDPR_TARGET_INFORMATION (lsa.idl /* Credentials */) — dodged the lsasrv-sys
+// bindgen allowlist; hand-declared to match the IDL struct verbatim.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct _CREDPR_TARGET_INFORMATION {
+    pub TargetName: LPWSTR,
+    pub NetbiosServerName: LPWSTR,
+    pub DnsServerName: LPWSTR,
+    pub NetbiosDomainName: LPWSTR,
+    pub DnsDomainName: LPWSTR,
+    pub DnsTreeName: LPWSTR,
+    pub PackageName: LPWSTR,
+    pub Flags: ULONG,
+}
+pub type CREDPR_TARGET_INFORMATION = _CREDPR_TARGET_INFORMATION;
+pub type PCREDPR_TARGET_INFORMATION = *mut _CREDPR_TARGET_INFORMATION;
+
+// Cross-file global: NT_PRODUCT_TYPE LsapProductType (lsasrv.rs #[no_mangle] static).
+pub use crate::lsasrv::lsasrv::LsapProductType;
+
+// LSA DB object-type: the c2rust output uses the `LsaDbObjectType_<v>` spelling
+// at one site (alongside the bare LsaDb*Object names already in scope).
+pub const LsaDbObjectType_LsaDbPolicyObject: LSA_DB_OBJECT_TYPE = LsaDbPolicyObject;
+
+// MIDL allocators, lowercase form: in C these are `#define midl_user_allocate
+// MIDL_user_allocate` (rpc runtime). Thin wrappers over the real RPC symbols.
+#[inline]
+pub unsafe fn midl_user_allocate(len: usize) -> *mut VOID {
+    MIDL_user_allocate(len)
+}
+#[inline]
+pub unsafe fn midl_user_free(ptr: *mut VOID) {
+    MIDL_user_free(ptr)
+}
 
 // ---- LSA token-info + logon types (authpackage.c LsapLogonUser token build) ----
 // ntsecpkg.h collides with the reduced NDK bindgen context (SSPI/SecBuffer), so
@@ -387,6 +477,13 @@ extern "C" {
 #[inline]
 pub unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
+}
+
+// RtlCopyMemory is a `#define RtlCopyMemory memcpy` macro (ntrtl.h) — not an
+// export. In-crate wrapper so call sites bind directly.
+#[inline]
+pub unsafe fn RtlCopyMemory(destination: *mut VOID, source: *const VOID, length: usize) {
+    memcpy(destination, source, length);
 }
 
 // RtlInitEmptyUnicodeString is a FORCEINLINE in rtlfuncs.h (not an export).
