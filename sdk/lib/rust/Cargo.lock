@@ -463,6 +463,9 @@ dependencies = [
 [[package]]
 name = "generictable"
 version = "0.1.0"
+dependencies = [
+ "splaytree",
+]
 
 [[package]]
 name = "guids-rust"

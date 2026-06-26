@@ -207,16 +207,27 @@ extern "system" {
     fn RtlSubtreePredecessor(links: *mut SplayLinks) -> *mut SplayLinks;
 }
 
-// In test mode, we call the splaytree crate's pub functions directly would
-// require a dep — instead just provide stubs that won't be called.
+// In test mode, forward to the splaytree crate's pub Rust functions (added as a
+// dev-dependency). Its `SplayLinks` is layout-identical (#[repr(C)], three
+// pointers), so the raw pointers cast directly — exactly the ABI compatibility
+// that lets the kernel link generictable against splaytree's symbols. This makes
+// the functional model tests exercise the real splay algorithm.
 #[cfg(test)]
-unsafe fn RtlSplay(_: *mut SplayLinks) -> *mut SplayLinks { core::ptr::null_mut() }
+unsafe fn RtlSplay(l: *mut SplayLinks) -> *mut SplayLinks {
+    splaytree::splay(l as *mut splaytree::SplayLinks) as *mut SplayLinks
+}
 #[cfg(test)]
-unsafe fn RtlDelete(_: *mut SplayLinks) -> *mut SplayLinks { core::ptr::null_mut() }
+unsafe fn RtlDelete(l: *mut SplayLinks) -> *mut SplayLinks {
+    splaytree::delete(l as *mut splaytree::SplayLinks) as *mut SplayLinks
+}
 #[cfg(test)]
-unsafe fn RtlRealSuccessor(_: *mut SplayLinks) -> *mut SplayLinks { core::ptr::null_mut() }
+unsafe fn RtlRealSuccessor(l: *mut SplayLinks) -> *mut SplayLinks {
+    splaytree::real_successor(l as *mut splaytree::SplayLinks) as *mut SplayLinks
+}
 #[cfg(test)]
-unsafe fn RtlSubtreePredecessor(_: *mut SplayLinks) -> *mut SplayLinks { core::ptr::null_mut() }
+unsafe fn RtlSubtreePredecessor(l: *mut SplayLinks) -> *mut SplayLinks {
+    splaytree::subtree_predecessor(l as *mut splaytree::SplayLinks) as *mut SplayLinks
+}
 
 // ============================================================================
 // Private functions
@@ -717,5 +728,247 @@ mod tests {
             offset,
             core::mem::size_of::<SplayLinks>() + core::mem::size_of::<ListEntry>()
         );
+    }
+}
+
+// ============================================================================
+// Functional model tests — the existing `tests` cover struct layout + the list
+// helpers but never exercise the actual table algorithm. These drive the
+// algorithm layer (generic_table_insert / find_node_or_parent / RtlDelete /
+// RtlRealSuccessor — the FFI shims live under cfg(not(test))) against a sorted
+// BTreeSet reference, and crucially verify the splay tree's BST in-order
+// invariant after every operation. Real NT-style callbacks back the table;
+// elements are 4-byte u32 keys stored in the user-data region.
+// ============================================================================
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+    use std::alloc::{alloc_zeroed, dealloc, Layout};
+    use std::collections::BTreeSet;
+
+    const KEY_SIZE: u32 = 4; // a u32 key in the user-data region
+
+    fn node_layout() -> Layout {
+        let size = user_data_offset() as usize + KEY_SIZE as usize;
+        Layout::from_size_align(size, core::mem::align_of::<TableEntryHeader>()).unwrap()
+    }
+
+    unsafe extern "system" fn t_alloc(_t: *mut RtlGenericTable, byte_size: u32) -> *mut c_void {
+        assert_eq!(byte_size, user_data_offset() + KEY_SIZE);
+        alloc_zeroed(node_layout()) as *mut c_void
+    }
+
+    unsafe extern "system" fn t_free(_t: *mut RtlGenericTable, buf: *mut c_void) {
+        dealloc(buf as *mut u8, node_layout());
+    }
+
+    unsafe extern "system" fn t_compare(
+        _t: *mut RtlGenericTable,
+        a: *const c_void,
+        b: *const c_void,
+    ) -> u32 {
+        let (ka, kb) = (*(a as *const u32), *(b as *const u32));
+        match ka.cmp(&kb) {
+            core::cmp::Ordering::Less => GENERIC_LESS_THAN,
+            core::cmp::Ordering::Greater => GENERIC_GREATER_THAN,
+            core::cmp::Ordering::Equal => GENERIC_EQUAL,
+        }
+    }
+
+    fn make() -> Box<RtlGenericTable> {
+        // Valid fn-pointer fields up front (no mem::zeroed UB), then init.
+        let mut t = Box::new(RtlGenericTable {
+            table_root: core::ptr::null_mut(),
+            insert_order_list: ListEntry {
+                flink: core::ptr::null_mut(),
+                blink: core::ptr::null_mut(),
+            },
+            ordered_pointer: core::ptr::null_mut(),
+            which_ordered_element: 0,
+            number_generic_table_elements: 0,
+            compare_routine: t_compare,
+            allocate_routine: t_alloc,
+            free_routine: t_free,
+            table_context: core::ptr::null_mut(),
+        });
+        unsafe {
+            generic_table_init(&mut *t, t_compare, t_alloc, t_free, core::ptr::null_mut());
+        }
+        t
+    }
+
+    unsafe fn insert(t: *mut RtlGenericTable, key: u32) -> bool {
+        let mut new_flag: u8 = 0;
+        let buf = key;
+        let p = generic_table_insert(
+            t,
+            &buf as *const u32 as *const c_void,
+            KEY_SIZE,
+            &mut new_flag,
+        );
+        assert!(!p.is_null(), "insert returned null");
+        assert_eq!(*(p as *const u32), key, "returned user data holds the key");
+        new_flag != 0
+    }
+
+    unsafe fn lookup(t: *mut RtlGenericTable, key: u32) -> bool {
+        let buf = key;
+        let mut node: *mut SplayLinks = core::ptr::null_mut();
+        if find_node_or_parent(t, &buf as *const u32 as *const c_void, &mut node) == TABLE_FOUND_NODE
+        {
+            assert_eq!(*(node_to_user_data(node) as *const u32), key);
+            true
+        } else {
+            false
+        }
+    }
+
+    // Mirror RtlDeleteElementGenericTable (FFI shim is cfg(not(test))).
+    unsafe fn delete(t: *mut RtlGenericTable, key: u32) -> bool {
+        let buf = key;
+        let mut node: *mut SplayLinks = core::ptr::null_mut();
+        if find_node_or_parent(t, &buf as *const u32 as *const c_void, &mut node) != TABLE_FOUND_NODE
+        {
+            return false;
+        }
+        (*t).table_root = RtlDelete(node);
+        list_remove(node_to_list_entry(node));
+        (*t).number_generic_table_elements -= 1;
+        (*t).which_ordered_element = 0;
+        (*t).ordered_pointer = &mut (*t).insert_order_list;
+        t_free(t, node as *mut c_void);
+        true
+    }
+
+    // In-order traversal (leftmost + RtlRealSuccessor) → keys in sorted order
+    // iff the splay tree is a valid BST.
+    unsafe fn in_order(t: *mut RtlGenericTable) -> Vec<u32> {
+        let mut out = Vec::new();
+        if (*t).table_root.is_null() {
+            return out;
+        }
+        let mut node = (*t).table_root;
+        while !sl_left(node).is_null() {
+            node = sl_left(node);
+        }
+        while !node.is_null() {
+            out.push(*(node_to_user_data(node) as *const u32));
+            node = RtlRealSuccessor(node);
+        }
+        out
+    }
+
+    unsafe fn check(t: *mut RtlGenericTable, model: &BTreeSet<u32>) {
+        assert_eq!((*t).number_generic_table_elements as usize, model.len(), "count");
+        let sorted: Vec<u32> = model.iter().copied().collect();
+        assert_eq!(in_order(t), sorted, "in-order traversal must equal the sorted model");
+        for &k in model {
+            assert!(lookup(t, k), "present key {k} must be found");
+        }
+    }
+
+    unsafe fn drain(t: *mut RtlGenericTable, model: &mut BTreeSet<u32>) {
+        let keys: Vec<u32> = model.iter().copied().collect();
+        for k in keys {
+            assert!(delete(t, k), "delete present {k}");
+            model.remove(&k);
+            check(t, model);
+        }
+        assert!((*t).table_root.is_null(), "drained tree root null");
+    }
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+        fn below(&mut self, n: u32) -> u32 {
+            (self.next() % n as u64) as u32
+        }
+    }
+
+    #[test]
+    fn empty_and_single() {
+        unsafe {
+            let mut t = make();
+            let p = &mut *t as *mut RtlGenericTable;
+            let mut model = BTreeSet::new();
+            check(p, &model);
+            assert!(!lookup(p, 7));
+            assert!(!delete(p, 7));
+
+            assert!(insert(p, 7));
+            assert!(!insert(p, 7)); // duplicate rejected
+            model.insert(7);
+            check(p, &model);
+            drain(p, &mut model);
+        }
+    }
+
+    #[test]
+    fn ascending_then_descending() {
+        unsafe {
+            for order in 0..2 {
+                let mut t = make();
+                let p = &mut *t as *mut RtlGenericTable;
+                let mut model = BTreeSet::new();
+                let seq: Vec<u32> = if order == 0 {
+                    (1..=150).collect()
+                } else {
+                    (1..=150).rev().collect()
+                };
+                for k in seq {
+                    assert!(insert(p, k));
+                    model.insert(k);
+                }
+                check(p, &model);
+                drain(p, &mut model);
+            }
+        }
+    }
+
+    #[test]
+    fn random_unique_insert() {
+        unsafe {
+            let mut t = make();
+            let p = &mut *t as *mut RtlGenericTable;
+            let mut model = BTreeSet::new();
+            let mut rng = Rng(0xCAFE_F00D);
+            for _ in 0..1500 {
+                let k = rng.below(500) + 1;
+                assert_eq!(insert(p, k), !model.contains(&k));
+                model.insert(k);
+            }
+            check(p, &model);
+            drain(p, &mut model);
+        }
+    }
+
+    #[test]
+    fn random_insert_delete_stress() {
+        unsafe {
+            let mut t = make();
+            let p = &mut *t as *mut RtlGenericTable;
+            let mut model = BTreeSet::new();
+            let mut rng = Rng(0xBADC_0FFEE);
+            for step in 0..4000 {
+                let k = rng.below(200) + 1;
+                if rng.below(2) == 0 {
+                    assert_eq!(insert(p, k), !model.contains(&k));
+                    model.insert(k);
+                } else {
+                    assert_eq!(delete(p, k), model.remove(&k));
+                }
+                if step % 250 == 0 {
+                    check(p, &model);
+                }
+            }
+            check(p, &model);
+            drain(p, &mut model);
+        }
     }
 }
