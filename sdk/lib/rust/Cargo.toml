@@ -164,6 +164,7 @@ members = [
     "pciidex-rust",
     "scsiport-rust",
     "atapi-rust",
+    "buslogic-rust",
     "mup-rust",
     "msfs-rust",
     "npfs-rust",

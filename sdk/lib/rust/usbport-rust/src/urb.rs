@@ -25,7 +25,6 @@ extern "system" {
     fn USBPORT_ValidateDeviceHandle( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, ) -> BOOLEAN;
     fn USBPORT_HandleSelectConfiguration( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
     fn USBPORT_HandleSelectInterface( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
-    fn USBPORT_ClearStall( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
 }
 extern "C" {
     fn USBD_TRANSFER_DIRECTION_FLAG(TransferFlags: u32) -> u32;
@@ -2102,3 +2101,64 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+extern "system" {
+    fn USBPORT_SendSetupPacket(
+        DeviceHandle: PUSBPORT_DEVICE_HANDLE,
+        FdoDevice: PDEVICE_OBJECT,
+        SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET,
+        Buffer: PVOID,
+        Length: ULONG,
+        TransferedLen: PULONG,
+        pUSBDStatus: *mut USBD_STATUS,
+    ) -> NTSTATUS;
+}
+
+// Translated from urb.c USBPORT_ClearStall (was a commented lazy-stub in the pure-LLM
+// pass; hand-translated to finish usbport at 100% Rust).
+#[no_mangle]
+pub unsafe extern "system" fn USBPORT_ClearStall(
+    FdoDevice: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Urb: PURB,
+) -> NTSTATUS {
+    let DeviceHandle: PUSBPORT_DEVICE_HANDLE;
+    let PipeHandle: PUSBPORT_PIPE_HANDLE;
+    let mut USBDStatus: USBD_STATUS = 0;
+    let Endpoint: PUSBPORT_ENDPOINT;
+    let Status: NTSTATUS;
+    let mut SetupPacket: USB_DEFAULT_PIPE_SETUP_PACKET = core::mem::zeroed();
+
+    PipeHandle = (*Urb).__bindgen_anon_1.UrbPipeRequest.PipeHandle as PUSBPORT_PIPE_HANDLE;
+    DeviceHandle = (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle as PUSBPORT_DEVICE_HANDLE;
+
+    if USBPORT_ValidatePipeHandle(DeviceHandle, PipeHandle) == 0 {
+        return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_INVALID_PIPE_HANDLE);
+    }
+
+    Endpoint = (*PipeHandle).Endpoint;
+
+    RtlZeroMemory(
+        core::ptr::addr_of_mut!(SetupPacket) as PVOID,
+        core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>() as _,
+    );
+
+    SetupPacket.bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT as u8);
+    SetupPacket.bRequest = USB_REQUEST_CLEAR_FEATURE as u8;
+    SetupPacket.wValue.W = 0;
+    SetupPacket.wIndex.W = (*Endpoint).EndpointProperties.EndpointAddress as u16;
+    SetupPacket.wLength = 0;
+
+    USBPORT_SendSetupPacket(
+        DeviceHandle,
+        FdoDevice,
+        core::ptr::addr_of_mut!(SetupPacket),
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(USBDStatus),
+    );
+
+    Status = USBPORT_USBDStatusToNtStatus(Urb, USBDStatus);
+    return Status;
+}

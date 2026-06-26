@@ -131,6 +131,7 @@ PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
 STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
 STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
+BUSLOGIC_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "buslogic"
 SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
@@ -745,6 +746,26 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # buslogic.sys — BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic,
+    # single 2.8K-LOC TU BusLogic958.c; Log.c/wmi.c are on disk but NOT in the build). A
+    # SCSIPORT miniport like atapi: imports ScsiPort* and registers via ScsiPortInitialize.
+    # No spec (kernelmodedriver, no exports). NOT on any QEMU boot path (live SCSI/IDE =
+    # uniata) → link-clean x3 bar. Driver-private structs (BusLogic_HostAdapter_T/CCB/
+    # *Mailbox/_HW_DEVICE_EXTENSION + SRB/CDB/sense/SCSI_WMI) from gen_driver_types.sh
+    # substrate (crate::types). Heavy port register I/O + mailbox DMA — c2rust-anchored.
+    "buslogic": Target(
+        name="buslogic",
+        source_dir=BUSLOGIC_DIR,
+        output_crate=RUST_DIR / "buslogic-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # serial.sys — 8250/16550 UART COM driver (drivers/serial/serial, ~2.7K LOC, 12 .c).
     # No spec (kernelmodedriver). NOT boot-loaded in smoke (kernel owns the KD COM port) →
     # link-clean x3 bar. Self-contained; the ISR/DPC/timeout files are the hard part.
@@ -1327,6 +1348,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["storport"]
     if "/drivers/storage/port/storahci" in posix:
         return TARGETS["storahci"]
+    if "/drivers/storage/port/buslogic" in posix:
+        return TARGETS["buslogic"]
     if "/drivers/serial/serial" in posix:
         return TARGETS["serial"]
     if "/drivers/storage/class/ramdisk" in posix:
