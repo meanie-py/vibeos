@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd, tooling
+from . import cargoswap, debugcmd, hostlock, tooling
 from . import prune as prune_mod
 from . import repro as repro_mod
 from . import smoke as smoke_mod
@@ -129,6 +129,14 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")
     ps.set_defaults(fn=_ps)
+
+    hs = sub.add_parser(
+        "host-status", help="host CPU broker: who holds the build/boot lease (across worktrees)"
+    )
+    hs.add_argument(
+        "--json", action="store_true", help="machine-readable (for wait-for-quiet polls)"
+    )
+    hs.set_defaults(fn=hostlock.cmd_status)
 
     ct = sub.add_parser(
         "check-tooling",

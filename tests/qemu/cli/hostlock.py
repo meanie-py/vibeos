@@ -219,9 +219,16 @@ def _is_held(p: Path) -> bool:
 def status() -> dict:
     """Snapshot of the host broker for `host-status`: which cpuheavy permits + build-dir
     locks are held, by whom (holder metadata), and whether that holder is still alive."""
-    out: dict = {"dir": str(HOSTLOCK_DIR), "enabled": enabled(), "cpuheavy": [], "builddir": []}
+    out: dict = {
+        "dir": str(HOSTLOCK_DIR),
+        "enabled": enabled(),
+        "cpuheavy": [],
+        "builddir": [],
+        "cpu_leases_total": DEFAULT_CPU_LEASES,
+        "cpu_leases_held": 0,
+    }
     if not HOSTLOCK_DIR.is_dir():
-        return out
+        return out  # no lock dir yet → nothing held (keys above stay at their defaults)
     for p in sorted(HOSTLOCK_DIR.glob("*")):
         held = _is_held(p)
         meta: dict = {}
@@ -244,3 +251,35 @@ def status() -> dict:
     out["cpu_leases_total"] = DEFAULT_CPU_LEASES
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
     return out
+
+
+def render_status(st: dict) -> str:
+    """Human-readable host-broker summary (the `vibeos-cli host-status` body)."""
+    lines = [
+        f"host broker: {'ON' if st['enabled'] else 'OFF (VIBEOS_HOST_BROKER=0)'}  —  "
+        f"CPU leases {st['cpu_leases_held']}/{st['cpu_leases_total']} held"
+    ]
+    held_cpu = [e for e in st["cpuheavy"] if e["held"]]
+    if not held_cpu:
+        lines.append("  cpuheavy : FREE — no cold build / TCG boot running")
+    for e in held_cpu:
+        h = e["holder"]
+        dead = "" if e["holder_alive"] else "  ⚠STALE(holder gone)"
+        kind = str(h.get("kind", "?"))
+        lines.append(f"  cpuheavy : {kind:<14} pid={h.get('pid', '?')}{dead}  {h.get('cwd', '')}")
+    for e in (e for e in st["builddir"] if e["held"]):
+        h = e["holder"]
+        lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
+    lines.append("  (QEMU boots: `vibeos-cli ps`)")
+    return "\n".join(lines)
+
+
+def cmd_status(args, repo: Path) -> int:
+    """`vibeos-cli host-status` — who holds the CPU lease / build-dir locks. `--json`
+    feeds the wait-for-quiet poll guards agents have been hand-rolling."""
+    st = status()
+    if getattr(args, "json", False):
+        print(json.dumps(st, indent=2))
+    else:
+        print(render_status(st))
+    return 0

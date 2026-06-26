@@ -1123,3 +1123,13 @@ def test_hostlock_status_reports_live_holder(tmp_path, monkeypatch):
     assert held[0]["holder_alive"] is True  # this very process holds it
     hl_mod.release(fd)
     assert hl_mod.status()["cpu_leases_held"] == 0
+
+
+def test_hostlock_render_status_no_dir(tmp_path, monkeypatch):
+    # status() before any lock dir exists must still carry the lease keys + render
+    # without KeyError (regression: render_status hit a missing cpu_leases_held).
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "does-not-exist")
+    st = hl_mod.status()
+    assert st["cpu_leases_held"] == 0 and st["cpu_leases_total"] >= 1
+    out = hl_mod.render_status(st)
+    assert "host broker" in out and "FREE" in out
