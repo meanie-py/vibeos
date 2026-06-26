@@ -3467,8 +3467,8 @@ pub unsafe extern "C" fn RequestIsIoctlBlockedByExclusiveAccess(
             || ioctlCode == 0x2D0C14 // IOCTL_STORAGE_GET_HOTPLUG_INFO
             || ioctlCode == 0x2D1080 // IOCTL_STORAGE_GET_DEVICE_NUMBER
             || ioctlCode == 0x2D0C04 // IOCTL_STORAGE_GET_MEDIA_TYPES_EX
-            || ioctlCode == 0x24038 // IOCTL_CDROM_EXCLUSIVE_ACCESS
-            || ioctlCode == 0x2403C // IOCTL_CDROM_GET_INQUIRY_DATA
+            || ioctlCode == 0x2C05C // IOCTL_CDROM_EXCLUSIVE_ACCESS
+            || ioctlCode == 0x24064 // IOCTL_CDROM_GET_INQUIRY_DATA
         {
             *IsBlocked = 0;
         }
