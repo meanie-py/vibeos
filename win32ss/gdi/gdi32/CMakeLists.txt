@@ -21,12 +21,12 @@ list(APPEND SOURCE
     misc/historic.c
     # misc/misc.c — replaced by Rust (gdi32-rust/src/misc/misc.rs); cohab via libgdi32_rust.a
     misc/wingl.c
-    objects/arc.c
+    # objects/arc.c — replaced by Rust (gdi32-rust/src/objects/arc.rs); cohab via libgdi32_rust.a
     objects/bitmap.c
     # objects/brush.c — replaced by Rust (gdi32-rust/src/objects/brush.rs); cohab via libgdi32_rust.a
     # objects/clientobj.c — replaced by Rust (gdi32-rust/src/objects/clientobj.rs); cohab via libgdi32_rust.a
     # objects/colorspace.c — replaced by Rust (gdi32-rust/src/objects/colorspace.rs); cohab via libgdi32_rust.a
-    objects/coord.c
+    # objects/coord.c — replaced by Rust (gdi32-rust/src/objects/coord.rs); cohab via libgdi32_rust.a
     objects/dc.c
     objects/eng.c
     objects/enhmfile.c
@@ -35,12 +35,12 @@ list(APPEND SOURCE
     objects/icm.c
     # objects/linedda.c — replaced by Rust (gdi32-rust/src/objects/linedda.rs); cohab via libgdi32_rust.a
     objects/metafile.c
-    objects/painting.c
+    # objects/painting.c — replaced by Rust (gdi32-rust/src/objects/painting.rs); cohab via libgdi32_rust.a
     objects/printdrv.c
     # objects/palette.c — replaced by Rust (gdi32-rust/src/objects/palette.rs); cohab via libgdi32_rust.a
     # objects/pen.c — replaced by Rust (gdi32-rust/src/objects/pen.rs); cohab via libgdi32_rust.a
-    objects/region.c
-    objects/text.c
+    # objects/region.c — replaced by Rust (gdi32-rust/src/objects/region.rs); cohab via libgdi32_rust.a
+    # objects/text.c — replaced by Rust (gdi32-rust/src/objects/text.rs); cohab via libgdi32_rust.a
     objects/utils.c
     objects/path.c
     include/precomp.h)
