@@ -40,8 +40,46 @@ def run_build(pkg, target, manifest, rustflags):
     return p.stdout
 
 
+_FILE_CACHE = {}
+
+
+def _file_bytes(fn):
+    if fn not in _FILE_CACHE:
+        try:
+            _FILE_CACHE[fn] = open(fn, 'rb').read()
+        except OSError:
+            _FILE_CACHE[fn] = b''
+    return _FILE_CACHE[fn]
+
+
+def _in_pattern_position(fn, byte_start, byte_end):
+    """A match-arm pattern can't carry an `as` cast — wrapping it produces a
+    'expected a pattern, found an expression' syntax error that re-appears every
+    run. Detect it: the span is followed by `=>` or `|` (arm / or-pattern), or
+    preceded by `|` or an arm-opening `{`/`,`. Skip those spans entirely."""
+    data = _file_bytes(fn)
+    if not data:
+        return False
+    # look ahead: skip ws + one optional closing paren
+    i = byte_end
+    while i < len(data) and data[i:i + 1].isspace():
+        i += 1
+    if data[i:i + 1] == b')':
+        i += 1
+        while i < len(data) and data[i:i + 1].isspace():
+            i += 1
+    after = data[i:i + 2]
+    if after.startswith(b'=>'):
+        return True
+    # a single `|` is an or-pattern separator; `||` is logical-or (an expression).
+    if after[:1] == b'|' and after[:2] != b'||':
+        return True
+    return False
+
+
 def collect_casts(json_out):
     """-> dict file -> list of (byte_start, byte_end, expected_type)."""
+    _FILE_CACHE.clear()
     edits = {}
     for line in json_out.splitlines():
         line = line.strip()
@@ -54,21 +92,51 @@ def collect_casts(json_out):
         if msg.get('reason') != 'compiler-message':
             continue
         d = msg.get('message', {})
-        if d.get('code', {}) is None or (d.get('code') or {}).get('code') != 'E0308':
-            continue
-        for span in d.get('spans', []):
-            if not span.get('is_primary'):
-                continue
-            label = span.get('label') or ''
-            m = EXPECTED_RE.search(label) or EXPECTED_RE.search(d.get('message', ''))
-            if not m:
-                continue
-            expected = m.group(1)
-            if expected not in INT_TYPES:
-                continue
-            fn = span['file_name']
-            edits.setdefault(fn, []).append(
-                (span['byte_start'], span['byte_end'], expected))
+        code = (d.get('code') or {}).get('code')
+        if code == 'E0308':
+            for span in d.get('spans', []):
+                if not span.get('is_primary'):
+                    continue
+                if _in_pattern_position(span['file_name'], span['byte_start'],
+                                        span['byte_end']):
+                    continue
+                label = span.get('label') or ''
+                m = EXPECTED_RE.search(label) or EXPECTED_RE.search(d.get('message', ''))
+                if not m:
+                    continue
+                expected, found = m.group(1), m.group(2)
+                cast = None
+                if expected in INT_TYPES:
+                    cast = expected
+                elif expected.startswith(('*mut ', '*const ')) and \
+                        found.startswith(('*mut ', '*const ')):
+                    # pointer-to-pointer mismatch (e.g. KSPIN_LOCK *mut u32 vs *mut usize,
+                    # void* vs typed*). Faithful `as <expected>` — but never on a &str found
+                    # (string literal; that needs a b"..." rewrite, handled elsewhere).
+                    cast = expected
+                if cast is None:
+                    # `*const i8` (DbgPrint/DPRINT fmt) fed a Rust `&str` literal — rewrite
+                    # the string span to a NUL-terminated byte-string pointer.
+                    if found == '&str' and ('i8' in expected or 'u8' in expected
+                                            or 'c_char' in expected):
+                        edits.setdefault(span['file_name'], []).append(
+                            (span['byte_start'], span['byte_end'], '__BSTR__'))
+                    continue
+                fn = span['file_name']
+                edits.setdefault(fn, []).append(
+                    (span['byte_start'], span['byte_end'], cast))
+        elif code == 'E0617':
+            # `can't pass `T` to variadic function` — C promotes small ints to int;
+            # wrap the arg span in `(... as c_int)` (the faithful default-arg-promotion).
+            for span in d.get('spans', []):
+                if not span.get('is_primary'):
+                    continue
+                if _in_pattern_position(span['file_name'], span['byte_start'],
+                                        span['byte_end']):
+                    continue
+                fn = span['file_name']
+                edits.setdefault(fn, []).append(
+                    (span['byte_start'], span['byte_end'], '::core::ffi::c_int'))
     return edits
 
 
@@ -86,6 +154,14 @@ def apply(edits):
             uniq.append(s)
         for bs, be, ty in uniq:
             expr = data[bs:be]
+            if ty == '__BSTR__':
+                # expr is a Rust string literal `"..."`; emit a NUL-terminated *const i8.
+                if expr.startswith(b'"') and expr.endswith(b'"'):
+                    inner = expr[1:-1]
+                    data = (data[:bs] + b'b"' + inner + b'\\0".as_ptr() as *const i8'
+                            + data[be:])
+                    n += 1
+                continue
             # skip if it already looks wrapped with this cast
             if expr.startswith(b'(') and expr.endswith((f' as {ty})').encode()):
                 continue

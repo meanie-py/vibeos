@@ -106,6 +106,7 @@ members = [
     "usbehci-rust",
     "usbohci-rust",
     "usbuhci-rust",
+    "usbport-rust",
     "i8042prt-rust",
     "handle",
     "interlck",
