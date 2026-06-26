@@ -5,3 +5,11 @@ edition = "2021"
 
 [lib]
 crate-type = ["rlib"]
+
+# Test-only: the splay operations (RtlSplay/RtlDelete/RtlRealSuccessor/...) are
+# extern symbols provided by the splaytree crate at kernel-link time. For host
+# `cargo test` we forward the cfg(test) shims to splaytree's pub Rust fns so the
+# functional model tests exercise the real algorithm instead of null stubs.
+# dev-dependencies do not affect the normal (kernel) build.
+[dev-dependencies]
+splaytree = { path = "../splaytree" }
