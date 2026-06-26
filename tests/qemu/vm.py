@@ -67,6 +67,13 @@ QEMU_MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "10"))
 QEMU_QUEUE_TIMEOUT = float(os.environ.get("VIBEOS_QEMU_QUEUE_TIMEOUT", "1800"))
 SLOT_DIR = LOCK_DIR / "slots"
 
+# windows-host hostfwd has a pick-then-bind TOCTOU: we pick a Windows-free port,
+# QEMU binds it a moment later, and a concurrent process can steal it in between →
+# QEMU exits immediately with "Could not set up host forwarding rule" (before any
+# guest code). Relaunch with a freshly-picked port a few times to ride out the race.
+HOSTFWD_BIND_ERROR = "Could not set up host forwarding rule"
+HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
+
 
 def per_arch_cap(arch: str) -> int:
     """Same-arch concurrency sub-cap, layered under the global pool. Mirrors
@@ -757,6 +764,9 @@ class QemuVM:
         # windows-host only: harness echo server backing the slirp guestfwd when
         # `-cmd:cat` can't run (Windows host has no `cat`). None on native / non-net.
         self._echo_server: socketserver.BaseServer | None = None
+        # stderr captured if QEMU exited early during launch (consumed once from the
+        # PIPE), so the diagnostic path can still report it — see _launch_qemu.
+        self._early_stderr: str = ""
 
     @property
     def net_host(self) -> str:
@@ -933,27 +943,101 @@ class QemuVM:
             *arch_args,
         ]
 
+    def _launch_qemu(self) -> list[str]:
+        """Build the qemu cmd and Popen it into self._proc; return the launched cmd.
+        On the windows-host backend with a slirp hostfwd, ride out the pick-then-bind
+        TOCTOU (HOSTFWD_BIND_ERROR) by relaunching with a freshly-picked port up to
+        HOSTFWD_LAUNCH_RETRIES times. Native / non-hostfwd configs launch exactly once
+        (no early-exit poll, so their healthy path pays no latency)."""
+        attempts = HOSTFWD_LAUNCH_RETRIES if self._backend == "windows-host" else 1
+        last_stderr = ""
+        for attempt in range(attempts):
+            if self._backend == "windows-host":
+                cmd = self._build_windows_cmd()
+            else:
+                cmd = self._build_native_cmd()
+            print(f"[QemuVM] {' '.join(cmd)}")
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setpgrp,
+            )
+            if not (self._backend == "windows-host" and any("hostfwd=" in a for a in cmd)):
+                self._proc = proc
+                return cmd
+            early = self._early_exit_stderr(proc)
+            if early is None:
+                self._proc = proc  # still running at the deadline → healthy launch
+                return cmd
+            if HOSTFWD_BIND_ERROR in early:
+                # Lost the port race — discard this attempt and relaunch with a fresh
+                # port (the next _build_windows_cmd re-picks + re-binds).
+                self._discard_failed_launch(proc)
+                last_stderr = early
+                print(
+                    f"[QemuVM] hostfwd-bind race (attempt {attempt + 1}/{attempts}), "
+                    "retrying with a fresh Windows port"
+                )
+                continue
+            # Exited early for some OTHER reason — not the flake. Stash stderr for the
+            # diagnostic path and let the normal start sequence surface the dead proc.
+            self._early_stderr = early
+            self._proc = proc
+            return cmd
+        raise RuntimeError(
+            f"QEMU hostfwd-bind failed after {attempts} attempts (Windows port TOCTOU).\n"
+            f"Last QEMU stderr:\n{last_stderr}"
+        )
+
+    def _early_exit_stderr(self, proc: subprocess.Popen, budget: float = 2.0) -> str | None:
+        """Poll up to `budget`s for an early QEMU exit. If it exits, return its full
+        stderr (consumed once). If still running at the deadline, return None (healthy).
+        Reads stderr only after exit, so a healthy long-running QEMU's pipe is never
+        drained here (same as the pre-existing behavior)."""
+        deadline = time.monotonic() + budget
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                if proc.stderr:
+                    try:
+                        return proc.stderr.read().decode("utf-8", errors="replace")
+                    except OSError:
+                        return ""
+                return ""
+            time.sleep(0.05)
+        return None
+
+    def _discard_failed_launch(self, proc: subprocess.Popen) -> None:
+        """Tear down a hostfwd-raced launch attempt: reap the dead qemu, stop the echo
+        server, and replace the serial/qmp clients with fresh instances — SerialClient
+        can't be reused after close() (its drainer won't restart once _closed is set).
+        The next _build_windows_cmd re-binds new listeners + re-stages media."""
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        if self._echo_server is not None:
+            try:
+                self._echo_server.shutdown()
+                self._echo_server.server_close()
+            except Exception:
+                pass
+            self._echo_server = None
+        self.serial.close()
+        self.qmp.close()
+        self.qmp = QmpClient()
+        self.serial = SerialClient()
+
     def start(self) -> None:
         """Start QEMU process, connect QMP + serial (backend-aware)."""
-        if self._backend == "windows-host":
-            cmd = self._build_windows_cmd()
-        else:
-            cmd = self._build_native_cmd()
-
-        print(f"[QemuVM] {' '.join(cmd)}")
-
         # Acquire a global concurrency slot BEFORE launching — and before we
         # record the start/deadline below, so the time spent queued here is
         # excluded from the 30-min lifetime cap. Held for this pytest process's
-        # lifetime; released in stop()/atexit.
+        # lifetime; released in stop()/atexit. Acquired once, ahead of any
+        # hostfwd-bind relaunch attempts.
         self._acquire_slot()
 
-        self._proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            preexec_fn=os.setpgrp,
-        )
+        cmd = self._launch_qemu()
 
         # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
         # launcher (this pytest process) dies. reap_orphan_qemus() is auto-
@@ -1327,4 +1411,7 @@ class QemuVM:
                 stderr = self._proc.stderr.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
+        # Fall back to stderr the launch-time early-exit poll already consumed from
+        # the PIPE (read() above would return empty in that case).
+        stderr = stderr or self._early_stderr
         raise RuntimeError(f"{msg}\nQEMU stderr:\n{stderr}")
