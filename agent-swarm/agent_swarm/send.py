@@ -28,6 +28,13 @@ def send(
     account (no "BOT" badge). Falls back to the incoming webhook (username override,
     BOT-tagged) when the agent has no token yet. Best-effort: never raises.
     """
+    # Guard the one chokepoint: never post an empty or sentinel body. The JS channel
+    # bridge stringifies a missing field as the literal "undefined" (String(undefined)),
+    # and some callers pass None/"" — both rendered as ghost "undefined" posts in #swarm.
+    # Refuse here so no caller can leak one. (A real message is never bare "undefined".)
+    text = "" if text is None else str(text)
+    if not text.strip() or text.strip() in ("undefined", "None", "null"):
+        return False
     cfg = cfg or default_config()
     mm = MattermostClient.from_config(cfg)
     if as_identity:
