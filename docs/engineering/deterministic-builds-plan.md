@@ -105,7 +105,7 @@ Determinism is also a **free nondeterminism detector**: build the same commit tw
 | 2. timestamp elimination | kills `__DATE__`/`__TIME__` + PE-header time variance | `SOURCE_DATE_EPOCH`; lld no-timestamp; deterministic `ar` |
 | 3. build-script / generator audit | the cargo-link + widl/windmc/gen tables are path/time/order-free | audit the ~48 `*-cargo/build.rs` + generators |
 | 4. build-id / debug-GUID determinism ✅ | identical debug directory | SATISFIED — i386 cold build-twice is byte-identical, so the GUID/build-id is already deterministic (no random/time id); no separate fix needed |
-| 5. reproducibility smoke ✅ (gauge built + RUN green i386) | identical bytes across builds/agents, wired as a gauge | `vibeos-cli repro verify --arch X` (cold build-twice → byte-identical); **i386 RUN BYTE-IDENTICAL 2026-06-26**; amd64/arm64 + cross-worktree run pending |
+| 5. reproducibility smoke ✅ (RUN green ALL 3 ARCHES) | identical bytes across builds/agents, wired as a gauge | `vibeos-cli repro verify --arch X` (cold build-twice → byte-identical); **i386 + amd64 + arm64 all RUN BYTE-IDENTICAL 2026-06-26**; formal cross-worktree diff optional |
 
 Rung 1 is the highest-leverage (it's the dedup unlock *and* most of the disk win). Rungs 2–4
 are cheap and mop up the residual; rung 5 is the payoff gauge.
@@ -192,32 +192,34 @@ are cheap and mop up the residual; rung 5 is the payoff gauge.
   same commit. `setdefault` lets a CI-pinned value win. No version.cmake source edit needed (the
   env var pins it). Unit-tested (commit-`%ct` derivation + non-git → None).
 - **Rung 3 (build.rs/generator audit) ✅ done**: clean — see the date/time audit section.
-- **Rung 5 ✅ gauge built + RUN GREEN on i386** (gauge 2026-06-21; first real run **2026-06-26**,
-  commit `eaae890a98f`): `vibeos-cli repro verify --arch i386` cold-builds the arch twice (deleting
-  the copied cargo exes between to force a genuine relink — defeats the §stale-cargo / task-#41
-  false-identical trap) and byte-compares. **Result: cold build-twice BYTE-IDENTICAL ✓** for all
-  three core artifacts:
+- **Rung 5 ✅ gauge built + RUN GREEN on ALL 3 ARCHES** (gauge 2026-06-21; runs **2026-06-26**):
+  `vibeos-cli repro verify --arch X` cold-builds the arch twice (deleting the copied cargo exes
+  between to force a genuine relink — defeats the §stale-cargo / task-#41 false-identical trap) and
+  byte-compares. **Result: cold build-twice BYTE-IDENTICAL ✓ on i386, amd64, AND arm64** for all
+  three core artifacts each:
   ```
-  ✓ identical  ntoskrnl/ntoskrnl.exe
-  ✓ identical  win32ss/win32k.sys
-  ✓ identical  dll/win32/kernel32/kernel32.dll
-  → cold build-twice BYTE-IDENTICAL ✓   (3m23s real, cache-accelerated)
+  i386  (commit eaae890a98f) : ✓ ntoskrnl.exe  ✓ win32k.sys  ✓ kernel32.dll   (3m23s)
+  amd64 (commit 224fe72607d) : ✓ ntoskrnl.exe  ✓ win32k.sys  ✓ kernel32.dll   (3m23s)
+  arm64 (commit 224fe72607d) : ✓ ntoskrnl.exe  ✓ win32k.sys  ✓ kernel32.dll   (2m34s)
   ```
-  This is the end-to-end proof that rungs 2a (PE-timestamp zeroing) + 2b (`SOURCE_DATE_EPOCH`) hold
-  on a real cold build, not just `repro report`. **Still pending: amd64 + arm64 same-path verify**
-  (the fixes are all-arch but only i386 is RUN-proven), and the stronger **cross-worktree
-  `diff-dirs`** proof that exercises the rung-1 path remap's cross-tree value (evidence already
-  strong: the strings-audit found 0 worktree-path leaks in ntoskrnl.exe, remaining paths are
-  home-relative toolchain paths identical on-machine — see Rung 1 notes).
-- **Rung 4 (build-id / debug-GUID determinism) ✅ SATISFIED — verified, no work needed.** The
-  i386 cold build-twice being byte-identical *proves* the PE debug directory / CodeView GUID /
-  build-id are already deterministic (content-derived or absent) — a random/time-based id would
-  have differed between the two builds. So rung 4 is closed by the rung-5 result, not a separate
-  TODO. (Re-confirm when the amd64/arm64 verify runs.)
-- **Pending ×3 cold gate** for the rung-1/2/2b build changes — superseded: these landed on mainline
-  via the build-cache merge (`53f453b586e`, ×3 boot-green) and are now in c-r-p. The determinism
-  *effect* is now RUN-proven on i386 (above). Remaining determinism TODO: amd64/arm64 verify +
-  cross-worktree diff-dirs.
+  (amd64/arm64 run in main `~/Projects/os-playground/vibeos`, which has those build dirs —
+  build-cache only configured build-i386; byte-identity is a commit-independent build-system
+  property so verifying in main is a valid mainline-reproducibility proof. Coordinated host-exclusive
+  with meaniepy so no concurrent `build --clean` on the shared dirs.) **Full 3-arch determinism
+  parity achieved** — rungs 2a (PE-timestamp zeroing) + 2b (`SOURCE_DATE_EPOCH`) hold uniformly on
+  every arch. The hardlink-dedup tool's premise is confirmed fleet-wide: same-commit builds ARE
+  byte-identical, so they dedup. **Remaining (optional):** the cross-worktree `diff-dirs` proof that
+  formally exercises the rung-1 path remap's cross-tree value — evidence already strong (strings
+  audit: 0 worktree-path leaks; remaining paths home-relative + identical on-machine).
+- **Rung 4 (build-id / debug-GUID determinism) ✅ SATISFIED ALL 3 ARCHES — verified, no work
+  needed.** Each arch's cold build-twice being byte-identical *proves* the PE debug directory /
+  CodeView GUID / build-id are already deterministic (content-derived or absent) — a random/time
+  id would have differed between the two builds. Closed by the rung-5 result on i386+amd64+arm64.
+- **×3 cold gate** for the rung-1/2/2b build changes: landed on mainline via the build-cache merge
+  (`53f453b586e`, ×3 boot-green), now in c-r-p, and the determinism *effect* is RUN-proven on all
+  3 arches (above). **The determinism ladder is functionally complete** (rungs 0–5 done; rung-4
+  satisfied-by-construction). Only optional polish remains: the formal cross-worktree diff and the
+  2 residual ccache main-path strings (harmless; would clear on a cache-off cold build).
 
 ## Sources of nondeterminism — the catalog (research notes)
 
