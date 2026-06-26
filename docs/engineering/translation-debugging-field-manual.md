@@ -244,6 +244,13 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Bonus (co-occurring): a `__forceinline`-from-a-header arithmetic helper is NOT a real export** — e.g. `RtlULongMult` (ntintsafe.h). Declaring it `extern` → undefined `_RtlULongMult@12` at link. Reimplement it locally as a small checked-arithmetic Rust fn (STATUS_SUCCESS / 0xC0000095 STATUS_INTEGER_OVERFLOW); see `win32k-rust/src/surface.rs` and gdi32 `font.rs`/`bitmap.rs`. (Sibling of "DDK FORCEINLINE exported only on i386" above, but here it's exported *nowhere*.)
 **Source:** gdi32 Wave 2 (`coord.rs`), Wave 2b (`font.rs`), Wave 3a (`path.rs`/`bitmap.rs`) — `docs/engineering/gdi32-translation-audit.md`.
 
+### cohab flip drops a `.spec`-exported symbol that was a hidden OBJ-LEVEL alias in the flipped `.c`
+**Symptom:** after a per-file cohab flip (`.c`→`.rs`), the DLL link fails with `undefined symbol: _Foo@N` for a symbol whose **literal name appears in NO `.c` file** — only in the `.spec` / a `.def`. The Rust crate compiles fine; it's a link-only break.
+**Root cause:** the DLL's `.spec` exports `Foo` (e.g. gdi32 ordinal 273 `GdiEntry16`), and the flipped `.c` translation-unit was emitting `_Foo@N` *as an alias of a differently-named function it defines* (gdi32: `_GdiEntry16@12` aliased `DdSwapTextureHandles` in historic.c.obj — the C did it via a build/obj-level alias with no visible source macro). The `.rs` defines the real function but not the alias, so the spec export goes unsatisfied.
+**Detection:** `undefined _Foo@N` + `grep -rn Foo **/*.c` returns nothing → it was an obj-level alias. Find the real target: grep the `.spec` (and any reference `.def` like ReactOS's `good api.def`, which had `GdiEntry16@12=DdSwapTextureHandles@12`) for the ordinal, and `nm` the **pre-flip** `.obj` to confirm `_Foo@N` lived there.
+**Fix:** re-provide the alias explicitly in the `.rs` as a `#[no_mangle] extern "system" fn Foo(...)` forwarding to the real target — **all-arch** (the spec export is arch-independent; `_Foo@N` on i386, `Foo` on amd64/arm64). **Recurs across a family:** gdi32's `GdiEntry1..15` (gdientry.c, aliasing the `DdXxx` HAL fns) will each need this when that file flips. **Sibling bug (same gate):** a *blanket* "this family is cdecl/stdcall" rule that's wrong for one member — `EMFDC_*` were assumed cdecl but `wine/emfdc.c` declares `BOOL WINAPI EMFDC_GdiComment` (stdcall) → `undefined _EMFDC_GdiComment` until its decl was `extern "system"`. Verify each cross-file callee's *own* decoration against its C def.
+**Source:** gdi32 Wave 3b (`historic.rs` GdiEntry16, `enhmfile.rs` EMFDC_GdiComment).
+
 ---
 
 ## LLVM captures(none) / ud2 / codegen-unit miscompiles
