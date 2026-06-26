@@ -55,7 +55,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
         (*SplitTransfer).TransferParameters.TransferBufferLength = MaxTransferSize;
 
         (*SplitTransfer).SgList.CurrentVa =
-            (((*Transfer).SgList.CurrentVa as u64).wrapping_add(TransferOffset as u64) as ULONG_PTR as u32);
+            (((*Transfer).SgList.CurrentVa as u64).wrapping_add(TransferOffset as u64) as _);
         (*SplitTransfer).SgList.MappedSystemVa =
             ((*Transfer).SgList.MappedSystemVa as u64).wrapping_add(TransferOffset as u64) as PVOID;
 
@@ -79,7 +79,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
     (*SplitTransfer).TransferParameters.IsTransferSplited = 1 as BOOL;
 
     (*SplitTransfer).SgList.CurrentVa =
-        (((*Transfer).SgList.CurrentVa as u64).wrapping_add(TransferOffset as u64) as ULONG_PTR as u32);
+        (((*Transfer).SgList.CurrentVa as u64).wrapping_add(TransferOffset as u64) as _);
     (*SplitTransfer).SgList.MappedSystemVa =
         ((*Transfer).SgList.MappedSystemVa as u64).wrapping_add(TransferOffset as u64) as PVOID;
 

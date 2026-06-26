@@ -6433,7 +6433,7 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn USBPORT_DoneTransfer(Transfer: PUSBPORT_TRANSFER);
 }
-unsafe extern "system" {
+unsafe extern "C" {
     pub fn USBPORT_DbgPrint(MiniPortExtension: PVOID, Level: ULONG, Format: PCH, ...) -> ULONG;
 }
 unsafe extern "system" {

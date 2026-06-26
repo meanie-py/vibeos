@@ -52,7 +52,7 @@ pub unsafe extern "system" fn USBPORT_CompletePdoWaitWake(FdoDevice: PDEVICE_OBJ
         );
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = (0 as ULONG_PTR as u32);
+        (*Irp).IoStatus.Information = (0 as _);
         IoCompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
 
         return;

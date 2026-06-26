@@ -109,7 +109,10 @@ pub unsafe fn MmGetMdlVirtualAddress(Mdl: *mut ntkrnl_sys::ddk::_MDL) -> *mut co
 }
 
 // ---- IRQL (i386: HAL export; amd64: CR8 FORCEINLINE) — re-export ntkrnl-sys inline ----
+#[cfg(target_arch = "x86")]
 pub use ntkrnl_sys::inline::tier1::{KeRaiseIrql, KeLowerIrql};
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::tier1::{KeRaiseIrqlInternal as KeRaiseIrql, KeLowerIrqlInternal as KeLowerIrql};
 
 // ---- BM_REQUEST_TYPE — bindgen collapsed the bitfield struct to just `B: UCHAR`; supply the
 // USB-spec bmRequestType bitfield accessors (Recipient[0:4], Type[5:6], Dir[7]) on the byte. ----
@@ -155,7 +158,8 @@ pub const USBD_STATUS_BAD_START_FRAME: USBD_STATUS = 0xC0000A00u32 as USBD_STATU
 // ASYNC_TIMER_CALLBACK: usbport.h `typedef VOID ASYNC_TIMER_CALLBACK(PVOID, PVOID)` —
 // bindgen inlined the field type, so the named alias is absent. Matches the
 // _USBPORT_ASYNC_CALLBACK_DATA.CallbackFunction slot Option<fn(PVOID,PVOID)>.
-pub type ASYNC_TIMER_CALLBACK = unsafe extern "system" fn(arg1: PVOID, arg2: PVOID);
+#[cfg(target_arch = "x86")]
+pub type ASYNC_TIMER_CALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID)>;
 
 // USB_IDLE_CALLBACK_INFO: usbiodef.h — usbiodef.h not in the bindgen allowlist, re-declared.
 pub type USB_IDLE_CALLBACK = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;

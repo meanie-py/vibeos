@@ -1540,7 +1540,7 @@ pub unsafe extern "system" fn USBPORT_BadRequestFlush(FdoDevice: PDEVICE_OBJECT)
         }
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_NOT_CONNECTED;
-        (*Irp).IoStatus.Information = (0 as ULONG_PTR as u32);
+        (*Irp).IoStatus.Information = (0 as _);
         IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
     }
 }

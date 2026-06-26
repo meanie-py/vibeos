@@ -416,7 +416,7 @@ pub unsafe extern "system" fn USBPORT_FdoDeviceControl(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = (Information as u32);
+    (*Irp).IoStatus.Information = (Information as _);
     IoCompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
 
     return Status;

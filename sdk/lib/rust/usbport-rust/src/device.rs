@@ -1841,12 +1841,12 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
         USBPORT_Wait(FdoDevice, 100);
     }
 
-    let _devdesc_cmp: u32 = RtlCompareMemory(
+    let _devdesc_cmp = RtlCompareMemory(
         core::ptr::addr_of!((*NewDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
         core::ptr::addr_of!((*OldDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
-        core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as u32,
+        core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as _,
     );
-    if core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as u32 == _devdesc_cmp
+    if core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() == _devdesc_cmp as usize
     {
         (*NewDeviceHandle).ConfigHandle = (*OldDeviceHandle).ConfigHandle;
 

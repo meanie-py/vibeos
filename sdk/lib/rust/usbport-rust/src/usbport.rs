@@ -121,7 +121,7 @@ pub unsafe extern "system" fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT) {
     ExInterlockedInsertTailList(
         core::ptr::addr_of_mut!(USBPORT_USB1FdoList),
         core::ptr::addr_of_mut!((*FdoExtension).ControllerLink),
-        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut u32),
+        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut _),
     );
 }
 
@@ -135,7 +135,7 @@ pub unsafe extern "system" fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT) {
     ExInterlockedInsertTailList(
         core::ptr::addr_of_mut!(USBPORT_USB2FdoList),
         core::ptr::addr_of_mut!((*FdoExtension).ControllerLink),
-        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut u32),
+        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut _),
     );
 }
 
@@ -1936,11 +1936,11 @@ pub unsafe extern "system" fn USBPORT_AllocateCommonBuffer(
         .wrapping_add(LengthPadded as ULONG_PTR) as PUSBPORT_COMMON_BUFFER_HEADER;
 
     (*HeaderBuffer).Length = Length;
-    (*HeaderBuffer).BaseVA = (BaseVA as u32);
+    (*HeaderBuffer).BaseVA = (BaseVA as _);
     (*HeaderBuffer).LogicalAddress = LogicalAddress;
 
-    (*HeaderBuffer).BufferLength = (BufferLength.wrapping_add(LengthPadded as SIZE_T) as u32);
-    (*HeaderBuffer).VirtualAddress = (StartBufferVA as u32);
+    (*HeaderBuffer).BufferLength = (BufferLength.wrapping_add(LengthPadded as SIZE_T) as _);
+    (*HeaderBuffer).VirtualAddress = (StartBufferVA as _);
     (*HeaderBuffer).PhysicalAddress = StartBufferPA;
 
     RtlZeroMemory(
@@ -2287,7 +2287,7 @@ pub unsafe extern "system" fn USBPORT_RequestAsyncCallback(
     TimerValue: ULONG,
     Buffer: PVOID,
     Length: SIZE_T,
-    Callback: Option<ASYNC_TIMER_CALLBACK>,
+    Callback: ASYNC_TIMER_CALLBACK,
 ) -> ULONG {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut FdoDevice: PDEVICE_OBJECT;
@@ -2505,7 +2505,7 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
         }
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        (*Irp).IoStatus.Information = (0 as ULONG_PTR as u32);
+        (*Irp).IoStatus.Information = (0 as _);
 
         KeRaiseIrql(DISPATCH_LEVEL as KIRQL, core::ptr::addr_of_mut!(OldIrql));
         IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
@@ -2571,7 +2571,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
     sgList = core::ptr::addr_of_mut!((*Transfer).SgList) as PUSBPORT_SCATTER_GATHER_LIST;
 
     (*sgList).Flags = 0;
-    (*sgList).CurrentVa = (CurrentVa as u32);
+    (*sgList).CurrentVa = (CurrentVa as _);
     (*sgList).MappedSystemVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority);
     (*Transfer).MapRegisterBase = MapRegisterBase;
 
@@ -2856,8 +2856,8 @@ pub unsafe extern "system" fn USBPORT_AllocateTransfer(
     (*Transfer).Urb = Urb;
     (*Transfer).Endpoint = (*PipeHandle).Endpoint as PUSBPORT_ENDPOINT;
     (*Transfer).Event = Event;
-    (*Transfer).PortTransferLength = (PortTransferLength as u32);
-    (*Transfer).FullTransferLength = (FullTransferLength as u32);
+    (*Transfer).PortTransferLength = (PortTransferLength as _);
+    (*Transfer).FullTransferLength = (FullTransferLength as _);
     (*Transfer).IsoBlockPtr = core::ptr::null_mut();
     (*Transfer).Period = 0 as ULONG;
     (*Transfer).ParentTransfer = Transfer;
@@ -2982,7 +2982,7 @@ pub unsafe extern "system" fn USBPORT_RegisterUSBPortDriver(
         InitializeListHead(core::ptr::addr_of_mut!(USBPORT_USB1FdoList));
         InitializeListHead(core::ptr::addr_of_mut!(USBPORT_USB2FdoList));
 
-        KeInitializeSpinLock((core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut u32));
+        KeInitializeSpinLock((core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut _));
         USBPORT_Initialized = 1 as BOOLEAN;
     }
 
@@ -3007,7 +3007,7 @@ pub unsafe extern "system" fn USBPORT_RegisterUSBPortDriver(
     ExInterlockedInsertTailList(
         core::ptr::addr_of_mut!(USBPORT_MiniPortDrivers),
         core::ptr::addr_of_mut!((*MiniPortInterface).DriverLink),
-        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut u32),
+        (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut _),
     );
 
     (*(*DriverObject).DriverExtension).AddDevice = cb!(USBPORT_AddDevice);
