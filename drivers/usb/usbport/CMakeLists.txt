@@ -35,11 +35,10 @@ add_custom_command(
     COMMENT "Building usbport-rust (${USBPORT_RUST_TARGET})" VERBATIM)
 add_custom_target(rust_usbport DEPENDS ${USBPORT_RUST_LIB})
 
-# Still-C cohab TUs: pnp.c (whole file not yet translated) + usbport_cohab_c.c (the two
-# functions the API translation left as commented stubs: USBPORT_AbortTransfers /
-# USBPORT_ClearStall). These are the untranslated remainder. guid.c is the data-only TU.
+# Still-C cohab TU: usbport_cohab_c.c (the two functions the API translation left as
+# commented stubs: USBPORT_AbortTransfers / USBPORT_ClearStall). pnp.c is now Rust
+# (usbport-rust/src/pnp.rs). guid.c is the data-only TU (DEFINE_GUID via initguid.h).
 list(APPEND PCH_SKIP_SOURCE
-    pnp.c
     usbport_cohab_c.c
     guid.c)
 

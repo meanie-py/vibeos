@@ -360,3 +360,75 @@ pub unsafe extern "system" fn IsEqualGUIDAligned(
 pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
     ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
 }
+
+// ---- pnp.rs: PCI/IRP constants + GUID data symbols (the latter instantiated by guid.c
+// via initguid.h; referenced here as extern statics, resolved at link within usbport.sys) ----
+pub const PCI_USE_CLASS_SUBCLASS: u32 = 0x00000008;
+pub const PCI_USE_PROGIF: u32 = 0x00000010;
+pub const PCI_USE_LOCAL_BUS: u32 = 0x00000020;
+pub const PCI_USE_LOCAL_DEVICE: u32 = 0x00000040;
+pub const PCI_CLASS_SERIAL_BUS_CTLR: u32 = 0x0c;
+pub const PCI_SUBCLASS_SB_USB: u32 = 0x03;
+pub const IRP_MN_QUERY_INTERFACE: u8 = 8;
+pub const IRP_MN_QUERY_CAPABILITIES: u8 = 9;
+
+extern "C" {
+    pub static GUID_BUS_INTERFACE_STANDARD: GUID;
+    pub static GUID_PCI_DEVICE_PRESENT_INTERFACE: GUID;
+    pub static GUID_DEVINTERFACE_USB_HOST_CONTROLLER: GUID;
+    pub static GUID_DEVINTERFACE_USB_HUB: GUID;
+    pub static GUID_BUS_TYPE_USB: GUID;
+}
+
+// pnp.rs enum-member aliases (bindgen names them `_ENUM_Member`)
+pub use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE as DEVICE_RELATION_TYPE;
+pub use ntkrnl_sys::ddk::_BUS_QUERY_ID_TYPE_BusQueryDeviceID as BusQueryDeviceID;
+pub use ntkrnl_sys::ddk::_BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs;
+pub use ntkrnl_sys::ddk::_BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs as BusQueryCompatibleIDs;
+pub use ntkrnl_sys::ddk::_BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID;
+pub use ntkrnl_sys::ddk::_BUS_QUERY_ID_TYPE_BusQueryDeviceSerialNumber as BusQueryDeviceSerialNumber;
+
+// pnp.rs: more enum-member aliases
+pub use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations as BusRelations;
+pub use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_RemovalRelations as RemovalRelations;
+pub use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation;
+pub use ntkrnl_sys::ddk::_CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared;
+pub use ntkrnl_sys::ddk::_DMA_SPEED_Compatible as Compatible;
+pub use ntkrnl_sys::ddk::DEVICE_REGISTRY_PROPERTY_DevicePropertyBusNumber as DevicePropertyBusNumber;
+pub use ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus as PCIBus;
+pub use ntkrnl_sys::ddk::_INTERFACE_TYPE_PNPBus as PNPBus;
+pub use ntkrnl_sys::ddk::_DMA_WIDTH_Width32Bits as Width32Bits;
+
+// ---- pnp.rs ddk macro-inlines (forward to ntkrnl_sys inlines) ----
+#[no_mangle]
+pub unsafe extern "C" fn IoGetNextIrpStackLocation(
+    Irp: ntkrnl_sys::ddk::PIRP,
+) -> ntkrnl_sys::ddk::PIO_STACK_LOCATION {
+    ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(Irp)
+}
+#[no_mangle]
+pub unsafe extern "C" fn IoSetCompletionRoutine(
+    Irp: ntkrnl_sys::ddk::PIRP,
+    CompletionRoutine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE,
+    Context: PVOID,
+    InvokeOnSuccess: BOOLEAN,
+    InvokeOnError: BOOLEAN,
+    InvokeOnCancel: BOOLEAN,
+) {
+    ntkrnl_sys::inline::tier1::IoSetCompletionRoutine(
+        Irp, CompletionRoutine, Context, InvokeOnSuccess, InvokeOnError, InvokeOnCancel,
+    )
+}
+// RtlStringCbPrintfExW: ntstrsafe FORCEINLINE, no export. Link-clean stub (non-boot path).
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfExW(
+    _pszDest: *mut u16,
+    _cbDest: usize,
+    _ppszDestEnd: *mut *mut u16,
+    _pcbRemaining: *mut usize,
+    _dwFlags: u32,
+    _pszFormat: *const u16,
+    mut _args: ...
+) -> i32 {
+    0 // STATUS_SUCCESS
+}
