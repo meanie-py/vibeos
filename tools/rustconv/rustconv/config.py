@@ -818,8 +818,9 @@ TARGETS = {
     # descriptor/disk/error/fdo/misc/pdo/queue/scsi/usbstor + guid). Bridges the USB stack
     # (URB/USBDI) to the SCSI/disk class — adjacent to the already-Rust disk/classpnp/scsiport
     # storage lane. kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/usbd, links sptilib).
-    # Private structs (CBW/CSW/IRP_CONTEXT/FDO+PDO device extensions/STORAGE_ADAPTER_DESCRIPTOR_WIN8)
-    # in usbstor.h. NOT boot-loaded in smoke (boots from CD/ramdisk, not USB) -> link-clean x3 bar.
+    # Private structs (CBW/CSW/IRP_CONTEXT/FDO+PDO device extensions/
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8) in usbstor.h. NOT boot-loaded in smoke
+    # (boots from CD/ramdisk, not USB) -> link-clean x3 bar.
     "usbstor": Target(
         name="usbstor",
         source_dir=USBSTOR_DIR,
