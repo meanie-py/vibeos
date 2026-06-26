@@ -92,7 +92,18 @@ post-boot refinement.
 | Wave | Commit | i386 | amd64 | arm64 |
 |------|--------|------|-------|-------|
 | 0 (linedda) | `0c811db111a` | build+boot ✓ (81s/73s quiet) | (gate) | (gate) |
-| 1a (dllmain+misc+gdiobj) | _pending_ | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
+| 1a (dllmain+misc+gdiobj) | `94e0fd5972a` | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
+| 1b (brush+pen+palette+colorspace+clientobj) | _pending_ | build+link ✓ | build+link ✓ | build+link ✓ | (smoke deferred — host held for other-lane gates; will boot once free) |
+
+### Wave 1b notes (object-creation wrappers)
+5 files (~1K LOC, 38 fns) via 3 parallel opus agents against `~/vibeos-rust-staging/gdi32-wave1b/CONTRACT-1b.md` (addendum to the 1a contract: substrate now in-crate). Object-creation NtGdi* wrappers:
+- **brush.rs** (13 fns) — Create{Solid,Hatch,Pattern,DIBPattern}Brush, CreateBrushIndirect, Get/Set/ClearBrushAttributes, BrushOrg (batch GdiBCSetBrushOrg), UnrealizeObject.
+- **palette.rs** (11 fns) — CreatePalette, Get/SetPaletteEntries, RealizePalette, ResizePalette, UpdateColors, Get/SetDIBColorTable, AnimatePalette (NtGdiDoPalette).
+- **pen.rs** (2 fns) — CreatePen, CreatePenIndirect.
+- **colorspace.rs** (7 fns) — GetLogColorSpaceA/W, Get/SetDeviceGammaRamp, CheckColorsInGamut, ColorMatchToTarget, SetColorAdjustment.
+- **clientobj.rs** (5 fns) — GdiCreate/Get/Remove/Delete ClientObjLink + Create/Delete ClientObj; **DEFINES `gcClientObj` (resolves gdiobj.rs's extern) + `gcsClientObjLinks` (resolves dllmain.rs's extern)**.
+
+Integration: only 3 errors total (contract reuse paid off) — `GdiBCSetBrushOrg` ambiguous → gdihelp-qualified (the Wave-1a GdiBC* pattern); `pcol` immutable-reassign → `mut`. Compiles + cohab-relinks clean ×3.
 
 ### Wave 1a notes (substrate)
 3 files via parallel opus agents against `~/vibeos-rust-staging/gdi32-wave1a/CONTRACT.md`, integrated centrally:

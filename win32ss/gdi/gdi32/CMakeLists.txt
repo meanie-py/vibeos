@@ -23,9 +23,9 @@ list(APPEND SOURCE
     misc/wingl.c
     objects/arc.c
     objects/bitmap.c
-    objects/brush.c
-    objects/clientobj.c
-    objects/colorspace.c
+    # objects/brush.c — replaced by Rust (gdi32-rust/src/objects/brush.rs); cohab via libgdi32_rust.a
+    # objects/clientobj.c — replaced by Rust (gdi32-rust/src/objects/clientobj.rs); cohab via libgdi32_rust.a
+    # objects/colorspace.c — replaced by Rust (gdi32-rust/src/objects/colorspace.rs); cohab via libgdi32_rust.a
     objects/coord.c
     objects/dc.c
     objects/eng.c
@@ -37,8 +37,8 @@ list(APPEND SOURCE
     objects/metafile.c
     objects/painting.c
     objects/printdrv.c
-    objects/palette.c
-    objects/pen.c
+    # objects/palette.c — replaced by Rust (gdi32-rust/src/objects/palette.rs); cohab via libgdi32_rust.a
+    # objects/pen.c — replaced by Rust (gdi32-rust/src/objects/pen.rs); cohab via libgdi32_rust.a
     objects/region.c
     objects/text.c
     objects/utils.c
