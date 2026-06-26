@@ -30,7 +30,7 @@ list(APPEND SOURCE
     objects/dc.c
     objects/eng.c
     objects/enhmfile.c
-    objects/font.c
+    # objects/font.c — replaced by Rust (gdi32-rust/src/objects/font.rs); cohab via libgdi32_rust.a
     # objects/gdiobj.c — replaced by Rust (gdi32-rust/src/objects/gdiobj.rs); cohab via libgdi32_rust.a
     objects/icm.c
     # objects/linedda.c — replaced by Rust (gdi32-rust/src/objects/linedda.rs); cohab via libgdi32_rust.a

@@ -94,7 +94,28 @@ post-boot refinement.
 | 0 (linedda) | `0c811db111a` | build+boot ✓ (81s/73s quiet) | (gate) | (gate) |
 | 1a (dllmain+misc+gdiobj) | `94e0fd5972a` | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
 | 1b (brush+pen+palette+colorspace+clientobj) | `7d40b6e83b2` (landed `76312282832`) | boot ✓ | boot ✓ (net✓) | boot ✓ 33s (genuine Rust, post archcfg-fix) |
-| 2 (coord+painting+text+arc+region) | _pending_ | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
+| 2 (coord+painting+text+arc+region) | landed `eaae890a98f` | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
+| 2b (font) | _pending_ | build+boot ✓ 1m13s | build+boot ✓ (net flake unrelated — gdi32 has no net surface) | build+boot ✓ 43s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (largest single file) |
+
+### Wave 2b notes (font.c — the largest single file)
+ONE file (~2.8K LOC, 70 exported + 11 private fns) via a single opus agent against
+`~/vibeos-rust-staging/gdi32-wave2b/CONTRACT-2b.md`, integrated centrally. Font selection
+(CreateFont(Indirect)A/W), enumeration (EnumFontFamilies(Ex)A/W + qsort/IntFontFamilyCompare
+callback), metrics (GetOutlineTextMetrics, GetTextExtent*, GetCharWidth/ABCWidths incl. the
+`*Float` PFLOAT/LPABCFLOAT variants), glyph (GetGlyphOutline/Indices), char placement, and
+font-resource add/remove (incl. IntConvertFontPaths). **3 integration fixes** (all the i386
+float-ABI class + one inline-not-export):
+- **`GDI_ROUND(FLOAT)`** and **`dabs(f64)`** were translated as fns → i386 `-sse,-sse2`
+  rejects an f32/f64 *value* crossing a fn boundary (rustc errors at the definition, even
+  `#[inline]`). → both converted to `macro_rules!` (math stays in-body, x87). GDI_ROUND made
+  **f64-native** (C computes the world-to-viewport transform in `double` throughout, then
+  `(int)floor(val+0.5)`; the agent's initial f32 narrowing would've lost precision). Same
+  pattern as coord.rs `_fmul!`/`_lrintf!`. **NB: FLOAT *pointers* (PFLOAT/LPABCFLOAT) and
+  FLOAT struct fields are fine — only by-value f32/f64 params/returns are forbidden.**
+- **`RtlULongMult`** declared `extern` → it's a `__forceinline` from ntintsafe.h, NOT an
+  ntdll export → undefined `_RtlULongMult@12` at link. → reimplemented locally as a checked
+  u32 multiply (STATUS_SUCCESS / 0xC0000095 STATUS_INTEGER_OVERFLOW), matching
+  `win32k-rust/src/surface.rs`.
 
 ### Wave 2 notes (desktop render path)
 5 files (~4.2K LOC, ~122 fns) via 5 parallel opus agents against `~/vibeos-rust-staging/gdi32-wave2/CONTRACT-2.md`, integrated centrally — only **2 compile errors** across 4.2K LOC (contract pattern dialed in):
