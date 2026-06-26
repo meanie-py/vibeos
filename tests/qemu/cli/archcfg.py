@@ -86,6 +86,14 @@ _CFGS = {
         # whose old dirty-volume constant mismatched FatSetFatEntry's check and
         # raised a spurious STATUS_FILE_CORRUPT_ERROR (0xC0000102) → BUGCHECK 0x1E
         # during the registry hive-create. Rebuilding+staging fastfat clears it.
+        # gdi32/user32 are the usermode GDI+windowing client DLLs (both being C→Rust
+        # cohab-translated, user32 100% Rust, gdi32 in progress). Same trap as
+        # win32k/kernel32: NOT in this set → `build --arch arm64` rebuilt neither, so
+        # mkramdisk staged an 8-day-STALE gdi32.dll (.text=0x27e10, the old C) and a
+        # stale user32.dll → arm64 gates false-greened the Rust gdi32/user32 (they
+        # were boot-exercised on i386+amd64 but the arm64 boot ran the C binaries).
+        # rust_gdi32/rust_user32 build the cohab staticlibs; the .dll targets relink
+        # them in. mkramdisk.sh already copies both (lines 232-233).
         ninja_targets=(
             "ntoskrnl",
             "hal",
@@ -93,6 +101,10 @@ _CFGS = {
             "win32k",
             "rust_kernel32",
             "dll/win32/kernel32/kernel32.dll",
+            "rust_gdi32",
+            "win32ss/gdi/gdi32/gdi32.dll",
+            "rust_user32",
+            "win32ss/user/user32/user32.dll",
             "fastfat",
             "netstack",
             "livecd_hives",
@@ -110,6 +122,8 @@ _CFGS = {
             "boot/freeldr/uefildr/uefildr.efi",
             "win32ss/win32k.sys",
             "dll/win32/kernel32/kernel32.dll",
+            "win32ss/gdi/gdi32/gdi32.dll",
+            "win32ss/user/user32/user32.dll",
             "drivers/filesystems/fastfat/fastfat.sys",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
