@@ -502,6 +502,15 @@ def _start_echo_server() -> socketserver.BaseServer:
 # TCP stack — where QEMU.exe actually binds them. None on the native backend.
 _windows_port_picker: Callable[[], int] | None = None
 
+# Slirp hostfwd ports are picked TOCTOU-style (pick-free-then-release; QEMU rebinds
+# a moment later), so a concurrent same-host launch can steal a port in the gap and
+# QEMU dies at startup with `Could not set up host forwarding rule` — erroring the
+# whole net stage of an otherwise-unrelated gate. The bind happens during slirp init,
+# before firmware, so a clean launch is still alive after a short probe while a bind
+# failure has already exited; on that specific failure we re-pick ports and relaunch.
+_HOSTFWD_LAUNCH_RETRIES = 4
+_HOSTFWD_PROBE_SECONDS = 1.5
+
 
 def _free_tcp_port() -> int:
     """Pick a currently-free TCP port for a slirp hostfwd rule.
@@ -972,12 +981,11 @@ class QemuVM:
         # lifetime; released in stop()/atexit.
         self._acquire_slot()
 
-        self._proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            preexec_fn=os.setpgrp,
-        )
+        # Launch QEMU. For net configs this retries a transient slirp hostfwd
+        # port-race (see _launch_with_hostfwd_retry) with fresh ports, in this
+        # same slot; non-net configs launch once. `cmd` may be updated with the
+        # re-picked ports — use the returned value for the lock-file record below.
+        self._proc, cmd = self._launch_with_hostfwd_retry(cmd)
 
         # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
         # launcher (this pytest process) dies. reap_orphan_qemus() is auto-
@@ -1034,6 +1042,103 @@ class QemuVM:
                 lambda: self.qmp.connect(str(self.qmp_path), timeout=self.config.qmp_timeout),
                 "QMP",
             )
+
+    def _launch_with_hostfwd_retry(
+        self, cmd: list[str]
+    ) -> tuple[subprocess.Popen, list[str]]:
+        """Popen QEMU, retrying ONLY a transient slirp hostfwd port-race.
+
+        For a net config (`hostfwd=` present), a stolen port makes QEMU exit at
+        slirp init — before firmware — with `Could not set up host forwarding
+        rule`, which would otherwise error the whole net stage. That's transient:
+        re-pick the two hostfwd ports (and the config fields the tests dial) and
+        relaunch in this same already-held slot. The dead QEMU is already reaped
+        by the probe, the serial/QMP listeners were never connected, so nothing
+        to tear down. Non-net configs (no `hostfwd=`) launch exactly once with no
+        probe delay. Any non-hostfwd early exit is handed back untouched so the
+        normal serial/QMP path surfaces the real launch error.
+        """
+        has_hostfwd = any("hostfwd=" in a for a in cmd)
+        attempts = _HOSTFWD_LAUNCH_RETRIES if has_hostfwd else 1
+        proc: subprocess.Popen | None = None
+        for attempt in range(attempts):
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setpgrp,
+            )
+            if not has_hostfwd:
+                return proc, cmd
+            err = self._probe_launch_failure(proc, _HOSTFWD_PROBE_SECONDS)
+            if err is None:
+                return proc, cmd  # survived the probe — the bind succeeded
+            if "host forwarding" not in err.lower() and "hostfwd" not in err.lower():
+                # Died early for a different reason — don't mask it; let the
+                # caller's serial/QMP connect surface the real failure.
+                return proc, cmd
+            if attempt + 1 >= attempts:
+                print(
+                    f"[QemuVM] hostfwd bind still losing the port race after "
+                    f"{attempts} attempts; proceeding (will surface as a launch error)"
+                )
+                return proc, cmd
+            cmd = self._repick_hostfwd_ports(cmd)
+            print(
+                f"[QemuVM] hostfwd bind lost the port race "
+                f"(attempt {attempt + 1}/{attempts}); relaunching with fresh ports"
+            )
+        assert proc is not None  # attempts >= 1
+        return proc, cmd
+
+    def _probe_launch_failure(
+        self, proc: subprocess.Popen, seconds: float
+    ) -> str | None:
+        """Watch a freshly-spawned QEMU for ~`seconds`. Return its stderr if it
+        exits in that window (a hostfwd bind failure is essentially immediate),
+        else None — meaning it's alive and past the slirp-init bind."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                try:
+                    raw = proc.stderr.read() if proc.stderr else b""
+                    err = raw.decode("utf-8", "replace")
+                except Exception:
+                    err = ""
+                return err or f"qemu exited rc={proc.returncode} with no stderr"
+            time.sleep(0.05)
+        return None
+
+    def _repick_hostfwd_ports(self, cmd: list[str]) -> list[str]:
+        """Re-pick the two slirp hostfwd host ports and patch them into `cmd`.
+
+        Updates the config fields the tests dial (`echo_hostfwd_port` /
+        `tdi_srv_hostfwd_port`) and swaps the old port for the new one inside the
+        `-netdev` arg, by exact `:{old}-` match (the `-` is the slirp host/guest
+        port delimiter, so guest ports and addresses can't collide). Backend-aware:
+        windows-host picks on the Windows TCP stack where QEMU.exe binds."""
+        cfg = self.config
+        old_echo = getattr(cfg, "echo_hostfwd_port", 0)
+        old_tdi = getattr(cfg, "tdi_srv_hostfwd_port", 0)
+        if self._backend == "windows-host":
+            from . import backend as be
+
+            pick = be.windows_free_tcp_port
+        else:
+            pick = _free_tcp_port
+        new_echo = pick()
+        new_tdi = pick()
+        cfg.echo_hostfwd_port = new_echo
+        cfg.tdi_srv_hostfwd_port = new_tdi
+        out: list[str] = []
+        for a in cmd:
+            if "hostfwd=" in a:
+                if old_echo:
+                    a = a.replace(f":{old_echo}-", f":{new_echo}-")
+                if old_tdi:
+                    a = a.replace(f":{old_tdi}-", f":{new_tdi}-")
+            out.append(a)
+        return out
 
     def wait_for_boot(self) -> str:
         """Wait for boot to complete. Returns all boot output.
