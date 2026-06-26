@@ -93,7 +93,18 @@ post-boot refinement.
 |------|--------|------|-------|-------|
 | 0 (linedda) | `0c811db111a` | build+boot ✓ (81s/73s quiet) | (gate) | (gate) |
 | 1a (dllmain+misc+gdiobj) | `94e0fd5972a` | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
-| 1b (brush+pen+palette+colorspace+clientobj) | _pending_ | build+link ✓ | build+link ✓ | build+link ✓ | (smoke deferred — host held for other-lane gates; will boot once free) |
+| 1b (brush+pen+palette+colorspace+clientobj) | `7d40b6e83b2` (landed `76312282832`) | boot ✓ | boot ✓ (net✓) | boot ✓ 33s (genuine Rust, post archcfg-fix) |
+| 2 (coord+painting+text+arc+region) | _pending_ | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
+
+### Wave 2 notes (desktop render path)
+5 files (~4.2K LOC, ~122 fns) via 5 parallel opus agents against `~/vibeos-rust-staging/gdi32-wave2/CONTRACT-2.md`, integrated centrally — only **2 compile errors** across 4.2K LOC (contract pattern dialed in):
+- **coord.rs** (28 fns) — viewport/window org+ext, DPtoLP/LPtoDP, World/ModifyWorldTransform, CombineTransform, layout, DC org. DC-attr-cache heavy.
+- **painting.rs** (31 fns) — MoveToEx/LineTo/Poly*/Rectangle/Ellipse/RoundRect/Fill·Frame·Invert·PaintRgn/Flood·SetPixel/Blt family (Bit/Pat/Stretch/Mask/Plg/Alpha/Transparent/Gradient). Batch GdiBCPatBlt/PolyPatBlt.
+- **text.rs** (33 fns) — TextOut/ExtTextOut(batch)/PolyTextOut/GetTextExtent*/GetTextMetrics/Face/Align/Color, A↔W via Rtl/WideCharToMultiByte.
+- **arc.rs** (5 fns) — Arc/ArcTo/Chord/Pie/AngleArc.
+- **region.rs** (25 fns) — CreateRectRgn/Elliptic/RoundRect/Polygon/CombineRgn/clip-region ops; **defines `DeleteRegion` (fastcall)** — resolves gdiobj.rs's extern.
+
+Integration fixes: `ExtTextOutW` cchString INT→UINT cast; **i386 no-SSE float-ABI** — coord's `_fmul`/`_lrintf` (both C *macros*) were translated as Rust fns taking `FLOAT`(f32) by value, which on i386 `-sse,-sse2` (i686-CPU-baseline rule) has no ABI register → converted them to Rust `macro_rules!` (faithful; f32 stays inside bodies via x87, never crosses a fn boundary; `FLOATL=DWORD` float-as-bits so `FOtoF`/`EFtoF` were fine). New field-manual candidate: **i386-no-SSE forbids f32 at fn boundaries → translate C float macros as Rust macros, not fns.**
 
 ### Wave 1b notes (object-creation wrappers)
 5 files (~1K LOC, 38 fns) via 3 parallel opus agents against `~/vibeos-rust-staging/gdi32-wave1b/CONTRACT-1b.md` (addendum to the 1a contract: substrate now in-crate). Object-creation NtGdi* wrappers:
