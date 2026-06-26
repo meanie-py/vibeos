@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
+    // __RPC_USER = stdcall; defined in samrpc.rs (_MIDL_user_free@4).
     fn MIDL_user_free(ptr: *mut core::ffi::c_void);
 }
 

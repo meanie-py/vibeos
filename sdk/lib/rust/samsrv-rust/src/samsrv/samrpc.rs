@@ -86,8 +86,21 @@ pub unsafe extern "C" fn midl_user_allocate(len: SIZE_T) -> *mut core::ffi::c_vo
 pub unsafe extern "C" fn midl_user_free(ptr: *mut core::ffi::c_void) {
     HeapFree(GetProcessHeap(), 0, ptr);
 }
+// The MIDL runtime/stub references the UPPERCASE names (C `#define
+// MIDL_user_allocate midl_user_allocate` in rpcndr.h; no preprocessor in the
+// Rust sam-stub). __RPC_USER = stdcall on i386 → extern "system" (_MIDL_user_*@N).
 #[no_mangle]
-pub unsafe extern "C" fn SAMPR_HANDLE_rundown(hHandle: SAMPR_HANDLE) {
+pub unsafe extern "system" fn MIDL_user_allocate(len: SIZE_T) -> *mut core::ffi::c_void {
+    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)
+}
+#[no_mangle]
+pub unsafe extern "system" fn MIDL_user_free(ptr: *mut core::ffi::c_void) {
+    HeapFree(GetProcessHeap(), 0, ptr);
+}
+// __RPC_USER (= __stdcall on i386) context-handle rundown → extern "system".
+#[no_mangle]
+pub unsafe extern "system" fn SAMPR_HANDLE_rundown(hHandle: SAMPR_HANDLE) {
+    let _ = hHandle;
 }
 
 #[no_mangle]
@@ -9353,15 +9366,15 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn SamrSetBootKeyInformation(_BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrSetBootKeyInformation(_BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "C" fn SamrGetBootKeyInformation(BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrGetBootKeyInformation(BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "C" fn SamrConnect3(BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrConnect3(BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -9398,7 +9411,7 @@ pub unsafe extern "system" fn SamrConnect4(
     )
 }
 #[no_mangle]
-pub unsafe extern "C" fn SamrUnicodeChangePasswordUser3(_BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrUnicodeChangePasswordUser3(_BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 

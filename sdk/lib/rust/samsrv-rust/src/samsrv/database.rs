@@ -7,7 +7,9 @@ extern "C" {
     fn wcscpy(dest: LPWSTR, src: LPWSTR) -> LPWSTR;
     fn wcslen(s: LPWSTR) -> usize;
 }
-extern "system" {
+extern "C" {
+    // C: `NTSTATUS SampRegQueryValue(IN HANDLE ...)` — cdecl (no NTAPI); defined
+    // extern "C" in registry.rs. Must match (i386 _SampRegQueryValue, no @N).
     fn SampRegQueryValue( KeyHandle: HANDLE, ValueName: LPWSTR, Type: PULONG, Data: LPVOID, DataSize: PULONG, ) -> NTSTATUS;
 }
 

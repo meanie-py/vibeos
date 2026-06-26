@@ -18,18 +18,18 @@ spec2def(samsrv.dll samsrv.spec ADD_IMPORTLIB)
 # compile_commands.json so sam-stub's build.rs (generate_rpc_stub_rust) can read
 # the precise symbol decorations (i386 _Samr*@N). Mirrors the lsasrv_c pattern.
 list(APPEND SOURCE
-    alias.c
-    database.c
-    display.c
-    domain.c
-    group.c
-    registry.c
-    samrpc.c
-    samsrv.c
-    security.c
-    setup.c
-    user.c
-    utils.c
+    # alias.c     — replaced by Rust (samsrv-rust/src/samsrv/alias.rs)
+    # database.c  — replaced by Rust (samsrv-rust/src/samsrv/database.rs)
+    # display.c   — replaced by Rust (samsrv-rust/src/samsrv/display.rs)
+    # domain.c    — replaced by Rust (samsrv-rust/src/samsrv/domain.rs)
+    # group.c     — replaced by Rust (samsrv-rust/src/samsrv/group.rs)
+    # registry.c  — replaced by Rust (samsrv-rust/src/samsrv/registry.rs)
+    # samrpc.c    — replaced by Rust (samsrv-rust/src/samsrv/samrpc.rs)
+    # samsrv.c    — replaced by Rust (samsrv-rust/src/samsrv/samsrv.rs)
+    # security.c  — replaced by Rust (samsrv-rust/src/samsrv/security.rs)
+    # setup.c     — replaced by Rust (samsrv-rust/src/samsrv/setup.rs)
+    # user.c      — replaced by Rust (samsrv-rust/src/samsrv/user.rs)
+    # utils.c     — replaced by Rust (samsrv-rust/src/samsrv/utils.rs)
     samsrv.h
     ${CMAKE_CURRENT_BINARY_DIR}/samsrv_stubs.c)
 

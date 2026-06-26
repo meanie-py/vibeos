@@ -20,6 +20,7 @@ extern "system" {
     fn LocalFree(hMem: LPVOID) -> LPVOID;
     fn RegCloseKey(hKey: HKEY) -> LONG;
     fn RegCreateKeyExW( hKey: HKEY, lpSubKey: LPCWSTR, Reserved: DWORD, lpClass: LPWSTR, dwOptions: DWORD, samDesired: DWORD, lpSecurityAttributes: LPVOID, phkResult: *mut HKEY, lpdwDisposition: *mut DWORD, ) -> LONG;
+    #[link_name = "RegSetValueExW"]
     fn RegSetValueEx( hKey: HKEY, lpValueName: LPCWSTR, Reserved: DWORD, dwType: DWORD, lpData: LPVOID, cbData: DWORD, ) -> LONG;
 }
 
