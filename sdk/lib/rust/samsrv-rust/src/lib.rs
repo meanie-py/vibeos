@@ -26,6 +26,11 @@ macro_rules! fixme { ($($arg:tt)*) => {{}}; }
 
 // Compile-time UTF-16 NUL-terminated &'static [u16; N] literal macros (crate is
 // #![no_std], no alloc). For ASCII string literals (registry key/attr names).
+// `#[macro_export]` so the `crate::wstr!` / `crate::wchar_literal!` path form the
+// c2rust output uses also resolves (plus the plain textual-scope form). All the
+// spellings the per-file translations emit (w!/widestring!/wchar_lit!/
+// wchar_literal!/wstr!) alias the one `wide!` implementation.
+#[macro_export]
 macro_rules! wide {
     ($s:literal) => {{
         const B: &[u8] = $s.as_bytes();
@@ -34,7 +39,23 @@ macro_rules! wide {
         &W
     }};
 }
-macro_rules! wstr { ($s:literal) => { wide!($s) }; }
+// `w!` mirrors `wide!` (array ref; call sites add `.as_ptr()`).
+#[macro_export]
+macro_rules! w { ($s:literal) => { $crate::wide!($s) }; }
+// The c2rust `L"..."`-decay spellings are passed *directly* where a `*const u16`
+// is expected (the C array-to-pointer decay), so these resolve to a pointer.
+#[macro_export]
+macro_rules! wstr { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! widestring { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! wchar_lit { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! wchar_literal { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+
+// FIELD_OFFSET(type, field) — winnt.h macro → core::mem::offset_of! (returns usize).
+#[macro_export]
+macro_rules! FIELD_OFFSET { ($t:ty, $f:ident) => { core::mem::offset_of!($t, $f) }; }
 
 mod consts;
 mod prelude;
