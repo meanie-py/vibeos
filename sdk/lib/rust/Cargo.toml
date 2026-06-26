@@ -199,6 +199,7 @@ members = [
     "svcctl-stub",
     "lsa-stub",
     "lsasrv-sys",
+    "samsrv-sys",
     "lsasrv-rust",
     "version-rust",
     "winreg-stub",

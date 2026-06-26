@@ -1,4 +1,9 @@
 use crate::prelude::*;
+use crate::lsasrv::utils::LsapLoadString;
+use crate::lsasrv::database::{
+    NtAuthority, NullSidAuthority, WorldSidAuthority, LocalSidAuthority, CreatorSidAuthority,
+    BuiltinDomainSid, AccountDomainSid, BuiltinDomainName, AccountDomainName,
+};
 
 extern "C" {
     fn ConvertSidToStringSidW(sid: PSID, string: *mut LPWSTR) -> BOOL;
@@ -26,18 +31,22 @@ pub static mut WellKnownSidListHead: LIST_ENTRY = LIST_ENTRY {
     Blink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
 };
 
+// Well-known SID globals — defined here (was `PSID LsapWorldSid = NULL;` in C
+// lookup.c), exported unmangled so the still-C TUs (lsarpc.c) and Rust siblings
+// (authpackage.rs) bind them by decorated C name.
+#[no_mangle]
 pub static mut LsapWorldSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapNetworkSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapBatchSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapInteractiveSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapServiceSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapLocalSystemSid: PSID = NULL;
-
+#[no_mangle]
 pub static mut LsapAdministratorsSid: PSID = NULL;
 
 pub type PSAMPR_SERVER_NAME = *mut u16;
@@ -58,6 +67,7 @@ pub struct _WELL_KNOWN_SID {
     pub DomainName: _UNICODE_STRING,
     pub Use: SID_NAME_USE,
 }
+pub type WELL_KNOWN_SID = _WELL_KNOWN_SID;
 pub type PWELL_KNOWN_SID = *mut _WELL_KNOWN_SID;
 #[no_mangle]
 pub unsafe extern "C" fn LsapCreateSid(
@@ -71,8 +81,8 @@ pub unsafe extern "C" fn LsapCreateSid(
 ) -> BOOLEAN {
     let AccountNameLength = wcslen(AccountName as *const u16) as SIZE_T;
     let DomainNameLength = wcslen(DomainName as *const u16) as SIZE_T;
-    if AccountNameLength > UNICODE_STRING_MAX_CHARS as usize
-        || DomainNameLength > UNICODE_STRING_MAX_CHARS as usize
+    if AccountNameLength > UNICODE_STRING_MAX_CHARS as SIZE_T
+        || DomainNameLength > UNICODE_STRING_MAX_CHARS as SIZE_T
     {
         return 0u8;
     }
@@ -166,8 +176,8 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
     let hInstance = GetModuleHandleW(
         core::mem::transmute::<&[u8; 22], &[u16; 11]>(b"l\0s\0a\0s\0r\0v\0.\0d\0l\0l\0\0\0").as_ptr(),
     );
-    LsapLoadString(hInstance, IDS_NT_AUTHORITY, szAccountName.as_mut_ptr(), 80);
-    LsapLoadString(hInstance, IDS_NT_AUTHORITY, szDomainName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szDomainName.as_mut_ptr(), 80);
     LsapCreateSid(
         &raw mut NtAuthority,
         0u8,
@@ -177,85 +187,85 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeDomain,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_NULL_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NULL_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_NULL_RID as u32;
     LsapCreateSid(
         &raw mut NullSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_WORLD_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_WORLD_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_WORLD_RID as u32;
     LsapCreateSid(
         &raw mut WorldSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         &raw mut LsapWorldSid,
     );
-    LsapLoadString(hInstance, IDS_LOCAL_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_LOCAL_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_LOCAL_RID as u32;
     LsapCreateSid(
         &raw mut LocalSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_CREATOR_OWNER_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_CREATOR_OWNER_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_CREATOR_OWNER_RID as u32;
     LsapCreateSid(
         &raw mut CreatorSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_CREATOR_GROUP_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_CREATOR_GROUP_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_CREATOR_GROUP_RID as u32;
     LsapCreateSid(
         &raw mut CreatorSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_CREATOR_OWNER_SERVER_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_CREATOR_OWNER_SERVER_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_CREATOR_OWNER_SERVER_RID as u32;
     LsapCreateSid(
         &raw mut CreatorSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_CREATOR_GROUP_SERVER_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_CREATOR_GROUP_SERVER_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_CREATOR_GROUP_SERVER_RID as u32;
     LsapCreateSid(
         &raw mut CreatorSidAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
         szAccountName.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 2], &[u16; 1]>(b"\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_DIALUP_RID, szAccountName.as_mut_ptr(), 80);
-    LsapLoadString(hInstance, IDS_NT_AUTHORITY, szDomainName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_DIALUP_RID as u32, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szDomainName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_DIALUP_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -266,7 +276,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_NETWORK_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NETWORK_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_NETWORK_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -277,7 +287,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         &raw mut LsapNetworkSid,
     );
-    LsapLoadString(hInstance, IDS_BATCH_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_BATCH_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BATCH_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -288,7 +298,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         &raw mut LsapBatchSid,
     );
-    LsapLoadString(hInstance, IDS_INTERACTIVE_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_INTERACTIVE_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_INTERACTIVE_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -299,7 +309,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         &raw mut LsapInteractiveSid,
     );
-    LsapLoadString(hInstance, IDS_SERVICE_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_SERVICE_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_SERVICE_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -310,7 +320,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         &raw mut LsapServiceSid,
     );
-    LsapLoadString(hInstance, IDS_ANONYMOUS_LOGON_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ANONYMOUS_LOGON_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_ANONYMOUS_LOGON_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -321,7 +331,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_PROXY_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_PROXY_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_PROXY_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -332,7 +342,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ENTERPRISE_CONTROLLERS_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ENTERPRISE_CONTROLLERS_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_ENTERPRISE_CONTROLLERS_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -343,7 +353,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_PRINCIPAL_SELF_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_PRINCIPAL_SELF_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_PRINCIPAL_SELF_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -354,7 +364,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_AUTHENTICATED_USER_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_AUTHENTICATED_USER_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_AUTHENTICATED_USER_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -365,7 +375,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_RESTRICTED_CODE_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_RESTRICTED_CODE_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_RESTRICTED_CODE_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -376,7 +386,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_TERMINAL_SERVER_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_TERMINAL_SERVER_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_TERMINAL_SERVER_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -387,7 +397,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_REMOTE_LOGON_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_REMOTE_LOGON_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_REMOTE_LOGON_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -398,7 +408,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_THIS_ORGANIZATION_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_THIS_ORGANIZATION_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_THIS_ORGANIZATION_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -409,7 +419,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_LOCAL_SYSTEM_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_LOCAL_SYSTEM_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_LOCAL_SYSTEM_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -420,7 +430,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeWellKnownGroup,
         &raw mut LsapLocalSystemSid,
     );
-    LsapLoadString(hInstance, IDS_LOCAL_SERVICE_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_LOCAL_SERVICE_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_LOCAL_SERVICE_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -435,12 +445,12 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         &raw mut NtAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"L\0O\0C\0A\0L\0S\0E\0R\0V\0I\0C\0E\0\0\0").as_ptr(),
-        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"N\0T\0 \0A\0U\0T\0H\0O\0R\0I\0T\0Y\0\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"L\0O\0C\0A\0L\0S\0E\0R\0V\0I\0C\0E\0\0\0").as_ptr() as PWSTR,
+        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"N\0T\0 \0A\0U\0T\0H\0O\0R\0I\0T\0Y\0\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_NETWORK_SERVICE_RID, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_NETWORK_SERVICE_RID as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_NETWORK_SERVICE_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -455,13 +465,13 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         &raw mut NtAuthority,
         1u8,
         SubAuthorities.as_mut_ptr(),
-        core::mem::transmute::<&[u8; 30], &[u16; 15]>(b"N\0E\0T\0W\0O\0R\0K\0S\0E\0R\0V\0I\0C\0E\0\0\0").as_ptr(),
-        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"N\0T\0 \0A\0U\0T\0H\0O\0R\0I\0T\0Y\0\0\0").as_ptr(),
+        core::mem::transmute::<&[u8; 30], &[u16; 15]>(b"N\0E\0T\0W\0O\0R\0K\0S\0E\0R\0V\0I\0C\0E\0\0\0").as_ptr() as PWSTR,
+        core::mem::transmute::<&[u8; 26], &[u16; 13]>(b"N\0T\0 \0A\0U\0T\0H\0O\0R\0I\0T\0Y\0\0\0").as_ptr() as PWSTR,
         SidTypeWellKnownGroup,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID, szAccountName.as_mut_ptr(), 80);
-    LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID, szDomainName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID as u32, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID as u32, szDomainName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     LsapCreateSid(
         &raw mut NtAuthority,
@@ -472,7 +482,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeDomain,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_ADMINS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_ADMINS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_ADMINS as u32;
     LsapCreateSid(
@@ -484,7 +494,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         &raw mut LsapAdministratorsSid,
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_USERS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_USERS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_USERS as u32;
     LsapCreateSid(
@@ -496,7 +506,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_GUESTS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_GUESTS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_GUESTS as u32;
     LsapCreateSid(
@@ -508,7 +518,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_POWER_USERS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_POWER_USERS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_POWER_USERS as u32;
     LsapCreateSid(
@@ -520,7 +530,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_ACCOUNT_OPS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_ACCOUNT_OPS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_ACCOUNT_OPS as u32;
     LsapCreateSid(
@@ -532,7 +542,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_SYSTEM_OPS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_SYSTEM_OPS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_SYSTEM_OPS as u32;
     LsapCreateSid(
@@ -544,7 +554,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_PRINT_OPS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_PRINT_OPS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_PRINT_OPS as u32;
     LsapCreateSid(
@@ -556,7 +566,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_BACKUP_OPS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_BACKUP_OPS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_BACKUP_OPS as u32;
     LsapCreateSid(
@@ -568,7 +578,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_REPLICATOR, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_REPLICATOR as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_REPLICATOR as u32;
     LsapCreateSid(
@@ -580,7 +590,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_RAS_SERVERS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_RAS_SERVERS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_RAS_SERVERS as u32;
     LsapCreateSid(
@@ -592,7 +602,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_PREW2KCOMPACCESS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_PREW2KCOMPACCESS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_PREW2KCOMPACCESS as u32;
     LsapCreateSid(
@@ -604,7 +614,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_REMOTE_DESKTOP_USERS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_REMOTE_DESKTOP_USERS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_REMOTE_DESKTOP_USERS as u32;
     LsapCreateSid(
@@ -616,7 +626,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
         SidTypeAlias,
         core::ptr::null_mut(),
     );
-    LsapLoadString(hInstance, IDS_ALIAS_RID_NETWORK_CONFIGURATION_OPS, szAccountName.as_mut_ptr(), 80);
+    LsapLoadString(hInstance, IDS_ALIAS_RID_NETWORK_CONFIGURATION_OPS as u32, szAccountName.as_mut_ptr(), 80);
     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID as u32;
     SubAuthorities[1] = DOMAIN_ALIAS_RID_NETWORK_CONFIGURATION_OPS as u32;
     LsapCreateSid(
@@ -631,7 +641,7 @@ pub unsafe extern "C" fn LsapInitSids() -> NTSTATUS {
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn LsapLookupWellKnownSid(sid: *mut SID) -> *mut _WELL_KNOWN_SID {
+pub unsafe extern "C" fn LsapLookupWellKnownSid(sid: PSID) -> *mut _WELL_KNOWN_SID {
     let mut list_entry = WellKnownSidListHead.Flink;
     while list_entry as *const _LIST_ENTRY != core::ptr::addr_of!(WellKnownSidListHead) {
         let ptr = (list_entry as usize)
@@ -810,7 +820,7 @@ unsafe fn LsapAddDomainToDomainsList(
             .Sid
             .is_null()
     {
-        if RtlEqualSid(Sid, (*((*ReferencedDomains).Domains).add(i as usize)).Sid) != 0 {
+        if RtlEqualSid(Sid, (*((*ReferencedDomains).Domains).add(i as usize)).Sid as PSID) != 0 {
             *Index = i;
             return STATUS_SUCCESS;
         }
@@ -861,7 +871,7 @@ unsafe fn LsapAddAuthorityToDomainsList(
 
     i = 0;
     while i < (*ReferencedDomains).Entries
-        && !(*ReferencedDomains.Domains.offset(i as isize))
+        && !(*(*ReferencedDomains).Domains.offset(i as isize))
             .Sid
             .is_null()
     {
@@ -957,7 +967,7 @@ unsafe fn LsapIsPrefixSid(PrefixSid: PSID, Sid: PSID) -> BOOLEAN {
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsapGetRelativeIdFromSid(Sid_: PSID) -> ULONG {
-    let sid = Sid_;
+    let sid = Sid_ as *mut SID;
     if (*sid).SubAuthorityCount != 0 {
         return *(*sid).SubAuthority.as_ptr().add((*sid).SubAuthorityCount as usize - 1);
     }
@@ -970,7 +980,7 @@ unsafe fn CreateSidFromSidAndRid(SrcSid: PSID, RelativeId: u32) -> PSID {
         return core::ptr::null_mut();
     }
     let DstSidSize = RtlLengthRequiredSid((RidCount + 1) as u32);
-    let DstSid: PSID = MIDL_user_allocate(DstSidSize) as PSID;
+    let DstSid: PSID = MIDL_user_allocate(DstSidSize as usize) as PSID;
     if DstSid.is_null() {
         return core::ptr::null_mut();
     }
@@ -990,7 +1000,7 @@ unsafe fn CreateDomainSidFromAccountSid(AccountSid: PSID) -> PSID {
     if RidCount > 0 {
         RidCount -= 1;
     }
-    let DstSidSize: u32 = RtlLengthRequiredSid(RidCount);
+    let DstSidSize: u32 = RtlLengthRequiredSid(RidCount as u32);
     let DomainSid: PSID = MIDL_user_allocate(DstSidSize as usize) as PSID;
     if DomainSid.is_null() {
         return core::ptr::null_mut();
@@ -1011,7 +1021,7 @@ unsafe fn CreateDomainSidFromAccountSid(AccountSid: PSID) -> PSID {
 unsafe fn LsapCopySid(src_sid: PSID) -> PSID {
     let rid_count: UCHAR = *RtlSubAuthorityCountSid(src_sid);
     let dst_sid_size: ULONG = RtlLengthRequiredSid(rid_count as ULONG);
-    let dst_sid: PSID = MIDL_user_allocate(dst_sid_size as SIZE_T) as PSID;
+    let dst_sid: PSID = MIDL_user_allocate(dst_sid_size as usize) as PSID;
     if dst_sid.is_null() {
         return core::ptr::null_mut();
     }
@@ -1232,7 +1242,7 @@ unsafe fn LsapLookupIsolatedBuiltinNames(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_LOOKUP as ACCESS_MASK,
-            BuiltinDomainSid as PRPC_SID,
+            BuiltinDomainSid as samsrv_sys::PRPC_SID,
             core::ptr::addr_of_mut!(DomainHandle),
         );
         if !(Status >= 0) {
@@ -1250,12 +1260,12 @@ unsafe fn LsapLookupIsolatedBuiltinNames(
                 }
                 TRACE!(
                     b"Mapping name: %wZ\n\0".as_ptr() as *const i8,
-                    AccountNames.add(i as usize) as *mut RPC_UNICODE_STRING,
+                    AccountNames.add(i as usize) as *mut samsrv_sys::_RPC_UNICODE_STRING,
                 );
                 Status = SamrLookupNamesInDomain(
                     DomainHandle,
                     1,
-                    AccountNames.add(i as usize) as *mut RPC_UNICODE_STRING,
+                    AccountNames.add(i as usize) as *mut samsrv_sys::_RPC_UNICODE_STRING,
                     core::ptr::addr_of_mut!(RelativeIds),
                     core::ptr::addr_of_mut!(Use),
                 );
@@ -1344,7 +1354,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
             );
         }
     } else {
-        Status = SamrOpenDomain(ServerHandle, DOMAIN_LOOKUP as u32, AccountDomainSid, &mut DomainHandle);
+        Status = SamrOpenDomain(ServerHandle, DOMAIN_LOOKUP as u32, AccountDomainSid as samsrv_sys::PRPC_SID, &mut DomainHandle);
         if !NT_SUCCESS(Status) {
             if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
                 ros_dbg_log(
@@ -1378,7 +1388,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
                     );
                 }
 
-                Status = SamrLookupNamesInDomain(DomainHandle, 1, &mut (*AccountNames.offset(i as isize)), &mut RelativeIds, &mut Use);
+                Status = SamrLookupNamesInDomain(DomainHandle, 1, &mut (*AccountNames.offset(i as isize)) as *mut _ as *mut samsrv_sys::_RPC_UNICODE_STRING, &mut RelativeIds, &mut Use);
                 if NT_SUCCESS(Status) {
                     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
                         ros_dbg_log(
@@ -1394,7 +1404,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
 
                     (*SidsBuffer.offset(i as isize)).Use = *Use.Element.offset(0) as SID_NAME_USE;
                     let fresh_sid = CreateSidFromSidAndRid(AccountDomainSid, *RelativeIds.Element.offset(0) as u32);
-                    (*SidsBuffer.offset(i as isize)).Sid = fresh_sid;
+                    (*SidsBuffer.offset(i as isize)).Sid = fresh_sid as PRPC_SID;
                     if fresh_sid.is_null() {
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         break;
@@ -1440,6 +1450,7 @@ unsafe fn LsapLookupFullyQualifiedWellKnownNames(
         MaximumLength: 2u16,
         Buffer: (&0u16 as *const u16) as *mut u16,
     };
+    let mut DomainIndex: ULONG = 0;
     let mut Status: i32 = STATUS_SUCCESS;
 
     for i in 0..Count {
@@ -1465,7 +1476,7 @@ unsafe fn LsapLookupFullyQualifiedWellKnownNames(
         }
 
         (*SidsBuffer.add(i as usize)).Use = (*ptr).Use;
-        (*SidsBuffer.add(i as usize)).Sid = sid_copy as *mut core::ffi::c_void;
+        (*SidsBuffer.add(i as usize)).Sid = sid_copy as PRPC_SID;
         (*SidsBuffer.add(i as usize)).DomainIndex = -1i32;
         (*SidsBuffer.add(i as usize)).Flags = 0u32;
 
@@ -1566,7 +1577,7 @@ unsafe fn LsapLookupBuiltinNames(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_LOOKUP as ACCESS_MASK,
-            BuiltinDomainSid as PRPC_SID,
+            BuiltinDomainSid as samsrv_sys::PRPC_SID,
             &mut DomainHandle,
         );
         if !NT_SUCCESS(Status) {
@@ -1610,13 +1621,13 @@ unsafe fn LsapLookupBuiltinNames(
                     1667,
                     b"Mapping name: %wZ\\%wZ\n\0".as_ptr() as *const i8,
                     DomainNames.add(i as usize) as *mut RPC_UNICODE_STRING,
-                    AccountNames.add(i as usize) as *mut RPC_UNICODE_STRING,
+                    AccountNames.add(i as usize) as *mut samsrv_sys::_RPC_UNICODE_STRING,
                 );
             }
             Status = SamrLookupNamesInDomain(
                 DomainHandle,
                 1u32,
-                AccountNames.add(i as usize) as *mut RPC_UNICODE_STRING,
+                AccountNames.add(i as usize) as *mut samsrv_sys::_RPC_UNICODE_STRING,
                 &mut RelativeIds,
                 &mut Use,
             );
@@ -1638,7 +1649,7 @@ unsafe fn LsapLookupBuiltinNames(
                 (*SidsBuffer.add(i as usize)).Flags = 0u32;
                 Status = LsapAddDomainToDomainsList(
                     DomainsBuffer,
-                    &BuiltinDomainName,
+                    &raw mut BuiltinDomainName,
                     BuiltinDomainSid,
                     &mut DomainIndex,
                 );
@@ -1706,7 +1717,7 @@ unsafe fn LsapLookupAccountNames(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_LOOKUP as ACCESS_MASK,
-            AccountDomainSid as PRPC_SID,
+            AccountDomainSid as samsrv_sys::PRPC_SID,
             &raw mut DomainHandle,
         );
         if !(Status >= 0) {
@@ -1764,7 +1775,7 @@ unsafe fn LsapLookupAccountNames(
                 Status = SamrLookupNamesInDomain(
                     DomainHandle,
                     1,
-                    AccountNames.add(i as usize) as *mut RPC_UNICODE_STRING,
+                    AccountNames.add(i as usize) as *mut samsrv_sys::_RPC_UNICODE_STRING,
                     &raw mut RelativeIds,
                     &raw mut Use,
                 );
@@ -1779,13 +1790,13 @@ unsafe fn LsapLookupAccountNames(
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         break;
                     }
-                    (*SidsBuffer.add(i as usize)).Sid = sid_ptr;
+                    (*SidsBuffer.add(i as usize)).Sid = sid_ptr as PRPC_SID;
                     (*SidsBuffer.add(i as usize)).DomainIndex = -1i32;
                     (*SidsBuffer.add(i as usize)).Flags = 0u32;
 
                     Status = LsapAddDomainToDomainsList(
                         DomainsBuffer,
-                        &raw const AccountDomainName,
+                        &raw mut AccountDomainName,
                         AccountDomainSid,
                         &raw mut DomainIndex,
                     );
@@ -1818,7 +1829,7 @@ pub unsafe extern "C" fn LsapLookupNames(
     Count: u32,
     Names: *mut _RPC_UNICODE_STRING,
     ReferencedDomains: *mut *mut _LSAPR_REFERENCED_DOMAIN_LIST,
-    TranslatedSids: *mut _LSAPR_TRANSLATED_SID_EX2,
+    TranslatedSids: *mut _LSAPR_TRANSLATED_SIDS_EX2,
     LookupLevel: LSAP_LOOKUP_LEVEL,
     MappedCount: *mut u32,
     LookupOptions: u32,
@@ -1848,7 +1859,7 @@ pub unsafe extern "C" fn LsapLookupNames(
         } else {
             (*DomainsBuffer).Domains = MIDL_user_allocate(
                 (Count as usize).wrapping_mul(core::mem::size_of::<_LSA_TRUST_INFORMATION>())
-            ) as *mut _LSA_TRUST_INFORMATION;
+            ) as PLSAPR_TRUST_INFORMATION;
             if (*DomainsBuffer).Domains.is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
             } else {
@@ -1864,7 +1875,7 @@ pub unsafe extern "C" fn LsapLookupNames(
                 }
                 Status = LsapSplitNames(Count, Names, core::ptr::addr_of_mut!(DomainNames), core::ptr::addr_of_mut!(AccountNames));
                 if Status < 0 {
-                    if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                    if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
                         let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;
                         ros_dbg_log(
@@ -1887,7 +1898,7 @@ pub unsafe extern "C" fn LsapLookupNames(
                         core::ptr::addr_of_mut!(Mapped),
                     );
                     if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                        if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                        if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                             let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
                             let __dbcl_0: __wine_debug_class = __WINE_DBCL_TRACE;
                             ros_dbg_log(
@@ -1911,7 +1922,7 @@ pub unsafe extern "C" fn LsapLookupNames(
                             core::ptr::addr_of_mut!(Mapped),
                         );
                         if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                            if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                            if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                                 let __dbch_1: *mut __wine_debug_channel = __wine_dbch___default;
                                 let __dbcl_1: __wine_debug_class = __WINE_DBCL_TRACE;
                                 ros_dbg_log(
@@ -1928,14 +1939,14 @@ pub unsafe extern "C" fn LsapLookupNames(
                         } else {
                             Status = LsapLookupIsolatedAccountNames(
                                 Count,
-                                DomainNames,
-                                AccountNames,
+                                DomainNames as *mut _UNICODE_STRING,
+                                AccountNames as *mut _UNICODE_STRING,
                                 DomainsBuffer,
                                 SidsBuffer,
                                 core::ptr::addr_of_mut!(Mapped),
                             );
                             if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                                if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                                if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                                     let __dbch_2: *mut __wine_debug_channel = __wine_dbch___default;
                                     let __dbcl_2: __wine_debug_class = __WINE_DBCL_TRACE;
                                     ros_dbg_log(
@@ -1952,14 +1963,14 @@ pub unsafe extern "C" fn LsapLookupNames(
                             } else {
                                 Status = LsapLookupFullyQualifiedWellKnownNames(
                                     Count,
-                                    DomainNames,
-                                    AccountNames,
+                                    DomainNames as *mut _UNICODE_STRING,
+                                    AccountNames as *mut _UNICODE_STRING,
                                     DomainsBuffer,
                                     SidsBuffer,
                                     core::ptr::addr_of_mut!(Mapped),
                                 );
                                 if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                                    if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                                    if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                                         let __dbch_3: *mut __wine_debug_channel = __wine_dbch___default;
                                         let __dbcl_3: __wine_debug_class = __WINE_DBCL_TRACE;
                                         ros_dbg_log(
@@ -1983,7 +1994,7 @@ pub unsafe extern "C" fn LsapLookupNames(
                                         core::ptr::addr_of_mut!(Mapped),
                                     );
                                     if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                                        if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                                        if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                                             let __dbch_4: *mut __wine_debug_channel = __wine_dbch___default;
                                             let __dbcl_4: __wine_debug_class = __WINE_DBCL_TRACE;
                                             ros_dbg_log(
@@ -2007,7 +2018,7 @@ pub unsafe extern "C" fn LsapLookupNames(
                                             core::ptr::addr_of_mut!(Mapped),
                                         );
                                         if Status < 0 && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-                                            if (unsafe { *__wine_dbch___default }).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
+                                            if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE) != 0 {
                                                 let __dbch_5: *mut __wine_debug_channel = __wine_dbch___default;
                                                 let __dbcl_5: __wine_debug_class = __WINE_DBCL_TRACE;
                                                 ros_dbg_log(
@@ -2113,8 +2124,8 @@ unsafe fn LsapLookupWellKnownSids(
                 break;
             }
             core::ptr::copy_nonoverlapping(
-                name.Name.Buffer as *mut u8,
                 (*ptr).AccountName.Buffer as *const u8,
+                name.Name.Buffer as *mut u8,
                 (*ptr).AccountName.MaximumLength as usize,
             );
 
@@ -2159,7 +2170,7 @@ unsafe fn LsapLookupBuiltinDomainSids(
 ) -> NTSTATUS {
     let mut ServerHandle: SAMPR_HANDLE = core::ptr::null_mut();
     let mut DomainHandle: SAMPR_HANDLE = core::ptr::null_mut();
-    let mut Names = core::mem::zeroed::<_SAMPR_RETURNED_USTRING_ARRAY>();
+    let mut Names = core::mem::zeroed::<samsrv_sys::_SAMPR_RETURNED_USTRING_ARRAY>();
     let mut Use = core::mem::zeroed::<_SAMPR_ULONG_ARRAY>();
     let mut SidString: LPWSTR = core::ptr::null_mut();
     let mut DomainIndex: ULONG = 0;
@@ -2183,7 +2194,7 @@ unsafe fn LsapLookupBuiltinDomainSids(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_LOOKUP as ACCESS_MASK,
-            &BuiltinDomainSid as PSID,
+            BuiltinDomainSid as samsrv_sys::PRPC_SID,
             &mut DomainHandle,
         );
         if !NT_SUCCESS(Status) {
@@ -2206,11 +2217,11 @@ unsafe fn LsapLookupBuiltinDomainSids(
                 &mut SidString,
             );
             TRACE!(b"Mapping SID: %S\n\0".as_ptr() as *const i8, SidString);
-            LocalFree(SidString);
+            LocalFree(SidString as *mut core::ffi::c_void);
             SidString = core::ptr::null_mut();
 
             if RtlEqualSid(
-                &BuiltinDomainSid,
+                BuiltinDomainSid,
                 (*SidEnumBuffer).SidInfo.add(i as usize).read().Sid as PSID,
             ) != 0
             {
@@ -2234,8 +2245,8 @@ unsafe fn LsapLookupBuiltinDomainSids(
 
                 Status = LsapAddDomainToDomainsList(
                     DomainsBuffer,
-                    &BuiltinDomainName,
-                    &BuiltinDomainSid,
+                    &raw mut BuiltinDomainName,
+                    BuiltinDomainSid,
                     &mut DomainIndex,
                 );
                 if !NT_SUCCESS(Status) {
@@ -2249,7 +2260,7 @@ unsafe fn LsapLookupBuiltinDomainSids(
                 );
                 *Mapped = (*Mapped).wrapping_add(1);
             } else if LsapIsPrefixSid(
-                &BuiltinDomainSid,
+                BuiltinDomainSid,
                 (*SidEnumBuffer).SidInfo.add(i as usize).read().Sid as PSID,
             ) != 0
             {
@@ -2291,8 +2302,8 @@ unsafe fn LsapLookupBuiltinDomainSids(
 
                     Status = LsapAddDomainToDomainsList(
                         DomainsBuffer,
-                        &BuiltinDomainName,
-                        &BuiltinDomainSid,
+                        &raw mut BuiltinDomainName,
+                        BuiltinDomainSid,
                         &mut DomainIndex,
                     );
                     if !NT_SUCCESS(Status) {
@@ -2327,7 +2338,7 @@ unsafe fn LsapLookupAccountDomainSids(
 ) -> NTSTATUS {
     let mut ServerHandle: SAMPR_HANDLE = core::ptr::null_mut();
     let mut DomainHandle: SAMPR_HANDLE = core::ptr::null_mut();
-    let mut Names: SAMPR_RETURNED_USTRING_ARRAY = _SAMPR_RETURNED_USTRING_ARRAY {
+    let mut Names: SAMPR_RETURNED_USTRING_ARRAY = samsrv_sys::_SAMPR_RETURNED_USTRING_ARRAY {
         Count: 0,
         Element: core::ptr::null_mut(),
     };
@@ -2351,7 +2362,7 @@ unsafe fn LsapLookupAccountDomainSids(
         Status = SamrOpenDomain(
             ServerHandle,
             DOMAIN_LOOKUP as ACCESS_MASK,
-            AccountDomainSid as PRPC_SID,
+            AccountDomainSid as samsrv_sys::PRPC_SID,
             &raw mut DomainHandle,
         );
         if Status < 0 {
@@ -2380,7 +2391,7 @@ unsafe fn LsapLookupAccountDomainSids(
                     (*NamesBuffer.add(i)).Name.Length = AccountDomainName.Length;
                     (*NamesBuffer.add(i)).Name.MaximumLength = AccountDomainName.MaximumLength;
                     let buf = &mut (*NamesBuffer.add(i)).Name.Buffer;
-                    *buf = MIDL_user_allocate(AccountDomainName.MaximumLength as isize) as LPWSTR;
+                    *buf = MIDL_user_allocate(AccountDomainName.MaximumLength as usize) as LPWSTR;
                     if (*buf).is_null() {
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         break;
@@ -2427,7 +2438,7 @@ unsafe fn LsapLookupAccountDomainSids(
                             (*Names.Element.add(0)).MaximumLength;
                         let buf = &mut (*NamesBuffer.add(i)).Name.Buffer;
                         *buf = MIDL_user_allocate(
-                            (*Names.Element.add(0)).MaximumLength as isize,
+                            (*Names.Element.add(0)).MaximumLength as usize,
                         ) as LPWSTR;
                         if (*buf).is_null() {
                             SamIFree_SAMPR_RETURNED_USTRING_ARRAY(&raw mut Names);
@@ -2483,21 +2494,20 @@ pub unsafe extern "C" fn LsapLookupSids(
     let mut Mapped: ULONG = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
+    'done: {
     let names_buffer_len = ((*SidEnumBuffer).Entries as usize)
         .wrapping_mul(core::mem::size_of::<LSAPR_TRANSLATED_NAME_EX>());
     NamesBuffer = MIDL_user_allocate(names_buffer_len) as PLSAPR_TRANSLATED_NAME_EX;
     if NamesBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         core::mem::drop(core::option::Option::None::<()>);
-        loop {
-            break 'done Status;
-        }
+        break 'done;
     }
 
     DomainsBuffer = MIDL_user_allocate(core::mem::size_of::<LSAPR_REFERENCED_DOMAIN_LIST>()) as PLSAPR_REFERENCED_DOMAIN_LIST;
     if DomainsBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        loop { break 'done Status; }
+        break 'done;
     }
 
     (*DomainsBuffer).Domains = MIDL_user_allocate(
@@ -2506,7 +2516,7 @@ pub unsafe extern "C" fn LsapLookupSids(
     ) as PLSAPR_TRUST_INFORMATION;
     if (*DomainsBuffer).Domains.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        loop { break 'done Status; }
+        break 'done;
     }
 
     (*DomainsBuffer).Entries = 0;
@@ -2529,10 +2539,10 @@ pub unsafe extern "C" fn LsapLookupSids(
         &raw mut Mapped,
     );
     if !NT_SUCCESS(Status) && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-        loop { break 'done Status; }
+        break 'done;
     }
     if Mapped == (*SidEnumBuffer).Entries {
-        loop { break 'done Status; }
+        break 'done;
     }
 
     Status = LsapLookupBuiltinDomainSids(
@@ -2542,10 +2552,10 @@ pub unsafe extern "C" fn LsapLookupSids(
         &raw mut Mapped,
     );
     if !NT_SUCCESS(Status) && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-        loop { break 'done Status; }
+        break 'done;
     }
     if Mapped == (*SidEnumBuffer).Entries {
-        loop { break 'done Status; }
+        break 'done;
     }
 
     Status = LsapLookupAccountDomainSids(
@@ -2555,13 +2565,14 @@ pub unsafe extern "C" fn LsapLookupSids(
         &raw mut Mapped,
     );
     if !NT_SUCCESS(Status) && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
-        loop { break 'done Status; }
+        break 'done;
     }
     if Mapped == (*SidEnumBuffer).Entries {
-        loop { break 'done Status; }
+        break 'done;
     }
+    } // 'done
 
-    'done: {
+    {
         TRACE!(b"done Status: %lx  Mapped: %lu\n\0".as_ptr() as *const i8, Status, Mapped);
 
         if !NT_SUCCESS(Status) {
@@ -2789,8 +2800,8 @@ pub unsafe extern "C" fn LsapLookupSids(
 //     hInstance = GetModuleHandleW(L"lsasrv.dll");
 //
 //     /* NT Authority */
-//     LsapLoadString(hInstance, IDS_NT_AUTHORITY, szAccountName, ARRAYSIZE(szAccountName));
-//     LsapLoadString(hInstance, IDS_NT_AUTHORITY, szDomainName, ARRAYSIZE(szDomainName));
+//     LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szDomainName, ARRAYSIZE(szDomainName));
 //     LsapCreateSid(&NtAuthority,
 //                   0,
 //                   NULL,
@@ -2800,7 +2811,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Null Sid */
-//     LsapLoadString(hInstance, IDS_NULL_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_NULL_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_NULL_RID;
 //     LsapCreateSid(&NullSidAuthority,
@@ -2812,7 +2823,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* World Sid */
-//     LsapLoadString(hInstance, IDS_WORLD_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_WORLD_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_WORLD_RID;
 //     LsapCreateSid(&WorldSidAuthority,
@@ -2824,7 +2835,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapWorldSid);
 //
 //     /* Local Sid */
-//     LsapLoadString(hInstance, IDS_LOCAL_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_LOCAL_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_LOCAL_RID;
 //     LsapCreateSid(&LocalSidAuthority,
@@ -2836,7 +2847,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Creator Owner Sid */
-//     LsapLoadString(hInstance, IDS_CREATOR_OWNER_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_CREATOR_OWNER_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_CREATOR_OWNER_RID;
 //     LsapCreateSid(&CreatorSidAuthority,
@@ -2848,7 +2859,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Creator Group Sid */
-//     LsapLoadString(hInstance, IDS_CREATOR_GROUP_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_CREATOR_GROUP_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_CREATOR_GROUP_RID;
 //     LsapCreateSid(&CreatorSidAuthority,
@@ -2860,7 +2871,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Creator Owner Server Sid */
-//     LsapLoadString(hInstance, IDS_CREATOR_OWNER_SERVER_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_CREATOR_OWNER_SERVER_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_CREATOR_OWNER_SERVER_RID;
 //     LsapCreateSid(&CreatorSidAuthority,
@@ -2872,7 +2883,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Creator Group Server Sid */
-//     LsapLoadString(hInstance, IDS_CREATOR_GROUP_SERVER_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_CREATOR_GROUP_SERVER_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_CREATOR_GROUP_SERVER_RID;
 //     LsapCreateSid(&CreatorSidAuthority,
@@ -2884,8 +2895,8 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Dialup Sid */
-//     LsapLoadString(hInstance, IDS_DIALUP_RID, szAccountName, ARRAYSIZE(szAccountName));
-//     LsapLoadString(hInstance, IDS_NT_AUTHORITY, szDomainName, ARRAYSIZE(szDomainName));
+//     LsapLoadString(hInstance, IDS_DIALUP_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_NT_AUTHORITY as u32, szDomainName, ARRAYSIZE(szDomainName));
 //
 //     SubAuthorities[0] = SECURITY_DIALUP_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2897,7 +2908,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Network Sid */
-//     LsapLoadString(hInstance, IDS_NETWORK_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_NETWORK_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_NETWORK_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2909,7 +2920,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapNetworkSid);
 //
 //     /* Batch Sid*/
-//     LsapLoadString(hInstance, IDS_BATCH_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_BATCH_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BATCH_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2921,7 +2932,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapBatchSid);
 //
 //     /* Interactive Sid */
-//     LsapLoadString(hInstance, IDS_INTERACTIVE_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_INTERACTIVE_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_INTERACTIVE_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2933,7 +2944,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapInteractiveSid);
 //
 //     /* Service Sid */
-//     LsapLoadString(hInstance, IDS_SERVICE_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_SERVICE_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_SERVICE_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2945,7 +2956,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapServiceSid);
 //
 //     /* Anonymous Logon Sid */
-//     LsapLoadString(hInstance, IDS_ANONYMOUS_LOGON_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ANONYMOUS_LOGON_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_ANONYMOUS_LOGON_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2957,7 +2968,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Proxy Sid */
-//     LsapLoadString(hInstance, IDS_PROXY_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_PROXY_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_PROXY_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2969,7 +2980,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Enterprise Controllers Sid */
-//     LsapLoadString(hInstance, IDS_ENTERPRISE_CONTROLLERS_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ENTERPRISE_CONTROLLERS_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_ENTERPRISE_CONTROLLERS_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2981,7 +2992,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Principal Self Sid */
-//     LsapLoadString(hInstance, IDS_PRINCIPAL_SELF_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_PRINCIPAL_SELF_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_PRINCIPAL_SELF_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -2993,7 +3004,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Authenticated Users Sid */
-//     LsapLoadString(hInstance, IDS_AUTHENTICATED_USER_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_AUTHENTICATED_USER_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_AUTHENTICATED_USER_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3005,7 +3016,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Restricted Code Sid */
-//     LsapLoadString(hInstance, IDS_RESTRICTED_CODE_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_RESTRICTED_CODE_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_RESTRICTED_CODE_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3017,7 +3028,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Terminal Server Sid */
-//     LsapLoadString(hInstance, IDS_TERMINAL_SERVER_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_TERMINAL_SERVER_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_TERMINAL_SERVER_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3029,7 +3040,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Remote Logon Sid */
-//     LsapLoadString(hInstance, IDS_REMOTE_LOGON_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_REMOTE_LOGON_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_REMOTE_LOGON_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3041,7 +3052,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* This Organization Sid */
-//     LsapLoadString(hInstance, IDS_THIS_ORGANIZATION_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_THIS_ORGANIZATION_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_THIS_ORGANIZATION_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3053,7 +3064,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Local System Sid */
-//     LsapLoadString(hInstance, IDS_LOCAL_SYSTEM_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_LOCAL_SYSTEM_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_LOCAL_SYSTEM_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3065,7 +3076,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapLocalSystemSid);
 //
 //     /* Local Service Sid */
-//     LsapLoadString(hInstance, IDS_LOCAL_SERVICE_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_LOCAL_SERVICE_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_LOCAL_SERVICE_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3085,7 +3096,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Network Service Sid */
-//     LsapLoadString(hInstance, IDS_NETWORK_SERVICE_RID, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_NETWORK_SERVICE_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_NETWORK_SERVICE_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3105,8 +3116,8 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Builtin Domain Sid */
-//     LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID, szAccountName, ARRAYSIZE(szAccountName));
-//     LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID, szDomainName, ARRAYSIZE(szDomainName));
+//     LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID as u32, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_BUILTIN_DOMAIN_RID as u32, szDomainName, ARRAYSIZE(szDomainName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     LsapCreateSid(&NtAuthority,
@@ -3118,7 +3129,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Administrators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_ADMINS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_ADMINS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_ADMINS;
@@ -3131,7 +3142,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   &LsapAdministratorsSid);
 //
 //     /* Users Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_USERS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_USERS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_USERS;
@@ -3144,7 +3155,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Guests Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_GUESTS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_GUESTS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_GUESTS;
@@ -3157,7 +3168,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Power User Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_POWER_USERS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_POWER_USERS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_POWER_USERS;
@@ -3170,7 +3181,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Account Operators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_ACCOUNT_OPS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_ACCOUNT_OPS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_ACCOUNT_OPS;
@@ -3183,7 +3194,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* System Operators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_SYSTEM_OPS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_SYSTEM_OPS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_SYSTEM_OPS;
@@ -3196,7 +3207,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Print Operators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_PRINT_OPS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_PRINT_OPS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_PRINT_OPS;
@@ -3209,7 +3220,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Backup Operators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_BACKUP_OPS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_BACKUP_OPS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_BACKUP_OPS;
@@ -3222,7 +3233,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Replicators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_REPLICATOR, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_REPLICATOR as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_REPLICATOR;
@@ -3235,7 +3246,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* RAS Servers Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_RAS_SERVERS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_RAS_SERVERS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_RAS_SERVERS;
@@ -3248,7 +3259,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Pre-Windows 2000 Compatible Access Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_PREW2KCOMPACCESS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_PREW2KCOMPACCESS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_PREW2KCOMPACCESS;
@@ -3261,7 +3272,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Remote Desktop Users Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_REMOTE_DESKTOP_USERS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_REMOTE_DESKTOP_USERS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_REMOTE_DESKTOP_USERS;
@@ -3274,7 +3285,7 @@ pub unsafe extern "C" fn LsapLookupSids(
 //                   NULL);
 //
 //     /* Network Configuration Operators Alias Sid */
-//     LsapLoadString(hInstance, IDS_ALIAS_RID_NETWORK_CONFIGURATION_OPS, szAccountName, ARRAYSIZE(szAccountName));
+//     LsapLoadString(hInstance, IDS_ALIAS_RID_NETWORK_CONFIGURATION_OPS as u32, szAccountName, ARRAYSIZE(szAccountName));
 //
 //     SubAuthorities[0] = SECURITY_BUILTIN_DOMAIN_RID;
 //     SubAuthorities[1] = DOMAIN_ALIAS_RID_NETWORK_CONFIGURATION_OPS;

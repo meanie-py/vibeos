@@ -14,42 +14,36 @@ static mut __wine_dbch_lsasrv: __wine_debug_channel = unsafe {
 static mut __wine_dbch___default: *mut __wine_debug_channel =
     unsafe { &raw const __wine_dbch_lsasrv as *mut __wine_debug_channel };
 
-pub static mut ServiceTable: [SERVICE_TABLE_ENTRYW; 3] = unsafe {
-    [
-        _SERVICE_TABLE_ENTRYW {
-            lpServiceName: ::core::mem::transmute::<[u8; 18], [::core::ffi::c_ushort; 9]>(
-                *b"N\0E\0T\0L\0O\0G\0O\0N\0\0\0",
-            )
-            .as_ptr() as LPWSTR,
-            lpServiceProc: Some(
-                NetlogonServiceMain as unsafe extern "C" fn(DWORD, *mut PWSTR) -> (),
-            ),
-        },
-        _SERVICE_TABLE_ENTRYW {
-            lpServiceName: ::core::mem::transmute::<[u8; 12], [::core::ffi::c_ushort; 6]>(
-                *b"S\0A\0M\0S\0S\0\0\0",
-            )
-            .as_ptr() as LPWSTR,
-            lpServiceProc: Some(SamSsServiceMain as unsafe extern "C" fn(DWORD, *mut PWSTR) -> ()),
-        },
-        _SERVICE_TABLE_ENTRYW {
-            lpServiceName: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
-            lpServiceProc: None,
-        },
-    ]
-};
+// Service name strings — `static` so they have a stable address for the table
+// (L"NETLOGON", L"SAMSS"). UTF-16, NUL-terminated.
+static NETLOGON_W: [u16; 9] = [0x004E, 0x0045, 0x0054, 0x004C, 0x004F, 0x0047, 0x004F, 0x004E, 0x0000];
+static SAMSS_W: [u16; 6] = [0x0053, 0x0041, 0x004D, 0x0053, 0x0053, 0x0000];
+
+pub static mut ServiceTable: [SERVICE_TABLE_ENTRYW; 3] = [
+    _SERVICE_TABLE_ENTRYW {
+        lpServiceName: NETLOGON_W.as_ptr() as LPWSTR,
+        lpServiceProc: Some(NetlogonServiceMain),
+    },
+    _SERVICE_TABLE_ENTRYW {
+        lpServiceName: SAMSS_W.as_ptr() as LPWSTR,
+        lpServiceProc: Some(SamSsServiceMain),
+    },
+    _SERVICE_TABLE_ENTRYW {
+        lpServiceName: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
+        lpServiceProc: None,
+    },
+];
 
 pub type PNETLOGONMAIN = Option<unsafe extern "system" fn(ArgCount: i32, ArgVector: *mut *mut u16)>;
 
-const NETLOGON_W: [u16; 9] = [0x004E, 0x0045, 0x0054, 0x004C, 0x004F, 0x0047, 0x004F, 0x004E, 0x0000];
-const SAMSS_W: [u16; 6] = [0x0053, 0x0041, 0x004D, 0x0053, 0x0053, 0x0000];
-
-unsafe fn NetlogonServiceMain(dwArgc: u32, pszArgv: *mut *mut u16) {
+// WINAPI (stdcall on i386) — matches LPSERVICE_MAIN_FUNCTIONW; a cdecl cast would
+// drift ESP on i386 when the SCM dispatches through the table.
+unsafe extern "system" fn NetlogonServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) {
     let mut hNetlogon: HINSTANCE = core::ptr::null_mut();
     let mut pNetlogonMain: PNETLOGONMAIN = None;
 
     // TRACE("NetlogonServiceMain(%lu %p)\n", dwArgc, pszArgv)
-    if (*(__wine_dbch___default)).flags & (1u32 << __WINE_DBCL_TRACE as u32) != 0 {
+    if (*(__wine_dbch___default)).flags as u32 & (1u32 << __WINE_DBCL_TRACE as u32) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
@@ -69,7 +63,7 @@ unsafe fn NetlogonServiceMain(dwArgc: u32, pszArgv: *mut *mut u16) {
     );
     if hNetlogon.is_null() {
         // ERR("LoadLibrary() failed!\n")
-        if (*(__wine_dbch___default)).flags & (1u32 << __WINE_DBCL_ERR as u32) != 0 {
+        if (*(__wine_dbch___default)).flags as u32 & (1u32 << __WINE_DBCL_ERR as u32) != 0 {
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
@@ -89,7 +83,7 @@ unsafe fn NetlogonServiceMain(dwArgc: u32, pszArgv: *mut *mut u16) {
     ));
     if pNetlogonMain.is_none() {
         // ERR("GetProcAddress(NlNetlogonMain) failed!\n")
-        if (*(__wine_dbch___default)).flags & (1u32 << __WINE_DBCL_ERR as u32) != 0 {
+        if (*(__wine_dbch___default)).flags as u32 & (1u32 << __WINE_DBCL_ERR as u32) != 0 {
             ros_dbg_log(
                 __WINE_DBCL_ERR,
                 __wine_dbch___default,
@@ -105,7 +99,7 @@ unsafe fn NetlogonServiceMain(dwArgc: u32, pszArgv: *mut *mut u16) {
     }
 
     // TRACE("NlNetlogonMain %p\n", pNetlogonMain)
-    if (*(__wine_dbch___default)).flags & (1u32 << __WINE_DBCL_TRACE as u32) != 0 {
+    if (*(__wine_dbch___default)).flags as u32 & (1u32 << __WINE_DBCL_TRACE as u32) != 0 {
         ros_dbg_log(
             __WINE_DBCL_TRACE,
             __wine_dbch___default,
@@ -121,7 +115,7 @@ unsafe fn NetlogonServiceMain(dwArgc: u32, pszArgv: *mut *mut u16) {
     pNetlogonMain.unwrap()(dwArgc as i32, pszArgv);
 }
 
-unsafe fn SamSsControlHandler(fdwControl: u32) {
+unsafe extern "system" fn SamSsControlHandler(fdwControl: DWORD) {
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
         let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;
@@ -138,7 +132,7 @@ unsafe fn SamSsControlHandler(fdwControl: u32) {
         );
     }
 }
-unsafe fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut PWSTR) {
+unsafe extern "system" fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) {
     let mut hStatus: SERVICE_STATUS_HANDLE = core::ptr::null_mut();
     let mut ServiceStatus: SERVICE_STATUS = SERVICE_STATUS {
         dwServiceType: 0,
@@ -161,9 +155,8 @@ unsafe fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut PWSTR) {
             pszArgv,
         );
     }
-    const SAMSS_NAME: [u16; 6] = [0x53, 0x41, 0x4D, 0x53, 0x53, 0];
     hStatus = RegisterServiceCtrlHandlerW(
-        &raw const SAMSS_NAME as LPCWSTR,
+        SAMSS_W.as_ptr() as LPCWSTR,
         Some(SamSsControlHandler as unsafe extern "system" fn(DWORD)),
     );
     if hStatus.is_null() {
@@ -183,12 +176,12 @@ unsafe fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut PWSTR) {
     SetServiceStatus(hStatus, &raw mut ServiceStatus);
 }
 
-unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
+unsafe extern "system" fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     let mut hEvent: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut dwError: u32;
 
     // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_TRACE) != 0 {
+    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
         let __dbch = __wine_dbch___default;
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -228,7 +221,7 @@ unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     }
 
     // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_TRACE) != 0 {
+    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
         let __dbch = __wine_dbch___default;
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -244,7 +237,7 @@ unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     dwError = WaitForSingleObject(hEvent, INFINITE);
 
     // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_TRACE) != 0 {
+    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
         let __dbch = __wine_dbch___default;
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -262,7 +255,7 @@ unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
 
     if dwError != WAIT_OBJECT_0 {
         // ERR
-        if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_ERR) != 0 {
+        if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_ERR) != 0 {
             let __dbch = __wine_dbch___default;
             ros_dbg_log(
                 __WINE_DBCL_ERR,
@@ -280,7 +273,7 @@ unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     I_ScIsSecurityProcess();
 
     // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_TRACE) != 0 {
+    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
         let __dbch = __wine_dbch___default;
         ros_dbg_log(
             __WINE_DBCL_TRACE,
@@ -301,7 +294,7 @@ unsafe fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     }
 
     // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags & (1u32 << __WINE_DBCL_TRACE) != 0 {
+    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
         let __dbch = __wine_dbch___default;
         ros_dbg_log(
             __WINE_DBCL_TRACE,

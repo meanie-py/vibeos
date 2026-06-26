@@ -25,9 +25,21 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 >   them lowercase but rpcndr.h `#define`s lowercase→UPPERCASE; Rust #[no_mangle] gets no macro
 >   → rename defs+calls to MIDL_user_allocate/free + ABI extern "system" (__RPC_USER=stdcall,
 >   i386 `@4`); local def shadows the prelude glob extern.
-> - **12 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
->   database + policy + session + notify + srm + lsasrv); each ×3-link-verified + i386 boot +
->   amd64 boot gated.
+> - **14 of 16 units Rust** (lsa_s stub + dssetup + privileges + utils + security + registry +
+>   database + policy + session + notify + srm + lsasrv + **authport** + **service**); each
+>   ×3-link-verified + i386 boot + amd64 boot gated. (12/16 LANDED on mainline `751cee96a32`;
+>   authport + service ride on top. **16/16 bodies now Rust; only lsarpc.c (RPC fan-out) remains C.**)
+> - **✅ `authport.c` DONE (M4, 13/16)** — LPC auth-port server (logon-process registration +
+>   `AuthPortThreadRoutine` dispatch loop). The hard part was the deeply-nested `LSA_API_MSG`
+>   anon-union: bindgen lays `{ApiNumber, Status, union{LogonUser,…}}` as
+>   `__bindgen_anon_1.__bindgen_anon_1.{ApiNumber,Status}` with the per-API union one level
+>   *deeper* (`.__bindgen_anon_1`). c2rust had emitted `.Status` at the union level (one `.__bindgen_anon_1`
+>   too many) → 8 "no field Status" errors. **Fix:** drop the extra level so `Status` is a sibling of
+>   `ApiNumber`. Other fixes: thread-routine return `NTSTATUS`→`DWORD` (LPTHREAD_START_ROUTINE wants
+>   DWORD; fn-ptr `as`-cast can't change return repr); 6 cross-file handlers extern-"C" declared
+>   (3 Rust siblings session/notify, 3 still-C authpackage); cross-crate `_LIST_ENTRY`/`_CLIENT_ID`/
+>   `_PORT_MESSAGE` ptr args `as *mut _`; `RtlAllocateHeap` size `as SIZE_T`; BOOL/i32 literals
+>   (`0u8`→`0`); LPC match scrutinee `as u32`. Builds + links clean ×3; i386 boot ✓.
 > - **✅ GATE CAVEAT RESOLVED (amd64 net):** since M4c, amd64 net shows 10/11 — the one failure is
 >   `test_outbound_tcp_client`. **Confirmed by the netstack lane (2026-06-21) to be a PRE-EXISTING
 >   host `cmd:cat` guestfwd-echo flake, NOT netstack and NOT lsasrv** — it fails on netstack's own
@@ -42,21 +54,51 @@ spine in Rust. Sibling of the userland audit set — see `userland-translation-a
 > - **wine-debug-internals shim ✅** (in prelude) — `ros_dbg_log` (real ReactOS variadic export,
 >   declared `extern` so the genuine debug path survives) + `__WINE_DBCL_*` consts + `__wine_debug_class`.
 >   This is the raw c2rust macro-expansion shape (`if dbch.flags & (1<<DBCL) { ros_dbg_log(..) }`).
-> - **`service.rs` STAGED, not integrated (`1bf67e64fb1`)** — translated, on disk, out of mod.rs.
->   Needs a **winsvc substrate**: SERVICE_TABLE_ENTRYW/SERVICE_STATUS(_HANDLE) types +
->   StartServiceCtrlDispatcherW/RegisterServiceCtrlHandlerW/SetServiceStatus/CreateThread/CreateEventW/
->   OpenEventW/WaitForSingleObject/LoadLibraryW/GetProcAddress/FreeLibrary/CloseHandle/GetLastError/
->   I_ScIsSecurityProcess externs + SERVICE_START_PENDING/RUNNING consts + fn-pointer ABI casts
->   (declare ServiceMain/ControlHandler/DispatcherThread with extern "C"/"system").
+> - **✅ `service.rs` DONE (14/16)** — security service (SCM dispatcher: NETLOGON+SAMSS
+>   ServiceMains + DispatcherThread waiting on `SECURITY_SERVICES_STARTED`). Added a **winsvc
+>   substrate to prelude**: SERVICE_TABLE_ENTRYW/SERVICE_STATUS/SERVICE_STATUS_HANDLE types +
+>   LPSERVICE_MAIN_FUNCTIONW/LPHANDLER_FUNCTION fn-ptr types + StartServiceCtrlDispatcherW/
+>   RegisterServiceCtrlHandlerW/SetServiceStatus/I_ScIsSecurityProcess + LoadLibraryW/GetProcAddress/
+>   FreeLibrary/CreateEventW/OpenEventW/WaitForSingleObject/GetLastError externs +
+>   SERVICE_START_PENDING(2)/SERVICE_RUNNING(4) consts. **i386-ABI fix:** the translation declared
+>   the WINAPI service-mains as `extern "C"` (cdecl) — fixed to `extern "system"` (stdcall) so the
+>   SCM dispatch through ServiceTable doesn't drift ESP on i386 (same class as the kernel32 RPC
+>   bug). Also: ServiceTable name strings → `static` (stable address, was dangling-prone transmute);
+>   DispatcherThread → `extern "system"` (CreateThread routine). Builds + links clean ×3.
 > - **`lookup.c` STAGED (`50987ef26d1`)** — translated ($0.17), out of mod.rs. **Bridges LSA→SAM**
 >   (Samr*/SAMPR_*/SAM masks/SamIFree_SAMPR_*) — needs samsrv S0 substrate first.
 > - **⚠️ Next steps** (in order):
->   1. **M4 rest** — `authport.c` (420, LPC auth port), then the winsvc substrate
->      (SERVICE_TABLE_ENTRYW/SERVICE_STATUS types + StartServiceCtrlDispatcherW/SetServiceStatus/…
->      externs + fn-ptr ABI casts) + finish staged `service.rs`, then `authpackage.c` (1856 LOC,
->      defines LsapTerminateLogon that session.rs externs).
->   2. **samsrv S0** — `samsrv-sys` SAMPR_* types + `Samr*`/`SamIFree_SAMPR_*` externs + SAM masks.
->   3. **Finish lookup.c** (un-comment, resolve SAM/db symbols).
+>   1. **M4 rest** — ~~authport.c~~ ✅ ~~service.c (winsvc substrate)~~ ✅ done.
+>      **`authpackage.c` TRANSLATED + STAGED** (`3624a8fe139`, $0.16, 23 fns, 2209 LOC; head→prelude,
+>      parse-artifact fixed) — but **BLOCKED on samsrv S0**: its LsapLogonUser/LsapAddSamGroups
+>      bridge into SAM (SAMPR_HANDLE/SAMPR_ULONG_ARRAY/SAMPR_PSID_ARRAY/SAMPR_SID_INFORMATION from
+>      the widl-generated `build-<arch>/dll/win32/samlib/sam_c.h`; Samr{OpenDomain,GetAliasMembership,
+>      CloseHandle}/SamIFree_SAMPR_ULONG_ARRAY externs; SAM masks SAM_SERVER_CONNECT/LOOKUP_DOMAIN,
+>      DOMAIN_GET_ALIAS_MEMBERSHIP, ACCOUNT_VIEW) + LSA-token-info types (_LSA_TOKEN_INFORMATION_V1/
+>      SECURITY_LOGON_TYPE from ntsecpkg.h) + _MSV1_0_INTERACTIVE_LOGON. ~199 compile errors are
+>      dominated by these. The SID globals it reads (LsapWorldSid/LsapLocalSystemSid/…) live in
+>      still-C lookup.c → extern them; BuiltinDomainSid/AccountDomainSid are already #[no_mangle] in
+>      database.rs → `use`. **⇒ samsrv S0 is now the critical-path unblocker for BOTH authpackage and
+>      lookup.c.** Do S0 next, then un-stage authpackage (`pub mod authpackage;` in mod.rs) → fix ×3
+>      → cohab-flip authpackage.c → boot-gate.
+>   2. **samsrv S0** — ✅ DONE (`5d621ccebb6`): `samsrv-sys` crate (bindgen over widl sam_c.h →
+>      SAMPR_* types + Samr* __stdcall client stubs), builds ×3. SAM masks/LSA-token types added
+>      to lsasrv-rust prelude.
+>   2b. **authpackage.c → Rust ✅ DONE (15/16, `d1343af24dd`)** — integration finished via a focused
+>      subagent grind (92→0 ×3): ~10 fn externs (Lsar* RPC stubs, SamIConnect/EqualSid,
+>      Lsap{AppendRidToSid,CreateTokenSd}, sibling uses), enum-const shadow renames (params
+>      TokenGroups/TokenPrivileges had silently matched ntdll TOKEN_INFORMATION_CLASS variants →
+>      typed u32 → deref cascade), local LSA_TOKEN_INFORMATION_V1/_TYPE dedup vs prelude,
+>      cross-crate as*mut/transmute bridges, SIZE_T casts, fn-ptr ABI. No stubs. Cohab-flipped,
+>      links clean ×3, i386 ✓boot + amd64 ✓boot. **15/16 units Rust; only lookup.c remains.**
+>   3. **lookup.c → Rust ✅ DONE (16/16)** — integration finished (246→0 ×3): LsapLoadString
+>      + database globals (NtAuthority/BuiltinDomainSid/…) imports, lowercase trace! no-op macros,
+>      `'done` labeled-block rewrites, LSAPR/SAMPR substrate re-exports in prelude (LSAP_LOOKUP_LEVEL
+>      consts, Samr* client stubs, SamIFree_SAMPR_RETURNED_USTRING_ARRAY), cross-crate ptr bridges,
+>      `__wine_dbch___default` move-out fix, LocalFree void* cast. **Well-known SID globals
+>      (LsapWorldSid/…) flipped from extern-to-C to `#[no_mangle]` defs in lookup.rs; authpackage.rs
+>      extern block → `use`.** No stubs. Cohab-flipped, links clean ×3 (i386 847K / amd64 945K /
+>      arm64 1040K lsasrv.dll, 0 undefined). **16/16 units Rust; only lsarpc.c (RPC fan-out) remains.**
 >   4. **M5** — `lsarpc.c` (4391 LOC, the big RPC method fan-out + ×3 gate), then samsrv S1–S4.
 >
 > ### Reusable substrate-growth + c2rust-fix patterns (validated M3/M4a)

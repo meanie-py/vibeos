@@ -785,6 +785,7 @@ version = "0.1.0"
 dependencies = [
  "lsasrv-sys",
  "ntdll-sys",
+ "samsrv-sys",
 ]
 
 [[package]]
@@ -1420,6 +1421,10 @@ checksum = "4813ee49326057f105d6d8ca3d8f9265095f26aa7b42094e487028403a594f4c"
 dependencies = [
  "zerocopy",
 ]
+
+[[package]]
+name = "samsrv-sys"
+version = "0.1.0"
 
 [[package]]
 name = "scoped-tls"

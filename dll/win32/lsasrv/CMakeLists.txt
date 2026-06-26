@@ -21,11 +21,11 @@ spec2def(lsasrv.dll lsasrv.spec ADD_IMPORTLIB)
 # compile_commands.json so lsa-stub's build.rs (generate_rpc_stub_rust) can read
 # the precise symbol decorations (i386 _Lsar*@N). Mirrors the services_c pattern.
 list(APPEND SOURCE
-    authpackage.c
-    authport.c
+    # authpackage.c — replaced by Rust (lsasrv-rust/src/lsasrv/authpackage.rs)
+    # authport.c    — replaced by Rust (lsasrv-rust/src/lsasrv/authport.rs)
     # database.c   — replaced by Rust (lsasrv-rust/src/lsasrv/database.rs)
     # dssetup.c  — replaced by Rust (sdk/lib/rust/lsasrv-rust/src/dssetup.rs)
-    lookup.c
+    # lookup.c      — replaced by Rust (lsasrv-rust/src/lsasrv/lookup.rs)
     lsarpc.c
     # lsasrv.c      — replaced by Rust (lsasrv-rust/src/lsasrv/lsasrv.rs)
     # notify.c      — replaced by Rust (lsasrv-rust/src/lsasrv/notify.rs)
@@ -33,7 +33,7 @@ list(APPEND SOURCE
     # privileges.c  — replaced by Rust (lsasrv-rust/src/lsasrv/privileges.rs)
     # registry.c     — replaced by Rust (lsasrv-rust/src/lsasrv/registry.rs)
     # security.c     — replaced by Rust (lsasrv-rust/src/lsasrv/security.rs)
-    service.c
+    # service.c     — replaced by Rust (lsasrv-rust/src/lsasrv/service.rs)
     # session.c     — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
     # srm.c         — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
     # utils.c        — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
