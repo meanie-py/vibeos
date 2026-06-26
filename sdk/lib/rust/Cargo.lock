@@ -125,6 +125,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "buslogic-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

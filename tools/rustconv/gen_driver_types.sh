@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -322,6 +322,31 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+    ;;
+  buslogic)
+    # The BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic/BusLogic958.c,
+    # single 2.8K-LOC TU). Like atapi it is a SCSIPORT miniport: it imports ScsiPort* and
+    # registers via ScsiPortInitialize. NOT in any QEMU boot path → link-clean ×3 is the
+    # bar. ALL its private structs (BusLogic_HostAdapter_T, BusLogic_CCB_T, BusLogic_*Mailbox,
+    # NONCACHED_EXTENSION, and the _HW_DEVICE_EXTENSION device-extension itself) live in the
+    # driver's own BusLogic958.h — allowlist it. BusLogic958.h #includes srb.h/scsi.h/
+    # ntddscsi.h/scsiwmi.h, so the SRB/CDB/sense + SCSI_WMI layouts must be emitted too →
+    # allowlist those headers. Like scsiport/atapi, _SCSI_REQUEST_BLOCK is OPAQUE in the
+    # kernel ddk bindgen → UNBLOCK it so THIS driver's bindgen (which includes scsi.h/srb.h)
+    # emits the full SRB. No version macros in the buslogic CMakeLists → NT 5.2 default;
+    # NTDDI 0x05020400 (amd64 peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/port/buslogic"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "BusLogic958.h"'
+    ALLOW_FILES=( --allowlist-file '.*buslogic[/\\]BusLogic958\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]scsiwmi\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/buslogic-rust" )
     ;;
   uniata)
     # The UniATA IDE/SATA/AHCI driver (drivers/storage/ide/uniata, 10 .cpp / 24K LOC,
