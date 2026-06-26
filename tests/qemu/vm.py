@@ -750,6 +750,10 @@ class QemuVM:
         self._slot_fd: int | None = None
         self._slot_index: int | None = None
         self._arch_slot_fd: int | None = None  # per-arch sub-cap lock (KVM arches)
+        # windows-host only: effective accelerator after the per-arch resolve (set in
+        # _build_windows_cmd). "tcg" until then; gates whether _acquire_arch_slot serializes
+        # same-arch boots (whpx contends like KVM, tcg doesn't).
+        self._win_accel: str = "tcg"
         # windows-host only: harness echo server backing the slirp guestfwd when
         # `-cmd:cat` can't run (Windows host has no `cat`). None on native / non-net.
         self._echo_server: socketserver.BaseServer | None = None
@@ -830,7 +834,14 @@ class QemuVM:
         from . import backend as be
 
         is_arm64 = self.config.arch.startswith("arm64")
-        accel = self._win.get("accel", "tcg")
+        # Per-arch accel resolve: x86 honors the configured value (default whpx), arm64 is
+        # forced to tcg (whpx is x86-only). Only probe WHPX when it could change the outcome
+        # (x86 + configured whpx) so arm64/tcg runs pay no PowerShell cost; a definite
+        # "feature Disabled" degrades x86 to tcg, an inconclusive probe trusts config.
+        configured = self._win.get("accel", "tcg")
+        whpx_ok = be.whpx_available() if (configured == "whpx" and not is_arm64) else None
+        accel = be.resolve_accel(self.config.arch, configured, whpx_ok)
+        self._win_accel = accel  # read by _acquire_arch_slot (whpx contends like KVM)
         # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
         # windows-host smokes across worktrees must not stomp each other's media — the per-arch
         # KVM slot does NOT serialize windows-host (it runs off-host and early-returns the slot),
@@ -1147,11 +1158,16 @@ class QemuVM:
         Held on self._arch_slot_fd for this process's lifetime alongside the
         global slot; cross-arch boots don't contend so they stay parallel. On
         timeout we release the global slot we already hold so it doesn't leak."""
-        # windows-host runs TCG on the Windows host (no nested KVM), which we measured to
-        # NOT contend under same-arch concurrency — the per-arch serialize cap is the
-        # nested-KVM workaround it makes obsolete, so skip it (like arm64 TCG). getattr
-        # default keeps slot-only partial QemuVM constructions (tests) working.
-        if getattr(self, "_backend", "native") == "windows-host":
+        # windows-host on TCG (all arm64, and x86 when whpx is off) runs off-host with no
+        # shared accelerator, so it does NOT contend under same-arch concurrency — the
+        # per-arch serialize cap is the nested-KVM workaround it obsoletes, so skip it.
+        # WHPX is the exception: it's REAL hardware virt on the Windows host, so same-arch
+        # x86 whpx guests contend for it like KVM → fall through and serialize those. getattr
+        # defaults keep slot-only partial QemuVM constructions (tests) working.
+        if (
+            getattr(self, "_backend", "native") == "windows-host"
+            and getattr(self, "_win_accel", "tcg") != "whpx"
+        ):
             return
         cap = per_arch_cap(self.config.arch)
         if cap <= 0:

@@ -695,7 +695,7 @@ def test_source_date_epoch_none_outside_git(tmp_path: Path):
 def test_config_defaults_when_no_overrides(tmp_path: Path):
     cfg = config_mod.load(tmp_path, environ={})
     assert cfg.get("qemu.backend") == "windows-host"
-    assert cfg.get("qemu.windows.accel") == "tcg"
+    assert cfg.get("qemu.windows.accel") == "tcg"  # whpx is opt-in (doesn't boot x86 cleanly yet)
     assert cfg.get("nonexistent.key", "fallback") == "fallback"
 
 
@@ -705,7 +705,7 @@ def test_config_local_file_deep_merges(tmp_path: Path):
     )
     cfg = config_mod.load(tmp_path, environ={})
     assert cfg.get("qemu.backend") == "windows-host"
-    assert cfg.get("qemu.windows.accel") == "whpx"
+    assert cfg.get("qemu.windows.accel") == "whpx"  # local override beats the tcg default
     # untouched sibling defaults survive the deep merge
     assert cfg.get("qemu.windows.host_addr") == "127.0.0.1"
 
@@ -802,17 +802,36 @@ def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
     assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
-    # whpx: kvm->whpx (irqchip off) and KEEP -cpu host
+    # whpx: kvm->whpx (irqchip off) and ALSO drop -cpu host — it faults OVMF on FXSAVE in
+    # early firmware, so whpx must fall back to qemu's default cpu model.
     assert be_mod.rewrite_accel(base, "whpx") == [
         "-M",
         "pc",
         "-accel",
         "whpx,kernel-irqchip=off",
-        "-cpu",
-        "host",
         "-m",
         "512M",
     ]
+
+
+def test_backend_resolve_accel_per_arch():
+    # x86 honors the configured value...
+    assert be_mod.resolve_accel("i386", "whpx") == "whpx"
+    assert be_mod.resolve_accel("amd64", "whpx") == "whpx"
+    assert be_mod.resolve_accel("amd64", "tcg") == "tcg"
+    # ...arm64 is FORCED to tcg regardless (whpx is x86-only; the cpu model must survive)
+    assert be_mod.resolve_accel("arm64", "whpx") == "tcg"
+    assert be_mod.resolve_accel("arm64-uefi", "whpx") == "tcg"
+
+
+def test_backend_resolve_accel_probe_degrade():
+    # probe says DEFINITELY absent → x86 whpx degrades to tcg (fail-soft)
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=False) == "tcg"
+    # probe present or inconclusive → trust the configured whpx (don't degrade on a flaky probe)
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=True) == "whpx"
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=None) == "whpx"
+    # a probe result never upgrades an explicit tcg config
+    assert be_mod.resolve_accel("amd64", "tcg", whpx_ok=True) == "tcg"
 
 
 def test_backend_stage_media_paths_passthrough():

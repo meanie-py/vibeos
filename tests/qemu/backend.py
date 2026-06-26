@@ -51,9 +51,14 @@ def windows_qemu_bin(native_bin: str, qemu_dir: str, accel: str) -> str:
 
 
 def rewrite_accel(args: list[str], accel: str) -> list[str]:
-    """Swap the KVM accelerator for the Windows one. `-accel kvm` -> `-accel <accel>`; for
-    tcg drop the paired `-cpu host` (host-passthrough is a KVM/WHPX concept), for whpx keep
-    it (WHPX wants host CPU). Operates on a copy."""
+    """Swap the KVM accelerator for the Windows one and drop the paired `-cpu host`.
+    `-accel kvm` -> `-accel <accel>` (whpx adds `kernel-irqchip=off`, required). `-cpu host`
+    is dropped for BOTH tcg and whpx: it's a KVM host-passthrough concept, and under WHPX it
+    actively breaks boot — `-cpu host` makes OVMF fault on FXSAVE in early firmware (the host
+    feature set WHPX exposes isn't what the 32/64-bit firmware expects), so WHPX falls back to
+    qemu's default model. Operates on a copy. (NB: even with this, whpx does not yet boot our
+    x86 guests cleanly — see docs/engineering/windows-host-qemu-whpx-spike.md; whpx is opt-in,
+    the default accel is tcg.)"""
     out: list[str] = []
     i = 0
     while i < len(args):
@@ -62,12 +67,59 @@ def rewrite_accel(args: list[str], accel: str) -> list[str]:
             out += ["-accel", "whpx,kernel-irqchip=off" if accel == "whpx" else accel]
             i += 2
             continue
-        if a == "-cpu" and i + 1 < len(args) and accel != "whpx":
-            i += 2  # drop `-cpu host` under tcg
+        if a == "-cpu" and i + 1 < len(args):
+            i += 2  # drop `-cpu host` (KVM-only passthrough; faults OVMF under whpx)
             continue
         out.append(a)
         i += 1
     return out
+
+
+def resolve_accel(arch: str, configured: str, whpx_ok: bool | None = None) -> str:
+    """Per-arch accelerator for the windows-host backend. WHPX is x86-ONLY (it lives only in
+    `qemu-system-x86_64.exe` and runs an x86 guest on the host's Hyper-V platform); an arm64
+    guest can't use it and boots via a real `-cpu cortex-a72` model that `rewrite_accel` would
+    strip. So the configured value is interpreted per-arch:
+
+      - arm64 → always "tcg" (the configured value is ignored — whpx can't run an aarch64 guest)
+      - x86 + configured "whpx" + probe says DEFINITELY absent (`whpx_ok is False`) → "tcg"
+      - else → the configured value verbatim
+
+    The degrade is fail-soft by design: an x86 host without the Hyper-V platform enabled still
+    boots, just on TCG. `whpx_ok is None` means "unknown/unprobed" → trust the configured value
+    (don't degrade on an inconclusive probe). Pure + side-effect-free for unit testing."""
+    if arch.startswith("arm64"):
+        return "tcg"
+    if configured == "whpx" and whpx_ok is False:
+        return "tcg"
+    return configured
+
+
+def whpx_available() -> bool | None:
+    """Best-effort probe: is a host hypervisor (the platform WHPX runs on) active on this
+    Windows host? Reads `Win32_ComputerSystem.HypervisorPresent` via CIM — which, unlike
+    `Get-WindowsOptionalFeature -Online` (elevation-gated, so it always came back unknown),
+    works WITHOUT admin. Returns True (a hypervisor is running → whpx usable), False (none →
+    whpx would fail, degrade to tcg), or None (couldn't determine → caller trusts config, does
+    NOT degrade). HypervisorPresent is a slight over-approximation (it's also True under
+    VBS/Hyper-V without the WHPX feature), but the only outcome it changes is detecting the
+    genuinely-no-hypervisor host so it degrades to tcg instead of failing qemu's whpx init."""
+    ps = "(Get-CimInstance -ClassName Win32_ComputerSystem).HypervisorPresent"
+    try:
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = proc.stdout.strip().lower()
+    if out == "true":
+        return True
+    if out == "false":
+        return False
+    return None
 
 
 def stage_media_paths(args: list[str], staging: Path) -> list[str]:
