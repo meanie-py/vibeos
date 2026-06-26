@@ -99,6 +99,178 @@ pub const RPC_S_PRF_ELT_NOT_ADDED: u32 = 1926;
 pub const RPC_S_PRF_ELT_NOT_REMOVED: u32 = 1927;
 pub const RPC_S_GRP_ELT_NOT_ADDED: u32 = 1928;
 pub const RPC_S_GRP_ELT_NOT_REMOVED: u32 = 1929;
+pub const REG_STANDARD_FORMAT: u32 = 1;
+pub const REG_LATEST_FORMAT: u32 = 2;
+pub const REG_NO_COMPRESSION: u32 = 4;
+pub const REG_WHOLE_HIVE_VOLATILE: u32 = 1;
+pub const REG_REFRESH_HIVE: u32 = 2;
+pub const REG_NO_LAZY_FLUSH: u32 = 4;
+pub const REG_FORCE_RESTORE: u32 = 8;
+pub const REG_OPTION_RESERVED: u32 = 0;
+pub const REG_OPTION_NON_VOLATILE: u32 = 0;
+pub const REG_OPTION_VOLATILE: u32 = 1;
+pub const REG_OPTION_CREATE_LINK: u32 = 2;
+pub const REG_OPTION_BACKUP_RESTORE: u32 = 4;
+pub const REG_OPTION_OPEN_LINK: u32 = 8;
+pub const REG_LEGAL_OPTION: u32 = 15;
+pub const SERVICE_KERNEL_DRIVER: u32 = 1;
+pub const SERVICE_FILE_SYSTEM_DRIVER: u32 = 2;
+pub const SERVICE_ADAPTER: u32 = 4;
+pub const SERVICE_RECOGNIZER_DRIVER: u32 = 8;
+pub const SERVICE_DRIVER: u32 = 11;
+pub const SERVICE_WIN32_OWN_PROCESS: u32 = 16;
+pub const SERVICE_WIN32_SHARE_PROCESS: u32 = 32;
+pub const SERVICE_WIN32: u32 = 48;
+pub const SERVICE_INTERACTIVE_PROCESS: u32 = 256;
+pub const SERVICE_TYPE_ALL: u32 = 319;
+pub const SERVICE_BOOT_START: u32 = 0;
+pub const SERVICE_SYSTEM_START: u32 = 1;
+pub const SERVICE_AUTO_START: u32 = 2;
+pub const SERVICE_DEMAND_START: u32 = 3;
+pub const SERVICE_DISABLED: u32 = 4;
+pub const SERVICE_ERROR_IGNORE: u32 = 0;
+pub const SERVICE_ERROR_NORMAL: u32 = 1;
+pub const SERVICE_ERROR_SEVERE: u32 = 2;
+pub const SERVICE_ERROR_CRITICAL: u32 = 3;
+pub const CP_NONE: u32 = 0;
+pub const CP_RECTANGLE: u32 = 1;
+pub const CP_REGION: u32 = 2;
+pub const SC_SIZE: u32 = 61440;
+pub const SC_MOVE: u32 = 61456;
+pub const SC_MINIMIZE: u32 = 61472;
+pub const SC_ICON: u32 = 61472;
+pub const SC_MAXIMIZE: u32 = 61488;
+pub const SC_ZOOM: u32 = 61488;
+pub const SC_NEXTWINDOW: u32 = 61504;
+pub const SC_PREVWINDOW: u32 = 61520;
+pub const SC_CLOSE: u32 = 61536;
+pub const SC_VSCROLL: u32 = 61552;
+pub const SC_HSCROLL: u32 = 61568;
+pub const SC_MOUSEMENU: u32 = 61584;
+pub const SC_KEYMENU: u32 = 61696;
+pub const SC_ARRANGE: u32 = 61712;
+pub const SC_RESTORE: u32 = 61728;
+pub const SC_TASKLIST: u32 = 61744;
+pub const SC_SCREENSAVE: u32 = 61760;
+pub const SC_HOTKEY: u32 = 61776;
+pub const SC_DEFAULT: u32 = 61792;
+pub const SC_MONITORPOWER: u32 = 61808;
+pub const SC_CONTEXTHELP: u32 = 61824;
+pub const SC_SEPARATOR: u32 = 61455;
+pub const CP_INSTALLED: u32 = 1;
+pub const CP_SUPPORTED: u32 = 2;
+pub const CP_ACP: u32 = 0;
+pub const CP_OEMCP: u32 = 1;
+pub const CP_MACCP: u32 = 2;
+pub const CP_THREAD_ACP: u32 = 3;
+pub const CP_SYMBOL: u32 = 42;
+pub const CP_UTF7: u32 = 65000;
+pub const CP_UTF8: u32 = 65001;
+pub const REG_CREATED_NEW_KEY: u32 = 1;
+pub const REG_OPENED_EXISTING_KEY: u32 = 2;
+pub const REG_NONE: u32 = 0;
+pub const REG_SZ: u32 = 1;
+pub const REG_EXPAND_SZ: u32 = 2;
+pub const REG_BINARY: u32 = 3;
+pub const REG_DWORD_LITTLE_ENDIAN: u32 = 4;
+pub const REG_DWORD: u32 = 4;
+pub const REG_DWORD_BIG_ENDIAN: u32 = 5;
+pub const REG_LINK: u32 = 6;
+pub const REG_MULTI_SZ: u32 = 7;
+pub const REG_RESOURCE_LIST: u32 = 8;
+pub const REG_FULL_RESOURCE_DESCRIPTOR: u32 = 9;
+pub const REG_RESOURCE_REQUIREMENTS_LIST: u32 = 10;
+pub const REG_QWORD_LITTLE_ENDIAN: u32 = 11;
+pub const REG_QWORD: u32 = 11;
+pub const REG_NOTIFY_CHANGE_NAME: u32 = 1;
+pub const REG_NOTIFY_CHANGE_ATTRIBUTES: u32 = 2;
+pub const REG_NOTIFY_CHANGE_LAST_SET: u32 = 4;
+pub const REG_NOTIFY_CHANGE_SECURITY: u32 = 8;
+pub const REG_NOTIFY_THREAD_AGNOSTIC: u32 = 268435456;
+pub const REG_MUI_STRING_TRUNCATE: u32 = 1;
+pub const SC_GROUP_IDENTIFIERA: u8 = 43u8;
+pub const SC_GROUP_IDENTIFIERW: u8 = 43u8;
+pub const SC_MANAGER_ALL_ACCESS: u32 = 983103;
+pub const SC_MANAGER_CONNECT: u32 = 1;
+pub const SC_MANAGER_CREATE_SERVICE: u32 = 2;
+pub const SC_MANAGER_ENUMERATE_SERVICE: u32 = 4;
+pub const SC_MANAGER_LOCK: u32 = 8;
+pub const SC_MANAGER_QUERY_LOCK_STATUS: u32 = 16;
+pub const SC_MANAGER_MODIFY_BOOT_CONFIG: u32 = 32;
+pub const SERVICE_NO_CHANGE: u32 = 4294967295;
+pub const SERVICE_STOPPED: u32 = 1;
+pub const SERVICE_START_PENDING: u32 = 2;
+pub const SERVICE_STOP_PENDING: u32 = 3;
+pub const SERVICE_RUNNING: u32 = 4;
+pub const SERVICE_CONTINUE_PENDING: u32 = 5;
+pub const SERVICE_PAUSE_PENDING: u32 = 6;
+pub const SERVICE_PAUSED: u32 = 7;
+pub const SERVICE_ACCEPT_STOP: u32 = 1;
+pub const SERVICE_ACCEPT_PAUSE_CONTINUE: u32 = 2;
+pub const SERVICE_ACCEPT_SHUTDOWN: u32 = 4;
+pub const SERVICE_ACCEPT_PARAMCHANGE: u32 = 8;
+pub const SERVICE_ACCEPT_NETBINDCHANGE: u32 = 16;
+pub const SERVICE_ACCEPT_HARDWAREPROFILECHANGE: u32 = 32;
+pub const SERVICE_ACCEPT_POWEREVENT: u32 = 64;
+pub const SERVICE_ACCEPT_SESSIONCHANGE: u32 = 128;
+pub const SERVICE_ACCEPT_PRESHUTDOWN: u32 = 256;
+pub const SERVICE_ACCEPT_TIMECHANGE: u32 = 512;
+pub const SERVICE_ACCEPT_TRIGGEREVENT: u32 = 1024;
+pub const SERVICE_ACCEPT_USER_LOGOFF: u32 = 2048;
+pub const SERVICE_ACCEPT_LOWRESOURCES: u32 = 8192;
+pub const SERVICE_ACCEPT_SYSTEMLOWRESOURCES: u32 = 16384;
+pub const SERVICE_CONTROL_STOP: u32 = 1;
+pub const SERVICE_CONTROL_PAUSE: u32 = 2;
+pub const SERVICE_CONTROL_CONTINUE: u32 = 3;
+pub const SERVICE_CONTROL_INTERROGATE: u32 = 4;
+pub const SERVICE_CONTROL_SHUTDOWN: u32 = 5;
+pub const SERVICE_CONTROL_PARAMCHANGE: u32 = 6;
+pub const SERVICE_CONTROL_NETBINDADD: u32 = 7;
+pub const SERVICE_CONTROL_NETBINDREMOVE: u32 = 8;
+pub const SERVICE_CONTROL_NETBINDENABLE: u32 = 9;
+pub const SERVICE_CONTROL_NETBINDDISABLE: u32 = 10;
+pub const SERVICE_CONTROL_DEVICEEVENT: u32 = 11;
+pub const SERVICE_CONTROL_HARDWAREPROFILECHANGE: u32 = 12;
+pub const SERVICE_CONTROL_POWEREVENT: u32 = 13;
+pub const SERVICE_CONTROL_SESSIONCHANGE: u32 = 14;
+pub const SERVICE_ACTIVE: u32 = 1;
+pub const SERVICE_INACTIVE: u32 = 2;
+pub const SERVICE_STATE_ALL: u32 = 3;
+pub const SERVICE_QUERY_CONFIG: u32 = 1;
+pub const SERVICE_CHANGE_CONFIG: u32 = 2;
+pub const SERVICE_QUERY_STATUS: u32 = 4;
+pub const SERVICE_ENUMERATE_DEPENDENTS: u32 = 8;
+pub const SERVICE_START: u32 = 16;
+pub const SERVICE_STOP: u32 = 32;
+pub const SERVICE_PAUSE_CONTINUE: u32 = 64;
+pub const SERVICE_INTERROGATE: u32 = 128;
+pub const SERVICE_USER_DEFINED_CONTROL: u32 = 256;
+pub const SERVICE_ALL_ACCESS: u32 = 983551;
+pub const SERVICE_RUNS_IN_SYSTEM_PROCESS: u32 = 1;
+pub const SERVICE_CONFIG_DESCRIPTION: u32 = 1;
+pub const SERVICE_CONFIG_FAILURE_ACTIONS: u32 = 2;
+pub const SERVICE_CONFIG_DELAYED_AUTO_START_INFO: u32 = 3;
+pub const SERVICE_CONFIG_FAILURE_ACTIONS_FLAG: u32 = 4;
+pub const SERVICE_CONFIG_SERVICE_SID_INFO: u32 = 5;
+pub const SERVICE_CONFIG_REQUIRED_PRIVILEGES_INFO: u32 = 6;
+pub const SERVICE_CONFIG_PRESHUTDOWN_INFO: u32 = 7;
+pub const SERVICE_CONFIG_TRIGGER_INFO: u32 = 8;
+pub const SERVICE_CONFIG_PREFERRED_NODE: u32 = 9;
+pub const SERVICE_CONFIG_RUNLEVEL_INFO: u32 = 10;
+pub const SERVICE_NOTIFY_STATUS_CHANGE_1: u32 = 1;
+pub const SERVICE_NOTIFY_STATUS_CHANGE_2: u32 = 2;
+pub const SERVICE_NOTIFY_STATUS_CHANGE: u32 = 2;
+pub const SERVICE_NOTIFY_STOPPED: u32 = 1;
+pub const SERVICE_NOTIFY_START_PENDING: u32 = 2;
+pub const SERVICE_NOTIFY_STOP_PENDING: u32 = 4;
+pub const SERVICE_NOTIFY_RUNNING: u32 = 8;
+pub const SERVICE_NOTIFY_CONTINUE_PENDING: u32 = 16;
+pub const SERVICE_NOTIFY_PAUSE_PENDING: u32 = 32;
+pub const SERVICE_NOTIFY_PAUSED: u32 = 64;
+pub const SERVICE_NOTIFY_CREATED: u32 = 128;
+pub const SERVICE_NOTIFY_DELETED: u32 = 256;
+pub const SERVICE_NOTIFY_DELETE_PENDING: u32 = 512;
+pub const SC_GROUP_IDENTIFIER: u8 = 43u8;
 pub const TRUSTEE_ACCESS_ALLOWED: u32 = 1;
 pub const TRUSTEE_ACCESS_READ: u32 = 2;
 pub const TRUSTEE_ACCESS_WRITE: u32 = 4;
@@ -139,6 +311,17 @@ pub const SAFER_POLICY_UIFLAGS_INFORMATION_PROMPT: u32 = 1;
 pub const SAFER_POLICY_UIFLAGS_OPTION_PROMPT: u32 = 2;
 pub const SAFER_POLICY_UIFLAGS_HIDDEN: u32 = 4;
 pub const SAFER_POLICY_UIFLAGS_MASK: u32 = 255;
+pub const SERVICE_TABLE_SHIFT: u32 = 8;
+pub const SERVICE_TABLE_MASK: u32 = 16;
+pub const SERVICE_NUMBER_MASK: u32 = 4095;
+pub const SERVICE_TABLE_TEST: u32 = 16;
+pub const RTL_ENCRYPT_MEMORY_SIZE: u32 = 8;
+pub const RTL_ENCRYPT_OPTION_SAME_PROCESS: u32 = 0;
+pub const RTL_ENCRYPT_OPTION_CROSS_PROCESS: u32 = 1;
+pub const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 2;
+pub const SERVICE_CONTROL_START_SHARE: u32 = 80;
+pub const SERVICE_CONTROL_START_OWN: u32 = 81;
+pub const SCM_START_EVENT: &[u8; 26] = b"SvcctrlStartEvent_A3752DX\0";
 pub const RPC_S_OK: u32 = 0;
 pub const RPC_S_INVALID_ARG: u32 = 87;
 pub const RPC_S_OUT_OF_MEMORY: u32 = 14;
@@ -151,8 +334,19 @@ pub const RPC_S_SERVER_OUT_OF_MEMORY: u32 = 1130;
 pub const RPC_S_ASYNC_CALL_PENDING: u32 = 997;
 pub const RPC_S_UNKNOWN_PRINCIPAL: u32 = 1332;
 pub const RPC_S_TIMEOUT: u32 = 1460;
+pub const MAX_SERVICE_NAME_LENGTH: u32 = 256;
+pub const SC_MAX_DEPEND_SIZE: u32 = 4096;
+pub const SC_MAX_NAME_LENGTH: u32 = 257;
+pub const SC_MAX_PATH_LENGTH: u32 = 32768;
+pub const SC_MAX_PWD_SIZE: u32 = 514;
+pub const SC_MAX_COMPUTER_NAME_LENGTH: u32 = 1024;
+pub const SC_MAX_ACCOUNT_NAME_LENGTH: u32 = 2048;
+pub const SC_MAX_COMMENT_LENGTH: u32 = 128;
+pub const SC_MAX_ARGUMENT_LENGTH: u32 = 1024;
+pub const SC_MAX_ARGUMENTS: u32 = 1024;
 pub type wchar_t = ::core::ffi::c_ushort;
 pub type ULONG = ::core::ffi::c_ulong;
+pub type PULONG = *mut ULONG;
 pub type USHORT = ::core::ffi::c_ushort;
 pub type UCHAR = ::core::ffi::c_uchar;
 pub type BOOL = ::core::ffi::c_int;
@@ -160,6 +354,7 @@ pub type BYTE = ::core::ffi::c_uchar;
 pub type WORD = ::core::ffi::c_ushort;
 pub type DWORD = ::core::ffi::c_ulong;
 pub type PBYTE = *mut BYTE;
+pub type LPVOID = *mut ::core::ffi::c_void;
 pub type ULONG_PTR = ::core::ffi::c_ulong;
 pub type SIZE_T = ULONG_PTR;
 pub type ULONG64 = ::core::ffi::c_ulonglong;
@@ -206,7 +401,29 @@ pub struct _LARGE_INTEGER__bindgen_ty_2 {
     pub HighPart: LONG,
 }
 pub type LARGE_INTEGER = _LARGE_INTEGER;
+pub type PSECURITY_DESCRIPTOR = PVOID;
+pub type SECURITY_INFORMATION = DWORD;
 pub type ACCESS_MASK = DWORD;
+pub type PSID = PVOID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _GENERIC_MAPPING {
+    pub GenericRead: ACCESS_MASK,
+    pub GenericWrite: ACCESS_MASK,
+    pub GenericExecute: ACCESS_MASK,
+    pub GenericAll: ACCESS_MASK,
+}
+pub type PGENERIC_MAPPING = *mut _GENERIC_MAPPING;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _ACL {
+    pub AclRevision: BYTE,
+    pub Sbz1: BYTE,
+    pub AclSize: WORD,
+    pub AceCount: WORD,
+    pub Sbz2: WORD,
+}
+pub type PACL = *mut _ACL;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SID_IDENTIFIER_AUTHORITY {
@@ -298,6 +515,12 @@ pub type HKEY = *mut HKEY__;
 pub type PHKEY = *mut HKEY;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct HINSTANCE__ {
+    pub unused: ::core::ffi::c_int,
+}
+pub type HINSTANCE = *mut HINSTANCE__;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _FILETIME {
     pub dwLowDateTime: DWORD,
     pub dwHighDateTime: DWORD,
@@ -351,6 +574,7 @@ pub struct _SERVICE_STATUS {
     pub dwWaitHint: DWORD,
 }
 pub type SERVICE_STATUS = _SERVICE_STATUS;
+pub type LPSERVICE_STATUS = *mut _SERVICE_STATUS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_STATUS_PROCESS {
@@ -365,6 +589,13 @@ pub struct _SERVICE_STATUS_PROCESS {
     pub dwServiceFlags: DWORD,
 }
 pub type SERVICE_STATUS_PROCESS = _SERVICE_STATUS_PROCESS;
+pub type LPSERVICE_STATUS_PROCESS = *mut _SERVICE_STATUS_PROCESS;
+pub const _SC_STATUS_TYPE_SC_STATUS_PROCESS_INFO: _SC_STATUS_TYPE = 0;
+pub type _SC_STATUS_TYPE = ::core::ffi::c_uint;
+pub use self::_SC_STATUS_TYPE as SC_STATUS_TYPE;
+pub const _SC_ENUM_TYPE_SC_ENUM_PROCESS_INFO: _SC_ENUM_TYPE = 0;
+pub type _SC_ENUM_TYPE = ::core::ffi::c_uint;
+pub use self::_SC_ENUM_TYPE as SC_ENUM_TYPE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ENUM_SERVICE_STATUSA {
@@ -452,6 +683,7 @@ pub struct _SERVICE_TABLE_ENTRYA {
     pub lpServiceProc: LPSERVICE_MAIN_FUNCTIONA,
 }
 pub type SERVICE_TABLE_ENTRYA = _SERVICE_TABLE_ENTRYA;
+pub type LPSERVICE_TABLE_ENTRYA = *mut _SERVICE_TABLE_ENTRYA;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _SERVICE_TABLE_ENTRYW {
@@ -459,6 +691,7 @@ pub struct _SERVICE_TABLE_ENTRYW {
     pub lpServiceProc: LPSERVICE_MAIN_FUNCTIONW,
 }
 pub type SERVICE_TABLE_ENTRYW = _SERVICE_TABLE_ENTRYW;
+pub type LPSERVICE_TABLE_ENTRYW = *mut _SERVICE_TABLE_ENTRYW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct SC_HANDLE__ {
@@ -472,6 +705,10 @@ pub struct SERVICE_STATUS_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type SERVICE_STATUS_HANDLE = *mut SERVICE_STATUS_HANDLE__;
+pub type LPHANDLER_FUNCTION = ::core::option::Option<unsafe extern "stdcall" fn(arg1: DWORD)>;
+pub type LPHANDLER_FUNCTION_EX = ::core::option::Option<
+    unsafe extern "stdcall" fn(arg1: DWORD, arg2: DWORD, arg3: LPVOID, arg4: LPVOID) -> DWORD,
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_DESCRIPTIONA {
@@ -527,12 +764,14 @@ pub struct _SERVICE_REQUIRED_PRIVILEGES_INFOA {
     pub pmszRequiredPrivileges: LPSTR,
 }
 pub type SERVICE_REQUIRED_PRIVILEGES_INFOA = _SERVICE_REQUIRED_PRIVILEGES_INFOA;
+pub type LPSERVICE_REQUIRED_PRIVILEGES_INFOA = *mut _SERVICE_REQUIRED_PRIVILEGES_INFOA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_REQUIRED_PRIVILEGES_INFOW {
     pub pmszRequiredPrivileges: LPWSTR,
 }
 pub type SERVICE_REQUIRED_PRIVILEGES_INFOW = _SERVICE_REQUIRED_PRIVILEGES_INFOW;
+pub type LPSERVICE_REQUIRED_PRIVILEGES_INFOW = *mut _SERVICE_REQUIRED_PRIVILEGES_INFOW;
 pub type PFN_SC_NOTIFY_CALLBACK = ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -580,9 +819,14 @@ pub type ENUM_SERVICE_STATUS_PROCESS = ENUM_SERVICE_STATUS_PROCESSW;
 pub type QUERY_SERVICE_CONFIG = QUERY_SERVICE_CONFIGW;
 pub type QUERY_SERVICE_LOCK_STATUS = QUERY_SERVICE_LOCK_STATUSW;
 pub type SERVICE_TABLE_ENTRY = SERVICE_TABLE_ENTRYW;
+pub type LPSERVICE_TABLE_ENTRY = *mut SERVICE_TABLE_ENTRYW;
+pub type LPSERVICE_MAIN_FUNCTION = LPSERVICE_MAIN_FUNCTIONW;
 pub type SERVICE_DESCRIPTION = SERVICE_DESCRIPTIONW;
+pub type LPSERVICE_DESCRIPTION = LPSERVICE_DESCRIPTIONW;
 pub type SERVICE_FAILURE_ACTIONS = SERVICE_FAILURE_ACTIONSW;
+pub type LPSERVICE_FAILURE_ACTIONS = LPSERVICE_FAILURE_ACTIONSW;
 pub type SERVICE_REQUIRED_PRIVILEGES_INFO = SERVICE_REQUIRED_PRIVILEGES_INFOW;
+pub type LPSERVICE_REQUIRED_PRIVILEGES_INFO = LPSERVICE_REQUIRED_PRIVILEGES_INFOW;
 pub type SERVICE_NOTIFY_2 = SERVICE_NOTIFY_2W;
 pub type PSERVICE_NOTIFY_2 = PSERVICE_NOTIFY_2W;
 pub type SERVICE_NOTIFY = SERVICE_NOTIFYW;
@@ -840,6 +1084,7 @@ pub struct _OBJECTS_AND_SID {
     pub pSid: *mut SID,
 }
 pub type OBJECTS_AND_SID = _OBJECTS_AND_SID;
+pub type POBJECTS_AND_SID = *mut _OBJECTS_AND_SID;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OBJECTS_AND_NAME_A {
@@ -850,6 +1095,7 @@ pub struct _OBJECTS_AND_NAME_A {
     pub ptstrName: LPSTR,
 }
 pub type OBJECTS_AND_NAME_A = _OBJECTS_AND_NAME_A;
+pub type POBJECTS_AND_NAME_A = *mut _OBJECTS_AND_NAME_A;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OBJECTS_AND_NAME_W {
@@ -860,18 +1106,27 @@ pub struct _OBJECTS_AND_NAME_W {
     pub ptstrName: LPWSTR,
 }
 pub type OBJECTS_AND_NAME_W = _OBJECTS_AND_NAME_W;
+pub type POBJECTS_AND_NAME_W = *mut _OBJECTS_AND_NAME_W;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct INHERITED_FROMA {
     pub GenerationGap: LONG,
     pub AncestorName: LPSTR,
 }
+pub type PINHERITED_FROMA = *mut INHERITED_FROMA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct INHERITED_FROMW {
     pub GenerationGap: LONG,
     pub AncestorName: LPWSTR,
 }
+pub type PINHERITED_FROMW = *mut INHERITED_FROMW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FN_OBJECT_MGR_FUNCTIONS {
+    pub Placeholder: ULONG,
+}
+pub type PFN_OBJECT_MGR_FUNCTS = *mut _FN_OBJECT_MGR_FUNCTIONS;
 pub const _PROG_INVOKE_SETTING_ProgressInvokeNever: _PROG_INVOKE_SETTING = 1;
 pub const _PROG_INVOKE_SETTING_ProgressInvokeEveryObject: _PROG_INVOKE_SETTING = 2;
 pub const _PROG_INVOKE_SETTING_ProgressInvokeOnError: _PROG_INVOKE_SETTING = 3;
@@ -921,7 +1176,9 @@ pub type PEXPLICIT_ACCESS = *mut EXPLICIT_ACCESSW;
 pub type TRUSTEE_ACCESS = TRUSTEE_ACCESSW;
 pub type PTRUSTEE_ACCESS = *mut TRUSTEE_ACCESSW;
 pub type OBJECTS_AND_NAME_ = OBJECTS_AND_NAME_W;
+pub type POBJECTS_AND_NAME_ = *mut OBJECTS_AND_NAME_W;
 pub type INHERITED_FROM = INHERITED_FROMW;
+pub type PINHERITED_FROM = *mut INHERITED_FROMW;
 pub type FN_PROGRESS = FN_PROGRESSW;
 pub type ALG_ID = ::core::ffi::c_uint;
 #[repr(C)]
@@ -1049,6 +1306,26 @@ pub struct _SAFER_URLZONE_IDENTIFICATION {
 }
 pub type SAFER_URLZONE_IDENTIFICATION = _SAFER_URLZONE_IDENTIFICATION;
 pub type PSAFER_URLZONE_IDENTIFICATION = *mut _SAFER_URLZONE_IDENTIFICATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SCM_CONTROL_PACKET {
+    pub dwSize: DWORD,
+    pub dwControl: DWORD,
+    pub dwArgumentsCount: DWORD,
+    pub dwServiceTag: DWORD,
+    pub hServiceStatus: SERVICE_STATUS_HANDLE,
+    pub dwServiceNameOffset: DWORD,
+    pub dwArgumentsOffset: DWORD,
+}
+pub type SCM_CONTROL_PACKET = _SCM_CONTROL_PACKET;
+pub type PSCM_CONTROL_PACKET = *mut _SCM_CONTROL_PACKET;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SCM_REPLY_PACKET {
+    pub dwError: DWORD,
+}
+pub type SCM_REPLY_PACKET = _SCM_REPLY_PACKET;
+pub type PSCM_REPLY_PACKET = *mut _SCM_REPLY_PACKET;
 pub type I_RPC_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_STATUS = ::core::ffi::c_long;
 pub type UUID = GUID;
@@ -1065,8 +1342,10 @@ pub struct _RPC_UNICODE_STRING {
 }
 pub type RPC_UNICODE_STRING = _RPC_UNICODE_STRING;
 pub type PRPC_UNICODE_STRING = *mut _RPC_UNICODE_STRING;
+pub type RPC_SERVICE_STATUS_HANDLE = ULONG_PTR;
 pub type SC_RPC_HANDLE = PVOID;
 pub type SC_RPC_LOCK = PVOID;
+pub type SC_NOTIFY_RPC_HANDLE = PVOID;
 pub type BOUNDED_DWORD_4K = DWORD;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1181,6 +1460,7 @@ pub struct _SC_RPC_NOTIFY_PARAMS_LIST {
     pub NotifyParamsArray: [SC_RPC_NOTIFY_PARAMS; 1usize],
 }
 pub type SC_RPC_NOTIFY_PARAMS_LIST = _SC_RPC_NOTIFY_PARAMS_LIST;
+pub type PSC_RPC_NOTIFY_PARAMS_LIST = *mut _SC_RPC_NOTIFY_PARAMS_LIST;
 pub type PREGISTRY_SERVER_NAME = PWCHAR;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1189,6 +1469,113 @@ pub struct ustring {
     pub MaximumLength: DWORD,
     pub Buffer: *mut ::core::ffi::c_uchar,
 }
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _NTMARTA {
+    pub hDllInstance: HINSTANCE,
+    pub LookupAccountTrustee: PVOID,
+    pub LookupAccountNameW: PVOID,
+    pub LookupAccountSidW: PVOID,
+    pub SetEntriesInAList: PVOID,
+    pub ConvertAccessToSecurityDescriptor: PVOID,
+    pub ConvertSDToAccess: PVOID,
+    pub ConvertAclToAccess: PVOID,
+    pub GetAccessForTrustee: PVOID,
+    pub GetExplicitEntries: PVOID,
+    pub RewriteGetNamedRights: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pObjectName: LPWSTR,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            ppsidOwner: *mut PSID,
+            ppsidGroup: *mut PSID,
+            ppDacl: *mut PACL,
+            ppSacl: *mut PACL,
+            ppSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+        ) -> DWORD,
+    >,
+    pub RewriteSetNamedRights: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pObjectName: LPWSTR,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+        ) -> DWORD,
+    >,
+    pub RewriteGetHandleRights: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            handle: HANDLE,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            ppsidOwner: *mut PSID,
+            ppsidGroup: *mut PSID,
+            ppDacl: *mut PACL,
+            ppSacl: *mut PACL,
+            ppSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+        ) -> DWORD,
+    >,
+    pub RewriteSetHandleRights: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            handle: HANDLE,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+        ) -> DWORD,
+    >,
+    pub RewriteSetEntriesInAcl: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            cCountOfExplicitEntries: ULONG,
+            pListOfExplicitEntries: PEXPLICIT_ACCESS_W,
+            OldAcl: PACL,
+            NewAcl: *mut PACL,
+        ) -> DWORD,
+    >,
+    pub RewriteGetExplicitEntriesFromAcl: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pacl: PACL,
+            pcCountOfExplicitEntries: PULONG,
+            pListOfExplicitEntries: *mut PEXPLICIT_ACCESS_W,
+        ) -> DWORD,
+    >,
+    pub TreeResetNamedSecurityInfo: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pObjectName: LPWSTR,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            pOwner: PSID,
+            pGroup: PSID,
+            pDacl: PACL,
+            pSacl: PACL,
+            KeepExplicit: BOOL,
+            fnProgress: FN_PROGRESSW,
+            ProgressInvokeSetting: PROG_INVOKE_SETTING,
+            Args: PVOID,
+        ) -> DWORD,
+    >,
+    pub GetInheritanceSourceW: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pObjectName: LPWSTR,
+            ObjectType: SE_OBJECT_TYPE,
+            SecurityInfo: SECURITY_INFORMATION,
+            Container: BOOL,
+            pObjectClassGuids: *mut *mut GUID,
+            GuidCount: DWORD,
+            pAcl: PACL,
+            pfnArray: PFN_OBJECT_MGR_FUNCTS,
+            pGenericMapping: PGENERIC_MAPPING,
+            pInheritArray: PINHERITED_FROMW,
+        ) -> DWORD,
+    >,
+    pub FreeIndexArray: ::core::option::Option<
+        unsafe extern "stdcall" fn(
+            pInheritArray: PINHERITED_FROMW,
+            AceCnt: USHORT,
+            pfnArray: PFN_OBJECT_MGR_FUNCTS,
+        ) -> DWORD,
+    >,
+}
+pub type NTMARTA = _NTMARTA;
+pub type PNTMARTA = *mut _NTMARTA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CERTIFICATE_BLOB {
@@ -1241,3 +1628,19 @@ pub struct _ENCRYPTION_CERTIFICATE_HASH_LIST {
 }
 pub type ENCRYPTION_CERTIFICATE_HASH_LIST = _ENCRYPTION_CERTIFICATE_HASH_LIST;
 pub type PENCRYPTION_CERTIFICATE_HASH_LIST = *mut _ENCRYPTION_CERTIFICATE_HASH_LIST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MD4_CTX {
+    pub buf: [::core::ffi::c_uint; 4usize],
+    pub i: [::core::ffi::c_uint; 2usize],
+    pub in_: [::core::ffi::c_uchar; 64usize],
+    pub digest: [::core::ffi::c_uchar; 16usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MD5_CTX {
+    pub i: [::core::ffi::c_uint; 2usize],
+    pub buf: [::core::ffi::c_uint; 4usize],
+    pub in_: [::core::ffi::c_uchar; 64usize],
+    pub digest: [::core::ffi::c_uchar; 16usize],
+}

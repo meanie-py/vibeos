@@ -2,7 +2,6 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
-    fn SetLastError(dwErrCode: u32);
 }
 
 // ---- file-scope preamble (translated) ----

@@ -5,7 +5,6 @@ extern "system" {
     fn GetProcessHeap() -> PVOID;
     fn HeapAlloc(hHeap: PVOID, dwFlags: ULONG, dwBytes: usize) -> PVOID;
     fn HeapFree(hHeap: PVOID, dwFlags: ULONG, lpMem: PVOID) -> i32;
-    fn SetLastError(dwErrCode: ULONG);
 }
 
 // ---- file-scope preamble (translated) ----

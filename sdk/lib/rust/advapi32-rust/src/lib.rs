@@ -48,6 +48,18 @@ macro_rules! wide {
         &W
     }};
 }
+// FIELD_OFFSET(type, field) → byte offset of `field` within `type`. The C macro
+// yields LONG; every advapi32 use site feeds it into a memcpy length, so return
+// `usize` to match those call sites directly.
+#[macro_export]
+macro_rules! FIELD_OFFSET {
+    ($t:ty, $f:ident) => {{
+        let u = core::mem::MaybeUninit::<$t>::uninit();
+        let p = u.as_ptr();
+        unsafe { (core::ptr::addr_of!((*p).$f) as usize) - (p as usize) }
+    }};
+}
+
 #[macro_export]
 macro_rules! wstr { ($s:literal) => { $crate::wide!($s) }; }
 #[macro_export]
@@ -102,3 +114,22 @@ pub mod sec_safer;
 pub mod wine_crypt_des;
 #[path = "wine/crypt_lmhash.rs"]
 pub mod wine_crypt_lmhash;
+// Wave 2 — mid-size files.
+#[path = "sec/sec.rs"]
+pub mod sec_sec;
+#[path = "sec/audit.rs"]
+pub mod sec_audit;
+// sec/ac.c DEFERRED to Wave 3: its Acc* access-control calls go through the
+// `NtMartaStatic` dynamic-ntmarta function-pointer table + `CheckNtMartaPresent`,
+// both defined in sec/misc.c (Wave 3). The translated ac.rs (kept on disk,
+// never deleted) flattened those into direct imports that have no symbol; the
+// faithful NtMartaStatic call-through is done when sec/misc.c flips. ac.c stays C
+// (active, working) until then — no regression hidden (ac.rs was never link-live).
+// #[path = "sec/ac.rs"]
+// pub mod sec_ac;
+#[path = "misc/sysfunc.rs"]
+pub mod misc_sysfunc;
+#[path = "reg/hkcr.rs"]
+pub mod reg_hkcr;
+#[path = "service/sctrl.rs"]
+pub mod service_sctrl;

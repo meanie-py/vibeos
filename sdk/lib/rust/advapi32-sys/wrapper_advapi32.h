@@ -21,3 +21,5 @@
 #include "advapi32.h"
 #include <winefs.h>
 #include "wine/crypt.h"
+#include <md4.h>
+#include <md5.h>

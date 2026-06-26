@@ -37,6 +37,18 @@ pub unsafe extern "system" fn SystemFunction006(password: LPCSTR, hash: LPSTR) -
     STATUS_SUCCESS
 }
 
+// ---- C `#ifndef __REACTOS__` block (crypt_lmhash.c lines 60-410): these
+// SystemFunction0xx are EXCLUDED from the ReactOS build — misc/sysfunc.c (sysfunc.rs)
+// is the canonical owner. The translation rendered them as live code; gate them off
+// with an always-false cfg to mirror the C preprocessor and avoid duplicate-symbol
+// clashes with sysfunc.rs. (SystemFunction006 above is the only __REACTOS__-active
+// export and stays.) cfg(any()) strips the module before compilation, so the bodies
+// are preserved verbatim but never emitted.
+#[cfg(any())]
+mod _wine_ifndef_reactos {
+    use crate::prelude::*;
+    use super::CRYPT_LMhash;
+
 #[no_mangle]
 pub unsafe extern "system" fn SystemFunction008(
     challenge: *const u8,
@@ -310,6 +322,7 @@ pub unsafe extern "system" fn SystemFunction025(
 
     STATUS_SUCCESS
 }
+} // end #[cfg(any())] mod _wine_ifndef_reactos (C #ifndef __REACTOS__)
 
 
 // ============================================================================

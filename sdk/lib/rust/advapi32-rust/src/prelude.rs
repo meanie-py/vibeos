@@ -45,7 +45,68 @@ pub use advapi32_sys::{
     ENCRYPTION_CERTIFICATE_LIST, PENCRYPTION_CERTIFICATE_LIST,
     ENCRYPTION_CERTIFICATE_HASH, PENCRYPTION_CERTIFICATE_HASH,
     ENCRYPTION_CERTIFICATE_HASH_LIST, PENCRYPTION_CERTIFICATE_HASH_LIST,
+    // aclapi — objects/inherited/SE_OBJECT_TYPE/progress (Wave 2)
+    SE_OBJECT_TYPE, PROG_INVOKE_SETTING, FN_PROGRESS,
+    OBJECTS_AND_NAME_W, POBJECTS_AND_NAME_W, OBJECTS_AND_NAME_A, POBJECTS_AND_NAME_A,
+    OBJECTS_AND_SID, POBJECTS_AND_SID,
+    INHERITED_FROMW, PINHERITED_FROMW, INHERITED_FROMA, PINHERITED_FROMA,
+    // winsvc — services / SCM (Wave 2)
+    SERVICE_STATUS_HANDLE, RPC_SERVICE_STATUS_HANDLE, LPSERVICE_STATUS,
+    LPHANDLER_FUNCTION, LPHANDLER_FUNCTION_EX,
+    LPSERVICE_MAIN_FUNCTIONW, LPSERVICE_MAIN_FUNCTIONA,
+    SERVICE_TABLE_ENTRYW, LPSERVICE_TABLE_ENTRYW,
+    SERVICE_TABLE_ENTRYA, LPSERVICE_TABLE_ENTRYA,
+    SCM_CONTROL_PACKET, PSCM_CONTROL_PACKET, SCM_REPLY_PACKET, PSCM_REPLY_PACKET,
+    PFN_OBJECT_MGR_FUNCTS,
+    // crypto contexts (cryptlib md4/md5)
+    MD4_CTX, MD5_CTX,
+    // consts (winsvc / winnls / ntsecapi) — Wave 2
+    CP_ACP, MAX_SERVICE_NAME_LENGTH,
+    SERVICE_CONTROL_STOP, SERVICE_CONTROL_PAUSE, SERVICE_CONTROL_CONTINUE,
+    SERVICE_CONTROL_INTERROGATE, SERVICE_CONTROL_SHUTDOWN,
+    RTL_ENCRYPT_OPTION_SAME_PROCESS, RTL_ENCRYPT_OPTION_CROSS_PROCESS,
+    RTL_ENCRYPT_OPTION_SAME_LOGON,
+    // winsvc / services.h service-control codes (Wave 2)
+    SERVICE_CONTROL_NETBINDDISABLE, SERVICE_CONTROL_DEVICEEVENT,
+    SERVICE_CONTROL_START_SHARE, SERVICE_CONTROL_START_OWN,
 };
+
+// UlongToPtr (basetsd.h inline cast)
+#[inline]
+pub fn UlongToPtr(ul: ULONG) -> PVOID {
+    ul as usize as PVOID
+}
+// RtlCopyMemory is a macro alias for memcpy.
+#[inline]
+pub unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
+    memcpy(dst, src, len);
+}
+
+// reg/reg.h FORCEINLINE HKCR-key tag helpers (no exported symbol → Rust inlines).
+#[inline]
+pub fn IsHKCRKey(hKey: HKEY) -> BOOL {
+    (((hKey as ULONG_PTR) & 0x2) != 0) as BOOL
+}
+#[inline]
+pub unsafe fn MakeHKCRKey(hKey: *mut HKEY) {
+    *hKey = ((*hKey as ULONG_PTR) | 0x2) as HKEY;
+}
+
+// rtl FORCEINLINEs (ntddk/rtlfuncs.h) — no exported symbol → Rust inlines.
+#[inline]
+pub fn RtlUlongByteSwap(source: ULONG) -> ULONG {
+    source.swap_bytes()
+}
+#[inline]
+pub unsafe fn RtlInitEmptyAnsiString(
+    AnsiString: PANSI_STRING,
+    Buffer: PCHAR,
+    BufferSize: USHORT,
+) {
+    (*AnsiString).Length = 0;
+    (*AnsiString).MaximumLength = BufferSize;
+    (*AnsiString).Buffer = Buffer;
+}
 
 // UUID is `typedef GUID UUID;` (rpcdce.h) — bindgen folds it into GUID.
 pub type UUID = GUID;
@@ -121,6 +182,54 @@ pub unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
 }
 
+// ---- RtlZeroMemory: macro alias for memset(dst, 0, len) ----
+#[inline]
+pub unsafe fn RtlZeroMemory(dst: PVOID, len: usize) {
+    memset(dst, 0, len);
+}
+
+// ---- InterlockedCompareExchangePointer: winnt.h is an inline intrinsic
+// (_InlineInterlockedCompareExchangePointer, no exported symbol) → implement with
+// a core atomic CAS. Returns the *initial* value (C semantics), regardless of
+// whether the exchange happened. ----
+#[inline]
+pub unsafe fn InterlockedCompareExchangePointer(
+    dest: *mut PVOID,
+    exchange: PVOID,
+    comparand: PVOID,
+) -> PVOID {
+    let a = &*(dest as *const core::sync::atomic::AtomicPtr<c_void>);
+    match a.compare_exchange(
+        comparand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) => v,
+        Err(v) => v,
+    }
+}
+
+// ---- STATUS_LOCAL_USER_SESSION_KEY (ntstatus.h cast macro — not bindgen'd) ----
+pub const STATUS_LOCAL_USER_SESSION_KEY: NTSTATUS = 0x4000_0006u32 as i32;
+
+// ---- IOCTL_KSEC_* (ksecioctl.h CTL_CODE macros — not bindgen-evaluable) ----
+// FILE_DEVICE_KSEC=0x39, METHOD_OUT_DIRECT=2 (values confirmed in header comments).
+pub const IOCTL_KSEC_ENCRYPT_SAME_PROCESS: ULONG = 0x0039_000E;
+pub const IOCTL_KSEC_DECRYPT_SAME_PROCESS: ULONG = 0x0039_0012;
+pub const IOCTL_KSEC_ENCRYPT_CROSS_PROCESS: ULONG = 0x0039_0016;
+pub const IOCTL_KSEC_DECRYPT_CROSS_PROCESS: ULONG = 0x0039_001A;
+pub const IOCTL_KSEC_ENCRYPT_SAME_LOGON: ULONG = 0x0039_001E;
+pub const IOCTL_KSEC_DECRYPT_SAME_LOGON: ULONG = 0x0039_0022;
+
+// ---- RC4_CONTEXT (cryptlib sdk/lib/cryptlib/rc4.h — not in advapi32-sys) ----
+#[repr(C)]
+pub struct RC4_CONTEXT {
+    pub state: [u8; 256],
+    pub x: u8,
+    pub y: u8,
+}
+
 // ---- CRT functions (cdecl → extern "C"); resolve against ntdll/CRT at link ----
 extern "C" {
     pub fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
@@ -128,6 +237,15 @@ extern "C" {
     pub fn memset(dst: *mut c_void, c: c_int, n: usize) -> *mut c_void;
     pub fn strlen(s: *const i8) -> usize;
     pub fn wcslen(s: *const u16) -> usize;
+    pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16;
+    pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> c_int;
+    pub fn swprintf(buffer: *mut u16, format: *const u16, ...) -> c_int;
+}
+
+// ---- cryptlib rc4 (sdk/lib/cryptlib/rc4.c — plain C/cdecl → extern "C") ----
+extern "C" {
+    pub fn rc4_init(a4i: *mut RC4_CONTEXT, key: *const u8, keyLen: c_uint);
+    pub fn rc4_crypt(a4i: *mut RC4_CONTEXT, inout: *mut u8, length: c_uint);
 }
 
 // ---- advapi32's own exported APIs called cross-file but not yet translated ----
