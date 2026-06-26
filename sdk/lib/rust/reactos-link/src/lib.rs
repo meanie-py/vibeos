@@ -1433,8 +1433,11 @@ impl Linker {
         // (set by ship/release/disk-GC builds) drops the debug sections at link
         // time; dev/smoke leave them in for gdb symbolication. No-op when debug=0
         // (nothing to strip) — so this is inert on the current default build.
-        // The EFI/native loaders below strip UNCONDITIONALLY (firmware can't load a
-        // DWARF-fat EFI image — EDK2 StartImage rejects it as Unsupported).
+        // The EFI/native loaders below strip UNCONDITIONALLY (they don't use in-image
+        // DWARF — symbolicated via qemu/sym.sh offset math).
+        // rerun-if-env-changed so toggling the flag on an already-built tree relinks
+        // (without it cargo wouldn't rerun this build script → silent no-op strip).
+        println!("cargo:rerun-if-env-changed=VIBEOS_STRIP_RELEASE");
         if env::var_os("VIBEOS_STRIP_RELEASE").is_some() {
             println!("cargo:rustc-link-arg=-Wl,--strip-debug");
         }
@@ -1517,11 +1520,14 @@ impl Linker {
                     a = alignment
                 );
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
-                // EDK2's StartImage rejects a DWARF-fat EFI image ("Image start
-                // failed: Unsupported"). With `[profile.release] debug=1` the
-                // cargo bin embeds line tables → uefildr won't boot. Strip them
-                // unconditionally (the loader is symbolicated via offset math in
-                // qemu/sym.sh, not DWARF, so nothing is lost). No-op at debug=0.
+                // Strip DWARF from uefildr unconditionally. With `[profile.release]
+                // debug=1` the cargo bin embeds line tables, but the loader is
+                // symbolicated via offset math in qemu/sym.sh (not in-image DWARF),
+                // so the debug sections are pure bloat in a firmware-loaded image —
+                // always drop them. (An earlier theory that EDK2 StartImage *rejects*
+                // a DWARF-fat EFI as "Unsupported" was disproven — that line is
+                // firmware noise; the real arm64 break was a corrupted efivars.fd.
+                // So this is leanness, not a boot requirement.) No-op at debug=0.
                 println!("cargo:rustc-link-arg=-Wl,--strip-debug");
                 (entry, *image_base)
             }
@@ -1533,8 +1539,9 @@ impl Linker {
                 // 0x1000). exports flow from .spec2def()'s rosload.def.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
-                // Strip DWARF unconditionally (same firmware/early-loader reason
-                // as EfiApplication above; debug=1 line tables aren't used here).
+                // Strip DWARF unconditionally (same as EfiApplication above: rosload
+                // is symbolicated via offset math, not in-image debug info, so debug=1
+                // line tables are dead weight here). No-op at debug=0.
                 println!("cargo:rustc-link-arg=-Wl,--strip-debug");
                 (entry, Some(*image_base))
             }
