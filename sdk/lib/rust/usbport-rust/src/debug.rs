@@ -15,7 +15,7 @@ extern "C" {
 // and NDEBUG_USBPORT_URB are object-like macros with no value (compile-time flags).
 
 #[no_mangle]
-pub unsafe extern "C" fn USBPORT_DbgPrint(
+pub unsafe extern "system" fn USBPORT_DbgPrint(
     mut MiniPortExtension: PVOID,
     mut Level: ULONG,
     mut Format: PCH,

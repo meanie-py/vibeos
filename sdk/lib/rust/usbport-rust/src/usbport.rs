@@ -654,7 +654,7 @@ pub unsafe extern "system" fn USBPORT_SoftInterrupt(FdoDevice: PDEVICE_OBJECT) {
 
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*FdoExtension).SoftInterruptDpc),
-        Some(USBPORT_SoftInterruptDpc as unsafe extern "C" fn(PRKDPC, *mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void)),
+        Some(USBPORT_SoftInterruptDpc as unsafe extern "system" fn(PRKDPC, *mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void)),
         FdoDevice as *mut core::ffi::c_void,
     );
 
@@ -1589,7 +1589,7 @@ pub unsafe extern "system" fn USBPORT_CreateWorkerThread(FdoDevice: PDEVICE_OBJE
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        Some(USBPORT_WorkerThread as unsafe extern "C" fn(PVOID) -> ()),
+        Some(USBPORT_WorkerThread as unsafe extern "system" fn(PVOID) -> ()),
         FdoDevice as PVOID,
     );
 
@@ -1814,7 +1814,7 @@ pub unsafe extern "system" fn USBPORT_TimerDpc(
                 (*IdleQueueItem).WqItem.List.Flink = core::ptr::null_mut();
                 (*IdleQueueItem).WqItem.WorkerRoutine = Some(
                     USBPORT_DoIdleNotificationCallback
-                        as unsafe extern "C" fn(PVOID) -> (),
+                        as unsafe extern "system" fn(PVOID) -> (),
                 );
                 (*IdleQueueItem).WqItem.Parameter = IdleQueueItem as PVOID;
 

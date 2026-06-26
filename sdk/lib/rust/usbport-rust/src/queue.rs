@@ -1035,7 +1035,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                         Irp,
                         Some(
                             USBPORT_CancelActiveTransferIrp
-                                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP),
+                                as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP),
                         ),
                     );
 

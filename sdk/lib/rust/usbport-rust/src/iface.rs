@@ -39,13 +39,13 @@ const USB_PORTATTR_NO_OVERCURRENT_UI: u32 = 0x00000004;
 const USBPORT_FLAG_COMPANION_HC: u32 = 0x01000000;
 
 #[no_mangle]
-pub unsafe extern "C" fn USBI_InterfaceReference(BusContext: PVOID) {
+pub unsafe extern "system" fn USBI_InterfaceReference(BusContext: PVOID) {
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBI_InterfaceDereference(BusContext: PVOID) {
+pub unsafe extern "system" fn USBI_InterfaceDereference(BusContext: PVOID) {
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_CreateUsbDevice(
+pub unsafe extern "system" fn USBHI_CreateUsbDevice(
     BusContext: PVOID,
     UsbdDeviceHandle: *mut PUSB_DEVICE_HANDLE,
     UsbdHubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn USBHI_CreateUsbDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_InitializeUsbDevice(
+pub unsafe extern "system" fn USBHI_InitializeUsbDevice(
     mut BusContext: PVOID,
     mut UsbdDeviceHandle: PUSB_DEVICE_HANDLE,
 ) -> NTSTATUS {
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn USBHI_InitializeUsbDevice(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_GetUsbDescriptors(
+pub unsafe extern "system" fn USBHI_GetUsbDescriptors(
     BusContext: PVOID,
     UsbdDeviceHandle: PUSB_DEVICE_HANDLE,
     DeviceDescBuffer: PUCHAR,
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn USBHI_GetUsbDescriptors(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_RemoveUsbDevice(
+pub unsafe extern "system" fn USBHI_RemoveUsbDevice(
     mut BusContext: PVOID,
     mut UsbdDeviceHandle: PUSB_DEVICE_HANDLE,
     mut Flags: ULONG,
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn USBHI_RemoveUsbDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_RestoreUsbDevice(
+pub unsafe extern "system" fn USBHI_RestoreUsbDevice(
     mut BusContext: PVOID,
     mut OldUsbdDeviceHandle: PUSB_DEVICE_HANDLE,
     mut NewUsbdDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn USBHI_RestoreUsbDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_QueryDeviceInformation(
+pub unsafe extern "system" fn USBHI_QueryDeviceInformation(
     mut BusContext: PVOID,
     mut UsbdDeviceHandle: PUSB_DEVICE_HANDLE,
     mut DeviceInfoBuffer: PVOID,
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn USBHI_QueryDeviceInformation(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_GetControllerInformation(
+pub unsafe extern "system" fn USBHI_GetControllerInformation(
     BusContext: PVOID,
     ControllerInfoBuffer: PVOID,
     ControllerInfoBufferLen: ULONG,
@@ -362,7 +362,7 @@ pub unsafe extern "C" fn USBHI_GetControllerInformation(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_ControllerSelectiveSuspend(
+pub unsafe extern "system" fn USBHI_ControllerSelectiveSuspend(
     BusContext: PVOID,
     Enable: BOOLEAN,
 ) -> NTSTATUS {
@@ -416,7 +416,7 @@ pub unsafe extern "C" fn USBHI_ControllerSelectiveSuspend(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_GetExtendedHubInformation(
+pub unsafe extern "system" fn USBHI_GetExtendedHubInformation(
     BusContext: PVOID,
     HubPhysicalDeviceObject: PDEVICE_OBJECT,
     HubInformationBuffer: PVOID,
@@ -519,7 +519,7 @@ pub unsafe extern "C" fn USBHI_GetExtendedHubInformation(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_GetRootHubSymbolicName(
+pub unsafe extern "system" fn USBHI_GetRootHubSymbolicName(
     BusContext: PVOID,
     HubInfoBuffer: PVOID,
     HubInfoBufferLen: ULONG,
@@ -560,7 +560,7 @@ pub unsafe extern "C" fn USBHI_GetRootHubSymbolicName(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_GetDeviceBusContext(
+pub unsafe extern "system" fn USBHI_GetDeviceBusContext(
     mut BusContext: PVOID,
     mut DeviceHandle: PVOID,
 ) -> PVOID {
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn USBHI_GetDeviceBusContext(
     return core::ptr::null_mut();
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_Initialize20Hub(
+pub unsafe extern "system" fn USBHI_Initialize20Hub(
     BusContext: PVOID,
     UsbdHubDeviceHandle: PUSB_DEVICE_HANDLE,
     TtCount: ULONG,
@@ -599,7 +599,7 @@ pub unsafe extern "C" fn USBHI_Initialize20Hub(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_RootHubInitNotification(
+pub unsafe extern "system" fn USBHI_RootHubInitNotification(
     mut BusContext: PVOID,
     mut CallbackContext: PVOID,
     mut CallbackFunction: PRH_INIT_CALLBACK,
@@ -629,7 +629,7 @@ pub unsafe extern "C" fn USBHI_RootHubInitNotification(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_FlushTransfers(
+pub unsafe extern "system" fn USBHI_FlushTransfers(
     BusContext: PVOID,
     UsbdDeviceHandle: PUSB_DEVICE_HANDLE,
 ) {
@@ -643,7 +643,7 @@ pub unsafe extern "C" fn USBHI_FlushTransfers(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBHI_SetDeviceHandleData(
+pub unsafe extern "system" fn USBHI_SetDeviceHandleData(
     mut BusContext: PVOID,
     mut DeviceHandle: PVOID,
     mut UsbDevicePdo: PDEVICE_OBJECT,
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn USBHI_SetDeviceHandleData(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_GetUSBDIVersion(
+pub unsafe extern "system" fn USBDI_GetUSBDIVersion(
     mut BusContext: PVOID,
     mut VersionInfo: PUSBD_VERSION_INFORMATION,
     mut HcdCapabilities: PULONG,
@@ -689,7 +689,7 @@ pub unsafe extern "C" fn USBDI_GetUSBDIVersion(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_QueryBusTime(
+pub unsafe extern "system" fn USBDI_QueryBusTime(
     mut BusContext: PVOID,
     mut CurrentFrame: PULONG,
 ) -> NTSTATUS {
@@ -710,7 +710,7 @@ pub unsafe extern "C" fn USBDI_QueryBusTime(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_SubmitIsoOutUrb(
+pub unsafe extern "system" fn USBDI_SubmitIsoOutUrb(
     mut BusContext: PVOID,
     mut Urb: PURB,
 ) -> NTSTATUS {
@@ -731,7 +731,7 @@ pub unsafe extern "C" fn USBDI_SubmitIsoOutUrb(
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_QueryBusInformation(
+pub unsafe extern "system" fn USBDI_QueryBusInformation(
     BusContext: PVOID,
     Level: ULONG,
     BusInfoBuffer: PVOID,
@@ -801,7 +801,7 @@ pub unsafe extern "C" fn USBDI_QueryBusInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_IsDeviceHighSpeed(mut BusContext: PVOID) -> BOOLEAN {
+pub unsafe extern "system" fn USBDI_IsDeviceHighSpeed(mut BusContext: PVOID) -> BOOLEAN {
     let mut PdoDevice: PDEVICE_OBJECT;
     let mut PdoExtension: PUSBPORT_RHDEVICE_EXTENSION;
     let mut FdoDevice: PDEVICE_OBJECT;
@@ -818,7 +818,7 @@ pub unsafe extern "C" fn USBDI_IsDeviceHighSpeed(mut BusContext: PVOID) -> BOOLE
     return (((*Packet).MiniPortFlags & USB_MINIPORT_FLAGS_USB2) != 0) as BOOLEAN;
 }
 #[no_mangle]
-pub unsafe extern "C" fn USBDI_EnumLogEntry(
+pub unsafe extern "system" fn USBDI_EnumLogEntry(
     mut BusContext: PVOID,
     mut DriverTag: ULONG,
     mut EnumTag: ULONG,
