@@ -1439,12 +1439,28 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
   `ninja_targets_optional`), or the gate false-greens on its stale pre-flip C binary. The
   comment block at the flip site (`*.cmake` "replaced by Rust") and `link-clean x3` bars do
   **not** imply boot-tested — only a clean arm64 boot of the actually-rebuilt Rust `.sys` does.
-- **Mechanizing the const class:** these garbage consts slipped both static gates —
-  `scan_inline_flag_literals` only catches *annotated bare literals* (`0x2 /* NAME */`), and
-  `verify_constants` only checks *module-level* `const` defs (and doesn't evaluate `CTL_CODE`
-  macros). The hole = **function-local `const KNOWN_NAME = <garbage>`** + CTL_CODE-derived
-  values. Extending `verify_constants` to validate local consts (and compute CTL_CODE) would
-  catch the whole class mechanically instead of one boot-bisect at a time.
+- **Mechanizing the const class — CTL_CODE half now CLOSED (2026-06-26):** these garbage consts
+  slipped both static gates — `scan_inline_flag_literals` only catches *annotated bare literals*
+  (`0x2 /* NAME */`), and `verify_constants` checked `const NAME = VALUE` against C `#define`
+  *literals* only — but `IOCTL_*`/`FSCTL_*` are `#define NAME CTL_CODE(dev,fn,method,access)`
+  *macro calls*, which all three of its literal/multichar/ntstatus parsers skip, so they never
+  entered the catalog and any garbage Rust copy went unchecked. **`verify_constants.build_c_catalog`
+  now evaluates the CTL_CODE macro** (`(dev<<16)|(access<<14)|(fn<<2)|method`), resolving the four
+  operands from the header scope (incl. `IOCTL_*_BASE` aliases → `FILE_DEVICE_*`) and seeding the
+  standardized base operands; it joins the DDK headers' multi-line continuation defs first. The
+  catalog gained **326 IOCTL_/FSCTL_ codes** (was 0). It would have caught every ramdisk const
+  above at the static gate. Locked by `tools/rustconv/tests/test_verify_constants_ctlcode.py`.
+  - **First catch (fixed same commit):** 3 real wrong codes in `ntoskrnl-rust` — `fstub/disksup.rs`
+    `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
+    *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`
+    (fn 3 not 2), `FSCTL_OPLOCK_BREAK_NOTIFY` `0x9000C`→`0x90014` (fn 5 not 3).
+  - **Still open (routed to lanes, not yet gated):** a tree-wide scan surfaced **~60 more garbage
+    IOCTL/FSCTL consts** in driver crates (cdrom, fastfat, disk, mountmgr, classpnp, scsiport,
+    usbhub, …) — all latent (on non-boot paths). The gate's `verify_constants` only scans
+    `ntoskrnl-rust/src`; **extending its scope to the driver crates (+ baseline) is the remaining
+    work** to make this prevention reach where ramdisk actually lived. Two halves still uncovered:
+    function-**local** `const NAME = <garbage>` (verify_constants only parses one-line module defs),
+    and non-CTL driver-crate consts (TAG_*/STATUS_*) the default ntoskrnl-only scan never visits.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 
