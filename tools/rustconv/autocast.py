@@ -40,8 +40,46 @@ def run_build(pkg, target, manifest, rustflags):
     return p.stdout
 
 
+_FILE_CACHE = {}
+
+
+def _file_bytes(fn):
+    if fn not in _FILE_CACHE:
+        try:
+            _FILE_CACHE[fn] = open(fn, 'rb').read()
+        except OSError:
+            _FILE_CACHE[fn] = b''
+    return _FILE_CACHE[fn]
+
+
+def _in_pattern_position(fn, byte_start, byte_end):
+    """A match-arm pattern can't carry an `as` cast — wrapping it produces a
+    'expected a pattern, found an expression' syntax error that re-appears every
+    run. Detect it: the span is followed by `=>` or `|` (arm / or-pattern), or
+    preceded by `|` or an arm-opening `{`/`,`. Skip those spans entirely."""
+    data = _file_bytes(fn)
+    if not data:
+        return False
+    # look ahead: skip ws + one optional closing paren
+    i = byte_end
+    while i < len(data) and data[i:i + 1].isspace():
+        i += 1
+    if data[i:i + 1] == b')':
+        i += 1
+        while i < len(data) and data[i:i + 1].isspace():
+            i += 1
+    after = data[i:i + 2]
+    if after.startswith(b'=>'):
+        return True
+    # a single `|` is an or-pattern separator; `||` is logical-or (an expression).
+    if after[:1] == b'|' and after[:2] != b'||':
+        return True
+    return False
+
+
 def collect_casts(json_out):
     """-> dict file -> list of (byte_start, byte_end, expected_type)."""
+    _FILE_CACHE.clear()
     edits = {}
     for line in json_out.splitlines():
         line = line.strip()
@@ -58,6 +96,9 @@ def collect_casts(json_out):
         if code == 'E0308':
             for span in d.get('spans', []):
                 if not span.get('is_primary'):
+                    continue
+                if _in_pattern_position(span['file_name'], span['byte_start'],
+                                        span['byte_end']):
                     continue
                 label = span.get('label') or ''
                 m = EXPECTED_RE.search(label) or EXPECTED_RE.search(d.get('message', ''))
@@ -89,6 +130,9 @@ def collect_casts(json_out):
             # wrap the arg span in `(... as c_int)` (the faithful default-arg-promotion).
             for span in d.get('spans', []):
                 if not span.get('is_primary'):
+                    continue
+                if _in_pattern_position(span['file_name'], span['byte_start'],
+                                        span['byte_end']):
                     continue
                 fn = span['file_name']
                 edits.setdefault(fn, []).append(

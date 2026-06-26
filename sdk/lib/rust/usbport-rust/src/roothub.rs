@@ -43,9 +43,9 @@ pub unsafe extern "system" fn USBPORT_RH_SetFeatureUSB2PortPower(
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let Packet: PUSBPORT_REGISTRATION_PACKET;
     let CompanionControllersList: PDEVICE_RELATIONS;
-    let CompanionPacket: PUSBPORT_REGISTRATION_PACKET;
-    let CompanionFdoDevice: PDEVICE_OBJECT;
-    let CompanionFdoExtension: PUSBPORT_DEVICE_EXTENSION;
+    let mut CompanionPacket: PUSBPORT_REGISTRATION_PACKET;
+    let mut CompanionFdoDevice: PDEVICE_OBJECT;
+    let mut CompanionFdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let PdoExtension: PUSBPORT_RHDEVICE_EXTENSION;
     let mut ix: USHORT;
     let mut Entry: *mut PDEVICE_OBJECT;
@@ -680,7 +680,7 @@ pub unsafe extern "system" fn USBPORT_RootHubEndpointWorker(Endpoint: PUSBPORT_E
         .offset(-(core::mem::offset_of!(USBPORT_TRANSFER, TransferLink) as isize)))
         as PUSBPORT_TRANSFER;
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) != 0
+    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList))
         || (*Endpoint).TransferList.Flink.is_null()
         || Transfer.is_null()
     {
@@ -974,7 +974,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateRootHub(MiniPortExtension: PVOID
         return 0;
     }
 
-    ((*(*(*FdoExtension).MiniPortInterface).Packet).RH_DisableIrq).unwrap()(
+    ((*(*FdoExtension).MiniPortInterface).Packet.RH_DisableIrq).unwrap()(
         (*FdoExtension).MiniPortExt,
     );
 
@@ -1004,9 +1004,9 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
     let mut RootHubData: USBPORT_ROOT_HUB_DATA = core::mem::zeroed();
     let mut Port: ULONG;
     let CompanionControllersList: PDEVICE_RELATIONS;
-    let CompanionFdoExtension: PUSBPORT_DEVICE_EXTENSION;
-    let CompanionPacket: PUSBPORT_REGISTRATION_PACKET;
-    let CompanionPorts: ULONG;
+    let mut CompanionFdoExtension: PUSBPORT_DEVICE_EXTENSION;
+    let mut CompanionPacket: PUSBPORT_REGISTRATION_PACKET;
+    let mut CompanionPorts: ULONG;
     let mut NumController: ULONG;
     let mut Entry: *mut PDEVICE_OBJECT;
     let NumPorts: ULONG;

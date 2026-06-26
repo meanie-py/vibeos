@@ -1,5 +1,7 @@
 use crate::types::*;
 use crate::glue::*;
+use crate::cb;
+use ntkrnl_sys::ddk::{IO_STACK_LOCATION, PIO_STACK_LOCATION};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -27,7 +29,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-(no output — all four `#define`s are object-like macros with empty replacement lists, i.e. NDEBUG-style flag macros with no value, so none translate to a constant)
+// (no output — all four `#define`s are object-like macros with empty replacement lists, i.e. NDEBUG-style flag macros with no value, so none translate to a constant)
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_InsertIdleIrp(Csq: PIO_CSQ, Irp: PIRP) {
@@ -41,14 +43,14 @@ pub unsafe extern "system" fn USBPORT_InsertIdleIrp(Csq: PIO_CSQ, Irp: PIRP) {
 
     InsertTailList(
         core::ptr::addr_of_mut!((*FdoExtension).IdleIrpList),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
     );
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_RemoveIdleIrp(mut Csq: PIO_CSQ, mut Irp: PIRP) {
     DPRINT_QUEUE(b"USBPORT_RemoveIdleIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
-    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry));
+    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
 }
 
 #[no_mangle]
@@ -75,14 +77,14 @@ pub unsafe extern "system" fn USBPORT_PeekNextIdleIrp(
     ListHead = core::ptr::addr_of_mut!((*FdoExtension).IdleIrpList) as PLIST_ENTRY;
 
     if !Irp.is_null() {
-        NextEntry = (*Irp).Tail.Overlay.ListEntry.Flink;
+        NextEntry = (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry.Flink;
     } else {
         NextEntry = (*ListHead).Flink;
     }
 
     while NextEntry != ListHead {
         NextIrp = ((NextEntry as usize)
-            - core::mem::offset_of!(IRP, Tail.Overlay.ListEntry))
+            - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
             as *mut IRP;
 
         if PeekContext.is_null() {
@@ -107,7 +109,7 @@ pub unsafe extern "system" fn USBPORT_AcquireIdleLock(Csq: PIO_CSQ, Irql: PKIRQL
                 as usize,
         ) as *mut USBPORT_DEVICE_EXTENSION as PUSBPORT_DEVICE_EXTENSION;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock), Irql);
+    KeAcquireSpinLock((core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock) as *mut usize), Irql);
 }
 
 #[no_mangle]
@@ -121,7 +123,7 @@ pub unsafe extern "system" fn USBPORT_ReleaseIdleLock(Csq: PIO_CSQ, Irql: KIRQL)
             as ULONG_PTR,
     ) as *mut USBPORT_DEVICE_EXTENSION;
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock), Irql);
+    KeReleaseSpinLock((core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock) as *mut usize), Irql);
 }
 
 #[no_mangle]
@@ -151,14 +153,14 @@ pub unsafe extern "system" fn USBPORT_InsertBadRequest(Csq: PIO_CSQ, Irp: PIRP) 
 
     InsertTailList(
         core::ptr::addr_of_mut!((*FdoExtension).BadRequestList),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
     );
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_RemoveBadRequest(Csq: PIO_CSQ, Irp: PIRP) {
     DPRINT_QUEUE(b"USBPORT_RemoveBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
-    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry));
+    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
 }
 
 #[no_mangle]
@@ -186,7 +188,7 @@ pub unsafe extern "system" fn USBPORT_PeekNextBadRequest(
     ListHead = core::ptr::addr_of_mut!((*FdoExtension).BadRequestList) as PLIST_ENTRY;
 
     if !Irp.is_null() {
-        NextEntry = (*Irp).Tail.Overlay.ListEntry.Flink;
+        NextEntry = (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry.Flink;
     } else {
         NextEntry = (*ListHead).Flink;
     }
@@ -194,7 +196,7 @@ pub unsafe extern "system" fn USBPORT_PeekNextBadRequest(
     while NextEntry != ListHead {
         NextIrp = (NextEntry as usize)
             .wrapping_sub(
-                core::mem::offset_of!(IRP, Tail.Overlay.ListEntry),
+                core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
             ) as *mut IRP;
 
         if PeekContext.is_null() {
@@ -221,7 +223,7 @@ pub unsafe extern "system" fn USBPORT_AcquireBadRequestLock(
     ) as *mut USBPORT_DEVICE_EXTENSION;
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).BadRequestIoCsqSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).BadRequestIoCsqSpinLock) as *mut usize),
         Irql,
     );
 }
@@ -237,7 +239,7 @@ pub unsafe extern "system" fn USBPORT_ReleaseBadRequestLock(Csq: PIO_CSQ, Irql: 
     ) as *mut USBPORT_DEVICE_EXTENSION;
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).BadRequestIoCsqSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).BadRequestIoCsqSpinLock) as *mut usize),
         Irql,
     );
 }
@@ -254,7 +256,7 @@ pub unsafe extern "system" fn USBPORT_CompleteCanceledBadRequest(Csq: PIO_CSQ, I
 
     InterlockedDecrement(core::ptr::addr_of_mut!((*FdoExtension).BadRequestLockCounter) as *mut core::ffi::c_long);
 
-    (*Irp).IoStatus.u.__bindgen_anon_1.Status = STATUS_CANCELLED;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
 }
@@ -543,7 +545,7 @@ pub unsafe extern "system" fn USBPORT_CancelPendingTransferIrp(
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
         core::ptr::addr_of_mut!(OldIrql),
     );
 
@@ -551,22 +553,22 @@ pub unsafe extern "system" fn USBPORT_CancelPendingTransferIrp(
 
     if irp.is_null() {
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
             OldIrql,
         );
         return;
     }
 
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
 
     RemoveEntryList(core::ptr::addr_of_mut!((*Transfer).TransferLink));
 
     (*Transfer).TransferLink.Flink = core::ptr::null_mut();
     (*Transfer).TransferLink.Blink = core::ptr::null_mut();
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
         OldIrql,
     );
 
@@ -603,7 +605,7 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
         core::ptr::addr_of_mut!(OldIrql),
     );
 
@@ -611,7 +613,7 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
 
     if irp.is_null() {
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
             OldIrql,
         );
         return;
@@ -628,12 +630,12 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
         Transfer,
     );
 
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
 
     (*Transfer).Flags |= TRANSFER_FLAG_CANCELED;
 
     if (*Transfer).Flags & TRANSFER_FLAG_PARENT != 0 {
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Transfer).TransferSpinLock));
+        KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Transfer).TransferSpinLock) as *mut usize));
 
         Entry = (*Transfer).SplitTransfersList.Flink;
 
@@ -647,12 +649,12 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
             Entry = (*Entry).Flink;
         }
 
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Transfer).TransferSpinLock));
+        KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Transfer).TransferSpinLock) as *mut usize));
     }
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
         OldIrql,
     );
 
@@ -686,13 +688,13 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
     InitializeListHead(core::ptr::addr_of_mut!(List));
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         core::ptr::addr_of_mut!((*Endpoint).EndpointOldIrql),
     );
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).AbortList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).AbortList)) {
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+            (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
             (*Endpoint).EndpointOldIrql,
         );
         return;
@@ -709,7 +711,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
             // DPRINT_CORE("USBPORT_FlushAbortList: Aborted PendingTransfer  - %p\n", Transfer);
 
             KeReleaseSpinLock(
-                core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+                (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
                 (*Endpoint).EndpointOldIrql,
             );
             return;
@@ -729,7 +731,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
             // DPRINT_CORE("USBPORT_FlushAbortList: Aborted ActiveTransfer - %p\n", Transfer);
 
             KeReleaseSpinLock(
-                core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+                (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
                 (*Endpoint).EndpointOldIrql,
             );
             return;
@@ -740,30 +742,30 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
 
     AbortList = core::ptr::addr_of_mut!((*Endpoint).AbortList) as PLIST_ENTRY;
 
-    while IsListEmpty(AbortList) == 0 {
+    while !IsListEmpty(AbortList) {
         //DbgBreakPoint();
 
         Irp = ((*AbortList).Flink as usize)
-            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.ListEntry))
+            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
             as *mut IRP;
 
         RemoveHeadList(AbortList);
         InsertTailList(
             core::ptr::addr_of_mut!(List),
-            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry),
+            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
         );
     }
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         (*Endpoint).EndpointOldIrql,
     );
 
-    while IsListEmpty(core::ptr::addr_of_mut!(List)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!(List)) {
         //DbgBreakPoint();
 
         Irp = (List.Flink as usize)
-            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.ListEntry))
+            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
             as *mut IRP;
 
         RemoveHeadList(core::ptr::addr_of_mut!(List));
@@ -798,12 +800,12 @@ pub unsafe extern "system" fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOIN
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
         core::ptr::addr_of_mut!(OldIrql),
     );
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).CancelList)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).CancelList)) {
         Transfer = ((*Endpoint).CancelList.Flink as usize
             - core::mem::offset_of!(USBPORT_TRANSFER, TransferLink))
             as *mut USBPORT_TRANSFER as PUSBPORT_TRANSFER;
@@ -822,9 +824,9 @@ pub unsafe extern "system" fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOIN
             USBPORT_RemoveActiveTransferIrp(FdoDevice, Irp);
         }
 
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+        KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
             OldIrql,
         );
 
@@ -839,15 +841,15 @@ pub unsafe extern "system" fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOIN
         }
 
         KeAcquireSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
             core::ptr::addr_of_mut!(OldIrql),
         );
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+        KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
     }
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+    KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
         OldIrql,
     );
 
@@ -879,12 +881,12 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
     // InterlockedCompareExchange expanded inline
     {
         let _dst = core::ptr::addr_of_mut!((*Endpoint).FlushPendingLock) as *mut core::ffi::c_long;
-        let _old: core::ffi::c_long = core::intrinsics::atomic_cxchg_seqcst_seqcst(
-            _dst,
-            0 as core::ffi::c_long,
-            1 as core::ffi::c_long,
-        )
-        .0;
+        let _old: core::ffi::c_long = {
+            let a = &*(_dst as *const core::sync::atomic::AtomicI32);
+            match a.compare_exchange(0, 1, core::sync::atomic::Ordering::SeqCst, core::sync::atomic::Ordering::SeqCst) {
+                Ok(v) | Err(v) => v,
+            }
+        };
         if _old != 0 {
             DPRINT_CORE(
                 b"USBPORT_FlushPendingTransfers: Endpoint Locked \n\0".as_ptr() as *const i8,
@@ -897,19 +899,19 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
         IsMapTransfer = 0 as BOOLEAN;
 
         KeAcquireSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
             core::ptr::addr_of_mut!(OldIrql),
         );
 
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+        KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
 
         'block: {
             if (*FdoExtension).Flags & USBPORT_FLAG_HC_SUSPEND != 0 {
                 IsEnd = 1 as BOOLEAN;
 
-                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock));
+                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize));
                 KeReleaseSpinLock(
-                    core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+                    (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
                     OldIrql,
                 );
                 break 'block; // goto Next
@@ -917,7 +919,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
 
             'worker: {
                 if (*Endpoint).Flags & ENDPOINT_FLAG_ROOTHUB_EP0 == 0 {
-                    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) == 0 {
+                    if !IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) {
                         List = (*Endpoint).TransferList.Flink;
 
                         while !List.is_null()
@@ -928,13 +930,13 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                                 as PUSBPORT_TRANSFER;
 
                             if (*Transfer).Flags & TRANSFER_FLAG_SUBMITED == 0 {
-                                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+                                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!(
                                     (*Endpoint).EndpointSpinLock
-                                ));
+                                ) as *mut usize));
                                 KeReleaseSpinLock(
-                                    core::ptr::addr_of_mut!(
+                                    (core::ptr::addr_of_mut!(
                                         (*FdoExtension).FlushPendingTransferSpinLock
-                                    ),
+                                    ) as *mut usize),
                                     OldIrql,
                                 );
 
@@ -950,13 +952,13 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                 List = (*Endpoint).PendingTransferList.Flink;
 
                 if List.is_null()
-                    || IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).PendingTransferList)) != 0
+                    || IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).PendingTransferList))
                 {
-                    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+                    KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!(
                         (*Endpoint).EndpointSpinLock
-                    ));
+                    ) as *mut usize));
                     KeReleaseSpinLock(
-                        core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+                        (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
                         OldIrql,
                     );
 
@@ -990,11 +992,11 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                 }
 
                 if Transfer.is_null() {
-                    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+                    KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!(
                         (*Endpoint).EndpointSpinLock
-                    ));
+                    ) as *mut usize));
                     KeReleaseSpinLock(
-                        core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+                        (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
                         OldIrql,
                     );
 
@@ -1017,26 +1019,23 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                     Irp = USBPORT_RemovePendingTransferIrp(FdoDevice, Irp);
                 }
 
-                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!(
                     (*Endpoint).EndpointSpinLock
-                ));
+                ) as *mut usize));
                 KeReleaseSpinLock(
-                    core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock),
+                    (core::ptr::addr_of_mut!((*FdoExtension).FlushPendingTransferSpinLock) as *mut usize),
                     OldIrql,
                 );
 
                 KeAcquireSpinLock(
-                    core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+                    (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
                     core::ptr::addr_of_mut!(OldIrql),
                 );
 
                 if !Irp.is_null() {
                     IoSetCancelRoutine(
                         Irp,
-                        Some(
-                            USBPORT_CancelActiveTransferIrp
-                                as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP),
-                        ),
+                        cb!(USBPORT_CancelActiveTransferIrp),
                     );
 
                     if (*Irp).Cancel != 0 && IoSetCancelRoutine(Irp, None).is_some() {
@@ -1046,7 +1045,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                         );
 
                         KeReleaseSpinLock(
-                            core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+                            (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
                             OldIrql,
                         );
 
@@ -1061,7 +1060,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                 IsMapTransfer = USBPORT_QueueActiveUrbToEndpoint(Endpoint, Urb);
 
                 KeReleaseSpinLock(
-                    core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock),
+                    (core::ptr::addr_of_mut!((*FdoExtension).FlushTransferSpinLock) as *mut usize),
                     OldIrql,
                 );
 
@@ -1118,7 +1117,7 @@ pub unsafe extern "system" fn USBPORT_QueuePendingUrbToEndpoint(
         core::ptr::addr_of_mut!((*Endpoint).PendingTransferList),
         core::ptr::addr_of_mut!((*Transfer).TransferLink),
     );
-    (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status = USBD_STATUS_PENDING;
+    (*Urb).__bindgen_anon_1.UrbHeader.Status = USBD_STATUS_PENDING;
 }
 
 #[no_mangle]
@@ -1143,7 +1142,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         core::ptr::addr_of_mut!((*Endpoint).EndpointOldIrql),
     );
 
@@ -1156,7 +1155,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
         );
 
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+            (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
             (*Endpoint).EndpointOldIrql,
         );
 
@@ -1172,7 +1171,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
         );
 
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+            (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
             (*Endpoint).EndpointOldIrql,
         );
 
@@ -1180,12 +1179,12 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
     }
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         (*Endpoint).EndpointOldIrql,
     );
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).MapTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).MapTransferSpinLock) as *mut usize),
         core::ptr::addr_of_mut!(OldIrql),
     );
 
@@ -1200,7 +1199,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
     );
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).MapTransferSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).MapTransferSpinLock) as *mut usize),
         OldIrql,
     );
 
@@ -1209,7 +1208,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_QueuePendingTransferIrp(mut Irp: PIRP) {
-    const USBD_STATUS_CANCELED: USBD_STATUS = 0xC0010000;
+    const USBD_STATUS_CANCELED: USBD_STATUS = 0xC0010000u32 as USBD_STATUS;
 
     let mut Urb: PURB;
     let mut Transfer: PUSBPORT_TRANSFER;
@@ -1230,7 +1229,7 @@ pub unsafe extern "system" fn USBPORT_QueuePendingTransferIrp(mut Irp: PIRP) {
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_PENDING;
     IoMarkIrpPending(Irp);
 
-    IoSetCancelRoutine(Irp, Some(USBPORT_CancelPendingTransferIrp));
+    IoSetCancelRoutine(Irp, cb!(USBPORT_CancelPendingTransferIrp));
 
     if (*Irp).Cancel as i32 != 0 && !IoSetCancelRoutine(Irp, None).is_none() {
         USBPORT_CompleteTransfer(Urb, USBD_STATUS_CANCELED);
@@ -1345,7 +1344,7 @@ pub unsafe extern "system" fn USBPORT_FlushAllEndpoints(mut FdoDevice: PDEVICE_O
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize),
         core::ptr::addr_of_mut!(OldIrql),
     );
 
@@ -1369,11 +1368,11 @@ pub unsafe extern "system" fn USBPORT_FlushAllEndpoints(mut FdoDevice: PDEVICE_O
     }
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock),
+        (core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize),
         OldIrql,
     );
 
-    while IsListEmpty(core::ptr::addr_of_mut!(List)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!(List)) {
         Endpoint = (List.Flink as usize)
             .wrapping_sub(core::mem::offset_of!(USBPORT_ENDPOINT, FlushLink))
             as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
@@ -1383,7 +1382,7 @@ pub unsafe extern "system" fn USBPORT_FlushAllEndpoints(mut FdoDevice: PDEVICE_O
         (*Endpoint).FlushLink.Flink = core::ptr::null_mut();
         (*Endpoint).FlushLink.Blink = core::ptr::null_mut();
 
-        if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).PendingTransferList)) == 0 {
+        if !IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).PendingTransferList)) {
             USBPORT_FlushPendingTransfers(Endpoint);
         }
     }
@@ -1446,7 +1445,7 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
 
     loop {
         KeAcquireSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize),
             core::ptr::addr_of_mut!(OldIrql),
         );
 
@@ -1454,7 +1453,7 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
 
         Entry = (*EndpointList).Flink as PLIST_ENTRY;
 
-        if IsListEmpty(EndpointList) == 0 {
+        if !IsListEmpty(EndpointList) {
             while !Entry.is_null() && Entry != EndpointList {
                 Endpoint = (Entry as ULONG_PTR).wrapping_sub(
                     core::ptr::addr_of_mut!(
@@ -1479,12 +1478,12 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
         }
 
         KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock),
+            (core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize),
             OldIrql,
         );
 
         KilledTransfers = 0;
-        while IsListEmpty(core::ptr::addr_of_mut!(FlushList)) == 0 {
+        while !IsListEmpty(core::ptr::addr_of_mut!(FlushList)) {
             Endpoint = (FlushList.Flink as ULONG_PTR).wrapping_sub(
                 core::ptr::addr_of_mut!(
                     (*core::ptr::null_mut::<USBPORT_ENDPOINT>()).FlushControllerLink
@@ -1540,8 +1539,8 @@ pub unsafe extern "system" fn USBPORT_BadRequestFlush(FdoDevice: PDEVICE_OBJECT)
             );
         }
 
-        (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = STATUS_DEVICE_NOT_CONNECTED;
-        (*Irp).IoStatus.Information = 0 as ULONG_PTR;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_NOT_CONNECTED;
+        (*Irp).IoStatus.Information = (0 as ULONG_PTR as u32);
         IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
     }
 }
@@ -1561,14 +1560,14 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
     // DPRINT_CORE("USBPORT_AbortEndpoint: Irp - %p\n", Irp);
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         core::ptr::addr_of_mut!((*Endpoint).EndpointOldIrql),
     );
 
     if !Irp.is_null() {
         InsertTailList(
             core::ptr::addr_of_mut!((*Endpoint).AbortList),
-            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry),
+            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
         );
     }
 
@@ -1609,7 +1608,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
     }
 
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock),
+        (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
         (*Endpoint).EndpointOldIrql,
     );
 

@@ -23,7 +23,7 @@ extern "system" {
     fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_ReopenPipe(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT) -> NTSTATUS;
     fn USBPORT_Wait(FdoDevice: PDEVICE_OBJECT, Milliseconds: ULONG);
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn USBPORT_AbortTransfers(FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE) ;
+    fn USBPORT_AbortTransfers(FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE) ;
     fn MiniportCloseEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
     fn MiniportOpenEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
     fn USBD_ERROR(Status: USBD_STATUS) -> BOOLEAN;
@@ -141,7 +141,7 @@ pub unsafe extern "system" fn USBPORT_SendSetupPacket(
                     core::ptr::null_mut(),
                 );
 
-                USBDStatus = (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status;
+                USBDStatus = (*Urb).__bindgen_anon_1.UrbHeader.Status;
             }
 
             Status = USBPORT_USBDStatusToNtStatus(Urb, USBDStatus);
@@ -317,8 +317,8 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
     let mut SetupPacket: USB_DEFAULT_PIPE_SETUP_PACKET = core::mem::zeroed();
     let HandleLength: SIZE_T;
     let mut IsAllocated: BOOLEAN = 0;
-    let MaxPacketSize: USHORT;
-    let wMaxPacketSize: USHORT;
+    let mut MaxPacketSize: USHORT;
+    let mut wMaxPacketSize: USHORT;
     let mut ix: ULONG;
     let mut USBDStatus: USBD_STATUS = USBD_STATUS_SUCCESS;
     let mut Status: NTSTATUS;
@@ -360,7 +360,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!(USBDStatus),
             );
-            if USBD_SUCCESS(USBDStatus) == 0 {
+            if !USBD_SUCCESS(USBDStatus) {
                 break 'Exit;
             }
         }
@@ -461,7 +461,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
             ix += 1;
         }
 
-        if USBD_SUCCESS(USBDStatus) != 0 {
+        if USBD_SUCCESS(USBDStatus) {
             ix = 0;
             while ix < NumEndpoints {
                 PipeInfo = core::ptr::addr_of_mut!((*InterfaceInfo).Pipes[ix as usize]);
@@ -471,7 +471,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
                     FdoDevice,
                     DeviceHandle,
                     PipeHandle,
-                    (core::ptr::addr_of_mut!(USBDStatus) as *mut _IRP),
+                    (core::ptr::addr_of_mut!(USBDStatus) as PIRP),
                 );
 
                 if !NT_SUCCESS(Status) {
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
         break 'Exit;
     }
 
-    if USBD_SUCCESS(USBDStatus) != 0 {
+    if USBD_SUCCESS(USBDStatus) {
         (*InterfaceInfo).InterfaceHandle = InterfaceHandle as USBD_INTERFACE_HANDLE;
         *iHandle = InterfaceHandle;
         (*InterfaceInfo).Length = (Length as ULONG as u16);
@@ -529,7 +529,7 @@ pub unsafe extern "system" fn USBPORT_CloseConfiguration(
     if !ConfigHandle.is_null() {
         iHandleList = core::ptr::addr_of_mut!((*ConfigHandle).InterfaceHandleList);
 
-        while IsListEmpty(iHandleList) == 0 {
+        while !IsListEmpty(iHandleList) {
             iHandle = (((*iHandleList).Flink as *mut u8)
                 .offset(-(core::mem::offset_of!(USBPORT_INTERFACE_HANDLE, InterfaceLink) as isize)))
                 as *mut USBPORT_INTERFACE_HANDLE;
@@ -780,7 +780,7 @@ pub unsafe extern "system" fn USBPORT_HandleSelectConfiguration(
 
             InterfaceHandle = core::ptr::null_mut();
 
-            if USBD_SUCCESS(USBDStatus) != 0 {
+            if USBD_SUCCESS(USBDStatus) {
                 USBDStatus = USBPORT_OpenInterface(
                     Urb,
                     DeviceHandle,
@@ -826,8 +826,8 @@ pub unsafe extern "system" fn USBPORT_HandleSelectConfiguration(
     }
 
     KeReleaseSemaphore(
-        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-        LOW_REALTIME_PRIORITY,
+        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+        (LOW_REALTIME_PRIORITY as i32),
         1,
         0,
     );
@@ -981,7 +981,7 @@ pub unsafe extern "system" fn USBPORT_GetTt(
         return core::ptr::null_mut();
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) {
         return core::ptr::null_mut();
     }
 
@@ -1052,7 +1052,7 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
     let mut SetupPacket: USB_DEFAULT_PIPE_SETUP_PACKET = core::mem::zeroed();
     let mut TransferedLen: ULONG;
     let DescriptorMinSize: ULONG;
-    let MaxPacketSize: UCHAR;
+    let mut MaxPacketSize: UCHAR;
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let Packet: PUSBPORT_REGISTRATION_PACKET;
     let mut Status: NTSTATUS;
@@ -1070,8 +1070,8 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
 
     if USBPORT_ValidateDeviceHandle(FdoDevice, HubDeviceHandle) == 0 {
         KeReleaseSemaphore(
-            core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-            LOW_REALTIME_PRIORITY,
+            core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+            (LOW_REALTIME_PRIORITY as i32),
             1,
             0,
         );
@@ -1093,8 +1093,8 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
     }
 
     KeReleaseSemaphore(
-        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-        LOW_REALTIME_PRIORITY,
+        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+        (LOW_REALTIME_PRIORITY as i32),
         1,
         0,
     );
@@ -1159,8 +1159,8 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
 
     if NT_ERROR(Status) {
         KeReleaseSemaphore(
-            core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-            LOW_REALTIME_PRIORITY,
+            core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+            (LOW_REALTIME_PRIORITY as i32),
             1,
             0,
         );
@@ -1236,8 +1236,8 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
                     *pUsbdDeviceHandle = (DeviceHandle as *mut c_void);
 
                     KeReleaseSemaphore(
-                        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-                        LOW_REALTIME_PRIORITY,
+                        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+                        (LOW_REALTIME_PRIORITY as i32),
                         1,
                         0,
                     );
@@ -1287,8 +1287,8 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
     }
 
     KeReleaseSemaphore(
-        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-        LOW_REALTIME_PRIORITY,
+        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+        (LOW_REALTIME_PRIORITY as i32),
         1,
         0,
     );
@@ -1383,7 +1383,7 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
     let mut CtrlSetup: USB_DEFAULT_PIPE_SETUP_PACKET = core::mem::zeroed();
     let mut TransferedLen: ULONG = 0;
     let mut DeviceAddress: USHORT = 0;
-    let MaxPacketSize: UCHAR;
+    let mut MaxPacketSize: UCHAR;
     let mut Status: NTSTATUS;
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
@@ -1485,8 +1485,8 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
     }
 
     KeReleaseSemaphore(
-        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as PVOID,
-        LOW_REALTIME_PRIORITY,
+        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+        (LOW_REALTIME_PRIORITY as i32),
         1,
         0,
     );
@@ -1644,8 +1644,8 @@ pub unsafe extern "system" fn USBPORT_HandleSelectInterface(
     }
 
     KeReleaseSemaphore(
-        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore) as *mut core::ffi::c_void,
-        LOW_REALTIME_PRIORITY,
+        core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore),
+        (LOW_REALTIME_PRIORITY as i32),
         1,
         0,
     );
@@ -1723,10 +1723,10 @@ pub unsafe extern "system" fn USBPORT_RemoveDevice(
         USBPORT_FreeUsbAddress(FdoDevice, (*DeviceHandle).DeviceAddress);
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) == 0 {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) {
     }
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*DeviceHandle).TtList)) {
         TtExtension = ((*DeviceHandle).TtList.Flink as *mut u8)
             .sub(core::mem::offset_of!(USB2_TT_EXTENSION, Link))
             as PUSB2_TT_EXTENSION;
@@ -1740,7 +1740,7 @@ pub unsafe extern "system" fn USBPORT_RemoveDevice(
 
         (*TtExtension).Flags |= USB2_TT_EXTENSION_FLAG_DELETED;
 
-        if IsListEmpty(core::ptr::addr_of_mut!((*TtExtension).EndpointList)) != 0 {
+        if IsListEmpty(core::ptr::addr_of_mut!((*TtExtension).EndpointList)) {
             USBPORT_UpdateAllocatedBwTt(TtExtension);
 
             ix = 0;
@@ -1797,7 +1797,7 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut USBDStatus: USBD_STATUS = 0;
     let mut OldIrql: KIRQL = 0;
-    let InterfaceHandle: PUSBPORT_INTERFACE_HANDLE;
+    let mut InterfaceHandle: PUSBPORT_INTERFACE_HANDLE;
     let PipeHandle: PUSBPORT_PIPE_HANDLE;
     let Packet: PUSBPORT_REGISTRATION_PACKET;
 
@@ -1841,12 +1841,12 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
         USBPORT_Wait(FdoDevice, 100);
     }
 
-    if core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as SIZE_T
-        == (RtlCompareMemory(
-            core::ptr::addr_of!((*NewDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
-            core::ptr::addr_of!((*OldDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
-            (core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as SIZE_T as u32),
- as usize)        )
+    let _devdesc_cmp: u32 = RtlCompareMemory(
+        core::ptr::addr_of!((*NewDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
+        core::ptr::addr_of!((*OldDeviceHandle).DeviceDescriptor) as *const core::ffi::c_void,
+        core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as u32,
+    );
+    if core::mem::size_of::<USB_DEVICE_DESCRIPTOR>() as u32 == _devdesc_cmp
     {
         (*NewDeviceHandle).ConfigHandle = (*OldDeviceHandle).ConfigHandle;
 
@@ -1928,7 +1928,7 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
             (*NewDeviceHandle).TtCount = (*OldDeviceHandle).TtCount;
         }
 
-        while IsListEmpty(core::ptr::addr_of_mut!((*OldDeviceHandle).PipeHandleList)) == 0 {
+        while !IsListEmpty(core::ptr::addr_of_mut!((*OldDeviceHandle).PipeHandleList)) {
             let PipeHandle = ((*OldDeviceHandle).PipeHandleList.Flink as *mut u8)
                 .offset(-(core::mem::offset_of!(USBPORT_PIPE_HANDLE, PipeLink) as isize))
                 as PUSBPORT_PIPE_HANDLE;

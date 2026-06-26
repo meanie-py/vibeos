@@ -1727,6 +1727,13 @@ name = "usbdex-rust"
 version = "0.1.0"
 
 [[package]]
+name = "usbehci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "usbhub-rust"
 version = "0.1.0"
 dependencies = [
@@ -1734,7 +1741,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbohci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbport-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "usbstor-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbuhci-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",

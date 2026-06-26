@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::glue::*;
+use crate::cb;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -870,14 +871,14 @@ pub unsafe extern "system" fn USBPORT_PdoQueryInterface(
         (*InterfaceHub).Version = (*IoStack).Parameters.QueryInterface.Version;
 
         if (*IoStack).Parameters.QueryInterface.Version as i32 >= 6 {
-            return (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status;
+            return (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
 
         (*InterfaceHub).Size = (*IoStack).Parameters.QueryInterface.Size;
         (*InterfaceHub).BusContext = PdoDevice as PVOID;
 
-        (*InterfaceHub).InterfaceReference = Some(USBI_InterfaceReference);
-        (*InterfaceHub).InterfaceDereference = Some(USBI_InterfaceDereference);
+        (*InterfaceHub).InterfaceReference = cb!(USBI_InterfaceReference);
+        (*InterfaceHub).InterfaceDereference = cb!(USBI_InterfaceDereference);
 
         if (*IoStack).Parameters.QueryInterface.Version as i32 >= 1 {
             (*InterfaceHub).CreateUsbDevice = Some(USBHI_CreateUsbDevice);
@@ -919,13 +920,13 @@ pub unsafe extern "system" fn USBPORT_PdoQueryInterface(
         (*InterfaceDI).Version = (*IoStack).Parameters.QueryInterface.Version;
 
         if (*IoStack).Parameters.QueryInterface.Version as i32 >= 3 {
-            return (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status;
+            return (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
 
         (*InterfaceDI).Size = (*IoStack).Parameters.QueryInterface.Size;
         (*InterfaceDI).BusContext = PdoDevice as PVOID;
-        (*InterfaceDI).InterfaceReference = Some(USBI_InterfaceReference);
-        (*InterfaceDI).InterfaceDereference = Some(USBI_InterfaceDereference);
+        (*InterfaceDI).InterfaceReference = cb!(USBI_InterfaceReference);
+        (*InterfaceDI).InterfaceDereference = cb!(USBI_InterfaceDereference);
         (*InterfaceDI).GetUSBDIVersion = Some(USBDI_GetUSBDIVersion);
         (*InterfaceDI).QueryBusTime = Some(USBDI_QueryBusTime);
         (*InterfaceDI).SubmitIsoOutUrb = Some(USBDI_SubmitIsoOutUrb);
@@ -951,7 +952,7 @@ pub unsafe extern "system" fn USBPORT_PdoQueryInterface(
         }
     }
 
-    return (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status;
+    return (*Irp).IoStatus.__bindgen_anon_1.Status;
 }
 
 

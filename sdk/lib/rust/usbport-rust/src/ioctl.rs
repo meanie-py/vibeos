@@ -7,7 +7,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DevicePropertyDriverKeyName, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlFreeUnicodeString, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IO_STACK_LOCATION, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlFreeUnicodeString, RtlInitUnicodeString};
 use core::ffi::c_void;
 
 extern "C" {
@@ -18,7 +18,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-(no output — `#define NDEBUG` is an object-like macro with no constant value and is only used to control debug-print macros, so it is skipped)
+// (no output — `#define NDEBUG` is an object-like macro with no constant value and is only used to control debug-print macros, so it is skipped)
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_UserGetHcName(
@@ -249,7 +249,7 @@ pub unsafe extern "system" fn USBPORT_GetUnicodeName(
             USBPORT_UserGetRootHubName(FdoDevice, ControllerName, UnicodeName);
         }
 
-        if (*ControllerName).Header.UsbUserStatusCode != UsbUserBufferTooSmall as u32 {
+        if (*ControllerName).Header.UsbUserStatusCode != (UsbUserBufferTooSmall as u32 as i32) {
             break;
         }
 
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn USBPORT_GetUnicodeName(
         ExFreePoolWithTag(ControllerName as PVOID, USB_PORT_TAG as ULONG);
     }
 
-    if (*ControllerName).Header.UsbUserStatusCode != UsbUserSuccess as u32 {
+    if (*ControllerName).Header.UsbUserStatusCode != (UsbUserSuccess as u32 as i32) {
         ExFreePoolWithTag(ControllerName as PVOID, USB_PORT_TAG as ULONG);
         return STATUS_UNSUCCESSFUL;
     }
@@ -416,7 +416,7 @@ pub unsafe extern "system" fn USBPORT_FdoDeviceControl(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = Information;
+    (*Irp).IoStatus.Information = (Information as u32);
     IoCompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
 
     return Status;

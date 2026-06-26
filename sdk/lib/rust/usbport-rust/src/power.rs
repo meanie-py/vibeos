@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::glue::*;
+use crate::cb;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -8,13 +9,13 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, DevicePowerState, IoCopyCurrentIrpStackLocationToNext, IoCsqInsertIrp, IoCsqRemoveNextIrp, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInsertQueueDpc, LARGE_INTEGER, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_STATE, PRKDPC, PowerDeviceD0, PowerDeviceD1, PowerDeviceD2, PowerDeviceD3, PowerSystemHibernate, PowerSystemSleeping1, PowerSystemSleeping2, PowerSystemSleeping3, PowerSystemUnspecified, PowerSystemWorking};
+use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, IoCopyCurrentIrpStackLocationToNext, IoCsqInsertIrp, IoCsqRemoveNextIrp, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInsertQueueDpc, LARGE_INTEGER, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_STATE, PRKDPC};
 use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT);
-    fn USBPORT_Wait(MiniPortExtension: PVOID, MillisecondsTimeout: ULONG);
+    fn USBPORT_Wait(MiniPortExtension: PVOID, MillisecondsTimeout: ULONG) -> NTSTATUS;
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, Enable: BOOLEAN);
     fn USBPORT_NukeAllEndpoints(FdoDevice: PDEVICE_OBJECT);
 }
@@ -359,8 +360,8 @@ pub unsafe extern "system" fn USBPORT_PdoPower(
 
     Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
-    match (*IoStack).MinorFunction as u32 {
-        (IRP_MN_WAIT_WAKE as u32) => {
+    match (*IoStack).MinorFunction {
+        IRP_MN_WAIT_WAKE => {
             if (*FdoExtension).Flags & USBPORT_FLAG_HC_STARTED == 0 {
                 /* The device does not support wake-up */
                 Status = STATUS_NOT_SUPPORTED;
@@ -370,7 +371,7 @@ pub unsafe extern "system" fn USBPORT_PdoPower(
                     core::ptr::addr_of_mut!(OldIrql),
                 );
 
-                IoSetCancelRoutine(Irp, Some(USBPORT_CancelPendingWakeIrp));
+                IoSetCancelRoutine(Irp, cb!(USBPORT_CancelPendingWakeIrp));
 
                 /* Check if the IRP has been cancelled */
                 let mut cancelled = false;
@@ -422,11 +423,11 @@ pub unsafe extern "system" fn USBPORT_PdoPower(
             }
         }
 
-        (IRP_MN_POWER_SEQUENCE as u32) => {
+        IRP_MN_POWER_SEQUENCE => {
             PoStartNextPowerIrp(Irp);
         }
 
-        (IRP_MN_SET_POWER as u32) => {
+        IRP_MN_SET_POWER => {
             if (*IoStack).Parameters.Power.Type == (DevicePowerState as i32 as u32) {
                 Status = USBPORT_PdoDevicePowerState(PdoDevice, Irp);
                 PoStartNextPowerIrp(Irp);
@@ -445,7 +446,7 @@ pub unsafe extern "system" fn USBPORT_PdoPower(
             }
         }
 
-        (IRP_MN_QUERY_POWER as u32) => {
+        IRP_MN_QUERY_POWER => {
             Status = STATUS_SUCCESS;
             PoStartNextPowerIrp(Irp);
         }
@@ -543,13 +544,13 @@ pub unsafe extern "system" fn USBPORT_FdoPower(
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
-    match (*IoStack).MinorFunction as i32 {
-        (IRP_MN_WAIT_WAKE as i32) => {
+    match (*IoStack).MinorFunction {
+        IRP_MN_WAIT_WAKE => {
             Status = USBPORT_HcWake(FdoDevice, Irp);
             return Status;
         }
-        (IRP_MN_POWER_SEQUENCE as i32) => {}
-        (IRP_MN_SET_POWER as i32) => {
+        IRP_MN_POWER_SEQUENCE => {}
+        IRP_MN_SET_POWER => {
             if (*IoStack).Parameters.Power.Type as u32 == DevicePowerState as i32 as u32 {
                 Status = USBPORT_DevicePowerState(FdoDevice, Irp);
             } else {
@@ -562,7 +563,7 @@ pub unsafe extern "system" fn USBPORT_FdoPower(
                 return Status;
             }
         }
-        (IRP_MN_QUERY_POWER as i32) => {
+        IRP_MN_QUERY_POWER => {
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         }
         _ => {}

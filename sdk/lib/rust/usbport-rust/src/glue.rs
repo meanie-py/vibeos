@@ -7,6 +7,9 @@ pub use crate::types::*;
 
 // ---- kernel type aliases the modules name bare but don't import from ddk ----
 pub use ntkrnl_sys::ddk::PCSTR;
+use ntkrnl_sys::base::PVOID;
+use ntkrnl_sys::base::ULONG;
+pub use ntkrnl_sys::ddk::DEVICE_REGISTRY_PROPERTY_DevicePropertyDriverKeyName as DevicePropertyDriverKeyName;
 pub use ntkrnl_sys::ddk::{
     ACCESS_MASK, CCHAR, GUID, IO_ALLOCATION_ACTION, KEY_VALUE_INFORMATION_CLASS, KPRIORITY,
     KPROCESSOR_MODE, PRKTHREAD, _KSEMAPHORE, _LIST_ENTRY, _UNICODE_STRING, wchar_t,
@@ -123,7 +126,6 @@ impl crate::types::_BM_REQUEST_TYPE {
 
 // ---- USBPORT_MPStatusToRHStatus (roothub.c:18) — dropped by the pure-LLM pass; faithful re-add. ----
 pub const RH_STATUS_SUCCESS: ntkrnl_sys::ddk::ULONG = 0;
-pub const MP_STATUS_FAILURE: ntkrnl_sys::ddk::ULONG = 1;
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_MPStatusToRHStatus(MPStatus: MPSTATUS) -> RHSTATUS {
     let mut rh: RHSTATUS = RH_STATUS_SUCCESS;
@@ -146,3 +148,81 @@ pub const BUGCODE_USB_DRIVER: u32 = 0xFE; // bugcheck.h
         Ok(v) | Err(v) => v,
     }
 }
+
+// ---- usbport: types/consts bindgen inlined or omitted (faithful re-decls) ----
+pub const USBD_STATUS_BAD_START_FRAME: USBD_STATUS = 0xC0000A00u32 as USBD_STATUS;
+
+// ASYNC_TIMER_CALLBACK: usbport.h `typedef VOID ASYNC_TIMER_CALLBACK(PVOID, PVOID)` —
+// bindgen inlined the field type, so the named alias is absent. Matches the
+// _USBPORT_ASYNC_CALLBACK_DATA.CallbackFunction slot Option<fn(PVOID,PVOID)>.
+pub type ASYNC_TIMER_CALLBACK = unsafe extern "system" fn(arg1: PVOID, arg2: PVOID);
+
+// USB_IDLE_CALLBACK_INFO: usbiodef.h — usbiodef.h not in the bindgen allowlist, re-declared.
+pub type USB_IDLE_CALLBACK = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
+#[repr(C)]
+pub struct USB_IDLE_CALLBACK_INFO {
+    pub IdleCallback: USB_IDLE_CALLBACK,
+    pub IdleContext: PVOID,
+}
+pub type PUSB_IDLE_CALLBACK_INFO = *mut USB_IDLE_CALLBACK_INFO;
+
+// USB_HUB_STATUS_AND_CHANGE: un-prefixed alias for the bindgen `_`-prefixed union.
+pub use crate::types::_USB_HUB_STATUS_AND_CHANGE as USB_HUB_STATUS_AND_CHANGE;
+
+// ---- USB user-mode IOCTL types/consts (usbuser.h + usbioctl.h; not in bindgen allowlist) ----
+pub type USB_USER_ERROR_CODE = i32;
+pub const UsbUserSuccess: USB_USER_ERROR_CODE = 0;
+pub const UsbUserNotSupported: USB_USER_ERROR_CODE = 1;
+pub const UsbUserInvalidRequestCode: USB_USER_ERROR_CODE = 2;
+pub const UsbUserFeatureDisabled: USB_USER_ERROR_CODE = 3;
+pub const UsbUserInvalidHeaderParameter: USB_USER_ERROR_CODE = 4;
+pub const UsbUserInvalidParameter: USB_USER_ERROR_CODE = 5;
+pub const UsbUserMiniportError: USB_USER_ERROR_CODE = 6;
+pub const UsbUserBufferTooSmall: USB_USER_ERROR_CODE = 7;
+pub const UsbUserErrorNotMapped: USB_USER_ERROR_CODE = 8;
+pub const UsbUserDeviceNotStarted: USB_USER_ERROR_CODE = 9;
+pub const UsbUserNoDeviceConnected: USB_USER_ERROR_CODE = 10;
+
+#[repr(C)]
+pub struct USBUSER_REQUEST_HEADER {
+    pub UsbUserRequest: ULONG,
+    pub UsbUserStatusCode: USB_USER_ERROR_CODE,
+    pub RequestBufferLength: ULONG,
+    pub ActualBufferLength: ULONG,
+}
+pub type PUSBUSER_REQUEST_HEADER = *mut USBUSER_REQUEST_HEADER;
+
+#[repr(C)]
+pub struct USB_UNICODE_NAME {
+    pub Length: ULONG,
+    pub String: [u16; 1],
+}
+pub type PUSB_UNICODE_NAME = *mut USB_UNICODE_NAME;
+
+#[repr(C)]
+pub struct USBUSER_CONTROLLER_UNICODE_NAME {
+    pub Header: USBUSER_REQUEST_HEADER,
+    pub UnicodeName: USB_UNICODE_NAME,
+}
+pub type PUSBUSER_CONTROLLER_UNICODE_NAME = *mut USBUSER_CONTROLLER_UNICODE_NAME;
+
+#[repr(C)]
+pub struct USB_HCD_DRIVERKEY_NAME {
+    pub ActualLength: ULONG,
+    pub DriverKeyName: [u16; 1],
+}
+pub type PUSB_HCD_DRIVERKEY_NAME = *mut USB_HCD_DRIVERKEY_NAME;
+
+pub const USBUSER_GET_CONTROLLER_DRIVER_KEY: ULONG = 0x00000002;
+pub const USBUSER_GET_ROOTHUB_SYMBOLIC_NAME: ULONG = 0x00000007;
+pub const IOCTL_GET_HCD_DRIVERKEY_NAME: ULONG = 0x00220424;
+
+pub const USBD_STATUS_CANCELED: USBD_STATUS = 0xC0010000u32 as USBD_STATUS;
+pub const USBD_STATUS_NO_BANDWIDTH: USBD_STATUS = 0x80000700u32 as USBD_STATUS;
+pub const USBD_STATUS_TIMEOUT: USBD_STATUS = 0xC0006000u32 as USBD_STATUS;
+pub const USBD_STATUS_PENDING: USBD_STATUS = 0x40000000u32 as USBD_STATUS;
+
+// usb100.h direction macros (object-like, not bindgen-emitted)
+pub const USB_ENDPOINT_DIRECTION_MASK: u8 = 0x80;
+#[inline] pub unsafe fn USB_ENDPOINT_DIRECTION_OUT(x: u8) -> u32 { ((x & USB_ENDPOINT_DIRECTION_MASK) == 0) as u32 }
+#[inline] pub unsafe fn USB_ENDPOINT_DIRECTION_IN(x: u8) -> u32 { ((x & USB_ENDPOINT_DIRECTION_MASK) != 0) as u32 }

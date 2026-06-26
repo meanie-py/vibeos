@@ -29,7 +29,6 @@ static mut CMASKS: [UCHAR; 8] = [
 
 pub const NDEBUG: () = ();
 
-const USB2_FS_SOF_TIME: u32 = 6;
 
 const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 0;
 const USB2_FS_SOF_TIME: ULONG = 6;
@@ -856,7 +855,7 @@ pub unsafe extern "system" fn USB2_RebalanceEndpoint(
     Packet = core::ptr::addr_of_mut!((*(*FdoExtension).MiniPortInterface).Packet)
         as PUSBPORT_REGISTRATION_PACKET;
 
-    while IsListEmpty(List) == 0 {
+    while !IsListEmpty(List) {
         Entry = RemoveHeadList(List);
 
         Endpoint = ((Entry as usize)
@@ -965,7 +964,7 @@ pub unsafe extern "system" fn USB2_Rebalance(
     InitializeListHead(core::ptr::addr_of_mut!(BalanceListInt1));
     InitializeListHead(core::ptr::addr_of_mut!(BalanceListInt2));
 
-    while IsListEmpty(RebalanceList) == 0 {
+    while !IsListEmpty(RebalanceList) {
         Entry = (*RebalanceList).Flink;
 
         Endpoint = (Entry as ULONG_PTR).wrapping_sub(

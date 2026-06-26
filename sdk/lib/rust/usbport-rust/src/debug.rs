@@ -7,7 +7,7 @@ use ntkrnl_sys::ddk::{PCH, PDEVICE_CAPABILITIES, RtlAssert};
 use core::ffi::c_void;
 
 extern "C" {
-    fn DbgPrint(Format: PCH, ...) -> u32;
+    fn DbgPrint(Format: *const ::core::ffi::c_char, ...) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -15,7 +15,7 @@ extern "C" {
 // and NDEBUG_USBPORT_URB are object-like macros with no value (compile-time flags).
 
 #[no_mangle]
-pub unsafe extern "system" fn USBPORT_DbgPrint(
+pub unsafe extern "C" fn USBPORT_DbgPrint(
     mut MiniPortExtension: PVOID,
     mut Level: ULONG,
     mut Format: PCH,
@@ -249,7 +249,7 @@ pub unsafe extern "system" fn USBPORT_DumpingURB(mut Urb: PURB) {
 
     DPRINT_URB(b"UrbHeader.Length           - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Length as ::core::ffi::c_int));
     DPRINT_URB(b"UrbHeader.Function         - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Function as ::core::ffi::c_int));
-    DPRINT_URB(b"UrbHeader.__bindgen_anon_1.Status           - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status);
+    DPRINT_URB(b"UrbHeader.__bindgen_anon_1.Status           - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.Status);
     DPRINT_URB(b"UrbHeader.UsbdDeviceHandle - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle);
     DPRINT_URB(b"UrbHeader.UsbdFlags        - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags);
 
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn USBPORT_DumpingURB(mut Urb: PURB) {
     DPRINT_URB(b"TransferBufferLength      - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength);
     DPRINT_URB(b"TransferBuffer            - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBuffer);
     DPRINT_URB(b"TransferBufferMDL         - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferMDL);
-    DPRINT_URB(b"UrbLink                   - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.__bindgen_anon_1.UrbLink);
+    DPRINT_URB(b"UrbLink                   - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.UrbLink);
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.Length as i32) < 0x50 {
         return;

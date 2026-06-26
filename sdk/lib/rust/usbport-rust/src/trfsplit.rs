@@ -47,8 +47,8 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
 
         (*Element0).SgOffset = 0 as ULONG;
         (*Element0).SgTransferLength = MaxTransferSize;
-        (*Element0).SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart =
-            ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart as u32)
+        (*Element0).SgPhysicalAddress.__bindgen_anon_1.LowPart =
+            ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
                 .wrapping_add(*SgOffset) as ULONG;
 
         (*SplitTransfer).TransferParameters.IsTransferSplited = 1 as BOOL;
@@ -71,8 +71,8 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
 
     (*Element0).SgOffset = 0 as ULONG;
     (*Element0).SgTransferLength = SgLength as ULONG;
-    (*Element0).SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart =
-        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart as u32)
+    (*Element0).SgPhysicalAddress.__bindgen_anon_1.LowPart =
+        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
             .wrapping_add(*SgOffset) as ULONG;
 
     (*SplitTransfer).TransferParameters.TransferBufferLength = SgLength as ULONG;
@@ -109,8 +109,8 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
 
     (*Element1).SgOffset = SgRemainLen as ULONG;
     (*Element1).SgTransferLength = (*Element0).SgTransferLength;
-    (*Element1).SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart =
-        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.c2rust_unnamed.__bindgen_anon_1.LowPart as u32)
+    (*Element1).SgPhysicalAddress.__bindgen_anon_1.LowPart =
+        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
             .wrapping_add(*SgOffset) as ULONG;
 
     (*SplitTransfer).TransferParameters.TransferBufferLength =
@@ -245,7 +245,7 @@ pub unsafe extern "system" fn USBPORT_SplitBulkInterruptTransfer(
         }
     }
 
-    while IsListEmpty(core::ptr::addr_of_mut!(tmplist)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!(tmplist)) {
         SplitTransfer = (tmplist.Flink as ULONG_PTR).wrapping_sub(
             core::mem::offset_of!(USBPORT_TRANSFER, TransferLink) as ULONG_PTR,
         ) as *mut USBPORT_TRANSFER as PUSBPORT_TRANSFER;
@@ -334,7 +334,7 @@ pub unsafe extern "system" fn USBPORT_DoneSplitTransfer(SplitTransfer: PUSBPORT_
     RemoveEntryList(core::ptr::addr_of_mut!((*SplitTransfer).SplitLink));
     ExFreePoolWithTag(SplitTransfer as PVOID, USB_PORT_TAG as ULONG);
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) {
         KeReleaseSpinLock(
             (core::ptr::addr_of_mut!((*ParentTransfer).TransferSpinLock) as *mut usize),
             OldIrql,
@@ -371,7 +371,7 @@ pub unsafe extern "system" fn USBPORT_CancelSplitTransfer(mut SplitTransfer: PUS
 
     ExFreePool(SplitTransfer as PVOID);
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) {
         InsertTailList(
             core::ptr::addr_of_mut!((*Endpoint).CancelList),
             core::ptr::addr_of_mut!((*ParentTransfer).TransferLink),

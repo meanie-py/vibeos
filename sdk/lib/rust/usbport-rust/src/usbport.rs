@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::glue::*;
+use crate::cb;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -10,7 +11,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, DEVICE_RELATIONS, DeallocateObjectKeepRegisters, ExQueueWorkItem, _KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAttachDeviceToDeviceStack, IoCreateDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSkipCurrentIrpStackLocation, KEY_VALUE_FULL_INFORMATION, KeDelayExecutionThread, KeInitializeDpc, KeInitializeEvent, KeInitializeSemaphore, KeInitializeSpinLock, KeInitializeTimer, KeInsertQueueDpc, KeQueryTimeIncrement, KeReleaseSemaphore, KeSetTimer, KeWaitForSingleObject, KeyValueFullInformation, LARGE_INTEGER, LIST_ENTRY, NormalPagePriority, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PDMA_OPERATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PMDL, PRKDPC, PRKEVENT, PUNICODE_STRING, PowerDeviceD3, PsCreateSystemThread, PsTerminateSystemThread, _KWAIT_REASON_Suspended, ZwSetValueKey, ZwWaitForSingleObject};
+use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExQueueWorkItem, _KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAttachDeviceToDeviceStack, IoCreateDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSkipCurrentIrpStackLocation, KEY_VALUE_FULL_INFORMATION, KeDelayExecutionThread, KeInitializeDpc, KeInitializeEvent, KeInitializeSemaphore, KeInitializeSpinLock, KeInitializeTimer, KeInsertQueueDpc, KeQueryTimeIncrement, KeReleaseSemaphore, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PDMA_OPERATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PMDL, PRKDPC, PRKEVENT, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, _KWAIT_REASON_Suspended, ZwSetValueKey, ZwWaitForSingleObject};
 use core::ffi::c_void;
 
 extern "C" {
@@ -516,7 +517,7 @@ pub unsafe extern "system" fn USBPORT_USBDStatusToNtStatus(
     }
 
     if !Urb.is_null() {
-        (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status = USBDStatus;
+        (*Urb).__bindgen_anon_1.UrbHeader.Status = USBDStatus;
     }
 
     match USBDStatus {
@@ -559,7 +560,7 @@ pub unsafe extern "system" fn USBPORT_Wait(
     Milliseconds: ULONG,
 ) -> NTSTATUS {
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
-    *Interval.QuadPart_mut() -= (10000u32)
+    Interval.QuadPart -= (10000u32)
         .wrapping_mul(Milliseconds)
         .wrapping_add((KeQueryTimeIncrement() as u32).wrapping_sub(1)) as i64;
     return KeDelayExecutionThread(0i32 as i8, 0, core::ptr::addr_of_mut!(Interval));
@@ -654,7 +655,7 @@ pub unsafe extern "system" fn USBPORT_SoftInterrupt(FdoDevice: PDEVICE_OBJECT) {
 
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*FdoExtension).SoftInterruptDpc),
-        Some(USBPORT_SoftInterruptDpc as unsafe extern "system" fn(PRKDPC, *mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void)),
+        cb!(USBPORT_SoftInterruptDpc),
         FdoDevice as *mut core::ffi::c_void,
     );
 
@@ -814,7 +815,7 @@ pub unsafe extern "system" fn USBPORT_DoneTransfer(Transfer: PUSBPORT_TRANSFER) 
     );
 
     USBPORT_USBDStatusToNtStatus((*Transfer).Urb, (*Transfer).USBDStatus);
-    USBPORT_CompleteTransfer(Urb, (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status);
+    USBPORT_CompleteTransfer(Urb, (*Urb).__bindgen_anon_1.UrbHeader.Status);
 
     // DPRINT_CORE("USBPORT_DoneTransfer: exit\n");
 }
@@ -841,7 +842,7 @@ pub unsafe extern "system" fn USBPORT_FlushDoneTransfers(FdoDevice: PDEVICE_OBJE
             core::ptr::addr_of_mut!(OldIrql),
         );
 
-        if IsListEmpty(DoneTransferList) != 0 {
+        if IsListEmpty(DoneTransferList) {
             break;
         }
 
@@ -990,7 +991,7 @@ pub unsafe extern "system" fn USBPORT_DpcHandler(FdoDevice: PDEVICE_OBJECT) {
 
     KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize));
 
-    while IsListEmpty(core::ptr::addr_of_mut!(List)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!(List)) {
         Endpoint = (List.Flink as usize).wrapping_sub(
             core::ptr::addr_of_mut!((*(core::ptr::null_mut::<USBPORT_ENDPOINT>())).DispatchLink) as usize,
         ) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
@@ -1005,7 +1006,7 @@ pub unsafe extern "system" fn USBPORT_DpcHandler(FdoDevice: PDEVICE_OBJECT) {
 
     KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize));
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FdoExtension).WorkerList)) == 0 {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*FdoExtension).WorkerList)) {
         USBPORT_SignalWorkerThread(FdoDevice);
     }
 
@@ -1164,7 +1165,7 @@ pub unsafe extern "system" fn USBPORT_IsrDpc(
         InterlockedDecrement(&mut (*FdoExtension).IsrDpcCounter as *mut core::ffi::c_long);
     }
 
-    KeAcquireSpinLockAtDpcLevel(&mut (*FdoExtension).MiniportInterruptsSpinLock);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*FdoExtension).MiniportInterruptsSpinLock) as *mut usize);
     InterruptEnable = (((*FdoExtension).Flags as u32 & USBPORT_FLAG_INTERRUPT_ENABLED as u32)
         == USBPORT_FLAG_INTERRUPT_ENABLED as u32) as i32 as BOOLEAN;
 
@@ -1173,7 +1174,7 @@ pub unsafe extern "system" fn USBPORT_IsrDpc(
         InterruptEnable,
     );
 
-    KeReleaseSpinLockFromDpcLevel(&mut (*FdoExtension).MiniportInterruptsSpinLock);
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*FdoExtension).MiniportInterruptsSpinLock) as *mut usize);
 
     if (*FdoExtension).Flags as u32 & USBPORT_FLAG_HC_SUSPEND as u32 != 0
         && (*FdoExtension).TimerFlags as u32 & USBPORT_TMFLAG_WAKE as u32 != 0
@@ -1293,7 +1294,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJ
 
         workerList = core::ptr::addr_of_mut!((*FdoExtension).WorkerList) as PLIST_ENTRY;
 
-        if IsListEmpty(workerList) != 0 {
+        if IsListEmpty(workerList) {
             break;
         }
 
@@ -1317,7 +1318,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJ
             }
         }
 
-        while IsListEmpty(core::ptr::addr_of_mut!(list)) == 0 {
+        while !IsListEmpty(core::ptr::addr_of_mut!(list)) {
             Endpoint = ((list.Flink as usize)
                 .wrapping_sub(core::mem::offset_of!(USBPORT_ENDPOINT, FlushAbortLink))) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
 
@@ -1589,7 +1590,7 @@ pub unsafe extern "system" fn USBPORT_CreateWorkerThread(FdoDevice: PDEVICE_OBJE
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        Some(USBPORT_WorkerThread as unsafe extern "system" fn(PVOID) -> ()),
+        cb!(USBPORT_WorkerThread),
         FdoDevice as PVOID,
     );
 
@@ -1812,10 +1813,7 @@ pub unsafe extern "system" fn USBPORT_TimerDpc(
                 );
 
                 (*IdleQueueItem).WqItem.List.Flink = core::ptr::null_mut();
-                (*IdleQueueItem).WqItem.WorkerRoutine = Some(
-                    USBPORT_DoIdleNotificationCallback
-                        as unsafe extern "system" fn(PVOID) -> (),
-                );
+                (*IdleQueueItem).WqItem.WorkerRoutine = cb!(USBPORT_DoIdleNotificationCallback);
                 (*IdleQueueItem).WqItem.Parameter = IdleQueueItem as PVOID;
 
                 (*IdleQueueItem).FdoDevice = FdoDevice;
@@ -1872,7 +1870,7 @@ pub unsafe extern "system" fn USBPORT_StartTimer(
     KeInitializeTimer(core::ptr::addr_of_mut!((*FdoExtension).TimerObject));
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*FdoExtension).TimerDpc),
-        Some(USBPORT_TimerDpc),
+        cb!(USBPORT_TimerDpc),
         FdoDevice as PVOID,
     );
 
@@ -2227,7 +2225,7 @@ pub unsafe extern "system" fn USBPORT_MiniportCompleteTransfer(
         core::ptr::addr_of_mut!(OldIrql),
     );
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) {
         USBPORT_QueueDoneTransfer(Transfer, USBDStatus);
         return;
     }
@@ -2235,7 +2233,7 @@ pub unsafe extern "system" fn USBPORT_MiniportCompleteTransfer(
     SplitHead = core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList) as PLIST_ENTRY;
     Entry = (*SplitHead).Flink as PLIST_ENTRY;
 
-    while !Entry.is_null() && IsListEmpty(SplitHead) == 0 {
+    while !Entry.is_null() && !IsListEmpty(SplitHead) {
         SplitTransfer = (Entry as usize).wrapping_sub(
             core::mem::offset_of!(USBPORT_TRANSFER, SplitLink),
         ) as *mut USBPORT_TRANSFER;
@@ -2289,7 +2287,7 @@ pub unsafe extern "system" fn USBPORT_RequestAsyncCallback(
     TimerValue: ULONG,
     Buffer: PVOID,
     Length: SIZE_T,
-    Callback: *mut ASYNC_TIMER_CALLBACK,
+    Callback: Option<ASYNC_TIMER_CALLBACK>,
 ) -> ULONG {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut FdoDevice: PDEVICE_OBJECT;
@@ -2332,7 +2330,7 @@ pub unsafe extern "system" fn USBPORT_RequestAsyncCallback(
 
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*AsyncCallbackData).AsyncTimerDpc),
-        Some(USBPORT_AsyncTimerDpc),
+        cb!(USBPORT_AsyncTimerDpc),
         AsyncCallbackData as PVOID,
     );
 
@@ -2574,7 +2572,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
 
     (*sgList).Flags = 0;
     (*sgList).CurrentVa = (CurrentVa as u32);
-    (*sgList).MappedSystemVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority as ULONG);
+    (*sgList).MappedSystemVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority);
     (*Transfer).MapRegisterBase = MapRegisterBase;
 
     ix = 0;
@@ -2598,12 +2596,12 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
                 .as_ptr() as *const i8,
         );
 
-        PhAddress.u.__bindgen_anon_1.HighPart = 0;
+        PhAddress.u.HighPart = 0;
         SgCurrentLength = TransferLength as SIZE_T;
 
         loop {
             ElementLength = (PAGE_SIZE as ULONG)
-                .wrapping_sub(PhAddress.u.__bindgen_anon_1.LowPart as ULONG & (PAGE_SIZE - 1) as ULONG)
+                .wrapping_sub(PhAddress.u.LowPart as ULONG & (PAGE_SIZE - 1) as ULONG)
                 as SIZE_T;
 
             if ElementLength > SgCurrentLength {
@@ -2621,7 +2619,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
                 .wrapping_add((TransferLength as SIZE_T).wrapping_sub(SgCurrentLength))
                 as ULONG;
 
-            PhAddress.u.__bindgen_anon_1.LowPart = (PhAddress.u.__bindgen_anon_1.LowPart as u64)
+            PhAddress.u.LowPart = (PhAddress.u.LowPart as u64)
                 .wrapping_add(ElementLength as u64) as ULONG;
             SgCurrentLength = (SgCurrentLength as u64)
                 .wrapping_sub(ElementLength as u64) as SIZE_T;
@@ -2671,7 +2669,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
 
         USBPORT_SplitTransfer(FdoDevice, Endpoint, Transfer, core::ptr::addr_of_mut!(List));
 
-        while IsListEmpty(core::ptr::addr_of_mut!(List)) == 0 {
+        while !IsListEmpty(core::ptr::addr_of_mut!(List)) {
             transfer = (List.Flink as usize
                 - core::mem::offset_of!(USBPORT_TRANSFER, TransferLink))
                 as PUSBPORT_TRANSFER;
@@ -2747,7 +2745,7 @@ pub unsafe extern "system" fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJEC
     while TRUE != 0 {
         MapTransferList = core::ptr::addr_of_mut!((*FdoExtension).MapTransferList) as PLIST_ENTRY;
 
-        if IsListEmpty(core::ptr::addr_of_mut!((*FdoExtension).MapTransferList)) != 0 {
+        if IsListEmpty(core::ptr::addr_of_mut!((*FdoExtension).MapTransferList)) {
             KeLowerIrql(OldIrql);
             return;
         }
@@ -2772,7 +2770,7 @@ pub unsafe extern "system" fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJEC
             (*FdoExtension).DmaAdapter,
             FdoDevice,
             NumMapRegisters,
-            Some(USBPORT_MapTransfer),
+            cb!(USBPORT_MapTransfer),
             Transfer as PVOID,
         );
 
@@ -2906,29 +2904,29 @@ pub unsafe extern "system" fn USBPORT_Dispatch(
         DbgBreakPoint();
     }
 
-    match (*IoStack).MajorFunction as i32 {
-        (IRP_MJ_DEVICE_CONTROL as i32) => {
+    match (*IoStack).MajorFunction {
+        IRP_MJ_DEVICE_CONTROL => {
             if (*DeviceExtension).IsPDO != 0 {
                 Status = USBPORT_PdoDeviceControl(DeviceObject, Irp);
             } else {
                 Status = USBPORT_FdoDeviceControl(DeviceObject, Irp);
             }
         }
-        (IRP_MJ_INTERNAL_DEVICE_CONTROL as i32) => {
+        IRP_MJ_INTERNAL_DEVICE_CONTROL => {
             if (*DeviceExtension).IsPDO != 0 {
                 Status = USBPORT_PdoInternalDeviceControl(DeviceObject, Irp);
             } else {
                 Status = USBPORT_FdoInternalDeviceControl(DeviceObject, Irp);
             }
         }
-        (IRP_MJ_POWER as i32) => {
+        IRP_MJ_POWER => {
             if (*DeviceExtension).IsPDO != 0 {
                 Status = USBPORT_PdoPower(DeviceObject, Irp);
             } else {
                 Status = USBPORT_FdoPower(DeviceObject, Irp);
             }
         }
-        (IRP_MJ_SYSTEM_CONTROL as i32) => {
+        IRP_MJ_SYSTEM_CONTROL => {
             if (*DeviceExtension).IsPDO != 0 {
                 Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                 IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
@@ -2937,14 +2935,14 @@ pub unsafe extern "system" fn USBPORT_Dispatch(
                 Status = IoCallDriver((*DeviceExtension).LowerDevice, Irp);
             }
         }
-        (IRP_MJ_PNP as i32) => {
+        IRP_MJ_PNP => {
             if (*DeviceExtension).IsPDO != 0 {
                 Status = USBPORT_PdoPnP(DeviceObject, Irp);
             } else {
                 Status = USBPORT_FdoPnP(DeviceObject, Irp);
             }
         }
-        (IRP_MJ_CREATE as i32) | (IRP_MJ_CLOSE as i32) => {
+        IRP_MJ_CREATE | IRP_MJ_CLOSE => {
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
         }
@@ -3012,33 +3010,33 @@ pub unsafe extern "system" fn USBPORT_RegisterUSBPortDriver(
         (core::ptr::addr_of_mut!(USBPORT_SpinLock) as *mut u32),
     );
 
-    (*(*DriverObject).DriverExtension).AddDevice = Some(USBPORT_AddDevice);
-    (*DriverObject).DriverUnload = Some(USBPORT_Unload);
+    (*(*DriverObject).DriverExtension).AddDevice = cb!(USBPORT_AddDevice);
+    (*DriverObject).DriverUnload = cb!(USBPORT_Unload);
 
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(USBPORT_Dispatch);
-    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = Some(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = cb!(USBPORT_Dispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = cb!(USBPORT_Dispatch);
 
     (*RegPacket).UsbPortDbgPrint = Some(USBPORT_DbgPrint);
     (*RegPacket).UsbPortTestDebugBreak = Some(USBPORT_TestDebugBreak);
     (*RegPacket).UsbPortAssertFailure = Some(USBPORT_AssertFailure);
-    (*RegPacket).UsbPortGetMiniportRegistryKeyValue = Some(USBPORT_GetMiniportRegistryKeyValue);
+    (*RegPacket).UsbPortGetMiniportRegistryKeyValue = cb!(USBPORT_GetMiniportRegistryKeyValue);
     (*RegPacket).UsbPortInvalidateRootHub = Some(USBPORT_InvalidateRootHub);
     (*RegPacket).UsbPortInvalidateEndpoint = Some(USBPORT_InvalidateEndpoint);
     (*RegPacket).UsbPortCompleteTransfer = Some(USBPORT_MiniportCompleteTransfer);
     (*RegPacket).UsbPortCompleteIsoTransfer = Some(USBPORT_CompleteIsoTransfer);
     (*RegPacket).UsbPortLogEntry = Some(USBPORT_LogEntry);
     (*RegPacket).UsbPortGetMappedVirtualAddress = Some(USBPORT_GetMappedVirtualAddress);
-    (*RegPacket).UsbPortRequestAsyncCallback = Some(USBPORT_RequestAsyncCallback);
+    (*RegPacket).UsbPortRequestAsyncCallback = cb!(USBPORT_RequestAsyncCallback);
     (*RegPacket).UsbPortReadWriteConfigSpace = Some(USBPORT_ReadWriteConfigSpace);
     (*RegPacket).UsbPortWait = Some(USBPORT_Wait);
     (*RegPacket).UsbPortInvalidateController = Some(USBPORT_InvalidateController);
     (*RegPacket).UsbPortBugCheck = Some(USBPORT_BugCheck);
-    (*RegPacket).UsbPortNotifyDoubleBuffer = Some(USBPORT_NotifyDoubleBuffer);
+    (*RegPacket).UsbPortNotifyDoubleBuffer = cb!(USBPORT_NotifyDoubleBuffer);
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*MiniPortInterface).Packet) as *mut core::ffi::c_void,

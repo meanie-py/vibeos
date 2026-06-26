@@ -27,16 +27,13 @@ extern "C" {
     fn USBPORT_ValidateDeviceHandle( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, ) -> BOOLEAN;
     fn USBPORT_HandleSelectConfiguration( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
     fn USBPORT_HandleSelectInterface( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn USBPORT_ClearStall( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
+    fn USBPORT_ClearStall( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG  (function-like/empty macro, skipped)
 // #define NDEBUG_USBPORT_URB  (empty macro, skipped)
 
-unsafe extern "C" {
-    fn USBPORT_QueueTransferUrb(Urb: PURB);
-}
 
 const USBD_FLAG_ALLOCATED_MDL: u32 = 0x00000001;
 
@@ -113,7 +110,7 @@ pub unsafe extern "system" fn USBPORT_AbortPipe(
 ) -> NTSTATUS {
 
     const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: u32 = 0x00000001; // PIPE_HANDLE_FLAG_NULL_PACKET_SIZE
-    const USBD_STATUS_SUCCESS: USBD_STATUS = 0x00000000; // USBD_STATUS_SUCCESS
+    const USBD_STATUS_SUCCESS: USBD_STATUS = 0x00000000u32 as USBD_STATUS; // USBD_STATUS_SUCCESS
     const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0x80000600u32 as USBD_STATUS; // USBD_STATUS_INVALID_PIPE_HANDLE
 
     let Endpoint: PUSBPORT_ENDPOINT;
@@ -190,7 +187,7 @@ pub unsafe extern "system" fn USBPORT_ResetPipe(
         core::ptr::addr_of_mut!((*Endpoint).EndpointOldIrql),
     );
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) {
         if (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags & USBD_FLAG_NOT_ISO_TRANSFER != 0 {
             KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*FdoExtension).MiniportSpinLock) as *mut usize));
 
@@ -284,7 +281,7 @@ pub unsafe extern "system" fn USBPORT_SyncResetPipeAndClearStall(
                 EndpointState = USBPORT_GetEndpointState(Endpoint);
 
                 if EndpointState == USBPORT_ENDPOINT_PAUSED
-                    && IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) != 0
+                    && IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList))
                 {
                     USBPORT_SetEndpointState(Endpoint, USBPORT_ENDPOINT_ACTIVE);
                 }
@@ -746,7 +743,7 @@ pub unsafe extern "system" fn USBPORT_ValidateURB(
 
     UrbRequest = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlTransfer);
 
-    if !(*UrbRequest).__bindgen_anon_1.UrbLink.is_null() {
+    if !(*UrbRequest).UrbLink.is_null() {
         Status = USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_INVALID_PARAMETER);
 
         // DPRINT1("USBPORT_ValidateURB: Not valid parameter\n");
@@ -829,7 +826,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
     FdoDevice = (*PdoExtension).FdoDevice;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
-    (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status = USBD_STATUS_SUCCESS;
+    (*Urb).__bindgen_anon_1.UrbHeader.Status = USBD_STATUS_SUCCESS;
     (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags = 0;
 
     Function = (*Urb).__bindgen_anon_1.UrbHeader.Function;
