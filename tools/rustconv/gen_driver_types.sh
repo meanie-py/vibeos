@@ -438,6 +438,89 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  usbstor)
+    # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
+    # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
+    # __COMMON_DEVICE_EXTENSION__ + the FDO/PDO device extensions, ERRORHANDLER_WORKITEM_DATA,
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8. usbstor.h pulls wdm/ntstrsafe/usbdi/usbbusif/usbdlib/
+    # classpnp -> allowlist ONLY usbstor.h so bindgen emits just the driver-private types, not
+    # the whole USBDI/classpnp surface (those come from the kernel ddk bindgen). Includes
+    # classpnp.h -> match classpnp's Win8 (0x602) version profile.
+    DRIVER_DIR="${SRC}/drivers/usb/usbstor"
+    WRAPPER_INC=$'#include "usbstor.h"'
+    # usbstor function bodies use raw SCSI/USB types directly (INQUIRYDATA, SENSE_DATA,
+    # SCSI_ADDRESS, USB_*_DESCRIPTOR, USBD_INTERFACE_LIST_ENTRY) that aren't transitively
+    # reachable from the device-extension structs and aren't in the kernel ddk bindgen ->
+    # allowlist their definition headers (scsi.h, usb.h, usbdi.h, usbdlib.h) alongside
+    # usbstor.h so the crate types.rs carries the full SCSI/USB surface.
+    ALLOW_FILES=( --allowlist-file '.*usbstor[/\\]usbstor\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h' )
+    # _SCSI_REQUEST_BLOCK is OPAQUE in the kernel ddk bindgen ({ _address: u8 }) — unblock
+    # it (and its aliases) so usbstor's own bindgen (which includes scsi.h) emits the FULL
+    # SRB (SrbStatus/Cdb/DataBuffer/SrbFlags/DataTransferLength/...). Same as scsiport/atapi.
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
+    ;;
+  usbccgp)
+    # USB composite-device (generic parent) driver (drivers/usb/usbccgp). Private structs are
+    # in usbccgp.h (FDO/PDO/function-descriptor extensions); it pulls hubbusif/usbbusif/usb100/
+    # usbdlib. USB-only (no SCSI). Allowlist usbccgp.h + the USB definition headers so the crate
+    # types.rs carries the USB descriptor/interface surface. Vista (_WIN32_WINNT=0x600).
+    DRIVER_DIR="${SRC}/drivers/usb/usbccgp"
+    WRAPPER_INC=$'#include "usbccgp.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbccgp[/\\]usbccgp\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usb200\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]usbioctl\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
+  usbhub)
+    # USB hub class driver (drivers/usb/usbhub). Many private structs in usbhub.h (USBHUB_FDO_
+    # EXTENSION/PORT_PDO_EXTENSION + URB/status/idle/reset contexts); it pulls usb/usbioctl/
+    # hubbusif/usbbusif/usbdlib + the miniport interface (drivers/usbport/usbmport.h) + ks/wmilib.
+    # Allowlist usbhub.h + the USB headers + usbmport.h so the crate types.rs carries the hub +
+    # miniport surface. _WIN32_WINNT default for the USB stack = Vista (0x600).
+    DRIVER_DIR="${SRC}/drivers/usb/usbhub"
+    WRAPPER_INC=$'#include "usbhub.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbhub[/\\]usbhub\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbioctl\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
+  usbehci|usbohci|usbuhci)
+    # USB host-controller miniports (drivers/usb/usb{ehci,ohci,uhci}). Each registers a
+    # USBPORT_REGISTRATION_PACKET with usbport (drivers/usbport/usbmport.h) and drives its
+    # controller hardware. Driver-private structs live in BOTH the main header (usbXhci.h:
+    # endpoint/transfer/extension structs) and hardware.h (HW register/descriptor layouts:
+    # EHCI QH/TD, OHCI ED/TD, UHCI QH/TD). Allowlist the whole driver dir + the USB headers +
+    # usbmport.h so types.rs carries the full miniport + hardware surface. USB stack = Vista.
+    DRIVER_DIR="${SRC}/drivers/usb/${DRIVER}"
+    WRAPPER_INC=$'#include "'"${DRIVER}"'.h"'
+    ALLOW_FILES=( --allowlist-file ".*${DRIVER}[/\\\\].*\\.h"
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
