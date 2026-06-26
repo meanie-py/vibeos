@@ -9,14 +9,79 @@ our accumulated Rust/C best-practice notes. Split out of `build-cache-and-determ
 > per-file gotchas. Exhaustive is fine (it's pull-context, zero standing cost). Keep the
 > *push* channel (AGENTS.md/MEMORY.md) free of this.
 
-## Why determinism (three payoffs, ranked by our priorities)
+## ⚠️ Strategy pivot (2026-06-21): determinism is NOT the disk lever — identical-artifact hardlink-dedup of the *cargo target tree* is
 
-1. **Disk — the cross-worktree dedup multiplier (priority #1).** Measured 2026-06-20:
-   hardlink-dedup across 5 `build-i386` trees saved only **3.94 G / ~13 %**, because
+The original priority-#1 framing below ("determinism unlocks cross-worktree dedup from 13 %
+→ ~90 %") was **measured and disproven** — but so was the *first* pivot ("share one
+`CARGO_TARGET_DIR`"). The corrected, **validated** finding:
+
+### 1. The ~17 % yield was measured on the wrong tree.
+
+A post-fix dedup-yield measurement on a `build-i386` (7.58 GB) found only ~17 % dedup-able. But
+`build-<arch>` is **not** the disk hog — the **`sdk/lib/rust/target` cargo tree is**: 9.7–26 GB
+*per worktree* (vibeos main 26 G, netstack 25 G, kernel32 23 G, filesystems 20 G …). Across 11
+worktrees the caches total **281 GB**, of which the cargo target trees dominate.
+
+### 2. A shared `CARGO_TARGET_DIR` is OFF the table — it's a *correctness* hazard, not a perf trade.
+
+`sdk/lib/rust/reactos-link/src/lib.rs` deliberately gives every cargo-EXE module its **own**
+per-crate target dir (`target/<pkg>-<crate>-rustlib`). Quoting its rationale:
+
+> PER-CRATE dir (not shared): a shared dir lets cargo feature-unify across crates and emit
+> duplicate symbols with different code that `--allow-multiple-definition` resolves first-match
+> to the wrong variant.
+
+So the ~98 per-crate target dirs each recompile build-std (core/alloc/compiler_builtins) and the
+shared rlibs — **that redundancy is the deliberate price of per-crate isolation**, and collapsing
+to one target dir would mis-link the kernel. Cache *sharing* via a single target dir is ruled out.
+
+### 3. The real, safe lever: hardlink byte-identical artifacts (`hardlink --ignore-time`).
+
+The per-crate build-std rlibs are **byte-identical** (same content, just built at different times),
+and post-determinism the per-worktree crates are byte-identical *across* worktrees too. Hardlinking
+them preserves per-crate isolation completely (each path still exists; they just share inodes).
+**`--ignore-time` is essential** — util-linux `hardlink` defaults to requiring identical mtime,
+which hid ~all of it (a default run found 767 KiB; `--ignore-time` found 6.4 GiB in one tree).
+
+**Measured (2026-06-21):**
+
+| scope | before | reclaim |
+|---|---|---|
+| intra-worktree (one cargo target tree) | 9.7 GB | **6.4 GiB → 3.3 GB** |
+| **FULL FLEET cargo target trees (11 worktrees)** | — | **113 GiB (60,899 files)** |
+
+ext4 has no reflink/CoW, so hardlink is the mechanism. **Safety validated end-to-end:** cargo
+always emits via tempfile + atomic rename (never in-place mutation), so a later rebuild gets a
+*new* inode and the link breaks cleanly — worst case a spurious rebuild, never wrong output.
+Proven: dedup → warm i386 build (7m41s, valid 433 MB iso) → **i386 smoke ✓ boot 83 s**. Re-bloat
+after a warm rebuild is partial (3.3 G → 4.9 G here) and recovered by re-running the dedup, so it
+is a **periodic maintenance pass**, not a permanent build-graph change.
+
+**Tool:** `tools/dedup-build-cache.sh` (dry-run by default; `--apply` to hardlink; auto-discovers
+all worktrees via `git worktree list`; skips trees with a recent write to dodge live-build races).
+
+### Determinism's retained value is therefore NOT disk directly
+
+It's payoffs #2 and #3 below (anti-stale de-risk + reproducibility), **plus it is what makes the
+cross-worktree hardlink-dedup actually land** — without the path/timestamp normalization the
+"identical" crates wouldn't be byte-identical across worktrees and only the (path-independent)
+build-std would dedup. The anti-stale value already paid off concretely: the genuinely-cold
+`--clean` (rung #41) unmasked two real arm64 bugs (PTE-cache alignment + stale-fastfat) that warm
+builds had hidden all session → arm64 now cold-boots green in ~38 s.
+
+The original payoff list is kept below for history; read it through the pivot above.
+
+## Why determinism (three payoffs — ORIGINAL framing; see pivot above)
+
+1. **Disk — the cross-worktree dedup multiplier (priority #1 — DISPROVEN, see pivot).** Measured
+   2026-06-20: hardlink-dedup across 5 `build-i386` trees saved only **3.94 G / ~13 %**, because
    "identical" binaries aren't byte-identical — they embed the worktree's absolute path
    (debug info, `__FILE__`) and a PE build timestamp. Strip those and the dedup ceiling rises
-   from ~13 % toward the ~90 %-actually-unchanged reality. Determinism is the lever that makes
-   the disk plan's dedup real. (See `build-cache-and-determinism-plan.md` → Disk-first reframing.)
+   from ~13 % toward the ~90 %-actually-unchanged reality. ~~Determinism is the lever that makes
+   the disk plan's dedup real.~~ **Corrected 2026-06-21:** measured post-fix yield is ~17 %, not
+   ~90 % — the bulk of a tree is regenerable cache, so cache-SHARING (shared `CARGO_TARGET_DIR` +
+   ccache/PCH), not determinism dedup, is the disk lever. (See `build-cache-and-determinism-plan.md`
+   → Disk-first reframing.)
 2. **De-risk the non-standard ntoskrnl/win32k build (priority #2).** The cargo-driven kernel
    link doesn't go through the normal cmake DAG (field-manual §9.6b: `ninja livecd` doesn't
    relink the cargo kernel on a `.rs` edit), which is a perennial "did the right thing

@@ -1,6 +1,8 @@
 # ntoskrnl C→Rust Translation Audit
 
-> **Ground-truth re-verified 2026-06-14** against CMakeLists/code — body confirmed 100% Rust at link (zero active body `.c` in `ntos.cmake`); **`cmdata.c` is FLIPPED** (commented out, `config/cmdata.rs` active — the "Phase-B holdout ~150 LOC still C" claim was STALE); deep-C cohab libs (cport/csq/arbiter/lsalib/rossym) are Rust-flipped **arm64-only** in `ntoskrnl-cargo/build.rs` — i386/amd64 still link the bundled cmake C `.a` (ungate gated by a layout-sensitive BUGCHECK 0x50 in the storage path, validated 2026-06-14).
+> **Translation: ~100% of the ntoskrnl body (methodology below).** The shipping kernel links **zero ntoskrnl body C** — the only active `.c` in `ntos.cmake` is the 8-file, 1,037-LOC header-free CRT/SEH/asm-glue shim layer (each augments a Rust impl in a sibling rlib). Methodology: the active-source list in `ntos.cmake` contains 0 body `.c` (all subsystem dirs carry "# replaced by Rust" markers — 42 in `ntos.cmake`/`CMakeLists.txt`); `find sdk/lib/rust/ntoskrnl-rust/src -name '*.rs'` = **406 files / 451,190 LOC** vs an original C body of **268,513 LOC**; the irreducible glue is the 1,037-LOC shim layer + the in-cargo CRT floor. Honest caveat: "100%" = coverage at link (every body symbol resolves to Rust), not idiomation quality — the frontier is Stage-3 (Result/Drop-RAII) + runtime correctness.
+
+> **Re-verified 2026-06-21** against CMakeLists/code — body still 100% Rust at link (zero active body `.c` in `ntos.cmake`). **UPDATE since 2026-06-14: the deep-C cohab libs are now Rust-flipped on ALL arches, not arm64-only.** `ntoskrnl-cargo/build.rs` now links `cport-rust`/`csq-rust`/`arbiter-rust`/`lsalib-rust`/`rossym-rust` **plus `cmlib-rust` and `rtl-rust`/`cnt-rust-lib`** as cargo-native `.rust_lib(...)` for i386/amd64/arm64 alike (lines ~310–327). The old x86 layout-sensitive BUGCHECK-0x50 gate is closed; the empty cmake `libcmlib.a`/`libcportlib.a` placeholders were dropped (cmlib `.a` removed 2026-06-20). So the five deep-C libs + cmlib are **Rust-bodied at link on all three arches** now. (`cmdata.c` remains FLIPPED — `config/cmdata.rs` active.)
 
 ## 2026-06-13 — MILESTONE: the ntoskrnl body is 100% Rust at link time
 
@@ -9,23 +11,26 @@ objects for its body. Verified mechanically:
 
 - `ntoskrnl-cargo/build.rs` pulls in no `libntoskrnl.a` and no per-`.dir`
   `.obj` glob; `reactos-link` has no auto-include of cmake ntoskrnl objects.
-  The only `static_libs` are *helper* archives (hal, kdcom, bootvid, cmlib,
-  cportlib, rtl, rossym, arbiter, csq, lsalib, ntoskrnl_vista) — cohab
-  placeholders or genuine non-ntoskrnl-body libs — plus the irreducible
+  The only `static_libs` are *helper* archives (hal, kdcom, bootvid,
+  ntoskrnl_vista) — genuine non-ntoskrnl-body libs — plus the irreducible
   CRT/SEH/asm floor compiled in-cargo (`c_from_compile_db` printf/scanf
   shells + i386 x87 `_CIxxx` math + amd64 SEH personality, `c_shims`).
-- **Deep-C cohab nuance (re-verified 2026-06-14).** Five of those helper libs —
-  `cportlib`/`csq`/`arbiter`/`lsalib`/`rossym` — have committed Rust translations
-  (`libcport_rust.a` etc.), but `ntoskrnl-cargo/build.rs` only adds the
-  `libX_rust.a` archives **when `arch == "aarch64"`**. On i386/amd64 the kernel
-  still links the **bundled cmake C `libX.a`** — the ungate is deliberately gated
-  to arm64 because adding the redundant rust archives on x86 shifts the kernel
-  link layout and tips a latent layout-sensitive miscompile (cold amd64 → BUGCHECK
-  0x50 in the scsiport/uniata storage path; validated 2026-06-14, see field manual
-  "Incomplete Rust cohab flip"). So these libs are **Rust-bodied at link on arm64
-  only; still C-bodied on i386/amd64.** (`cmlib`: a `cmlib-rust` crate exists but
-  is NOT in even the arm64 flip set here — the kernel links the C `libcmlib.a` on
-  all three arches.)
+  The former cohab-placeholder `.a`s (cmlib/cportlib/rossym/arbiter/csq/
+  lsalib) are gone — those bodies are now cargo-native `.rust_lib` (see
+  the all-arch deep-C nuance below).
+- **Deep-C cohab nuance (UPDATED 2026-06-21 — now all-arch).** The five helper libs —
+  `cportlib`/`csq`/`arbiter`/`lsalib`/`rossym` — are now built **cargo-native** via
+  `.rust_lib("cport-rust"/"csq-rust"/"arbiter-rust"/"lsalib-rust"/"rossym-rust", …)`
+  in `ntoskrnl-cargo/build.rs` (lines ~323–327) on **all three arches** — the
+  arm64-only gate (and the `bacd1fc64d3` x86-ungate-then-revert dance) is gone.
+  The cmake C `.a` placeholders were empty `rust_cohab_stub` TUs (0 real symbols),
+  so dropping them was a no-op for the link. **`cmlib` is likewise now Rust on all
+  arches** via `.rust_lib("cmlib-rust", …)` (line ~316); its cmake `libcmlib.a`
+  (an empty placeholder since all 13 `cmlib/*.c` are `REMOVE_ITEM`'d) was **dropped
+  2026-06-20**. `rtl-rust` + `cnt-rust-lib` are also cargo-native `.rust_lib` here.
+  Net: every deep-C cohab lib is **Rust-bodied at link on i386/amd64/arm64.** The
+  old layout-sensitive BUGCHECK-0x50 concern is resolved (guarded by the cmlib-rust
+  no-prepopulate class-guard).
 - Every core kernel symbol resolves to Rust: `NtCreateFile`/`IopParseDevice`
   → `iomgr/file.rs`, `MmCreateProcessAddressSpace` → `ARM3/procsup.rs`,
   `KeBugCheckEx` → `ps/psmgr.rs`, `KdpSafeReadMemory` → `kdbg/i386_dis.rs`.
@@ -43,7 +48,7 @@ build. The remaining ntoskrnl translation frontier is *quality*, not coverage
 — Stage-3 idiomation (Result/Drop-RAII over the mechanically-transliterated
 unsafe Rust) and runtime correctness (the open amd64 taskbar BUGCHECK 0x50).
 
-### Kernel-land status (other PEs), surveyed 2026-06-13
+### Kernel-land status (other PEs), surveyed 2026-06-13 (spot-checked 2026-06-21)
 
 Probed each `*-cargo/build.rs` for residual C (the same way as ntoskrnl).
 "CRT floor" = printf variadic shells / i386 x87 math / SEH personality /
@@ -60,17 +65,18 @@ subsystem body C.
 | services / winlogon / userinit | *-rust| CRT floor only                              | ✅ |
 | ntdll / ntdll_vista| ntdll-rust        | CRT floor (rtl placeholder .a)              | ✅ |
 | HAL                | hal-rust          | 42/45 `.c` retired; only a generated empty stub live | ✅ ~100% |
-| **win32k.sys**     | win32k-rust (164 .rs) | **13 live `.c`** (147 retired): the `reactx/ntddraw` DirectDraw/D3D stack (9), `safe_user_io.c`, `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c` | 🔶 ~92% — active flip lane |
+| **win32k.sys**     | win32k-rust       | win32k cmake was flipped OFF (mainline landing); residual DirectDraw/D3D + a few gdi `.c` may remain — re-verify against `win32ss/CMakeLists.txt` (still has cohab markers) | 🔶 mostly Rust — see win32k audit for live-`.c` ledger |
 | uefildr / rosload  | freeldr-rust      | boot RTL `.c` (bitmap/compress/crc32/image/largeint/random/unicode/mem) + `libmini_hal.a` + 2 asm | 🔶 boot-loader RTL not on rtl-rust; `systimer.S`-blocked |
 
-The only kernel-mode bodies with substantial *body* C remaining are
-**win32k DirectDraw** (active other-agent lane — coordinate, don't collide)
-and the **uefildr/rosload boot RTL** (the `_MINIHAL_`/`systimer.S` asm-define
-blocker documented in the freeldr audit). Everything else is Rust-bodied.
+The remaining kernel-mode *body* C lives outside ntoskrnl: residual
+**win32k** GDI/DirectDraw (track in the win32k audit — `win32ss/CMakeLists.txt`
+still carries cohab markers) and the **uefildr/rosload boot RTL** (the
+`_MINIHAL_`/`systimer.S` asm-define blocker documented in the freeldr audit).
+Everything inside the ntoskrnl body is Rust-bodied.
 
 ---
 
-Last updated 2026-05-09. Sixteen milestones landed this session.
+Last updated 2026-06-21. (History below is from the 2026-05-09 milestone session.)
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
    shim files are now header-free (no `<ntoskrnl.h>`, no internal
@@ -274,14 +280,14 @@ etc., totalling ~165K LOC of C) — those are tracked separately in
 [`static-libs-translation-audit.md`](static-libs-translation-audit.md).
 That's the next "elimination" axis.
 
-> **Note (2026-06-09):** the ~30 cmake-built static-libs axis has since LARGELY COMPLETED — rtl/libcntpr/hal are ~fully Rust, cmlib in progress.
+> **Note (2026-06-21):** the ~30 cmake-built static-libs axis is now essentially CLOSED — rtl/libcntpr/hal/cmlib **and** the five deep-C cohab libs (cport/csq/arbiter/lsalib/rossym) are all linked cargo-native `.rust_lib` on all 3 arches (`ntoskrnl-cargo/build.rs`). The empty cmake placeholder `.a`s were dropped. Only the genuine non-body helper archives (hal/kdcom/bootvid/ntoskrnl_vista) + the in-cargo CRT floor remain C.
 
 Counts (verified by `wc -l`):
 
 | Bucket | LOC |
 |---|---:|
-| Original ntoskrnl C body of work (excl. shims) | 268,436 |
-| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | 441,282 |
+| Original ntoskrnl C body of work (excl. shims) | 268,513 |
+| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` (406 files, 2026-06-21) | 451,190 |
 | Active C in default i386/amd64 build (excl. shims) | 0 |
 | C shim layer (8 files in `PCH_SKIP_SOURCE`) | 1,037 |
 | C data-table sister files | 0 (was 1; `io_tables.c` retired 2026-05-08) |
@@ -313,14 +319,17 @@ explicit accessor paths, (b) every output-pointer write goes through
 rlib pattern means C trampolines + Rust impls coexist for a shrinking
 set of fns. Net work-done metric is closer to 1:1.
 
-**Sibling rlib count: 45.** Up from ~15 a few sessions ago.
+**Workspace crate count: 207** (`find sdk/lib/rust -maxdepth 2 -name Cargo.toml | wc -l`, 2026-06-21). Was 45 on 2026-05-09 — the growth is the kernel-land driver/DLL waves (cdrom/disk/classpnp/uniata/scsiport/atapi/storahci/storport, kernel32, netstack smoltcp, npfs/msfs, cdfs) factored into their own rlibs, not all ntoskrnl-body.
 
-Smoke status:
-- **i386: 7/7 PASS** (cmake build); cargo-built binary also boots, smoke green.
-- **amd64: 7/7 PASS** (cmake build).
-- **arm64: 5/5 PASS** (cmake build). One open downstream issue —
-  post-boot fastfat BUGCHECK with `STATUS_INSUFFICIENT_RESOURCES` —
-  is tracked separately and does not block smoke. *(Possibly SUPERSEDED 2026-06-09: ext2/btrfs/ntfs FS were deleted 14a0563b291 — re-verify whether this BUGCHECK still reproduces.)*
+Smoke status (boot verdict is now the single `shell ready` marker on all 3 arches):
+- **i386: GREEN** to shell ready (cmake build); cargo PoC binary also boots.
+- **amd64: GREEN** to shell ready (cmake build). *Open, ntoskrnl-adjacent:* a
+  non-deterministic amd64 taskbar BUGCHECK 0x50 (~1/3) post-`shell ready` via
+  win32k taskbar child-control creation — runtime/logic, not an ntoskrnl
+  coverage gap; tracked separately.
+- **arm64: GREEN** — boots to the ReactOS desktop. The old post-boot fastfat
+  `STATUS_INSUFFICIENT_RESOURCES` BUGCHECK is **RESOLVED** (Rust fastfat cohab
+  flip landed on mainline 2026-06-15; arm64 reaches winlogon→explorer→taskbar).
 
 ## Survey of remaining `build-i386/` deps (2026-05-08)
 
@@ -557,7 +566,7 @@ Rust file in the tree is wired in — parked translations: **0**.
 | fstub | 5 | ~12,300 |
 | cc (cache) | 8 | ~6,200 |
 | dbgk / po / inbv / lpc / kd / wmi / vdm / arch dirs / rtl / vf / top-level | ~50 | ~30,000 |
-| **TOTAL active (i386/amd64)** | **~325** | **~441,300** |
+| **TOTAL active (i386/amd64)** | **406 files** | **451,190** (2026-06-21) |
 
 ## Verified must-stay set
 
@@ -709,9 +718,10 @@ decoration, that's the bug.
 - **Boot correctness.** A line-count metric says nothing about whether
   the Rust version actually works under load. Smoke is the source of
   truth; this audit is just the LOC ledger backing the smoke story.
-- **Per-arch differentials.** i386 and amd64 are at parity. arm64 is
-  green at boot smoke; one open downstream issue (post-boot fastfat
-  BUGCHECK).
+- **Per-arch differentials.** i386/amd64/arm64 all boot green to the desktop
+  (`shell ready`). One open *runtime* issue: the non-deterministic amd64 taskbar
+  BUGCHECK 0x50 (win32k child-control creation, post-shell-ready) — not an
+  ntoskrnl coverage gap.
 
 ## How these numbers are computed
 
@@ -719,7 +729,7 @@ decoration, that's the bug.
 # Total ntoskrnl C body of work (excludes shims):
 find ntoskrnl -name "*.c" \
   | grep -v -E '_rust_shims\.c|variadic_shims\.c|lto_workaround\.c|mm_lock_outlines\.c|ntprintf_trampoline\.c' \
-  | xargs wc -l   # → 268,436
+  | xargs wc -l   # → 268,513 (2026-06-21)
 
 # Active C in default build (excludes shims):
 grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
@@ -739,10 +749,10 @@ wc -l ntoskrnl/ke/ke_rust_shims.c \
       ntoskrnl/mm_lock_outlines.c   # → 1,037
 
 # Rust LOC across ntoskrnl-rust/:
-find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 441,282
+find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 451,190 (406 files, 2026-06-21)
 
-# Sibling rlib count:
-find sdk/lib/rust -maxdepth 2 -name "Cargo.toml" | wc -l   # → 45
+# Workspace crate count:
+find sdk/lib/rust -maxdepth 2 -name "Cargo.toml" | wc -l   # → 207 (2026-06-21)
 
 # Parked Rust translations (file on disk, not in mod.rs):
 for d in sdk/lib/rust/ntoskrnl-rust/src/*/mod.rs; do

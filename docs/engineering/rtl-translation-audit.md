@@ -1,6 +1,21 @@
 # RTL (sdk/lib/rtl) C→Rust Translation Audit
 
-> **Ground-truth re-verified 2026-06-14** against `sdk/lib/rtl/CMakeLists.txt` + the `sdk/lib/rust/` crates — **the whole `sdk/lib/rtl/*.c` surface is now flipped to Rust**, including the previously-"deferred" `registry.c` (→ `rtl-misc`), the entire `heap.c` family (`heap.c`/`heapdbg.c` → `rtl-heap`, `heappage.c` → `rtl-heappage`, `heapuser.c` → `rtl-heapuser`), `image.c` (→ `rtl-diag`), and the per-arch exception/unwind tail (→ `rtl-except`). The **only active (uncommented) C/asm left in `librtl.a`** is the irreducible floor: `dbgprint_variadic.c` (C-variadic FFI glue), `rtl_vista_stub.c` (placeholder), and the per-arch asm `*/debug_asm.S`, `i386/{except_asm.s,rtlmem.s,rtlswap.S}`, `amd64/{except_asm.S,unwind-asm.s}`. The "Still C" / "deferred" claims below are SUPERSEDED — corrected inline.
+> **Translation: ~99% (methodology: by source `.c` files in `sdk/lib/rtl`).** Of 82 `.c`
+> files in the tree, **80 are flipped to Rust** (cohabitation-commented in
+> `sdk/lib/rtl/CMakeLists.txt` — **83 `# … — replaced by Rust` markers**, counting the
+> per-arch `except.c`/`thread.c`/`unwind.c`/`dynfntbl.c`/`stubs.c` variants). The only
+> active (uncommented) `.c` left are the irreducible floor: `dbgprint_variadic.c` (180 LOC,
+> C-variadic FFI trampolines that back `rtl-diag`'s `DbgPrint*`/`wine_dbg_*`) and
+> `rtl_vista_stub.c` (17 LOC placeholder) — plus ~2.35K LOC of per-arch asm
+> (`*/debug_asm.S`, `i386/{except_asm.s,rtlmem.s,rtlswap.S}`, `amd64/{except_asm.S,unwind-asm.s}`).
+> No `Rtl*` API *body* remains in C.
+
+> **Ground-truth re-verified 2026-06-21** against `sdk/lib/rtl/CMakeLists.txt` + the `sdk/lib/rust/` crates — **the whole `sdk/lib/rtl/*.c` surface is now flipped to Rust**, including the previously-"deferred" `registry.c` (→ `rtl-misc`), the entire `heap.c` family (`heap.c`/`heapdbg.c` → `rtl-heap`, `heappage.c` → `rtl-heappage`, `heapuser.c` → `rtl-heapuser`), `image.c` (→ `rtl-diag`), and the per-arch exception/unwind tail (→ `rtl-except`). The **only active (uncommented) C/asm left in `librtl.a`** is the irreducible floor: `dbgprint_variadic.c` (C-variadic FFI glue), `rtl_vista_stub.c` (placeholder), and the per-arch asm `*/debug_asm.S`, `i386/{except_asm.s,rtlmem.s,rtlswap.S}`, `amd64/{except_asm.S,unwind-asm.s}`. The "Still C" / "deferred" claims below are SUPERSEDED — corrected inline.
+>
+> **Rust footprint (2026-06-21):** 20 `rtl-*` crates + the `rtl-rust` umbrella —
+> **94 `.rs` files, ~56.7K LOC** (largest: `rtl-strings` 22 files/~15.9K LOC,
+> `rtl-actctx` ~7.7K, `rtl-difftest` ~5.5K test harness, `rtl-heap` ~4.8K,
+> `rtl-threadpool` ~4.1K, `rtl-except` ~3.2K, `rtl-sync` ~3.0K). Per-crate table in §4.
 
 **Surface:** `sdk/lib/rtl/*.c` — the NT `Rtl*` run-time library that compiles
 into the single `librtl.a`, which links into **both** `ntoskrnl.exe` (kernel,
@@ -11,8 +26,10 @@ memory + the `handoff-rtl-libs-next-steps.md` codex handoff into an in-repo
 ledger). Sister docs: `ntoskrnl-translation-audit.md`,
 `ntdll-translation-audit.md`, `static-libs-translation-audit.md`.
 
-**Active branch:** `rtl-priv-port` (worktree `vibeos-wt-rtl-priv`).
-HEAD `b77c87e0840` + uncommitted PATH-wave work (see §4).
+**Status (2026-06-21):** the entire rtl flip is **DONE** and landed on mainline
+(`continue-rust-port` == `master`). The `rtl-priv-port` lane that drove the original
+string/path waves is closed; all 20 `rtl-*` crates are integrated and live in
+`sdk/lib/rtl/CMakeLists.txt`. The historical lane notes below are kept for provenance.
 
 ---
 
@@ -77,7 +94,34 @@ core, but they are separate tracks.
 
 ---
 
-## 4. Current status (2026-06-01)
+## 4. Current status (2026-06-21)
+
+### Rust crate footprint (measured from tree, 2026-06-21)
+
+| Crate | `.rs` | LOC | Covers |
+|---|---|---|---|
+| rtl-strings | 22 | 15,907 | unicode/nls/dos8dot3/sid/acl/sd/priv/tz/env/sec/res/thr/prc/atom/path (the `Rtl*` API bodies) |
+| rtl-actctx | 5 | 7,692 | actctx.c (SxS activation contexts) |
+| rtl-difftest | 3 | 5,504 | byte-diff fuzz harness (host-only, not linked) |
+| rtl-heap | 4 | 4,772 | heap.c + heapdbg.c |
+| rtl-threadpool | 6 | 4,146 | threadpool.c / timerqueue.c / workitem.c |
+| rtl-except | 12 | 3,192 | per-arch exception/unwind tail (i386/amd64/arm64) |
+| rtl-sync | 9 | 2,957 | critical/wait/srw/condvar/runonce/locale |
+| rtl-diag | 12 | 2,372 | image/debug/assert/trace/message/exception/wine_debug/… |
+| rtl-misc | 5 | 2,359 | registry/res/memstream |
+| rtl-heappage | 2 | 2,352 | heappage.c |
+| rtl-error | 3 | 2,188 | error.c |
+| rtl-rxact | 1 | 658 | rxact.c |
+| rtl-sysvol | 1 | 632 | sysvol.c |
+| rtl-rangelist | 1 | 561 | rangelist.c |
+| rtl-ppb | 1 | 352 | ppb.c |
+| rtl-version | 1 | 332 | version.c |
+| rtl-bootdata | 1 | 255 | bootdata.c |
+| rtl-propvar | 1 | 184 | propvar.c |
+| rtl-heapuser | 2 | 143 | heapuser.c |
+| rtl-rust (umbrella) | 1 | 96 | re-exports the algorithm rlibs + cabi feature wiring |
+| rtl-vista-rust | 1 | 26 | vista stub crate |
+| **TOTAL** | **94** | **56,680** | (rtl-difftest is host-test-only; algorithm rlibs counted in static-libs audit) |
 
 ### Flipped to Rust (rtl-strings cabi) — cohabitation-commented in CMakeLists
 
@@ -151,16 +195,24 @@ tracked in `static-libs-translation-audit.md`.)
 | image.c | — | shared PE format primitives (`RtlImageNtHeader`, …). **NOW Rust → `rtl-diag/src/image.rs`** (C-variadic shims in `dbgprint_variadic.c`). |
 | misc remainder | — | bootdata, generic small files. **NOW Rust** (`rtl-bootdata`, `rtl-misc`, etc.). |
 
-### Boot state (amd64, with the PATH flip + this session's 3 fixes)
+### Boot state
 
-> **Point-in-time snapshot (2026-06-01); the services.exe-hang described below is a state of that session, not current HEAD.**
+> **RESOLVED — all three arches boot green on mainline (2026-06-21).** The
+> rtl flip (path.c + the full surface) is fully landed; i386/amd64/arm64 each
+> reach the desktop (`shell ready`) in smoke. The amd64 `services.exe` init
+> hang recorded below was a **2026-06-01 point-in-time state of the
+> `rtl-priv-port` session** — it has since been cleared (the deeper amd64 boot
+> stalls were the timer-base skew + scsiport LUNEX/find-loop bugs, root-caused
+> in unrelated lanes, not an rtl defect). The snapshot is kept for history.
 
-`./vibeos-cli smoke --arch amd64` reaches **`[WIN32K] shell ready`** — the
-full kernel → smss → csrss → win32k chain boots with path.c live. Winlogon
-then starts, switches desktop, and launches `services.exe`, which **hangs
+> **Point-in-time snapshot (2026-06-01); the services.exe-hang described below is NO LONGER current — see above.**
+
+`./vibeos-cli smoke --arch amd64` reached **`[WIN32K] shell ready`** — the
+full kernel → smss → csrss → win32k chain booted with path.c live. Winlogon
+then started, switched desktop, and launched `services.exe`, which **hung
 during init** (PID 128 loading apphelp/setupapi/newdev; no msgqueue spam;
-clean hang) → smoke verdict `HANG_TIMEOUT`. **This is the current amd64
-blocker.** i386 and arm64 **not yet re-validated** with the 3 fixes.
+clean hang) → smoke verdict `HANG_TIMEOUT`. **This was the 2026-06-01 amd64
+blocker (now cleared).**
 
 ---
 
@@ -229,29 +281,33 @@ are all-arch:
 
 ## Open issues / debt
 
-- **amd64 services.exe init hang** (current blocker, this session). Boot
-  reaches `shell ready` + winlogon; `services.exe` hangs loading
-  apphelp/setupapi/newdev. Next: attach to PID 128, find the blocking
-  syscall/path/registry call.
-- **i386 + arm64 not re-validated** with the 3 PATH-wave fixes. All three fixes
-  are all-arch (FIX#1 kernel libsupp, FIX#2/#3 cabi). Note i386
-  `RtlInitializeContext` has a different ABI/arg contract — re-verify FIX#2
-  there before claiming green.
+The rtl flip is complete and green on mainline; remaining items are quality/cleanup,
+not blockers.
+
+- ~~**amd64 services.exe init hang**~~ — **RESOLVED** (2026-06-01 point-in-time state;
+  cleared on mainline — see Boot state above).
+- ~~**i386 + arm64 not re-validated** with the 3 PATH-wave fixes~~ — **RESOLVED:**
+  all three arches boot green to `shell ready`/desktop on mainline.
 - **amd64 SD-wave msgqueue.split2.c:87 spam** (pre-PATH) — diff-coverage gap,
-  needs `--timeout 600`; extend `mk_relative_sd`/`mk_absolute_sd`.
-- **i386 idle-cpu regression** on continue-rust-port HEAD — pre-existing,
-  bisect-owed, **unrelated** to any rtl wave (verified via stash revert).
-- ~~`registry.c`, `image.c`, `heap.c` family remain C~~ — **RESOLVED 2026-06-14:
-  all flipped to Rust** (registry → `rtl-misc`, image → `rtl-diag`, heap family
+  needs `--timeout 600`; extend `mk_relative_sd`/`mk_absolute_sd`. (Cosmetic/coverage,
+  not a boot blocker.)
+- ~~`registry.c`, `image.c`, `heap.c` family remain C~~ — **RESOLVED:**
+  all flipped to Rust (registry → `rtl-misc`, image → `rtl-diag`, heap family
   → `rtl-heap`/`rtl-heappage`/`rtl-heapuser`). Only the irreducible
   variadic-glue + per-arch asm floor is C now (see top marker).
+- **Irreducible C floor (by design, not debt):** `dbgprint_variadic.c` (180 LOC,
+  C-variadic trampolines) + `rtl_vista_stub.c` (17 LOC) + ~2.35K LOC per-arch asm.
+  These back the Rust crates over an FFI boundary and are not slated for translation.
+- **Quality / Stage-3 idiomation** of the landed crates (Result+Drop-RAII) is the
+  remaining frontier, tracked with the broader translation effort — not rtl-specific.
 
 ---
 
 ## Conventions (must-follow)
 
-- **Worktree path discipline** — all edits use the
-  `vibeos-wt-rtl-priv/...` absolute path; repo-root paths leak into main.
+- **Worktree path discipline** — when reopening rtl work in a dedicated worktree,
+  prefix every edit with that worktree's absolute toplevel; bare repo-root paths
+  leak into the shared main checkout. (The original `rtl-priv-port` lane is closed.)
 - **Never revert a `.rs` to C** to pass a build/smoke; **never delete a
   translated `.rs`** without explicit approval; a broken-but-integrated
   translation visible in smoke is the correct state (see AGENTS.md).

@@ -1,6 +1,44 @@
 # Win32k C→Rust Translation Audit
 
-> **Ground-truth re-verified 2026-06-14** against `win32ss/CMakeLists.txt` + on-disk `.rs`: BOTH halves are fully flipped — all 59 `user/ntuser/*.c` are commented `# replaced by Rust … cohabitation` (only `main_rust_shims.c` stays active = irreducible syscall tables); GDI (ntgdi+eng+dib) and DirectDraw (reactx/ntddraw, all 9 .c) are 100% flipped. The only active C is irreducible glue: 5 `*_rust_shims.c`, `main_rust_shims.c`, i386 `floatobj.c`/`floatobj.S` + i386 dib `.s`, gendib generated tables, and the dead `USE_DIBLIB` path (`dib_new.c`/`bitblt_new.c`, FALSE — not compiled). The "USER 3/59" snapshot in the older sections below is corrected inline.
+> **Translation: ~99% of win32k.sys (kernel-mode body) — DONE.**
+> *Methodology:* win32k.sys is the cargo-driven Rust body
+> `win32k-rust` (**166 `.rs` files, ~256K LOC**, all 3 arches) plus a thin
+> C-residue static archive (`win32k_residue`). The "~1%" that is still C is
+> **irreducible glue, not subsystem code** — 5 `*_rust_shims.c` (cdecl
+> wrappers for FORCEINLINE/macro helpers + the `Win32kSSDT`/`Win32kSSPT`
+> syscall dispatch tables), the i386-only `gdi/eng/i386/floatobj.c` +
+> i386 dib hand-asm (kernel-mode lacks SSE, stays asm by design), the
+> `native-gendib`-generated DIB tables, and the dead `USE_DIBLIB`
+> `dib_new.c`/`bitblt_new.c` (FALSE → never compiled). Every translatable
+> `.c`/`.cpp` leaf is gone. Smoke green ×3 (i386/amd64/arm64 → `shell ready`/desktop).
+
+> **2026-06-21 — MAJOR LANDINGS (this doc was stale before today):**
+> 1. **Superseded C tree RETIRED** (commit `8d3c33ee41e`, "win32k.sys:
+>    retire superseded kernel-mode C tree — Rust-only (179 files)"): the
+>    147 superseded `.c`/`.cpp` originals (gdi/ntgdi 38, gdi/eng 37, gdi/dib
+>    12, user/ntuser 59 + brush.cpp) + 32 orphan pretranslation `*.split*.c`
+>    fragments were **deleted from disk**. The old `# replaced by Rust`
+>    lines in `win32ss/CMakeLists.txt` are now historical comments pointing
+>    at files that no longer exist — they are no longer a live cohabitation
+>    fallback. Binary-neutral by construction (every retired file was
+>    already commented out of SOURCE).
+> 2. **win32k.sys is now CARGO-DRIVEN** — `add_cargo_module(win32k
+>    win32k-cargo win32k.sys KIND kernelmodedriver BODY_CRATES
+>    win32k-kernel-rust win32k-rust …)` replaced the old
+>    `add_library(win32k MODULE)` + `set_module_type(kernelmodedriver)`.
+>    The Rust body links via the reactos-link engine; the remaining C is
+>    compiled by cmake into the `win32k_residue` STATIC archive (same tier
+>    as `libhal.a`/`libcmlib.a`), placed FIRST in the cargo link's
+>    `--start-group` so first-match precedence is preserved. The cargo link
+>    is byte-identical to the old MODULE link. (Part of the repo-wide
+>    cmake-off / cargo-orchestrate effort — see git log `cmake-off`.)
+>
+> Earlier ground-truth (now superseded by the retirement above, kept for
+> history): BOTH halves were fully flipped via cohabitation — all 59
+> `user/ntuser/*.c`, GDI (ntgdi+eng+dib), and DirectDraw (reactx/ntddraw)
+> commented `# replaced by Rust`. As of 2026-06-21 those C files are
+> deleted, not merely commented out. The "USER 3/59" snapshot in the older
+> sections below is long obsolete (corrected inline).
 
 > **2026-06-14 — MILESTONE: win32k.sys default-build body is 100% Rust**
 > (commit translating `safe_user_io.c` → `safe_user_io.rs`, cold `--clean` smoke
@@ -54,15 +92,18 @@
 > **Cold `--clean` smoke GREEN ×3 (i386/amd64/arm64 — ✓ staleness ✓ boot).**
 > ~~win32k.sys now has **4 live C files**: `safe_user_io.c`,
 > `user/rtl/{image,text}.c`, `gdi/dib/dib_new.c`.~~
-> **CORRECTED 2026-06-17 (rollup ground-truth):** all four are now
-> `# replaced by Rust` in `win32ss/CMakeLists.txt` — none are live. The only
-> active C is irreducible glue (see the 2026-06-14 header at top: `*_rust_shims.c`,
-> `main_rust_shims.c`, i386 `floatobj.c`, gendib tables; `dib_new.c` is the dead
-> `USE_DIBLIB=FALSE` path, not compiled).
+> **CORRECTED 2026-06-17:** none of the four were ever live (all
+> `# replaced by Rust`). **FINAL 2026-06-21:** `safe_user_io.c` and
+> `user/rtl/{image,text}.c` were **deleted from disk** in the C-tree
+> retirement (`8d3c33ee41e`) — their `# replaced by Rust` comments survive
+> only as history. `dib_new.c` survives on disk only as the dead
+> `USE_DIBLIB=FALSE` branch (never compiled). The only active C is
+> irreducible glue (see the top header: `*_rust_shims.c`,
+> `main_rust_shims.c`, i386 `floatobj.c`, gendib tables).
 
 > **SUPERSEDED 2026-06-09 / re-verified 2026-06-14 — the ntuser flip is now COMPLETE: all 59 `user/ntuser/*.c` are cohabitation-commented in `win32ss/CMakeLists.txt`; the "3/59" counts below are the obsolete 2026-06-04 snapshot, kept only for history.**
 
-Last updated **2026-06-04** *(status re-verified 2026-06-14)*. **Status:
+Last updated **2026-06-21** *(re-measured from tree; major C-tree-retirement + cargo-driven-link landings folded in)*. **Status:
 Phase 1 (handle tables) DONE; Phase 2 (GDI half) ✅ DONE — the entire GDI
 half (ntgdi + eng + dib) is Rust and smoke-green ×3; Phase 3 (USER half)
 ✅ DONE — all 59 ntuser files flipped (was "3/59" at the 2026-06-04
@@ -130,15 +171,20 @@ and are now annotated/superseded where they disagree.
 
 | Metric | Value |
 |---|---|
-| Rust modules in `win32k-rust/src/` | **166** (`.rs` on disk, 2026-06-14) |
-| Rust LOC | **~140,000+** |
-| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **all subsystem C** — only irreducible glue stays active |
+| Rust modules in `win32k-rust/src/` | **166** (`.rs` on disk, re-measured 2026-06-21) |
+| Rust LOC | **~256,000** (`win32k-rust/src/**/*.rs`) |
+| Subsystem C remaining | **0** — all translatable `.c`/`.cpp` deleted from disk (`8d3c33ee41e`) |
+| Active glue C (`win32k_residue` archive) | 5 `*_rust_shims.c` + i386 `floatobj.c` + i386 asm + gendib tables (dead `USE_DIBLIB` `*_new.c` not compiled) |
+| Link | **cargo-driven** (`add_cargo_module win32k`); C residue = `win32k_residue` STATIC, first in `--start-group` |
+| Binary size (i386) | **~1.9 MB** (was 16.9 MB pre cargo-link) |
 | Smoke status | **green ×3** (i386/amd64/arm64), 0 unexpected ud2 |
 
-Flipped by subsystem (re-verified against cmake 2026-06-14): **gdi/eng
+Flipped by subsystem (re-verified against cmake + disk 2026-06-21): **gdi/eng
 100%, gdi/dib 100%, gdi/ntgdi 100%, reactx/ntddraw 100% (all 9 .c),
-user/ntuser 100% — all 59 .c commented `# replaced by Rust … cohabitation`,
-only `main_rust_shims.c` (syscall dispatch tables) stays active.**
+user/ntuser 100% — all 59 .c flipped, brush.cpp flipped. As of
+2026-06-21 the C originals are DELETED (no longer cohabitation comments);
+only `main_rust_shims.c` (syscall dispatch tables) + the 4 GDI
+`*_rust_shims.c` + i386 floatobj/asm + gendib tables remain as glue.**
 
 ### Phase status (vs the original plan)
 
@@ -360,12 +406,15 @@ straight into the USER half.
 
 ## Today's win32k.sys
 
-The kernel-mode binary alone:
+The kernel-mode binary alone (these were the pre-cargo-link MODULE sizes;
+the current cargo-driven Rust body is much smaller — i386 is ~1.9 MB as
+of 2026-06-21):
 
 ```
-build-i386/win32ss/win32k.sys      16.9 MB
-build-amd64/win32ss/win32k.sys     17.9 MB
-build-arm64/win32ss/win32k.sys     17.6 MB
+build-i386/win32ss/win32k.sys      ~1.9 MB   (cargo-driven, 2026-06-21)
+                                   (was 16.9 MB under add_library MODULE)
+build-amd64/win32ss/win32k.sys     17.9 MB   (pre-cargo figure)
+build-arm64/win32ss/win32k.sys     17.6 MB   (pre-cargo figure)
 ```
 
 Source layout:
@@ -415,26 +464,33 @@ win32ss/
 
 **Win32k.sys composition** (what actually compiles into the .sys):
 
-*(Translation-status column re-verified against cmake 2026-06-14.)*
+*(Translation-status column re-verified against cmake + disk 2026-06-21.
+"flipped + deleted" = the C original was retired from disk by
+`8d3c33ee41e`; the Rust `.rs` is the sole implementation.)*
 
-| Component | LOC C | Files | Status (2026-06-14) |
+| Component | LOC C (orig) | Files | Status (2026-06-21) |
 |---|---:|---:|---|
-| `gdi/ntgdi/` | 41,471 | 39 | ✅ flipped (Phase 2) |
-| `gdi/eng/` | 19,192 | 40 | ✅ flipped (Phase 2; i386 `floatobj.c` stays C by design) |
-| `gdi/dib/` | 5,426 | 13 | ✅ flipped (Phase 2; i386 `.s` + dead `dib_new.c` stay C) |
-| `user/ntuser/` | 73,166 | 59 | ✅ flipped (Phase 3; only `main_rust_shims.c` syscall tables active) |
-| `reactx/ntddraw/` | 3,193 | 9 | ✅ flipped (all 9 .c → `ntddraw_*.rs`, DirectDraw flip) |
-| `reactx/dxg/` | 1,884 | 9 | ⬜ STILL C — separate `dxg.sys` MODULE (`reactx/dxg/CMakeLists.txt`), NOT part of win32k.sys; all 9 .c uncommented. Out of the win32k.sys core. |
-| `gdi/ntgdi/brush.cpp` | 605 | 1 (C++) | ✅ flipped (one-off, wave 23) |
-| **win32k.sys total** | **~145K** | **170** | — |
+| `gdi/ntgdi/` | 41,471 | 39 | ✅ flipped + **deleted** (i386 `floatobj.*` excepted; 4 `*_rust_shims.c` glue remain) |
+| `gdi/eng/` | 19,192 | 40 | ✅ flipped + **deleted** (i386 `floatobj.c` stays C by design) |
+| `gdi/dib/` | 5,426 | 13 | ✅ flipped + **deleted** (i386 `.s` stays; dead `dib_new.c` not compiled) |
+| `user/ntuser/` | 73,166 | 59 | ✅ flipped + **deleted** (only `main_rust_shims.c` syscall tables remain) |
+| `reactx/ntddraw/` | 3,193 | 9 | ✅ flipped → `ntddraw_*.rs` (DirectDraw flip; subdir cmake) |
+| `reactx/dxg/` | 1,884 | 9 | ⬜ STILL C — separate `dxg.sys` MODULE (`reactx/dxg/CMakeLists.txt`), NOT part of win32k.sys. Out of the win32k.sys core. |
+| `gdi/ntgdi/brush.cpp` | 605 | 1 (C++) | ✅ flipped + **deleted** (one-off, wave 23) |
+| **win32k.sys total** | **~145K** | **170** | **0 translatable C left** |
 
 Plus sys-stubs.S (auto-generated syscall table from `w32ksvc{32,64}.h`)
 and the i386-only `gdi/eng/i386/floatobj.S` + `gdi/dib/i386/dib*_hline.s`
 fixed-point asm (~6 files, small).
 
-**Build artifact:** single `win32k.sys` (kernelmodedriver). Imports:
-`ntoskrnl`, `hal`, `ftfd` (FreeType font driver). Links: `${PSEH_LIB}`,
-`dxguid`, `libcntpr` (kernel-mode CRT subset).
+**Build artifact:** single `win32k.sys` (kernelmodedriver), now produced by
+the **cargo-driven link** (`add_cargo_module(win32k …)`, BODY_CRATES
+`win32k-kernel-rust win32k-rust`) — *not* `add_library(win32k MODULE)` any
+more. The still-C remainder compiles into the `win32k_residue` STATIC
+archive that the cargo link reuses (placed first in `--start-group` for
+first-match precedence). Imports: `ntoskrnl`, `hal`, `ftfd` (FreeType font
+driver). EXTRA_DEPENDS: `win32k_residue ${PSEH_LIB} dxguid libcntpr chkstk
+rust_cnt memcmp`.
 
 ## Today's smoke coverage
 
@@ -642,7 +698,16 @@ the user-side call.
 > the proven tree. **win32k follows the same cohabitation pattern.**
 > The cdylib/custom-target section below is superseded.
 
-### Corrected: cohabitation staticlib (proven — ntoskrnl-rust/hal-rust)
+### Corrected: cohabitation staticlib → cargo-driven link (current 2026-06-21)
+
+> **Final shape (2026-06-21):** win32k.sys is now built by
+> `add_cargo_module(win32k win32k-cargo win32k.sys KIND kernelmodedriver
+> BODY_CRATES win32k-kernel-rust win32k-rust …)` — the reactos-link engine
+> builds the Rust body and links the binary directly, replacing the old
+> `add_library(win32k MODULE)` + `set_module_type`. The C cohabitation
+> phase (below) is complete and the C originals are deleted; the only C
+> left compiles into the `win32k_residue` STATIC archive the cargo link
+> reuses. Historical cohabitation mechanics retained below.
 
 `sdk/lib/rust/win32k-rust/` is an **rlib** pulled into a staticlib
 umbrella (mirror `kernel-rust`/`hal-rust`): `crate-type=["rlib"]`,
@@ -858,9 +923,14 @@ Mirroring the HAL/FreeLDR audits' forward-path shape:
    deep core flipped anyway — confirm whether the typestate API actually
    landed or whether the core was translated without it. -->.
 9. **Per-arch verification.** All 3 arches green on smoke. **Continuous.**
-10. **Cleanup.** Retire the C `win32ss/` kernel-mode tree; flip the
-    `--allow-multiple-definition` cohabitation to Rust-only. Confirm the
-    stale `device.rs` "FAILING" cmake annotation is downgraded. **1 session.**
+10. ~~**Cleanup.** Retire the C `win32ss/` kernel-mode tree; flip the
+    `--allow-multiple-definition` cohabitation to Rust-only.~~ **✅ DONE
+    2026-06-21** (`8d3c33ee41e`): 147 superseded `.c`/`.cpp` + 32 orphan
+    `*.split*.c` fragments deleted; `--allow-multiple-definition` is now
+    solely for Rust-internal dups (`__chkstk`, panic personality), no
+    longer a C↔Rust crutch. Surviving C is only `*_rust_shims.c` + i386
+    `floatobj.c` + dead `USE_DIBLIB` `*_new.c`. Concurrently the link went
+    cargo-driven (`add_cargo_module`).
 
 **Remaining estimate: ~9–13 sessions** (Phase 1.5 ~2–3, Phase 3 USER
 ~6–9, cleanup ~1). The GDI half — the methodology bake-in — is **done**;

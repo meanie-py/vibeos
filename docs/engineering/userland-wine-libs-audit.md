@@ -11,6 +11,16 @@ already audited, *not* the done spine, and *not* vendored 3rd-party C libs
 module: role, LOC, origin (Wine / ReactOS-modified-Wine / native), completeness
 (full / stub / forwarder), problem points, difficulty, translate-verdict.
 
+**Translation: ~0% of this Wine tier (by design).** Methodology: this doc is the
+**deliberately-skipped** low-value tier (~1.23M LOC of Wine-imported code — translating
+it is re-doing CodeWeavers' work, not *our* OS). The only Wine-tier DLLs with a Rust
+crate are small utility ones already absorbed into the done spine: **cabinet** (DONE —
+`cabinet-rust`/`cabinet-cargo`, cohab flip) and **version** (DONE — `version-rust`,
+cohab flip; the once-"partial" note is now resolved → fully landed). **mlang** is also
+DONE (`mlang-cargo`, cargo-driven full-body link). An **mscms-rust** crate exists in
+the tree but is **not yet wired into the mscms link** (the mscms cmake has no Rust
+ref) — treat as in-progress, not landed. Everything else here remains C and should stay C.
+
 ## Methodology / canonical set
 
 Deterministic enumeration: every `.spec`-bearing module under `dll/` + `win32ss/`,
@@ -49,9 +59,14 @@ The exceptions below are the only things worth remembering.
 
 ### Already done / not built / no-op (remove from any "todo")
 - **cabinet — already Rust** (`cabinet-rust`/`cabinet-cargo`, cohab flip done). Not a candidate.
+- **version — DONE** (`version-rust`, cohab flip landed: the whole `version.c` body
+  GetFileVersionInfo*/VerQueryValue*/VerFindFile*/VerInstallFile* → Rust, cmake links
+  `libversion_rust.a`). No longer "partial."
+- **mlang — DONE** (`mlang-cargo`, cargo-driven full-body link replacing the win32dll C link).
+- **mscms** — `mscms-rust` crate exists but is **not yet wired** into the mscms link
+  (mscms cmake has no Rust ref); in-progress, not landed.
 - **kernelbase/wine (41K) — NOT BUILT.** `#add_subdirectory(wine)` is commented out
   ("ReactOS isn't ready for Kernelbase.dll"). Dormant dead source — ignore entirely.
-- **version** — has a partial existing Rust effort (`version-rust`, per git history).
 - Pure **stubs/forwarders** (nothing to translate): the RAS family (rasapi32 has 63
   stubs, rasdlg/rasman/mprapi), crtdll + msvcrt40 (forward to msvcrt), dpnhpast
   (85-LOC no-op), initpki/mscat32/mssign32/mssip32/sccbase/slbcsp/cryptdll, and a
@@ -200,8 +215,8 @@ Performance-counter ini loader (LoadPerfCounterTextStrings). Wine, mostly stub. 
 ### dll/win32/mapi32 (4782 LOC)
 Simple MAPI (mail) + util functions. Wine. Real util.c/prop.c logic but leaf email API, no boot relevance. Verdict: skip.
 
-### dll/win32/mscms (2681 LOC)
-Color Management System (ICC profiles, WCS). Pure Wine (Hans Leidekker — despite the audit-brief flag, header says "MSCMS … for Wine", not native). Leaf imaging API. Verdict: skip.
+### dll/win32/mscms (2681 LOC) 🔄 crate exists, not wired
+Color Management System (ICC profiles, WCS). Pure Wine (Hans Leidekker — despite the audit-brief flag, header says "MSCMS … for Wine", not native). Leaf imaging API. **An `mscms-rust` crate exists in the tree but the mscms cmake has no Rust ref yet (not linked).** Verdict: skip / in-progress (low value).
 
 ### dll/win32/msimg32 (37 LOC, 5 exports)
 GradientFill/TransparentBlt/AlphaBlend forwarders to gdi32. Wine, trivial forwarder. Verdict: skip.
@@ -254,8 +269,8 @@ Telephony API client. Wine. Leaf TAPI. Verdict: skip.
 ### dll/win32/url (128 LOC, 21 exports)
 URL invocation helper (InetIsOffline etc.). Wine, stub forwarder to shdocvw/shell. Verdict: skip.
 
-### dll/win32/version (1687 LOC)
-Version-resource API (GetFileVersionInfo/VerQueryValue). Upstream-Wine-derived (Marcus Meissner et al.) but **widely used** (installers, loader, shell). Real impl. *(Note: a separate Rust `version` effort exists per repo history — git log mentions "version-rust"; check before scoping.)* Verdict: borderline — already partially addressed in Rust; LOW remaining.
+### dll/win32/version (1687 LOC) ✅ DONE
+Version-resource API (GetFileVersionInfo/VerQueryValue). Upstream-Wine-derived (Marcus Meissner et al.) but **widely used** (installers, loader, shell). **Fully translated → `version-rust` (1 .rs / ~2.8K LOC); `version.c` cohab-disabled, cmake links `libversion_rust.a`.** Verdict: DONE — not a candidate.
 
 ### dll/win32/vssapi (113 LOC, 85 exports)
 Volume Shadow Copy API. Wine, stub (85 exports, 113 LOC). Verdict: skip.

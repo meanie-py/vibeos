@@ -1,21 +1,43 @@
 # Static-Lib Translation Audit (cargo drive)
 
-> **Ground-truth re-verified 2026-06-15** against `sdk/lib/rust/*-cargo/build.rs`
+> **Translation/cmake-off: ~100% (methodology: per-lib, against the live tree).**
+> The kernel `static_libs` vec in `ntoskrnl-cargo`/`ntkrnlmp-cargo build.rs` is now
+> **EMPTY** (re-verified 2026-06-21 — the `vec![…]` block is comment-only); the
+> cargo-driven `ntoskrnl.exe`/`ntkrnlmp.exe` link references **zero cmake-built `.a`**.
+> Every cargo-linked kernel-mode and user-mode-spine module reaches its entire C/asm
+> floor via Rust (`.rust_lib`), in-cargo `c_from_compile_db` (irreducible C variadics),
+> `asm_archive` (irreducible asm), or `.import_lib` (hal/kdcom/bootvid). The only
+> cmake-built `.a` still reused on *any* cargo link line is the bootloader floor
+> (uefildr/rosload) + a couple of tiny GUID/uuid data libs (libuuid). **The remaining
+> "debt" is cargo-native floor-cleanup (variadic shells / asm leaves), not C→Rust
+> translation.** Global fresh facts (2026-06-21): Rust body = 1,992 `.rs` / ~2.87M LOC
+> / 207 crates; 594 cohab markers. **The staticlibs/cargo-drive cmake-off arc is
+> COMPLETE this session: kernel + the 13-module spine + 25/25 cohab drivers + win32k
+> are all cmake-off byte-equivalent (landed on mainline); `tools/cargo_orchestrate.py`
+> (target cells + `--spine`, builds each PE cargo-native and post-links it
+> byte-equivalent to the cmake archive) is productionized.**
+>
+> **Ground-truth re-verified 2026-06-21** against `sdk/lib/rust/*-cargo/build.rs`
 > + CMakeLists + code. **CORRECTION (supersedes the 2026-06-14 banner): cmlib is
 > NOT in the arm64-gated set — the kernel cmlib body is 100% Rust on ALL three
 > arches.** cmlib's cmake target REMOVE_ITEM's all 13 `.c` → a placeholder TU on
 > every arch (`sdk/lib/cmlib/CMakeLists.txt:28-59`) and `build.rs` links
 > `cmlib-rust` **unconditionally** (`ntoskrnl-cargo/build.rs:282`). The C-free
 > clean build is exactly what exposed (then fixed) the `write_bytes`
-> element-vs-byte APC bug — see `cmlib-apc-bugcheck-handoff.md` (RESOLVED
-> 2026-06-11); i386+amd64 boot C-free.
+> element-vs-byte APC bug (RESOLVED 2026-06-11); i386+amd64 boot C-free.
 >
-> The genuinely arm64-gated set is the OTHER **five** deep-C cohab libs —
-> **cportlib / csq / arbiter / lsalib / rossym**. **✅ x86 UNGATE DONE — landed
-> `bacd1fc64d3` (c-r-p + master), ×3-green full-from-scratch cold (2026-06-18).**
-> The gate is now `aarch64 || x86 || x86_64` (`ntoskrnl-cargo`/`ntkrnlmp-cargo`
-> build.rs), so all 5 `libX_rust.a` link into the kernel on i386/amd64/arm64 and
-> the bundled C bodies are dropped. The blocker was NEVER the suspected cmlib
+> **✅ #35 WALL FULLY DISSOLVED (re-verified 2026-06-21).** The five deep-C cohab
+> libs — **cportlib / csq / arbiter / lsalib / rossym** — are no longer gated *or*
+> cmake-built on any arch: the kernel `build.rs` now pulls them as cargo-native
+> `.rust_lib("cport-rust"/"csq-rust"/"arbiter-rust"/"lsalib-rust"/"rossym-rust")`
+> uniformly across i386/amd64/arm64 (`ntoskrnl-cargo`/`ntkrnlmp-cargo build.rs`
+> ~lines 323-327). This **supersedes** the earlier x86-ungate (`bacd1fc64d3`, the
+> `aarch64 || x86 || x86_64` gate that re-added the cmake `libX_rust.a` on x86) —
+> that whole block is gone (commit `e8765d21008`, 2026-06-20, ×3-green incl. amd64
+> cold), and both halves of each cohab dropped from `static_libs` (5 empty C-body
+> stub `.a` + 5 cmake-built `libX_rust.a`). The cmlib-rust no-prepopulate class-guard
+> survived the layout shift (0 hivewrt failures, amd64 cold ✓boot ✓net). The blocker
+> was NEVER the suspected cmlib
 > "layout-sensitive miscompile" on the `Hv*` hive-write path — that was a
 > red herring. The real blocker: an **i386 stdcall/cdecl ABI mismatch** in cmlib
 > `cmcheck.rs`/`cmheal.rs` (CMAPI fns `HvMarkCellDirty`/`HvIsCellAllocated`/
@@ -30,8 +52,7 @@
 > `cmlib-rust --features bldr` (the `-D_BLDR_` read-only surface) — the C
 > `blcmlib` is no longer linked by any loader (`da9c72b240d`, 2026-06-11; the
 > cmake `blcmlib` target is vestigial). So **cmlib is 100% Rust end-to-end —
-> kernel AND loader, all 3 arches**. (`cmlib-loader-swap-handoff.md` is stale; it
-> still says OPEN.) The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
+> kernel AND loader, all 3 arches**. The fs-drivers btrfs/ext2/ntfs + fslibs were deleted
 > (`14a0563b291`) — this doc never referenced them, so no correction needed.
 > No softfloat gap: the libcntpr float/printf/scanf core is already Rust.
 
@@ -76,7 +97,14 @@ non-Rust floor. In rough order of "most cmake-coupled" → "least":
 A lib is "done" only when every consumer reaches it via (5) — Rust. (2)–(4)
 remove the *prebuilt-`.a`* coupling but are still C/asm = **translation debt**.
 
-## Where we are (2026-06-13)
+## Where we are (2026-06-13 → 2026-06-21)
+
+**2026-06-21 status:** the cmake-off arc is COMPLETE — the kernel `static_libs` vec
+is EMPTY (both `ntoskrnl-cargo` and `ntkrnlmp-cargo`), and the spine + 25/25 cohab
+drivers + win32k are all cmake-off byte-equivalent and landed on mainline. The
+historical narrative below (from the 2026-06-13 fleet-wide-cutover refresh) is kept
+as the record of how each lib got there; the per-row "Status" cells were re-verified
+2026-06-20/21.
 
 The cargo drive is now **fleet-wide**: 43 `*-cargo` modules (kernel ×2, hal,
 ntdll ×2, the csr/spine exes, win32k, the boot loaders, the KD transports, and
@@ -257,7 +285,8 @@ translation for the "all-Rust, no-headers" endpoint:
 4. ✅ **step 8 — libcntpr i386 float tail**: DONE 2026-06-13 for **classpnp** —
    it dropped `liblibcntpr.a` entirely (no C residue needed; cnt-rust-lib +
    compiler-builtins cover it). The other 11 `liblibcntpr.a` consumers remain.
-5. **Kernel deep-C** (arbiter/csq/ntlsalib/rossym/…): per-lib translation arcs.
+5. ✅ **Kernel deep-C** (arbiter/csq/ntlsalib/rossym/cmlib/…): DONE — all
+   cargo-native `.rust_lib`; kernel `static_libs` is now EMPTY (2026-06-20/21).
 6. ✅ **msvcrtex CRT-startup → Rust**: DONE 2026-06-13 (crt-startup-rust +
    crt-dllmain-rust + crt0-rust; boot ×3). See the debt note above.
 
