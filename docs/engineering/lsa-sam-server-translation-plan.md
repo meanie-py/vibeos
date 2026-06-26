@@ -379,13 +379,21 @@ rotation not crypto) · `group.c` `SampAdd/RemoveMemberToGroup` · `utils.c` `Ap
   centrally; cohab flip; ×3 gate.
 
 **samsrv (after lsasrv patterns exist):**
-- **S0** — `samsrv-sys` (bindgen `sam_s.h`) + `sam-stub` + the 3 `SystemFunctionXXX` FFI +
-  `SAM_*_FIXED_DATA` `#[repr(C)]` + size-asserts + the lone DUMMY_PSEH fix (`database.c:309`).
-- **S1** — pure fuzz crates (`samsrv-difftest`): user.c/group.c/utils.c/domain.c packers +
-  security.c SD builders.
-- **S2** — registry.c + database.c (I/O boundary).
-- **S3** — fan out `samrpc.c` 68 methods in batches; setup.c + ~90 spec stubs (mechanical) last.
-- **S4** — cohab flip; ×3 gate.
+- **S0** — ✅ DONE: `samsrv-sys` (bindgen). `sam-stub` built in S1.
+- **S1** — ✅ DONE (scaffolding, `f513f861ebc`): `sam-stub` (Rust samr RPC server stub replacing
+  sam_s.c — needed a `widl_to_rust.py` expr-eval fix for SAMPR_LOGON_HOURS: multi-word scalar
+  view fields + pointer-tail + paren-aware/division/u32-normalized arithmetic + `->`-arrow guard)
+  + `samsrv-rust` crate skeleton + CMake cohab wiring. ×3-link-verified. (Pure-fuzz difftest crates
+  deferred — boot gate is the parity oracle.)
+- **S2/S3** — ✅ DONE: ALL 12 .c → Rust (Opus translate, ~$7.39). Wave 1 = 11 leaf/support files
+  (`dc51f14d1a6`, ~960→0 ×3); Wave 2 = `samrpc.c` 68-method fan-out (`1e5ffcb7d4e`, 816→0 ×3).
+  No stubs beyond the C's own ~15 thin STATUS_NOT_IMPLEMENTED; preserved security.c DaclSize/Sacl
+  latent bug + SetInfo password FIXME + database.c lone _SEH2 (dead under DUMMY_PSEH).
+- **S4** — ✅ cohab-flipped (`fe464460015`): all 12 .c out of CMakeLists; samsrv.dll bodies fully
+  Rust. Links clean ×3 (i386 276K / amd64 297K / arm64 291K, 0 undefined). Link-gap ABI fixes:
+  uppercase MIDL_user_*@4 defs (Rust stub has no `#define`), SAMPR_HANDLE_rundown + 4 Samr methods
+  extern "C"→system, SampRegQueryValue system→C, RegSetValueEx→W. **i386 boot-verify + ×3 cold gate
+  = remaining.** ⇒ **whole LSA/SAM server spine (lsasrv 16/16+RPC + samsrv 12/12+RPC) is Rust.**
 
 **Model/loop:** the proven msgina pipeline — guarded rustconv (worktree-pinned `PYTHONPATH`),
 **DeepSeek-first + c2rust anchoring**, Sonnet fallback, wine traces behind the `wine_debug`
