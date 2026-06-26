@@ -343,9 +343,9 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
                 core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>() as SIZE_T,
             );
 
-            SetupPacket.bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
-            SetupPacket.bmRequestType.Type = BMREQUEST_STANDARD;
-            SetupPacket.bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
+            SetupPacket.bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE);
+            SetupPacket.bmRequestType.set_Type(BMREQUEST_STANDARD);
+            SetupPacket.bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE);
             SetupPacket.bRequest = USB_REQUEST_SET_INTERFACE;
             SetupPacket.wValue.W = (*InterfaceInfo).AlternateSetting as USHORT;
             SetupPacket.wIndex.W = (*InterfaceInfo).InterfaceNumber as USHORT;
@@ -2466,9 +2466,9 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //     {
 //         RtlZeroMemory(&SetupPacket, sizeof(SetupPacket));
 //
-//         SetupPacket.bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
-//         SetupPacket.bmRequestType.Type = BMREQUEST_STANDARD;
-//         SetupPacket.bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
+//         SetupPacket.bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE);
+//         SetupPacket.bmRequestType.set_Type(BMREQUEST_STANDARD);
+//         SetupPacket.bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE);
 //         SetupPacket.bRequest = USB_REQUEST_SET_INTERFACE;
 //         SetupPacket.wValue.W = InterfaceInfo->AlternateSetting;
 //         SetupPacket.wIndex.W = InterfaceInfo->InterfaceNumber;
@@ -3318,7 +3318,7 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //     RtlZeroMemory(DeviceDescriptor, USB_DEFAULT_MAX_PACKET);
 //     RtlZeroMemory(&SetupPacket, sizeof(USB_DEFAULT_PIPE_SETUP_PACKET));
 //
-//     SetupPacket.bmRequestType.Dir = BMREQUEST_DEVICE_TO_HOST;
+//     SetupPacket.bmRequestType.set_Dir(BMREQUEST_DEVICE_TO_HOST);
 //     SetupPacket.bRequest = USB_REQUEST_GET_DESCRIPTOR;
 //     SetupPacket.wValue.HiByte = USB_DEVICE_DESCRIPTOR_TYPE;
 //     SetupPacket.wLength = USB_DEFAULT_MAX_PACKET;
@@ -3381,10 +3381,10 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //
 //     if (TtExtension && TtDeviceHandle)
 //     {
-//         SetupPacket.bmRequestType.Recipient = BMREQUEST_TO_OTHER;
+//         SetupPacket.bmRequestType.set_Recipient(BMREQUEST_TO_OTHER);
 //         SetupPacket.bmRequestType.Reserved = 0;
-//         SetupPacket.bmRequestType.Type = BMREQUEST_CLASS;
-//         SetupPacket.bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
+//         SetupPacket.bmRequestType.set_Type(BMREQUEST_CLASS);
+//         SetupPacket.bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE);
 //
 //         /* Table 11-15.  Hub Class Requests */
 //         if (TtDeviceHandle == HubDeviceHandle)
@@ -3626,7 +3626,7 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //
 //     RtlZeroMemory(&SetupPacket, sizeof(USB_DEFAULT_PIPE_SETUP_PACKET));
 //
-//     SetupPacket.bmRequestType.Dir = BMREQUEST_DEVICE_TO_HOST;
+//     SetupPacket.bmRequestType.set_Dir(BMREQUEST_DEVICE_TO_HOST);
 //     SetupPacket.bRequest = USB_REQUEST_GET_DESCRIPTOR;
 //     SetupPacket.wValue.HiByte = Type;
 //     SetupPacket.wLength = (USHORT)*ConfigDescSize;
@@ -3964,7 +3964,7 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //         {
 //             RtlZeroMemory(&SetupPacket, sizeof(USB_DEFAULT_PIPE_SETUP_PACKET));
 //
-//             SetupPacket.bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
+//             SetupPacket.bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE);
 //             SetupPacket.bRequest = USB_REQUEST_SET_CONFIGURATION;
 //             SetupPacket.wValue.W = OldDeviceHandle->ConfigHandle->ConfigurationDescriptor->bConfigurationValue;
 //             SetupPacket.wIndex.W = 0;
@@ -3996,9 +3996,9 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 //                     {
 //                         RtlZeroMemory(&SetupPacket, sizeof(USB_DEFAULT_PIPE_SETUP_PACKET));
 //
-//                         SetupPacket.bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
-//                         SetupPacket.bmRequestType.Type = BMREQUEST_STANDARD;
-//                         SetupPacket.bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
+//                         SetupPacket.bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE);
+//                         SetupPacket.bmRequestType.set_Type(BMREQUEST_STANDARD);
+//                         SetupPacket.bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE);
 //
 //                         SetupPacket.bRequest = USB_REQUEST_SET_INTERFACE;
 //                         SetupPacket.wValue.W = InterfaceHandle->InterfaceDescriptor.bAlternateSetting;

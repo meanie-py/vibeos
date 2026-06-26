@@ -247,22 +247,22 @@ pub unsafe extern "system" fn USBPORT_DumpingSetupPacket(
 pub unsafe extern "system" fn USBPORT_DumpingURB(mut Urb: PURB) {
     let mut SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET;
 
-    DPRINT_URB("UrbHeader.Length           - %x\n", ((*Urb).__bindgen_anon_1.UrbHeader.Length as ::core::ffi::c_int));
-    DPRINT_URB("UrbHeader.Function         - %x\n", ((*Urb).__bindgen_anon_1.UrbHeader.Function as ::core::ffi::c_int));
-    DPRINT_URB("UrbHeader.__bindgen_anon_1.Status           - %x\n", (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status);
-    DPRINT_URB("UrbHeader.UsbdDeviceHandle - %p\n", (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle);
-    DPRINT_URB("UrbHeader.UsbdFlags        - %x\n", (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags);
+    DPRINT_URB(b"UrbHeader.Length           - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Length as ::core::ffi::c_int));
+    DPRINT_URB(b"UrbHeader.Function         - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Function as ::core::ffi::c_int));
+    DPRINT_URB(b"UrbHeader.__bindgen_anon_1.Status           - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.__bindgen_anon_1.Status);
+    DPRINT_URB(b"UrbHeader.UsbdDeviceHandle - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle);
+    DPRINT_URB(b"UrbHeader.UsbdFlags        - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags);
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.Length as i32) < 0x48 {
         return;
     }
 
-    DPRINT_URB("PipeHandle                - %p\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.PipeHandle);
-    DPRINT_URB("TransferFlags             - %x\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferFlags);
-    DPRINT_URB("TransferBufferLength      - %x\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength);
-    DPRINT_URB("TransferBuffer            - %p\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBuffer);
-    DPRINT_URB("TransferBufferMDL         - %p\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferMDL);
-    DPRINT_URB("UrbLink                   - %p\n", (*Urb).__bindgen_anon_1.UrbControlTransfer.__bindgen_anon_1.UrbLink);
+    DPRINT_URB(b"PipeHandle                - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.PipeHandle);
+    DPRINT_URB(b"TransferFlags             - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferFlags);
+    DPRINT_URB(b"TransferBufferLength      - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength);
+    DPRINT_URB(b"TransferBuffer            - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBuffer);
+    DPRINT_URB(b"TransferBufferMDL         - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferMDL);
+    DPRINT_URB(b"UrbLink                   - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.__bindgen_anon_1.UrbLink);
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.Length as i32) < 0x50 {
         return;

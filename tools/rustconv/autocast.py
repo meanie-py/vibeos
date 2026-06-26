@@ -74,6 +74,12 @@ def collect_casts(json_out):
                     # (string literal; that needs a b"..." rewrite, handled elsewhere).
                     cast = expected
                 if cast is None:
+                    # `*const i8` (DbgPrint/DPRINT fmt) fed a Rust `&str` literal — rewrite
+                    # the string span to a NUL-terminated byte-string pointer.
+                    if found == '&str' and ('i8' in expected or 'u8' in expected
+                                            or 'c_char' in expected):
+                        edits.setdefault(span['file_name'], []).append(
+                            (span['byte_start'], span['byte_end'], '__BSTR__'))
                     continue
                 fn = span['file_name']
                 edits.setdefault(fn, []).append(
@@ -104,6 +110,14 @@ def apply(edits):
             uniq.append(s)
         for bs, be, ty in uniq:
             expr = data[bs:be]
+            if ty == '__BSTR__':
+                # expr is a Rust string literal `"..."`; emit a NUL-terminated *const i8.
+                if expr.startswith(b'"') and expr.endswith(b'"'):
+                    inner = expr[1:-1]
+                    data = (data[:bs] + b'b"' + inner + b'\\0".as_ptr() as *const i8'
+                            + data[be:])
+                    n += 1
+                continue
             # skip if it already looks wrapped with this cast
             if expr.startswith(b'(') and expr.endswith((f' as {ty})').encode()):
                 continue
