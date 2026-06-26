@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -261,7 +263,7 @@ pub unsafe extern "system" fn UhciRHSetFeaturePortResetWorker(
         10 as ULONG,
         pPort as PVOID,
         core::mem::size_of::<u16>() as SIZE_T,
-        Some(UhciRHPortResetComplete as unsafe extern "C" fn(PVOID, PVOID) -> ()),
+        Some(UhciRHPortResetComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 }
 

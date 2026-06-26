@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -15,7 +17,6 @@ extern "C" {
 const OHCI_MAX_PORT_COUNT: ::core::ffi::c_int = 15;
 
 const USB_GETSTATUS_SELF_POWERED: u32 = 0x0001;
-const MP_STATUS_SUCCESS: u32 = 0;
 
 const MP_STATUS_SUCCESS: MPSTATUS = 0;
 

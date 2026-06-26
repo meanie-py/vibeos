@@ -1,13 +1,16 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{Balance, KeQueryTimeIncrement, KeStallExecutionProcessor, LARGE_INTEGER, PDRIVER_OBJECT, PUNICODE_STRING, RtlSecureZeroMemory, UINT32};
+use ntkrnl_sys::ddk::{KeQueryTimeIncrement, KeStallExecutionProcessor, LARGE_INTEGER, PDRIVER_OBJECT, PUNICODE_STRING, RtlSecureZeroMemory, UINT32};
 use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
+    fn DPRINT_OHCI(format: *const ::core::ffi::c_char, ...);
     fn RtlAssert( VoidFailedAssertion: PVOID, VoidFileName: PVOID, LineNumber: ULONG, MutableMessage: *mut CHAR, );
     fn OHCI_ReadRhDescriptorA(OhciExtension: POHCI_EXTENSION) -> OHCI_REG_RH_DESCRIPTORA;
 }
@@ -152,22 +155,22 @@ pub unsafe extern "system" fn OHCI_DumpHcdED(ED: POHCI_HCD_ED) {
 
 #[no_mangle]
 pub unsafe extern "system" fn OHCI_DumpHcdTD(TD: POHCI_HCD_TD) {
-    if (*TD).HwTD.gTD.CurrentBuffer != 0 {
+    if (*TD).HwTD.c2rust_unnamed.gTD.CurrentBuffer != 0 {
     }
-    if (*TD).HwTD.gTD.NextTD != 0 {
+    if (*TD).HwTD.c2rust_unnamed.gTD.NextTD != 0 {
     }
-    if (*TD).HwTD.gTD.BufferEnd != 0 {
+    if (*TD).HwTD.c2rust_unnamed.gTD.BufferEnd != 0 {
     }
 
-    if (*TD).HwTD.SetupPacket.bmRequestType.B != 0 {
+    if (*TD).HwTD.c2rust_unnamed.SetupPacket.bmRequestType.B != 0 {
     }
-    if (*TD).HwTD.SetupPacket.bRequest != 0 {
+    if (*TD).HwTD.c2rust_unnamed.SetupPacket.bRequest != 0 {
     }
-    if (*TD).HwTD.SetupPacket.wValue.W != 0 {
+    if (*TD).HwTD.c2rust_unnamed.SetupPacket.wValue.W != 0 {
     }
-    if (*TD).HwTD.SetupPacket.wIndex.W != 0 {
+    if (*TD).HwTD.c2rust_unnamed.SetupPacket.wIndex.W != 0 {
     }
-    if (*TD).HwTD.SetupPacket.wLength != 0 {
+    if (*TD).HwTD.c2rust_unnamed.SetupPacket.wLength != 0 {
     }
 
     if (*TD).TransferLen != 0 {
@@ -1404,7 +1407,7 @@ unsafe fn OHCI_MapTransferToTD(
         CurrentTransferLen = TransferDataLeft;
         BufferEnd = (*SgElement)
             .SgPhysicalAddress
-            .LowPart
+            .u.LowPart
             .wrapping_add(CurrentTransferLen)
             .wrapping_sub(1);
     } else {
@@ -1422,7 +1425,7 @@ unsafe fn OHCI_MapTransferToTD(
             CurrentTransferLen = CurrentTransferLen.wrapping_add(TransferDataLeft);
             BufferEnd = (*SgNextElement)
                 .SgPhysicalAddress
-                .LowPart
+                .u.LowPart
                 .wrapping_add(TransferDataLeft)
                 .wrapping_sub(1);
         } else {
@@ -1430,14 +1433,14 @@ unsafe fn OHCI_MapTransferToTD(
                 CurrentTransferLen.wrapping_add((*SgNextElement).SgTransferLength);
             BufferEnd = (*SgNextElement)
                 .SgPhysicalAddress
-                .LowPart
+                .u.LowPart
                 .wrapping_add((*SgNextElement).SgTransferLength)
                 .wrapping_sub(1);
         }
     }
 
-    (*TD).HwTD.gTD.CurrentBuffer = CurrentBuffer;
-    (*TD).HwTD.gTD.BufferEnd = BufferEnd;
+    (*TD).HwTD.c2rust_unnamed.gTD.CurrentBuffer = CurrentBuffer;
+    (*TD).HwTD.c2rust_unnamed.gTD.BufferEnd = BufferEnd;
     (*TD).TransferLen = CurrentTransferLen;
 
     return TransferedLen.wrapping_add(CurrentTransferLen);
@@ -1537,31 +1540,31 @@ unsafe fn OHCI_ControlTransfer(
     (*OhciTransfer).PendingTDs = (*OhciTransfer).PendingTDs.wrapping_add(1);
 
     RtlCopyMemory(
-        core::ptr::addr_of_mut!((*SetupTD).HwTD.SetupPacket) as PVOID,
-        core::ptr::addr_of!((*TransferParameters).SetupPacket) as PVOID,
+        core::ptr::addr_of_mut!((*SetupTD).HwTD.c2rust_unnamed.SetupPacket) as PVOID,
+        core::ptr::addr_of!((*TransferParameters).c2rust_unnamed.SetupPacket) as PVOID,
         core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>() as SIZE_T,
     );
 
-    (*SetupTD).HwTD.gTD.CurrentBuffer = ((*SetupTD).PhysicalAddress as ULONG)
-        .wrapping_add(FIELD_OFFSET(OHCI_HCD_TD, HwTD.SetupPacket) as ULONG)
+    (*SetupTD).HwTD.c2rust_unnamed.gTD.CurrentBuffer = ((*SetupTD).PhysicalAddress as ULONG)
+        .wrapping_add(core::mem::offset_of!(OHCI_HCD_TD, HwTD.c2rust_unnamed.SetupPacket) as ULONG)
         as ULONG;
-    (*SetupTD).HwTD.gTD.BufferEnd = (((*SetupTD).PhysicalAddress as ULONG)
-        .wrapping_add(FIELD_OFFSET(OHCI_HCD_TD, HwTD.SetupPacket) as ULONG) as usize)
+    (*SetupTD).HwTD.c2rust_unnamed.gTD.BufferEnd = (((*SetupTD).PhysicalAddress as ULONG)
+        .wrapping_add(core::mem::offset_of!(OHCI_HCD_TD, HwTD.c2rust_unnamed.SetupPacket) as ULONG) as usize)
         .wrapping_add(core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>() as usize)
         .wrapping_sub(1 as usize) as ULONG;
     (*SetupTD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_DelayInterrupt(OHCI_TD_INTERRUPT_NONE as ULONG);
     (*SetupTD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_ConditionCode(OHCI_TD_CONDITION_NOT_ACCESSED as ULONG);
     (*SetupTD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_DataToggle(OHCI_TD_DATA_TOGGLE_DATA0 as ULONG);
 
@@ -1572,7 +1575,7 @@ unsafe fn OHCI_ControlTransfer(
     (*TD).Flags |= OHCI_HCD_TD_FLAG_PROCESSED as ULONG;
     (*TD).OhciTransfer = OhciTransfer;
 
-    (*PrevTD).HwTD.gTD.NextTD = (*TD).PhysicalAddress;
+    (*PrevTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
     (*PrevTD).NextTDVa = TD;
 
     /* The first data packet should use DATA1, subsequent ones use DATA0 (OpenHCI spec, 4.3.1.3.4) */
@@ -1585,28 +1588,28 @@ unsafe fn OHCI_ControlTransfer(
         if (*TransferParameters).TransferFlags as ULONG & USBD_TRANSFER_DIRECTION_IN as ULONG != 0 {
             (*TD)
                 .HwTD
-                .gTD
+                .c2rust_unnamed.gTD
                 .Control
                 .set_DirectionPID(OHCI_TD_DIRECTION_PID_IN as ULONG);
         } else {
             (*TD)
                 .HwTD
-                .gTD
+                .c2rust_unnamed.gTD
                 .Control
                 .set_DirectionPID(OHCI_TD_DIRECTION_PID_OUT as ULONG);
         }
 
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_DelayInterrupt(OHCI_TD_INTERRUPT_NONE as ULONG);
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_ConditionCode(OHCI_TD_CONDITION_NOT_ACCESSED as ULONG);
-        (*TD).HwTD.gTD.Control.set_DataToggle(DataToggle as ULONG);
+        (*TD).HwTD.c2rust_unnamed.gTD.Control.set_DataToggle(DataToggle as ULONG);
 
         TransferedLen =
             OHCI_MapTransferToTD(OhciExtension, TransferedLen, OhciTransfer, TD, SGList);
@@ -1616,13 +1619,13 @@ unsafe fn OHCI_ControlTransfer(
         TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_DelayInterrupt(OHCI_TD_INTERRUPT_NONE as ULONG);
         (*TD).Flags |= OHCI_HCD_TD_FLAG_PROCESSED as ULONG;
         (*TD).OhciTransfer = OhciTransfer;
 
-        (*PrevTD).HwTD.gTD.NextTD = (*TD).PhysicalAddress;
+        (*PrevTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
         (*PrevTD).NextTDVa = TD;
 
         DataToggle = OHCI_TD_DATA_TOGGLE_DATA0 as UCHAR;
@@ -1631,7 +1634,7 @@ unsafe fn OHCI_ControlTransfer(
     if (*TransferParameters).TransferFlags as ULONG & USBD_SHORT_TRANSFER_OK as ULONG != 0 {
         (*PrevTD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_BufferRounding(TRUE as ULONG);
         (*OhciTransfer).Flags |= OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK as ULONG;
@@ -1645,23 +1648,23 @@ unsafe fn OHCI_ControlTransfer(
     if (*TransferParameters).TransferFlags as ULONG & USBD_TRANSFER_DIRECTION_IN as ULONG != 0 {
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_BufferRounding(FALSE as ULONG);
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_DirectionPID(OHCI_TD_DIRECTION_PID_OUT as ULONG);
     } else {
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_BufferRounding(TRUE as ULONG);
         (*TD)
             .HwTD
-            .gTD
+            .c2rust_unnamed.gTD
             .Control
             .set_DirectionPID(OHCI_TD_DIRECTION_PID_IN as ULONG);
     }
@@ -1669,17 +1672,17 @@ unsafe fn OHCI_ControlTransfer(
     /* OpenHCI spec, 4.3.1.3.4 */
     (*TD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_DataToggle(OHCI_TD_DATA_TOGGLE_DATA1 as ULONG);
     (*TD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_ConditionCode(OHCI_TD_CONDITION_NOT_ACCESSED as ULONG);
     (*TD)
         .HwTD
-        .gTD
+        .c2rust_unnamed.gTD
         .Control
         .set_DelayInterrupt(OHCI_TD_INTERRUPT_IMMEDIATE as ULONG);
 
@@ -1691,11 +1694,11 @@ unsafe fn OHCI_ControlTransfer(
     /* And the last descriptor, which is not used in the current transfer (OpenHCI spec, 4.6) */
     TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
 
-    (*PrevTD).HwTD.gTD.NextTD = (*TD).PhysicalAddress;
+    (*PrevTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
     (*PrevTD).NextTDVa = TD;
 
     (*TD).NextTDVa = core::ptr::null_mut();
-    /* TD->HwTD.gTD.NextTD = 0; */
+    /* TD->HwTD.c2rust_unnamed.gTD.NextTD = 0; */
 
     (*OhciTransfer).NextTD = TD;
     (*OhciEndpoint).HcdTailP = TD;
@@ -1733,15 +1736,15 @@ unsafe fn OHCI_BulkOrInterruptTransfer(
     PrevTD = core::ptr::null_mut();
 
     loop {
-        (*TD).HwTD.gTD.Control.set_DelayInterrupt(OHCI_TD_INTERRUPT_NONE as ULONG);
-        (*TD).HwTD.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NOT_ACCESSED as ULONG);
+        (*TD).HwTD.c2rust_unnamed.gTD.Control.set_DelayInterrupt(OHCI_TD_INTERRUPT_NONE as ULONG);
+        (*TD).HwTD.c2rust_unnamed.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NOT_ACCESSED as ULONG);
 
         if (*TransferParameters).TransferFlags & USBD_TRANSFER_DIRECTION_IN != 0 {
-            (*TD).HwTD.gTD.Control.set_BufferRounding(FALSE as ULONG);
-            (*TD).HwTD.gTD.Control.set_DirectionPID(OHCI_TD_DIRECTION_PID_IN as ULONG);
+            (*TD).HwTD.c2rust_unnamed.gTD.Control.set_BufferRounding(FALSE as ULONG);
+            (*TD).HwTD.c2rust_unnamed.gTD.Control.set_DirectionPID(OHCI_TD_DIRECTION_PID_IN as ULONG);
         } else {
-            (*TD).HwTD.gTD.Control.set_BufferRounding(TRUE as ULONG);
-            (*TD).HwTD.gTD.Control.set_DirectionPID(OHCI_TD_DIRECTION_PID_OUT as ULONG);
+            (*TD).HwTD.c2rust_unnamed.gTD.Control.set_BufferRounding(TRUE as ULONG);
+            (*TD).HwTD.c2rust_unnamed.gTD.Control.set_DirectionPID(OHCI_TD_DIRECTION_PID_OUT as ULONG);
         }
 
         (*TD).Flags |= OHCI_HCD_TD_FLAG_PROCESSED as ULONG;
@@ -1765,7 +1768,7 @@ unsafe fn OHCI_BulkOrInterruptTransfer(
         TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
         (*OhciTransfer).PendingTDs = (*OhciTransfer).PendingTDs.wrapping_add(1);
 
-        (*PrevTD).HwTD.gTD.NextTD = (*TD).PhysicalAddress;
+        (*PrevTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
         (*PrevTD).NextTDVa = TD;
 
         if !(TransferedLen < (*TransferParameters).TransferBufferLength) {
@@ -1774,16 +1777,16 @@ unsafe fn OHCI_BulkOrInterruptTransfer(
     }
 
     if (*TransferParameters).TransferFlags & USBD_SHORT_TRANSFER_OK != 0 {
-        (*PrevTD).HwTD.gTD.Control.set_BufferRounding(TRUE as ULONG);
+        (*PrevTD).HwTD.c2rust_unnamed.gTD.Control.set_BufferRounding(TRUE as ULONG);
         (*OhciTransfer).Flags |= OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK as ULONG;
     }
 
-    (*PrevTD).HwTD.gTD.Control.set_DelayInterrupt(OHCI_TD_INTERRUPT_IMMEDIATE as ULONG);
+    (*PrevTD).HwTD.c2rust_unnamed.gTD.Control.set_DelayInterrupt(OHCI_TD_INTERRUPT_IMMEDIATE as ULONG);
 
     /* The last TD in a chain is not used in a transfer. The controller does not access it
      * so it will be used for chaining a next transfer to it (OpenHCI spec, 4.6)
      */
-    /* TD->HwTD.gTD.NextTD = 0; */
+    /* TD->HwTD.c2rust_unnamed.gTD.NextTD = 0; */
     (*TD).NextTDVa = core::ptr::null_mut();
 
     (*OhciTransfer).NextTD = TD;
@@ -1890,13 +1893,13 @@ pub unsafe extern "system" fn OHCI_ProcessDoneTD(
 
     (*OhciTransfer).PendingTDs -= 1;
 
-    Buffer = (*TD).HwTD.gTD.CurrentBuffer;
-    BufferEnd = (*TD).HwTD.gTD.BufferEnd;
+    Buffer = (*TD).HwTD.c2rust_unnamed.gTD.CurrentBuffer;
+    BufferEnd = (*TD).HwTD.c2rust_unnamed.gTD.BufferEnd;
 
     if (*TD).Flags & OHCI_HCD_TD_FLAG_NOT_ACCESSED != 0 {
-        (*TD).HwTD.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NO_ERROR as ULONG);
+        (*TD).HwTD.c2rust_unnamed.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NO_ERROR as ULONG);
     } else {
-        if (*TD).HwTD.gTD.CurrentBuffer != 0 {
+        if (*TD).HwTD.c2rust_unnamed.gTD.CurrentBuffer != 0 {
             if (*TD).TransferLen != 0 {
                 Length = (BufferEnd & (PAGE_SIZE - 1) as ULONG)
                     .wrapping_sub(Buffer & (PAGE_SIZE - 1) as ULONG);
@@ -1911,18 +1914,18 @@ pub unsafe extern "system" fn OHCI_ProcessDoneTD(
             }
         }
 
-        if (*TD).HwTD.gTD.Control.DirectionPID() != OHCI_TD_DIRECTION_PID_SETUP {
+        if (*TD).HwTD.c2rust_unnamed.gTD.Control.DirectionPID() != OHCI_TD_DIRECTION_PID_SETUP {
             (*OhciTransfer).TransferLen = (*OhciTransfer).TransferLen.wrapping_add((*TD).TransferLen);
         }
 
-        if (*TD).HwTD.gTD.Control.ConditionCode() != 0 {
+        if (*TD).HwTD.c2rust_unnamed.gTD.Control.ConditionCode() != 0 {
             (*OhciTransfer).USBDStatus =
-                (USBD_STATUS_HALTED | (*TD).HwTD.gTD.Control.ConditionCode() as i32) as USBD_STATUS;
+                (USBD_STATUS_HALTED | (*TD).HwTD.c2rust_unnamed.gTD.Control.ConditionCode() as i32) as USBD_STATUS;
         }
     }
 
     (*TD).Flags = 0;
-    (*TD).HwTD.gTD.NextTD = 0;
+    (*TD).HwTD.c2rust_unnamed.gTD.NextTD = 0;
     (*TD).OhciTransfer = core::ptr::null_mut();
 
     (*TD).DoneLink.Flink = core::ptr::null_mut();
@@ -2072,7 +2075,7 @@ pub unsafe extern "system" fn OHCI_AbortTransfer(
         (*(*LastTD).OhciTransfer).NextTD = TD;
 
         (*LastTD).NextTDVa = TD as *mut _OHCI_HCD_TD;
-        (*LastTD).HwTD.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
+        (*LastTD).HwTD.c2rust_unnamed.c2rust_unnamed.gTD.NextTD = (*TD).PhysicalAddress;
     }
 
     *CompletedLength = (*OhciTransfer).TransferLen as ULONG;
@@ -2242,7 +2245,7 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
             }
 
             OhciTransfer = (*TD).OhciTransfer;
-            ConditionCode = (*TD).HwTD.gTD.Control.ConditionCode() as UCHAR;
+            ConditionCode = (*TD).HwTD.c2rust_unnamed.gTD.Control.ConditionCode() as UCHAR;
 
             OHCI_DumpHcdTD(TD);
 
@@ -2260,7 +2263,7 @@ pub unsafe extern "system" fn OHCI_PollAsyncEndpoint(
                 OHCI_TD_CONDITION_DATA_UNDERRUN => {
                     if (*OhciTransfer).Flags & OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK != 0 {
                         IsResetOnHalt = 1;
-                        (*TD).HwTD.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NO_ERROR as ULONG);
+                        (*TD).HwTD.c2rust_unnamed.gTD.Control.set_ConditionCode(OHCI_TD_CONDITION_NO_ERROR as ULONG);
 
                         ControlStatusTD = (*OhciTransfer).ControlStatusTD;
 
@@ -3037,24 +3040,24 @@ pub unsafe extern "system" fn DriverEntry(
 // OHCI_DumpHcdTD(POHCI_HCD_TD TD)
 // {
 //     DPRINT("TD                - %p\n", TD);
-//     DPRINT("gTD.Control       - %08X\n", TD->HwTD.gTD.Control.AsULONG);
-//     if (TD->HwTD.gTD.CurrentBuffer)
-//         DPRINT("gTD.CurrentBuffer - %08X\n", TD->HwTD.gTD.CurrentBuffer);
-//     if (TD->HwTD.gTD.NextTD)
-//         DPRINT("gTD.NextTD        - %08X\n", TD->HwTD.gTD.NextTD);
-//     if (TD->HwTD.gTD.BufferEnd)
-//         DPRINT("gTD.BufferEnd     - %08X\n", TD->HwTD.gTD.BufferEnd);
+//     DPRINT("gTD.Control       - %08X\n", TD->HwTD.c2rust_unnamed.gTD.Control.AsULONG);
+//     if (TD->HwTD.c2rust_unnamed.gTD.CurrentBuffer)
+//         DPRINT("gTD.CurrentBuffer - %08X\n", TD->HwTD.c2rust_unnamed.gTD.CurrentBuffer);
+//     if (TD->HwTD.c2rust_unnamed.gTD.NextTD)
+//         DPRINT("gTD.NextTD        - %08X\n", TD->HwTD.c2rust_unnamed.gTD.NextTD);
+//     if (TD->HwTD.c2rust_unnamed.gTD.BufferEnd)
+//         DPRINT("gTD.BufferEnd     - %08X\n", TD->HwTD.c2rust_unnamed.gTD.BufferEnd);
 //
-//     if (TD->HwTD.SetupPacket.bmRequestType.B)
-//         DPRINT("bmRequestType     - %02X\n", TD->HwTD.SetupPacket.bmRequestType.B);
-//     if (TD->HwTD.SetupPacket.bRequest)
-//         DPRINT("bRequest          - %02X\n", TD->HwTD.SetupPacket.bRequest);
-//     if (TD->HwTD.SetupPacket.wValue.W)
-//         DPRINT("wValue            - %04X\n", TD->HwTD.SetupPacket.wValue.W);
-//     if (TD->HwTD.SetupPacket.wIndex.W)
-//         DPRINT("wIndex            - %04X\n", TD->HwTD.SetupPacket.wIndex.W);
-//     if (TD->HwTD.SetupPacket.wLength)
-//         DPRINT("wLength           - %04X\n", TD->HwTD.SetupPacket.wLength);
+//     if (TD->HwTD.c2rust_unnamed.SetupPacket.bmRequestType.B)
+//         DPRINT("bmRequestType     - %02X\n", TD->HwTD.c2rust_unnamed.SetupPacket.bmRequestType.B);
+//     if (TD->HwTD.c2rust_unnamed.SetupPacket.bRequest)
+//         DPRINT("bRequest          - %02X\n", TD->HwTD.c2rust_unnamed.SetupPacket.bRequest);
+//     if (TD->HwTD.c2rust_unnamed.SetupPacket.wValue.W)
+//         DPRINT("wValue            - %04X\n", TD->HwTD.c2rust_unnamed.SetupPacket.wValue.W);
+//     if (TD->HwTD.c2rust_unnamed.SetupPacket.wIndex.W)
+//         DPRINT("wIndex            - %04X\n", TD->HwTD.c2rust_unnamed.SetupPacket.wIndex.W);
+//     if (TD->HwTD.c2rust_unnamed.SetupPacket.wLength)
+//         DPRINT("wLength           - %04X\n", TD->HwTD.c2rust_unnamed.SetupPacket.wLength);
 //
 //     DPRINT("PhysicalAddress   - %p\n", TD->PhysicalAddress);
 //     DPRINT("Flags             - %X\n", TD->Flags);
@@ -3678,7 +3681,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     for (ix = 0; ix < INTERRUPT_ENDPOINTs; ix++)
 //     {
 //         IntED = &OhciExtension->HcResourcesVA->InterrruptHeadED[ix];
-//         IntEdPA = OhciExtension->HcResourcesPA + FIELD_OFFSET(OHCI_HC_RESOURCES, InterrruptHeadED[ix]);
+//         IntEdPA = OhciExtension->HcResourcesPA + core::mem::offset_of!(OHCI_HC_RESOURCES, InterrruptHeadED[ix]);
 //
 //         if (ix == (ENDPOINT_INTERRUPT_1ms - 1))
 //         {
@@ -3812,7 +3815,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     /* Setup HcHCCA register */
 //     WRITE_REGISTER_ULONG(&OperationalRegs->HcHCCA,
-//                          OhciExtension->HcResourcesPA + FIELD_OFFSET(OHCI_HC_RESOURCES, HcHCCA));
+//                          OhciExtension->HcResourcesPA + core::mem::offset_of!(OHCI_HC_RESOURCES, HcHCCA));
 //
 //     /* Setup HcInterruptEnable register */
 //     Interrupts.AsULONG = 0;
@@ -4207,8 +4210,8 @@ pub unsafe extern "system" fn DriverEntry(
 //         }
 //     }
 //
-//     TD->HwTD.gTD.CurrentBuffer = CurrentBuffer;
-//     TD->HwTD.gTD.BufferEnd = BufferEnd;
+//     TD->HwTD.c2rust_unnamed.gTD.CurrentBuffer = CurrentBuffer;
+//     TD->HwTD.c2rust_unnamed.gTD.BufferEnd = BufferEnd;
 //     TD->TransferLen = CurrentTransferLen;
 //
 //     return TransferedLen + CurrentTransferLen;
@@ -4298,16 +4301,16 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OhciTransfer->PendingTDs++;
 //
-//     RtlCopyMemory(&SetupTD->HwTD.SetupPacket,
+//     RtlCopyMemory(&SetupTD->HwTD.c2rust_unnamed.SetupPacket,
 //                   &TransferParameters->SetupPacket,
-//                   sizeof(SetupTD->HwTD.SetupPacket));
+//                   sizeof(SetupTD->HwTD.c2rust_unnamed.SetupPacket));
 //
-//     SetupTD->HwTD.gTD.CurrentBuffer = SetupTD->PhysicalAddress + FIELD_OFFSET(OHCI_HCD_TD, HwTD.SetupPacket);
-//     SetupTD->HwTD.gTD.BufferEnd = SetupTD->PhysicalAddress + FIELD_OFFSET(OHCI_HCD_TD, HwTD.SetupPacket) +
+//     SetupTD->HwTD.c2rust_unnamed.gTD.CurrentBuffer = SetupTD->PhysicalAddress + core::mem::offset_of!(OHCI_HCD_TD, HwTD.c2rust_unnamed.SetupPacket);
+//     SetupTD->HwTD.c2rust_unnamed.gTD.BufferEnd = SetupTD->PhysicalAddress + core::mem::offset_of!(OHCI_HCD_TD, HwTD.c2rust_unnamed.SetupPacket) +
 //                                   sizeof(USB_DEFAULT_PIPE_SETUP_PACKET) - 1;
-//     SetupTD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
-//     SetupTD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
-//     SetupTD->HwTD.gTD.Control.DataToggle = OHCI_TD_DATA_TOGGLE_DATA0;
+//     SetupTD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
+//     SetupTD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
+//     SetupTD->HwTD.c2rust_unnamed.gTD.Control.DataToggle = OHCI_TD_DATA_TOGGLE_DATA0;
 //
 //     PrevTD = SetupTD;
 //
@@ -4316,7 +4319,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     TD->Flags |= OHCI_HCD_TD_FLAG_PROCESSED;
 //     TD->OhciTransfer = OhciTransfer;
 //
-//     PrevTD->HwTD.gTD.NextTD = TD->PhysicalAddress;
+//     PrevTD->HwTD.c2rust_unnamed.gTD.NextTD = TD->PhysicalAddress;
 //     PrevTD->NextTDVa = TD;
 //
 //     /* The first data packet should use DATA1, subsequent ones use DATA0 (OpenHCI spec, 4.3.1.3.4) */
@@ -4328,13 +4331,13 @@ pub unsafe extern "system" fn DriverEntry(
 //         OhciTransfer->PendingTDs++;
 //
 //         if (TransferParameters->TransferFlags & USBD_TRANSFER_DIRECTION_IN)
-//             TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
 //         else
-//             TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
 //
-//         TD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
-//         TD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
-//         TD->HwTD.gTD.Control.DataToggle = DataToggle;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DataToggle = DataToggle;
 //
 //         TransferedLen = OHCI_MapTransferToTD(OhciExtension,
 //                                              TransferedLen,
@@ -4345,11 +4348,11 @@ pub unsafe extern "system" fn DriverEntry(
 //         PrevTD = TD;
 //
 //         TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
-//         TD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
 //         TD->Flags |= OHCI_HCD_TD_FLAG_PROCESSED;
 //         TD->OhciTransfer = OhciTransfer;
 //
-//         PrevTD->HwTD.gTD.NextTD = TD->PhysicalAddress;
+//         PrevTD->HwTD.c2rust_unnamed.gTD.NextTD = TD->PhysicalAddress;
 //         PrevTD->NextTDVa = TD;
 //
 //         DataToggle = OHCI_TD_DATA_TOGGLE_DATA0;
@@ -4357,7 +4360,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (TransferParameters->TransferFlags & USBD_SHORT_TRANSFER_OK)
 //     {
-//         PrevTD->HwTD.gTD.Control.BufferRounding = TRUE;
+//         PrevTD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = TRUE;
 //         OhciTransfer->Flags |= OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK;
 //     }
 //
@@ -4368,19 +4371,19 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if ((TransferParameters->TransferFlags & USBD_TRANSFER_DIRECTION_IN) != 0)
 //     {
-//         TD->HwTD.gTD.Control.BufferRounding = FALSE;
-//         TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = FALSE;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
 //     }
 //     else
 //     {
-//         TD->HwTD.gTD.Control.BufferRounding = TRUE;
-//         TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = TRUE;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
 //     }
 //
 //     /* OpenHCI spec, 4.3.1.3.4 */
-//     TD->HwTD.gTD.Control.DataToggle = OHCI_TD_DATA_TOGGLE_DATA1;
-//     TD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
-//     TD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_IMMEDIATE;
+//     TD->HwTD.c2rust_unnamed.gTD.Control.DataToggle = OHCI_TD_DATA_TOGGLE_DATA1;
+//     TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
+//     TD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_IMMEDIATE;
 //
 //     OhciTransfer->PendingTDs++;
 //     OhciTransfer->ControlStatusTD = TD;
@@ -4390,11 +4393,11 @@ pub unsafe extern "system" fn DriverEntry(
 //     /* And the last descriptor, which is not used in the current transfer (OpenHCI spec, 4.6) */
 //     TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
 //
-//     PrevTD->HwTD.gTD.NextTD = TD->PhysicalAddress;
+//     PrevTD->HwTD.c2rust_unnamed.gTD.NextTD = TD->PhysicalAddress;
 //     PrevTD->NextTDVa = TD;
 //
 //     TD->NextTDVa = NULL;
-//     /* TD->HwTD.gTD.NextTD = 0; */
+//     /* TD->HwTD.c2rust_unnamed.gTD.NextTD = 0; */
 //
 //     OhciTransfer->NextTD = TD;
 //     OhciEndpoint->HcdTailP = TD;
@@ -4432,18 +4435,18 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     do
 //     {
-//         TD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
-//         TD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_NONE;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
 //
 //         if (TransferParameters->TransferFlags & USBD_TRANSFER_DIRECTION_IN)
 //         {
-//             TD->HwTD.gTD.Control.BufferRounding = FALSE;
-//             TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = FALSE;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_IN;
 //         }
 //         else
 //         {
-//             TD->HwTD.gTD.Control.BufferRounding = TRUE;
-//             TD->HwTD.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = TRUE;
+//             TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID = OHCI_TD_DIRECTION_PID_OUT;
 //         }
 //
 //         TD->Flags |= OHCI_HCD_TD_FLAG_PROCESSED;
@@ -4468,23 +4471,23 @@ pub unsafe extern "system" fn DriverEntry(
 //         TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
 //         OhciTransfer->PendingTDs++;
 //
-//         PrevTD->HwTD.gTD.NextTD = TD->PhysicalAddress;
+//         PrevTD->HwTD.c2rust_unnamed.gTD.NextTD = TD->PhysicalAddress;
 //         PrevTD->NextTDVa = TD;
 //     }
 //     while (TransferedLen < TransferParameters->TransferBufferLength);
 //
 //     if (TransferParameters->TransferFlags & USBD_SHORT_TRANSFER_OK)
 //     {
-//         PrevTD->HwTD.gTD.Control.BufferRounding = TRUE;
+//         PrevTD->HwTD.c2rust_unnamed.gTD.Control.BufferRounding = TRUE;
 //         OhciTransfer->Flags |= OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK;
 //     }
 //
-//     PrevTD->HwTD.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_IMMEDIATE;
+//     PrevTD->HwTD.c2rust_unnamed.gTD.Control.DelayInterrupt = OHCI_TD_INTERRUPT_IMMEDIATE;
 //
 //     /* The last TD in a chain is not used in a transfer. The controller does not access it
 //      * so it will be used for chaining a next transfer to it (OpenHCI spec, 4.6)
 //      */
-//     /* TD->HwTD.gTD.NextTD = 0; */
+//     /* TD->HwTD.c2rust_unnamed.gTD.NextTD = 0; */
 //     TD->NextTDVa = NULL;
 //
 //     OhciTransfer->NextTD = TD;
@@ -4585,16 +4588,16 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OhciTransfer->PendingTDs--;
 //
-//     Buffer = TD->HwTD.gTD.CurrentBuffer;
-//     BufferEnd = TD->HwTD.gTD.BufferEnd;
+//     Buffer = TD->HwTD.c2rust_unnamed.gTD.CurrentBuffer;
+//     BufferEnd = TD->HwTD.c2rust_unnamed.gTD.BufferEnd;
 //
 //     if (TD->Flags & OHCI_HCD_TD_FLAG_NOT_ACCESSED)
 //     {
-//         TD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NO_ERROR;
+//         TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NO_ERROR;
 //     }
 //     else
 //     {
-//         if (TD->HwTD.gTD.CurrentBuffer)
+//         if (TD->HwTD.c2rust_unnamed.gTD.CurrentBuffer)
 //         {
 //             if (TD->TransferLen)
 //             {
@@ -4610,18 +4613,18 @@ pub unsafe extern "system" fn DriverEntry(
 //             }
 //         }
 //
-//         if (TD->HwTD.gTD.Control.DirectionPID != OHCI_TD_DIRECTION_PID_SETUP)
+//         if (TD->HwTD.c2rust_unnamed.gTD.Control.DirectionPID != OHCI_TD_DIRECTION_PID_SETUP)
 //             OhciTransfer->TransferLen += TD->TransferLen;
 //
-//         if (TD->HwTD.gTD.Control.ConditionCode)
+//         if (TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode)
 //         {
 //             OhciTransfer->USBDStatus = USBD_STATUS_HALTED |
-//                                        TD->HwTD.gTD.Control.ConditionCode;
+//                                        TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode;
 //         }
 //     }
 //
 //     TD->Flags = 0;
-//     TD->HwTD.gTD.NextTD = 0;
+//     TD->HwTD.c2rust_unnamed.gTD.NextTD = 0;
 //     TD->OhciTransfer = 0;
 //
 //     TD->DoneLink.Flink = NULL;
@@ -4751,7 +4754,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         LastTD->OhciTransfer->NextTD = TD;
 //
 //         LastTD->NextTDVa = TD;
-//         LastTD->HwTD.gTD.NextTD = TD->PhysicalAddress;
+//         LastTD->HwTD.c2rust_unnamed.gTD.NextTD = TD->PhysicalAddress;
 //     }
 //
 //     *CompletedLength = OhciTransfer->TransferLen;
@@ -4924,7 +4927,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         }
 //
 //         OhciTransfer = TD->OhciTransfer;
-//         ConditionCode = TD->HwTD.gTD.Control.ConditionCode;
+//         ConditionCode = TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode;
 //
 //         DPRINT("TD - %p, ConditionCode - %X\n", TD, ConditionCode);
 //         OHCI_DumpHcdTD(TD);
@@ -4947,7 +4950,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                 if (OhciTransfer->Flags & OHCI_TRANSFER_FLAGS_SHORT_TRANSFER_OK)
 //                 {
 //                     IsResetOnHalt = TRUE;
-//                     TD->HwTD.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NO_ERROR;
+//                     TD->HwTD.c2rust_unnamed.gTD.Control.ConditionCode = OHCI_TD_CONDITION_NO_ERROR;
 //
 //                     ControlStatusTD = OhciTransfer->ControlStatusTD;
 //

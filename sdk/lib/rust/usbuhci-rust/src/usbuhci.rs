@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -17,6 +19,7 @@ extern "C" {
     fn WRITE_PORT_UCHAR(Port: *mut UCHAR, Value: UCHAR);
     fn WRITE_PORT_USHORT(Port: *mut USHORT, Value: USHORT);
     fn DPRINT_IMPL(format: *const i8, ...);
+    fn DPRINT_UHCI(format: *const i8, ...);
     fn USBPORT_RegisterUSBPortDriver( DriverObject: PDRIVER_OBJECT, Version: ULONG, RegPacket: *mut USBPORT_REGISTRATION_PACKET, ) -> NTSTATUS;
     fn RtlAssert( VoidFailedAssertion: *mut core::ffi::c_void, VoidFileName: *mut core::ffi::c_void, LineNumber: u32, MutableMessage: *mut i8, );
     fn WRITE_PORT_ULONG(Register: PULONG, Value: ULONG);
@@ -974,7 +977,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
     }
 
     if HcStatus.HcHalted() != 0 {
-        DPRINT_UHCI!(
+        DPRINT_UHCI(
             "UhciInterruptService: Hc Halted [%p] HcStatus %X\n",
             UhciExtension,
             HcStatus.AsUSHORT as i32
@@ -1117,9 +1120,9 @@ pub unsafe extern "system" fn UhciQueueTransfer(
             | UHCI_TD_LINK_PTR_QH
             | UHCI_TD_LINK_PTR_DEPTH_FIRST) as ULONG;
 
-        if (*FirstTD).HwTD.ControlStatus.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & UHCI_TD_STS_ACTIVE != 0 {
+        if (*FirstTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & UHCI_TD_STS_ACTIVE != 0 {
             if PhysicalAddress == (*TailTD).PhysicalAddress
-                && (*TailTD).HwTD.ControlStatus.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & UHCI_TD_STS_ACTIVE
+                && (*TailTD).HwTD.ControlStatus.c2rust_unnamed.Status() as i32 & UHCI_TD_STS_ACTIVE
                     == 0
             {
                 (*QH).HwQH.NextElement = (*FirstTD).PhysicalAddress;

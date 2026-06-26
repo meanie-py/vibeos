@@ -509,17 +509,26 @@ pub const UHCI_FRAME_LIST_POINTER_QH: u32 = 2;
 pub const UHCI_FRAME_LIST_INDEX_MASK: u32 = 1023;
 pub const UHCI_MAX_STATIC_SOF_TDS: u32 = 8;
 pub const UHCI_EXTENSION_FLAG_SUSPENDED: u32 = 2;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SYSTEM_POWER_STATE_CONTEXT {
     pub __bindgen_anon_1: _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1 {
-    pub __bindgen_anon_1:
-        __BindgenUnionField<_SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1>,
-    pub ContextAsUlong: __BindgenUnionField<ULONG>,
-    pub bindgen_union_field: u32,
+pub union _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1 {
+    pub __bindgen_anon_1: _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1,
+    pub c2rust_unnamed: _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1,
+    pub ContextAsUlong: ULONG,
 }
+impl core::ops::Deref for _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1 {
+    type Target = _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1 {
+    #[inline] fn deref_mut(&mut self) -> &mut _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(4))]
 pub struct _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1 {
@@ -802,16 +811,13 @@ impl _SYSTEM_POWER_STATE_CONTEXT__bindgen_ty_1__bindgen_ty_1 {
     }
 }
 pub type SYSTEM_POWER_STATE_CONTEXT = _SYSTEM_POWER_STATE_CONTEXT;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1 {
-    pub Raw: __BindgenUnionField<
-        _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1,
-    >,
-    pub Translated: __BindgenUnionField<
-        _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_2,
-    >,
-    pub bindgen_union_field: [u32; 4usize],
+pub union _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1 {
+    pub Raw:  _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1,
+    pub Translated:  _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_2,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1 {
     pub Reserved: USHORT,
@@ -819,34 +825,40 @@ pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_
     pub Vector: ULONG,
     pub Affinity: KAFFINITY,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_4__bindgen_ty_1__bindgen_ty_2 {
     pub Level: ULONG,
     pub Vector: ULONG,
     pub Affinity: KAFFINITY,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_9 {
     pub DataSize: ULONG,
     pub Reserved1: ULONG,
     pub Reserved2: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_10 {
     pub Start: PHYSICAL_ADDRESS,
     pub Length40: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_11 {
     pub Start: PHYSICAL_ADDRESS,
     pub Length48: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _CM_PARTIAL_RESOURCE_DESCRIPTOR__bindgen_ty_1__bindgen_ty_12 {
     pub Start: PHYSICAL_ADDRESS,
     pub Length64: ULONG,
 }
 pub type BOOL = ::core::ffi::c_int;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_DEVICE_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -866,6 +878,7 @@ pub struct _USB_DEVICE_DESCRIPTOR {
 }
 pub type USB_DEVICE_DESCRIPTOR = _USB_DEVICE_DESCRIPTOR;
 pub type PUSB_DEVICE_DESCRIPTOR = *mut _USB_DEVICE_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_ENDPOINT_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -877,6 +890,7 @@ pub struct _USB_ENDPOINT_DESCRIPTOR {
 }
 pub type USB_ENDPOINT_DESCRIPTOR = _USB_ENDPOINT_DESCRIPTOR;
 pub type PUSB_ENDPOINT_DESCRIPTOR = *mut _USB_ENDPOINT_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_CONFIGURATION_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -890,6 +904,7 @@ pub struct _USB_CONFIGURATION_DESCRIPTOR {
 }
 pub type USB_CONFIGURATION_DESCRIPTOR = _USB_CONFIGURATION_DESCRIPTOR;
 pub type PUSB_CONFIGURATION_DESCRIPTOR = *mut _USB_CONFIGURATION_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_INTERFACE_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -904,6 +919,7 @@ pub struct _USB_INTERFACE_DESCRIPTOR {
 }
 pub type USB_INTERFACE_DESCRIPTOR = _USB_INTERFACE_DESCRIPTOR;
 pub type PUSB_INTERFACE_DESCRIPTOR = *mut _USB_INTERFACE_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_STRING_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -912,6 +928,7 @@ pub struct _USB_STRING_DESCRIPTOR {
 }
 pub type USB_STRING_DESCRIPTOR = _USB_STRING_DESCRIPTOR;
 pub type PUSB_STRING_DESCRIPTOR = *mut _USB_STRING_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_COMMON_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -919,6 +936,7 @@ pub struct _USB_COMMON_DESCRIPTOR {
 }
 pub type USB_COMMON_DESCRIPTOR = _USB_COMMON_DESCRIPTOR;
 pub type PUSB_COMMON_DESCRIPTOR = *mut _USB_COMMON_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_HUB_DESCRIPTOR {
     pub bDescriptorLength: UCHAR,
@@ -931,6 +949,7 @@ pub struct _USB_HUB_DESCRIPTOR {
 }
 pub type USB_HUB_DESCRIPTOR = _USB_HUB_DESCRIPTOR;
 pub type PUSB_HUB_DESCRIPTOR = *mut _USB_HUB_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_CONFIGURATION_POWER_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -949,6 +968,7 @@ pub struct _USB_CONFIGURATION_POWER_DESCRIPTOR {
 }
 pub type USB_CONFIGURATION_POWER_DESCRIPTOR = _USB_CONFIGURATION_POWER_DESCRIPTOR;
 pub type PUSB_CONFIGURATION_POWER_DESCRIPTOR = *mut _USB_CONFIGURATION_POWER_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_INTERFACE_POWER_DESCRIPTOR {
     pub bLength: UCHAR,
@@ -975,11 +995,12 @@ pub const _USB_DEVICE_SPEED_UsbFullSpeed: _USB_DEVICE_SPEED = 1;
 pub const _USB_DEVICE_SPEED_UsbHighSpeed: _USB_DEVICE_SPEED = 2;
 pub type _USB_DEVICE_SPEED = ::core::ffi::c_uint;
 pub use self::_USB_DEVICE_SPEED as USB_DEVICE_SPEED;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _BM_REQUEST_TYPE {
-    pub B: __BindgenUnionField<UCHAR>,
-    pub bindgen_union_field: u8,
+pub union _BM_REQUEST_TYPE {
+    pub B: UCHAR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _BM_REQUEST_TYPE__BM {
     pub _bitfield_align_1: [u8; 0],
@@ -1146,6 +1167,7 @@ impl _BM_REQUEST_TYPE__BM {
     }
 }
 pub type BM_REQUEST_TYPE = _BM_REQUEST_TYPE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_DEFAULT_PIPE_SETUP_PACKET {
     pub bmRequestType: BM_REQUEST_TYPE,
@@ -1154,35 +1176,62 @@ pub struct _USB_DEFAULT_PIPE_SETUP_PACKET {
     pub wIndex: _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex,
     pub wLength: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_DEFAULT_PIPE_SETUP_PACKET__wValue {
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1>,
-    pub W: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_DEFAULT_PIPE_SETUP_PACKET__wValue {
+    pub __bindgen_anon_1: _USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1,
+    pub W: USHORT,
 }
+impl core::ops::Deref for _USB_DEFAULT_PIPE_SETUP_PACKET__wValue {
+    type Target = _USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_DEFAULT_PIPE_SETUP_PACKET__wValue {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_DEFAULT_PIPE_SETUP_PACKET__wValue__bindgen_ty_1 {
     pub LowByte: UCHAR,
     pub HiByte: UCHAR,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex {
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1>,
-    pub W: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex {
+    pub __bindgen_anon_1: _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1,
+    pub W: USHORT,
 }
+impl core::ops::Deref for _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex {
+    type Target = _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_DEFAULT_PIPE_SETUP_PACKET__wIndex__bindgen_ty_1 {
     pub LowByte: UCHAR,
     pub HiByte: UCHAR,
 }
 pub type USB_DEFAULT_PIPE_SETUP_PACKET = _USB_DEFAULT_PIPE_SETUP_PACKET;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_20_PORT_STATUS {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_20_PORT_STATUS__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_20_PORT_STATUS {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_20_PORT_STATUS__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_20_PORT_STATUS__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_20_PORT_STATUS {
+    type Target = _USB_20_PORT_STATUS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_20_PORT_STATUS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_20_PORT_STATUS {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_20_PORT_STATUS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_20_PORT_STATUS__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -1693,12 +1742,21 @@ impl _USB_20_PORT_STATUS__bindgen_ty_1 {
     }
 }
 pub type USB_20_PORT_STATUS = _USB_20_PORT_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_20_PORT_CHANGE {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_20_PORT_CHANGE__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_20_PORT_CHANGE {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_20_PORT_CHANGE__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_20_PORT_CHANGE__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_20_PORT_CHANGE {
+    type Target = _USB_20_PORT_CHANGE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_20_PORT_CHANGE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_20_PORT_CHANGE {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_20_PORT_CHANGE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_20_PORT_CHANGE__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -1943,12 +2001,21 @@ impl _USB_20_PORT_CHANGE__bindgen_ty_1 {
     }
 }
 pub type USB_20_PORT_CHANGE = _USB_20_PORT_CHANGE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_30_PORT_STATUS {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_30_PORT_STATUS__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_30_PORT_STATUS {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_30_PORT_STATUS__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_30_PORT_STATUS__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_30_PORT_STATUS {
+    type Target = _USB_30_PORT_STATUS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_30_PORT_STATUS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_30_PORT_STATUS {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_30_PORT_STATUS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_30_PORT_STATUS__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -2306,12 +2373,21 @@ impl _USB_30_PORT_STATUS__bindgen_ty_1 {
     }
 }
 pub type USB_30_PORT_STATUS = _USB_30_PORT_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_30_PORT_CHANGE {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_30_PORT_CHANGE__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_30_PORT_CHANGE {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_30_PORT_CHANGE__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_30_PORT_CHANGE__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_30_PORT_CHANGE {
+    type Target = _USB_30_PORT_CHANGE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_30_PORT_CHANGE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_30_PORT_CHANGE {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_30_PORT_CHANGE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_30_PORT_CHANGE__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -2632,40 +2708,58 @@ impl _USB_30_PORT_CHANGE__bindgen_ty_1 {
     }
 }
 pub type USB_30_PORT_CHANGE = _USB_30_PORT_CHANGE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_PORT_STATUS {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub Usb20PortStatus: __BindgenUnionField<USB_20_PORT_STATUS>,
-    pub Usb30PortStatus: __BindgenUnionField<USB_30_PORT_STATUS>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_PORT_STATUS {
+    pub AsUshort16: USHORT,
+    pub Usb20PortStatus: USB_20_PORT_STATUS,
+    pub Usb30PortStatus: USB_30_PORT_STATUS,
 }
 pub type USB_PORT_STATUS = _USB_PORT_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_PORT_CHANGE {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub Usb20PortChange: __BindgenUnionField<USB_20_PORT_CHANGE>,
-    pub Usb30PortChange: __BindgenUnionField<USB_30_PORT_CHANGE>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_PORT_CHANGE {
+    pub AsUshort16: USHORT,
+    pub Usb20PortChange: USB_20_PORT_CHANGE,
+    pub Usb30PortChange: USB_30_PORT_CHANGE,
 }
 pub type USB_PORT_CHANGE = _USB_PORT_CHANGE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_PORT_STATUS_AND_CHANGE {
-    pub AsUlong32: __BindgenUnionField<ULONG>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 4usize],
+pub union _USB_PORT_STATUS_AND_CHANGE {
+    pub AsUlong32: ULONG,
+    pub __bindgen_anon_1: _USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_PORT_STATUS_AND_CHANGE {
+    type Target = _USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_PORT_STATUS_AND_CHANGE {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_PORT_STATUS_AND_CHANGE__bindgen_ty_1 {
     pub PortStatus: USB_PORT_STATUS,
     pub PortChange: USB_PORT_CHANGE,
 }
 pub type PUSB_PORT_STATUS_AND_CHANGE = *mut _USB_PORT_STATUS_AND_CHANGE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_HUB_STATUS {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_HUB_STATUS__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_HUB_STATUS {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_HUB_STATUS__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_HUB_STATUS__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_HUB_STATUS {
+    type Target = _USB_HUB_STATUS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_HUB_STATUS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_HUB_STATUS {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_HUB_STATUS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_HUB_STATUS__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -2794,12 +2888,21 @@ impl _USB_HUB_STATUS__bindgen_ty_1 {
     }
 }
 pub type USB_HUB_STATUS = _USB_HUB_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_HUB_CHANGE {
-    pub AsUshort16: __BindgenUnionField<USHORT>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_HUB_CHANGE__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 2usize],
+pub union _USB_HUB_CHANGE {
+    pub AsUshort16: USHORT,
+    pub __bindgen_anon_1: _USB_HUB_CHANGE__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_HUB_CHANGE__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_HUB_CHANGE {
+    type Target = _USB_HUB_CHANGE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_HUB_CHANGE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_HUB_CHANGE {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_HUB_CHANGE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_HUB_CHANGE__bindgen_ty_1 {
     pub _bitfield_align_1: [u8; 0],
@@ -2928,12 +3031,21 @@ impl _USB_HUB_CHANGE__bindgen_ty_1 {
     }
 }
 pub type USB_HUB_CHANGE = _USB_HUB_CHANGE;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _USB_HUB_STATUS_AND_CHANGE {
-    pub AsUlong32: __BindgenUnionField<ULONG>,
-    pub __bindgen_anon_1: __BindgenUnionField<_USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1>,
-    pub bindgen_union_field: [u8; 4usize],
+pub union _USB_HUB_STATUS_AND_CHANGE {
+    pub AsUlong32: ULONG,
+    pub __bindgen_anon_1: _USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1,
+    pub c2rust_unnamed: _USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1,
 }
+impl core::ops::Deref for _USB_HUB_STATUS_AND_CHANGE {
+    type Target = _USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USB_HUB_STATUS_AND_CHANGE {
+    #[inline] fn deref_mut(&mut self) -> &mut _USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_HUB_STATUS_AND_CHANGE__bindgen_ty_1 {
     pub HubStatus: USB_HUB_STATUS,
@@ -2970,6 +3082,7 @@ pub type USBD_STATUS = LONG;
 pub type USBD_PIPE_HANDLE = PVOID;
 pub type USBD_CONFIGURATION_HANDLE = PVOID;
 pub type USBD_INTERFACE_HANDLE = PVOID;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBD_VERSION_INFORMATION {
     pub USBDI_Version: ULONG,
@@ -2983,6 +3096,7 @@ pub const _USBD_PIPE_TYPE_UsbdPipeTypeBulk: _USBD_PIPE_TYPE = 2;
 pub const _USBD_PIPE_TYPE_UsbdPipeTypeInterrupt: _USBD_PIPE_TYPE = 3;
 pub type _USBD_PIPE_TYPE = ::core::ffi::c_uint;
 pub use self::_USBD_PIPE_TYPE as USBD_PIPE_TYPE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBD_DEVICE_INFORMATION {
     pub OffsetNext: ULONG,
@@ -2991,6 +3105,7 @@ pub struct _USBD_DEVICE_INFORMATION {
 }
 pub type USBD_DEVICE_INFORMATION = _USBD_DEVICE_INFORMATION;
 pub type PUSBD_DEVICE_INFORMATION = *mut _USBD_DEVICE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBD_PIPE_INFORMATION {
     pub MaximumPacketSize: USHORT,
@@ -3003,6 +3118,7 @@ pub struct _USBD_PIPE_INFORMATION {
 }
 pub type USBD_PIPE_INFORMATION = _USBD_PIPE_INFORMATION;
 pub type PUSBD_PIPE_INFORMATION = *mut _USBD_PIPE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBD_INTERFACE_INFORMATION {
     pub Length: USHORT,
@@ -3018,10 +3134,12 @@ pub struct _USBD_INTERFACE_INFORMATION {
 }
 pub type USBD_INTERFACE_INFORMATION = _USBD_INTERFACE_INFORMATION;
 pub type PUSBD_INTERFACE_INFORMATION = *mut _USBD_INTERFACE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_HCD_AREA {
     pub Reserved8: [PVOID; 8usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_HEADER {
     pub Length: USHORT,
@@ -3030,12 +3148,14 @@ pub struct _URB_HEADER {
     pub UsbdDeviceHandle: PVOID,
     pub UsbdFlags: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_SELECT_INTERFACE {
     pub Hdr: _URB_HEADER,
     pub ConfigurationHandle: USBD_CONFIGURATION_HANDLE,
     pub Interface: USBD_INTERFACE_INFORMATION,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_SELECT_CONFIGURATION {
     pub Hdr: _URB_HEADER,
@@ -3043,32 +3163,38 @@ pub struct _URB_SELECT_CONFIGURATION {
     pub ConfigurationHandle: USBD_CONFIGURATION_HANDLE,
     pub Interface: USBD_INTERFACE_INFORMATION,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_PIPE_REQUEST {
     pub Hdr: _URB_HEADER,
     pub PipeHandle: USBD_PIPE_HANDLE,
     pub Reserved: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_FRAME_LENGTH_CONTROL {
     pub Hdr: _URB_HEADER,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_GET_FRAME_LENGTH {
     pub Hdr: _URB_HEADER,
     pub FrameLength: ULONG,
     pub FrameNumber: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_SET_FRAME_LENGTH {
     pub Hdr: _URB_HEADER,
     pub FrameLengthDelta: LONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_GET_CURRENT_FRAME_NUMBER {
     pub Hdr: _URB_HEADER,
     pub FrameNumber: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_DESCRIPTOR_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3085,6 +3211,7 @@ pub struct _URB_CONTROL_DESCRIPTOR_REQUEST {
     pub LanguageId: USHORT,
     pub Reserved2: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_GET_STATUS_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3099,6 +3226,7 @@ pub struct _URB_CONTROL_GET_STATUS_REQUEST {
     pub Index: USHORT,
     pub Reserved2: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_FEATURE_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3114,6 +3242,7 @@ pub struct _URB_CONTROL_FEATURE_REQUEST {
     pub Index: USHORT,
     pub Reserved1: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3130,6 +3259,7 @@ pub struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST {
     pub Index: USHORT,
     pub Reserved1: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_GET_INTERFACE_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3144,6 +3274,7 @@ pub struct _URB_CONTROL_GET_INTERFACE_REQUEST {
     pub Interface: USHORT,
     pub Reserved2: USHORT,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_GET_CONFIGURATION_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3156,6 +3287,7 @@ pub struct _URB_CONTROL_GET_CONFIGURATION_REQUEST {
     pub hca: _URB_HCD_AREA,
     pub Reserved1: [UCHAR; 8usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _OS_STRING {
     pub bLength: UCHAR,
@@ -3164,14 +3296,15 @@ pub struct _OS_STRING {
     pub bVendorCode: UCHAR,
     pub __bindgen_anon_1: _OS_STRING__bindgen_ty_1,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _OS_STRING__bindgen_ty_1 {
-    pub bPad: __BindgenUnionField<UCHAR>,
-    pub bFlags: __BindgenUnionField<UCHAR>,
-    pub bindgen_union_field: u8,
+pub union _OS_STRING__bindgen_ty_1 {
+    pub bPad: UCHAR,
+    pub bFlags: UCHAR,
 }
 pub type OS_STRING = _OS_STRING;
 pub type POS_STRING = *mut _OS_STRING;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_OS_FEATURE_DESCRIPTOR_REQUEST {
     pub Hdr: _URB_HEADER,
@@ -3274,6 +3407,7 @@ impl _URB_OS_FEATURE_DESCRIPTOR_REQUEST {
         __bindgen_bitfield_unit
     }
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_TRANSFER {
     pub Hdr: _URB_HEADER,
@@ -3286,6 +3420,7 @@ pub struct _URB_CONTROL_TRANSFER {
     pub hca: _URB_HCD_AREA,
     pub SetupPacket: [UCHAR; 8usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_CONTROL_TRANSFER_EX {
     pub Hdr: _URB_HEADER,
@@ -3299,6 +3434,7 @@ pub struct _URB_CONTROL_TRANSFER_EX {
     pub hca: _URB_HCD_AREA,
     pub SetupPacket: [UCHAR; 8usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_BULK_OR_INTERRUPT_TRANSFER {
     pub Hdr: _URB_HEADER,
@@ -3310,6 +3446,7 @@ pub struct _URB_BULK_OR_INTERRUPT_TRANSFER {
     pub UrbLink: *mut _URB,
     pub hca: _URB_HCD_AREA,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBD_ISO_PACKET_DESCRIPTOR {
     pub Offset: ULONG,
@@ -3318,6 +3455,7 @@ pub struct _USBD_ISO_PACKET_DESCRIPTOR {
 }
 pub type USBD_ISO_PACKET_DESCRIPTOR = _USBD_ISO_PACKET_DESCRIPTOR;
 pub type PUSBD_ISO_PACKET_DESCRIPTOR = *mut _USBD_ISO_PACKET_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB_ISOCH_TRANSFER {
     pub Hdr: _URB_HEADER,
@@ -3333,37 +3471,38 @@ pub struct _URB_ISOCH_TRANSFER {
     pub ErrorCount: ULONG,
     pub IsoPacket: [USBD_ISO_PACKET_DESCRIPTOR; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _URB {
     pub __bindgen_anon_1: _URB__bindgen_ty_1,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _URB__bindgen_ty_1 {
-    pub UrbHeader: __BindgenUnionField<_URB_HEADER>,
-    pub UrbSelectInterface: __BindgenUnionField<_URB_SELECT_INTERFACE>,
-    pub UrbSelectConfiguration: __BindgenUnionField<_URB_SELECT_CONFIGURATION>,
-    pub UrbPipeRequest: __BindgenUnionField<_URB_PIPE_REQUEST>,
-    pub UrbFrameLengthControl: __BindgenUnionField<_URB_FRAME_LENGTH_CONTROL>,
-    pub UrbGetFrameLength: __BindgenUnionField<_URB_GET_FRAME_LENGTH>,
-    pub UrbSetFrameLength: __BindgenUnionField<_URB_SET_FRAME_LENGTH>,
-    pub UrbGetCurrentFrameNumber: __BindgenUnionField<_URB_GET_CURRENT_FRAME_NUMBER>,
-    pub UrbControlTransfer: __BindgenUnionField<_URB_CONTROL_TRANSFER>,
-    pub UrbControlTransferEx: __BindgenUnionField<_URB_CONTROL_TRANSFER_EX>,
-    pub UrbBulkOrInterruptTransfer: __BindgenUnionField<_URB_BULK_OR_INTERRUPT_TRANSFER>,
-    pub UrbIsochronousTransfer: __BindgenUnionField<_URB_ISOCH_TRANSFER>,
-    pub UrbControlDescriptorRequest: __BindgenUnionField<_URB_CONTROL_DESCRIPTOR_REQUEST>,
-    pub UrbControlGetStatusRequest: __BindgenUnionField<_URB_CONTROL_GET_STATUS_REQUEST>,
-    pub UrbControlFeatureRequest: __BindgenUnionField<_URB_CONTROL_FEATURE_REQUEST>,
-    pub UrbControlVendorClassRequest: __BindgenUnionField<_URB_CONTROL_VENDOR_OR_CLASS_REQUEST>,
-    pub UrbControlGetInterfaceRequest: __BindgenUnionField<_URB_CONTROL_GET_INTERFACE_REQUEST>,
-    pub UrbControlGetConfigurationRequest:
-        __BindgenUnionField<_URB_CONTROL_GET_CONFIGURATION_REQUEST>,
-    pub UrbOSFeatureDescriptorRequest: __BindgenUnionField<_URB_OS_FEATURE_DESCRIPTOR_REQUEST>,
-    pub bindgen_union_field: [u64; 19usize],
+pub union _URB__bindgen_ty_1 {
+    pub UrbHeader: _URB_HEADER,
+    pub UrbSelectInterface: _URB_SELECT_INTERFACE,
+    pub UrbSelectConfiguration: _URB_SELECT_CONFIGURATION,
+    pub UrbPipeRequest: _URB_PIPE_REQUEST,
+    pub UrbFrameLengthControl: _URB_FRAME_LENGTH_CONTROL,
+    pub UrbGetFrameLength: _URB_GET_FRAME_LENGTH,
+    pub UrbSetFrameLength: _URB_SET_FRAME_LENGTH,
+    pub UrbGetCurrentFrameNumber: _URB_GET_CURRENT_FRAME_NUMBER,
+    pub UrbControlTransfer: _URB_CONTROL_TRANSFER,
+    pub UrbControlTransferEx: _URB_CONTROL_TRANSFER_EX,
+    pub UrbBulkOrInterruptTransfer: _URB_BULK_OR_INTERRUPT_TRANSFER,
+    pub UrbIsochronousTransfer: _URB_ISOCH_TRANSFER,
+    pub UrbControlDescriptorRequest: _URB_CONTROL_DESCRIPTOR_REQUEST,
+    pub UrbControlGetStatusRequest: _URB_CONTROL_GET_STATUS_REQUEST,
+    pub UrbControlFeatureRequest: _URB_CONTROL_FEATURE_REQUEST,
+    pub UrbControlVendorClassRequest: _URB_CONTROL_VENDOR_OR_CLASS_REQUEST,
+    pub UrbControlGetInterfaceRequest: _URB_CONTROL_GET_INTERFACE_REQUEST,
+    pub UrbControlGetConfigurationRequest: _URB_CONTROL_GET_CONFIGURATION_REQUEST,
+    pub UrbOSFeatureDescriptorRequest: _URB_OS_FEATURE_DESCRIPTOR_REQUEST,
 }
 pub type URB = _URB;
 pub type PURB = *mut _URB;
 pub type PUSB_DEVICE_HANDLE = PVOID;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _ROOTHUB_PDO_EXTENSION {
     pub Signature: ULONG,
@@ -3371,7 +3510,7 @@ pub struct _ROOTHUB_PDO_EXTENSION {
 pub type ROOTHUB_PDO_EXTENSION = _ROOTHUB_PDO_EXTENSION;
 pub type PROOTHUB_PDO_EXTENSION = *mut _ROOTHUB_PDO_EXTENSION;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -3390,6 +3529,7 @@ pub const _USBPORT_CREATEDEV_ERROR_CreateDevTtNotFound: _USBPORT_CREATEDEV_ERROR
 pub const _USBPORT_CREATEDEV_ERROR_CreateDevBadDevHandlePtr: _USBPORT_CREATEDEV_ERROR = 7;
 pub type _USBPORT_CREATEDEV_ERROR = ::core::ffi::c_uint;
 pub use self::_USBPORT_CREATEDEV_ERROR as USBPORT_CREATEDEV_ERROR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_CD_ERROR_INFORMATION {
     pub Version: ULONG,
@@ -3402,7 +3542,7 @@ pub struct _USB_CD_ERROR_INFORMATION {
 pub type USB_CD_ERROR_INFORMATION = _USB_CD_ERROR_INFORMATION;
 pub type PUSB_CD_ERROR_INFORMATION = *mut _USB_CD_ERROR_INFORMATION;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HsHubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -3413,6 +3553,7 @@ pub type USB_BUSIFFN_CREATE_USB_DEVICE_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_CREATE_USB_DEVICE_EX = USB_BUSIFFN_CREATE_USB_DEVICE_EX;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_PORT_PATH {
     pub PortPathDepth: ULONG,
@@ -3421,7 +3562,7 @@ pub struct _USB_PORT_PATH {
 pub type USB_PORT_PATH = _USB_PORT_PATH;
 pub type PUSB_PORT_PATH = *mut _USB_PORT_PATH;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE_V7 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HsHubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -3440,6 +3581,7 @@ pub const _USBPORT_INITDEV_ERROR_InitDevFailedPokeEndpoint: _USBPORT_INITDEV_ERR
 pub const _USBPORT_INITDEV_ERROR_InitDevBadDeviceDescriptor: _USBPORT_INITDEV_ERROR = 3;
 pub type _USBPORT_INITDEV_ERROR = ::core::ffi::c_uint;
 pub use self::_USBPORT_INITDEV_ERROR as USBPORT_INITDEV_ERROR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_ID_ERROR_INFORMATION {
     pub Version: ULONG,
@@ -3453,11 +3595,11 @@ pub struct _USB_ID_ERROR_INFORMATION {
 pub type USB_ID_ERROR_INFORMATION = _USB_ID_ERROR_INFORMATION;
 pub type PUSB_ID_ERROR_INFORMATION = *mut _USB_ID_ERROR_INFORMATION;
 pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_USB_DEVICE = USB_BUSIFFN_INITIALIZE_USB_DEVICE;
 pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         IdErrInfo: PUSB_ID_ERROR_INFORMATION,
@@ -3465,7 +3607,7 @@ pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX;
 pub type USB_BUSIFFN_REMOVE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Flags: ULONG,
@@ -3473,7 +3615,7 @@ pub type USB_BUSIFFN_REMOVE_USB_DEVICE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_REMOVE_USB_DEVICE = USB_BUSIFFN_REMOVE_USB_DEVICE;
 pub type USB_BUSIFFN_GET_USB_DESCRIPTORS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceDescriptorBuffer: PUCHAR,
@@ -3484,7 +3626,7 @@ pub type USB_BUSIFFN_GET_USB_DESCRIPTORS = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_USB_DESCRIPTORS = USB_BUSIFFN_GET_USB_DESCRIPTORS;
 pub type USB_BUSIFFN_RESTORE_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         OldDeviceHandle: PUSB_DEVICE_HANDLE,
         NewDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -3492,10 +3634,10 @@ pub type USB_BUSIFFN_RESTORE_DEVICE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_RESTORE_DEVICE = USB_BUSIFFN_RESTORE_DEVICE;
 pub type USB_BUSIFFN_GET_POTRTHACK_FLAGS =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Flags: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Flags: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_GET_POTRTHACK_FLAGS = USB_BUSIFFN_GET_POTRTHACK_FLAGS;
 pub type USB_BUSIFFN_GET_DEVICE_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceInformationBuffer: PVOID,
@@ -3505,7 +3647,7 @@ pub type USB_BUSIFFN_GET_DEVICE_INFORMATION = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_INFORMATION = USB_BUSIFFN_GET_DEVICE_INFORMATION;
 pub type USB_BUSIFFN_GET_CONTROLLER_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         ControllerInformationBuffer: PVOID,
         ControllerInformationBufferLength: ULONG,
@@ -3514,10 +3656,10 @@ pub type USB_BUSIFFN_GET_CONTROLLER_INFORMATION = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_CONTROLLER_INFORMATION = USB_BUSIFFN_GET_CONTROLLER_INFORMATION;
 pub type USB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND = USB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND;
 pub type USB_BUSIFFN_GET_EXTENDED_HUB_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubPhysicalDeviceObject: PDEVICE_OBJECT,
         HubInformationBuffer: PVOID,
@@ -3527,7 +3669,7 @@ pub type USB_BUSIFFN_GET_EXTENDED_HUB_INFO = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_EXTENDED_HUB_INFO = USB_BUSIFFN_GET_EXTENDED_HUB_INFO;
 pub type USB_BUSIFFN_GET_ROOTHUB_SYM_NAME = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubSymNameBuffer: PVOID,
         HubSymNameBufferLength: ULONG,
@@ -3536,11 +3678,11 @@ pub type USB_BUSIFFN_GET_ROOTHUB_SYM_NAME = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_ROOTHUB_SYM_NAME = USB_BUSIFFN_GET_ROOTHUB_SYM_NAME;
 pub type USB_BUSIFFN_GET_DEVICE_BUSCONTEXT = ::core::option::Option<
-    unsafe extern "C" fn(HubBusContext: PVOID, DeviceHandle: PVOID) -> PVOID,
+    unsafe extern "system" fn(HubBusContext: PVOID, DeviceHandle: PVOID) -> PVOID,
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_BUSCONTEXT = USB_BUSIFFN_GET_DEVICE_BUSCONTEXT;
 pub type USB_BUSIFFN_INITIALIZE_20HUB = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubDeviceHandle: PUSB_DEVICE_HANDLE,
         TtCount: ULONG,
@@ -3548,18 +3690,18 @@ pub type USB_BUSIFFN_INITIALIZE_20HUB = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_20HUB = USB_BUSIFFN_INITIALIZE_20HUB;
 pub type USB_BUSIFFN_IS_ROOT =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, DeviceObject: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, DeviceObject: PVOID) -> BOOLEAN>;
 pub type PUSB_BUSIFFN_IS_ROOT = USB_BUSIFFN_IS_ROOT;
 pub type USB_BUSIFFN_ACQUIRE_SEMAPHORE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID)>;
 pub type PUSB_BUSIFFN_ACQUIRE_SEMAPHORE = USB_BUSIFFN_ACQUIRE_SEMAPHORE;
 pub type USB_BUSIFFN_RELEASE_SEMAPHORE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID)>;
 pub type PUSB_BUSIFFN_RELEASE_SEMAPHORE = USB_BUSIFFN_RELEASE_SEMAPHORE;
-pub type RH_INIT_CALLBACK = ::core::option::Option<unsafe extern "C" fn(CallBackContext: PVOID)>;
+pub type RH_INIT_CALLBACK = ::core::option::Option<unsafe extern "system" fn(CallBackContext: PVOID)>;
 pub type PRH_INIT_CALLBACK = RH_INIT_CALLBACK;
 pub type USB_BUSIFFN_ROOTHUB_INIT_NOTIFY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         CallbackContext: PVOID,
         CallbackRoutine: PRH_INIT_CALLBACK,
@@ -3567,10 +3709,10 @@ pub type USB_BUSIFFN_ROOTHUB_INIT_NOTIFY = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_ROOTHUB_INIT_NOTIFY = USB_BUSIFFN_ROOTHUB_INIT_NOTIFY;
 pub type USB_BUSIFFN_FLUSH_TRANSFERS =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PVOID)>;
 pub type PUSB_BUSIFFN_FLUSH_TRANSFERS = USB_BUSIFFN_FLUSH_TRANSFERS;
 pub type USB_BUSIFFN_CALC_PIPE_BANDWIDTH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         PipeInfo: PUSBD_PIPE_INFORMATION,
         DeviceSpeed: USB_DEVICE_SPEED,
@@ -3578,10 +3720,10 @@ pub type USB_BUSIFFN_CALC_PIPE_BANDWIDTH = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_CALC_PIPE_BANDWIDTH = USB_BUSIFFN_CALC_PIPE_BANDWIDTH;
 pub type USB_BUSIFFN_SET_BUS_WAKE_MODE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Mode: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Mode: ULONG)>;
 pub type PUSB_BUSIFFN_SET_BUS_WAKE_MODE = USB_BUSIFFN_SET_BUS_WAKE_MODE;
 pub type USB_BUSIFFN_SET_DEVICE_FLAG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceFlagGuid: *mut GUID,
         ValueData: PVOID,
@@ -3590,11 +3732,11 @@ pub type USB_BUSIFFN_SET_DEVICE_FLAG = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_SET_DEVICE_FLAG = USB_BUSIFFN_SET_DEVICE_FLAG;
 pub type USB_BUSIFFN_SET_DEVHANDLE_DATA = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PVOID, UsbDevicePdo: PDEVICE_OBJECT),
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PVOID, UsbDevicePdo: PDEVICE_OBJECT),
 >;
 pub type PUSB_BUSIFFN_SET_DEVHANDLE_DATA = USB_BUSIFFN_SET_DEVHANDLE_DATA;
 pub type USB_BUSIFFN_TEST_POINT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PVOID,
         Opcode: ULONG,
@@ -3603,7 +3745,7 @@ pub type USB_BUSIFFN_TEST_POINT = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_TEST_POINT = USB_BUSIFFN_TEST_POINT;
 pub type USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceInformationBuffer: PVOID,
@@ -3613,10 +3755,10 @@ pub type USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO;
 pub type USB_BUSIFFN_WAIT_ASYNC_POWERUP =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_WAIT_ASYNC_POWERUP = USB_BUSIFFN_WAIT_ASYNC_POWERUP;
 pub type USB_BUSIFFN_GET_DEVICE_ADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceAddress: PUSHORT,
@@ -3624,7 +3766,7 @@ pub type USB_BUSIFFN_GET_DEVICE_ADDRESS = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_ADDRESS = USB_BUSIFFN_GET_DEVICE_ADDRESS;
 pub type USB_BUSIFFN_DEREF_DEVICE_HANDLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Object: PVOID,
@@ -3633,7 +3775,7 @@ pub type USB_BUSIFFN_DEREF_DEVICE_HANDLE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_DEREF_DEVICE_HANDLE = USB_BUSIFFN_DEREF_DEVICE_HANDLE;
 pub type USB_BUSIFFN_REF_DEVICE_HANDLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Object: PVOID,
@@ -3642,7 +3784,7 @@ pub type USB_BUSIFFN_REF_DEVICE_HANDLE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_REF_DEVICE_HANDLE = USB_BUSIFFN_REF_DEVICE_HANDLE;
 pub type USB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         NewIdleReadyState: ULONG,
@@ -3651,28 +3793,29 @@ pub type USB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE = ::core::option::Option
 pub type PUSB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE =
     USB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE;
 pub type USB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT = USB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT;
 pub type USB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID),
+    unsafe extern "system" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID),
 >;
 pub type PUSB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT = USB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT;
 pub type USB_BUSIFFN_ABORT_ALL_DEVICE_PIPES = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_ABORT_ALL_DEVICE_PIPES = USB_BUSIFFN_ABORT_ALL_DEVICE_PIPES;
 pub type USB_BUSIFFN_SET_DEVICE_ERRATA_FLAG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceErrataFlag: ULONG,
     ),
 >;
 pub type PUSB_BUSIFFN_SET_DEVICE_ERRATA_FLAG = USB_BUSIFFN_SET_DEVICE_ERRATA_FLAG;
-unsafe extern "C" {
+unsafe extern "system" {
     pub static USB_BUS_INTERFACE_HUB_GUID: GUID;
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V0 {
     pub Size: USHORT,
@@ -3683,6 +3826,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V0 {
 }
 pub type USB_BUS_INTERFACE_HUB_V0 = _USB_BUS_INTERFACE_HUB_V0;
 pub type PUSB_BUS_INTERFACE_HUB_V0 = *mut _USB_BUS_INTERFACE_HUB_V0;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V1 {
     pub Size: USHORT,
@@ -3700,6 +3844,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V1 {
 }
 pub type USB_BUS_INTERFACE_HUB_V1 = _USB_BUS_INTERFACE_HUB_V1;
 pub type PUSB_BUS_INTERFACE_HUB_V1 = *mut _USB_BUS_INTERFACE_HUB_V1;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V2 {
     pub Size: USHORT,
@@ -3723,6 +3868,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V2 {
 }
 pub type USB_BUS_INTERFACE_HUB_V2 = _USB_BUS_INTERFACE_HUB_V2;
 pub type PUSB_BUS_INTERFACE_HUB_V2 = *mut _USB_BUS_INTERFACE_HUB_V2;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V3 {
     pub Size: USHORT,
@@ -3747,6 +3893,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V3 {
 }
 pub type USB_BUS_INTERFACE_HUB_V3 = _USB_BUS_INTERFACE_HUB_V3;
 pub type PUSB_BUS_INTERFACE_HUB_V3 = *mut _USB_BUS_INTERFACE_HUB_V3;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V4 {
     pub Size: USHORT,
@@ -3772,6 +3919,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V4 {
 }
 pub type USB_BUS_INTERFACE_HUB_V4 = _USB_BUS_INTERFACE_HUB_V4;
 pub type PUSB_BUS_INTERFACE_HUB_V4 = *mut _USB_BUS_INTERFACE_HUB_V4;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V5 {
     pub Size: USHORT,
@@ -3798,6 +3946,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V5 {
 }
 pub type USB_BUS_INTERFACE_HUB_V5 = _USB_BUS_INTERFACE_HUB_V5;
 pub type PUSB_BUS_INTERFACE_HUB_V5 = *mut _USB_BUS_INTERFACE_HUB_V5;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V6 {
     pub Size: USHORT,
@@ -3837,6 +3986,7 @@ pub struct _USB_BUS_INTERFACE_HUB_V6 {
 }
 pub type USB_BUS_INTERFACE_HUB_V6 = _USB_BUS_INTERFACE_HUB_V6;
 pub type PUSB_BUS_INTERFACE_HUB_V6 = *mut _USB_BUS_INTERFACE_HUB_V6;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_V7 {
     pub Size: USHORT,
@@ -3881,11 +4031,12 @@ pub struct _USB_BUS_INTERFACE_HUB_V7 {
 }
 pub type USB_BUS_INTERFACE_HUB_V7 = _USB_BUS_INTERFACE_HUB_V7;
 pub type PUSB_BUS_INTERFACE_HUB_V7 = *mut _USB_BUS_INTERFACE_HUB_V7;
-unsafe extern "C" {
+unsafe extern "system" {
     pub static USB_BUS_INTERFACE_HUB_MINIDUMP_GUID: GUID;
 }
 pub type PUSB_BUSIFFN_SET_MINIDUMP_FLAGS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_MINIDUMP {
     pub Size: USHORT,
@@ -3897,13 +4048,14 @@ pub struct _USB_BUS_INTERFACE_HUB_MINIDUMP {
 }
 pub type USB_BUS_INTERFACE_HUB_MINIDUMP = _USB_BUS_INTERFACE_HUB_MINIDUMP;
 pub type PUSB_BUS_INTERFACE_HUB_MINIDUMP = *mut _USB_BUS_INTERFACE_HUB_MINIDUMP;
-unsafe extern "C" {
+unsafe extern "system" {
     pub static USB_BUS_INTERFACE_HUB_SS_GUID: GUID;
 }
 pub type PUSB_BUSIFFN_SUSPEND_HUB =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_RESUME_HUB =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND {
     pub Size: USHORT,
@@ -3916,6 +4068,7 @@ pub struct _USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND {
 }
 pub type USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND = _USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND;
 pub type PUSB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND = *mut _USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_PIPE_INFORMATION_0 {
     pub EndpointDescriptor: USB_ENDPOINT_DESCRIPTOR,
@@ -3924,6 +4077,7 @@ pub struct _USB_PIPE_INFORMATION_0 {
 }
 pub type USB_PIPE_INFORMATION_0 = _USB_PIPE_INFORMATION_0;
 pub type PUSB_PIPE_INFORMATION_0 = *mut _USB_PIPE_INFORMATION_0;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_LEVEL_INFORMATION {
     pub InformationLevel: ULONG,
@@ -3931,6 +4085,7 @@ pub struct _USB_LEVEL_INFORMATION {
 }
 pub type USB_LEVEL_INFORMATION = _USB_LEVEL_INFORMATION;
 pub type PUSB_LEVEL_INFORMATION = *mut _USB_LEVEL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_DEVICE_INFORMATION_0 {
     pub InformationLevel: ULONG,
@@ -3949,6 +4104,7 @@ pub struct _USB_DEVICE_INFORMATION_0 {
 }
 pub type USB_DEVICE_INFORMATION_0 = _USB_DEVICE_INFORMATION_0;
 pub type PUSB_DEVICE_INFORMATION_0 = *mut _USB_DEVICE_INFORMATION_0;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_CONTROLLER_INFORMATION_0 {
     pub InformationLevel: ULONG,
@@ -3958,6 +4114,7 @@ pub struct _USB_CONTROLLER_INFORMATION_0 {
 }
 pub type USB_CONTROLLER_INFORMATION_0 = _USB_CONTROLLER_INFORMATION_0;
 pub type PUSB_CONTROLLER_INFORMATION_0 = *mut _USB_CONTROLLER_INFORMATION_0;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_CONTROLLER_INFORMATION_1 {
     pub InformationLevel: ULONG,
@@ -3970,6 +4127,7 @@ pub struct _USB_CONTROLLER_INFORMATION_1 {
 }
 pub type USB_CONTROLLER_INFORMATION_1 = _USB_CONTROLLER_INFORMATION_1;
 pub type PUSB_CONTROLLER_INFORMATION_1 = *mut _USB_CONTROLLER_INFORMATION_1;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_EXTPORT_INFORMATION_0 {
     pub PhysicalPortNumber: ULONG,
@@ -3980,6 +4138,7 @@ pub struct _USB_EXTPORT_INFORMATION_0 {
 }
 pub type USB_EXTPORT_INFORMATION_0 = _USB_EXTPORT_INFORMATION_0;
 pub type PUSB_EXTPORT_INFORMATION = *mut _USB_EXTPORT_INFORMATION_0;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_EXTHUB_INFORMATION_0 {
     pub InformationLevel: ULONG,
@@ -3988,6 +4147,7 @@ pub struct _USB_EXTHUB_INFORMATION_0 {
 }
 pub type USB_EXTHUB_INFORMATION_0 = _USB_EXTHUB_INFORMATION_0;
 pub type PUSB_EXTHUB_INFORMATION_0 = *mut _USB_EXTHUB_INFORMATION_0;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _USB_DEVICE_PERFORMANCE_INFO_0 {
     pub InformationLevel: ULONG,
@@ -4011,14 +4171,14 @@ pub struct _USB_DEVICE_PERFORMANCE_INFO_0 {
 pub type USB_DEVICE_PERFORMANCE_INFO_0 = _USB_DEVICE_PERFORMANCE_INFO_0;
 pub type PUSB_DEVICE_PERFORMANCE_INFO_0 = *mut _USB_DEVICE_PERFORMANCE_INFO_0;
 pub type PUSB_BUSIFFN_SUBMIT_ISO_OUT_URB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_GETUSBDI_VERSION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
 >;
 pub type PUSB_BUSIFFN_QUERY_BUS_TIME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_ENUM_LOG_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: ULONG,
@@ -4026,6 +4186,7 @@ pub type PUSB_BUSIFFN_ENUM_LOG_ENTRY = ::core::option::Option<
         arg5: ULONG,
     ) -> NTSTATUS,
 >;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INFORMATION_LEVEL_0 {
     pub TotalBandwidth: ULONG,
@@ -4033,6 +4194,7 @@ pub struct _USB_BUS_INFORMATION_LEVEL_0 {
 }
 pub type USB_BUS_INFORMATION_LEVEL_0 = _USB_BUS_INFORMATION_LEVEL_0;
 pub type PUSB_BUS_INFORMATION_LEVEL_0 = *mut _USB_BUS_INFORMATION_LEVEL_0;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INFORMATION_LEVEL_1 {
     pub TotalBandwidth: ULONG,
@@ -4043,7 +4205,7 @@ pub struct _USB_BUS_INFORMATION_LEVEL_1 {
 pub type USB_BUS_INFORMATION_LEVEL_1 = _USB_BUS_INFORMATION_LEVEL_1;
 pub type PUSB_BUS_INFORMATION_LEVEL_1 = *mut _USB_BUS_INFORMATION_LEVEL_1;
 pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: PVOID,
@@ -4052,10 +4214,11 @@ pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_IS_DEVICE_HIGH_SPEED =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> BOOLEAN>;
-unsafe extern "C" {
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> BOOLEAN>;
+unsafe extern "system" {
     pub static USB_BUS_INTERFACE_USBDI_GUID: GUID;
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_USBDI_V0 {
     pub Size: USHORT,
@@ -4070,6 +4233,7 @@ pub struct _USB_BUS_INTERFACE_USBDI_V0 {
 }
 pub type USB_BUS_INTERFACE_USBDI_V0 = _USB_BUS_INTERFACE_USBDI_V0;
 pub type PUSB_BUS_INTERFACE_USBDI_V0 = *mut _USB_BUS_INTERFACE_USBDI_V0;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_USBDI_V1 {
     pub Size: USHORT,
@@ -4085,6 +4249,7 @@ pub struct _USB_BUS_INTERFACE_USBDI_V1 {
 }
 pub type USB_BUS_INTERFACE_USBDI_V1 = _USB_BUS_INTERFACE_USBDI_V1;
 pub type PUSB_BUS_INTERFACE_USBDI_V1 = *mut _USB_BUS_INTERFACE_USBDI_V1;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_USBDI_V2 {
     pub Size: USHORT,
@@ -4102,9 +4267,9 @@ pub struct _USB_BUS_INTERFACE_USBDI_V2 {
 pub type USB_BUS_INTERFACE_USBDI_V2 = _USB_BUS_INTERFACE_USBDI_V2;
 pub type PUSB_BUS_INTERFACE_USBDI_V2 = *mut _USB_BUS_INTERFACE_USBDI_V2;
 pub type PUSB_BUSIFFN_QUERY_BUS_TIME_EX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_QUERY_CONTROLLER_TYPE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PULONG,
         arg3: PUSHORT,
@@ -4115,6 +4280,7 @@ pub type PUSB_BUSIFFN_QUERY_CONTROLLER_TYPE = ::core::option::Option<
         arg8: PUCHAR,
     ) -> NTSTATUS,
 >;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_USBDI_V3 {
     pub Size: USHORT,
@@ -4133,9 +4299,10 @@ pub struct _USB_BUS_INTERFACE_USBDI_V3 {
 }
 pub type USB_BUS_INTERFACE_USBDI_V3 = _USB_BUS_INTERFACE_USBDI_V3;
 pub type PUSB_BUS_INTERFACE_USBDI_V3 = *mut _USB_BUS_INTERFACE_USBDI_V3;
-unsafe extern "C" {
+unsafe extern "system" {
     pub static USB_BUS_INTERFACE_USBC_CONFIGURATION_GUID: GUID;
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBC_FUNCTION_DESCRIPTOR {
     pub FunctionNumber: UCHAR,
@@ -4150,7 +4317,7 @@ pub struct _USBC_FUNCTION_DESCRIPTOR {
 pub type USBC_FUNCTION_DESCRIPTOR = _USBC_FUNCTION_DESCRIPTOR;
 pub type PUSBC_FUNCTION_DESCRIPTOR = *mut _USBC_FUNCTION_DESCRIPTOR;
 pub type USBC_START_DEVICE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceDescriptor: PUSB_DEVICE_DESCRIPTOR,
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         FunctionDescriptorBuffer: *mut PUSBC_FUNCTION_DESCRIPTOR,
@@ -4160,7 +4327,7 @@ pub type USBC_START_DEVICE_CALLBACK = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type USBC_PDO_ENABLE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         FirstInterfaceNumber: USHORT,
         NumberOfInterfaces: USHORT,
@@ -4169,6 +4336,7 @@ pub type USBC_PDO_ENABLE_CALLBACK = ::core::option::Option<
         FunctionProtocol: UCHAR,
     ) -> BOOLEAN,
 >;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBC_DEVICE_CONFIGURATION_INTERFACE_V1 {
     pub Size: USHORT,
@@ -4196,23 +4364,23 @@ pub struct USBD_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type USBD_HANDLE = *mut USBD_HANDLE__;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetUSBDIVersion(VersionInformation: PUSBD_VERSION_INFORMATION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptor(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceNumber: UCHAR,
         AlternateSetting: UCHAR,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequest(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         Siz: PUSHORT,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseDescriptors(
         DescriptorBuffer: PVOID,
         TotalLength: ULONG,
@@ -4220,7 +4388,7 @@ unsafe extern "C" {
         DescriptorType: LONG,
     ) -> PUSB_COMMON_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptorEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         StartPosition: PVOID,
@@ -4231,22 +4399,22 @@ unsafe extern "C" {
         InterfaceProtocol: LONG,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequestEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceList: PUSBD_INTERFACE_LIST_ENTRY,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetInterfaceLength(
         InterfaceDescriptor: PUSB_INTERFACE_DESCRIPTOR,
         BufferEnd: PUCHAR,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_RegisterHcFilter(DeviceObject: PDEVICE_OBJECT, FilterDeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetPdoRegistryParameter(
         PhysicalDeviceObject: PDEVICE_OBJECT,
         Parameter: PVOID,
@@ -4255,17 +4423,17 @@ unsafe extern "C" {
         KeyNameLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_QueryBusTime(RootHubPdo: PDEVICE_OBJECT, CurrentFrame: PULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CalculateUsbBandwidth(
         MaxPacketSize: ULONG,
         EndpointType: UCHAR,
         LowSpeed: BOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ValidateConfigurationDescriptor(
         ConfigDesc: PUSB_CONFIGURATION_DESCRIPTOR,
         BufferLength: ULONG,
@@ -4274,7 +4442,7 @@ unsafe extern "C" {
         Tag: ULONG,
     ) -> USBD_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_QueryUsbCapability(
         USBDHandle: USBD_HANDLE,
         CapabilityType: *const GUID,
@@ -4283,14 +4451,14 @@ unsafe extern "C" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_AssignUrbToIoStackLocation(
         USBDHandle: USBD_HANDLE,
         IoStackLocation: PIO_STACK_LOCATION,
         Urb: PURB,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateHandle(
         DeviceObject: PDEVICE_OBJECT,
         TargetDeviceObject: PDEVICE_OBJECT,
@@ -4299,22 +4467,23 @@ unsafe extern "C" {
         USBDHandle: *mut USBD_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CloseHandle(USBDHandle: USBD_HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_UrbAllocate(USBDHandle: USBD_HANDLE, Urb: *mut PURB) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_IsochUrbAllocate(
         USBDHandle: USBD_HANDLE,
         NumberOfIsochPacket: ULONG,
         Urb: *mut PURB,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_UrbFree(USBDHandle: USBD_HANDLE, Urb: PURB);
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_RESOURCES {
     pub ResourcesTypes: ULONG,
@@ -4338,9 +4507,10 @@ pub struct _USBPORT_RESOURCES {
 }
 pub type USBPORT_RESOURCES = _USBPORT_RESOURCES;
 pub type PUSBPORT_RESOURCES = *mut _USBPORT_RESOURCES;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn c_assert() -> *mut [::core::ffi::c_char; 1usize];
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_ENDPOINT_PROPERTIES {
     pub DeviceAddress: USHORT,
@@ -4369,6 +4539,7 @@ pub struct _USBPORT_ENDPOINT_PROPERTIES {
 }
 pub type USBPORT_ENDPOINT_PROPERTIES = _USBPORT_ENDPOINT_PROPERTIES;
 pub type PUSBPORT_ENDPOINT_PROPERTIES = *mut _USBPORT_ENDPOINT_PROPERTIES;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_TRANSFER_PARAMETERS {
     pub TransferFlags: ULONG,
@@ -4380,6 +4551,7 @@ pub struct _USBPORT_TRANSFER_PARAMETERS {
 }
 pub type USBPORT_TRANSFER_PARAMETERS = _USBPORT_TRANSFER_PARAMETERS;
 pub type PUSBPORT_TRANSFER_PARAMETERS = *mut _USBPORT_TRANSFER_PARAMETERS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_SCATTER_GATHER_ELEMENT {
     pub SgPhysicalAddress: PHYSICAL_ADDRESS,
@@ -4390,6 +4562,7 @@ pub struct _USBPORT_SCATTER_GATHER_ELEMENT {
 }
 pub type USBPORT_SCATTER_GATHER_ELEMENT = _USBPORT_SCATTER_GATHER_ELEMENT;
 pub type PUSBPORT_SCATTER_GATHER_ELEMENT = *mut _USBPORT_SCATTER_GATHER_ELEMENT;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_SCATTER_GATHER_LIST {
     pub Flags: ULONG,
@@ -4400,6 +4573,7 @@ pub struct _USBPORT_SCATTER_GATHER_LIST {
 }
 pub type USBPORT_SCATTER_GATHER_LIST = _USBPORT_SCATTER_GATHER_LIST;
 pub type PUSBPORT_SCATTER_GATHER_LIST = *mut _USBPORT_SCATTER_GATHER_LIST;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_ENDPOINT_REQUIREMENTS {
     pub HeaderBufferSize: ULONG,
@@ -4410,33 +4584,33 @@ pub type PUSBPORT_ENDPOINT_REQUIREMENTS = *mut _USBPORT_ENDPOINT_REQUIREMENTS;
 pub type MPSTATUS = ULONG;
 pub type RHSTATUS = ULONG;
 pub type PHCI_OPEN_ENDPOINT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID) -> MPSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID) -> MPSTATUS,
 >;
 pub type PHCI_REOPEN_ENDPOINT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID) -> MPSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID) -> MPSTATUS,
 >;
 pub type PHCI_QUERY_ENDPOINT_REQUIREMENTS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PUSBPORT_ENDPOINT_PROPERTIES,
         arg3: PUSBPORT_ENDPOINT_REQUIREMENTS,
     ),
 >;
 pub type PHCI_CLOSE_ENDPOINT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: BOOLEAN)>;
 pub type PHCI_START_CONTROLLER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PUSBPORT_RESOURCES) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PUSBPORT_RESOURCES) -> MPSTATUS>;
 pub type PHCI_STOP_CONTROLLER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: BOOLEAN)>;
-pub type PHCI_SUSPEND_CONTROLLER = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: BOOLEAN)>;
+pub type PHCI_SUSPEND_CONTROLLER = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_RESUME_CONTROLLER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> MPSTATUS>;
 pub type PHCI_INTERRUPT_SERVICE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> BOOLEAN>;
 pub type PHCI_INTERRUPT_DPC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: BOOLEAN)>;
 pub type PHCI_SUBMIT_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PVOID,
         arg3: PUSBPORT_TRANSFER_PARAMETERS,
@@ -4445,7 +4619,7 @@ pub type PHCI_SUBMIT_TRANSFER = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PHCI_SUBMIT_ISO_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PVOID,
         arg3: PUSBPORT_TRANSFER_PARAMETERS,
@@ -4454,66 +4628,66 @@ pub type PHCI_SUBMIT_ISO_TRANSFER = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PHCI_ABORT_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: PULONG),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: PULONG),
 >;
 pub type PHCI_GET_ENDPOINT_STATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
 pub type PHCI_SET_ENDPOINT_STATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
 pub type PHCI_POLL_ENDPOINT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID)>;
-pub type PHCI_CHECK_CONTROLLER = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID)>;
+pub type PHCI_CHECK_CONTROLLER = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_GET_32BIT_FRAME_NUMBER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> ULONG>;
-pub type PHCI_INTERRUPT_NEXT_SOF = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
-pub type PHCI_ENABLE_INTERRUPTS = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
-pub type PHCI_DISABLE_INTERRUPTS = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
-pub type PHCI_POLL_CONTROLLER = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> ULONG>;
+pub type PHCI_INTERRUPT_NEXT_SOF = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+pub type PHCI_ENABLE_INTERRUPTS = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+pub type PHCI_DISABLE_INTERRUPTS = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+pub type PHCI_POLL_CONTROLLER = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_SET_ENDPOINT_DATA_TOGGLE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
 pub type PHCI_GET_ENDPOINT_STATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
 pub type PHCI_SET_ENDPOINT_STATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
-pub type PHCI_RESET_CONTROLLER = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG)>;
+pub type PHCI_RESET_CONTROLLER = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_RH_GET_ROOT_HUB_DATA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID)>;
 pub type PHCI_RH_GET_STATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PUSHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PUSHORT) -> MPSTATUS>;
 pub type PHCI_RH_GET_PORT_STATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: USHORT, arg3: PUSB_PORT_STATUS_AND_CHANGE) -> MPSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: USHORT, arg3: PUSB_PORT_STATUS_AND_CHANGE) -> MPSTATUS,
 >;
 pub type PHCI_RH_GET_HUB_STATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSB_HUB_STATUS_AND_CHANGE) -> MPSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSB_HUB_STATUS_AND_CHANGE) -> MPSTATUS,
 >;
 pub type PHCI_RH_SET_FEATURE_PORT_RESET =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_SET_FEATURE_PORT_POWER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_SET_FEATURE_PORT_ENABLE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_SET_FEATURE_PORT_SUSPEND =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_ENABLE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_POWER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_SUSPEND =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_ENABLE_CHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_CONNECT_CHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_RESET_CHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_SUSPEND_CHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
 pub type PHCI_RH_CLEAR_FEATURE_PORT_OVERCURRENT_CHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
-pub type PHCI_RH_DISABLE_IRQ = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
-pub type PHCI_RH_ENABLE_IRQ = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+pub type PHCI_RH_DISABLE_IRQ = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+pub type PHCI_RH_ENABLE_IRQ = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_START_SEND_ONE_PACKET = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PVOID,
         arg3: PVOID,
@@ -4525,7 +4699,7 @@ pub type PHCI_START_SEND_ONE_PACKET = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PHCI_END_SEND_ONE_PACKET = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PVOID,
         arg3: PVOID,
@@ -4537,17 +4711,17 @@ pub type PHCI_END_SEND_ONE_PACKET = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PHCI_PASS_THRU = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG, arg4: PVOID) -> MPSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: ULONG, arg4: PVOID) -> MPSTATUS,
 >;
 pub type PUSBPORT_DBG_PRINT =
     ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: ULONG, arg3: PCH, ...) -> ULONG>;
 pub type PUSBPORT_TEST_DEBUG_BREAK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> ULONG>;
 pub type PUSBPORT_ASSERT_FAILURE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: ULONG, arg5: PCHAR) -> ULONG,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: ULONG, arg5: PCHAR) -> ULONG,
 >;
 pub type PUSBPORT_GET_MINIPORT_REGISTRY_KEY_VALUE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: BOOL,
         arg3: PCWSTR,
@@ -4557,17 +4731,17 @@ pub type PUSBPORT_GET_MINIPORT_REGISTRY_KEY_VALUE = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PUSBPORT_INVALIDATE_ROOT_HUB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> ULONG>;
 pub type PUSBPORT_INVALIDATE_ENDPOINT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> ULONG>;
 pub type PUSBPORT_COMPLETE_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: USBD_STATUS, arg5: ULONG),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: USBD_STATUS, arg5: ULONG),
 >;
 pub type PUSBPORT_COMPLETE_ISO_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: ULONG) -> ULONG,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: ULONG) -> ULONG,
 >;
 pub type PUSBPORT_LOG_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: ULONG,
@@ -4577,11 +4751,11 @@ pub type PUSBPORT_LOG_ENTRY = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PUSBPORT_GET_MAPPED_VIRTUAL_ADDRESS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: ULONG, arg2: PVOID, arg3: PVOID) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: ULONG, arg2: PVOID, arg3: PVOID) -> PVOID>;
 pub type ASYNC_TIMER_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(MiniportExtension: PVOID, CallBackContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(MiniportExtension: PVOID, CallBackContext: PVOID)>;
 pub type PUSBPORT_REQUEST_ASYNC_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: PVOID,
@@ -4590,7 +4764,7 @@ pub type PUSBPORT_REQUEST_ASYNC_CALLBACK = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PUSBPORT_READ_WRITE_CONFIG_SPACE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: BOOLEAN,
         arg3: PVOID,
@@ -4599,20 +4773,21 @@ pub type PUSBPORT_READ_WRITE_CONFIG_SPACE = ::core::option::Option<
     ) -> MPSTATUS,
 >;
 pub type PUSBPORT_WAIT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: ULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: ULONG) -> NTSTATUS>;
 pub type PUSBPORT_INVALIDATE_CONTROLLER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: ULONG) -> ULONG>;
-pub type PUSBPORT_BUG_CHECK = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: ULONG) -> ULONG>;
+pub type PUSBPORT_BUG_CHECK = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PUSBPORT_NOTIFY_DOUBLE_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: SIZE_T) -> ULONG,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PVOID, arg3: PVOID, arg4: SIZE_T) -> ULONG,
 >;
 pub type PHCI_REBALANCE_ENDPOINT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBPORT_ENDPOINT_PROPERTIES, arg3: PVOID),
 >;
-pub type PHCI_FLUSH_INTERRUPTS = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+pub type PHCI_FLUSH_INTERRUPTS = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub type PHCI_RH_CHIRP_ROOT_PORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
-pub type PHCI_TAKE_PORT_CONTROL = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: USHORT) -> MPSTATUS>;
+pub type PHCI_TAKE_PORT_CONTROL = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_REGISTRATION_PACKET {
     pub MiniPortVersion: ULONG,
@@ -4697,6 +4872,7 @@ pub struct _USBPORT_REGISTRATION_PACKET {
 }
 pub type USBPORT_REGISTRATION_PACKET = _USBPORT_REGISTRATION_PACKET;
 pub type PUSBPORT_REGISTRATION_PACKET = *mut _USBPORT_REGISTRATION_PACKET;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_MINIPORT_INTERFACE {
     pub DriverObject: PDRIVER_OBJECT,
@@ -4707,12 +4883,21 @@ pub struct _USBPORT_MINIPORT_INTERFACE {
 }
 pub type USBPORT_MINIPORT_INTERFACE = _USBPORT_MINIPORT_INTERFACE;
 pub type PUSBPORT_MINIPORT_INTERFACE = *mut _USBPORT_MINIPORT_INTERFACE;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _USBPORT_HUB_11_CHARACTERISTICS {
-    pub __bindgen_anon_1: __BindgenUnionField<_USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _USBPORT_HUB_11_CHARACTERISTICS {
+    pub __bindgen_anon_1: _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1,
+    pub c2rust_unnamed: _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _USBPORT_HUB_11_CHARACTERISTICS {
+    type Target = _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USBPORT_HUB_11_CHARACTERISTICS {
+    #[inline] fn deref_mut(&mut self) -> &mut _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1 {
     pub _bitfield_align_1: [u16; 0],
@@ -4957,12 +5142,21 @@ impl _USBPORT_HUB_11_CHARACTERISTICS__bindgen_ty_1 {
     }
 }
 pub type USBPORT_HUB_11_CHARACTERISTICS = _USBPORT_HUB_11_CHARACTERISTICS;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _USBPORT_HUB_20_CHARACTERISTICS {
-    pub __bindgen_anon_1: __BindgenUnionField<_USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _USBPORT_HUB_20_CHARACTERISTICS {
+    pub __bindgen_anon_1: _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1,
+    pub c2rust_unnamed: _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _USBPORT_HUB_20_CHARACTERISTICS {
+    type Target = _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _USBPORT_HUB_20_CHARACTERISTICS {
+    #[inline] fn deref_mut(&mut self) -> &mut _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(2))]
 pub struct _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1 {
@@ -5286,15 +5480,16 @@ impl _USBPORT_HUB_20_CHARACTERISTICS__bindgen_ty_1 {
 }
 pub type USBPORT_HUB_20_CHARACTERISTICS = _USBPORT_HUB_20_CHARACTERISTICS;
 pub type USBPORT_HUB_30_CHARACTERISTICS = USBPORT_HUB_11_CHARACTERISTICS;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _USBPORT_HUB_CHARACTERISTICS {
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub Usb11HubCharacteristics: __BindgenUnionField<USBPORT_HUB_11_CHARACTERISTICS>,
-    pub Usb20HubCharacteristics: __BindgenUnionField<USBPORT_HUB_20_CHARACTERISTICS>,
-    pub Usb30HubCharacteristics: __BindgenUnionField<USBPORT_HUB_30_CHARACTERISTICS>,
-    pub bindgen_union_field: u16,
+pub union _USBPORT_HUB_CHARACTERISTICS {
+    pub AsUSHORT: USHORT,
+    pub Usb11HubCharacteristics: USBPORT_HUB_11_CHARACTERISTICS,
+    pub Usb20HubCharacteristics: USBPORT_HUB_20_CHARACTERISTICS,
+    pub Usb30HubCharacteristics: USBPORT_HUB_30_CHARACTERISTICS,
 }
 pub type USBPORT_HUB_CHARACTERISTICS = _USBPORT_HUB_CHARACTERISTICS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USBPORT_ROOT_HUB_DATA {
     pub NumberOfPorts: ULONG,
@@ -5305,22 +5500,31 @@ pub struct _USBPORT_ROOT_HUB_DATA {
 }
 pub type USBPORT_ROOT_HUB_DATA = _USBPORT_ROOT_HUB_DATA;
 pub type PUSBPORT_ROOT_HUB_DATA = *mut _USBPORT_ROOT_HUB_DATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBPORT_GetHciMn() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBPORT_RegisterUSBPortDriver(
         DriverObject: PDRIVER_OBJECT,
         Version: ULONG,
         RegistrationPacket: PUSBPORT_REGISTRATION_PACKET,
     ) -> NTSTATUS;
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_PCI_LEGSUP {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_PCI_LEGSUP__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _UHCI_PCI_LEGSUP {
+    pub __bindgen_anon_1: _UHCI_PCI_LEGSUP__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_PCI_LEGSUP__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _UHCI_PCI_LEGSUP {
+    type Target = _UHCI_PCI_LEGSUP__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_PCI_LEGSUP__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_PCI_LEGSUP {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_PCI_LEGSUP__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(2))]
 pub struct _UHCI_PCI_LEGSUP__bindgen_ty_1 {
@@ -5944,12 +6148,21 @@ impl _UHCI_PCI_LEGSUP__bindgen_ty_1 {
     }
 }
 pub type UHCI_PCI_LEGSUP = _UHCI_PCI_LEGSUP;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_USB_COMMAND {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_USB_COMMAND__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _UHCI_USB_COMMAND {
+    pub __bindgen_anon_1: _UHCI_USB_COMMAND__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_USB_COMMAND__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _UHCI_USB_COMMAND {
+    type Target = _UHCI_USB_COMMAND__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_USB_COMMAND__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_USB_COMMAND {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_USB_COMMAND__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(2))]
 pub struct _UHCI_USB_COMMAND__bindgen_ty_1 {
@@ -6307,12 +6520,21 @@ impl _UHCI_USB_COMMAND__bindgen_ty_1 {
     }
 }
 pub type UHCI_USB_COMMAND = _UHCI_USB_COMMAND;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_USB_STATUS {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_USB_STATUS__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _UHCI_USB_STATUS {
+    pub __bindgen_anon_1: _UHCI_USB_STATUS__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_USB_STATUS__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _UHCI_USB_STATUS {
+    type Target = _UHCI_USB_STATUS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_USB_STATUS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_USB_STATUS {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_USB_STATUS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_USB_STATUS__bindgen_ty_1 {
     pub _bitfield_align_1: [u16; 0],
@@ -6593,12 +6815,21 @@ impl _UHCI_USB_STATUS__bindgen_ty_1 {
     }
 }
 pub type UHCI_USB_STATUS = _UHCI_USB_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_INTERRUPT_ENABLE {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_INTERRUPT_ENABLE__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _UHCI_INTERRUPT_ENABLE {
+    pub __bindgen_anon_1: _UHCI_INTERRUPT_ENABLE__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_INTERRUPT_ENABLE__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _UHCI_INTERRUPT_ENABLE {
+    type Target = _UHCI_INTERRUPT_ENABLE__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_INTERRUPT_ENABLE__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_INTERRUPT_ENABLE {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_INTERRUPT_ENABLE__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_INTERRUPT_ENABLE__bindgen_ty_1 {
     pub _bitfield_align_1: [u16; 0],
@@ -6803,12 +7034,21 @@ impl _UHCI_INTERRUPT_ENABLE__bindgen_ty_1 {
     }
 }
 pub type UHCI_INTERRUPT_ENABLE = _UHCI_INTERRUPT_ENABLE;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_PORT_STATUS_CONTROL {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_PORT_STATUS_CONTROL__bindgen_ty_1>,
-    pub AsUSHORT: __BindgenUnionField<USHORT>,
-    pub bindgen_union_field: u16,
+pub union _UHCI_PORT_STATUS_CONTROL {
+    pub __bindgen_anon_1: _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1,
+    pub AsUSHORT: USHORT,
 }
+impl core::ops::Deref for _UHCI_PORT_STATUS_CONTROL {
+    type Target = _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_PORT_STATUS_CONTROL__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_PORT_STATUS_CONTROL {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(2))]
 pub struct _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1 {
@@ -7281,6 +7521,7 @@ impl _UHCI_PORT_STATUS_CONTROL__bindgen_ty_1 {
     }
 }
 pub type UHCI_PORT_STATUS_CONTROL = _UHCI_PORT_STATUS_CONTROL;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_HW_REGISTERS {
     pub HcCommand: UHCI_USB_COMMAND,
@@ -7294,12 +7535,21 @@ pub struct _UHCI_HW_REGISTERS {
 }
 pub type UHCI_HW_REGISTERS = _UHCI_HW_REGISTERS;
 pub type PUHCI_HW_REGISTERS = *mut _UHCI_HW_REGISTERS;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_CONTROL_STATUS {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_CONTROL_STATUS__bindgen_ty_1>,
-    pub AsULONG: __BindgenUnionField<ULONG>,
-    pub bindgen_union_field: u32,
+pub union _UHCI_CONTROL_STATUS {
+    pub __bindgen_anon_1: _UHCI_CONTROL_STATUS__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_CONTROL_STATUS__bindgen_ty_1,
+    pub AsULONG: ULONG,
 }
+impl core::ops::Deref for _UHCI_CONTROL_STATUS {
+    type Target = _UHCI_CONTROL_STATUS__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_CONTROL_STATUS__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_CONTROL_STATUS {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_CONTROL_STATUS__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(4))]
 pub struct _UHCI_CONTROL_STATUS__bindgen_ty_1 {
@@ -7657,12 +7907,21 @@ impl _UHCI_CONTROL_STATUS__bindgen_ty_1 {
     }
 }
 pub type UHCI_CONTROL_STATUS = _UHCI_CONTROL_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_TD_TOKEN {
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_TD_TOKEN__bindgen_ty_1>,
-    pub AsULONG: __BindgenUnionField<ULONG>,
-    pub bindgen_union_field: u32,
+pub union _UHCI_TD_TOKEN {
+    pub __bindgen_anon_1: _UHCI_TD_TOKEN__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_TD_TOKEN__bindgen_ty_1,
+    pub AsULONG: ULONG,
 }
+impl core::ops::Deref for _UHCI_TD_TOKEN {
+    type Target = _UHCI_TD_TOKEN__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_TD_TOKEN__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_TD_TOKEN {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_TD_TOKEN__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[repr(align(4))]
 pub struct _UHCI_TD_TOKEN__bindgen_ty_1 {
@@ -7906,6 +8165,7 @@ impl _UHCI_TD_TOKEN__bindgen_ty_1 {
     }
 }
 pub type UHCI_TD_TOKEN = _UHCI_TD_TOKEN;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_TD {
     pub NextElement: ULONG,
@@ -7915,6 +8175,7 @@ pub struct _UHCI_TD {
 }
 pub type UHCI_TD = _UHCI_TD;
 pub type PUHCI_TD = *mut _UHCI_TD;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_QH {
     pub NextQH: ULONG,
@@ -7922,11 +8183,12 @@ pub struct _UHCI_QH {
 }
 pub type UHCI_QH = _UHCI_QH;
 pub type PUHCI_QH = *mut _UHCI_QH;
-unsafe extern "C" {
+unsafe extern "system" {
     pub static mut RegPacket: USBPORT_REGISTRATION_PACKET;
 }
 pub type PUHCI_ENDPOINT = *mut _UHCI_ENDPOINT;
 pub type PUHCI_TRANSFER = *mut _UHCI_TRANSFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_HCD_TD {
     pub HwTD: UHCI_TD,
@@ -7938,12 +8200,21 @@ pub struct _UHCI_HCD_TD {
     pub TdLink: LIST_ENTRY,
     pub Padded: [ULONG; 15usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _UHCI_HCD_TD__bindgen_ty_1 {
-    pub UhciTransfer: __BindgenUnionField<PUHCI_TRANSFER>,
-    pub __bindgen_anon_1: __BindgenUnionField<_UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1>,
-    pub bindgen_union_field: u64,
+pub union _UHCI_HCD_TD__bindgen_ty_1 {
+    pub UhciTransfer: PUHCI_TRANSFER,
+    pub __bindgen_anon_1: _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1,
+    pub c2rust_unnamed: _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1,
 }
+impl core::ops::Deref for _UHCI_HCD_TD__bindgen_ty_1 {
+    type Target = _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1;
+    #[inline] fn deref(&self) -> &_UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1 { unsafe { &self.c2rust_unnamed } }
+}
+impl core::ops::DerefMut for _UHCI_HCD_TD__bindgen_ty_1 {
+    #[inline] fn deref_mut(&mut self) -> &mut _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1 { unsafe { &mut self.c2rust_unnamed } }
+}
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1 {
     pub Frame: ULONG,
@@ -7951,6 +8222,7 @@ pub struct _UHCI_HCD_TD__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type UHCI_HCD_TD = _UHCI_HCD_TD;
 pub type PUHCI_HCD_TD = *mut _UHCI_HCD_TD;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_HCD_QH {
     pub HwQH: UHCI_QH,
@@ -7963,6 +8235,7 @@ pub struct _UHCI_HCD_QH {
 }
 pub type UHCI_HCD_QH = _UHCI_HCD_QH;
 pub type PUHCI_HCD_QH = *mut _UHCI_HCD_QH;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_ENDPOINT {
     pub Flags: ULONG,
@@ -7979,6 +8252,7 @@ pub struct _UHCI_ENDPOINT {
     pub DataToggle: BOOL,
 }
 pub type UHCI_ENDPOINT = _UHCI_ENDPOINT;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_TRANSFER {
     pub TransferParameters: PUSBPORT_TRANSFER_PARAMETERS,
@@ -7988,6 +8262,7 @@ pub struct _UHCI_TRANSFER {
     pub TransferLen: SIZE_T,
 }
 pub type UHCI_TRANSFER = _UHCI_TRANSFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_HC_RESOURCES {
     pub FrameList: [ULONG; 1024usize],
@@ -8000,6 +8275,7 @@ pub struct _UHCI_HC_RESOURCES {
 }
 pub type UHCI_HC_RESOURCES = _UHCI_HC_RESOURCES;
 pub type PUHCI_HC_RESOURCES = *mut _UHCI_HC_RESOURCES;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _UHCI_EXTENSION {
     pub BaseRegister: PUHCI_HW_REGISTERS,
@@ -8028,73 +8304,73 @@ pub struct _UHCI_EXTENSION {
 }
 pub type UHCI_EXTENSION = _UHCI_EXTENSION;
 pub type PUHCI_EXTENSION = *mut _UHCI_EXTENSION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHGetRootHubData(uhciExtension: PVOID, rootHubData: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHGetStatus(uhciExtension: PVOID, Status: PUSHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHGetPortStatus(
         uhciExtension: PVOID,
         Port: USHORT,
         PortStatus: PUSB_PORT_STATUS_AND_CHANGE,
     ) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHGetHubStatus(
         uhciExtension: PVOID,
         HubStatus: PUSB_HUB_STATUS_AND_CHANGE,
     ) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHSetFeaturePortReset(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHSetFeaturePortPower(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHSetFeaturePortEnable(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHSetFeaturePortSuspend(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortEnable(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortPower(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortSuspend(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortEnableChange(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortConnectChange(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortResetChange(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortSuspendChange(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHClearFeaturePortOvercurrentChange(uhciExtension: PVOID, Port: USHORT) -> MPSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHDisableIrq(uhciExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciRHEnableIrq(uhciExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciDisableInterrupts(uhciExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciGet32BitFrameNumber(uhciExtension: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UhciHardwarePresent(UhciExtension: PUHCI_EXTENSION) -> BOOLEAN;
 }

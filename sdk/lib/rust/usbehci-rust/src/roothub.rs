@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -431,8 +433,8 @@ pub unsafe extern "system" fn EHCI_RH_PortResetComplete(ehciExtension: PVOID, Co
         EhciExtension as PVOID,
         50,
         Port as PVOID,
-        core::mem::size_of::<u16>() as SIZE_T,
-        Some(EHCI_RH_FinishReset as unsafe extern "C" fn(PVOID, PVOID) -> ()),
+        core::mem::size_of::<u16>() as ULONG,
+        Some(EHCI_RH_FinishReset as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 }
 
@@ -478,8 +480,8 @@ pub unsafe extern "system" fn EHCI_RH_SetFeaturePortReset(
         EhciExtension as PVOID,
         50 as ULONG,
         core::ptr::addr_of_mut!(Port) as PVOID,
-        core::mem::size_of::<USHORT>() as SIZE_T,
-        Some(EHCI_RH_PortResetComplete as unsafe extern "C" fn(PVOID, PVOID) -> ()),
+        core::mem::size_of::<USHORT>() as ULONG,
+        Some(EHCI_RH_PortResetComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 
     return MP_STATUS_SUCCESS as MPSTATUS;
@@ -693,8 +695,8 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortSuspend(
         EhciExtension as PVOID,
         50,
         core::ptr::addr_of_mut!(Port) as PVOID,
-        core::mem::size_of::<USHORT>() as SIZE_T,
-        Some(EHCI_RH_PortResumeComplete as unsafe extern "C" fn(PVOID, PVOID) -> ()),
+        core::mem::size_of::<USHORT>() as ULONG,
+        Some(EHCI_RH_PortResumeComplete as unsafe extern "system" fn(PVOID, PVOID) -> ()),
     );
 
     return MP_STATUS_SUCCESS as MPSTATUS;
@@ -750,7 +752,7 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortConnectChange(
 
     DPRINT_RH(
         b"EHCI_RH_ClearFeaturePortConnectChange: Port - %x\n\0".as_ptr() as *const core::ffi::c_char,
-        Port,
+        Port as core::ffi::c_int,
     );
 
     if !(Port as core::ffi::c_int != 0 as core::ffi::c_int) {
@@ -846,7 +848,7 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortOvercurrentChange(
 
     DPRINT_RH(
         b"EHCI_RH_ClearFeaturePortOvercurrentChange: Port - %x\n\0".as_ptr() as *const i8,
-        Port,
+        Port as core::ffi::c_int,
     );
     if !(Port as i32 != 0 as i32) {
         RtlAssert(

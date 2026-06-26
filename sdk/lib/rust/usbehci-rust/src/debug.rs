@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use core::ffi::c_void;
 
 extern "C" {

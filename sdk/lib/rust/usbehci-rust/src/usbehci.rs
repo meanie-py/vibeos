@@ -1,13 +1,16 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{Balance, KeStallExecutionProcessor, LARGE_INTEGER, PDRIVER_OBJECT, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{KeStallExecutionProcessor, LARGE_INTEGER, PDRIVER_OBJECT, PUNICODE_STRING};
 use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
+    fn DPRINT_EHCI(format: *const ::core::ffi::c_char, ...);
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR);
     fn USBPORT_GetHciMn() -> ULONG;
     fn USBPORT_RegisterUSBPortDriver( DriverObject: PDRIVER_OBJECT, Version: ULONG, RegPacket: *mut USBPORT_REGISTRATION_PACKET, ) -> NTSTATUS;
@@ -586,7 +589,7 @@ pub unsafe extern "system" fn EHCI_InitializeQH(
     let EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES;
     let DeviceSpeed: ULONG;
 
-    DPRINT_EHCI!(
+    DPRINT_EHCI(
         b"EHCI_InitializeQH: EhciEndpoint - %p, QH - %p, QhPA - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         QH,
@@ -671,7 +674,7 @@ pub unsafe extern "system" fn EHCI_OpenBulkOrControlEndpoint(
 
     RtlZeroMemory(
         (*EhciEndpoint).DmaBufferVA,
-        core::mem::size_of::<EHCI_HCD_TD>() as ULONG,
+        core::mem::size_of::<EHCI_HCD_TD>() as SIZE_T,
     );
 
     QH = ((*EhciEndpoint).DmaBufferVA as PEHCI_HCD_QH).offset(1);
@@ -696,7 +699,7 @@ pub unsafe extern "system" fn EHCI_OpenBulkOrControlEndpoint(
 
     ix = 0;
     while ix < TdCount {
-        RtlZeroMemory(TdVA as PVOID, core::mem::size_of::<EHCI_HCD_TD>() as ULONG);
+        RtlZeroMemory(TdVA as PVOID, core::mem::size_of::<EHCI_HCD_TD>() as SIZE_T);
 
         // ASSERT((TdPA & ~LINK_POINTER_MASK) == 0);
 
@@ -1345,7 +1348,7 @@ pub unsafe extern "system" fn EHCI_InitializeSchedule(
 
     RtlZeroMemory(
         AsyncHead as *mut core::ffi::c_void,
-        core::mem::size_of::<EHCI_STATIC_QH>() as ULONG,
+        core::mem::size_of::<EHCI_STATIC_QH>() as SIZE_T,
     );
 
     NextLink.AsULONG = AsyncHeadPA;
@@ -1565,7 +1568,7 @@ pub unsafe extern "system" fn EHCI_TakeControlHC(EhciExtension: PEHCI_EXTENSION)
         core::mem::size_of::<EHCI_LEGACY_EXTENDED_CAPABILITY>() as ULONG,
     );
 
-    *(core::ptr::addr_of_mut!(EndTime) as *mut ULONG64) = *(SharedSystemTime as *mut ULONG64);
+    *(core::ptr::addr_of_mut!(EndTime) as *mut ULONG64) = *(SharedSystemTimePtr());
     EndTime.QuadPart += (100 * 10000) as i64;
 
     loop {
@@ -1576,7 +1579,7 @@ pub unsafe extern "system" fn EHCI_TakeControlHC(EhciExtension: PEHCI_EXTENSION)
             OffsetEECP as ULONG,
             core::mem::size_of::<EHCI_LEGACY_EXTENDED_CAPABILITY>() as ULONG,
         );
-        *(core::ptr::addr_of_mut!(CurrentTime) as *mut ULONG64) = *(SharedSystemTime as *mut ULONG64);
+        *(core::ptr::addr_of_mut!(CurrentTime) as *mut ULONG64) = *(SharedSystemTimePtr());
 
         if LegacyCapability.c2rust_unnamed.BiosOwnedSemaphore() != 0 {
             break;
@@ -1661,7 +1664,7 @@ pub unsafe extern "system" fn EHCI_StartController(
         return MPStatus;
     }
 
-    MPStatus = EHCI_InitializeSchedule(EhciExtension, (*Resources).StartVA, (*Resources).StartPA);
+    MPStatus = EHCI_InitializeSchedule(EhciExtension, (*Resources).StartVA as ULONG_PTR, (*Resources).StartPA);
 
     if MPStatus != 0 {
         return MPStatus;
@@ -1983,7 +1986,7 @@ pub unsafe extern "system" fn EHCI_InterruptService(ehciExtension: PVOID) -> BOO
     if iStatus.HostSystemError() != 0 {
         (*EhciExtension).HcSystemErrors = (*EhciExtension).HcSystemErrors.wrapping_add(1);
 
-        if ((*EhciExtension).HcSystemErrors as i32) < EHCI_MAX_HC_SYSTEM_ERRORS {
+        if ((*EhciExtension).HcSystemErrors as i32) < EHCI_MAX_HC_SYSTEM_ERRORS as i32 {
             Command.AsULONG =
                 READ_REGISTER_ULONG(core::ptr::addr_of_mut!((*OperationalRegs).HcCommand.AsULONG));
             Command.set_Run(1 as ULONG);
@@ -2027,7 +2030,7 @@ pub unsafe extern "system" fn EHCI_InterruptDpc(
     DPRINT_EHCI(
         b"EHCI_InterruptDpc: [%p] EnableInterrupts - %x\n\0".as_ptr() as *const i8,
         EhciExtension,
-        EnableInterrupts,
+        EnableInterrupts as core::ffi::c_int,
     );
 
     iStatus = (*EhciExtension).InterruptStatus;
@@ -2115,12 +2118,12 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
     if SgRemain > EHCI_MAX_QTD_BUFFER_PAGES {
         (*TD).HwTD.Buffer[0] = (*SgList).SgElement[SgIdx as usize]
             .SgPhysicalAddress
-            .LowPart
+            .u.LowPart
             .wrapping_sub((*SgList).SgElement[SgIdx as usize].SgOffset)
             .wrapping_add(TransferedLen);
 
-        LengthThisTD = (EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE)
-            .wrapping_sub((*TD).HwTD.Buffer[0] & (PAGE_SIZE - 1));
+        LengthThisTD = (EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE as ULONG)
+            .wrapping_sub((*TD).HwTD.Buffer[0] & (PAGE_SIZE as ULONG - 1));
 
         ix = 1;
         while ix < EHCI_MAX_QTD_BUFFER_PAGES {
@@ -2755,17 +2758,17 @@ pub unsafe extern "system" fn EHCI_BulkTransfer(
 ) -> MPSTATUS {
     let mut PrevTD: PEHCI_HCD_TD;
     let mut FirstTD: PEHCI_HCD_TD = core::ptr::null_mut();
-    let mut TD: PEHCI_HCD_TD;
+    let mut TD: PEHCI_HCD_TD = core::ptr::null_mut();
     let mut TransferedLen: ULONG;
 
-    DPRINT_EHCI!(
+    DPRINT_EHCI(
         b"EHCI_BulkTransfer: EhciEndpoint - %p, EhciTransfer - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         EhciTransfer
     );
 
     if ((*TransferParameters).TransferBufferLength
-        / (((EHCI_MAX_QTD_BUFFER_PAGES - 1) * PAGE_SIZE) as ULONG))
+        / (((EHCI_MAX_QTD_BUFFER_PAGES - 1) * PAGE_SIZE as ULONG) as ULONG))
         + 1
         > (*EhciEndpoint).RemainTDs
     {
@@ -3571,7 +3574,7 @@ pub unsafe extern "system" fn EHCI_SetEndpointState(
 pub unsafe extern "system" fn EHCI_InterruptNextSOF(ehciExtension: PVOID) {
     let EhciExtension: PEHCI_EXTENSION = ehciExtension as PEHCI_EXTENSION;
 
-    DPRINT_EHCI("EHCI_InterruptNextSOF: ... \n");
+    DPRINT_EHCI(b"EHCI_InterruptNextSOF: ... \n\0".as_ptr() as *const i8);
 
     (RegPacket.UsbPortInvalidateController.expect("non-null function pointer"))(
         EhciExtension as PVOID,
@@ -3585,7 +3588,7 @@ pub unsafe extern "system" fn EHCI_GetErrorFromTD(TD: PEHCI_HCD_TD) -> USBD_STAT
 
     DPRINT_EHCI(b"EHCI_GetErrorFromTD: ... \n\0".as_ptr() as *const i8);
 
-    if (*TD).HwTD.Token.c2rust_unnamed.__bindgen_anon_1.Status() as ::core::ffi::c_int
+    if (*TD).HwTD.Token.c2rust_unnamed.Status() as ::core::ffi::c_int
         & EHCI_TOKEN_STATUS_HALTED
         == 0
     {
@@ -3602,25 +3605,25 @@ pub unsafe extern "system" fn EHCI_GetErrorFromTD(TD: PEHCI_HCD_TD) -> USBD_STAT
 
     Token = (*TD).HwTD.Token;
 
-    if Token.c2rust_unnamed.__bindgen_anon_1.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_TRANSACTION_ERROR
+    if Token.c2rust_unnamed.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_TRANSACTION_ERROR
         != 0
     {
         return USBD_STATUS_XACT_ERROR;
     }
 
-    if Token.c2rust_unnamed.__bindgen_anon_1.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_BABBLE_DETECTED
+    if Token.c2rust_unnamed.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_BABBLE_DETECTED
         != 0
     {
         return USBD_STATUS_BABBLE_DETECTED;
     }
 
-    if Token.c2rust_unnamed.__bindgen_anon_1.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_DATA_BUFFER_ERROR
+    if Token.c2rust_unnamed.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_DATA_BUFFER_ERROR
         != 0
     {
         return USBD_STATUS_DATA_BUFFER_ERROR;
     }
 
-    if Token.c2rust_unnamed.__bindgen_anon_1.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_MISSED_MICROFRAME
+    if Token.c2rust_unnamed.Status() as ::core::ffi::c_int & EHCI_TOKEN_STATUS_MISSED_MICROFRAME
         != 0
     {
         return USBD_STATUS_XACT_ERROR;
@@ -3653,7 +3656,7 @@ pub unsafe extern "system" fn EHCI_ProcessDoneAsyncTd(
     EhciEndpoint = (*EhciTransfer).EhciEndpoint;
 
     if (*TD).TdFlags & EHCI_HCD_TD_FLAG_ACTIVE == 0 {
-        if (*TD).HwTD.Token.__bindgen_anon_1.Status() & EHCI_TOKEN_STATUS_HALTED != 0 {
+        if (*TD).HwTD.Token.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_HALTED != 0 {
             USBDStatus = EHCI_GetErrorFromTD(TD);
         } else {
             USBDStatus = USBD_STATUS_SUCCESS;
@@ -3668,7 +3671,7 @@ pub unsafe extern "system" fn EHCI_ProcessDoneAsyncTd(
         }
 
         if USBDStatus != USBD_STATUS_SUCCESS {
-            (*EhciTransfer).USBDStatus = USBDStatus;
+            (*EhciTransfer).USBDStatus = USBDStatus as ULONG;
         }
     }
 
@@ -3709,7 +3712,7 @@ pub unsafe extern "system" fn EHCI_ProcessDoneAsyncTd(
             EhciExtension as PVOID,
             EhciEndpoint as PVOID,
             TransferParameters as PVOID,
-            (*EhciTransfer).USBDStatus,
+            (*EhciTransfer).USBDStatus as USBD_STATUS,
             (*EhciTransfer).TransferLen,
         );
     }
@@ -3753,7 +3756,7 @@ pub unsafe extern "system" fn EHCI_PollActiveAsyncEndpoint(
 
     if TD == CurrentTD {
         if TD != (*EhciEndpoint).HcdTailP
-            && (*TD).HwTD.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE == 0
+            && (*TD).HwTD.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE == 0
         {
             if !(*TD).NextHcdTD.is_null()
                 && (*TD).HwTD.NextTD != (*(*TD).NextHcdTD).PhysicalAddress
@@ -3768,7 +3771,7 @@ pub unsafe extern "system" fn EHCI_PollActiveAsyncEndpoint(
             }
 
             if (*QH).sqh.HwQH.CurrentTD == (*TD).PhysicalAddress
-                && (*TD).HwTD.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE == 0
+                && (*TD).HwTD.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE == 0
                 && ((*QH).sqh.HwQH.NextTD != (*TD).HwTD.NextTD
                     || (*QH).sqh.HwQH.AlternateNextTD != (*TD).HwTD.AlternateNextTD)
             {
@@ -3784,7 +3787,7 @@ pub unsafe extern "system" fn EHCI_PollActiveAsyncEndpoint(
 
             (*TD).TdFlags |= EHCI_HCD_TD_FLAG_DONE as ULONG;
 
-            if (*TD).HwTD.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
+            if (*TD).HwTD.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
                 (*TD).TdFlags |= EHCI_HCD_TD_FLAG_ACTIVE as ULONG;
             }
 
@@ -3796,7 +3799,7 @@ pub unsafe extern "system" fn EHCI_PollActiveAsyncEndpoint(
         }
     }
 
-    if (*CurrentTD).HwTD.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
+    if (*CurrentTD).HwTD.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
         // ASSERT(TD != NULL);
         (*EhciEndpoint).HcdHeadP = TD;
         return;
@@ -3898,7 +3901,7 @@ pub unsafe extern "system" fn EHCI_PollHaltedAsyncEndpoint(
     TD = (*EhciEndpoint).HcdHeadP;
 
     while TD != CurrentTD {
-        if (*TD).HwTD.Token.__bindgen_anon_1.Status() & EHCI_TOKEN_STATUS_ACTIVE != 0 {
+        if (*TD).HwTD.Token.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
             (*TD).TdFlags |= EHCI_HCD_TD_FLAG_ACTIVE;
         }
 
@@ -3917,7 +3920,7 @@ pub unsafe extern "system" fn EHCI_PollHaltedAsyncEndpoint(
     Transfer = (*CurrentTD).EhciTransfer as PEHCI_TRANSFER;
 
     loop {
-        if (*TD).HwTD.Token.__bindgen_anon_1.Status() & EHCI_TOKEN_STATUS_ACTIVE != 0 {
+        if (*TD).HwTD.Token.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0 {
             (*TD).TdFlags |= EHCI_HCD_TD_FLAG_ACTIVE;
         }
 
@@ -3975,8 +3978,8 @@ pub unsafe extern "system" fn EHCI_PollAsyncEndpoint(
         return;
     }
 
-    if (*QH).sqh.HwQH.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0
-        || (*QH).sqh.HwQH.Token.c2rust_unnamed.__bindgen_anon_1.Status() as i32 & EHCI_TOKEN_STATUS_HALTED == 0
+    if (*QH).sqh.HwQH.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_ACTIVE != 0
+        || (*QH).sqh.HwQH.Token.c2rust_unnamed.Status() as i32 & EHCI_TOKEN_STATUS_HALTED == 0
     {
         EHCI_PollActiveAsyncEndpoint(EhciExtension, EhciEndpoint);
     } else {
@@ -3986,7 +3989,7 @@ pub unsafe extern "system" fn EHCI_PollAsyncEndpoint(
 
     DoneList = core::ptr::addr_of_mut!((*EhciEndpoint).ListTDs) as PLIST_ENTRY;
 
-    while IsListEmpty(DoneList as *const LIST_ENTRY) == 0 {
+    while !IsListEmpty(DoneList as *const LIST_ENTRY) {
         TD = ((*DoneList).Flink as ULONG_PTR).wrapping_sub(
             core::mem::offset_of!(EHCI_HCD_TD, DoneLink) as ULONG_PTR,
         ) as *mut EHCI_HCD_TD as PEHCI_HCD_TD;
@@ -4107,7 +4110,7 @@ pub unsafe extern "system" fn EHCI_PollController(ehciExtension: PVOID) {
 
     if (*EhciExtension).NumberOfPorts != 0 {
         Port = 0;
-        while Port < (*EhciExtension).NumberOfPorts {
+        while Port < (*EhciExtension).NumberOfPorts as ULONG {
             PortSC.AsULONG = READ_REGISTER_ULONG(
                 core::ptr::addr_of_mut!(
                     (*(core::ptr::addr_of_mut!((*OperationalRegs).PortControl)
@@ -4189,7 +4192,7 @@ pub unsafe extern "system" fn EHCI_SetEndpointStatus(
             (*EhciEndpoint).EndpointStatus &= !(USBPORT_ENDPOINT_HALT as ULONG);
 
             QH = (*EhciEndpoint).QH;
-            (*QH).sqh.HwQH.Token.__bindgen_anon_1.Status &= !(EHCI_TOKEN_STATUS_HALTED as UCHAR);
+            { let __t = &mut (*QH).sqh.HwQH.Token.__bindgen_anon_1; let __v = __t.Status() & !(EHCI_TOKEN_STATUS_HALTED as UCHAR) as ULONG; __t.set_Status(__v); }
 
             return;
         }
@@ -4398,10 +4401,10 @@ pub unsafe extern "system" fn DriverEntry(
 
     RegPacket.MiniPortBusBandwidth = TOTAL_USB20_BUS_BANDWIDTH as ULONG;
 
-    RegPacket.MiniPortExtensionSize = core::mem::size_of::<EHCI_EXTENSION>() as SIZE_T;
-    RegPacket.MiniPortEndpointSize = core::mem::size_of::<EHCI_ENDPOINT>() as SIZE_T;
-    RegPacket.MiniPortTransferSize = core::mem::size_of::<EHCI_TRANSFER>() as SIZE_T;
-    RegPacket.MiniPortResourcesSize = core::mem::size_of::<EHCI_HC_RESOURCES>() as SIZE_T;
+    RegPacket.MiniPortExtensionSize = core::mem::size_of::<EHCI_EXTENSION>() as ULONG;
+    RegPacket.MiniPortEndpointSize = core::mem::size_of::<EHCI_ENDPOINT>() as ULONG;
+    RegPacket.MiniPortTransferSize = core::mem::size_of::<EHCI_TRANSFER>() as ULONG;
+    RegPacket.MiniPortResourcesSize = core::mem::size_of::<EHCI_HC_RESOURCES>() as ULONG;
 
     RegPacket.OpenEndpoint = Some(EHCI_OpenEndpoint);
     RegPacket.ReopenEndpoint = Some(EHCI_ReopenEndpoint);
@@ -4455,7 +4458,7 @@ pub unsafe extern "system" fn DriverEntry(
     RegPacket.RH_ChirpRootPort = Some(EHCI_RH_ChirpRootPort);
     RegPacket.TakePortControl = Some(EHCI_TakePortControl);
 
-    (*DriverObject).DriverUnload = Some(EHCI_Unload);
+    (*DriverObject).DriverUnload = core::mem::transmute(Some(EHCI_Unload as unsafe extern "system" fn(PDRIVER_OBJECT)));
 
     return USBPORT_RegisterUSBPortDriver(
         DriverObject,
@@ -6048,8 +6051,8 @@ pub unsafe extern "system" fn DriverEntry(
 //                              SgList->SgElement[SgIdx].SgOffset +
 //                              TransferedLen;
 //
-//         LengthThisTD = EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE -
-//                        (TD->HwTD.Buffer[0] & (PAGE_SIZE - 1));
+//         LengthThisTD = EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE as ULONG -
+//                        (TD->HwTD.Buffer[0] & (PAGE_SIZE as ULONG - 1));
 //
 //         for (ix = 1; ix < EHCI_MAX_QTD_BUFFER_PAGES; ix++)
 //         {
