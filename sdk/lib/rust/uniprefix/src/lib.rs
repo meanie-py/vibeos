@@ -655,4 +655,67 @@ mod tests {
             assert_eq!((*f4).prefix, &*p3 as *const _ as *mut _);
         }
     }
+
+    // The core purpose of the table — LONGEST-prefix match across prefixes of
+    // DIFFERENT depth (different NameLength ⇒ separate splay trees in the
+    // NextPrefixTree chain). The existing test only uses same-depth prefixes
+    // (one tree); this exercises the multi-tree chain walk in
+    // RtlFindUnicodePrefix and cross-depth RtlRemoveUnicodePrefix (which routes
+    // through the splay delete fixed in e5ca403e206).
+    #[test]
+    fn nested_prefix_longest_match() {
+        unsafe {
+            let mut tbl = Box::new(PrefixTable {
+                node_type_code: 0,
+                name_length: 0,
+                next_prefix_tree: null_mut(),
+                last_next_entry: null_mut(),
+            });
+            RtlInitializeUnicodePrefix(&mut *tbl);
+            let tp: *mut PrefixTable = &mut *tbl;
+
+            // Backing stores must outlive the table (it holds raw pointers into
+            // them). The inner heap buffers are stable across outer-Vec growth.
+            let mut backs: Vec<Vec<u16>> = Vec::new();
+            let mut uss: Vec<Box<UnicodeString>> = Vec::new();
+            let mut ents: Vec<Box<PrefixEntry>> = Vec::new();
+            let mut ent: Vec<*mut PrefixEntry> = Vec::new();
+
+            for p in ["\\a", "\\a\\b", "\\a\\b\\c"] {
+                backs.push(w(p));
+                let u = us(backs.last_mut().unwrap());
+                let uptr = &*u as *const _ as *mut UnicodeString;
+                uss.push(u);
+                ents.push(entry());
+                let eptr = &mut **ents.last_mut().unwrap() as *mut PrefixEntry;
+                assert_eq!(RtlInsertUnicodePrefix(tp, uptr, eptr), 1, "insert {p}");
+                ent.push(eptr);
+            }
+
+            let mut qbacks: Vec<Vec<u16>> = Vec::new();
+            let mut quss: Vec<Box<UnicodeString>> = Vec::new();
+            let mut find = |query: &str| -> *mut PrefixEntry {
+                qbacks.push(w(query));
+                let u = us(qbacks.last_mut().unwrap());
+                let uptr = &*u as *const _ as *mut UnicodeString;
+                quss.push(u);
+                RtlFindUnicodePrefix(tp, uptr, 1)
+            };
+
+            // longest registered ancestor wins
+            assert_eq!(find("\\a\\b\\c\\d"), ent[2], "deepest prefix");
+            assert_eq!(find("\\a\\b\\x"), ent[1]);
+            assert_eq!(find("\\a\\x"), ent[0]);
+            assert_eq!(find("\\a\\b\\c"), ent[2], "exact deepest");
+            assert!(find("\\q\\r\\s").is_null(), "unrelated path");
+
+            // remove the deepest → the next-longest ancestor now wins
+            RtlRemoveUnicodePrefix(tp, ent[2]);
+            assert_eq!(find("\\a\\b\\c\\d"), ent[1], "after removing \\a\\b\\c");
+            // and again
+            RtlRemoveUnicodePrefix(tp, ent[1]);
+            assert_eq!(find("\\a\\b\\x"), ent[0], "after removing \\a\\b");
+            assert_eq!(find("\\a\\b\\c\\d"), ent[0]);
+        }
+    }
 }
