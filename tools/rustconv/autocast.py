@@ -54,21 +54,39 @@ def collect_casts(json_out):
         if msg.get('reason') != 'compiler-message':
             continue
         d = msg.get('message', {})
-        if d.get('code', {}) is None or (d.get('code') or {}).get('code') != 'E0308':
-            continue
-        for span in d.get('spans', []):
-            if not span.get('is_primary'):
-                continue
-            label = span.get('label') or ''
-            m = EXPECTED_RE.search(label) or EXPECTED_RE.search(d.get('message', ''))
-            if not m:
-                continue
-            expected = m.group(1)
-            if expected not in INT_TYPES:
-                continue
-            fn = span['file_name']
-            edits.setdefault(fn, []).append(
-                (span['byte_start'], span['byte_end'], expected))
+        code = (d.get('code') or {}).get('code')
+        if code == 'E0308':
+            for span in d.get('spans', []):
+                if not span.get('is_primary'):
+                    continue
+                label = span.get('label') or ''
+                m = EXPECTED_RE.search(label) or EXPECTED_RE.search(d.get('message', ''))
+                if not m:
+                    continue
+                expected, found = m.group(1), m.group(2)
+                cast = None
+                if expected in INT_TYPES:
+                    cast = expected
+                elif expected.startswith(('*mut ', '*const ')) and \
+                        found.startswith(('*mut ', '*const ')):
+                    # pointer-to-pointer mismatch (e.g. KSPIN_LOCK *mut u32 vs *mut usize,
+                    # void* vs typed*). Faithful `as <expected>` — but never on a &str found
+                    # (string literal; that needs a b"..." rewrite, handled elsewhere).
+                    cast = expected
+                if cast is None:
+                    continue
+                fn = span['file_name']
+                edits.setdefault(fn, []).append(
+                    (span['byte_start'], span['byte_end'], cast))
+        elif code == 'E0617':
+            # `can't pass `T` to variadic function` — C promotes small ints to int;
+            # wrap the arg span in `(... as c_int)` (the faithful default-arg-promotion).
+            for span in d.get('spans', []):
+                if not span.get('is_primary'):
+                    continue
+                fn = span['file_name']
+                edits.setdefault(fn, []).append(
+                    (span['byte_start'], span['byte_end'], '::core::ffi::c_int'))
     return edits
 
 
