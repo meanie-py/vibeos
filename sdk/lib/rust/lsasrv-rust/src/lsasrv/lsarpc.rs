@@ -1,9 +1,15 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// DsSetupInit is internal lsasrv (C: `VOID DsSetupInit(VOID)` — cdecl, NOT
+// WINAPI), defined in dssetup.rs as `extern "C"`. Declaring it extern "system"
+// (stdcall, _DsSetupInit@0) here is an ABI/decoration mismatch vs the cdecl
+// definition (_DsSetupInit) → i386 call diverges. Must be extern "C".
+extern "C" {
+    fn DsSetupInit();
+}
 extern "system" {
     fn CreateEventW( lpEventAttributes: *mut core::ffi::c_void, bManualReset: i32, bInitialState: i32, lpName: PWSTR, ) -> *mut core::ffi::c_void;
-    fn DsSetupInit();
     fn GetLastError() -> u32;
     fn I_RpcMapWin32Status(Status: i32) -> NTSTATUS;
     fn RpcServerListen(MinimumCallThreads: u32, MaxCalls: u32, DontWait: u32) -> i32;
