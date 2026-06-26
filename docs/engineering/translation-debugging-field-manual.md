@@ -1403,6 +1403,49 @@ It hadn't: **bare mainline built the same subset-way wedged at the identical PC.
   symbolicate→targeted-guard path (§"#38/#35" Findings 2–3). Cost of skipping this step:
   a full symbolication + no-prepop fork put to the user on a phantom regression.
 
+### 9.6c.1 ⚠️ A boot-critical driver MISSING from the arm64 staged set false-greens the gate on a STALE pre-cohab-flip binary — masking a broken Rust translation indefinitely
+
+Distinct from §9.6c (which is an ABI *skew* of drivers that ARE built). Here a Rust-cohab
+driver is **absent from `tests/qemu/cli/archcfg.py`'s arm64 `ninja_targets`/`staged_bins_rel`
+entirely**, so `vibeos-cli build --arch arm64` + `mkramdisk --refresh` **never rebuild it** —
+the gate ships whatever `.sys` was last on disk, which for a driver cohab-flipped C→Rust is the
+**pre-flip STALE C binary**. The committed Rust translation is then **never boot-exercised**:
+the gate stays green while a *clean* build (which does build the Rust `.sys`) crashes.
+
+- **2026-06-26 case — `ramdisk`:** the 06-21 `ramdisk.c`→Rust cohab flip (`1c492f8adb9`,
+  "link-clean x3" bar, never arm64-boot-tested) sat broken on mainline for days. Every arm64
+  gate was green (36s) because `ramdisk` was in **neither** `ninja_targets` nor
+  `staged_bins_rel` → the gate booted a stale **C** `ramdisk.sys` (13.7KB `.text`, 0 Rust
+  syms). A clean build's **Rust** `ramdisk.sys` (140KB `.text`, 651 Rust syms) BUGCHECK'd
+  **0x64** at the first file open (`ZwOpenFile(ntdll.dll)=0xc000003a`, IopParseDevice never
+  reached). Root cause was a cluster of **garbage machine-translation consts used as Rust
+  `match` patterns / FSCTL codes** — the const-as-pattern silent-dead-code class (sibling of
+  §"const placeholder" entries): `FSCTL_CREATE_RAM_DISK`=`0x900c4` (×3 local shadows, correct
+  `0x240000`=`CTL_CODE(FILE_DEVICE_VIRTUAL_DISK,0,BUFFERED,ANY)`) → the FSCTL dispatch arm was
+  dead code → device never created; `RAMDISK_BOOT_DISK`/`WIM`/`MEMORY_MAPPED`=garbage ASCII
+  (correct 3/4/2) → boot disk failed `DiskType >= RAMDISK_BOOT_DISK`. After those: a deeper
+  **0x23 (FAT_FILE_SYSTEM)** because `IOCTL_DISK_CHECK_VERIFY`=`0x70000` **collided** with
+  `IOCTL_DISK_GET_DRIVE_GEOMETRY`=`0x70000` and was listed FIRST in the match → geometry IOCTL
+  returned success with a **zeroed `DISK_GEOMETRY`** (`BytesPerSector=0`) → fastfat FAT math
+  divides by zero. Fix = all consts to header CTL_CODE values + add `ramdisk` **and** `pl011`
+  (the 5th boot-critical Rust-cohab driver, also missing) to both archcfg lists.
+- **Why x86 is immune:** i386/amd64 boot from a LiveCD ISO that `ninja livecd` repackages with
+  freshly-built drivers; only arm64's **staged-ramdisk** path can ship a stale `.sys`. So an
+  arm64-only `ramdisk`/`pl011`/`serial` cohab flip is invisible to the x86 gates entirely.
+- **Detect / audit (do this whenever you cohab-flip ANY arm64 boot-loaded driver):** in a boot
+  serial, `grep '\[BLT\] IopInitializeBuiltinDriver:'` lists *every* driver the kernel BLT-loads
+  at boot (2026-06: `fastfat ramdisk pl011 arm64input arm64vid`). EVERY one that is a Rust-cohab
+  workspace member MUST be in `archcfg.py` arm64 `ninja_targets` + `staged_bins_rel` (or
+  `ninja_targets_optional`), or the gate false-greens on its stale pre-flip C binary. The
+  comment block at the flip site (`*.cmake` "replaced by Rust") and `link-clean x3` bars do
+  **not** imply boot-tested — only a clean arm64 boot of the actually-rebuilt Rust `.sys` does.
+- **Mechanizing the const class:** these garbage consts slipped both static gates —
+  `scan_inline_flag_literals` only catches *annotated bare literals* (`0x2 /* NAME */`), and
+  `verify_constants` only checks *module-level* `const` defs (and doesn't evaluate `CTL_CODE`
+  macros). The hole = **function-local `const KNOWN_NAME = <garbage>`** + CTL_CODE-derived
+  values. Extending `verify_constants` to validate local consts (and compute CTL_CODE) would
+  catch the whole class mechanically instead of one boot-bisect at a time.
+
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 
 Distinct from §9.6c (which is a real ABI mismatch). `mkramdisk.sh` occasionally produces a

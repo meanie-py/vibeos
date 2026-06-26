@@ -707,19 +707,7 @@ pub unsafe extern "system" fn IopParseDevice(
         }
         let CurrentDeviceObject = OriginalDeviceObject;
 
-        if (*RemainingName).Length != 0 {
-            crate::dbg_print!(b"[PD-ENTRY] dev_type=0x%x rem_len=%d vpb_null=0x%x flags=0x%x rem=%wZ\r\n\0",
-                (*CurrentDeviceObject).DeviceType as u32,
-                (*RemainingName).Length as u32,
-                (*CurrentDeviceObject).Vpb.is_null() as u32,
-                (*CurrentDeviceObject).Flags as u32,
-                RemainingName);
-        }
-
         Status = IopCheckDeviceAndDriver(OpenPacket, CurrentDeviceObject);
-        if (*RemainingName).Length != 0 {
-            crate::dbg_print!(b"[PD-CDD] status=0x%x\r\n\0", Status as u32);
-        }
         if Status < 0 {
             (*OpenPacket).FinalStatus = Status;
             return Status;

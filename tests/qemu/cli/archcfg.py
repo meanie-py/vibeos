@@ -94,6 +94,17 @@ _CFGS = {
             "rust_kernel32",
             "dll/win32/kernel32/kernel32.dll",
             "fastfat",
+            # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
+            # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
+            # as fastfat above. It was NOT in this set, so the 2026-06-21 ramdisk.c->Rust
+            # cohab flip (1c492f8adb9, link-clean-only bar) was NEVER boot-exercised: the
+            # gate kept shipping the pre-flip STALE C ramdisk.sys and false-greened arm64
+            # while a clean build's Rust ramdisk-rust 0x64'd (garbage FSCTL/IOCTL consts).
+            # pl011 is the PL011 UART serial driver (Rust cohab, BLT-loaded) — same risk.
+            # These two + fastfat + arm64input/arm64vid (optional) = all 5 arm64
+            # boot-critical Rust-cohab drivers now actually rebuilt+staged by the gate.
+            "ramdisk",
+            "pl011",
             "netstack",
             "livecd_hives",
             "afd",
@@ -111,6 +122,8 @@ _CFGS = {
             "win32ss/win32k.sys",
             "dll/win32/kernel32/kernel32.dll",
             "drivers/filesystems/fastfat/fastfat.sys",
+            "drivers/storage/class/ramdisk/ramdisk.sys",
+            "drivers/serial/pl011/pl011.sys",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
             "drivers/network/netstack/netstack.sys",
