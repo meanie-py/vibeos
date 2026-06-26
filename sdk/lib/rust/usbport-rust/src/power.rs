@@ -12,12 +12,14 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, IoCopyCurrentIrpStackLocationToNext, IoCsqInsertIrp, IoCsqRemoveNextIrp, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInsertQueueDpc, LARGE_INTEGER, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_STATE, PRKDPC};
 use core::ffi::c_void;
 
-extern "C" {
-    fn DbgPrint(Format: PCSTR, ...) -> u32;
+extern "system" {
     fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_Wait(MiniPortExtension: PVOID, MillisecondsTimeout: ULONG) -> NTSTATUS;
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, Enable: BOOLEAN);
     fn USBPORT_NukeAllEndpoints(FdoDevice: PDEVICE_OBJECT);
+}
+extern "C" {
+    fn DbgPrint(Format: PCSTR, ...) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

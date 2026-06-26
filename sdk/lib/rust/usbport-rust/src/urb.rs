@@ -11,14 +11,12 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoAllocateMdl, IoCsqInsertIrp, IoMarkIrpPending, MmBuildMdlForNonPagedPool, PDEVICE_OBJECT, PIRP, PMDL};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn USBPORT_DumpingSetupPacket(SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET);
     fn USBPORT_QueueTransferUrb(Urb: PURB);
     fn USBPORT_USBDStatusToNtStatus(Urb: PURB, USBDStatus: USBD_STATUS) -> NTSTATUS;
     fn USBPORT_ValidatePipeHandle( DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, ) -> i32;
     fn USBPORT_AbortEndpoint( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Irp: PIRP, );
-    fn USBD_TRANSFER_DIRECTION_FLAG(TransferFlags: u32) -> u32;
-    fn DPRINT1(format: *const i8, ...);
     fn USBPORT_DumpingURB(Urb: PURB);
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> ULONG;
     fn USBPORT_SetEndpointState(Endpoint: PUSBPORT_ENDPOINT, EndpointState: ULONG);
@@ -28,6 +26,10 @@ extern "C" {
     fn USBPORT_HandleSelectConfiguration( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
     fn USBPORT_HandleSelectInterface( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
     fn USBPORT_ClearStall( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
+}
+extern "C" {
+    fn USBD_TRANSFER_DIRECTION_FLAG(TransferFlags: u32) -> u32;
+    fn DPRINT1(format: *const i8, ...);
 }
 
 // ---- file-scope preamble (translated) ----

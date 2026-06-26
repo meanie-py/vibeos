@@ -14,14 +14,13 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExQueueWorkItem, _KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAttachDeviceToDeviceStack, IoCreateDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSkipCurrentIrpStackLocation, KEY_VALUE_FULL_INFORMATION, KeDelayExecutionThread, KeInitializeDpc, KeInitializeEvent, KeInitializeSemaphore, KeInitializeSpinLock, KeInitializeTimer, KeInsertQueueDpc, KeQueryTimeIncrement, KeReleaseSemaphore, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PDMA_OPERATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PMDL, PRKDPC, PRKEVENT, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, _KWAIT_REASON_Suspended, ZwSetValueKey, ZwWaitForSingleObject};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn IoOpenDeviceRegistryKey( DeviceObject: PDEVICE_OBJECT, DevInstKeyType: ULONG, DesiredAccess: ACCESS_MASK, DevInstRegKey: *mut HANDLE, ) -> NTSTATUS;
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
     fn ExAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
     fn ZwQueryValueKey( KeyHandle: HANDLE, ValueName: PUNICODE_STRING, KeyValueInformationClass: KEY_VALUE_INFORMATION_CLASS, KeyValueInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG, ) -> NTSTATUS;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
-    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn USBPORT_FdoDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn USBPORT_FdoInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
@@ -34,10 +33,8 @@ extern "C" {
     fn USBPORT_FlushAllEndpoints(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_EndpointWorker(Endpoint: PUSBPORT_ENDPOINT, Flag: BOOLEAN) -> BOOLEAN;
     fn USBPORT_FlushClosedEndpointList(FdoDevice: PDEVICE_OBJECT);
-    fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: PCWSTR, ... ) -> NTSTATUS;
     fn USB2_InitController(Usb2Extension: PUSB2_HC_EXTENSION);
     fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: PDEVICE_OBJECT);
-    fn _InterlockedCompareExchange( Destination: *mut core::ffi::c_long, Exchange: core::ffi::c_long, Comperand: core::ffi::c_long, ) -> core::ffi::c_long;
     fn USBPORT_RemoveActiveTransferIrp(FdoDevice: PDEVICE_OBJECT, Irp: PIRP);
     fn USBPORT_DoSetPowerD0(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_DoneSplitTransfer(Transfer: PUSBPORT_TRANSFER);
@@ -45,6 +42,11 @@ extern "C" {
     fn USBPORT_InvalidateEndpointHandler( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Type: ULONG, );
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> u32;
     fn USBPORT_FlushPendingTransfers(Endpoint: PUSBPORT_ENDPOINT);
+}
+extern "C" {
+    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
+    fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: PCWSTR, ... ) -> NTSTATUS;
+    fn _InterlockedCompareExchange( Destination: *mut core::ffi::c_long, Exchange: core::ffi::c_long, Comperand: core::ffi::c_long, ) -> core::ffi::c_long;
 }
 
 // ---- file-scope preamble (translated) ----

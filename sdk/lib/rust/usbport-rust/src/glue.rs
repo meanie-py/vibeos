@@ -9,6 +9,7 @@ pub use crate::types::*;
 pub use ntkrnl_sys::ddk::PCSTR;
 use ntkrnl_sys::base::PVOID;
 use ntkrnl_sys::base::ULONG;
+use ntkrnl_sys::base::{BOOLEAN, NTSTATUS, KIRQL};
 pub use ntkrnl_sys::ddk::DEVICE_REGISTRY_PROPERTY_DevicePropertyDriverKeyName as DevicePropertyDriverKeyName;
 pub use ntkrnl_sys::ddk::{
     ACCESS_MASK, CCHAR, GUID, IO_ALLOCATION_ACTION, KEY_VALUE_INFORMATION_CLASS, KPRIORITY,
@@ -108,11 +109,42 @@ pub unsafe fn MmGetMdlVirtualAddress(Mdl: *mut ntkrnl_sys::ddk::_MDL) -> *mut co
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as *mut core::ffi::c_void
 }
 
-// ---- IRQL (i386: HAL export; amd64: CR8 FORCEINLINE) — re-export ntkrnl-sys inline ----
+// ---- IRQL — driver-side KeRaiseIrql/KeLowerIrql (same pattern as scsiport).
+// i386: fastcall KfRaiseIrql/KfLowerIrql HAL exports. amd64: IRQL IS cr8 — the DDK
+// accessors are FORCEINLINE, NOT driver-visible exports (the kernel-internal tier1
+// KeRaiseIrql is unavailable to a .sys). arm64: real KfRaiseIrql/KeLowerIrql exports.
 #[cfg(target_arch = "x86")]
 pub use ntkrnl_sys::inline::tier1::{KeRaiseIrql, KeLowerIrql};
-#[cfg(not(target_arch = "x86"))]
-pub use ntkrnl_sys::inline::tier1::{KeRaiseIrqlInternal as KeRaiseIrql, KeLowerIrqlInternal as KeLowerIrql};
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    let old: u64;
+    core::arch::asm!("mov {}, cr8", out(reg) old, options(nomem, nostack));
+    *OldIrql = old as KIRQL;
+    core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack));
+}
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) {
+    core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack));
+}
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+}
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    *OldIrql = KfRaiseIrql(NewIrql);
+}
+#[cfg(target_arch = "aarch64")]
+mod lower_irql {
+    extern "C" {
+        pub fn KeLowerIrql(NewIrql: super::KIRQL);
+    }
+}
+#[cfg(target_arch = "aarch64")]
+pub use lower_irql::KeLowerIrql;
 
 // ---- BM_REQUEST_TYPE — bindgen collapsed the bitfield struct to just `B: UCHAR`; supply the
 // USB-spec bmRequestType bitfield accessors (Recipient[0:4], Type[5:6], Dir[7]) on the byte. ----
@@ -230,3 +262,101 @@ pub const USBD_STATUS_PENDING: USBD_STATUS = 0x40000000u32 as USBD_STATUS;
 pub const USB_ENDPOINT_DIRECTION_MASK: u8 = 0x80;
 #[inline] pub unsafe fn USB_ENDPOINT_DIRECTION_OUT(x: u8) -> u32 { ((x & USB_ENDPOINT_DIRECTION_MASK) == 0) as u32 }
 #[inline] pub unsafe fn USB_ENDPOINT_DIRECTION_IN(x: u8) -> u32 { ((x & USB_ENDPOINT_DIRECTION_MASK) != 0) as u32 }
+
+// ---- C-macro inlines + intrinsic (kept as extern "C" decls in the modules; the
+// linker resolves them to these #[no_mangle] cdecl symbols). The modules' local
+// extern decls shadow the glob-imported names, so no Rust name clash. ----
+#[no_mangle]
+pub unsafe extern "C" fn IoGetCurrentIrpStackLocation(
+    Irp: ntkrnl_sys::ddk::PIRP,
+) -> ntkrnl_sys::ddk::PIO_STACK_LOCATION {
+    ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation(Irp)
+}
+#[no_mangle]
+pub unsafe extern "C" fn IoSkipCurrentIrpStackLocation(Irp: ntkrnl_sys::ddk::PIRP) {
+    ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation(Irp)
+}
+#[no_mangle]
+pub unsafe extern "C" fn URB_FROM_IRP(Irp: ntkrnl_sys::ddk::PIRP) -> PURB {
+    (*ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation(Irp))
+        .Parameters
+        .Others
+        .Argument1 as PURB
+}
+#[no_mangle]
+pub unsafe extern "C" fn USBD_TRANSFER_DIRECTION_FLAG(flags: u32) -> u32 {
+    flags & 0x00000001 // USBD_TRANSFER_DIRECTION
+}
+#[no_mangle]
+pub unsafe extern "C" fn _InterlockedCompareExchange(dest: *mut i32, exch: i32, comp: i32) -> i32 {
+    let a = &*(dest as *const core::sync::atomic::AtomicI32);
+    match a.compare_exchange(
+        comp,
+        exch,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) | Err(v) => v,
+    }
+}
+
+// ---- ddk macro-inlines referenced by the modules (forward to ntkrnl_sys inlines) ----
+#[no_mangle]
+pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext(Irp: ntkrnl_sys::ddk::PIRP) {
+    ntkrnl_sys::inline::tier1::IoCopyCurrentIrpStackLocationToNext(Irp)
+}
+#[no_mangle]
+pub unsafe extern "C" fn IoMarkIrpPending(Irp: ntkrnl_sys::ddk::PIRP) {
+    ntkrnl_sys::inline::tier1::IoMarkIrpPending(Irp)
+}
+#[no_mangle]
+pub unsafe extern "C" fn IoSetCancelRoutine(
+    Irp: ntkrnl_sys::ddk::PIRP,
+    CancelRoutine: ntkrnl_sys::ddk::PDRIVER_CANCEL,
+) -> ntkrnl_sys::ddk::PDRIVER_CANCEL {
+    ntkrnl_sys::inline::tier1::IoSetCancelRoutine(Irp, CancelRoutine)
+}
+#[no_mangle]
+pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+    *SpinLock = 0;
+}
+// USBD_SUCCESS(Status) = ((USBD_STATUS)(Status) >= 0); USBD_ERROR = (< 0). Sign-tested as LONG.
+#[no_mangle]
+pub unsafe extern "system" fn USBD_SUCCESS(Status: USBD_STATUS) -> BOOLEAN {
+    ((Status as i32) >= 0) as BOOLEAN
+}
+#[no_mangle]
+pub unsafe extern "system" fn USBD_ERROR(Status: USBD_STATUS) -> BOOLEAN {
+    ((Status as i32) < 0) as BOOLEAN
+}
+// RtlStringCbPrintfW: ntstrsafe FORCEINLINE (no exported symbol). usbport uses it only to
+// format a registry path in a non-boot path; link-clean stub (usbport is NOT boot-loaded).
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW(
+    _pszDest: *mut u16,
+    _cbDest: usize,
+    _pszFormat: *const u16,
+    mut _args: ...
+) -> NTSTATUS {
+    0 // STATUS_SUCCESS
+}
+
+// IsEqualGUIDAligned (wdm FORCEINLINE) — compares the two 8-byte halves. iface.rs declares
+// it extern (NTAPI), so resolve it to this #[no_mangle] symbol.
+#[no_mangle]
+pub unsafe extern "system" fn IsEqualGUIDAligned(
+    guid1: *const GUID,
+    guid2: *const GUID,
+) -> BOOLEAN {
+    let a = guid1 as *const u64;
+    let b = guid2 as *const u64;
+    ((*a == *b) && (*a.add(1) == *b.add(1))) as BOOLEAN
+}
+
+// KeGetCurrentPrcb — FORCEINLINE (ketypes.h). On arm64 it is not a driver export, so the
+// USBPORT_WorkerThread reference needs a concrete symbol; forward to the ntkrnl-sys inline.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
+    ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
+}

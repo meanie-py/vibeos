@@ -12,7 +12,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PDEVICE_RELATIONS};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_QueueDoneTransfer(Transfer: PUSBPORT_TRANSFER, USBDStatus: USBD_STATUS);
 }

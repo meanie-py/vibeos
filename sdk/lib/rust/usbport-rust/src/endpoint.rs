@@ -12,9 +12,8 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{KeInitializeSpinLock, KeInsertQueueDpc, LARGE_INTEGER, PDEVICE_OBJECT};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
-    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
     fn USBPORT_CancelSplitTransfer(Transfer: PUSBPORT_TRANSFER);
     fn USBPORT_FreeCommonBuffer(FdoDevice: PDEVICE_OBJECT, HeaderBuffer: *mut core::ffi::c_void);
     fn USBPORT_AllocateCommonBuffer( FdoDevice: PDEVICE_OBJECT, BufferLength: SIZE_T, ) -> PUSBPORT_COMMON_BUFFER_HEADER;
@@ -27,6 +26,9 @@ extern "C" {
     fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_RootHubEndpointWorker(Endpoint: PUSBPORT_ENDPOINT);
+}
+extern "C" {
+    fn DbgPrint(Format: PCSTR, ...) -> ULONG;
 }
 
 // ---- file-scope preamble (translated) ----

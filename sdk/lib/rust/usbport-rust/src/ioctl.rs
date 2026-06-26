@@ -10,11 +10,13 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IO_STACK_LOCATION, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlFreeUnicodeString, RtlInitUnicodeString};
 use core::ffi::c_void;
 
+extern "system" {
+    fn USBPORT_HandleSubmitURB( PdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
+    fn USBPORT_IdleNotification(PdoDevice: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
 extern "C" {
     fn DbgPrint(Format: *const ::core::ffi::c_char, ...) -> u32;
     fn URB_FROM_IRP(Irp: PIRP) -> PURB;
-    fn USBPORT_HandleSubmitURB( PdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
-    fn USBPORT_IdleNotification(PdoDevice: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

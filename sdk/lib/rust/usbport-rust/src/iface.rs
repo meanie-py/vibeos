@@ -9,10 +9,10 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlFreeUnicodeString, RtlStringFromGUID};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn USBPORT_BadRequestFlush(FdoDevice: PDEVICE_OBJECT);
 }
-extern "C" {
+extern "system" {
     fn USBPORT_CreateDevice( UsbdDeviceHandle: *mut PUSBPORT_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, HubDeviceHandle: PUSBPORT_DEVICE_HANDLE, PortStatus: USHORT, PortNumber: USHORT, ) -> NTSTATUS;
     fn USBPORT_GetUsbDescriptor( DeviceHandle: PUSBPORT_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, Type: UCHAR, ConfigDescBuffer: PUCHAR, ConfigDescBufferLen: PULONG, ) -> NTSTATUS;
     fn USBPORT_DumpingDeviceDescriptor(Descriptor: PUSB_DEVICE_DESCRIPTOR);
@@ -22,9 +22,11 @@ extern "C" {
     fn USBPORT_FindUSB2Controller(FdoDevice: PDEVICE_OBJECT) -> PDEVICE_OBJECT;
     fn USBPORT_GetRegistryKeyValueFullInfo( FdoDevice: PDEVICE_OBJECT, LowerPdoDevice: PDEVICE_OBJECT, UseDefault: BOOLEAN, KeyNameString: PCWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG, ) -> NTSTATUS;
     fn USBPORT_GetSymbolicName( PdoDevice: PDEVICE_OBJECT, HubName: PUNICODE_STRING, ) -> NTSTATUS;
-    fn DbgPrint(Format: *const i8, ...) -> u32;
     fn USBPORT_Initialize20Hub( FdoDevice: PDEVICE_OBJECT, UsbdHubDeviceHandle: PUSBPORT_DEVICE_HANDLE, TtCount: ULONG, ) -> NTSTATUS;
     fn IsEqualGUIDAligned(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
+}
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

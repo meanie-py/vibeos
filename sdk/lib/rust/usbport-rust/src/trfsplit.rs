@@ -10,8 +10,10 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExFreePool, LIST_ENTRY, PDEVICE_OBJECT};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn USBPORT_DoneTransfer(Transfer: PUSBPORT_TRANSFER);
+}
+extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
 }
 

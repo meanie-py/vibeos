@@ -14,18 +14,20 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IRP, IoAcquireCancelSpinLock, IoCsqRemoveNextIrp, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, LIST_ENTRY, PDEVICE_OBJECT, PIO_CSQ, PIRP, PKIRQL};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
-    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
-    fn URB_FROM_IRP(Irp: PIRP) -> PURB;
     fn USBPORT_USBDStatusToNtStatus(Urb: PURB, Status: u32) -> NTSTATUS;
-    fn DbgPrint(Format: *const i8, ...) -> u32;
     fn USBPORT_CompleteTransfer(Urb: PURB, USBDStatus: USBD_STATUS);
     fn USBPORT_EndpointWorker(Endpoint: PUSBPORT_ENDPOINT, Flag: BOOLEAN) -> BOOLEAN;
     fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_InvalidateEndpointHandler( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Type: ULONG, );
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> ULONG;
     fn USBPORT_Wait(MiniPortExtension: PVOID, MicroSeconds: ULONG);
+}
+extern "C" {
+    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
+    fn URB_FROM_IRP(Irp: PIRP) -> PURB;
+    fn DbgPrint(Format: *const i8, ...) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
