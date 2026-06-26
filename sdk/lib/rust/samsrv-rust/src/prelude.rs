@@ -35,6 +35,51 @@ pub use samsrv_sys::{
     PSAMPR_ULONG_ARRAY, PSAMPR_PSID_ARRAY,
     PSAMPR_SR_SECURITY_DESCRIPTOR, PSAMPR_SERVER_NAME,
     PSAMPR_RETURNED_USTRING_ARRAY,
+    // Wave-2 (samrpc.rs) value/by-value type uses.
+    SAMPR_USER_INFO_BUFFER, SAMPR_GROUP_INFO_BUFFER, SAMPR_ALIAS_INFO_BUFFER,
+    SAMPR_DOMAIN_INFO_BUFFER, SAMPR_ENUMERATION_BUFFER,
+    SAMPR_RID_ENUMERATION, PSAMPR_RID_ENUMERATION,
+    SAMPR_GET_MEMBERS_BUFFER, SAMPR_GET_GROUPS_BUFFER,
+    SAMPR_SR_SECURITY_DESCRIPTOR,
+    SAMPR_PSID_ARRAY, SAMPR_PSID_ARRAY_OUT, PSAMPR_PSID_ARRAY_OUT,
+    SAMPR_REVISION_INFO, PSAMPR_REVISION_INFO,
+    SAMPR_REVISION_INFO_V1, PSAMPR_REVISION_INFO_V1,
+    SAMPR_ENCRYPTED_USER_PASSWORD, PSAMPR_ENCRYPTED_USER_PASSWORD,
+    SAMPR_ENCRYPTED_USER_PASSWORD_NEW, PSAMPR_ENCRYPTED_USER_PASSWORD_NEW,
+    RPC_UNICODE_STRING, RPC_STRING, PRPC_STRING,
+    PUSER_DOMAIN_PASSWORD_INFORMATION,
+    SAM_VALIDATE_AUTHENTICATION_INPUT_ARG, SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG,
+    SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG,
+    SAM_VALIDATE_STANDARD_OUTPUT_ARG, SAM_VALIDATE_PASSWORD_HASH,
+    PSAM_VALIDATE_INPUT_ARG, PSAM_VALIDATE_OUTPUT_ARG, PSAM_VALIDATE_PASSWORD_HASH,
+    handle_t,
+};
+// NT/LM OWF password (ntsecapi.h) — bindgen aliases both to the LM struct.
+pub type NT_OWF_PASSWORD = samsrv_sys::ENCRYPTED_NT_OWF_PASSWORD;
+pub type LM_OWF_PASSWORD = samsrv_sys::ENCRYPTED_LM_OWF_PASSWORD;
+pub type USER_DOMAIN_PASSWORD_INFORMATION = samsrv_sys::_USER_DOMAIN_PASSWORD_INFORMATION;
+// Full-prefix DOMAIN_INFORMATION_CLASS_* const aliases (some match arms use the
+// bindgen enum-prefixed spelling rather than the bare Domain* form above).
+pub use samsrv_sys::{
+    _DOMAIN_INFORMATION_CLASS_DomainGeneralInformation as DOMAIN_INFORMATION_CLASS_DomainGeneralInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainGeneralInformation2 as DOMAIN_INFORMATION_CLASS_DomainGeneralInformation2,
+    _DOMAIN_INFORMATION_CLASS_DomainLockoutInformation as DOMAIN_INFORMATION_CLASS_DomainLockoutInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainLogoffInformation as DOMAIN_INFORMATION_CLASS_DomainLogoffInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainModifiedInformation as DOMAIN_INFORMATION_CLASS_DomainModifiedInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainModifiedInformation2 as DOMAIN_INFORMATION_CLASS_DomainModifiedInformation2,
+    _DOMAIN_INFORMATION_CLASS_DomainNameInformation as DOMAIN_INFORMATION_CLASS_DomainNameInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainOemInformation as DOMAIN_INFORMATION_CLASS_DomainOemInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainPasswordInformation as DOMAIN_INFORMATION_CLASS_DomainPasswordInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainReplicationInformation as DOMAIN_INFORMATION_CLASS_DomainReplicationInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainServerRoleInformation as DOMAIN_INFORMATION_CLASS_DomainServerRoleInformation,
+    _DOMAIN_INFORMATION_CLASS_DomainStateInformation as DOMAIN_INFORMATION_CLASS_DomainStateInformation,
+};
+// PASSWORD_POLICY_VALIDATION_TYPE enum + bare variant consts (sam.idl).
+pub type PASSWORD_POLICY_VALIDATION_TYPE = samsrv_sys::_PASSWORD_POLICY_VALIDATION_TYPE;
+pub use samsrv_sys::{
+    _PASSWORD_POLICY_VALIDATION_TYPE_SamValidateAuthentication as SamValidateAuthentication,
+    _PASSWORD_POLICY_VALIDATION_TYPE_SamValidatePasswordChange as SamValidatePasswordChange,
+    _PASSWORD_POLICY_VALIDATION_TYPE_SamValidatePasswordReset as SamValidatePasswordReset,
 };
 
 // Bare enum aliases bindgen emitted only with the `_`-tag form.
@@ -217,17 +262,32 @@ pub const DomainServerRolePrimary: DOMAIN_SERVER_ROLE = 3;
 // and referenced from setup.rs/user.rs (and the still-C samrpc.c at final link).
 // pServerMapping is defined in samrpc.c (still C, Wave 2) → extern here.
 // ============================================================================
-pub use crate::samsrv::samsrv::{EmptyNtHash, EmptyLmHash, SampProductType};
-extern "C" {
-    pub static mut pServerMapping: PGENERIC_MAPPING;
-}
+pub use crate::samsrv::samsrv::{EmptyNtHash, EmptyLmHash, SampProductType, SampResource};
+// pServerMapping + SampStartRpcServer are now defined in samrpc.rs (Wave 2).
 
 // ============================================================================
 // Cross-file SAM helper functions — defined in sibling modules; re-exported so
 // every translated file resolves the bare-name calls (mirrors the C external
 // linkage of these Samp*/Sam* helpers).
 // ============================================================================
-pub use crate::samsrv::utils::{AppendRidToSid, SampIsSetupRunning, SampLoadString};
+pub use crate::samsrv::utils::{
+    AppendRidToSid, SampIsSetupRunning, SampLoadString, SampCheckAccountName, SampGetRidFromSid,
+};
+pub use crate::samsrv::samrpc::{SampStartRpcServer, pServerMapping};
+pub use crate::samsrv::user::{
+    SampAddGroupMembershipToUser, SampGetLogonHoursAttribute, SampGetUserGroupAttributes,
+    SampOpenUserObject, SampRemoveGroupMembershipFromUser, SampRemoveUserFromAllAliases,
+    SampRemoveUserFromAllGroups, SampSetLogonHoursAttribute, SampSetUserGroupAttributes,
+    SampSetUserPassword,
+};
+pub use crate::samsrv::alias::{
+    SampAddMemberToAlias, SampGetMembersInAlias, SampRemoveAllMembersFromAlias,
+    SampRemoveMemberFromAlias,
+};
+pub use crate::samsrv::domain::{
+    SampCheckAccountNameInDomain, SampCreateAccountSid, SampRemoveAccountNameFromDomain,
+    SampRemoveMemberFromAllAliases, SampSetAccountNameInDomain,
+};
 pub use crate::samsrv::registry::{
     SampRegCloseKey, SampRegCreateKey, SampRegDeleteKey, SampRegDeleteValue,
     SampRegEnumerateSubKey, SampRegEnumerateValue, SampRegOpenKey, SampRegQueryKeyInfo,
@@ -235,13 +295,17 @@ pub use crate::samsrv::registry::{
 };
 pub use crate::samsrv::database::{
     SampCloseDbObject, SampGetObjectAttribute, SampInitDatabase, SampOpenDbObject,
-    SampSetObjectAttribute,
+    SampSetObjectAttribute, SampCreateDbObject, SampDeleteAccountDbObject,
+    SampGetObjectAttributeString, SampSetObjectAttributeString, SampValidateDbObject,
 };
-pub use crate::samsrv::group::{SampOpenGroupObject, SampRemoveMemberFromGroup};
-pub use crate::samsrv::display::SampInitializeDisplayCache;
+pub use crate::samsrv::group::{
+    SampOpenGroupObject, SampRemoveMemberFromGroup, SampAddMemberToGroup,
+};
+pub use crate::samsrv::display::{SampInitializeDisplayCache, SampFillDisplayCache, SampShutdownDisplayCache};
 pub use crate::samsrv::setup::SampInitializeSAM;
 pub use crate::samsrv::security::{
     SampCreateAccountDomainSD, SampCreateBuiltinDomainSD, SampCreateUserSD,
+    SampCreateAliasSD, SampCreateGroupSD,
 };
 
 // ============================================================================
@@ -250,6 +314,14 @@ pub use crate::samsrv::security::{
 pub type HKEY = HANDLE;
 pub type HRSRC = HANDLE;
 pub type HGLOBAL = HANDLE;
+
+// RPC runtime types (rpcdce.h). RPC_STATUS = long; RPC_IF_HANDLE = void*.
+pub type RPC_STATUS = c_long;
+pub type RPC_IF_HANDLE = *mut c_void;
+// The MIDL-generated server interface spec (sam_s.c) — resolved at final link.
+extern "C" {
+    pub static samr_v1_0_s_ifspec: RPC_IF_HANDLE;
+}
 
 extern "system" {
     // MIDL RPC allocators (__RPC_USER = stdcall).
@@ -304,12 +376,41 @@ extern "system" {
     // sddl/kernel32 (alias.c / domain.c SID-string helpers; WINAPI = stdcall).
     pub fn ConvertSidToStringSidW(Sid: PSID, StringSid: *mut LPWSTR) -> BOOL;
     pub fn LocalFree(hMem: LPVOID) -> LPVOID;
+
+    // kernel32 process heap (samrpc.c midl_user_allocate/free).
+    pub fn GetProcessHeap() -> HANDLE;
+    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
+    pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
+
+    // rpcrt4 server runtime (samrpc.c SampStartRpcServer; RPC_ENTRY = stdcall).
+    pub fn RpcServerUseProtseqEpW(
+        Protseq: LPWSTR,
+        MaxCalls: ULONG,
+        Endpoint: LPWSTR,
+        SecurityDescriptor: *mut c_void,
+    ) -> RPC_STATUS;
+    pub fn RpcServerRegisterIf(
+        IfSpec: RPC_IF_HANDLE,
+        MgrTypeUuid: *mut c_void,
+        MgrEpv: *mut c_void,
+    ) -> RPC_STATUS;
+    pub fn RpcServerListen(MinimumCallThreads: ULONG, MaxCalls: ULONG, DontWait: ULONG)
+        -> RPC_STATUS;
+    pub fn RpcMgmtStopServerListening(ServerIfHandle: *mut c_void) -> RPC_STATUS;
 }
 
-// samrpc.c (still C, Wave 2) — VOID SampStartRpcServer(VOID), cdecl.
-extern "C" {
-    pub fn SampStartRpcServer();
+// ConvertSidToStringSid (sddl.h) is #define'd to the W variant.
+#[inline]
+pub unsafe fn ConvertSidToStringSid(Sid: PSID, StringSid: *mut LPWSTR) -> BOOL {
+    ConvertSidToStringSidW(Sid, StringSid)
 }
+
+// RtlEqualMemory(dst,src,len) (winnt.h) == (!memcmp(dst,src,len)).
+#[inline]
+pub unsafe fn RtlEqualMemory(dst: *const VOID, src: *const VOID, len: usize) -> ULONG {
+    (memcmp(dst, src, len) == 0) as ULONG
+}
+
 
 // ============================================================================
 // CRT (cdecl → extern "C"); resolve against ntdll/CRT at link.

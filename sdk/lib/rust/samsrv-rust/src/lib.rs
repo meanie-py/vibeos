@@ -52,6 +52,21 @@ macro_rules! widestring { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u
 macro_rules! wchar_lit { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
 #[macro_export]
 macro_rules! wchar_literal { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+// samrpc.c spellings (all the L"..."-decay forms used as a `*const/*mut u16`).
+#[macro_export]
+macro_rules! wsz { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! wchar { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! widestr { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! wchar_str { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! L { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! windows_wide { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
+#[macro_export]
+macro_rules! bwstr { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 }; }
 
 // FIELD_OFFSET(type, field) — winnt.h macro → core::mem::offset_of! (returns usize).
 #[macro_export]

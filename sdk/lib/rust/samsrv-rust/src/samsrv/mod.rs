@@ -11,4 +11,4 @@ pub mod user;
 pub mod samsrv;
 pub mod setup;
 pub mod security;
-// pub mod samrpc;  // WAVE 2 — enabled after the 11 leaf/support files build clean
+pub mod samrpc;

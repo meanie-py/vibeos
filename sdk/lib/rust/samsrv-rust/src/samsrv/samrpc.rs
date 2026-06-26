@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -46,10 +46,10 @@ pub static mut pServerMapping: PGENERIC_MAPPING = unsafe { core::ptr::addr_of_mu
 unsafe fn SampAddRelativeTimeToTime(AbsoluteTime: LARGE_INTEGER, RelativeTime: LARGE_INTEGER) -> LARGE_INTEGER {
     let mut NewTime: LARGE_INTEGER = core::mem::zeroed();
 
-    *NewTime.QuadPart_mut() = AbsoluteTime.QuadPart() - RelativeTime.QuadPart();
+    NewTime.QuadPart = AbsoluteTime.QuadPart - RelativeTime.QuadPart;
 
-    if *NewTime.QuadPart() < 0 {
-        *NewTime.QuadPart_mut() = 0;
+    if NewTime.QuadPart < 0 {
+        NewTime.QuadPart = 0;
     }
 
     NewTime
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn SampStartRpcServer() {
         return;
     }
 
-    Status = RpcServerListen(1, 20, 1u8);
+    Status = RpcServerListen(1, 20, 1);
     if Status != RPC_S_OK {
         return;
     }
@@ -229,7 +229,7 @@ pub unsafe extern "system" fn SamrSetSecurityObject(
 
     Status = SampGetObjectAttribute(
         DbObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *const u16,
+        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *mut u16,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         &mut RelativeSdSize,
@@ -238,14 +238,14 @@ pub unsafe extern "system" fn SamrSetSecurityObject(
         return Status;
     }
 
-    RelativeSd = RtlAllocateHeap(RtlGetProcessHeap(), 0, RelativeSdSize as usize);
+    RelativeSd = RtlAllocateHeap(RtlGetProcessHeap(), 0, RelativeSdSize as SIZE_T);
     if RelativeSd.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Status = SampGetObjectAttribute(
         DbObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *const u16,
+        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *mut u16,
         core::ptr::null_mut(),
         RelativeSd,
         &mut RelativeSdSize,
@@ -279,7 +279,7 @@ pub unsafe extern "system" fn SamrSetSecurityObject(
 
     Status = SampSetObjectAttribute(
         DbObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *const u16,
+        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *mut u16,
         REG_BINARY,
         RelativeSd,
         RtlLengthSecurityDescriptor(RelativeSd),
@@ -341,7 +341,7 @@ pub unsafe extern "system" fn SamrQuerySecurityObject(
         /* Get the size of the SD */
         Status = SampGetObjectAttribute(
             SamObject,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as LPCWSTR,
+            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             &mut RelativeSdSize,
@@ -360,7 +360,7 @@ pub unsafe extern "system" fn SamrQuerySecurityObject(
         /* Get the SD */
         Status = SampGetObjectAttribute(
             SamObject,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as LPCWSTR,
+            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             RelativeSd as *mut core::ffi::c_void,
             &mut RelativeSdSize,
@@ -848,8 +848,8 @@ pub unsafe extern "system" fn SamrOpenDomain(
 
         Status = SampOpenDbObject(
             ServerObject,
-            "Domains\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
-            "Builtin\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Domains"),
+            wstr!("Builtin"),
             0,
             SamDbDomainObject,
             DesiredAccess,
@@ -865,8 +865,8 @@ pub unsafe extern "system" fn SamrOpenDomain(
 
         Status = SampOpenDbObject(
             ServerObject,
-            "Domains\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
-            "Account\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Domains"),
+            wstr!("Account"),
             0,
             SamDbDomainObject,
             DesiredAccess,
@@ -920,10 +920,10 @@ unsafe fn SampQueryDomainPassword(
         (*InfoBuffer).Password.MinPasswordLength = FixedData.MinPasswordLength;
         (*InfoBuffer).Password.PasswordHistoryLength = FixedData.PasswordHistoryLength;
         (*InfoBuffer).Password.PasswordProperties = FixedData.PasswordProperties;
-        (*InfoBuffer).Password.MaxPasswordAge.__bindgen_anon_1.LowPart = FixedData.MaxPasswordAge.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Password.MaxPasswordAge.__bindgen_anon_1.HighPart = FixedData.MaxPasswordAge.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Password.MinPasswordAge.__bindgen_anon_1.LowPart = FixedData.MinPasswordAge.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Password.MinPasswordAge.__bindgen_anon_1.HighPart = FixedData.MinPasswordAge.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Password.MaxPasswordAge.LowPart = FixedData.MaxPasswordAge.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Password.MaxPasswordAge.HighPart = FixedData.MaxPasswordAge.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Password.MinPasswordAge.LowPart = FixedData.MinPasswordAge.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Password.MinPasswordAge.HighPart = FixedData.MinPasswordAge.__bindgen_anon_1.HighPart;
 
         *Buffer = InfoBuffer;
     }
@@ -999,7 +999,7 @@ unsafe fn SampQueryDomainGeneral(
     Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
     Status = SampGetObjectAttribute(
         DomainObject,
-        wide!("F").as_ptr(),
+        wstr!("F"),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(FixedData) as PVOID,
         &mut Length,
@@ -1010,11 +1010,11 @@ unsafe fn SampQueryDomainGeneral(
             break 'done;
         }
 
-        (*InfoBuffer).General.ForceLogoff.__bindgen_anon_1.LowPart = FixedData.ForceLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).General.ForceLogoff.__bindgen_anon_1.HighPart = FixedData.ForceLogoff.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).General.DomainModifiedCount.__bindgen_anon_1.LowPart =
+        (*InfoBuffer).General.ForceLogoff.LowPart = FixedData.ForceLogoff.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).General.ForceLogoff.HighPart = FixedData.ForceLogoff.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).General.DomainModifiedCount.LowPart =
             FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).General.DomainModifiedCount.__bindgen_anon_1.HighPart =
+        (*InfoBuffer).General.DomainModifiedCount.HighPart =
             FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
         (*InfoBuffer).General.DomainServerState = FixedData.DomainServerState;
         (*InfoBuffer).General.DomainServerRole = FixedData.DomainServerRole;
@@ -1022,7 +1022,7 @@ unsafe fn SampQueryDomainGeneral(
 
         Status = SampGetObjectAttributeString(
             DomainObject,
-            wide!("OemInformation").as_ptr(),
+            wstr!("OemInformation"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.OemInformation),
         );
         if !NT_SUCCESS(Status) {
@@ -1032,7 +1032,7 @@ unsafe fn SampQueryDomainGeneral(
 
         Status = SampGetObjectAttributeString(
             DomainObject,
-            wide!("Name").as_ptr(),
+            wstr!("Name"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.DomainName),
         );
         if !NT_SUCCESS(Status) {
@@ -1042,7 +1042,7 @@ unsafe fn SampQueryDomainGeneral(
 
         Status = SampGetObjectAttributeString(
             DomainObject,
-            wide!("ReplicaSourceNodeName").as_ptr(),
+            wstr!("ReplicaSourceNodeName"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.ReplicaSourceNodeName),
         );
         if !NT_SUCCESS(Status) {
@@ -1133,9 +1133,9 @@ unsafe fn SampQueryDomainLogoff(
             break 'done;
         }
 
-        (*InfoBuffer).Logoff.ForceLogoff.__bindgen_anon_1.LowPart =
+        (*InfoBuffer).Logoff.ForceLogoff.LowPart =
             FixedData.ForceLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logoff.ForceLogoff.__bindgen_anon_1.HighPart =
+        (*InfoBuffer).Logoff.ForceLogoff.HighPart =
             FixedData.ForceLogoff.__bindgen_anon_1.HighPart;
 
         *Buffer = InfoBuffer;
@@ -1244,7 +1244,7 @@ unsafe fn SampQueryDomainReplication(
 
     Status = SampGetObjectAttributeString(
         DomainObject,
-        b"R\0e\0p\0l\0i\0c\0a\0S\0o\0u\0r\0c\0e\0N\0o\0d\0e\0N\0a\0m\0e\0\0\0".as_ptr() as LPCWSTR,
+        b"R\0e\0p\0l\0i\0c\0a\0S\0o\0u\0r\0c\0e\0N\0o\0d\0e\0N\0a\0m\0e\0\0\0".as_ptr() as LPWSTR,
         core::ptr::addr_of_mut!((*InfoBuffer).Replication.ReplicaSourceNodeName),
     );
 
@@ -1341,10 +1341,10 @@ unsafe fn SampQueryDomainModified(
             break 'done;
         }
 
-        (*InfoBuffer).Modified.DomainModifiedCount.__bindgen_anon_1.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Modified.DomainModifiedCount.__bindgen_anon_1.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Modified.CreationTime.__bindgen_anon_1.LowPart = FixedData.CreationTime.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Modified.CreationTime.__bindgen_anon_1.HighPart = FixedData.CreationTime.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Modified.DomainModifiedCount.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Modified.DomainModifiedCount.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Modified.CreationTime.LowPart = FixedData.CreationTime.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Modified.CreationTime.HighPart = FixedData.CreationTime.__bindgen_anon_1.HighPart;
 
         *Buffer = InfoBuffer;
     }
@@ -1432,16 +1432,16 @@ unsafe fn SampQueryDomainGeneral2(
             break 'done;
         }
 
-        (*InfoBuffer).General2.I1.ForceLogoff.__bindgen_anon_1.LowPart = FixedData.ForceLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).General2.I1.ForceLogoff.__bindgen_anon_1.HighPart = FixedData.ForceLogoff.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).General2.I1.DomainModifiedCount.__bindgen_anon_1.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).General2.I1.DomainModifiedCount.__bindgen_anon_1.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).General2.I1.ForceLogoff.LowPart = FixedData.ForceLogoff.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).General2.I1.ForceLogoff.HighPart = FixedData.ForceLogoff.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).General2.I1.DomainModifiedCount.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).General2.I1.DomainModifiedCount.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
         (*InfoBuffer).General2.I1.DomainServerState = FixedData.DomainServerState;
         (*InfoBuffer).General2.I1.DomainServerRole = FixedData.DomainServerRole;
         (*InfoBuffer).General2.I1.UasCompatibilityRequired = FixedData.UasCompatibilityRequired;
 
-        (*InfoBuffer).General2.LockoutDuration = FixedData.LockoutDuration;
-        (*InfoBuffer).General2.LockoutObservationWindow = FixedData.LockoutObservationWindow;
+        (*InfoBuffer).General2.LockoutDuration = core::mem::transmute(FixedData.LockoutDuration);
+        (*InfoBuffer).General2.LockoutObservationWindow = core::mem::transmute(FixedData.LockoutObservationWindow);
         (*InfoBuffer).General2.LockoutThreshold = FixedData.LockoutThreshold;
 
         Status = SampGetObjectAttributeString(
@@ -1549,7 +1549,7 @@ unsafe fn SampQueryDomainLockout(
     Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
     Status = SampGetObjectAttribute(
         DomainObject,
-        windows_wide!("F").as_ptr() as LPWSTR,
+        windows_wide!("F") as LPWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(FixedData) as PVOID,
         &mut Length,
@@ -1560,8 +1560,8 @@ unsafe fn SampQueryDomainLockout(
             break 'done;
         }
 
-        (*InfoBuffer).Lockout.LockoutDuration = FixedData.LockoutDuration;
-        (*InfoBuffer).Lockout.LockoutObservationWindow = FixedData.LockoutObservationWindow;
+        (*InfoBuffer).Lockout.LockoutDuration = core::mem::transmute(FixedData.LockoutDuration);
+        (*InfoBuffer).Lockout.LockoutObservationWindow = core::mem::transmute(FixedData.LockoutObservationWindow);
         (*InfoBuffer).Lockout.LockoutThreshold = FixedData.LockoutThreshold;
 
         *Buffer = InfoBuffer;
@@ -1606,12 +1606,12 @@ unsafe fn SampQueryDomainModified2(
             break 'done;
         }
 
-        (*InfoBuffer).Modified2.DomainModifiedCount.__bindgen_anon_1.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Modified2.DomainModifiedCount.__bindgen_anon_1.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Modified2.CreationTime.__bindgen_anon_1.LowPart = FixedData.CreationTime.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Modified2.CreationTime.__bindgen_anon_1.HighPart = FixedData.CreationTime.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Modified2.ModifiedCountAtLastPromotion.__bindgen_anon_1.LowPart = FixedData.ModifiedCountAtLastPromotion.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Modified2.ModifiedCountAtLastPromotion.__bindgen_anon_1.HighPart = FixedData.ModifiedCountAtLastPromotion.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Modified2.DomainModifiedCount.LowPart = FixedData.DomainModifiedCount.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Modified2.DomainModifiedCount.HighPart = FixedData.DomainModifiedCount.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Modified2.CreationTime.LowPart = FixedData.CreationTime.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Modified2.CreationTime.HighPart = FixedData.CreationTime.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Modified2.ModifiedCountAtLastPromotion.LowPart = FixedData.ModifiedCountAtLastPromotion.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Modified2.ModifiedCountAtLastPromotion.HighPart = FixedData.ModifiedCountAtLastPromotion.__bindgen_anon_1.HighPart;
 
         *Buffer = InfoBuffer;
     }
@@ -1659,10 +1659,10 @@ unsafe fn SampSetDomainPassword(
         FixedData.MinPasswordLength = (*Buffer).Password.MinPasswordLength;
         FixedData.PasswordHistoryLength = (*Buffer).Password.PasswordHistoryLength;
         FixedData.PasswordProperties = (*Buffer).Password.PasswordProperties;
-        FixedData.MaxPasswordAge.__bindgen_anon_1.LowPart = (*Buffer).Password.MaxPasswordAge.__bindgen_anon_1.LowPart;
-        FixedData.MaxPasswordAge.__bindgen_anon_1.HighPart = (*Buffer).Password.MaxPasswordAge.__bindgen_anon_1.HighPart;
-        FixedData.MinPasswordAge.__bindgen_anon_1.LowPart = (*Buffer).Password.MinPasswordAge.__bindgen_anon_1.LowPart;
-        FixedData.MinPasswordAge.__bindgen_anon_1.HighPart = (*Buffer).Password.MinPasswordAge.__bindgen_anon_1.HighPart;
+        FixedData.MaxPasswordAge.__bindgen_anon_1.LowPart = (*Buffer).Password.MaxPasswordAge.LowPart;
+        FixedData.MaxPasswordAge.__bindgen_anon_1.HighPart = (*Buffer).Password.MaxPasswordAge.HighPart;
+        FixedData.MinPasswordAge.__bindgen_anon_1.LowPart = (*Buffer).Password.MinPasswordAge.LowPart;
+        FixedData.MinPasswordAge.__bindgen_anon_1.HighPart = (*Buffer).Password.MinPasswordAge.HighPart;
 
         Status = SampSetObjectAttribute(
             DomainObject,
@@ -1698,8 +1698,8 @@ unsafe fn SampSetDomainLogoff(
             break 'done;
         }
 
-        FixedData.ForceLogoff.__bindgen_anon_1.LowPart = (*Buffer).Logoff.ForceLogoff.__bindgen_anon_1.LowPart;
-        FixedData.ForceLogoff.__bindgen_anon_1.HighPart = (*Buffer).Logoff.ForceLogoff.__bindgen_anon_1.HighPart;
+        FixedData.ForceLogoff.__bindgen_anon_1.LowPart = (*Buffer).Logoff.ForceLogoff.LowPart;
+        FixedData.ForceLogoff.__bindgen_anon_1.HighPart = (*Buffer).Logoff.ForceLogoff.HighPart;
 
         Status = SampSetObjectAttribute(
             DomainObject,
@@ -1787,7 +1787,7 @@ unsafe fn SampSetDomainLockout(
     Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
     Status = SampGetObjectAttribute(
         DomainObject,
-        widestr!("F").as_ptr(),
+        widestr!("F"),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(FixedData) as PVOID,
         &mut Length,
@@ -1798,13 +1798,13 @@ unsafe fn SampSetDomainLockout(
             break 'done;
         }
 
-        FixedData.LockoutDuration = (*Buffer).Lockout.LockoutDuration;
-        FixedData.LockoutObservationWindow = (*Buffer).Lockout.LockoutObservationWindow;
+        FixedData.LockoutDuration = core::mem::transmute((*Buffer).Lockout.LockoutDuration);
+        FixedData.LockoutObservationWindow = core::mem::transmute((*Buffer).Lockout.LockoutObservationWindow);
         FixedData.LockoutThreshold = (*Buffer).Lockout.LockoutThreshold;
 
         Status = SampSetObjectAttribute(
             DomainObject,
-            widestr!("F").as_ptr(),
+            widestr!("F"),
             REG_BINARY,
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             Length,
@@ -1869,21 +1869,21 @@ pub unsafe extern "system" fn SamrSetInformationDomain(
             DomainOemInformation => {
                 Status = SampSetObjectAttributeString(
                     DomainObject,
-                    "OemInformation\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                    wstr!("OemInformation") as LPWSTR,
                     core::ptr::addr_of_mut!((*DomainInformation).Oem.OemInformation),
                 );
             }
             DomainNameInformation => {
                 Status = SampSetObjectAttributeString(
                     DomainObject,
-                    "Name\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                    wstr!("Name") as LPWSTR,
                     core::ptr::addr_of_mut!((*DomainInformation).Name.DomainName),
                 );
             }
             DomainReplicationInformation => {
                 Status = SampSetObjectAttributeString(
                     DomainObject,
-                    "ReplicaSourceNodeName\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                    wstr!("ReplicaSourceNodeName") as LPWSTR,
                     core::ptr::addr_of_mut!((*DomainInformation).Replication.ReplicaSourceNodeName),
                 );
             }
@@ -1959,7 +1959,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
         ulSize = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             DomainObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             core::ptr::null_mut(),
             &mut FixedDomainData as *mut _ as PVOID,
             &mut ulSize,
@@ -1973,7 +1973,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetObjectAttribute(
             DomainObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             REG_BINARY,
             &mut FixedDomainData as *mut _ as PVOID,
             ulSize,
@@ -1984,14 +1984,14 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         swprintf(
             szRid.as_mut_ptr(),
-            "%08lX\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("%08lX"),
             ulRid,
         );
 
         Status = SampCreateDbObject(
             DomainObject,
-            "Groups\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
-            szRid.as_ptr(),
+            wstr!("Groups"),
+            szRid.as_ptr() as *mut u16,
             ulRid,
             SamDbGroupObject,
             DesiredAccess,
@@ -2003,7 +2003,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetAccountNameInDomain(
             DomainObject,
-            "Groups\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Groups"),
             (*Name).Buffer,
             ulRid,
         );
@@ -2021,7 +2021,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetObjectAttribute(
             GroupObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             REG_BINARY,
             &mut FixedGroupData as *mut _ as LPVOID,
             core::mem::size_of::<SAM_GROUP_FIXED_DATA>() as ULONG,
@@ -2032,7 +2032,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetObjectAttributeString(
             GroupObject,
-            "Name\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Name"),
             Name,
         );
         if !NT_SUCCESS(Status) {
@@ -2041,7 +2041,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetObjectAttributeString(
             GroupObject,
-            "AdminComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("AdminComment"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2050,7 +2050,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
 
         Status = SampSetObjectAttribute(
             GroupObject,
-            "SecDesc\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("SecDesc"),
             REG_BINARY,
             Sd,
             SdSize,
@@ -2154,7 +2154,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
 
             if (RequiredLength as usize
                 + NameLength as usize
-                + core::mem::size_of::<UNICODE_NULL>()
+                + core::mem::size_of::<WCHAR>()
                 + core::mem::size_of::<SAMPR_RID_ENUMERATION>())
                 > PreferedMaximumLength as usize
             {
@@ -2163,7 +2163,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
             }
 
             RequiredLength += NameLength
-                + core::mem::size_of::<UNICODE_NULL>() as ULONG
+                + core::mem::size_of::<WCHAR>() as ULONG
                 + core::mem::size_of::<SAMPR_RID_ENUMERATION>() as ULONG;
             EnumCount += 1;
 
@@ -2206,7 +2206,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
                 GroupName.as_mut_ptr(),
                 &mut NameLength,
                 core::ptr::null_mut(),
-                &mut Rid,
+                core::ptr::addr_of_mut!(Rid) as PVOID,
                 &mut DataLength,
             );
             if !NT_SUCCESS(Status) {
@@ -2220,7 +2220,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
 
             (*(*EnumBuffer).Buffer.add(i as usize)).Name.Length = NameLength as USHORT;
             (*(*EnumBuffer).Buffer.add(i as usize)).Name.MaximumLength =
-                (NameLength + core::mem::size_of::<UNICODE_NULL>() as ULONG) as USHORT;
+                (NameLength + core::mem::size_of::<WCHAR>() as ULONG) as USHORT;
 
             i += 1;
             EnumIndex += 1;
@@ -2329,7 +2329,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
         ulSize = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             DomainObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             core::ptr::null_mut(),
             &mut FixedDomainData as *mut _ as PVOID,
             &mut ulSize,
@@ -2353,7 +2353,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             DomainObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             REG_BINARY,
             &mut FixedDomainData as *mut _ as PVOID,
             ulSize,
@@ -2364,14 +2364,14 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         swprintf(
             szRid.as_mut_ptr(),
-            "%08lX\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("%08lX"),
             ulRid,
         );
 
         Status = SampCreateDbObject(
             DomainObject,
-            "Users\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
-            szRid.as_ptr(),
+            wstr!("Users"),
+            szRid.as_ptr() as *mut u16,
             ulRid,
             SamDbUserObject,
             DesiredAccess,
@@ -2383,7 +2383,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetAccountNameInDomain(
             DomainObject,
-            "Users\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Users"),
             (*Name).Buffer,
             ulRid,
         );
@@ -2416,7 +2416,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             REG_BINARY,
             &mut FixedUserData as *mut _ as LPVOID,
             core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG,
@@ -2427,7 +2427,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "Name\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Name"),
             Name,
         );
         if !NT_SUCCESS(Status) {
@@ -2436,7 +2436,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "FullName\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("FullName"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2445,7 +2445,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "HomeDirectory\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("HomeDirectory"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2454,7 +2454,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "HomeDirectoryDrive\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("HomeDirectoryDrive"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2463,7 +2463,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "ScriptPath\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("ScriptPath"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2472,7 +2472,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "ProfilePath\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("ProfilePath"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2481,7 +2481,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "AdminComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("AdminComment"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2490,7 +2490,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "UserComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("UserComment"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2499,7 +2499,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "WorkStations\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("WorkStations"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2508,7 +2508,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "Parameters\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Parameters"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2520,7 +2520,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "LogonHours\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("LogonHours"),
             REG_BINARY,
             LogonHours.as_mut_ptr() as PVOID,
             core::mem::size_of::<[UCHAR; 23]>() as ULONG,
@@ -2535,7 +2535,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "Groups\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Groups"),
             REG_BINARY,
             &mut GroupMembership as *mut _ as PVOID,
             core::mem::size_of::<GROUP_MEMBERSHIP>() as ULONG,
@@ -2546,7 +2546,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "LMPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("LMPwd"),
             REG_BINARY,
             &EmptyLmHash as *const _ as PVOID,
             core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() as ULONG,
@@ -2557,7 +2557,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "NTPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("NTPwd"),
             REG_BINARY,
             &EmptyNtHash as *const _ as PVOID,
             core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() as ULONG,
@@ -2568,7 +2568,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "LMPwdHistory\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("LMPwdHistory"),
             REG_BINARY,
             core::ptr::null_mut(),
             0,
@@ -2579,7 +2579,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "NTPwdHistory\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("NTPwdHistory"),
             REG_BINARY,
             core::ptr::null_mut(),
             0,
@@ -2590,7 +2590,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "PrivateData\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("PrivateData"),
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -2599,7 +2599,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "SecDesc\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("SecDesc"),
             REG_BINARY,
             Sd,
             SdSize,
@@ -2667,7 +2667,7 @@ pub unsafe extern "system" fn SamrEnumerateUsersInDomain(
 
         Status = SampRegOpenKey(
             (*DomainObject).KeyHandle,
-            "Users\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Users"),
             KEY_READ,
             core::ptr::addr_of_mut!(UsersKeyHandle),
         );
@@ -2677,7 +2677,7 @@ pub unsafe extern "system" fn SamrEnumerateUsersInDomain(
 
         Status = SampRegOpenKey(
             UsersKeyHandle,
-            "Names\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Names"),
             KEY_READ,
             core::ptr::addr_of_mut!(NamesKeyHandle),
         );
@@ -2759,7 +2759,7 @@ pub unsafe extern "system" fn SamrEnumerateUsersInDomain(
                 UserName.as_mut_ptr(),
                 core::ptr::addr_of_mut!(NameLength),
                 core::ptr::null_mut(),
-                core::ptr::addr_of_mut!(Rid),
+                core::ptr::addr_of_mut!(Rid) as PVOID,
                 core::ptr::addr_of_mut!(DataLength),
             );
             if !NT_SUCCESS(Status) {
@@ -3012,7 +3012,7 @@ pub unsafe extern "system" fn SamrEnumerateAliasesInDomain(
 
         Status = SampRegOpenKey(
             (*DomainObject).KeyHandle,
-            "Aliases\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Aliases"),
             KEY_READ,
             &mut AliasesKeyHandle,
         );
@@ -3022,7 +3022,7 @@ pub unsafe extern "system" fn SamrEnumerateAliasesInDomain(
 
         Status = SampRegOpenKey(
             AliasesKeyHandle,
-            "Names\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Names"),
             KEY_READ,
             &mut NamesKeyHandle,
         );
@@ -3104,7 +3104,7 @@ pub unsafe extern "system" fn SamrEnumerateAliasesInDomain(
                 AliasName.as_mut_ptr(),
                 &mut NameLength,
                 core::ptr::null_mut(),
-                &mut Rid,
+                core::ptr::addr_of_mut!(Rid) as PVOID,
                 &mut DataLength,
             );
             if !NT_SUCCESS(Status) {
@@ -3231,7 +3231,7 @@ pub unsafe extern "system" fn SamrGetAliasMembership(
 
         i = 0;
         while i < (*SidArray).Count {
-            ConvertSidToStringSid((*(*SidArray).Sids.offset(i as isize)).SidPointer, &mut MemberSidString);
+            ConvertSidToStringSid((*(*SidArray).Sids.offset(i as isize)).SidPointer as PSID, &mut MemberSidString);
 
             Status = SampRegOpenKey(
                 MembersKeyHandle,
@@ -3273,7 +3273,7 @@ pub unsafe extern "system" fn SamrGetAliasMembership(
         RidIndex = 0;
         i = 0;
         while i < (*SidArray).Count {
-            ConvertSidToStringSid((*(*SidArray).Sids.offset(i as isize)).SidPointer, &mut MemberSidString);
+            ConvertSidToStringSid((*(*SidArray).Sids.offset(i as isize)).SidPointer as PSID, &mut MemberSidString);
 
             Status = SampRegOpenKey(
                 MembersKeyHandle,
@@ -3397,14 +3397,14 @@ pub unsafe extern "system" fn SamrLookupNamesInDomain(
 
             Status = SampRegOpenKey(
                 (*DomainObject).KeyHandle,
-                w_str("Aliases"),
+                wstr!("Aliases"),
                 KEY_READ,
                 &mut AccountsKeyHandle,
             );
             if NT_SUCCESS(Status) {
                 Status = SampRegOpenKey(
                     AccountsKeyHandle,
-                    w_str("Names"),
+                    wstr!("Names"),
                     KEY_READ,
                     &mut NamesKeyHandle,
                 );
@@ -3438,14 +3438,14 @@ pub unsafe extern "system" fn SamrLookupNamesInDomain(
 
             Status = SampRegOpenKey(
                 (*DomainObject).KeyHandle,
-                w_str("Groups"),
+                wstr!("Groups"),
                 KEY_READ,
                 &mut AccountsKeyHandle,
             );
             if NT_SUCCESS(Status) {
                 Status = SampRegOpenKey(
                     AccountsKeyHandle,
-                    w_str("Names"),
+                    wstr!("Names"),
                     KEY_READ,
                     &mut NamesKeyHandle,
                 );
@@ -3479,14 +3479,14 @@ pub unsafe extern "system" fn SamrLookupNamesInDomain(
 
             Status = SampRegOpenKey(
                 (*DomainObject).KeyHandle,
-                w_str("Users"),
+                wstr!("Users"),
                 KEY_READ,
                 &mut AccountsKeyHandle,
             );
             if NT_SUCCESS(Status) {
                 Status = SampRegOpenKey(
                     AccountsKeyHandle,
-                    w_str("Names"),
+                    wstr!("Names"),
                     KEY_READ,
                     &mut NamesKeyHandle,
                 );
@@ -4725,7 +4725,7 @@ pub unsafe extern "system" fn SamrOpenAlias(
 
         Status = SampOpenDbObject(
             DomainObject,
-            b"Aliases\0".as_ptr() as *const u16,
+            b"Aliases\0".as_ptr() as *mut u16,
             szRid.as_mut_ptr(),
             AliasId,
             SamDbAliasObject,
@@ -5062,7 +5062,7 @@ pub unsafe extern "system" fn SamrSetInformationAlias(
             AliasAdminCommentInformation => {
                 Status = SampSetObjectAttributeString(
                     AliasObject,
-                    b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR,
+                    b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as LPWSTR,
                     core::ptr::addr_of_mut!((*Buffer).AdminComment.AdminComment),
                 );
             }
@@ -5285,8 +5285,8 @@ pub unsafe extern "system" fn SamrOpenUser(
 
         Status = SampOpenDbObject(
             DomainObject,
-            ['U' as u16, 's' as u16, 'e' as u16, 'r' as u16, 's' as u16, 0u16].as_ptr(),
-            szRid.as_ptr(),
+            ['U' as u16, 's' as u16, 'e' as u16, 'r' as u16, 's' as u16, 0u16].as_ptr() as *mut u16,
+            szRid.as_ptr() as *mut u16,
             UserId,
             SamDbUserObject,
             DesiredAccess,
@@ -5372,7 +5372,7 @@ unsafe fn SampQueryUserGeneral(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("F"),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -5385,7 +5385,7 @@ unsafe fn SampQueryUserGeneral(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            "Name\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("Name"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.UserName),
         );
         if !NT_SUCCESS(Status) {
@@ -5395,7 +5395,7 @@ unsafe fn SampQueryUserGeneral(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            "FullName\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("FullName"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.FullName),
         );
         if !NT_SUCCESS(Status) {
@@ -5405,7 +5405,7 @@ unsafe fn SampQueryUserGeneral(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            "AdminComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("AdminComment"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.AdminComment),
         );
         if !NT_SUCCESS(Status) {
@@ -5415,7 +5415,7 @@ unsafe fn SampQueryUserGeneral(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            "UserComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("UserComment"),
             core::ptr::addr_of_mut!((*InfoBuffer).General.UserComment),
         );
         if !NT_SUCCESS(Status) {
@@ -5471,7 +5471,7 @@ unsafe fn SampQueryUserPreferences(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -5485,7 +5485,7 @@ unsafe fn SampQueryUserPreferences(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            "UserComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("UserComment") as LPWSTR,
             core::ptr::addr_of_mut!((*InfoBuffer).Preferences.UserComment),
         );
         if !NT_SUCCESS(Status) {
@@ -5532,7 +5532,7 @@ unsafe fn SampQueryUserLogon(
         Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             (*UserObject).ParentObject,
-            w!("F"),
+            wstr!("F"),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(DomainFixedData) as PVOID,
             &mut Length,
@@ -5544,7 +5544,7 @@ unsafe fn SampQueryUserLogon(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            w!("F"),
+            wstr!("F"),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -5555,27 +5555,27 @@ unsafe fn SampQueryUserLogon(
 
         (*InfoBuffer).Logon.UserId = FixedData.UserId;
         (*InfoBuffer).Logon.PrimaryGroupId = FixedData.PrimaryGroupId;
-        (*InfoBuffer).Logon.LastLogon.__bindgen_anon_1.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logon.LastLogon.__bindgen_anon_1.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Logon.LastLogoff.__bindgen_anon_1.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logon.LastLogoff.__bindgen_anon_1.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Logon.PasswordLastSet.__bindgen_anon_1.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logon.PasswordLastSet.__bindgen_anon_1.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Logon.LastLogon.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Logon.LastLogon.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Logon.LastLogoff.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Logon.LastLogoff.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Logon.PasswordLastSet.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Logon.PasswordLastSet.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
         (*InfoBuffer).Logon.BadPasswordCount = FixedData.BadPasswordCount;
         (*InfoBuffer).Logon.LogonCount = FixedData.LogonCount;
         (*InfoBuffer).Logon.UserAccountControl = FixedData.UserAccountControl;
 
         PasswordCanChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet, DomainFixedData.MinPasswordAge);
-        (*InfoBuffer).Logon.PasswordCanChange.__bindgen_anon_1.LowPart = PasswordCanChange.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logon.PasswordCanChange.__bindgen_anon_1.HighPart = PasswordCanChange.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Logon.PasswordCanChange.LowPart = PasswordCanChange.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Logon.PasswordCanChange.HighPart = PasswordCanChange.__bindgen_anon_1.HighPart;
 
         PasswordMustChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet, DomainFixedData.MaxPasswordAge);
-        (*InfoBuffer).Logon.PasswordMustChange.__bindgen_anon_1.LowPart = PasswordMustChange.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Logon.PasswordMustChange.__bindgen_anon_1.HighPart = PasswordMustChange.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Logon.PasswordMustChange.LowPart = PasswordMustChange.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Logon.PasswordMustChange.HighPart = PasswordMustChange.__bindgen_anon_1.HighPart;
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("Name"),
+            wstr!("Name"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.UserName),
         );
         if !NT_SUCCESS(Status) {
@@ -5584,7 +5584,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("FullName"),
+            wstr!("FullName"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.FullName),
         );
         if !NT_SUCCESS(Status) {
@@ -5593,7 +5593,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("HomeDirectory"),
+            wstr!("HomeDirectory"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.HomeDirectory),
         );
         if !NT_SUCCESS(Status) {
@@ -5602,7 +5602,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("HomeDirectoryDrive"),
+            wstr!("HomeDirectoryDrive"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.HomeDirectoryDrive),
         );
         if !NT_SUCCESS(Status) {
@@ -5611,7 +5611,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("ScriptPath"),
+            wstr!("ScriptPath"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.ScriptPath),
         );
         if !NT_SUCCESS(Status) {
@@ -5620,7 +5620,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("ProfilePath"),
+            wstr!("ProfilePath"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.ProfilePath),
         );
         if !NT_SUCCESS(Status) {
@@ -5629,7 +5629,7 @@ unsafe fn SampQueryUserLogon(
 
         Status = SampGetObjectAttributeString(
             UserObject,
-            w!("WorkStations"),
+            wstr!("WorkStations"),
             core::ptr::addr_of_mut!((*InfoBuffer).Logon.WorkStations),
         );
         if !NT_SUCCESS(Status) {
@@ -5720,14 +5720,14 @@ unsafe fn SampQueryUserAccount(
 
         (*InfoBuffer).Account.UserId = FixedData.UserId;
         (*InfoBuffer).Account.PrimaryGroupId = FixedData.PrimaryGroupId;
-        (*InfoBuffer).Account.LastLogon.__bindgen_anon_1.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Account.LastLogon.__bindgen_anon_1.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Account.LastLogoff.__bindgen_anon_1.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Account.LastLogoff.__bindgen_anon_1.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Account.PasswordLastSet.__bindgen_anon_1.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Account.PasswordLastSet.__bindgen_anon_1.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Account.AccountExpires.__bindgen_anon_1.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Account.AccountExpires.__bindgen_anon_1.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Account.LastLogon.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Account.LastLogon.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Account.LastLogoff.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Account.LastLogoff.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Account.PasswordLastSet.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Account.PasswordLastSet.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Account.AccountExpires.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Account.AccountExpires.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
         (*InfoBuffer).Account.BadPasswordCount = FixedData.BadPasswordCount;
         (*InfoBuffer).Account.LogonCount = FixedData.LogonCount;
         (*InfoBuffer).Account.UserAccountControl = FixedData.UserAccountControl;
@@ -6135,7 +6135,7 @@ unsafe fn SampQueryUserScript(
 
     Status = SampGetObjectAttributeString(
         UserObject,
-        b"S\0c\0r\0i\0p\0t\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+        b"S\0c\0r\0i\0p\0t\0P\0a\0t\0h\0\0\0".as_ptr() as LPWSTR,
         core::ptr::addr_of_mut!((*InfoBuffer).Script.ScriptPath),
     );
     if NT_SUCCESS(Status) {
@@ -6330,8 +6330,8 @@ unsafe fn SampQueryUserExpires(
             break 'done;
         }
 
-        (*InfoBuffer).Expires.AccountExpires.__bindgen_anon_1.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Expires.AccountExpires.__bindgen_anon_1.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Expires.AccountExpires.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Expires.AccountExpires.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
 
         *Buffer = InfoBuffer;
     }
@@ -6373,7 +6373,7 @@ unsafe fn SampQueryUserInternal1(
         Length = 0;
         SampGetObjectAttribute(
             UserObject,
-            "NTPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("NTPwd") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             &mut Length,
@@ -6382,7 +6382,7 @@ unsafe fn SampQueryUserInternal1(
         if Length as usize == core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() {
             Status = SampGetObjectAttribute(
                 UserObject,
-                "NTPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                wstr!("NTPwd") as LPWSTR,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!((*InfoBuffer).Internal1.EncryptedNtOwfPassword) as PVOID,
                 &mut Length,
@@ -6405,7 +6405,7 @@ unsafe fn SampQueryUserInternal1(
         Length = 0;
         SampGetObjectAttribute(
             UserObject,
-            "LMPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("LMPwd") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             &mut Length,
@@ -6414,7 +6414,7 @@ unsafe fn SampQueryUserInternal1(
         if Length as usize == core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() {
             Status = SampGetObjectAttribute(
                 UserObject,
-                "LMPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                wstr!("LMPwd") as LPWSTR,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!((*InfoBuffer).Internal1.EncryptedLmOwfPassword) as PVOID,
                 &mut Length,
@@ -6467,7 +6467,7 @@ unsafe fn SampQueryUserInternal2(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -6477,10 +6477,10 @@ unsafe fn SampQueryUserInternal2(
         }
 
         (*InfoBuffer).Internal2.Flags = 0;
-        (*InfoBuffer).Internal2.LastLogon.__bindgen_anon_1.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Internal2.LastLogon.__bindgen_anon_1.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
-        (*InfoBuffer).Internal2.LastLogoff.__bindgen_anon_1.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
-        (*InfoBuffer).Internal2.LastLogoff.__bindgen_anon_1.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Internal2.LastLogon.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Internal2.LastLogon.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
+        (*InfoBuffer).Internal2.LastLogoff.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
+        (*InfoBuffer).Internal2.LastLogoff.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
         (*InfoBuffer).Internal2.BadPasswordCount = FixedData.BadPasswordCount;
         (*InfoBuffer).Internal2.LogonCount = FixedData.LogonCount;
 
@@ -6512,7 +6512,7 @@ unsafe fn SampQueryUserParameters(
 
     Status = SampGetObjectAttributeString(
         UserObject,
-        b"P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR,
+        b"P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as LPWSTR,
         core::ptr::addr_of_mut!((*InfoBuffer).Parameters.Parameters),
     );
     if !NT_SUCCESS(Status) {
@@ -6743,14 +6743,14 @@ unsafe fn SampQueryUserAll(
 
         /* Get the LastLogon attribute */
         if (*InfoBuffer).All.WhichFields & USER_ALL_LASTLOGON != 0 {
-            (*InfoBuffer).All.LastLogon.__bindgen_anon_1.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.LastLogon.__bindgen_anon_1.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.LastLogon.LowPart = FixedData.LastLogon.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.LastLogon.HighPart = FixedData.LastLogon.__bindgen_anon_1.HighPart;
         }
 
         /* Get the LastLogoff attribute */
         if (*InfoBuffer).All.WhichFields & USER_ALL_LASTLOGOFF != 0 {
-            (*InfoBuffer).All.LastLogoff.__bindgen_anon_1.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.LastLogoff.__bindgen_anon_1.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.LastLogoff.LowPart = FixedData.LastLogoff.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.LastLogoff.HighPart = FixedData.LastLogoff.__bindgen_anon_1.HighPart;
         }
 
         /* Get the LogonHours attribute */
@@ -6781,8 +6781,8 @@ unsafe fn SampQueryUserAll(
                 FixedData.PasswordLastSet,
                 DomainFixedData.MinPasswordAge,
             );
-            (*InfoBuffer).All.PasswordCanChange.__bindgen_anon_1.LowPart = PasswordCanChange.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.PasswordCanChange.__bindgen_anon_1.HighPart = PasswordCanChange.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.PasswordCanChange.LowPart = PasswordCanChange.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.PasswordCanChange.HighPart = PasswordCanChange.__bindgen_anon_1.HighPart;
         }
 
         /* Get the PasswordMustChange attribute */
@@ -6791,20 +6791,20 @@ unsafe fn SampQueryUserAll(
                 FixedData.PasswordLastSet,
                 DomainFixedData.MaxPasswordAge,
             );
-            (*InfoBuffer).All.PasswordMustChange.__bindgen_anon_1.LowPart = PasswordMustChange.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.PasswordMustChange.__bindgen_anon_1.HighPart = PasswordMustChange.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.PasswordMustChange.LowPart = PasswordMustChange.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.PasswordMustChange.HighPart = PasswordMustChange.__bindgen_anon_1.HighPart;
         }
 
         /* Get the PasswordLastSet attribute */
         if (*InfoBuffer).All.WhichFields & USER_ALL_PASSWORDLASTSET != 0 {
-            (*InfoBuffer).All.PasswordLastSet.__bindgen_anon_1.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.PasswordLastSet.__bindgen_anon_1.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.PasswordLastSet.LowPart = FixedData.PasswordLastSet.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.PasswordLastSet.HighPart = FixedData.PasswordLastSet.__bindgen_anon_1.HighPart;
         }
 
         /* Get the AccountExpires attribute */
         if (*InfoBuffer).All.WhichFields & USER_ALL_ACCOUNTEXPIRES != 0 {
-            (*InfoBuffer).All.AccountExpires.__bindgen_anon_1.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
-            (*InfoBuffer).All.AccountExpires.__bindgen_anon_1.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
+            (*InfoBuffer).All.AccountExpires.LowPart = FixedData.AccountExpires.__bindgen_anon_1.LowPart;
+            (*InfoBuffer).All.AccountExpires.HighPart = FixedData.AccountExpires.__bindgen_anon_1.HighPart;
         }
 
         /* Get the UserAccountControl attribute */
@@ -7091,7 +7091,7 @@ unsafe fn SampSetUserName(
 
     Status = SampGetObjectAttributeString(
         UserObject,
-        widestr_name().as_ptr(),
+        widestr_name().as_ptr() as *mut u16,
         core::ptr::addr_of_mut!(OldUserName) as PRPC_UNICODE_STRING,
     );
     if !NT_SUCCESS(Status) {
@@ -7136,7 +7136,7 @@ unsafe fn SampSetUserName(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            widestr_name().as_ptr(),
+            widestr_name().as_ptr() as *mut u16,
             NewUserName,
         );
     }
@@ -7181,7 +7181,7 @@ unsafe fn SampSetUserGeneral(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -7194,7 +7194,7 @@ unsafe fn SampSetUserGeneral(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             REG_BINARY,
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             Length,
@@ -7213,7 +7213,7 @@ unsafe fn SampSetUserGeneral(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "FullName\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("FullName") as LPWSTR,
             core::ptr::addr_of_mut!((*Buffer).General.FullName),
         );
         if !NT_SUCCESS(Status) {
@@ -7222,7 +7222,7 @@ unsafe fn SampSetUserGeneral(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "AdminComment\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("AdminComment") as LPWSTR,
             core::ptr::addr_of_mut!((*Buffer).General.AdminComment),
         );
         if !NT_SUCCESS(Status) {
@@ -7231,7 +7231,7 @@ unsafe fn SampSetUserGeneral(
 
         Status = SampSetObjectAttributeString(
             UserObject,
-            "UserComment\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("UserComment") as LPWSTR,
             core::ptr::addr_of_mut!((*Buffer).General.UserComment),
         );
     }
@@ -7284,8 +7284,6 @@ unsafe fn SampSetUserPreferences(
     Status
 }
 
-Note: I need to declare the L"..." wide strings properly. Let me revise — the C code uses `L"F"` which are UTF-16 strings. Let me correct:
-
 unsafe fn SampSetUserPrimaryGroup(
     UserObject: PSAM_DB_OBJECT,
     Buffer: PSAMPR_USER_INFO_BUFFER,
@@ -7330,7 +7328,7 @@ unsafe fn SampSetUserControl(UserObject: PSAM_DB_OBJECT,
 
     Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
     Status = SampGetObjectAttribute(UserObject,
-                                    "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+                                    wstr!("F") as LPWSTR,
                                     core::ptr::null_mut(),
                                     &mut FixedData as *mut _ as PVOID,
                                     &mut Length);
@@ -7343,7 +7341,7 @@ unsafe fn SampSetUserControl(UserObject: PSAM_DB_OBJECT,
         FixedData.UserAccountControl = (*Buffer).Control.UserAccountControl;
 
         Status = SampSetObjectAttribute(UserObject,
-                                        "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPWSTR,
+                                        wstr!("F") as LPWSTR,
                                         REG_BINARY,
                                         &mut FixedData as *mut _ as PVOID,
                                         Length);
@@ -7366,7 +7364,7 @@ unsafe fn SampSetUserExpires(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -7375,12 +7373,12 @@ unsafe fn SampSetUserExpires(
             break 'done;
         }
 
-        FixedData.AccountExpires.__bindgen_anon_1.LowPart = (*Buffer).Expires.AccountExpires.__bindgen_anon_1.LowPart;
-        FixedData.AccountExpires.__bindgen_anon_1.HighPart = (*Buffer).Expires.AccountExpires.__bindgen_anon_1.HighPart;
+        FixedData.AccountExpires.__bindgen_anon_1.LowPart = (*Buffer).Expires.AccountExpires.LowPart;
+        FixedData.AccountExpires.__bindgen_anon_1.HighPart = (*Buffer).Expires.AccountExpires.HighPart;
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             REG_BINARY,
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             Length,
@@ -7397,6 +7395,9 @@ unsafe fn SampSetUserInternal1(
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    /* FIXME: Decrypt NT password */
+    /* FIXME: Decrypt LM password */
 
     'done: loop {
         Status = SampSetUserPassword(
@@ -7423,8 +7424,8 @@ unsafe fn SampSetUserInternal1(
         }
 
         if (*Buffer).Internal1.PasswordExpired != 0 {
-            FixedData.PasswordLastSet.u.__bindgen_anon_1.LowPart = 0;
-            FixedData.PasswordLastSet.u.__bindgen_anon_1.HighPart = 0;
+            FixedData.PasswordLastSet.u.LowPart = 0;
+            FixedData.PasswordLastSet.u.HighPart = 0;
         } else {
             Status = NtQuerySystemTime(core::ptr::addr_of_mut!(FixedData.PasswordLastSet));
             if !NT_SUCCESS(Status) {
@@ -7458,7 +7459,7 @@ unsafe fn SampSetUserInternal2(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as *mut u16,
+            wstr!("F") as *mut u16,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -7492,7 +7493,7 @@ unsafe fn SampSetUserInternal2(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as *mut u16,
+            wstr!("F") as *mut u16,
             REG_BINARY,
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             Length,
@@ -7522,7 +7523,7 @@ unsafe fn SampSetUserAll(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(FixedData) as PVOID,
             &mut Length,
@@ -7541,7 +7542,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_FULLNAME != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "FullName\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("FullName") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.FullName),
             );
             if !NT_SUCCESS(Status) {
@@ -7552,7 +7553,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_ADMINCOMMENT != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "AdminComment\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("AdminComment") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.AdminComment),
             );
             if !NT_SUCCESS(Status) {
@@ -7563,7 +7564,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_USERCOMMENT != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "UserComment\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("UserComment") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.UserComment),
             );
             if !NT_SUCCESS(Status) {
@@ -7574,7 +7575,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_HOMEDIRECTORY != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "HomeDirectory\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("HomeDirectory") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.HomeDirectory),
             );
             if !NT_SUCCESS(Status) {
@@ -7585,7 +7586,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_HOMEDIRECTORYDRIVE != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "HomeDirectoryDrive\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("HomeDirectoryDrive") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.HomeDirectoryDrive),
             );
             if !NT_SUCCESS(Status) {
@@ -7596,7 +7597,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_SCRIPTPATH != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "ScriptPath\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("ScriptPath") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.ScriptPath),
             );
             if !NT_SUCCESS(Status) {
@@ -7607,7 +7608,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_PROFILEPATH != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "ProfilePath\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("ProfilePath") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.ProfilePath),
             );
             if !NT_SUCCESS(Status) {
@@ -7618,7 +7619,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_WORKSTATIONS != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "WorkStations\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("WorkStations") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.WorkStations),
             );
             if !NT_SUCCESS(Status) {
@@ -7629,7 +7630,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_PARAMETERS != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "Parameters\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("Parameters") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.Parameters),
             );
             if !NT_SUCCESS(Status) {
@@ -7653,8 +7654,8 @@ unsafe fn SampSetUserAll(
         }
 
         if WhichFields & USER_ALL_ACCOUNTEXPIRES != 0 {
-            FixedData.AccountExpires.__bindgen_anon_1.LowPart = (*Buffer).All.AccountExpires.__bindgen_anon_1.LowPart;
-            FixedData.AccountExpires.__bindgen_anon_1.HighPart = (*Buffer).All.AccountExpires.__bindgen_anon_1.HighPart;
+            FixedData.AccountExpires.__bindgen_anon_1.LowPart = (*Buffer).All.AccountExpires.LowPart;
+            FixedData.AccountExpires.__bindgen_anon_1.HighPart = (*Buffer).All.AccountExpires.HighPart;
             WriteFixedData = 1u8;
         }
 
@@ -7708,7 +7709,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_PRIVATEDATA != 0 {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "PrivateData\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("PrivateData") as LPWSTR,
                 core::ptr::addr_of_mut!((*Buffer).All.PrivateData),
             );
             if !NT_SUCCESS(Status) {
@@ -7735,7 +7736,7 @@ unsafe fn SampSetUserAll(
         if WhichFields & USER_ALL_SECURITYDESCRIPTOR != 0 {
             Status = SampSetObjectAttribute(
                 UserObject,
-                "SecDesc\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("SecDesc") as LPWSTR,
                 REG_BINARY,
                 (*Buffer).All.SecurityDescriptor.SecurityDescriptor as PVOID,
                 (*Buffer).All.SecurityDescriptor.Length,
@@ -7745,7 +7746,7 @@ unsafe fn SampSetUserAll(
         if WriteFixedData != 0u8 {
             Status = SampSetObjectAttribute(
                 UserObject,
-                "F\0".encode_utf16().collect::<Vec<u16>>().as_ptr() as LPCWSTR,
+                wstr!("F") as LPWSTR,
                 REG_BINARY,
                 core::ptr::addr_of_mut!(FixedData) as PVOID,
                 Length,
@@ -7830,7 +7831,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
         Length = core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "LMPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("LMPwd") as LPWSTR,
             core::ptr::null_mut(),
             &mut StoredLmPassword as *mut _ as PVOID,
             &mut Length,
@@ -7853,7 +7854,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
         Length = core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "NTPwd\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("NTPwd") as LPWSTR,
             core::ptr::null_mut(),
             &mut StoredNtPassword as *mut _ as PVOID,
             &mut Length,
@@ -7876,7 +7877,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+            wstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             &mut UserFixedData as *mut _ as PVOID,
             &mut Length,
@@ -7891,7 +7892,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
             Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
             Status = SampGetObjectAttribute(
                 (*UserObject).ParentObject,
-                "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                wstr!("F") as LPWSTR,
                 core::ptr::null_mut(),
                 &mut DomainFixedData as *mut _ as PVOID,
                 &mut Length,
@@ -8015,7 +8016,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
                 Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
                 Status = SampSetObjectAttribute(
                     UserObject,
-                    "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                    wstr!("F") as LPWSTR,
                     REG_BINARY,
                     &mut UserFixedData as *mut _ as PVOID,
                     Length,
@@ -8032,7 +8033,7 @@ pub unsafe extern "system" fn SamrChangePasswordUser(
             Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
             Status = SampSetObjectAttribute(
                 UserObject,
-                "F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR,
+                wstr!("F") as LPWSTR,
                 REG_BINARY,
                 &mut UserFixedData as *mut _ as PVOID,
                 Length,
@@ -8243,7 +8244,7 @@ pub unsafe extern "system" fn SamrGetUserDomainPasswordInformation(
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             UserObject,
-            b"F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPCWSTR,
+            bwstr!("F") as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(UserFixedData) as LPVOID,
             core::ptr::addr_of_mut!(Length),
@@ -8270,7 +8271,7 @@ pub unsafe extern "system" fn SamrGetUserDomainPasswordInformation(
             Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
             Status = SampGetObjectAttribute(
                 DomainObject,
-                b"F\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPCWSTR,
+                bwstr!("F") as LPWSTR,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!(DomainFixedData) as LPVOID,
                 core::ptr::addr_of_mut!(Length),
@@ -8755,7 +8756,7 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
         FixedUserData.LastLogoff.QuadPart = 0;
         FixedUserData.PasswordLastSet.QuadPart = 0;
         FixedUserData.AccountExpires.__bindgen_anon_1.LowPart = MAXULONG;
-        FixedUserData.AccountExpires.__bindgen_anon_1.HighPart = MAXLONG;
+        FixedUserData.AccountExpires.__bindgen_anon_1.HighPart = MAXLONG as LONG;
         FixedUserData.LastBadPasswordTime.QuadPart = 0;
         FixedUserData.UserId = ulRid;
         FixedUserData.PrimaryGroupId = DOMAIN_GROUP_RID_USERS;
@@ -9104,8 +9105,8 @@ pub unsafe extern "system" fn SamrGetDomainPasswordInformation(
 
         Status = SampOpenDbObject(
             ServerHandle as PSAM_DB_OBJECT,
-            b"D\0o\0m\0a\0i\0n\0s\0\0\0".as_ptr() as *const u16,
-            b"A\0c\0c\0o\0u\0n\0t\0\0\0".as_ptr() as *const u16,
+            b"D\0o\0m\0a\0i\0n\0s\0\0\0".as_ptr() as *mut u16,
+            b"A\0c\0c\0o\0u\0n\0t\0\0\0".as_ptr() as *mut u16,
             0,
             SamDbDomainObject,
             DOMAIN_READ_PASSWORD_PARAMETERS,
@@ -9118,7 +9119,7 @@ pub unsafe extern "system" fn SamrGetDomainPasswordInformation(
         Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
         Status = SampGetObjectAttribute(
             DomainObject,
-            b"F\0\0\0".as_ptr() as *const u16,
+            b"F\0\0\0".as_ptr() as *mut u16,
             core::ptr::null_mut(),
             &mut FixedData as *mut _ as *mut core::ffi::c_void,
             &mut Length,
@@ -9250,7 +9251,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
             if NT_SUCCESS(Status) {
                 Status = SampSetObjectAttributeString(
                     UserObject,
-                    "FullName\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                    wstr!("FullName"),
                     core::ptr::addr_of_mut!((*Buffer).Name.FullName),
                 );
             }
@@ -9264,7 +9265,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         UserFullNameInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "FullName\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("FullName"),
                 core::ptr::addr_of_mut!((*Buffer).FullName.FullName),
             );
         }
@@ -9274,13 +9275,13 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         UserHomeInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "HomeDirectory\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("HomeDirectory"),
                 core::ptr::addr_of_mut!((*Buffer).Home.HomeDirectory),
             );
             if NT_SUCCESS(Status) {
                 Status = SampSetObjectAttributeString(
                     UserObject,
-                    "HomeDirectoryDrive\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                    wstr!("HomeDirectoryDrive"),
                     core::ptr::addr_of_mut!((*Buffer).Home.HomeDirectoryDrive),
                 );
             }
@@ -9288,35 +9289,35 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         UserScriptInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "ScriptPath\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("ScriptPath"),
                 core::ptr::addr_of_mut!((*Buffer).Script.ScriptPath),
             );
         }
         UserProfileInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "ProfilePath\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("ProfilePath"),
                 core::ptr::addr_of_mut!((*Buffer).Profile.ProfilePath),
             );
         }
         UserAdminCommentInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "AdminComment\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("AdminComment"),
                 core::ptr::addr_of_mut!((*Buffer).AdminComment.AdminComment),
             );
         }
         UserWorkStationsInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "WorkStations\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("WorkStations"),
                 core::ptr::addr_of_mut!((*Buffer).WorkStations.WorkStations),
             );
         }
         UserSetPasswordInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "Password\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("Password"),
                 core::ptr::addr_of_mut!((*Buffer).SetPassword.Password),
             );
         }
@@ -9335,7 +9336,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         UserParametersInformation => {
             Status = SampSetObjectAttributeString(
                 UserObject,
-                "Parameters\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+                wstr!("Parameters"),
                 core::ptr::addr_of_mut!((*Buffer).Parameters.Parameters),
             );
         }
@@ -9439,7 +9440,7 @@ pub unsafe extern "system" fn SamrConnect5(
     Status = SampOpenDbObject(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        ['S' as u16, 'A' as u16, 'M' as u16, 0].as_ptr(),
+        ['S' as u16, 'A' as u16, 'M' as u16, 0].as_ptr() as *mut u16,
         0,
         SamDbServerObject,
         DesiredAccess,
