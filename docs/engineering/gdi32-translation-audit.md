@@ -95,7 +95,24 @@ post-boot refinement.
 | 1a (dllmain+misc+gdiobj) | `94e0fd5972a` | build+boot ✓ (73s) | build+boot ✓ (188s, net✓) | cohab-link ✓; gdi32 proven loaded (1st boot reached `mpr wnetInit` late-usermode); smoke blocked by env (KNOWN_FLAKE handoff race, then efivars wrong-X64-image — arm64-love's documented media issue, not gdi32). Gate will verdict on controlled host. |
 | 1b (brush+pen+palette+colorspace+clientobj) | `7d40b6e83b2` (landed `76312282832`) | boot ✓ | boot ✓ (net✓) | boot ✓ 33s (genuine Rust, post archcfg-fix) |
 | 2 (coord+painting+text+arc+region) | landed `eaae890a98f` | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
-| 2b (font) | _pending_ | build+boot ✓ 1m13s | build+boot ✓ (net flake unrelated — gdi32 has no net surface) | build+boot ✓ 43s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (largest single file) |
+| 2b (font) | landed `704590ef795` | build+boot ✓ 1m13s | build+boot ✓ (net flake unrelated — gdi32 has no net surface) | build+boot ✓ 43s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (largest single file) |
+| 3a (path+bitmap+icm) | _pending_ | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 33s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (paths/DIB/color-mgmt) |
+
+### Wave 3a notes (path / bitmap / icm)
+3 files (~1.8K LOC, 45 fns) via 3 parallel opus agents against
+`~/vibeos-rust-staging/gdi32-wave3a/CONTRACT-3a.md`, integrated centrally. **2 integration
+fixes**, both the i386 float-ABI / inline-not-export class (now captured in the field manual
+§"i386 no-SSE float ABI"):
+- **path.rs `SetMiterLimit`** — an EXPORTED WINAPI fn taking `FLOAT` **by value** (the only such
+  export in the wave). i386 `-sse,-sse2` rejects an f32 value across a fn boundary → **per-arch
+  cfg split**: i386 takes the float's stack bytes as `u32` (bit-identical to the C stdcall float
+  arg) and passes them straight through; amd64/arm64 use the native `f32` sig (float in a vector
+  reg). Mirrors the C `gxf_long worker; worker.f=a1; …(worker.l)…` bit-reinterpret.
+- **bitmap.rs `RtlULongMult`** — a `__forceinline` from ntintsafe.h (NOT an ntdll export) →
+  reimplemented locally as a checked u32 multiply (matches `win32k-rust/src/surface.rs` + font.rs).
+- **bitmap.c** is the meaty one (DIB sections, GetDIBits/SetDIBits/StretchDIBits, the FASTCALL
+  size helpers); `GdiGetBitmapBitsSize` kept `#[no_mangle] extern "system"` because utils.c (still
+  C) links against it. **icm.c** = color-space/ICM-profile thin wrappers + A/W conversion.
 
 ### Wave 2b notes (font.c — the largest single file)
 ONE file (~2.8K LOC, 70 exported + 11 private fns) via a single opus agent against

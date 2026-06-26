@@ -2,6 +2,7 @@
 //! Wave 0: linedda. Wave 1a: gdiobj. Wave 1b: brush/pen/palette/colorspace/clientobj.
 //! Wave 2: coord/painting/text/arc/region (the desktop render path).
 //! Wave 2b: font (selection/enumeration/metrics — the largest single file).
+//! Wave 3a: path/bitmap/icm (paths, DIB/bitmap creation, color management).
 
 pub mod linedda;
 pub mod gdiobj;
@@ -16,3 +17,6 @@ pub mod text;
 pub mod arc;
 pub mod region;
 pub mod font;
+pub mod path;
+pub mod bitmap;
+pub mod icm;
