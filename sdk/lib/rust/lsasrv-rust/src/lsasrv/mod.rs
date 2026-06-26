@@ -13,4 +13,5 @@ pub mod privileges;
 pub mod security;
 pub mod registry;
 pub mod lookup;
+pub mod lsarpc;
 pub mod utils;
