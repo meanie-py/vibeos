@@ -212,6 +212,22 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Fix:** `#[cfg(target_arch="x86")] const HIGH_LEVEL: KIRQL = 31;` else `= 15;`, or import per-arch from `hal_ddk`. Diagnosis: disassemble the suspect HAL fn and look for `mov cr8, <imm>` with imm > 15 — trust the instruction stream over the symbolicator for control-register #GPs.
 **Source:** `feedback_irql_high_level_per_arch.md`
 
+### i386 no-SSE float ABI: an `f32`/`f64` VALUE can't cross a fn boundary (translate C float helpers as macros; cfg-split float exports)
+**Symptom:** a usermode-DLL Rust crate that builds with `-sse,-sse2` (the i686 CPU-baseline rule — gdi32/user32/etc., via `sdk/lib/rust/.cargo/config.toml`) fails to **compile** on i386 with `error: this function definition uses SIMD vector type 'f32'/'f64' which (with the chosen ABI) requires the 'sse' target feature, which is not enabled` — pointing at a fn *definition*, even with `#[inline(always)]`. amd64/arm64 build fine (SSE/NEON always present).
+**Root cause:** without SSE there is no float ABI register, so rustc rejects any `f32`/`f64` **passed by value** across a function boundary (param or return) — it checks at the *definition*, so `#[inline]` does NOT help. What IS fine on no-SSE i386: float **math/values/stores inside a body** (x87), float **pointers** (`PFLOAT`/`*mut f32`/`LPABCFLOAT`), and float **struct fields**. Only the by-value ABI crossing is forbidden.
+**Fixes (two flavors, both used in gdi32):**
+1. **Internal C float helper → Rust `macro_rules!`, not a fn.** A `static __inline INT GDI_ROUND(FLOAT)` / `_fmul`/`_lrintf` / `fabs`-style helper translated as a Rust `fn(f32)->…` trips this. Convert it to a macro so the float math inlines at the call site and never crosses an ABI boundary: `macro_rules! GDI_ROUND { ($v:expr) => {{ let val: f64 = ($v) as f64; let t = val+0.5; let i = t as i64 as f64; (if i>t {i-1.0} else {i}) as INT }}; }`. **Keep the macro's internal type matching the C width** — C does world-to-viewport transforms in `double` then `(int)floor(v+0.5)`; narrowing to f32 in the macro silently loses precision. (gdi32 `coord.rs` `_fmul!`/`_lrintf!`; `font.rs` `GDI_ROUND!`/`dabs!`.)
+2. **EXPORTED fn taking FLOAT by value → per-arch `#[cfg]` signature split.** e.g. `BOOL WINAPI SetMiterLimit(HDC, FLOAT eNewLimit, PFLOAT peOld)`. You can't drop the param and you can't make it `f32` on i386 — but the i386 stdcall ABI passes a 4-byte FLOAT **on the stack**, bit-identical to a `u32` on the stack, whereas amd64/arm64 pass it in a **vector register** (so they need the native `f32` sig — a `u32` there would corrupt the ABI). Split it:
+   ```rust
+   #[cfg(target_arch = "x86")]      // float arrives as stack bytes — take the bits directly
+   pub unsafe extern "system" fn SetMiterLimit(hdc: HDC, a1: u32 /*FLOAT bits*/, a2: PFLOAT) -> BOOL { … NtGdiSetMiterLimit(hdc, a1 as LONG, …); *(a2 as *mut u32) = out_bits; … }
+   #[cfg(not(target_arch = "x86"))] // float arrives in xmm/neon — native sig
+   pub unsafe extern "system" fn SetMiterLimit(hdc: HDC, a1: FLOAT, a2: PFLOAT) -> BOOL { … NtGdiSetMiterLimit(hdc, a1.to_bits() as LONG, …); *a2 = f32::from_bits(out_bits); … }
+   ```
+   This mirrors the C, which reinterprets the float's bits as a LONG and passes the LONG to the kernel anyway (`gxf_long worker; worker.f = a1; …(worker.l)…`). The cfg-split is mandatory: a plain `f32` param won't compile on i386, a plain `u32` param corrupts amd64/arm64.
+**Bonus (co-occurring): a `__forceinline`-from-a-header arithmetic helper is NOT a real export** — e.g. `RtlULongMult` (ntintsafe.h). Declaring it `extern` → undefined `_RtlULongMult@12` at link. Reimplement it locally as a small checked-arithmetic Rust fn (STATUS_SUCCESS / 0xC0000095 STATUS_INTEGER_OVERFLOW); see `win32k-rust/src/surface.rs` and gdi32 `font.rs`/`bitmap.rs`. (Sibling of "DDK FORCEINLINE exported only on i386" above, but here it's exported *nowhere*.)
+**Source:** gdi32 Wave 2 (`coord.rs`), Wave 2b (`font.rs`), Wave 3a (`path.rs`/`bitmap.rs`) — `docs/engineering/gdi32-translation-audit.md`.
+
 ---
 
 ## LLVM captures(none) / ud2 / codegen-unit miscompiles
