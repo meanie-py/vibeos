@@ -27,7 +27,7 @@ list(APPEND SOURCE
     # misc/unicode.c — replaced by Rust (advapi32-rust)
     # reg/hkcr.c — replaced by Rust (advapi32-rust)
     reg/reg.c
-    sec/ac.c
+    # sec/ac.c — replaced by Rust (advapi32-rust)
     # sec/audit.c — replaced by Rust (advapi32-rust)
     # sec/lsa.c — replaced by Rust (advapi32-rust)
     # sec/misc.c — replaced by Rust (advapi32-rust)

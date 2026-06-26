@@ -119,14 +119,10 @@ pub mod wine_crypt_lmhash;
 pub mod sec_sec;
 #[path = "sec/audit.rs"]
 pub mod sec_audit;
-// sec/ac.c DEFERRED to Wave 3: its Acc* access-control calls go through the
-// `NtMartaStatic` dynamic-ntmarta function-pointer table + `CheckNtMartaPresent`,
-// both defined in sec/misc.c (Wave 3). The translated ac.rs (kept on disk,
-// never deleted) flattened those into direct imports that have no symbol; the
-// faithful NtMartaStatic call-through is done when sec/misc.c flips. ac.c stays C
-// (active, working) until then — no regression hidden (ac.rs was never link-live).
-// #[path = "sec/ac.rs"]
-// pub mod sec_ac;
+// sec/ac.rs — Acc* access-control calls route through sec_misc's NtMartaStatic
+// dynamic-ntmarta function-pointer table + CheckNtMartaPresent (now flipped).
+#[path = "sec/ac.rs"]
+pub mod sec_ac;
 #[path = "misc/sysfunc.rs"]
 pub mod misc_sysfunc;
 #[path = "reg/hkcr.rs"]

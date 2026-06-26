@@ -1,11 +1,10 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "system" {
-    fn CheckNtMartaPresent() -> DWORD;
-    fn AccFreeIndexArray( pInheritArray: PINHERITED_FROMW, AceCnt: USHORT, pfnArray: PFN_OBJECT_MGR_FUNCTS, ) -> DWORD;
-    fn AccRewriteGetExplicitEntriesFromAcl( pacl: PACL, pcCountOfExplicitEntries: *mut u32, pListOfExplicitEntries: *mut *mut core::ffi::c_void, ) -> u32;
-}
+// ntmarta dynamic-load table + presence check live in sec/misc.rs (where the
+// NtMartaStatic global is defined #[no_mangle]). The Acc* calls below are the
+// advapi32.h `#define Acc… NtMartaStatic.<field>` macros → call through the table.
+use crate::sec_misc::{CheckNtMartaPresent, NtMartaStatic};
 
 // ---- file-scope preamble (translated) ----
 // No translatable file-scope declarations.
@@ -116,17 +115,17 @@ pub unsafe extern "system" fn GetInheritanceSourceW(
 
     ErrorCode = CheckNtMartaPresent();
     if ErrorCode == ERROR_SUCCESS {
-        ErrorCode = AccGetInheritanceSource(
+        ErrorCode = (NtMartaStatic.GetInheritanceSourceW.unwrap())(
             pObjectName,
             ObjectType,
             SecurityInfo,
             Container,
-            pObjectClassGuids,
+            pObjectClassGuids as _,
             GuidCount,
-            pAcl,
-            pfnArray,
-            pGenericMapping,
-            pInheritArray,
+            pAcl as _,
+            pfnArray as _,
+            pGenericMapping as _,
+            pInheritArray as _,
         );
     }
 
@@ -160,7 +159,7 @@ pub unsafe extern "system" fn FreeInheritedFromArray(
 
     ErrorCode = CheckNtMartaPresent();
     if ErrorCode == ERROR_SUCCESS {
-        ErrorCode = AccFreeIndexArray(pInheritArray, AceCnt, pfnArray);
+        ErrorCode = (NtMartaStatic.FreeIndexArray.unwrap())(pInheritArray, AceCnt, pfnArray);
     }
 
     ErrorCode
@@ -181,11 +180,11 @@ pub unsafe extern "system" fn SetEntriesInAclW(
 
     ErrorCode = CheckNtMartaPresent();
     if ErrorCode == ERROR_SUCCESS {
-        ErrorCode = AccRewriteSetEntriesInAcl(
+        ErrorCode = (NtMartaStatic.RewriteSetEntriesInAcl.unwrap())(
             cCountOfExplicitEntries,
-            pListOfExplicitEntries,
-            OldAcl,
-            NewAcl,
+            pListOfExplicitEntries as _,
+            OldAcl as _,
+            NewAcl as _,
         );
     }
 
@@ -595,10 +594,10 @@ pub unsafe extern "system" fn GetExplicitEntriesFromAclW(
 
     let mut ErrorCode: u32 = CheckNtMartaPresent();
     if ErrorCode == ERROR_SUCCESS {
-        ErrorCode = AccRewriteGetExplicitEntriesFromAcl(
-            pacl,
-            pcCountOfExplicitEntries,
-            pListOfExplicitEntries,
+        ErrorCode = (NtMartaStatic.RewriteGetExplicitEntriesFromAcl.unwrap())(
+            pacl as _,
+            pcCountOfExplicitEntries as _,
+            pListOfExplicitEntries as _,
         );
     }
 
@@ -809,7 +808,7 @@ pub unsafe extern "system" fn GetAuditedPermissionsFromAclA(
 //     if (ErrorCode == ERROR_SUCCESS)
 //     {
 //         /* call the MARTA provider */
-//         ErrorCode = AccGetInheritanceSource(pObjectName,
+//         ErrorCode = (NtMartaStatic.GetInheritanceSourceW.unwrap())(pObjectName,
 //                                             ObjectType,
 //                                             SecurityInfo,
 //                                             Container,
@@ -892,7 +891,7 @@ pub unsafe extern "system" fn GetAuditedPermissionsFromAclA(
 //     if (ErrorCode == ERROR_SUCCESS)
 //     {
 //         /* call the MARTA provider */
-//         ErrorCode = AccRewriteSetEntriesInAcl(cCountOfExplicitEntries,
+//         ErrorCode = (NtMartaStatic.RewriteSetEntriesInAcl.unwrap())(cCountOfExplicitEntries,
 //                                               pListOfExplicitEntries,
 //                                               OldAcl,
 //                                               NewAcl);
@@ -1335,7 +1334,7 @@ pub unsafe extern "system" fn GetAuditedPermissionsFromAclA(
 //     if (ErrorCode == ERROR_SUCCESS)
 //     {
 //         /* call the MARTA provider */
-//         ErrorCode = AccRewriteGetExplicitEntriesFromAcl(pacl,
+//         ErrorCode = (NtMartaStatic.RewriteGetExplicitEntriesFromAcl.unwrap())(pacl,
 //                                                         pcCountOfExplicitEntries,
 //                                                         pListOfExplicitEntries);
 //     }
