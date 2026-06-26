@@ -97,6 +97,22 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Fix:** Mirror the receiver's exact union type on both sides; pass `*ptr` (the struct), not `(*ptr).QuadPart`. Same for any bindgen union (`_ULARGE_INTEGER`, `_M128A`).
 **Source:** `feedback_i64_vs_largeinteger_abi.md`
 
+### c2rust direct union/bitfield access vs `__BindgenUnionField` repr → E0599/E0609/E0063 cluster
+**Symptom (buslogic-rust, 2026-06-26):** a c2rust/LLM driver translation that touches C bitfield-union *registers* compiles to a wall of `no method 'X' found for __BindgenUnionField<T>` (E0599), `no field 'All'/'__bindgen_anon_1'` (E0609), and `missing fields 'Bits' and 'bindgen_union_field' in initializer` (E0063).
+**Root cause:** c2rust emits C-native union access — `reg.All = x`, `reg.Bits.SomeFlag()`, `Reg { All: 0 }` — but the repo's gen_driver_types.sh / ntkrnl-sys bindgen renders **every** union as the legacy `__BindgenUnionField` struct (zero-sized accessor fields + a `bindgen_union_field` storage blob), never a native Rust `union`. The accessor fields aren't real fields, so direct read/write/init all fail.
+**Fix (mechanical, sed-able):**
+- init `Reg { All: 0 }` → `core::mem::zeroed()` (the let-binding's type annotation carries the type).
+- read bit `reg.Bits.Flag()` → `reg.Bits.as_ref().Flag()`; read whole `reg.All` → `(*reg.All.as_ref())`; write `reg.All = v` → `*reg.All.as_mut() = v`. (`__BindgenUnionField<T>::as_ref/as_mut` transmute `&self`→`&T`.)
+- nested c2rust anon names differ from bindgen's: `.c2rust_unnamed` → `.__bindgen_anon_1`; a C anon-union/struct member bindgen *flattened* (e.g. CCB `.Status`) drops the `.__bindgen_anon_1.` prefix entirely — check the substrate struct.
+- a native bindgen `union` (e.g. ddk `_LARGE_INTEGER`) IS direct-access (`.__bindgen_anon_1.LowPart`), but a `__BindgenUnionField` one is NOT — grep the substrate to tell which.
+Do the four register rewrites in any order (the suffixes `as`/`)`/`;`/` = ` are disjoint). atapi-rust's hand translation already used `.as_ref()` — the gap is c2rust/LLM output that didn't.
+
+### gen_driver_types.sh enum members: bindgen names them `<EnumTag>_<member>`, the C source used the bare name
+**Symptom:** ~50 `cannot find value 'BusLogic_VESA_Bus' / 'RequestComplete' / 'ScsiAdapterControlMax'` (E0425) after wiring a driver substrate — the translation references C enum members by their bare name.
+**Root cause:** bindgen prefixes each enum constant with its enum *tag* (`BusLogic_HostAdapterBusType_T_BusLogic_VESA_Bus`, `_SCSI_NOTIFICATION_TYPE_RequestComplete`), and long-typed consts **wrap the `: <type> = N;` onto the next line**.
+**Fix (automate it):** collect the missing names from the compiler, then for each grep the substrate for `pub const [A-Za-z0-9_]*<name>:` (anchor on the trailing `:` so it survives the line-wrap; type-on-next-line breaks a `pub const NAME: TYPE =` one-liner regex) and emit `pub use crate::types::<fullname> as <name>;` into glue (type-free `pub use` > `pub const X: T = ...`, no type to chase, arch-independent since enum names are identical on all 3). A handful of dup-value members bindgen drops, and #defines not in an allowlisted header (`SP_UNTAGGED`), need a manual `pub const`.
+**Source:** buslogic-rust (BusLogic958.c → Rust, the last C-only storage driver; `drivers/storage/` 100% Rust). Companion to the `wstr!` compile-time `L"..."` macro (pure-LLM emits `…encode_utf16().collect::<Vec<u16>>()` — no allocator in-kernel).
+
 ### `PWCHAR HalName = L"..."` translated as `[u16; N]` → triple-fault at boot
 **Symptom:** Kernel hangs at boot with no trace points (fault precedes HAL init); `cargo check` and the linker are both happy.
 **Root cause:** The C export is a pointer *variable* (4/8 bytes holding the string's address), not the string bytes. As `pub static HalName: [u16; N]` the symbol sits at the buffer start, so consumers read `'A','C','P','I'` (`0x49004300...`) as the pointer and dereference a wild address.
