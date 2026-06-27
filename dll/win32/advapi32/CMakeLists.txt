@@ -35,7 +35,7 @@ list(APPEND SOURCE
     # sec/sec.c — replaced by Rust (advapi32-rust)
     # sec/trustee.c — replaced by Rust (advapi32-rust)
     # service/eventlog.c — replaced by Rust (advapi32-rust)
-    service/rpc.c
+    # service/rpc.c — replaced by Rust (advapi32-rust)
     # service/scm.c — replaced by Rust (advapi32-rust)
     # service/sctrl.c — replaced by Rust (advapi32-rust)
     # service/winreg.c — replaced by Rust (advapi32-rust)

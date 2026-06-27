@@ -149,3 +149,5 @@ pub mod service_scm;
 pub mod wine_security;
 #[path = "reg/reg.rs"]
 pub mod reg_reg;
+#[path = "service/rpc.rs"]
+pub mod service_rpc;
