@@ -43,20 +43,25 @@ advapi32` link-gate** (catches ABI/decoration bugs crate-build can't see).
 
 | Wave | Files | LOC | State |
 |------|-------|-----|-------|
-| 1 | token, misc/{unicode,msi,dllmain,evntrace,hwprofiles,efs,shutdown}, service/winreg, sec/{trustee,safer}, wine/{crypt_des,crypt_lmhash} (13) | ~3.6K | ✅ translated, integrated, flipped, i386-linked, ×3 compile |
-| 2 | sec/sec, sec/audit, misc/sysfunc, reg/hkcr, service/sctrl (5) | ~4.5K | ✅ translated, integrated, flipped, i386-linked, ×3 compile |
-| 3 | misc/logon, service/eventlog, sec/misc, wine/cred, sec/lsa, wine/crypt (6) | ~11.7K | 🔄 in progress |
-| 4 | service/scm, wine/security, reg/reg (3) | ~12.7K | ⏳ pending |
+| 1 | token, misc/{unicode,msi,dllmain,evntrace,hwprofiles,efs,shutdown}, service/winreg, sec/{trustee,safer}, wine/{crypt_des,crypt_lmhash} (13) | ~3.6K | ✅ done |
+| 2 | sec/sec, sec/audit, misc/sysfunc, reg/hkcr, service/sctrl (5) | ~4.5K | ✅ done |
+| 3 | misc/logon, service/eventlog, sec/misc, sec/ac, wine/cred, sec/lsa, wine/crypt (7) | ~13.4K | ✅ done |
+| 4 | service/scm, wine/security, reg/reg, service/rpc (4) | ~12.7K | ✅ done |
 
-### Deferred
+**🏆 advapi32.dll body is 100% Rust — all 28 .c flipped.** Crate builds clean ×3;
+advapi32.dll links 0-undefined on i386 (1.06M) / amd64 (1.14M) / arm64 (1.23M).
+i386 self-boot GREEN: lsass→winlogon→win32k `shell ready`→explorer.exe created.
+Tip `080626ac5a7` on kernel32-port (8 ahead / 45 behind mainline → catch-up-merge
+before the cold ×3 gate). Total translation spend ~$22 (opus).
 
-- **sec/ac.c → Wave 3** (with sec/misc.c): its `Acc*` access-control calls route
-  through the `NtMartaStatic` dynamic-ntmarta function-pointer table +
-  `CheckNtMartaPresent`, both defined in `sec/misc.c`. The translated `ac.rs` (on
-  disk, `pub mod sec_ac` commented in lib.rs) flattened those into direct imports
-  with no symbol; the faithful `NtMartaStatic.X.unwrap()(…)` call-through is done
-  when sec/misc.c flips. `NTMARTA` is in the advapi32-sys bindgen. ac.c stays
-  active C until then (no regression hidden — ac.rs was never link-live).
+### Resolved deferral
+
+- **sec/ac.c** was deferred during Wave 2→3 because its `Acc*` access-control
+  calls route through the `NtMartaStatic` dynamic-ntmarta function-pointer table +
+  `CheckNtMartaPresent` (both in sec/misc.c). Once sec/misc.c flipped (Wave 3, with
+  `NtMartaStatic` as a `#[no_mangle] pub static mut`), ac.rs was completed: the
+  `Acc*` macro-calls were rewritten as `(NtMartaStatic.<field>.unwrap())(…)`
+  call-throughs (cross-crate `_GUID`/`_ACL` type-identity puns cast `as _`).
 
 ## RPC interfaces
 
