@@ -26,7 +26,7 @@ list(APPEND SOURCE
     # misc/sysfunc.c — replaced by Rust (advapi32-rust)
     # misc/unicode.c — replaced by Rust (advapi32-rust)
     # reg/hkcr.c — replaced by Rust (advapi32-rust)
-    reg/reg.c
+    # reg/reg.c — replaced by Rust (advapi32-rust)
     # sec/ac.c — replaced by Rust (advapi32-rust)
     # sec/audit.c — replaced by Rust (advapi32-rust)
     # sec/lsa.c — replaced by Rust (advapi32-rust)
@@ -36,7 +36,7 @@ list(APPEND SOURCE
     # sec/trustee.c — replaced by Rust (advapi32-rust)
     # service/eventlog.c — replaced by Rust (advapi32-rust)
     service/rpc.c
-    service/scm.c
+    # service/scm.c — replaced by Rust (advapi32-rust)
     # service/sctrl.c — replaced by Rust (advapi32-rust)
     # service/winreg.c — replaced by Rust (advapi32-rust)
     # token/token.c — replaced by Rust (advapi32-rust)

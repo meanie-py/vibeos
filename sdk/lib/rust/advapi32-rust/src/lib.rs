@@ -142,3 +142,10 @@ pub mod wine_cred;
 pub mod sec_lsa;
 #[path = "wine/crypt.rs"]
 pub mod wine_crypt;
+// Wave 4 — largest files.
+#[path = "service/scm.rs"]
+pub mod service_scm;
+#[path = "wine/security.rs"]
+pub mod wine_security;
+#[path = "reg/reg.rs"]
+pub mod reg_reg;

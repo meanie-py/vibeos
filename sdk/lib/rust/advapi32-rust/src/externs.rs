@@ -85,12 +85,27 @@ extern "system" {
     pub fn GetTrusteeTypeW(pTrustee: PTRUSTEE_W) -> TRUSTEE_TYPE;
 }
 
-// svcctl RPC client stubs (generated svcctl_c.c, never flipped) — __stdcall.
-extern "system" {
-    pub fn RSetServiceStatus( hServiceStatus: RPC_SERVICE_STATUS_HANDLE, lpServiceStatus: LPSERVICE_STATUS, ) -> DWORD;
-    pub fn RI_ScSetServiceBitsW( hServiceStatus: RPC_SERVICE_STATUS_HANDLE, dwServiceBits: DWORD, bSetBitsOn: BOOL, bUpdateImmediately: BOOL, lpString: LPWSTR, ) -> DWORD;
-    pub fn RI_ScSetServiceBitsA( hServiceStatus: RPC_SERVICE_STATUS_HANDLE, dwServiceBits: DWORD, bSetBitsOn: BOOL, bUpdateImmediately: BOOL, lpString: LPSTR, ) -> DWORD;
-}
+// svcctl RPC client stubs (generated svcctl_c.c, never flipped) — __stdcall on
+// i386, cdecl on win64. Declarations + correct per-arch ABI come from advapi32-sys
+// bindgen (allowlist-function R[A-Z].*|Secl.*); re-export by name. These resolve
+// against the generated C at link. Wave 2 (sctrl.rs) used RSetServiceStatus /
+// RI_ScSetServiceBits*; Wave 4 (scm.rs) adds the full SCM client surface +
+// seclogon SeclCreateProcessWithLogonW.
+pub use advapi32_sys::{
+    RSetServiceStatus, RI_ScSetServiceBitsW, RI_ScSetServiceBitsA,
+    RChangeServiceConfig2A, RChangeServiceConfig2W, RChangeServiceConfigA, RChangeServiceConfigW,
+    RCloseServiceHandle, RControlService, RCreateServiceA, RCreateServiceW, RDeleteService,
+    REnumDependentServicesA, REnumDependentServicesW, REnumServiceGroupW,
+    REnumServicesStatusA, REnumServicesStatusW, REnumServicesStatusExA, REnumServicesStatusExW,
+    RGetServiceDisplayNameA, RGetServiceDisplayNameW, RGetServiceKeyNameA, RGetServiceKeyNameW,
+    RI_ScGetCurrentGroupStateW, RI_ScQueryServiceTagInfo, RI_ScSendPnPMessage, RI_ScValidatePnPService,
+    RLockServiceDatabase, RNotifyBootConfigStatus, ROpenSCManagerA, ROpenSCManagerW,
+    ROpenServiceA, ROpenServiceW, RQueryServiceConfig2A, RQueryServiceConfig2W,
+    RQueryServiceConfigA, RQueryServiceConfigW, RQueryServiceLockStatusA, RQueryServiceLockStatusW,
+    RQueryServiceObjectSecurity, RQueryServiceStatus, RQueryServiceStatusEx,
+    RSetServiceObjectSecurity, RStartServiceA, RStartServiceW, RUnlockServiceDatabase,
+    SeclCreateProcessWithLogonW,
+};
 
 // ntmarta.dll exports — sec/ac.c calls AccGetInheritanceSource /
 // AccRewriteSetEntriesInAcl, which advapi32.h #defines to NtMartaStatic.* function
@@ -230,4 +245,46 @@ extern "system" {
     // ntmarta Acc{Rewrite,Tree}* removed: these are advapi32.h macros for
     // NtMartaStatic.<field>(...) (no real symbol) — sec/misc.rs now dispatches
     // through the NTMARTA function-pointer table instead of a direct extern call.
+}
+
+// ---- Wave 4: advapi32-own / kernel32 / aclapi exports (WINAPI = stdcall) ----
+extern "system" {
+    // reg/hkcr.c HKCR predefined-key helpers (LONG WINAPI, internal, not flipped).
+    pub fn CreateHKCRKey( hKey: HKEY, lpSubKey: LPCWSTR, Reserved: DWORD, lpClass: LPWSTR, dwOptions: DWORD, samDesired: REGSAM, lpSecurityAttributes: LPSECURITY_ATTRIBUTES, phkResult: PHKEY, lpdwDisposition: LPDWORD, ) -> LONG;
+    pub fn OpenHKCRKey(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: PHKEY) -> LONG;
+    pub fn DeleteHKCRKey(hKey: HKEY, lpSubKey: LPCWSTR, RegSam: REGSAM, Reserved: DWORD) -> LONG;
+    pub fn DeleteHKCRValue(hKey: HKEY, ValueName: PUNICODE_STRING) -> LONG;
+    pub fn QueryHKCRValue(hKey: HKEY, Name: LPCWSTR, Reserved: LPDWORD, Type: LPDWORD, Data: LPBYTE, Count: LPDWORD) -> LONG;
+    pub fn SetHKCRValue(hKey: HKEY, Name: LPCWSTR, Reserved: DWORD, Type: DWORD, Data: *const u8, DataSize: DWORD) -> LONG;
+    pub fn EnumHKCRKey( hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, lpcbName: LPDWORD, lpReserved: LPDWORD, lpClass: LPWSTR, lpcbClass: LPDWORD, lpftLastWriteTime: PFILETIME, ) -> LONG;
+    pub fn EnumHKCRValue( hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, lpcbName: *mut DWORD, lpReserved: *mut DWORD, lpdwType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD, ) -> LONG;
+    pub fn QueryInfoHKCRKey( hKey: HKEY, lpClass: LPWSTR, lpcchClass: LPDWORD, lpReserved: LPDWORD, lpcSubKeys: LPDWORD, lpcbMaxSubKeyLen: LPDWORD, lpcbMaxClassLen: LPDWORD, lpcValues: LPDWORD, lpcbMaxValueNameLen: LPDWORD, lpcbMaxValueLen: LPDWORD, lpcbSecurityDescriptor: LPDWORD, lpftLastWriteTime: PFILETIME, ) -> LONG;
+    // advapi32-own security exports (sec/*, not flipped or crate-defined elsewhere).
+    pub fn GetSecurityDescriptorControl(pSecurityDescriptor: PSECURITY_DESCRIPTOR, pControl: *mut SECURITY_DESCRIPTOR_CONTROL, lpdwRevision: LPDWORD) -> BOOL;
+    pub fn GetSecurityDescriptorDacl(pSecurityDescriptor: PSECURITY_DESCRIPTOR, lpbDaclPresent: LPBOOL, pDacl: *mut PACL, lpbDaclDefaulted: LPBOOL) -> BOOL;
+    pub fn GetSecurityDescriptorSacl(pSecurityDescriptor: PSECURITY_DESCRIPTOR, lpbSaclPresent: LPBOOL, pSacl: *mut PACL, lpbSaclDefaulted: LPBOOL) -> BOOL;
+    pub fn GetSecurityDescriptorOwner(pSecurityDescriptor: PSECURITY_DESCRIPTOR, pOwner: *mut PSID, lpbOwnerDefaulted: LPBOOL) -> BOOL;
+    pub fn GetSecurityDescriptorGroup(pSecurityDescriptor: PSECURITY_DESCRIPTOR, pGroup: *mut PSID, lpbGroupDefaulted: LPBOOL) -> BOOL;
+    pub fn GetNamedSecurityInfoW(pObjectName: LPWSTR, ObjectType: SE_OBJECT_TYPE, SecurityInfo: SECURITY_INFORMATION, ppsidOwner: *mut PSID, ppsidGroup: *mut PSID, ppDacl: *mut PACL, ppSacl: *mut PACL, ppSecurityDescriptor: *mut PSECURITY_DESCRIPTOR) -> DWORD;
+    pub fn SetNamedSecurityInfoW(pObjectName: LPWSTR, ObjectType: SE_OBJECT_TYPE, SecurityInfo: SECURITY_INFORMATION, psidOwner: PSID, psidGroup: PSID, pDacl: PACL, pSacl: PACL) -> DWORD;
+    pub fn LookupAccountNameW(lpSystemName: LPCWSTR, lpAccountName: LPCWSTR, Sid: PSID, cbSid: LPDWORD, ReferencedDomainName: LPWSTR, cchReferencedDomainName: LPDWORD, peUse: *mut SID_NAME_USE) -> BOOL;
+    pub fn LookupPrivilegeNameW(lpSystemName: LPCWSTR, lpLuid: PLUID, lpName: LPWSTR, cchName: LPDWORD) -> BOOL;
+    pub fn LookupPrivilegeDisplayNameW(lpSystemName: LPCWSTR, lpName: LPCWSTR, lpDisplayName: LPWSTR, cchDisplayName: LPDWORD, lpLanguageId: LPDWORD) -> BOOL;
+    // wine/security.c local exports QuerySecurityAccessMask/SetSecurityAccessMask (VOID WINAPI).
+    pub fn QuerySecurityAccessMask(SecurityInformation: SECURITY_INFORMATION, DesiredAccess: LPDWORD);
+    pub fn SetSecurityAccessMask(SecurityInformation: SECURITY_INFORMATION, DesiredAccess: LPDWORD);
+    // cryptsp/SystemFunction* (advapi32.spec @ stdcall) — RC4 session-key crypto.
+    pub fn SystemFunction004(input: *const crate::prelude::ustring, key: *const crate::prelude::ustring, output: *mut crate::prelude::ustring) -> NTSTATUS;
+    pub fn SystemFunction028(ContextHandle: PVOID, SessionKey: *mut u8) -> NTSTATUS;
+    // kernel32 base APIs (WINAPI = stdcall) — service/scm.rs + reg/reg.rs (Wave 4).
+    pub fn CreateEventW(lpEventAttributes: LPSECURITY_ATTRIBUTES, bManualReset: BOOL, bInitialState: BOOL, lpName: LPCWSTR) -> HANDLE;
+    pub fn OpenEventW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
+    pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+    pub fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HANDLE;
+    pub fn LoadResource(hModule: HMODULE, hResInfo: HANDLE) -> HANDLE;
+    pub fn LockResource(hResData: HANDLE) -> LPVOID;
+    pub fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE;
+    pub fn ExpandEnvironmentStringsA(lpSrc: LPCSTR, lpDst: LPSTR, nSize: DWORD) -> DWORD;
+    pub fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: c_int) -> LPWSTR;
+    pub fn GetVersion() -> DWORD;
 }

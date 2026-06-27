@@ -182,17 +182,28 @@ pub unsafe fn heap_alloc(len: usize) -> PVOID {
 pub unsafe fn heap_free(mem: PVOID) -> BOOL {
     HeapFree(GetProcessHeap(), 0, mem)
 }
-// setypes.h SID_IDENTIFIER_AUTHORITY initializers {0,0,0,0,0,N}. The C uses them
-// as brace-initializers; the translation flattened each to its sole nonzero
-// trailing byte `[0,0,0,0,0, X as u8]`, so X is that trailing byte value.
-pub const SECURITY_LOCAL_SID_AUTHORITY: u8 = 2;
-pub const SECURITY_NT_AUTHORITY: u8 = 5;
+// winnt.h SID_IDENTIFIER_AUTHORITY initializers {0,0,0,0,0,N}. The C uses them as
+// full brace-initializers of a SID_IDENTIFIER_AUTHORITY struct (e.g. the Wave-4
+// WellKnownSids table in wine/security.rs: `IdentifierAuthority: SECURITY_NT_
+// AUTHORITY`), so they MUST be the struct value, not the bare trailing byte. The
+// Wave-1/2/3 sites that wanted just the byte read `.Value[5]`.
+pub const SECURITY_NULL_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 0] };
+pub const SECURITY_WORLD_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
+pub const SECURITY_LOCAL_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 2] };
+pub const SECURITY_CREATOR_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 3] };
+pub const SECURITY_NT_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
+pub const SECURITY_MANDATORY_LABEL_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+    SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 16] };
 
 // wine/unicode.h: #define sprintfW _swprintf — link to the CRT _swprintf symbol
 // (variadic, cdecl). Used by wine/crypt.rs to format a UUID container name.
 extern "C" {
-    #[link_name = "_swprintf"]
-    pub fn sprintfW(buffer: *mut u16, format: *const u16, ...) -> c_int;
+    #[link_name = "_swprintf"] pub fn sprintfW(buffer: *mut u16, format: *const u16, ...) -> c_int;
 }
 
 // UlongToPtr (basetsd.h inline cast)
@@ -230,6 +241,16 @@ pub unsafe fn RtlInitEmptyAnsiString(
     (*AnsiString).Length = 0;
     (*AnsiString).MaximumLength = BufferSize;
     (*AnsiString).Buffer = Buffer;
+}
+#[inline]
+pub unsafe fn RtlInitEmptyUnicodeString(
+    UnicodeString: PUNICODE_STRING,
+    Buffer: PWSTR,
+    BufferSize: USHORT,
+) {
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
 }
 
 // UUID is `typedef GUID UUID;` (rpcdce.h) — bindgen folds it into GUID.
@@ -395,6 +416,219 @@ extern "C" {
 extern "C" {
     pub fn rc4_init(a4i: *mut RC4_CONTEXT, key: *const u8, keyLen: c_uint);
     pub fn rc4_crypt(a4i: *mut RC4_CONTEXT, inout: *mut u8, length: c_uint);
+}
+
+// ============================ Wave 4 ============================
+// SCM / service / wine-security / reg types curated from advapi32-sys (all
+// present in bindgen; none collide with ntdll_sys::nt). service/scm.rs +
+// wine/security.rs + reg/reg.rs.
+pub use advapi32_sys::{
+    // winsvc / svcctl SCM handle + RPC types
+    SC_HANDLE, SC_LOCK, SC_RPC_HANDLE, LPSC_RPC_HANDLE, SC_RPC_LOCK, LPSC_RPC_LOCK,
+    SC_RPC_CONFIG_INFOW, SC_RPC_CONFIG_INFOA, SC_ENUM_TYPE, SC_STATUS_TYPE, LPSC_ACTION,
+    SVCCTL_HANDLEW, SVCCTL_HANDLEA,
+    // enum-service status (W/A + LP)
+    ENUM_SERVICE_STATUSW, ENUM_SERVICE_STATUSA, LPENUM_SERVICE_STATUSW, LPENUM_SERVICE_STATUSA,
+    ENUM_SERVICE_STATUS_PROCESSW, ENUM_SERVICE_STATUS_PROCESSA,
+    LPENUM_SERVICE_STATUS_PROCESSW, LPENUM_SERVICE_STATUS_PROCESSA,
+    // query-service config / lock-status (W/A + LP)
+    QUERY_SERVICE_CONFIGW, QUERY_SERVICE_CONFIGA, LPQUERY_SERVICE_CONFIGW, LPQUERY_SERVICE_CONFIGA,
+    QUERY_SERVICE_LOCK_STATUSW, QUERY_SERVICE_LOCK_STATUSA,
+    LPQUERY_SERVICE_LOCK_STATUSW, LPQUERY_SERVICE_LOCK_STATUSA,
+    // service description / failure-actions (W/A + LP)
+    SERVICE_DESCRIPTIONW, SERVICE_DESCRIPTIONA, LPSERVICE_DESCRIPTIONW, LPSERVICE_DESCRIPTIONA,
+    SERVICE_FAILURE_ACTIONSW, SERVICE_FAILURE_ACTIONSA,
+    LPSERVICE_FAILURE_ACTIONSW, LPSERVICE_FAILURE_ACTIONSA,
+    SERVICE_STATUS_PROCESS,
+    // svcctl RPC marshalling (STRING_PTRS, TAG_INFO, seclogon SECL)
+    LPSTRING_PTRSW, LPSTRING_PTRSA,
+    TAG_INFO_LEVEL, PTAG_INFO_NAME_FROM_TAG,
+    PTAG_INFO_NAME_FROM_TAG_IN_PARAMS, PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS,
+    SECL_REQUEST, SECL_RESPONSE,
+    // aclapi ACTRL access/audit (wine/security.rs)
+    PACTRL_ACCESSW, PACTRL_ACCESSA, PACTRL_AUDITW, PACTRL_AUDITA,
+    // winsvc SC_MANAGER access masks (present in bindgen-var)
+    SC_MANAGER_CONNECT, SC_MANAGER_ENUMERATE_SERVICE,
+};
+
+// Enum-variant bare-name consts (bindgen prefixes them) — scm.rs uses the bare
+// names.
+pub const SC_STATUS_PROCESS_INFO: SC_STATUS_TYPE =
+    advapi32_sys::_SC_STATUS_TYPE_SC_STATUS_PROCESS_INFO;
+pub const TagInfoLevelNameFromTag: TAG_INFO_LEVEL =
+    advapi32_sys::_TAG_INFO_LEVEL_TagInfoLevelNameFromTag;
+
+// HKEY predefined-key cast-macro consts (winreg.h) — Wave 4 adds the last two.
+pub const HKEY_PERFORMANCE_DATA: HKEY = 0x8000_0004u32 as usize as HKEY;
+pub const HKEY_CURRENT_CONFIG: HKEY = 0x8000_0005u32 as usize as HKEY;
+
+// winsvc.h SCM event/db names — W-API wide strings (services.h SCM_START_EVENT is
+// L"..."; bindgen folded it narrow, so hand-define wide to match OpenEventW).
+pub const SCM_START_EVENT: PCWSTR = crate::wide!("SvcctrlStartEvent_A3752DX").as_ptr();
+pub const SERVICES_ACTIVE_DATABASEW: PCWSTR = crate::wide!("ServicesActive").as_ptr();
+
+// winnt.h access-mask consts (FILE_GENERIC_* / FILE_ALL_ACCESS) — DWORD.
+pub const FILE_GENERIC_READ: DWORD = 0x0012_0089;
+pub const FILE_GENERIC_WRITE: DWORD = 0x0012_0116;
+pub const FILE_GENERIC_EXECUTE: DWORD = 0x0012_00A0;
+pub const FILE_ALL_ACCESS: DWORD = 0x001F_01FF;
+
+// winioctl.h: FSCTL_PIPE_IMPERSONATE = CTL_CODE(FILE_DEVICE_NAMED_PIPE=0x11, 7,
+//   METHOD_BUFFERED=0, FILE_ANY_ACCESS=0) = (0x11<<16)|(0<<14)|(7<<2)|0 = 0x11001C.
+pub const FSCTL_PIPE_IMPERSONATE: DWORD = 0x0011_001C;
+
+// winuser.h: RT_STRING = MAKEINTRESOURCE(6) — used `RT_STRING as LPWSTR`.
+pub const RT_STRING: ULONG_PTR = 6;
+
+// sddl.h SDDL_REVISION (numeric) + the 2-letter SDDL right strings (TEXT("..")
+// → wide). The ACEFLAG table in wine/security.rs uses `.as_ptr()` on these.
+pub const SDDL_REVISION_1: DWORD = 1;
+pub const SDDL_REVISION: DWORD = 1;
+pub const SDDL_PROTECTED: &[u16] = crate::wide!("P");
+pub const SDDL_AUTO_INHERIT_REQ: &[u16] = crate::wide!("AR");
+pub const SDDL_AUTO_INHERITED: &[u16] = crate::wide!("AI");
+pub const SDDL_READ_PROPERTY: &[u16] = crate::wide!("RP");
+pub const SDDL_WRITE_PROPERTY: &[u16] = crate::wide!("WP");
+pub const SDDL_CREATE_CHILD: &[u16] = crate::wide!("CC");
+pub const SDDL_DELETE_CHILD: &[u16] = crate::wide!("DC");
+pub const SDDL_LIST_CHILDREN: &[u16] = crate::wide!("LC");
+pub const SDDL_SELF_WRITE: &[u16] = crate::wide!("SW");
+pub const SDDL_LIST_OBJECT: &[u16] = crate::wide!("LO");
+pub const SDDL_DELETE_TREE: &[u16] = crate::wide!("DT");
+pub const SDDL_CONTROL_ACCESS: &[u16] = crate::wide!("CR");
+pub const SDDL_READ_CONTROL: &[u16] = crate::wide!("RC");
+pub const SDDL_WRITE_DAC: &[u16] = crate::wide!("WD");
+pub const SDDL_WRITE_OWNER: &[u16] = crate::wide!("WO");
+pub const SDDL_STANDARD_DELETE: &[u16] = crate::wide!("SD");
+pub const SDDL_GENERIC_ALL: &[u16] = crate::wide!("GA");
+pub const SDDL_GENERIC_READ: &[u16] = crate::wide!("GR");
+pub const SDDL_GENERIC_WRITE: &[u16] = crate::wide!("GW");
+pub const SDDL_GENERIC_EXECUTE: &[u16] = crate::wide!("GX");
+pub const SDDL_FILE_ALL: &[u16] = crate::wide!("FA");
+pub const SDDL_FILE_READ: &[u16] = crate::wide!("FR");
+pub const SDDL_FILE_WRITE: &[u16] = crate::wide!("FW");
+pub const SDDL_FILE_EXECUTE: &[u16] = crate::wide!("FX");
+pub const SDDL_KEY_ALL: &[u16] = crate::wide!("KA");
+pub const SDDL_KEY_READ: &[u16] = crate::wide!("KR");
+pub const SDDL_KEY_WRITE: &[u16] = crate::wide!("KW");
+pub const SDDL_KEY_EXECUTE: &[u16] = crate::wide!("KX");
+
+// ---- Win32 macros (winbase.h / minwindef.h / winuser.h) → inline fns ----
+#[inline]
+pub unsafe fn CopyMemory(dst: PVOID, src: *const c_void, len: usize) {
+    memcpy(dst, src, len);
+}
+#[inline]
+pub unsafe fn MoveMemory(dst: PVOID, src: *const c_void, len: usize) {
+    memmove(dst, src, len);
+}
+#[inline]
+pub unsafe fn ZeroMemory(dst: PVOID, len: usize) {
+    memset(dst, 0, len);
+}
+// SecureZeroMemory: zeroes and is not elidable. Byte-volatile loop = faithful.
+#[inline]
+pub unsafe fn SecureZeroMemory(ptr: PVOID, cnt: SIZE_T) -> PVOID {
+    let mut p = ptr as *mut u8;
+    let mut n = cnt as usize;
+    while n != 0 {
+        core::ptr::write_volatile(p, 0);
+        p = p.add(1);
+        n -= 1;
+    }
+    ptr
+}
+// InitializeObjectAttributes (ntdef.h field-init macro).
+#[inline]
+pub unsafe fn InitializeObjectAttributes(
+    p: *mut OBJECT_ATTRIBUTES,
+    n: *mut UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r as _;
+    (*p).Attributes = a;
+    (*p).ObjectName = n as _;
+    (*p).SecurityDescriptor = s as _;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
+}
+// MAKEWORD/MAKELONG/LOWORD/HIWORD are minwindef.h macros applied to mixed integer
+// widths (BYTE/WORD/DWORD) in the C — generic over Into<u32> so each call site's
+// native arg type (u8/u16/u32) is accepted without a cast.
+#[inline]
+pub fn MAKEWORD<A: Into<u32>, B: Into<u32>>(a: A, b: B) -> WORD {
+    ((a.into() & 0xff) | ((b.into() & 0xff) << 8)) as WORD
+}
+#[inline]
+pub fn MAKELONG<A: Into<u32>, B: Into<u32>>(a: A, b: B) -> LONG {
+    ((a.into() & 0xffff) | ((b.into() & 0xffff) << 16)) as LONG
+}
+#[inline]
+pub fn LOWORD<L: Into<u32>>(l: L) -> WORD {
+    (l.into() & 0xffff) as WORD
+}
+#[inline]
+pub fn HIWORD<L: Into<u32>>(l: L) -> WORD {
+    ((l.into() >> 16) & 0xffff) as WORD
+}
+#[inline]
+pub fn MAKEINTRESOURCEW(i: WORD) -> LPWSTR {
+    i as ULONG_PTR as LPWSTR
+}
+
+// Marks a read-only `static` whose value holds raw pointers (not auto-Sync) as
+// shareable. Sound because the data is immutable constant tables (C `static
+// const`). Used by the LPCWSTR lookup tables in wine/security.rs.
+#[repr(transparent)]
+pub struct SyncConst<T>(pub T);
+unsafe impl<T> Sync for SyncConst<T> {}
+
+// ---- reg.c file-local predefined-key macros → inline fns (reg/reg.rs) ----
+#[inline]
+pub unsafe fn ClosePredefKey(handle: HANDLE) {
+    if (handle as ULONG_PTR) & 0x1 != 0 {
+        NtClose(handle);
+    }
+}
+#[inline]
+pub fn IsPredefKey(hkey: HKEY) -> BOOL {
+    (((hkey as ULONG_PTR) & 0xF000_0000) == 0x8000_0000) as BOOL
+}
+#[inline]
+pub fn GetPredefKeyIndex(hkey: HKEY) -> ULONG_PTR {
+    (hkey as ULONG_PTR) & 0x0FFF_FFFF
+}
+
+// ---- wine/unicode.h string macros → inline fns / CRT externs ----
+// wine/unicode.h: strlenW returns `unsigned int`, strncmpW takes `unsigned int n`
+// (not size_t) — match those so the DWORD call sites need no cast.
+#[inline]
+pub unsafe fn strlenW(s: *const u16) -> c_uint {
+    wcslen(s) as c_uint
+}
+#[inline]
+pub unsafe fn strncmpW(s1: *const u16, s2: *const u16, n: c_uint) -> c_int {
+    wcsncmp(s1, s2, n as usize)
+}
+#[inline]
+pub unsafe fn strtoulW(s: *const u16, end: *mut *mut u16, base: c_int) -> c_ulong {
+    wcstoul(s, end, base)
+}
+#[inline]
+pub unsafe fn atoiW(s: *const u16) -> c_int {
+    _wtoi(s)
+}
+extern "C" {
+    pub fn wcscmp(s1: *const u16, s2: *const u16) -> c_int;
+    pub fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> c_int;
+    pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    pub fn wcstoul(s: *const u16, end: *mut *mut u16, base: c_int) -> c_ulong;
+    pub fn _wtoi(s: *const u16) -> c_int;
+    // wine/debug.h variadic debug-string formatter (cdecl) — only reached from
+    // TRACE no-ops, but the debugstr_* bodies still compile/call it.
+    pub fn wine_dbg_sprintf(format: *const core::ffi::c_char, ...) -> *const core::ffi::c_char;
 }
 
 // ---- advapi32's own exported APIs called cross-file but not yet translated ----

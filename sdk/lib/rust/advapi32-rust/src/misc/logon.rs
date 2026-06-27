@@ -819,10 +819,10 @@ pub unsafe extern "system" fn LogonUserExW(
     pQuotaLimits: PQUOTA_LIMITS,
 ) -> BOOL {
     let mut LocalAuthority: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
-        Value: [0, 0, 0, 0, 0, SECURITY_LOCAL_SID_AUTHORITY as u8],
+        Value: [0, 0, 0, 0, 0, SECURITY_LOCAL_SID_AUTHORITY.Value[5]],
     };
     let mut SystemAuthority: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
-        Value: [0, 0, 0, 0, 0, SECURITY_NT_AUTHORITY as u8],
+        Value: [0, 0, 0, 0, 0, SECURITY_NT_AUTHORITY.Value[5]],
     };
     let mut LogonSid: PSID = core::ptr::null_mut();
     let mut LocalSid: PSID = core::ptr::null_mut();

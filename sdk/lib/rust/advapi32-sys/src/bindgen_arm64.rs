@@ -778,6 +778,7 @@ pub type USHORT = ::core::ffi::c_ushort;
 pub type UCHAR = ::core::ffi::c_uchar;
 pub type PUCHAR = *mut UCHAR;
 pub type BOOL = ::core::ffi::c_int;
+pub type PBOOL = *mut BOOL;
 pub type BYTE = ::core::ffi::c_uchar;
 pub type WORD = ::core::ffi::c_ushort;
 pub type DWORD = ::core::ffi::c_ulong;
@@ -787,6 +788,7 @@ pub type LPDWORD = *mut DWORD;
 pub type LPVOID = *mut ::core::ffi::c_void;
 pub type ULONG_PTR = ::core::ffi::c_ulonglong;
 pub type SIZE_T = ULONG_PTR;
+pub type DWORD_PTR = ULONG_PTR;
 pub type ULONG64 = ::core::ffi::c_ulonglong;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1064,6 +1066,7 @@ pub struct _ENUM_SERVICE_STATUSA {
     pub ServiceStatus: SERVICE_STATUS,
 }
 pub type ENUM_SERVICE_STATUSA = _ENUM_SERVICE_STATUSA;
+pub type LPENUM_SERVICE_STATUSA = *mut _ENUM_SERVICE_STATUSA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ENUM_SERVICE_STATUSW {
@@ -1072,6 +1075,7 @@ pub struct _ENUM_SERVICE_STATUSW {
     pub ServiceStatus: SERVICE_STATUS,
 }
 pub type ENUM_SERVICE_STATUSW = _ENUM_SERVICE_STATUSW;
+pub type LPENUM_SERVICE_STATUSW = *mut _ENUM_SERVICE_STATUSW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ENUM_SERVICE_STATUS_PROCESSA {
@@ -1080,6 +1084,7 @@ pub struct _ENUM_SERVICE_STATUS_PROCESSA {
     pub ServiceStatusProcess: SERVICE_STATUS_PROCESS,
 }
 pub type ENUM_SERVICE_STATUS_PROCESSA = _ENUM_SERVICE_STATUS_PROCESSA;
+pub type LPENUM_SERVICE_STATUS_PROCESSA = *mut _ENUM_SERVICE_STATUS_PROCESSA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ENUM_SERVICE_STATUS_PROCESSW {
@@ -1088,6 +1093,7 @@ pub struct _ENUM_SERVICE_STATUS_PROCESSW {
     pub ServiceStatusProcess: SERVICE_STATUS_PROCESS,
 }
 pub type ENUM_SERVICE_STATUS_PROCESSW = _ENUM_SERVICE_STATUS_PROCESSW;
+pub type LPENUM_SERVICE_STATUS_PROCESSW = *mut _ENUM_SERVICE_STATUS_PROCESSW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _QUERY_SERVICE_CONFIGA {
@@ -1102,6 +1108,7 @@ pub struct _QUERY_SERVICE_CONFIGA {
     pub lpDisplayName: LPSTR,
 }
 pub type QUERY_SERVICE_CONFIGA = _QUERY_SERVICE_CONFIGA;
+pub type LPQUERY_SERVICE_CONFIGA = *mut _QUERY_SERVICE_CONFIGA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _QUERY_SERVICE_CONFIGW {
@@ -1116,6 +1123,7 @@ pub struct _QUERY_SERVICE_CONFIGW {
     pub lpDisplayName: LPWSTR,
 }
 pub type QUERY_SERVICE_CONFIGW = _QUERY_SERVICE_CONFIGW;
+pub type LPQUERY_SERVICE_CONFIGW = *mut _QUERY_SERVICE_CONFIGW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _QUERY_SERVICE_LOCK_STATUSA {
@@ -1124,6 +1132,7 @@ pub struct _QUERY_SERVICE_LOCK_STATUSA {
     pub dwLockDuration: DWORD,
 }
 pub type QUERY_SERVICE_LOCK_STATUSA = _QUERY_SERVICE_LOCK_STATUSA;
+pub type LPQUERY_SERVICE_LOCK_STATUSA = *mut _QUERY_SERVICE_LOCK_STATUSA;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _QUERY_SERVICE_LOCK_STATUSW {
@@ -1132,6 +1141,7 @@ pub struct _QUERY_SERVICE_LOCK_STATUSW {
     pub dwLockDuration: DWORD,
 }
 pub type QUERY_SERVICE_LOCK_STATUSW = _QUERY_SERVICE_LOCK_STATUSW;
+pub type LPQUERY_SERVICE_LOCK_STATUSW = *mut _QUERY_SERVICE_LOCK_STATUSW;
 pub type LPSERVICE_MAIN_FUNCTIONA =
     ::core::option::Option<unsafe extern "C" fn(arg1: DWORD, arg2: *mut LPSTR)>;
 pub type LPSERVICE_MAIN_FUNCTIONW =
@@ -1158,6 +1168,7 @@ pub struct SC_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type SC_HANDLE = *mut SC_HANDLE__;
+pub type LPSC_HANDLE = *mut SC_HANDLE;
 pub type SC_LOCK = PVOID;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1196,6 +1207,7 @@ pub struct _SC_ACTION {
     pub Delay: DWORD,
 }
 pub type SC_ACTION = _SC_ACTION;
+pub type LPSC_ACTION = *mut _SC_ACTION;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_FAILURE_ACTIONSA {
@@ -1275,9 +1287,13 @@ pub type PSERVICE_NOTIFYA = *mut SERVICE_NOTIFY_2A;
 pub type SERVICE_NOTIFYW = SERVICE_NOTIFY_2W;
 pub type PSERVICE_NOTIFYW = *mut SERVICE_NOTIFY_2W;
 pub type ENUM_SERVICE_STATUS = ENUM_SERVICE_STATUSW;
+pub type LPENUM_SERVICE_STATUS = *mut ENUM_SERVICE_STATUSW;
 pub type ENUM_SERVICE_STATUS_PROCESS = ENUM_SERVICE_STATUS_PROCESSW;
+pub type LPENUM_SERVICE_STATUS_PROCESS = LPENUM_SERVICE_STATUS_PROCESSW;
 pub type QUERY_SERVICE_CONFIG = QUERY_SERVICE_CONFIGW;
+pub type LPQUERY_SERVICE_CONFIG = *mut QUERY_SERVICE_CONFIGW;
 pub type QUERY_SERVICE_LOCK_STATUS = QUERY_SERVICE_LOCK_STATUSW;
+pub type LPQUERY_SERVICE_LOCK_STATUS = *mut QUERY_SERVICE_LOCK_STATUSW;
 pub type SERVICE_TABLE_ENTRY = SERVICE_TABLE_ENTRYW;
 pub type LPSERVICE_TABLE_ENTRY = *mut SERVICE_TABLE_ENTRYW;
 pub type LPSERVICE_MAIN_FUNCTION = LPSERVICE_MAIN_FUNCTIONW;
@@ -2878,11 +2894,56 @@ pub struct _RPC_SID {
 }
 pub type RPC_SID = _RPC_SID;
 pub type PRPC_SID = *mut _RPC_SID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SECL_REQUEST {
+    pub Username: *mut WCHAR,
+    pub Domain: *mut WCHAR,
+    pub Password: *mut WCHAR,
+    pub ApplicationName: *mut WCHAR,
+    pub CommandLine: *mut WCHAR,
+    pub CurrentDirectory: *mut WCHAR,
+    pub Environment: *mut BYTE,
+    pub dwEnvironmentSize: DWORD,
+    pub dwLogonFlags: DWORD,
+    pub dwCreationFlags: DWORD,
+    pub dwProcessId: DWORD,
+}
+pub type SECL_REQUEST = _SECL_REQUEST;
+pub type PSECL_REQUEST = *mut _SECL_REQUEST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SECL_RESPONSE {
+    pub hProcess: DWORD_PTR,
+    pub hThread: DWORD_PTR,
+    pub dwProcessId: DWORD,
+    pub dwThreadId: DWORD,
+    pub dwError: DWORD,
+}
+pub type SECL_RESPONSE = _SECL_RESPONSE;
+pub type PSECL_RESPONSE = *mut _SECL_RESPONSE;
+unsafe extern "C" {
+    pub fn SeclCreateProcessWithLogonW(
+        hBinding: handle_t,
+        pRequest: *mut SECL_REQUEST,
+        pResponse: *mut SECL_RESPONSE,
+    );
+}
+pub type SVCCTL_HANDLEA = LPSTR;
+pub type SVCCTL_HANDLEW = LPWSTR;
 pub type RPC_SERVICE_STATUS_HANDLE = ULONG_PTR;
 pub type SC_RPC_HANDLE = PVOID;
+pub type LPSC_RPC_HANDLE = *mut SC_RPC_HANDLE;
 pub type SC_RPC_LOCK = PVOID;
+pub type LPSC_RPC_LOCK = *mut SC_RPC_LOCK;
 pub type SC_NOTIFY_RPC_HANDLE = PVOID;
+pub type LPSC_NOTIFY_RPC_HANDLE = *mut SC_NOTIFY_RPC_HANDLE;
 pub type BOUNDED_DWORD_4K = DWORD;
+pub type LPBOUNDED_DWORD_4K = *mut BOUNDED_DWORD_4K;
+pub type BOUNDED_DWORD_8K = DWORD;
+pub type LPBOUNDED_DWORD_8K = *mut BOUNDED_DWORD_8K;
+pub type BOUNDED_DWORD_256K = DWORD;
+pub type LPBOUNDED_DWORD_256K = *mut BOUNDED_DWORD_256K;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_DELAYED_AUTO_START_INFO {
@@ -2930,6 +2991,7 @@ pub union _SC_RPC_CONFIG_INFOA__bindgen_ty_1 {
     pub psps: LPSERVICE_PRESHUTDOWN_INFO,
 }
 pub type SC_RPC_CONFIG_INFOA = _SC_RPC_CONFIG_INFOA;
+pub type LPSC_RPC_CONFIG_INFOA = *mut _SC_RPC_CONFIG_INFOA;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _SC_RPC_CONFIG_INFOW {
@@ -2948,6 +3010,7 @@ pub union _SC_RPC_CONFIG_INFOW__bindgen_ty_1 {
     pub psps: LPSERVICE_PRESHUTDOWN_INFO,
 }
 pub type SC_RPC_CONFIG_INFOW = _SC_RPC_CONFIG_INFOW;
+pub type LPSC_RPC_CONFIG_INFOW = *mut _SC_RPC_CONFIG_INFOW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SERVICE_NOTIFY_STATUS_CHANGE_PARAMS_1 {
@@ -2989,6 +3052,7 @@ pub union _SC_RPC_NOTIFY_PARAMS__bindgen_ty_1 {
     pub pStatusChangeParam2: PSERVICE_NOTIFY_STATUS_CHANGE_PARAMS_2,
 }
 pub type SC_RPC_NOTIFY_PARAMS = _SC_RPC_NOTIFY_PARAMS;
+pub type LPSC_RPC_NOTIFY_PARAMS = *mut _SC_RPC_NOTIFY_PARAMS;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _SC_RPC_NOTIFY_PARAMS_LIST {
@@ -2997,7 +3061,537 @@ pub struct _SC_RPC_NOTIFY_PARAMS_LIST {
 }
 pub type SC_RPC_NOTIFY_PARAMS_LIST = _SC_RPC_NOTIFY_PARAMS_LIST;
 pub type PSC_RPC_NOTIFY_PARAMS_LIST = *mut _SC_RPC_NOTIFY_PARAMS_LIST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _STRING_PTRSA {
+    pub StringPtr: LPSTR,
+}
+pub type STRING_PTRSA = _STRING_PTRSA;
+pub type PSTRING_PTRSA = *mut _STRING_PTRSA;
+pub type LPSTRING_PTRSA = *mut _STRING_PTRSA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _STRING_PTRSW {
+    pub StringPtr: LPWSTR,
+}
+pub type STRING_PTRSW = _STRING_PTRSW;
+pub type PSTRING_PTRSW = *mut _STRING_PTRSW;
+pub type LPSTRING_PTRSW = *mut _STRING_PTRSW;
+pub const _TAG_INFO_LEVEL_TagInfoLevelNameFromTag: _TAG_INFO_LEVEL = 1;
+pub type _TAG_INFO_LEVEL = ::core::ffi::c_uint;
+pub use self::_TAG_INFO_LEVEL as TAG_INFO_LEVEL;
+pub const _TAG_TYPE_TagTypeService: _TAG_TYPE = 1;
+pub type _TAG_TYPE = ::core::ffi::c_uint;
+pub use self::_TAG_TYPE as TAG_TYPE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TAG_INFO_NAME_FROM_TAG_IN_PARAMS {
+    pub dwPid: DWORD,
+    pub dwTag: DWORD,
+}
+pub type TAG_INFO_NAME_FROM_TAG_IN_PARAMS = _TAG_INFO_NAME_FROM_TAG_IN_PARAMS;
+pub type PTAG_INFO_NAME_FROM_TAG_IN_PARAMS = *mut _TAG_INFO_NAME_FROM_TAG_IN_PARAMS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TAG_INFO_NAME_FROM_TAG_OUT_PARAMS {
+    pub TagType: TAG_TYPE,
+    pub pszName: LPWSTR,
+}
+pub type TAG_INFO_NAME_FROM_TAG_OUT_PARAMS = _TAG_INFO_NAME_FROM_TAG_OUT_PARAMS;
+pub type PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS = *mut _TAG_INFO_NAME_FROM_TAG_OUT_PARAMS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TAG_INFO_NAME_FROM_TAG {
+    pub InParams: TAG_INFO_NAME_FROM_TAG_IN_PARAMS,
+    pub OutParams: TAG_INFO_NAME_FROM_TAG_OUT_PARAMS,
+}
+pub type TAG_INFO_NAME_FROM_TAG = _TAG_INFO_NAME_FROM_TAG;
+pub type PTAG_INFO_NAME_FROM_TAG = *mut _TAG_INFO_NAME_FROM_TAG;
+unsafe extern "C" {
+    pub fn RCloseServiceHandle(hSCObject: LPSC_RPC_HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RControlService(
+        hService: SC_RPC_HANDLE,
+        dwControl: DWORD,
+        lpServiceStatus: LPSERVICE_STATUS,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RDeleteService(hService: SC_RPC_HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RLockServiceDatabase(hSCManager: SC_RPC_HANDLE, lpLock: LPSC_RPC_LOCK) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceObjectSecurity(
+        hService: SC_RPC_HANDLE,
+        dwSecurityInformation: SECURITY_INFORMATION,
+        lpSecurityDescriptor: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RSetServiceObjectSecurity(
+        hService: SC_RPC_HANDLE,
+        dwSecurityInformation: DWORD,
+        lpSecurityDescriptor: LPBYTE,
+        dwSecuityDescriptorSize: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceStatus(hService: SC_RPC_HANDLE, lpServiceStatus: LPSERVICE_STATUS)
+        -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RSetServiceStatus(
+        hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
+        lpServiceStatus: LPSERVICE_STATUS,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RUnlockServiceDatabase(Lock: LPSC_RPC_LOCK) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RNotifyBootConfigStatus(lpMachineName: SVCCTL_HANDLEW, BootAcceptable: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScSetServiceBitsW(
+        hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
+        dwServiceBits: DWORD,
+        bSetBitsOn: BOOL,
+        bUpdateImmediately: BOOL,
+        lpString: LPWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RChangeServiceConfigW(
+        hService: SC_RPC_HANDLE,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPWSTR,
+        lpLoadOrderGroup: LPWSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPWSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpDisplayName: LPWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RCreateServiceW(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPCWSTR,
+        lpDisplayName: LPCWSTR,
+        dwDesiredAccess: DWORD,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPCWSTR,
+        lpLoadOrderGroup: LPCWSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPCWSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumDependentServicesW(
+        hService: SC_RPC_HANDLE,
+        dwServiceState: DWORD,
+        lpServices: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumServicesStatusW(
+        hSCManager: SC_RPC_HANDLE,
+        dwServiceType: DWORD,
+        dwServiceState: DWORD,
+        lpBuffer: LPBYTE,
+        dwBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+        lpResumeHandle: LPBOUNDED_DWORD_256K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ROpenSCManagerW(
+        lpMachineName: SVCCTL_HANDLEW,
+        lpDatabaseName: LPWSTR,
+        dwDesiredAccess: DWORD,
+        lpScHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ROpenServiceW(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPWSTR,
+        dwDesiredAccess: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceConfigW(
+        hService: SC_RPC_HANDLE,
+        lpServiceConfig: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_8K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceLockStatusW(
+        hSCManager: SC_RPC_HANDLE,
+        lpLockStatus: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_4K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RStartServiceW(hService: SC_RPC_HANDLE, argc: DWORD, argv: LPSTRING_PTRSW) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RGetServiceDisplayNameW(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPCWSTR,
+        lpDisplayName: LPWSTR,
+        lpcchBuffer: *mut DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RGetServiceKeyNameW(
+        hSCManager: SC_RPC_HANDLE,
+        lpDisplayName: LPCWSTR,
+        lpServiceName: LPWSTR,
+        lpcchBuffer: *mut DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScSetServiceBitsA(
+        hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
+        dwServiceBits: DWORD,
+        bSetBitsOn: BOOL,
+        bUpdateImmediately: BOOL,
+        lpString: LPSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RChangeServiceConfigA(
+        hService: SC_RPC_HANDLE,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPSTR,
+        lpLoadOrderGroup: LPSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpDisplayName: LPSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RCreateServiceA(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPSTR,
+        lpDisplayName: LPSTR,
+        dwDesiredAccess: DWORD,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPSTR,
+        lpLoadOrderGroup: LPSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumDependentServicesA(
+        hService: SC_RPC_HANDLE,
+        dwServiceState: DWORD,
+        lpServices: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumServicesStatusA(
+        hSCManager: SC_RPC_HANDLE,
+        dwServiceType: DWORD,
+        dwServiceState: DWORD,
+        lpBuffer: LPBYTE,
+        dwBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+        lpResumeHandle: LPBOUNDED_DWORD_256K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ROpenSCManagerA(
+        lpMachineName: SVCCTL_HANDLEA,
+        lpDatabaseName: LPSTR,
+        dwDesiredAccess: DWORD,
+        lpScHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ROpenServiceA(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPSTR,
+        dwDesiredAccess: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceConfigA(
+        hService: SC_RPC_HANDLE,
+        lpServiceConfig: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_8K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceLockStatusA(
+        hSCManager: SC_RPC_HANDLE,
+        lpLockStatus: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_4K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RStartServiceA(hService: SC_RPC_HANDLE, argc: DWORD, argv: LPSTRING_PTRSA) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RGetServiceDisplayNameA(
+        hSCManager: SC_RPC_HANDLE,
+        lpServiceName: LPCSTR,
+        lpDisplayName: LPSTR,
+        lpcchBuffer: LPBOUNDED_DWORD_4K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RGetServiceKeyNameA(
+        hSCManager: SC_RPC_HANDLE,
+        lpDisplayName: LPCSTR,
+        lpKeyName: LPSTR,
+        lpcchBuffer: LPBOUNDED_DWORD_4K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScGetCurrentGroupStateW(
+        hSCManager: SC_RPC_HANDLE,
+        lpLoadOrderGroup: LPWSTR,
+        lpState: LPDWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumServiceGroupW(
+        hSCManager: SC_RPC_HANDLE,
+        dwServiceType: DWORD,
+        dwServiceState: DWORD,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+        lpResumeIndex: LPBOUNDED_DWORD_256K,
+        pszGroupName: LPCWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RChangeServiceConfig2A(hService: SC_RPC_HANDLE, Info: SC_RPC_CONFIG_INFOA) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RChangeServiceConfig2W(hService: SC_RPC_HANDLE, Info: SC_RPC_CONFIG_INFOW) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceConfig2A(
+        hService: SC_RPC_HANDLE,
+        dwInfoLevel: DWORD,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_8K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceConfig2W(
+        hService: SC_RPC_HANDLE,
+        dwInfoLevel: DWORD,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_8K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RQueryServiceStatusEx(
+        hService: SC_RPC_HANDLE,
+        InfoLevel: SC_STATUS_TYPE,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_8K,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumServicesStatusExA(
+        hSCManager: SC_RPC_HANDLE,
+        InfoLevel: SC_ENUM_TYPE,
+        dwServiceType: DWORD,
+        dwServiceState: DWORD,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+        lpResumeIndex: LPBOUNDED_DWORD_256K,
+        pszGroupName: LPCSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn REnumServicesStatusExW(
+        hSCManager: SC_RPC_HANDLE,
+        InfoLevel: SC_ENUM_TYPE,
+        dwServiceType: DWORD,
+        dwServiceState: DWORD,
+        lpBuffer: LPBYTE,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPBOUNDED_DWORD_256K,
+        lpServicesReturned: LPBOUNDED_DWORD_256K,
+        lpResumeIndex: LPBOUNDED_DWORD_256K,
+        pszGroupName: LPCWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RSendTSMessage(BindingHandle: handle_t) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RCreateServiceWOW64A(
+        BindingHandle: handle_t,
+        lpServiceName: LPSTR,
+        lpDisplayName: LPSTR,
+        dwDesiredAccess: DWORD,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPSTR,
+        lpLoadOrderGroup: LPSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RCreateServiceWOW64W(
+        BindingHandle: handle_t,
+        lpServiceName: LPWSTR,
+        lpDisplayName: LPWSTR,
+        dwDesiredAccess: DWORD,
+        dwServiceType: DWORD,
+        dwStartType: DWORD,
+        dwErrorControl: DWORD,
+        lpBinaryPathName: LPWSTR,
+        lpLoadOrderGroup: LPWSTR,
+        lpdwTagId: LPDWORD,
+        lpDependencies: LPBYTE,
+        dwDependSize: DWORD,
+        lpServiceStartName: LPWSTR,
+        lpPassword: LPBYTE,
+        dwPwSize: DWORD,
+        lpServiceHandle: LPSC_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScQueryServiceTagInfo(
+        hSCManager: SC_RPC_HANDLE,
+        dwInfoLevel: TAG_INFO_LEVEL,
+        lpInParams: *mut PTAG_INFO_NAME_FROM_TAG_IN_PARAMS,
+        lpOutParams: *mut PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RNotifyServiceStatusChange(
+        hService: SC_RPC_HANDLE,
+        NotifyParams: SC_RPC_NOTIFY_PARAMS,
+        pClientProcessGuid: *mut GUID,
+        pSCMProcessGuid: *mut GUID,
+        pfCreateRemoteQueue: PBOOL,
+        phNotify: LPSC_NOTIFY_RPC_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RGetNotifyResults(
+        hNotify: SC_NOTIFY_RPC_HANDLE,
+        ppNotifyParams: *mut PSC_RPC_NOTIFY_PARAMS_LIST,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RCloseNotifyHandle(phNotify: LPSC_NOTIFY_RPC_HANDLE, pfApcFired: PBOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RControlServiceExA(
+        hService: SC_RPC_HANDLE,
+        dwControl: DWORD,
+        dwInfoLevel: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RControlServiceExW(
+        hService: SC_RPC_HANDLE,
+        dwControl: DWORD,
+        dwInfoLevel: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScSendPnPMessage(
+        hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
+        dwControl: DWORD,
+        dwEventType: DWORD,
+        dwEventSize: DWORD,
+        pEventData: LPBYTE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RI_ScValidatePnPService(
+        hService: SC_RPC_HANDLE,
+        pszServiceName: LPWSTR,
+        phServiceStatus: *mut RPC_SERVICE_STATUS_HANDLE,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ROpenServiceStatusHandle(BindingHandle: handle_t) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RFunction55(BindingHandle: handle_t) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RPC_SERVICE_STATUS_HANDLE_bind(arg1: RPC_SERVICE_STATUS_HANDLE) -> handle_t;
+}
+unsafe extern "C" {
+    pub fn RPC_SERVICE_STATUS_HANDLE_unbind(arg1: RPC_SERVICE_STATUS_HANDLE, arg2: handle_t);
+}
+pub type RPC_HKEY = HANDLE;
 pub type PREGISTRY_SERVER_NAME = PWCHAR;
+unsafe extern "C" {
+    pub fn RPC_HKEY_rundown(arg1: RPC_HKEY);
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct tagPROVFUNCS {
