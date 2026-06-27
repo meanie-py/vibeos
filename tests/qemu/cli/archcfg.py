@@ -105,6 +105,12 @@ _CFGS = {
             "win32ss/gdi/gdi32/gdi32.dll",
             "rust_user32",
             "win32ss/user/user32/user32.dll",
+            # advapi32 is boot-critical on arm64 (lsass/services/winlogon link it) and
+            # its body is 100% Rust (advapi32-rust cohab). Same stale-.dll trap as
+            # gdi32/user32: NOT rebuilt by `build --clean --arch arm64` unless listed →
+            # the gate would stage a stale C advapi32.dll and false-green the Rust one.
+            "rust_advapi32",
+            "dll/win32/advapi32/advapi32.dll",
             "fastfat",
             # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
             # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
@@ -135,6 +141,7 @@ _CFGS = {
             "dll/win32/kernel32/kernel32.dll",
             "win32ss/gdi/gdi32/gdi32.dll",
             "win32ss/user/user32/user32.dll",
+            "dll/win32/advapi32/advapi32.dll",
             "drivers/filesystems/fastfat/fastfat.sys",
             "drivers/storage/class/ramdisk/ramdisk.sys",
             "drivers/serial/pl011/pl011.sys",
