@@ -97,7 +97,28 @@ post-boot refinement.
 | 2 (coord+painting+text+arc+region) | landed `eaae890a98f` | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
 | 2b (font) | landed `704590ef795` | build+boot ✓ 1m13s | build+boot ✓ (net flake unrelated — gdi32 has no net surface) | build+boot ✓ 43s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (largest single file) |
 | 3a (path+bitmap+icm) | `5f5274f26d7` (gating) | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 33s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (paths/DIB/color-mgmt) |
-| 3b (dc+utils+heap+historic+wingl+efloat+enhmfile+metafile) | _pending_ | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 34s (first try, no flake) | **×3 boot-GREEN** (DC lifecycle + utils + EMF/WMF + i386 efloat) |
+| 3b (dc+utils+heap+historic+wingl+efloat+enhmfile+metafile) | landed `1f5868cc4e0` | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 34s (first try) | **×3 boot-GREEN** (DC lifecycle + utils + EMF/WMF + i386 efloat) |
+| 4 (gdientry+printdrv+eng) | _pending_ | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 34s (first try) | **×3 boot-GREEN** — 🎉 **gdi32 100% Rust** |
+
+### Wave 4 notes (the final trio — gdi32 → 100% Rust)
+3 files (~3.3K LOC, ~89 fns) via 3 parallel opus agents against
+`~/vibeos-rust-staging/gdi32-wave4/CONTRACT-4.md`. **gdientry.c is heavy DirectDraw DDI** (the
+DDHAL surface callbacks + the 16 GDI entry points). 3 distinct integration fixes:
+- **The `GdiEntryN` naming (critical, link-breaking if wrong):** `sdk/include/psdk/ddrawgdi.h`
+  `#define`s `DdCreateDirectDrawObject`..`DdSetGammaRamp` → `GdiEntry1`..`GdiEntry15` (and
+  `DdSwapTextureHandles`→`GdiEntry16`), so the compiled/exported symbols are `GdiEntryN`. Rust has
+  no preprocessor → the 15 fns are **named `GdiEntryN` directly** in gdientry.rs (GdiEntry16 stays
+  in historic.rs). The other ~44 `Dd*`/`Dvp*`/`D3d*` HAL callbacks keep their real names. All
+  `@N` decorations matched the spec on the first link.
+- **The `Unlock` const-pattern footgun:** `DdUnlock`/`DdUnlockD3D` had a param named `Unlock`, which
+  collides with the glob-imported `const Unlock: _SECURITY_LOGON_TYPE` → Rust parsed the param as a
+  const-pattern (binding nothing) and the body saw a `u32`. Renamed `Unlock`→`pUnlock`. New
+  field-manual entry (this is a SILENT bug when the const type is compatible).
+- **bitmap-union + cast nits:** `ddsCapsEx.dwCaps4` → `.__bindgen_anon_1.dwCaps4` (union); printdrv
+  `ghSpooler = hModWinSpoolDrv as HANDLE` (HINSTANCE→HANDLE).
+
+**🏆 gdi32.dll is now 100% Rust** (29/29 .c translated, cohab-flipped, ×3 boot-green). The usermode
+GDI client joins ntoskrnl, win32k, kernel32, user32, cdfs, cdrom, fastfat, usbport, … in Rust.
 
 ### Wave 3b notes (substrate + utilities — completes everything bar the Wave-4 driver/spooler trio)
 8 files (~3.1K LOC, ~103 fns) via 8 parallel opus agents against
