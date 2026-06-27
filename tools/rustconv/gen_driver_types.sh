@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -322,6 +322,31 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+    ;;
+  usbaudio)
+    # USB Audio class driver (drivers/usb/usbaudio, 4 .c). A KS/PortCls audio miniport:
+    # usbaudio.h pulls portcls.h (PORT/KSPIN/SUBDEVICE interfaces), ksmedia.h (KS audio
+    # formats/property sets), usb.h/usbdi.h/usbdlib.h/usbioctl.h + hubbusif/usbbusif (the USB
+    # descriptor + bus interfaces), and defines the driver-private structs inline (the
+    # pshpack1 USB-audio descriptor structs + __DEVICE_EXTENSION__). None of the KS/PortCls/USB
+    # surface is in the kernel ddk bindgen -> allowlist usbaudio.h + those headers so the crate
+    # types.rs carries the full KS/PortCls/USB types the bodies use. _URB is opaque in the
+    # kernel ddk bindgen -> unblock it so this driver's bindgen (includes usb.h) emits the full
+    # URB. NTDDI Vista (0x600) per the usbaudio CMakeLists (-D_WIN32_WINNT=0x600).
+    DRIVER_DIR="${SRC}/drivers/usb/usbaudio"
+    WRAPPER_INC=$'#include "usbaudio.h"'
+    ALLOW_FILES=( --allowlist-file '.*usbaudio[/\\]usbaudio\.h'
+                  --allowlist-file '.*[/\\]portcls\.h'
+                  --allowlist-file '.*[/\\]ksmedia\.h'
+                  --allowlist-file '.*[/\\]ks\.h'
+                  --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]usbioctl\.h' )
+    UNBLOCK="_URB URB PURB"
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/usbaudio-rust" )
     ;;
   buslogic)
     # The BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic/BusLogic958.c,
