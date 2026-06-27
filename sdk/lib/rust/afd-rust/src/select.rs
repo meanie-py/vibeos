@@ -9,16 +9,15 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine, KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSetTimer, _TIMER_TYPE_NotificationTimer, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PRKDPC};
+use ntkrnl_sys::ddk::{KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSetTimer, _TIMER_TYPE_NotificationTimer, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PRKDPC};
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut u32) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
-    fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
     fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Information: u32) -> NTSTATUS;
-    static ExEventObjectType: *mut *mut core::ffi::c_void;
 }
 
 // ---- file-scope preamble (translated) ----

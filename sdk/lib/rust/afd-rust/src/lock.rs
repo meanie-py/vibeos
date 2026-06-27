@@ -8,7 +8,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, IoGetCurrentIrpStackLocation, IoMarkIrpPending, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, IoSetCancelRoutine, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 extern "system" {

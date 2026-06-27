@@ -6,7 +6,8 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{PIO_COMPLETION_ROUTINE, IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{PIO_COMPLETION_ROUTINE, IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 extern "C" {
@@ -14,15 +15,12 @@ extern "C" {
     fn PollReeval(device_ext: PVOID, file_object: PFILE_OBJECT);
     fn SocketAcquireStateLock(fcb: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(fcb: PAFD_FCB);
-    fn UNREFERENCED_PARAMETER(x: PVOID);
     fn UnlockBuffers(buffer_array: PAFD_WSABUF, buffer_count: u32, write: BOOLEAN);
     fn UnlockRequest(irp: PIRP, stack: PIO_STACK_LOCATION);
     fn LeaveIrpUntilLater(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     fn LockBuffers( array: PAFD_WSABUF, count: u32, p1: *mut u32, p2: *mut u32, b1: u8, b2: u8, mode: KPROCESSOR_MODE, ) -> PAFD_WSABUF;
     fn LockRequest(irp: PIRP, sp: PIO_STACK_LOCATION, b: u8, mode: *mut KPROCESSOR_MODE) -> PAFD_SEND_INFO;
     fn LostSocket(irp: PIRP) -> NTSTATUS;
-    fn MIN(a: u32, b: u32) -> u32;
-    fn NT_VERIFY(expr: u8) -> u8;
     fn QueueUserModeIrp(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     fn TdiBuildConnectionInfo(out: *mut PTDI_CONNECTION_INFORMATION, addr: PTRANSPORT_ADDRESS) -> NTSTATUS;
     fn TdiSend( req: *mut PIRP, obj: PFILE_OBJECT, flags: u32, buf: *mut u8, len: u32, complete: PIO_COMPLETION_ROUTINE, ctx: PVOID, ) -> NTSTATUS;

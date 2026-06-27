@@ -9,6 +9,19 @@
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::driver_ddk::{MmGetSystemAddressForMdlSafe, NormalPagePriority};
 
+// --- kernel DATA exports (POBJECT_TYPE globals) -----------------------------
+// ntoskrnl exports these as data, not functions. A plain `extern` references the
+// bare symbol (`_ExEventObjectType`) which the import lib doesn't provide — only
+// `__imp__ExEventObjectType`. raw-dylib routes the reference through the import
+// thunk so it resolves. Types match the existing call-site casts/derefs verbatim:
+// select.rs does `*ExEventObjectType as *mut _`; bind.rs casts IoFileObjectType to
+// `*mut POBJECT_TYPE` then derefs.
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+extern "C" {
+    pub static ExEventObjectType: *mut *mut core::ffi::c_void;
+    pub static IoFileObjectType: *mut core::ffi::c_void;
+}
+
 // --- base type aliases not in the kernel bindgen ---------------------------
 pub type CCHAR = i8;
 pub type UINT = u32;
@@ -87,6 +100,17 @@ pub struct TA_IP_ADDRESS {
     pub Address: [TA_IP_ADDRESS_AddrIp; 1],
 }
 pub type PTA_IP_ADDRESS = *mut TA_IP_ADDRESS;
+
+// UNREFERENCED_PARAMETER(x) and NT_VERIFY(x) are macros the C source uses as call
+// expressions. UNREFERENCED_PARAMETER is a no-op; NT_VERIFY evaluates+returns its
+// arg (the debug assertion is dropped under release). Generic so the per-call arg
+// types (PDEVICE_OBJECT / PVOID / u8 / ...) all resolve.
+#[inline(always)]
+pub fn UNREFERENCED_PARAMETER<T>(_x: T) {}
+#[inline(always)]
+pub fn NT_VERIFY<T>(expr: T) -> T {
+    expr
+}
 
 // AFD_DbgPrint is a debug-only macro (empty under release/NDEBUG, which is the
 // ReactOS build config). Make it a no-op macro — faithful to the C #define and

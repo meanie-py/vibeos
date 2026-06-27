@@ -7,7 +7,8 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IRP, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 extern "C" {
@@ -18,7 +19,6 @@ extern "C" {
     fn SocketStateUnlock(FCB: PAFD_FCB);
     fn TaCopyTransportAddress(Address: PVOID) -> PVOID;
     fn TdiReceiveDatagram( Request: *mut PIRP, AddressFile: PVOID, Flags: ULONG, Buffer: PVOID, Size: ULONG, AddressFrom: PVOID, Completion: PVOID, Context: PVOID, ) -> NTSTATUS;
-    fn UNREFERENCED_PARAMETER(param: PVOID);
     fn UnlockBuffers(BufferArray: PVOID, BufferCount: ULONG, UnlockExtra: BOOLEAN);
     fn UnlockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION);
 }

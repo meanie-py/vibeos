@@ -9,44 +9,26 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInformation, IRP, IoCancelIrp, IoCreateDevice, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeInitializeMutex, KeInitializeSpinLock, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PIO_COMPLETION_ROUTINE, PUNICODE_STRING, ZwClose};
+use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInformation, IRP, IoCancelIrp, IoCreateDevice, IoReleaseCancelSpinLock, KeInitializeMutex, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PIO_COMPLETION_ROUTINE, PUNICODE_STRING, ZwClose};
+// FORCEINLINE WDK macros: use the linkable inline versions, not the (non-exported)
+// bindgen `ddk` extern stubs.
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use core::ffi::c_void;
 
+// The Afd* cross-module dispatch fns are declared (stdcall) by the per-arch
+// `types` substrate (imported via `use crate::types::*`) — re-declaring them here
+// as cdecl `extern "C"` shadowed those with the wrong ABI and broke the i386 link.
+// UNREFERENCED_PARAMETER is now a no-op generic in glue. Only the genuinely-external
+// (C tdihelpers / lock helpers) fns stay declared here.
 extern "C" {
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
-    fn UNREFERENCED_PARAMETER(x: PDEVICE_OBJECT);
     fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Info: ULONG_PTR) -> NTSTATUS;
     fn SocketStateUnlock(FCB: PAFD_FCB);
     fn KillSelectsForFCB(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT, Force: BOOLEAN);
     fn TdiDisassociateAddressFile(Object: PVOID) -> NTSTATUS;
     fn TdiDisconnect( Request: *mut PIRP, ConnectionObject: PVOID, Timeout: PLARGE_INTEGER, Flags: USHORT, CompletionRoutine: PIO_COMPLETION_ROUTINE, CompletionContext: PVOID, CallInfo: PTDI_CONNECTION_INFORMATION, ReturnInfo: PTDI_CONNECTION_INFORMATION, ) -> NTSTATUS;
-    fn AfdAccept(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdBindSocket(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdConnectedSocketReadData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION, bool_param: u8) -> NTSTATUS;
-    fn AfdConnectedSocketWriteData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION, bool_param: u8) -> NTSTATUS;
-    fn AfdEnumEvents(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdEventSelect(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetConnectData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetConnectOptions(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetContext(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetContextSize(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetInfo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetPeerName(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdGetSockName(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdListenSocket(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdPacketSocketReadData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdPacketSocketWriteData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSelect(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetConnectData(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetConnectDataSize(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetConnectOptions(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetConnectOptionsSize(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetContext(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdSetInfo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdStreamSocketConnect(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdStreamSocketSuperConnect(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
-    fn AfdWaitForListen(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -982,7 +964,7 @@ unsafe fn AfdDisconnect(
     UnlockAndMaybeComplete(FCB, Status, Irp, 0)
 }
 #[no_mangle]
-pub unsafe extern "C" fn AfdQueryFsDeviceInfo(
+pub unsafe extern "system" fn AfdQueryFsDeviceInfo(
     DeviceObject: PDEVICE_OBJECT,
     Buffer: PFILE_FS_DEVICE_INFORMATION,
     Length: *mut u32,
@@ -1486,7 +1468,9 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     DeviceExt = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;
-    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock));
+    // inline KeInitializeSpinLock takes *mut ULONG_PTR; the driver-types Lock field
+    // is a KSPIN_LOCK (u32 on i386, usize on 64-bit) — cast to the param's pointer type.
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut _);
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceExt).Polls));
 
     AFD_DbgPrint!(

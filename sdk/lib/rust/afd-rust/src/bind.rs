@@ -129,7 +129,7 @@ pub unsafe extern "system" fn AfdBindSocket(
             0,
             core::ptr::null_mut(),
             MAXIMUM_ALLOWED,
-            *(IoFileObjectType as *mut ntkrnl_sys::ddk::POBJECT_TYPE),
+            *(crate::glue::IoFileObjectType as *mut ntkrnl_sys::ddk::POBJECT_TYPE),
             (*Irp).RequestorMode,
             core::ptr::addr_of_mut!(UserHandle),
         );

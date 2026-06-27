@@ -7,12 +7,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IRP, IoGetCurrentIrpStackLocation, IoSetCancelRoutine, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut KPROCESSOR_MODE) -> *mut core::ffi::c_void;
-    fn UNREFERENCED_PARAMETER(x: PDEVICE_OBJECT);
     fn LostSocket(Irp: PIRP) -> i32;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
     fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: i32, Irp: PIRP, Information: usize) -> i32;
