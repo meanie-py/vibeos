@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -347,6 +347,25 @@ case "$DRIVER" in
     UNBLOCK="_URB URB PURB"
     VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/usbaudio-rust" )
+    ;;
+  ks)
+    # Kernel Streaming class library (drivers/ksfilter/ks, 22 .c / ~19K LOC). The KS keystone:
+    # EXPORT driver (216 Ks* exports). Private structs live in the driver's own kstypes.h; the
+    # COM-ish interface vtables in ksiface.h. precomp.h pulls ntddk + portcls.h + kcom.h + ntstrsafe.
+    # -DBUILDING_KS/_COMDDK_ expose the internal Ks* decls. Allowlist kstypes.h + ksiface.h +
+    # portcls.h + kcom.h + ks.h so the crate types.rs carries the full private + KS/PortCls surface;
+    # kernel types stay blocklisted (single ddk identity). NT 5.2 default; NTDDI 0x05020400.
+    DRIVER_DIR="${SRC}/drivers/ksfilter/ks"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <portcls.h>\n#include <kcom.h>\n#include <ntstrsafe.h>\n#include "kstypes.h"\n#include "ksiface.h"'
+    ALLOW_FILES=( --allowlist-file '.*ksfilter[/\\]ks[/\\]kstypes\.h'
+                  --allowlist-file '.*ksfilter[/\\]ks[/\\]ksiface\.h'
+                  --allowlist-file '.*[/\\]portcls\.h'
+                  --allowlist-file '.*[/\\]kcom\.h'
+                  --allowlist-file '.*[/\\]ks\.h' )
+    VER_DEFS=( -DBUILDING_KS -D_COMDDK_
+               -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/ks-rust" )
     ;;
   buslogic)
     # The BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic/BusLogic958.c,

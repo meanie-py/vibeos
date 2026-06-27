@@ -166,6 +166,7 @@ members = [
     "atapi-rust",
     "buslogic-rust",
     "usbaudio-rust",
+    "ks-rust",
     "mup-rust",
     "msfs-rust",
     "npfs-rust",
