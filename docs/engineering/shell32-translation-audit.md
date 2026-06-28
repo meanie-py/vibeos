@@ -33,12 +33,12 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 
 | File | LOC | Exp | COM/PIDL | Status | Wave |
 |------|----:|----:|---------:|--------|------|
-| `wine/shellreg.c`    |  186 |  8 |   0 | ✅ **Rust** (cohab, links ×3) | **0** |
-| `wine/shpolicy.c`    |  215 |  4 |   0 | C | 1 |
-| `wine/shellstring.c` |  271 |  8 |   3 | C | 1 |
-| `appbar.c`           |  128 |  0 |   0 | C | 1 |
-| `vista.c`            |  218 |  0 |   0 | C | 1 |
-| `wine/clipboard.c`   |  252 |  0 |   8 | C | 1 |
+| `wine/shellreg.c`    |  186 |  8 |   0 | ✅ **Rust** (cohab, boots ×3) | **0** |
+| `wine/shpolicy.c`    |  215 |  4 |   0 | ✅ **Rust** (cohab, boots ×3) | **1** |
+| `wine/shellstring.c` |  271 |  8 |   3 | ✅ **Rust** (cohab, boots ×3) | **1** |
+| `appbar.c`           |  128 |  0 |   0 | ✅ **Rust** (cohab, boots ×3) | **1** |
+| `vista.c`            |  218 |  0 |   0 | ✅ **Rust** (cohab, boots ×3) | **1** |
+| `wine/clipboard.c`   |  252 |  0 |   8 | ✅ **Rust** (cohab, boots ×3) | **1** |
 | `wine/control.c`     | 1260 |  8 |   0 | C | 2 |
 | `wine/shellole.c`    |  856 | 28 |   9 | C | 2 |
 | `wine/classes.c`     |  657 |  0 |   5 | C | 2 |
@@ -48,7 +48,19 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 | `wine/shellpath.c`   | 3398 | 32 |   9 | C | 4 |
 | `wine/shellord.c`    | 3108 | 76 |  51 | C | 4 (ordinal grab-bag) |
 
-**Progress: 1/14 .c (7%) · ~186 / ~16K LOC.**
+**Progress: 6/14 .c (43%) · ~1270 / ~16K LOC.**
+
+### Wave 1 notes (shpolicy/shellstring/appbar/vista/clipboard)
+Translated by 5 parallel agents (CONTRACT-1), integrated centrally, boots ×3.
+**🔑 Data-table preprocessor-config bug (caught + fixed):** shpolicy's `s_PolicyTable` is
+built by `#include "PolicyData.h"`, whose rows are guarded by `WINE_FILEVERSION_MAJOR`/
+`NTDDI_VERSION`/`_SHELL32_`. The agent first preprocessed with `_WIN32_WINNT=0x502`
+(NTDDI_WS03) → wrong row set (169). The real shell32 build is `_WIN32_WINNT=0x600`
+(NTDDI_WIN6, and `NTDDI_LONGHORN==NTDDI_VISTA==NTDDI_WIN6`, so `< NTDDI_LONGHORN` is FALSE)
+**plus `-D_SHELL32_`** → **159 rows**, verified byte-for-byte against the compiled
+`shpolicy.c.obj`'s UTF-16 strings (the authoritative ground truth, stronger than a
+preprocessor count). Lesson now in CONTRACT-2: translate only the branch active under the
+real CMake define set; check `strings -el <obj>` when unsure.
 
 (`shellrecyclebin/recyclebin.c` + `shellrecyclebin/guid.c` build into the separate
 `recyclebin` static lib, not shell32.dll's TU — tracked separately if pursued.)

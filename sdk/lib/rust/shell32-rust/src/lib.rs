@@ -17,7 +17,13 @@
 pub mod types;
 
 // wine/ — wine-derived pure-C bodies. Wave 0: shellreg (SHReg* registry wrappers).
+// Wave 1: shpolicy, shellstring, clipboard.
 pub mod wine;
+
+// Top-level (mirrors the C tree: appbar.c / vista.c live at dll/win32/shell32/ root).
+// Wave 1: appbar (SHAppBarMessage), vista (RegLoadMUIString A/W).
+pub mod appbar;
+pub mod vista;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

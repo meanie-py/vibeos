@@ -86,9 +86,9 @@ list(APPEND SOURCE
     CFolderItemVerbs.cpp)
 
 list(APPEND PCH_SKIP_SOURCE
-    appbar.c
+    # appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
     wine/classes.c
-    wine/clipboard.c
+    # wine/clipboard.c — replaced by Rust (shell32-rust/src/wine/clipboard.rs); cohab via libshell32_rust.a
     wine/control.c
     wine/pidl.c
     wine/shell32_main.c
@@ -96,10 +96,10 @@ list(APPEND PCH_SKIP_SOURCE
     wine/shellord.c
     wine/shellpath.c
     # wine/shellreg.c — replaced by Rust (shell32-rust/src/wine/shellreg.rs); cohab via libshell32_rust.a
-    wine/shellstring.c
+    # wine/shellstring.c — replaced by Rust (shell32-rust/src/wine/shellstring.rs); cohab via libshell32_rust.a
     wine/shlmenu.c
-    wine/shpolicy.c
-    vista.c
+    # wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
+    # vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)
 
 file(GLOB_RECURSE shell32_rc_deps res/*.*)
