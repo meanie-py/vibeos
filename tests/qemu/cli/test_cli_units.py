@@ -6,6 +6,7 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import json
+import os
 import socket
 import struct
 import subprocess
@@ -201,6 +202,92 @@ def test_staleness_arm64_restage_trap(tmp_path: Path):
     v = provenance.check_staleness(r, "arm64")
     assert v.stale, v.reasons
     assert any("re-staged" in reason for reason in v.reasons), v.reasons
+
+
+@pytest.fixture
+def arm64_cohab_repo(tmp_path: Path) -> Path:
+    """An arm64 repo with one Rust-cohab driver (foo-rust -> foo.sys), staged via
+    mkramdisk REQUIRED_FILES, plus a build-arm64 artifact + boot.img + stamp — the
+    fixture for the staged-build cohab freshness net (advapi32/fastfat class)."""
+    r = tmp_path / "repo"
+    crate = r / "sdk" / "lib" / "rust" / "foo-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text("[package]\nname = 'foo-rust'\n")
+    (crate / "src" / "lib.rs").write_text("// rust cohab\n")
+    (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
+    (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
+    (r / "qemu").mkdir()
+    (r / "qemu" / "mkramdisk.sh").write_text(
+        'REQUIRED_FILES=(\n    "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"\n'
+        '    "$BUILD_DIR/drivers/x/foo/foo.sys"\n)\n'
+    )
+    (r / "qemu" / "boot.img").write_bytes(b"BOOT")
+    (r / "docs").mkdir()
+    (r / "docs" / "readme.md").write_text("hi\n")
+    _git(r, "init", "-q")
+    _git(r, "config", "user.email", "t@t")
+    _git(r, "config", "user.name", "t")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "init")
+    provenance.make_stamp(r, "arm64", cold=True, ts=1).write(r / "build-arm64")
+    return r
+
+
+def test_mkramdisk_required_rels_parsed(arm64_cohab_repo: Path):
+    rels = provenance.mkramdisk_required_rels(arm64_cohab_repo)
+    assert "drivers/x/foo/foo.sys" in rels and "ntoskrnl/ntoskrnl.exe" in rels
+
+
+def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
+    # underscore'd binary stem (kernel32_vista) must find the hyphen crate name
+    (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust").mkdir()
+    (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust" / "Cargo.toml").write_text("x")
+    assert provenance._crate_for_stem(arm64_cohab_repo, "k32_vista") is not None
+    assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
+
+
+def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
+    rels = provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    assert "drivers/x/foo/foo.sys" in rels  # has foo-rust crate
+    assert "ntoskrnl/ntoskrnl.exe" not in rels  # no ntoskrnl-rust crate in this repo
+    # x86 never stages — always empty (full ninja livecd can't ship stale cohab)
+    assert provenance.boot_set_cohab_rels(arm64_cohab_repo, "i386") == []
+
+
+def test_cohab_fresh_binary_not_stale(arm64_cohab_repo: Path):
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(rs, (1000, 1000))
+    os.utime(sysf, (2000, 2000))  # binary newer than its .rs == freshly rebuilt
+    assert provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64") == []
+
+
+def test_cohab_stale_binary_flagged(arm64_cohab_repo: Path):
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(sysf, (1000, 1000))
+    os.utime(rs, (2000, 2000))  # .rs newer == cohab flip not rebuilt
+    reasons = provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64")
+    assert any("foo.sys" in r and "stale" in r for r in reasons), reasons
+
+
+def test_cohab_missing_artifact_flagged(arm64_cohab_repo: Path):
+    (arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").unlink()
+    reasons = provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64")
+    assert any("foo.sys" in r and "absent" in r for r in reasons), reasons
+
+
+def test_cohab_stale_overrides_tier1_fresh(arm64_cohab_repo: Path):
+    """The crux: fingerprint matches the stamp (no source change since build), so
+    tier-1 would short-circuit to FRESH — but the cohab binary was never rebuilt,
+    so the net must still mark it stale (the exact advapi32 false-green)."""
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(sysf, (1000, 1000))
+    os.utime(rs, (2000, 2000))
+    v = provenance.check_staleness(arm64_cohab_repo, "arm64")
+    assert v.stale and not v.fresh, v.reasons
+    assert any("foo.sys" in r for r in v.reasons), v.reasons
 
 
 def test_discover_rust_targets(tmp_path: Path):
