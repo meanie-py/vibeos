@@ -111,6 +111,15 @@ _CFGS = {
             # the gate would stage a stale C advapi32.dll and false-green the Rust one.
             "rust_advapi32",
             "dll/win32/advapi32/advapi32.dll",
+            # shell32 is the usermode Shell client DLL (explorer.exe links it → boot-
+            # critical). Its wine-derived .c half is being C→Rust cohab-translated
+            # (shell32-rust staticlib). Same stale-DLL trap as gdi32/user32: NOT in this
+            # set → `build --arch arm64` wouldn't relink shell32.dll, so mkramdisk would
+            # stage a stale shell32 and the arm64 gate would false-green the Rust cohab.
+            # rust_shell32 builds the staticlib; the .dll target relinks it in.
+            # mkramdisk.sh already copies it (line 272).
+            "rust_shell32",
+            "dll/win32/shell32/shell32.dll",
             "fastfat",
             # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
             # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
@@ -142,6 +151,7 @@ _CFGS = {
             "win32ss/gdi/gdi32/gdi32.dll",
             "win32ss/user/user32/user32.dll",
             "dll/win32/advapi32/advapi32.dll",
+            "dll/win32/shell32/shell32.dll",
             "drivers/filesystems/fastfat/fastfat.sys",
             "drivers/storage/class/ramdisk/ramdisk.sys",
             "drivers/serial/pl011/pl011.sys",
