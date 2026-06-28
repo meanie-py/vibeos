@@ -3,6 +3,7 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments)]
 #![allow(static_mut_refs)]
+#![allow(private_interfaces)]
 #![allow(clippy::all)]
 
 //! shell32.dll — Rust translation of dll/win32/shell32 (the usermode Shell client DLL).

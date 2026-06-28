@@ -39,16 +39,16 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 | `appbar.c`           |  128 |  0 |   0 | ✅ **Rust** (cohab, boots ×3) | **1** |
 | `vista.c`            |  218 |  0 |   0 | ✅ **Rust** (cohab, boots ×3) | **1** |
 | `wine/clipboard.c`   |  252 |  0 |   8 | ✅ **Rust** (cohab, boots ×3) | **1** |
-| `wine/control.c`     | 1260 |  8 |   0 | C | 2 |
-| `wine/shellole.c`    |  856 | 28 |   9 | C | 2 |
-| `wine/classes.c`     |  657 |  0 |   5 | C | 2 |
+| `wine/control.c`     | 1260 |  8 |   0 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
+| `wine/shellole.c`    |  856 | 28 |   9 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
+| `wine/classes.c`     |  657 |  0 |   5 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
 | `wine/shell32_main.c`| 1370 | 16 |  18 | C | 3 |
 | `wine/shlmenu.c`     |  997 | 25 |  18 | C | 3 |
 | `wine/pidl.c`        | 2681 | 41 | 193 | C | 4 (PIDL core) |
 | `wine/shellpath.c`   | 3398 | 32 |   9 | C | 4 |
 | `wine/shellord.c`    | 3108 | 76 |  51 | C | 4 (ordinal grab-bag) |
 
-**Progress: 6/14 .c (43%) · ~1270 / ~16K LOC.**
+**Progress: 9/14 .c (64%) · ~4040 / ~16K LOC.**
 
 ### Wave 1 notes (shpolicy/shellstring/appbar/vista/clipboard)
 Translated by 5 parallel agents (CONTRACT-1), integrated centrally, boots ×3.
@@ -73,8 +73,12 @@ real CMake define set; check `strings -el <obj>` when unsure.
 - **Wave 1 — leaves (~1.1K LOC):** `shpolicy` (policy table + `SHRestricted`), `shellstring`
   (`StrRetToStr*`/`CheckEscapes*`), `appbar` (`SHAppBarMessage`), `vista` (internal helpers),
   `clipboard` (shell clipboard-format helpers). Low/zero COM. Parallel opus agents + CONTRACT.
-- **Wave 2 — mid (~2.8K LOC):** `control` (control-panel, big but COM-free), `shellole`
-  (OLE/`SHCreate*` glue), `classes` (file-class registry).
+- **Wave 2 — mid (~2.8K LOC) ✅ DONE:** `control` (control-panel applet loader; the `*16`
+  thunk entries are FIXME-stubs in the C, translated verbatim), `shellole` (OLE/COM glue +
+  drag-drop; models IClassFactory/IPropertySetStorage/IPropertyStorage vtables — `SHFree`/
+  `SHAlloc` keep `@4` decoration for the clipboard.rs cross-ref), `classes` (HKEY_CLASSES_ROOT
+  helpers; models IShellFolder vtable). 3 parallel agents, integrated centrally. Links ×3,
+  i386 boots; amd64/arm64 self-smoke pending host.
 - **Wave 3 — heavy (~2.4K LOC):** `shell32_main` (DllMain-adjacent main exports), `shlmenu`
   (`Shell_MergeMenus`/FileMenu_*). More internal-helper coupling.
 - **Wave 4 — heaviest, PIDL-dense (~9.2K LOC):** `pidl` (the ITEMIDLIST core, 193 PIDL refs),

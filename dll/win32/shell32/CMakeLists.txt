@@ -87,12 +87,12 @@ list(APPEND SOURCE
 
 list(APPEND PCH_SKIP_SOURCE
     # appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
-    wine/classes.c
+    # wine/classes.c — replaced by Rust (shell32-rust/src/wine/classes.rs); cohab via libshell32_rust.a
     # wine/clipboard.c — replaced by Rust (shell32-rust/src/wine/clipboard.rs); cohab via libshell32_rust.a
-    wine/control.c
+    # wine/control.c — replaced by Rust (shell32-rust/src/wine/control.rs); cohab via libshell32_rust.a
     wine/pidl.c
     wine/shell32_main.c
-    wine/shellole.c
+    # wine/shellole.c — replaced by Rust (shell32-rust/src/wine/shellole.rs); cohab via libshell32_rust.a
     wine/shellord.c
     wine/shellpath.c
     # wine/shellreg.c — replaced by Rust (shell32-rust/src/wine/shellreg.rs); cohab via libshell32_rust.a
