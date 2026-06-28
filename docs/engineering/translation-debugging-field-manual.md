@@ -1485,12 +1485,42 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
   `ninja_targets_optional`), or the gate false-greens on its stale pre-flip C binary. The
   comment block at the flip site (`*.cmake` "replaced by Rust") and `link-clean x3` bars do
   **not** imply boot-tested — only a clean arm64 boot of the actually-rebuilt Rust `.sys` does.
-- **Mechanizing the const class:** these garbage consts slipped both static gates —
-  `scan_inline_flag_literals` only catches *annotated bare literals* (`0x2 /* NAME */`), and
-  `verify_constants` only checks *module-level* `const` defs (and doesn't evaluate `CTL_CODE`
-  macros). The hole = **function-local `const KNOWN_NAME = <garbage>`** + CTL_CODE-derived
-  values. Extending `verify_constants` to validate local consts (and compute CTL_CODE) would
-  catch the whole class mechanically instead of one boot-bisect at a time.
+- **Mechanizing the const class — CTL_CODE half now CLOSED (2026-06-26):** these garbage consts
+  slipped both static gates — `scan_inline_flag_literals` only catches *annotated bare literals*
+  (`0x2 /* NAME */`), and `verify_constants` checked `const NAME = VALUE` against C `#define`
+  *literals* only — but `IOCTL_*`/`FSCTL_*` are `#define NAME CTL_CODE(dev,fn,method,access)`
+  *macro calls*, which all three of its literal/multichar/ntstatus parsers skip, so they never
+  entered the catalog and any garbage Rust copy went unchecked. **`verify_constants.build_c_catalog`
+  now evaluates the CTL_CODE macro** (`(dev<<16)|(access<<14)|(fn<<2)|method`), resolving the four
+  operands from the header scope (incl. `IOCTL_*_BASE` aliases → `FILE_DEVICE_*`) and seeding the
+  standardized base operands; it joins the DDK headers' multi-line continuation defs first. The
+  catalog gained **326 IOCTL_/FSCTL_ codes** (was 0). It would have caught every ramdisk const
+  above at the static gate. Locked by `tools/rustconv/tests/test_verify_constants_ctlcode.py`.
+  - **First catch (fixed same commit):** 3 real wrong codes in `ntoskrnl-rust` — `fstub/disksup.rs`
+    `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
+    *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`
+    (fn 3 not 2), `FSCTL_OPLOCK_BREAK_NOTIFY` `0x9000C`→`0x90014` (fn 5 not 3).
+  - **Gate scope now WHOLE-WORKSPACE (2026-06-26):** `verify_constants` main() default + the gate
+    spec (`tests/qemu/cli/lints.py`) now scan **all of `sdk/lib/rust/**` (driver crates included)**,
+    not just `ntoskrnl-rust/src` — so the prevention finally reaches where ramdisk actually lived.
+    Its volatile catalog/file-count summary moved to **stderr** (gate reads stdout only) so the
+    baseline stays stable as workspace files come and go. The tree-wide scan found **57 latent
+    garbage IOCTL/FSCTL consts**: **cdrom-rust's 26 are FIXED mechanically** (`verify_constants
+    --fix` — it rewrites each to the computed CTL_CODE value); the rest (fastfat 24, disk/mountmgr/
+    classpnp/cdfs/usbhub) are **baselined** in `tools/lint-baseline/verify_constants.txt` (75 lines
+    = 31 residual CTL + 44 non-CTL) as accepted debt for the owning lanes to burn down — the gate now
+    blocks any NEW garbage const tree-wide.
+  - **`--fix` now rewrites function-LOCAL consts too:** `parse_rust_const` strips the line so it
+    *detected* `    const NAME = …` inside fns, but `fix_const_line` anchored its rewrite regex at
+    column 0 → silently no-op'd on any indented const (e.g. cdrom's `IOCTL_CDROM_GET_INQUIRY_DATA`).
+    Fixed by capturing leading whitespace in the prefix (indentation preserved). This closes the
+    function-local half of the mechanization.
+  - **Triage of the non-CTL findings (the holistic-fix question):** they split three ways —
+    **CTL codes** are mechanically `--fix`-able (header-authoritative ABI values); **pool `TAG_*`**
+    mismatches are *harmless translation divergences* (arbitrary 4-char debug labels, e.g. `TAG_KERNEL`
+    "Kern" vs C "Ke  ") → baseline, do NOT auto-fix; **`STATUS_*`/flag** mismatches are *case-by-case*
+    (a wrong NTSTATUS is a real bug, but the name can collide across status enums → FP risk) → review
+    before fixing, never blanket `--fix`. So a blind tree-wide `--fix` is UNSAFE; fix per-class.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

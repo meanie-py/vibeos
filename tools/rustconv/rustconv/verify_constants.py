@@ -110,6 +110,129 @@ def _eval_enum_expr(expr: str, scope: dict[str, int]) -> int | None:
         return None
 
 
+# ── CTL_CODE (IOCTL/FSCTL device-control codes) ──────────────────────
+# IOCTL_*/FSCTL_* constants are #defined via the CTL_CODE() macro, not as plain
+# literals, so the #define/multichar/ntstatus parsers above all skip them — they
+# never enter the catalog and a garbage-translated Rust copy goes unchecked. This
+# is exactly the class that cost the arm64 0x64/0x23 grind: ramdisk-rust had
+# `const FSCTL_CREATE_RAM_DISK = 0x900c4` (real: 0x240000) and
+# `IOCTL_DISK_CHECK_VERIFY = 0x70000` (real: 0x74800, collided with
+# GET_DRIVE_GEOMETRY) — both silently dead dispatch arms, no compiler warning.
+# We evaluate the macro: CTL_CODE(DeviceType, Function, Method, Access)
+#   = (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+# (winioctl.h / iotypes.h). All four operands resolve from the catalog scope; if
+# any can't be resolved we skip the def rather than fabricate a value.
+
+# Base operands — standardized Windows values, identical across every DDK
+# version. Seeded (not header-harvested) because ReactOS defines FILE_*_ACCESS
+# via aliases (FILE_READ_ACCESS = FILE_READ_DATA) in some headers and as literals
+# in others; seeding removes the order-dependence and guarantees correctness.
+CTL_BASE_SEED = {
+    "METHOD_BUFFERED": 0,
+    "METHOD_IN_DIRECT": 1,
+    "METHOD_OUT_DIRECT": 2,
+    "METHOD_NEITHER": 3,
+    "FILE_ANY_ACCESS": 0,
+    "FILE_READ_ACCESS": 1,
+    "FILE_WRITE_ACCESS": 2,
+}
+
+# Headers that define IOCTL_*/FSCTL_* via CTL_CODE(). The DDK device headers
+# (ntdddisk/ntddcdrm/ntddstor) use multi-line continuation defs, so the text is
+# continuation-joined before scanning. iotypes.h/winioctl.h also supply the
+# FILE_DEVICE_* device-type literals + IOCTL_*_BASE aliases the macro needs.
+CTL_CODE_HEADERS = (
+    "sdk/include/xdk/iotypes.h",
+    "sdk/include/psdk/winioctl.h",
+    "sdk/include/psdk/ntdddisk.h",
+    "sdk/include/psdk/ntddcdrm.h",
+    "sdk/include/psdk/ntddstor.h",
+    "sdk/include/psdk/ntddscsi.h",
+    "sdk/include/psdk/ntddvol.h",
+    "sdk/include/reactos/drivers/ntddrdsk.h",
+)
+
+
+def _join_line_continuations(text: str) -> str:
+    r"""Join C `\`-continued lines so a multi-line #define is one logical line."""
+    return re.sub(r"\\\n", " ", text)
+
+
+def _split_top_commas(s: str) -> list[str]:
+    """Split on commas not nested inside parentheses."""
+    parts, depth, cur = [], 0, ""
+    for ch in s:
+        if ch == "(":
+            depth += 1
+            cur += ch
+        elif ch == ")":
+            depth -= 1
+            cur += ch
+        elif ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def _eval_int_expr(expr: str, scope: dict[str, int]) -> int | None:
+    """Evaluate an integer expression (literals, scope names, + - | & << >> ~ ^
+    and parens). Returns None if any token is unrecognized or a name is unresolved
+    — so we never fabricate a value from an expression we didn't fully understand."""
+    expr = expr.strip()
+    if not expr:
+        return None
+    tokens = re.findall(r"0[xX][0-9A-Fa-f]+|\d+|[A-Za-z_]\w*|<<|>>|[|&+\-()~^]", expr)
+    # Reject if tokenization didn't consume the whole expression (stray * / , etc.)
+    if "".join(tokens) != re.sub(r"\s+", "", expr):
+        return None
+    py = []
+    for t in tokens:
+        if re.fullmatch(r"0[xX][0-9A-Fa-f]+", t):
+            py.append(str(int(t, 16)))
+        elif t.isdigit() or t in ("<<", ">>", "|", "&", "+", "-", "(", ")", "~", "^"):
+            py.append(t)
+        elif re.fullmatch(r"[A-Za-z_]\w*", t):
+            if t in scope:
+                py.append(str(scope[t]))
+            else:
+                return None  # unresolved name — bail rather than guess
+        else:
+            return None
+    try:
+        return int(eval(" ".join(py), {"__builtins__": {}}, {})) & 0xFFFFFFFF
+    except Exception:
+        return None
+
+
+def parse_ctl_code_defines(text: str, scope: dict[str, int], ctl_acc: dict[str, set]) -> None:
+    """Find `#define NAME CTL_CODE(dev, func, method, access)` defs (text already
+    continuation-joined), evaluate the macro, and accumulate NAME→{values}. A def
+    whose operands don't all resolve is skipped. The caller drops any NAME that
+    collected more than one distinct value (header inconsistency / ambiguity)."""
+    ctl_re = re.compile(r"#define\s+([A-Z_][A-Z0-9_]*)\s+CTL_CODE\s*\((.*)\)\s*$")
+    for raw in text.splitlines():
+        line = re.sub(r"/\*.*?\*/", "", raw.strip())
+        line = re.sub(r"//.*", "", line).strip()
+        m = ctl_re.match(line)
+        if not m:
+            continue
+        name, argstr = m.group(1), m.group(2)
+        args = _split_top_commas(argstr)
+        if len(args) != 4:
+            continue
+        dev = _eval_int_expr(args[0], scope)
+        func = _eval_int_expr(args[1], scope)
+        method = _eval_int_expr(args[2], scope)
+        access = _eval_int_expr(args[3], scope)
+        if dev is None or func is None or method is None or access is None:
+            continue  # never fabricate from an unresolved operand
+        val = ((dev << 16) | (access << 14) | (func << 2) | method) & 0xFFFFFFFF
+        ctl_acc.setdefault(name, set()).add(val)
+
+
 def parse_c_enums(text: str, enum_acc: dict[str, set]) -> None:
     """Parse `enum { ... }` bodies, assigning C enum semantics (sequential
     counter, honoring `= EXPR` overrides). Accumulates name→{values seen}
@@ -212,6 +335,51 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
             if len(vals) == 1:
                 catalog.setdefault(name, next(iter(vals)))
 
+    # ── CTL_CODE device-control codes (IOCTL_*/FSCTL_*) ──────────────────
+    # Build an evaluation scope: catalog literals (incl. FILE_DEVICE_* from
+    # iotypes.h) + extra device-type literals/aliases from the CTL headers +
+    # the base-operand seed (authoritative). Then evaluate every CTL_CODE def.
+    alias_re = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+([A-Z_][A-Z0-9_]*)\s*(?://.*)?$")
+    scope = dict(catalog)
+    aliases: dict[str, str] = {}
+    ctl_texts: list[str] = []
+    for rel in CTL_CODE_HEADERS:
+        hfile = reactos_root / rel
+        if not hfile.exists():
+            continue
+        text = _join_line_continuations(hfile.read_text(errors="replace"))
+        ctl_texts.append(text)
+        for raw in text.splitlines():
+            line = raw.strip()
+            m = define_re.match(line)
+            if m:
+                v = parse_c_hex(m.group(2).strip())
+                if v is not None:
+                    scope.setdefault(m.group(1), v)
+                    continue
+            am = alias_re.match(line)
+            if am:
+                aliases.setdefault(am.group(1), am.group(2))
+    # Resolve identifier aliases (e.g. IOCTL_DISK_BASE → FILE_DEVICE_DISK) to a
+    # fixpoint, then let the base-operand seed win over any header definition.
+    for _ in range(8):
+        progressed = False
+        for k, tgt in aliases.items():
+            if k not in scope and tgt in scope:
+                scope[k] = scope[tgt]
+                progressed = True
+        if not progressed:
+            break
+    scope.update(CTL_BASE_SEED)
+
+    ctl_acc: dict[str, set] = {}
+    for text in ctl_texts:
+        parse_ctl_code_defines(text, scope, ctl_acc)
+    # Merge unambiguous codes; a plain-literal #define already in catalog wins.
+    for name, vals in ctl_acc.items():
+        if len(vals) == 1:
+            catalog.setdefault(name, next(iter(vals)))
+
     return catalog
 
 
@@ -263,8 +431,12 @@ def parse_rust_const(line: str) -> tuple[str, int] | None:
 
 def fix_const_line(line: str, name: str, c_val: int) -> str:
     """Rewrite a const definition line with the correct C value."""
-    # Match the const pattern and replace the value
-    m = re.match(r"(const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
+    # Match the const pattern and replace the value. The leading `\s*` (captured
+    # in the prefix) preserves indentation so FUNCTION-LOCAL consts get fixed too —
+    # parse_rust_const strips the line so it detects them, but without this the
+    # rewrite silently no-op'd on any `    const NAME = ...` (e.g. cdrom-rust's
+    # IOCTL_CDROM_GET_INQUIRY_DATA / IOCTL_SCSI_PASS_THROUGH_DIRECT_EX).
+    m = re.match(r"(\s*const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
     if not m:
         return line
     prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
@@ -344,12 +516,25 @@ def main():
     reactos_root = _RUSTCONV_REACTOS_ROOT  # tools/rustconv → reactos/
 
     catalog = build_c_catalog(reactos_root, include_enums=args.enums)
-    print(f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""))
+    # Volatile summary → stderr so the gate baseline (stdout-only) captures just the
+    # stable `MISMATCH:` finding lines. Otherwise the catalog/file counts (which move
+    # on any header or workspace-file change) read as new findings on every edit.
+    print(
+        f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""),
+        file=sys.stderr,
+    )
 
     if args.files:
         rs_files = [Path(f) for f in args.files]
     else:
-        rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
+        # Whole Rust kernel/driver workspace — IOCTL/FSCTL garbage consts live in the
+        # driver crates (ramdisk, cdrom, fastfat, …), not just ntoskrnl-rust. Skip
+        # build output under target/.
+        rs_files = sorted(
+            p
+            for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
+            if "/target/" not in p.as_posix()
+        )
 
     total_mismatches = 0
     files_fixed = 0
@@ -366,10 +551,12 @@ def main():
             if args.fix:
                 files_fixed += 1
 
-    if args.fix:
-        print(f"\nFixed {total_mismatches} constants in {files_fixed} files")
-    else:
-        print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
+    summary = (
+        f"Fixed {total_mismatches} constants in {files_fixed} files"
+        if args.fix
+        else f"{total_mismatches} mismatches found across {len(rs_files)} files"
+    )
+    print(summary, file=sys.stderr)
     return 1 if total_mismatches > 0 and not args.fix else 0
 
 

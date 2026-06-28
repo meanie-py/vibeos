@@ -106,6 +106,7 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/identify-object.py"
     -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
+    -ex "source $GDB_HELPERS_DIR/run-until-bp.py"
 )
 
 if [ -n "$CACHED_KBASE" ] && [ "$CACHED_KBASE" != "null" ]; then
@@ -114,10 +115,14 @@ else
     EX_ARGS+=(-ex "find-kbase")
 fi
 
+# bounded-continue interrupts cleanly from inside gdb after $TIMEOUT seconds if
+# the breakpoint never fires (printing a NOT-HIT marker), so the --then/cleanup
+# commands below always run against a STOPPED target rather than crashing with
+# "Cannot execute while running". The host-side `timeout` (below) is a wider
+# safety net only — it should never be what fires.
 EX_ARGS+=(
     -ex "break $BRK"
-    -ex "continue"
-    -ex "echo \\n=== BREAKPOINT HIT ===\\n"
+    -ex "bounded-continue $TIMEOUT"
 )
 
 for t in "${THENS[@]:-}"; do
@@ -141,9 +146,13 @@ EX_ARGS+=(
 TMP_OUT="$(mktemp)"
 trap 'rm -f "$TMP_OUT"' EXIT
 
+# Host timeout is a wider safety net than the in-gdb bounded-continue budget
+# (which interrupts gracefully at $TIMEOUT). +30s covers gdb teardown/detach so
+# this kill only fires if bounded-continue itself wedges.
+HARD_TIMEOUT=$(( TIMEOUT + 30 ))
 {
     echo "=== run-until.sh $RUN_ID --break $BRK timeout=$TIMEOUT $(date -u +%FT%TZ) ==="
-    timeout --foreground "$TIMEOUT" \
+    timeout --foreground "$HARD_TIMEOUT" \
         env VIBEOS_ARCH="$ARCH" VIBEOS_KERNEL="$KERNEL" \
         gdb-multiarch -batch "${EX_ARGS[@]}" 2>&1
     rc=$?
