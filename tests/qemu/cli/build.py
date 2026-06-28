@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, lints, provenance
+from . import archcfg, cachecfg, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -218,6 +218,16 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
+    # Host CPU broker: a build is the writer in the writer-takes-all CPU pool — it grabs
+    # ALL leases (exclusive host, so no concurrent TCG boot starves into a false
+    # HANG_TIMEOUT) AND the per-build-dir lock (so two builds never corrupt the same dir,
+    # the determinism-verify-vs-gate incident). Held around the whole build; on a stuck
+    # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
+    with hostlock.build_lock(build_dir, arch):
+        return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+
+
+def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if cold:
         _clean(run, repo, arch)
 

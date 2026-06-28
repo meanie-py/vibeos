@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .cli import hostlock
 from .qmp_client import QmpClient
 from .serial_client import SerialClient
 
@@ -757,6 +758,7 @@ class QemuVM:
         self._slot_fd: int | None = None
         self._slot_index: int | None = None
         self._arch_slot_fd: int | None = None  # per-arch sub-cap lock (KVM arches)
+        self._cpu_lease_fd: int | None = None  # host CPU-broker lease (TCG boots only)
         # windows-host only: effective accelerator after the per-arch resolve (set in
         # _build_windows_cmd). "tcg" until then; gates whether _acquire_arch_slot serializes
         # same-arch boots (whpx contends like KVM, tcg doesn't).
@@ -1037,6 +1039,13 @@ class QemuVM:
         # hostfwd-bind relaunch attempts.
         self._acquire_slot()
 
+        # Host CPU broker: a TCG boot is CPU-bound emulation, so take one lease from the
+        # writer-takes-all pool BEFORE launch — a concurrent cold build grabs the whole pool
+        # (exclusive), so this blocks (QEMU not yet spawned → no wasted CPU) until the build
+        # frees it, instead of starving into a false HANG_TIMEOUT. Like the slot, the wait
+        # happens before `started` is recorded so it's excluded from the lifetime cap.
+        self._acquire_cpu_lease()
+
         cmd = self._launch_qemu()
 
         # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
@@ -1288,9 +1297,46 @@ class QemuVM:
                 announced = True
             time.sleep(2)
 
+    def _boot_is_tcg(self) -> bool:
+        """Whether this boot runs under CPU-bound TCG emulation → it should take a host
+        CPU-broker lease so a concurrent cold build (writer-takes-all) can't starve it into
+        a false HANG_TIMEOUT. KVM/WHPX boots are hardware-accelerated → no lease.
+
+        - native arm64: always TCG (no aarch64 KVM in WSL2)
+        - native x86: KVM when /dev/kvm exists (the pc/q35 configs hardcode `-accel kvm`),
+          else QEMU itself degrades to TCG → treat as CPU-heavy
+        - windows-host: TCG unless WHPX resolved on (x86 only). Resolved during launch and
+          cached on `_win_accel` ('tcg' until then), so a pre-launch call conservatively
+          treats it as TCG — correct today (WHPX shelved → all windows-host boots are TCG)
+          and only ever over-takes one of K permits if WHPX returns."""
+        if getattr(self, "_backend", "native") == "windows-host":
+            return getattr(self, "_win_accel", "tcg") != "whpx"
+        if self.config.arch.startswith("arm64"):
+            return True
+        return not Path("/dev/kvm").exists()
+
+    def _acquire_cpu_lease(self) -> None:
+        """Take one host CPU-broker lease for a TCG boot (no-op when the broker is off or the
+        boot is hardware-accelerated). Held on `_cpu_lease_fd` for the VM's lifetime, released
+        in stop(). On timeout (a stuck holder, not real contention) warn + proceed UNLOCKED —
+        never wedge a boot forever. Called before launch so a queued boot doesn't burn CPU
+        while it waits behind an exclusive build."""
+        if not hostlock.enabled() or not self._boot_is_tcg():
+            return
+        self._cpu_lease_fd = hostlock.acquire_cpu_lease(
+            f"boot:{self.config.arch}", work_dir=str(self.work_dir)
+        )
+        if self._cpu_lease_fd is None:
+            print(
+                f"[QemuVM] WARNING: host CPU lease timeout (boot:{self.config.arch}) — "
+                "proceeding UNLOCKED (a holder looks stuck; check `vibeos-cli host-status`)"
+            )
+
     def _release_slot(self) -> None:
         """Release the concurrency slot(s) (idempotent): the per-arch sub-cap
-        lock and the global slot."""
+        lock, the global slot, and the host CPU-broker lease."""
+        hostlock.release(self._cpu_lease_fd)
+        self._cpu_lease_fd = None
         for attr in ("_arch_slot_fd", "_slot_fd"):
             fd = getattr(self, attr)
             if fd is not None:

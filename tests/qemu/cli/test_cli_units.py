@@ -498,6 +498,7 @@ def _bare_vm(arch: str):
     v.config = types.SimpleNamespace(arch=arch)  # type: ignore[assignment]
     v._slot_fd = None
     v._arch_slot_fd = None
+    v._cpu_lease_fd = None
     return v
 
 
@@ -528,6 +529,78 @@ def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
     third._acquire_arch_slot()
     assert third._arch_slot_fd is not None
     third._release_slot()
+
+
+# --- host CPU broker: boot-side lease wiring (vm.py) ------------------------
+def test_boot_is_tcg_native_arm64_yes(monkeypatch):
+    v = _bare_vm("arm64")
+    v._backend = "native"
+    assert v._boot_is_tcg() is True  # no aarch64 KVM in WSL2 → always TCG
+
+
+def test_boot_is_tcg_native_x86_follows_kvm(monkeypatch):
+    v = _bare_vm("amd64")
+    v._backend = "native"
+    monkeypatch.setattr(vm.Path, "exists", lambda self: True)  # /dev/kvm present
+    assert v._boot_is_tcg() is False  # KVM → no CPU lease
+    monkeypatch.setattr(vm.Path, "exists", lambda self: False)  # no /dev/kvm
+    assert v._boot_is_tcg() is True  # QEMU degrades to TCG → CPU-heavy
+
+
+def test_boot_is_tcg_windows_host_whpx_no(monkeypatch):
+    v = _bare_vm("amd64")
+    v._backend = "windows-host"
+    v._win_accel = "whpx"
+    assert v._boot_is_tcg() is False  # hardware virt on the Windows host → no lease
+    v._win_accel = "tcg"
+    assert v._boot_is_tcg() is True
+
+
+def test_acquire_cpu_lease_tcg_takes_then_release(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    v = _bare_vm("arm64")
+    v._backend = "native"
+    v.work_dir = tmp_path
+    v._acquire_cpu_lease()
+    assert v._cpu_lease_fd is not None  # a TCG boot holds one CPU permit
+    v._release_slot()  # _release_slot also drops the CPU lease
+    assert v._cpu_lease_fd is None
+
+
+def test_acquire_cpu_lease_kvm_takes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    v = _bare_vm("amd64")
+    v._backend = "native"
+    v.work_dir = tmp_path
+    monkeypatch.setattr(vm.Path, "exists", lambda self: True)  # /dev/kvm present → KVM
+    v._acquire_cpu_lease()
+    assert v._cpu_lease_fd is None  # KVM boot takes no CPU lease
+
+
+def test_acquire_cpu_lease_noop_when_broker_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
+    v = _bare_vm("arm64")
+    v._backend = "native"
+    v.work_dir = tmp_path
+    v._acquire_cpu_lease()
+    assert v._cpu_lease_fd is None  # broker off → no lease even for a TCG boot
+
+
+def test_acquire_cpu_lease_soft_fails_on_timeout(tmp_path, monkeypatch, capsys):
+    """When no permit is free (an exclusive build holds the pool), the boot lease times out
+    → warn + proceed UNLOCKED, never wedging the boot (the writer-takes-all soft-fail seam)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    monkeypatch.setattr(hl_mod, "acquire_cpu_lease", lambda *a, **k: None)  # simulate timeout
+    v = _bare_vm("arm64")
+    v._backend = "native"
+    v.work_dir = tmp_path
+    v._acquire_cpu_lease()
+    assert v._cpu_lease_fd is None  # never wedged
+    assert "proceeding UNLOCKED" in capsys.readouterr().out
 
 
 # --- windows-host hostfwd-bind TOCTOU launch retry -------------------------
