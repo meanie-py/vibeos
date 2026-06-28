@@ -129,7 +129,10 @@ pub unsafe extern "system" fn AfdBindSocket(
             0,
             core::ptr::null_mut(),
             MAXIMUM_ALLOWED,
-            *(crate::glue::IoFileObjectType as *mut ntkrnl_sys::ddk::POBJECT_TYPE),
+            // raw-dylib reads through the import thunk: the static IS the POBJECT_TYPE,
+            // so pass it directly (no deref — see glue.rs). The C `*IoFileObjectType`
+            // deref'd the IAT-alias, which Rust doesn't have.
+            crate::glue::IoFileObjectType as ntkrnl_sys::ddk::POBJECT_TYPE,
             (*Irp).RequestorMode,
             core::ptr::addr_of_mut!(UserHandle),
         );

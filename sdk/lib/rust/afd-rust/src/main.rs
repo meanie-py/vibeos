@@ -1011,43 +1011,51 @@ unsafe fn AfdQueryVolumeInformation(
 
 const MID_TRACE: u32 = 1;
 const MIN_TRACE: u32 = 0;
-const IOCTL_AFD_BIND: u32 = 0x12003;
-const IOCTL_AFD_CONNECT: u32 = 0x12007;
-const IOCTL_AFD_SUPER_CONNECT: u32 = 0x1201B;
-const IOCTL_AFD_START_LISTEN: u32 = 0x1200B;
-const IOCTL_AFD_RECV: u32 = 0x12017;
-const IOCTL_AFD_SELECT: u32 = 0x12024;
-const IOCTL_AFD_EVENT_SELECT: u32 = 0x12021;
-const IOCTL_AFD_ENUM_NETWORK_EVENTS: u32 = 0x12022;
-const IOCTL_AFD_RECV_DATAGRAM: u32 = 0x1201F;
-const IOCTL_AFD_SEND: u32 = 0x1201E;
-const IOCTL_AFD_SEND_DATAGRAM: u32 = 0x12023;
-const IOCTL_AFD_GET_INFO: u32 = 0x1202B;
-const IOCTL_AFD_SET_INFO: u32 = 0x1202C;
-const IOCTL_AFD_GET_CONTEXT_SIZE: u32 = 0x1202F;
-const IOCTL_AFD_GET_CONTEXT: u32 = 0x12030;
-const IOCTL_AFD_SET_CONTEXT: u32 = 0x12031;
-const IOCTL_AFD_WAIT_FOR_LISTEN: u32 = 0x12025;
-const IOCTL_AFD_ACCEPT: u32 = 0x12026;
-const IOCTL_AFD_DISCONNECT: u32 = 0x1202A;
-const IOCTL_AFD_GET_SOCK_NAME: u32 = 0x1202D;
-const IOCTL_AFD_GET_PEER_NAME: u32 = 0x1202E;
-const IOCTL_AFD_GET_CONNECT_DATA: u32 = 0x12032;
-const IOCTL_AFD_SET_CONNECT_DATA: u32 = 0x12033;
-const IOCTL_AFD_SET_DISCONNECT_DATA: u32 = 0x12034;
-const IOCTL_AFD_GET_DISCONNECT_DATA: u32 = 0x12035;
-const IOCTL_AFD_SET_CONNECT_DATA_SIZE: u32 = 0x12036;
-const IOCTL_AFD_SET_DISCONNECT_DATA_SIZE: u32 = 0x12037;
-const IOCTL_AFD_SET_CONNECT_OPTIONS: u32 = 0x12038;
-const IOCTL_AFD_SET_DISCONNECT_OPTIONS: u32 = 0x12039;
-const IOCTL_AFD_GET_CONNECT_OPTIONS: u32 = 0x1203A;
-const IOCTL_AFD_GET_DISCONNECT_OPTIONS: u32 = 0x1203B;
-const IOCTL_AFD_SET_CONNECT_OPTIONS_SIZE: u32 = 0x1203C;
-const IOCTL_AFD_SET_DISCONNECT_OPTIONS_SIZE: u32 = 0x1203D;
-const IOCTL_AFD_GET_TDI_HANDLES: u32 = 0x1203E;
-const IOCTL_AFD_DEFER_ACCEPT: u32 = 0x1203F;
-const IOCTL_AFD_GET_PENDING_CONNECT_DATA: u32 = 0x12040;
-const IOCTL_AFD_VALIDATE_GROUP: u32 = 0x12041;
+// AFD IOCTLs — _AFD_CONTROL_CODE(Op, Method) = (FILE_DEVICE_NETWORK<<12)|(Op<<2)|Method
+// per drivers/afd/shared.h. The grind hardcoded many of these with WRONG (roughly
+// sequential) values, so msafd's real codes were misrouted — e.g. SEND (0x1201F)
+// landed on the RECV_DATAGRAM arm, DISCONNECT (0x1202B) on GET_INFO, and the dominant
+// GET_INFO(0x1207B)/SET_CONTEXT(0x12047) polls fell through to default. Compute them
+// from the canonical (op, method) so they match msafd exactly and can't drift again.
+// METHOD_NEITHER = 3, METHOD_BUFFERED = 0.
+const fn afd_ctl(op: u32, method: u32) -> u32 { (0x12u32 << 12) | (op << 2) | method }
+const IOCTL_AFD_BIND: u32 = afd_ctl(0, 3);
+const IOCTL_AFD_CONNECT: u32 = afd_ctl(1, 3);
+const IOCTL_AFD_START_LISTEN: u32 = afd_ctl(2, 3);
+const IOCTL_AFD_WAIT_FOR_LISTEN: u32 = afd_ctl(3, 0);
+const IOCTL_AFD_ACCEPT: u32 = afd_ctl(4, 0);
+const IOCTL_AFD_RECV: u32 = afd_ctl(5, 3);
+const IOCTL_AFD_RECV_DATAGRAM: u32 = afd_ctl(6, 3);
+const IOCTL_AFD_SEND: u32 = afd_ctl(7, 3);
+const IOCTL_AFD_SEND_DATAGRAM: u32 = afd_ctl(8, 3);
+const IOCTL_AFD_SELECT: u32 = afd_ctl(9, 0);
+const IOCTL_AFD_DISCONNECT: u32 = afd_ctl(10, 3);
+const IOCTL_AFD_GET_SOCK_NAME: u32 = afd_ctl(11, 3);
+const IOCTL_AFD_GET_PEER_NAME: u32 = afd_ctl(12, 3);
+const IOCTL_AFD_GET_TDI_HANDLES: u32 = afd_ctl(13, 3);
+const IOCTL_AFD_SET_INFO: u32 = afd_ctl(14, 3);
+const IOCTL_AFD_GET_CONTEXT_SIZE: u32 = afd_ctl(15, 3);
+const IOCTL_AFD_GET_CONTEXT: u32 = afd_ctl(16, 3);
+const IOCTL_AFD_SET_CONTEXT: u32 = afd_ctl(17, 3);
+const IOCTL_AFD_SET_CONNECT_DATA: u32 = afd_ctl(18, 3);
+const IOCTL_AFD_SET_CONNECT_OPTIONS: u32 = afd_ctl(19, 3);
+const IOCTL_AFD_SET_DISCONNECT_DATA: u32 = afd_ctl(20, 3);
+const IOCTL_AFD_SET_DISCONNECT_OPTIONS: u32 = afd_ctl(21, 3);
+const IOCTL_AFD_GET_CONNECT_DATA: u32 = afd_ctl(22, 3);
+const IOCTL_AFD_GET_CONNECT_OPTIONS: u32 = afd_ctl(23, 3);
+const IOCTL_AFD_GET_DISCONNECT_DATA: u32 = afd_ctl(24, 3);
+const IOCTL_AFD_GET_DISCONNECT_OPTIONS: u32 = afd_ctl(25, 3);
+const IOCTL_AFD_SET_CONNECT_DATA_SIZE: u32 = afd_ctl(26, 3);
+const IOCTL_AFD_SET_CONNECT_OPTIONS_SIZE: u32 = afd_ctl(27, 3);
+const IOCTL_AFD_SET_DISCONNECT_DATA_SIZE: u32 = afd_ctl(28, 3);
+const IOCTL_AFD_SET_DISCONNECT_OPTIONS_SIZE: u32 = afd_ctl(29, 3);
+const IOCTL_AFD_GET_INFO: u32 = afd_ctl(30, 3);
+const IOCTL_AFD_EVENT_SELECT: u32 = afd_ctl(33, 3);
+const IOCTL_AFD_ENUM_NETWORK_EVENTS: u32 = afd_ctl(34, 3);
+const IOCTL_AFD_DEFER_ACCEPT: u32 = afd_ctl(35, 3);
+const IOCTL_AFD_GET_PENDING_CONNECT_DATA: u32 = afd_ctl(41, 3);
+const IOCTL_AFD_VALIDATE_GROUP: u32 = afd_ctl(42, 3);
+const IOCTL_AFD_SUPER_CONNECT: u32 = afd_ctl(49, 3);
 unsafe extern "system" fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let mut Status: NTSTATUS = STATUS_NOT_IMPLEMENTED;
@@ -1436,10 +1444,21 @@ pub unsafe extern "system" fn DriverEntry(
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
     let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    // RTL_CONSTANT_STRING(L"\\Device\\Afd") — a UTF-16 (wide) device name. The grind
+    // emitted an ASCII byte-string reinterpreted as *mut u16 (so each pair of ASCII
+    // bytes became one garbage wide char) with doubled Length/MaximumLength. That
+    // registered a mis-named device, so msafd's NtCreateFile on \Device\Afd returned
+    // STATUS_OBJECT_PATH_NOT_FOUND. Use a real UTF-16 literal: 11 chars -> Length 22,
+    // MaximumLength 24 (incl the trailing NUL). IoCreateDevice copies the name, so a
+    // read-only static backing buffer is fine.
+    static AFD_DEVICE_NAME: [u16; 12] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
+        b'e' as u16, b'\\' as u16, b'A' as u16, b'f' as u16, b'd' as u16, 0,
+    ];
     let mut wstrDeviceName = _UNICODE_STRING {
-        Length: 24,
-        MaximumLength: 26,
-        Buffer: b"\\Device\\Afd\0".as_ptr() as *mut u16,
+        Length: 22,
+        MaximumLength: 24,
+        Buffer: AFD_DEVICE_NAME.as_ptr() as *mut u16,
     };
     let DeviceExt: PAFD_DEVICE_EXTENSION;
     let Status: NTSTATUS;

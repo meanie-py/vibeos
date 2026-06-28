@@ -372,7 +372,7 @@ pub unsafe extern "system" fn AfdEventSelect(
         Status = ObReferenceObjectByHandle(
             (*EventSelectInfo).EventObject as PVOID,
             EVENT_ALL_ACCESS,
-            *ExEventObjectType as *mut _,
+            ExEventObjectType as *mut _,
             1i8,
             core::ptr::addr_of_mut!((*FCB).EventSelect) as *mut PVOID,
             core::ptr::null_mut(),
@@ -443,7 +443,7 @@ pub unsafe extern "system" fn AfdEnumEvents(
         Status = ObReferenceObjectByHandle(
             (*EnumReq).Event,
             EVENT_ALL_ACCESS,
-            *ExEventObjectType as *mut _,
+            ExEventObjectType as *mut _,
             1i8,
             &mut UserEvent as *mut PKEVENT as *mut *mut core::ffi::c_void,
             core::ptr::null_mut()

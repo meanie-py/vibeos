@@ -13,12 +13,15 @@ use ntkrnl_sys::driver_ddk::{MmGetSystemAddressForMdlSafe, NormalPagePriority};
 // ntoskrnl exports these as data, not functions. A plain `extern` references the
 // bare symbol (`_ExEventObjectType`) which the import lib doesn't provide — only
 // `__imp__ExEventObjectType`. raw-dylib routes the reference through the import
-// thunk so it resolves. Types match the existing call-site casts/derefs verbatim:
-// select.rs does `*ExEventObjectType as *mut _`; bind.rs casts IoFileObjectType to
-// `*mut POBJECT_TYPE` then derefs.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+// thunk so it resolves. CRITICAL: each of these is a single POBJECT_TYPE
+// (`*mut OBJECT_TYPE`), NOT a double pointer. The C source writes `*IoFileObjectType`
+// only because ReactOS's __CREATE_NTOS_DATA_IMPORT_ALIAS makes the bare C symbol the
+// IAT slot itself (a POBJECT_TYPE*); raw-dylib already reads THROUGH that thunk, so
+// in Rust the static's value IS the POBJECT_TYPE and call-sites must NOT deref it.
+// (Matches cdfs-rust/fastfat-rust fsctrl.rs, which pass `IoFileObjectType` directly.)
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
-    pub static ExEventObjectType: *mut *mut core::ffi::c_void;
+    pub static ExEventObjectType: *mut core::ffi::c_void;
     pub static IoFileObjectType: *mut core::ffi::c_void;
 }
 
