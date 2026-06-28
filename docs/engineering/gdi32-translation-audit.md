@@ -96,7 +96,64 @@ post-boot refinement.
 | 1b (brush+pen+palette+colorspace+clientobj) | `7d40b6e83b2` (landed `76312282832`) | boot ✓ | boot ✓ (net✓) | boot ✓ 33s (genuine Rust, post archcfg-fix) |
 | 2 (coord+painting+text+arc+region) | landed `eaae890a98f` | build+boot ✓ 72s | build+boot ✓ 178s (net✓) | build+boot ✓ 33s | **×3 GREEN** (desktop render path) |
 | 2b (font) | landed `704590ef795` | build+boot ✓ 1m13s | build+boot ✓ (net flake unrelated — gdi32 has no net surface) | build+boot ✓ 43s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (largest single file) |
-| 3a (path+bitmap+icm) | _pending_ | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 33s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (paths/DIB/color-mgmt) |
+| 3a (path+bitmap+icm) | `5f5274f26d7` (gating) | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 33s (cleared known wnetInit flake on re-run) | **×3 boot-GREEN** (paths/DIB/color-mgmt) |
+| 3b (dc+utils+heap+historic+wingl+efloat+enhmfile+metafile) | landed `1f5868cc4e0` | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 34s (first try) | **×3 boot-GREEN** (DC lifecycle + utils + EMF/WMF + i386 efloat) |
+| 4 (gdientry+printdrv+eng) | _pending_ | build+boot ✓ | build+boot ✓ (net✓) | build+boot ✓ 34s (first try) | **×3 boot-GREEN** — 🎉 **gdi32 100% Rust** |
+
+### Wave 4 notes (the final trio — gdi32 → 100% Rust)
+3 files (~3.3K LOC, ~89 fns) via 3 parallel opus agents against
+`~/vibeos-rust-staging/gdi32-wave4/CONTRACT-4.md`. **gdientry.c is heavy DirectDraw DDI** (the
+DDHAL surface callbacks + the 16 GDI entry points). 3 distinct integration fixes:
+- **The `GdiEntryN` naming (critical, link-breaking if wrong):** `sdk/include/psdk/ddrawgdi.h`
+  `#define`s `DdCreateDirectDrawObject`..`DdSetGammaRamp` → `GdiEntry1`..`GdiEntry15` (and
+  `DdSwapTextureHandles`→`GdiEntry16`), so the compiled/exported symbols are `GdiEntryN`. Rust has
+  no preprocessor → the 15 fns are **named `GdiEntryN` directly** in gdientry.rs (GdiEntry16 stays
+  in historic.rs). The other ~44 `Dd*`/`Dvp*`/`D3d*` HAL callbacks keep their real names. All
+  `@N` decorations matched the spec on the first link.
+- **The `Unlock` const-pattern footgun:** `DdUnlock`/`DdUnlockD3D` had a param named `Unlock`, which
+  collides with the glob-imported `const Unlock: _SECURITY_LOGON_TYPE` → Rust parsed the param as a
+  const-pattern (binding nothing) and the body saw a `u32`. Renamed `Unlock`→`pUnlock`. New
+  field-manual entry (this is a SILENT bug when the const type is compatible).
+- **bitmap-union + cast nits:** `ddsCapsEx.dwCaps4` → `.__bindgen_anon_1.dwCaps4` (union); printdrv
+  `ghSpooler = hModWinSpoolDrv as HANDLE` (HINSTANCE→HANDLE).
+
+**🏆 gdi32.dll is now 100% Rust** (29/29 .c translated, cohab-flipped, ×3 boot-green). The usermode
+GDI client joins ntoskrnl, win32k, kernel32, user32, cdfs, cdrom, fastfat, usbport, … in Rust.
+
+### Wave 3b notes (substrate + utilities — completes everything bar the Wave-4 driver/spooler trio)
+8 files (~3.1K LOC, ~103 fns) via 8 parallel opus agents against
+`~/vibeos-rust-staging/gdi32-wave3b/CONTRACT-3b.md`, integrated centrally — only **1 integration
+error** (the `GdiBCSelObj` batch-const glob ambiguity in dc.rs → `crate::gdihelp::GdiBCSelObj`):
+- **dc.rs** (51 fns) — DC lifecycle + device caps (Create/Delete/Save/Restore/ResetDC,
+  GetDeviceCaps, Get/SetDC{Brush,Pen}Color, Get/SetBkColor/Mode/ROP2/PolyFillMode/GraphicsMode,
+  GetCurrentObject, SelectObject, bounds-rect, etc.). DC-attr-cache heavy. The boot-critical one.
+- **utils.rs** (6 fns) — CalculateColorTableSize, ConvertBitmapInfo, LogFontA2W/W2A,
+  EnumLogFontExW2A, LoadLPK + the 4 owned LPK fn-ptr globals (text.rs externs them).
+- **heap.rs** (3 fns) — HEAP_strdupA2W(_buf) + the `hProcessHeap` global (font.rs externs the buf).
+- **historic.rs** (23 fns), **wingl.rs** (5 pixel-format fns + 2 lazy-loaders), **enhmfile.rs**
+  (6 EMF fns), **metafile.rs** (5 WMF fns) — thin client wrappers.
+- **efloat.rs** (2 FASTCALL fns, **i386-only** `#[cfg(target_arch = "x86")] pub mod efloat;`) —
+  EFtoF/FtoEF. FLOATL is an integer (float-bits), so all-integer ABI, no float-ABI issue.
+After this lands, only the **Wave 4** driver/spooler trio remains C: `misc/gdientry.c` (2084 LOC),
+`objects/printdrv.c` (944), `objects/eng.c` (264) — driver/DirectX/spooler entry, not boot-critical.
+
+**2 link fixes during 3b integration (both worth a field-manual note):**
+1. **A `.spec`-exported symbol provided as a hidden OBJ-LEVEL alias by the flipped .c.** gdi32.spec
+   exports ordinal 273 `GdiEntry16` (stdcall, 3 ptr), but no `.c` contains the text "GdiEntry16" —
+   the symbol `_GdiEntry16@12` was emitted *into historic.c.obj* as an alias of `DdSwapTextureHandles`
+   (the "GDIEntry 16" comment). Flipping historic.c→.rs dropped the alias → `undefined symbol:
+   _GdiEntry16@12` at link (the crate compiled fine — it's a link-only break). **Fix:** re-provide
+   `GdiEntry16` explicitly in historic.rs as a `#[no_mangle] extern "system"` export forwarding to
+   `DdSwapTextureHandles` (all-arch — the spec export is arch-independent). **Detection recipe:** when
+   a cohab flip yields `undefined symbol: _Foo@N` for a symbol absent from every `.c`, it was an
+   obj-level alias — grep the gdi32.spec/`good api.def` for the ordinal and `nm` the pre-flip `.obj`
+   to find the real target. **⚠️ Wave 4 will hit this for `GdiEntry1..15`** (gdientry.c aliases the
+   `DdXxx` HAL fns) — each needs an explicit forwarding export.
+2. **A blanket "this family is cdecl" ABI assumption that's wrong for one member.** The contract said
+   "EMFDC_* are cdecl (`extern "C"`)", but `wine/emfdc.c` declares `BOOL WINAPI EMFDC_GdiComment` —
+   stdcall (`_EMFDC_GdiComment@12`). The `extern "C"` decl → undefined `_EMFDC_GdiComment`. **Fix:**
+   `extern "system"`. Lesson: verify each cross-file callee's *own* decoration against its C def; don't
+   trust a family-wide rule.
 
 ### Wave 3a notes (path / bitmap / icm)
 3 files (~1.8K LOC, 45 fns) via 3 parallel opus agents against
