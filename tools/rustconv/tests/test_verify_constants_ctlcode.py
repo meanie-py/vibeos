@@ -13,11 +13,13 @@ from typing import ClassVar
 
 from rustconv.config import REACTOS_ROOT
 from rustconv.verify_constants import (
+    _BUILTIN_FUNC_MACROS,
     _eval_int_expr,
+    _parse_func_macros,
     _split_top_commas,
     build_c_catalog,
     fix_const_line,
-    parse_ctl_code_defines,
+    parse_ioctl_defines,
     verify_file,
 )
 
@@ -68,18 +70,89 @@ class TestCtlCodeParser:
             "#define FSCTL_CREATE_RAM_DISK "
             "CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x0000, METHOD_BUFFERED, FILE_ANY_ACCESS)\n"
         )
-        parse_ctl_code_defines(text, SCOPE, acc)
+        parse_ioctl_defines(text, SCOPE, dict(_BUILTIN_FUNC_MACROS), acc)
         assert acc["IOCTL_DISK_CHECK_VERIFY"] == {0x74800}
         assert acc["FSCTL_CREATE_RAM_DISK"] == {0x240000}
 
     def test_unresolved_operand_skips_def(self):
         acc: dict[str, set] = {}
-        parse_ctl_code_defines(
+        parse_ioctl_defines(
             "#define IOCTL_X CTL_CODE(MYSTERY_DEVICE, 0, METHOD_BUFFERED, FILE_ANY_ACCESS)\n",
             SCOPE,
+            dict(_BUILTIN_FUNC_MACROS),
             acc,
         )
         assert "IOCTL_X" not in acc  # never fabricate from an unresolved operand
+
+    def test_plain_literal_ioctl_subsumed(self):
+        # The IOCTL_/FSCTL_ namespace parser also catches plain-literal defines.
+        acc: dict[str, set] = {}
+        parse_ioctl_defines(
+            "#define IOCTL_FOO_BAR 0x1234\n", SCOPE, dict(_BUILTIN_FUNC_MACROS), acc
+        )
+        assert acc["IOCTL_FOO_BAR"] == {0x1234}
+
+    def test_ignores_non_ioctl_namespace(self):
+        acc: dict[str, set] = {}
+        parse_ioctl_defines("#define SOME_FLAG 0x1\n", SCOPE, dict(_BUILTIN_FUNC_MACROS), acc)
+        assert acc == {}  # only IOCTL_/FSCTL_ names are evaluated
+
+
+class TestFuncMacroExpander:
+    """The generic function-like-macro expander — the robustness upgrade that
+    lets ANY CTL_CODE-family wrapper (not just CTL_CODE) evaluate through one
+    path. AFD's wrapper doesn't even use CTL_CODE; it has its own bit-packing."""
+
+    AFD: ClassVar[dict] = {
+        "_AFD_CONTROL_CODE": (
+            ["Operation", "Method"],
+            "((FSCTL_AFD_BASE)<<12 | (Operation<<2) | Method)",
+        ),
+    }
+
+    def test_parse_func_macro(self):
+        macros = _parse_func_macros(
+            "#define _TDI_CONTROL_CODE(request,method)   "
+            "CTL_CODE(FILE_DEVICE_TRANSPORT, request, method, FILE_ANY_ACCESS)\n"
+        )
+        assert macros["_TDI_CONTROL_CODE"][0] == ["request", "method"]
+        assert "CTL_CODE" in macros["_TDI_CONTROL_CODE"][1]
+
+    def test_object_macro_not_captured_as_func(self):
+        # A space before '(' makes it object-like (value), not function-like.
+        assert _parse_func_macros("#define FOO (1 << 2)\n") == {}
+
+    def test_afd_wrapper_evaluates_without_ctl_code(self):
+        scope = {"FSCTL_AFD_BASE": 0x12, "METHOD_NEITHER": 3, "AFD_BIND": 0}
+        # IOCTL_AFD_BIND = _AFD_CONTROL_CODE(AFD_BIND, METHOD_NEITHER) = 0x12003
+        assert (
+            _eval_int_expr("_AFD_CONTROL_CODE(AFD_BIND, METHOD_NEITHER)", scope, self.AFD)
+            == 0x12003
+        )
+
+    def test_nested_wrapper_expands_to_ctl_code(self):
+        # _TDI_CONTROL_CODE → CTL_CODE → arithmetic, two levels deep.
+        macros = dict(_BUILTIN_FUNC_MACROS)
+        macros["_TDI_CONTROL_CODE"] = (
+            ["request", "method"],
+            "CTL_CODE(FILE_DEVICE_TRANSPORT, request, method, FILE_ANY_ACCESS)",
+        )
+        scope = {"FILE_DEVICE_TRANSPORT": 0x21, "METHOD_BUFFERED": 0, "FILE_ANY_ACCESS": 0}
+        # IOCTL_TDI_CONNECT = _TDI_CONTROL_CODE(1, METHOD_BUFFERED) = 0x210004
+        assert _eval_int_expr("_TDI_CONTROL_CODE(1, METHOD_BUFFERED)", scope, macros) == 0x210004
+
+    def test_param_substitution_is_whole_word(self):
+        # param `Method` must NOT match inside `METHOD_NEITHER`.
+        scope = {"FSCTL_AFD_BASE": 0x12, "METHOD_NEITHER": 3, "Op": 5}
+        assert _eval_int_expr("_AFD_CONTROL_CODE(Op, METHOD_NEITHER)", scope, self.AFD) == (
+            (0x12 << 12) | (5 << 2) | 3
+        )
+
+    def test_recursion_guard_bails_safely(self):
+        # A self-referential macro must not hang — it bails, leaving an
+        # unevaluable expression → None (never a fabricated value).
+        loop = {"LOOP": (["x"], "LOOP(x)")}
+        assert _eval_int_expr("LOOP(1)", {}, loop) is None
 
 
 class TestRealCatalog:
@@ -88,6 +161,7 @@ class TestRealCatalog:
     the evaluator (or a header move) trips here, not at a runtime BUGCHECK."""
 
     EXPECT: ClassVar[dict[str, int]] = {
+        # CTL_CODE-direct (the original ramdisk-fix constants — regression guard):
         "FSCTL_CREATE_RAM_DISK": 0x240000,
         "IOCTL_DISK_CHECK_VERIFY": 0x74800,
         "IOCTL_DISK_GET_DRIVE_GEOMETRY": 0x70000,
@@ -95,6 +169,15 @@ class TestRealCatalog:
         "IOCTL_CDROM_CHECK_VERIFY": 0x24800,
         "FSCTL_OPLOCK_BREAK_ACKNOWLEDGE": 0x9000C,
         "FSCTL_OPLOCK_BREAK_NOTIFY": 0x90014,
+        # Wrapper-macro families (the robustness upgrade). AFD uses its own
+        # bit-packing (no CTL_CODE); TDI/NDIS wrap CTL_CODE. IOCTL_AFD_SEND is
+        # the value netstack cited as the one their afd bug #3 had scrambled.
+        "IOCTL_AFD_BIND": 0x12003,
+        "IOCTL_AFD_SEND": 0x1201F,
+        "IOCTL_AFD_RECV": 0x12017,
+        "IOCTL_TDI_CONNECT": 0x210004,
+        "IOCTL_TDI_SEND": 0x21001D,
+        "IOCTL_NDIS_QUERY_GLOBAL_STATS": 0x170002,
     }
 
     def test_known_values(self):
@@ -105,7 +188,7 @@ class TestRealCatalog:
     def test_at_least_a_hundred_codes(self):
         cat = build_c_catalog(REACTOS_ROOT)
         codes = [k for k in cat if k.startswith(("IOCTL_", "FSCTL_"))]
-        assert len(codes) > 100  # ~326 today; guards against the pass silently no-op'ing
+        assert len(codes) > 100  # ~390 today (incl. AFD/TDI/NDIS/USB families)
 
 
 class TestFixConstLine:

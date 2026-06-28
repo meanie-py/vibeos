@@ -1496,6 +1496,25 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
   standardized base operands; it joins the DDK headers' multi-line continuation defs first. The
   catalog gained **326 IOCTL_/FSCTL_ codes** (was 0). It would have caught every ramdisk const
   above at the static gate. Locked by `tools/rustconv/tests/test_verify_constants_ctlcode.py`.
+  - **Generalized to ALL wrapper-macro families (2026-06-28) — the robust upgrade:** many IOCTL
+    families aren't `CTL_CODE(...)` directly but go through a *device-specific wrapper macro* —
+    `_AFD_CONTROL_CODE`, `_TDI_CONTROL_CODE`, `_NDIS_CONTROL_CODE`, `USB_CTL`, … — and AFD's wrapper
+    doesn't even use `CTL_CODE` (it has its own packing `(FSCTL_AFD_BASE)<<12 | (Op<<2) | Method`).
+    Special-casing `CTL_CODE` missed all of these. Replaced the `CTL_CODE`-only parser with a
+    **generic function-like-macro expander** (`_expand_func_macros`): it parses every `#define
+    NAME(params) body` wrapper from the headers, recursively substitutes args (whole-word, so a
+    `Method` param never matches inside `METHOD_NEITHER`) and expands nested calls until the body is
+    pure arithmetic, then evaluates. `parse_ioctl_defines` now scans the whole `IOCTL_*`/`FSCTL_*`
+    namespace through this one path — literal, direct-`CTL_CODE`, and any wrapper, family-agnostic.
+    Catalog **326 → 390** (+AFD 38, TDI 14, NDIS, USB), verified against known answers (`IOCTL_AFD_BIND`
+    `0x12003`, `IOCTL_AFD_SEND` `0x1201F`, `IOCTL_TDI_CONNECT` `0x210004`, `IOCTL_NDIS_QUERY_GLOBAL_STATS`
+    `0x170002`). **This is exactly netstack's afd bug #3** (the `IOCTL_AFD_*` block mis-numbered
+    sequentially instead of computed → `msafd` SEND `0x1201F` misrouted to the RECV arm) — the
+    generalized gate computes the right value, so that class is now caught statically for the whole
+    transport/USB stack, not just the disk/cdrom CTL_CODE ones. Bringing a new family under the net
+    is a one-line header add to `CTL_CODE_HEADERS`; depth-guarded so a recursive macro bails to
+    "unevaluable" (skipped) rather than fabricating. Self-referential/non-arithmetic wrapper macros
+    are harmless — they only expand when an IOCTL body calls them and a non-integer result is skipped.
   - **First catch (fixed same commit):** 3 real wrong codes in `ntoskrnl-rust` — `fstub/disksup.rs`
     `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
     *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`

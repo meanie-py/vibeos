@@ -20,35 +20,6 @@
   MISMATCH: sdk/lib/rust/disk-rust/src/diskwmi.rs:291: IOCTL_STORAGE_PREDICT_FAILURE: Rust=0x002D14C0 → C=0x002D1100
   MISMATCH: sdk/lib/rust/disk-rust/src/pnp.rs:141: NonPagedPoolNxCacheAligned: Rust=0x00000000 → C=0x00000204
   MISMATCH: sdk/lib/rust/disk-rust/src/pnp.rs:748: IOCTL_STORAGE_GET_HOTPLUG_INFO: Rust=0x002D1400 → C=0x002D0C14
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/devctrl.rs:123: IOCTL_DISK_COPY_DATA: Rust=0x00000002 → C=0x0007C064
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/devctrl.rs:124: IOCTL_SCSI_PASS_THROUGH: Rust=0x00000003 → C=0x0004D004
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/devctrl.rs:125: IOCTL_SCSI_PASS_THROUGH_DIRECT: Rust=0x00000004 → C=0x0004D014
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/devctrl.rs:126: IOCTL_SCSI_PASS_THROUGH_EX: Rust=0x00000005 → C=0x0004D044
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/devctrl.rs:127: IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: Rust=0x00000006 → C=0x0004D048
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/deviosup.rs:528: NonPagedPoolNxCacheAligned: Rust=0x20000000 → C=0x00000204
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:144: IOCTL_DISK_IS_WRITABLE: Rust=0x00074008 → C=0x00070024
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:146: STATUS_MEDIA_WRITE_PROTECTED: Rust=0xC0000371 → C=0xC00000A2
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:224: FSCTL_MARK_VOLUME_DIRTY: Rust=0x00090024 → C=0x00090030
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:225: FSCTL_IS_VOLUME_DIRTY: Rust=0x00090028 → C=0x00090078
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:226: FSCTL_IS_VOLUME_MOUNTED: Rust=0x00090030 → C=0x00090028
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:227: FSCTL_IS_PATHNAME_VALID: Rust=0x00090038 → C=0x0009002C
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:228: FSCTL_QUERY_RETRIEVAL_POINTERS: Rust=0x00090040 → C=0x0009003B
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:229: FSCTL_QUERY_FAT_BPB: Rust=0x00090048 → C=0x00090058
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:230: FSCTL_FILESYSTEM_GET_STATISTICS: Rust=0x0009004C → C=0x00090060
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:232: FSCTL_GET_BOOT_AREA_INFO: Rust=0x00090054 → C=0x00090230
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:233: FSCTL_GET_VOLUME_BITMAP: Rust=0x00090058 → C=0x0009006F
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:234: FSCTL_GET_RETRIEVAL_POINTERS: Rust=0x00090044 → C=0x00090073
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:236: FSCTL_ALLOW_EXTENDED_DASD_IO: Rust=0x00090060 → C=0x00090083
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:237: FSCTL_MARK_HANDLE: Rust=0x00090064 → C=0x000900FC
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:238: FSCTL_SET_PURGE_FAILURE_MODE: Rust=0x00090068 → C=0x00090270
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:239: FSCTL_SET_ZERO_ON_DEALLOCATION: Rust=0x0009006C → C=0x00090194
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/fsctrl.rs:240: FSCTL_REQUEST_OPLOCK: Rust=0x00090070 → C=0x00090240
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/read.rs:293: IRP_PAGING_IO: Rust=0x00000001 → C=0x00000002
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/strucsup.rs:141: FSCTL_INVALIDATE_VOLUMES: Rust=0x0009000C → C=0x00090054
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/strucsup.rs:154: IOCTL_STORAGE_GET_HOTPLUG_INFO: Rust=0x002D4800 → C=0x002D0C14
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/strucsup.rs:167: TAG_VPB: Rust=0x70627661 → C=0x20425056
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/verfysup.rs:408: FSCTL_MARK_VOLUME_DIRTY: Rust=0x00090078 → C=0x00090030
-  MISMATCH: sdk/lib/rust/fastfat-rust/src/write.rs:185: NonPagedPoolNx: Rust=0x00000000 → C=0x00000200
   MISMATCH: sdk/lib/rust/fltmgr-rust/src/Context.rs:25: STATUS_FLT_INVALID_CONTEXT_REGISTRATION: Rust=0xC01C0021 → C=0xC01C0017
   MISMATCH: sdk/lib/rust/fltmgr-rust/src/Filter.rs:482: STATUS_FLT_DELETING_OBJECT: Rust=0xC01C0009 → C=0xC01C000B
   MISMATCH: sdk/lib/rust/fltmgr-rust/src/Object.rs:38: STATUS_FLT_DELETING_OBJECT: Rust=0xC01C0009 → C=0xC01C000B
