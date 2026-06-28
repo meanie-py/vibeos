@@ -215,6 +215,8 @@ members = [
     "samsrv-rust",
     "advapi32-rust",
     "advapi32-sys",
+    "secur32-rust",
+    "secur32-sys",
     "version-rust",
     "winreg-stub",
     "mlang-rust",
