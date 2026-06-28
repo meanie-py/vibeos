@@ -300,6 +300,52 @@ mutation corrupts all copies; safe only because builds write-fresh — gate to l
    proven safe + fast on i386. Flip default-on after amd64/arm64 validation (the cargo-driven
    amd64 kernel relink is the interaction to check). `max_size` capped at 50 G each.
 
+## Host CPU broker (`hostlock.py`) — cross-worktree build/boot arbitration
+
+Same lane, adjacent pain: the shared dev host has **one CPU pool** but many worktrees, and
+agents were hand-arbitrating it in `#swarm` ("taking the host" / "host free") to avoid two
+classes of corruption-and-false-flake:
+
+1. **CPU starvation → false `HANG_TIMEOUT`.** A cold build (`ninja -j` over all cores) and a
+   CPU-bound **TCG** boot (native arm64; or a windows-host boot while WHPX is shelved) run
+   concurrently starve each other — the boot misses its marker and reads as a boot regression.
+   The documented 2026-06-19 incident burned hours on exactly this.
+2. **Same-build-dir corruption.** Two `build --clean` on the same `build-<arch>` clobber each
+   other's CMake cache / cargo target (the determinism-verify-vs-gate hazard).
+
+The per-arch QEMU slot cap in `vm.py` only covers *accelerated* same-arch boots; it's blind to
+the CPU-bound class. `hostlock.py` closes that gap with two flock locks under a shared `/tmp`
+dir (every worktree sees them; the kernel auto-releases on holder death — no stale cleanup):
+
+- **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4), used
+  **writer-takes-all** so starvation is fixed *without* over-serializing boots:
+  a cold **build** / `repro verify` grabs **ALL** permits (exclusive host); a **TCG boot** grabs
+  **1** (so up to K TCG boots still parallelize — a ×3 gate keeps its boot parallelism — but a
+  build excludes them all). KVM/WHPX boots are hardware-accelerated → take **none** and stay on
+  the per-arch QEMU cap.
+- **`builddir:<canonical-path>`** — exclusive per-build-dir lock (held under the cpuheavy grant),
+  keyed by the resolved path so the same dir from any worktree maps to one lock.
+
+Acquire order is always `cpuheavy → builddir`; a build takes the K permits **in order** (0,1,…)
+so two builds can't deadlock. Timeouts **fail soft** (warn + proceed UNLOCKED, never wedge) —
+the generous default ceiling (`VIBEOS_HOST_LOCK_TIMEOUT`, 1 h) means hitting it implies a stuck
+holder, not real contention. `VIBEOS_HOST_BROKER=0` makes every lock a no-op.
+
+**Wiring.** `build.py` runs the whole build under `hostlock.build_lock(build_dir, arch)`;
+`vm.py` `start()` calls `_acquire_cpu_lease()` for a TCG boot (`_boot_is_tcg()`: native arm64
+always, native x86 only if `/dev/kvm` absent, windows-host unless WHPX) before launch and
+releases it in `_release_slot()`; `repro verify` inherits via its `build --clean` subprocesses.
+`vibeos-cli host-status [--json]` shows who holds what (the `--json` feeds the wait-for-quiet
+poll guards agents were hand-rolling).
+
+**Status.** Primitive + host-status + writer-takes-all model + build/boot wiring: **landed on
+`build-cache`** (`8dd7648a52a`, `be169da8e67`, `000f82c80fc`, `27f7caf389b`). 17 unit tests
+(primitive + boot-lease seam) + a cross-process build-excludes-boot check pass; tooling gate
+14/14. **Default-ON**, rolling out gradually (the lock-taking code only runs where the new
+`vm.py`/`build.py` exists, so it's self-only until the mainline merge propagates — a built-in
+safe rollout). Remaining: the real concurrent build-+-arm64-boot starve-test on a quiet host,
+then the mainline ×3 gate.
+
 ## Risks & open items
 
 - **Link is uncached.** May cap the "no more copying" win; #5 measures it before we promise.
