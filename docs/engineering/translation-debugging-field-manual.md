@@ -1522,6 +1522,51 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
     (a wrong NTSTATUS is a real bug, but the name can collide across status enums → FP risk) → review
     before fixing, never blanket `--fix`. So a blind tree-wide `--fix` is UNSAFE; fix per-class.
 
+### 9.6c.2 ✅ The arm64 staged-build false-green is now STRUCTURALLY mechanized — a self-maintaining freshness net + build self-heal (2026-06-28)
+
+§9.6c.1 mechanized the *const* half (a broken Rust binary). This closes the *other* half of
+that bug — the **stale binary** that lets a broken (or even a *correct*) Rust cohab flip never
+get boot-exercised because the arm64 staged build didn't rebuild it. The fix is two cooperating
+pieces in `tests/qemu/cli/`, both keyed off the **actual boot manifest** (`mkramdisk.sh`'s
+`REQUIRED_FILES`) rather than the hand-maintained `archcfg.py` lists — so neither can be
+defeated by forgetting an archcfg entry (the exact failure mode that bit fastfat→ramdisk→pl011
+→gdi32→user32→advapi32, six times):
+
+- **The freshness net** (`provenance.cohab_staleness_reasons`, wired into `check_staleness` so
+  `smoke` hard-fails). For every binary in the boot set (`mkramdisk.sh` `REQUIRED_FILES` ∪
+  `archcfg.staged_bins_rel`) that maps to a `<stem>-rust` cohab crate, it asserts the built
+  artifact is **newer than the crate's newest `.rs`**. A cohab flip that wasn't rebuilt leaves
+  the artifact older than its source → loud `STALE` at the gate, instead of a silent stale-C (or
+  stale-old-Rust) boot. **Crucially it runs in BOTH staleness tiers** — a flip that wasn't
+  rebuilt leaves the build-stamp git-fingerprint *matching*, so the tier-1 fast path ("fingerprint
+  unchanged ⇒ fresh") is itself unsound for these binaries and cannot be trusted; the net overrides
+  it. Self-maintaining: a new `<x>-rust` crate that produces `<x>.sys` auto-joins the net the
+  moment it's added to `mkramdisk.sh` — zero archcfg edits. (Mapping handles the `_`↔`-` skew:
+  binary `kernel32_vista.dll` → crate `kernel32-vista-rust`.)
+- **The build self-heal** (`build.py`): `boot_set_cohab_rels()` feeds those same cohab boot paths
+  into the `ninja` invocation alongside `archcfg.ninja_targets`, so **every cohab boot binary is
+  force-rebuilt regardless of whether anyone added it to `ninja_targets`**. This is the time-saver:
+  no more "forgot archcfg → stale gate → hand-`ninja` the driver → full re-gate" loop; `build`
+  just produces fresh binaries, and the net above confirms it.
+- **Validation:** on a real `build-arm64` the net guards 20 cohab boot binaries (kernel, hal,
+  win32k, kernel32(+vista), user32, winsrv, fastfat, ramdisk, pl011, netstack, ntdll, kdcom,
+  bootvid, framebuf, mlang, version, winlogon, arm64input/vid) with zero false positives, and
+  immediately flagged a genuinely-stale `user32.dll` (source newer than the built binary) that
+  would otherwise have staged stale. `i386`/`amd64` return empty (a full `ninja livecd` can't ship
+  a stale cohab binary), so the net is arm64-scoped by construction. Locked by 8 unit tests in
+  `tests/qemu/cli/test_cli_units.py` (`test_cohab_*`, incl. the tier-1-override case).
+- **Why mtime not content-hash:** the gate flow is `build`→`smoke` back-to-back, so mtimes are
+  authoritative; the failure mode is conservative (over-warn on git-mtime churn between build and
+  smoke, never false-green), and `--allow-stale` is the escape hatch. Same philosophy as the
+  pre-existing re-stage trap (boot.img mtime), which this generalizes from "did mkramdisk re-run"
+  to "was each cohab binary actually rebuilt from its current source."
+
+**Takeaway:** you should no longer need the §9.6c.1 manual audit (`grep '\[BLT\]'` + cross-check
+archcfg) for the *staleness* half — the gate now catches a stale cohab boot binary automatically,
+and `build` stops producing them. The archcfg lists remain useful (they drive what `--clean`
+nukes and the x86 path), but they are no longer the *only* thing standing between a cohab flip and
+a false-green.
+
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 
 Distinct from §9.6c (which is a real ABI mismatch). `mkramdisk.sh` occasionally produces a

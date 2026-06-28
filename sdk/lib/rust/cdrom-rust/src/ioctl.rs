@@ -2197,7 +2197,7 @@ pub unsafe extern "C" fn RequestValidateAacsBindingNonce(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestValidateExclusiveAccess(
+pub unsafe extern "system" fn RequestValidateExclusiveAccess(
     Request: WDFREQUEST,
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
@@ -4794,7 +4794,7 @@ pub unsafe extern "C" fn RequestHandleSetHotPlugInfo(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleEventNotification(
+pub unsafe extern "system" fn RequestHandleEventNotification(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     RequestParameters: *mut WDF_REQUEST_PARAMETERS,
@@ -5997,7 +5997,7 @@ pub unsafe extern "C" fn RequestHandleAreVolumesReady(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleVolumeOnline(
+pub unsafe extern "system" fn RequestHandleVolumeOnline(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: *mut core::ffi::c_void,
     RequestParameters: *mut core::ffi::c_void,
