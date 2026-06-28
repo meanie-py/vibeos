@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -5,81 +7,76 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{DelayedWorkQueue, _KWAIT_REASON_Executive, IoAllocateAdapterChannel, IoAllocateWorkItem, IoForwardIrpSynchronously, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoQueueWorkItem, IoSkipCurrentIrpStackLocation, KeInitializeMutex, KeReleaseMutex, KeWaitForSingleObject, PADAPTER_OBJECT, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_CONTROL, PIO_STACK_LOCATION, PIRP, PRKMUTEX, PowerDeviceD0, PowerSystemWorking, Unknown};
+use ntkrnl_sys::ddk::{_WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue, _KWAIT_REASON_Executive, IoAllocateWorkItem, IoForwardIrpSynchronously, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoQueueWorkItem, IoSkipCurrentIrpStackLocation, KeInitializeMutex, KeReleaseMutex, KeWaitForSingleObject, PADAPTER_OBJECT, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_CONTROL, PIO_STACK_LOCATION, PIRP, PRKMUTEX, _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0, _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking};
 use core::ffi::c_void;
 
+// IoAllocateAdapterChannel is in the i386 ddk bindgen but missing on amd64/arm64 — declare
+// it locally (real ntoskrnl/HAL export) so all three arches link.
+extern "system" {
+    fn IoAllocateAdapterChannel(
+        AdapterObject: PADAPTER_OBJECT,
+        DeviceObject: PDEVICE_OBJECT,
+        NumberOfMapRegisters: ULONG,
+        ExecutionRoutine: PDRIVER_CONTROL,
+        Context: PVOID,
+    ) -> NTSTATUS;
+}
+
+// Cross-module helpers / sibling Ks routines.
+use crate::misc::{AllocateItem, CompleteRequest, FreeItem};
+use crate::deviceinterface::KspSetFilterFactoriesState;
+use crate::irp::FindMatchingCreateItem;
+use crate::filterfactory::KspCreateFilterFactory;
+
+// IRP_MN_FILTER_RESOURCE_REQUIREMENTS (xdk/iotypes.h: 0x0D) — not exported via glue/ddk;
+// used only here. Without it the match arm becomes a catch-all binding that shadows later arms.
+const IRP_MN_FILTER_RESOURCE_REQUIREMENTS: u8 = 0x0D;
+
+// Local GUID compare (per-file precedent across ks modules).
+#[inline]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
 // ---- file-scope preamble (translated) ----
-// @c2rust file-scope data (compiler-exact tables/statics)
-static mut vt_IKsDevice: IKsDeviceVtbl = unsafe {
-    IKsDeviceVtbl {
-        QueryInterface: Some(
-            IKsDevice_fnQueryInterface
-                as unsafe extern "C" fn(*mut IKsDevice, *const IID, *mut PVOID) -> NTSTATUS,
-        ),
-        AddRef: Some(IKsDevice_fnAddRef as unsafe extern "C" fn(*mut IKsDevice) -> ULONG),
-        Release: Some(IKsDevice_fnRelease as unsafe extern "C" fn(*mut IKsDevice) -> ULONG),
-        GetStruct: Some(IKsDevice_fnGetStruct as unsafe extern "C" fn(*mut IKsDevice) -> PKSDEVICE),
-        InitializeObjectBag: Some(
-            IKsDevice_fnInitializeObjectBag
-                as unsafe extern "C" fn(*mut IKsDevice, PKSIOBJECT_BAG, PRKMUTEX) -> NTSTATUS,
-        ),
-        AcquireDevice: Some(
-            IKsDevice_fnAcquireDevice as unsafe extern "C" fn(*mut IKsDevice) -> NTSTATUS,
-        ),
-        ReleaseDevice: Some(
-            IKsDevice_fnReleaseDevice as unsafe extern "C" fn(*mut IKsDevice) -> NTSTATUS,
-        ),
-        GetAdapterObject: Some(
-            IKsDevice_fnGetAdapterObject
-                as unsafe extern "C" fn(
-                    *mut IKsDevice,
-                    *mut PADAPTER_OBJECT,
-                    PULONG,
-                    PULONG,
-                ) -> NTSTATUS,
-        ),
-        AddPowerEntry: Some(
-            IKsDevice_fnAddPowerEntry
-                as unsafe extern "C" fn(
-                    *mut IKsDevice,
-                    *mut KSPOWER_ENTRY,
-                    *mut IKsPowerNotify,
-                ) -> NTSTATUS,
-        ),
-        RemovePowerEntry: Some(
-            IKsDevice_fnRemovePowerEntry
-                as unsafe extern "C" fn(*mut IKsDevice, *mut KSPOWER_ENTRY) -> NTSTATUS,
-        ),
-        PinStateChange: Some(
-            IKsDevice_fnPinStateChange
-                as unsafe extern "C" fn(*mut IKsDevice, KSPIN, PIRP, KSSTATE, KSSTATE) -> NTSTATUS,
-        ),
-        ArbitrateAdapterChannel: Some(
-            IKsDevice_fnArbitrateAdapterChannel
-                as unsafe extern "C" fn(*mut IKsDevice, ULONG, PDRIVER_CONTROL, PVOID) -> NTSTATUS,
-        ),
-        CheckIoCapability: Some(
-            IKsDevice_fnCheckIoCapability
-                as unsafe extern "C" fn(*mut IKsDevice, ULONG) -> NTSTATUS,
-        ),
-    }
+// The KS IKsDevice vtable. Layout-compatible with crate::types::IKsDeviceVtbl (13 nullable
+// fn pointers in COM order); declared locally with `extern "system"` fields so the const
+// initializer can bind the `extern "system"` IKsDevice_fn* items via fn-pointer coercion
+// (an ABI-changing `as` cast is not permitted in a const, and on i386 "system" == stdcall).
+static mut vt_IKsDevice: IKsDeviceVtbl = IKsDeviceVtbl {
+    QueryInterface: Some(IKsDevice_fnQueryInterface),
+    AddRef: Some(IKsDevice_fnAddRef),
+    Release: Some(IKsDevice_fnRelease),
+    GetStruct: Some(IKsDevice_fnGetStruct),
+    InitializeObjectBag: Some(IKsDevice_fnInitializeObjectBag),
+    AcquireDevice: Some(IKsDevice_fnAcquireDevice),
+    ReleaseDevice: Some(IKsDevice_fnReleaseDevice),
+    GetAdapterObject: Some(IKsDevice_fnGetAdapterObject),
+    AddPowerEntry: Some(IKsDevice_fnAddPowerEntry),
+    RemovePowerEntry: Some(IKsDevice_fnRemovePowerEntry),
+    PinStateChange: Some(IKsDevice_fnPinStateChange),
+    ArbitrateAdapterChannel: Some(IKsDevice_fnArbitrateAdapterChannel),
+    CheckIoCapability: Some(IKsDevice_fnCheckIoCapability),
 };
 
 #[repr(C)]
 pub struct IKsDeviceVtbl {
-    pub QueryInterface: unsafe extern "system" fn(*mut IKsDevice, *mut GUID, *mut *mut c_void) -> NTSTATUS,
-    pub AddRef: unsafe extern "system" fn(*mut IKsDevice) -> ULONG,
-    pub Release: unsafe extern "system" fn(*mut IKsDevice) -> ULONG,
-    pub GetStruct: unsafe extern "system" fn(*mut IKsDevice) -> *mut c_void,
-    pub InitializeObjectBag: unsafe extern "system" fn(*mut IKsDevice, ULONG, ULONG) -> NTSTATUS,
-    pub AcquireDevice: unsafe extern "system" fn(*mut IKsDevice) -> NTSTATUS,
-    pub ReleaseDevice: unsafe extern "system" fn(*mut IKsDevice) -> NTSTATUS,
-    pub GetAdapterObject: unsafe extern "system" fn(*mut IKsDevice) -> PADAPTER_OBJECT,
-    pub AddPowerEntry: unsafe extern "system" fn(*mut IKsDevice, *mut KSPOWER_ENTRY) -> NTSTATUS,
-    pub RemovePowerEntry: unsafe extern "system" fn(*mut IKsDevice, *mut KSPOWER_ENTRY) -> NTSTATUS,
-    pub PinStateChange: unsafe extern "system" fn(*mut IKsDevice, KSPIN_DATAFLOW, KSPIN_STATE, KSPIN_STATE) -> NTSTATUS,
-    pub ArbitrateAdapterChannel: unsafe extern "system" fn(*mut IKsDevice, ULONG, ULONG, PDRIVER_CONTROL, *mut c_void) -> NTSTATUS,
-    pub CheckIoCapability: unsafe extern "system" fn(*mut IKsDevice, *mut KSPIN_DATAFLOW, *mut KSPIN_STATE, *mut KSPIN_STATE) -> NTSTATUS,
+    pub QueryInterface: Option<unsafe extern "system" fn(*mut IKsDevice, *const IID, *mut PVOID) -> NTSTATUS>,
+    pub AddRef: Option<unsafe extern "system" fn(*mut IKsDevice) -> ULONG>,
+    pub Release: Option<unsafe extern "system" fn(*mut IKsDevice) -> ULONG>,
+    pub GetStruct: Option<unsafe extern "system" fn(*mut IKsDevice) -> PKSDEVICE>,
+    pub InitializeObjectBag: Option<unsafe extern "system" fn(*mut IKsDevice, PKSIOBJECT_BAG, PRKMUTEX) -> NTSTATUS>,
+    pub AcquireDevice: Option<unsafe extern "system" fn(*mut IKsDevice) -> NTSTATUS>,
+    pub ReleaseDevice: Option<unsafe extern "system" fn(*mut IKsDevice) -> NTSTATUS>,
+    pub GetAdapterObject: Option<unsafe extern "system" fn(*mut IKsDevice, *mut PADAPTER_OBJECT, *mut u32, *mut u32) -> NTSTATUS>,
+    pub AddPowerEntry: Option<unsafe extern "system" fn(*mut IKsDevice, *mut KSPOWER_ENTRY, *mut IKsPowerNotify) -> NTSTATUS>,
+    pub RemovePowerEntry: Option<unsafe extern "system" fn(*mut IKsDevice, *mut KSPOWER_ENTRY) -> NTSTATUS>,
+    pub PinStateChange: Option<unsafe extern "system" fn(*mut IKsDevice, KSPIN, PIRP, KSSTATE, KSSTATE) -> NTSTATUS>,
+    pub ArbitrateAdapterChannel: Option<unsafe extern "system" fn(*mut IKsDevice, ULONG, PDRIVER_CONTROL, PVOID) -> NTSTATUS>,
+    pub CheckIoCapability: Option<unsafe extern "system" fn(*mut IKsDevice, ULONG) -> NTSTATUS>,
 }
 
 pub type PIKSDEVICE = *mut IKsDevice;
@@ -90,7 +87,7 @@ pub unsafe extern "system" fn IKsDevice_fnQueryInterface(
     refiid: *const IID,
     Output: *mut PVOID,
 ) -> NTSTATUS {
-    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD(
+    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD!(
         iface,
         KSIDEVICE_HEADER,
         BasicHeader.OuterUnknown,
@@ -98,7 +95,7 @@ pub unsafe extern "system" fn IKsDevice_fnQueryInterface(
 
     if IsEqualGUIDAligned(refiid, &IID_IUnknown) {
         *Output = &mut (*This).BasicHeader.OuterUnknown as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref_0);
+        InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
 
@@ -124,27 +121,27 @@ pub unsafe extern "system" fn IKsDevice_fnAddRef(iface: *mut IKsDevice) -> ULONG
             .wrapping_sub(core::mem::offset_of!(KSIDEVICE_HEADER, BasicHeader.OuterUnknown))
             as *mut KSIDEVICE_HEADER,
     );
-    InterlockedIncrement(&mut (*This).ref_0) as ULONG
+    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsDevice_fnRelease(
     iface: *mut IKsDevice,
 ) -> ULONG {
-    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD(
+    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD!(
         iface,
         KSIDEVICE_HEADER,
         BasicHeader.OuterUnknown,
     );
-    InterlockedDecrement(&mut (*This).ref_0);
-    return (*This).ref_0;
+    InterlockedDecrement(&mut (*This).ref_);
+    return (*This).ref_ as ULONG;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsDevice_fnGetStruct(
     iface: *mut IKsDevice,
 ) -> PKSDEVICE {
-    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD(
+    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD!(
         iface,
         KSIDEVICE_HEADER,
         BasicHeader.OuterUnknown,
@@ -158,7 +155,7 @@ pub unsafe extern "system" fn IKsDevice_fnInitializeObjectBag(
     Bag: PKSIOBJECT_BAG,
     Mutex: PRKMUTEX,
 ) -> NTSTATUS {
-    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD(
+    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD!(
         iface as *mut u8,
         KSIDEVICE_HEADER,
         BasicHeader.OuterUnknown,
@@ -170,7 +167,7 @@ pub unsafe extern "system" fn IKsDevice_fnInitializeObjectBag(
     }
 
     (*Bag).BagMutex = Mutex;
-    (*Bag).DeviceHeader = This as *mut core::ffi::c_void as PKSIDEVICE_HEADER;
+    (*Bag).DeviceHeader = This as *mut core::ffi::c_void;
     InitializeListHead(core::ptr::addr_of_mut!((*Bag).ObjectList));
     InsertTailList(
         core::ptr::addr_of_mut!((*This).ObjectBags),
@@ -264,7 +261,7 @@ pub unsafe extern "system" fn IKsDevice_fnArbitrateAdapterChannel(
     ExecutionRoutine: PDRIVER_CONTROL,
     Context: PVOID,
 ) -> NTSTATUS {
-    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+    let This: PKSIDEVICE_HEADER = CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
     let Status: NTSTATUS;
 
     Status = IoAllocateAdapterChannel(
@@ -292,7 +289,7 @@ pub unsafe extern "system" fn IKsDevice_PnpPostStart(
     Context: PVOID,
 ) {
     let Ctx = Context as PPNP_POSTSTART_CONTEXT;
-    let Status = ((*(*(*(*Ctx).DeviceHeader).KsDevice.Descriptor).Dispatch).PostStart)(
+    let Status = ((*(*(*(*Ctx).DeviceHeader).KsDevice.Descriptor).Dispatch).PostStart.expect("non-null function pointer"))(
         &mut (*(*Ctx).DeviceHeader).KsDevice,
     );
 
@@ -390,7 +387,7 @@ pub unsafe extern "system" fn IKsDevice_PnpStartDevice(
     if !Ctx.is_null() {
         IoQueueWorkItem(
             (*Ctx).WorkItem,
-            Some(IKsDevice_PnpPostStart as unsafe extern "system" fn(PDEVICE_OBJECT, *mut _) -> ()),
+            crate::cb!(IKsDevice_PnpPostStart),
             DelayedWorkQueue,
             Ctx as *mut _,
         );
@@ -408,7 +405,7 @@ pub unsafe extern "system" fn IKsDevice_Pnp(
     let DeviceExtension: PDEVICE_EXTENSION;
     let DeviceHeader: PKSIDEVICE_HEADER;
     let Dispatch: PKSDEVICE_DISPATCH;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     DeviceExtension = (*DeviceObject).DeviceExtension as PDEVICE_EXTENSION;
@@ -420,7 +417,7 @@ pub unsafe extern "system" fn IKsDevice_Pnp(
         Dispatch = core::ptr::null_mut();
     }
 
-    match (*IoStack).MinorFunction as u32 {
+    match (*IoStack).MinorFunction {
         IRP_MN_START_DEVICE => {
             return IKsDevice_PnpStartDevice(DeviceObject, Irp);
         }
@@ -517,7 +514,7 @@ pub unsafe extern "system" fn IKsDevice_Create(
         return STATUS_SUCCESS;
     }
 
-    IKsDevice_fnAcquireDevice(&mut (*DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice);
+    IKsDevice_fnAcquireDevice(core::ptr::addr_of_mut!((*DeviceHeader).BasicHeader.OuterUnknown) as *mut IKsDevice);
 
     if (*(*IoStack).FileObject).RelatedFileObject.is_null() {
         Status = FindMatchingCreateItem(
@@ -545,7 +542,7 @@ pub unsafe extern "system" fn IKsDevice_Create(
         }
     }
 
-    IKsDevice_fnReleaseDevice(&mut (*DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice);
+    IKsDevice_fnReleaseDevice(core::ptr::addr_of_mut!((*DeviceHeader).BasicHeader.OuterUnknown) as *mut IKsDevice);
     Status
 }
 
@@ -565,7 +562,7 @@ pub unsafe extern "system" fn KsInitializeDevice(
     DeviceExtension = (*FunctionalDeviceObject).DeviceExtension as PDEVICE_EXTENSION;
 
     Status = KsAllocateDeviceHeader(
-        &mut (*DeviceExtension).DeviceHeader as *mut KSDEVICE_HEADER,
+        core::ptr::addr_of_mut!((*DeviceExtension).DeviceHeader) as *mut KSDEVICE_HEADER,
         0,
         core::ptr::null_mut(),
     );
@@ -577,14 +574,14 @@ pub unsafe extern "system" fn KsInitializeDevice(
     }
 
     (*Header).BasicHeader.OuterUnknown = &vt_IKsDevice as *const _ as PUNKNOWN;
-    (*Header).ref = 1;
+    (*Header).ref_ = 1;
 
     (*Header).KsDevice.Bag = AllocateItem(
         NonPagedPool,
         core::mem::size_of::<KSIOBJECT_BAG>(),
     ) as KSOBJECT_BAG;
     if (*Header).KsDevice.Bag.is_null() {
-        KsFreeDeviceHeader(&mut (*DeviceExtension).DeviceHeader as *mut KSDEVICE_HEADER);
+        KsFreeDeviceHeader((*DeviceExtension).DeviceHeader as KSDEVICE_HEADER);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -607,7 +604,7 @@ pub unsafe extern "system" fn KsInitializeDevice(
     (*Header).KsDevice.DevicePowerState = PowerDeviceD0;
     (*Header).KsDevice.Started = 0u8;
     (*Header).KsDevice.Context = core::ptr::null_mut();
-    KsSetDevicePnpAndBaseObject(Header, PhysicalDeviceObject, NextDeviceObject);
+    KsSetDevicePnpAndBaseObject(Header as KSDEVICE_HEADER, PhysicalDeviceObject, NextDeviceObject);
 
     if !Descriptor.is_null() {
         let mut Index: ULONG = 0;
@@ -618,8 +615,8 @@ pub unsafe extern "system" fn KsInitializeDevice(
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 0,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                None,
+                None,
                 core::ptr::null_mut(),
             );
 
@@ -629,8 +626,8 @@ pub unsafe extern "system" fn KsInitializeDevice(
             Index = Index.wrapping_add(1);
         }
 
-        if !(*Descriptor).Dispatch.is_null() && !(*((*Descriptor).Dispatch)).Add.is_null() {
-            Status = ((*((*Descriptor).Dispatch)).Add)(&mut (*Header).KsDevice);
+        if !(*Descriptor).Dispatch.is_null() && (*((*Descriptor).Dispatch)).Add.is_some() {
+            Status = ((*((*Descriptor).Dispatch)).Add.expect("non-null function pointer"))(&mut (*Header).KsDevice);
         }
 
         (*Header).KsDevice.Descriptor = Descriptor;
@@ -674,7 +671,7 @@ pub unsafe extern "system" fn KsDereferenceBusObject(Header: KSDEVICE_HEADER) {
     let DeviceHeader = Header as PKSIDEVICE_HEADER;
     let Device = (*DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice;
     if !Device.is_null() {
-        ((*(*Device).lpVtbl).Release)(Device);
+        ((*(*Device).lpVtbl).Release.expect("non-null function pointer"))(Device);
     }
 }
 
@@ -718,7 +715,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     PVOID* Output)
 // {
 //     NTSTATUS Status;
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown))
 //     {
@@ -748,7 +745,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 // IKsDevice_fnAddRef(
 //     IN IKsDevice * iface)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -758,7 +755,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 // IKsDevice_fnRelease(
 //     IN IKsDevice * iface)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -772,7 +769,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 // IKsDevice_fnGetStruct(
 //     IN IKsDevice * iface)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     return &This->KsDevice;
 // }
@@ -784,7 +781,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN PKSIOBJECT_BAG Bag,
 //     IN PRKMUTEX Mutex)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     if (!Mutex)
 //     {
@@ -808,7 +805,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 // IKsDevice_fnAcquireDevice(
 //     IN IKsDevice * iface)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     return KeWaitForSingleObject(&This->DeviceMutex, Executive, KernelMode, FALSE, NULL);
 // }
@@ -818,7 +815,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 // IKsDevice_fnReleaseDevice(
 //     IN IKsDevice * iface)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     return KeReleaseMutex(&This->DeviceMutex, FALSE);
 // }
@@ -831,7 +828,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN PULONG MaxMappingsByteCount,
 //     IN PULONG MappingTableStride)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     *Object = This->AdapterObject;
 //     *MaxMappingsByteCount = This->MaxMappingsByteCount;
@@ -848,7 +845,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN struct KSPOWER_ENTRY * Entry,
 //     IN IKsPowerNotify* Notify)
 // {
-//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     UNIMPLEMENTED;
 //     return STATUS_NOT_IMPLEMENTED;
@@ -860,7 +857,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN IKsDevice * iface,
 //     IN struct KSPOWER_ENTRY * Entry)
 // {
-//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     UNIMPLEMENTED;
 //     return STATUS_NOT_IMPLEMENTED;
@@ -876,7 +873,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN KSSTATE OldState,
 //     IN KSSTATE NewState)
 // {
-//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     UNIMPLEMENTED;
 //     return STATUS_NOT_IMPLEMENTED;
@@ -891,7 +888,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN PDRIVER_CONTROL ExecutionRoutine,
 //     IN PVOID Context)
 // {
-//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //     NTSTATUS Status;
 //
 //     DPRINT("IKsDevice_fnArbitrateAdapterChannel NumberOfMapRegisters %lu ExecutionRoutine %p Context %p Irql %lu\n", NumberOfMapRegisters, ExecutionRoutine, Context, KeGetCurrentIrql());
@@ -913,7 +910,7 @@ pub unsafe extern "system" fn KsDereferenceSoftwareBusObject(
 //     IN IKsDevice * iface,
 //     IN ULONG Unknown)
 // {
-//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
+//     //PKSIDEVICE_HEADER This = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(iface, KSIDEVICE_HEADER, BasicHeader.OuterUnknown);
 //
 //     UNIMPLEMENTED;
 //     return STATUS_NOT_IMPLEMENTED;

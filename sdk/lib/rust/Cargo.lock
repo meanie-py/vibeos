@@ -746,6 +746,7 @@ name = "ks-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "slist",
 ]
 
 [[package]]

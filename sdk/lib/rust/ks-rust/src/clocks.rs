@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -5,6 +7,63 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeSpinLock, KeInitializeTimer, PDEVICE_OBJECT, PFILE_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIRP, PLONGLONG, RtlFreeUnicodeString, RtlStringFromGUID};
 use core::ffi::c_void;
+
+// ---- ks-rust integration glue (clocks.rs-local): imports, aliases, helper shims ----
+// Explicit import wins over glob ambiguity (DbgPrint lives in driver_ddk).
+use ntkrnl_sys::driver_ddk::DbgPrint;
+// KSPIN_LOCK / PKSPIN_LOCK from ddk (bindgen) so they match KeInitializeSpinLock's pointer type
+// (ddk ULONG_PTR == u32 on i386; ke's is usize — distinct types to rustc).
+use ntkrnl_sys::ddk::{KSPIN_LOCK, PKSPIN_LOCK};
+// Shared allocator/completion helpers + create-request copier (defined #[no_mangle] in misc.rs).
+use crate::misc::{AllocateItem, FreeItem, CompleteRequest, KspCopyCreateRequest};
+// Cross-module Ks* handler (defined #[no_mangle] in sibling ks module).
+use crate::topology::KspCreateObjectType;
+// Clock property-set GUID static (defined in pin.rs).
+use crate::pin::KSPROPSETID_Clock;
+
+// ExInterlockedCompareExchange64: on i386 ntoskrnl exports it as FASTCALL (64-bit interlocked
+// CAS guarded by a spinlock). It is NOT exported on amd64/arm64 (there it is an intrinsic), so
+// implement it portably with a native 64-bit atomic CAS for those arches.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ExInterlockedCompareExchange64(
+        Destination: *mut LONGLONG,
+        Exchange: *const LONGLONG,
+        Comparand: *const LONGLONG,
+        Lock: PKSPIN_LOCK,
+    ) -> LONGLONG;
+}
+#[cfg(not(target_arch = "x86"))]
+unsafe fn ExInterlockedCompareExchange64(
+    Destination: *mut LONGLONG,
+    Exchange: *const LONGLONG,
+    Comparand: *const LONGLONG,
+    _Lock: PKSPIN_LOCK,
+) -> LONGLONG {
+    use core::sync::atomic::{AtomicI64, Ordering};
+    let a = &*(Destination as *const AtomicI64);
+    match a.compare_exchange(*Comparand, *Exchange, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(old) => old,
+        Err(old) => old,
+    }
+}
+
+// All KS property handlers share one concrete signature (PKSIDENTIFIER == PKSPROPERTY).
+type KsPropHandlerFn = unsafe extern "system" fn(PIRP, PKSPROPERTY, PVOID) -> NTSTATUS;
+
+// KSPROPERTY_ITEM get/set handler union builders. const-eval forbids materialising a function
+// pointer as the union's integer storage, so the table is null-initialised at const time and the
+// real handler pointers are written at runtime in run_static_initializers (c2rust .init_array).
+macro_rules! ks_prop_get {
+    ($f:expr) => {
+        ::core::mem::transmute::<Option<KsPropHandlerFn>, KSPROPERTY_ITEM__bindgen_ty_1>(None)
+    };
+}
+macro_rules! ks_prop_set_null {
+    () => {
+        ::core::mem::transmute::<Option<KsPropHandlerFn>, KSPROPERTY_ITEM__bindgen_ty_2>(None)
+    };
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -17,204 +76,35 @@ pub const KSSTRING_Clock: [::core::ffi::c_ushort; 39] = unsafe {
     )
 };
 
+// DEFINE_KSPROPERTY_CLOCKSET(ClockPropertyTable, ...). The GetPropertyHandler union slots cannot
+// hold a function pointer at const time (fn-ptr -> integer is not const-evaluable), so they are
+// null here and installed at runtime by run_static_initializers().
+macro_rules! clock_prop_item {
+    ($id:expr, $mindata:ty) => {
+        KSPROPERTY_ITEM {
+            PropertyId: $id as ::core::ffi::c_int as ULONG,
+            __bindgen_anon_1: ks_prop_get!(0),
+            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
+            MinData: ::core::mem::size_of::<$mindata>() as ULONG,
+            __bindgen_anon_2: ks_prop_set_null!(),
+            Values: ::core::ptr::null::<KSPROPERTY_VALUES>(),
+            RelationsCount: 0 as ULONG,
+            Relations: ::core::ptr::null::<KSPROPERTY>(),
+            SupportHandler: None,
+            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
+        }
+    };
+}
+
 pub static mut ClockPropertyTable: [KSPROPERTY_ITEM; 7] = unsafe {
     [
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_TIME as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyTime
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<LONGLONG>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_PHYSICALTIME as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyPhysicalTime
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<LONGLONG>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_CORRELATEDTIME as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyCorrelatedTime
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<KSCORRELATED_TIME>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_CORRELATEDPHYSICALTIME as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyCorrelatedPhysicalTime
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<KSCORRELATED_TIME>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_RESOLUTION as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyResolution
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<KSRESOLUTION>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_STATE as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyState
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<KSSTATE>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_CLOCK_FUNCTIONTABLE as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_95 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    ClockPropertyFunctionTable
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: ::core::mem::size_of::<KSCLOCK_FUNCTIONTABLE>() as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_94 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
+        clock_prop_item!(KSPROPERTY_CLOCK_TIME, LONGLONG),
+        clock_prop_item!(KSPROPERTY_CLOCK_PHYSICALTIME, LONGLONG),
+        clock_prop_item!(KSPROPERTY_CLOCK_CORRELATEDTIME, KSCORRELATED_TIME),
+        clock_prop_item!(KSPROPERTY_CLOCK_CORRELATEDPHYSICALTIME, KSCORRELATED_TIME),
+        clock_prop_item!(KSPROPERTY_CLOCK_RESOLUTION, KSRESOLUTION),
+        clock_prop_item!(KSPROPERTY_CLOCK_STATE, KSSTATE),
+        clock_prop_item!(KSPROPERTY_CLOCK_FUNCTIONTABLE, KSCLOCK_FUNCTIONTABLE),
     ]
 };
 
@@ -228,74 +118,69 @@ pub static mut ClockPropertySet: [KSPROPERTY_SET; 1] = [KSPROPERTY_SET {
 
 static mut DispatchTable: KSDISPATCH_TABLE = unsafe {
     KSDISPATCH_TABLE {
-        DeviceIoControl: Some(
+        DeviceIoControl: ::core::mem::transmute(
             IKsClock_DispatchDeviceIoControl
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Read: Some(
+        Read: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Write: Some(
+        Write: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Flush: Some(
+        Flush: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Close: Some(
-            IKsClock_DispatchClose as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Close: ::core::mem::transmute(
+            IKsClock_DispatchClose as *const (),
         ),
-        QuerySecurity: Some(
-            KsDispatchQuerySecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        QuerySecurity: ::core::mem::transmute(
+            KsDispatchQuerySecurity as *const (),
         ),
-        SetSecurity: Some(
-            KsDispatchSetSecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        SetSecurity: ::core::mem::transmute(
+            KsDispatchSetSecurity as *const (),
         ),
-        FastDeviceIoControl: Some(
+        FastDeviceIoControl: ::core::mem::transmute(
             KsDispatchFastIoDeviceControlFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    BOOLEAN,
-                    PVOID,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    ULONG,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastRead: Some(
+        FastRead: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastWrite: Some(
+        FastWrite: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
     }
 };
 
+// c2rust .init_array constructor: installs the property-item handler slots (fn-ptr -> integer
+// stores forbidden at const time) and wires ClockPropertySet -> ClockPropertyTable.
+unsafe extern "C" fn run_static_initializers() {
+    let set_get = |item: &mut KSPROPERTY_ITEM, f: KsPropHandlerFn| {
+        item.__bindgen_anon_1.bindgen_union_field = f as usize as _;
+    };
+    set_get(&mut ClockPropertyTable[0], ClockPropertyTime);
+    set_get(&mut ClockPropertyTable[1], ClockPropertyPhysicalTime);
+    set_get(&mut ClockPropertyTable[2], ClockPropertyCorrelatedTime);
+    set_get(&mut ClockPropertyTable[3], ClockPropertyCorrelatedPhysicalTime);
+    set_get(&mut ClockPropertyTable[4], ClockPropertyResolution);
+    set_get(&mut ClockPropertyTable[5], ClockPropertyState);
+    set_get(&mut ClockPropertyTable[6], ClockPropertyFunctionTable);
+
+    ClockPropertySet[0].Set = &raw const KSPROPSETID_Clock;
+    ClockPropertySet[0].PropertiesCount =
+        (core::mem::size_of_val(&ClockPropertyTable) / core::mem::size_of::<KSPROPERTY_ITEM>())
+            as ULONG;
+    ClockPropertySet[0].PropertyItem = &raw const ClockPropertyTable[0];
+}
+
+#[used]
+#[cfg_attr(target_os = "windows", link_section = ".CRT$XCU")]
 static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
 
 #[repr(C)]
@@ -317,7 +202,7 @@ pub type PKSIDEFAULTCLOCK = *mut KSIDEFAULTCLOCK;
 
 #[repr(C)]
 pub struct KSICLOCK {
-    pub ref: LONG,
+    pub ref_: LONG,
     pub ClockCreate: PKSCLOCK_CREATE,
     pub DefaultClock: PKSIDEFAULTCLOCK,
     pub ObjectHeader: PKSIOBJECT_HEADER,
@@ -452,7 +337,7 @@ pub unsafe extern "system" fn ClockPropertyTime(
 
     *Time = ClockGetTime((*IoStack).FileObject);
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<LONGLONG>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<LONGLONG>() as _;
     STATUS_SUCCESS
 }
 #[no_mangle]
@@ -466,7 +351,7 @@ pub unsafe extern "system" fn ClockPropertyPhysicalTime(
 
     *Time = ClockGetPhysicalTime((*IoStack).FileObject);
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<LONGLONG>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<LONGLONG>() as _;
     STATUS_SUCCESS
 }
 #[no_mangle]
@@ -480,7 +365,7 @@ pub unsafe extern "system" fn ClockPropertyCorrelatedTime(
 
     (*Time).Time = ClockGetCorrelatedTime((*IoStack).FileObject, &mut (*Time).SystemTime);
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<KSCORRELATED_TIME>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<KSCORRELATED_TIME>() as _;
     STATUS_SUCCESS
 }
 
@@ -498,7 +383,7 @@ pub unsafe extern "system" fn ClockPropertyCorrelatedPhysicalTime(
         core::ptr::addr_of_mut!((*Time).SystemTime),
     );
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<KSCORRELATED_TIME>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<KSCORRELATED_TIME>() as _;
     STATUS_SUCCESS
 }
 
@@ -516,7 +401,7 @@ pub unsafe extern "system" fn ClockPropertyResolution(
     (*Resolution).Error = (*(*Clock).DefaultClock).Error;
     (*Resolution).Granularity = (*(*Clock).DefaultClock).Granularity;
 
-    (*Irp).IoStatus.Information = core::mem::size_of::<KSRESOLUTION>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<KSRESOLUTION>() as _;
     STATUS_SUCCESS
 }
 
@@ -531,7 +416,7 @@ pub unsafe extern "system" fn ClockPropertyState(
     let ObjectHeader = (*((*IoStack).FileObject)).FsContext2 as PKSIOBJECT_HEADER;
     let Clock = (*ObjectHeader).ObjectType as PKSICLOCK;
     *State = (*(*Clock).DefaultClock).State;
-    (*Irp).IoStatus.Information = core::mem::size_of::<KSSTATE>() as ULONG_PTR;
+    (*Irp).IoStatus.Information = core::mem::size_of::<KSSTATE>() as _;
     STATUS_SUCCESS
 }
 
@@ -543,17 +428,12 @@ pub unsafe extern "system" fn ClockPropertyFunctionTable(
 ) -> NTSTATUS {
     let Table = Data as PKSCLOCK_FUNCTIONTABLE;
 
-    (*Table).GetCorrelatedPhysicalTime = Some(
-        ClockGetCorrelatedPhysicalTime as unsafe extern "system" fn(PFILE_OBJECT, PLONGLONG) -> LONGLONG,
-    ) as PFNKSCLOCK_CORRELATEDTIME;
-    (*Table).GetCorrelatedTime =
-        Some(ClockGetCorrelatedTime as unsafe extern "system" fn(PFILE_OBJECT, PLONGLONG) -> LONGLONG)
-            as PFNKSCLOCK_CORRELATEDTIME;
-    (*Table).GetPhysicalTime =
-        Some(ClockGetPhysicalTime as unsafe extern "system" fn(PFILE_OBJECT) -> LONGLONG)
-            as PFNKSCLOCK_GETTIME;
-    (*Table).GetTime =
-        Some(ClockGetTime as unsafe extern "system" fn(PFILE_OBJECT) -> LONGLONG) as PFNKSCLOCK_GETTIME;
+    // The ClockGet* helpers are FASTCALL on x86 / C elsewhere (cfg-gated below); transmute the
+    // fn item into the per-arch PFNKSCLOCK_* Option slot ABI-agnostically.
+    (*Table).GetCorrelatedPhysicalTime = crate::cb!(ClockGetCorrelatedPhysicalTime);
+    (*Table).GetCorrelatedTime = crate::cb!(ClockGetCorrelatedTime);
+    (*Table).GetPhysicalTime = crate::cb!(ClockGetPhysicalTime);
+    (*Table).GetTime = crate::cb!(ClockGetTime);
 
     STATUS_SUCCESS
 }
@@ -650,7 +530,7 @@ pub unsafe extern "system" fn KsCreateDefaultClock(
     DefaultClock: PKSDEFAULTCLOCK,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ClockCreate: PKSCLOCK_CREATE;
+    let mut ClockCreate: PKSCLOCK_CREATE = core::ptr::null_mut();
     let mut Clock: PKSICLOCK;
 
     Status = KsValidateClockCreateRequest(Irp, &mut ClockCreate);
@@ -665,7 +545,7 @@ pub unsafe extern "system" fn KsCreateDefaultClock(
     }
 
     Status = KsAllocateObjectHeader(
-        &mut (*Clock).ObjectHeader as *mut _ as PVOID,
+        &mut (*Clock).ObjectHeader as *mut _ as *mut PVOID,
         0,
         core::ptr::null_mut(),
         Irp,
@@ -679,7 +559,7 @@ pub unsafe extern "system" fn KsCreateDefaultClock(
     }
 
     (*(*Clock).ObjectHeader).ObjectType = Clock as PVOID;
-    (*Clock).ref = 1;
+    (*Clock).ref_ = 1;
     (*Clock).ClockCreate = ClockCreate;
     (*Clock).DefaultClock = DefaultClock as PKSIDEFAULTCLOCK;
 
@@ -734,11 +614,11 @@ pub unsafe extern "system" fn KsAllocateDefaultClockEx(
     (*Clock).Flags = Flags;
 
     if !Resolution.is_null() {
-        if !SetTimer.is_null() {
+        if SetTimer.is_some() {
             (*Clock).Error = (*Resolution).Error;
         }
 
-        if !CorrelatedTime.is_null() {
+        if CorrelatedTime.is_some() {
             (*Clock).Granularity = (*Resolution).Granularity;
         }
     }

@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -6,11 +8,56 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, FileBasicInformation, FileStandardInformation, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReadAccess, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, IoWriteAccess, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, MmProbeAndLockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
+use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, MmProbeAndLockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
 use core::ffi::c_void;
 
+// ---- cross-module helpers + bindgen-name aliases (used only in this module) ----
+use crate::misc::{CompleteRequest, AllocateItem, FreeItem};
+use crate::device::{IKsDevice_Create, IKsDevice_Power, IKsDevice_Pnp};
+use ntkrnl_sys::ddk::{FILE_INFORMATION_CLASS, LOCK_OPERATION};
+use ntkrnl_sys::ddk::{
+    _FILE_INFORMATION_CLASS_FileBasicInformation as FileBasicInformation,
+    _FILE_INFORMATION_CLASS_FileStandardInformation as FileStandardInformation,
+    _LOCK_OPERATION_IoReadAccess as IoReadAccess,
+    _LOCK_OPERATION_IoWriteAccess as IoWriteAccess,
+};
+use crate::types::{
+    KSCOMPLETION_INVOCATION_KsInvokeOnSuccess as KsInvokeOnSuccess,
+    KSCOMPLETION_INVOCATION_KsInvokeOnError as KsInvokeOnError,
+    KSCOMPLETION_INVOCATION_KsInvokeOnCancel as KsInvokeOnCancel,
+    KSLIST_ENTRY_LOCATION_KsListEntryTail as KsListEntryTail,
+    KSLIST_ENTRY_LOCATION_KsListEntryHead as KsListEntryHead,
+    KSIRP_REMOVAL_OPERATION_KsAcquireAndRemove as KsAcquireAndRemove,
+    KSIRP_REMOVAL_OPERATION_KsAcquireOnlySingleItem as KsAcquireOnlySingleItem,
+    KSIRP_REMOVAL_OPERATION_KsAcquireAndRemoveOnlySingleItem as KsAcquireAndRemoveOnlySingleItem,
+};
+
+// ProbeForRead/ProbeForWrite are real ntoskrnl exports (not in the bindgen layer).
+extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
+}
+
+// KS #defines used only here (header-sourced: sdk/include/psdk/ks.h, xdk/iotypes.h)
+const KSCREATE_ITEM_SECURITYCHANGED: ULONG = 0x1;
+const KSCREATE_ITEM_WILDCARD: ULONG = 0x2;
+const IRP_MJ_QUERY_SECURITY: u8 = 0x14;
+const IRP_MJ_SET_SECURITY: u8 = 0x15;
+
+// KSCREATE_ITEM_IRP_STORAGE!(Irp) == *(PKSOBJECT_CREATE_ITEM*)&Irp->Tail.Overlay.DriverContext[0]
+macro_rules! KSCREATE_ITEM_IRP_STORAGE { ($irp:expr) => {
+    *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0]
+        as *mut PVOID as *mut PKSOBJECT_CREATE_ITEM)
+}; }
+// KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp) == *(PKSPIN_LOCK*)&Irp->Tail.Overlay.DriverContext[1]
+macro_rules! KSQUEUE_SPINLOCK_IRP_STORAGE { ($irp:expr) => {
+    *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1]
+        as *mut PVOID as *mut PKSPIN_LOCK)
+}; }
+
 // ---- file-scope preamble (translated) ----
-The C preamble contains only function declarations (not definitions) and no file-scope types, constants, or tables. Therefore, there are no Rust declarations to translate from this preamble.
+// The C preamble contains only function declarations (not definitions) and no file-scope
+// types, constants, or tables. There are no Rust declarations to translate from it.
 
 #[no_mangle]
 pub unsafe extern "system" fn KsDispatchQuerySecurity(
@@ -18,7 +65,7 @@ pub unsafe extern "system" fn KsDispatchQuerySecurity(
     Irp: PIRP,
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let CreateItem = KSCREATE_ITEM_IRP_STORAGE(Irp);
+    let CreateItem = KSCREATE_ITEM_IRP_STORAGE!(Irp);
 
     if CreateItem.is_null() || (*CreateItem).SecurityDescriptor.is_null() {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NO_SECURITY_ON_OBJECT;
@@ -36,7 +83,7 @@ pub unsafe extern "system" fn KsDispatchQuerySecurity(
     );
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = Length;
+    (*Irp).IoStatus.Information = Length as _;
 
     CompleteRequest(Irp, IO_NO_INCREMENT);
     Status
@@ -48,7 +95,7 @@ pub unsafe extern "system" fn KsDispatchSetSecurity(
     Irp: PIRP,
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let CreateItem: PKSOBJECT_CREATE_ITEM = KSCREATE_ITEM_IRP_STORAGE(Irp);
+    let CreateItem: PKSOBJECT_CREATE_ITEM = KSCREATE_ITEM_IRP_STORAGE!(Irp);
 
     if CreateItem.is_null() || (*CreateItem).SecurityDescriptor.is_null() {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NO_SECURITY_ON_OBJECT;
@@ -90,7 +137,7 @@ pub unsafe extern "system" fn KsDispatchSpecificMethod(
 #[no_mangle]
 pub unsafe extern "system" fn KsReadFile(
     FileObject: PFILE_OBJECT,
-    Event: PKEVENT,
+    mut Event: PKEVENT,
     PortContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Buffer: PVOID,
@@ -101,18 +148,18 @@ pub unsafe extern "system" fn KsReadFile(
     let DeviceObject: PDEVICE_OBJECT;
     let IoStack: PIO_STACK_LOCATION;
     let Irp: PIRP;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let Result: BOOLEAN;
-    let LocalEvent: KEVENT;
+    let mut LocalEvent: KEVENT = core::mem::zeroed();
 
     if !Event.is_null() {
-        KeClearEvent(Event);
+        KeClearEvent(Event as _);
     }
 
-    if RequestorMode == 1i32 {
+    if RequestorMode == 1i8 {
         let mut Status: NTSTATUS;
-        'try_block: {
-            ProbeForWrite(Buffer, Length, core::mem::size_of::<UCHAR>() as ULONG);
+        {
+            ProbeForWrite(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
             Status = STATUS_SUCCESS;
         }
         if !NT_SUCCESS(Status) {
@@ -121,9 +168,9 @@ pub unsafe extern "system" fn KsReadFile(
     }
 
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    if RequestorMode == 0i32 && ExGetPreviousMode() == 0i32 &&
+    if RequestorMode == 0i8 && ExGetPreviousMode() == 0i8 &&
         !(*((*DeviceObject).DriverObject)).FastIoDispatch.is_null() &&
-        !(*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoRead.is_null()
+        !(*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoRead.is_none()
     {
         Result = (*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoRead.unwrap()(
             FileObject,
@@ -147,7 +194,7 @@ pub unsafe extern "system" fn KsReadFile(
     }
 
     Irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_READ,
+        IRP_MJ_READ as ULONG,
         DeviceObject,
         Buffer,
         Length,
@@ -172,7 +219,7 @@ pub unsafe extern "system" fn KsReadFile(
 
     if Status == STATUS_PENDING {
         if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
-            KeWaitForSingleObject(Event, _KWAIT_REASON_Executive, RequestorMode, 0u8, core::ptr::null_mut());
+            KeWaitForSingleObject(Event as _, _KWAIT_REASON_Executive, RequestorMode, 0u8, core::ptr::null_mut());
             Status = (*IoStatusBlock).__bindgen_anon_1.Status;
         }
     }
@@ -183,7 +230,7 @@ pub unsafe extern "system" fn KsReadFile(
 #[no_mangle]
 pub unsafe extern "system" fn KsWriteFile(
     FileObject: PFILE_OBJECT,
-    Event: PKEVENT,
+    mut Event: PKEVENT,
     PortContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Buffer: PVOID,
@@ -194,18 +241,18 @@ pub unsafe extern "system" fn KsWriteFile(
     let DeviceObject: PDEVICE_OBJECT;
     let IoStack: PIO_STACK_LOCATION;
     let Irp: PIRP;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let Result: BOOLEAN;
-    let LocalEvent: KEVENT;
+    let mut LocalEvent: KEVENT = core::mem::zeroed();
 
     if !Event.is_null() {
-        KeClearEvent(Event);
+        KeClearEvent(Event as _);
     }
 
-    if RequestorMode == 1i32 {
+    if RequestorMode == 1i8 {
         let probe_status: NTSTATUS;
-        'probe: {
-            ProbeForRead(Buffer, Length, core::mem::size_of::<UCHAR>() as ULONG);
+        {
+            ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
             probe_status = STATUS_SUCCESS;
         }
         if !NT_SUCCESS(probe_status) {
@@ -214,11 +261,11 @@ pub unsafe extern "system" fn KsWriteFile(
     }
 
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    if RequestorMode == 0i32 && ExGetPreviousMode() == 0i32 &&
+    if RequestorMode == 0i8 && ExGetPreviousMode() == 0i8 &&
         !(*((*DeviceObject).DriverObject)).FastIoDispatch.is_null() &&
-        !(*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoWrite.is_null()
+        !(*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoWrite.is_none()
     {
-        Result = (*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoWrite(
+        Result = (*(*((*DeviceObject).DriverObject)).FastIoDispatch).FastIoWrite.unwrap()(
             FileObject,
             &mut (*FileObject).CurrentByteOffset,
             Length,
@@ -240,7 +287,7 @@ pub unsafe extern "system" fn KsWriteFile(
     }
 
     Irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_WRITE,
+        IRP_MJ_WRITE as ULONG,
         DeviceObject,
         Buffer,
         Length,
@@ -264,8 +311,8 @@ pub unsafe extern "system" fn KsWriteFile(
     Status = IoCallDriver(DeviceObject, Irp);
 
     if Status == STATUS_PENDING {
-        if (*FileObject).Flags & 0x00000001 {
-            KeWaitForSingleObject(Event, _KWAIT_REASON_Executive, RequestorMode, 0u8, core::ptr::null_mut());
+        if (*FileObject).Flags & 0x00000001 != 0 {
+            KeWaitForSingleObject(Event as _, _KWAIT_REASON_Executive, RequestorMode, 0u8, core::ptr::null_mut());
             Status = (*IoStatusBlock).__bindgen_anon_1.Status;
         }
     }
@@ -284,18 +331,18 @@ pub unsafe extern "system" fn KsQueryInformationFile(
     let FastIoDispatch: PFAST_IO_DISPATCH;
     let Irp: PIRP;
     let IoStack: PIO_STACK_LOCATION;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
-    let Event: KEVENT;
-    let Offset: LARGE_INTEGER;
-    let Status: NTSTATUS;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+    let mut Status: NTSTATUS;
 
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
     FastIoDispatch = (*((*DeviceObject).DriverObject)).FastIoDispatch;
 
     if !FastIoDispatch.is_null() {
         if FileInformationClass == FileBasicInformation {
-            if !(*FastIoDispatch).FastIoQueryBasicInfo.is_null()
-                && ((*FastIoDispatch).FastIoQueryBasicInfo)(
+            if !(*FastIoDispatch).FastIoQueryBasicInfo.is_none()
+                && ((*FastIoDispatch).FastIoQueryBasicInfo).unwrap()(
                     FileObject,
                     1u8,
                     FileInformation as PFILE_BASIC_INFORMATION,
@@ -306,8 +353,8 @@ pub unsafe extern "system" fn KsQueryInformationFile(
                 return IoStatusBlock.__bindgen_anon_1.Status;
             }
         } else if FileInformationClass == FileStandardInformation {
-            if !(*FastIoDispatch).FastIoQueryStandardInfo.is_null()
-                && ((*FastIoDispatch).FastIoQueryStandardInfo)(
+            if !(*FastIoDispatch).FastIoQueryStandardInfo.is_none()
+                && ((*FastIoDispatch).FastIoQueryStandardInfo).unwrap()(
                     FileObject,
                     1u8,
                     FileInformation as PFILE_STANDARD_INFORMATION,
@@ -320,17 +367,17 @@ pub unsafe extern "system" fn KsQueryInformationFile(
         }
     }
 
-    KeClearEvent(&mut (*FileObject).Event);
+    KeClearEvent(&mut (*FileObject).Event as *mut _ as _);
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
     Offset.QuadPart = 0i64;
 
     Irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_QUERY_INFORMATION,
+        IRP_MJ_QUERY_INFORMATION as ULONG,
         IoGetRelatedDeviceObject(FileObject),
         core::ptr::null_mut(),
         0,
-        &Offset,
-        &Event,
+        &mut Offset,
+        &mut Event,
         &mut IoStatusBlock,
     );
     if Irp.is_null() {
@@ -345,7 +392,7 @@ pub unsafe extern "system" fn KsQueryInformationFile(
     Status = IoCallDriver(IoGetRelatedDeviceObject(FileObject), Irp);
 
     if Status == STATUS_PENDING {
-        KeWaitForSingleObject(&Event, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
+        KeWaitForSingleObject(&mut Event as *mut _ as _, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
         if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
             Status = (*FileObject).FinalStatus;
         } else {
@@ -366,19 +413,19 @@ pub unsafe extern "system" fn KsSetInformationFile(
     let DeviceObject: PDEVICE_OBJECT;
     let Irp: PIRP;
     let Buffer: PVOID;
-    let Event: KEVENT;
-    let Offset: LARGE_INTEGER;
-    let IoStatus: _IO_STATUS_BLOCK;
-    let Status: NTSTATUS;
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+    let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Status: NTSTATUS;
 
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
 
-    Buffer = AllocateItem(NonPagedPool, Length);
+    Buffer = AllocateItem(NonPagedPool, Length as usize);
     if Buffer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ProbeForRead(Buffer, Length, core::mem::size_of::<UCHAR>() as ULONG);
+    ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
     core::ptr::copy_nonoverlapping(FileInformation as *const u8, Buffer as *mut u8, Length as usize);
     Status = STATUS_SUCCESS;
 
@@ -391,7 +438,7 @@ pub unsafe extern "system" fn KsSetInformationFile(
     Offset.QuadPart = 0i64;
 
     Irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_SET_INFORMATION,
+        IRP_MJ_SET_INFORMATION as ULONG,
         DeviceObject,
         core::ptr::null_mut(),
         0,
@@ -414,13 +461,13 @@ pub unsafe extern "system" fn KsSetInformationFile(
     Status = IoCallDriver(DeviceObject, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event,
+            &mut Event as *mut _ as _,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             FALSE,
             core::ptr::null_mut(),
         );
-        if (*FileObject).Flags & FO_SYNCHRONOUS_IO {
+        if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
             Status = (*FileObject).FinalStatus;
         } else {
             Status = IoStatus.__bindgen_anon_1.Status;
@@ -446,14 +493,14 @@ pub unsafe extern "system" fn KsStreamIo(
 ) -> NTSTATUS {
     let DeviceObject = IoGetRelatedDeviceObject(FileObject);
     if !Event.is_null() {
-        KeClearEvent(Event);
+        KeClearEvent(Event as _);
     }
-    if RequestorMode != 0 || ExGetPreviousMode() == 0i32 {
+    if RequestorMode != 0 || ExGetPreviousMode() == 0i8 {
         let ObjectHeader = (*FileObject).FsContext2 as *mut KSIOBJECT_HEADER;
         if !ObjectHeader.is_null() {
             if Flags == KSSTREAM_READ {
-                if !(*ObjectHeader).DispatchTable.FastRead.is_null() {
-                    let Ret = ((*ObjectHeader).DispatchTable.FastRead)(
+                if !(*ObjectHeader).DispatchTable.FastRead.is_none() {
+                    let Ret = ((*ObjectHeader).DispatchTable.FastRead).unwrap()(
                         FileObject,
                         core::ptr::null_mut(),
                         Length,
@@ -468,8 +515,8 @@ pub unsafe extern "system" fn KsStreamIo(
                     }
                 }
             } else if Flags == KSSTREAM_WRITE {
-                if !(*ObjectHeader).DispatchTable.FastWrite.is_null() {
-                    let Ret = ((*ObjectHeader).DispatchTable.FastWrite)(
+                if !(*ObjectHeader).DispatchTable.FastWrite.is_none() {
+                    let Ret = ((*ObjectHeader).DispatchTable.FastWrite).unwrap()(
                         FileObject,
                         core::ptr::null_mut(),
                         Length,
@@ -486,11 +533,11 @@ pub unsafe extern "system" fn KsStreamIo(
             }
         }
     }
-    KeClearEvent(&mut (*FileObject).Event);
+    KeClearEvent(&mut (*FileObject).Event as *mut _ as _);
     let mut Offset: LARGE_INTEGER = core::mem::zeroed();
-    Offset.__bindgen_anon_1.QuadPart = 0i64;
+    Offset.QuadPart = 0i64;
     let Irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_DEVICE_CONTROL,
+        IRP_MJ_DEVICE_CONTROL as ULONG,
         DeviceObject,
         StreamHeaders,
         Length,
@@ -513,7 +560,7 @@ pub unsafe extern "system" fn KsStreamIo(
     } else {
         IOCTL_KS_WRITE_STREAM
     };
-    if !CompletionRoutine.is_null() {
+    if CompletionRoutine.is_some() {
         IoSetCompletionRoutine(
             Irp,
             CompletionRoutine,
@@ -556,8 +603,8 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     Length = (*IoStack).Parameters.DeviceIoControl.OutputBufferLength;
 
-    if (*Irp).RequestorMode == 0i32 || !(*Irp).AssociatedIrp.SystemBuffer.is_null() {
-        if (*Irp).RequestorMode == 0i32 {
+    if (*Irp).RequestorMode == 0i8 || !(*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        if (*Irp).RequestorMode == 0i8 {
             (*Irp).AssociatedIrp.SystemBuffer = (*Irp).UserBuffer;
         }
         'AllocMdl: loop {
@@ -565,17 +612,17 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
                 return STATUS_SUCCESS;
             }
             if !(*Irp).MdlAddress.is_null() {
-                'ProbeMdl: loop {
+                loop {
                     if (ProbeFlags & KSPROBE_PROBEANDLOCK) != 0 {
-                        if (*(*Irp).MdlAddress).MdlFlags & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                        if (*(*Irp).MdlAddress).MdlFlags as u32 & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL as u32) != 0 {
                             if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
                                 Mdl = (*Irp).MdlAddress;
                                 loop {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL;
-                                    if (*Mdl).MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
                                         Buffer = (*Mdl).MappedSystemVa;
                                     } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i32);
+                                        Buffer = MmMapLockedPages(Mdl, 0i8);
                                     }
                                     if Buffer.is_null() {
                                         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -596,11 +643,11 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
                             loop {
                                 MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation);
                                 if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL;
-                                    if (*Mdl).MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
                                         Buffer = (*Mdl).MappedSystemVa;
                                     } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i32);
+                                        Buffer = MmMapLockedPages(Mdl, 0i8);
                                     }
                                     if Buffer.is_null() {
                                         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -629,17 +676,17 @@ pub unsafe extern "system" fn KsAllocateExtraData(
     ExtraBuffer: *mut PVOID,
 ) -> NTSTATUS {
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
-    let Count = IoStack.Parameters.DeviceIoControl.InputBufferLength / core::mem::size_of::<KSSTREAM_HEADER>() as ULONG;
-    let Buffer = AllocateItem(NonPagedPool, Count * (core::mem::size_of::<KSSTREAM_HEADER>() as ULONG + ExtraSize));
+    let Count = (*IoStack).Parameters.DeviceIoControl.InputBufferLength / core::mem::size_of::<KSSTREAM_HEADER>() as ULONG;
+    let Buffer = AllocateItem(NonPagedPool, (Count * (core::mem::size_of::<KSSTREAM_HEADER>() as ULONG + ExtraSize)) as usize);
     if Buffer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     let BufferOrg = Buffer;
     let mut Status = STATUS_SUCCESS;
-    let Header = IoStack.Parameters.DeviceIoControl.Type3InputBuffer as *const KSSTREAM_HEADER;
+    let Header = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSSTREAM_HEADER;
     let mut Index = 0;
     while Index < Count {
-        core::ptr::copy_nonoverlapping(Header.add(Index as usize) as *const u8, Buffer, core::mem::size_of::<KSSTREAM_HEADER>());
+        core::ptr::copy_nonoverlapping(Header.add(Index as usize) as *const u8, Buffer as *mut u8, core::mem::size_of::<KSSTREAM_HEADER>());
         Index += 1;
     }
     if !NT_SUCCESS(Status) {
@@ -728,26 +775,26 @@ pub unsafe extern "system" fn KsCancelIo(
     QueueHead: PLIST_ENTRY,
     SpinLock: PKSPIN_LOCK,
 ) {
-    let OldDriverCancel: PDRIVER_CANCEL;
-    let IoStack: PIO_STACK_LOCATION;
-    let Entry: PLIST_ENTRY;
-    let NextEntry: PLIST_ENTRY;
-    let Irp: PIRP;
-    let OldLevel: KIRQL;
+    let mut OldDriverCancel: PDRIVER_CANCEL;
+    let mut IoStack: PIO_STACK_LOCATION;
+    let mut Entry: PLIST_ENTRY;
+    let mut NextEntry: PLIST_ENTRY;
+    let mut Irp: PIRP;
+    let mut OldLevel: KIRQL = 0;
 
-    KeAcquireSpinLock(SpinLock, &OldLevel);
+    KeAcquireSpinLock(SpinLock, &mut OldLevel);
     Entry = (*QueueHead).Flink;
     while Entry != QueueHead {
-        Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry) as PIRP;
+        Irp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as PIRP;
         NextEntry = (*Entry).Flink;
-        (*Irp).Cancel = 1i8;
+        (*Irp).Cancel = 1u8;
         OldDriverCancel = IoSetCancelRoutine(Irp, None);
-        if !OldDriverCancel.is_null() {
+        if OldDriverCancel.is_some() {
             KeReleaseSpinLock(SpinLock, OldLevel);
             IoStack = IoGetCurrentIrpStackLocation(Irp);
             IoAcquireCancelSpinLock(&mut (*Irp).CancelIrql);
-            OldDriverCancel((*IoStack).DeviceObject, Irp);
-            KeAcquireSpinLock(SpinLock, &OldLevel);
+            OldDriverCancel.unwrap()((*IoStack).DeviceObject, Irp);
+            KeAcquireSpinLock(SpinLock, &mut OldLevel);
         }
         Entry = NextEntry;
     }
@@ -762,26 +809,26 @@ pub unsafe extern "system" fn KsReleaseIrpOnCancelableQueue(
     let SpinLock: PKSPIN_LOCK;
     let OldDriverCancel: PDRIVER_CANCEL;
     let IoStack: PIO_STACK_LOCATION;
-    let OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
     if Irp.is_null() {
         return;
     }
 
-    let DriverCancel = if !DriverCancel.is_null() {
+    let DriverCancel: PDRIVER_CANCEL = if DriverCancel.is_some() {
         DriverCancel
     } else {
-        KsCancelRoutine
+        crate::cb!(KsCancelRoutine)
     };
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
-    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 
     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 
     OldDriverCancel = IoSetCancelRoutine(Irp, DriverCancel);
 
-    if (*Irp).Cancel != 0 && OldDriverCancel.is_null() {
+    if (*Irp).Cancel != 0 && OldDriverCancel.is_none() {
         KeReleaseSpinLock(SpinLock, OldLevel);
         IoAcquireCancelSpinLock(&mut (*Irp).CancelIrql);
         DriverCancel.unwrap()((*IoStack).DeviceObject, Irp);
@@ -799,7 +846,7 @@ pub unsafe extern "system" fn KsRemoveIrpFromCancelableQueue(
 ) -> PIRP {
     let mut Irp: PIRP;
     let mut CurEntry: PLIST_ENTRY;
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
 
     if QueueHead.is_null() || SpinLock.is_null() {
         return core::ptr::null_mut();
@@ -826,17 +873,17 @@ pub unsafe extern "system" fn KsRemoveIrpFromCancelableQueue(
             break;
         }
 
-        Irp = CONTAINING_RECORD(CurEntry, IRP, Tail.Overlay.ListEntry) as PIRP;
+        Irp = CONTAINING_RECORD!(CurEntry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as PIRP;
 
         if (*Irp).Cancel != 0 {
             break;
         }
 
-        if !(*Irp).CancelRoutine.is_null() {
+        if (*Irp).CancelRoutine.is_some() {
             (*Irp).CancelRoutine = None;
 
             if RemovalOperation == KsAcquireAndRemove || RemovalOperation == KsAcquireAndRemoveOnlySingleItem {
-                RemoveEntryList(&mut (*Irp).Tail.Overlay.ListEntry);
+                RemoveEntryList(&mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
             }
 
             if RemovalOperation == KsAcquireAndRemoveOnlySingleItem || RemovalOperation == KsAcquireOnlySingleItem {
@@ -847,7 +894,7 @@ pub unsafe extern "system" fn KsRemoveIrpFromCancelableQueue(
 
     KeReleaseSpinLock(SpinLock, OldIrql);
 
-    if Irp.is_null() || (*Irp).CancelRoutine.is_null() {
+    if Irp.is_null() || (*Irp).CancelRoutine.is_none() {
         return Irp;
     }
 
@@ -855,7 +902,7 @@ pub unsafe extern "system" fn KsRemoveIrpFromCancelableQueue(
     KeAcquireSpinLockAtDpcLevel(SpinLock);
 
     if RemovalOperation == KsAcquireAndRemove || RemovalOperation == KsAcquireAndRemoveOnlySingleItem {
-        RemoveEntryList(&mut (*Irp).Tail.Overlay.ListEntry);
+        RemoveEntryList(&mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
     }
 
     KeReleaseSpinLockFromDpcLevel(SpinLock);
@@ -874,9 +921,9 @@ pub unsafe extern "system" fn KsMoveIrpsOnCancelableQueue(
     ListCallback: PFNKSIRPLISTCALLBACK,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
     let mut SrcEntry: PLIST_ENTRY;
-    let Irp: PIRP;
+    let mut Irp: PIRP;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if DestinationLock.is_null() {
@@ -900,25 +947,25 @@ pub unsafe extern "system" fn KsMoveIrpsOnCancelableQueue(
             break;
         }
 
-        Irp = CONTAINING_RECORD(
+        Irp = CONTAINING_RECORD!(
             SrcEntry,
             IRP,
-            Tail.Overlay.ListEntry,
+            Tail.Overlay.__bindgen_anon_2.ListEntry,
         );
 
-        Status = ListCallback(Irp, Context);
+        Status = ListCallback.unwrap()(Irp, Context);
 
         if Status == STATUS_SUCCESS {
-            RemoveEntryList(&mut (*Irp).Tail.Overlay.ListEntry);
+            RemoveEntryList(&mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
 
             if ListLocation == KsListEntryTail {
-                InsertTailList(DestinationList, &mut (*Irp).Tail.Overlay.ListEntry);
+                InsertTailList(DestinationList, &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
             } else {
-                InsertHeadList(DestinationList, &mut (*Irp).Tail.Overlay.ListEntry);
+                InsertHeadList(DestinationList, &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
             }
 
             if !DestinationLock.is_null() {
-                KSQUEUE_SPINLOCK_IRP_STORAGE(Irp) = DestinationLock;
+                KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp) = DestinationLock;
             }
         } else {
             if Status != STATUS_NO_MATCH {
@@ -944,13 +991,13 @@ pub unsafe extern "system" fn KsRemoveSpecificIrpFromCancelableQueue(
     Irp: PIRP,
 ) {
     let SpinLock: PKSPIN_LOCK;
-    let OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
-    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 
     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 
-    RemoveEntryList(&mut (*Irp).Tail.Overlay.ListEntry);
+    RemoveEntryList(&mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
 
     KeReleaseSpinLock(SpinLock, OldLevel);
 }
@@ -965,7 +1012,7 @@ pub unsafe extern "system" fn KsAddIrpToCancelableQueue(
 ) {
     let OldDriverCancel: PDRIVER_CANCEL;
     let IoStack: PIO_STACK_LOCATION;
-    let OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
     if QueueHead.is_null() || SpinLock.is_null() || Irp.is_null() {
         return;
@@ -979,28 +1026,28 @@ pub unsafe extern "system" fn KsAddIrpToCancelableQueue(
         return;
     }
 
-    let DriverCancel = if DriverCancel.is_null() {
-        KsCancelRoutine
+    let DriverCancel: PDRIVER_CANCEL = if DriverCancel.is_none() {
+        crate::cb!(KsCancelRoutine)
     } else {
         DriverCancel
     };
 
-    KeAcquireSpinLock(SpinLock, &OldLevel);
+    KeAcquireSpinLock(SpinLock, &mut OldLevel);
 
     if ListLocation == KsListEntryTail {
-        InsertTailList(QueueHead, &mut (*Irp).Tail.Overlay.ListEntry);
+        InsertTailList(QueueHead, &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
     } else {
-        InsertHeadList(QueueHead, &mut (*Irp).Tail.Overlay.ListEntry);
+        InsertHeadList(QueueHead, &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
     }
 
-    KSQUEUE_SPINLOCK_IRP_STORAGE(Irp) = SpinLock;
+    KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp) = SpinLock;
 
     OldDriverCancel = IoSetCancelRoutine(Irp, DriverCancel);
 
-    if (*Irp).Cancel != 0 && OldDriverCancel.is_null() {
+    if (*Irp).Cancel != 0 && OldDriverCancel.is_none() {
         KeReleaseSpinLock(SpinLock, OldLevel);
         IoAcquireCancelSpinLock(&mut (*Irp).CancelIrql);
-        DriverCancel((*IoStack).DeviceObject, Irp);
+        DriverCancel.unwrap()((*IoStack).DeviceObject, Irp);
     } else {
         KeReleaseSpinLock(SpinLock, OldLevel);
     }
@@ -1013,13 +1060,13 @@ pub unsafe extern "system" fn KsCancelRoutine(
 ) {
     let SpinLock: PKSPIN_LOCK;
 
-    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+    SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 
     KeAcquireSpinLockAtDpcLevel(SpinLock);
 
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
-    RemoveEntryList(&mut (*Irp).Tail.Overlay.ListEntry);
+    RemoveEntryList(&mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
 
     KeReleaseSpinLock(SpinLock, (*Irp).CancelIrql);
 
@@ -1035,14 +1082,14 @@ pub unsafe extern "C" fn FindMatchingCreateItem(
     OutCreateItem: *mut PCREATE_ITEM_ENTRY,
 ) -> NTSTATUS {
     let mut Entry: PLIST_ENTRY;
-    let CreateItemEntry: PCREATE_ITEM_ENTRY;
-    let RefString: _UNICODE_STRING;
-    let pStr: LPWSTR;
-    let Count: ULONG;
+    let mut CreateItemEntry: PCREATE_ITEM_ENTRY;
+    let mut RefString: _UNICODE_STRING;
+    let mut pStr: LPWSTR;
+    let mut Count: ULONG;
 
     RefString = *String;
 
-    if (*String).Buffer[0] as u16 == b'\\' as u16 {
+    if *(*String).Buffer as u16 == b'\\' as u16 {
         RefString.Buffer = RefString.Buffer.offset(1);
         RefString.Length -= core::mem::size_of::<u16>() as u16;
     } else {
@@ -1059,14 +1106,14 @@ pub unsafe extern "C" fn FindMatchingCreateItem(
     Entry = (*ListHead).Flink;
 
     while Entry != ListHead {
-        CreateItemEntry = CONTAINING_RECORD(Entry, CREATE_ITEM_ENTRY, Entry) as PCREATE_ITEM_ENTRY;
+        CreateItemEntry = CONTAINING_RECORD!(Entry, CREATE_ITEM_ENTRY, Entry) as PCREATE_ITEM_ENTRY;
 
-        if (*((*CreateItemEntry).CreateItem)).Flags & KSCREATE_ITEM_WILDCARD {
+        if (*((*CreateItemEntry).CreateItem)).Flags & KSCREATE_ITEM_WILDCARD != 0 {
             *OutCreateItem = CreateItemEntry;
             return STATUS_SUCCESS;
         }
 
-        if (*((*CreateItemEntry).CreateItem)).Create.is_null() {
+        if (*((*CreateItemEntry).CreateItem)).Create.is_none() {
             Entry = (*Entry).Flink;
             continue;
         }
@@ -1097,42 +1144,42 @@ pub unsafe extern "system" fn KspCreate(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut CreateItemEntry: PCREATE_ITEM_ENTRY;
+    let mut CreateItemEntry: PCREATE_ITEM_ENTRY = core::ptr::null_mut();
     let IoStack: PIO_STACK_LOCATION;
     let DeviceExtension: PDEVICE_EXTENSION;
     let DeviceHeader: PKSIDEVICE_HEADER;
     let ObjectHeader: PKSIOBJECT_HEADER;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     DeviceExtension = (*DeviceObject).DeviceExtension as PDEVICE_EXTENSION;
     DeviceHeader = (*DeviceExtension).DeviceHeader;
 
-    if (*IoStack).FileObject.FileName.Buffer.is_null() {
+    if (*(*IoStack).FileObject).FileName.Buffer.is_null() {
         (*Irp).IoStatus.Information = 0;
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         CompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_SUCCESS;
     }
 
-    if !(*IoStack).FileObject.RelatedFileObject.is_null() {
-        ObjectHeader = (*(*IoStack).FileObject.RelatedFileObject).FsContext2 as PKSIOBJECT_HEADER;
+    if !(*(*IoStack).FileObject).RelatedFileObject.is_null() {
+        ObjectHeader = (*(*(*IoStack).FileObject).RelatedFileObject).FsContext2 as PKSIOBJECT_HEADER;
         Status = FindMatchingCreateItem(
-            &(*ObjectHeader).ItemList,
-            &(*IoStack).FileObject.FileName,
+            &mut (*ObjectHeader).ItemList,
+            &mut (*(*IoStack).FileObject).FileName,
             &mut CreateItemEntry,
         );
     } else {
         Status = FindMatchingCreateItem(
-            &(*DeviceHeader).ItemList,
-            &(*IoStack).FileObject.FileName,
+            &mut (*DeviceHeader).ItemList,
+            &mut (*(*IoStack).FileObject).FileName,
             &mut CreateItemEntry,
         );
     }
 
     if NT_SUCCESS(Status) {
-        KSCREATE_ITEM_IRP_STORAGE(Irp) = (*CreateItemEntry).CreateItem;
-        Status = (*(*CreateItemEntry).CreateItem).Create(DeviceObject, Irp);
+        KSCREATE_ITEM_IRP_STORAGE!(Irp) = (*CreateItemEntry).CreateItem;
+        Status = ((*(*CreateItemEntry).CreateItem).Create).unwrap()(DeviceObject, Irp);
         if NT_SUCCESS(Status) {
             InterlockedIncrement(&mut (*CreateItemEntry).ReferenceCount);
         }
@@ -1174,12 +1221,12 @@ pub unsafe extern "system" fn KspDispatchIrp(
         IRP_MJ_FLUSH_BUFFERS => (*ObjectHeader).DispatchTable.Flush,
         IRP_MJ_QUERY_SECURITY => (*ObjectHeader).DispatchTable.QuerySecurity,
         IRP_MJ_SET_SECURITY => (*ObjectHeader).DispatchTable.SetSecurity,
-        IRP_MJ_PNP => KsDefaultDispatchPnp,
-        _ => core::ptr::null_mut(),
+        IRP_MJ_PNP => Some(KsDefaultDispatchPnp),
+        _ => None,
     };
 
-    if !Dispatch.is_null() {
-        Status = Dispatch(DeviceObject, Irp);
+    if Dispatch.is_some() {
+        Status = Dispatch.unwrap()(DeviceObject, Irp);
     } else {
         Status = KsDispatchInvalidDeviceRequest(DeviceObject, Irp);
     }
@@ -1192,12 +1239,12 @@ pub unsafe extern "system" fn KsSetMajorFunctionHandler(
     DriverObject: PDRIVER_OBJECT,
     MajorFunction: ULONG,
 ) -> NTSTATUS {
-    match MajorFunction {
+    match MajorFunction as u8 {
         IRP_MJ_CREATE => {
-            (*DriverObject).MajorFunction[MajorFunction as usize] = Some(KspCreate);
+            (*DriverObject).MajorFunction[MajorFunction as usize] = crate::cb!(KspCreate);
         }
         IRP_MJ_DEVICE_CONTROL | IRP_MJ_CLOSE | IRP_MJ_READ | IRP_MJ_WRITE | IRP_MJ_FLUSH_BUFFERS | IRP_MJ_QUERY_SECURITY | IRP_MJ_SET_SECURITY => {
-            (*DriverObject).MajorFunction[MajorFunction as usize] = Some(KspDispatchIrp);
+            (*DriverObject).MajorFunction[MajorFunction as usize] = crate::cb!(KspDispatchIrp);
         }
         _ => {
             return STATUS_INVALID_PARAMETER;
@@ -1217,7 +1264,7 @@ pub unsafe extern "system" fn KsDispatchIrp(
 
     if (*IoStack).MajorFunction <= IRP_MJ_DEVICE_CONTROL {
         if (*IoStack).MajorFunction == IRP_MJ_CREATE {
-            if (*DeviceHeader).BasicHeader.OuterUnknown != 0 {
+            if !(*DeviceHeader).BasicHeader.OuterUnknown.is_null() {
                 return IKsDevice_Create(DeviceObject, Irp);
             } else {
                 return KspCreate(DeviceObject, Irp);
@@ -1237,13 +1284,13 @@ pub unsafe extern "system" fn KsDispatchIrp(
     }
 
     if (*IoStack).MajorFunction == IRP_MJ_POWER {
-        if (*DeviceHeader).BasicHeader.OuterUnknown != 0 {
+        if !(*DeviceHeader).BasicHeader.OuterUnknown.is_null() {
             return IKsDevice_Power(DeviceObject, Irp);
         } else {
             return KsDefaultDispatchPower(DeviceObject, Irp);
         }
     } else if (*IoStack).MajorFunction == IRP_MJ_PNP {
-        if (*DeviceHeader).BasicHeader.OuterUnknown != 0 {
+        if !(*DeviceHeader).BasicHeader.OuterUnknown.is_null() {
             return IKsDevice_Pnp(DeviceObject, Irp);
         } else {
             return KsDefaultDispatchPnp(DeviceObject, Irp);
@@ -1259,7 +1306,7 @@ pub unsafe extern "system" fn KsDispatchIrp(
 pub unsafe extern "system" fn KsGetNodeIdFromIrp(
     Irp: PIRP,
 ) -> ULONG {
-    UNIMPLEMENTED;
+    // UNIMPLEMENTED
     return KSFILTER_NODE;
 }
 
@@ -1302,7 +1349,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     IoStack = IoGetCurrentIrpStackLocation(Irp);
 //
 //     /* get create item */
-//     CreateItem = KSCREATE_ITEM_IRP_STORAGE(Irp);
+//     CreateItem = KSCREATE_ITEM_IRP_STORAGE!(Irp);
 //
 //     if (!CreateItem || !CreateItem->SecurityDescriptor)
 //     {
@@ -1348,7 +1395,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     IoStack = IoGetCurrentIrpStackLocation(Irp);
 //
 //     /* get create item */
-//     CreateItem = KSCREATE_ITEM_IRP_STORAGE(Irp);
+//     CreateItem = KSCREATE_ITEM_IRP_STORAGE!(Irp);
 //
 //     if (!CreateItem || !CreateItem->SecurityDescriptor)
 //     {
@@ -1398,7 +1445,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     IN  PIRP Irp,
 //     IN  PFNKSHANDLER Handler)
 // {
-//     UNIMPLEMENTED;
+//     // UNIMPLEMENTED
 //     return STATUS_UNSUCCESSFUL;
 // }
 //
@@ -1429,7 +1476,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Event)
 //     {
 //         /* make sure event is reset */
-//         KeClearEvent(Event);
+//         KeClearEvent(Event as _);
 //     }
 //
 //     if (RequestorMode == UserMode)
@@ -1506,7 +1553,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //         if (FileObject->Flags & FO_SYNCHRONOUS_IO)
 //         {
 //             /* it is so wait */
-//             KeWaitForSingleObject(Event, Executive, RequestorMode, FALSE, NULL);
+//             KeWaitForSingleObject(Event as _, Executive, RequestorMode, FALSE, NULL);
 //             Status = IoStatusBlock->Status;
 //         }
 //     }
@@ -1540,7 +1587,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Event)
 //     {
 //         /* make sure event is reset */
-//         KeClearEvent(Event);
+//         KeClearEvent(Event as _);
 //     }
 //
 //     if (RequestorMode == UserMode)
@@ -1617,7 +1664,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //         if (FileObject->Flags & FO_SYNCHRONOUS_IO)
 //         {
 //             /* it is so wait */
-//             KeWaitForSingleObject(Event, Executive, RequestorMode, FALSE, NULL);
+//             KeWaitForSingleObject(Event as _, Executive, RequestorMode, FALSE, NULL);
 //             Status = IoStatusBlock->Status;
 //         }
 //     }
@@ -1717,7 +1764,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Status == STATUS_PENDING)
 //     {
 //         /* wait for the operation to complete */
-//         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+//         KeWaitForSingleObject(&mut Event as *mut _ as _, Executive, KernelMode, FALSE, NULL);
 //
 //        /* is object sync */
 //        if (FileObject->Flags & FO_SYNCHRONOUS_IO)
@@ -1755,7 +1802,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     DeviceObject = IoGetRelatedDeviceObject(FileObject);
 //
 //     /* copy file information */
-//     Buffer = AllocateItem(NonPagedPool, Length);
+//     Buffer = AllocateItem(NonPagedPool, Length as usize);
 //     if (!Buffer)
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -1810,7 +1857,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Status == STATUS_PENDING)
 //     {
 //         /* wait untill the operation has completed */
-//         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+//         KeWaitForSingleObject(&mut Event as *mut _ as _, Executive, KernelMode, FALSE, NULL);
 //         /* is a sync file object */
 //         if (FileObject->Flags & FO_SYNCHRONOUS_IO)
 //             Status = FileObject->FinalStatus;
@@ -1857,7 +1904,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Event)
 //     {
 //         /* reset event */
-//         KeClearEvent(Event);
+//         KeClearEvent(Event as _);
 //     }
 //
 //     if (RequestorMode || ExGetPreviousMode() == KernelMode)
@@ -2214,7 +2261,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (Length && ( (!HeaderSize) || (Length % HeaderSize == 0) || ((ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) && (Length == sizeof(KSSTREAM_HEADER))) ) )
 //     {
 //         /* allocate stream header buffer */
-//         Irp->AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, Length);
+//         Irp->AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, Length as usize);
 //
 //         if (!Irp->AssociatedIrp.SystemBuffer)
 //         {
@@ -2570,14 +2617,14 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     KIRQL OldLevel;
 //
 //     /* acquire spinlock */
-//     KeAcquireSpinLock(SpinLock, &OldLevel);
+//     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 //     /* point to first entry */
 //     Entry = QueueHead->Flink;
 //     /* loop all items */
 //     while(Entry != QueueHead)
 //     {
 //         /* get irp offset */
-//         Irp = (PIRP)CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         Irp = (PIRP)CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //         /* get next entry */
 //         NextEntry = Entry->Flink;
@@ -2602,7 +2649,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //             OldDriverCancel(IoStack->DeviceObject, Irp);
 //
 //             /* re-acquire spinlock */
-//             KeAcquireSpinLock(SpinLock, &OldLevel);
+//             KeAcquireSpinLock(SpinLock, &mut OldLevel);
 //         }
 //
 //         /* move on to next entry */
@@ -2643,10 +2690,10 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     IoStack = IoGetCurrentIrpStackLocation(Irp);
 //
 //     /* get internal queue lock */
-//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 //
 //     /* acquire spinlock */
-//     KeAcquireSpinLock(SpinLock, &OldLevel);
+//     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 //
 //     /* now set the cancel routine */
 //     OldDriverCancel = IoSetCancelRoutine(Irp, DriverCancel);
@@ -2720,7 +2767,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //         }
 //
 //         /* get irp offset */
-//         Irp = (PIRP)CONTAINING_RECORD(CurEntry, IRP, Tail.Overlay.ListEntry);
+//         Irp = (PIRP)CONTAINING_RECORD!(CurEntry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //         if (Irp->Cancel)
 //         {
@@ -2736,7 +2783,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //             if (RemovalOperation == KsAcquireAndRemove || RemovalOperation == KsAcquireAndRemoveOnlySingleItem)
 //             {
 //                 /* remove irp from list */
-//                 RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//                 RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //             }
 //
 //             if (RemovalOperation == KsAcquireAndRemoveOnlySingleItem || RemovalOperation == KsAcquireOnlySingleItem)
@@ -2762,7 +2809,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (RemovalOperation == KsAcquireAndRemove || RemovalOperation == KsAcquireAndRemoveOnlySingleItem)
 //     {
 //         /* remove it */
-//         RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//         RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //     }
 //
 //     /* release list lock */
@@ -2797,7 +2844,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (!DestinationLock)
 //     {
 //         /* no destination lock just acquire the source lock */
-//         KeAcquireSpinLock(SourceLock, &OldLevel);
+//         KeAcquireSpinLock(SourceLock, &mut OldLevel);
 //     }
 //     else
 //     {
@@ -2835,33 +2882,33 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //         }
 //
 //         /* get irp offset */
-//         Irp = (PIRP)CONTAINING_RECORD(SrcEntry, IRP, Tail.Overlay.ListEntry);
+//         Irp = (PIRP)CONTAINING_RECORD!(SrcEntry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //         /* now check if irp can be moved */
-//         Status = ListCallback(Irp, Context);
+//         Status = ListCallback.unwrap()(Irp, Context);
 //
 //         /* check if irp can be moved */
 //         if (Status == STATUS_SUCCESS)
 //         {
 //             /* remove irp from src list */
-//             RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//             RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //             if (ListLocation == KsListEntryTail)
 //             {
 //                 /* insert irp end of list */
-//                 InsertTailList(DestinationList, &Irp->Tail.Overlay.ListEntry);
+//                 InsertTailList(DestinationList, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //             }
 //             else
 //             {
 //                 /* insert irp head of list */
-//                 InsertHeadList(DestinationList, &Irp->Tail.Overlay.ListEntry);
+//                 InsertHeadList(DestinationList, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //             }
 //
 //             /* do we need to update the irp lock */
 //             if (DestinationLock)
 //             {
 //                 /* update irp lock */
-//                 KSQUEUE_SPINLOCK_IRP_STORAGE(Irp) = DestinationLock;
+//                 KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp) = DestinationLock;
 //             }
 //         }
 //         else
@@ -2914,13 +2961,13 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     DPRINT("KsRemoveSpecificIrpFromCancelableQueue %p\n", Irp);
 //
 //     /* get internal queue lock */
-//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 //
 //     /* acquire spinlock */
-//     KeAcquireSpinLock(SpinLock, &OldLevel);
+//     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 //
 //     /* remove the irp from the list */
-//     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//     RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //     /* release spinlock */
 //     KeReleaseSpinLock(SpinLock, OldLevel);
@@ -2973,21 +3020,21 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //
 //
 //     /* acquire spinlock */
-//     KeAcquireSpinLock(SpinLock, &OldLevel);
+//     KeAcquireSpinLock(SpinLock, &mut OldLevel);
 //
 //     if (ListLocation == KsListEntryTail)
 //     {
 //         /* insert irp to tail of list */
-//         InsertTailList(QueueHead, &Irp->Tail.Overlay.ListEntry);
+//         InsertTailList(QueueHead, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //     }
 //     else
 //     {
 //         /* insert irp to head of list */
-//         InsertHeadList(QueueHead, &Irp->Tail.Overlay.ListEntry);
+//         InsertHeadList(QueueHead, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //     }
 //
 //     /* store internal queue lock */
-//     KSQUEUE_SPINLOCK_IRP_STORAGE(Irp) = SpinLock;
+//     KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp) = SpinLock;
 //
 //     /* now set the cancel routine */
 //     OldDriverCancel = IoSetCancelRoutine(Irp, DriverCancel);
@@ -3023,7 +3070,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     PKSPIN_LOCK SpinLock;
 //
 //     /* get internal queue lock */
-//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE(Irp);
+//     SpinLock = KSQUEUE_SPINLOCK_IRP_STORAGE!(Irp);
 //
 //     /* acquire spinlock */
 //     KeAcquireSpinLockAtDpcLevel(SpinLock);
@@ -3035,7 +3082,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     IoReleaseCancelSpinLock(Irp->CancelIrql);
 //
 //     /* remove the irp from the list */
-//     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//     RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //
 //     /* release spinlock */
 //     KeReleaseSpinLock(SpinLock, Irp->CancelIrql);
@@ -3096,7 +3143,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     while (Entry != ListHead)
 //     {
 //         /* get create item entry */
-//         CreateItemEntry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD(Entry,
+//         CreateItemEntry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD!(Entry,
 //                                                                 CREATE_ITEM_ENTRY,
 //                                                                 Entry);
 //
@@ -3203,7 +3250,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     if (NT_SUCCESS(Status))
 //     {
 //         /* set object create item */
-//         KSCREATE_ITEM_IRP_STORAGE(Irp) = CreateItemEntry->CreateItem;
+//         KSCREATE_ITEM_IRP_STORAGE!(Irp) = CreateItemEntry->CreateItem;
 //
 //         /* call create function */
 //         Status = CreateItemEntry->CreateItem->Create(DeviceObject, Irp);
@@ -3262,7 +3309,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 //     /* sanity check */
 //     ASSERT(ObjectHeader);
 //     /* store create item */
-//     //KSCREATE_ITEM_IRP_STORAGE(Irp) = (PKSOBJECT_CREATE_ITEM)0x12345678; //ObjectHeader->CreateItem;
+//     //KSCREATE_ITEM_IRP_STORAGE!(Irp) = (PKSOBJECT_CREATE_ITEM)0x12345678; //ObjectHeader->CreateItem;
 //
 //     /* retrieve matching dispatch function */
 //     switch(IoStack->MajorFunction)
@@ -3454,7 +3501,7 @@ pub unsafe extern "system" fn KsGetNodeIdFromIrp(
 // KsGetNodeIdFromIrp(
 //     IN PIRP Irp)
 // {
-//     UNIMPLEMENTED;
+//     // UNIMPLEMENTED
 //     return KSFILTER_NODE;
 // }
 //

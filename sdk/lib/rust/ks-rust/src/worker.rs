@@ -1,10 +1,15 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{CriticalWorkQueue, DelayedWorkQueue, ExQueueWorkItem, _KWAIT_REASON_Executive, HyperCriticalWorkQueue, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PWORK_QUEUE_ITEM, WORK_QUEUE_ITEM};
+use ntkrnl_sys::ddk::{_WORK_QUEUE_TYPE_CriticalWorkQueue as CriticalWorkQueue, _WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue, _WORK_QUEUE_TYPE_HyperCriticalWorkQueue as HyperCriticalWorkQueue, ExQueueWorkItem, _KWAIT_REASON_Executive, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PWORK_QUEUE_ITEM, WORK_QUEUE_ITEM, WORK_QUEUE_TYPE};
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
+use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
+use crate::misc::{AllocateItem, FreeItem};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -29,28 +34,28 @@ pub unsafe extern "system" fn WorkItemRoutine(Context: PVOID) {
     let mut WorkItem: PWORK_QUEUE_ITEM;
     let mut Entry: PLIST_ENTRY;
 
-    KeAcquireSpinLock(&(*KsWorker).Lock, &mut OldLevel);
+    KeAcquireSpinLock(&mut (*KsWorker).Lock, &mut OldLevel);
 
     loop {
-        Entry = RemoveHeadList(&(*KsWorker).QueuedWorkItems);
+        Entry = RemoveHeadList(&mut (*KsWorker).QueuedWorkItems);
         WorkItem = CONTAINING_RECORD!(Entry, WORK_QUEUE_ITEM, List);
 
-        KeReleaseSpinLock(&(*KsWorker).Lock, OldLevel);
+        KeReleaseSpinLock(&mut (*KsWorker).Lock, OldLevel);
 
-        ((*WorkItem).WorkerRoutine)((*WorkItem).Parameter);
+        ((*WorkItem).WorkerRoutine.unwrap())((*WorkItem).Parameter);
 
-        KeAcquireSpinLock(&(*KsWorker).Lock, &mut OldLevel);
+        KeAcquireSpinLock(&mut (*KsWorker).Lock, &mut OldLevel);
 
-        InterlockedDecrement(&(*KsWorker).QueuedWorkItemCount);
+        InterlockedDecrement(&mut (*KsWorker).QueuedWorkItemCount);
 
         if (*KsWorker).QueuedWorkItemCount == 0 {
             break;
         }
     }
 
-    KeReleaseSpinLock(&(*KsWorker).Lock, OldLevel);
+    KeReleaseSpinLock(&mut (*KsWorker).Lock, OldLevel);
 
-    KeSetEvent(&(*KsWorker).Event, IO_NO_INCREMENT, 0u8);
+    KeSetEvent(core::ptr::addr_of_mut!((*KsWorker).Event) as PVOID, IO_NO_INCREMENT as LONG, 0u8);
 }
 
 #[no_mangle]
@@ -74,7 +79,7 @@ pub unsafe extern "system" fn KsRegisterWorker(
 
     ExInitializeWorkItem(
         &mut (*KsWorker).WorkItem,
-        Some(WorkItemRoutine as unsafe extern "C" fn(PVOID)),
+        crate::cb!(WorkItemRoutine),
         KsWorker as PVOID,
     );
 
@@ -83,27 +88,27 @@ pub unsafe extern "system" fn KsRegisterWorker(
     KeInitializeSpinLock(&mut (*KsWorker).Lock);
     KeInitializeEvent(&mut (*KsWorker).Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
-    *Worker = KsWorker;
+    *Worker = KsWorker as PKSWORKER;
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KsUnregisterWorker(Worker: PKSWORKER) {
     let KsWorker: PKSIWORKER;
-    let OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
 
     if Worker.is_null() {
         return;
     }
 
     KsWorker = Worker as PKSIWORKER;
-    KeAcquireSpinLock(&(*KsWorker).Lock, &OldIrql);
+    KeAcquireSpinLock(&mut (*KsWorker).Lock, &mut OldIrql);
     (*KsWorker).Counter = 1;
     if (*KsWorker).QueuedWorkItemCount != 0 {
-        KeReleaseSpinLock(&(*KsWorker).Lock, OldIrql);
-        KeWaitForSingleObject(&(*KsWorker).Event, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
+        KeReleaseSpinLock(&mut (*KsWorker).Lock, OldIrql);
+        KeWaitForSingleObject(core::ptr::addr_of_mut!((*KsWorker).Event) as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
     } else {
-        KeReleaseSpinLock(&(*KsWorker).Lock, OldIrql);
+        KeReleaseSpinLock(&mut (*KsWorker).Lock, OldIrql);
     }
     FreeItem(KsWorker as PVOID);
 }
@@ -166,23 +171,23 @@ pub unsafe extern "system" fn KsQueueWorkItem(
     WorkItem: PWORK_QUEUE_ITEM,
 ) -> NTSTATUS {
     let KsWorker: PKSIWORKER;
-    let OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
 
     if Worker.is_null() || WorkItem.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
 
     KsWorker = Worker as PKSIWORKER;
-    KeAcquireSpinLock(&(*KsWorker).Lock, &OldIrql);
-    InsertTailList(&(*KsWorker).QueuedWorkItems, &(*WorkItem).List);
-    InterlockedIncrement(&(*KsWorker).QueuedWorkItemCount);
+    KeAcquireSpinLock(&mut (*KsWorker).Lock, &mut OldIrql);
+    InsertTailList(&mut (*KsWorker).QueuedWorkItems, &mut (*WorkItem).List);
+    InterlockedIncrement(&mut (*KsWorker).QueuedWorkItemCount);
 
     if (*KsWorker).QueuedWorkItemCount == 1 {
-        KeClearEvent(&(*KsWorker).Event);
-        ExQueueWorkItem(&(*KsWorker).WorkItem, (*KsWorker).Type);
+        KeClearEvent(core::ptr::addr_of_mut!((*KsWorker).Event) as PVOID);
+        ExQueueWorkItem(&mut (*KsWorker).WorkItem, (*KsWorker).Type);
     }
 
-    KeReleaseSpinLock(&(*KsWorker).Lock, OldIrql);
+    KeReleaseSpinLock(&mut (*KsWorker).Lock, OldIrql);
     STATUS_SUCCESS
 }
 
@@ -247,7 +252,7 @@ pub unsafe extern "system" fn KsQueueWorkItem(
 //         /* remove first entry */
 //         Entry = RemoveHeadList(&KsWorker->QueuedWorkItems);
 //         /* get offset to work item */
-//         WorkItem = (PWORK_QUEUE_ITEM)CONTAINING_RECORD(Entry, WORK_QUEUE_ITEM, List);
+//         WorkItem = (PWORK_QUEUE_ITEM)CONTAINING_RECORD!(Entry, WORK_QUEUE_ITEM, List);
 //
 //         /* release lock as the callback might call one KsWorker functions */
 //         KeReleaseSpinLock(&KsWorker->Lock, OldLevel);

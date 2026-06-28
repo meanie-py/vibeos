@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -5,53 +7,48 @@ use ntkrnl_sys::ddk::{ExGetPreviousMode, GUID, IoGetCurrentIrpStackLocation, KPR
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-#[repr(C)]
-pub struct _KSMETHOD {
-    pub Set: GUID,
-    pub Id: u32,
-    pub Flags: u32,
+// ProbeForRead is a real ntoskrnl export; declare locally so this module links
+// (sibling modules api.rs/irp.rs do the same). KSMETHOD/PKSMETHOD, KSMETHOD_SET/
+// PKSMETHOD_SET, KSFASTMETHOD_ITEM and PFNKSFASTHANDLER come from crate::types.
+extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
-pub type PKSMETHOD = *mut _KSMETHOD;
-
-pub const NDEBUG: u32 = 0;
-
-pub type PFAST_METHOD_HANDLER = Option<unsafe extern "system" fn(
-    FileObject: PFILE_OBJECT,
-    MethodRequest: PKSMETHOD,
-    MethodLength: u32,
-    Data: *mut core::ffi::c_void,
-    DataLength: u32,
-    IoStatus: PIO_STATUS_BLOCK,
-) -> BOOLEAN>;
-
-#[repr(C)]
-pub struct _KSMETHOD_SET {
-    pub Set: GUID,
-    pub MethodsCount: u32,
-    pub Method: *mut _KSMETHOD,
-    pub FastIoCount: u32,
-    pub FastIoTable: *mut PFAST_METHOD_HANDLER,
+// guiddef.h IsEqualGUIDAligned (private per-module helper; int/BOOLEAN form — all
+// call sites in this file use it in `!= 0` context).
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> i32 {
+    ((*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4) as i32
 }
 
-pub type PKSMETHOD_SET = *mut _KSMETHOD_SET;
+// ks.h KSMETHOD_SET_IRP_STORAGE(Irp) == *(PKSMETHOD_SET*)&Irp->Tail.Overlay.DriverContext[0]
+macro_rules! KSMETHOD_SET_IRP_STORAGE { ($irp:expr) => {
+    *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0]
+        as *mut PVOID as *mut PKSMETHOD_SET)
+}; }
 #[no_mangle]
 pub unsafe extern "C" fn FindFastMethodHandler(
-    FastIoCount: u32,
-    FastIoTable: *mut PFAST_METHOD_HANDLER,
-    MethodRequest: PKSMETHOD,
-    FastMethodHandler: *mut PFAST_METHOD_HANDLER,
+    FastIoCount: ULONG,
+    FastIoTable: *const KSFASTMETHOD_ITEM,
+    MethodId: PKSMETHOD,
+    FastMethodHandler: *mut PFNKSFASTHANDLER,
 ) -> NTSTATUS {
-    let mut Index: u32 = 0;
+    let mut Index: ULONG = 0;
     while Index < FastIoCount {
-        if let Some(handler) = *FastIoTable.add(Index as usize) {
-            *FastMethodHandler = Some(handler);
-            return STATUS_SUCCESS;
+        let item = &*FastIoTable.offset(Index as isize);
+        if (*MethodId).Id == item.MethodId {
+            if *item.__bindgen_anon_1.MethodSupported.as_ref() != 0 {
+                *FastMethodHandler = *item.__bindgen_anon_1.MethodHandler.as_ref();
+                return STATUS_SUCCESS;
+            }
         }
         Index += 1;
     }
     STATUS_NOT_FOUND
-}```
+}
 #[no_mangle]
 pub unsafe extern "C" fn FindMethodHandler(
     IoStatus: PIO_STATUS_BLOCK,
@@ -74,12 +71,12 @@ pub unsafe extern "C" fn FindMethodHandler(
             while ItemIndex < (*MethodSet.offset(Index as isize)).MethodsCount {
                 if (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MethodId == (*Method).Id {
                     if (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinMethod > InputBufferLength {
-                        (*IoStatus).Information = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinMethod;
+                        (*IoStatus).Information = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinMethod as _;
                         return STATUS_INVALID_PARAMETER;
                     }
 
                     if (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinData > OutputBufferLength {
-                        (*IoStatus).Information = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinData;
+                        (*IoStatus).Information = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MinData as _;
                         return STATUS_MORE_ENTRIES;
                     }
 
@@ -87,13 +84,13 @@ pub unsafe extern "C" fn FindMethodHandler(
                         let Flags: *mut ULONG;
                         let Description: *mut KSPROPERTY_DESCRIPTION;
 
-                        if core::mem::size_of::<ULONG>() > OutputBufferLength {
+                        if core::mem::size_of::<ULONG>() as ULONG > OutputBufferLength {
                             return STATUS_INVALID_PARAMETER;
                         }
 
                         Flags = OutputBuffer as *mut ULONG;
                         *Flags = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).Flags;
-                        (*IoStatus).Information = core::mem::size_of::<ULONG>() as ULONG;
+                        (*IoStatus).Information = core::mem::size_of::<ULONG>() as _;
 
                         if OutputBufferLength >= core::mem::size_of::<KSPROPERTY_DESCRIPTION>() as ULONG {
                             Description = OutputBuffer as *mut KSPROPERTY_DESCRIPTION;
@@ -103,13 +100,13 @@ pub unsafe extern "C" fn FindMethodHandler(
                             (*Description).PropTypeSet.Flags = 0;
                             (*Description).MembersListCount = 0;
                             (*Description).Reserved = 0;
-                            (*IoStatus).Information = core::mem::size_of::<KSPROPERTY_DESCRIPTION>() as ULONG;
+                            (*IoStatus).Information = core::mem::size_of::<KSPROPERTY_DESCRIPTION>() as _;
                         }
                         return STATUS_SUCCESS;
                     }
 
-                    *MethodHandler = (*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).MethodHandler;
-                    *Set = &mut (*MethodSet.offset(Index as isize)) as *mut KSMETHOD_SET;
+                    *MethodHandler = *(*((*MethodSet.offset(Index as isize)).MethodItem.offset(ItemIndex as isize))).__bindgen_anon_1.MethodHandler.as_ref();
+                    *Set = MethodSet.offset(Index as isize) as *mut KSMETHOD_SET;
                     return STATUS_SUCCESS;
                 }
                 ItemIndex += 1;
@@ -129,17 +126,17 @@ pub unsafe extern "system" fn KspMethodHandlerWithAllocator(
     MethodItemSize: ULONG,
 ) -> NTSTATUS {
     let Method: PKSMETHOD;
-    let Set: *mut KSMETHOD_SET;
+    let mut Set: *mut KSMETHOD_SET = core::ptr::null_mut();
     let IoStack: PIO_STACK_LOCATION;
-    let Status: NTSTATUS;
-    let MethodHandler: PFNKSHANDLER = core::ptr::null_mut();
-    let Index: ULONG;
+    let mut Status: NTSTATUS;
+    let MethodHandler: PFNKSHANDLER = None;
+    let mut Index: ULONG;
     let Guid: LPGUID;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
     if (*IoStack).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<KSMETHOD>() as ULONG {
-        (*Irp).IoStatus.Information = core::mem::size_of::<KSPROPERTY>() as ULONG_PTR;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KSPROPERTY>() as _;
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
@@ -157,24 +154,24 @@ pub unsafe extern "system" fn KspMethodHandlerWithAllocator(
         &mut Set,
     );
 
-    if NT_SUCCESS(Status) && !MethodHandler.is_null() {
-        KSMETHOD_SET_IRP_STORAGE(Irp) = Set;
-        Status = MethodHandler(Irp, Method, (*Irp).UserBuffer);
+    if NT_SUCCESS(Status) && MethodHandler.is_some() {
+        KSMETHOD_SET_IRP_STORAGE!(Irp) = Set;
+        Status = (MethodHandler.unwrap())(Irp, Method, (*Irp).UserBuffer);
 
         if Status == STATUS_BUFFER_TOO_SMALL {
-            if !Allocator.is_null() {
-                Status = Allocator(Irp, (*Irp).IoStatus.Information as ULONG, 0u8);
+            if Allocator.is_some() {
+                Status = (Allocator.unwrap())(Irp, (*Irp).IoStatus.Information as ULONG, 0u8);
                 if !NT_SUCCESS(Status) {
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-                Status = MethodHandler(Irp, Method, (*Irp).UserBuffer);
+                Status = (MethodHandler.unwrap())(Irp, Method, (*Irp).UserBuffer);
             }
         }
     } else if IsEqualGUIDAligned(&(*Method).Set as *const GUID, &GUID_NULL as *const GUID) != 0
         && (*Method).Id == 0
         && (*Method).Flags == KSMETHOD_TYPE_SETSUPPORT
     {
-        (*Irp).IoStatus.Information = (core::mem::size_of::<GUID>() as ULONG) * MethodSetsCount;
+        (*Irp).IoStatus.Information = ((core::mem::size_of::<GUID>() as ULONG) * MethodSetsCount) as _;
         if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < (core::mem::size_of::<GUID>() as ULONG) * MethodSetsCount {
             return STATUS_MORE_ENTRIES;
         }
@@ -183,8 +180,8 @@ pub unsafe extern "system" fn KspMethodHandlerWithAllocator(
         Index = 0;
         while Index < MethodSetsCount {
             core::ptr::copy_nonoverlapping(
-                &(*MethodSet.add(Index as usize)).Set as *const GUID,
-                &mut (*Guid.add(Index as usize)) as *mut GUID,
+                (*MethodSet.add(Index as usize)).Set,
+                &mut *Guid.add(Index as usize) as *mut GUID,
                 1,
             );
             Index += 1;
@@ -201,7 +198,7 @@ pub unsafe extern "system" fn KsMethodHandler(
     MethodSetsCount: ULONG,
     MethodSet: *const KSMETHOD_SET,
 ) -> NTSTATUS {
-    return KspMethodHandlerWithAllocator(Irp, MethodSetsCount, MethodSet, core::ptr::null_mut(), 0);
+    return KspMethodHandlerWithAllocator(Irp, MethodSetsCount, MethodSet, None, 0);
 }
 
 #[no_mangle]
@@ -222,7 +219,7 @@ pub unsafe extern "system" fn KsFastMethodHandler(
     MethodLength: u32,
     Data: *mut core::ffi::c_void,
     DataLength: u32,
-    IoStatus: *mut _IO_STATUS_BLOCK,
+    IoStatus: PIO_STATUS_BLOCK,
     MethodSetsCount: u32,
     MethodSet: *const KSMETHOD_SET,
 ) -> u8 {
@@ -230,7 +227,7 @@ pub unsafe extern "system" fn KsFastMethodHandler(
     let Mode: KPROCESSOR_MODE;
     let mut Status: i32 = 0i32;
     let mut Index: u32;
-    let mut FastMethodHandler: PFNKSFASTHANDLER;
+    let mut FastMethodHandler: PFNKSFASTHANDLER = None;
 
     if MethodLength < core::mem::size_of::<KSPROPERTY>() as u32 {
         return 0u8;
@@ -238,7 +235,7 @@ pub unsafe extern "system" fn KsFastMethodHandler(
 
     Mode = ExGetPreviousMode();
 
-    if Mode == 0i32 {
+    if Mode == 0i8 {
         core::ptr::copy_nonoverlapping(
             Method as *const u8,
             &mut MethodRequest as *mut KSMETHOD as *mut u8,
@@ -246,7 +243,7 @@ pub unsafe extern "system" fn KsFastMethodHandler(
         );
     } else {
         // SEH2_TRY body executed directly
-        ProbeForRead(Method as *const core::ffi::c_void, core::mem::size_of::<KSPROPERTY>() as u32, core::mem::size_of::<u8>() as u32);
+        ProbeForRead(Method as PVOID, core::mem::size_of::<KSPROPERTY>() as ULONG_PTR, core::mem::size_of::<u8>() as ULONG);
         core::ptr::copy_nonoverlapping(
             Method as *const u8,
             &mut MethodRequest as *mut KSMETHOD as *mut u8,
@@ -259,6 +256,48 @@ pub unsafe extern "system" fn KsFastMethodHandler(
         }
     }
 
+    // are there any method sets provided
+    if MethodSetsCount != 0 {
+        // iterate through all method sets
+        Index = 0;
+        loop {
+            // does the set id match
+            if IsEqualGUIDAligned(
+                (*MethodSet.offset(Index as isize)).Set,
+                &MethodRequest.Set as *const GUID,
+            ) != 0
+            {
+                // try to find a fast method handler
+                Status = FindFastMethodHandler(
+                    (*MethodSet.offset(Index as isize)).FastIoCount,
+                    (*MethodSet.offset(Index as isize)).FastIoTable,
+                    &mut MethodRequest,
+                    &mut FastMethodHandler,
+                );
+
+                if NT_SUCCESS(Status) {
+                    // call fast method handler
+                    if let Some(handler) = FastMethodHandler {
+                        return handler(
+                            FileObject,
+                            &mut MethodRequest,
+                            core::mem::size_of::<KSMETHOD>() as u32,
+                            Data,
+                            DataLength,
+                            IoStatus,
+                        );
+                    }
+                }
+            }
+            // move to next item
+            Index += 1;
+            if Index >= MethodSetsCount {
+                break;
+            }
+        }
+    }
+    0u8
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

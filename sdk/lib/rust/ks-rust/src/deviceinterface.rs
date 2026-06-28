@@ -1,8 +1,12 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{CLSID, GUID, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, PDEVICE_OBJECT, PUNICODE_STRING, RtlFreeUnicodeString};
+use ntkrnl_sys::ddk::{CLSID, GUID, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, PDEVICE_OBJECT, PIRP, PUNICODE_STRING, RtlFreeUnicodeString};
+use crate::misc::{AllocateItem, FreeItem};
+use crate::filterfactory::IKsFilterFactory_Create;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -38,7 +42,7 @@ pub unsafe extern "C" fn KspFreeDeviceInterfaces(
     let mut Entry: PLIST_ENTRY;
     let mut SymEntry: PSYMBOLIC_LINK_ENTRY;
 
-    while IsListEmpty(ListHead) == 0 {
+    while !IsListEmpty(ListHead) {
         Entry = RemoveHeadList(ListHead);
         SymEntry = core::mem::transmute::<isize, PSYMBOLIC_LINK_ENTRY>(
             (Entry as isize)
@@ -110,12 +114,7 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
         );
 
         if !(*CreateEntry).CreateItem.is_null() {
-            if (*(*CreateEntry).CreateItem).Create
-                == Some(
-                    IKsFilterFactory_Create
-                        as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
-                )
-            {
+            if (*(*CreateEntry).CreateItem).Create == cb!(IKsFilterFactory_Create) {
                 Status = KsFilterFactorySetDeviceClassesState(
                     (*(*CreateEntry).CreateItem).Context as PKSFILTERFACTORY,
                     NewState,
@@ -153,7 +152,7 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
 //     while(Entry != ListHead)
 //     {
 //         /* fetch symbolic link entry */
-//         SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD(Entry, SYMBOLIC_LINK_ENTRY, Entry);
+//         SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD!(Entry, SYMBOLIC_LINK_ENTRY, Entry);
 //         /* set device interface state */
 //         Status = IoSetDeviceInterfaceState(&SymEntry->SymbolicLink, Enable);
 //
@@ -182,7 +181,7 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
 //         Entry = RemoveHeadList(ListHead);
 //
 //         /* fetch symbolic link entry */
-//         SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD(Entry, SYMBOLIC_LINK_ENTRY, Entry);
+//         SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD!(Entry, SYMBOLIC_LINK_ENTRY, Entry);
 //
 //         /* free device interface string */
 //         RtlFreeUnicodeString(&SymEntry->SymbolicLink);
@@ -255,7 +254,7 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
 //     while(Entry != &DeviceHeader->ItemList && Status == STATUS_SUCCESS)
 //     {
 //         /* grab create entry */
-//         CreateEntry = CONTAINING_RECORD(Entry, CREATE_ITEM_ENTRY, Entry);
+//         CreateEntry = CONTAINING_RECORD!(Entry, CREATE_ITEM_ENTRY, Entry);
 //
 //         /* sanity check */
 //         ASSERT(CreateEntry->CreateItem);

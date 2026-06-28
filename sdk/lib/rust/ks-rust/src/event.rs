@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -9,6 +11,38 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExAcquireFastMutexUnsafe, ExAcquireResourceExclusiveLite, ExQueueWorkItem, ExReleaseFastMutex, ExReleaseFastMutexUnsafe, ExReleaseResourceLite, _KWAIT_REASON_Executive, GUID, IoGetCurrentIrpStackLocation, KeEnterCriticalRegion, KeInsertQueueDpc, KeLeaveCriticalRegion, KeReleaseMutex, KeReleaseSemaphore, KeSynchronizeExecution, KeWaitForSingleObject, LPGUID, ObReferenceObjectByHandle, PERESOURCE, PFAST_MUTEX, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKINTERRUPT, PKSYNCHRONIZE_ROUTINE, PRKDPC, PRKMUTEX, PWORK_QUEUE_ITEM, RtlFreeUnicodeString, RtlStringFromGUID};
 use core::ffi::c_void;
+use crate::misc::{AllocateItem, FreeItem};
+use crate::worker::KsQueueWorkItem;
+use ntkrnl_sys::ddk::POBJECT_TYPE;
+use crate::api::GUID_NULL;
+
+// ProbeForRead is a real ntoskrnl export; declare it locally (same pattern as property.rs).
+extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
+}
+
+// Object-type data exports (ntoskrnl). In the WDK these are `POBJECT_TYPE*`, hence the
+// `*ExEventObjectType` deref at the call site yields a POBJECT_TYPE. Cross-DLL DATA imports
+// need raw-dylib (`__imp_` indirection) — without it the link references the bare symbol.
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+extern "C" {
+    static ExEventObjectType: *mut POBJECT_TYPE;
+    static ExSemaphoreObjectType: *mut POBJECT_TYPE;
+}
+
+// Access rights (ketypes.h: both 0x0002). Used only here.
+const SEMAPHORE_MODIFY_STATE: ACCESS_MASK = 0x0002;
+const EVENT_MODIFY_STATE: ACCESS_MASK = 0x0002;
+
+// guiddef.h IsEqualGUIDAligned (private per-module helper; bool form).
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn KspSynchronizedEventRoutine(
     EventsFlags: KSEVENTS_LOCKTYPE,
@@ -20,35 +54,35 @@ pub unsafe extern "C" fn KspSynchronizedEventRoutine(
     let mut OldLevel: KIRQL = 0u8;
 
     if EventsFlags == KSEVENTS_NONE {
-        Result = SynchronizedRoutine(Ctx);
+        Result = SynchronizedRoutine.unwrap()(Ctx);
     } else if EventsFlags == KSEVENTS_SPINLOCK {
         KeAcquireSpinLock(EventsLock as PKSPIN_LOCK, &mut OldLevel);
-        Result = SynchronizedRoutine(Ctx);
+        Result = SynchronizedRoutine.unwrap()(Ctx);
         KeReleaseSpinLock(EventsLock as PKSPIN_LOCK, OldLevel);
     } else if EventsFlags == KSEVENTS_MUTEX {
-        KeWaitForSingleObject(EventsLock, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
-        Result = SynchronizedRoutine(Ctx);
+        KeWaitForSingleObject(EventsLock, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
+        Result = SynchronizedRoutine.unwrap()(Ctx);
         KeReleaseMutex(EventsLock as PRKMUTEX, 0u8);
     } else if EventsFlags == KSEVENTS_FMUTEX {
         ExAcquireFastMutex(EventsLock as PFAST_MUTEX);
-        Result = SynchronizedRoutine(Ctx);
+        Result = SynchronizedRoutine.unwrap()(Ctx);
         ExReleaseFastMutex(EventsLock as PFAST_MUTEX);
     } else if EventsFlags == KSEVENTS_FMUTEXUNSAFE {
         KeEnterCriticalRegion();
         ExAcquireFastMutexUnsafe(EventsLock as PFAST_MUTEX);
-        Result = SynchronizedRoutine(Ctx);
+        Result = SynchronizedRoutine.unwrap()(Ctx);
         ExReleaseFastMutexUnsafe(EventsLock as PFAST_MUTEX);
         KeLeaveCriticalRegion();
     } else if EventsFlags == KSEVENTS_INTERRUPT {
         Result = KeSynchronizeExecution(
             EventsLock as PKINTERRUPT,
-            Some(core::mem::transmute::<PKSEVENT_SYNCHRONIZED_ROUTINE, PKSYNCHRONIZE_ROUTINE>(SynchronizedRoutine)),
+            core::mem::transmute::<PKSEVENT_SYNCHRONIZED_ROUTINE, PKSYNCHRONIZE_ROUTINE>(SynchronizedRoutine),
             Ctx as PVOID,
         );
     } else if EventsFlags == KSEVENTS_ERESOURCE {
         KeEnterCriticalRegion();
         ExAcquireResourceExclusiveLite(EventsLock as PERESOURCE, 1u8);
-        Result = SynchronizedRoutine(Ctx);
+        Result = SynchronizedRoutine.unwrap()(Ctx);
         ExReleaseResourceLite(EventsLock as PERESOURCE);
         KeLeaveCriticalRegion();
     }
@@ -65,6 +99,275 @@ pub unsafe extern "system" fn SyncAddEvent(
 }
 
 #[no_mangle]
+pub unsafe extern "system" fn KspEnableEvent(
+    Irp: PIRP,
+    EventSetsCount: ULONG,
+    EventSet: *const KSEVENT_SET,
+    EventsList: PLIST_ENTRY,
+    EventsFlags: KSEVENTS_LOCKTYPE,
+    EventsLock: PVOID,
+    Allocator: PFNKSALLOCATOR,
+    _EventItemSize: ULONG,
+) -> NTSTATUS {
+    let IoStack: PIO_STACK_LOCATION;
+    let mut Status: NTSTATUS;
+    let mut Event: KSEVENT = core::mem::zeroed();
+    let mut EventItem: PKSEVENT_ITEM;
+    let mut FoundEventItem: PKSEVENT_ITEM;
+    let EventData: PKSEVENTDATA;
+    let mut FoundEventSet: *const KSEVENT_SET;
+    let EventEntry: PKSEVENT_ENTRY;
+    let mut Index: ULONG;
+    let mut SubIndex: ULONG;
+    let Size: ULONG;
+    let mut Object: PVOID = core::ptr::null_mut();
+    let mut Ctx: KSEVENT_CTX = core::mem::zeroed();
+    let Guid: LPGUID;
+
+    /* get current stack location */
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if ((*IoStack).Parameters.DeviceIoControl.InputBufferLength as usize) < core::mem::size_of::<KSEVENT>() {
+        /* invalid parameter */
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (*Irp).RequestorMode == 1i8 {
+        /* DUMMY_PSEH: probe and copy (exception handling is dead code) */
+        ProbeForRead((*IoStack).Parameters.DeviceIoControl.Type3InputBuffer, core::mem::size_of::<KSEVENT>() as ULONG_PTR, 1);
+        ProbeForRead((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
+        core::ptr::copy(
+            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const u8,
+            &mut Event as *mut KSEVENT as *mut u8,
+            core::mem::size_of::<KSEVENT>(),
+        );
+        Status = STATUS_SUCCESS;
+
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+    } else {
+        /* copy event struct */
+        core::ptr::copy(
+            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const u8,
+            &mut Event as *mut KSEVENT as *mut u8,
+            core::mem::size_of::<KSEVENT>(),
+        );
+    }
+
+    FoundEventItem = core::ptr::null_mut();
+    FoundEventSet = core::ptr::null();
+
+    if IsEqualGUIDAligned(&Event.Set, &GUID_NULL) && Event.Id == 0 && Event.Flags == KSEVENT_TYPE_SETSUPPORT {
+        // store output size
+        (*Irp).IoStatus.Information = (core::mem::size_of::<GUID>() * EventSetsCount as usize) as _;
+        if ((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize)
+            < (core::mem::size_of::<GUID>() * EventSetsCount as usize)
+        {
+            // buffer too small
+            return STATUS_MORE_ENTRIES;
+        }
+
+        // get output buffer
+        Guid = (*Irp).UserBuffer as LPGUID;
+
+        // copy property guids from property sets
+        Index = 0;
+        while Index < EventSetsCount {
+            core::ptr::copy(
+                (*EventSet.offset(Index as isize)).Set as *const u8,
+                Guid.offset(Index as isize) as *mut u8,
+                core::mem::size_of::<GUID>(),
+            );
+            Index += 1;
+        }
+        return STATUS_SUCCESS;
+    }
+
+    /* now try to find event set */
+    Index = 0;
+    while Index < EventSetsCount {
+        if IsEqualGUIDAligned(&Event.Set, (*EventSet.offset(Index as isize)).Set) {
+            EventItem = (*EventSet.offset(Index as isize)).EventItem as PKSEVENT_ITEM;
+
+            /* now find matching event id */
+            SubIndex = 0;
+            while SubIndex < (*EventSet.offset(Index as isize)).EventsCount {
+                if (*EventItem.offset(SubIndex as isize)).EventId == Event.Id {
+                    /* found event item */
+                    FoundEventItem = EventItem.offset(SubIndex as isize);
+                    FoundEventSet = EventSet.offset(Index as isize);
+                    break;
+                }
+                SubIndex += 1;
+            }
+
+            if !FoundEventSet.is_null() {
+                break;
+            }
+        }
+        Index += 1;
+    }
+
+    if FoundEventSet.is_null() {
+        let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
+
+        RtlStringFromGUID(&Event.Set, &mut GuidString);
+        RtlFreeUnicodeString(&mut GuidString);
+        return STATUS_PROPSET_NOT_FOUND;
+    }
+
+    if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < (*FoundEventItem).DataInput {
+        /* buffer too small */
+        return STATUS_SUCCESS;
+    }
+
+    if (*FoundEventItem).AddHandler.is_none() && EventsList.is_null() {
+        /* no add handler and no list to add the new entry to */
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* get event data */
+    EventData = (*Irp).UserBuffer as PKSEVENTDATA;
+
+    if (*Irp).RequestorMode == 1i8 {
+        if (*EventData).NotificationType == KSEVENTF_SEMAPHORE_HANDLE {
+            /* get semaphore object handle */
+            Status = ObReferenceObjectByHandle(
+                (*EventData).__bindgen_anon_1.SemaphoreHandle.as_ref().Semaphore,
+                SEMAPHORE_MODIFY_STATE,
+                *ExSemaphoreObjectType,
+                (*Irp).RequestorMode,
+                &mut Object,
+                core::ptr::null_mut(),
+            );
+            if !NT_SUCCESS(Status) {
+                return STATUS_INVALID_PARAMETER;
+            }
+        } else if (*EventData).NotificationType == KSEVENTF_EVENT_HANDLE {
+            /* get event object handle */
+            Status = ObReferenceObjectByHandle(
+                (*EventData).__bindgen_anon_1.EventHandle.as_ref().Event,
+                EVENT_MODIFY_STATE,
+                *ExEventObjectType,
+                (*Irp).RequestorMode,
+                &mut Object,
+                core::ptr::null_mut(),
+            );
+            if !NT_SUCCESS(Status) {
+                return STATUS_INVALID_PARAMETER;
+            }
+        } else {
+            /* user mode client can only pass an event or semaphore handle */
+            return STATUS_INVALID_PARAMETER;
+        }
+    } else if (*EventData).NotificationType != KSEVENTF_EVENT_OBJECT
+        && (*EventData).NotificationType != KSEVENTF_SEMAPHORE_OBJECT
+        && (*EventData).NotificationType != KSEVENTF_DPC
+        && (*EventData).NotificationType != KSEVENTF_WORKITEM
+        && (*EventData).NotificationType != KSEVENTF_KSWORKITEM
+    {
+        /* invalid type requested */
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* calculate request size */
+    Size = core::mem::size_of::<KSEVENT_ENTRY>() as ULONG + (*FoundEventItem).ExtraEntryData;
+
+    /* do we have an allocator */
+    if Allocator.is_some() {
+        /* allocate event entry */
+        Status = (Allocator.unwrap())(Irp, Size, 0u8);
+
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+
+        /* assume the caller put it there */
+        EventEntry = *(&mut (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0]
+            as *mut PVOID as *mut PKSEVENT_ENTRY);
+    } else {
+        /* allocate it from nonpaged pool */
+        EventEntry = AllocateItem(NonPagedPool, Size as usize) as PKSEVENT_ENTRY;
+    }
+
+    if EventEntry.is_null() {
+        /* not enough memory */
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* zero event entry */
+    core::ptr::write_bytes(EventEntry as *mut u8, 0, Size as usize);
+
+    /* initialize event entry */
+    (*EventEntry).EventData = EventData;
+    (*EventEntry).NotificationType = (*EventData).NotificationType;
+    (*EventEntry).EventItem = FoundEventItem;
+    (*EventEntry).EventSet = FoundEventSet;
+    (*EventEntry).FileObject = (*IoStack).FileObject;
+
+    match (*EventEntry).NotificationType {
+        x if x == KSEVENTF_EVENT_HANDLE => {
+            (*EventEntry).Object = Object;
+            (*EventEntry).Reserved = 0;
+        }
+        x if x == KSEVENTF_SEMAPHORE_HANDLE => {
+            (*EventEntry).Object = Object;
+            (*EventEntry).SemaphoreAdjustment = (*EventData).__bindgen_anon_1.SemaphoreHandle.as_ref().Adjustment as ULONG;
+            (*EventEntry).Reserved = 0;
+        }
+        x if x == KSEVENTF_EVENT_OBJECT => {
+            (*EventEntry).Object = (*EventData).__bindgen_anon_1.EventObject.as_ref().Event;
+            (*EventEntry).Reserved = (*EventData).__bindgen_anon_1.EventObject.as_ref().Increment as ULONG;
+        }
+        x if x == KSEVENTF_SEMAPHORE_OBJECT => {
+            (*EventEntry).Object = (*EventData).__bindgen_anon_1.SemaphoreObject.as_ref().Semaphore;
+            (*EventEntry).SemaphoreAdjustment = (*EventData).__bindgen_anon_1.SemaphoreObject.as_ref().Adjustment as ULONG;
+            (*EventEntry).Reserved = (*EventData).__bindgen_anon_1.SemaphoreObject.as_ref().Increment as ULONG;
+        }
+        x if x == KSEVENTF_DPC => {
+            (*EventEntry).Object = (*EventData).__bindgen_anon_1.Dpc.as_ref().Dpc as PVOID;
+            (*EventData).__bindgen_anon_1.Dpc.as_mut().ReferenceCount = 0;
+        }
+        x if x == KSEVENTF_WORKITEM => {
+            (*EventEntry).Object = (*EventData).__bindgen_anon_1.WorkItem.as_ref().WorkQueueItem as PVOID;
+            (*EventEntry).__bindgen_anon_1.BufferItem =
+                (*EventData).__bindgen_anon_1.WorkItem.as_ref().WorkQueueType as ULONG_PTR as PKSBUFFER_ITEM;
+        }
+        x if x == KSEVENTF_KSWORKITEM => {
+            (*EventEntry).Object = (*EventData).__bindgen_anon_1.KsWorkItem.as_ref().KsWorkerObject;
+            (*EventEntry).__bindgen_anon_1.DpcItem =
+                (*EventData).__bindgen_anon_1.KsWorkItem.as_ref().WorkQueueItem as PKSDPC_ITEM;
+        }
+        _ => {
+            /* should not happen */
+        }
+    }
+
+    if (*FoundEventItem).AddHandler.is_some() {
+        /* now add the event */
+        Status = ((*FoundEventItem).AddHandler.unwrap())(Irp, EventData, EventEntry);
+
+        if !NT_SUCCESS(Status) {
+            /* discard event entry */
+            KsDiscardEvent(EventEntry);
+        }
+    } else {
+        /* setup context */
+        Ctx.List = EventsList;
+        Ctx.EventEntry = EventEntry;
+
+        /* add the event */
+        KspSynchronizedEventRoutine(EventsFlags, EventsLock, crate::cb!(SyncAddEvent), &mut Ctx);
+
+        Status = STATUS_SUCCESS;
+    }
+
+    /* done */
+    Status
+}
+
+#[no_mangle]
 pub unsafe extern "system" fn KsEnableEvent(
     Irp: PIRP,
     EventSetsCount: ULONG,
@@ -73,7 +376,7 @@ pub unsafe extern "system" fn KsEnableEvent(
     EventsFlags: KSEVENTS_LOCKTYPE,
     EventsLock: PVOID,
 ) -> NTSTATUS {
-    return KspEnableEvent(Irp, EventSetsCount, EventSet, EventsList, EventsFlags, EventsLock, core::ptr::null_mut(), 0);
+    return KspEnableEvent(Irp, EventSetsCount, EventSet, EventsList, EventsFlags, EventsLock, None, 0);
 }
 
 #[no_mangle]
@@ -96,8 +399,8 @@ pub unsafe extern "system" fn KspDisableEvent(
 ) -> BOOLEAN {
     let IoStack: PIO_STACK_LOCATION;
     let EventData: PKSEVENTDATA;
-    let EventEntry: PKSEVENT_ENTRY;
-    let Entry: PLIST_ENTRY;
+    let mut EventEntry: PKSEVENT_ENTRY;
+    let mut Entry: PLIST_ENTRY;
 
     if Ctx.is_null() || (*Ctx).List.is_null() || (*Ctx).FileObject.is_null() || (*Ctx).Irp.is_null() {
         return 0u8;
@@ -110,7 +413,7 @@ pub unsafe extern "system" fn KspDisableEvent(
     Entry = (*(*Ctx).List).Flink;
 
     while Entry != (*Ctx).List {
-        EventEntry = CONTAINING_RECORD(Entry, KSEVENT_ENTRY, ListEntry) as PKSEVENT_ENTRY;
+        EventEntry = CONTAINING_RECORD!(Entry, KSEVENT_ENTRY, ListEntry) as PKSEVENT_ENTRY;
 
         if (*EventEntry).EventData == EventData && (*EventEntry).FileObject == (*Ctx).FileObject {
             RemoveEntryList(&mut (*EventEntry).ListEntry);
@@ -132,7 +435,7 @@ pub unsafe extern "system" fn KsDisableEvent(
     EventsLock: PVOID,
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let mut Ctx: KSEVENT_CTX;
+    let mut Ctx: KSEVENT_CTX = core::mem::zeroed();
 
     if (*IoStack).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<KSEVENTDATA>() as u32 {
         if (*IoStack).Parameters.DeviceIoControl.InputBufferLength == 0 {
@@ -147,7 +450,7 @@ pub unsafe extern "system" fn KsDisableEvent(
     Ctx.Irp = Irp;
     Ctx.EventEntry = core::ptr::null_mut();
 
-    if KspSynchronizedEventRoutine(EventsFlags, EventsLock, KspDisableEvent, &mut Ctx) != 0 {
+    if KspSynchronizedEventRoutine(EventsFlags, EventsLock, crate::cb!(KspDisableEvent), &mut Ctx) != 0 {
         if !Ctx.EventEntry.is_null() {
             KsDiscardEvent(Ctx.EventEntry);
             return STATUS_SUCCESS;
@@ -166,7 +469,7 @@ pub unsafe extern "system" fn KsDiscardEvent(
         ObDereferenceObject((*EventEntry).Object);
     }
 
-    FreeItem(EventEntry);
+    FreeItem(EventEntry as PVOID);
 }
 
 #[no_mangle]
@@ -180,7 +483,7 @@ pub unsafe extern "system" fn KspFreeEventList(
         return 0u8;
     }
 
-    if IsListEmpty((*Ctx).List) != 0 {
+    if IsListEmpty((*Ctx).List) {
         return 0u8;
     }
 
@@ -204,13 +507,13 @@ pub unsafe extern "system" fn KsFreeEventList(
     EventsFlags: KSEVENTS_LOCKTYPE,
     EventsLock: PVOID,
 ) {
-    let mut Ctx: KSEVENT_CTX;
+    let mut Ctx: KSEVENT_CTX = core::mem::zeroed();
 
     Ctx.List = EventsList;
     Ctx.FileObject = FileObject;
     Ctx.EventEntry = core::ptr::null_mut();
 
-    while KspSynchronizedEventRoutine(EventsFlags, EventsLock, KspFreeEventList, &mut Ctx) != 0 {
+    while KspSynchronizedEventRoutine(EventsFlags, EventsLock, crate::cb!(KspFreeEventList), &mut Ctx) != 0 {
         if !Ctx.EventEntry.is_null() {
             KsDiscardEvent(Ctx.EventEntry);
         }
@@ -221,17 +524,17 @@ pub unsafe extern "system" fn KsFreeEventList(
 pub unsafe extern "system" fn KsGenerateEvent(
     EntryEvent: PKSEVENT_ENTRY,
 ) -> NTSTATUS {
-    if EntryEvent.NotificationType == KSEVENTF_EVENT_HANDLE || EntryEvent.NotificationType == KSEVENTF_EVENT_OBJECT {
-        KeSetEvent(EntryEvent.Object, EntryEvent.Reserved, FALSE);
-    } else if EntryEvent.NotificationType == KSEVENTF_SEMAPHORE_HANDLE || EntryEvent.NotificationType == KSEVENTF_SEMAPHORE_OBJECT {
-        KeReleaseSemaphore(EntryEvent.Object, EntryEvent.Reserved, EntryEvent.SemaphoreAdjustment, FALSE);
-    } else if EntryEvent.NotificationType == KSEVENTF_DPC {
-        InterlockedIncrement(&mut (*EntryEvent.EventData).Dpc.ReferenceCount as *mut LONG);
-        KeInsertQueueDpc(EntryEvent.Object as PRKDPC, core::ptr::null_mut(), core::ptr::null_mut());
-    } else if EntryEvent.NotificationType == KSEVENTF_WORKITEM {
-        ExQueueWorkItem(EntryEvent.Object as PWORK_QUEUE_ITEM, PtrToUlong(EntryEvent.BufferItem as *mut c_void));
-    } else if EntryEvent.NotificationType == KSEVENTF_KSWORKITEM {
-        return KsQueueWorkItem(EntryEvent.Object as PKSWORKER, EntryEvent.DpcItem as PWORK_QUEUE_ITEM);
+    if (*EntryEvent).NotificationType == KSEVENTF_EVENT_HANDLE || (*EntryEvent).NotificationType == KSEVENTF_EVENT_OBJECT {
+        KeSetEvent((*EntryEvent).Object, (*EntryEvent).Reserved as LONG, FALSE as BOOLEAN);
+    } else if (*EntryEvent).NotificationType == KSEVENTF_SEMAPHORE_HANDLE || (*EntryEvent).NotificationType == KSEVENTF_SEMAPHORE_OBJECT {
+        KeReleaseSemaphore((*EntryEvent).Object as _, (*EntryEvent).Reserved as KPRIORITY, (*EntryEvent).SemaphoreAdjustment as LONG, FALSE as BOOLEAN);
+    } else if (*EntryEvent).NotificationType == KSEVENTF_DPC {
+        InterlockedIncrement(&mut (*(*EntryEvent).EventData).__bindgen_anon_1.Dpc.as_mut().ReferenceCount as *mut ULONG as *mut LONG);
+        KeInsertQueueDpc((*EntryEvent).Object as PRKDPC, core::ptr::null_mut(), core::ptr::null_mut());
+    } else if (*EntryEvent).NotificationType == KSEVENTF_WORKITEM {
+        ExQueueWorkItem((*EntryEvent).Object as PWORK_QUEUE_ITEM, (*EntryEvent).__bindgen_anon_1.BufferItem as usize as _);
+    } else if (*EntryEvent).NotificationType == KSEVENTF_KSWORKITEM {
+        return KsQueueWorkItem((*EntryEvent).Object as PKSWORKER, (*EntryEvent).__bindgen_anon_1.DpcItem as PWORK_QUEUE_ITEM);
     } else {
         return STATUS_INVALID_PARAMETER;
     }
@@ -241,71 +544,28 @@ pub unsafe extern "system" fn KsGenerateEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn KsGenerateDataEvent(
-    EventEntry: PKSEVENT_ENTRY,
-    DataSize: ULONG,
-    Data: PVOID,
+    _EventEntry: PKSEVENT_ENTRY,
+    _DataSize: ULONG,
+    _Data: PVOID,
 ) -> NTSTATUS {
-    UNIMPLEMENTED;
+    /* UNIMPLEMENTED */
     STATUS_UNSUCCESSFUL
 }
 
+/*
+    @unimplemented
+    C source (drivers/ksfilter/ks/event.c) is `VOID NTAPI KsGenerateEventList(...) { UNIMPLEMENTED; }`.
+    Kept as a faithful no-op; a prior pass had fabricated a body that did not match the C.
+*/
 #[no_mangle]
 pub unsafe extern "system" fn KsGenerateEventList(
-    Set: *mut GUID,
-    EventId: u32,
-    EventsList: PLIST_ENTRY,
-    EventsFlags: KSEVENTS_LOCKTYPE,
-    EventsLock: *mut core::ffi::c_void,
+    _Set: *mut GUID,
+    _EventId: u32,
+    _EventsList: PLIST_ENTRY,
+    _EventsFlags: KSEVENTS_LOCKTYPE,
+    _EventsLock: *mut core::ffi::c_void,
 ) -> NTSTATUS {
-    let mut ListEntry: PLIST_ENTRY;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut EventEntry: PKSEVENT_ENTRY;
-    let mut OldIrql: KIRQL;
-
-    if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_SPINLOCK {
-        KeAcquireSpinLock(EventsLock as PKSPIN_LOCK, &mut OldIrql);
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_FASTMUTEX {
-        ExAcquireFastMutex(EventsLock as PFAST_MUTEX);
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_MUTEX {
-        KeWaitForSingleObject(
-            EventsLock as PRKMUTEX,
-            _KWAIT_REASON_Executive,
-            0i32,
-            0,
-            core::ptr::null_mut(),
-        );
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_RESOURCE {
-        ExAcquireResourceExclusiveLite(EventsLock as PERESOURCE, 1u8);
-    }
-
-    if !IsListEmpty(EventsList) {
-        ListEntry = (*EventsList).Flink;
-        while ListEntry != EventsList {
-            NextEntry = (*ListEntry).Flink;
-            EventEntry = CONTAINING_RECORD(ListEntry, KSEVENT_ENTRY, ListEntry);
-            if (Set == core::ptr::null_mut() || *Set == *EventEntry.Set) &&
-               (EventId == EventEntry.EventId)
-            {
-                if EventEntry.DpcFlags != 0 {
-                    KeInsertQueueDpc(EventEntry.Dpc, core::ptr::null_mut(), core::ptr::null_mut());
-                } else {
-                    KeSetEvent(EventEntry.Event, 0, 0u8);
-                }
-            }
-            ListEntry = NextEntry;
-        }
-    }
-
-    if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_SPINLOCK {
-        KeReleaseSpinLock(EventsLock as PKSPIN_LOCK, OldIrql);
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_FASTMUTEX {
-        ExReleaseFastMutex(EventsLock as PFAST_MUTEX);
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_MUTEX {
-        KeReleaseMutex(EventsLock as PRKMUTEX, 0u8);
-    } else if EventsFlags == KSEVENTS_LOCKTYPE_KSEVENT_RESOURCE {
-        ExReleaseResourceLite(EventsLock as PERESOURCE);
-    }
-
+    /* UNIMPLEMENTED */
     STATUS_SUCCESS
 }
 
@@ -803,7 +1063,7 @@ pub unsafe extern "system" fn KsGenerateEvents(
 //     while(Entry != Ctx->List)
 //     {
 //         /* get event entry */
-//         EventEntry = (PKSEVENT_ENTRY)CONTAINING_RECORD(Entry, KSEVENT_ENTRY, ListEntry);
+//         EventEntry = (PKSEVENT_ENTRY)CONTAINING_RECORD!(Entry, KSEVENT_ENTRY, ListEntry);
 //
 //         if (EventEntry->EventData == EventData && EventEntry->FileObject == Ctx->FileObject)
 //         {
@@ -921,7 +1181,7 @@ pub unsafe extern "system" fn KsGenerateEvents(
 //     }
 //
 //     /* get event entry */
-//     EventEntry = (PKSEVENT_ENTRY)CONTAINING_RECORD(Entry, KSEVENT_ENTRY, ListEntry);
+//     EventEntry = (PKSEVENT_ENTRY)CONTAINING_RECORD!(Entry, KSEVENT_ENTRY, ListEntry);
 //
 //     /* store event entry */
 //     Ctx->EventEntry = EventEntry;

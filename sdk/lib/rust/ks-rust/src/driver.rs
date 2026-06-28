@@ -1,15 +1,24 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoGetDriverObjectExtension, PDEVICE_OBJECT, PDRIVER_OBJECT, PUNICODE_STRING, PowerDeviceD0, PowerSystemWorking};
+use ntkrnl_sys::ddk::{IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoGetDriverObjectExtension, PDEVICE_OBJECT, PDRIVER_OBJECT, PUNICODE_STRING, _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0, _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking};
 use core::ffi::c_void;
+
+// IKsDevice_* IRP dispatch handlers live in the device module (referenced by KsInitializeDriver).
+use crate::device::{IKsDevice_Create, IKsDevice_Pnp, IKsDevice_Power};
+
+// RtlAssert is a real ntoskrnl export (declared here for the rlib; resolved at cohab link).
+extern "system" {
+    fn RtlAssert(FailedAssertion: PCHAR, FileName: PCHAR, LineNumber: ULONG, Message: PCHAR);
+}
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 0;
 
-pub type PKSDEVICE = *mut KSDEVICE;
-pub type KSDEVICE = core::ffi::c_void;
+// KSDEVICE / PKSDEVICE come from crate::types (KSDEVICE = _KSDEVICE).
 
 #[no_mangle]
 pub unsafe extern "system" fn KsGetDeviceForDeviceObject(
@@ -225,7 +234,7 @@ pub unsafe extern "system" fn KsInitializeDriver(
             DriverObject,
             KsInitializeDriver as PVOID,
             core::mem::size_of::<KS_DRIVER_EXTENSION>() as ULONG,
-            &mut DriverObjectExtension as *mut PKS_DRIVER_EXTENSION as PVOID,
+            &mut DriverObjectExtension as *mut PKS_DRIVER_EXTENSION as *mut PVOID,
         );
         if NT_SUCCESS(Status) {
             (*DriverObjectExtension).Descriptor = Descriptor;
@@ -236,16 +245,16 @@ pub unsafe extern "system" fn KsInitializeDriver(
         return Status;
     }
 
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(IKsDevice_Create);
-    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(IKsDevice_Pnp);
-    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(IKsDevice_Power);
-    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = Some(KsDefaultForwardIrp);
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = crate::cb!(IKsDevice_Create);
+    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = crate::cb!(IKsDevice_Pnp);
+    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = crate::cb!(IKsDevice_Power);
+    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = crate::cb!(KsDefaultForwardIrp);
 
-    (*DriverObject).DriverUnload = Some(KsNullDriverUnload);
-    (*(*DriverObject).DriverExtension).AddDevice = Some(KsAddDevice);
+    (*DriverObject).DriverUnload = crate::cb!(KsNullDriverUnload);
+    (*(*DriverObject).DriverExtension).AddDevice = crate::cb!(KsAddDevice);
 
-    KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CLOSE);
-    KsSetMajorFunctionHandler(DriverObject, IRP_MJ_DEVICE_CONTROL);
+    KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CLOSE as ULONG);
+    KsSetMajorFunctionHandler(DriverObject, IRP_MJ_DEVICE_CONTROL as ULONG);
 
     STATUS_SUCCESS
 }

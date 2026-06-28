@@ -1,10 +1,18 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoOpenDeviceRegistryKey, LDR_RESOURCE_INFO, LPWSTR, LdrAccessResource, LdrFindResource_U, _OBJECT_ATTRIBUTES, PDEVICE_OBJECT, PIMAGE_RESOURCE_DATA_ENTRY, PUNICODE_STRING, RtlAppendUnicodeStringToString, Type, ZwClose, ZwOpenKey};
+use ntkrnl_sys::ddk::{IoOpenDeviceRegistryKey, LDR_RESOURCE_INFO, LPWSTR, LdrAccessResource, LdrFindResource_U, _OBJECT_ATTRIBUTES, PDEVICE_OBJECT, PIMAGE_RESOURCE_DATA_ENTRY, PUNICODE_STRING, RtlAppendUnicodeStringToString, ZwClose, ZwOpenKey};
+use crate::misc::{AllocateItem, FreeItem};
 use core::ffi::c_void;
+
+#[inline(always)]
+fn MAKELANGID(p: u32, s: u32) -> u32 {
+    ((s & 0x3ff) << 10) | (p & 0x3ff)
+}
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -25,17 +33,17 @@ pub struct _IMAGE_RESOURCE_DATA_ENTRY {
     pub CodePage: ULONG,
     pub Reserved: ULONG,
 }
-pub type PIMAGE_RESOURCE_DATA_ENTRY = *mut _IMAGE_RESOURCE_DATA_ENTRY;
+// PIMAGE_RESOURCE_DATA_ENTRY comes from the ddk import (local redef removed — E0255).
 
-pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D;
-pub const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005;
-pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017;
-pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A;
-pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002;
+pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as NTSTATUS;
+pub const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005u32 as NTSTATUS;
+pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017u32 as NTSTATUS;
+pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
+pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
 
 pub const OBJ_KERNEL_HANDLE: ULONG = 0x00000200;
 pub const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
-pub const GENERIC_READ: ACCESS_MASK = 0x80000000;
+pub const GENERIC_READ: ACCESS_MASK = 0x80000000u32 as ACCESS_MASK;
 
 pub const PagedPool: POOL_TYPE = 1;
 
@@ -49,21 +57,21 @@ pub unsafe extern "system" fn KsLoadResource(
     ResourceSize: *mut u32,
 ) -> i32 {
     let mut Status: i32;
-    let mut ResourceInfo: LDR_RESOURCE_INFO;
-    let mut ResourceDataEntry: *mut IMAGE_RESOURCE_DATA_ENTRY;
-    let mut Data: *mut core::ffi::c_void;
-    let mut Size: u32;
+    let mut ResourceInfo: LDR_RESOURCE_INFO = core::mem::zeroed();
+    let mut ResourceDataEntry: PIMAGE_RESOURCE_DATA_ENTRY = core::ptr::null_mut();
+    let mut Data: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut Size: u32 = 0;
     let mut Result: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    ResourceInfo.Type = ResourceType;
-    ResourceInfo.Name = ResourceName;
-    ResourceInfo.Language = MAKELANGID(0, 0);
+    ResourceInfo.Type = ResourceType as _;
+    ResourceInfo.Name = ResourceName as _;
+    ResourceInfo.Language = MAKELANGID(0, 0) as _;
 
-    Status = LdrFindResource_U(ImageBase, &ResourceInfo, 3, &mut ResourceDataEntry);
+    Status = LdrFindResource_U(ImageBase, &mut ResourceInfo, 3, &mut ResourceDataEntry);
     if NT_SUCCESS(Status) {
         Status = LdrAccessResource(ImageBase, ResourceDataEntry, &mut Data, &mut Size);
         if NT_SUCCESS(Status) {
-            Result = AllocateItem(PoolType, Size);
+            Result = AllocateItem(PoolType, Size as usize);
             if !Result.is_null() {
                 core::ptr::copy_nonoverlapping(Data, Result, Size as usize);
                 *Resource = Result;
@@ -103,7 +111,7 @@ pub unsafe extern "system" fn KsGetImageNameAndResourceId(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut ImageLength: ULONG;
-    let ImagePath: [WCHAR; 28] = [
+    let ImagePath: [WCHAR; 30] = [
         b'\\' as WCHAR, b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR,
         b't' as WCHAR, b'e' as WCHAR, b'm' as WCHAR, b'R' as WCHAR,
         b'o' as WCHAR, b'o' as WCHAR, b't' as WCHAR, b'\\' as WCHAR,
@@ -119,13 +127,13 @@ pub unsafe extern "system" fn KsGetImageNameAndResourceId(
     (*ImageName).MaximumLength = 0;
 
     ImageLength = 0;
-    Status = KspQueryRegValue(RegKey, L"Image\0".as_ptr() as LPWSTR, core::ptr::null_mut(), &mut ImageLength, core::ptr::null_mut());
+    Status = KspQueryRegValue(RegKey, L!("Image\0").as_ptr() as LPWSTR, core::ptr::null_mut(), &mut ImageLength, core::ptr::null_mut());
 
     if Status != STATUS_BUFFER_OVERFLOW {
         return Status;
     }
 
-    (*ImageName).MaximumLength = (core::mem::size_of_val(&ImagePath) + ImageLength) as USHORT;
+    (*ImageName).MaximumLength = (core::mem::size_of_val(&ImagePath) + ImageLength as usize) as USHORT;
     (*ImageName).Buffer = AllocateItem(PagedPool, (*ImageName).MaximumLength as usize) as PWCHAR;
 
     if (*ImageName).Buffer.is_null() {
@@ -136,7 +144,7 @@ pub unsafe extern "system" fn KsGetImageNameAndResourceId(
 
     Status = KspQueryRegValue(
         RegKey,
-        L"Image\0".as_ptr() as LPWSTR,
+        L!("Image\0").as_ptr() as LPWSTR,
         (*ImageName).Buffer.add(core::mem::size_of_val(&ImagePath) / core::mem::size_of::<WCHAR>()) as PVOID,
         &mut ImageLength,
         core::ptr::null_mut(),
@@ -148,7 +156,7 @@ pub unsafe extern "system" fn KsGetImageNameAndResourceId(
     }
 
     ImageLength = 0;
-    Status = KspQueryRegValue(RegKey, L"ResourceId\0".as_ptr() as LPWSTR, core::ptr::null_mut(), &mut ImageLength, ValueType);
+    Status = KspQueryRegValue(RegKey, L!("ResourceId\0").as_ptr() as LPWSTR, core::ptr::null_mut(), &mut ImageLength, ValueType);
 
     *ResourceId = AllocateItem(PagedPool, ImageLength as usize) as ULONG_PTR;
 
@@ -157,7 +165,7 @@ pub unsafe extern "system" fn KsGetImageNameAndResourceId(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = KspQueryRegValue(RegKey, L"ResourceId\0".as_ptr() as LPWSTR, *ResourceId as PVOID, &mut ImageLength, ValueType);
+    Status = KspQueryRegValue(RegKey, L!("ResourceId\0").as_ptr() as LPWSTR, *ResourceId as PVOID, &mut ImageLength, ValueType);
 
     if !NT_SUCCESS(Status) {
         FreeItem((*ImageName).Buffer as PVOID);
@@ -175,18 +183,18 @@ pub unsafe extern "system" fn KsMapModuleName(
     ResourceId: PULONG_PTR,
     ValueType: PULONG,
 ) -> NTSTATUS {
-    let Status: NTSTATUS;
-    let SubKeyName: _UNICODE_STRING;
-    let Modules: _UNICODE_STRING;
-    let hKey: HANDLE;
-    let hSubKey: HANDLE;
-    let ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut Status: NTSTATUS;
+    let mut SubKeyName: _UNICODE_STRING = core::mem::zeroed();
+    let mut Modules: _UNICODE_STRING = core::mem::zeroed();
+    let mut hKey: HANDLE = core::ptr::null_mut();
+    let mut hSubKey: HANDLE = core::ptr::null_mut();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     Modules.Length = 16u16;
     Modules.MaximumLength = 18u16;
     Modules.Buffer = "Modules\\\0".as_ptr() as PWSTR;
 
-    Status = IoOpenDeviceRegistryKey(PhysicalDeviceObject, PLUGPLAY_REGKEY_DEVICE, GENERIC_READ, &hKey);
+    Status = IoOpenDeviceRegistryKey(PhysicalDeviceObject, PLUGPLAY_REGKEY_DEVICE, GENERIC_READ, &mut hKey);
 
     if !NT_SUCCESS(Status) {
         return STATUS_INVALID_PARAMETER;
@@ -201,17 +209,17 @@ pub unsafe extern "system" fn KsMapModuleName(
         return STATUS_NO_MEMORY;
     }
 
-    RtlAppendUnicodeStringToString(&SubKeyName, &Modules);
-    RtlAppendUnicodeStringToString(&SubKeyName, ModuleName);
+    RtlAppendUnicodeStringToString(&mut SubKeyName, &Modules);
+    RtlAppendUnicodeStringToString(&mut SubKeyName, ModuleName);
 
-    (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = hKey;
-    (*ObjectAttributes).Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
-    (*ObjectAttributes).ObjectName = &SubKeyName;
-    (*ObjectAttributes).SecurityDescriptor = core::ptr::null_mut();
-    (*ObjectAttributes).SecurityQualityOfService = core::ptr::null_mut();
+    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    ObjectAttributes.RootDirectory = hKey;
+    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
+    ObjectAttributes.ObjectName = &mut SubKeyName;
+    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
+    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = ZwOpenKey(&hSubKey, GENERIC_READ, &ObjectAttributes);
+    Status = ZwOpenKey(&mut hSubKey, GENERIC_READ, &mut ObjectAttributes);
 
     if NT_SUCCESS(Status) {
         Status = KsGetImageNameAndResourceId(hSubKey, ImageName, ResourceId, ValueType);
@@ -351,7 +359,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 // {
 //     NTSTATUS Status;
 //     ULONG ImageLength;
-//     WCHAR ImagePath[] = {L"\\SystemRoot\\system32\\drivers\\"};
+//     WCHAR ImagePath[] = {L!("\\SystemRoot\\system32\\drivers\\")};
 //
 //     /* first clear the provided ImageName */
 //     ImageName->Buffer = NULL;
@@ -359,7 +367,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 //
 //     ImageLength = 0;
 //     /* retrieve length of image name */
-//     Status = KspQueryRegValue(RegKey, L"Image", NULL, &ImageLength, NULL);
+//     Status = KspQueryRegValue(RegKey, L!("Image"), NULL, &ImageLength, NULL);
 //
 //     if (Status != STATUS_BUFFER_OVERFLOW)
 //     {
@@ -383,7 +391,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 //
 //     /* retrieve image name */
 //     Status = KspQueryRegValue(RegKey,
-//                               L"Image",
+//                               L!("Image"),
 //                               &ImageName->Buffer[sizeof(ImagePath) / sizeof(WCHAR)],
 //                               &ImageLength,
 //                               NULL);
@@ -397,7 +405,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 //
 //     /* now query for resource id length*/
 //    ImageLength = 0;
-//    Status = KspQueryRegValue(RegKey, L"ResourceId", NULL, &ImageLength, ValueType);
+//    Status = KspQueryRegValue(RegKey, L!("ResourceId"), NULL, &ImageLength, ValueType);
 //
 //     /* allocate resource id buffer*/
 //     *ResourceId = (ULONG_PTR)AllocateItem(PagedPool, ImageLength);
@@ -410,7 +418,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //     }
 //     /* now query for resource id */
-//     Status = KspQueryRegValue(RegKey, L"ResourceId", (PVOID)*ResourceId, &ImageLength, ValueType);
+//     Status = KspQueryRegValue(RegKey, L!("ResourceId"), (PVOID)*ResourceId, &ImageLength, ValueType);
 //
 //     if (!NT_SUCCESS(Status))
 //     {
@@ -438,7 +446,7 @@ pub unsafe extern "system" fn KsMapModuleName(
 // {
 //     NTSTATUS Status;
 //     UNICODE_STRING SubKeyName;
-//     UNICODE_STRING Modules = RTL_CONSTANT_STRING(L"Modules\\");
+//     UNICODE_STRING Modules = RTL_CONSTANT_STRING(L!("Modules\\"));
 //     HANDLE hKey, hSubKey;
 //     OBJECT_ATTRIBUTES ObjectAttributes;
 //

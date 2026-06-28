@@ -1,9 +1,12 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{ExFreePool, _KWAIT_REASON_Executive, KeReleaseMutex, KeWaitForSingleObject};
+use crate::misc::{AllocateItem, FreeItem};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -44,7 +47,7 @@ pub unsafe extern "system" fn KsAllocateObjectBag(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KspFindObjectBagEntry(
+pub unsafe extern "system" fn KspFindObjectBagItem(
     ObjectList: PLIST_ENTRY,
     Item: PVOID,
 ) -> PKSIOBJECT_BAG_ENTRY {
@@ -78,7 +81,7 @@ pub unsafe extern "system" fn KsAddItemToObjectBag(
         core::ptr::null_mut(),
     );
 
-    let BagEntry = KspFindObjectBagEntry(&raw mut (*Bag).ObjectList, Item);
+    let BagEntry = KspFindObjectBagItem(&raw mut (*Bag).ObjectList, Item);
 
     if !BagEntry.is_null() {
         InterlockedIncrement(&raw mut (*BagEntry).References as PLONG);
@@ -101,7 +104,7 @@ pub unsafe extern "system" fn KsAddItemToObjectBag(
     if Free.is_some() {
         (*BagEntry).Free = Free;
     } else {
-        (*BagEntry).Free = Some(ExFreePool as unsafe extern "system" fn(PVOID));
+        (*BagEntry).Free = cb!(ExFreePool);
     }
 
     InsertTailList(&raw mut (*Bag).ObjectList, &raw mut (*BagEntry).Entry);
@@ -122,9 +125,7 @@ pub unsafe extern "C" fn KspGetObjectItemReferenceCount(
 
     Entry = (*DeviceHeader).ObjectBags.Flink;
     while Entry != &mut (*DeviceHeader).ObjectBags {
-        OtherBag = core::mem::transmute::<PLIST_ENTRY, PKSIOBJECT_BAG>(
-            core::ptr::addr_of!((*Entry).Flink).sub(1)
-        );
+        OtherBag = CONTAINING_RECORD!(Entry, KSIOBJECT_BAG, Entry);
         OtherBagEntry = KspFindObjectBagItem(&mut (*OtherBag).ObjectList, Item);
         if !OtherBagEntry.is_null() {
             TotalRefs += 1;
@@ -143,7 +144,7 @@ pub unsafe extern "system" fn KsRemoveItemFromObjectBag(
 ) -> ULONG {
     let Bag = ObjectBag as PKSIOBJECT_BAG;
     let BagEntry: PKSIOBJECT_BAG_ENTRY;
-    let TotalRefs: ULONG;
+    let mut TotalRefs: ULONG;
 
     KeWaitForSingleObject(
         (*Bag).BagMutex as PVOID,
@@ -166,7 +167,7 @@ pub unsafe extern "system" fn KsRemoveItemFromObjectBag(
         Item,
     ));
 
-    InterlockedDecrement(&mut (*BagEntry).References as *mut LONG as PLONG);
+    InterlockedDecrement(&mut (*BagEntry).References as *mut ULONG as PLONG);
 
     if (*BagEntry).References == 0 {
         RemoveEntryList(&mut (*BagEntry).Entry);
@@ -198,19 +199,19 @@ pub unsafe extern "system" fn KsCopyObjectBagItems(
     let ObjectBagDest = ObjectBagDestination as PKSIOBJECT_BAG;
 
     KeWaitForSingleObject(
-        (*ObjectBagSrc).BagMutex,
+        (*ObjectBagSrc).BagMutex as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
-        FALSE,
+        0i32 as KPROCESSOR_MODE,
+        FALSE as BOOLEAN,
         core::ptr::null_mut(),
     );
 
     if (*ObjectBagSrc).BagMutex != (*ObjectBagDest).BagMutex {
         KeWaitForSingleObject(
-            (*ObjectBagDest).BagMutex,
+            (*ObjectBagDest).BagMutex as PVOID,
             _KWAIT_REASON_Executive,
-            0i32,
-            FALSE,
+            0i32 as KPROCESSOR_MODE,
+            FALSE as BOOLEAN,
             core::ptr::null_mut(),
         );
     }
@@ -253,14 +254,14 @@ pub unsafe extern "system" fn KsFreeObjectBag(
     Bag = ObjectBag as PKSIOBJECT_BAG;
 
     KeWaitForSingleObject(
-        (*Bag).BagMutex,
+        (*Bag).BagMutex as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i32 as KPROCESSOR_MODE,
         0u8,
         core::ptr::null_mut(),
     );
 
-    while IsListEmpty(&mut (*Bag).ObjectList) == 0 {
+    while !IsListEmpty(&mut (*Bag).ObjectList) {
         Entry = RemoveHeadList(&mut (*Bag).ObjectList);
         BagEntry = (Entry as usize)
             .wrapping_sub(&raw mut (*core::ptr::null_mut::<KSIOBJECT_BAG_ENTRY>()).Entry as usize)
@@ -298,10 +299,10 @@ pub unsafe extern "system" fn _KsEdit(
     let mut Status: NTSTATUS;
 
     KeWaitForSingleObject(
-        (*Bag).BagMutex,
+        (*Bag).BagMutex as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
-        FALSE,
+        0i32 as KPROCESSOR_MODE,
+        FALSE as BOOLEAN,
         core::ptr::null_mut(),
     );
 
@@ -312,13 +313,13 @@ pub unsafe extern "system" fn _KsEdit(
     }
 
     if BagEntry.is_null() || NewSize > OldSize {
-        Item = AllocateItem(NonPagedPool, NewSize);
+        Item = AllocateItem(NonPagedPool, NewSize as usize);
         if Item.is_null() {
             KeReleaseMutex((*Bag).BagMutex, FALSE);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = KsAddItemToObjectBag(Bag as KSOBJECT_BAG, Item, core::ptr::null_mut());
+        Status = KsAddItemToObjectBag(Bag as KSOBJECT_BAG, Item, None);
         if !NT_SUCCESS(Status) {
             FreeItem(Item);
             KeReleaseMutex((*Bag).BagMutex, FALSE);
@@ -394,7 +395,7 @@ pub unsafe extern "system" fn _KsEdit(
 //     IKsDevice *KsDevice;
 //
 //     /* get real device header */
-//     DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD(Device, KSIDEVICE_HEADER, KsDevice);
+//     DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(Device, KSIDEVICE_HEADER, KsDevice);
 //
 //     /* allocate a object bag ctx */
 //     Bag = AllocateItem(NonPagedPool, sizeof(KSIOBJECT_BAG));
@@ -422,7 +423,7 @@ pub unsafe extern "system" fn _KsEdit(
 //     while(Entry != ObjectList)
 //     {
 //         /* get bag entry */
-//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD(Entry, KSIOBJECT_BAG_ENTRY, Entry);
+//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD!(Entry, KSIOBJECT_BAG_ENTRY, Entry);
 //
 //         if (BagEntry->Item == Item)
 //         {
@@ -514,7 +515,7 @@ pub unsafe extern "system" fn _KsEdit(
 //     while(Entry != &DeviceHeader->ObjectBags)
 //     {
 //         /* get other bag */
-//         OtherBag = (PKSIOBJECT_BAG)CONTAINING_RECORD(Entry, KSIOBJECT_BAG, Entry);
+//         OtherBag = (PKSIOBJECT_BAG)CONTAINING_RECORD!(Entry, KSIOBJECT_BAG, Entry);
 //
 //         /* is the item present there */
 //         OtherBagEntry = KspFindObjectBagItem(&OtherBag->ObjectList, Item);
@@ -633,7 +634,7 @@ pub unsafe extern "system" fn _KsEdit(
 //     while(Entry != &ObjectBagSrc->ObjectList)
 //     {
 //         /* get bag entry */
-//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD(Entry, KSIOBJECT_BAG_ENTRY, Entry);
+//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD!(Entry, KSIOBJECT_BAG_ENTRY, Entry);
 //
 //         /* add the item */
 //         Status = KsAddItemToObjectBag(ObjectBagDestination, BagEntry->Item, BagEntry->Free);
@@ -683,7 +684,7 @@ pub unsafe extern "system" fn _KsEdit(
 //         /* get an bag entry */
 //         Entry = RemoveHeadList(&Bag->ObjectList);
 //         /* access bag entry item */
-//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD(Entry, KSIOBJECT_BAG, Entry);
+//         BagEntry = (PKSIOBJECT_BAG_ENTRY)CONTAINING_RECORD!(Entry, KSIOBJECT_BAG, Entry);
 //
 //         /* check if the item is present in some other bag */
 //         TotalRefs = KspGetObjectItemReferenceCount((PKSIDEVICE_HEADER)Bag->DeviceHeader, &BagEntry->Item);

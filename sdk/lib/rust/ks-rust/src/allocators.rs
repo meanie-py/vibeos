@@ -1,10 +1,34 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{ExDeleteNPagedLookasideList, ExDeletePagedLookasideList, ExInitializeNPagedLookasideList, ExInitializePagedLookasideList, GUID, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::inline::ex::{ExAllocateFromNPagedLookasideList, ExFreeToNPagedLookasideList, ExAllocateFromPagedLookasideList, ExFreeToPagedLookasideList};
+use crate::misc::{AllocateItem, FreeItem, CompleteRequest, KspCopyCreateRequest};
+use crate::topology::KspCreateObjectType;
+use crate::cb;
 use core::ffi::c_void;
+
+// IsEqualGUIDAligned: file-local (the C inline; other ks modules define it locally too).
+#[inline]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> BOOLEAN {
+    ((*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4) as BOOLEAN
+}
+
+// extern "system" trampolines: the Ex*LookasideList alloc/free helpers are FORCEINLINE Rust
+// fns (extern "Rust" ABI); the union slots expect extern "system" fn pointers, so wrap them.
+unsafe extern "system" fn ks_npaged_alloc(l: PNPAGED_LOOKASIDE_LIST) -> PVOID { ExAllocateFromNPagedLookasideList(l) }
+unsafe extern "system" fn ks_npaged_free(l: PNPAGED_LOOKASIDE_LIST, e: PVOID) { ExFreeToNPagedLookasideList(l, e) }
+unsafe extern "system" fn ks_npaged_delete(l: PNPAGED_LOOKASIDE_LIST) { ExDeleteNPagedLookasideList(l) }
+unsafe extern "system" fn ks_paged_alloc(l: PPAGED_LOOKASIDE_LIST) -> PVOID { ExAllocateFromPagedLookasideList(l) }
+unsafe extern "system" fn ks_paged_free(l: PPAGED_LOOKASIDE_LIST, e: PVOID) { ExFreeToPagedLookasideList(l, e) }
+unsafe extern "system" fn ks_paged_delete(l: PPAGED_LOOKASIDE_LIST) { ExDeletePagedLookasideList(l) }
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -17,7 +41,7 @@ pub const KSSTRING_Allocator: [::core::ffi::c_ushort; 39] = unsafe {
     )
 };
 
-pub static mut IID_IKsAllocator: GUID = _GUID {
+pub static mut IID_IKsAllocator: GUID = GUID {
     Data1: 0x642f5d00 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x4791 as ::core::ffi::c_ushort,
     Data3: 0x11d0 as ::core::ffi::c_ushort,
@@ -33,7 +57,7 @@ pub static mut IID_IKsAllocator: GUID = _GUID {
     ],
 };
 
-pub static mut KSPROPSETID_StreamAllocator: GUID = _GUID {
+pub static mut KSPROPSETID_StreamAllocator: GUID = GUID {
     Data1: 0xcf6e4342 as ::core::ffi::c_uint,
     Data2: 0xec87 as ::core::ffi::c_ushort,
     Data3: 0x11cf as ::core::ffi::c_ushort,
@@ -49,113 +73,90 @@ pub static mut KSPROPSETID_StreamAllocator: GUID = _GUID {
     ],
 };
 
+// vtbl slots: methods are defined `extern "system"` (== stdcall on i386). The slot type is
+// the bindgen Option<fn>; `Some(f as extern "C" fn)` both mis-casts the ABI and mis-matches
+// the slot, so each slot is filled via a const-safe fn-POINTER transmute (transmuting the fn
+// pointer is const-evaluable; `f as usize` would not be). Same pattern as filter.rs.
 static mut vt_IKsAllocator: IKsAllocatorVtbl = unsafe {
     IKsAllocatorVtbl {
-        QueryInterface: Some(
+        QueryInterface: ::core::mem::transmute(
             IKsAllocator_fnQueryInterface
-                as unsafe extern "C" fn(*mut IKsAllocator, *const IID, *mut PVOID) -> NTSTATUS,
+                as *const (),
         ),
-        AddRef: Some(IKsAllocator_fnAddRef as unsafe extern "C" fn(*mut IKsAllocator) -> ULONG),
-        Release: Some(IKsAllocator_fnRelease as unsafe extern "C" fn(*mut IKsAllocator) -> ULONG),
-        DispatchDeviceIoControl: Some(
+        AddRef: ::core::mem::transmute(
+            IKsAllocator_fnAddRef as *const (),
+        ),
+        Release: ::core::mem::transmute(
+            IKsAllocator_fnRelease as *const (),
+        ),
+        DispatchDeviceIoControl: ::core::mem::transmute(
             IKsAllocator_fnDeviceIoControl
-                as unsafe extern "C" fn(*mut IKsAllocator, PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Close: Some(IKsAllocator_fnClose as unsafe extern "C" fn(*mut IKsAllocator) -> NTSTATUS),
-        AllocateFrame: Some(
+        Close: ::core::mem::transmute(
+            IKsAllocator_fnClose as *const (),
+        ),
+        AllocateFrame: ::core::mem::transmute(
             IKsAllocator_fnAllocateFrame
-                as unsafe extern "C" fn(*mut IKsAllocator, *mut PVOID) -> NTSTATUS,
+                as *const (),
         ),
-        FreeFrame: Some(
-            IKsAllocator_fnFreeFrame as unsafe extern "C" fn(*mut IKsAllocator, PVOID) -> (),
+        FreeFrame: ::core::mem::transmute(
+            IKsAllocator_fnFreeFrame as *const (),
         ),
     }
 };
 
 static mut DispatchTable: KSDISPATCH_TABLE = unsafe {
     KSDISPATCH_TABLE {
-        DeviceIoControl: Some(
+        DeviceIoControl: ::core::mem::transmute(
             IKsAllocator_DispatchDeviceIoControl
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Read: Some(
-            KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Read: ::core::mem::transmute(
+            KsDispatchInvalidDeviceRequest as *const (),
         ),
-        Write: Some(
-            KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Write: ::core::mem::transmute(
+            KsDispatchInvalidDeviceRequest as *const (),
         ),
-        Flush: Some(
-            KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Flush: ::core::mem::transmute(
+            KsDispatchInvalidDeviceRequest as *const (),
         ),
-        Close: Some(
-            IKsAllocator_DispatchClose as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Close: ::core::mem::transmute(
+            IKsAllocator_DispatchClose as *const (),
         ),
-        QuerySecurity: Some(
-            KsDispatchQuerySecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        QuerySecurity: ::core::mem::transmute(
+            KsDispatchQuerySecurity as *const (),
         ),
-        SetSecurity: Some(
-            KsDispatchSetSecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        SetSecurity: ::core::mem::transmute(
+            KsDispatchSetSecurity as *const (),
         ),
-        FastDeviceIoControl: Some(
+        FastDeviceIoControl: ::core::mem::transmute(
             KsDispatchFastIoDeviceControlFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    BOOLEAN,
-                    PVOID,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    ULONG,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastRead: Some(
+        FastRead: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastWrite: Some(
+        FastWrite: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
     }
 };
 
-#[repr(C)]
-pub enum ALLOCATOR_TYPE {
-    ALLOCATOR_NPAGED_LOOKASIDE = 0,
-    ALLOCATOR_PAGED_LOOKASIDE = 1,
-    ALLOCATOR_CUSTOM = 2,
-}
+// C file-local enums (allocators.c). Translated to integer constants so the `==` comparisons
+// against the (now integer) Type/Request fields compile. Ordinals match the C enum order.
+pub type ALLOCATOR_TYPE = i32;
+pub const ALLOCATOR_NPAGED_LOOKASIDE: ALLOCATOR_TYPE = 0;
+pub const ALLOCATOR_PAGED_LOOKASIDE: ALLOCATOR_TYPE = 1;
+pub const ALLOCATOR_CUSTOM: ALLOCATOR_TYPE = 2;
 
-#[repr(C)]
-pub enum ALLOC_REQUEST {
-    ALLOCATOR_DEVICE_CONTROL = 0,
-    ALLOCATOR_DEVICE_CLOSE = 1,
-    ALLOCATOR_ALLOCATE = 2,
-    ALLOCATOR_FREE = 3,
-}
+pub type ALLOC_REQUEST = i32;
+pub const ALLOCATOR_DEVICE_CONTROL: ALLOC_REQUEST = 0;
+pub const ALLOCATOR_DEVICE_CLOSE: ALLOC_REQUEST = 1;
+pub const ALLOCATOR_ALLOCATE: ALLOC_REQUEST = 2;
+pub const ALLOCATOR_FREE: ALLOC_REQUEST = 3;
 
 pub type PFNKSPAGEDPOOLALLOCATE = Option<unsafe extern "system" fn(Lookaside: PPAGED_LOOKASIDE_LIST) -> PVOID>;
 pub type PFNKSNPAGEDPOOLALLOCATE = Option<unsafe extern "system" fn(Lookaside: PNPAGED_LOOKASIDE_LIST) -> PVOID>;
@@ -167,7 +168,7 @@ pub type PFNKSPAGEDPOOLDELETE = Option<unsafe extern "system" fn(Lookaside: PPAG
 #[repr(C)]
 pub struct ALLOCATOR {
     pub lpVtbl: *mut IKsAllocatorVtbl,
-    pub ref: LONG,
+    pub ref_: LONG,
     pub Header: PKSIOBJECT_HEADER,
     pub Type: ALLOCATOR_TYPE,
     pub Status: KSSTREAMALLOCATOR_STATUS,
@@ -213,13 +214,13 @@ pub unsafe extern "system" fn IKsAllocator_fnQueryInterface(
     refiid: *const GUID,
     Output: *mut PVOID,
 ) -> NTSTATUS {
-    let This: PALLOCATOR = CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+    let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 
-    if IsEqualGUIDAligned(refiid, &IID_IUnknown) ||
-       IsEqualGUIDAligned(refiid, &IID_IKsAllocator)
+    if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 ||
+       IsEqualGUIDAligned(refiid, &IID_IKsAllocator) != 0
     {
         *Output = &mut (*This).lpVtbl as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref);
+        InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
     return STATUS_UNSUCCESSFUL;
@@ -227,21 +228,21 @@ pub unsafe extern "system" fn IKsAllocator_fnQueryInterface(
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsAllocator_fnAddRef(iface: *mut IKsAllocator) -> ULONG {
-    let This: PALLOCATOR = CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
-    InterlockedIncrement(&mut (*This).ref_0) as ULONG
+    let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
+    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsAllocator_fnRelease(
     iface: *mut IKsAllocator,
 ) -> ULONG {
-    let This: PALLOCATOR = CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
-    InterlockedDecrement(&mut (*This).ref);
-    if (*This).ref == 0 {
+    let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
+    InterlockedDecrement(&mut (*This).ref_);
+    if (*This).ref_ == 0 {
         FreeItem(This as PVOID);
         return 0;
     }
-    (*This).ref as ULONG
+    (*This).ref_ as ULONG
 }
 
 #[no_mangle]
@@ -274,7 +275,7 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
         if (*Property).Id == KSPROPERTY_STREAMALLOCATOR_FUNCTIONTABLE {
             if ((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize) < core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
-                (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() as ULONG_PTR;
+                (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() as _;
                 CompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
                 return STATUS_BUFFER_TOO_SMALL;
             }
@@ -285,17 +286,17 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
             }
 
             let FunctionTable = (*Irp).UserBuffer as PKSSTREAMALLOCATOR_FUNCTIONTABLE;
-            (*FunctionTable).AllocateFrame = Some(IKsAllocator_Allocate as PFNALLOCATOR_ALLOCATEFRAME);
-            (*FunctionTable).FreeFrame = Some(IKsAllocator_FreeFrame as PFNALLOCATOR_FREEFRAME);
+            (*FunctionTable).AllocateFrame = cb!(IKsAllocator_Allocate);
+            (*FunctionTable).FreeFrame = cb!(IKsAllocator_FreeFrame);
 
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() as ULONG_PTR;
+            (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() as _;
             CompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
             return STATUS_SUCCESS;
         } else if (*Property).Id == KSPROPERTY_STREAMALLOCATOR_STATUS {
             if ((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize) < core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>() {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
-                (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>() as ULONG_PTR;
+                (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>() as _;
                 CompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
                 return STATUS_BUFFER_TOO_SMALL;
             }
@@ -307,13 +308,13 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
 
             let State = (*Irp).UserBuffer as PKSSTREAMALLOCATOR_STATUS;
             core::ptr::copy_nonoverlapping(
-                &raw const (*This).__bindgen_anon_1.Status as *const u8,
+                &raw const (*This).Status as *const u8,
                 State as *mut u8,
                 core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>(),
             );
 
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>() as ULONG_PTR;
+            (*Irp).IoStatus.Information = core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>() as _;
             CompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
             return STATUS_SUCCESS;
         }
@@ -328,16 +329,16 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
 pub unsafe extern "system" fn IKsAllocator_fnClose(
     iface: *mut IKsAllocator,
 ) -> NTSTATUS {
-    let This: PALLOCATOR = CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+    let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 
     if (*This).Type == ALLOCATOR_CUSTOM {
-        let delete = (*This).Delete.DefaultDelete;
+        let delete = (*This).Delete.DefaultDelete.unwrap();
         delete((*This).u.CustomList);
     } else if (*This).Type == ALLOCATOR_NPAGED_LOOKASIDE {
-        let delete = (*This).Delete.NPagedPool;
+        let delete = (*This).Delete.NPagedPool.unwrap();
         delete(&mut (*This).u.NPagedList);
     } else if (*This).Type == ALLOCATOR_PAGED_LOOKASIDE {
-        let delete = (*This).Delete.PagedPool;
+        let delete = (*This).Delete.PagedPool.unwrap();
         delete(&mut (*This).u.PagedList);
     }
 
@@ -376,7 +377,7 @@ pub unsafe extern "system" fn IKsAllocator_fnAllocateFrame(
 
     if !Frame.is_null() {
         *OutFrame = Frame;
-        InterlockedIncrement(&mut (*This).__bindgen_anon_1.Status.AllocatedFrames as *mut LONG);
+        InterlockedIncrement(core::ptr::addr_of_mut!((*This).Status.AllocatedFrames) as *mut LONG);
         return STATUS_SUCCESS;
     }
 
@@ -388,16 +389,16 @@ pub unsafe extern "system" fn IKsAllocator_fnFreeFrame(
     iface: *mut IKsAllocator,
     Frame: PVOID,
 ) {
-    let This: PALLOCATOR = CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+    let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 
     if (*This).Type == ALLOCATOR_CUSTOM {
-        let free = (*This).Free.DefaultFree;
+        let free = (*This).Free.DefaultFree.unwrap();
         free((*This).u.CustomList, Frame);
     } else if (*This).Type == ALLOCATOR_NPAGED_LOOKASIDE {
-        let free = (*This).Free.NPagedPool;
+        let free = (*This).Free.NPagedPool.unwrap();
         free(&mut (*This).u.NPagedList, Frame);
     } else if (*This).Type == ALLOCATOR_PAGED_LOOKASIDE {
-        let free = (*This).Free.PagedPool;
+        let free = (*This).Free.PagedPool.unwrap();
         free(&mut (*This).u.PagedList, Frame);
     }
 }
@@ -461,7 +462,7 @@ pub unsafe extern "system" fn KsValidateAllocatorCreateRequest(
         | KSALLOCATOR_REQUIREMENTF_MUST_ALLOCATE) as ULONG;
 
     if (*AllocatorFraming).FrameSize == 0
-        || ((*AllocatorFraming).__bindgen_anon_1.OptionsFlags & !SupportedFlags) != 0
+        || ((*(*AllocatorFraming).__bindgen_anon_1.OptionsFlags.as_ref()) & !SupportedFlags) != 0
     {
         FreeItem(AllocatorFraming as PVOID);
         return STATUS_INVALID_PARAMETER;
@@ -481,7 +482,7 @@ pub unsafe extern "C" fn IKsAllocator_DispatchRequest(
 ) -> NTSTATUS {
     let mut Header: PKSIOBJECT_HEADER;
     let mut Status: NTSTATUS;
-    let mut Allocator: *mut IKsAllocator;
+    let mut Allocator: *mut IKsAllocator = core::ptr::null_mut();
 
     Header = (*FileObject).FsContext2 as PKSIOBJECT_HEADER;
 
@@ -593,7 +594,7 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
     DeleteAllocator: PFNKSDELETEALLOCATOR,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut AllocatorFraming: PKSALLOCATOR_FRAMING;
+    let mut AllocatorFraming: PKSALLOCATOR_FRAMING = core::ptr::null_mut();
     let mut Allocator: PALLOCATOR;
     let mut Ctx: PVOID;
 
@@ -618,7 +619,7 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
         0,
         core::ptr::null_mut(),
         Irp,
-        &DispatchTable as *const _ as PVOID,
+        core::ptr::addr_of!(DispatchTable) as *mut _,
     );
     if !NT_SUCCESS(Status) {
         FreeItem(AllocatorFraming as PVOID);
@@ -626,11 +627,11 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
         return Status;
     }
 
-    (*Allocator).lpVtbl = &vt_IKsAllocator;
+    (*Allocator).lpVtbl = core::ptr::addr_of_mut!(vt_IKsAllocator);
     (*(*Allocator).Header).Unknown = &mut (*Allocator).lpVtbl as *mut _ as PUNKNOWN;
-    (*Allocator).ref = 1;
+    (*Allocator).ref_ = 1;
 
-    if !DefaultAllocate.is_null() {
+    if DefaultAllocate.is_some() {
         (*Allocator).Type = ALLOCATOR_CUSTOM;
         (*Allocator).Allocate.DefaultAllocate = DefaultAllocate;
         (*Allocator).Free.DefaultFree = DefaultFree;
@@ -647,47 +648,29 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
         }
     } else if (*AllocatorFraming).PoolType as u32 == NonPagedPool as u32 {
         (*Allocator).Type = ALLOCATOR_NPAGED_LOOKASIDE;
-        (*Allocator).Allocate.NPagedPool = Some(
-            ExAllocateFromNPagedLookasideList
-                as unsafe extern "system" fn(PNPAGED_LOOKASIDE_LIST) -> PVOID,
-        ) as PFNKSNPAGEDPOOLALLOCATE;
-        (*Allocator).Free.NPagedPool = Some(
-            ExFreeToNPagedLookasideList
-                as unsafe extern "system" fn(PNPAGED_LOOKASIDE_LIST, PVOID),
-        ) as PFNKSNPAGEDPOOLFREE;
-        (*Allocator).Delete.NPagedPool = Some(
-            ExDeleteNPagedLookasideList
-                as unsafe extern "system" fn(PNPAGED_LOOKASIDE_LIST),
-        ) as PFNKSNPAGEDPOOLDELETE;
+        (*Allocator).Allocate.NPagedPool = Some(ks_npaged_alloc);
+        (*Allocator).Free.NPagedPool = Some(ks_npaged_free);
+        (*Allocator).Delete.NPagedPool = Some(ks_npaged_delete);
         ExInitializeNPagedLookasideList(
             &mut (*Allocator).u.NPagedList,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            None,
+            None,
             0,
-            (*AllocatorFraming).FrameSize,
+            (*AllocatorFraming).FrameSize as _,
             0,
             0,
         );
     } else if (*AllocatorFraming).PoolType as u32 == PagedPool as u32 {
         (*Allocator).Type = ALLOCATOR_PAGED_LOOKASIDE;
-        (*Allocator).Allocate.PagedPool = Some(
-            ExAllocateFromPagedLookasideList
-                as unsafe extern "system" fn(PPAGED_LOOKASIDE_LIST) -> PVOID,
-        ) as PFNKSPAGEDPOOLALLOCATE;
-        (*Allocator).Free.PagedPool = Some(
-            ExFreeToPagedLookasideList
-                as unsafe extern "system" fn(PPAGED_LOOKASIDE_LIST, PVOID),
-        ) as PFNKSPAGEDPOOLFREE;
-        (*Allocator).Delete.PagedPool = Some(
-            ExDeletePagedLookasideList
-                as unsafe extern "system" fn(PPAGED_LOOKASIDE_LIST),
-        ) as PFNKSPAGEDPOOLDELETE;
+        (*Allocator).Allocate.PagedPool = Some(ks_paged_alloc);
+        (*Allocator).Free.PagedPool = Some(ks_paged_free);
+        (*Allocator).Delete.PagedPool = Some(ks_paged_delete);
         ExInitializePagedLookasideList(
             &mut (*Allocator).u.PagedList,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            None,
+            None,
             0,
-            (*AllocatorFraming).FrameSize,
+            (*AllocatorFraming).FrameSize as _,
             0,
             0,
         );
@@ -695,7 +678,7 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
 
     core::ptr::copy_nonoverlapping(
         AllocatorFraming as *const u8,
-        &mut (*Allocator).__bindgen_anon_1.Status.Framing as *mut _ as *mut u8,
+        &mut (*Allocator).Status.Framing as *mut _ as *mut u8,
         core::mem::size_of::<KSALLOCATOR_FRAMING>(),
     );
     FreeItem(AllocatorFraming as PVOID);
@@ -831,7 +814,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 //     IN  REFIID refiid,
 //     OUT PVOID* Output)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown) ||
 //         IsEqualGUIDAligned(refiid, &IID_IKsAllocator))
@@ -848,7 +831,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 // IKsAllocator_fnAddRef(
 //     IKsAllocator * iface)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -858,7 +841,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 // IKsAllocator_fnRelease(
 //     IKsAllocator * iface)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -878,7 +861,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 //     IN PDEVICE_OBJECT DeviceObject,
 //     IN PIRP Irp)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //     PIO_STACK_LOCATION IoStack;
 //     PKSSTREAMALLOCATOR_FUNCTIONTABLE FunctionTable;
 //     PKSSTREAMALLOCATOR_STATUS State;
@@ -996,7 +979,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 // IKsAllocator_fnClose(
 //     IKsAllocator *iface)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     /* FIXME locks */
 //
@@ -1027,7 +1010,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 //     IN PVOID * OutFrame)
 // {
 //     PVOID Frame = NULL;
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     /* FIXME locks */
 //
@@ -1061,7 +1044,7 @@ pub unsafe extern "system" fn KsValidateAllocatorFramingEx(
 //     IKsAllocator *iface,
 //     IN PVOID Frame)
 // {
-//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD(iface, ALLOCATOR, lpVtbl);
+//     PALLOCATOR This = (PALLOCATOR)CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 //
 //     /* now allocate frame */
 //     if (This->Type == ALLOCATOR_CUSTOM)

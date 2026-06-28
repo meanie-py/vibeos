@@ -1,37 +1,72 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLSID, Filter, GUID, IoOpenDeviceInterfaceRegistryKey, KeInitializeMutex, KeInitializeSpinLock, PDEVICE_OBJECT, PIRP, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareMemory, RtlFreeUnicodeString, RtlInitUnicodeString, RtlStringFromGUID, ZwClose, ZwSetValueKey};
+use ntkrnl_sys::ddk::{CLSID, GUID, IoOpenDeviceInterfaceRegistryKey, KeInitializeMutex, KeInitializeSpinLock, PDEVICE_OBJECT, PIRP, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareMemory, RtlFreeUnicodeString, RtlInitUnicodeString, RtlStringFromGUID, ZwClose, ZwSetValueKey};
 use core::ffi::c_void;
+
+// ---- ks-rust integration glue (filterfactory.rs-local): imports, aliases, helper shims ----
+// Shared allocator/completion helpers (defined #[no_mangle] in misc.rs).
+use crate::misc::{AllocateItem, FreeItem, CompleteRequest};
+// Cross-module Ks* handlers (defined #[no_mangle] in sibling ks modules).
+use crate::deviceinterface::{KspSetDeviceInterfacesState, KspFreeDeviceInterfaces, KspRegisterDeviceInterfaces};
+use crate::filter::KspCreateFilter;
+// header-sourced constants (drivers/ksfilter/ks/precomp.h) — used only in this module.
+const REG_PINFLAG_B_MANY: ULONG = 0x4;
+const MERIT_DO_NOT_USE: ULONG = 0x200000;
+
+// IsEqualGUIDAligned: guiddef inline GUID equality.
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
+// RTL_CONSTANT_STRING(L!("...")) helper: wide static -> _UNICODE_STRING (lengths in bytes).
+#[inline(always)]
+unsafe fn rtl_const_string(w: &'static [u16]) -> _UNICODE_STRING {
+    _UNICODE_STRING {
+        Length: ((w.len() - 1) * 2) as u16,
+        MaximumLength: (w.len() * 2) as u16,
+        Buffer: w.as_ptr() as *mut u16,
+    }
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+// The bindgen vtbl slots are `extern "stdcall"` while our handlers are `extern "system"`
+// (identical ABI on i386, distinct Rust types). `cb!` would `as usize`, which const-eval
+// forbids; instead coerce each fn item to its `extern "system"` pointer (valid coercion)
+// and transmute the (pointer-sized) value into the slot's Option<fn> — const-eval safe.
 static mut vt_IKsFilterFactoryVtbl: IKsFilterFactoryVtbl = unsafe {
     IKsFilterFactoryVtbl {
-        QueryInterface: Some(
+        QueryInterface: core::mem::transmute(
             IKsFilterFactory_fnQueryInterface
-                as unsafe extern "C" fn(*mut IKsFilterFactory, *const IID, *mut PVOID) -> NTSTATUS,
+                as unsafe extern "system" fn(*mut IKsFilterFactory, *const IID, *mut PVOID) -> NTSTATUS,
         ),
-        AddRef: Some(
-            IKsFilterFactory_fnAddRef as unsafe extern "C" fn(*mut IKsFilterFactory) -> ULONG,
+        AddRef: core::mem::transmute(
+            IKsFilterFactory_fnAddRef as unsafe extern "system" fn(*mut IKsFilterFactory) -> ULONG,
         ),
-        Release: Some(
-            IKsFilterFactory_fnRelease as unsafe extern "C" fn(*mut IKsFilterFactory) -> ULONG,
+        Release: core::mem::transmute(
+            IKsFilterFactory_fnRelease as unsafe extern "system" fn(*mut IKsFilterFactory) -> ULONG,
         ),
-        GetStruct: Some(
+        GetStruct: core::mem::transmute(
             IKsFilterFactory_fnGetStruct
-                as unsafe extern "C" fn(*mut IKsFilterFactory) -> *mut KSFILTERFACTORY,
+                as unsafe extern "system" fn(*mut IKsFilterFactory) -> *mut KSFILTERFACTORY,
         ),
-        SetDeviceClassesState: Some(
+        SetDeviceClassesState: core::mem::transmute(
             IKsFilterFactory_fnSetDeviceClassesState
-                as unsafe extern "C" fn(*mut IKsFilterFactory, BOOLEAN) -> NTSTATUS,
+                as unsafe extern "system" fn(*mut IKsFilterFactory, BOOLEAN) -> NTSTATUS,
         ),
-        Initialize: Some(
+        Initialize: core::mem::transmute(
             IKsFilterFactory_fnInitialize
-                as unsafe extern "C" fn(
+                as unsafe extern "system" fn(
                     *mut IKsFilterFactory,
                     PDEVICE_OBJECT,
                     *const KSFILTER_DESCRIPTOR,
@@ -50,7 +85,7 @@ static mut vt_IKsFilterFactoryVtbl: IKsFilterFactoryVtbl = unsafe {
 pub struct IKsFilterFactoryImpl {
     pub Header: KSBASIC_HEADER,
     pub FilterFactory: KSFILTERFACTORY,
-    pub ref: LONG,
+    pub ref_: LONG,
     pub DeviceHeader: PKSIDEVICE_HEADER,
     pub SleepCallback: PFNKSFILTERFACTORYPOWER,
     pub WakeCallback: PFNKSFILTERFACTORYPOWER,
@@ -64,7 +99,7 @@ pub type PIKsFilterFactoryImpl = *mut IKsFilterFactoryImpl;
 pub unsafe extern "system" fn IKsFilterFactory_ItemFreeCb(
     CreateItem: PKSOBJECT_CREATE_ITEM,
 ) {
-    let iface = CONTAINING_RECORD(
+    let iface = CONTAINING_RECORD!(
         (*CreateItem).Context,
         IKsFilterFactoryImpl,
         FilterFactory,
@@ -110,11 +145,11 @@ pub unsafe extern "system" fn IKsFilterFactory_fnQueryInterface(
     refiid: *const IID,
     Output: *mut *mut core::ffi::c_void,
 ) -> NTSTATUS {
-    let This = CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+    let This = CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
     
     if IsEqualGUIDAligned(refiid, &IID_IUnknown) {
         *Output = &mut (*This).Header.OuterUnknown as *mut _ as *mut core::ffi::c_void;
-        InterlockedIncrement(&mut (*This).ref);
+        InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
     
@@ -136,29 +171,29 @@ pub unsafe extern "system" fn IKsFilterFactory_fnQueryInterface(
 pub unsafe extern "system" fn IKsFilterFactory_fnAddRef(
     iface: *mut IKsFilterFactory,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(
+    let This = CONTAINING_RECORD!(
         iface,
         IKsFilterFactoryImpl,
         Header.OuterUnknown,
     ) as *mut IKsFilterFactoryImpl;
-    InterlockedIncrement(&mut (*This).ref_0) as ULONG
+    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilterFactory_fnRelease(
     iface: *mut IKsFilterFactory,
 ) -> ULONG {
-    let This: *mut IKsFilterFactoryImpl = CONTAINING_RECORD(
+    let This: *mut IKsFilterFactoryImpl = CONTAINING_RECORD!(
         iface,
         IKsFilterFactoryImpl,
         Header.OuterUnknown,
     );
 
-    InterlockedDecrement(&mut (*This).ref_0);
+    InterlockedDecrement(&mut (*This).ref_);
 
-    if (*This).ref_0 == 0 {
+    if (*This).ref_ == 0 {
         if !IsListEmpty(&mut (*This).SymbolicLinkList) {
-            KspSetDeviceInterfacesState(&mut (*This).SymbolicLinkList, FALSE);
+            KspSetDeviceInterfacesState(&mut (*This).SymbolicLinkList, FALSE as i32);
             KspFreeDeviceInterfaces(&mut (*This).SymbolicLinkList);
         }
 
@@ -166,7 +201,19 @@ pub unsafe extern "system" fn IKsFilterFactory_fnRelease(
         return 0;
     }
 
-    (*This).ref_0 as ULONG
+    (*This).ref_ as ULONG
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IKsFilterFactory_fnGetStruct(
+    iface: *mut IKsFilterFactory,
+) -> *mut KSFILTERFACTORY {
+    let This: *mut IKsFilterFactoryImpl = CONTAINING_RECORD!(
+        iface,
+        IKsFilterFactoryImpl,
+        Header.OuterUnknown,
+    );
+    &mut (*This).FilterFactory
 }
 
 #[no_mangle]
@@ -235,7 +282,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnInitialize(
     let mut FreeString: BOOLEAN = 0u8;
     let mut KsDevice: *mut IKsDevice;
 
-    let This: *mut IKsFilterFactoryImpl = CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+    let This: *mut IKsFilterFactoryImpl = CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 
     DeviceExtension = (*DeviceObject).DeviceExtension as PDEVICE_EXTENSION;
 
@@ -290,7 +337,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnInitialize(
 
     CreateItem.SecurityDescriptor = SecurityDescriptor;
     CreateItem.Flags = CreateItemFlags;
-    CreateItem.Create = Some(IKsFilterFactory_Create);
+    CreateItem.Create = cb!(IKsFilterFactory_Create);
     CreateItem.Context = &mut (*This).FilterFactory as *mut _ as PVOID;
     RtlInitUnicodeString(&mut CreateItem.ObjectClass, ReferenceString.Buffer);
 
@@ -298,7 +345,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnInitialize(
         (*DeviceExtension).DeviceHeader as KSDEVICE_HEADER,
         &mut CreateItem,
         1u8,
-        Some(IKsFilterFactory_ItemFreeCb),
+        cb!(IKsFilterFactory_ItemFreeCb),
     );
 
     if FreeString != 0 {
@@ -307,7 +354,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnInitialize(
 
     (*This).FilterFactory.Bag = AllocateItem(NonPagedPool, core::mem::size_of::<KSIOBJECT_BAG>()) as KSOBJECT_BAG;
     if !(*This).FilterFactory.Bag.is_null() {
-        KsDevice = &mut (*(*DeviceExtension).DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice;
+        KsDevice = core::ptr::addr_of_mut!((*(*DeviceExtension).DeviceHeader).BasicHeader.OuterUnknown) as *mut IKsDevice;
         (*(*KsDevice).lpVtbl).InitializeObjectBag.expect("non-null function pointer")(
             KsDevice,
             (*This).FilterFactory.Bag as PKSIOBJECT_BAG,
@@ -344,7 +391,7 @@ pub unsafe extern "system" fn KspCreateFilterFactory(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    (*This).ref = 1;
+    (*This).ref_ = 1;
     (*This).Header.OuterUnknown = core::ptr::addr_of_mut!(vt_IKsFilterFactoryVtbl) as PUNKNOWN;
 
     Filter = core::ptr::addr_of_mut!((*This).Header.OuterUnknown) as *mut IKsFilterFactory;
@@ -396,25 +443,22 @@ pub unsafe extern "system" fn KsFilterFactorySetDeviceClassesState(
     FilterFactory: PKSFILTERFACTORY,
     NewState: BOOLEAN,
 ) -> NTSTATUS {
-    let This = (FilterFactory as *mut u8)
-        .offset_from(&((*(core::ptr::null_mut::<IKsFilterFactoryImpl>())).FilterFactory as *mut _ as *mut u8))
-        as isize;
-    let This = (FilterFactory as *mut u8).offset(-This) as *mut IKsFilterFactoryImpl;
-    let Factory = &mut (*This).Header.OuterUnknown as *mut *mut _ as *mut IKsFilterFactory;
-    ((*(*Factory)).lpVtbl).SetDeviceClassesState.unwrap()(Factory, NewState)
+    let This = CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory) as *mut IKsFilterFactoryImpl;
+    let Factory = core::ptr::addr_of_mut!((*This).Header.OuterUnknown) as *mut IKsFilterFactory;
+    (*(*Factory).lpVtbl).SetDeviceClassesState.unwrap()(Factory, NewState)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KsFilterFactoryGetSymbolicLink(
     FilterFactory: PKSFILTERFACTORY,
 ) -> PUNICODE_STRING {
-    let Factory = CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory) as *mut IKsFilterFactoryImpl;
+    let Factory = CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory) as *mut IKsFilterFactoryImpl;
 
-    if IsListEmpty(&(*Factory).SymbolicLinkList) != 0 {
+    if IsListEmpty(&(*Factory).SymbolicLinkList) {
         return core::ptr::null_mut();
     }
 
-    let LinkEntry = CONTAINING_RECORD((*Factory).SymbolicLinkList.Flink, SYMBOLIC_LINK_ENTRY, Entry) as PSYMBOLIC_LINK_ENTRY;
+    let LinkEntry = CONTAINING_RECORD!((*Factory).SymbolicLinkList.Flink, SYMBOLIC_LINK_ENTRY, Entry) as PSYMBOLIC_LINK_ENTRY;
 
     return &mut (*LinkEntry).SymbolicLink;
 }
@@ -427,13 +471,14 @@ pub unsafe extern "system" fn KsFilterFactoryAddCreateItem(
     CreateItemFlags: ULONG,
 ) -> NTSTATUS {
     let mut CreateItem: KSOBJECT_CREATE_ITEM = core::mem::zeroed();
-    let Factory: *mut IKsFilterFactoryImpl = CONTAINING_RECORD(
-        FilterFactory as *mut IKsFilterFactoryImpl,
+    let Factory: *mut IKsFilterFactoryImpl = CONTAINING_RECORD!(
         FilterFactory,
+        IKsFilterFactoryImpl,
+        FilterFactory
     );
 
     CreateItem.Context = &mut (*Factory).FilterFactory as *mut _ as PVOID;
-    CreateItem.Create = Some(IKsFilterFactory_Create as PDRIVER_DISPATCH);
+    CreateItem.Create = cb!(IKsFilterFactory_Create);
     CreateItem.Flags = CreateItemFlags;
     CreateItem.SecurityDescriptor = SecurityDescriptor;
     RtlInitUnicodeString(&mut CreateItem.ObjectClass, RefString);
@@ -442,7 +487,7 @@ pub unsafe extern "system" fn KsFilterFactoryAddCreateItem(
         (*Factory).DeviceHeader as KSDEVICE_HEADER,
         &mut CreateItem,
         1u8,
-        Some(IKsFilterFactory_ItemFreeCb),
+        cb!(IKsFilterFactory_ItemFreeCb),
     )
 }
 #[no_mangle]
@@ -457,8 +502,8 @@ pub unsafe extern "C" fn KspCacheAddData(
         if RtlCompareMemory(
             (*Descriptor).DataCache as *const core::ffi::c_void,
             Data as *const core::ffi::c_void,
-            Length as SIZE_T,
-        ) == Length as ULONG_PTR
+            Length as _,
+        ) == Length as _
         {
             if Index.wrapping_add(Length) > (*Descriptor).DataOffset {
                 (*Descriptor).DataOffset = Index.wrapping_add(Length);
@@ -495,7 +540,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 ) -> NTSTATUS {
     let mut Descriptor: KSPCACHE_DESCRIPTOR = core::mem::zeroed();
     let mut FilterHeader: PKSPCACHE_FILTER_HEADER = core::ptr::null_mut();
-    let FilterData: _UNICODE_STRING = RTL_CONSTANT_STRING(b"FilterData\0");
+    let mut FilterData: _UNICODE_STRING = rtl_const_string(crate::L!("FilterData"));
     let mut PinHeader: PKSPCACHE_PIN_HEADER = core::ptr::null_mut();
     let mut Index: ULONG = 0;
     let mut SubIndex: ULONG = 0;
@@ -505,13 +550,14 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
     let mut hKey: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    let Factory: *mut IKsFilterFactoryImpl = CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
+    let Factory: *mut IKsFilterFactoryImpl = CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
 
+    let mut FilterDescriptor = FilterDescriptor;
     if FilterDescriptor.is_null() {
         FilterDescriptor = (*Factory).FilterFactory.FilterDescriptor;
     }
 
-    RtlZeroMemory(&mut Descriptor as *mut _, core::mem::size_of::<KSPCACHE_DESCRIPTOR>());
+    RtlZeroMemory(&mut Descriptor as *mut KSPCACHE_DESCRIPTOR as *mut c_void, core::mem::size_of::<KSPCACHE_DESCRIPTOR>());
 
     Descriptor.FilterLength = core::mem::size_of::<KSPCACHE_FILTER_HEADER>() as ULONG;
 
@@ -581,12 +627,12 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
             (*DataRange).dwUnused = 0;
             (*DataRange).OffsetMajor = KspCacheAddData(
                 &mut Descriptor,
-                &(*(*(*FilterDescriptor).PinDescriptors.offset(Index as isize)).PinDescriptor.DataRanges.offset(SubIndex as isize)).MajorFormat as LPCVOID,
+                core::ptr::addr_of!((*(*(*(*FilterDescriptor).PinDescriptors.offset(Index as isize)).PinDescriptor.DataRanges.offset(SubIndex as isize))).__bindgen_anon_1.as_ref().MajorFormat) as LPCVOID,
                 core::mem::size_of::<CLSID>() as ULONG,
             );
             (*DataRange).OffsetMinor = KspCacheAddData(
                 &mut Descriptor,
-                &(*(*(*FilterDescriptor).PinDescriptors.offset(Index as isize)).PinDescriptor.DataRanges.offset(SubIndex as isize)).SubFormat as LPCVOID,
+                core::ptr::addr_of!((*(*(*(*FilterDescriptor).PinDescriptors.offset(Index as isize)).PinDescriptor.DataRanges.offset(SubIndex as isize))).__bindgen_anon_1.as_ref().SubFormat) as LPCVOID,
                 core::mem::size_of::<CLSID>() as ULONG,
             );
             Descriptor.FilterOffset += core::mem::size_of::<KSPCACHE_DATARANGE>() as ULONG;
@@ -608,7 +654,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 
             *MediumOffset = KspCacheAddData(
                 &mut Descriptor,
-                &Medium as LPCVOID,
+                core::ptr::addr_of!(Medium) as LPCVOID,
                 core::mem::size_of::<KSPCACHE_MEDIUM>() as ULONG,
             );
             Descriptor.FilterOffset += core::mem::size_of::<ULONG>() as ULONG;
@@ -624,9 +670,9 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
         Found = 0;
 
         while Entry != &mut (*Factory).SymbolicLinkList {
-            SymEntry = CONTAINING_RECORD(Entry, SYMBOLIC_LINK_ENTRY, Entry);
+            SymEntry = CONTAINING_RECORD!(Entry, SYMBOLIC_LINK_ENTRY, Entry);
 
-            if IsEqualGUIDAligned(&(*SymEntry).DeviceInterfaceClass, &(*FilterDescriptor).Categories.offset(Index as isize) as *const _) {
+            if IsEqualGUIDAligned(&(*SymEntry).DeviceInterfaceClass, (*FilterDescriptor).Categories.offset(Index as isize)) {
                 Found = 1;
                 break;
             }
@@ -644,7 +690,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
             break;
         }
 
-        Status = ZwSetValueKey(hKey, &FilterData, 0, REG_BINARY, Descriptor.FilterData as PVOID, Descriptor.FilterLength + Descriptor.DataOffset);
+        Status = ZwSetValueKey(hKey, &mut FilterData, 0, REG_BINARY, Descriptor.FilterData as PVOID, Descriptor.FilterLength + Descriptor.DataOffset);
         ZwClose(hKey);
 
         if !NT_SUCCESS(Status) {
@@ -697,7 +743,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     IN PKSOBJECT_CREATE_ITEM  CreateItem)
 // {
 //     /* callback when create item is freed in the device header */
-//     IKsFilterFactory * iface = (IKsFilterFactory*)CONTAINING_RECORD(CreateItem->Context, IKsFilterFactoryImpl, FilterFactory);
+//     IKsFilterFactory * iface = (IKsFilterFactory*)CONTAINING_RECORD!(CreateItem->Context, IKsFilterFactoryImpl, FilterFactory);
 //
 //     iface->lpVtbl->Release(iface);
 // }
@@ -722,7 +768,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     }
 //
 //     /* get filter factory interface */
-//     Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD(CreateItem->Context, IKsFilterFactoryImpl, FilterFactory);
+//     Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(CreateItem->Context, IKsFilterFactoryImpl, FilterFactory);
 //
 //     /* get interface */
 //     iface = (IKsFilterFactory*)&Factory->Header.OuterUnknown;
@@ -752,7 +798,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // {
 //     NTSTATUS Status;
 //
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown))
 //     {
@@ -782,7 +828,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // IKsFilterFactory_fnAddRef(
 //     IKsFilterFactory * iface)
 // {
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -792,7 +838,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // IKsFilterFactory_fnRelease(
 //     IKsFilterFactory * iface)
 // {
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -818,7 +864,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // IKsFilterFactory_fnGetStruct(
 //     IKsFilterFactory * iface)
 // {
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     return &This->FilterFactory;
 // }
@@ -829,7 +875,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     IKsFilterFactory * iface,
 //     IN BOOLEAN Enable)
 // {
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     return KspSetDeviceInterfacesState(&This->SymbolicLinkList, Enable);
 // }
@@ -895,7 +941,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     BOOL FreeString = FALSE;
 //     IKsDevice * KsDevice;
 //
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(iface, IKsFilterFactoryImpl, Header.OuterUnknown);
 //
 //     /* get device extension */
 //     DeviceExtension = (PDEVICE_EXTENSION)DeviceObject->DeviceExtension;
@@ -1100,7 +1146,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     IN BOOLEAN  NewState)
 // {
 //     IKsFilterFactory * Factory;
-//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
+//     IKsFilterFactoryImpl * This = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
 //
 //     Factory = (IKsFilterFactory*)&This->Header.OuterUnknown;
 //     return Factory->lpVtbl->SetDeviceClassesState(Factory, NewState);
@@ -1117,7 +1163,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     IN PKSFILTERFACTORY  FilterFactory)
 // {
 //     PSYMBOLIC_LINK_ENTRY LinkEntry;
-//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
+//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
 //
 //     if (IsListEmpty(&Factory->SymbolicLinkList))
 //     {
@@ -1126,7 +1172,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     }
 //
 //     /* get first entry */
-//     LinkEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD(Factory->SymbolicLinkList.Flink, SYMBOLIC_LINK_ENTRY, Entry);
+//     LinkEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD!(Factory->SymbolicLinkList.Flink, SYMBOLIC_LINK_ENTRY, Entry);
 //
 //     /* return first link */
 //     return &LinkEntry->SymbolicLink;
@@ -1146,7 +1192,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // {
 //     KSOBJECT_CREATE_ITEM CreateItem;
 //
-//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
+//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
 //
 //     /* initialize create item */
 //     CreateItem.Context = (PVOID)&Factory->FilterFactory;
@@ -1209,7 +1255,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 // {
 //     KSPCACHE_DESCRIPTOR Descriptor;
 //     PKSPCACHE_FILTER_HEADER FilterHeader;
-//     UNICODE_STRING FilterData = RTL_CONSTANT_STRING(L"FilterData");
+//     UNICODE_STRING FilterData = RTL_CONSTANT_STRING(L!("FilterData"));
 //     PKSPCACHE_PIN_HEADER PinHeader;
 //     ULONG Index, SubIndex;
 //     PLIST_ENTRY Entry;
@@ -1218,7 +1264,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //     HANDLE hKey;
 //     NTSTATUS Status = STATUS_SUCCESS;
 //
-//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
+//     IKsFilterFactoryImpl * Factory = (IKsFilterFactoryImpl*)CONTAINING_RECORD!(FilterFactory, IKsFilterFactoryImpl, FilterFactory);
 //
 //     DPRINT("KsFilterFactoryUpdateCacheData %p\n", FilterDescriptor);
 //
@@ -1370,7 +1416,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
 //         while(Entry != &Factory->SymbolicLinkList)
 //         {
 //             /* fetch symbolic link entry */
-//             SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD(Entry, SYMBOLIC_LINK_ENTRY, Entry);
+//             SymEntry = (PSYMBOLIC_LINK_ENTRY)CONTAINING_RECORD!(Entry, SYMBOLIC_LINK_ENTRY, Entry);
 //
 //             if (IsEqualGUIDAligned(&SymEntry->DeviceInterfaceClass, &FilterDescriptor->Categories[Index]))
 //             {

@@ -1,9 +1,76 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, GUID, IoGetCurrentIrpStackLocation, KeyValuePartialInformation, LPGUID, LPWSTR, _OBJECT_ATTRIBUTES, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlAppendUnicodeStringToString, RtlFreeUnicodeString, RtlStringFromGUID, ZwClose, ZwOpenKey, ZwQueryValueKey};
+use ntkrnl_sys::ddk::{ACCESS_MASK, GUID, IoGetCurrentIrpStackLocation, LPGUID, LPWSTR, _OBJECT_ATTRIBUTES, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlAppendUnicodeStringToString, RtlFreeUnicodeString, RtlStringFromGUID, ZwClose, ZwOpenKey, ZwQueryValueKey};
 use core::ffi::c_void;
+
+// ---- ks-rust integration glue (connectivity.rs-local): imports, aliases, helper shims ----
+// Shared allocator helpers (defined #[no_mangle] in misc.rs).
+use crate::misc::{AllocateItem, FreeItem, KspCopyCreateRequest};
+// Cross-module Ks* handler (defined #[no_mangle] in topology.rs).
+use crate::topology::KspCreateObjectType;
+// _KEY_VALUE_INFORMATION_CLASS member (bindgen names it <EnumTag>_<member>).
+use ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as KeyValuePartialInformation;
+// KSPROPERTY_PIN enum-member bare aliases (bindgen names them <EnumTag>_<member>; CTYPES via glue).
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_DATAFLOW as KSPROPERTY_PIN_DATAFLOW;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_DATARANGES as KSPROPERTY_PIN_DATARANGES;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_CONSTRAINEDDATARANGES as KSPROPERTY_PIN_CONSTRAINEDDATARANGES;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_INTERFACES as KSPROPERTY_PIN_INTERFACES;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_MEDIUMS as KSPROPERTY_PIN_MEDIUMS;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_COMMUNICATION as KSPROPERTY_PIN_COMMUNICATION;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_CATEGORY as KSPROPERTY_PIN_CATEGORY;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_NAME as KSPROPERTY_PIN_NAME;
+use crate::types::KSPROPERTY_PIN_KSPROPERTY_PIN_PROPOSEDATAFORMAT as KSPROPERTY_PIN_PROPOSEDATAFORMAT;
+
+// IsEqualGUIDAligned: guiddef inline GUID equality.
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
+// RTL_CONSTANT_STRING(L!("...")) helper: wide static -> _UNICODE_STRING (lengths in bytes).
+#[inline(always)]
+unsafe fn rtl_const_string(w: &'static [u16]) -> _UNICODE_STRING {
+    _UNICODE_STRING {
+        Length: ((w.len() - 1) * 2) as u16,
+        MaximumLength: (w.len() * 2) as u16,
+        Buffer: w.as_ptr() as *mut u16,
+    }
+}
+
+// Audio format types (ksmedia.h pshpack1 / mmreg.h WAVEFORMATEX) — used only in this module.
+#[repr(C, packed)]
+pub struct WAVEFORMATEX {
+    pub wFormatTag: u16,
+    pub nChannels: u16,
+    pub nSamplesPerSec: u32,
+    pub nAvgBytesPerSec: u32,
+    pub nBlockAlign: u16,
+    pub wBitsPerSample: u16,
+    pub cbSize: u16,
+}
+#[repr(C, packed)]
+pub struct KSDATAFORMAT_WAVEFORMATEX {
+    pub DataFormat: KSDATAFORMAT,
+    pub WaveFormatEx: WAVEFORMATEX,
+}
+pub type PKSDATAFORMAT_WAVEFORMATEX = *mut KSDATAFORMAT_WAVEFORMATEX;
+#[repr(C)]
+pub struct KSDATARANGE_AUDIO {
+    pub DataRange: KSDATARANGE,
+    pub MaximumChannels: ULONG,
+    pub MinimumBitsPerSample: ULONG,
+    pub MaximumBitsPerSample: ULONG,
+    pub MinimumSampleFrequency: ULONG,
+    pub MaximumSampleFrequency: ULONG,
+}
+pub type PKSDATARANGE_AUDIO = *mut KSDATARANGE_AUDIO;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -16,8 +83,8 @@ pub const KSSTRING_Pin: [::core::ffi::c_ushort; 39] = unsafe {
     )
 };
 
-pub static mut StandardPinInterface: KSPIN_INTERFACE = KSIDENTIFIER {
-    Set: _GUID {
+pub static mut StandardPinInterface: KSPIN_INTERFACE = KSPIN_INTERFACE {
+    Set: GUID {
         Data1: 0x1a8766a0 as ::core::ffi::c_long as ::core::ffi::c_uint,
         Data2: 0x62ce as ::core::ffi::c_ushort,
         Data3: 0x11cf as ::core::ffi::c_ushort,
@@ -36,8 +103,8 @@ pub static mut StandardPinInterface: KSPIN_INTERFACE = KSIDENTIFIER {
     Flags: 0 as ULONG,
 };
 
-pub static mut StandardPinMedium: KSPIN_MEDIUM = KSIDENTIFIER {
-    Set: _GUID {
+pub static mut StandardPinMedium: KSPIN_MEDIUM = KSPIN_MEDIUM {
+    Set: GUID {
         Data1: 0x4747b320 as ::core::ffi::c_long as ::core::ffi::c_uint,
         Data2: 0x62ce as ::core::ffi::c_ushort,
         Data3: 0x11cf as ::core::ffi::c_ushort,
@@ -56,7 +123,7 @@ pub static mut StandardPinMedium: KSPIN_MEDIUM = KSIDENTIFIER {
     Flags: 0 as ULONG,
 };
 
-pub static mut KSDATAFORMAT_SUBTYPE_BDA_MPEG2_TRANSPORT: GUID = _GUID {
+pub static mut KSDATAFORMAT_SUBTYPE_BDA_MPEG2_TRANSPORT: GUID = GUID {
     Data1: 0xf4aeb342 as ::core::ffi::c_uint,
     Data2: 0x329 as ::core::ffi::c_ushort,
     Data3: 0x4fdd as ::core::ffi::c_ushort,
@@ -97,13 +164,16 @@ pub unsafe extern "system" fn KsCreatePin(
 ) -> NTSTATUS {
     let mut ConnectSize: UINT = core::mem::size_of::<KSPIN_CONNECT>() as UINT;
     let Format: PKSDATAFORMAT_WAVEFORMATEX = Connect.offset(1) as PKSDATAFORMAT_WAVEFORMATEX;
-    if (*Format).DataFormat.FormatSize == core::mem::size_of::<KSDATAFORMAT>() as ULONG
-        || (*Format).DataFormat.FormatSize as usize
+    // DataFormat.FormatSize is at offset 0; WaveFormatEx.cbSize lives in a packed struct (read unaligned).
+    let format_size: ULONG = core::ptr::read_unaligned(Format as *const ULONG);
+    let cb_size: u16 = core::ptr::read_unaligned(core::ptr::addr_of!((*Format).WaveFormatEx.cbSize));
+    if format_size == core::mem::size_of::<KSDATAFORMAT>() as ULONG
+        || format_size as usize
             == (core::mem::size_of::<KSDATAFORMAT>() as usize)
                 .wrapping_add(core::mem::size_of::<WAVEFORMATEX>() as usize)
-                .wrapping_add((*Format).WaveFormatEx.cbSize as usize)
+                .wrapping_add(cb_size as usize)
     {
-        ConnectSize = ConnectSize.wrapping_add((*Format).DataFormat.FormatSize as UINT);
+        ConnectSize = ConnectSize.wrapping_add(format_size as UINT);
     }
     KspCreateObjectType(
         FilterHandle,
@@ -131,7 +201,7 @@ pub unsafe extern "C" fn KspValidateConnectRequest(
     let mut Count: ULONG;
     let mut Found: BOOLEAN;
     let mut Descriptor: PKSPIN_DESCRIPTOR;
-    let mut GuidString2: _UNICODE_STRING;
+    let mut GuidString2: _UNICODE_STRING = core::mem::zeroed();
 
     if Connect.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -181,7 +251,7 @@ pub unsafe extern "C" fn KspValidateConnectRequest(
     RtlStringFromGUID(&mut (*ConnectDetails).Interface.Set, &mut GuidString2);
 
     loop {
-        let mut GuidString: _UNICODE_STRING;
+        let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
         RtlStringFromGUID(&mut (*Interface.offset(Index as isize)).Set, &mut GuidString);
         RtlFreeUnicodeString(&mut GuidString);
 
@@ -220,7 +290,7 @@ pub unsafe extern "C" fn KspValidateConnectRequest(
     RtlStringFromGUID(&mut (*ConnectDetails).Medium.Set, &mut GuidString2);
 
     loop {
-        let mut GuidString: _UNICODE_STRING;
+        let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
         RtlStringFromGUID(&mut (*Medium.offset(Index as isize)).Set, &mut GuidString);
         RtlFreeUnicodeString(&mut GuidString);
 
@@ -270,8 +340,8 @@ pub unsafe extern "C" fn KspReadMediaCategory(
     Category: LPGUID,
     OutInformation: *mut PKEY_VALUE_PARTIAL_INFORMATION,
 ) -> NTSTATUS {
-    let MediaPath: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\\0");
-    let Name: _UNICODE_STRING = RTL_CONSTANT_STRING(b"Name\0");
+    let MediaPath: _UNICODE_STRING = rtl_const_string(crate::L!("\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\"));
+    let mut Name: _UNICODE_STRING = rtl_const_string(crate::L!("Name"));
     let mut GuidString: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -319,14 +389,14 @@ pub unsafe extern "C" fn KspReadMediaCategory(
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = ZwOpenKey(&mut hKey, GENERIC_READ, &ObjectAttributes);
+    Status = ZwOpenKey(&mut hKey, GENERIC_READ, &mut ObjectAttributes);
     FreeItem(Path.Buffer as PVOID);
 
     if !NT_SUCCESS(Status) {
         return Status;
     }
 
-    Status = ZwQueryValueKey(hKey, &Name, KeyValuePartialInformation, core::ptr::null_mut(), 0, &mut Size);
+    Status = ZwQueryValueKey(hKey, &mut Name, KeyValuePartialInformation, core::ptr::null_mut(), 0, &mut Size);
     if !NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL {
         ZwClose(hKey);
         return Status;
@@ -338,7 +408,7 @@ pub unsafe extern "C" fn KspReadMediaCategory(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = ZwQueryValueKey(hKey, &Name, KeyValuePartialInformation, KeyInfo as PVOID, Size, &mut Size);
+    Status = ZwQueryValueKey(hKey, &mut Name, KeyValuePartialInformation, KeyInfo as PVOID, Size, &mut Size);
     ZwClose(hKey);
 
     if !NT_SUCCESS(Status) {
@@ -367,7 +437,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
     let Buffer: PVOID;
     let mut WaveFormatOut: *mut PKSDATARANGE_AUDIO;
     let mut WaveFormatIn: PKSDATAFORMAT_WAVEFORMATEX;
-    let mut KeyInfo: PKEY_VALUE_PARTIAL_INFORMATION;
+    let mut KeyInfo: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::null_mut();
     let Descriptor: *const KSPIN_DESCRIPTOR;
     let mut Status: NTSTATUS;
     let mut Count: ULONG;
@@ -385,14 +455,14 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
         }
     } else {
         *(Buffer as *mut ULONG) = DescriptorsCount;
-        (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+        (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
         return STATUS_SUCCESS;
     }
 
     if DescriptorSize == core::mem::size_of::<KSPIN_DESCRIPTOR>() as ULONG {
         Descriptor = &*Descriptors.offset((*Pin).PinId as isize) as *const KSPIN_DESCRIPTOR;
     } else {
-        Descriptor = &(*(Descriptors as ULONG_PTR).wrapping_add((*Pin).PinId as usize * DescriptorSize as usize) as *const KSPIN_DESCRIPTOR_EX).PinDescriptor;
+        Descriptor = &(*((Descriptors as ULONG_PTR).wrapping_add((*Pin).PinId as usize * DescriptorSize as usize) as *const KSPIN_DESCRIPTOR_EX)).PinDescriptor;
     }
 
     Status = STATUS_NOT_SUPPORTED;
@@ -401,11 +471,11 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
         KSPROPERTY_PIN_DATAFLOW => {
             Size = core::mem::size_of::<KSPIN_DATAFLOW>() as ULONG;
             if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < Size {
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 *(Buffer as *mut KSPIN_DATAFLOW) = (*Descriptor).DataFlow;
-                (*Irp).IoStatus.Information = core::mem::size_of::<KSPIN_DATAFLOW>() as ULONG_PTR;
+                (*Irp).IoStatus.Information = core::mem::size_of::<KSPIN_DATAFLOW>() as _;
                 Status = STATUS_SUCCESS;
             }
         }
@@ -413,60 +483,62 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
         KSPROPERTY_PIN_DATARANGES | KSPROPERTY_PIN_CONSTRAINEDDATARANGES => {
             Size = core::mem::size_of::<KSMULTIPLE_ITEM>() as ULONG;
 
-            if (*Property).Id == KSPROPERTY_PIN_DATARANGES || (*Descriptor).__bindgen_anon_1.ConstrainedDataRangesCount == 0 {
+            if (*Property).Id == KSPROPERTY_PIN_DATARANGES || (*Descriptor).__bindgen_anon_1.__bindgen_anon_1.as_ref().ConstrainedDataRangesCount == 0 {
                 DataRanges = (*Descriptor).DataRanges;
                 Count = (*Descriptor).DataRangesCount;
             } else {
-                DataRanges = (*Descriptor).__bindgen_anon_1.ConstrainedDataRanges;
-                Count = (*Descriptor).__bindgen_anon_1.ConstrainedDataRangesCount;
+                DataRanges = (*Descriptor).__bindgen_anon_1.__bindgen_anon_1.as_ref().ConstrainedDataRanges as *const PKSDATARANGE;
+                Count = (*Descriptor).__bindgen_anon_1.__bindgen_anon_1.as_ref().ConstrainedDataRangesCount;
             }
 
             Index = 0;
             while Index < Count {
-                Size = Size.wrapping_add(((*DataRanges.offset(Index as isize)).FormatSize + 0x7) & !0x7);
+                Size = Size.wrapping_add(((*(*DataRanges.offset(Index as isize))).__bindgen_anon_1.as_ref().FormatSize + 0x7) & !0x7);
                 Index = Index.wrapping_add(1);
             }
 
             if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == 0 {
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_OVERFLOW;
             } else {
                 Item = Buffer as *mut KSMULTIPLE_ITEM;
 
                 if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == core::mem::size_of::<ULONG>() as ULONG {
                     (*Item).Size = Size;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
                     Status = STATUS_SUCCESS;
                 } else {
                     (*Item).Size = Size;
                     (*Item).Count = Count;
 
                     if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == core::mem::size_of::<KSMULTIPLE_ITEM>() as ULONG {
-                        (*Irp).IoStatus.Information = core::mem::size_of::<KSMULTIPLE_ITEM>() as ULONG_PTR;
+                        (*Irp).IoStatus.Information = core::mem::size_of::<KSMULTIPLE_ITEM>() as _;
                         Status = STATUS_SUCCESS;
                     } else {
                         let mut DataPtr = Item.offset(1) as *mut u8;
 
                         Index = 0;
                         while Index < Count {
-                            let GuidString: _UNICODE_STRING;
-                            RtlStringFromGUID(&(*DataRanges.offset(Index as isize)).MajorFormat, &raw mut GuidString);
-                            RtlStringFromGUID(&(*DataRanges.offset(Index as isize)).SubFormat, &raw mut GuidString);
-                            RtlStringFromGUID(&(*DataRanges.offset(Index as isize)).Specifier, &raw mut GuidString);
-                            RtlStringFromGUID(&(*DataRanges.offset(Index as isize)).Specifier, &raw mut GuidString);
+                            let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
+                            let dr = *DataRanges.offset(Index as isize);
+                            RtlStringFromGUID(&(*dr).__bindgen_anon_1.as_ref().MajorFormat, &mut GuidString);
+                            RtlStringFromGUID(&(*dr).__bindgen_anon_1.as_ref().SubFormat, &mut GuidString);
+                            RtlStringFromGUID(&(*dr).__bindgen_anon_1.as_ref().Specifier, &mut GuidString);
+                            RtlStringFromGUID(&(*dr).__bindgen_anon_1.as_ref().Specifier, &mut GuidString);
 
+                            let format_size = (*dr).__bindgen_anon_1.as_ref().FormatSize;
                             core::ptr::copy_nonoverlapping(
-                                *DataRanges.offset(Index as isize) as *const u8,
+                                dr as *const u8,
                                 DataPtr,
-                                (*DataRanges.offset(Index as isize)).FormatSize as usize,
+                                format_size as usize,
                             );
-                            DataPtr = DataPtr.offset((*DataRanges.offset(Index as isize)).FormatSize as isize);
-                            DataPtr = (DataPtr as ULONG_PTR).wrapping_add(7) & !7 as ULONG_PTR as *mut u8;
+                            DataPtr = DataPtr.offset(format_size as isize);
+                            DataPtr = (((DataPtr as ULONG_PTR).wrapping_add(7)) & !(7 as ULONG_PTR)) as *mut u8;
                             Index = Index.wrapping_add(1);
                         }
 
                         Status = STATUS_SUCCESS;
-                        (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                        (*Irp).IoStatus.Information = Size as _;
                     }
                 }
             }
@@ -491,12 +563,12 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
         KSPROPERTY_PIN_COMMUNICATION => {
             Size = core::mem::size_of::<KSPIN_COMMUNICATION>() as ULONG;
             if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < Size {
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 *(Buffer as *mut KSPIN_COMMUNICATION) = (*Descriptor).Communication;
                 Status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
             }
         }
 
@@ -507,7 +579,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
 
             Size = core::mem::size_of::<GUID>() as ULONG;
             if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < Size {
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 core::ptr::copy_nonoverlapping(
@@ -516,7 +588,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
                     core::mem::size_of::<GUID>(),
                 );
                 Status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
             }
         }
 
@@ -535,7 +607,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
             if !NT_SUCCESS(Status) {
                 (*Irp).IoStatus.Information = 0;
             } else {
-                (*Irp).IoStatus.Information = ((*KeyInfo).DataLength as usize).wrapping_add(core::mem::size_of::<WCHAR>()) as ULONG_PTR;
+                (*Irp).IoStatus.Information = ((*KeyInfo).DataLength as usize).wrapping_add(core::mem::size_of::<WCHAR>()) as _;
 
                 if ((*KeyInfo).DataLength as usize).wrapping_add(core::mem::size_of::<WCHAR>()) > (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize {
                     Status = STATUS_BUFFER_OVERFLOW;
@@ -555,7 +627,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
         KSPROPERTY_PIN_PROPOSEDATAFORMAT => {
             Size = core::mem::size_of::<KSDATAFORMAT>() as ULONG;
             if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < Size {
-                (*Irp).IoStatus.Information = Size as ULONG_PTR;
+                (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength != core::mem::size_of::<KSDATAFORMAT_WAVEFORMATEX>() as ULONG {
                 Status = STATUS_NOT_IMPLEMENTED;
@@ -569,16 +641,20 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
                     WaveFormatOut = (*Descriptor).DataRanges as *mut PKSDATARANGE_AUDIO;
                     Index = 0;
                     while Index < (*Descriptor).DataRangesCount {
-                        if (*WaveFormatOut.offset(Index as isize)).DataRange.FormatSize != core::mem::size_of::<KSDATARANGE_AUDIO>() as ULONG {
+                        let wfo = *WaveFormatOut.offset(Index as isize);
+                        if (*wfo).DataRange.__bindgen_anon_1.as_ref().FormatSize != core::mem::size_of::<KSDATARANGE_AUDIO>() as ULONG {
                             Index = Index.wrapping_add(1);
                             continue;
                         }
 
-                        if (*WaveFormatOut.offset(Index as isize)).MinimumSampleFrequency > (*WaveFormatIn).WaveFormatEx.nSamplesPerSec ||
-                            (*WaveFormatOut.offset(Index as isize)).MaximumSampleFrequency < (*WaveFormatIn).WaveFormatEx.nSamplesPerSec ||
-                            (*WaveFormatOut.offset(Index as isize)).MinimumBitsPerSample > (*WaveFormatIn).WaveFormatEx.wBitsPerSample as ULONG ||
-                            (*WaveFormatOut.offset(Index as isize)).MaximumBitsPerSample < (*WaveFormatIn).WaveFormatEx.wBitsPerSample as ULONG ||
-                            (*WaveFormatOut.offset(Index as isize)).MaximumChannels < (*WaveFormatIn).WaveFormatEx.nChannels as ULONG
+                        let in_samples_per_sec = core::ptr::read_unaligned(core::ptr::addr_of!((*WaveFormatIn).WaveFormatEx.nSamplesPerSec));
+                        let in_bits_per_sample = core::ptr::read_unaligned(core::ptr::addr_of!((*WaveFormatIn).WaveFormatEx.wBitsPerSample));
+                        let in_channels = core::ptr::read_unaligned(core::ptr::addr_of!((*WaveFormatIn).WaveFormatEx.nChannels));
+                        if (*wfo).MinimumSampleFrequency > in_samples_per_sec ||
+                            (*wfo).MaximumSampleFrequency < in_samples_per_sec ||
+                            (*wfo).MinimumBitsPerSample > in_bits_per_sample as ULONG ||
+                            (*wfo).MaximumBitsPerSample < in_bits_per_sample as ULONG ||
+                            (*wfo).MaximumChannels < in_channels as ULONG
                         {
                             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NO_MATCH;
                             (*Irp).IoStatus.Information = 0;
@@ -651,7 +727,7 @@ pub unsafe extern "system" fn KsPinDataIntersection(
         .wrapping_add(core::mem::size_of::<KSDATARANGE>() as ULONG);
 
     if (*IoStack).Parameters.DeviceIoControl.InputBufferLength < Size {
-        (*Irp).IoStatus.Information = Size as ULONG_PTR;
+        (*Irp).IoStatus.Information = Size as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
         return STATUS_BUFFER_TOO_SMALL;
     }
@@ -667,10 +743,10 @@ pub unsafe extern "system" fn KsPinDataIntersection(
 
     let mut Index: ULONG = 0;
     while Index < (*Item).Count {
-        let Status = IntersectHandler(Irp, Pin, DataRange as PKSDATARANGE, Data);
+        let Status = IntersectHandler.expect("non-null function pointer")(Irp, Pin, DataRange as PKSDATARANGE, Data);
         if NT_SUCCESS(Status) {
-            if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < (*DataRange).FormatSize {
-                (*Irp).IoStatus.Information = (*DataRange).FormatSize as ULONG_PTR;
+            if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength < (*DataRange).__bindgen_anon_1.as_ref().FormatSize {
+                (*Irp).IoStatus.Information = (*DataRange).__bindgen_anon_1.as_ref().FormatSize as _;
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
                 return STATUS_BUFFER_TOO_SMALL;
             }
@@ -679,7 +755,7 @@ pub unsafe extern "system" fn KsPinDataIntersection(
                 (*Irp).UserBuffer as *mut u8,
                 core::mem::size_of::<KSDATARANGE>(),
             );
-            (*Irp).IoStatus.Information = core::mem::size_of::<KSDATARANGE>() as ULONG_PTR;
+            (*Irp).IoStatus.Information = core::mem::size_of::<KSDATARANGE>() as _;
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
             return STATUS_SUCCESS;
         }
@@ -704,13 +780,13 @@ pub unsafe extern "system" fn KsHandleSizedListQuery(
     let Item = (*Irp).AssociatedIrp.SystemBuffer as PKSMULTIPLE_ITEM;
 
     if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == 0 {
-        (*Irp).IoStatus.Information = Size as ULONG_PTR;
+        (*Irp).IoStatus.Information = Size as _;
         return STATUS_BUFFER_OVERFLOW;
     }
 
     if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == size_of::<ULONG>() as ULONG {
         (*Item).Size = Size;
-        (*Irp).IoStatus.Information = size_of::<ULONG>() as ULONG_PTR;
+        (*Irp).IoStatus.Information = size_of::<ULONG>() as _;
         return STATUS_SUCCESS;
     }
 
@@ -722,7 +798,7 @@ pub unsafe extern "system" fn KsHandleSizedListQuery(
     (*Item).Size = DataItemSize;
 
     if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength == size_of::<KSMULTIPLE_ITEM>() as ULONG {
-        (*Irp).IoStatus.Information = size_of::<KSMULTIPLE_ITEM>() as ULONG_PTR;
+        (*Irp).IoStatus.Information = size_of::<KSMULTIPLE_ITEM>() as _;
         return STATUS_SUCCESS;
     }
 
@@ -732,7 +808,7 @@ pub unsafe extern "system" fn KsHandleSizedListQuery(
             Item.offset(1) as *mut core::ffi::c_void,
             (DataItemSize.wrapping_mul(DataItemsCount)) as usize,
         );
-        (*Irp).IoStatus.Information = Size as ULONG_PTR;
+        (*Irp).IoStatus.Information = Size as _;
         STATUS_SUCCESS
     } else {
         STATUS_BUFFER_TOO_SMALL
@@ -979,8 +1055,8 @@ pub unsafe extern "system" fn KsHandleSizedListQuery(
 //     IN LPGUID Category,
 //     PKEY_VALUE_PARTIAL_INFORMATION *OutInformation)
 // {
-//     UNICODE_STRING MediaPath = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\");
-//     UNICODE_STRING Name = RTL_CONSTANT_STRING(L"Name");
+//     UNICODE_STRING MediaPath = RTL_CONSTANT_STRING(L!("\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\"));
+//     UNICODE_STRING Name = RTL_CONSTANT_STRING(L!("Name"));
 //     UNICODE_STRING GuidString, Path;
 //     NTSTATUS Status;
 //     OBJECT_ATTRIBUTES ObjectAttributes;

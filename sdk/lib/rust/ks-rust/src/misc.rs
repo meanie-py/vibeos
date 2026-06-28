@@ -1,10 +1,12 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolZero, IoGetCurrentIrpStackLocation, LPWSTR, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, IoGetCurrentIrpStackLocation, LPWSTR, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -21,6 +23,7 @@ pub union _KSIDENTIFIER__bindgen_ty_1 {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct _KSIDENTIFIER__bindgen_ty_1__bindgen_ty_1 {
     pub Set: GUID,
     pub Id: ULONG,
@@ -54,7 +57,13 @@ pub unsafe extern "C" fn AllocateItem(
     PoolType: POOL_TYPE,
     NumberOfBytes: usize,
 ) -> *mut core::ffi::c_void {
-    ExAllocatePoolZero(PoolType, NumberOfBytes, TAG_KS)
+    // ExAllocatePoolZero is not exported by this ntoskrnl; use ExAllocatePoolWithTag + zero
+    // (the zeroed-pool semantics the KS AllocateItem relies on).
+    let p = ExAllocatePoolWithTag(PoolType, NumberOfBytes as _, TAG_KS);
+    if !p.is_null() {
+        core::ptr::write_bytes(p as *mut u8, 0, NumberOfBytes);
+    }
+    p
 }
 #[no_mangle]
 pub unsafe extern "C" fn FreeItem(Item: PVOID) {

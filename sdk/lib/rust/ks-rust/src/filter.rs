@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -5,8 +7,31 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, Filter, GUID, HyperCriticalWorkQueue, IoGetCurrentIrpStackLocation, KeInitializeMutex, KeInitializeSpinLock, KeReadStateMutex, KeReleaseMutex, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, RtlFreeUnicodeString, RtlInitUnicodeString, RtlStringFromGUID};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, GUID, IoGetCurrentIrpStackLocation, KeInitializeMutex, KeInitializeSpinLock, KeReadStateMutex, KeReleaseMutex, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, RtlFreeUnicodeString, RtlInitUnicodeString, RtlStringFromGUID};
+use ntkrnl_sys::ddk::_WORK_QUEUE_TYPE_HyperCriticalWorkQueue as HyperCriticalWorkQueue;
+use ntkrnl_sys::ddk::RtlAssert;
+use ntkrnl_sys::ddk::_GUID;
+use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
+use ntkrnl_sys::interlocked::InterlockedIncrement as _InterlockedIncrement;
+use ntkrnl_sys::driver_ddk::DbgPrint;
+use crate::misc::{FreeItem, AllocateItem, CompleteRequest};
+use crate::connectivity::{KspPinPropertyHandler, KspValidateConnectRequest};
+use crate::property::KspPropertyHandler;
+use crate::methods::KspMethodHandlerWithAllocator;
+use crate::pin::KspCreatePin;
+use crate::event::KspEnableEvent;
 use core::ffi::c_void;
+
+// IsEqualGUIDAligned (guiddef.h inline): byte-equal GUID compare. Defined locally to match
+// the sibling ks modules (api.rs/pin.rs/swenum.rs each define their own private copy); also
+// reported in ~/vibeos-rust-staging/ks-glue-needs-filter.txt for the integrator to centralize.
+#[inline]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> BOOLEAN {
+    ((*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4) as BOOLEAN
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -108,394 +133,345 @@ pub static mut KSPROPSETID_General: GUID = _GUID {
     ],
 };
 
-pub static mut IKsFilterTopologySet: [KSPROPERTY_ITEM; 4] = unsafe {
-    [
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_TOPOLOGY_CATEGORIES as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_102 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    FilterTopologyPropertyHandler
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: 0 as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_101 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_TOPOLOGY_NODES as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_102 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    FilterTopologyPropertyHandler
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: 0 as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_101 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_TOPOLOGY_CONNECTIONS as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_102 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    FilterTopologyPropertyHandler
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-            MinData: 0 as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_101 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-        KSPROPERTY_ITEM {
-            PropertyId: KSPROPERTY_TOPOLOGY_NAME as ::core::ffi::c_int as ULONG,
-            c2rust_unnamed: C2RustUnnamed_102 {
-                GetPropertyHandler: ::core::mem::transmute::<
-                    Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                    PFNKSHANDLER,
-                >(Some(
-                    FilterTopologyPropertyHandler
-                        as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-                )),
-            },
-            MinProperty: ::core::mem::size_of::<KSP_NODE>() as ULONG,
-            MinData: 0 as ULONG,
-            c2rust_unnamed_0: C2RustUnnamed_101 {
-                SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                    ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-                ),
-            },
-            Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-            RelationsCount: 0 as ULONG,
-            Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-                as PKSPROPERTY as *const KSPROPERTY,
-            SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-            SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-        },
-    ]
-};
+// Property-item tables. The Get/Set handler slots live in bindgen unions whose only
+// storage is a plain u32, so a function pointer cannot be placed there in a const
+// initializer (fn-ptr -> integer is not const-evaluable). The unions are const-init'd
+// zeroed here; the handlers are installed at runtime by run_static_initializers() (the
+// c2rust .init_array constructor), exactly as the C designated-initializer tables would
+// have them. All scalar/size fields are const-initialized faithfully from the DEFINE_*
+// macros in ks.h.
 
-pub static mut IKsFilterPinSet: [KSPROPERTY_ITEM; 12] = [KSPROPERTY_ITEM {
-    PropertyId: 0,
-    c2rust_unnamed: C2RustUnnamed_102 {
-        GetPropertyHandler: None,
-    },
-    MinProperty: 0,
-    MinData: 0,
-    c2rust_unnamed_0: C2RustUnnamed_101 {
-        SetPropertyHandler: None,
-    },
-    Values: ::core::ptr::null::<KSPROPERTY_VALUES>(),
-    RelationsCount: 0,
-    Relations: ::core::ptr::null::<KSPROPERTY>(),
-    SupportHandler: None,
-    SerializedSize: 0,
-}; 12];
+const fn ks_union1_zero() -> KSPROPERTY_ITEM__bindgen_ty_1 {
+    KSPROPERTY_ITEM__bindgen_ty_1 {
+        GetPropertyHandler: __BindgenUnionField::new(),
+        GetSupported: __BindgenUnionField::new(),
+        bindgen_union_field: 0,
+    }
+}
+const fn ks_union2_zero() -> KSPROPERTY_ITEM__bindgen_ty_2 {
+    KSPROPERTY_ITEM__bindgen_ty_2 {
+        SetPropertyHandler: __BindgenUnionField::new(),
+        SetSupported: __BindgenUnionField::new(),
+        bindgen_union_field: 0,
+    }
+}
+const fn ks_item(PropertyId: ULONG, MinProperty: ULONG, MinData: ULONG) -> KSPROPERTY_ITEM {
+    KSPROPERTY_ITEM {
+        PropertyId,
+        __bindgen_anon_1: ks_union1_zero(),
+        MinProperty,
+        MinData,
+        __bindgen_anon_2: ks_union2_zero(),
+        Values: ::core::ptr::null::<KSPROPERTY_VALUES>(),
+        RelationsCount: 0,
+        Relations: ::core::ptr::null::<KSPROPERTY>(),
+        SupportHandler: None,
+        SerializedSize: 0,
+    }
+}
 
-pub static mut IKsFilterGeneralSet: [KSPROPERTY_ITEM; 1] = unsafe {
-    [KSPROPERTY_ITEM {
-        PropertyId: KSPROPERTY_GENERAL_COMPONENTID as ::core::ffi::c_int as ULONG,
-        c2rust_unnamed: C2RustUnnamed_102 {
-            GetPropertyHandler: ::core::mem::transmute::<
-                Option<unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS>,
-                PFNKSHANDLER,
-            >(Some(
-                FilterGeneralComponentIdHandler
-                    as unsafe extern "C" fn(PIRP, PKSIDENTIFIER, PVOID) -> NTSTATUS,
-            )),
-        },
-        MinProperty: ::core::mem::size_of::<KSPROPERTY>() as ULONG,
-        MinData: ::core::mem::size_of::<KSCOMPONENTID>() as ULONG,
-        c2rust_unnamed_0: C2RustUnnamed_101 {
-            SetPropertyHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-                ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-            ),
-        },
-        Values: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-            as PKSPROPERTY_VALUES as *const KSPROPERTY_VALUES,
-        RelationsCount: 0 as ULONG,
-        Relations: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void
-            as PKSPROPERTY as *const KSPROPERTY,
-        SupportHandler: ::core::mem::transmute::<*mut ::core::ffi::c_void, PFNKSHANDLER>(
-            ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-        ),
-        SerializedSize: 0 as ::core::ffi::c_int as ULONG,
-    }]
-};
+// GetPropertyHandler = FilterTopologyPropertyHandler (installed at runtime).
+pub static mut IKsFilterTopologySet: [KSPROPERTY_ITEM; 4] = [
+    ks_item(KSPROPERTY_TOPOLOGY_CATEGORIES as ULONG, ::core::mem::size_of::<KSPROPERTY>() as ULONG, 0),
+    ks_item(KSPROPERTY_TOPOLOGY_NODES as ULONG, ::core::mem::size_of::<KSPROPERTY>() as ULONG, 0),
+    ks_item(KSPROPERTY_TOPOLOGY_CONNECTIONS as ULONG, ::core::mem::size_of::<KSPROPERTY>() as ULONG, 0),
+    ks_item(KSPROPERTY_TOPOLOGY_NAME as ULONG, ::core::mem::size_of::<KSP_NODE>() as ULONG, 0),
+];
 
-pub static mut FilterPropertySet: [KSPROPERTY_SET; 3] = [KSPROPERTY_SET {
-    Set: ::core::ptr::null::<GUID>(),
-    PropertiesCount: 0,
-    PropertyItem: ::core::ptr::null::<KSPROPERTY_ITEM>(),
-    FastIoCount: 0,
-    FastIoTable: ::core::ptr::null::<KSFASTPROPERTY_ITEM>(),
-}; 3];
+// DEFINE_KSPROPERTY_PINPROPOSEDATAFORMAT(IKsFilterPinSet, FilterPinPropertyHandler x3).
+// Items 0..=10 use GetPropertyHandler = FilterPinPropertyHandler; item 11
+// (PROPOSEDATAFORMAT) uses SetPropertyHandler = FilterPinPropertyHandler. Installed
+// at runtime by run_static_initializers().
+pub static mut IKsFilterPinSet: [KSPROPERTY_ITEM; 12] = [
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_CINSTANCES as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, ::core::mem::size_of::<KSPIN_CINSTANCES>() as ULONG),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_CTYPES as ULONG, ::core::mem::size_of::<KSPROPERTY>() as ULONG, ::core::mem::size_of::<ULONG>() as ULONG),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_DATAFLOW as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, ::core::mem::size_of::<KSPIN_DATAFLOW>() as ULONG),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_DATARANGES as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_DATAINTERSECTION as ULONG, (::core::mem::size_of::<KSP_PIN>() + ::core::mem::size_of::<KSMULTIPLE_ITEM>()) as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_INTERFACES as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_MEDIUMS as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_COMMUNICATION as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, ::core::mem::size_of::<KSPIN_COMMUNICATION>() as ULONG),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_CATEGORY as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, ::core::mem::size_of::<GUID>() as ULONG),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_NAME as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_CONSTRAINEDDATARANGES as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, 0),
+    ks_item(KSPROPERTY_PIN_KSPROPERTY_PIN_PROPOSEDATAFORMAT as ULONG, ::core::mem::size_of::<KSP_PIN>() as ULONG, ::core::mem::size_of::<KSDATAFORMAT>() as ULONG),
+];
 
+// GetPropertyHandler = FilterGeneralComponentIdHandler (installed at runtime).
+pub static mut IKsFilterGeneralSet: [KSPROPERTY_ITEM; 1] = [
+    ks_item(KSPROPERTY_GENERAL_COMPONENTID as ULONG, ::core::mem::size_of::<KSPROPERTY>() as ULONG, ::core::mem::size_of::<KSCOMPONENTID>() as ULONG),
+];
+
+// KSPROPERTY_SET is not Copy, so the `[x; 3]` repeat syntax can't be used; spell out the
+// three elements. The Set/Count/PropertyItem fields are filled at runtime by
+// run_static_initializers() (they take the address of other statics, not const-evaluable).
+const fn ks_empty_propset() -> KSPROPERTY_SET {
+    KSPROPERTY_SET {
+        Set: ::core::ptr::null::<GUID>(),
+        PropertiesCount: 0,
+        PropertyItem: ::core::ptr::null::<KSPROPERTY_ITEM>(),
+        FastIoCount: 0,
+        FastIoTable: ::core::ptr::null::<KSFASTPROPERTY_ITEM>(),
+    }
+}
+pub static mut FilterPropertySet: [KSPROPERTY_SET; 3] =
+    [ks_empty_propset(), ks_empty_propset(), ks_empty_propset()];
+
+// NOTE: vtbl slots below are bindgen `extern "system"` Option<fn> fields; the methods are
+// defined `extern "system"` (== stdcall on i386). `Some(f as extern "C" fn)` both mis-casts
+// the ABI and mis-matches the slot, so each slot is filled via a const-safe fn-ptr transmute
+// (transmuting the fn POINTER is const-evaluable; `f as usize` would not be).
 static mut vt_IKsProcessingObject: IKsProcessingObjectVtbl = unsafe {
     IKsProcessingObjectVtbl {
-        QueryInterface: Some(
+        QueryInterface: ::core::mem::transmute(
             IKsProcessingObject_fnQueryInterface
-                as unsafe extern "C" fn(
-                    *mut IKsProcessingObject,
-                    *const IID,
-                    *mut PVOID,
-                ) -> NTSTATUS,
+                as *const (),
         ),
-        AddRef: Some(
-            IKsProcessingObject_fnAddRef as unsafe extern "C" fn(*mut IKsProcessingObject) -> ULONG,
+        AddRef: ::core::mem::transmute(
+            IKsProcessingObject_fnAddRef as *const (),
         ),
-        Release: Some(
+        Release: ::core::mem::transmute(
             IKsProcessingObject_fnRelease
-                as unsafe extern "C" fn(*mut IKsProcessingObject) -> ULONG,
+                as *const (),
         ),
-        ProcessingObjectWork: Some(
+        ProcessingObjectWork: ::core::mem::transmute(
             IKsProcessingObject_fnProcessingObjectWork
-                as unsafe extern "C" fn(*mut IKsProcessingObject) -> (),
+                as *const (),
         ),
-        GetAndGate: Some(
+        GetAndGate: ::core::mem::transmute(
             IKsProcessingObject_fnGetAndGate
-                as unsafe extern "C" fn(*mut IKsProcessingObject) -> PKSGATE,
+                as *const (),
         ),
-        Process: Some(
+        Process: ::core::mem::transmute(
             IKsProcessingObject_fnProcess
-                as unsafe extern "C" fn(*mut IKsProcessingObject, BOOLEAN) -> (),
+                as *const (),
         ),
-        Reset: Some(
-            IKsProcessingObject_fnReset as unsafe extern "C" fn(*mut IKsProcessingObject) -> (),
+        Reset: ::core::mem::transmute(
+            IKsProcessingObject_fnReset as *const (),
         ),
-        TriggerNotification: Some(
+        TriggerNotification: ::core::mem::transmute(
             IKsProcessingObject_fnTriggerNotification
-                as unsafe extern "C" fn(*mut IKsProcessingObject) -> (),
+                as *const (),
         ),
     }
 };
 
 static mut vt_IKsControl: IKsControlVtbl = unsafe {
     IKsControlVtbl {
-        QueryInterface: Some(
+        QueryInterface: ::core::mem::transmute(
             IKsControl_fnQueryInterface
-                as unsafe extern "C" fn(*mut IKsControl, *const IID, *mut PVOID) -> NTSTATUS,
+                as *const (),
         ),
-        AddRef: Some(IKsControl_fnAddRef as unsafe extern "C" fn(*mut IKsControl) -> ULONG),
-        Release: Some(IKsControl_fnRelease as unsafe extern "C" fn(*mut IKsControl) -> ULONG),
-        KsProperty: Some(
+        AddRef: ::core::mem::transmute(IKsControl_fnAddRef as *const ()),
+        Release: ::core::mem::transmute(IKsControl_fnRelease as *const ()),
+        KsProperty: ::core::mem::transmute(
             IKsControl_fnKsProperty
-                as unsafe extern "C" fn(
-                    *mut IKsControl,
-                    PKSPROPERTY,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    *mut ULONG,
-                ) -> NTSTATUS,
+                as *const (),
         ),
-        KsMethod: Some(
+        KsMethod: ::core::mem::transmute(
             IKsControl_fnKsMethod
-                as unsafe extern "C" fn(
-                    *mut IKsControl,
-                    PKSMETHOD,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    *mut ULONG,
-                ) -> NTSTATUS,
+                as *const (),
         ),
-        KsEvent: Some(
+        KsEvent: ::core::mem::transmute(
             IKsControl_fnKsEvent
-                as unsafe extern "C" fn(
-                    *mut IKsControl,
-                    PKSEVENT,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    *mut ULONG,
-                ) -> NTSTATUS,
+                as *const (),
         ),
     }
 };
 
 static mut vt_IKsFilter: IKsFilterVtbl = unsafe {
     IKsFilterVtbl {
-        QueryInterface: Some(
+        QueryInterface: ::core::mem::transmute(
             IKsFilter_fnQueryInterface
-                as unsafe extern "C" fn(*mut IKsFilter, *const IID, *mut PVOID) -> NTSTATUS,
+                as *const (),
         ),
-        AddRef: Some(IKsFilter_fnAddRef as unsafe extern "C" fn(*mut IKsFilter) -> ULONG),
-        Release: Some(IKsFilter_fnRelease as unsafe extern "C" fn(*mut IKsFilter) -> ULONG),
-        GetStruct: Some(IKsFilter_fnGetStruct as unsafe extern "C" fn(*mut IKsFilter) -> PKSFILTER),
-        DoAllNecessaryPinsExist: Some(
-            IKsFilter_fnDoAllNecessaryPinsExist as unsafe extern "C" fn(*mut IKsFilter) -> BOOL,
+        AddRef: ::core::mem::transmute(IKsFilter_fnAddRef as *const ()),
+        Release: ::core::mem::transmute(IKsFilter_fnRelease as *const ()),
+        GetStruct: ::core::mem::transmute(IKsFilter_fnGetStruct as *const ()),
+        DoAllNecessaryPinsExist: ::core::mem::transmute(
+            IKsFilter_fnDoAllNecessaryPinsExist as *const (),
         ),
-        CreateNode: Some(
+        CreateNode: ::core::mem::transmute(
             IKsFilter_fnCreateNode
-                as unsafe extern "C" fn(*mut IKsFilter, PIRP, *mut IKsPin, PLIST_ENTRY) -> NTSTATUS,
+                as *const (),
         ),
-        BindProcessPinsToPipeSection: Some(
+        BindProcessPinsToPipeSection: ::core::mem::transmute(
             IKsFilter_fnBindProcessPinsToPipeSection
-                as unsafe extern "C" fn(
-                    *mut IKsFilter,
-                    *mut KSPROCESSPIPESECTION,
-                    PVOID,
-                    PKSPIN,
-                    *mut *mut IKsPin,
-                    *mut PKSGATE,
-                ) -> NTSTATUS,
+                as *const (),
         ),
-        UnbindProcessPinsFromPipeSection: Some(
+        UnbindProcessPinsFromPipeSection: ::core::mem::transmute(
             IKsFilter_fnUnbindProcessPinsFromPipeSection
-                as unsafe extern "C" fn(*mut IKsFilter, *mut KSPROCESSPIPESECTION) -> NTSTATUS,
+                as *const (),
         ),
-        AddProcessPin: Some(
+        AddProcessPin: ::core::mem::transmute(
             IKsFilter_fnAddProcessPin
-                as unsafe extern "C" fn(*mut IKsFilter, PKSPROCESSPIN) -> NTSTATUS,
+                as *const (),
         ),
-        RemoveProcessPin: Some(
+        RemoveProcessPin: ::core::mem::transmute(
             IKsFilter_fnRemoveProcessPin
-                as unsafe extern "C" fn(*mut IKsFilter, PKSPROCESSPIN) -> NTSTATUS,
+                as *const (),
         ),
-        ReprepareProcessPipeSection: Some(
+        ReprepareProcessPipeSection: ::core::mem::transmute(
             IKsFilter_fnReprepareProcessPipeSection
-                as unsafe extern "C" fn(*mut IKsFilter, *mut KSPROCESSPIPESECTION, PULONG) -> BOOL,
+                as *const (),
         ),
-        DeliverResetState: Some(
+        DeliverResetState: ::core::mem::transmute(
             IKsFilter_fnDeliverResetState
-                as unsafe extern "C" fn(*mut IKsFilter, *mut KSPROCESSPIPESECTION, KSRESET) -> (),
+                as *const (),
         ),
-        IsFrameHolding: Some(
-            IKsFilter_fnIsFrameHolding as unsafe extern "C" fn(*mut IKsFilter) -> BOOL,
+        IsFrameHolding: ::core::mem::transmute(
+            IKsFilter_fnIsFrameHolding as *const (),
         ),
-        RegisterForCopyCallbacks: Some(
+        RegisterForCopyCallbacks: ::core::mem::transmute(
             IKsFilter_fnRegisterForCopyCallbacks
-                as unsafe extern "C" fn(*mut IKsFilter, *mut IKsQueue, BOOL) -> (),
+                as *const (),
         ),
-        GetProcessDispatch: Some(
+        GetProcessDispatch: ::core::mem::transmute(
             IKsFilter_fnGetProcessDispatch
-                as unsafe extern "C" fn(*mut IKsFilter) -> PKSPROCESSPIN_INDEXENTRY,
+                as *const (),
         ),
     }
 };
 
 static mut DispatchTable: KSDISPATCH_TABLE = unsafe {
     KSDISPATCH_TABLE {
-        DeviceIoControl: Some(
+        DeviceIoControl: ::core::mem::transmute(
             IKsFilter_DispatchDeviceIoControl
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Read: Some(
+        Read: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Write: Some(
+        Write: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Flush: Some(
+        Flush: ::core::mem::transmute(
             KsDispatchInvalidDeviceRequest
-                as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+                as *const (),
         ),
-        Close: Some(
-            IKsFilter_DispatchClose as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        Close: ::core::mem::transmute(
+            IKsFilter_DispatchClose as *const (),
         ),
-        QuerySecurity: Some(
-            KsDispatchQuerySecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        QuerySecurity: ::core::mem::transmute(
+            KsDispatchQuerySecurity as *const (),
         ),
-        SetSecurity: Some(
-            KsDispatchSetSecurity as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS,
+        SetSecurity: ::core::mem::transmute(
+            KsDispatchSetSecurity as *const (),
         ),
-        FastDeviceIoControl: Some(
+        FastDeviceIoControl: ::core::mem::transmute(
             KsDispatchFastIoDeviceControlFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    BOOLEAN,
-                    PVOID,
-                    ULONG,
-                    PVOID,
-                    ULONG,
-                    ULONG,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastRead: Some(
+        FastRead: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
-        FastWrite: Some(
+        FastWrite: ::core::mem::transmute(
             KsDispatchFastReadFailure
-                as unsafe extern "C" fn(
-                    PFILE_OBJECT,
-                    PLARGE_INTEGER,
-                    ULONG,
-                    BOOLEAN,
-                    ULONG,
-                    PVOID,
-                    PIO_STATUS_BLOCK,
-                    PDEVICE_OBJECT,
-                ) -> BOOLEAN,
+                as *const (),
         ),
     }
 };
 
+#[used]
+#[cfg_attr(target_os = "windows", link_section = ".CRT$XCU")]
 static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+
+// c2rust .init_array constructor: installs the property-item handler slots (which cannot
+// be const-initialized because the bindgen union storage is a u32) and fills the
+// FilterPropertySet[] table (whose C initializer takes the address of other statics).
+unsafe extern "C" fn run_static_initializers() {
+    let topo: PFNKSHANDLER = crate::cb!(FilterTopologyPropertyHandler);
+    let p = (&raw mut IKsFilterTopologySet) as *mut KSPROPERTY_ITEM;
+    let mut i = 0usize;
+    while i < 4 {
+        *(*p.add(i)).__bindgen_anon_1.GetPropertyHandler.as_mut() = topo;
+        i += 1;
+    }
+
+    let pin: PFNKSHANDLER = crate::cb!(FilterPinPropertyHandler);
+    let q = (&raw mut IKsFilterPinSet) as *mut KSPROPERTY_ITEM;
+    i = 0;
+    while i < 11 {
+        *(*q.add(i)).__bindgen_anon_1.GetPropertyHandler.as_mut() = pin;
+        i += 1;
+    }
+    // PROPOSEDATAFORMAT (item 11) installs its handler in the Set slot.
+    *(*q.add(11)).__bindgen_anon_2.SetPropertyHandler.as_mut() = pin;
+
+    let g = (&raw mut IKsFilterGeneralSet) as *mut KSPROPERTY_ITEM;
+    *(*g).__bindgen_anon_1.GetPropertyHandler.as_mut() = crate::cb!(FilterGeneralComponentIdHandler);
+
+    let fps = (&raw mut FilterPropertySet) as *mut KSPROPERTY_SET;
+    (*fps.add(0)).Set = &raw const KSPROPSETID_Topology;
+    (*fps.add(0)).PropertiesCount = 4;
+    (*fps.add(0)).PropertyItem = (&raw const IKsFilterTopologySet) as *const KSPROPERTY_ITEM;
+    (*fps.add(1)).Set = &raw const KSPROPSETID_Pin;
+    (*fps.add(1)).PropertiesCount = 12;
+    (*fps.add(1)).PropertyItem = (&raw const IKsFilterPinSet) as *const KSPROPERTY_ITEM;
+    (*fps.add(2)).Set = &raw const KSPROPSETID_General;
+    (*fps.add(2)).PropertiesCount = 1;
+    (*fps.add(2)).PropertyItem = (&raw const IKsFilterGeneralSet) as *const KSPROPERTY_ITEM;
+}
+
+// ---- KSGATE inline helpers (ks.h); used only by this module ----
+#[inline]
+unsafe fn ks_InterlockedCompareExchange(dest: *mut LONG, exch: LONG, comp: LONG) -> LONG {
+    let a = &*(dest as *const core::sync::atomic::AtomicI32);
+    match a.compare_exchange(
+        comp,
+        exch,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) | Err(v) => v,
+    }
+}
+#[inline]
+unsafe fn KsGateTurnInputOn(mut Gate: PKSGATE) {
+    while !Gate.is_null() && InterlockedIncrement(&mut (*Gate).Count) == 1 {
+        Gate = (*Gate).NextGate;
+    }
+}
+#[inline]
+unsafe fn KsGateTurnInputOff(mut Gate: PKSGATE) {
+    while !Gate.is_null() && InterlockedDecrement(&mut (*Gate).Count) == 0 {
+        Gate = (*Gate).NextGate;
+    }
+}
+#[inline]
+unsafe fn KsGateInitialize(
+    Gate: PKSGATE,
+    InitialCount: LONG,
+    NextGate: PKSGATE,
+    StateToPropagate: BOOLEAN,
+) {
+    (*Gate).Count = InitialCount;
+    (*Gate).NextGate = NextGate;
+    if !NextGate.is_null() {
+        if InitialCount > 0 {
+            if StateToPropagate != 0 {
+                KsGateTurnInputOn(NextGate);
+            }
+        } else if StateToPropagate == 0 {
+            KsGateTurnInputOff(NextGate);
+        }
+    }
+}
+#[inline]
+unsafe fn KsGateInitializeAnd(AndGate: PKSGATE, NextOrGate: PKSGATE) {
+    KsGateInitialize(AndGate, 1, NextOrGate, 1 as BOOLEAN);
+}
+#[inline]
+unsafe fn KsGateCaptureThreshold(Gate: PKSGATE) -> BOOLEAN {
+    let captured = (ks_InterlockedCompareExchange(&mut (*Gate).Count, 0, 1) == 1) as BOOLEAN;
+    if captured != 0 {
+        KsGateTurnInputOff((*Gate).NextGate);
+    }
+    captured
+}
 
 #[repr(C)]
 pub struct IKsFilterImpl {
@@ -504,7 +480,7 @@ pub struct IKsFilterImpl {
     pub lpVtblKsControl: *mut IKsControlVtbl,
     pub FilterFactory: *mut IKsFilterFactory,
     pub lpVtblKsProcessingObject: *mut IKsProcessingObjectVtbl,
-    pub ref: LONG,
+    pub ref_: LONG,
     pub ObjectHeader: PKSIOBJECT_HEADER,
     pub Topology: KSTOPOLOGY,
     pub Factory: PKSFILTERFACTORY,
@@ -529,15 +505,15 @@ pub unsafe extern "system" fn IKsProcessingObject_fnQueryInterface(
     refiid: *const IID,
     Output: *mut PVOID,
 ) -> NTSTATUS {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(
         iface as *mut u8,
         IKsFilterImpl,
         lpVtblKsProcessingObject,
     ) as *mut IKsFilterImpl;
 
-    if IsEqualGUIDAligned(refiid, &IID_IUnknown) {
+    if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 {
         *Output = &mut (*This).Header.OuterUnknown as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref_0);
+        _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
     STATUS_UNSUCCESSFUL
@@ -547,22 +523,22 @@ pub unsafe extern "system" fn IKsProcessingObject_fnQueryInterface(
 pub unsafe extern "system" fn IKsProcessingObject_fnAddRef(
     iface: *mut IKsProcessingObject,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(
+    let This = CONTAINING_RECORD!(
         iface,
         IKsFilterImpl,
         lpVtblKsProcessingObject,
     ) as *mut IKsFilterImpl;
 
-    InterlockedIncrement(&mut (*This).ref_0) as ULONG
+    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsProcessingObject_fnRelease(
     iface: *mut IKsProcessingObject,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
-    InterlockedDecrement(&mut (*This).ref_0);
-    (*This).ref_0
+    let This = CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+    InterlockedDecrement(&mut (*This).ref_);
+    (*This).ref_ as ULONG
 }
 
 #[no_mangle]
@@ -570,8 +546,8 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcessingObjectWork(
     iface: *mut IKsProcessingObject,
 ) {
     let mut Status: NTSTATUS;
-    let mut TimeOut: LARGE_INTEGER;
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(
+    let mut TimeOut: LARGE_INTEGER = core::mem::zeroed();
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(
         iface as *mut u8,
         IKsFilterImpl,
         lpVtblKsProcessingObject,
@@ -581,7 +557,7 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcessingObjectWork(
         KeWaitForSingleObject(
             &mut (*This).ProcessingMutex as *mut _ as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -594,7 +570,7 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcessingObjectWork(
         Status = KeWaitForSingleObject(
             &mut (*This).ProcessingMutex as *mut _ as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             FALSE,
             &mut TimeOut,
         );
@@ -619,7 +595,7 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcessingObjectWork(
 pub unsafe extern "system" fn IKsProcessingObject_fnGetAndGate(
     iface: *mut IKsProcessingObject,
 ) -> PKSGATE {
-    let This = CONTAINING_RECORD(
+    let This = CONTAINING_RECORD!(
         iface,
         IKsFilterImpl,
         lpVtblKsProcessingObject,
@@ -632,7 +608,7 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcess(
     iface: *mut IKsProcessingObject,
     Asynchronous: BOOLEAN,
 ) {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 
     if Asynchronous != 0 {
         KsQueueWorkItem((*This).Worker, &mut (*This).WorkItem);
@@ -650,23 +626,23 @@ pub unsafe extern "system" fn IKsProcessingObject_fnProcess(
         return;
     }
 
-    ((*(*iface).lpVtbl).ProcessingObjectWork)(iface);
+    ((*(*iface).lpVtbl).ProcessingObjectWork.unwrap())(iface);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsProcessingObject_fnReset(
     iface: *mut IKsProcessingObject,
 ) {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(
         iface as *mut u8,
         IKsFilterImpl,
         lpVtblKsProcessingObject,
     ) as *mut IKsFilterImpl;
 
     KeWaitForSingleObject(
-        &mut (*This).ProcessingMutex,
+        &mut (*This).ProcessingMutex as *mut _ as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
@@ -691,34 +667,34 @@ pub unsafe extern "system" fn IKsControl_fnQueryInterface(
     refiid: *const IID,
     Output: *mut PVOID,
 ) -> NTSTATUS {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 
-    if IsEqualGUIDAligned(refiid, &IID_IUnknown) {
+    if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 {
         *Output = &mut (*This).Header.OuterUnknown as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref_0);
+        _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
     STATUS_UNSUCCESSFUL
 }
 #[no_mangle]
 pub unsafe extern "system" fn IKsControl_fnAddRef(iface: *mut IKsControl) -> ULONG {
-    let This = CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl) as *mut IKsFilterImpl;
-    InterlockedIncrement(&mut (*This).ref as *mut LONG) as ULONG
+    let This = CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl) as *mut IKsFilterImpl;
+    InterlockedIncrement(&mut (*This).ref_ as *mut LONG) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsControl_fnRelease(
     iface: *mut IKsControl,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(
+    let This = CONTAINING_RECORD!(
         iface,
         IKsFilterImpl,
         lpVtblKsControl,
     ) as *mut IKsFilterImpl;
 
-    InterlockedDecrement(&mut (*This).ref);
+    InterlockedDecrement(&mut (*This).ref_);
 
-    (*This).ref
+    (*This).ref_ as ULONG
 }
 
 #[no_mangle]
@@ -737,9 +713,9 @@ pub unsafe extern "system" fn IKsControl_fnKsProperty(
 
     KsSynchronousIoControlDevice(
         (*This).FileObject,
-        0i32,
+        0i8,
         IOCTL_KS_PROPERTY,
-        Property,
+        Property as PVOID,
         PropertyLength,
         PropertyData,
         DataLength,
@@ -762,7 +738,7 @@ pub unsafe extern "system" fn IKsControl_fnKsMethod(
     );
     KsSynchronousIoControlDevice(
         (*This).FileObject,
-        0i32,
+        0i8,
         IOCTL_KS_METHOD,
         Method as PVOID,
         MethodLength,
@@ -788,7 +764,7 @@ pub unsafe extern "system" fn IKsControl_fnKsEvent(
     if !Event.is_null() {
         return KsSynchronousIoControlDevice(
             (*This).FileObject,
-            0i32,
+            0i8,
             IOCTL_KS_ENABLE_EVENT,
             Event as *mut core::ffi::c_void,
             EventLength,
@@ -799,7 +775,7 @@ pub unsafe extern "system" fn IKsControl_fnKsEvent(
     } else {
         return KsSynchronousIoControlDevice(
             (*This).FileObject,
-            0i32,
+            0i8,
             IOCTL_KS_DISABLE_EVENT,
             EventData,
             DataLength,
@@ -816,17 +792,17 @@ pub unsafe extern "system" fn IKsFilter_fnQueryInterface(
     refiid: *const IID,
     Output: *mut PVOID,
 ) -> NTSTATUS {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 
     if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 ||
        IsEqualGUIDAligned(refiid, &IID_IKsFilter) != 0
     {
         *Output = &mut (*This).Header.OuterUnknown as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref_0);
+        _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     } else if IsEqualGUIDAligned(refiid, &IID_IKsControl) != 0 {
         *Output = &mut (*This).lpVtblKsControl as *mut _ as PVOID;
-        _InterlockedIncrement(&mut (*This).ref_0);
+        _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
     }
 
@@ -846,22 +822,22 @@ pub unsafe extern "system" fn IKsFilter_fnQueryInterface(
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilter_fnAddRef(iface: *mut IKsFilter) -> ULONG {
-    let This = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
-    InterlockedIncrement(&mut (*This).ref)
+    let This = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
+    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilter_fnRelease(iface: *mut IKsFilter) -> ULONG {
-    let This = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown) as *mut IKsFilterImpl;
+    let This = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown) as *mut IKsFilterImpl;
 
-    InterlockedDecrement(&mut (*This).ref);
+    InterlockedDecrement(&mut (*This).ref_);
 
-    if (*This).ref == 0 {
+    if (*This).ref_ == 0 {
         FreeItem(This as PVOID);
         return 0;
     }
 
-    (*This).ref as ULONG
+    (*This).ref_ as ULONG
 }
 
 #[no_mangle]
@@ -924,17 +900,17 @@ pub unsafe extern "system" fn IKsFilter_fnAddProcessPin(
     iface: *mut IKsFilter,
     ProcessPin: PKSPROCESSPIN,
 ) -> NTSTATUS {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 
     KeWaitForSingleObject(
         &mut (*This).ProcessingMutex as *mut _ as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         FALSE,
         core::ptr::null_mut(),
     );
 
-    Status = _KsEdit(
+    let Status = _KsEdit(
         (*This).Filter.Bag,
         &mut (*((*This).ProcessPinIndex.offset((*(*ProcessPin).Pin).Id as isize))).Pins as *mut _ as *mut PVOID,
         (((*((*This).Filter.Descriptor)).PinDescriptorsCount as ULONG).wrapping_add(1) as usize)
@@ -951,7 +927,7 @@ pub unsafe extern "system" fn IKsFilter_fnAddProcessPin(
             (*(*This).ProcessPinIndex.offset((*(*ProcessPin).Pin).Id as isize)).Count.wrapping_add(1);
     }
 
-    KeReleaseMutex(&mut (*This).ProcessingMutex as *mut _ as PVOID, FALSE);
+    KeReleaseMutex(&mut (*This).ProcessingMutex as *mut _, FALSE);
 
     Status
 }
@@ -965,12 +941,12 @@ pub unsafe extern "system" fn IKsFilter_fnRemoveProcessPin(
     let mut Count: ULONG;
     let mut Pins: *mut PKSPROCESSPIN;
 
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 
     KeWaitForSingleObject(
         &mut (*This).ProcessingMutex as *mut _ as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         FALSE,
         core::ptr::null_mut(),
     );
@@ -1064,7 +1040,7 @@ pub unsafe extern "system" fn IKsFilter_fnRegisterForCopyCallbacks(
 pub unsafe extern "system" fn IKsFilter_fnGetProcessDispatch(
     iface: *mut IKsFilter,
 ) -> PKSPROCESSPIN_INDEXENTRY {
-    let this = CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+    let this = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
     (*this).ProcessPinIndex
 }
 #[no_mangle]
@@ -1101,14 +1077,14 @@ pub unsafe extern "system" fn IKsFilter_DispatchClose(
 ) -> NTSTATUS {
     let mut Filter: *mut IKsFilter = core::ptr::null_mut();
     let mut This: *mut IKsFilterImpl = core::ptr::null_mut();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     Status = IKsFilter_GetFilterFromIrp(Irp, &mut Filter);
     if !NT_SUCCESS(Status) {
         return Status;
     }
 
-    This = CONTAINING_RECORD(Filter, IKsFilterImpl, Header.OuterUnknown);
+    This = CONTAINING_RECORD!(Filter, IKsFilterImpl, Header.OuterUnknown);
 
     if !(*This).Filter.Descriptor.is_null()
         && !(*(*This).Filter.Descriptor).Dispatch.is_null()
@@ -1151,7 +1127,7 @@ pub unsafe extern "C" fn KspHandlePropertyInstances(
     (*Instances).PossibleCount = (*(*(*This).Filter.Descriptor).PinDescriptors.offset((*Pin).PinId as isize)).InstancesPossible;
     (*Instances).CurrentCount = *(*This).PinInstanceCount.offset((*Pin).PinId as isize);
 
-    (*IoStatus).Information = core::mem::size_of::<KSPIN_CINSTANCES>() as ULONG_PTR;
+    (*IoStatus).Information = core::mem::size_of::<KSPIN_CINSTANCES>() as _;
     (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
     STATUS_SUCCESS
 }
@@ -1172,7 +1148,7 @@ pub unsafe extern "C" fn KspHandleNecessaryPropertyInstances(
     let Result = Data as PULONG;
     *Result = (*(*(*This).Filter.Descriptor).PinDescriptors.offset((*Pin).PinId as isize)).InstancesNecessary;
 
-    (*IoStatus).Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+    (*IoStatus).Information = core::mem::size_of::<ULONG>() as _;
     (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
     STATUS_SUCCESS
 }
@@ -1186,10 +1162,10 @@ pub unsafe extern "C" fn KspHandleDataIntersection(
     This: *mut IKsFilterImpl,
 ) -> NTSTATUS {
     let MultipleItem: PKSMULTIPLE_ITEM;
-    let DataRange: PKSDATARANGE;
+    let mut DataRange: PKSDATARANGE;
     let mut Status: NTSTATUS = STATUS_NO_MATCH;
     let mut Index: ULONG;
-    let mut Length: ULONG;
+    let mut Length: ULONG = 0;
     let IoStack: PIO_STACK_LOCATION;
     let Pin: *mut KSP_PIN = Request as *mut KSP_PIN;
 
@@ -1218,9 +1194,9 @@ pub unsafe extern "C" fn KspHandleDataIntersection(
         let mut SubFormat: _UNICODE_STRING = core::mem::zeroed();
         let mut Specifier: _UNICODE_STRING = core::mem::zeroed();
 
-        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.MajorFormat, &mut MajorFormat);
-        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.SubFormat, &mut SubFormat);
-        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.Specifier, &mut Specifier);
+        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.as_mut().MajorFormat, &mut MajorFormat);
+        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.as_mut().SubFormat, &mut SubFormat);
+        RtlStringFromGUID(&mut (*DataRange).__bindgen_anon_1.as_mut().Specifier, &mut Specifier);
 
         Status = (*(*(*This).Filter.Descriptor).PinDescriptors.offset((*Pin).PinId as isize)).IntersectHandler.expect("non-null function pointer")(
             &mut (*This).Filter as *mut _ as PVOID,
@@ -1234,11 +1210,11 @@ pub unsafe extern "C" fn KspHandleDataIntersection(
         );
 
         if Status == STATUS_SUCCESS || Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL {
-            (*IoStatus).Information = Length as ULONG_PTR;
+            (*IoStatus).Information = Length as _;
             break;
         }
 
-        DataRange = (DataRange as PUCHAR).offset((*DataRange).__bindgen_anon_1.FormatSize as isize) as PKSDATARANGE;
+        DataRange = (DataRange as PUCHAR).offset((*DataRange).__bindgen_anon_1.as_ref().FormatSize as isize) as PKSDATARANGE;
         Index = Index.wrapping_add(1);
     }
 
@@ -1256,7 +1232,7 @@ pub unsafe extern "system" fn FilterTopologyPropertyHandler(
         .Tail
         .Overlay
         .__bindgen_anon_1
-        .DriverContext
+        .__bindgen_anon_1.DriverContext
         .as_mut_ptr()
         .offset(3isize) as *mut *mut IKsFilterImpl);
 
@@ -1287,7 +1263,7 @@ pub unsafe extern "system" fn FilterGeneralComponentIdHandler(
             Data as *mut u8,
             core::mem::size_of::<KSCOMPONENTID>(),
         );
-        (*Irp).IoStatus.Information = core::mem::size_of::<KSCOMPONENTID>() as ULONG_PTR;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KSCOMPONENTID>() as _;
         return STATUS_SUCCESS;
     } else {
         return STATUS_NOT_FOUND;
@@ -1321,10 +1297,10 @@ pub unsafe extern "system" fn FilterPinPropertyHandler(
             );
         }
         8 => {
-            Status = KspHandlePropertyInstances(&raw mut (*Irp).IoStatus, Request, Data, This, 1u8);
+            Status = KspHandlePropertyInstances(&raw mut (*Irp).IoStatus, Request, Data, This, 1i32);
         }
         0 => {
-            Status = KspHandlePropertyInstances(&raw mut (*Irp).IoStatus, Request, Data, This, 0u8);
+            Status = KspHandlePropertyInstances(&raw mut (*Irp).IoStatus, Request, Data, This, 0i32);
         }
         9 => {
             Status = KspHandleNecessaryPropertyInstances(&raw mut (*Irp).IoStatus, Request, Data, This);
@@ -1400,15 +1376,15 @@ pub unsafe extern "system" fn IKsFilter_DispatchDeviceIoControl(
             MethodItemSize = (*(*(*FilterInstance).Descriptor).AutomationTable).MethodItemSize;
         }
 
-        Status = KspMethodHandlerWithAllocator(Irp, SetCount, MethodSet, core::ptr::null(), MethodItemSize);
+        Status = KspMethodHandlerWithAllocator(Irp, SetCount, MethodSet, None, MethodItemSize);
     } else if (*IoStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY {
         let mut PropertySet: *const KSPROPERTY_SET = core::ptr::null();
         let mut PropertyItemSize: ULONG = 0;
 
         if (*Property).Flags & KSPROPERTY_TYPE_TOPOLOGY != 0 {
             NodeProperty = Property as PKSP_NODE;
-            NodeDescriptor = ((*FilterInstance).Descriptor).NodeDescriptors
-                .offset(((*FilterInstance).Descriptor).NodeDescriptorSize as isize * (*NodeProperty).NodeId as isize)
+            NodeDescriptor = (*(*FilterInstance).Descriptor).NodeDescriptors
+                .offset((*(*FilterInstance).Descriptor).NodeDescriptorSize as isize * (*NodeProperty).NodeId as isize)
                 as PKSNODE_DESCRIPTOR;
 
             if !(*NodeDescriptor).AutomationTable.is_null() {
@@ -1423,9 +1399,9 @@ pub unsafe extern "system" fn IKsFilter_DispatchDeviceIoControl(
             PropertyItemSize = 0;
         }
 
-        *((*Irp).Tail.Overlay.__bindgen_anon_1.DriverContext.as_mut_ptr().offset(3) as *mut *const KSPROPERTY_ITEM) = This as *mut KSPROPERTY_ITEM;
+        *((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext.as_mut_ptr().offset(3) as *mut *const KSPROPERTY_ITEM) = This as *mut KSPROPERTY_ITEM;
 
-        Status = KspPropertyHandler(Irp, SetCount, PropertySet, core::ptr::null(), PropertyItemSize);
+        Status = KspPropertyHandler(Irp, SetCount, PropertySet, None, PropertyItemSize);
     } else {
         if (*IoStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_ENABLE_EVENT {
             Status = KspEnableEvent(
@@ -1435,7 +1411,7 @@ pub unsafe extern "system" fn IKsFilter_DispatchDeviceIoControl(
                 &raw mut (*This).Header.EventList,
                 KSEVENTS_SPINLOCK,
                 &raw mut (*This).Header.EventListLock as PVOID,
-                core::ptr::null_mut(),
+                None,
                 (*(*(*FilterInstance).Descriptor).AutomationTable).EventItemSize,
             );
         } else {
@@ -1467,7 +1443,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
     FilterDescriptor: *mut KSFILTER_DESCRIPTOR,
 ) -> NTSTATUS {
     let mut Index: ULONG = 0;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let mut NodeDescriptor: PKSNODE_DESCRIPTOR;
 
     (*This).FirstPin = core::ptr::null_mut();
@@ -1519,7 +1495,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
 
         core::ptr::copy_nonoverlapping(
             (*FilterDescriptor).PinDescriptors,
-            (*(*This).Filter.Descriptor).PinDescriptors,
+            (*(*This).Filter.Descriptor).PinDescriptors as *mut _,
             ((*FilterDescriptor).PinDescriptorSize.wrapping_mul((*FilterDescriptor).PinDescriptorsCount)) as usize,
         );
 
@@ -1576,7 +1552,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
             if !(*NodeDescriptor).Type.is_null() {
                 core::ptr::copy_nonoverlapping(
                     (*NodeDescriptor).Type,
-                    &raw mut (*This).Topology.TopologyNodes[Index as usize] as *mut GUID,
+                    (*This).Topology.TopologyNodes.add(Index as usize) as *mut GUID,
                     core::mem::size_of::<GUID>(),
                 );
             }
@@ -1584,7 +1560,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
             if !(*NodeDescriptor).Name.is_null() {
                 core::ptr::copy_nonoverlapping(
                     (*NodeDescriptor).Name,
-                    &raw mut (*This).Topology.TopologyNodesNames[Index as usize] as *mut GUID,
+                    (*This).Topology.TopologyNodesNames.add(Index as usize) as *mut GUID,
                     core::mem::size_of::<GUID>(),
                 );
             }
@@ -1602,7 +1578,7 @@ pub unsafe extern "C" fn IKsFilter_CopyFilterDescriptor(
     FilterDescriptor: *const KSFILTER_DESCRIPTOR,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut AutomationTable: KSAUTOMATION_TABLE;
+    let mut AutomationTable: KSAUTOMATION_TABLE = core::mem::zeroed();
 
     (*This).Filter.Descriptor = AllocateItem(
         NonPagedPool,
@@ -1615,7 +1591,7 @@ pub unsafe extern "C" fn IKsFilter_CopyFilterDescriptor(
     Status = KsAddItemToObjectBag(
         (*This).Filter.Bag,
         (*This).Filter.Descriptor as PVOID,
-        core::ptr::null_mut(),
+        None,
     );
     if !NT_SUCCESS(Status) {
         FreeItem((*This).Filter.Descriptor as PVOID);
@@ -1640,7 +1616,7 @@ pub unsafe extern "C" fn IKsFilter_CopyFilterDescriptor(
     AutomationTable.PropertySets = &FilterPropertySet as *const KSPROPERTY_SET;
 
     Status = KsMergeAutomationTables(
-        &mut (*((*This).Filter.Descriptor)).AutomationTable as *mut PKSAUTOMATION_TABLE,
+        &raw const (*((*This).Filter.Descriptor)).AutomationTable as *mut PKSAUTOMATION_TABLE,
         (*FilterDescriptor).AutomationTable as PKSAUTOMATION_TABLE,
         &mut AutomationTable,
         (*This).Filter.Bag,
@@ -1660,7 +1636,7 @@ pub unsafe extern "C" fn IKsFilter_AddPin(
         .wrapping_sub(core::mem::offset_of!(IKsFilterImpl, Filter))
         as *mut IKsFilterImpl;
 
-    if !((*Pin).Id < (*(*(*This).Filter).Descriptor).PinDescriptorsCount) {
+    if !((*Pin).Id < (*(*This).Filter.Descriptor).PinDescriptorsCount) {
         RtlAssert(
             b"Pin->Id < This->Filter.Descriptor->PinDescriptorsCount\0".as_ptr() as PVOID,
             b"drivers/ksfilter/ks/filter.c\0".as_ptr() as PVOID,
@@ -1689,7 +1665,7 @@ pub unsafe extern "C" fn IKsFilter_AddPin(
     }
 
     BasicHeader = (CurPin as usize).wrapping_sub(core::mem::size_of::<KSBASIC_HEADER>()) as PKSBASIC_HEADER;
-    (*BasicHeader).__bindgen_anon_1.Next.Pin = Pin;
+    (*BasicHeader).Next.Pin = Pin;
 }
 #[no_mangle]
 pub unsafe extern "C" fn IKsFilter_RemovePin(
@@ -1739,16 +1715,16 @@ pub unsafe extern "system" fn IKsFilter_DispatchCreatePin(
 ) -> NTSTATUS {
     let mut This: *mut IKsFilterImpl;
     let mut CreateItem: PKSOBJECT_CREATE_ITEM;
-    let mut Connect: PKSPIN_CONNECT;
+    let mut Connect: PKSPIN_CONNECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    CreateItem = *((*Irp).Tail.Overlay.__bindgen_anon_1.DriverContext.as_mut_ptr() as *mut PKSOBJECT_CREATE_ITEM);
+    CreateItem = *((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext.as_mut_ptr() as *mut PKSOBJECT_CREATE_ITEM);
     This = (*CreateItem).Context as *mut IKsFilterImpl;
 
     KeWaitForSingleObject(
         (*This).Header.ControlMutex as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
@@ -1770,7 +1746,7 @@ pub unsafe extern "system" fn IKsFilter_DispatchCreatePin(
                 Irp,
                 (*This).Header.KsDevice,
                 (*This).FilterFactory,
-                &mut (*This).Header.__bindgen_anon_1.OuterUnknown as *mut _ as *mut IKsFilter,
+                &mut (*This).Header.OuterUnknown as *mut _ as *mut IKsFilter,
                 Connect,
                 (*(*This).Filter.Descriptor).PinDescriptors.offset((*Connect).PinId as isize) as *mut KSPIN_DESCRIPTOR_EX,
             );
@@ -1909,7 +1885,7 @@ pub unsafe extern "system" fn KspCreateFilter(
     }
 
     if (*(*Factory).FilterDescriptor).Flags & KSFILTER_FLAG_DENY_USERMODE_ACCESS != 0 {
-        if (*Irp).RequestorMode == 1i32 {
+        if (*Irp).RequestorMode == 1i8 {
             return STATUS_UNSUCCESSFUL;
         }
     }
@@ -1925,7 +1901,7 @@ pub unsafe extern "system" fn KspCreateFilter(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    KsDevice = &mut (*(*DeviceExtension).DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice;
+    KsDevice = &raw mut (*(*DeviceExtension).DeviceHeader).BasicHeader.OuterUnknown as *mut IKsDevice;
     (*(*KsDevice).lpVtbl).InitializeObjectBag.expect("non-null function pointer")(
         KsDevice,
         (*This).Filter.Bag as PKSIOBJECT_BAG,
@@ -1948,18 +1924,18 @@ pub unsafe extern "system" fn KspCreateFilter(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    (*CreateItem.offset(0)).Create = Some(IKsFilter_DispatchCreatePin as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS) as PDRIVER_DISPATCH;
+    (*CreateItem.offset(0)).Create = core::mem::transmute(IKsFilter_DispatchCreatePin as *const ());
     (*CreateItem.offset(0)).Context = This as PVOID;
     (*CreateItem.offset(0)).Flags = KSCREATE_ITEM_FREEONSTOP as ULONG;
     RtlInitUnicodeString(&mut (*CreateItem.offset(0)).ObjectClass, KSSTRING_Pin.as_ptr() as PCWSTR);
 
-    (*CreateItem.offset(1)).Create = Some(IKsFilter_DispatchCreateNode as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS) as PDRIVER_DISPATCH;
+    (*CreateItem.offset(1)).Create = core::mem::transmute(IKsFilter_DispatchCreateNode as *const ());
     (*CreateItem.offset(1)).Context = This as PVOID;
     (*CreateItem.offset(1)).Flags = KSCREATE_ITEM_FREEONSTOP as ULONG;
     RtlInitUnicodeString(&mut (*CreateItem.offset(1)).ObjectClass, KSSTRING_TopologyNode.as_ptr() as PCWSTR);
 
-    (*This).ref = 1;
-    (*This).Header.OuterUnknown = &mut vt_IKsFilter as PUNKNOWN;
+    (*This).ref_ = 1;
+    (*This).Header.OuterUnknown = &raw mut vt_IKsFilter as PUNKNOWN;
     (*This).lpVtblKsControl = &mut vt_IKsControl;
     (*This).lpVtblKsProcessingObject = &mut vt_IKsProcessingObject;
 
@@ -1978,7 +1954,7 @@ pub unsafe extern "system" fn KspCreateFilter(
 
     KsGateInitializeAnd(&mut (*This).Gate, core::ptr::null_mut());
 
-    ExInitializeWorkItem(&mut (*This).WorkItem, Some(IKsFilter_FilterCentricWorker as unsafe extern "C" fn(PVOID)), (*This).lpVtblKsProcessingObject as PVOID);
+    ExInitializeWorkItem(&mut (*This).WorkItem as *mut _ as *mut _, crate::cb!(IKsFilter_FilterCentricWorker), (*This).lpVtblKsProcessingObject as PVOID);
 
     Status = KsRegisterCountedWorker(HyperCriticalWorkQueue, &mut (*This).WorkItem, &mut (*This).Worker);
     if !NT_SUCCESS(Status) {
@@ -2007,14 +1983,14 @@ pub unsafe extern "system" fn KspCreateFilter(
         }
     }
 
-    Status = KsAllocateObjectHeader(&mut (*This).ObjectHeader as *mut KSOBJECT_HEADER, 2, CreateItem, Irp, &mut DispatchTable);
+    Status = KsAllocateObjectHeader(&raw mut (*This).ObjectHeader as *mut KSOBJECT_HEADER, 2, CreateItem, Irp, &mut DispatchTable);
     if !NT_SUCCESS(Status) {
         return Status;
     }
 
     (*(*This).ObjectHeader).Type = KsObjectTypeFilter;
-    (*(*This).ObjectHeader).Unknown = &mut (*This).Header.OuterUnknown as PUNKNOWN;
-    (*(*This).ObjectHeader).ObjectType = &mut (*This).Filter as PVOID;
+    (*(*This).ObjectHeader).Unknown = &raw mut (*This).Header.OuterUnknown as PUNKNOWN;
+    (*(*This).ObjectHeader).ObjectType = &raw mut (*This).Filter as PVOID;
 
     IKsFilter_AttachFilterToFilterFactory(This, (*This).Header.Parent.KsFilterFactory);
 
@@ -2032,7 +2008,7 @@ pub unsafe extern "system" fn KsFilterAcquireProcessingMutex(
     KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*This).ProcessingMutex) as *mut _,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
@@ -2059,13 +2035,13 @@ pub unsafe extern "system" fn KsFilterAddTopologyConnections(
 ) -> NTSTATUS {
     let Count: ULONG;
     let Status: NTSTATUS;
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 
     Count = (*((*This).Filter.Descriptor)).ConnectionsCount.wrapping_add(NewConnectionsCount);
 
     Status = _KsEdit(
         (*This).Filter.Bag,
-        &raw mut (*((*This).Filter.Descriptor)).Connections as *mut PVOID,
+        &raw const (*((*This).Filter.Descriptor)).Connections as *mut PVOID,
         Count.wrapping_mul(core::mem::size_of::<KSTOPOLOGY_CONNECTION>() as ULONG),
         (*((*This).Filter.Descriptor)).ConnectionsCount.wrapping_mul(core::mem::size_of::<KSTOPOLOGY_CONNECTION>() as ULONG),
         0,
@@ -2077,7 +2053,7 @@ pub unsafe extern "system" fn KsFilterAddTopologyConnections(
 
     core::ptr::copy_nonoverlapping(
         NewTopologyConnections,
-        (*((*This).Filter.Descriptor)).Connections.offset((*((*This).Filter.Descriptor)).ConnectionsCount as isize),
+        (*((*This).Filter.Descriptor)).Connections.offset((*((*This).Filter.Descriptor)).ConnectionsCount as isize) as *mut _,
         NewConnectionsCount as usize,
     );
 
@@ -2094,9 +2070,9 @@ pub unsafe extern "system" fn KsFilterAttemptProcessing(
     Asynchronous: BOOLEAN,
 ) {
     let Gate: PKSGATE;
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 
-    Gate = ((*This).lpVtblKsProcessingObject).GetAndGate.expect("non-null function pointer")(
+    Gate = (*(*This).lpVtblKsProcessingObject).GetAndGate.expect("non-null function pointer")(
         (*This).lpVtblKsProcessingObject as *mut IKsProcessingObject,
     );
 
@@ -2104,7 +2080,7 @@ pub unsafe extern "system" fn KsFilterAttemptProcessing(
         return;
     }
 
-    ((*This).lpVtblKsProcessingObject).Process.expect("non-null function pointer")(
+    (*(*This).lpVtblKsProcessingObject).Process.expect("non-null function pointer")(
         (*This).lpVtblKsProcessingObject as *mut IKsProcessingObject,
         Asynchronous,
     );
@@ -2133,7 +2109,7 @@ pub unsafe extern "system" fn KsFilterCreatePinFactory(
 
     let mut Status = _KsEdit(
         (*This).Filter.Bag,
-        core::ptr::addr_of_mut!((*(*This).Filter.Descriptor).PinDescriptors) as *mut PVOID,
+        core::ptr::addr_of!((*(*This).Filter.Descriptor).PinDescriptors) as *mut PVOID,
         Count.wrapping_mul((*(*This).Filter.Descriptor).PinDescriptorSize),
         (*(*This).Filter.Descriptor).PinDescriptorsCount.wrapping_mul((*(*This).Filter.Descriptor).PinDescriptorSize),
         0,
@@ -2166,7 +2142,7 @@ pub unsafe extern "system" fn KsFilterCreatePinFactory(
 
     core::ptr::copy_nonoverlapping(
         InPinDescriptor,
-        (*(*This).Filter.Descriptor).PinDescriptors.add((*(*This).Filter.Descriptor).PinDescriptorsCount as usize),
+        (*(*This).Filter.Descriptor).PinDescriptors.add((*(*This).Filter.Descriptor).PinDescriptorsCount as usize) as *mut _,
         1,
     );
 
@@ -2204,7 +2180,7 @@ pub unsafe extern "system" fn KsFilterGetChildPinCount(
     Filter: PKSFILTER,
     PinId: ULONG,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(Filter, IKsFilterImpl, Filter) as *mut IKsFilterImpl;
+    let This = CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter) as *mut IKsFilterImpl;
 
     if PinId >= (*((*This).Filter.Descriptor)).PinDescriptorsCount {
         return 0;
@@ -2235,7 +2211,7 @@ pub unsafe extern "system" fn KsFilterRegisterPowerCallbacks(
     Sleep: PFNKSFILTERPOWER,
     Wake: PFNKSFILTERPOWER,
 ) {
-    let This: *mut IKsFilterImpl = CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+    let This: *mut IKsFilterImpl = CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
     (*This).Sleep = Sleep;
     (*This).Wake = Wake;
 }
@@ -2359,7 +2335,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN  REFIID refiid,
 //     OUT PVOID* Output)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown))
 //     {
@@ -2375,7 +2351,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsProcessingObject_fnAddRef(
 //     IKsProcessingObject * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -2385,7 +2361,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsProcessingObject_fnRelease(
 //     IKsProcessingObject * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -2400,7 +2376,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // {
 //     NTSTATUS Status;
 //     LARGE_INTEGER TimeOut;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     DPRINT1("processing object\n");
 //     /* first check if running at passive level */
@@ -2456,7 +2432,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsProcessingObject_fnGetAndGate(
 //     IKsProcessingObject * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     /* return and gate */
 //     return &This->Gate;
@@ -2468,7 +2444,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IKsProcessingObject * iface,
 //     IN BOOLEAN Asynchronous)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     /* should the action be asynchronous */
 //     if (Asynchronous)
@@ -2500,7 +2476,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsProcessingObject_fnReset(
 //     IKsProcessingObject * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsProcessingObject);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsProcessingObject);
 //
 //     /* acquire processing mutex */
 //     KeWaitForSingleObject(&This->ProcessingMutex, Executive, KernelMode, FALSE, NULL);
@@ -2549,7 +2525,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN  REFIID refiid,
 //     OUT PVOID* Output)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown))
 //     {
@@ -2565,7 +2541,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsControl_fnAddRef(
 //     IKsControl * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -2575,7 +2551,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsControl_fnRelease(
 //     IKsControl * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -2593,7 +2569,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN ULONG DataLength,
 //     OUT ULONG* BytesReturned)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     return KsSynchronousIoControlDevice(This->FileObject, KernelMode, IOCTL_KS_PROPERTY, Property, PropertyLength, PropertyData, DataLength, BytesReturned);
 // }
@@ -2609,7 +2585,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN ULONG DataLength,
 //     OUT ULONG* BytesReturned)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     return KsSynchronousIoControlDevice(This->FileObject, KernelMode, IOCTL_KS_METHOD, Method, MethodLength, MethodData, DataLength, BytesReturned);
 // }
@@ -2625,7 +2601,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN ULONG DataLength,
 //     OUT ULONG* BytesReturned)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, lpVtblKsControl);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, lpVtblKsControl);
 //
 //     if (Event)
 //     {
@@ -2657,7 +2633,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     OUT PVOID* Output)
 // {
 //     NTSTATUS Status;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown) ||
 //         IsEqualGUIDAligned(refiid, &IID_IKsFilter))
@@ -2694,7 +2670,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsFilter_fnAddRef(
 //     IKsFilter * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     return InterlockedIncrement(&This->ref);
 // }
@@ -2704,7 +2680,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsFilter_fnRelease(
 //     IKsFilter * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     InterlockedDecrement(&This->ref);
 //
@@ -2723,7 +2699,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsFilter_fnGetStruct(
 //     IKsFilter * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     return &This->Filter;
 // }
@@ -2780,7 +2756,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN PKSPROCESSPIN ProcessPin)
 // {
 //     NTSTATUS Status;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     /* first acquire processing mutex */
 //     KeWaitForSingleObject(&This->ProcessingMutex, Executive, KernelMode, FALSE, NULL);
@@ -2817,7 +2793,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     ULONG Count;
 //     PKSPROCESSPIN * Pins;
 //
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     /* first acquire processing mutex */
 //     KeWaitForSingleObject(&This->ProcessingMutex, Executive, KernelMode, FALSE, NULL);
@@ -2901,7 +2877,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // IKsFilter_fnGetProcessDispatch(
 //     IKsFilter * iface)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(iface, IKsFilterImpl, Header.OuterUnknown);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 //
 //     return This->ProcessPinIndex;
 // }
@@ -2980,7 +2956,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //         return Status;
 //
 //     /* get our real implementation */
-//     This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Header.OuterUnknown);
+//     This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Header.OuterUnknown);
 //
 //     /* does the driver support notifications */
 //     if (This->Filter.Descriptor && This->Filter.Descriptor->Dispatch && This->Filter.Descriptor->Dispatch->Close)
@@ -3295,7 +3271,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //         return Status;
 //
 //     /* get our real implementation */
-//     This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Header.OuterUnknown);
+//     This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Header.OuterUnknown);
 //
 //     /* current irp stack */
 //     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -3607,7 +3583,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // {
 //     PKSPIN NextPin, CurPin;
 //     PKSBASIC_HEADER BasicHeader;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     /* sanity check */
 //     ASSERT(Pin->Id < This->Filter.Descriptor->PinDescriptorsCount);
@@ -3648,7 +3624,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // {
 //     PKSPIN NextPin, CurPin, LastPin;
 //     PKSBASIC_HEADER BasicHeader;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     /* sanity check */
 //     ASSERT(Pin->Id < This->Filter.Descriptor->PinDescriptorsCount);
@@ -4103,7 +4079,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // KsFilterAcquireProcessingMutex(
 //     IN PKSFILTER Filter)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     KeWaitForSingleObject(&This->ProcessingMutex, Executive, KernelMode, FALSE, NULL);
 // }
@@ -4117,7 +4093,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // KsFilterReleaseProcessingMutex(
 //     IN PKSFILTER Filter)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     KeReleaseMutex(&This->ProcessingMutex, FALSE);
 // }
@@ -4136,7 +4112,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // {
 //     ULONG Count;
 //     NTSTATUS Status;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     DPRINT("KsFilterAddTopologyConnections\n");
 //
@@ -4184,7 +4160,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN BOOLEAN Asynchronous)
 // {
 //     PKSGATE Gate;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     /* get gate */
 //     Gate = This->lpVtblKsProcessingObject->GetAndGate((IKsProcessingObject*)This->lpVtblKsProcessingObject);
@@ -4227,7 +4203,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // {
 //     ULONG Count;
 //     NTSTATUS Status;
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     DPRINT("KsFilterCreatePinFactory\n");
 //
@@ -4298,7 +4274,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 // KsFilterGetAndGate(
 //     IN PKSFILTER Filter)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     /* return and-gate */
 //     return &This->Gate;
@@ -4314,7 +4290,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN PKSFILTER Filter,
 //     IN ULONG PinId)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     if (PinId >= This->Filter.Descriptor->PinDescriptorsCount)
 //     {
@@ -4335,7 +4311,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN PKSFILTER Filter,
 //     IN ULONG PinId)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     if (PinId >= This->Filter.Descriptor->PinDescriptorsCount)
 //     {
@@ -4358,7 +4334,7 @@ pub unsafe extern "system" fn KsGetFilterFromIrp(
 //     IN PFNKSFILTERPOWER Sleep OPTIONAL,
 //     IN PFNKSFILTERPOWER Wake OPTIONAL)
 // {
-//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD(Filter, IKsFilterImpl, Filter);
+//     IKsFilterImpl * This = (IKsFilterImpl*)CONTAINING_RECORD!(Filter, IKsFilterImpl, Filter);
 //
 //     This->Sleep = Sleep;
 //     This->Wake = Wake;

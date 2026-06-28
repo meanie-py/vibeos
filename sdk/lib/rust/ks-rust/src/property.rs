@@ -1,24 +1,49 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExGetPreviousMode, GUID, IoGetCurrentIrpStackLocation, KPROCESSOR_MODE, LPGUID, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP};
+use crate::misc::AllocateItem;
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated) ----
-#[repr(C)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
+// ProbeForRead/ProbeForWrite are real ntoskrnl exports; declare them locally so
+// this module can link (sibling modules api.rs/irp.rs do the same).
+extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
+    fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
-pub type LPGUID = *mut GUID;
+// guiddef.h IsEqualGUIDAligned (private per-module helper; bool form — all call
+// sites in this file use it in boolean context).
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
+// ks.h KSPROPERTY_SET_IRP_STORAGE(Irp)  == *(PKSPROPERTY_SET*)&Irp->Tail.Overlay.DriverContext[0]
+macro_rules! KSPROPERTY_SET_IRP_STORAGE { ($irp:expr) => {
+    *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0]
+        as *mut PVOID as *mut PKSPROPERTY_SET)
+}; }
+// ks.h KSPROPERTY_ITEM_IRP_STORAGE(Irp) == *(PKSPROPERTY_ITEM*)&Irp->Tail.Overlay.DriverContext[3]
+macro_rules! KSPROPERTY_ITEM_IRP_STORAGE { ($irp:expr) => {
+    *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3]
+        as *mut PVOID as *mut PKSPROPERTY_ITEM)
+}; }
+
+// ---- file-scope preamble (translated) ----
+// GUID / LPGUID come from the ddk import (local redefs removed — E0255).
 
 pub const KSPROPERTY_TYPE_SETSUPPORT: u32 = 0x00000100;
 
+// #[no_mangle] so methods.rs (and other modules using the substrate `extern` decl) link here.
+#[no_mangle]
 pub static KSPROPTYPESETID_General: GUID = GUID {
     Data1: 0x97E99BA0,
     Data2: 0xBDEA,
@@ -53,24 +78,24 @@ pub unsafe extern "C" fn FindPropertyHandler(
 
                 if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).PropertyId == (*Property).Id {
                     if (*Property).Flags & KSPROPERTY_TYPE_BASICSUPPORT != 0 {
-                        if core::mem::size_of::<ULONG>() > OutputBufferLength {
+                        if core::mem::size_of::<ULONG>() as ULONG > OutputBufferLength {
                             return STATUS_INVALID_PARAMETER;
                         }
 
                         Flags = OutputBuffer as PULONG;
                         *Flags = 0;
-                        (*IoStatus).Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+                        (*IoStatus).Information = core::mem::size_of::<ULONG>() as _;
 
                         if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SupportHandler != None {
                             *PropertyHandler = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SupportHandler;
                             return STATUS_SUCCESS;
                         }
 
-                        if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).GetSupported != 0 {
+                        if *(*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).__bindgen_anon_1.GetSupported.as_ref() != 0 {
                             *Flags |= KSPROPERTY_TYPE_GET;
                         }
 
-                        if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SetSupported != 0 {
+                        if *(*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).__bindgen_anon_2.SetSupported.as_ref() != 0 {
                             *Flags |= KSPROPERTY_TYPE_SET;
                         }
 
@@ -82,28 +107,28 @@ pub unsafe extern "C" fn FindPropertyHandler(
                             (*Description).PropTypeSet.Flags = 0;
                             (*Description).MembersListCount = 0;
                             (*Description).Reserved = 0;
-                            (*IoStatus).Information = core::mem::size_of::<KSPROPERTY_DESCRIPTION>() as ULONG_PTR;
+                            (*IoStatus).Information = core::mem::size_of::<KSPROPERTY_DESCRIPTION>() as _;
                         }
                         return STATUS_SUCCESS;
                     }
 
                     if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinProperty > InputBufferLength {
-                        (*IoStatus).Information = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinProperty as ULONG_PTR;
+                        (*IoStatus).Information = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinProperty as _;
                         return STATUS_INVALID_PARAMETER;
                     }
 
                     if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinData > OutputBufferLength {
-                        (*IoStatus).Information = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinData as ULONG_PTR;
+                        (*IoStatus).Information = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).MinData as _;
                         return STATUS_MORE_ENTRIES;
                     }
 
                     if (*Property).Flags & KSPROPERTY_TYPE_SET != 0 {
-                        *PropertyHandler = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SetPropertyHandler;
+                        *PropertyHandler = *(*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).__bindgen_anon_2.SetPropertyHandler.as_ref();
                         return STATUS_SUCCESS;
                     }
 
                     if (*Property).Flags & KSPROPERTY_TYPE_GET != 0 {
-                        *PropertyHandler = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).GetPropertyHandler;
+                        *PropertyHandler = *(*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).__bindgen_anon_1.GetPropertyHandler.as_ref();
                         return STATUS_SUCCESS;
                     }
                 }
@@ -123,11 +148,11 @@ pub unsafe extern "C" fn KspPropertyHandler(
     PropertyItemSize: ULONG,
 ) -> NTSTATUS {
     let mut Property: PKSPROPERTY;
-    let mut PropertyItem: PKSPROPERTY_ITEM;
-    let mut Set: PKSPROPERTY_SET;
+    let mut PropertyItem: PKSPROPERTY_ITEM = core::ptr::null_mut();
+    let mut Set: PKSPROPERTY_SET = core::ptr::null_mut();
     let IoStack: PIO_STACK_LOCATION;
-    let Status: NTSTATUS;
-    let mut PropertyHandler: PFNKSHANDLER = core::ptr::null_mut();
+    let mut Status: NTSTATUS;
+    let mut PropertyHandler: PFNKSHANDLER = None;
     let Index: ULONG;
     let InputBufferLength: ULONG;
     let OutputBufferLength: ULONG;
@@ -136,69 +161,69 @@ pub unsafe extern "C" fn KspPropertyHandler(
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
-    OutputBufferLength = (IoStack.Parameters.DeviceIoControl.OutputBufferLength + 7) & !7;
-    InputBufferLength = IoStack.Parameters.DeviceIoControl.InputBufferLength;
+    OutputBufferLength = ((*IoStack).Parameters.DeviceIoControl.OutputBufferLength + 7) & !7;
+    InputBufferLength = (*IoStack).Parameters.DeviceIoControl.InputBufferLength;
 
-    if OutputBufferLength < IoStack.Parameters.DeviceIoControl.OutputBufferLength {
+    if OutputBufferLength < (*IoStack).Parameters.DeviceIoControl.OutputBufferLength {
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
-    if InputBufferLength + OutputBufferLength < IoStack.Parameters.DeviceIoControl.OutputBufferLength {
+    if InputBufferLength + OutputBufferLength < (*IoStack).Parameters.DeviceIoControl.OutputBufferLength {
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
-    if IoStack.Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<KSPROPERTY>() as ULONG {
+    if (*IoStack).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<KSPROPERTY>() as ULONG {
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
     TotalSize = InputBufferLength + OutputBufferLength;
 
-    Property = IoStack.Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY;
+    Property = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY;
 
     if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
-        if (*Irp).RequestorMode == 1i32 {
-            ProbeForRead(IoStack.Parameters.DeviceIoControl.Type3InputBuffer, InputBufferLength, 1);
+        if (*Irp).RequestorMode == 1i8 {
+            ProbeForRead((*IoStack).Parameters.DeviceIoControl.Type3InputBuffer, InputBufferLength as ULONG_PTR, 1);
         }
 
-        if !Allocator.is_null() && ((*Property).Flags & (KSPROPERTY_TYPE_GET | KSPROPERTY_TYPE_SET)) != 0 {
-            Status = Allocator(Irp, TotalSize, ((*Property).Flags & KSPROPERTY_TYPE_GET) as BOOLEAN);
+        if Allocator.is_some() && ((*Property).Flags & (KSPROPERTY_TYPE_GET | KSPROPERTY_TYPE_SET)) != 0 {
+            Status = (Allocator.unwrap())(Irp, TotalSize, ((*Property).Flags & KSPROPERTY_TYPE_GET) as BOOLEAN);
             if !NT_SUCCESS(Status) {
                 return Status;
             }
         } else {
-            (*Irp).AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, TotalSize);
+            (*Irp).AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, TotalSize as usize);
             (*Irp).Flags |= IRP_DEALLOCATE_BUFFER | IRP_BUFFERED_IO;
         }
 
         core::ptr::copy_nonoverlapping(
-            IoStack.Parameters.DeviceIoControl.Type3InputBuffer,
-            ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength) as *mut u8,
+            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const u8,
+            ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as *mut u8,
             InputBufferLength as usize,
         );
 
-        Property = ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength) as PKSPROPERTY;
+        Property = ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as PKSPROPERTY;
 
         if (*Property).Flags & KSPROPERTY_TYPE_SET != 0 {
-            if (*Irp).RequestorMode == 1i32 {
-                ProbeForRead((*Irp).UserBuffer, IoStack.Parameters.DeviceIoControl.OutputBufferLength, 1);
+            if (*Irp).RequestorMode == 1i8 {
+                ProbeForRead((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
             }
             core::ptr::copy_nonoverlapping(
-                (*Irp).UserBuffer,
-                (*Irp).AssociatedIrp.SystemBuffer,
-                IoStack.Parameters.DeviceIoControl.OutputBufferLength as usize,
+                (*Irp).UserBuffer as *const u8,
+                (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+                (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
             );
         }
 
-        if IoStack.Parameters.DeviceIoControl.OutputBufferLength != 0 {
-            if (*Irp).RequestorMode == 1i32 {
-                ProbeForWrite((*Irp).UserBuffer, IoStack.Parameters.DeviceIoControl.OutputBufferLength, 1);
+        if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0 {
+            if (*Irp).RequestorMode == 1i8 {
+                ProbeForWrite((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
             }
-            if Allocator.is_null() || ((*Property).Flags & KSPROPERTY_TYPE_GET) == 0 {
+            if Allocator.is_none() || ((*Property).Flags & KSPROPERTY_TYPE_GET) == 0 {
                 (*Irp).Flags |= IRP_INPUT_OPERATION;
             }
         }
     } else {
-        Property = ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength) as PKSPROPERTY;
+        Property = ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as PKSPROPERTY;
     }
 
     Status = FindPropertyHandler(
@@ -214,26 +239,26 @@ pub unsafe extern "C" fn KspPropertyHandler(
         &mut PropertyItem,
     );
 
-    if NT_SUCCESS(Status) && !PropertyHandler.is_null() {
-        KSPROPERTY_SET_IRP_STORAGE(Irp) = Set;
+    if NT_SUCCESS(Status) && PropertyHandler.is_some() {
+        KSPROPERTY_SET_IRP_STORAGE!(Irp) = Set;
 
         if PropertyItemSize != 0 {
-            KSPROPERTY_ITEM_IRP_STORAGE(Irp) = PropertyItem;
+            KSPROPERTY_ITEM_IRP_STORAGE!(Irp) = PropertyItem;
         }
 
-        Status = PropertyHandler(
+        Status = (PropertyHandler.unwrap())(
             Irp,
             Property,
             if OutputBufferLength > 0 { (*Irp).AssociatedIrp.SystemBuffer } else { core::ptr::null_mut() },
         );
 
         if Status == STATUS_BUFFER_TOO_SMALL {
-            if !Allocator.is_null() {
-                Status = Allocator(Irp, (*Irp).IoStatus.Information as ULONG, 0u8);
+            if Allocator.is_some() {
+                Status = (Allocator.unwrap())(Irp, (*Irp).IoStatus.Information as ULONG, 0u8);
                 if !NT_SUCCESS(Status) {
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-                Status = PropertyHandler(Irp, Property, (*Irp).AssociatedIrp.SystemBuffer);
+                Status = (PropertyHandler.unwrap())(Irp, Property, (*Irp).AssociatedIrp.SystemBuffer);
             }
         }
     }
@@ -247,7 +272,7 @@ pub unsafe extern "system" fn KsPropertyHandler(
     PropertySetsCount: ULONG,
     PropertySet: *const KSPROPERTY_SET,
 ) -> NTSTATUS {
-    return KspPropertyHandler(Irp, PropertySetsCount, PropertySet, core::ptr::null_mut(), 0);
+    return KspPropertyHandler(Irp, PropertySetsCount, PropertySet, None, 0);
 }
 
 #[no_mangle]
@@ -273,15 +298,15 @@ pub unsafe extern "C" fn FindFastPropertyHandler(
     while Index < FastIoCount {
         if (*PropertyId).Id == (*FastIoTable.offset(Index as isize)).PropertyId {
             if (*PropertyId).Flags & KSPROPERTY_TYPE_SET != 0 {
-                if (*FastIoTable.offset(Index as isize)).SetSupported != 0 {
-                    *FastPropertyHandler = (*FastIoTable.offset(Index as isize)).SetPropertyHandler;
+                if *(*FastIoTable.offset(Index as isize)).__bindgen_anon_2.SetSupported.as_ref() != 0 {
+                    *FastPropertyHandler = *(*FastIoTable.offset(Index as isize)).__bindgen_anon_2.SetPropertyHandler.as_ref();
                     return STATUS_SUCCESS;
                 }
             }
 
             if (*PropertyId).Flags & KSPROPERTY_TYPE_GET != 0 {
-                if (*FastIoTable.offset(Index as isize)).GetSupported != 0 {
-                    *FastPropertyHandler = (*FastIoTable.offset(Index as isize)).GetPropertyHandler;
+                if *(*FastIoTable.offset(Index as isize)).__bindgen_anon_1.GetSupported.as_ref() != 0 {
+                    *FastPropertyHandler = *(*FastIoTable.offset(Index as isize)).__bindgen_anon_1.GetPropertyHandler.as_ref();
                     return STATUS_SUCCESS;
                 }
             }
@@ -308,7 +333,7 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
     let Mode: KPROCESSOR_MODE;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut Index: ULONG;
-    let mut FastPropertyHandler: PFNKSFASTHANDLER;
+    let mut FastPropertyHandler: PFNKSFASTHANDLER = None;
 
     if PropertyLength < core::mem::size_of::<KSPROPERTY>() as ULONG {
         return FALSE;
@@ -316,7 +341,7 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
 
     Mode = ExGetPreviousMode();
 
-    if Mode == 0i32 {
+    if Mode == 0i8 {
         core::ptr::copy_nonoverlapping(
             Property as *const u8,
             &mut PropRequest as *mut KSPROPERTY as *mut u8,
@@ -339,6 +364,48 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
         }
     }
 
+    // are there any property sets provided
+    if PropertySetsCount != 0 {
+        // iterate through all property sets
+        Index = 0;
+        loop {
+            // does the property id match
+            if IsEqualGUIDAligned(
+                &PropRequest.Set,
+                (*PropertySet.offset(Index as isize)).Set,
+            ) {
+                // try to find a fast property handler
+                Status = FindFastPropertyHandler(
+                    (*PropertySet.offset(Index as isize)).FastIoCount,
+                    (*PropertySet.offset(Index as isize)).FastIoTable,
+                    &mut PropRequest,
+                    &mut FastPropertyHandler,
+                );
+
+                if NT_SUCCESS(Status) {
+                    // call fast property handler
+                    if let Some(handler) = FastPropertyHandler {
+                        return handler(
+                            FileObject,
+                            &mut PropRequest as *mut KSPROPERTY,
+                            core::mem::size_of::<KSPROPERTY>() as ULONG,
+                            Data,
+                            DataLength,
+                            IoStatus,
+                        );
+                    }
+                }
+            }
+            // move to next item
+            Index += 1;
+            if Index >= PropertySetsCount {
+                break;
+            }
+        }
+    }
+    FALSE
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KsDispatchSpecificProperty(
     Irp: PIRP,
@@ -346,9 +413,9 @@ pub unsafe extern "system" fn KsDispatchSpecificProperty(
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    Handler(
+    (Handler.unwrap())(
         Irp,
-        (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
+        (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY,
         (*Irp).UserBuffer,
     )
 }

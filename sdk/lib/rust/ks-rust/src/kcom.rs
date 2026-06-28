@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -6,7 +8,7 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-pub static mut IID_IUnknown: GUID = _GUID {
+pub static mut IID_IUnknown: GUID = GUID {
     Data1: 0 as ::core::ffi::c_uint,
     Data2: 0 as ::core::ffi::c_ushort,
     Data3: 0 as ::core::ffi::c_ushort,
@@ -23,6 +25,14 @@ pub static mut IID_IUnknown: GUID = _GUID {
 };
 
 pub const NDEBUG: u32 = 0;
+
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn KoCreateInstance(

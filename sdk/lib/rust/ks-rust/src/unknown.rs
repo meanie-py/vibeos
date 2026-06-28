@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -5,44 +7,42 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ddk::{GUID};
 use core::ffi::c_void;
 
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut vt_INonDelegatedUnknownVtbl: INonDelegatedUnknownVtbl = unsafe {
     INonDelegatedUnknownVtbl {
-        NonDelegatedQueryInterface: Some(
+        NonDelegatedQueryInterface: core::mem::transmute(
             INonDelegatedUnknown_fnQueryInterface
-                as unsafe extern "C" fn(
-                    *mut INonDelegatedUnknown,
-                    *const IID,
-                    *mut PVOID,
-                ) -> NTSTATUS,
+                as unsafe extern "system" fn(*mut INonDelegatedUnknown, *const IID, *mut PVOID) -> NTSTATUS,
         ),
-        NonDelegatedAddRef: Some(
-            INonDelegatedUnknown_fnAddRef
-                as unsafe extern "C" fn(*mut INonDelegatedUnknown) -> ULONG,
+        NonDelegatedAddRef: core::mem::transmute(
+            INonDelegatedUnknown_fnAddRef as unsafe extern "system" fn(*mut INonDelegatedUnknown) -> ULONG,
         ),
-        NonDelegatedRelease: Some(
-            INonDelegatedUnknown_fnRelease
-                as unsafe extern "C" fn(*mut INonDelegatedUnknown) -> ULONG,
+        NonDelegatedRelease: core::mem::transmute(
+            INonDelegatedUnknown_fnRelease as unsafe extern "system" fn(*mut INonDelegatedUnknown) -> ULONG,
         ),
     }
 };
 
 static mut vt_IIndirectedUnknownVtbl: IIndirectedUnknownVtbl = unsafe {
     IIndirectedUnknownVtbl {
-        IndirectedQueryInterface: Some(
+        IndirectedQueryInterface: core::mem::transmute(
             IIndirectedUnknown_fnQueryInterface
-                as unsafe extern "C" fn(
-                    *mut IIndirectedUnknown,
-                    *const IID,
-                    *mut PVOID,
-                ) -> NTSTATUS,
+                as unsafe extern "system" fn(*mut IIndirectedUnknown, *const IID, *mut *mut core::ffi::c_void) -> NTSTATUS,
         ),
-        IndirectedAddRef: Some(
-            IIndirectedUnknown_fnAddRef as unsafe extern "C" fn(*mut IIndirectedUnknown) -> ULONG,
+        IndirectedAddRef: core::mem::transmute(
+            IIndirectedUnknown_fnAddRef as unsafe extern "system" fn(*mut IIndirectedUnknown) -> ULONG,
         ),
-        IndirectedRelease: Some(
-            IIndirectedUnknown_fnRelease as unsafe extern "C" fn(*mut IIndirectedUnknown) -> ULONG,
+        IndirectedRelease: core::mem::transmute(
+            IIndirectedUnknown_fnRelease as unsafe extern "system" fn(*mut IIndirectedUnknown) -> ULONG,
         ),
     }
 };
@@ -67,7 +67,7 @@ pub unsafe extern "system" fn INonDelegatedUnknown_fnQueryInterface(
         .wrapping_sub(core::mem::offset_of!(CBaseUnknownImpl, lpVtbl))
         as *mut CBaseUnknownImpl;
 
-    if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 {
+    if IsEqualGUIDAligned(refiid, &IID_IUnknown) {
         *Output = core::ptr::addr_of_mut!((*This).lpVtbl) as PVOID;
         InterlockedIncrement(core::ptr::addr_of_mut!((*This).m_RefCount));
         return STATUS_SUCCESS;
@@ -89,9 +89,9 @@ pub unsafe extern "system" fn INonDelegatedUnknown_fnAddRef(
 pub unsafe extern "system" fn INonDelegatedUnknown_fnRelease(
     iface: *mut INonDelegatedUnknown,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtbl);
+    let This = CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtbl);
     InterlockedDecrement(&mut (*This).m_RefCount);
-    return (*This).m_RefCount;
+    return (*This).m_RefCount as ULONG;
 }
 
 #[no_mangle]
@@ -103,7 +103,7 @@ pub unsafe extern "system" fn IIndirectedUnknown_fnQueryInterface(
     let This = (iface as usize)
         .wrapping_sub(core::mem::offset_of!(CBaseUnknownImpl, lpVtblIndirectedUnknown))
         as *mut CBaseUnknownImpl;
-    ((*(*This).m_UnknownOuter).lpVtbl)
+    (*((*(*This).m_UnknownOuter).lpVtbl))
         .QueryInterface
         .expect("non-null function pointer")((*This).m_UnknownOuter, refiid, Output)
 }
@@ -112,8 +112,8 @@ pub unsafe extern "system" fn IIndirectedUnknown_fnQueryInterface(
 pub unsafe extern "system" fn IIndirectedUnknown_fnAddRef(
     iface: *mut IIndirectedUnknown,
 ) -> ULONG {
-    let This = CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
-    return ((*(*This).m_UnknownOuter).lpVtbl.AddRef)((*This).m_UnknownOuter);
+    let This = CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
+    return ((*((*(*This).m_UnknownOuter).lpVtbl)).AddRef.expect("non-null function pointer"))((*This).m_UnknownOuter);
 }
 
 #[no_mangle]
@@ -124,11 +124,16 @@ pub unsafe extern "system" fn IIndirectedUnknown_fnRelease(
         - core::mem::offset_of!(CBaseUnknownImpl, lpVtblIndirectedUnknown))
         as *mut CBaseUnknownImpl;
     let outer = (*This).m_UnknownOuter;
-    ((*(*outer).lpVtbl).Release)(outer)
+    ((*(*outer).lpVtbl).Release.expect("non-null function pointer"))(outer)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn CBaseUnknown_ConstructorWithGUID(
+// CBaseUnknown_* are ks.spec exports. On i386, KS_DECL_CXX = `__fastcall` and KS_THIS expands
+// to `CLASS* This, void* dummy_` -> the i386 exports are fastcall with an extra dummy arg
+// (decorations @16/@12/@12/@8). On amd64/arm64, KS_DECL_CXX = `__cdecl` and KS_THIS = just
+// `This`. The bodies ignore dummy_, so each is a shared Rust-ABI impl with thin per-arch
+// #[no_mangle] export wrappers (cfg-gated) that produce the exact decorated symbol ks.def needs.
+
+unsafe fn cbu_ctor_guid_impl(
     This: *mut CBaseUnknownImpl,
     lpGUID: *const GUID,
     OuterUnknown: *mut IUnknown,
@@ -149,9 +154,27 @@ pub unsafe extern "C" fn CBaseUnknown_ConstructorWithGUID(
     }
     This
 }
-
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "C" fn CBaseUnknown_Constructor(
+pub unsafe extern "fastcall" fn CBaseUnknown_ConstructorWithGUID(
+    This: *mut CBaseUnknownImpl,
+    _dummy: *mut core::ffi::c_void,
+    lpGUID: *const GUID,
+    OuterUnknown: *mut IUnknown,
+) -> *mut CBaseUnknownImpl {
+    cbu_ctor_guid_impl(This, lpGUID, OuterUnknown)
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CBaseUnknown_ConstructorWithGUID(
+    This: *mut CBaseUnknownImpl,
+    lpGUID: *const GUID,
+    OuterUnknown: *mut IUnknown,
+) -> *mut CBaseUnknownImpl {
+    cbu_ctor_guid_impl(This, lpGUID, OuterUnknown)
+}
+
+unsafe fn cbu_ctor_impl(
     This: *mut CBaseUnknownImpl,
     OuterUnknown: *mut IUnknown,
 ) -> *mut CBaseUnknownImpl {
@@ -164,13 +187,27 @@ pub unsafe extern "C" fn CBaseUnknown_Constructor(
     } else {
         (*This).m_UnknownOuter = &mut (*This).lpVtbl as *mut _ as *mut IUnknown;
     }
-    return This;
+    This
 }
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "C" fn CBaseUnknown_Destructor(
+pub unsafe extern "fastcall" fn CBaseUnknown_Constructor(
+    This: *mut CBaseUnknownImpl,
+    _dummy: *mut core::ffi::c_void,
+    OuterUnknown: *mut IUnknown,
+) -> *mut CBaseUnknownImpl {
+    cbu_ctor_impl(This, OuterUnknown)
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CBaseUnknown_Constructor(
     This: *mut CBaseUnknownImpl,
     OuterUnknown: *mut IUnknown,
-) {
+) -> *mut CBaseUnknownImpl {
+    cbu_ctor_impl(This, OuterUnknown)
+}
+
+unsafe fn cbu_dtor_impl(This: *mut CBaseUnknownImpl, OuterUnknown: *mut IUnknown) {
     (*This).lpVtbl = &raw mut vt_INonDelegatedUnknownVtbl;
     (*This).lpVtblIndirectedUnknown = &raw mut vt_IIndirectedUnknownVtbl;
     if !OuterUnknown.is_null() {
@@ -179,10 +216,40 @@ pub unsafe extern "C" fn CBaseUnknown_Destructor(
         (*This).m_UnknownOuter = &raw mut (*This).lpVtbl as *mut IUnknown;
     }
 }
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownImpl) {
+pub unsafe extern "fastcall" fn CBaseUnknown_Destructor(
+    This: *mut CBaseUnknownImpl,
+    _dummy: *mut core::ffi::c_void,
+    OuterUnknown: *mut IUnknown,
+) {
+    cbu_dtor_impl(This, OuterUnknown)
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CBaseUnknown_Destructor(
+    This: *mut CBaseUnknownImpl,
+    OuterUnknown: *mut IUnknown,
+) {
+    cbu_dtor_impl(This, OuterUnknown)
+}
+
+unsafe fn cbu_default_dtor_impl(This: *mut CBaseUnknownImpl) {
     (*This).lpVtbl = core::ptr::addr_of_mut!(vt_INonDelegatedUnknownVtbl);
     (*This).lpVtblIndirectedUnknown = core::ptr::addr_of_mut!(vt_IIndirectedUnknownVtbl);
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn CBaseUnknown_DefaultDestructor(
+    This: *mut CBaseUnknownImpl,
+    _dummy: *mut core::ffi::c_void,
+) {
+    cbu_default_dtor_impl(This)
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownImpl) {
+    cbu_default_dtor_impl(This)
 }
 
 
@@ -234,7 +301,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 //     IN  REFIID refiid,
 //     OUT PVOID* Output)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtbl);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtbl);
 //
 //     if (IsEqualGUIDAligned(refiid, &IID_IUnknown))
 //     {
@@ -250,7 +317,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 // INonDelegatedUnknown_fnAddRef(
 //     INonDelegatedUnknown * iface)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtbl);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtbl);
 //
 //     return InterlockedIncrement(&This->m_RefCount);
 // }
@@ -260,7 +327,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 // INonDelegatedUnknown_fnRelease(
 //     INonDelegatedUnknown * iface)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtbl);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtbl);
 //
 //     InterlockedDecrement(&This->m_RefCount);
 //
@@ -282,7 +349,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 //     IN  REFIID refiid,
 //     OUT PVOID* Output)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
 //
 //     return This->m_UnknownOuter->lpVtbl->QueryInterface(This->m_UnknownOuter, refiid, Output);
 // }
@@ -292,7 +359,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 // IIndirectedUnknown_fnAddRef(
 //     IIndirectedUnknown * iface)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
 //
 //     return This->m_UnknownOuter->lpVtbl->AddRef(This->m_UnknownOuter);
 // }
@@ -302,7 +369,7 @@ pub unsafe extern "C" fn CBaseUnknown_DefaultDestructor(This: *mut CBaseUnknownI
 // IIndirectedUnknown_fnRelease(
 //     IIndirectedUnknown * iface)
 // {
-//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
+//     CBaseUnknownImpl * This = (CBaseUnknownImpl*)CONTAINING_RECORD!(iface, CBaseUnknownImpl, lpVtblIndirectedUnknown);
 //
 //     return This->m_UnknownOuter->lpVtbl->Release(This->m_UnknownOuter);
 // }

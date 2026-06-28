@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -8,8 +10,117 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusQueryDeviceID, BusQueryHardwareIDs, BusQueryInstanceID, BusRelations, DEVICE_CAPABILITIES, DEVICE_RELATIONS, DelayedWorkQueue, ExGetPreviousMode, ExQueueWorkItem, _KWAIT_REASON_Executive, GUID, IRP, InterfaceTypeUndefined, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IoInvalidateDeviceRelations, IoMarkIrpPending, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KEY_BASIC_INFORMATION, KEY_FULL_INFORMATION, KPROCESSOR_MODE, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeQueryTimeIncrement, KeSetTimer, KeWaitForSingleObject, KeyBasicInformation, KeyFullInformation, LARGE_INTEGER, LPWSTR, LUID, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_BASIC_INFORMATION, PNP_BUS_INFORMATION, PPNP_BUS_INFORMATION, PowerDeviceD0, PowerSystemWorking, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlConvertUlongToLuid, RtlFreeUnicodeString, RtlGUIDFromString, RtlInitUnicodeString, RtlStringFromGUID, SeSinglePrivilegeCheck, _EVENT_TYPE_SynchronizationEvent, TargetDeviceRelation, ZwClose, ZwCreateKey, ZwEnumerateKey, ZwOpenKey, ZwQueryKey};
+use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, DEVICE_RELATIONS, ExGetPreviousMode, ExQueueWorkItem, _KWAIT_REASON_Executive, GUID, IRP, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IoInvalidateDeviceRelations, IoMarkIrpPending, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KEY_BASIC_INFORMATION, KEY_FULL_INFORMATION, KPROCESSOR_MODE, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeQueryTimeIncrement, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, LUID, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_BASIC_INFORMATION, PNP_BUS_INFORMATION, PPNP_BUS_INFORMATION, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlFreeUnicodeString, RtlGUIDFromString, RtlInitUnicodeString, RtlStringFromGUID, SeSinglePrivilegeCheck, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwCreateKey, ZwEnumerateKey, ZwOpenKey, ZwQueryKey};
+
+// RtlConvertUlongToLuid is a header inline (ndk/rtlfuncs.h), not an ntoskrnl export — define
+// it locally (LUID { LowPart: Ulong, HighPart: 0 }).
+#[inline]
+unsafe fn RtlConvertUlongToLuid(Ulong: u32) -> LUID {
+    LUID { LowPart: Ulong, HighPart: 0 }
+}
+// Enum-member aliases (bindgen prefixes the enum-type name) + RtlAssert.
+use ntkrnl_sys::ddk::{
+    _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BusQueryDeviceID,
+    _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs,
+    _BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID,
+    _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
+    _DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation,
+    _WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue,
+    _INTERFACE_TYPE_InterfaceTypeUndefined as InterfaceTypeUndefined,
+    _KEY_INFORMATION_CLASS_KeyBasicInformation as KeyBasicInformation,
+    _KEY_INFORMATION_CLASS_KeyFullInformation as KeyFullInformation,
+    _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
+    _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking,
+    DEVICE_REGISTRY_PROPERTY_DevicePropertyPhysicalDeviceObjectName as DevicePropertyPhysicalDeviceObjectName,
+    RtlAssert,
+};
+// Pool/IRP helpers live in the sibling `misc` module; the WORK_QUEUE_ITEM init
+// helper is a FORCEINLINE DDK helper provided by ntkrnl_sys.
+use crate::misc::{AllocateItem, FreeItem, CompleteRequest};
+use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 use core::ffi::c_void;
+
+// ---- file-local declarations (swenum-only; not shared) ----
+extern "C" {
+    fn wcscpy(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    fn wcscat(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    fn _wcsicmp(a: *const WCHAR, b: *const WCHAR) -> i32;
+}
+extern "system" {
+    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
+}
+
+/// IsEqualGUIDAligned — byte-compare two aligned GUIDs (ks.h inline).
+#[inline]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> BOOLEAN {
+    let pa = a as *const u8;
+    let pb = b as *const u8;
+    let mut i = 0usize;
+    while i < core::mem::size_of::<GUID>() {
+        if *pa.add(i) != *pb.add(i) {
+            return 0u8;
+        }
+        i += 1;
+    }
+    1u8
+}
+
+/// ASSERT / NT_VERIFY — retail (NDEBUG) builds evaluate the expression only.
+#[inline]
+unsafe fn ASSERT(_cond: bool) {}
+#[inline]
+unsafe fn NT_VERIFY(_cond: bool) {}
+
+/// RtlStringCbCopyW — bounded wide-string copy (ntstrsafe.h inline).
+#[inline]
+unsafe fn RtlStringCbCopyW(
+    dst: NTSTRSAFE_PWSTR,
+    cb_dest: usize,
+    src: NTSTRSAFE_PCWSTR,
+) -> NTSTATUS {
+    let cch = cb_dest / core::mem::size_of::<WCHAR>();
+    if cch == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut i: usize = 0;
+    while i + 1 < cch && *src.add(i) != 0 {
+        *dst.add(i) = *src.add(i);
+        i += 1;
+    }
+    *dst.add(i) = 0;
+    if *src.add(i) != 0 {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
+}
+
+// ---- DDK swenum.h types (sdk/include/ddk/swenum.h) — used only by this module ----
+#[repr(C)]
+pub struct SWENUM_INTERFACE {
+    pub Size: USHORT,
+    pub Version: USHORT,
+    pub Context: PVOID,
+    pub InterfaceReference: Option<unsafe extern "system" fn(Context: PVOID)>,
+    pub InterfaceDereference: Option<unsafe extern "system" fn(Context: PVOID)>,
+}
+#[repr(C)]
+pub struct BUS_INTERFACE_SWENUM {
+    pub Interface: SWENUM_INTERFACE,
+    pub ReferenceDeviceObject: Option<unsafe extern "system" fn(Context: PVOID)>,
+    pub DereferenceDeviceObject: Option<unsafe extern "system" fn(Context: PVOID)>,
+    pub QueryReferenceString:
+        Option<unsafe extern "system" fn(Context: PVOID, String: *mut PWCHAR) -> NTSTATUS>,
+}
+pub type PBUS_INTERFACE_SWENUM = *mut BUS_INTERFACE_SWENUM;
+
+#[repr(C)]
+pub struct SWENUM_INSTALL_INTERFACE {
+    pub DeviceId: GUID,
+    pub InterfaceId: GUID,
+    pub ReferenceString: [WCHAR; 1usize],
+}
+pub type PSWENUM_INSTALL_INTERFACE = *mut SWENUM_INSTALL_INTERFACE;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -78,9 +189,9 @@ pub unsafe extern "C" fn KspCreatePDO(
 
     *((*DeviceObject).DeviceExtension as *mut PVOID) = DeviceExtension as PVOID;
 
-    (*DeviceExtension).IsBus = 0u8;
-    (*DeviceExtension).__bindgen_anon_1.DeviceObject = DeviceObject;
-    (*DeviceExtension).__bindgen_anon_2.DeviceEntry = DeviceEntry;
+    (*DeviceExtension).IsBus = 0;
+    *(*DeviceExtension).__bindgen_anon_1.DeviceObject.as_mut() = DeviceObject;
+    *(*DeviceExtension).__bindgen_anon_2.DeviceEntry.as_mut() = DeviceEntry;
     (*DeviceExtension).BusDeviceExtension = BusDeviceExtension;
 
     (*DeviceEntry).DeviceState = NotStarted;
@@ -101,7 +212,7 @@ pub unsafe extern "C" fn KspRegisterDeviceAssociation(
     BusInstanceEntry: PBUS_INSTANCE_ENTRY,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ReferenceString: _UNICODE_STRING;
+    let mut ReferenceString: _UNICODE_STRING = core::mem::zeroed();
 
     RtlInitUnicodeString(&mut ReferenceString, (*DeviceEntry).DeviceName);
 
@@ -142,8 +253,8 @@ pub unsafe extern "C" fn KspRemoveDeviceAssociations(
 
         if (*CurEntry).SymbolicLink.Buffer.is_null() {
             RtlAssert(
-                b"CurEntry->SymbolicLink.Buffer\0".as_ptr() as PCHAR,
-                b"drivers/ksfilter/ks/swenum.c\0".as_ptr() as PCHAR,
+                b"CurEntry->SymbolicLink.Buffer\0".as_ptr() as PVOID,
+                b"drivers/ksfilter/ks/swenum.c\0".as_ptr() as PVOID,
                 148u32,
                 core::ptr::null_mut(),
             );
@@ -225,7 +336,7 @@ pub unsafe extern "C" fn KspEnumerateBusRegistryKeys(
             &mut ResultLength,
         );
         if NT_SUCCESS(Status) {
-            Status = Callback(
+            Status = (Callback.unwrap())(
                 &mut hNewKey,
                 BusDeviceExtension,
                 DeviceEntry,
@@ -259,13 +370,13 @@ pub unsafe extern "system" fn KspCreateDeviceAssociation(
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
 
     RtlInitUnicodeString(&mut DeviceName, InterfaceString);
-    RtlGUIDFromString(&DeviceName, &mut InterfaceGUID);
+    RtlGUIDFromString(&mut DeviceName, &mut InterfaceGUID);
 
     Entry = (*DeviceEntry).DeviceInterfaceList.Flink;
     while Entry != &mut (*DeviceEntry).DeviceInterfaceList {
-        CurEntry = CONTAINING_RECORD(Entry, BUS_INSTANCE_ENTRY, Entry);
+        CurEntry = CONTAINING_RECORD!(Entry, BUS_INSTANCE_ENTRY, Entry);
 
-        if IsEqualGUIDAligned(&(*CurEntry).InterfaceGuid, &InterfaceGUID) {
+        if IsEqualGUIDAligned(&(*CurEntry).InterfaceGuid, &InterfaceGUID) != 0 {
             return STATUS_SUCCESS;
         }
 
@@ -313,7 +424,7 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
         Buffer: core::ptr::null_mut(),
     };
     let mut Status: NTSTATUS;
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
     Length = wcslen(DeviceId) + wcslen(InterfaceId);
     Length += 2;
@@ -324,7 +435,7 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
     }
 
     wcscpy(DeviceName, DeviceId);
-    wcscat(DeviceName, L"&\0".as_ptr() as LPWSTR);
+    wcscat(DeviceName, L!("&\0").as_ptr() as LPWSTR);
     wcscat(DeviceName, InterfaceId);
 
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
@@ -376,7 +487,7 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
         DeviceEntry,
     );
 
-    if IsListEmpty(&mut (*DeviceEntry).DeviceInterfaceList) != 0 {
+    if IsListEmpty(&mut (*DeviceEntry).DeviceInterfaceList) {
         FreeItem((*DeviceEntry).BusId as PVOID);
         FreeItem((*DeviceEntry).DeviceName as PVOID);
         FreeItem(DeviceEntry as PVOID);
@@ -392,12 +503,12 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
     }
 
     if ItemExists == 0 {
-        KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock, &mut OldLevel);
+        KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
         InsertTailList(
             &mut (*BusDeviceExtension).Common.Entry,
             &mut (*DeviceEntry).Entry,
         );
-        KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock, OldLevel);
+        KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
     }
 
     Status
@@ -446,7 +557,7 @@ pub unsafe extern "C" fn KspScanBus(
     BusDeviceExtension: PBUS_ENUM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
     let mut hKey: HANDLE = core::ptr::null_mut();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     Status = KspOpenBusRegistryKey(BusDeviceExtension, &mut hKey);
 
@@ -474,7 +585,7 @@ pub unsafe extern "system" fn KspBusQueryReferenceString(
 ) -> NTSTATUS {
     let BusDeviceExtension: PBUS_ENUM_DEVICE_EXTENSION = Context as PBUS_ENUM_DEVICE_EXTENSION;
 
-    let Length = wcslen((*BusDeviceExtension).BusIdentifier).wrapping_add(1);
+    let Length = wcslen((*BusDeviceExtension).BusIdentifier.as_ptr()).wrapping_add(1);
 
     let Name = AllocateItem(PagedPool, Length.wrapping_mul(core::mem::size_of::<WCHAR>())) as LPWSTR;
 
@@ -482,7 +593,7 @@ pub unsafe extern "system" fn KspBusQueryReferenceString(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    wcscpy(Name, (*BusDeviceExtension).BusIdentifier);
+    wcscpy(Name, (*BusDeviceExtension).BusIdentifier.as_ptr());
 
     *String = Name as PWCHAR;
 
@@ -555,7 +666,7 @@ pub unsafe extern "C" fn KspEnableBusDeviceInterface(
     Entry = (*DeviceEntry).DeviceInterfaceList.Flink;
 
     while Entry != &mut (*DeviceEntry).DeviceInterfaceList as *mut _ as PLIST_ENTRY {
-        InstanceEntry = CONTAINING_RECORD(Entry, BUS_INSTANCE_ENTRY, Entry) as PBUS_INSTANCE_ENTRY;
+        InstanceEntry = CONTAINING_RECORD!(Entry, BUS_INSTANCE_ENTRY, Entry) as PBUS_INSTANCE_ENTRY;
 
         Status = IoSetDeviceInterfaceState(&mut (*InstanceEntry).SymbolicLink, bEnable);
 
@@ -620,14 +731,12 @@ pub unsafe extern "C" fn KspCompletePendingIrps(
     let mut Irp: PIRP;
     let mut Status: NTSTATUS;
 
-    while IsListEmpty(&mut (*DeviceEntry).IrpPendingList) == 0 {
+    while !IsListEmpty(&mut (*DeviceEntry).IrpPendingList) {
         Entry = RemoveHeadList(&mut (*DeviceEntry).IrpPendingList);
 
         Irp = (Entry as usize).wrapping_sub(
             &mut (*core::ptr::null_mut::<IRP>())
-                .Tail
-                .__bindgen_anon_1
-                .ListEntry as *mut _ as usize,
+                .Tail.Overlay.__bindgen_anon_2.ListEntry as *mut _ as usize,
         ) as *mut IRP as PIRP;
 
         if ResultCode == STATUS_REPARSE {
@@ -674,11 +783,11 @@ pub unsafe extern "C" fn KspStartBusDevice(
 
     NT_VERIFY(NT_SUCCESS(RtlStringCbCopyW(
         Name as NTSTRSAFE_PWSTR,
-        NameLength as size_t,
+        NameLength as usize,
         PDOName.as_ptr() as NTSTRSAFE_PCWSTR,
     )));
 
-    DeviceEntry = (*ChildDeviceExtension).__bindgen_anon_1.DeviceEntry as PBUS_DEVICE_ENTRY;
+    DeviceEntry = (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY;
 
     ASSERT(!DeviceEntry.is_null());
 
@@ -706,9 +815,9 @@ pub unsafe extern "C" fn KspQueryBusDeviceCapabilities(
 
     core::ptr::write_bytes(Capabilities as *mut u8, 0, core::mem::size_of::<DEVICE_CAPABILITIES>());
 
-    (*Capabilities).UniqueID = 1u8;
-    (*Capabilities).SilentInstall = 1u8;
-    (*Capabilities).SurpriseRemovalOK = 1u8;
+    (*Capabilities).set_UniqueID(1);
+    (*Capabilities).set_SilentInstall(1);
+    (*Capabilities).set_SurpriseRemovalOK(1);
     (*Capabilities).Address = 0;
     (*Capabilities).UINumber = 0;
     (*Capabilities).SystemWake = PowerSystemWorking;
@@ -738,7 +847,7 @@ pub unsafe extern "C" fn KspQueryBusInformation(
         core::mem::size_of::<GUID>(),
     );
 
-    (*Irp).IoStatus.Information = BusInformation as ULONG_PTR;
+    (*Irp).IoStatus.Information = BusInformation  as _;
 
     STATUS_SUCCESS
 }
@@ -747,7 +856,7 @@ pub unsafe extern "C" fn KspQueryBusDevicePnpState(
     ChildDeviceExtension: PCOMMON_DEVICE_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
-    (*Irp).IoStatus.Information = (PNP_DEVICE_DONT_DISPLAY_IN_UI | PNP_DEVICE_NOT_DISABLEABLE) as ULONG_PTR;
+    (*Irp).IoStatus.Information = (PNP_DEVICE_DONT_DISPLAY_IN_UI | PNP_DEVICE_NOT_DISABLEABLE)  as _;
     STATUS_SUCCESS
 }
 #[no_mangle]
@@ -759,29 +868,29 @@ pub unsafe extern "C" fn KspQueryId(
     let IdType = (*IoStack).Parameters.QueryId.IdType;
 
     if IdType == BusQueryInstanceID {
-        let DeviceEntry = (*ChildDeviceExtension).__bindgen_anon_1.DeviceEntry as PBUS_DEVICE_ENTRY;
+        let DeviceEntry = (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY;
         let Length = wcslen((*DeviceEntry).Instance).wrapping_add(2);
         let Name = AllocateItem(PagedPool, Length.wrapping_mul(core::mem::size_of::<WCHAR>())) as LPWSTR;
         if Name.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         wcscpy(Name, (*DeviceEntry).Instance);
-        (*Irp).IoStatus.Information = Name as ULONG_PTR;
+        (*Irp).IoStatus.Information = Name  as _;
         STATUS_SUCCESS
     } else if IdType == BusQueryDeviceID || IdType == BusQueryHardwareIDs {
-        let DeviceEntry = (*ChildDeviceExtension).__bindgen_anon_1.DeviceEntry as PBUS_DEVICE_ENTRY;
+        let DeviceEntry = (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY;
         let BusDeviceExtension = (*ChildDeviceExtension).BusDeviceExtension as PBUS_ENUM_DEVICE_EXTENSION;
-        let mut Length = wcslen((*BusDeviceExtension).BusIdentifier);
+        let mut Length = wcslen((*BusDeviceExtension).BusIdentifier.as_ptr());
         Length = Length.wrapping_add(wcslen((*DeviceEntry).BusId));
         Length = Length.wrapping_add(4);
         let Name = AllocateItem(PagedPool, Length.wrapping_mul(core::mem::size_of::<WCHAR>())) as LPWSTR;
         if Name.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        wcscpy(Name, (*BusDeviceExtension).BusIdentifier);
-        wcscat(Name, L"\\\0".as_ptr() as *const WCHAR);
+        wcscpy(Name, (*BusDeviceExtension).BusIdentifier.as_ptr());
+        wcscat(Name, L!("\\\0").as_ptr() as *const WCHAR);
         wcscat(Name, (*DeviceEntry).BusId);
-        (*Irp).IoStatus.Information = Name as ULONG_PTR;
+        (*Irp).IoStatus.Information = Name  as _;
         STATUS_SUCCESS
     } else {
         (*Irp).IoStatus.__bindgen_anon_1.Status
@@ -794,15 +903,15 @@ pub unsafe extern "C" fn KspInstallInterface(
 ) -> NTSTATUS {
     let mut Length: usize;
     let mut Index: usize;
-    let mut DeviceString: _UNICODE_STRING;
-    let mut InterfaceString: _UNICODE_STRING;
-    let mut ReferenceString: _UNICODE_STRING;
-    let mut hKey: HANDLE;
-    let mut hDeviceKey: HANDLE;
-    let mut hInterfaceKey: HANDLE;
-    let mut hReferenceKey: HANDLE;
+    let mut DeviceString: _UNICODE_STRING = core::mem::zeroed();
+    let mut InterfaceString: _UNICODE_STRING = core::mem::zeroed();
+    let mut ReferenceString: _UNICODE_STRING = core::mem::zeroed();
+    let mut hKey: HANDLE = core::ptr::null_mut();
+    let mut hDeviceKey: HANDLE = core::ptr::null_mut();
+    let mut hInterfaceKey: HANDLE = core::ptr::null_mut();
+    let mut hReferenceKey: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     Length = wcslen((*InstallInterface).ReferenceString.as_ptr()) as usize;
 
@@ -898,11 +1007,11 @@ pub unsafe extern "system" fn KspInstallBusEnumInterface(
     Ctx: PVOID,
 ) {
     let IoStack: PIO_STACK_LOCATION;
-    let Status: NTSTATUS;
-    let Entry: PLIST_ENTRY;
-    let DeviceEntry: PBUS_DEVICE_ENTRY;
+    let mut Status: NTSTATUS;
+    let mut Entry: PLIST_ENTRY;
+    let mut DeviceEntry: PBUS_DEVICE_ENTRY;
     let InstallInterface: PSWENUM_INSTALL_INTERFACE;
-    let OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
     let Context: PBUS_INSTALL_ENUM_CONTEXT = Ctx as PBUS_INSTALL_ENUM_CONTEXT;
 
     IoStack = IoGetCurrentIrpStackLocation((*Context).Irp);
@@ -910,28 +1019,28 @@ pub unsafe extern "system" fn KspInstallBusEnumInterface(
     InstallInterface = (*(*Context).Irp).AssociatedIrp.SystemBuffer as PSWENUM_INSTALL_INTERFACE;
 
     if ((*IoStack).Parameters.DeviceIoControl.InputBufferLength as usize) < core::mem::size_of::<SWENUM_INSTALL_INTERFACE>() {
-        (*Context).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
-        KeSetEvent(&mut (*Context).Event, 0, 0u8);
+        (*Context).Status = STATUS_INVALID_PARAMETER;
+        KeSetEvent(&mut (*Context).Event as *mut _ as PVOID, 0, 0u8);
         return;
     }
 
     Status = KspInstallInterface((*Context).BusDeviceExtension, InstallInterface);
     if !NT_SUCCESS(Status) {
-        (*Context).__bindgen_anon_1.Status = Status;
-        KeSetEvent(&mut (*Context).Event, 0, 0u8);
+        (*Context).Status = Status;
+        KeSetEvent(&mut (*Context).Event as *mut _ as PVOID, 0, 0u8);
         return;
     }
 
     Status = KspScanBus((*Context).BusDeviceExtension);
 
-    KeAcquireSpinLock(&mut (*(*Context).BusDeviceExtension).Lock, &mut OldLevel);
+    KeAcquireSpinLock(&mut (*(*Context).BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
 
     Entry = (*(*Context).BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*(*Context).BusDeviceExtension).Common.Entry {
-        DeviceEntry = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
+        DeviceEntry = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
         if IsEqualGUIDAligned(&mut (*DeviceEntry).DeviceGuid, &mut (*InstallInterface).DeviceId) != 0 {
             if (*DeviceEntry).PDO.is_null() {
-                KeReleaseSpinLock(&mut (*(*Context).BusDeviceExtension).Lock, OldLevel);
+                KeReleaseSpinLock(&mut (*(*Context).BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
 
                 Status = KspCreatePDO(
                     (*Context).BusDeviceExtension,
@@ -939,7 +1048,7 @@ pub unsafe extern "system" fn KspInstallBusEnumInterface(
                     &mut (*DeviceEntry).PDO,
                 );
 
-                KeAcquireSpinLock(&mut (*(*Context).BusDeviceExtension).Lock, &mut OldLevel);
+                KeAcquireSpinLock(&mut (*(*Context).BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
 
                 break;
             }
@@ -948,16 +1057,16 @@ pub unsafe extern "system" fn KspInstallBusEnumInterface(
         Entry = (*Entry).Flink;
     }
 
-    KeReleaseSpinLock(&mut (*(*Context).BusDeviceExtension).Lock, OldLevel);
+    KeReleaseSpinLock(&mut (*(*Context).BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
 
     IoInvalidateDeviceRelations(
         (*(*Context).BusDeviceExtension).PhysicalDeviceObject,
         BusRelations,
     );
 
-    (*Context).__bindgen_anon_1.Status = Status;
+    (*Context).Status = Status;
 
-    KeSetEvent(&mut (*Context).Event, 0, 0u8);
+    KeSetEvent(&mut (*Context).Event as *mut _ as PVOID, 0, 0u8);
 }
 
 #[no_mangle]
@@ -966,22 +1075,22 @@ pub unsafe extern "system" fn KspBusWorkerRoutine(Parameter: PVOID) {
     let mut DoInvalidate: BOOLEAN = 0u8;
     let mut OldLevel: KIRQL = 0;
 
-    KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock, &mut OldLevel);
+    KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, &mut OldLevel);
 
     let mut Time: LARGE_INTEGER = core::mem::zeroed();
     KeQueryTickCount(&mut Time);
 
     let mut Entry: PLIST_ENTRY = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &raw mut (*BusDeviceExtension).Common.Entry {
-        let DeviceEntry: PBUS_DEVICE_ENTRY = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+        let DeviceEntry: PBUS_DEVICE_ENTRY = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 
         if !(*DeviceEntry).PDO.is_null() {
             if (*DeviceEntry).DeviceState == NotStarted {
-                let Diff: LARGE_INTEGER = core::mem::zeroed();
-                (*Diff).QuadPart = (Time.QuadPart - (*DeviceEntry).TimeCreated.QuadPart) * KeQueryTimeIncrement() as i64;
+                let mut Diff: LARGE_INTEGER = core::mem::zeroed();
+                Diff.QuadPart = (Time.QuadPart - (*DeviceEntry).TimeCreated.QuadPart) * KeQueryTimeIncrement() as i64;
 
-                if (*Diff).QuadPart > 15000i64 * 10000i64 {
-                    KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock, OldLevel);
+                if Diff.QuadPart > 15000i64 * 10000i64 {
+                    KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, OldLevel);
 
                     DbgPrint(
                         b"DeviceID %S Instance %S TimeCreated %I64u Now %I64u Diff %I64u hung\n\0".as_ptr() as PCHAR,
@@ -989,34 +1098,34 @@ pub unsafe extern "system" fn KspBusWorkerRoutine(Parameter: PVOID) {
                         (*DeviceEntry).Instance,
                         (*DeviceEntry).TimeCreated.QuadPart * KeQueryTimeIncrement() as i64,
                         Time.QuadPart * KeQueryTimeIncrement() as i64,
-                        (*Diff).QuadPart,
+                        Diff.QuadPart,
                     );
 
-                    KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock, &mut OldLevel);
+                    KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, &mut OldLevel);
 
                     (*DeviceEntry).DeviceState = StopPending;
                     DoInvalidate = 1u8;
                 }
             } else if (*DeviceEntry).DeviceState == Started {
-                KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock, OldLevel);
+                KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, OldLevel);
 
                 KspCompletePendingIrps(DeviceEntry, STATUS_REPARSE);
 
-                KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock, &mut OldLevel);
+                KeAcquireSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, &mut OldLevel);
             }
         }
 
         Entry = (*Entry).Flink;
     }
 
-    KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock, OldLevel);
+    KeReleaseSpinLock(&raw mut (*BusDeviceExtension).Lock as *mut usize, OldLevel);
 
     if DoInvalidate != 0 {
         IoInvalidateDeviceRelations((*BusDeviceExtension).PhysicalDeviceObject, BusRelations);
     }
 
     let mut Time: LARGE_INTEGER = core::mem::zeroed();
-    (*Time).QuadPart = 5000i64 * -10000i64;
+    Time.QuadPart = 5000i64 * -10000i64;
     KeSetTimer(&raw mut (*BusDeviceExtension).Timer, Time, &raw mut (*BusDeviceExtension).Dpc);
 }
 
@@ -1037,10 +1146,10 @@ pub unsafe extern "system" fn KspRemoveBusInterface(
 ) {
     let Context = Ctx as PBUS_INSTALL_ENUM_CONTEXT;
 
-    (*Context).__bindgen_anon_1.Status = STATUS_NOT_IMPLEMENTED;
+    (*Context).Status = STATUS_NOT_IMPLEMENTED;
 
     KeSetEvent(
-        &mut (*Context).Event,
+        &mut (*Context).Event as *mut _ as PVOID,
         IO_NO_INCREMENT as KPRIORITY,
         FALSE as BOOLEAN,
     );
@@ -1055,13 +1164,13 @@ pub unsafe extern "C" fn KspQueryBusRelations(
     let mut DeviceEntry: PBUS_DEVICE_ENTRY;
     let mut Count: ULONG = 0;
     let mut Length: ULONG;
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
-    KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock, &mut OldLevel);
+    KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
 
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*BusDeviceExtension).Common.Entry {
-        DeviceEntry = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
+        DeviceEntry = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
 
         if !(*DeviceEntry).PDO.is_null()
             && ((*DeviceEntry).DeviceState == NotStarted || (*DeviceEntry).DeviceState == Started)
@@ -1079,31 +1188,31 @@ pub unsafe extern "C" fn KspQueryBusRelations(
             0
         };
 
-    DeviceRelations = AllocateItem(NonPagedPool, Length) as PDEVICE_RELATIONS;
+    DeviceRelations = AllocateItem(NonPagedPool, Length as usize) as PDEVICE_RELATIONS;
 
     if DeviceRelations.is_null() {
-        KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock, OldLevel);
+        KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*BusDeviceExtension).Common.Entry {
-        DeviceEntry = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
+        DeviceEntry = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
 
         if !(*DeviceEntry).PDO.is_null()
             && ((*DeviceEntry).DeviceState == NotStarted || (*DeviceEntry).DeviceState == Started)
         {
             (*DeviceRelations).Objects[(*DeviceRelations).Count as usize] = (*DeviceEntry).PDO;
-            ObReferenceObject((*DeviceEntry).PDO);
+            ObReferenceObject((*DeviceEntry).PDO as PVOID);
             (*DeviceRelations).Count += 1;
         }
 
         Entry = (*Entry).Flink;
     }
 
-    KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock, OldLevel);
+    KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
 
-    (*Irp).IoStatus.Information = DeviceRelations as ULONG_PTR;
+    (*Irp).IoStatus.Information = DeviceRelations  as _;
 
     STATUS_SUCCESS
 }
@@ -1154,7 +1263,7 @@ pub unsafe extern "system" fn KsGetBusEnumParentFDOFromChildPDO(
 ) -> NTSTATUS {
     let DeviceExtension = (*DeviceObject).DeviceExtension as PDEV_EXTENSION;
 
-    if (*(*DeviceExtension).Ext).IsBus == 0u8 {
+    if (*(*DeviceExtension).Ext).IsBus == 0 {
         *FunctionalDeviceObject = (*(*(*DeviceExtension).Ext).BusDeviceExtension).BusDeviceObject;
         return STATUS_SUCCESS;
     }
@@ -1187,7 +1296,7 @@ pub unsafe extern "system" fn KsCreateBusEnumObject(
     let mut DeviceExtension: PDEV_EXTENSION;
     let mut DeviceEntry: PBUS_DEVICE_ENTRY;
     let mut Entry: PLIST_ENTRY;
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
 
     Length = wcslen(BusIdentifier) * core::mem::size_of::<WCHAR>();
     Length += core::mem::size_of::<BUS_ENUM_DEVICE_EXTENSION>();
@@ -1256,7 +1365,7 @@ pub unsafe extern "system" fn KsCreateBusEnumObject(
 
     (*BusDeviceExtension).Common.BusDeviceExtension = core::ptr::null_mut();
     (*BusDeviceExtension).Common.DeviceObjectReferenceCount = 1;
-    (*BusDeviceExtension).Common.__bindgen_anon_1.DeviceReferenceCount = 1;
+    *(*BusDeviceExtension).Common.__bindgen_anon_1.DeviceReferenceCount.as_mut() = 1;
     (*BusDeviceExtension).Common.IsBus = 1;
     InitializeListHead(&mut (*BusDeviceExtension).Common.Entry);
 
@@ -1267,13 +1376,13 @@ pub unsafe extern "system" fn KsCreateBusEnumObject(
     KeInitializeTimer(&mut (*BusDeviceExtension).Timer);
     KeInitializeDpc(
         &mut (*BusDeviceExtension).Dpc,
-        Some(KspBusDpcRoutine as unsafe extern "system" fn(PKDPC, PVOID, PVOID, PVOID)),
+        cb!(KspBusDpcRoutine),
         BusDeviceExtension as PVOID,
     );
     KeInitializeEvent(&mut (*BusDeviceExtension).Event, _EVENT_TYPE_SynchronizationEvent, 0u8);
     ExInitializeWorkItem(
         &mut (*BusDeviceExtension).WorkItem,
-        Some(KspBusWorkerRoutine as unsafe extern "system" fn(PVOID)),
+        cb!(KspBusWorkerRoutine),
         BusDeviceExtension as PVOID,
     );
 
@@ -1312,21 +1421,21 @@ pub unsafe extern "system" fn KsCreateBusEnumObject(
         return Status;
     }
 
-    KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock, &mut OldLevel);
+    KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
 
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*BusDeviceExtension).Common.Entry {
-        DeviceEntry = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
+        DeviceEntry = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
         if (*DeviceEntry).PDO.is_null() {
-            KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock, OldLevel);
+            KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
             Status = KspCreatePDO(BusDeviceExtension, DeviceEntry, &mut (*DeviceEntry).PDO);
-            KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock, &mut OldLevel);
+            KeAcquireSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, &mut OldLevel);
             break;
         }
         Entry = (*Entry).Flink;
     }
 
-    KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock, OldLevel);
+    KeReleaseSpinLock(&mut (*BusDeviceExtension).Lock as *mut _ as *mut usize, OldLevel);
 
     IoInvalidateDeviceRelations((*BusDeviceExtension).PhysicalDeviceObject, BusRelations);
 
@@ -1382,17 +1491,17 @@ pub unsafe extern "system" fn KsInstallBusEnumInterface(
     Context.Irp = Irp;
     KeInitializeEvent(&mut Context.Event, _EVENT_TYPE_NotificationEvent, 0u8);
     Context.BusDeviceExtension = BusDeviceExtension;
-    ExInitializeWorkItem(&mut Context.WorkItem, Some(KspInstallBusEnumInterface), &mut Context as *mut _ as PVOID);
+    ExInitializeWorkItem(&mut Context.WorkItem, cb!(KspInstallBusEnumInterface), &mut Context as *mut _ as PVOID);
     ExQueueWorkItem(&mut Context.WorkItem, DelayedWorkQueue);
     KeWaitForSingleObject(
         &mut Context.Event as *mut _ as PVOID,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
-    (*Irp).IoStatus.__bindgen_anon_1.Status = Context.__bindgen_anon_1.Status;
-    Context.__bindgen_anon_1.Status
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Context.Status;
+    Context.Status
 }
 
 #[no_mangle]
@@ -1423,7 +1532,7 @@ pub unsafe extern "system" fn KsServiceBusEnumCreateRequest(
     let DeviceExtension: PDEV_EXTENSION;
     let BusDeviceExtension: PBUS_ENUM_DEVICE_EXTENSION;
     let mut Status: NTSTATUS;
-    let mut Time: LARGE_INTEGER;
+    let mut Time: LARGE_INTEGER = core::mem::zeroed();
 
     DeviceExtension = (*DeviceObject).DeviceExtension as PDEV_EXTENSION;
     BusDeviceExtension = (*DeviceExtension).Ext as PBUS_ENUM_DEVICE_EXTENSION;
@@ -1441,7 +1550,7 @@ pub unsafe extern "system" fn KsServiceBusEnumCreateRequest(
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
 
     while Entry != &mut (*BusDeviceExtension).Common.Entry {
-        DeviceEntry = CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
+        DeviceEntry = CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry) as PBUS_DEVICE_ENTRY;
 
         if _wcsicmp(
             (*DeviceEntry).DeviceName,
@@ -1463,14 +1572,14 @@ pub unsafe extern "system" fn KsServiceBusEnumCreateRequest(
         if (*DeviceEntry).DeviceState == Started {
             Status = KspDoReparseForIrp(Irp, DeviceEntry);
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-            (*Irp).IoStatus.Information = IO_REPARSE as ULONG_PTR;
+            (*Irp).IoStatus.Information = IO_REPARSE  as _;
             return Status;
         }
 
         IoMarkIrpPending(Irp);
         InsertTailList(
             &mut (*DeviceEntry).IrpPendingList,
-            &mut (*Irp).Tail.Overlay.__bindgen_anon_1.ListEntry,
+            &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry,
         );
 
         Time.QuadPart = (1500i64) * (-10000i64);
@@ -1491,7 +1600,7 @@ pub unsafe extern "system" fn KsServiceBusEnumCreateRequest(
         IoMarkIrpPending(Irp);
         InsertTailList(
             &mut (*DeviceEntry).IrpPendingList,
-            &mut (*Irp).Tail.Overlay.__bindgen_anon_1.ListEntry,
+            &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry,
         );
         IoInvalidateDeviceRelations((*BusDeviceExtension).PhysicalDeviceObject, BusRelations);
 
@@ -1505,11 +1614,11 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
     Irp: PIRP,
 ) -> NTSTATUS {
     let DeviceExtension: PDEV_EXTENSION;
-    let BusDeviceExtension: PBUS_ENUM_DEVICE_EXTENSION;
+    let mut BusDeviceExtension: PBUS_ENUM_DEVICE_EXTENSION;
     let ChildDeviceExtension: PCOMMON_DEVICE_EXTENSION;
     let IoStack: PIO_STACK_LOCATION;
     let Status: NTSTATUS;
-    let Time: LARGE_INTEGER;
+    let mut Time: LARGE_INTEGER = core::mem::zeroed();
     let DeviceRelation: PDEVICE_RELATIONS;
     let DeviceEntry: PBUS_DEVICE_ENTRY;
 
@@ -1518,9 +1627,9 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
     if (*BusDeviceExtension).Common.IsBus != 0 {
-        if (*IoStack).MinorFunction as i32 == IRP_MN_START_DEVICE {
+        if (*IoStack).MinorFunction as i32 == IRP_MN_START_DEVICE as i32 {
             Status = STATUS_SUCCESS;
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_DEVICE_RELATIONS {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_DEVICE_RELATIONS as i32 {
             Status = KspQueryBusRelations(BusDeviceExtension, Irp);
         } else {
             Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
@@ -1529,10 +1638,10 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
         ChildDeviceExtension = (*DeviceExtension).Ext;
         BusDeviceExtension = (*ChildDeviceExtension).BusDeviceExtension as PBUS_ENUM_DEVICE_EXTENSION;
 
-        if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_ID {
+        if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_ID as i32 {
             Status = KspQueryId(ChildDeviceExtension, Irp);
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_REMOVE_DEVICE {
-            DeviceEntry = (*ChildDeviceExtension).__bindgen_anon_1.DeviceEntry as PBUS_DEVICE_ENTRY;
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_REMOVE_DEVICE as i32 {
+            DeviceEntry = (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY;
             FreeItem(ChildDeviceExtension as PVOID);
             (*DeviceEntry).PDO = core::ptr::null_mut();
             IoDeleteDevice(DeviceObject);
@@ -1543,17 +1652,17 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
             (*DeviceEntry).DeviceState = _DEVICE_STATE_NotStarted;
             KspCompletePendingIrps(DeviceEntry, STATUS_DEVICE_REMOVED);
             Status = STATUS_SUCCESS;
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_BUS_INFORMATION {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_BUS_INFORMATION as i32 {
             Status = KspQueryBusInformation(ChildDeviceExtension, Irp);
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_RESOURCES {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_RESOURCES as i32 {
             Status = STATUS_SUCCESS;
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_RESOURCE_REQUIREMENTS {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_RESOURCE_REQUIREMENTS as i32 {
             Status = STATUS_SUCCESS;
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_START_DEVICE {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_START_DEVICE as i32 {
             Status = KspStartBusDevice(DeviceObject, ChildDeviceExtension, Irp);
             if NT_SUCCESS(Status) {
                 KspCompletePendingIrps(
-                    (*ChildDeviceExtension).__bindgen_anon_1.DeviceEntry as PBUS_DEVICE_ENTRY,
+                    (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY,
                     STATUS_REPARSE,
                 );
             }
@@ -1563,13 +1672,13 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
                 Time,
                 &mut (*BusDeviceExtension).Dpc,
             );
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_CAPABILITIES {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_CAPABILITIES as i32 {
             Status = KspQueryBusDeviceCapabilities(ChildDeviceExtension, Irp);
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_PNP_DEVICE_STATE {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_PNP_DEVICE_STATE as i32 {
             Status = KspQueryBusDevicePnpState(ChildDeviceExtension, Irp);
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_INTERFACE {
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_INTERFACE as i32 {
             Status = KspQueryBusDeviceInterface(ChildDeviceExtension, Irp);
-        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_DEVICE_RELATIONS
+        } else if (*IoStack).MinorFunction as i32 == IRP_MN_QUERY_DEVICE_RELATIONS as i32
             && (*IoStack).Parameters.QueryDeviceRelations.Type as u32 == TargetDeviceRelation as u32
         {
             DeviceRelation = AllocateItem(
@@ -1580,7 +1689,7 @@ pub unsafe extern "system" fn KsServiceBusEnumPnpRequest(
                 (*DeviceRelation).Count = 1;
                 (*DeviceRelation).Objects[0] = DeviceObject;
                 ObReferenceObject(DeviceObject as PVOID);
-                (*Irp).IoStatus.Information = DeviceRelation as ULONG_PTR;
+                (*Irp).IoStatus.Information = DeviceRelation  as _;
                 Status = STATUS_SUCCESS;
             } else {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1616,7 +1725,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
     KeInitializeEvent(&mut Ctx.Event, _EVENT_TYPE_NotificationEvent, 0u8);
     Ctx.Irp = Irp;
     Ctx.BusDeviceExtension = BusDeviceExtension;
-    ExInitializeWorkItem(&mut Ctx.WorkItem, Some(KspRemoveBusInterface), &mut Ctx as *mut _ as PVOID);
+    ExInitializeWorkItem(&mut Ctx.WorkItem, cb!(KspRemoveBusInterface), &mut Ctx as *mut _ as PVOID);
     ExQueueWorkItem(&mut Ctx.WorkItem, DelayedWorkQueue);
     KeWaitForSingleObject(
         &mut Ctx.Event as *mut _ as PVOID,
@@ -1625,7 +1734,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
         0u8,
         core::ptr::null_mut(),
     );
-    Ctx.__bindgen_anon_1.Status
+    Ctx.Status
 }
 
 
@@ -1675,7 +1784,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     CurDeviceId = InterlockedIncrement(&KsDeviceCount);
 //
 //     /* generate new device id */
-//     swprintf(Buffer, L"\\Device\\KSENUM%08x", CurDeviceId);
+//     swprintf(Buffer, L!("\\Device\\KSENUM%08x"), CurDeviceId);
 //
 //     /* initialize new device name */
 //     RtlInitUnicodeString(&DeviceName, Buffer);
@@ -1777,7 +1886,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &DeviceEntry->DeviceInterfaceList)
 //     {
 //          /* get offset */
-//          CurEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD(Entry, BUS_INSTANCE_ENTRY, Entry);
+//          CurEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD!(Entry, BUS_INSTANCE_ENTRY, Entry);
 //
 //          /* sanity check */
 //          ASSERT(CurEntry->SymbolicLink.Buffer);
@@ -1870,7 +1979,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //         if (NT_SUCCESS(Status))
 //         {
 //             /* perform callback */
-//             Status = Callback(hNewKey, BusDeviceExtension, DeviceEntry, KeyInfo->Name, ReferenceString);
+//             Status = (Callback.unwrap())(hNewKey, BusDeviceExtension, DeviceEntry, KeyInfo->Name, ReferenceString);
 //
 //             /* should enumeration stop */
 //             if (!NT_SUCCESS(Status))
@@ -1917,7 +2026,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &DeviceEntry->DeviceInterfaceList)
 //     {
 //          /* get offset */
-//          CurEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD(Entry, BUS_INSTANCE_ENTRY, Entry);
+//          CurEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD!(Entry, BUS_INSTANCE_ENTRY, Entry);
 //
 //          if (IsEqualGUIDAligned(&CurEntry->InterfaceGuid, &InterfaceGUID))
 //          {
@@ -1995,7 +2104,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //
 //     /* construct device name */
 //     wcscpy(DeviceName, DeviceId);
-//     wcscat(DeviceName, L"&");
+//     wcscat(DeviceName, L!("&"));
 //     wcscat(DeviceName, InterfaceId);
 //
 //     /* scan list and check if it is already present */
@@ -2004,7 +2113,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get real offset */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //
 //         /* check if name matches */
 //         if (!_wcsicmp(DeviceEntry->DeviceName, DeviceName))
@@ -2283,7 +2392,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &DeviceEntry->DeviceInterfaceList)
 //     {
 //         /* get bus instance entry */
-//         InstanceEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD(Entry, BUS_INSTANCE_ENTRY, Entry);
+//         InstanceEntry = (PBUS_INSTANCE_ENTRY)CONTAINING_RECORD!(Entry, BUS_INSTANCE_ENTRY, Entry);
 //         DPRINT("Enabling %u %wZ Irql %u\n", bEnable, &InstanceEntry->SymbolicLink, KeGetCurrentIrql());
 //
 //         /* set interface state */
@@ -2337,7 +2446,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     }
 //
 //     /* construct buffer */
-//     swprintf(Buffer, L"%s\\%s", DeviceEntry->PDODeviceName, DeviceEntry->Instance);
+//     swprintf(Buffer, L!("%s\\%s"), DeviceEntry->PDODeviceName, DeviceEntry->Instance);
 //
 //     /* free old buffer*/
 //     ExFreePoolWithTag(IoStack->FileObject->FileName.Buffer, 'mNoI');
@@ -2365,7 +2474,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //         Entry = RemoveHeadList(&DeviceEntry->IrpPendingList);
 //
 //         /* get irp */
-//         Irp = (PIRP)CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         Irp = (PIRP)CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.ListEntry);
 //
 //         if (ResultCode == STATUS_REPARSE)
 //         {
@@ -2598,9 +2707,9 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //
 //         /* construct id */
 //         wcscpy(Name, BusDeviceExtension->BusIdentifier);
-//         wcscat(Name, L"\\");
+//         wcscat(Name, L!("\\"));
 //         wcscat(Name, DeviceEntry->BusId);
-//         //swprintf(Name, L"%s\\%s", BusDeviceExtension->BusIdentifier, DeviceEntry->BusId);
+//         //swprintf(Name, L!("%s\\%s"), BusDeviceExtension->BusIdentifier, DeviceEntry->BusId);
 //
 //         /* store result */
 //         Irp->IoStatus.Information = (ULONG_PTR)Name;
@@ -2772,7 +2881,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &Context->BusDeviceExtension->Common.Entry)
 //     {
 //         /* get device entry */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //         if (IsEqualGUIDAligned(&DeviceEntry->DeviceGuid, &InstallInterface->DeviceId))
 //         {
 //             if (!DeviceEntry->PDO)
@@ -2835,7 +2944,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get offset to device entry */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //
 //         /* sanity check */
 //         ASSERT(DeviceEntry);
@@ -2962,7 +3071,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get offset to device entry */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //
 //         /* is there a pdo yet */
 //         if (DeviceEntry->PDO && (DeviceEntry->DeviceState == NotStarted || DeviceEntry->DeviceState == Started))
@@ -2994,7 +3103,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get offset to device entry */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //
 //         /* is there a pdo yet */
 //         if (DeviceEntry->PDO && (DeviceEntry->DeviceState == NotStarted || DeviceEntry->DeviceState == Started))
@@ -3163,7 +3272,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 // {
 //     SIZE_T Length;
 //     NTSTATUS Status = STATUS_SUCCESS;
-//     UNICODE_STRING ServiceKeyPath = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Services\\");
+//     UNICODE_STRING ServiceKeyPath = RTL_CONSTANT_STRING(L!("\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Services\\"));
 //     PBUS_ENUM_DEVICE_EXTENSION BusDeviceExtension;
 //     PDEV_EXTENSION DeviceExtension;
 //     PBUS_DEVICE_ENTRY DeviceEntry;
@@ -3226,7 +3335,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //
 //     if (ServiceRelativePath)
 //     {
-//         RtlAppendUnicodeToString(&BusDeviceExtension->ServicePath, L"\\");
+//         RtlAppendUnicodeToString(&BusDeviceExtension->ServicePath, L!("\\"));
 //         RtlAppendUnicodeToString(&BusDeviceExtension->ServicePath, ServiceRelativePath);
 //     }
 //
@@ -3347,7 +3456,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get device entry */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //         if (!DeviceEntry->PDO)
 //         {
 //             /* release device entry lock */
@@ -3573,7 +3682,7 @@ pub unsafe extern "system" fn KsRemoveBusEnumInterface(
 //     while(Entry != &BusDeviceExtension->Common.Entry)
 //     {
 //         /* get real offset */
-//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
+//         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD!(Entry, BUS_DEVICE_ENTRY, Entry);
 //
 //         /* check if name matches */
 //         if (!_wcsicmp(DeviceEntry->DeviceName, IoStack->FileObject->FileName.Buffer + 1))

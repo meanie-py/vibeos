@@ -1,3 +1,5 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -8,31 +10,75 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, GUID, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAllocateIrp, IoAttachDeviceToDeviceStack, IoBuildDeviceIoControlRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetDeviceInterfaces, IoGetDriverObjectExtension, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoOpenDeviceInterfaceRegistryKey, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeInitializeMutex, KeLeaveCriticalRegion, KeReleaseMutex, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PADAPTER_OBJECT, PDEVICE_OBJECT, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFILE_OBJECT, PGENERIC_MAPPING, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PRKEVENT, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlCopyUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString, RtlStringFromGUID, SECURITY_SUBJECT_CONTEXT, SeAssignSecurity, SeCaptureSubjectContext, SeReleaseSubjectContext, ZwClose, ZwCreateKey, ZwSetValueKey};
 use core::ffi::c_void;
+use crate::misc::{AllocateItem, FreeItem, CompleteRequest};
+use ntkrnl_sys::inline::common::InitializeObjectAttributes;
+
+// ProbeForRead is a real ntoskrnl export but is declared non-pub in
+// ntkrnl_sys::inline::common; declare it locally so this module can link to it.
+extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
+}
+// _wcsicmp: CRT case-insensitive wide compare (sibling swenum.rs declares it the
+// same way). Local extern decl — no global symbol conflict.
+extern "C" {
+    fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
+}
+
+// guiddef.h IsEqualGUIDAligned (private per-module helper, as in pin.rs).
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
+// ASSERT / UNIMPLEMENTED DDK stubs.
+#[inline(always)]
+unsafe fn ASSERT<T>(_cond: T) {}
+#[allow(non_upper_case_globals)]
+const UNIMPLEMENTED: () = ();
+
+// ks.h KSCREATE_ITEM_IRP_STORAGE(Irp): place expr aliasing DriverContext[0].
+macro_rules! KSCREATE_ITEM_IRP_STORAGE {
+    ($irp:expr) => {
+        *(&mut (*$irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0]
+            as *mut PVOID as *mut PKSOBJECT_CREATE_ITEM)
+    };
+}
 
 // ---- file-scope preamble (translated) ----
-pub const GUID_NULL: GUID = GUID {
+// GUID_NULL is declared `extern` by the substrate; ks defines it (DEFINE_GUID). #[no_mangle]
+// so sibling modules' link references resolve here.
+#[no_mangle]
+pub static GUID_NULL: GUID = GUID {
     Data1: 0x00000000,
     Data2: 0x0000,
     Data3: 0x0000,
     Data4: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
 };
 
-pub const KSMEDIUMSETID_Standard: GUID = GUID {
+// Define the ks-owned GUID as a #[no_mangle] static (the substrate declares it `extern` —
+// ks.sys is what defines it via DEFINE_GUID). Satisfies sibling-module link references.
+#[no_mangle]
+pub static KSMEDIUMSETID_Standard: GUID = GUID {
     Data1: 0x4747B320,
     Data2: 0x62CE,
     Data3: 0x11CF,
     Data4: [0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00],
 };
 
+// C KoDispatchTable is positionally initialized (drivers/ksfilter/ks/api.c:1343);
+// KSDISPATCH_TABLE field order: DeviceIoControl, Read, Write, Flush, Close,
+// QuerySecurity, SetSecurity, FastDeviceIoControl, FastRead, FastWrite.
 pub static KoDispatchTable: KSDISPATCH_TABLE = KSDISPATCH_TABLE {
-    Create: Some(KsDispatchInvalidDeviceRequest),
-    Close: Some(KsDispatchInvalidDeviceRequest),
+    DeviceIoControl: Some(KsDispatchInvalidDeviceRequest),
     Read: Some(KsDispatchInvalidDeviceRequest),
     Write: Some(KsDispatchInvalidDeviceRequest),
-    DeviceControl: Some(KopDispatchClose),
+    Flush: Some(KsDispatchInvalidDeviceRequest),
+    Close: unsafe { core::mem::transmute(KopDispatchClose as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS) },
     QuerySecurity: Some(KsDispatchQuerySecurity),
     SetSecurity: Some(KsDispatchSetSecurity),
-    FastDeviceControl: Some(KsDispatchFastIoDeviceControlFailure),
+    FastDeviceIoControl: Some(KsDispatchFastIoDeviceControlFailure),
     FastRead: Some(KsDispatchFastReadFailure),
     FastWrite: Some(KsDispatchFastReadFailure),
 };
@@ -49,11 +95,11 @@ pub unsafe extern "system" fn KsAcquireResetValue(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (*Irp).RequestorMode == 1i32 {
+    if (*Irp).RequestorMode == 1i8 {
         ProbeForRead(
             (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
-            core::mem::size_of::<KSRESET>() as u32,
-            core::mem::size_of::<u8>() as u32,
+            core::mem::size_of::<KSRESET>() as ULONG_PTR,
+            core::mem::size_of::<u8>() as ULONG,
         );
         let Value = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSRESET;
         *ResetValue = *Value;
@@ -122,11 +168,11 @@ pub unsafe extern "system" fn KsDefaultDispatchPower(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let DeviceExtension = DeviceObject.DeviceExtension as *mut DEVICE_EXTENSION;
+    let DeviceExtension = (*DeviceObject).DeviceExtension as *mut DEVICE_EXTENSION;
     let DeviceHeader = (*DeviceExtension).DeviceHeader as *mut KSIDEVICE_HEADER;
     let mut ListEntry = (*DeviceHeader).PowerDispatchList.Flink;
     while ListEntry != &mut (*DeviceHeader).PowerDispatchList as *mut _ as PLIST_ENTRY {
-        let ObjectHeader = CONTAINING_RECORD(
+        let ObjectHeader = CONTAINING_RECORD!(
             ListEntry,
             KSIOBJECT_HEADER,
             PowerDispatchEntry,
@@ -180,7 +226,7 @@ pub unsafe extern "system" fn KsQueryDevicePnpObject(
 pub unsafe extern "system" fn KsQueryObjectAccessMask(
     Header: KSOBJECT_HEADER,
 ) -> ACCESS_MASK {
-    let ObjectHeader = Header as *mut _KSIOBJECT_HEADER;
+    let ObjectHeader = Header as *mut KSIOBJECT_HEADER;
     return (*ObjectHeader).AccessMask;
 }
 
@@ -252,7 +298,7 @@ pub unsafe extern "system" fn KsSetPowerDispatch(
 
     KsAcquireDeviceSecurityLock(DeviceHeader as KSDEVICE_HEADER, 0u8);
 
-    if PowerDispatch != core::ptr::null_mut() {
+    if PowerDispatch.is_some() {
         InsertTailList(
             &mut (*DeviceHeader).PowerDispatchList,
             &mut (*ObjectHeader).PowerDispatchEntry,
@@ -261,7 +307,7 @@ pub unsafe extern "system" fn KsSetPowerDispatch(
         (*ObjectHeader).PowerContext = PowerContext;
     } else {
         RemoveEntryList(&mut (*ObjectHeader).PowerDispatchEntry);
-        (*ObjectHeader).PowerDispatch = core::ptr::null_mut();
+        (*ObjectHeader).PowerDispatch = None;
         (*ObjectHeader).PowerContext = core::ptr::null_mut();
     }
 
@@ -282,11 +328,11 @@ pub unsafe extern "C" fn KspAddCreateItemToList(
     ItemsList: PKSOBJECT_CREATE_ITEM,
 ) -> NTSTATUS {
     let mut Index: ULONG;
-    let Entry: PCREATE_ITEM_ENTRY;
+    let mut Entry: PCREATE_ITEM_ENTRY;
 
     Index = 0;
     while Index < ItemsCount {
-        Entry = AllocateItem(NonPagedPool, core::mem::size_of::<CREATE_ITEM_ENTRY>());
+        Entry = AllocateItem(NonPagedPool, core::mem::size_of::<CREATE_ITEM_ENTRY>()) as PCREATE_ITEM_ENTRY;
         if Entry.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -294,7 +340,7 @@ pub unsafe extern "C" fn KspAddCreateItemToList(
         InitializeListHead(&mut (*Entry).ObjectItemList);
         (*Entry).CreateItem = &mut *ItemsList.offset(Index as isize);
         (*Entry).ReferenceCount = 0;
-        (*Entry).ItemFreeCallback = core::ptr::null_mut();
+        (*Entry).ItemFreeCallback = None;
 
         InsertTailList(ListHead, &mut (*Entry).Entry);
         Index += 1;
@@ -304,7 +350,7 @@ pub unsafe extern "C" fn KspAddCreateItemToList(
 #[no_mangle]
 pub unsafe extern "C" fn KspFreeCreateItems(ListHead: PLIST_ENTRY) {
     while !IsListEmpty(ListHead) {
-        let Entry = CONTAINING_RECORD(
+        let Entry = CONTAINING_RECORD!(
             RemoveHeadList(ListHead),
             CREATE_ITEM_ENTRY,
             Entry,
@@ -347,13 +393,13 @@ pub unsafe extern "system" fn KsAllocateDeviceHeader(
 
     (*Header).BasicHeader.Type = KsObjectTypeDevice;
     (*Header).BasicHeader.KsDevice = &mut (*Header).KsDevice;
-    (*Header).BasicHeader.__bindgen_anon_1.Parent.KsDevice = &mut (*Header).KsDevice;
+    (*Header).BasicHeader.Parent.KsDevice = &mut (*Header).KsDevice;
 
     if ItemsCount != 0 && !ItemsList.is_null() {
         Status = KspAddCreateItemToList(&mut (*Header).ItemList, ItemsCount, ItemsList);
 
         if NT_SUCCESS(Status) {
-            (*Header).ItemListCount = ItemsCount;
+            (*Header).ItemListCount = ItemsCount as _;
         } else {
             KspFreeCreateItems(&mut (*Header).ItemList);
         }
@@ -420,7 +466,7 @@ pub unsafe extern "system" fn KsAllocateObjectHeader(
     if ItemsCount != 0 && !ItemsList.is_null() {
         let Status = KspAddCreateItemToList(&mut (*ObjectHeader).ItemList, ItemsCount, ItemsList);
         if NT_SUCCESS(Status) {
-            (*ObjectHeader).ItemListCount = ItemsCount;
+            (*ObjectHeader).ItemListCount = ItemsCount as _;
         } else {
             KsFreeObjectHeader(ObjectHeader as *mut core::ffi::c_void);
             return Status;
@@ -429,10 +475,10 @@ pub unsafe extern "system" fn KsAllocateObjectHeader(
 
     (*(*IoStack).FileObject).FsContext2 = ObjectHeader as *mut core::ffi::c_void;
     (*ObjectHeader).ParentDeviceObject = IoGetRelatedDeviceObject((*IoStack).FileObject);
-    (*ObjectHeader).OriginalCreateItem = KSCREATE_ITEM_IRP_STORAGE(Irp);
-    (*ObjectHeader).AccessMask = (*(*(*IoStack).Parameters.Create.SecurityContext)).DesiredAccess;
+    (*ObjectHeader).OriginalCreateItem = KSCREATE_ITEM_IRP_STORAGE!(Irp);
+    (*ObjectHeader).AccessMask = (*(*IoStack).Parameters.Create.SecurityContext).DesiredAccess;
 
-    *Header = ObjectHeader;
+    *Header = ObjectHeader as KSOBJECT_HEADER;
 
     STATUS_SUCCESS
 }
@@ -464,7 +510,7 @@ pub unsafe extern "C" fn KspAddObjectCreateItemToList(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
     let mut Entry: PLIST_ENTRY;
-    let CreateEntry: PCREATE_ITEM_ENTRY;
+    let mut CreateEntry: PCREATE_ITEM_ENTRY;
 
     Entry = (*ListHead).Flink;
 
@@ -478,7 +524,7 @@ pub unsafe extern "C" fn KspAddObjectCreateItemToList(
             debug_assert!((*CreateEntry).ReferenceCount == 0);
 
             (*((*CreateEntry).CreateItem)).Context = Context;
-            (*((*CreateEntry).CreateItem)).Create = Some(Create);
+            (*((*CreateEntry).CreateItem)).Create = Create;
             RtlInitUnicodeString(
                 &mut (*((*CreateEntry).CreateItem)).ObjectClass,
                 ObjectClass,
@@ -513,7 +559,7 @@ pub unsafe extern "system" fn KsAddObjectCreateItemToDeviceHeader(
         return STATUS_INVALID_PARAMETER_1;
     }
 
-    if Create.is_null() {
+    if Create.is_none() {
         return STATUS_INVALID_PARAMETER_2;
     }
 
@@ -550,7 +596,7 @@ pub unsafe extern "system" fn KsAddObjectCreateItemToObjectHeader(
         return STATUS_INVALID_PARAMETER_1;
     }
 
-    if Create.is_null() {
+    if Create.is_none() {
         return STATUS_INVALID_PARAMETER_2;
     }
 
@@ -596,6 +642,7 @@ pub unsafe extern "system" fn KsAllocateObjectCreateItem(
     }
 
     let Item: PKSOBJECT_CREATE_ITEM;
+    let mut ItemFreeCallbackUsed = ItemFreeCallback;
     if AllocateEntry != 0 {
         Item = AllocateItem(NonPagedPool, core::mem::size_of::<KSOBJECT_CREATE_ITEM>()) as PKSOBJECT_CREATE_ITEM;
         if Item.is_null() {
@@ -619,14 +666,16 @@ pub unsafe extern "system" fn KsAllocateObjectCreateItem(
         RtlCopyUnicodeString(&mut (*Item).ObjectClass, &(*CreateItem).ObjectClass);
     } else {
         let mut freeCallback = ItemFreeCallback;
-        if !freeCallback.is_null() {
+        if freeCallback.is_some() {
+            // callback is only accepted when the create item is copied
             freeCallback = None;
         }
+        ItemFreeCallbackUsed = freeCallback;
         Item = CreateItem;
     }
 
     InitializeListHead(&mut (*CreateEntry).ObjectItemList);
-    (*CreateEntry).ItemFreeCallback = ItemFreeCallback;
+    (*CreateEntry).ItemFreeCallback = ItemFreeCallbackUsed;
     (*CreateEntry).CreateItem = Item;
     (*CreateEntry).ReferenceCount = 0;
 
@@ -658,10 +707,10 @@ pub unsafe extern "system" fn KsFreeObjectCreateItemsByContext(
     Header: KSDEVICE_HEADER,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut Item: KSOBJECT_CREATE_ITEM;
+    let mut Item: KSOBJECT_CREATE_ITEM = core::mem::zeroed();
     core::ptr::write_bytes(&mut Item, 0, 1);
     Item.Context = Context;
-    KspObjectFreeCreateItems(Header, &Item)
+    KspObjectFreeCreateItems(Header, &mut Item)
 }
 
 #[no_mangle]
@@ -670,21 +719,21 @@ pub unsafe extern "system" fn KsCreateDefaultSecurity(
     DefaultSecurity: *mut PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
     let Mapping: PGENERIC_MAPPING;
-    let SubjectContext: SECURITY_SUBJECT_CONTEXT;
+    let mut SubjectContext: SECURITY_SUBJECT_CONTEXT = core::mem::zeroed();
     let Status: NTSTATUS;
 
-    SeCaptureSubjectContext(&SubjectContext);
+    SeCaptureSubjectContext(&mut SubjectContext);
     Mapping = IoGetFileObjectGenericMapping();
     Status = SeAssignSecurity(
         ParentSecurity,
         core::ptr::null_mut(),
         DefaultSecurity,
         0u8,
-        &SubjectContext,
+        &mut SubjectContext,
         Mapping,
         NonPagedPool,
     );
-    SeReleaseSubjectContext(&SubjectContext);
+    SeReleaseSubjectContext(&mut SubjectContext);
     Status
 }
 
@@ -750,13 +799,12 @@ pub unsafe extern "system" fn KsSynchronousIoControlDevice(
 
     ObjectHeader = (*FileObject).FsContext2 as PKSIOBJECT_HEADER;
 
-    if !ObjectHeader.is_null() && !((*ObjectHeader).DispatchTable.FastDeviceIoControl).is_null() {
-        let mut IoStatusBlock = _IO_STATUS_BLOCK {
-            Status: STATUS_UNSUCCESSFUL,
-            Information: 0,
-        };
+    if !ObjectHeader.is_null() && (*ObjectHeader).DispatchTable.FastDeviceIoControl.is_some() {
+        let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+        IoStatusBlock.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;
+        IoStatusBlock.Information = 0;
 
-        Status = ((*ObjectHeader).DispatchTable.FastDeviceIoControl)(
+        Status = ((*ObjectHeader).DispatchTable.FastDeviceIoControl.unwrap())(
             FileObject,
             1u8,
             InBuffer,
@@ -766,7 +814,7 @@ pub unsafe extern "system" fn KsSynchronousIoControlDevice(
             IoControl,
             &mut IoStatusBlock as *mut _IO_STATUS_BLOCK,
             DeviceObject,
-        );
+        ) as i32;
 
         if Status != 0 {
             *BytesReturned = IoStatusBlock.Information as ULONG;
@@ -774,10 +822,10 @@ pub unsafe extern "system" fn KsSynchronousIoControlDevice(
         }
     }
 
-    let mut Event = core::mem::zeroed();
+    let mut Event: KEVENT = core::mem::zeroed();
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
-    let mut IoStatusBlock = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     Irp = IoBuildDeviceIoControlRequest(
         IoControl,
         DeviceObject,
@@ -805,7 +853,7 @@ pub unsafe extern "system" fn KsSynchronousIoControlDevice(
 
     IoSetCompletionRoutine(
         Irp,
-        Some(KspSynchronousIoControlDeviceCompletion),
+        cb!(KspSynchronousIoControlDeviceCompletion),
         &mut IoStatusBlock as *mut _IO_STATUS_BLOCK as PVOID,
         1u8,
         1u8,
@@ -815,7 +863,7 @@ pub unsafe extern "system" fn KsSynchronousIoControlDevice(
     let mut Status = IoCallDriver(DeviceObject, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event as *mut KEVENT,
+            &mut Event as *mut KEVENT as *mut c_void,
             _KWAIT_REASON_Executive,
             RequestorMode,
             0u8,
@@ -844,16 +892,23 @@ pub unsafe extern "system" fn KsCacheMedium(
     PinDirection: ULONG,
 ) -> NTSTATUS {
     let mut hKey: HANDLE = core::ptr::null_mut();
-    let mut Path: _UNICODE_STRING = _UNICODE_STRING::default();
-    let BasePath: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediumCache\\\0");
-    let mut GuidString: _UNICODE_STRING = _UNICODE_STRING::default();
+    let mut Path: _UNICODE_STRING = core::mem::zeroed();
+    // C: UNICODE_STRING BasePath = RTL_CONSTANT_STRING(L"...MediumCache\\");
+    // Constructed inline from a wide literal (Length excludes the NUL terminator).
+    let basepath_w = L!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediumCache\\");
+    let BasePath: _UNICODE_STRING = _UNICODE_STRING {
+        Length: ((basepath_w.len() - 1) * core::mem::size_of::<WCHAR>()) as u16,
+        MaximumLength: (basepath_w.len() * core::mem::size_of::<WCHAR>()) as u16,
+        Buffer: basepath_w.as_ptr() as *mut u16,
+    };
+    let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
     let mut Status: NTSTATUS;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES::default();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut PathAdjusted: BOOLEAN = 0u8;
     let Value: ULONG = 0;
 
-    if IsEqualGUIDAligned(&KSMEDIUMSETID_Standard, &(*Medium).Set) != 0 ||
-       IsEqualGUIDAligned(&GUID_NULL, &(*Medium).Set) != 0
+    if IsEqualGUIDAligned(&KSMEDIUMSETID_Standard, &(*Medium).Set) ||
+       IsEqualGUIDAligned(&GUID_NULL, &(*Medium).Set)
     {
         return STATUS_SUCCESS;
     }
@@ -863,26 +918,26 @@ pub unsafe extern "system" fn KsCacheMedium(
         return Status;
     }
 
-    (*Path).Length = 0;
-    (*Path).MaximumLength = (*BasePath).MaximumLength + (*GuidString).MaximumLength + 10 * core::mem::size_of::<WCHAR>() as u16;
-    (*Path).Buffer = AllocateItem(PagedPool, (*Path).MaximumLength as usize) as PWSTR;
-    if (*Path).Buffer.is_null() {
+    Path.Length = 0;
+    Path.MaximumLength = BasePath.MaximumLength + GuidString.MaximumLength + 10 * core::mem::size_of::<WCHAR>() as u16;
+    Path.Buffer = AllocateItem(PagedPool, Path.MaximumLength as usize) as PWSTR;
+    if Path.Buffer.is_null() {
         RtlFreeUnicodeString(&mut GuidString);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     RtlAppendUnicodeStringToString(&mut Path, &BasePath);
     RtlAppendUnicodeStringToString(&mut Path, &GuidString);
-    RtlAppendUnicodeToString(&mut Path, b"-\0".as_ptr() as PWSTR);
-    RtlAppendUnicodeToString(&mut Path, b"0\0".as_ptr() as PWSTR);
-    RtlAppendUnicodeToString(&mut Path, b"-\0".as_ptr() as PWSTR);
-    RtlAppendUnicodeToString(&mut Path, b"0\0".as_ptr() as PWSTR);
+    RtlAppendUnicodeToString(&mut Path, L!("-").as_ptr());
+    RtlAppendUnicodeToString(&mut Path, L!("0").as_ptr());
+    RtlAppendUnicodeToString(&mut Path, L!("-").as_ptr());
+    RtlAppendUnicodeToString(&mut Path, L!("0").as_ptr());
 
     RtlFreeUnicodeString(&mut GuidString);
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
-        &Path,
+        &mut Path,
         OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -891,18 +946,18 @@ pub unsafe extern "system" fn KsCacheMedium(
     Status = ZwCreateKey(
         &mut hKey,
         GENERIC_WRITE,
-        &ObjectAttributes,
+        &mut ObjectAttributes,
         0,
         core::ptr::null_mut(),
         0,
         core::ptr::null_mut(),
     );
 
-    FreeItem((*Path).Buffer as PVOID);
+    FreeItem(Path.Buffer as PVOID);
 
     if NT_SUCCESS(Status) {
-        if (*SymbolicLink).Buffer[1] as u16 == '?' as u16 && (*SymbolicLink).Buffer[2] as u16 == '?' as u16 {
-            (*SymbolicLink).Buffer[1] = '\\' as u16;
+        if *(*SymbolicLink).Buffer.add(1) == '?' as u16 && *(*SymbolicLink).Buffer.add(2) == '?' as u16 {
+            *(*SymbolicLink).Buffer.add(1) = '\\' as u16;
             PathAdjusted = 1u8;
         }
 
@@ -916,7 +971,7 @@ pub unsafe extern "system" fn KsCacheMedium(
         );
 
         if PathAdjusted != 0 {
-            (*SymbolicLink).Buffer[1] = '?' as u16;
+            *(*SymbolicLink).Buffer.add(1) = '?' as u16;
         }
 
         ZwClose(hKey);
@@ -938,10 +993,10 @@ pub unsafe extern "system" fn KopDispatchClose(
     Irp: PIRP,
 ) -> NTSTATUS {
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
-    let Header = (*IoStack).FileObject.as_mut().unwrap().FsContext2 as *mut _;
+    let Header = (*IoStack).FileObject.as_mut().unwrap().FsContext2 as *mut KO_OBJECT_HEADER;
     KsFreeObjectHeader((*Header).ObjectHeader);
     FreeItem(Header as *mut core::ffi::c_void);
-    let DeviceExtension = (*DeviceObject).DeviceExtension as *mut _;
+    let DeviceExtension = (*DeviceObject).DeviceExtension as *mut DEVICE_EXTENSION;
     KsDereferenceBusObject((*DeviceExtension).DeviceHeader as *mut _);
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     CompleteRequest(Irp, IO_NO_INCREMENT);
@@ -983,10 +1038,10 @@ pub unsafe extern "system" fn KopDispatchCreate(
                     break;
                 }
             } else {
-                (*Header).CreateItem.Create = Some(KopDispatchCreate);
+                (*Header).CreateItem.Create = cb!(KopDispatchCreate);
                 RtlInitUnicodeString(
                     &mut (*Header).CreateItem.ObjectClass,
-                    KOSTRING_CreateObject.as_ptr(),
+                    L!("{72CF721C-525A-11D1-9AA1-00A0C9223196}").as_ptr(),
                 );
 
                 Status = KsAllocateObjectHeader(
@@ -994,7 +1049,7 @@ pub unsafe extern "system" fn KopDispatchCreate(
                     1,
                     &mut (*Header).CreateItem,
                     Irp,
-                    &KoDispatchTable,
+                    &KoDispatchTable as *const KSDISPATCH_TABLE as *mut KSDISPATCH_TABLE,
                 );
                 if !NT_SUCCESS(Status) {
                     loop {
@@ -1051,15 +1106,15 @@ pub unsafe extern "system" fn KopAddDevice(
         return Status;
     }
 
-    CreateItem = AllocateItem(NonPagedPool, core::mem::size_of::<KSOBJECT_CREATE_ITEM>() as ULONG);
+    CreateItem = AllocateItem(NonPagedPool, core::mem::size_of::<KSOBJECT_CREATE_ITEM>()) as PKSOBJECT_CREATE_ITEM;
 
     if CreateItem.is_null() {
         IoDeleteDevice(FunctionalDeviceObject);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    (*CreateItem).Create = Some(KopDispatchCreate);
-    RtlInitUnicodeString(&mut (*CreateItem).ObjectClass, KOSTRING_CreateObject);
+    (*CreateItem).Create = cb!(KopDispatchCreate);
+    RtlInitUnicodeString(&mut (*CreateItem).ObjectClass, L!("{72CF721C-525A-11D1-9AA1-00A0C9223196}").as_ptr());
 
     DeviceExtension = (*FunctionalDeviceObject).DeviceExtension as PDEVICE_EXTENSION;
 
@@ -1070,22 +1125,22 @@ pub unsafe extern "system" fn KopAddDevice(
     );
     if !NT_SUCCESS(Status) {
         IoDeleteDevice(FunctionalDeviceObject);
-        FreeItem(CreateItem);
+        FreeItem(CreateItem as PVOID);
         return Status;
     }
 
     NextDeviceObject = IoAttachDeviceToDeviceStack(FunctionalDeviceObject, PhysicalDeviceObject);
     if !NextDeviceObject.is_null() {
         KsSetDevicePnpAndBaseObject(
-            (*DeviceExtension).DeviceHeader,
+            (*DeviceExtension).DeviceHeader as *mut c_void,
             NextDeviceObject,
             FunctionalDeviceObject,
         );
         (*FunctionalDeviceObject).Flags |= DO_DIRECT_IO | DO_POWER_PAGABLE;
         (*FunctionalDeviceObject).Flags &= !DO_DEVICE_INITIALIZING;
     } else {
-        KsFreeDeviceHeader((*DeviceExtension).DeviceHeader);
-        FreeItem(CreateItem);
+        KsFreeDeviceHeader((*DeviceExtension).DeviceHeader as *mut c_void);
+        FreeItem(CreateItem as PVOID);
         IoDeleteDevice(FunctionalDeviceObject);
         Status = STATUS_DEVICE_REMOVED;
     }
@@ -1097,13 +1152,13 @@ pub unsafe extern "system" fn KopAddDevice(
 pub unsafe extern "system" fn KoDeviceInitialize(
     DeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    let DeviceExtension: PDEVICE_EXTENSION = DeviceObject.DeviceExtension as PDEVICE_EXTENSION;
+    let DeviceExtension: PDEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PDEVICE_EXTENSION;
 
     return KsAddObjectCreateItemToDeviceHeader(
-        DeviceExtension.DeviceHeader as KSDEVICE_HEADER,
-        Some(KopDispatchCreate),
+        (*DeviceExtension).DeviceHeader as KSDEVICE_HEADER,
+        cb!(KopDispatchCreate),
         core::ptr::null_mut(),
-        KOSTRING_CreateObject,
+        L!("{72CF721C-525A-11D1-9AA1-00A0C9223196}").as_ptr() as PWCHAR,
         core::ptr::null_mut(),
     );
 }
@@ -1117,7 +1172,7 @@ pub unsafe extern "system" fn KoDriverInitialize(
     let mut DriverObjectExtension: PKO_DRIVER_EXTENSION = core::ptr::null_mut();
     let Status = IoAllocateDriverObjectExtension(
         DriverObject,
-        KoDriverInitialize as *const core::ffi::c_void,
+        KoDriverInitialize as *mut core::ffi::c_void,
         core::mem::size_of::<KO_DRIVER_EXTENSION>() as u32,
         &mut DriverObjectExtension as *mut _ as *mut *mut core::ffi::c_void,
     );
@@ -1125,17 +1180,17 @@ pub unsafe extern "system" fn KoDriverInitialize(
     if NT_SUCCESS(Status) {
         (*DriverObjectExtension).CreateObjectHandler = CreateObjectHandler;
 
-        (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(KsDefaultDispatchPnp);
-        (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(KsDefaultDispatchPower);
-        (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = Some(KsDefaultForwardIrp);
+        (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = cb!(KsDefaultDispatchPnp);
+        (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = cb!(KsDefaultDispatchPower);
+        (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = cb!(KsDefaultForwardIrp);
 
-        (*DriverObject).DriverUnload = Some(KsNullDriverUnload);
+        (*DriverObject).DriverUnload = cb!(KsNullDriverUnload);
 
-        (*(*DriverObject).DriverExtension).AddDevice = Some(KopAddDevice);
+        (*(*DriverObject).DriverExtension).AddDevice = cb!(KopAddDevice);
 
-        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CREATE);
-        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CLOSE);
-        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_DEVICE_CONTROL);
+        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CREATE as ULONG);
+        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_CLOSE as ULONG);
+        KsSetMajorFunctionHandler(DriverObject, IRP_MJ_DEVICE_CONTROL as ULONG);
     }
 
     Status
@@ -1154,9 +1209,9 @@ pub unsafe extern "system" fn KsAcquireControl(
     let BasicHeader = ((Object as usize).wrapping_sub(core::mem::size_of::<KSBASIC_HEADER>())) as *mut KSBASIC_HEADER;
 
     KeWaitForSingleObject(
-        (*BasicHeader).ControlMutex,
+        (*BasicHeader).ControlMutex as *mut c_void,
         _KWAIT_REASON_Executive,
-        0i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
@@ -1181,7 +1236,7 @@ pub unsafe extern "system" fn KsAcquireDevice(
 
     KsDevice = &mut (*DeviceHeader).BasicHeader.OuterUnknown as *mut _ as *mut IKsDevice;
 
-    ((*(*KsDevice).lpVtbl).AcquireDevice)(KsDevice);
+    ((*(*KsDevice).lpVtbl).AcquireDevice.unwrap())(KsDevice);
 }
 
 #[no_mangle]
@@ -1193,7 +1248,7 @@ pub unsafe extern "system" fn KsReleaseDevice(
         let offset = core::mem::offset_of!(KSIDEVICE_HEADER, KsDevice);
         addr.sub(offset) as PKSIDEVICE_HEADER
     };
-    let KsDevice: IKsDevice = &mut (*DeviceHeader).BasicHeader.OuterUnknown as *mut _ as *mut IKsDevice;
+    let KsDevice: *mut IKsDevice = &mut (*DeviceHeader).BasicHeader.OuterUnknown as *mut _ as *mut IKsDevice;
     (*(*KsDevice).lpVtbl).ReleaseDevice.unwrap()(KsDevice);
 }
 
@@ -1235,7 +1290,7 @@ pub unsafe extern "system" fn KspSetGetBusDataCompletion(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    KeSetEvent(Context as PRKEVENT, IO_NO_INCREMENT, 0u8);
+    KeSetEvent(Context as *mut c_void, IO_NO_INCREMENT as i32, 0u8);
     STATUS_MORE_PROCESSING_REQUIRED
 }
 #[no_mangle]
@@ -1249,8 +1304,8 @@ pub unsafe extern "C" fn KspDeviceSetGetBusData(
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION;
     let Irp: PIRP;
-    let Status: NTSTATUS;
-    let mut Event: KEVENT;
+    let mut Status: NTSTATUS;
+    let mut Event: KEVENT = core::mem::zeroed();
 
     Irp = IoAllocateIrp(1, FALSE);
 
@@ -1264,7 +1319,7 @@ pub unsafe extern "C" fn KspDeviceSetGetBusData(
 
     IoSetCompletionRoutine(
         Irp,
-        Some(KspSetGetBusDataCompletion),
+        cb!(KspSetGetBusDataCompletion),
         &mut Event as *mut _ as PVOID,
         TRUE,
         TRUE,
@@ -1286,9 +1341,9 @@ pub unsafe extern "C" fn KspDeviceSetGetBusData(
 
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event as *mut _ as PRKEVENT,
+            &mut Event as *mut _ as *mut c_void,
             _KWAIT_REASON_Executive,
-            0i32,
+            0i8,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -1331,7 +1386,7 @@ pub unsafe extern "system" fn KsDeviceGetBusData(
         Buffer,
         Offset,
         Length,
-        1u8,
+        1i32,
     );
 }
 
@@ -1371,8 +1426,8 @@ pub unsafe extern "C" fn KspCountMethodSets(
     AutomationTableA: Option<&PKSAUTOMATION_TABLE>,
     AutomationTableB: Option<&PKSAUTOMATION_TABLE>,
 ) -> ULONG {
-    let AutomationTableA = AutomationTableA.unwrap_or(std::ptr::null());
-    let AutomationTableB = AutomationTableB.unwrap_or(std::ptr::null());
+    let AutomationTableA = AutomationTableA.map(|p| *p).unwrap_or(core::ptr::null_mut());
+    let AutomationTableB = AutomationTableB.map(|p| *p).unwrap_or(core::ptr::null_mut());
 
     if AutomationTableA.is_null() {
         return (*AutomationTableB).MethodSetsCount;
@@ -1395,8 +1450,8 @@ pub unsafe extern "C" fn KspCountMethodSets(
         let mut SubIndex = 0u32;
         while SubIndex < (*AutomationTableA).MethodSetsCount {
             if IsEqualGUIDAligned(
-                &(*AutomationTableB).MethodSets[Index as usize].Set,
-                &(*AutomationTableA).MethodSets[SubIndex as usize].Set,
+                (*(*AutomationTableB).MethodSets.add(Index as usize)).Set,
+                (*(*AutomationTableA).MethodSets.add(SubIndex as usize)).Set,
             ) {
                 bFound = 1u8;
                 break;
@@ -1422,7 +1477,7 @@ pub unsafe extern "C" fn KspCountEventSets(
     let mut Index: ULONG;
     let mut SubIndex: ULONG;
     let mut Count: ULONG;
-    let mut bFound: BOOL;
+    let mut bFound: u8;
 
     if AutomationTableA.is_none() {
         return (*AutomationTableB.unwrap()).EventSetsCount;
@@ -1454,8 +1509,8 @@ pub unsafe extern "C" fn KspCountEventSets(
         SubIndex = 0;
         while SubIndex < (*AutomationTableA).EventSetsCount {
             if IsEqualGUIDAligned(
-                &(*AutomationTableB).EventSets[Index as usize].Set,
-                &(*AutomationTableA).EventSets[SubIndex as usize].Set,
+                (*(*AutomationTableB).EventSets.add(Index as usize)).Set,
+                (*(*AutomationTableA).EventSets.add(SubIndex as usize)).Set,
             ) {
                 /* same Event set found */
                 bFound = 1u8;
@@ -1477,8 +1532,8 @@ pub unsafe extern "C" fn KspCountPropertySets(
     AutomationTableA: Option<&PKSAUTOMATION_TABLE>,
     AutomationTableB: Option<&PKSAUTOMATION_TABLE>,
 ) -> ULONG {
-    let AutomationTableA = AutomationTableA.unwrap_or(core::ptr::null());
-    let AutomationTableB = AutomationTableB.unwrap_or(core::ptr::null());
+    let AutomationTableA = AutomationTableA.map(|p| *p).unwrap_or(core::ptr::null_mut());
+    let AutomationTableB = AutomationTableB.map(|p| *p).unwrap_or(core::ptr::null_mut());
 
     if AutomationTableA.is_null() {
         return (*AutomationTableB).PropertySetsCount;
@@ -1502,8 +1557,8 @@ pub unsafe extern "C" fn KspCountPropertySets(
 
         for SubIndex in 0..(*AutomationTableA).PropertySetsCount {
             if IsEqualGUIDAligned(
-                &(*AutomationTableB).PropertySets[Index as usize].Set,
-                &(*AutomationTableA).PropertySets[SubIndex as usize].Set,
+                (*(*AutomationTableB).PropertySets.add(Index as usize)).Set,
+                (*(*AutomationTableA).PropertySets.add(SubIndex as usize)).Set,
             ) {
                 /* same property set found */
                 bFound = 1u8;
@@ -1527,7 +1582,7 @@ pub unsafe extern "C" fn KspCopyMethodSets(
     let mut Index: ULONG;
     let mut SubIndex: ULONG;
     let mut Count: ULONG;
-    let mut bFound: BOOL;
+    let mut bFound: u8;
 
     if AutomationTableA.is_null() {
         core::ptr::copy_nonoverlapping(
@@ -1559,8 +1614,8 @@ pub unsafe extern "C" fn KspCopyMethodSets(
         SubIndex = 0;
         while SubIndex < (*AutomationTableA).MethodSetsCount {
             if IsEqualGUIDAligned(
-                &(*AutomationTableB).MethodSets[Index as usize].Set,
-                &(*AutomationTableA).MethodSets[SubIndex as usize].Set,
+                (*(*AutomationTableB).MethodSets.add(Index as usize)).Set,
+                (*(*AutomationTableA).MethodSets.add(SubIndex as usize)).Set,
             ) {
                 bFound = 1u8;
                 break;
@@ -1570,8 +1625,8 @@ pub unsafe extern "C" fn KspCopyMethodSets(
 
         if bFound == 0u8 {
             core::ptr::copy_nonoverlapping(
-                &(*AutomationTableB).MethodSets[Index as usize] as *const KSMETHOD_SET as *const u8,
-                &mut (*Table).MethodSets[Count as usize] as *mut KSMETHOD_SET as *mut u8,
+                (*AutomationTableB).MethodSets.add(Index as usize) as *const KSMETHOD_SET as *const u8,
+                (*Table).MethodSets.add(Count as usize) as *mut KSMETHOD_SET as *mut u8,
                 core::mem::size_of::<KSMETHOD_SET>(),
             );
             Count += 1;
@@ -1589,13 +1644,13 @@ pub unsafe extern "C" fn KspAddPropertyItem(
     let mut CurrentPropertyItem: PKSPROPERTY_ITEM;
     let mut Index: ULONG;
 
-    CurrentPropertyItem = (*OutPropertySet).PropertyItem;
+    CurrentPropertyItem = (*OutPropertySet).PropertyItem as PKSPROPERTY_ITEM;
     Index = 0;
     while Index < (*OutPropertySet).PropertiesCount {
         if (*CurrentPropertyItem).PropertyId == (*PropertyItem).PropertyId {
             return;
         }
-        CurrentPropertyItem = ((CurrentPropertyItem as ULONG_PTR) + PropertyItemSize) as PKSPROPERTY_ITEM;
+        CurrentPropertyItem = ((CurrentPropertyItem as ULONG_PTR) + PropertyItemSize as ULONG_PTR) as PKSPROPERTY_ITEM;
         Index += 1;
     }
     core::ptr::copy_nonoverlapping(PropertyItem as *const u8, CurrentPropertyItem as *mut u8, PropertyItemSize as usize);
@@ -1612,13 +1667,13 @@ pub unsafe extern "C" fn KspMergePropertySet(
     let PropertyCount: ULONG = (*PropertySetA).PropertiesCount + (*PropertySetB).PropertiesCount;
 
     let PropertyItem: PKSPROPERTY_ITEM =
-        AllocateItem(NonPagedPool, (*Table).PropertyItemSize * PropertyCount);
+        AllocateItem(NonPagedPool, ((*Table).PropertyItemSize * PropertyCount) as usize) as PKSPROPERTY_ITEM;
     if PropertyItem.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     if !Bag.is_null() {
-        let Status = KsAddItemToObjectBag(Bag, PropertyItem as PVOID, core::ptr::null_mut());
+        let Status = KsAddItemToObjectBag(Bag, PropertyItem as PVOID, None);
         if !NT_SUCCESS(Status) {
             FreeItem(Table as PVOID);
             return Status;
@@ -1628,17 +1683,17 @@ pub unsafe extern "C" fn KspMergePropertySet(
     core::ptr::copy_nonoverlapping(
         (*PropertySetA).PropertyItem as *const u8,
         PropertyItem as *mut u8,
-        (*Table).PropertyItemSize * (*PropertySetA).PropertiesCount as usize,
+        (*Table).PropertyItemSize as usize * (*PropertySetA).PropertiesCount as usize,
     );
 
     (*OutPropertySet).PropertiesCount = (*PropertySetA).PropertiesCount;
     (*OutPropertySet).PropertyItem = PropertyItem;
 
-    let mut CurrentPropertyItem: PKSPROPERTY_ITEM = (*PropertySetB).PropertyItem;
+    let mut CurrentPropertyItem: PKSPROPERTY_ITEM = (*PropertySetB).PropertyItem as PKSPROPERTY_ITEM;
     let mut Index: ULONG = 0;
     while Index < (*PropertySetB).PropertiesCount {
         KspAddPropertyItem(OutPropertySet, CurrentPropertyItem, (*Table).PropertyItemSize);
-        CurrentPropertyItem = ((CurrentPropertyItem as ULONG_PTR) + (*Table).PropertyItemSize)
+        CurrentPropertyItem = ((CurrentPropertyItem as ULONG_PTR) + (*Table).PropertyItemSize as ULONG_PTR)
             as PKSPROPERTY_ITEM;
         Index += 1;
     }
@@ -1655,20 +1710,20 @@ pub unsafe extern "C" fn KspCopyPropertySets(
     let mut Index: ULONG;
     let mut SubIndex: ULONG;
     let mut Count: ULONG;
-    let mut bFound: BOOL;
+    let mut bFound: u8;
     let mut Status: NTSTATUS;
 
     if AutomationTableA.is_null() {
         core::ptr::copy_nonoverlapping(
             (*AutomationTableB).PropertySets,
-            (*Table).PropertySets,
+            (*Table).PropertySets as *mut KSPROPERTY_SET,
             ((*AutomationTableB).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
         );
         return STATUS_SUCCESS;
     } else if AutomationTableB.is_null() {
         core::ptr::copy_nonoverlapping(
             (*AutomationTableA).PropertySets,
-            (*Table).PropertySets,
+            (*Table).PropertySets as *mut KSPROPERTY_SET,
             ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
         );
         return STATUS_SUCCESS;
@@ -1676,7 +1731,7 @@ pub unsafe extern "C" fn KspCopyPropertySets(
 
     core::ptr::copy_nonoverlapping(
         (*AutomationTableA).PropertySets,
-        (*Table).PropertySets,
+        (*Table).PropertySets as *mut KSPROPERTY_SET,
         ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
     );
     Count = (*AutomationTableA).PropertySetsCount;
@@ -1700,7 +1755,7 @@ pub unsafe extern "C" fn KspCopyPropertySets(
         if bFound == 0u8 {
             core::ptr::copy_nonoverlapping(
                 (*AutomationTableB).PropertySets.add(Index as usize),
-                (*Table).PropertySets.add(Count as usize),
+                (*Table).PropertySets.add(Count as usize) as *mut KSPROPERTY_SET,
                 core::mem::size_of::<KSPROPERTY_SET>(),
             );
             Count += 1;
@@ -1730,7 +1785,7 @@ pub unsafe extern "C" fn KspCopyEventSets(
     let mut Index: ULONG;
     let mut SubIndex: ULONG;
     let mut Count: ULONG;
-    let mut bFound: BOOL;
+    let mut bFound: u8;
 
     if AutomationTableA.is_null() {
         core::ptr::copy_nonoverlapping(
@@ -1762,9 +1817,9 @@ pub unsafe extern "C" fn KspCopyEventSets(
         SubIndex = 0;
         while SubIndex < (*AutomationTableA).EventSetsCount {
             if IsEqualGUIDAligned(
-                &(*((*AutomationTableB).EventSets as *const KSEVENT_SET).add(Index as usize)).Set,
-                &(*((*AutomationTableA).EventSets as *const KSEVENT_SET).add(SubIndex as usize)).Set,
-            ) != 0
+                (*((*AutomationTableB).EventSets as *const KSEVENT_SET).add(Index as usize)).Set,
+                (*((*AutomationTableA).EventSets as *const KSEVENT_SET).add(SubIndex as usize)).Set,
+            )
             {
                 bFound = 1u8;
                 break;
@@ -1800,19 +1855,20 @@ pub unsafe extern "system" fn KsMergeAutomationTables(
         return STATUS_SUCCESS;
     }
 
-    Table = AllocateItem(NonPagedPool, core::mem::size_of::<KSAUTOMATION_TABLE>());
+    Table = AllocateItem(NonPagedPool, core::mem::size_of::<KSAUTOMATION_TABLE>()) as PKSAUTOMATION_TABLE;
     if Table.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     if !Bag.is_null() {
-        Status = KsAddItemToObjectBag(Bag, Table as PVOID, core::ptr::null_mut());
+        Status = KsAddItemToObjectBag(Bag, Table as PVOID, None);
         if !NT_SUCCESS(Status) {
             FreeItem(Table as PVOID);
             return Status;
         }
     }
 
+    'cleanup: {
     (*Table).PropertySetsCount = KspCountPropertySets(
         if AutomationTableA.is_null() { None } else { Some(&AutomationTableA) },
         if AutomationTableB.is_null() { None } else { Some(&AutomationTableB) },
@@ -1835,7 +1891,7 @@ pub unsafe extern "system" fn KsMergeAutomationTables(
         }
 
         if !Bag.is_null() {
-            Status = KsAddItemToObjectBag(Bag, (*Table).PropertySets as PVOID, core::ptr::null_mut());
+            Status = KsAddItemToObjectBag(Bag, (*Table).PropertySets as PVOID, None);
             if !NT_SUCCESS(Status) {
                 break 'cleanup;
             }
@@ -1869,7 +1925,7 @@ pub unsafe extern "system" fn KsMergeAutomationTables(
         }
 
         if !Bag.is_null() {
-            Status = KsAddItemToObjectBag(Bag, (*Table).MethodSets as PVOID, core::ptr::null_mut());
+            Status = KsAddItemToObjectBag(Bag, (*Table).MethodSets as PVOID, None);
             if !NT_SUCCESS(Status) {
                 break 'cleanup;
             }
@@ -1903,7 +1959,7 @@ pub unsafe extern "system" fn KsMergeAutomationTables(
         }
 
         if !Bag.is_null() {
-            Status = KsAddItemToObjectBag(Bag, (*Table).EventSets as PVOID, core::ptr::null_mut());
+            Status = KsAddItemToObjectBag(Bag, (*Table).EventSets as PVOID, None);
             if !NT_SUCCESS(Status) {
                 break 'cleanup;
             }
@@ -1917,28 +1973,29 @@ pub unsafe extern "system" fn KsMergeAutomationTables(
 
     *AutomationTableAB = Table;
     return Status;
+    } // end 'cleanup labeled block
 
-    'cleanup: {
+    {
         if !Table.is_null() {
             if !(*Table).PropertySets.is_null() {
-                if Bag.is_null() || !NT_SUCCESS(KsRemoveItemFromObjectBag(Bag, (*Table).PropertySets as PVOID, 1u8)) {
+                if Bag.is_null() || !NT_SUCCESS((KsRemoveItemFromObjectBag(Bag, (*Table).PropertySets as PVOID, 1u8) as i32)) {
                     FreeItem((*Table).PropertySets as PVOID);
                 }
             }
 
             if !(*Table).MethodSets.is_null() {
-                if Bag.is_null() || !NT_SUCCESS(KsRemoveItemFromObjectBag(Bag, (*Table).MethodSets as PVOID, 1u8)) {
+                if Bag.is_null() || !NT_SUCCESS((KsRemoveItemFromObjectBag(Bag, (*Table).MethodSets as PVOID, 1u8) as i32)) {
                     FreeItem((*Table).MethodSets as PVOID);
                 }
             }
 
             if !(*Table).EventSets.is_null() {
-                if Bag.is_null() || !NT_SUCCESS(KsRemoveItemFromObjectBag(Bag, (*Table).EventSets as PVOID, 1u8)) {
+                if Bag.is_null() || !NT_SUCCESS((KsRemoveItemFromObjectBag(Bag, (*Table).EventSets as PVOID, 1u8) as i32)) {
                     FreeItem((*Table).EventSets as PVOID);
                 }
             }
 
-            if Bag.is_null() || !NT_SUCCESS(KsRemoveItemFromObjectBag(Bag, Table as PVOID, 1u8)) {
+            if Bag.is_null() || !NT_SUCCESS((KsRemoveItemFromObjectBag(Bag, Table as PVOID, 1u8) as i32)) {
                 FreeItem(Table as PVOID);
             }
         }
@@ -1955,10 +2012,10 @@ pub unsafe extern "system" fn KsRegisterAggregatedClientUnknown(
     let BasicHeader = (Object as usize - core::mem::size_of::<KSBASIC_HEADER>()) as *mut KSBASIC_HEADER;
 
     if !(*BasicHeader).ClientAggregate.is_null() {
-        (*(*BasicHeader).ClientAggregate).lpVtbl.as_ref().unwrap().Release((*BasicHeader).ClientAggregate);
+        (*(*BasicHeader).ClientAggregate).lpVtbl.as_ref().unwrap().Release.unwrap()((*BasicHeader).ClientAggregate);
     }
 
-    (*ClientUnknown).lpVtbl.as_ref().unwrap().AddRef(ClientUnknown);
+    (*ClientUnknown).lpVtbl.as_ref().unwrap().AddRef.unwrap()(ClientUnknown);
 
     (*BasicHeader).ClientAggregate = ClientUnknown;
 
@@ -1974,12 +2031,12 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
     MediumList: *mut KSPIN_MEDIUM,
     CategoryList: *mut GUID,
 ) -> NTSTATUS {
-    let Size: ULONG;
-    let Index: ULONG;
-    let Status: NTSTATUS;
-    let SymbolicLinkList: PWSTR;
-    let hKey: HANDLE;
-    let InterfaceString: _UNICODE_STRING;
+    let mut Size: ULONG;
+    let mut Index: ULONG;
+    let mut Status: NTSTATUS;
+    let mut SymbolicLinkList: PWSTR = core::ptr::null_mut();
+    let mut hKey: HANDLE = core::ptr::null_mut();
+    let mut InterfaceString: _UNICODE_STRING = core::mem::zeroed();
 
     if InterfaceClassGUID.is_null() || PinCount == 0 || PinDirection.is_null() || MediumList.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -2001,7 +2058,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
     if NT_SUCCESS(Status) {
         RtlInitUnicodeString(&mut InterfaceString, SymbolicLinkList);
 
-        Status = IoOpenDeviceInterfaceRegistryKey(&InterfaceString, GENERIC_WRITE, &mut hKey);
+        Status = IoOpenDeviceInterfaceRegistryKey(&mut InterfaceString, GENERIC_WRITE, &mut hKey);
         if NT_SUCCESS(Status) {
             ZwClose(hKey);
         }
@@ -2009,7 +2066,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
         if PinCount != 0 {
             Index = 0;
             while Index < PinCount {
-                KsCacheMedium(&InterfaceString, &mut *MediumList.add(Index as usize), *PinDirection.add(Index as usize));
+                KsCacheMedium(&mut InterfaceString, &mut *MediumList.add(Index as usize), *PinDirection.add(Index as usize) as ULONG);
                 Index += 1;
             }
         }
@@ -2218,7 +2275,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     while(ListEntry != &DeviceHeader->PowerDispatchList)
 //     {
 //         /* get object header */
-//         ObjectHeader = (PKSIOBJECT_HEADER)CONTAINING_RECORD(ListEntry, KSIOBJECT_HEADER, PowerDispatchEntry);
+//         ObjectHeader = (PKSIOBJECT_HEADER)CONTAINING_RECORD!(ListEntry, KSIOBJECT_HEADER, PowerDispatchEntry);
 //
 //         /* does it have still a cb */
 //         if (ObjectHeader->PowerDispatch)
@@ -2521,7 +2578,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     while(!IsListEmpty(ListHead))
 //     {
 //         /* remove create item from list */
-//         Entry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD(RemoveHeadList(ListHead), CREATE_ITEM_ENTRY, Entry);
+//         Entry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD!(RemoveHeadList(ListHead), CREATE_ITEM_ENTRY, Entry);
 //
 //         /* caller shouldnt have any references */
 //         //ASSERT(Entry->ReferenceCount == 0);
@@ -2788,7 +2845,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     while(Entry != ListHead)
 //     {
 //         /* get create entry */
-//         CreateEntry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD(Entry, CREATE_ITEM_ENTRY, Entry);
+//         CreateEntry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD!(Entry, CREATE_ITEM_ENTRY, Entry);
 //         /* if the create item has no create routine, then it is free to use */
 //         if (CreateEntry->CreateItem->Create == NULL)
 //         {
@@ -3241,7 +3298,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 // {
 //     HANDLE hKey;
 //     UNICODE_STRING Path;
-//     UNICODE_STRING BasePath = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediumCache\\");
+//     UNICODE_STRING BasePath = RTL_CONSTANT_STRING(L!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediumCache\\"));
 //     UNICODE_STRING GuidString;
 //     NTSTATUS Status;
 //     OBJECT_ATTRIBUTES ObjectAttributes;
@@ -3274,12 +3331,12 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //
 //     RtlAppendUnicodeStringToString(&Path, &BasePath);
 //     RtlAppendUnicodeStringToString(&Path, &GuidString);
-//     RtlAppendUnicodeToString(&Path, L"-");
+//     RtlAppendUnicodeToString(&Path, L!("-"));
 //     /* FIXME append real instance id */
-//     RtlAppendUnicodeToString(&Path, L"0");
-//     RtlAppendUnicodeToString(&Path, L"-");
+//     RtlAppendUnicodeToString(&Path, L!("0"));
+//     RtlAppendUnicodeToString(&Path, L!("-"));
 //     /* FIXME append real instance id */
-//     RtlAppendUnicodeToString(&Path, L"0");
+//     RtlAppendUnicodeToString(&Path, L!("0"));
 //
 //     /* free guid string */
 //     RtlFreeUnicodeString(&GuidString);
@@ -3654,7 +3711,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     PKSIDEVICE_HEADER DeviceHeader;
 //
 //     DPRINT("KsAcquireDevice\n");
-//     DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD(Device, KSIDEVICE_HEADER, KsDevice);
+//     DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(Device, KSIDEVICE_HEADER, KsDevice);
 //
 //     /* get device interface*/
 //     KsDevice = (IKsDevice*)&DeviceHeader->BasicHeader.OuterUnknown;
@@ -3672,7 +3729,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     IN PKSDEVICE  Device)
 // {
 //     IKsDevice *KsDevice;
-//     PKSIDEVICE_HEADER DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD(Device, KSIDEVICE_HEADER, KsDevice);
+//     PKSIDEVICE_HEADER DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(Device, KSIDEVICE_HEADER, KsDevice);
 //
 //     /* get device interface*/
 //     KsDevice = (IKsDevice*)&DeviceHeader->BasicHeader.OuterUnknown;
@@ -3871,7 +3928,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     IN ULONG MaxMappingsByteCount,
 //     IN ULONG MappingTableStride)
 // {
-//     PKSIDEVICE_HEADER DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD(Device, KSIDEVICE_HEADER, KsDevice);
+//     PKSIDEVICE_HEADER DeviceHeader = (PKSIDEVICE_HEADER)CONTAINING_RECORD!(Device, KSIDEVICE_HEADER, KsDevice);
 //
 //     DeviceHeader->AdapterObject = AdapterObject;
 //     DeviceHeader->MaxMappingsByteCount = MaxMappingsByteCount;
@@ -4583,7 +4640,7 @@ pub unsafe extern "system" fn KsRegisterFilterWithNoKSPins(
 //     //PUCHAR Buffer;
 //     HANDLE hKey;
 //     UNICODE_STRING InterfaceString;
-//     //UNICODE_STRING FilterData = RTL_CONSTANT_STRING(L"FilterData");
+//     //UNICODE_STRING FilterData = RTL_CONSTANT_STRING(L!("FilterData"));
 //
 //     if (!InterfaceClassGUID || !PinCount || !PinDirection || !MediumList)
 //     {

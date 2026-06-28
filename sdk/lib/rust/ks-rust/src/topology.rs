@@ -1,9 +1,23 @@
+use crate::types::*;
+use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, CreateFileTypeNone, GUID, _IO_STATUS_BLOCK, IoCreateFile, IoGetCurrentIrpStackLocation, LPGUID, LPWSTR, _OBJECT_ATTRIBUTES, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlAppendUnicodeToString};
+use ntkrnl_sys::ddk::{ACCESS_MASK, GUID, _IO_STATUS_BLOCK, IoCreateFile, IoGetCurrentIrpStackLocation, LPGUID, LPWSTR, _OBJECT_ATTRIBUTES, PHANDLE, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlAppendUnicodeToString};
+use ntkrnl_sys::ddk::_CREATE_FILE_TYPE_CreateFileTypeNone as CreateFileTypeNone;
+use ntkrnl_sys::driver_ddk::wcslen;
+use crate::misc::{AllocateItem, FreeItem, KspCopyCreateRequest};
+use crate::connectivity::KspReadMediaCategory;
 use core::ffi::c_void;
+
+#[inline(always)]
+unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
+    (*a).Data1 == (*b).Data1
+        && (*a).Data2 == (*b).Data2
+        && (*a).Data3 == (*b).Data3
+        && (*a).Data4 == (*b).Data4
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -89,7 +103,7 @@ pub unsafe extern "system" fn KspCreateObjectType(
     }
 
     RtlAppendUnicodeToString(&mut Name, ObjectType);
-    RtlAppendUnicodeToString(&mut Name, L"\\\0".as_ptr() as PCWSTR);
+    RtlAppendUnicodeToString(&mut Name, L!("\\\0").as_ptr() as PCWSTR);
 
     core::ptr::copy_nonoverlapping(
         CreateParameters as *const u8,
@@ -250,7 +264,7 @@ pub unsafe extern "system" fn KsTopologyPropertyHandler(
                 } else {
                     (*Irp).IoStatus.Information = ((*KeyInfo).DataLength as usize)
                         .wrapping_add(core::mem::size_of::<u16>())
-                        as isize;
+                        as _;
 
                     if ((*KeyInfo).DataLength as usize)
                         .wrapping_add(core::mem::size_of::<u16>())
@@ -332,7 +346,7 @@ pub unsafe extern "system" fn KsTopologyPropertyHandler(
 //      * For clocks it is full path for pin\{ClockGuid}\ClockCreateParams
 //      */
 //     RtlAppendUnicodeToString(&Name, ObjectType);
-//     RtlAppendUnicodeToString(&Name, L"\\");
+//     RtlAppendUnicodeToString(&Name, L!("\\"));
 //     /* append create parameters */
 //     RtlMoveMemory(Name.Buffer + (Name.Length / sizeof(WCHAR)), CreateParameters, CreateParametersSize);
 //     Name.Length += CreateParametersSize;

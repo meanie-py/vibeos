@@ -17,3 +17,6 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+# Lock-free SList: provides #[no_mangle] RtlInterlockedPush/PopEntrySList (per-arch decoration)
+# that ntkrnl-sys references but ntoskrnl only exports under fastcall/Exp* aliases.
+slist = { path = "../slist" }
