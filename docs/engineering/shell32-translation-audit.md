@@ -42,13 +42,25 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 | `wine/control.c`     | 1260 |  8 |   0 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
 | `wine/shellole.c`    |  856 | 28 |   9 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
 | `wine/classes.c`     |  657 |  0 |   5 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
-| `wine/shell32_main.c`| 1370 | 16 |  18 | C | 3 |
-| `wine/shlmenu.c`     |  997 | 25 |  18 | C | 3 |
+| `wine/shell32_main.c`| 1370 | 16 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
+| `wine/shlmenu.c`     |  997 | 25 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
 | `wine/pidl.c`        | 2681 | 41 | 193 | C | 4 (PIDL core) |
 | `wine/shellpath.c`   | 3398 | 32 |   9 | C | 4 |
 | `wine/shellord.c`    | 3108 | 76 |  51 | C | 4 (ordinal grab-bag) |
 
-**Progress: 9/14 .c (64%) · ~4040 / ~16K LOC.**
+**Progress: 11/14 .c (79%) · ~6400 / ~16K LOC.**
+
+### Wave 3 notes (shell32_main/shlmenu)
+2 parallel agents (CONTRACT-3), integrated centrally; links ×3, all 43 exports match the
+pre-flip obj decoration. shell32_main models IShellFolder/IShellFolder2/IShellDetails/
+IExtractIconW vtables + cfg-split PE32/PE32+ headers (ExtractIcon); CommandLineToArgvW is a
+literal port of the quote/backslash state machine. shlmenu reproduces the file-private
+FMINFO/FMITEM structs + IShellFolder/IEnumIDList vtables. Both reference the still-C `_IL*`
+PIDL helpers (resolve from C pidl.c until Wave 4). **Known benign warnings:** shell32_main +
+shlmenu each define a file-local `IShellFolder`, so their `extern` decls of `SHGetDesktopFolder`/
+`PidlToSicIndex` clash nominally (ABI-identical — same arg count, all pointer-width; resolve
+to the one C symbol). Proper fix = hoist the common COM/PIDL types into a shared module; that
+lands with the **shell32-sys** substrate the PIDL Wave 4 needs.
 
 ### Wave 1 notes (shpolicy/shellstring/appbar/vista/clipboard)
 Translated by 5 parallel agents (CONTRACT-1), integrated centrally, boots ×3.

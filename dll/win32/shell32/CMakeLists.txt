@@ -91,13 +91,13 @@ list(APPEND PCH_SKIP_SOURCE
     # wine/clipboard.c — replaced by Rust (shell32-rust/src/wine/clipboard.rs); cohab via libshell32_rust.a
     # wine/control.c — replaced by Rust (shell32-rust/src/wine/control.rs); cohab via libshell32_rust.a
     wine/pidl.c
-    wine/shell32_main.c
+    # wine/shell32_main.c — replaced by Rust (shell32-rust/src/wine/shell32_main.rs); cohab via libshell32_rust.a
     # wine/shellole.c — replaced by Rust (shell32-rust/src/wine/shellole.rs); cohab via libshell32_rust.a
     wine/shellord.c
     wine/shellpath.c
     # wine/shellreg.c — replaced by Rust (shell32-rust/src/wine/shellreg.rs); cohab via libshell32_rust.a
     # wine/shellstring.c — replaced by Rust (shell32-rust/src/wine/shellstring.rs); cohab via libshell32_rust.a
-    wine/shlmenu.c
+    # wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
     # wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
     # vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)

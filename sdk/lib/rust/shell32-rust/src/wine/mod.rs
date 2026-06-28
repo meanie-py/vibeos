@@ -4,6 +4,8 @@
 //! clipboard (Render* shell clipboard-format builders).
 //! Wave 2: classes (HCR_* HKEY_CLASSES_ROOT helpers), shellole (OLE/COM glue + drag-drop),
 //! control (Control Panel applet loader).
+//! Wave 3: shell32_main (SHGetFileInfo/ExtractIcon/CommandLineToArgvW/ShellAbout),
+//! shlmenu (FileMenu_* PIDL owner-draw menus + Shell_MergeMenus).
 
 pub mod shellreg;
 pub mod shpolicy;
@@ -12,3 +14,5 @@ pub mod clipboard;
 pub mod classes;
 pub mod shellole;
 pub mod control;
+pub mod shell32_main;
+pub mod shlmenu;
