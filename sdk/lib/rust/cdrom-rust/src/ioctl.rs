@@ -2512,7 +2512,10 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleQueryPropertyRetrieveCachedData(
+// i386 ABI: declared extern "system" (stdcall) at cdrom.rs:91 block / called at cdrom.rs:2644.
+// Definition must match the decl or i386 link-fails on the `@16` decoration (cdecl def emits no
+// `@N`). Latent until arm64-love's CTL_CODE const fixes kept this call path alive past DCE.
+pub unsafe extern "system" fn RequestHandleQueryPropertyRetrieveCachedData(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     RequestParameters: *mut WDF_REQUEST_PARAMETERS,
