@@ -173,6 +173,7 @@ members = [
     "kernel32-vista-rust",
     "user32-rust",
     "gdi32-rust",
+    "shell32-rust",
     "msgina-rust",
     "uniata-rust",
     "dxg-rust",

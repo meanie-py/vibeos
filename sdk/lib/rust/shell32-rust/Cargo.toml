@@ -1,0 +1,28 @@
+# shell32-rust — Rust translation of dll/win32/shell32 (the usermode Shell client DLL).
+# staticlib → libshell32_rust.a, cohab-linked into the cmake-built shell32.dll with the
+# translated .c files commented out (per-file flip, like gdi32-rust / user32-rust /
+# kernel32-rust). User-mode DLL: builds for the STANDARD per-arch targets (i686/x86_64
+# gnu, aarch64 gnullvm) with i386 -sse,-sse2 (the user-mode no-SSE rule).
+#
+# SCOPE: shell32.dll is ~14 .c files (wine-derived pure C, ~16K LOC) + 81 .cpp COM-vtable
+# classes (~64K LOC). This crate translates the .c portion; the COM .cpp classes stay C++
+# (separate, much heavier effort). Imports resolve at runtime via shell32's existing
+# import libs — advapi32, gdi32, user32, comctl32, comdlg32, shlwapi, msvcrt, kernel32,
+# ntdll — so the translated bodies just declare `extern "system"` for the fns they call;
+# no bindgen *-sys substrate is needed yet (a shell32-sys may be added for the heavier
+# PIDL/shell-struct waves: pidl/shellpath/shellord).
+#
+# Wave 0: wine/shellreg.c (SHReg* registry wrappers) — a small leaf over advapi32 Reg* +
+# shlwapi SHQueryValueEx*. Proves the cohab link + i386 stdcall export decoration
+# (`_SHRegOpenKeyA@12` etc.) before any bulk translation.
+# See docs/engineering/shell32-translation-audit.md.
+
+[package]
+name = "shell32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
