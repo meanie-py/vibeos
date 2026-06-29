@@ -732,6 +732,7 @@
 ;@ cdecl -arch=x86_64 KiCpuId()
 @ stdcall -arch=i386,arm,arm64 KiDeliverApc(long ptr ptr)
 @ stdcall -arch=i386 KiDispatchInterrupt()
+@ stdcall -arch=arm64 KiDispatchInterruptArm64(long)
 @ extern -arch=i386,arm,x86_64 KiEnableTimerWatchdog
 @ stdcall -arch=i386,arm KiIpiServiceRoutine(ptr ptr)
 @ fastcall -arch=i386,arm KiReleaseSpinLock(ptr)

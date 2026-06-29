@@ -83,12 +83,18 @@ class DecodeBugcheckCmd(gdb.Command):
             bf.select()
             gdb.write(f"decode-bugcheck: frame = {bf.name()}\n")
 
+        # Force C language: amd64/i386 arg exprs are C casts (`*(unsigned ... *)
+        # ($rsp+0x28)`) which fail when stopped inside a Rust frame (Rust mode
+        # rejects C type names). Restored to auto afterward.
+        gdb.execute("set language c", to_string=True)
         try:
             arg_exprs = _arch_args(arch)
             vals = [_read_unsigned(e) for e in arg_exprs]
         except gdb.error as e:
             gdb.write(f"decode-bugcheck: failed to read args: {e}\n", gdb.STDERR)
             return
+        finally:
+            gdb.execute("set language auto", to_string=True)
 
         code = vals[0] & 0xFFFFFFFF
         name = BUGCHECK_NAMES.get(code, "UNKNOWN")

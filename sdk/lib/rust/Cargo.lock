@@ -19,6 +19,18 @@ name = "acpica-sys"
 version = "0.1.0"
 
 [[package]]
+name = "advapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "advapi32-sys",
+ "ntdll-sys",
+]
+
+[[package]]
+name = "advapi32-sys"
+version = "0.1.0"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1739,6 +1751,13 @@ dependencies = [
 [[package]]
 name = "usb-sys"
 version = "0.1.0"
+
+[[package]]
+name = "usbaudio-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "usbccgp-rust"

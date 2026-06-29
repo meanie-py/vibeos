@@ -180,16 +180,91 @@ pub static MmProtectToValue: [ULONG; 32] = [
     PAGE_WRITECOMBINE | PAGE_EXECUTE_WRITECOPY,
 ];
 
+// --- arm64 device-interrupt dispatch (GICv2) --------------------------------
+// A flat vector→KINTERRUPT table keyed by GIC INTID. GICv2 INTIDs: SGI 0-15,
+// PPI 16-31, SPI 32-1019 (1020-1023 are special/spurious). Device interrupts
+// (virtio etc.) are SPIs. The HAL owns the GIC hardware (ack/enable/EOI in
+// hal-rust::arm64); this side owns the KINTERRUPT registry + ISR dispatch.
+//
+// One ISR per vector (no shared-vector chaining yet) — sufficient for the
+// QEMU `virt` device set where each SPI is dedicated. Single-CPU, IRQs are
+// masked by hardware for the duration of the exception, so a plain AtomicPtr
+// (no per-vector lock) is race-free against the dispatch read.
+const GIC_MAX_INTID: usize = 1020;
+static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; GIC_MAX_INTID] =
+    [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; GIC_MAX_INTID];
+
+extern "system" {
+    fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: KINTERRUPT_MODE) -> BOOLEAN;
+    fn HalDisableSystemInterrupt(Vector: ULONG, Irql: KIRQL);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    0u8
+    let vector = (*Interrupt).Vector as usize;
+    // Reject out-of-range / special INTIDs (>=1020).
+    if vector >= GIC_MAX_INTID {
+        return 0u8;
+    }
+    if (*Interrupt).Connected != 0 {
+        return 1u8;
+    }
+    // Refuse to silently steal a vector already owned by another ISR (no
+    // shared-vector chaining yet) — fail so the caller knows, matching NT.
+    let prev = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if !prev.is_null() && prev != Interrupt {
+        return 0u8;
+    }
+    INTERRUPT_TABLE[vector].store(Interrupt, Ordering::SeqCst);
+    // Enable the GIC line. On failure, roll back the table slot.
+    if HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode) == 0 {
+        INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+        return 0u8;
+    }
+    (*Interrupt).Connected = 1u8;
+    1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    0u8
+    let vector = (*Interrupt).Vector as usize;
+    let was_connected = (*Interrupt).Connected;
+    if vector < GIC_MAX_INTID
+        && INTERRUPT_TABLE[vector].load(Ordering::SeqCst) == Interrupt
+    {
+        HalDisableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql);
+        INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+    }
+    (*Interrupt).Connected = 0u8;
+    was_connected
+}
+
+/// Dispatch a device GIC interrupt to its connected ISR. Called by the HAL IRQ
+/// handler (`HalClockInterruptArm64`) for every non-timer, non-spurious INTID,
+/// AFTER ack (IAR read) and BEFORE EOI. Returns TRUE if an ISR handled it.
+///
+/// Runs in IRQ context with IRQs masked by hardware. The ISR is expected to be
+/// the standard NT shape (ack its device, queue a DPC, return) — DPCs are
+/// retired by `KiIdleLoop`, same as the clock's timer-expiration follow-through.
+#[no_mangle]
+pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN {
+    use core::sync::atomic::Ordering;
+    let vector = Intid as usize;
+    if vector >= GIC_MAX_INTID {
+        return 0u8;
+    }
+    let interrupt = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if interrupt.is_null() {
+        return 0u8;
+    }
+    match (*interrupt).ServiceRoutine {
+        Some(svc) => svc(interrupt, (*interrupt).ServiceContext),
+        None => 0u8,
+    }
 }
 
 #[no_mangle]

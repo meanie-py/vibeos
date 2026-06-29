@@ -168,7 +168,10 @@ pub unsafe extern "system" fn HalCalibratePerformanceCounter(
 pub unsafe extern "system" fn HalClearSoftwareInterrupt(Request: ddk::KIRQL) {}
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ddk::ULONG, Irql: ddk::KIRQL) {}
+pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ddk::ULONG, Irql: ddk::KIRQL) {
+    // Clear-enable the device's GIC line (Vector == GIC INTID).
+    super::clock::disable_gic_interrupt(Vector as u32);
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDisplayString(String: ddk::PCSTR) {}
@@ -179,6 +182,14 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     Irql: ddk::KIRQL,
     InterruptMode: ddk::KINTERRUPT_MODE,
 ) -> ddk::BOOLEAN {
+    // Vector == GIC INTID. Enable the distributor line so the IRQ reaches the
+    // CPU interface; the connected ISR is then dispatched by KiIrqHandler →
+    // HalClockInterruptArm64 → KiDispatchInterruptArm64. Returns FALSE for an
+    // out-of-range / special INTID so KeConnectInterrupt rolls back cleanly.
+    if Vector as usize >= 1020 {
+        return FALSE;
+    }
+    super::clock::enable_gic_interrupt(Vector as u32);
     TRUE
 }
 

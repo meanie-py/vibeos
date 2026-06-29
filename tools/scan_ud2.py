@@ -1,19 +1,33 @@
 #!/usr/bin/env python3
-"""Scan ntoskrnl.exe for ud2 instructions in named functions.
+"""Scan ntoskrnl.exe for illegal/degenerate codegen in named functions.
 
-ud2 (0x0f 0x0b) in a named function means LLVM proved the function body
-contains undefined behavior and replaced it with an illegal instruction.
-This is almost always a miscompilation caused by captures(none) or ABI
-mismatch on i386.
+x86 (i386/amd64): ud2 (0x0f 0x0b) in a named function means LLVM proved the
+function body contains undefined behavior and replaced it with an illegal
+instruction. Almost always a miscompilation from captures(none) or an i386 ABI
+mismatch.
 
-Expected ud2 sites (not bugs):
+arm64: there is NO x86-style trap for UB. The aarch64-pc-windows-gnullvm target
+builds with trap-unreachable OFF — a UB/`unreachable` body emits no instruction
+(it falls through silently) and a Rust panic lowers to `rust_begin_unwind`, which
+is a branch-to-self `b .` spin (the "fake arm64 idle hang"). So:
+  * The captures(none)/UB class is SILENT on arm64 (no binary signal) — it is
+    caught at SOURCE by tools/lint_kernel.py, which is the primary arm64 defense.
+  * The one detectable binary signal is an *unexpected branch-to-self spin* in a
+    named function (a body that is just `b .`). The known-good spins are panic /
+    bugcheck / halt primitives; a NEW one means a function regressed into an
+    infinite loop (a pre-boot catch for an otherwise-mysterious arm64 hang).
+This tool scans ud2 on x86 and branch-to-self on arm64, so the binary gate is
+honest on all three arches instead of silently "passing" on arm64.
+
+Expected x86 ud2 sites (not bugs):
 - core::option::Option::unwrap_unchecked — unreachable panic stubs
 - core::panicking::* — panic infrastructure
 
 Usage:
     python3 tools/scan_ud2.py [build-dir]
     python3 tools/scan_ud2.py build-i386
-    python3 tools/scan_ud2.py --check build-i386  # exit 1 if unexpected ud2 found
+    python3 tools/scan_ud2.py --check build-i386  # exit 1 if unexpected found
+    python3 tools/scan_ud2.py --check build-arm64 # arm64 branch-to-self scan
 """
 
 import re
@@ -80,6 +94,20 @@ KNOWN_CGU_UD2 = {
     "KeAcquireInStackQueuedSpinLockForDpc",
 }
 
+# arm64: named functions whose body is legitimately a branch-to-self `b .` spin
+# (the arm64 analogue of x86's EXPECTED_UD2). These are intentional terminal
+# loops — panic handler, bugcheck, and halt primitives — not miscompiles. A spin
+# in a function NOT matching one of these is flagged: a body that regressed into
+# an infinite loop, which boots as a hard-to-diagnose "idle hang". Substring
+# match (mangled Rust names embed the symbol), same as EXPECTED_UD2.
+EXPECTED_SPIN = {
+    "rust_begin_unwind",  # Rust panic handler (panic=abort → loop {})
+    "KeBugCheckWithTf",  # bugcheck terminal halt
+    "KeBugCheck",  # bugcheck family
+    "xHalHaltSystem",  # HAL halt
+    "HvValidateHive",  # fatal hive-corruption terminal path
+}
+
 
 def find_objdump(arch: str) -> str | None:
     """Find a working objdump for the given architecture.
@@ -111,8 +139,12 @@ def find_objdump(arch: str) -> str | None:
     return None
 
 
-def scan_ud2(ntoskrnl_path: Path, objdump: str) -> list[dict]:
-    """Scan binary for ud2 instructions, return list of {address, function, expected}."""
+def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict]:
+    """Scan binary for illegal/degenerate codegen in named functions.
+
+    x86: ud2 (0f 0b). arm64: branch-to-self `b .` spins. Returns a list of
+    {address, function, expected, known_cgu}. The arm64 path classifies against
+    EXPECTED_SPIN (and never sets known_cgu — that bug is x86-CGU specific)."""
     result = subprocess.run(
         [objdump, "-d", str(ntoskrnl_path)],
         capture_output=True,
@@ -130,20 +162,41 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str) -> list[dict]:
             current_function = func_match.group(2)
             continue
 
-        # Match ud2 instruction (0f 0b)
-        ud2_match = re.search(r"^\s+([0-9a-f]+):\s+0f 0b\s+ud2", line)
-        if ud2_match and current_function:
-            addr = ud2_match.group(1)
-            expected = any(e in current_function for e in EXPECTED_UD2)
-            known_cgu = any(e in current_function for e in KNOWN_CGU_UD2)
-            findings.append(
-                {
-                    "address": addr,
-                    "function": current_function,
-                    "expected": expected,
-                    "known_cgu": known_cgu,
-                }
-            )
+        if not current_function:
+            continue
+
+        if arch == "arm64":
+            # Branch-to-self: `<addr>: <word>  b 0x<addr>` where the branch
+            # target equals the instruction's own address. That is `b .` — an
+            # infinite loop, the arm64 panic/halt idiom (and the regression
+            # signature for a function that became an unintended spin).
+            m = re.search(r"^\s+([0-9a-f]+):\s+[0-9a-f]{8}\s+b\s+0x([0-9a-f]+)\b", line)
+            if m and m.group(1) == m.group(2):
+                addr = m.group(1)
+                expected = any(e in current_function for e in EXPECTED_SPIN)
+                findings.append(
+                    {
+                        "address": addr,
+                        "function": current_function,
+                        "expected": expected,
+                        "known_cgu": False,
+                    }
+                )
+        else:
+            # x86: ud2 instruction (0f 0b)
+            ud2_match = re.search(r"^\s+([0-9a-f]+):\s+0f 0b\s+ud2", line)
+            if ud2_match:
+                addr = ud2_match.group(1)
+                expected = any(e in current_function for e in EXPECTED_UD2)
+                known_cgu = any(e in current_function for e in KNOWN_CGU_UD2)
+                findings.append(
+                    {
+                        "address": addr,
+                        "function": current_function,
+                        "expected": expected,
+                        "known_cgu": known_cgu,
+                    }
+                )
 
     return findings
 
@@ -171,15 +224,23 @@ def main():
         print("ERROR: No objdump found")
         sys.exit(1)
 
-    print(f"Scanning {ntoskrnl} for ud2 instructions...")
-    findings = scan_ud2(ntoskrnl, objdump)
+    # Per-arch vocabulary: x86 looks for ud2, arm64 for branch-to-self spins.
+    kind = "branch-to-self spins" if arch == "arm64" else "ud2 instructions"
+    bug_hint = (
+        "unintended infinite loop (arm64 'idle hang' signature)"
+        if arch == "arm64"
+        else "likely LLVM miscompilation"
+    )
+    print(f"Scanning {ntoskrnl} ({arch}) for {kind}...")
+    findings = scan_ud2(ntoskrnl, objdump, arch)
 
     expected = [f for f in findings if f["expected"]]
     known_cgu = [f for f in findings if not f["expected"] and f["known_cgu"]]
     unexpected = [f for f in findings if not f["expected"] and not f["known_cgu"]]
 
     if expected:
-        print(f"\n  Expected ud2 ({len(expected)} — unreachable panic paths):")
+        label = "panic/halt spins" if arch == "arm64" else "unreachable panic paths"
+        print(f"\n  Expected ({len(expected)} — {label}):")
         for f in expected:
             print(f"    0x{f['address']}: {f['function']}")
 
@@ -189,23 +250,33 @@ def main():
             print(f"    0x{f['address']}: {f['function']}  (known)")
 
     if unexpected:
-        print(f"\n  UNEXPECTED ud2 ({len(unexpected)} — likely LLVM miscompilation):")
+        print(f"\n  UNEXPECTED ({len(unexpected)} — {bug_hint}):")
         for f in unexpected:
             print(f"    0x{f['address']}: {f['function']}  *** BUG ***")
 
     if not findings:
-        print("  No ud2 instructions found.")
+        print(f"  No {kind} found.")
+
+    if arch == "arm64":
+        # Be explicit that a clean spin-scan does NOT mean arm64 UB is clean —
+        # the captures(none)/UB class is invisible in arm64 binaries (no trap).
+        print(
+            "\n  NOTE: arm64 has no instruction-level UB trap (trap-unreachable off);"
+            "\n  the captures(none)/UB class is SILENT here and is gated at source by"
+            "\n  tools/lint_kernel.py — this scan only covers branch-to-self spins."
+        )
 
     print(
-        f"\nTotal: {len(findings)} ud2 ({len(expected)} expected, "
+        f"\nTotal: {len(findings)} {kind.split()[0]} ({len(expected)} expected, "
         f"{len(known_cgu)} known CGU, {len(unexpected)} unexpected)"
     )
 
     if check_mode and unexpected:
-        print("\nFAILED: Unexpected ud2 found — LLVM miscompilation detected!")
+        noun = "branch-to-self spin" if arch == "arm64" else "ud2"
+        print(f"\nFAILED: Unexpected {noun} found — {bug_hint}!")
         sys.exit(1)
     elif not unexpected:
-        print("\nPASSED: All ud2 are in expected or known-CGU locations.")
+        print("\nPASSED: All findings are in expected or known-CGU locations.")
 
 
 if __name__ == "__main__":

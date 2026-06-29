@@ -8,6 +8,9 @@
 #   --gdb             Open gdbstub on auto-allocated port
 #   --gdb-wait        Open gdbstub AND halt at first instruction (for boot-from-zero)
 #   --livecd          Boot from livecd.iso (i386/amd64; default; ignored for arm64)
+#   --incoming <file> Restore VM state from a snapshot file instead of cold-booting
+#                     (migration-to-file; the VM starts paused awaiting the stream —
+#                     qemu/snapshot.sh issues the post-load `cont`). See snapshot.sh.
 #   --skip-preflight  Skip preflight checks (use only when iterating preflight itself)
 #
 # On success: prints the run-id to stdout. All other output goes to stderr.
@@ -36,12 +39,14 @@ GDB=0
 GDB_WAIT=0
 LIVECD=1
 SKIP_PREFLIGHT=0
+INCOMING=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --gdb)            GDB=1 ;;
         --gdb-wait)       GDB=1; GDB_WAIT=1 ;;
         --livecd)         LIVECD=1 ;;
+        --incoming)       shift; INCOMING="$1" ;;
         --skip-preflight) SKIP_PREFLIGHT=1 ;;
         --help|-h)
             sed -n '2,15p' "$0"
@@ -131,6 +136,15 @@ EXTRA_FLAGS=()
 if [ -n "${VIBEOS_QEMU_EXTRA:-}" ]; then
     # shellcheck disable=SC2206
     EXTRA_FLAGS=(${VIBEOS_QEMU_EXTRA})
+fi
+
+# Snapshot restore: read VM state from the file at launch. The VM comes up
+# paused in the incoming-migration state; snapshot.sh does the post-load `cont`.
+# `exec:cat < file` has its own redirection independent of QEMU's /dev/null stdin.
+if [ -n "$INCOMING" ]; then
+    [ -f "$INCOMING" ] || die "--incoming: snapshot file not found: $INCOMING"
+    EXTRA_FLAGS+=(-incoming "exec:cat < $INCOMING")
+    manifest_set "$RUN_ID" incoming_snapshot "$INCOMING"
 fi
 
 # --- per-arch QEMU command -------------------------------------------------

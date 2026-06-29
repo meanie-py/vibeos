@@ -1485,12 +1485,106 @@ the gate stays green while a *clean* build (which does build the Rust `.sys`) cr
   `ninja_targets_optional`), or the gate false-greens on its stale pre-flip C binary. The
   comment block at the flip site (`*.cmake` "replaced by Rust") and `link-clean x3` bars do
   **not** imply boot-tested — only a clean arm64 boot of the actually-rebuilt Rust `.sys` does.
-- **Mechanizing the const class:** these garbage consts slipped both static gates —
-  `scan_inline_flag_literals` only catches *annotated bare literals* (`0x2 /* NAME */`), and
-  `verify_constants` only checks *module-level* `const` defs (and doesn't evaluate `CTL_CODE`
-  macros). The hole = **function-local `const KNOWN_NAME = <garbage>`** + CTL_CODE-derived
-  values. Extending `verify_constants` to validate local consts (and compute CTL_CODE) would
-  catch the whole class mechanically instead of one boot-bisect at a time.
+- **Mechanizing the const class — CTL_CODE half now CLOSED (2026-06-26):** these garbage consts
+  slipped both static gates — `scan_inline_flag_literals` only catches *annotated bare literals*
+  (`0x2 /* NAME */`), and `verify_constants` checked `const NAME = VALUE` against C `#define`
+  *literals* only — but `IOCTL_*`/`FSCTL_*` are `#define NAME CTL_CODE(dev,fn,method,access)`
+  *macro calls*, which all three of its literal/multichar/ntstatus parsers skip, so they never
+  entered the catalog and any garbage Rust copy went unchecked. **`verify_constants.build_c_catalog`
+  now evaluates the CTL_CODE macro** (`(dev<<16)|(access<<14)|(fn<<2)|method`), resolving the four
+  operands from the header scope (incl. `IOCTL_*_BASE` aliases → `FILE_DEVICE_*`) and seeding the
+  standardized base operands; it joins the DDK headers' multi-line continuation defs first. The
+  catalog gained **326 IOCTL_/FSCTL_ codes** (was 0). It would have caught every ramdisk const
+  above at the static gate. Locked by `tools/rustconv/tests/test_verify_constants_ctlcode.py`.
+  - **Generalized to ALL wrapper-macro families (2026-06-28) — the robust upgrade:** many IOCTL
+    families aren't `CTL_CODE(...)` directly but go through a *device-specific wrapper macro* —
+    `_AFD_CONTROL_CODE`, `_TDI_CONTROL_CODE`, `_NDIS_CONTROL_CODE`, `USB_CTL`, … — and AFD's wrapper
+    doesn't even use `CTL_CODE` (it has its own packing `(FSCTL_AFD_BASE)<<12 | (Op<<2) | Method`).
+    Special-casing `CTL_CODE` missed all of these. Replaced the `CTL_CODE`-only parser with a
+    **generic function-like-macro expander** (`_expand_func_macros`): it parses every `#define
+    NAME(params) body` wrapper from the headers, recursively substitutes args (whole-word, so a
+    `Method` param never matches inside `METHOD_NEITHER`) and expands nested calls until the body is
+    pure arithmetic, then evaluates. `parse_ioctl_defines` now scans the whole `IOCTL_*`/`FSCTL_*`
+    namespace through this one path — literal, direct-`CTL_CODE`, and any wrapper, family-agnostic.
+    Catalog **326 → 390** (+AFD 38, TDI 14, NDIS, USB), verified against known answers (`IOCTL_AFD_BIND`
+    `0x12003`, `IOCTL_AFD_SEND` `0x1201F`, `IOCTL_TDI_CONNECT` `0x210004`, `IOCTL_NDIS_QUERY_GLOBAL_STATS`
+    `0x170002`). **This is exactly netstack's afd bug #3** (the `IOCTL_AFD_*` block mis-numbered
+    sequentially instead of computed → `msafd` SEND `0x1201F` misrouted to the RECV arm) — the
+    generalized gate computes the right value, so that class is now caught statically for the whole
+    transport/USB stack, not just the disk/cdrom CTL_CODE ones. Bringing a new family under the net
+    is a one-line header add to `CTL_CODE_HEADERS`; depth-guarded so a recursive macro bails to
+    "unevaluable" (skipped) rather than fabricating. Self-referential/non-arithmetic wrapper macros
+    are harmless — they only expand when an IOCTL body calls them and a non-integer result is skipped.
+  - **First catch (fixed same commit):** 3 real wrong codes in `ntoskrnl-rust` — `fstub/disksup.rs`
+    `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
+    *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`
+    (fn 3 not 2), `FSCTL_OPLOCK_BREAK_NOTIFY` `0x9000C`→`0x90014` (fn 5 not 3).
+  - **Gate scope now WHOLE-WORKSPACE (2026-06-26):** `verify_constants` main() default + the gate
+    spec (`tests/qemu/cli/lints.py`) now scan **all of `sdk/lib/rust/**` (driver crates included)**,
+    not just `ntoskrnl-rust/src` — so the prevention finally reaches where ramdisk actually lived.
+    Its volatile catalog/file-count summary moved to **stderr** (gate reads stdout only) so the
+    baseline stays stable as workspace files come and go. The tree-wide scan found **57 latent
+    garbage IOCTL/FSCTL consts**: **cdrom-rust's 26 are FIXED mechanically** (`verify_constants
+    --fix` — it rewrites each to the computed CTL_CODE value); the rest (fastfat 24, disk/mountmgr/
+    classpnp/cdfs/usbhub) are **baselined** in `tools/lint-baseline/verify_constants.txt` (75 lines
+    = 31 residual CTL + 44 non-CTL) as accepted debt for the owning lanes to burn down — the gate now
+    blocks any NEW garbage const tree-wide.
+  - **`--fix` now rewrites function-LOCAL consts too:** `parse_rust_const` strips the line so it
+    *detected* `    const NAME = …` inside fns, but `fix_const_line` anchored its rewrite regex at
+    column 0 → silently no-op'd on any indented const (e.g. cdrom's `IOCTL_CDROM_GET_INQUIRY_DATA`).
+    Fixed by capturing leading whitespace in the prefix (indentation preserved). This closes the
+    function-local half of the mechanization.
+  - **Triage of the non-CTL findings (the holistic-fix question):** they split three ways —
+    **CTL codes** are mechanically `--fix`-able (header-authoritative ABI values); **pool `TAG_*`**
+    mismatches are *harmless translation divergences* (arbitrary 4-char debug labels, e.g. `TAG_KERNEL`
+    "Kern" vs C "Ke  ") → baseline, do NOT auto-fix; **`STATUS_*`/flag** mismatches are *case-by-case*
+    (a wrong NTSTATUS is a real bug, but the name can collide across status enums → FP risk) → review
+    before fixing, never blanket `--fix`. So a blind tree-wide `--fix` is UNSAFE; fix per-class.
+
+### 9.6c.2 ✅ The arm64 staged-build false-green is now STRUCTURALLY mechanized — a self-maintaining freshness net + build self-heal (2026-06-28)
+
+§9.6c.1 mechanized the *const* half (a broken Rust binary). This closes the *other* half of
+that bug — the **stale binary** that lets a broken (or even a *correct*) Rust cohab flip never
+get boot-exercised because the arm64 staged build didn't rebuild it. The fix is two cooperating
+pieces in `tests/qemu/cli/`, both keyed off the **actual boot manifest** (`mkramdisk.sh`'s
+`REQUIRED_FILES`) rather than the hand-maintained `archcfg.py` lists — so neither can be
+defeated by forgetting an archcfg entry (the exact failure mode that bit fastfat→ramdisk→pl011
+→gdi32→user32→advapi32, six times):
+
+- **The freshness net** (`provenance.cohab_staleness_reasons`, wired into `check_staleness` so
+  `smoke` hard-fails). For every binary in the boot set (`mkramdisk.sh` `REQUIRED_FILES` ∪
+  `archcfg.staged_bins_rel`) that maps to a `<stem>-rust` cohab crate, it asserts the built
+  artifact is **newer than the crate's newest `.rs`**. A cohab flip that wasn't rebuilt leaves
+  the artifact older than its source → loud `STALE` at the gate, instead of a silent stale-C (or
+  stale-old-Rust) boot. **Crucially it runs in BOTH staleness tiers** — a flip that wasn't
+  rebuilt leaves the build-stamp git-fingerprint *matching*, so the tier-1 fast path ("fingerprint
+  unchanged ⇒ fresh") is itself unsound for these binaries and cannot be trusted; the net overrides
+  it. Self-maintaining: a new `<x>-rust` crate that produces `<x>.sys` auto-joins the net the
+  moment it's added to `mkramdisk.sh` — zero archcfg edits. (Mapping handles the `_`↔`-` skew:
+  binary `kernel32_vista.dll` → crate `kernel32-vista-rust`.)
+- **The build self-heal** (`build.py`): `boot_set_cohab_rels()` feeds those same cohab boot paths
+  into the `ninja` invocation alongside `archcfg.ninja_targets`, so **every cohab boot binary is
+  force-rebuilt regardless of whether anyone added it to `ninja_targets`**. This is the time-saver:
+  no more "forgot archcfg → stale gate → hand-`ninja` the driver → full re-gate" loop; `build`
+  just produces fresh binaries, and the net above confirms it.
+- **Validation:** on a real `build-arm64` the net guards 20 cohab boot binaries (kernel, hal,
+  win32k, kernel32(+vista), user32, winsrv, fastfat, ramdisk, pl011, netstack, ntdll, kdcom,
+  bootvid, framebuf, mlang, version, winlogon, arm64input/vid) with zero false positives, and
+  immediately flagged a genuinely-stale `user32.dll` (source newer than the built binary) that
+  would otherwise have staged stale. `i386`/`amd64` return empty (a full `ninja livecd` can't ship
+  a stale cohab binary), so the net is arm64-scoped by construction. Locked by 8 unit tests in
+  `tests/qemu/cli/test_cli_units.py` (`test_cohab_*`, incl. the tier-1-override case).
+- **Why mtime not content-hash:** the gate flow is `build`→`smoke` back-to-back, so mtimes are
+  authoritative; the failure mode is conservative (over-warn on git-mtime churn between build and
+  smoke, never false-green), and `--allow-stale` is the escape hatch. Same philosophy as the
+  pre-existing re-stage trap (boot.img mtime), which this generalizes from "did mkramdisk re-run"
+  to "was each cohab binary actually rebuilt from its current source."
+
+**Takeaway:** you should no longer need the §9.6c.1 manual audit (`grep '\[BLT\]'` + cross-check
+archcfg) for the *staleness* half — the gate now catches a stale cohab boot binary automatically,
+and `build` stops producing them. The archcfg lists remain useful (they drive what `--clean`
+nukes and the x86 path), but they are no longer the *only* thing standing between a cohab flip and
+a false-green.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

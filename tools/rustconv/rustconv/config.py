@@ -143,6 +143,8 @@ USBEHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbehci"
 USBOHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbohci"
 USBUHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbuhci"
 USBPORT_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbport"
+USBAUDIO_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbaudio"
+KS_DIR = REACTOS_ROOT / "drivers" / "ksfilter" / "ks"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -963,6 +965,40 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # usbaudio.sys — USB Audio class driver (drivers/usb/usbaudio, 4 .c / ~3.5K LOC; guid.c
+    # stays a C data TU). KS/PortCls audio miniport (imports usbd + ks + portcls), NTDDI Vista.
+    # No spec (kernelmodedriver). NOT on any QEMU boot path -> link-clean x3 bar. Private structs
+    # (pshpack1 USB-audio descriptors + __DEVICE_EXTENSION__) + KS/PortCls/USB DDK from the
+    # gen_driver_types.sh substrate (crate::types). DeepSeek-chat + c2rust, constant-safeguarded.
+    "usbaudio": Target(
+        name="usbaudio",
+        source_dir=USBAUDIO_DIR,
+        output_crate=RUST_DIR / "usbaudio-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ks.sys — Kernel Streaming class library (drivers/ksfilter/ks, 22 .c / ~19K LOC). EXPORT
+    # driver (ks.spec: the Ks* API the audio stack imports). The KS keystone. imports ntoskrnl+hal.
+    # NOT boot-loaded -> link-clean x3 bar. DeepSeek-chat + c2rust, constant-safeguarded.
+    "ks": Target(
+        name="ks",
+        source_dir=KS_DIR,
+        output_crate=RUST_DIR / "ks-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KS_DIR / "ks.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1372,6 +1408,10 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["usbuhci"]
     if "/drivers/usb/usbport" in posix:
         return TARGETS["usbport"]
+    if "/drivers/usb/usbaudio" in posix:
+        return TARGETS["usbaudio"]
+    if "/drivers/ksfilter/ks" in posix:
+        return TARGETS["ks"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

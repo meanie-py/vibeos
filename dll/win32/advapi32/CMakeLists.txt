@@ -16,34 +16,34 @@ add_rpc_files(client
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 
 list(APPEND SOURCE
-    misc/dllmain.c
-    misc/efs.c
-    misc/evntrace.c
-    misc/hwprofiles.c
-    misc/logon.c
-    misc/msi.c
-    misc/shutdown.c
-    misc/sysfunc.c
-    misc/unicode.c
-    reg/hkcr.c
-    reg/reg.c
-    sec/ac.c
-    sec/audit.c
-    sec/lsa.c
-    sec/misc.c
-    sec/safer.c
-    sec/sec.c
-    sec/trustee.c
-    service/eventlog.c
-    service/rpc.c
-    service/scm.c
-    service/sctrl.c
-    service/winreg.c
-    token/token.c
-    wine/cred.c
-    wine/crypt.c
-    wine/crypt_des.c
-    wine/crypt_lmhash.c
+    # misc/dllmain.c — replaced by Rust (advapi32-rust)
+    # misc/efs.c — replaced by Rust (advapi32-rust)
+    # misc/evntrace.c — replaced by Rust (advapi32-rust)
+    # misc/hwprofiles.c — replaced by Rust (advapi32-rust)
+    # misc/logon.c — replaced by Rust (advapi32-rust)
+    # misc/msi.c — replaced by Rust (advapi32-rust)
+    # misc/shutdown.c — replaced by Rust (advapi32-rust)
+    # misc/sysfunc.c — replaced by Rust (advapi32-rust)
+    # misc/unicode.c — replaced by Rust (advapi32-rust)
+    # reg/hkcr.c — replaced by Rust (advapi32-rust)
+    # reg/reg.c — replaced by Rust (advapi32-rust)
+    # sec/ac.c — replaced by Rust (advapi32-rust)
+    # sec/audit.c — replaced by Rust (advapi32-rust)
+    # sec/lsa.c — replaced by Rust (advapi32-rust)
+    # sec/misc.c — replaced by Rust (advapi32-rust)
+    # sec/safer.c — replaced by Rust (advapi32-rust)
+    # sec/sec.c — replaced by Rust (advapi32-rust)
+    # sec/trustee.c — replaced by Rust (advapi32-rust)
+    # service/eventlog.c — replaced by Rust (advapi32-rust)
+    # service/rpc.c — replaced by Rust (advapi32-rust)
+    # service/scm.c — replaced by Rust (advapi32-rust)
+    # service/sctrl.c — replaced by Rust (advapi32-rust)
+    # service/winreg.c — replaced by Rust (advapi32-rust)
+    # token/token.c — replaced by Rust (advapi32-rust)
+    # wine/cred.c — replaced by Rust (advapi32-rust)
+    # wine/crypt.c — replaced by Rust (advapi32-rust)
+    # wine/crypt_des.c — replaced by Rust (advapi32-rust)
+    # wine/crypt_lmhash.c — replaced by Rust (advapi32-rust)
     wine/security.c)
 
 list(APPEND PCH_SKIP_SOURCE
@@ -58,6 +58,41 @@ if(ARCH STREQUAL "arm64")
     list(APPEND PCH_SKIP_SOURCE arm64_advapi32_stubs.c)
 endif()
 
+# --- Rust cohabitation (advapi32-rust) ------------------------------------
+# Build libadvapi32_rust.a from the workspace crate (STANDARD user-mode per-arch
+# targets; i386 gets -sse,-sse2 via sdk/lib/rust/.cargo/config.toml). The
+# #[no_mangle] bodies replace the commented-out .c TUs above; lld first-match
+# (--allow-multiple-definition) lets the Rust staticlib's panic_handler/
+# eh_personality coexist with whatever the C cohab pulls in.
+set(ADVAPI32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(ADVAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-advapi32-target")
+set(ADVAPI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libadvapi32_rust.a")
+if(ARCH STREQUAL "i386")
+    set(ADVAPI32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(ADVAPI32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(ADVAPI32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+file(GLOB_RECURSE ADVAPI32_RUST_SRCS "${ADVAPI32_RUST_WORKSPACE_DIR}/advapi32-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${ADVAPI32_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${ADVAPI32_RUST_TARGET_DIR}
+        cargo build --release --target ${ADVAPI32_RUST_TARGET}
+            -p advapi32-rust
+            --manifest-path ${ADVAPI32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${ADVAPI32_RUST_TARGET_DIR}/${ADVAPI32_RUST_TARGET}/release/libadvapi32_rust.a
+        ${ADVAPI32_RUST_LIB}
+    DEPENDS ${ADVAPI32_RUST_SRCS}
+            ${ADVAPI32_RUST_WORKSPACE_DIR}/advapi32-rust/Cargo.toml
+    WORKING_DIRECTORY ${ADVAPI32_RUST_WORKSPACE_DIR}
+    COMMENT "Building advapi32-rust (${ADVAPI32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_advapi32 DEPENDS ${ADVAPI32_RUST_LIB})
+# --------------------------------------------------------------------------
+
 add_library(advapi32 MODULE
     ${SOURCE}
     ${PCH_SKIP_SOURCE}
@@ -65,7 +100,9 @@ add_library(advapi32 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/advapi32.def)
 
 set_module_type(advapi32 win32dll UNICODE ENTRYPOINT DllMain 12)
-target_link_libraries(advapi32 cryptlib wine ${PSEH_LIB})
+# ADVAPI32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
+target_link_libraries(advapi32 ${ADVAPI32_RUST_LIB} cryptlib wine ${PSEH_LIB})
+target_link_options(advapi32 PRIVATE LINKER:--allow-multiple-definition)
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(advapi32 etwtrace)
 endif()
@@ -78,4 +115,5 @@ else()
 endif()
 add_importlibs(advapi32 advapi32_vista rpcrt4 kernel32 ntdll)
 add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
+add_dependencies(advapi32 rust_advapi32)
 add_cd_file(TARGET advapi32 DESTINATION reactos/system32 FOR all)
