@@ -1,0 +1,23 @@
+# msafd-rust — Rust translation of dll/win32/msafd (the AFD Winsock service
+# provider). staticlib → libmsafd_rust.a, cohab-linked into the cmake-built
+# msafd.dll with the translated .c files commented out (per-file flip, like
+# kernel32-rust). The next rung up the netstack→winsock vertical above afd.sys:
+# ws2_32's WSP* entry points land here and become IOCTL_AFD_* DeviceIoControls
+# down to afd.sys (\Device\Afd). User-mode DLL: standard per-arch targets
+# (i686/x86_64 gnu, aarch64 gnullvm) with i386 -sse,-sse2 (user-mode no-SSE rule).
+# Nt*/Rtl* FFI from ntdll-sys; winsock2/WSP + AFD shared.h IOCTL types live in
+# msafd-rust's own `types` module (curated, not bindgen — usermode pattern).
+[package]
+name = "msafd-rust"
+version = "0.1.0"
+edition = "2021"
+# staticlib cohab crate only — stop Cargo auto-discovering any src/main.rs.
+autobins = false
+
+[lib]
+name = "msafd_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

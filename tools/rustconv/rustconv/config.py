@@ -197,6 +197,12 @@ NTDLL_DIR = REACTOS_ROOT / "dll" / "ntdll"
 # cmake-built kernel32.dll (proc.c was the first flip; see project memory).
 # Same user-mode substrate as ntdll/smss-csrss (ntdll-sys → ntdll_sys::nt).
 KERNEL32_DIR = REACTOS_ROOT / "dll" / "win32" / "kernel32"
+# msafd.dll — the AFD Winsock service provider (dll/win32/msafd, ~6.3K LOC:
+# dllmain/sndrcv/helpers/event/stubs.c). The next rung up the netstack→winsock
+# vertical above afd.sys: ws2_32's WSP* calls land here and become IOCTL_AFD_*
+# DeviceIoControls down to afd.sys. Usermode DLL, same ntdll-sys substrate as
+# kernel32 (Nt*/Rtl*); winsock2/WSP + AFD shared.h IOCTL types added per-crate.
+MSAFD_DIR = REACTOS_ROOT / "dll" / "win32" / "msafd"
 LSASRV_DIR = REACTOS_ROOT / "dll" / "win32" / "lsasrv"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
@@ -1045,6 +1051,27 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # msafd.dll — AFD Winsock service provider (next rung above afd.sys on the
+    # netstack→winsock vertical). Usermode DLL, same ntdll-sys substrate as
+    # kernel32 (Nt*/Rtl* → ntdll_sys::nt); winsock2/WSP + AFD shared.h IOCTL
+    # types added per-crate in msafd-rust. Cohab-flips into the cmake-built
+    # msafd.dll; validated by the winsock round-trip (test_net.py), not a boot.
+    "msafd": Target(
+        name="msafd",
+        source_dir=MSAFD_DIR,
+        output_crate=RUST_DIR / "msafd-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # lsasrv.dll — Local Security Authority server. Own lsasrv-rust crate; same
     # user-mode substrate as kernel32/ntdll (ntdll_sys::nt base, auto-collapsed).
     # The LSAPR_*/SAMPR_*/DSROLER marshalled + policy info types live in
@@ -1186,6 +1213,11 @@ def detect_target(c_path: Path) -> Target:
     # user-mode substrate as ntdll. NLS/string family + client/* etc.
     if "/dll/win32/kernel32/" in posix:
         return TARGETS["kernel32"]
+    # msafd.dll body (AFD Winsock service provider). Own msafd-rust crate, same
+    # user-mode substrate as kernel32 (ntdll_sys::nt base). winsock2/WSP + AFD
+    # shared.h IOCTL types come from msafd-rust's own types, imported per-file.
+    if "/dll/win32/msafd/" in posix:
+        return TARGETS["msafd"]
     # lsasrv.dll body (LSA server). Own lsasrv-rust crate, same user-mode
     # substrate as ntdll (ntdll_sys::nt base). LSAPR_*/DSROLER marshalled types
     # come from lsasrv-sys, imported per-file at integration.
