@@ -44,11 +44,21 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 | `wine/classes.c`     |  657 |  0 |   5 | ✅ **Rust** (cohab, links ×3, i386 boots) | **2** |
 | `wine/shell32_main.c`| 1370 | 16 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
 | `wine/shlmenu.c`     |  997 | 25 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
-| `wine/pidl.c`        | 2681 | 41 | 193 | C | 4 (PIDL core) |
-| `wine/shellpath.c`   | 3398 | 32 |   9 | C | 4 |
-| `wine/shellord.c`    | 3108 | 76 |  51 | C | 4 (ordinal grab-bag) |
+| `wine/pidl.c`        | 2681 | 81 | 193 | ✅ **Rust** (cohab, links ×3; smoke pending) | **4** (PIDL core) |
+| `wine/shellpath.c`   | 3398 | 35 |   9 | C (translating) | 4 |
+| `wine/shellord.c`    | 3108 | 72 |  51 | C (translating) | 4 (ordinal grab-bag) |
 
-**Progress: 11/14 .c (79%) · ~6400 / ~16K LOC.**
+**Progress: 12/14 .c (86%) · ~9080 / ~16K LOC.**
+
+### Wave 4 notes (pidl + shellcom; shellpath/shellord in flight)
+pidl.c (81 exports — 39 WINAPI `IL*@N`/`SH*@N` + 42 cdecl `_IL*`/`__IL*` internals) is the
+PIDL foundation. Its canonical shared types (the packed PIDL on-disk format SHITEMID/ITEMIDLIST/
+PIDLDATA + PT_* tags, STRRET, the GUID family, and 11 COM vtables) were promoted into a new
+shared module **`crate::shellcom`** so pidl/shellpath/shellord share ONE definition (Wave 0-3
+keep their file-local copies — retrofitting them is deferred to avoid destabilizing the landed
+waves; the residual cross-file `SHGetDesktopFolder`/`PidlToSicIndex`/`StrRetToStrNW` clash
+warnings are benign, ABI-identical). pidl links ×3; the C++-side imports
+(IFileSystemBindData_Constructor, BindCtx_*, SHELL32_AliasTranslatePidl) all resolve.
 
 ### Wave 3 notes (shell32_main/shlmenu)
 2 parallel agents (CONTRACT-3), integrated centrally; links ×3, all 43 exports match the

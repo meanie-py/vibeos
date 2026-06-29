@@ -16,3 +16,5 @@ pub mod shellole;
 pub mod control;
 pub mod shell32_main;
 pub mod shlmenu;
+// Wave 4: the PIDL core. pidl (foundation) uses crate::shellcom.
+pub mod pidl;

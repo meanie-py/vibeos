@@ -17,6 +17,10 @@
 // Foundation: minimal Win32 type aliases (grows as waves land).
 pub mod types;
 
+// Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM
+// vtables) used by the PIDL core (pidl/shellpath/shellord). Promoted from pidl.rs.
+pub mod shellcom;
+
 // wine/ — wine-derived pure-C bodies. Wave 0: shellreg (SHReg* registry wrappers).
 // Wave 1: shpolicy, shellstring, clipboard.
 pub mod wine;
