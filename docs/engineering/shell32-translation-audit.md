@@ -45,10 +45,12 @@ before flipping — same discipline as the gdi32 `GdiEntry16`/`EMFDC_GdiComment`
 | `wine/shell32_main.c`| 1370 | 16 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
 | `wine/shlmenu.c`     |  997 | 25 |  18 | ✅ **Rust** (cohab, links ×3; smoke pending) | **3** |
 | `wine/pidl.c`        | 2681 | 81 | 193 | ✅ **Rust** (cohab, links ×3; smoke pending) | **4** (PIDL core) |
-| `wine/shellpath.c`   | 3398 | 35 |   9 | C (translating) | 4 |
-| `wine/shellord.c`    | 3108 | 72 |  51 | C (translating) | 4 (ordinal grab-bag) |
+| `wine/shellpath.c`   | 3398 | 35 |   9 | ✅ **Rust** (cohab, links ×3; smoke pending) | **4** |
+| `wine/shellord.c`    | 3108 | 72 |  51 | ✅ **Rust** (cohab, links ×3; smoke pending) | **4** (ordinal grab-bag) |
 
-**Progress: 12/14 .c (86%) · ~9080 / ~16K LOC.**
+**Progress: 14/14 .c (100%) · ~16K / ~16K LOC. 🎉 shell32's entire wine-derived C half is Rust.**
+(The only remaining build inputs are the auto-generated `shell32_stubs.c` and the 81 `.cpp`
+COM-vtable classes — a separate, much heavier ATL/COM effort, out of scope for this lane.)
 
 ### Wave 4 notes (pidl + shellcom; shellpath/shellord in flight)
 pidl.c (81 exports — 39 WINAPI `IL*@N`/`SH*@N` + 42 cdecl `_IL*`/`__IL*` internals) is the
@@ -59,6 +61,18 @@ keep their file-local copies — retrofitting them is deferred to avoid destabil
 waves; the residual cross-file `SHGetDesktopFolder`/`PidlToSicIndex`/`StrRetToStrNW` clash
 warnings are benign, ABI-identical). pidl links ×3; the C++-side imports
 (IFileSystemBindData_Constructor, BindCtx_*, SHELL32_AliasTranslatePidl) all resolve.
+
+### Wave 4b notes (shellpath + shellord — completes 100%)
+2 parallel agents against `crate::shellcom`, integrated centrally; links ×3, all exports match
+the pre-flip obj decoration. **shellpath** (35 exports): path manipulation + the 63-entry CSIDL
+special-folder table (every `__REACTOS__` CSIDL_* row reproduced with registry value / default
+path / resource ID pinned from shlobj.h/shresdef.h; the Wine-only rows 0x3f-0x72 omitted).
+**shellord** (72 exports, +`g_hShellState` global): the ordinal grab-bag — DAD_* drag image,
+DoEnvironmentSubst, ParseField, SHAddToRecentDocs, SHDoDragDrop, prop-sheet ext arrays,
+Read/WriteCabinetState, etc.; honest FIXME-stubs kept as stubs. `ShellMessageBoxA` is a genuine
+C-variadic export → the crate gains `#![feature(c_variadic)]` + the cmake custom_command gains
+`RUSTC_BOOTSTRAP=1` (same pattern as version-rust/scsiport-rust). Fixed one integration bug: a
+local `hkey` var shadowed the `hkey()` helper fn in Read/WriteCabinetState (E0618).
 
 ### Wave 3 notes (shell32_main/shlmenu)
 2 parallel agents (CONTRACT-3), integrated centrally; links ×3, all 43 exports match the

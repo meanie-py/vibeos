@@ -93,8 +93,8 @@ list(APPEND PCH_SKIP_SOURCE
     # wine/pidl.c — replaced by Rust (shell32-rust/src/wine/pidl.rs); cohab via libshell32_rust.a
     # wine/shell32_main.c — replaced by Rust (shell32-rust/src/wine/shell32_main.rs); cohab via libshell32_rust.a
     # wine/shellole.c — replaced by Rust (shell32-rust/src/wine/shellole.rs); cohab via libshell32_rust.a
-    wine/shellord.c
-    wine/shellpath.c
+    # wine/shellord.c — replaced by Rust (shell32-rust/src/wine/shellord.rs); cohab via libshell32_rust.a
+    # wine/shellpath.c — replaced by Rust (shell32-rust/src/wine/shellpath.rs); cohab via libshell32_rust.a
     # wine/shellreg.c — replaced by Rust (shell32-rust/src/wine/shellreg.rs); cohab via libshell32_rust.a
     # wine/shellstring.c — replaced by Rust (shell32-rust/src/wine/shellstring.rs); cohab via libshell32_rust.a
     # wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
@@ -130,6 +130,7 @@ add_custom_command(
     OUTPUT ${SHELL32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${SHELL32_RUST_TARGET_DIR}
+        RUSTC_BOOTSTRAP=1  # shellord.rs ShellMessageBoxA needs #![feature(c_variadic)]
         cargo build --release --target ${SHELL32_RUST_TARGET}
             -p shell32-rust
             --manifest-path ${SHELL32_RUST_WORKSPACE_DIR}/Cargo.toml
