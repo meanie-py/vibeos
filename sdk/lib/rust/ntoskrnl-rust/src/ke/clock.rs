@@ -227,6 +227,37 @@ pub unsafe extern "system" fn KeSetTimeIncrement(MaxIncrement: ULONG, MinIncreme
     KeTimeAdjustment = MaxIncrement;
     KeTimeIncrement = MaxIncrement;
     KiTickOffset = MaxIncrement as LONG;
+
+    // amd64: establish the 0-based system-time base HERE, at clock-init. This runs in
+    // HAL clock setup (HalpInitializeClock -> KeSetTimeIncrement, Phase-0) which is
+    // *before* IoInitSystem (Phase-1) arms any periodic timer. On amd64 the
+    // KUSER_SHARED_DATA InterruptTime/Tick (and KeTickCount) are loader-left page
+    // garbage (~2.8e14) — never explicitly zeroed (i386 starts at 0). The old fix
+    // (ke/time.rs CLOCK_BASE_RESET) zeroed them on the *first clock tick*, which fires
+    // AFTER IoInitSystem: by then the scsiport SRB-timeout IopTimer (1s periodic) has
+    // already baked its DueTime against the garbage base, so the reset stranded it
+    // forever (DueTime never <= the new 0-based InterruptTime) — the watchdog died
+    // after ~4 fires, storage stalls never self-recovered, and amd64 hung ~30% of boots.
+    // Zeroing here — coherent with KeMaximumIncrement/KiTickOffset/KiTickOffset above —
+    // means every Phase-1 timer arms against a 0 base and KeUpdateSystemTime just
+    // accumulates from 0 (exactly like i386). KeSetTimeIncrement is boot-only (runtime
+    // resolution changes go through HalSetTimeIncrement), so this never rewinds time at
+    // runtime. Root-caused by arm64-love + kernel32 (debugcon ISR/timer instrumentation);
+    // supersedes the racy first-tick reset in 38b63f15b74 + the KiTickOffset patch 3262dfd1018.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let shared_interrupt_time = (SharedUserData as usize
+            + core::mem::offset_of!(ntkrnl_sys::ddk::_KUSER_SHARED_DATA, InterruptTime)) as *mut u64;
+        *shared_interrupt_time = 0;
+        let shared_tick = (SharedUserData as usize
+            + core::mem::offset_of!(ntkrnl_sys::ddk::_KUSER_SHARED_DATA, __bindgen_anon_2)) as *mut KSYSTEM_TIME;
+        (*shared_tick).LowPart = 0;
+        (*shared_tick).High1Time = 0;
+        (*shared_tick).High2Time = 0;
+        KeTickCount.LowPart = 0;
+        KeTickCount.High1Time = 0;
+        KeTickCount.High2Time = 0;
+    }
 }
 
 
