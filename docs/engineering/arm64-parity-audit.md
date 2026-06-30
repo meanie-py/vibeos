@@ -52,11 +52,17 @@ below are **real-hardware / expanded-driver** gaps, not boot blockers today.
 - **Stale "idle detection" lore corrected** in `AGENTS.md` (arm64 uses the real marker) —
   confirmed in `AGENTS.md` § Smoke Tests.
 
-### 🐛 NON-BLOCKING flaky arm64 `0xF4` under net load (post-marker)
-A flaky `0xF4` is seen on **arm64-net under network load** — an smss EL0 sysreg-write fault.
-It is **post-`shell ready`** and intermittent, so it does **not** gate the standard smoke
-(which has no arm64-net config yet — see the tracked follow-up below). Tracked, not a boot
-blocker. (Distinct from the taskbar `0x50` below, which is a win32k child-control read-fault.)
+### ✅ RESOLVED — flaky arm64 `0xF4` under net load (2026-06-30)
+Was: a flaky `0xF4` (smss death) on **arm64-net under network load**, post-`shell ready`.
+**Resolved** — cleared by the accumulated fixes (fastfat landing, arm64 KiDispatchException +
+clock, kernel32 `BaseInitializeContext`, and the fastfat-mount `0x64`/`0x1E` blockers). On
+fresh post-clock-fix media the **`arm64-net` config now exists** (`Arm64NetConfig`, virtio-net-pci
+on GPEX — the "no arm64-net config yet" caveat below is also stale) and boots **5/5 clean to the
+full desktop** (smss→csrss→winlogon→explorer→`shell ready`, NIC attached, zero `0xF4`/bugcheck;
+net path reaches dhcp/ping-gateway/tcp-echo-ready/TDI-server). Residual flake risk = the
+project-wide **KNOWN smss-csrss race** (field-manual ~line 1115, `0xF4(0x3)` Heisenbug — byte-
+identical binaries flip green/red), **not** arm64-net-specific. (Distinct from the taskbar `0x50`
+below, which is a win32k child-control read-fault.) Closed as task #10.
 
 ### 🐛 SURFACED by the stack fix — arm64 taskbar BUGCHECK 0x50 (pre-existing win32k bug)
 **Caveat (2026-06-21):** the stack-size half of the fix that *surfaced* this is currently
@@ -143,6 +149,14 @@ Correct per-arch differences, not bugs: `MM_LOWEST_SYSTEM_ADDRESS` / VA layout (
 57-bit), `MM_PAGE_FRAME_NUMBER_SIZE` (36-bit PA), `MI_HIGHEST_USER_ADDRESS` (matches amd64 at
 47-bit), `MAXIMUM_PROC_PER_GROUP` (64, correct for `_WIN64`). A larger arm64
 `DOUBLE_FAULT_STACK_SIZE` (0x8000) is harmless/defensive.
+
+**`debug=1` build flag is BOOT-SAFE on arm64 (verified — the held strip-mechanism is a
+ship-build nicety, not a boot blocker).** `debug=1` (held in `f6326bf2cf2`) adds a `.buildid`
+section to `ntoskrnl.exe` + `uefildr.efi` (**6 sections vs 5**). Both load fine — FreeLoader for
+the kernel, EDK2 BdsDxe for uefildr — so the extra section does not break image load on arm64.
+The held strip-mechanism (to drop `.buildid` for a clean ship/reproducible build) is therefore a
+nicety, **not** a prerequisite for landing the GICv2/clock/toolkit stack above it; that stack is
+land-safe independent of the strip work.
 
 ---
 
