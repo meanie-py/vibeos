@@ -122,33 +122,16 @@ unsafe fn KeUpdateSystemTimeImpl(
 
     let shared_interrupt_time = (SharedUserData as usize + core::mem::offset_of!(_KUSER_SHARED_DATA, InterruptTime)) as *mut u64;
 
-    // [TIMER-BASE FIX] The timer table relies on the invariant
+    // [TIMER-BASE] The timer table relies on the invariant
     // InterruptTime / KeMaximumIncrement == KeTickCount (both 0-based since boot):
     // insertion (KiComputeTimerTableIndex) hashes absolute InterruptTime by
     // KeMaximumIncrement, while expiration sweeps KeTickCount.LowPart & 511. On amd64
-    // both KUSER InterruptTime and KeTickCount arrive at the first clock tick pre-seeded
-    // to large, mutually-inconsistent values (offset ~106 buckets), so every relative
-    // KeDelay/KeWait-with-timeout lands in a bucket the expiration hand just passed and
-    // waits a full ~512-tick table revolution (~8s). (Masked previously by the broken
-    // RTC clock; exposed when the LAPIC clock made timers actually fire — 22356522c58.)
-    // Zero both on the first tick so they advance in lockstep, restoring the invariant.
-    #[cfg(target_arch = "x86_64")]
-    {
-        static mut CLOCK_BASE_RESET: bool = false;
-        if !CLOCK_BASE_RESET {
-            CLOCK_BASE_RESET = true;
-            *shared_interrupt_time = 0;
-            let shared_tick = (SharedUserData as usize
-                + core::mem::offset_of!(_KUSER_SHARED_DATA, __bindgen_anon_2)) as *mut KSYSTEM_TIME;
-            (*shared_tick).LowPart = 0;
-            (*shared_tick).High1Time = 0;
-            (*shared_tick).High2Time = 0;
-            KeTickCount.LowPart = 0;
-            KeTickCount.High1Time = 0;
-            KeTickCount.High2Time = 0;
-        }
-    }
-
+    // the KUSER InterruptTime/Tick + KeTickCount are loader-left garbage; the coherent
+    // 0-base is now established ONCE at clock-init in KeSetTimeIncrement (ke/clock.rs),
+    // *before* IoInitSystem arms any timer — so KeUpdateSystemTime here just accumulates
+    // from 0. (The previous first-tick CLOCK_BASE_RESET ran too late: it fired AFTER
+    // IoInitSystem armed the periodic scsiport SRB-timeout IopTimer against the garbage
+    // base, stranding that watchdog forever → ~30% amd64 boot hangs. See clock.rs.)
     InterruptTime.QuadPart = *shared_interrupt_time;
     InterruptTime.QuadPart += Increment as u64;
     KiWriteSystemTime(

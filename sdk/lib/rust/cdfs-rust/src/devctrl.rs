@@ -60,7 +60,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
 
     if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == 0x00024000 { // IOCTL_CDROM_READ_TOC
         CdVerifyVcb(IrpContext, (*Fcb).Vcb);
-    } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == 0x00024040 { // IOCTL_CDROM_DISK_TYPE
+    } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == 0x00020040 { // IOCTL_CDROM_DISK_TYPE
         CdVerifyVcb(IrpContext, (*Fcb).Vcb);
 
         if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<CDROM_DISK_DATA>() as u32 {

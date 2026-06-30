@@ -112,7 +112,16 @@ Baselines are stored repo-relative so they match across worktrees.
 
 Covers: `shellcheck`, `py-syntax`, `verify_abi`, `verify_ffi`,
 `verify_constants`, `lint_kernel` (source); `scan_ud2`, `sacred_primitives`
-(binary, needs a build).
+(binary, needs a build — `check --strict --arch X`).
+
+The **binary** lints are judged by their `--check` **exit code**, not baseline-diff:
+their output is arch-specific (so a single baseline can't match across arches) and
+they already encode the correct per-arch verdict. `scan_ud2` is arch-aware — it
+scans x86 `ud2` (LLVM UB trap) on i386/amd64, and **branch-to-self `b .` spins** on
+arm64 (which has no UB trap: the captures(none)/UB class is *silent* in arm64
+binaries and is caught at source by `lint_kernel` instead — the arm64 binary scan
+only catches a function that regressed into an infinite loop, the "idle hang"
+signature).
 
 `--strict` additionally runs the **`cargo_link`** guard: it re-runs the
 cargo-driven link PoCs (`sdk/lib/rust/{ntoskrnl,ntdll,ntdll_vista}-cargo` via
