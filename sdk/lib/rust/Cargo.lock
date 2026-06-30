@@ -742,6 +742,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ks-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "slist",
+]
+
+[[package]]
 name = "ksecdd-rust"
 version = "0.1.0"
 dependencies = [
@@ -1484,6 +1492,18 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
 ]
+
+[[package]]
+name = "secur32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "secur32-sys",
+]
+
+[[package]]
+name = "secur32-sys"
+version = "0.1.0"
 
 [[package]]
 name = "serial-rust"
