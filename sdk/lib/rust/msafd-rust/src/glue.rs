@@ -23,28 +23,15 @@ macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 // const expression in IOCTL buffer-size math). offset_of! is the Rust equivalent.
 #[macro_export]
 macro_rules! FIELD_OFFSET {
-    ($ty:ty, $field:tt) => { core::mem::offset_of!($ty, $field) };
+    ($ty:ty, $($field:tt)+) => { core::mem::offset_of!($ty, $($field)+) };
 }
 
 // NT_SUCCESS(Status) — Status >= 0 (top bit clear). The C macro used as a bool expr.
 #[inline(always)]
 pub fn NT_SUCCESS(status: i32) -> bool { status >= 0 }
 
-// --- winsock2.h constants (values verified vs sdk/include/psdk/winsock2.h) ----
-pub const SOCKET_ERROR: i32 = -1;
-pub const INVALID_SOCKET: usize = !0usize; // (SOCKET)(~0)
-
-// FD_* network-event bitmasks (1 << FD_*_BIT)
-pub const FD_READ: u32 = 1;
-pub const FD_WRITE: u32 = 2;
-pub const FD_OOB: u32 = 4;
-pub const FD_ACCEPT: u32 = 8;
-pub const FD_CONNECT: u32 = 16;
-pub const FD_CLOSE: u32 = 32;
-
-// MSG_* send/recv flags
-pub const MSG_OOB: u32 = 1;
-pub const MSG_PEEK: u32 = 2;
-pub const MSG_DONTROUTE: u32 = 4;
-pub const MSG_WAITALL: u32 = 8;
-pub const MSG_PARTIAL: u32 = 0x8000;
+// NOTE: the winsock constants (SOCKET_ERROR, INVALID_SOCKET, FD_*, MSG_*) are NOT
+// here — the bindgen substrate (`types`) emits them verbatim from winsock2.h, so
+// duplicating them in glue caused E0659 glob ambiguity. They resolve via
+// `use crate::types::*`. Glue carries only what bindgen can't emit (the wine debug
+// macros, FIELD_OFFSET, NT_SUCCESS above).

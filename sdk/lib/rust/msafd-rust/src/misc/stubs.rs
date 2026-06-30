@@ -1,4 +1,5 @@
-use ntdll_sys::nt::*;
+use crate::types::*;
+use crate::glue::*;
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn WSPCancelBlockingCall(
