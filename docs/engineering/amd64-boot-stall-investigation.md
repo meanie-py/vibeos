@@ -53,4 +53,35 @@
 
 **Open follow-ups (non-blocking):**
 - ~~The IopTimer/ScsiPortIoTimer SRB watchdog (`t`=4) — still likely stranded~~ → **CORRECTED (meaniepy, 2026-06-29): the watchdog death is NOT timer-stranding — it's an empty-stub dispatch.** `iomgr.rs:1190` arms `IopTimerDpc` to `IopTimerDispatch`, but that name resolves to a **local empty stub** `iomgr.rs:176` (`unsafe extern "system" fn IopTimerDispatch(..) {}` — body literally `{}`) which **shadows the real `pub` dispatch at `iotimer.rs:53`** (the one that walks `IopTimerQueueHead` and calls each registered device `IoTimer` routine). So the IO-timer DPC fires 1/sec but does nothing → `ScsiPortIoTimer` (SRB watchdog) and every other device IoTimer routine never run. My "stranded IopTimer / DueTime-vs-pre-reset-base" hypothesis was WRONG — IopTimer fires fine; the dispatch is a no-op. (The `t`=4 I measured — rather than 0 — is incidental: ScsiPortIoTimer gets a few init-path calls and/or the capture was truncated; immaterial to the root.) **Fix = remove/rename the `iomgr.rs:176` stub (or qualify the arming to `iotimer::IopTimerDispatch`) so the DPC binds the real dispatch.** meaniepy has a fix stashed (compiles ×3, but did NOT resolve the net residual below, so it's a separate latent fix needing ×3 validation). A duplicate-symbol/local-shadow class bug — sibling to other translation-grind name collisions.
-- **amd64 net suite failed (14 errors) on the confirm-boot, but HEAVILY confounded** (`-accel tcg` fallback = no KVM → timing-sensitive TCP tests fail under TCG slowness; + debugcon-marker spam). Likely artifact, not a real regression — meaniepy's clean KVM ×3 gate on marker-free `b73c7efd46e` is the real net verdict. If net is red there too, chase it before ×3-green. repro: `pytest tests/qemu/test_net.py --arch amd64-uefi-net`.
+- **amd64 net suite failed (14 errors) on the confirm-boot, but HEAVILY confounded** (`-accel tcg` fallback = no KVM → timing-sensitive TCP tests fail under TCG slowness; + debugcon-marker spam). Confirmed by meaniepy a **pre-existing host-harness flake** (windows hostfwd/serial; amd64 net was already 14/14-failing on pre-fix mainline `53727b3483a`), NOT the clock fix. **netstack owns it.**
+
+---
+
+## Debug surface — how to instrument the storage-timing stall (for the net-residual hunt)
+
+The amd64-net residual stall (net VM wedges at `Rpcss` with a 30s `[GAP]` under the heavier virtio-net boot load) is the **same storage-timing surface** as this boot-stall — the coherent-0-base clock fix mitigated the lighter smoke path but not the net config's load. Reusable instrumentation, banked so the next hunt doesn't re-derive it:
+
+**1. The proximate stall signal — cdrom GAP log.** `CdromGapLog()` (decl `cdrom.rs:50`, call `cdrom.rs:2789`) emits serial `[GAP] read#N gap=<us>` = the gap between **read-IRP arrivals** at cdrom. A 30s gap = the upper layer (cdfs/Cc/Mm) took 30s to *issue* the next read — NOT a scsiport completion failure. This is the headline "are we stalled and where" signal; grep the serial log for `[GAP]`.
+
+**2. debugcon (port 0xE9) byte markers — sub-millisecond, no serial-flush cost.** `WRITE_PORT_UCHAR(0xE9 as *mut u8, b'X')` (scsiport, in scope via `use crate::inlines::*`) or `core::arch::asm!("out 0xe9, al", in("al") b, ...)` (ntoskrnl `_flake_e9` helper pattern). Capture **gotcha**: `vibeos-cli smoke` writes debugcon to a **per-run** Windows staging file `/mnt/c/temp/vibeos-qemu/<pid>-<ts>-smoke-amd64-boot0/debugcon.bin` that is **cleaned after the run** (the flat `/mnt/c/temp/vibeos-qemu/debugcon.bin` is a stale week-old file — reading it cost me 2 boots). Reliable capture = poll-copy the live per-run file during the run, filtered to `*smoke-amd64*` (skip concurrent net pytests). Harness:
+
+```bash
+# capture_boot.sh OUT SMOKE_LOG — boot amd64 smoke + reliably grab the per-run debugcon
+set -uo pipefail; cd <repo>
+OUT="$1"; SMOKE_LOG="$2"; : > "$SMOKE_LOG"; : > "$OUT"
+START=$(date +%s); STROOT=/mnt/c/temp/vibeos-qemu
+./vibeos-cli smoke --arch amd64 --allow-stale > "$SMOKE_LOG" 2>&1 &  SMOKE_PID=$!
+last=""
+while kill -0 "$SMOKE_PID" 2>/dev/null; do
+  live=$(find "$STROOT" -mindepth 2 -name debugcon.bin -newermt "@$START" -path '*smoke-amd64*' \
+         -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+  [ -n "$live" ] && [ -f "$live" ] && cp "$live" "$OUT" 2>/dev/null && last="$live"
+  sleep 5
+done
+[ -n "$last" ] && cp "$last" "$OUT" 2>/dev/null; wait "$SMOKE_PID"
+```
+Count markers: `python3 -c "from collections import Counter as C; print(C(open('OUT','rb').read().decode('latin1')))"`. **Marker-collision-safe bytes** (clean vs the trace catalog `tests/qemu/debugcon.py`): `D t T B R c C x z` are free; `e` is a hex digit (minor noise); AVOID `I J K L M N O P Q i j k l m o p q r` (catalog milestones). The pre-existing `ScsiPortIsr` `#I#/#i#/#J#` markers (scsiport.rs:1970-1991) emit unconditionally — leave them. **Capture caveat:** for a boot+net run the per-run file rotates/cleans mid-run, so a single poll-copy can truncate to the first ~30s — for a clean full-boot count, do a **boot-only** run (no net stage) or grab the file before the net stage starts.
+
+**3. §9.6b — the amd64 cargo kernel does NOT relink on a `.rs` edit** (field-manual line ~1344). `ninja livecd` / `vibeos-cli build` can silently ship a STALE kernel. Force a real relink: remove the staged exes (`rm -f build-amd64/ntoskrnl/{ntoskrnl,ntkrnlmp}.exe`) AND, if incremental still looks stale, nuke the cargo target (`rm -rf sdk/lib/rust/target/x86_64-kernel`). **Self-validation trick (used here):** put a debugcon marker in the SAME crate as your fix — if the marker appears in the boot, that crate was genuinely rebuilt with your change (markers in `ntoskrnl-rust` validate any `ntoskrnl-rust` fix; e.g. `c`/`C` in ke/time.rs co-validate a ke/clock.rs change). After an edit, confirm `stat -c %y build-amd64/ntoskrnl/ntoskrnl.exe` is newer than the edit.
+
+**4. Coordinate amd64 boot windows** — concurrent host load perturbs the stall rate (a quiet host is the clean measurement). `qemu/ps` / `./vibeos-cli ps` shows live QEMUs; same-arch boots auto-serialize but cross-contaminate timing. Don't double-boot amd64 with another agent mid-measurement.
