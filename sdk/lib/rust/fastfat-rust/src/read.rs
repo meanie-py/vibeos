@@ -290,7 +290,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
     const NotificationEvent: u32 = 0;
     const Executive: i32 = 0;
     const KernelMode: u32 = 0;
-    const IRP_PAGING_IO: u32 = 0x00000001;
+    const IRP_PAGING_IO: u32 = 0x02;
     const FAT_NTC_VCB: u16 = 0x0501; // nodetype.h: real value
     const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x00001000;
     // KEVENT Event; PERESOURCE Resource; PVCB Vcb;

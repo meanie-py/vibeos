@@ -19,7 +19,7 @@
 #                     -- "what is this kernel pointer?" (process/thread/etc)
 #   decode-bugcheck   -- read KeBugCheckEx args at the bugcheck frame
 #   triage-bugcheck   -- decode-bugcheck + dump-trapframe + identify-object
-#                        in one shot (amd64 0x1E only for now)
+#                        in one shot (0x1E drilldown on all 3 arches)
 #   walk-waitlist <addr>
 #                     -- walk the WaitListHead of a dispatcher object,
 #                        printing every wait block (Thread / Object / state)

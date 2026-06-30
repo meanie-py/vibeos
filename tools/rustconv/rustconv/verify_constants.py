@@ -110,6 +110,230 @@ def _eval_enum_expr(expr: str, scope: dict[str, int]) -> int | None:
         return None
 
 
+# ── CTL_CODE (IOCTL/FSCTL device-control codes) ──────────────────────
+# IOCTL_*/FSCTL_* constants are #defined via the CTL_CODE() macro, not as plain
+# literals, so the #define/multichar/ntstatus parsers above all skip them — they
+# never enter the catalog and a garbage-translated Rust copy goes unchecked. This
+# is exactly the class that cost the arm64 0x64/0x23 grind: ramdisk-rust had
+# `const FSCTL_CREATE_RAM_DISK = 0x900c4` (real: 0x240000) and
+# `IOCTL_DISK_CHECK_VERIFY = 0x70000` (real: 0x74800, collided with
+# GET_DRIVE_GEOMETRY) — both silently dead dispatch arms, no compiler warning.
+# We evaluate the macro: CTL_CODE(DeviceType, Function, Method, Access)
+#   = (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+# (winioctl.h / iotypes.h). All four operands resolve from the catalog scope; if
+# any can't be resolved we skip the def rather than fabricate a value.
+
+# Base operands — standardized Windows values, identical across every DDK
+# version. Seeded (not header-harvested) because ReactOS defines FILE_*_ACCESS
+# via aliases (FILE_READ_ACCESS = FILE_READ_DATA) in some headers and as literals
+# in others; seeding removes the order-dependence and guarantees correctness.
+CTL_BASE_SEED = {
+    "METHOD_BUFFERED": 0,
+    "METHOD_IN_DIRECT": 1,
+    "METHOD_OUT_DIRECT": 2,
+    "METHOD_NEITHER": 3,
+    "FILE_ANY_ACCESS": 0,
+    "FILE_READ_ACCESS": 1,
+    "FILE_WRITE_ACCESS": 2,
+}
+
+# Headers that define IOCTL_*/FSCTL_* — directly (CTL_CODE) or through a
+# device-specific wrapper macro (_AFD_CONTROL_CODE, _TDI_CONTROL_CODE,
+# _NDIS_CONTROL_CODE, USB_CTL, …). The DDK device headers use multi-line
+# continuation defs, so the text is continuation-joined before scanning;
+# iotypes.h/winioctl.h supply the FILE_DEVICE_* device-type literals, the
+# CTL_CODE primitive, and the IOCTL_*_BASE aliases the wrappers need. Adding a
+# header here is the only step needed to bring a new IOCTL family under the net
+# — values are computed generically (see _expand_func_macros), not hardcoded.
+CTL_CODE_HEADERS = (
+    "sdk/include/xdk/iotypes.h",
+    "sdk/include/psdk/winioctl.h",
+    "sdk/include/psdk/ntdddisk.h",
+    "sdk/include/psdk/ntddcdrm.h",
+    "sdk/include/psdk/ntddstor.h",
+    "sdk/include/psdk/ntddscsi.h",
+    "sdk/include/psdk/ntddvol.h",
+    "sdk/include/reactos/drivers/ntddrdsk.h",
+    # Wrapper-macro IOCTL families (each bottoms out in CTL_CODE or its own
+    # bit-packing — all handled generically by the func-macro expander):
+    "sdk/include/reactos/drivers/afd/shared.h",  # _AFD_CONTROL_CODE → IOCTL_AFD_*
+    "sdk/include/psdk/ntddtdi.h",  # _TDI_CONTROL_CODE → IOCTL_TDI_*
+    "sdk/include/psdk/ntddndis.h",  # _NDIS_CONTROL_CODE → IOCTL_NDIS_*
+    "sdk/include/psdk/usbiodef.h",  # USB_CTL → IOCTL_*_USB_*
+)
+
+# CTL_CODE seeded as a builtin function-like macro so the evaluator works even
+# when winioctl.h isn't in scope (e.g. unit tests / a family header that assumes
+# it). A header-parsed CTL_CODE (identical) harmlessly overrides this.
+_BUILTIN_FUNC_MACROS: dict[str, tuple[list[str], str]] = {
+    "CTL_CODE": (
+        ["DeviceType", "Function", "Method", "Access"],
+        "(((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))",
+    ),
+}
+
+
+def _join_line_continuations(text: str) -> str:
+    r"""Join C `\`-continued lines so a multi-line #define is one logical line."""
+    return re.sub(r"\\\n", " ", text)
+
+
+def _split_top_commas(s: str) -> list[str]:
+    """Split on commas not nested inside parentheses."""
+    parts, depth, cur = [], 0, ""
+    for ch in s:
+        if ch == "(":
+            depth += 1
+            cur += ch
+        elif ch == ")":
+            depth -= 1
+            cur += ch
+        elif ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def _matching_paren(s: str, open_idx: int) -> int | None:
+    """Index of the ')' that closes the '(' at open_idx, or None if unbalanced."""
+    depth = 0
+    for i in range(open_idx, len(s)):
+        if s[i] == "(":
+            depth += 1
+        elif s[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+def _parse_func_macros(text: str) -> dict[str, tuple[list[str], str]]:
+    """Collect function-like macro defs `#define NAME(p1, p2, …) body` (text
+    already continuation-joined) — the CTL_CODE-family wrappers (CTL_CODE itself,
+    _AFD_CONTROL_CODE, _TDI_CONTROL_CODE, _NDIS_CONTROL_CODE, USB_CTL, …) that
+    IOCTL/FSCTL defines invoke. Returns NAME → (param_names, body). Object-like
+    macros (a space before `(`, so no params) are ignored. Extra non-arithmetic
+    macros that happen to match are harmless — they only expand when an IOCTL body
+    calls them, and a non-integer expansion just fails evaluation (skipped)."""
+    macros: dict[str, tuple[list[str], str]] = {}
+    fm_re = re.compile(r"#define\s+([A-Za-z_]\w*)\(([^)]*)\)\s+(.+?)\s*$")
+    for raw in text.splitlines():
+        line = re.sub(r"/\*.*?\*/", "", raw)
+        line = re.sub(r"//.*", "", line).strip()
+        m = fm_re.match(line)
+        if not m:
+            continue
+        params = [p.strip() for p in m.group(2).split(",") if p.strip()]
+        if params:
+            macros[m.group(1)] = (params, m.group(3).strip())
+    return macros
+
+
+def _expand_func_macros(
+    expr: str, func_macros: dict[str, tuple[list[str], str]], depth: int = 0
+) -> str:
+    """Recursively expand function-like macro CALLS in expr — CTL_CODE(…),
+    _AFD_CONTROL_CODE(…), and nested wrappers — to their argument-substituted
+    bodies, so the result is pure integer arithmetic _eval_int_expr can evaluate.
+    Whole-word param substitution (so a param `Method` never matches inside
+    `METHOD_NEITHER`); each argument is itself expanded first (nested calls in
+    args). Depth-guarded: a runaway / self-referential macro bails, leaving an
+    unevaluable expression → the def is skipped, never fabricated. Family-agnostic
+    — AFD's bespoke `(BASE<<12 | Op<<2 | Method)` packing works identically to a
+    CTL_CODE-based one; both are just arithmetic after expansion."""
+    if depth > 24 or "(" not in expr:
+        return expr
+    search_from = 0
+    pat = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+    while True:
+        m = pat.search(expr, search_from)
+        if not m:
+            return expr
+        name = m.group(1)
+        if name not in func_macros:
+            search_from = m.end()
+            continue
+        open_idx = m.end() - 1  # the '(' the regex matched
+        close_idx = _matching_paren(expr, open_idx)
+        if close_idx is None:
+            return expr
+        params, body = func_macros[name]
+        args = _split_top_commas(expr[open_idx + 1 : close_idx])
+        if len(args) != len(params):
+            search_from = m.end()  # not a valid invocation — skip past it
+            continue
+        new_body = body
+        for p, a in zip(params, args, strict=True):  # lengths checked above
+            a_exp = _expand_func_macros(a.strip(), func_macros, depth + 1)
+            new_body = re.sub(r"\b" + re.escape(p) + r"\b", "(" + a_exp + ")", new_body)
+        expr = expr[: m.start()] + "(" + new_body + ")" + expr[close_idx + 1 :]
+        return _expand_func_macros(expr, func_macros, depth + 1)
+
+
+def _eval_int_expr(
+    expr: str, scope: dict[str, int], func_macros: dict[str, tuple[list[str], str]] | None = None
+) -> int | None:
+    """Evaluate an integer expression (literals, scope names, + - | & << >> ~ ^
+    and parens). With func_macros, function-like macro calls are expanded first.
+    Returns None if any token is unrecognized or a name is unresolved — so we
+    never fabricate a value from an expression we didn't fully understand."""
+    expr = expr.strip()
+    if not expr:
+        return None
+    if func_macros:
+        expr = _expand_func_macros(expr, func_macros).strip()
+    tokens = re.findall(r"0[xX][0-9A-Fa-f]+|\d+|[A-Za-z_]\w*|<<|>>|[|&+\-()~^]", expr)
+    # Reject if tokenization didn't consume the whole expression (stray * / , etc.)
+    if "".join(tokens) != re.sub(r"\s+", "", expr):
+        return None
+    py = []
+    for t in tokens:
+        if re.fullmatch(r"0[xX][0-9A-Fa-f]+", t):
+            py.append(str(int(t, 16)))
+        elif t.isdigit() or t in ("<<", ">>", "|", "&", "+", "-", "(", ")", "~", "^"):
+            py.append(t)
+        elif re.fullmatch(r"[A-Za-z_]\w*", t):
+            if t in scope:
+                py.append(str(scope[t]))
+            else:
+                return None  # unresolved name — bail rather than guess
+        else:
+            return None
+    try:
+        return int(eval(" ".join(py), {"__builtins__": {}}, {})) & 0xFFFFFFFF
+    except Exception:
+        return None
+
+
+def parse_ioctl_defines(
+    text: str,
+    scope: dict[str, int],
+    func_macros: dict[str, tuple[list[str], str]],
+    ctl_acc: dict[str, set],
+) -> None:
+    """Find `#define (IOCTL|FSCTL)_NAME <expr>` defs (text already
+    continuation-joined), expand any function-like wrapper macros, evaluate to an
+    integer, and accumulate NAME→{values}. Namespace-scoped to the IOCTL_/FSCTL_
+    device-control namespace so unrelated macros are never evaluated. One path
+    subsumes every form: a plain literal, a direct CTL_CODE(…), and any wrapper
+    (_AFD_/_TDI_/_NDIS_CONTROL_CODE, USB_CTL, …). A def whose body doesn't fully
+    resolve is skipped; the caller drops any NAME with >1 distinct value (header
+    ambiguity — e.g. the same IOCTL defined per-arch or guarded differently)."""
+    ioctl_re = re.compile(r"#define\s+((?:IOCTL|FSCTL)_[A-Z0-9_]+)\s+(.+)$")
+    for raw in text.splitlines():
+        line = re.sub(r"/\*.*?\*/", "", raw.strip())
+        line = re.sub(r"//.*", "", line).strip()
+        m = ioctl_re.match(line)
+        if not m:
+            continue
+        val = _eval_int_expr(m.group(2).strip(), scope, func_macros)
+        if val is not None:
+            ctl_acc.setdefault(m.group(1), set()).add(val)
+
+
 def parse_c_enums(text: str, enum_acc: dict[str, set]) -> None:
     """Parse `enum { ... }` bodies, assigning C enum semantics (sequential
     counter, honoring `= EXPR` overrides). Accumulates name→{values seen}
@@ -212,6 +436,53 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
             if len(vals) == 1:
                 catalog.setdefault(name, next(iter(vals)))
 
+    # ── CTL_CODE device-control codes (IOCTL_*/FSCTL_*) ──────────────────
+    # Build an evaluation scope: catalog literals (incl. FILE_DEVICE_* from
+    # iotypes.h) + extra device-type literals/aliases from the CTL headers +
+    # the base-operand seed (authoritative). Then evaluate every CTL_CODE def.
+    alias_re = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+([A-Z_][A-Z0-9_]*)\s*(?://.*)?$")
+    scope = dict(catalog)
+    aliases: dict[str, str] = {}
+    ctl_texts: list[str] = []
+    func_macros: dict[str, tuple[list[str], str]] = dict(_BUILTIN_FUNC_MACROS)
+    for rel in CTL_CODE_HEADERS:
+        hfile = reactos_root / rel
+        if not hfile.exists():
+            continue
+        text = _join_line_continuations(hfile.read_text(errors="replace"))
+        ctl_texts.append(text)
+        func_macros.update(_parse_func_macros(text))  # CTL_CODE + wrapper families
+        for raw in text.splitlines():
+            line = raw.strip()
+            m = define_re.match(line)
+            if m:
+                v = parse_c_hex(m.group(2).strip())
+                if v is not None:
+                    scope.setdefault(m.group(1), v)
+                    continue
+            am = alias_re.match(line)
+            if am:
+                aliases.setdefault(am.group(1), am.group(2))
+    # Resolve identifier aliases (e.g. IOCTL_DISK_BASE → FILE_DEVICE_DISK) to a
+    # fixpoint, then let the base-operand seed win over any header definition.
+    for _ in range(8):
+        progressed = False
+        for k, tgt in aliases.items():
+            if k not in scope and tgt in scope:
+                scope[k] = scope[tgt]
+                progressed = True
+        if not progressed:
+            break
+    scope.update(CTL_BASE_SEED)
+
+    ctl_acc: dict[str, set] = {}
+    for text in ctl_texts:
+        parse_ioctl_defines(text, scope, func_macros, ctl_acc)
+    # Merge unambiguous codes; a plain-literal #define already in catalog wins.
+    for name, vals in ctl_acc.items():
+        if len(vals) == 1:
+            catalog.setdefault(name, next(iter(vals)))
+
     return catalog
 
 
@@ -263,8 +534,12 @@ def parse_rust_const(line: str) -> tuple[str, int] | None:
 
 def fix_const_line(line: str, name: str, c_val: int) -> str:
     """Rewrite a const definition line with the correct C value."""
-    # Match the const pattern and replace the value
-    m = re.match(r"(const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
+    # Match the const pattern and replace the value. The leading `\s*` (captured
+    # in the prefix) preserves indentation so FUNCTION-LOCAL consts get fixed too —
+    # parse_rust_const strips the line so it detects them, but without this the
+    # rewrite silently no-op'd on any `    const NAME = ...` (e.g. cdrom-rust's
+    # IOCTL_CDROM_GET_INQUIRY_DATA / IOCTL_SCSI_PASS_THROUGH_DIRECT_EX).
+    m = re.match(r"(\s*const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
     if not m:
         return line
     prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
@@ -344,12 +619,25 @@ def main():
     reactos_root = _RUSTCONV_REACTOS_ROOT  # tools/rustconv → reactos/
 
     catalog = build_c_catalog(reactos_root, include_enums=args.enums)
-    print(f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""))
+    # Volatile summary → stderr so the gate baseline (stdout-only) captures just the
+    # stable `MISMATCH:` finding lines. Otherwise the catalog/file counts (which move
+    # on any header or workspace-file change) read as new findings on every edit.
+    print(
+        f"C catalog: {len(catalog)} constants from headers" + (" (+enums)" if args.enums else ""),
+        file=sys.stderr,
+    )
 
     if args.files:
         rs_files = [Path(f) for f in args.files]
     else:
-        rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
+        # Whole Rust kernel/driver workspace — IOCTL/FSCTL garbage consts live in the
+        # driver crates (ramdisk, cdrom, fastfat, …), not just ntoskrnl-rust. Skip
+        # build output under target/.
+        rs_files = sorted(
+            p
+            for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
+            if "/target/" not in p.as_posix()
+        )
 
     total_mismatches = 0
     files_fixed = 0
@@ -366,10 +654,12 @@ def main():
             if args.fix:
                 files_fixed += 1
 
-    if args.fix:
-        print(f"\nFixed {total_mismatches} constants in {files_fixed} files")
-    else:
-        print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
+    summary = (
+        f"Fixed {total_mismatches} constants in {files_fixed} files"
+        if args.fix
+        else f"{total_mismatches} mismatches found across {len(rs_files)} files"
+    )
+    print(summary, file=sys.stderr)
     return 1 if total_mismatches > 0 and not args.fix else 0
 
 

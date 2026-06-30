@@ -77,3 +77,4 @@ agent-swarm/channel/node_modules/
 
 # WS5 cmake-off orchestrator output (tools/cargo_orchestrate.py)
 cmake-off-out/
+qemu/snapshots/

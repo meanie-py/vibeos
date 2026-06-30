@@ -67,11 +67,35 @@ def _lint_stage(
     cwd: Path | None = None,
     strict: bool,
     findings_from: str = "stdout",
+    by_exit_code: bool = False,
 ) -> Stage:
-    """Run one lint; classify NEW-vs-baseline. Advisory unless strict."""
+    """Run one lint; classify NEW-vs-baseline. Advisory unless strict.
+
+    by_exit_code: judge purely on the tool's --check exit status instead of
+    line-baseline-diff. Required for BINARY lints (scan_ud2, sacred_primitives):
+    their output is ARCH-SPECIFIC (i386 ud2 lines ≠ arm64 branch-to-self spins ≠
+    amd64), so a single arch-agnostic baseline file can never match across arches
+    — every line reads as "new". These tools already encode the correct per-arch
+    pass/fail in their exit code (their own EXPECTED-site classification), so the
+    exit code is the right signal."""
     if cmd[0] == "MISSING":
         return run.add(Stage(name, status="skip", detail="tool unavailable"))
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+    if by_exit_code:
+        text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
+        if cp.returncode == 0:
+            return run.add(Stage(name, exit=0, status="ok"))
+        st = "fail" if strict else "warn"
+        salient = [ln for ln in text.splitlines() if "*** BUG" in ln or "FAIL" in ln][:3]
+        return run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status=st,
+                detail=f"exit {cp.returncode}",
+                salient=salient or text.splitlines()[:3],
+            )
+        )
     text = cp.stdout if findings_from == "stdout" else (cp.stdout + "\n" + cp.stderr)
     text = _rel(text, repo)
     base = _baseline(repo, name)
@@ -130,10 +154,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     for tool, rel in (
         ("verify_abi", "verify_abi.py"),
         ("verify_ffi", "verify_ffi.py"),
-        ("verify_constants", "verify_constants.py"),
     ):
         f = rc / rel
         specs.append((tool, [py, str(f)] if f.is_file() else ["MISSING"], "both"))
+    # verify_constants reads stdout only: it now scans the whole rust workspace
+    # (driver crates included), so its volatile catalog/file-count summary goes to
+    # stderr to keep the baseline stable — only `MISMATCH:` finding lines on stdout.
+    vc = rc / "verify_constants.py"
+    specs.append(("verify_constants", [py, str(vc)] if vc.is_file() else ["MISSING"], "stdout"))
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
@@ -338,6 +366,10 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         return
+    # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
+    # their output is arch-specific so a single baseline can't match across arches
+    # (scan_ud2 emits ud2 on x86 vs branch-to-self spins on arm64). The tools'
+    # --check exit already encodes the correct per-arch verdict.
     ud2 = repo / "tools" / "scan_ud2.py"
     _lint_stage(
         run,
@@ -345,7 +377,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         "scan_ud2",
         [py, str(ud2), "--check", str(build_dir)] if ud2.is_file() else ["MISSING"],
         strict=strict,
-        findings_from="both",
+        by_exit_code=True,
     )
     sp = repo / "tools" / "verify_sacred_primitives.sh"
     _lint_stage(
@@ -354,5 +386,5 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         "sacred_primitives",
         ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
         strict=strict,
-        findings_from="both",
+        by_exit_code=True,
     )

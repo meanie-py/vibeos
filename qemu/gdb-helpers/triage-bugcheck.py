@@ -6,9 +6,10 @@
 # when applicable — what the bogus pointer in the asm operand actually was
 # (process? thread? freed slab?).
 #
-# Currently tuned for amd64 KMODE_EXCEPTION_NOT_HANDLED (0x1E) where Param3
-# is a KTRAP_FRAME pointer. Other variants fall back to printing the bug
-# args and stop short.
+# Tuned for KMODE_EXCEPTION_NOT_HANDLED (0x1E), where this tree raises with
+# Param2 = fault PC and Param3 = KTRAP_FRAME pointer on ALL three arches
+# (amd64 ke/amd64, i386 ke/i386/exp.rs, arm64 ke/arm64/stubs.rs). Other stop
+# codes fall back to printing the bug args and stop short.
 
 import gdb
 import os
@@ -35,6 +36,18 @@ def _arch() -> str:
     return os.environ.get("VIBEOS_ARCH", "amd64")
 
 
+# Per-arch "what pointer did the faulting instruction touch" — read from the
+# KTRAP_FRAME after we've located it. amd64/i386 surface the C-call first arg
+# register (Rcx/Ecx) that asm-heavy sites indirect through; arm64 has no such
+# convention, so we use the hardware FaultAddress (the data-abort VA) directly.
+# (trapframe-relative offset, label)
+BAD_PTR = {
+    "amd64": (0x38, "Rcx"),
+    "i386":  (0x40, "Ecx"),
+    "arm64": (0x10, "FaultAddress"),
+}
+
+
 def _bugcheck_args() -> list[int] | None:
     arch = _arch()
     if arch == "amd64":
@@ -47,10 +60,16 @@ def _bugcheck_args() -> list[int] | None:
     else:
         return None
 
+    # Force C language: some exprs are C casts (`*(unsigned long long *)($rsp+
+    # 0x28)`), which fail when gdb is stopped inside a Rust frame (Rust language
+    # mode rejects C type names). Register convenience vars work in any language.
+    gdb.execute("set language c", to_string=True)
     try:
         return [int(gdb.parse_and_eval(e)) & 0xFFFFFFFFFFFFFFFF for e in exprs]
     except gdb.error:
         return None
+    finally:
+        gdb.execute("set language auto", to_string=True)
 
 
 def _find_bugcheck_frame() -> bool:
@@ -78,9 +97,8 @@ class TriageBugcheckCmd(gdb.Command):
 
     def invoke(self, arg: str, from_tty: bool) -> None:
         arch = _arch()
-        if arch != "amd64":
-            gdb.write(f"triage-bugcheck: only amd64 supported (got '{arch}')\n",
-                      gdb.STDERR)
+        if arch not in BAD_PTR:
+            gdb.write(f"triage-bugcheck: unsupported arch '{arch}'\n", gdb.STDERR)
             return
 
         if not _find_bugcheck_frame():
@@ -132,20 +150,24 @@ class TriageBugcheckCmd(gdb.Command):
             gdb.write(f"  (dump-trapframe failed: {e})\n")
             return
 
-        # For amd64 #PF in KiUnwaitThread-style sites, Rcx holds the pointer
-        # the asm was indirecting through. Pull it out and identify it.
+        # Pull the per-arch "bad pointer" out of the trap frame and identify it:
+        # amd64/i386 use the first C-arg register (Rcx/Ecx) that asm-heavy #PF
+        # sites indirect through; arm64 uses the hardware FaultAddress (data VA).
+        ptr_off, ptr_label = BAD_PTR[arch]
+        sz = 4 if arch == "i386" else 8
         try:
-            rcx = int(gdb.parse_and_eval(
-                f"*(unsigned long long *)({trap_frame:#x} + 0x38)"
-            )) & 0xFFFFFFFFFFFFFFFF
-        except gdb.error:
+            # Language-agnostic raw read (see dump-trapframe: C casts break in
+            # Rust frames). Trap frames are little-endian on our targets.
+            buf = gdb.selected_inferior().read_memory(trap_frame + ptr_off, sz)
+            bad = int.from_bytes(bytes(buf), "little") & 0xFFFFFFFFFFFFFFFF
+        except (gdb.error, gdb.MemoryError):
             return
-        if rcx == 0:
+        if bad == 0:
             return
 
-        gdb.write(f"\n--- identify-object on Rcx @ {rcx:#018x} ---\n")
+        gdb.write(f"\n--- identify-object on {ptr_label} @ {bad:#018x} ---\n")
         try:
-            gdb.execute(f"identify-object {rcx:#x}")
+            gdb.execute(f"identify-object {bad:#x}")
         except gdb.error as e:
             gdb.write(f"  (identify-object failed: {e})\n")
 

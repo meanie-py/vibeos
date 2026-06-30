@@ -336,7 +336,7 @@ pub unsafe extern "C" fn DeviceSendEnableIdlePowerIoctl(
     KeInitializeEvent(&raw mut event, _EVENT_TYPE_NotificationEvent, 0);
 
     irp = IoBuildDeviceIoControlRequest(
-        0x2D1400, /* IOCTL_STORAGE_ENABLE_IDLE_POWER */
+        0x2D1C80, /* IOCTL_STORAGE_ENABLE_IDLE_POWER */
         (*DeviceExtension).LowerPdo,
         core::ptr::addr_of_mut!(idlePower) as *mut core::ffi::c_void,
         core::mem::size_of::<STORAGE_IDLE_POWER>() as u32,
