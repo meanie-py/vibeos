@@ -24,6 +24,27 @@ macro_rules! cb {
 }
 pub(crate) use cb;
 
+// Compile-time L"..." wide-string literal -> *const u16 (NUL-terminated static array).
+// Replaces the pure-LLM `"x\0".encode_utf16().collect::<Vec<u16>>().as_ptr()` (no alloc in
+// the kernel). ASCII-only, which all the usbport registry/symlink literals are.
+macro_rules! wstr {
+    ($s:literal) => {{
+        const BYTES: &[u8] = $s.as_bytes();
+        const N: usize = BYTES.len();
+        const ARR: [u16; N] = {
+            let mut arr = [0u16; N];
+            let mut i = 0;
+            while i < N {
+                arr[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            arr
+        };
+        ARR.as_ptr() as *mut u16
+    }};
+}
+pub(crate) use wstr;
+
 pub mod types;
 pub mod glue;
 pub mod debug;
@@ -32,6 +53,7 @@ pub mod endpoint;
 pub mod iface;
 pub mod ioctl;
 pub mod iso;
+pub mod pnp;
 pub mod power;
 pub mod queue;
 pub mod roothub;

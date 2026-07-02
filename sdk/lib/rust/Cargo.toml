@@ -164,6 +164,9 @@ members = [
     "pciidex-rust",
     "scsiport-rust",
     "atapi-rust",
+    "buslogic-rust",
+    "usbaudio-rust",
+    "ks-rust",
     "mup-rust",
     "msfs-rust",
     "npfs-rust",
@@ -172,6 +175,7 @@ members = [
     "kernel32-vista-rust",
     "user32-rust",
     "gdi32-rust",
+    "shell32-rust",
     "msgina-rust",
     "uniata-rust",
     "dxg-rust",
@@ -211,6 +215,10 @@ members = [
     "samsrv-sys",
     "lsasrv-rust",
     "samsrv-rust",
+    "advapi32-rust",
+    "advapi32-sys",
+    "secur32-rust",
+    "secur32-sys",
     "version-rust",
     "winreg-stub",
     "mlang-rust",
@@ -236,3 +244,4 @@ panic = "abort"
 opt-level = 1
 lto = false
 codegen-units = 256
+debug = 1

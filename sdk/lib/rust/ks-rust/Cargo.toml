@@ -1,0 +1,22 @@
+# ks-rust — Rust translation of drivers/ksfilter/ks, the Kernel Streaming class library
+# (22 .c / ~19K LOC). EXPORT driver (216 Ks* exports the audio stack imports). DeepSeek-chat
+# (V3) + c2rust-anchored, constant-safeguarded. NOT boot-loaded -> link-clean x3 is the bar.
+# Private structs + KS/PortCls/kcom DDK layouts from the gen_driver_types.sh substrate
+# (src/types_*.rs, per-arch). crate-type=staticlib -> libks_rust.a, cohab-linked into ks.sys
+# with the .c bodies commented out; #[no_mangle] Ks* exports + DriverEntry take over. Depends
+# on ntkrnl-sys. Built for all 3 arches.
+[package]
+name = "ks-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ks_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+# Lock-free SList: provides #[no_mangle] RtlInterlockedPush/PopEntrySList (per-arch decoration)
+# that ntkrnl-sys references but ntoskrnl only exports under fastcall/Exp* aliases.
+slist = { path = "../slist" }

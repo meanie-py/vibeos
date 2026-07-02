@@ -1,0 +1,23 @@
+# advapi32-rust — Rust translation of dll/win32/advapi32 (the Win32 Advanced API DLL:
+# registry, services/SCM, security/SID/ACL, crypto, eventlog, logon). staticlib →
+# libadvapi32_rust.a, cohab-linked into the cmake-built advapi32.dll with the translated
+# .c files commented out (per-file flip, like kernel32-rust / lsasrv-rust). User-mode
+# DLL: builds for the STANDARD per-arch targets (i686/x86_64 gnu, aarch64 gnullvm) with
+# i386 -sse,-sse2 (the user-mode no-SSE rule). Imports resolve to ntdll.dll / kernel32.dll
+# / rpcrt4.dll / secur32.dll at runtime; the FFI decls come from ntdll-sys (Nt*/Rtl*/Ldr*)
+# plus advapi32's own substrate modules (security/RPC-client types).
+#
+# advapi32 uses RPC *client* stubs (svcctl/winreg/lsa/seclogon/eventlogrpc) which stay as
+# generated C (PCH_SKIP_SOURCE); the Rust bodies call them by decorated name.
+
+[package]
+name = "advapi32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
+advapi32-sys = { path = "../advapi32-sys" }

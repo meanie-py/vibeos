@@ -23,7 +23,6 @@ extern "system" {
     fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_ReopenPipe(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT) -> NTSTATUS;
     fn USBPORT_Wait(FdoDevice: PDEVICE_OBJECT, Milliseconds: ULONG);
-    fn USBPORT_AbortTransfers(FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE) ;
     fn MiniportCloseEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
     fn MiniportOpenEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
     fn USBD_ERROR(Status: USBD_STATUS) -> BOOLEAN;
@@ -4242,3 +4241,44 @@ pub unsafe extern "system" fn USBPORT_Initialize20Hub(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+extern "system" {
+    fn USBPORT_AbortEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Irp: PIRP);
+    fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJECT);
+}
+
+// Translated from device.c USBPORT_AbortTransfers (was a commented lazy-stub in the
+// pure-LLM pass; hand-translated to finish usbport at 100% Rust).
+#[no_mangle]
+pub unsafe extern "system" fn USBPORT_AbortTransfers(
+    FdoDevice: PDEVICE_OBJECT,
+    DeviceHandle: PUSBPORT_DEVICE_HANDLE,
+) {
+    let mut HandleList: PLIST_ENTRY;
+    let mut PipeHandle: PUSBPORT_PIPE_HANDLE;
+    let mut Result: BOOLEAN;
+
+    HandleList = (*DeviceHandle).PipeHandleList.Flink;
+
+    while HandleList != core::ptr::addr_of_mut!((*DeviceHandle).PipeHandleList) {
+        PipeHandle = (HandleList as *mut u8)
+            .offset(-(core::mem::offset_of!(USBPORT_PIPE_HANDLE, PipeLink) as isize))
+            as *mut USBPORT_PIPE_HANDLE;
+
+        HandleList = (*HandleList).Flink;
+
+        if ((*PipeHandle).Flags & DEVICE_HANDLE_FLAG_ROOTHUB) == 0 {
+            (*(*PipeHandle).Endpoint).Flags |= ENDPOINT_FLAG_ABORTING;
+            USBPORT_AbortEndpoint(FdoDevice, (*PipeHandle).Endpoint, core::ptr::null_mut());
+            USBPORT_FlushMapTransfers(FdoDevice);
+        }
+    }
+
+    loop {
+        Result = USBPORT_DeviceHasTransfers(FdoDevice, DeviceHandle);
+        if Result == 0 {
+            break;
+        }
+        USBPORT_Wait(FdoDevice, 100);
+    }
+}

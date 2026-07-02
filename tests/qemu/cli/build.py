@@ -250,8 +250,22 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             return run.finalize(repo)  # ccache reconfigure failed hard
 
     # --- ninja the boot target(s) ---
+    # Force-build every Rust-cohab binary in the arm64 boot set, not just the
+    # archcfg.ninja_targets list — a cohab flip whose .sys/.dll someone forgot to
+    # add to ninja_targets would otherwise leave a STALE C binary that mkramdisk
+    # stages and the gate false-greens (fastfat/ramdisk/advapi32 class). Deriving
+    # the set from the actual boot manifest (mkramdisk REQUIRED_FILES) makes the
+    # build self-healing: no archcfg edit needed per flip. ninja dedups any rel
+    # already covered by a phony target. See provenance.boot_set_cohab_rels.
     targets = list(cfg.ninja_targets)
-    cp = run.run(["ninja", *targets], cwd=build_dir, env=build_env, stage="ninja", timeout=1800)
+    cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
+    if cohab:
+        run.log(
+            "force-building cohab boot binaries (self-heal):\n" + "\n".join(cohab), header="cohab"
+        )
+    cp = run.run(
+        ["ninja", *targets, *cohab], cwd=build_dir, env=build_env, stage="ninja", timeout=1800
+    )
     if cp.returncode != 0:
         cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
         run.classification = cls

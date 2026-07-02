@@ -19,6 +19,18 @@ name = "acpica-sys"
 version = "0.1.0"
 
 [[package]]
+name = "advapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "advapi32-sys",
+ "ntdll-sys",
+]
+
+[[package]]
+name = "advapi32-sys"
+version = "0.1.0"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -119,6 +131,13 @@ dependencies = [
 
 [[package]]
 name = "bootvid-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "buslogic-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -720,6 +739,14 @@ name = "kmdf-sys"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "ks-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "slist",
 ]
 
 [[package]]
@@ -1467,6 +1494,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "secur32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "secur32-sys",
+]
+
+[[package]]
+name = "secur32-sys"
+version = "0.1.0"
+
+[[package]]
 name = "serial-rust"
 version = "0.1.0"
 dependencies = [
@@ -1502,6 +1541,10 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shell32-rust"
+version = "0.1.0"
 
 [[package]]
 name = "shlex"
@@ -1728,6 +1771,13 @@ dependencies = [
 [[package]]
 name = "usb-sys"
 version = "0.1.0"
+
+[[package]]
+name = "usbaudio-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "usbccgp-rust"

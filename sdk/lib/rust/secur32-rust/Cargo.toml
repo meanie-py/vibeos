@@ -1,0 +1,22 @@
+# secur32-rust — Rust translation of dll/win32/secur32 (the Win32 SSPI client
+# DLL: security-provider dispatch, A/W thunks, the secure-package wrapper, the
+# LSA-LPC channel to lsasrv, and the built-in wine SSPs: NTLM, Kerberos stub,
+# Negotiate). staticlib → libsecur32_rust.a, cohab-linked into the cmake-built
+# secur32.dll with the translated .c files commented out (per-file flip, like
+# advapi32-rust / kernel32-rust). User-mode DLL: builds for the STANDARD per-arch
+# targets (i686/x86_64 gnu, aarch64 gnullvm) with i386 -sse,-sse2. Imports resolve
+# to ntdll.dll / kernel32.dll / advapi32.dll / netapi32.dll at runtime; the FFI
+# decls come from ntdll-sys (Nt*/Rtl*/Ldr*) plus secur32's own substrate
+# (secur32-sys: SSPI/LSA-LPC/NTLM-MSV/wincred types).
+
+[package]
+name = "secur32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
+secur32-sys = { path = "../secur32-sys" }

@@ -1,0 +1,20 @@
+# advapi32-sys — the Win32 SDK / RPC-client / winsafer / aclapi / evntrace / EFS
+# type substrate for the advapi32.dll C->Rust translation (advapi32-rust).
+# bindgen-generated (generate_bindings.sh) from the module's own advapi32.h
+# (which sequences windows.h, aclapi.h, winsafer.h, ntsecapi.h, services.h and
+# the generated svcctl_c.h/winreg_c.h/lsa_c.h/seclogon_c.h/eventlogrpc_c.h RPC
+# client stubs) + evntrace.h + wine/crypt.h, allowlisted to the advapi32-specific
+# surface absent from ntdll-sys (which is NT-internal only). Per-arch (pointer
+# widths + RPC string layout differ). no_std rlib (declaration dependency).
+#
+# Regenerate with: bash sdk/lib/rust/advapi32-sys/generate_bindings.sh
+
+[package]
+name = "advapi32-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

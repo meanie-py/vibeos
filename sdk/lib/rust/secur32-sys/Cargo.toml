@@ -1,0 +1,19 @@
+# secur32-sys — the SSPI / security-provider / LSA-LPC / NTLM-MSV / wincred type
+# substrate for the secur32.dll C->Rust translation (secur32-rust).
+# bindgen-generated (generate_bindings.sh) from the SSPI headers (security.h →
+# sspi.h/secext.h/schannel.h), ntsecapi.h (MSV1_0_*/KERB_*), wincred.h, lm.h and
+# lsass/lsass.h (the LSA-LPC port-message structs secur32 uses to talk to lsasrv),
+# allowlisted to the secur32-specific surface absent from ntdll-sys (NT-internal
+# only). Per-arch (pointer widths + handle layout differ). no_std rlib.
+#
+# Regenerate with: bash sdk/lib/rust/secur32-sys/generate_bindings.sh
+
+[package]
+name = "secur32-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
