@@ -3688,10 +3688,8 @@ pub struct __wine_debug_channel {
     pub name: [::core::ffi::c_char; 15usize],
 }
 unsafe extern "C" {
-    pub static mut __wine_dbch_msafd: __wine_debug_channel;
 }
 unsafe extern "C" {
-    pub static __wine_dbch___default: *mut __wine_debug_channel;
 }
 #[repr(C)]
 pub struct _HELPER_DATA {
@@ -3721,25 +3719,18 @@ pub struct _HELPER_DATA {
 pub type HELPER_DATA = _HELPER_DATA;
 pub type PHELPER_DATA = *mut _HELPER_DATA;
 unsafe extern "C" {
-    pub static mut GlobalHeap: HANDLE;
 }
 unsafe extern "C" {
-    pub static mut Upcalls: WSPUPCALLTABLE;
 }
 unsafe extern "C" {
-    pub static mut lpWPUCompleteOverlappedRequest: LPWPUCOMPLETEOVERLAPPEDREQUEST;
 }
 unsafe extern "C" {
-    pub static mut SockHelpersListHead: LIST_ENTRY;
 }
 unsafe extern "C" {
-    pub static mut SockEvent: HANDLE;
 }
 unsafe extern "C" {
-    pub static mut SockAsyncCompletionPort: HANDLE;
 }
 unsafe extern "C" {
-    pub static mut SockAsyncSelectCalled: BOOLEAN;
 }
 #[repr(C)]
 pub struct _SOCKET_INFORMATION {

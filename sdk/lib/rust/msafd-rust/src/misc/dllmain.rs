@@ -18,7 +18,6 @@ extern "C" {
     fn HandleToUlong(h: HANDLE) -> DWORD;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> DWORD;
     fn MapViewOfFile( hFileMappingObject: HANDLE, dwDesiredAccess: DWORD, dwFileOffsetHigh: DWORD, dwFileOffsetLow: DWORD, dwNumberOfBytesToMap: usize, ) -> LPVOID;
-    fn MsafdReturnWithErrno( Status: DWORD, lpErrno: LPINT, arg3: DWORD, arg4: LPVOID, ) -> INT;
     fn OpenProcess( dwDesiredAccess: DWORD, bInheritHandle: DWORD, dwProcessId: DWORD, ) -> HANDLE;
     fn RtlConvertLongToLargeInteger(Long: i32) -> LARGE_INTEGER;
     fn ERR(fmt: *const i8, ...);
@@ -795,6 +794,29 @@ pub unsafe extern "C" fn WSPDuplicateSocket(
     }
 
     return NO_ERROR as INT;
+}
+// MsafdReturnWithErrno — FORCEINLINE helper in msafd.h (no .c body, so never translated by
+// the per-function pass). Faithful translation of the header inline: map the NTSTATUS to a
+// winsock errno via TranslateNtStatusError, publish the byte count, and return 0/SOCKET_ERROR.
+#[no_mangle]
+pub unsafe extern "C" fn MsafdReturnWithErrno(
+    Status: NTSTATUS,
+    Errno: LPINT,
+    Received: DWORD,
+    ReturnedBytes: LPDWORD,
+) -> DWORD {
+    if !Errno.is_null() {
+        *Errno = TranslateNtStatusError(Status);
+        if !ReturnedBytes.is_null() {
+            *ReturnedBytes = if *Errno == 0 { Received } else { 0 };
+        }
+        return if *Errno == 0 { 0 } else { SOCKET_ERROR as DWORD };
+    } else {
+        if !ReturnedBytes.is_null() {
+            *ReturnedBytes = if Status == STATUS_SUCCESS { Received } else { 0 };
+        }
+        return if Status == STATUS_SUCCESS { 0 } else { SOCKET_ERROR as DWORD };
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn TranslateNtStatusError(Status: NTSTATUS) -> INT {

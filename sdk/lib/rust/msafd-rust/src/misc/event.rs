@@ -2,14 +2,8 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn ERR(fmt: *const u8, ...);
-    fn TRACE(fmt: *const u8, ...);
-    fn GetSocketStructure(Handle: SOCKET) -> PSOCKET_INFORMATION;
-    fn MsafdReturnWithErrno(Status: NTSTATUS, lpErrno: LPINT, arg3: u32, arg4: *mut core::ffi::c_void) -> i32;
-    fn MsafdWaitForAlert(SockEvent: HANDLE);
-    fn SetSocketInformation( Socket: PSOCKET_INFORMATION, info_type: u32, data: *const core::ffi::c_void, arg4: *const core::ffi::c_void, arg5: *const core::ffi::c_void, arg6: *const core::ffi::c_void, arg7: *const core::ffi::c_void );
-}
+// GetSocketStructure/MsafdReturnWithErrno/MsafdWaitForAlert/SetSocketInformation now come
+// from misc::dllmain via `use crate::glue::*` (re-exported there). ERR/TRACE stay macro-shims.
 #[no_mangle]
 pub unsafe extern "C" fn WSPEventSelect(
     Handle: SOCKET,
