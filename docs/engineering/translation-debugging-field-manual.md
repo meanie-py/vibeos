@@ -56,6 +56,14 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 **Diagnostic:** the def↔decl CC scan must run over the **whole crate's own symbols**, not just spec-checked ones — find every fn name appearing under BOTH `extern "C"` and `extern "system"` (decls *and* `pub extern "X" fn` defs). Catches what verify_abi misses for internal helpers. (kernel32 had 4; only the *called* ones bite — `TranslateStdHandle`, `BaseFormatTimeOut`. Address-taken-only startup fns (BaseThreadStartup/BaseFiberStartup/BaseProcessStartup written into CONTEXT `.Eip/.Rip`) are harmless: never called via the decl, and i386 uses a separate `_BaseThreadStartupThunk@0`.)
 **Fix:** decl CC := def CC := the C contract (no `WINAPI`/`NTAPI` ⇒ cdecl ⇒ `extern "C"`; `WINAPI`/`NTAPI` ⇒ stdcall ⇒ `extern "system"`). Fixed `f2f349d8a5d` (kernel32-port).
 
+### Wrong-ABI **declaration** of an internal fn → i386 call *diverges* (not ESP-drift), even at 0 args (lsasrv, 2026-06-26)
+**Symptom:** i386-only HANG during lsass init — `lsass.exe` wedges in `LsarStartRpcServer` right after `RpcServerRegisterIf`, before `SetEvent(LSA_RPC_SERVER_ACTIVE)`, so winlogon `WaitForLsass` (`WaitForSingleObject(event, INFINITE)`) waits forever → no desktop. No BUGCHECK, no `ud2`, **no Rust panic** (a panic-handler DbgPrint proved it), **links clean ×3**, amd64/arm64 boot fine. Deterministic.
+**Root cause:** `lsarpc.rs` declared the internal helper `DsSetupInit` (C: `VOID DsSetupInit(VOID)` — **cdecl**, no `WINAPI`) inside an `extern "system"` block. On i386 that emits a reference to the stdcall-decorated `_DsSetupInit@0`, but the definition (`dssetup.rs`, correctly `extern "C"`) is `_DsSetupInit`. The `@0` reference **resolves to the wrong target** (the link does NOT error — it resolves to *something* via auto-import/fixup), so the call at runtime **diverges** (jumps to a bad address) and is swallowed by DUMMY_PSEH → the thread wedges. This is a THIRD ABI failure mode, distinct from the two famous ones: not a `ud2`/fold (line 40), not ESP-drift (TranslateStdHandle, line 54). The decoration-mismatch bites **even though `DsSetupInit` takes 0 args** (where stdcall and cdecl are behaviorally identical) — because the *symbol name* differs (`_F@0` vs `_F`), the bug is in symbol *resolution*, not stack cleanup.
+**Why every existing check misses it:** (1) the def↔decl "appears under BOTH `extern "C"` and `extern "system"`" scan (line 56) does **NOT** catch it — `DsSetupInit` was declared *only once*, as `extern "system"`, never under both. (2) `--disable-stdcall-fixup` + 0-undefined ×3 does **not** rule it out — the `@0` ref resolves to *something*, so the link is clean (this is the exact false-confidence that makes you suspect contention/a 64-bit-only path instead). (3) `verify_abi`/`verify_ffi` miss it — `DsSetupInit` is lsasrv-internal, invisible to spec/bindgen (same blind spot as TranslateStdHandle).
+**Detection recipe:** for every `extern "system"`/`extern "C"` **declaration** of an *internal* (translated, non-import) fn, cross-check the ABI against that fn's **actual Rust definition** AND the C convention (`VOID Foo(VOID)`/no-`WINAPI` ⇒ cdecl ⇒ `extern "C"`; `WINAPI`/`NTAPI`/`__stdcall`/`__RPC_USER` ⇒ `extern "system"`). The matching scan is **decl-ABI vs def-ABI per symbol**, not "both ABIs present." Worth teaching `verify_abi.py` to resolve internal-fn decls against their in-tree defs.
+**Localization that cracked it (use for any i386-only early-init hang):** DbgPrint-bisect the init path with **real `DbgPrint`** (translated `TRACE!`/`WARN!` are no-op macros — their *absence* in the serial is NOT evidence of where execution stopped; that false signal cost a detour). Bracket each init step + each callee; the hang sits at the last printed trace's *next* call. Then audit that callee's decl ABI vs its def. (Boot a worktree i386 ISO directly — `qemu-system-i386 -M pc -accel kvm -cpu host -drive if=pflash,...OVMF32_CODE.fd... -device ide-cd,drive=cd0,bootindex=0 -serial file:...` — because `vibeos-cli smoke` from a worktree boots the **main** repo's media via the editable-install `tests` shadow.)
+**Fix:** one line — declare `DsSetupInit` `extern "C"` to match its cdecl definition. i386 boots to desktop. Fixed on kernel32-port (lsasrv M5).
+
 ### disk-rust variants (2026-06-11): llvm.assume fold, noreturn-decl poison, per-symbol CC authority
 Same class as the classpnp at-scale fold; four refinements from the disk.sys port:
 - **Faster diagnostic than `-print-changed`:** `cargo rustc -p <crate> --target i686… --release -- --emit=llvm-ir`, then read the folded fn in the `.ll`. The smoking gun is `tail call void @llvm.assume(i1 %cond)` where the source had `if cond` — LLVM proved the OTHER branch UB and converted the branch to an assume. Whatever the surviving path calls next is NOT the culprit; the proven-UB call on the dead path is.
@@ -88,6 +96,22 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Root cause:** `_LARGE_INTEGER` is an 8-byte aggregate union; i386 cdecl lowers aggregates differently from scalar `i64`, so the `_rs_*` impl reads garbage off the stack. amd64 x64 ABI passes both in the same slot, hiding it. (`_rs_KxSetTimerForThreadWait` declared `interval: i64` vs impl `_LARGE_INTEGER`.)
 **Fix:** Mirror the receiver's exact union type on both sides; pass `*ptr` (the struct), not `(*ptr).QuadPart`. Same for any bindgen union (`_ULARGE_INTEGER`, `_M128A`).
 **Source:** `feedback_i64_vs_largeinteger_abi.md`
+
+### c2rust direct union/bitfield access vs `__BindgenUnionField` repr → E0599/E0609/E0063 cluster
+**Symptom (buslogic-rust, 2026-06-26):** a c2rust/LLM driver translation that touches C bitfield-union *registers* compiles to a wall of `no method 'X' found for __BindgenUnionField<T>` (E0599), `no field 'All'/'__bindgen_anon_1'` (E0609), and `missing fields 'Bits' and 'bindgen_union_field' in initializer` (E0063).
+**Root cause:** c2rust emits C-native union access — `reg.All = x`, `reg.Bits.SomeFlag()`, `Reg { All: 0 }` — but the repo's gen_driver_types.sh / ntkrnl-sys bindgen renders **every** union as the legacy `__BindgenUnionField` struct (zero-sized accessor fields + a `bindgen_union_field` storage blob), never a native Rust `union`. The accessor fields aren't real fields, so direct read/write/init all fail.
+**Fix (mechanical, sed-able):**
+- init `Reg { All: 0 }` → `core::mem::zeroed()` (the let-binding's type annotation carries the type).
+- read bit `reg.Bits.Flag()` → `reg.Bits.as_ref().Flag()`; read whole `reg.All` → `(*reg.All.as_ref())`; write `reg.All = v` → `*reg.All.as_mut() = v`. (`__BindgenUnionField<T>::as_ref/as_mut` transmute `&self`→`&T`.)
+- nested c2rust anon names differ from bindgen's: `.c2rust_unnamed` → `.__bindgen_anon_1`; a C anon-union/struct member bindgen *flattened* (e.g. CCB `.Status`) drops the `.__bindgen_anon_1.` prefix entirely — check the substrate struct.
+- a native bindgen `union` (e.g. ddk `_LARGE_INTEGER`) IS direct-access (`.__bindgen_anon_1.LowPart`), but a `__BindgenUnionField` one is NOT — grep the substrate to tell which.
+Do the four register rewrites in any order (the suffixes `as`/`)`/`;`/` = ` are disjoint). atapi-rust's hand translation already used `.as_ref()` — the gap is c2rust/LLM output that didn't.
+
+### gen_driver_types.sh enum members: bindgen names them `<EnumTag>_<member>`, the C source used the bare name
+**Symptom:** ~50 `cannot find value 'BusLogic_VESA_Bus' / 'RequestComplete' / 'ScsiAdapterControlMax'` (E0425) after wiring a driver substrate — the translation references C enum members by their bare name.
+**Root cause:** bindgen prefixes each enum constant with its enum *tag* (`BusLogic_HostAdapterBusType_T_BusLogic_VESA_Bus`, `_SCSI_NOTIFICATION_TYPE_RequestComplete`), and long-typed consts **wrap the `: <type> = N;` onto the next line**.
+**Fix (automate it):** collect the missing names from the compiler, then for each grep the substrate for `pub const [A-Za-z0-9_]*<name>:` (anchor on the trailing `:` so it survives the line-wrap; type-on-next-line breaks a `pub const NAME: TYPE =` one-liner regex) and emit `pub use crate::types::<fullname> as <name>;` into glue (type-free `pub use` > `pub const X: T = ...`, no type to chase, arch-independent since enum names are identical on all 3). A handful of dup-value members bindgen drops, and #defines not in an allowlisted header (`SP_UNTAGGED`), need a manual `pub const`.
+**Source:** buslogic-rust (BusLogic958.c → Rust, the last C-only storage driver; `drivers/storage/` 100% Rust). Companion to the `wstr!` compile-time `L"..."` macro (pure-LLM emits `…encode_utf16().collect::<Vec<u16>>()` — no allocator in-kernel).
 
 ### `PWCHAR HalName = L"..."` translated as `[u16; N]` → triple-fault at boot
 **Symptom:** Kernel hangs at boot with no trace points (fault precedes HAL init); `cargo check` and the linker are both happy.
@@ -203,6 +227,42 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Root cause:** HIGH_LEVEL is 31 on i386 but 15 on amd64/arm64; amd64 maps IRQL to CR8 which has only 4 valid bits, so writing 0x1F sets reserved bit 4 → #GP. (`pcibus.rs` `KeRaiseIrql(HIGH_LEVEL=31,...)`.)
 **Fix:** `#[cfg(target_arch="x86")] const HIGH_LEVEL: KIRQL = 31;` else `= 15;`, or import per-arch from `hal_ddk`. Diagnosis: disassemble the suspect HAL fn and look for `mov cr8, <imm>` with imm > 15 — trust the instruction stream over the symbolicator for control-register #GPs.
 **Source:** `feedback_irql_high_level_per_arch.md`
+
+### i386 no-SSE float ABI: an `f32`/`f64` VALUE can't cross a fn boundary (translate C float helpers as macros; cfg-split float exports)
+**Symptom:** a usermode-DLL Rust crate that builds with `-sse,-sse2` (the i686 CPU-baseline rule — gdi32/user32/etc., via `sdk/lib/rust/.cargo/config.toml`) fails to **compile** on i386 with `error: this function definition uses SIMD vector type 'f32'/'f64' which (with the chosen ABI) requires the 'sse' target feature, which is not enabled` — pointing at a fn *definition*, even with `#[inline(always)]`. amd64/arm64 build fine (SSE/NEON always present).
+**Root cause:** without SSE there is no float ABI register, so rustc rejects any `f32`/`f64` **passed by value** across a function boundary (param or return) — it checks at the *definition*, so `#[inline]` does NOT help. What IS fine on no-SSE i386: float **math/values/stores inside a body** (x87), float **pointers** (`PFLOAT`/`*mut f32`/`LPABCFLOAT`), and float **struct fields**. Only the by-value ABI crossing is forbidden.
+**Fixes (two flavors, both used in gdi32):**
+1. **Internal C float helper → Rust `macro_rules!`, not a fn.** A `static __inline INT GDI_ROUND(FLOAT)` / `_fmul`/`_lrintf` / `fabs`-style helper translated as a Rust `fn(f32)->…` trips this. Convert it to a macro so the float math inlines at the call site and never crosses an ABI boundary: `macro_rules! GDI_ROUND { ($v:expr) => {{ let val: f64 = ($v) as f64; let t = val+0.5; let i = t as i64 as f64; (if i>t {i-1.0} else {i}) as INT }}; }`. **Keep the macro's internal type matching the C width** — C does world-to-viewport transforms in `double` then `(int)floor(v+0.5)`; narrowing to f32 in the macro silently loses precision. (gdi32 `coord.rs` `_fmul!`/`_lrintf!`; `font.rs` `GDI_ROUND!`/`dabs!`.)
+2. **EXPORTED fn taking FLOAT by value → per-arch `#[cfg]` signature split.** e.g. `BOOL WINAPI SetMiterLimit(HDC, FLOAT eNewLimit, PFLOAT peOld)`. You can't drop the param and you can't make it `f32` on i386 — but the i386 stdcall ABI passes a 4-byte FLOAT **on the stack**, bit-identical to a `u32` on the stack, whereas amd64/arm64 pass it in a **vector register** (so they need the native `f32` sig — a `u32` there would corrupt the ABI). Split it:
+   ```rust
+   #[cfg(target_arch = "x86")]      // float arrives as stack bytes — take the bits directly
+   pub unsafe extern "system" fn SetMiterLimit(hdc: HDC, a1: u32 /*FLOAT bits*/, a2: PFLOAT) -> BOOL { … NtGdiSetMiterLimit(hdc, a1 as LONG, …); *(a2 as *mut u32) = out_bits; … }
+   #[cfg(not(target_arch = "x86"))] // float arrives in xmm/neon — native sig
+   pub unsafe extern "system" fn SetMiterLimit(hdc: HDC, a1: FLOAT, a2: PFLOAT) -> BOOL { … NtGdiSetMiterLimit(hdc, a1.to_bits() as LONG, …); *a2 = f32::from_bits(out_bits); … }
+   ```
+   This mirrors the C, which reinterprets the float's bits as a LONG and passes the LONG to the kernel anyway (`gxf_long worker; worker.f = a1; …(worker.l)…`). The cfg-split is mandatory: a plain `f32` param won't compile on i386, a plain `u32` param corrupts amd64/arm64.
+**Bonus (co-occurring): a `__forceinline`-from-a-header arithmetic helper is NOT a real export** — e.g. `RtlULongMult` (ntintsafe.h). Declaring it `extern` → undefined `_RtlULongMult@12` at link. Reimplement it locally as a small checked-arithmetic Rust fn (STATUS_SUCCESS / 0xC0000095 STATUS_INTEGER_OVERFLOW); see `win32k-rust/src/surface.rs` and gdi32 `font.rs`/`bitmap.rs`. (Sibling of "DDK FORCEINLINE exported only on i386" above, but here it's exported *nowhere*.)
+**Source:** gdi32 Wave 2 (`coord.rs`), Wave 2b (`font.rs`), Wave 3a (`path.rs`/`bitmap.rs`) — `docs/engineering/gdi32-translation-audit.md`.
+
+### cohab flip drops a `.spec`-exported symbol that was a hidden OBJ-LEVEL alias in the flipped `.c`
+**Symptom:** after a per-file cohab flip (`.c`→`.rs`), the DLL link fails with `undefined symbol: _Foo@N` for a symbol whose **literal name appears in NO `.c` file** — only in the `.spec` / a `.def`. The Rust crate compiles fine; it's a link-only break.
+**Root cause:** the DLL's `.spec` exports `Foo` (e.g. gdi32 ordinal 273 `GdiEntry16`), and the flipped `.c` translation-unit was emitting `_Foo@N` *as an alias of a differently-named function it defines* (gdi32: `_GdiEntry16@12` aliased `DdSwapTextureHandles` in historic.c.obj — the C did it via a build/obj-level alias with no visible source macro). The `.rs` defines the real function but not the alias, so the spec export goes unsatisfied.
+**Detection:** `undefined _Foo@N` + `grep -rn Foo **/*.c` returns nothing → it was an obj-level alias. Find the real target: grep the `.spec` (and any reference `.def` like ReactOS's `good api.def`, which had `GdiEntry16@12=DdSwapTextureHandles@12`) for the ordinal, and `nm` the **pre-flip** `.obj` to confirm `_Foo@N` lived there.
+**Fix:** re-provide the alias explicitly in the `.rs` as a `#[no_mangle] extern "system" fn Foo(...)` forwarding to the real target — **all-arch** (the spec export is arch-independent; `_Foo@N` on i386, `Foo` on amd64/arm64). **Recurs across a family:** gdi32's `GdiEntry1..15` (gdientry.c, aliasing the `DdXxx` HAL fns) will each need this when that file flips. **Sibling bug (same gate):** a *blanket* "this family is cdecl/stdcall" rule that's wrong for one member — `EMFDC_*` were assumed cdecl but `wine/emfdc.c` declares `BOOL WINAPI EMFDC_GdiComment` (stdcall) → `undefined _EMFDC_GdiComment` until its decl was `extern "system"`. Verify each cross-file callee's *own* decoration against its C def.
+**Source:** gdi32 Wave 3b (`historic.rs` GdiEntry16, `enhmfile.rs` EMFDC_GdiComment).
+
+### a fn PARAMETER (or `let`) named like a glob-imported `const` becomes a const-PATTERN, not a binding → body sees the const's type
+**Symptom:** a translated fn whose parameter is annotated as a pointer/struct type fails to compile with the parameter "found `u32`" (or whatever the const's type is) — e.g. `expected *mut _DDHAL_UNLOCKDATA, found u32`, plus cascade `error[E0614]: type u32 cannot be dereferenced` at every `(*param)` in the body. The annotation resolves correctly (the error even prints the right `*mut …::_DDHAL_UNLOCKDATA`), yet the binding is the const's type. Maddening because the *same* deref pattern compiles in a sibling fn whose param has a different name.
+**Root cause:** Rust function parameters are irrefutable **patterns**. If an identifier in a pattern position matches a `const` in scope, it's parsed as a **constant pattern** (matching against that const's value), NOT as a fresh binding. The huge `win32k_sys::win32k::*` glob (and its `enum_aliases_*`) re-exports thousands of consts — e.g. `pub const Unlock: _SECURITY_LOGON_TYPE` (a u32 enum value). So `fn DdUnlock(Unlock: *mut _DDHAL_UNLOCKDATA)` binds nothing; every `Unlock` in the body resolves to that u32 const. (DirectDraw HAL params like `Unlock`/`Lock`/`Flip` are prime collision candidates against the LOGON_TYPE / DD_* / enum consts.)
+**Detection:** when a param "is" the wrong scalar type despite a correct annotation, grep the glob for a `pub const <ParamName>:` — `grep -rn "pub const Unlock" sdk/lib/rust/win32k-sys/src/`. A sibling fn with the same body shape but a different param name compiling fine is the tell.
+**Fix:** rename the parameter so it can't match a const — `Unlock` → `pUnlock` (update body refs; leave `.Unlock` *field* accesses alone). **⚠️ The dangerous variant is SILENT:** if the colliding const's type is *compatible* with the body's use, it compiles and the fn reads the const instead of its argument — a runtime bug with no error. So for translations against a big bindgen glob, prefer non-colliding param names (Hungarian `p*`/`lp*` prefixes, as the C often already has) rather than bare capitalized nouns.
+**Source:** gdi32 Wave 4 (`gdientry.rs` DdUnlock/DdUnlockD3D — `Unlock` param vs `_SECURITY_LOGON_TYPE_Unlock` glob const). Cost ~an hour of "this param is u32 but it's annotated as a pointer?!" before spotting the const-pattern.
+
+### a `#include`-built data TABLE has a different ROW SET under the wrong preprocessor config → wrong-but-compiling table (SILENT)
+**Symptom:** a translated static table built from a header `#include` (the C does `static const T tbl[] = {\n#include "Data.h"\n};` where `Data.h` is rows of a `DEFINE_X(...)` macro) compiles and links clean, but has the **wrong number of rows** / wrong entries vs what the C build actually compiles. No error — the table is just silently wrong, so every lookup against it can return the wrong value at runtime.
+**Root cause:** the rows in `Data.h` are guarded by `#if` on build macros (`_WIN32_WINNT`/`NTDDI_VERSION`/`WINE_FILEVERSION_MAJOR`/component defines like `_SHELL32_`). If the translator preprocesses with the *wrong* config, a different set of `#if` branches is active → a different row set. The classic miss: `_WIN32_WINNT=0x502` (NTDDI_WS03) instead of the module's real `-D_WIN32_WINNT=0x600` (NTDDI_WIN6) flips every `NTDDI_VERSION < NTDDI_LONGHORN` guard (note `NTDDI_LONGHORN == NTDDI_VISTA == NTDDI_WIN6`), and forgetting a component define (`-D_SHELL32_`) drops its guarded rows.
+**Detection / fix:** translate the table against the **module's real CMake define set** (grep its `CMakeLists.txt` for `add_definitions`/`-D...`; shell32 forces `-D_WIN32_WINNT=0x600 -D_SHELL32_ -D__REACTOS__ -DUNICODE`). Verify the row set against **ground truth**, not a hand re-preprocess: `strings -el <the pre-flip .c.obj>` shows exactly which string literals (e.g. each row's key string) the real build compiled in — diff that against your table. A bare `clang -E` with hand-guessed `-D`s reproduces the bug (that's how the wrong count arose in the first place); the obj is authoritative.
+**Source:** shell32 Wave 1 — `shpolicy.rs` `s_PolicyTable` (`#include "PolicyData.h"`, rows of `DEFINE_POLICY`). First pass preprocessed at WS03 → 169 rows; the real WIN6+`_SHELL32_` build is **159 rows**, confirmed byte-for-byte against `shpolicy.c.obj`'s UTF-16 strings (12 NTDDI-guarded rows dropped, 2 `>= NTDDI_LONGHORN` rows + 1 `_SHELL32_`-guarded row added). Same class to watch for the NLS/CSIDL/locale tables.
 
 ---
 
@@ -448,6 +508,12 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 #### Sub-class: correct literal for the WRONG named constant — a range BOUND, not a flag (scanner-invisible)
 **Symptom (2026-06-21, user32-rust):** `IS_ATOM(x)` coded `v > 0 && v < 0xC000` with a comment "MAXINTATOM is 0xC000". The C macro (`user32p.h`) is `(x > 0) && (x < 0x10000)` — the upper bound is **0x10000** (high 48 bits clear), NOT `MAXINTATOM`. MAXINTATOM (0xC000) is the *base* of registered-class atoms; they start at 0xC000 and increment. So once the shell registers ~100 window classes, a real class atom (e.g. `0xC06A`) is `>= 0xC000` and `IS_ATOM` returns false → it flows into `RtlInitUnicodeString`, whose `wcslen` derefs the tiny integer → **AV 0xC0000005 in explorer at "taskbar: creating tray window"**, crash-looping the shell post-`shell ready` (so the smoke gate stays green; only the *desktop* is broken). Two copies (`window.rs:42` `User32CreateWindowEx`, `class.rs:111`) had the bug; `message.rs:224` had it right (0x10000). Fixed in `67c9e5849c7`.
 **Why the literal-scanner misses it:** the literal `0xC000` *matches* its naming comment (`MAXINTATOM` really is 0xC000) — so `scan_inline_flag_literals.py` sees a consistent literal/label pair and stays silent. The defect is one level up: the translator picked the **wrong named constant** for an *unnamed* numeric bound in the source (the C `0x10000` had no symbol). This is the residual "correct value, wrong concept" class. **Tell:** a range/threshold compare (`< CONST`, `>= CONST`, `>> N`) where the C original used a bare numeric literal — re-derive the bound from the C, don't trust a plausible-looking named-constant comment. **Cross-arch:** `user32-rust` (and most usermode `*-rust` crates) are cohab'd on all 3 arches, so a usermode-DLL translation bug breaks amd64/i386 identically — it just hides *past* their `shell ready` gate. To see it, boot past the gate and watch for `[UEXC]`/`PspExitThread ExitStatus=0xC0000005`.
+
+### Ported tree/list rebalance: an untested special case (predecessor = direct child) self-corrupts links — random model tests catch it, hand-built cases don't (splaytree, 2026-06-26)
+**Symptom:** splaytree's two-children `delete` (`RtlDelete` → `subtree_predecessor` + `swap_splay_links`) corrupts the tree ONLY when the in-order predecessor is the node's *direct left child* — `verify_links` fails "left child's parent mismatch", or a later op derefs a wild/misaligned node pointer (a `SplayLinks` field holding key-like bytes). Compiles/links clean. The splay primitives are extern-linked from the splaytree crate, so any generic-table consumer (`generictable`, anything calling `RtlDelete`) hits it on a two-children-direct-predecessor delete. Latent — boot never landed on that exact shape.
+**Cause:** in `swap_splay_links`, the "A was parent of B" special case wires A in under B (and repoints A's old parent at B), but the following `fixup_child_links(A, root=false, …)` *also* relinks A into "its parent" — and A's recorded parent (`tb.parent`) is A's *own* address (B was A's child), so it runs `set_left/right(A, A)`, self-corrupting A's child pointer and orphaning A's real child.
+**Fix:** pass `a_was_parent_of_b = (tb.parent == link_a)` as fixup's `root` flag for A, skipping the bogus parent-relink (A's parent is already B). Only the special case changes; the deeper-predecessor path is byte-identical. (`e5ca403e206`)
+**Methodology (the real lesson):** hand-built delete tests covered leaf / root-only / one-child and even a two-children case with a *deeper* predecessor — all green — and still missed this. A **random keyed model test** (insert/delete vs a `BTreeMap`; nodes never freed/reused so any corruption is a genuine link bug; `verify_links` + in-order-equals-sorted check after EVERY op) found it in <100 ops and shrank to a 4-node deterministic repro. For any ported/translated tree/list/heap: don't trust hand-built cases — model-test against a reference structure with a links-invariant check after each mutation, and make sure the merge/rebalance special cases (predecessor-is-direct-child, node-is-root, left-vs-right child) are actually exercised. The same gap let `swap_splay_links` ship untested for the entire two-children path.
 
 ### Hand-encoded UTF-16 (wide) byte-string literals — three silent mis-encodings
 **Symptom (2026-06-21, user32-rust Wave 4):** rustconv emits `L"..."` wide strings as Rust byte-string literals (`b"i\0m\0m\03\02\0.\0d\0l\0l\0\0\0"` == `L"imm32.dll"`). Three ways it silently corrupts them, all compile clean (the bytes are well-formed Rust), all manifest only as a wrong *runtime* string:
@@ -1388,6 +1454,143 @@ It hadn't: **bare mainline built the same subset-way wedged at the identical PC.
   is clean and your change wedges **under a FULL ninja** is it a real regression worth the
   symbolicate→targeted-guard path (§"#38/#35" Findings 2–3). Cost of skipping this step:
   a full symbolication + no-prepop fork put to the user on a phantom regression.
+
+### 9.6c.1 ⚠️ A boot-critical driver MISSING from the arm64 staged set false-greens the gate on a STALE pre-cohab-flip binary — masking a broken Rust translation indefinitely
+
+Distinct from §9.6c (which is an ABI *skew* of drivers that ARE built). Here a Rust-cohab
+driver is **absent from `tests/qemu/cli/archcfg.py`'s arm64 `ninja_targets`/`staged_bins_rel`
+entirely**, so `vibeos-cli build --arch arm64` + `mkramdisk --refresh` **never rebuild it** —
+the gate ships whatever `.sys` was last on disk, which for a driver cohab-flipped C→Rust is the
+**pre-flip STALE C binary**. The committed Rust translation is then **never boot-exercised**:
+the gate stays green while a *clean* build (which does build the Rust `.sys`) crashes.
+
+- **2026-06-26 case — `ramdisk`:** the 06-21 `ramdisk.c`→Rust cohab flip (`1c492f8adb9`,
+  "link-clean x3" bar, never arm64-boot-tested) sat broken on mainline for days. Every arm64
+  gate was green (36s) because `ramdisk` was in **neither** `ninja_targets` nor
+  `staged_bins_rel` → the gate booted a stale **C** `ramdisk.sys` (13.7KB `.text`, 0 Rust
+  syms). A clean build's **Rust** `ramdisk.sys` (140KB `.text`, 651 Rust syms) BUGCHECK'd
+  **0x64** at the first file open (`ZwOpenFile(ntdll.dll)=0xc000003a`, IopParseDevice never
+  reached). Root cause was a cluster of **garbage machine-translation consts used as Rust
+  `match` patterns / FSCTL codes** — the const-as-pattern silent-dead-code class (sibling of
+  §"const placeholder" entries): `FSCTL_CREATE_RAM_DISK`=`0x900c4` (×3 local shadows, correct
+  `0x240000`=`CTL_CODE(FILE_DEVICE_VIRTUAL_DISK,0,BUFFERED,ANY)`) → the FSCTL dispatch arm was
+  dead code → device never created; `RAMDISK_BOOT_DISK`/`WIM`/`MEMORY_MAPPED`=garbage ASCII
+  (correct 3/4/2) → boot disk failed `DiskType >= RAMDISK_BOOT_DISK`. After those: a deeper
+  **0x23 (FAT_FILE_SYSTEM)** because `IOCTL_DISK_CHECK_VERIFY`=`0x70000` **collided** with
+  `IOCTL_DISK_GET_DRIVE_GEOMETRY`=`0x70000` and was listed FIRST in the match → geometry IOCTL
+  returned success with a **zeroed `DISK_GEOMETRY`** (`BytesPerSector=0`) → fastfat FAT math
+  divides by zero. Fix = all consts to header CTL_CODE values + add `ramdisk` **and** `pl011`
+  (the 5th boot-critical Rust-cohab driver, also missing) to both archcfg lists.
+- **Why x86 is immune:** i386/amd64 boot from a LiveCD ISO that `ninja livecd` repackages with
+  freshly-built drivers; only arm64's **staged-ramdisk** path can ship a stale `.sys`. So an
+  arm64-only `ramdisk`/`pl011`/`serial` cohab flip is invisible to the x86 gates entirely.
+- **Detect / audit (do this whenever you cohab-flip ANY arm64 boot-loaded driver):** in a boot
+  serial, `grep '\[BLT\] IopInitializeBuiltinDriver:'` lists *every* driver the kernel BLT-loads
+  at boot (2026-06: `fastfat ramdisk pl011 arm64input arm64vid`). EVERY one that is a Rust-cohab
+  workspace member MUST be in `archcfg.py` arm64 `ninja_targets` + `staged_bins_rel` (or
+  `ninja_targets_optional`), or the gate false-greens on its stale pre-flip C binary. The
+  comment block at the flip site (`*.cmake` "replaced by Rust") and `link-clean x3` bars do
+  **not** imply boot-tested — only a clean arm64 boot of the actually-rebuilt Rust `.sys` does.
+- **Mechanizing the const class — CTL_CODE half now CLOSED (2026-06-26):** these garbage consts
+  slipped both static gates — `scan_inline_flag_literals` only catches *annotated bare literals*
+  (`0x2 /* NAME */`), and `verify_constants` checked `const NAME = VALUE` against C `#define`
+  *literals* only — but `IOCTL_*`/`FSCTL_*` are `#define NAME CTL_CODE(dev,fn,method,access)`
+  *macro calls*, which all three of its literal/multichar/ntstatus parsers skip, so they never
+  entered the catalog and any garbage Rust copy went unchecked. **`verify_constants.build_c_catalog`
+  now evaluates the CTL_CODE macro** (`(dev<<16)|(access<<14)|(fn<<2)|method`), resolving the four
+  operands from the header scope (incl. `IOCTL_*_BASE` aliases → `FILE_DEVICE_*`) and seeding the
+  standardized base operands; it joins the DDK headers' multi-line continuation defs first. The
+  catalog gained **326 IOCTL_/FSCTL_ codes** (was 0). It would have caught every ramdisk const
+  above at the static gate. Locked by `tools/rustconv/tests/test_verify_constants_ctlcode.py`.
+  - **Generalized to ALL wrapper-macro families (2026-06-28) — the robust upgrade:** many IOCTL
+    families aren't `CTL_CODE(...)` directly but go through a *device-specific wrapper macro* —
+    `_AFD_CONTROL_CODE`, `_TDI_CONTROL_CODE`, `_NDIS_CONTROL_CODE`, `USB_CTL`, … — and AFD's wrapper
+    doesn't even use `CTL_CODE` (it has its own packing `(FSCTL_AFD_BASE)<<12 | (Op<<2) | Method`).
+    Special-casing `CTL_CODE` missed all of these. Replaced the `CTL_CODE`-only parser with a
+    **generic function-like-macro expander** (`_expand_func_macros`): it parses every `#define
+    NAME(params) body` wrapper from the headers, recursively substitutes args (whole-word, so a
+    `Method` param never matches inside `METHOD_NEITHER`) and expands nested calls until the body is
+    pure arithmetic, then evaluates. `parse_ioctl_defines` now scans the whole `IOCTL_*`/`FSCTL_*`
+    namespace through this one path — literal, direct-`CTL_CODE`, and any wrapper, family-agnostic.
+    Catalog **326 → 390** (+AFD 38, TDI 14, NDIS, USB), verified against known answers (`IOCTL_AFD_BIND`
+    `0x12003`, `IOCTL_AFD_SEND` `0x1201F`, `IOCTL_TDI_CONNECT` `0x210004`, `IOCTL_NDIS_QUERY_GLOBAL_STATS`
+    `0x170002`). **This is exactly netstack's afd bug #3** (the `IOCTL_AFD_*` block mis-numbered
+    sequentially instead of computed → `msafd` SEND `0x1201F` misrouted to the RECV arm) — the
+    generalized gate computes the right value, so that class is now caught statically for the whole
+    transport/USB stack, not just the disk/cdrom CTL_CODE ones. Bringing a new family under the net
+    is a one-line header add to `CTL_CODE_HEADERS`; depth-guarded so a recursive macro bails to
+    "unevaluable" (skipped) rather than fabricating. Self-referential/non-arithmetic wrapper macros
+    are harmless — they only expand when an IOCTL body calls them and a non-integer result is skipped.
+  - **First catch (fixed same commit):** 3 real wrong codes in `ntoskrnl-rust` — `fstub/disksup.rs`
+    `IOCTL_DISK_GET_DRIVE_LAYOUT` `0x74004`→`0x7400C`, and `iomgr/rawfs.rs` oplock FSCTLs numbered
+    *contiguously* but the real headers skip: `FSCTL_OPLOCK_BREAK_ACKNOWLEDGE` `0x90008`→`0x9000C`
+    (fn 3 not 2), `FSCTL_OPLOCK_BREAK_NOTIFY` `0x9000C`→`0x90014` (fn 5 not 3).
+  - **Gate scope now WHOLE-WORKSPACE (2026-06-26):** `verify_constants` main() default + the gate
+    spec (`tests/qemu/cli/lints.py`) now scan **all of `sdk/lib/rust/**` (driver crates included)**,
+    not just `ntoskrnl-rust/src` — so the prevention finally reaches where ramdisk actually lived.
+    Its volatile catalog/file-count summary moved to **stderr** (gate reads stdout only) so the
+    baseline stays stable as workspace files come and go. The tree-wide scan found **57 latent
+    garbage IOCTL/FSCTL consts**: **cdrom-rust's 26 are FIXED mechanically** (`verify_constants
+    --fix` — it rewrites each to the computed CTL_CODE value); the rest (fastfat 24, disk/mountmgr/
+    classpnp/cdfs/usbhub) are **baselined** in `tools/lint-baseline/verify_constants.txt` (75 lines
+    = 31 residual CTL + 44 non-CTL) as accepted debt for the owning lanes to burn down — the gate now
+    blocks any NEW garbage const tree-wide.
+  - **`--fix` now rewrites function-LOCAL consts too:** `parse_rust_const` strips the line so it
+    *detected* `    const NAME = …` inside fns, but `fix_const_line` anchored its rewrite regex at
+    column 0 → silently no-op'd on any indented const (e.g. cdrom's `IOCTL_CDROM_GET_INQUIRY_DATA`).
+    Fixed by capturing leading whitespace in the prefix (indentation preserved). This closes the
+    function-local half of the mechanization.
+  - **Triage of the non-CTL findings (the holistic-fix question):** they split three ways —
+    **CTL codes** are mechanically `--fix`-able (header-authoritative ABI values); **pool `TAG_*`**
+    mismatches are *harmless translation divergences* (arbitrary 4-char debug labels, e.g. `TAG_KERNEL`
+    "Kern" vs C "Ke  ") → baseline, do NOT auto-fix; **`STATUS_*`/flag** mismatches are *case-by-case*
+    (a wrong NTSTATUS is a real bug, but the name can collide across status enums → FP risk) → review
+    before fixing, never blanket `--fix`. So a blind tree-wide `--fix` is UNSAFE; fix per-class.
+
+### 9.6c.2 ✅ The arm64 staged-build false-green is now STRUCTURALLY mechanized — a self-maintaining freshness net + build self-heal (2026-06-28)
+
+§9.6c.1 mechanized the *const* half (a broken Rust binary). This closes the *other* half of
+that bug — the **stale binary** that lets a broken (or even a *correct*) Rust cohab flip never
+get boot-exercised because the arm64 staged build didn't rebuild it. The fix is two cooperating
+pieces in `tests/qemu/cli/`, both keyed off the **actual boot manifest** (`mkramdisk.sh`'s
+`REQUIRED_FILES`) rather than the hand-maintained `archcfg.py` lists — so neither can be
+defeated by forgetting an archcfg entry (the exact failure mode that bit fastfat→ramdisk→pl011
+→gdi32→user32→advapi32, six times):
+
+- **The freshness net** (`provenance.cohab_staleness_reasons`, wired into `check_staleness` so
+  `smoke` hard-fails). For every binary in the boot set (`mkramdisk.sh` `REQUIRED_FILES` ∪
+  `archcfg.staged_bins_rel`) that maps to a `<stem>-rust` cohab crate, it asserts the built
+  artifact is **newer than the crate's newest `.rs`**. A cohab flip that wasn't rebuilt leaves
+  the artifact older than its source → loud `STALE` at the gate, instead of a silent stale-C (or
+  stale-old-Rust) boot. **Crucially it runs in BOTH staleness tiers** — a flip that wasn't
+  rebuilt leaves the build-stamp git-fingerprint *matching*, so the tier-1 fast path ("fingerprint
+  unchanged ⇒ fresh") is itself unsound for these binaries and cannot be trusted; the net overrides
+  it. Self-maintaining: a new `<x>-rust` crate that produces `<x>.sys` auto-joins the net the
+  moment it's added to `mkramdisk.sh` — zero archcfg edits. (Mapping handles the `_`↔`-` skew:
+  binary `kernel32_vista.dll` → crate `kernel32-vista-rust`.)
+- **The build self-heal** (`build.py`): `boot_set_cohab_rels()` feeds those same cohab boot paths
+  into the `ninja` invocation alongside `archcfg.ninja_targets`, so **every cohab boot binary is
+  force-rebuilt regardless of whether anyone added it to `ninja_targets`**. This is the time-saver:
+  no more "forgot archcfg → stale gate → hand-`ninja` the driver → full re-gate" loop; `build`
+  just produces fresh binaries, and the net above confirms it.
+- **Validation:** on a real `build-arm64` the net guards 20 cohab boot binaries (kernel, hal,
+  win32k, kernel32(+vista), user32, winsrv, fastfat, ramdisk, pl011, netstack, ntdll, kdcom,
+  bootvid, framebuf, mlang, version, winlogon, arm64input/vid) with zero false positives, and
+  immediately flagged a genuinely-stale `user32.dll` (source newer than the built binary) that
+  would otherwise have staged stale. `i386`/`amd64` return empty (a full `ninja livecd` can't ship
+  a stale cohab binary), so the net is arm64-scoped by construction. Locked by 8 unit tests in
+  `tests/qemu/cli/test_cli_units.py` (`test_cohab_*`, incl. the tier-1-override case).
+- **Why mtime not content-hash:** the gate flow is `build`→`smoke` back-to-back, so mtimes are
+  authoritative; the failure mode is conservative (over-warn on git-mtime churn between build and
+  smoke, never false-green), and `--allow-stale` is the escape hatch. Same philosophy as the
+  pre-existing re-stage trap (boot.img mtime), which this generalizes from "did mkramdisk re-run"
+  to "was each cohab binary actually rebuilt from its current source."
+
+**Takeaway:** you should no longer need the §9.6c.1 manual audit (`grep '\[BLT\]'` + cross-check
+archcfg) for the *staleness* half — the gate now catches a stale cohab boot binary automatically,
+and `build` stops producing them. The archcfg lists remain useful (they drive what `--clean`
+nukes and the x86 path), but they are no longer the *only* thing standing between a cohab flip and
+a false-green.
 
 ### 9.6d ⚠️ A bad mkramdisk run can hang arm64 late-boot — regenerate before suspecting code
 

@@ -1,0 +1,24 @@
+# buslogic-rust — Rust translation of drivers/storage/port/buslogic/BusLogic958.c, the
+# BusLogic BT-958 SCSI HBA miniport (single 2.8K-LOC TU). It is a SCSIPORT miniport: it
+# imports ScsiPort* (scsiport-rust) and registers via ScsiPortInitialize. buslogic.sys is
+# NOT on any QEMU boot path (the live SCSI/IDE path is uniata.sys) → link-clean ×3 is the
+# verification bar.
+#
+# Driver-private structs (BusLogic_HostAdapter_T, BusLogic_CCB_T, the *Mailbox structs,
+# the _HW_DEVICE_EXTENSION device-extension + the SCSI SRB/CDB/sense + SCSI_WMI DDK
+# layouts) come from the gen_driver_types.sh substrate (src/types_*.rs, per-arch).
+# crate-type=staticlib → libbuslogic_rust.a, cohab-linked into the cmake buslogic.sys with
+# BusLogic958.c commented out; #[no_mangle] DriverEntry takes over. Depends on ntkrnl-sys.
+# Built for all 3 arches.
+[package]
+name = "buslogic-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "buslogic_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

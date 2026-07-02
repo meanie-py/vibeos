@@ -11,14 +11,14 @@ import gdb
 import os
 
 
-def _tf_read(addr: int, ctype: str) -> int:
-    val = gdb.parse_and_eval(f"*({ctype} *)({addr:#x})")
-    return int(val)
-
-
 def _tf_read_u(addr: int, size: int) -> int:
-    return _tf_read(addr, {1: "unsigned char", 2: "unsigned short",
-                           4: "unsigned int", 8: "unsigned long long"}[size])
+    # Read raw bytes via the Inferior API rather than a C-cast expression
+    # (`*(unsigned long long *)addr`): when gdb is stopped inside a Rust frame
+    # the expression evaluator is in Rust language mode and rejects C type names
+    # ("No symbol 'unsigned' in current context"). read_memory is language-
+    # agnostic. Trap frames are always little-endian on our targets.
+    buf = gdb.selected_inferior().read_memory(addr, size)
+    return int.from_bytes(bytes(buf), "little")
 
 
 # (offset, size, label)
@@ -104,30 +104,32 @@ I386_FIELDS = [
 I386_SIZE = 0x08c
 
 
-# arm64: minimal subset — full struct is in sdk/include/ndk/arm64/ketypes.h.
+# arm64 KTRAP_FRAME — see sdk/include/ndk/arm64/ketypes.h. Offsets derived from
+# the struct with natural alignment: the Bcr/Bvr/Wcr/Wvr debug-register block
+# (+0x24..+0xa0) is skipped; X[19] is the GPR array at +0xb0 (X0..X18).
 ARM64_FIELDS = [
-    (0x000, 8, "X0"),
-    (0x008, 8, "X1"),
-    (0x010, 8, "X2"),
-    (0x018, 8, "X3"),
-    (0x020, 8, "X4"),
-    (0x028, 8, "X5"),
-    (0x030, 8, "X6"),
-    (0x038, 8, "X7"),
-    (0x100, 8, "Fp"),
-    (0x108, 8, "Lr"),
-    (0x110, 8, "Sp"),
-    (0x118, 8, "Pc"),
-    (0x120, 4, "Spsr"),
-    (0x124, 4, "Esr"),
-    (0x128, 8, "FaultAddress"),
+    (0x000, 1, "ExceptionActive"),
+    (0x001, 1, "ContextFromKFramesUnwound"),
+    (0x002, 1, "DebugRegistersValid"),
+    (0x003, 1, "PreviousMode"),
+    (0x004, 1, "PreviousIrql"),
+    (0x010, 8, "FaultAddress"),
+    (0x018, 8, "TrapFrame"),
+    (0x0a0, 4, "Spsr"),
+    (0x0a4, 4, "Esr"),
+    (0x0a8, 8, "Sp"),
+] + [(0x0b0 + i * 8, 8, f"X{i}") for i in range(19)] + [
+    (0x148, 8, "Lr"),
+    (0x150, 8, "Fp"),
+    (0x158, 8, "Pc"),
 ]
+ARM64_SIZE = 0x160
 
 
 SCHEMA = {
     "amd64": (AMD64_FIELDS, AMD64_SIZE),
     "i386":  (I386_FIELDS,  I386_SIZE),
-    "arm64": (ARM64_FIELDS, None),
+    "arm64": (ARM64_FIELDS, ARM64_SIZE),
 }
 
 

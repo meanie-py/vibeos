@@ -1,0 +1,14 @@
+[package]
+name = "sam-stub"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Rust RPC server stub for the samr interface — replaces cmake's widl-generated sam_s.c. Linked into samsrv.dll alongside the (cohab) samsrv bodies."
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+midl-rt = { path = "../midl-rt" }
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

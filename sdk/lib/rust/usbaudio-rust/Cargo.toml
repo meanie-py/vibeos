@@ -1,0 +1,21 @@
+# usbaudio-rust — Rust translation of drivers/usb/usbaudio (4 .c: usbaudio/pool/filter/pin;
+# guid.c stays a data-only C TU). A KS/PortCls USB-audio miniport: imports usbd + ks + portcls
+# and registers via PcInitializeAdapterDriver/KsCreate*. NOT on any QEMU boot path -> link-clean
+# x3 is the verification bar. DeepSeek-chat (V3) + c2rust-anchored, constant-safeguarded.
+#
+# Driver-private structs (the pshpack1 USB-audio descriptor structs + __DEVICE_EXTENSION__) and
+# the KS/PortCls/USB DDK layouts come from the gen_driver_types.sh substrate (src/types_*.rs,
+# per-arch). crate-type=staticlib -> libusbaudio_rust.a, cohab-linked into usbaudio.sys with the
+# .c bodies commented out. Depends on ntkrnl-sys. Built for all 3 arches.
+[package]
+name = "usbaudio-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "usbaudio_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

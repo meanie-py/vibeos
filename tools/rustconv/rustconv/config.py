@@ -135,10 +135,20 @@ PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
 STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
 STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
+BUSLOGIC_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "buslogic"
 SERIAL_DIR = REACTOS_ROOT / "drivers" / "serial" / "serial"
 RAMDISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "ramdisk"
 FLTMGR_DIR = REACTOS_ROOT / "drivers" / "filters" / "fltmgr"
 KSECDD_DIR = REACTOS_ROOT / "drivers" / "crypto" / "ksecdd"
+USBSTOR_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbstor"
+USBCCGP_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbccgp"
+USBHUB_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbhub"
+USBEHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbehci"
+USBOHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbohci"
+USBUHCI_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbuhci"
+USBPORT_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbport"
+USBAUDIO_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbaudio"
+KS_DIR = REACTOS_ROOT / "drivers" / "ksfilter" / "ks"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = REACTOS_ROOT / "tools" / "rustconv"  # follows REACTOS_ROOT (invoked tree)
@@ -768,6 +778,26 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # buslogic.sys — BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic,
+    # single 2.8K-LOC TU BusLogic958.c; Log.c/wmi.c are on disk but NOT in the build). A
+    # SCSIPORT miniport like atapi: imports ScsiPort* and registers via ScsiPortInitialize.
+    # No spec (kernelmodedriver, no exports). NOT on any QEMU boot path (live SCSI/IDE =
+    # uniata) → link-clean x3 bar. Driver-private structs (BusLogic_HostAdapter_T/CCB/
+    # *Mailbox/_HW_DEVICE_EXTENSION + SRB/CDB/sense/SCSI_WMI) from gen_driver_types.sh
+    # substrate (crate::types). Heavy port register I/O + mailbox DMA — c2rust-anchored.
+    "buslogic": Target(
+        name="buslogic",
+        source_dir=BUSLOGIC_DIR,
+        output_crate=RUST_DIR / "buslogic-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # serial.sys — 8250/16550 UART COM driver (drivers/serial/serial, ~2.7K LOC, 12 .c).
     # No spec (kernelmodedriver). NOT boot-loaded in smoke (kernel owns the KD COM port) →
     # link-clean x3 bar. Self-contained; the ISR/DPC/timeout files are the hard part.
@@ -832,6 +862,167 @@ TARGETS = {
         bindgen_files=BINDGEN_FILES,
         hal_bindgen_files={},
         spec_file=KSECDD_DIR / "ksecdd.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbstor.sys — USB mass-storage class driver (drivers/usb/usbstor, ~3.9K LOC, 9 .c:
+    # descriptor/disk/error/fdo/misc/pdo/queue/scsi/usbstor + guid). Bridges the USB stack
+    # (URB/USBDI) to the SCSI/disk class — adjacent to the already-Rust disk/classpnp/scsiport
+    # storage lane. kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/usbd, links sptilib).
+    # Private structs (CBW/CSW/IRP_CONTEXT/FDO+PDO device extensions/
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8) in usbstor.h. NOT boot-loaded in smoke
+    # (boots from CD/ramdisk, not USB) -> link-clean x3 bar.
+    "usbstor": Target(
+        name="usbstor",
+        source_dir=USBSTOR_DIR,
+        output_crate=RUST_DIR / "usbstor-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbccgp.sys — USB composite-device (generic parent) class driver (drivers/usb/usbccgp,
+    # ~3.6K LOC, 7 .c: descriptor/fdo/function/misc/pdo/usbccgp + guid). Splits a composite USB
+    # device into per-interface child PDOs. kernelmodedriver MODULE, no spec (imports ntoskrnl/
+    # hal/usbd). Private structs in usbccgp.h (pulls hubbusif/usbbusif/usb100/usbdlib). Vista
+    # (_WIN32_WINNT=0x600). NOT boot-loaded in smoke -> link-clean x3 bar. USB-only (no SCSI/SRB).
+    "usbccgp": Target(
+        name="usbccgp",
+        source_dir=USBCCGP_DIR,
+        output_crate=RUST_DIR / "usbccgp-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbhub.sys — USB hub class driver (drivers/usb/usbhub, ~10.4K LOC, 6 .c: debug/guid/ioctl/
+    # pnp/power/usbhub). Enumerates/powers/resets downstream ports, bridges to the USB miniport
+    # (usbmport.h) + WMI (wmilib). kernelmodedriver MODULE, no spec (imports ntoskrnl/hal/wmilib/
+    # usbd). Many private structs in usbhub.h (USBHUB_FDO_EXTENSION/PORT_PDO_EXTENSION + contexts;
+    # pulls usb/usbioctl/hubbusif/usbbusif/usbdlib/ks/usbport/usbmport). NOT boot-loaded in smoke
+    # -> link-clean x3 bar. The heaviest USB leaf; do after usbccgp.
+    "usbhub": Target(
+        name="usbhub",
+        source_dir=USBHUB_DIR,
+        output_crate=RUST_DIR / "usbhub-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbehci.sys — USB 2.0 EHCI host-controller miniport (drivers/usb/usbehci, ~4.5K LOC,
+    # 3 .c: debug/roothub/usbehci + guid). Registers a USBPORT_REGISTRATION_PACKET with usbport
+    # (usbmport.h); drives EHCI hardware registers/queue-heads/TDs (hardware.h). kernelmodedriver
+    # MODULE, no spec (imports usbport/usbd/hal/ntoskrnl). NOT boot-loaded in smoke -> link-clean
+    # x3 bar. First of the 3 host-controller miniports.
+    "usbehci": Target(
+        name="usbehci",
+        source_dir=USBEHCI_DIR,
+        output_crate=RUST_DIR / "usbehci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbohci.sys — USB 1.1 OHCI host-controller miniport (drivers/usb/usbohci, ~3.2K LOC,
+    # 2 .c: roothub/usbohci + guid). Same usbport-miniport shape as usbehci; OHCI EDs/TDs
+    # (hardware.h). kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbohci": Target(
+        name="usbohci",
+        source_dir=USBOHCI_DIR,
+        output_crate=RUST_DIR / "usbohci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbuhci.sys — USB 1.1 UHCI host-controller miniport (drivers/usb/usbuhci, ~3.3K LOC,
+    # 2 .c: roothub/usbuhci + guid). Same usbport-miniport shape; UHCI QHs/TDs (hardware.h).
+    # kernelmodedriver MODULE, no spec (imports usbport/usbd/hal/ntoskrnl).
+    "usbuhci": Target(
+        name="usbuhci",
+        source_dir=USBUHCI_DIR,
+        output_crate=RUST_DIR / "usbuhci-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbport.sys — USB host-controller PORT framework (drivers/usb/usbport, ~17K LOC, 14 .c:
+    # debug/device/endpoint/iface/ioctl/iso/pnp/power/queue/roothub/trfsplit/urb/usb2/usbport
+    # + guid). The miniport substrate the 3 host-controller miniports (ehci/ohci/uhci) register
+    # WITH via USBPORT_RegisterUSBPortDriver; owns the URB queue, endpoint/transfer state, PnP
+    # FDO/PDO, roothub PDO, USB2 bandwidth scheduler. kernelmodedriver MODULE WITH a .spec
+    # (exports USBPORT_* to the miniports) -> cohab flip must keep usbport.spec/def + the export
+    # surface. NOT boot-loaded in smoke -> link-clean x3 bar.
+    "usbport": Target(
+        name="usbport",
+        source_dir=USBPORT_DIR,
+        output_crate=RUST_DIR / "usbport-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=USBPORT_DIR / "usbport.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbaudio.sys — USB Audio class driver (drivers/usb/usbaudio, 4 .c / ~3.5K LOC; guid.c
+    # stays a C data TU). KS/PortCls audio miniport (imports usbd + ks + portcls), NTDDI Vista.
+    # No spec (kernelmodedriver). NOT on any QEMU boot path -> link-clean x3 bar. Private structs
+    # (pshpack1 USB-audio descriptors + __DEVICE_EXTENSION__) + KS/PortCls/USB DDK from the
+    # gen_driver_types.sh substrate (crate::types). DeepSeek-chat + c2rust, constant-safeguarded.
+    "usbaudio": Target(
+        name="usbaudio",
+        source_dir=USBAUDIO_DIR,
+        output_crate=RUST_DIR / "usbaudio-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ks.sys — Kernel Streaming class library (drivers/ksfilter/ks, 22 .c / ~19K LOC). EXPORT
+    # driver (ks.spec: the Ks* API the audio stack imports). The KS keystone. imports ntoskrnl+hal.
+    # NOT boot-loaded -> link-clean x3 bar. DeepSeek-chat + c2rust, constant-safeguarded.
+    "ks": Target(
+        name="ks",
+        source_dir=KS_DIR,
+        output_crate=RUST_DIR / "ks-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KS_DIR / "ks.spec",
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
         src_subdir=Path("src"),
         cmake_deps_file=None,
@@ -1252,6 +1443,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["storport"]
     if "/drivers/storage/port/storahci" in posix:
         return TARGETS["storahci"]
+    if "/drivers/storage/port/buslogic" in posix:
+        return TARGETS["buslogic"]
     if "/drivers/serial/serial" in posix:
         return TARGETS["serial"]
     if "/drivers/storage/class/ramdisk" in posix:
@@ -1260,6 +1453,24 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["fltmgr"]
     if "/drivers/crypto/ksecdd" in posix:
         return TARGETS["ksecdd"]
+    if "/drivers/usb/usbstor" in posix:
+        return TARGETS["usbstor"]
+    if "/drivers/usb/usbccgp" in posix:
+        return TARGETS["usbccgp"]
+    if "/drivers/usb/usbhub" in posix:
+        return TARGETS["usbhub"]
+    if "/drivers/usb/usbehci" in posix:
+        return TARGETS["usbehci"]
+    if "/drivers/usb/usbohci" in posix:
+        return TARGETS["usbohci"]
+    if "/drivers/usb/usbuhci" in posix:
+        return TARGETS["usbuhci"]
+    if "/drivers/usb/usbport" in posix:
+        return TARGETS["usbport"]
+    if "/drivers/usb/usbaudio" in posix:
+        return TARGETS["usbaudio"]
+    if "/drivers/ksfilter/ks" in posix:
+        return TARGETS["ks"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

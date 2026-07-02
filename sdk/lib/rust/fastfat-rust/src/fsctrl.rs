@@ -141,9 +141,9 @@ pub static mut FatMoveFileDebug: BOOLEAN = 0;
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_FSCTRL;
 pub const Dbg: u32 = DEBUG_TRACE_FSCTRL;
 
-const IOCTL_DISK_IS_WRITABLE: u32 = 0x00074008;
+const IOCTL_DISK_IS_WRITABLE: u32 = 0x00070024;
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
-const STATUS_MEDIA_WRITE_PROTECTED: i32 = 0xC0000371_u32 as i32;
+const STATUS_MEDIA_WRITE_PROTECTED: i32 = 0xC00000A2_u32 as i32;
 
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
@@ -221,23 +221,23 @@ const STATUS_WRONG_VOLUME: i32 = 0xC0000012_u32 as i32;
 const FSCTL_LOCK_VOLUME: u32 = 0x00090018;
 const FSCTL_UNLOCK_VOLUME: u32 = 0x0009001C;
 const FSCTL_DISMOUNT_VOLUME: u32 = 0x00090020;
-const FSCTL_MARK_VOLUME_DIRTY: u32 = 0x00090024;
-const FSCTL_IS_VOLUME_DIRTY: u32 = 0x00090028;
-const FSCTL_IS_VOLUME_MOUNTED: u32 = 0x00090030;
-const FSCTL_IS_PATHNAME_VALID: u32 = 0x00090038;
-const FSCTL_QUERY_RETRIEVAL_POINTERS: u32 = 0x00090040;
-const FSCTL_QUERY_FAT_BPB: u32 = 0x00090048;
-const FSCTL_FILESYSTEM_GET_STATISTICS: u32 = 0x0009004C;
+const FSCTL_MARK_VOLUME_DIRTY: u32 = 0x00090030;
+const FSCTL_IS_VOLUME_DIRTY: u32 = 0x00090078;
+const FSCTL_IS_VOLUME_MOUNTED: u32 = 0x00090028;
+const FSCTL_IS_PATHNAME_VALID: u32 = 0x0009002C;
+const FSCTL_QUERY_RETRIEVAL_POINTERS: u32 = 0x0009003B;
+const FSCTL_QUERY_FAT_BPB: u32 = 0x00090058;
+const FSCTL_FILESYSTEM_GET_STATISTICS: u32 = 0x00090060;
 const FSCTL_GET_RETRIEVAL_POINTER_BASE: u32 = 0x00090234; // CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 141, METHOD_BUFFERED, FILE_ANY_ACCESS)
-const FSCTL_GET_BOOT_AREA_INFO: u32 = 0x00090054;
-const FSCTL_GET_VOLUME_BITMAP: u32 = 0x00090058;
-const FSCTL_GET_RETRIEVAL_POINTERS: u32 = 0x00090044;
+const FSCTL_GET_BOOT_AREA_INFO: u32 = 0x00090230;
+const FSCTL_GET_VOLUME_BITMAP: u32 = 0x0009006F;
+const FSCTL_GET_RETRIEVAL_POINTERS: u32 = 0x00090073;
 const FSCTL_MOVE_FILE: u32 = 0x00090074; // CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 29, METHOD_BUFFERED, FILE_ANY_ACCESS)
-const FSCTL_ALLOW_EXTENDED_DASD_IO: u32 = 0x00090060;
-const FSCTL_MARK_HANDLE: u32 = 0x00090064;
-const FSCTL_SET_PURGE_FAILURE_MODE: u32 = 0x00090068;
-const FSCTL_SET_ZERO_ON_DEALLOCATION: u32 = 0x0009006C;
-const FSCTL_REQUEST_OPLOCK: u32 = 0x00090070;
+const FSCTL_ALLOW_EXTENDED_DASD_IO: u32 = 0x00090083;
+const FSCTL_MARK_HANDLE: u32 = 0x000900FC;
+const FSCTL_SET_PURGE_FAILURE_MODE: u32 = 0x00090270;
+const FSCTL_SET_ZERO_ON_DEALLOCATION: u32 = 0x00090194;
+const FSCTL_REQUEST_OPLOCK: u32 = 0x00090240;
 #[no_mangle]
 pub unsafe extern "system" fn FatNonSparseMcb(
     Vcb: *mut VCB,
@@ -552,7 +552,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
             let mut PartitionInformation: PARTITION_INFORMATION_EX = core::mem::zeroed();
             FatPerformDevIoCtrl(
                 IrpContext,
-                0x007044C /* IOCTL_DISK_GET_PARTITION_INFO_EX */,
+                0x00070048 /* IOCTL_DISK_GET_PARTITION_INFO_EX */,
                 (*Vcb).TargetDeviceObject,
                 core::ptr::null_mut(),
                 0,
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
         if FlagOn((*(*Vcb).TargetDeviceObject).Characteristics, 0x1 /* FILE_REMOVABLE_MEDIA */) != 0 {
             Status = FatPerformDevIoCtrl(
                 IrpContext,
-                0x00070000 /* IOCTL_DISK_CHECK_VERIFY */,
+                0x00074800 /* IOCTL_DISK_CHECK_VERIFY */,
                 (*Vcb).TargetDeviceObject,
                 core::ptr::null_mut(),
                 0,
@@ -601,7 +601,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
 
         Status = FatPerformDevIoCtrl(
             IrpContext,
-            0x0007400C /* IOCTL_DISK_GET_DRIVE_GEOMETRY */,
+            0x00070000 /* IOCTL_DISK_GET_DRIVE_GEOMETRY */,
             (*Vcb).TargetDeviceObject,
             core::ptr::null_mut(),
             0,

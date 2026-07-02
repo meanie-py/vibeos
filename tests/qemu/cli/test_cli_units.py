@@ -6,6 +6,7 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import json
+import os
 import socket
 import struct
 import subprocess
@@ -201,6 +202,92 @@ def test_staleness_arm64_restage_trap(tmp_path: Path):
     v = provenance.check_staleness(r, "arm64")
     assert v.stale, v.reasons
     assert any("re-staged" in reason for reason in v.reasons), v.reasons
+
+
+@pytest.fixture
+def arm64_cohab_repo(tmp_path: Path) -> Path:
+    """An arm64 repo with one Rust-cohab driver (foo-rust -> foo.sys), staged via
+    mkramdisk REQUIRED_FILES, plus a build-arm64 artifact + boot.img + stamp — the
+    fixture for the staged-build cohab freshness net (advapi32/fastfat class)."""
+    r = tmp_path / "repo"
+    crate = r / "sdk" / "lib" / "rust" / "foo-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text("[package]\nname = 'foo-rust'\n")
+    (crate / "src" / "lib.rs").write_text("// rust cohab\n")
+    (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
+    (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
+    (r / "qemu").mkdir()
+    (r / "qemu" / "mkramdisk.sh").write_text(
+        'REQUIRED_FILES=(\n    "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"\n'
+        '    "$BUILD_DIR/drivers/x/foo/foo.sys"\n)\n'
+    )
+    (r / "qemu" / "boot.img").write_bytes(b"BOOT")
+    (r / "docs").mkdir()
+    (r / "docs" / "readme.md").write_text("hi\n")
+    _git(r, "init", "-q")
+    _git(r, "config", "user.email", "t@t")
+    _git(r, "config", "user.name", "t")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "init")
+    provenance.make_stamp(r, "arm64", cold=True, ts=1).write(r / "build-arm64")
+    return r
+
+
+def test_mkramdisk_required_rels_parsed(arm64_cohab_repo: Path):
+    rels = provenance.mkramdisk_required_rels(arm64_cohab_repo)
+    assert "drivers/x/foo/foo.sys" in rels and "ntoskrnl/ntoskrnl.exe" in rels
+
+
+def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
+    # underscore'd binary stem (kernel32_vista) must find the hyphen crate name
+    (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust").mkdir()
+    (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust" / "Cargo.toml").write_text("x")
+    assert provenance._crate_for_stem(arm64_cohab_repo, "k32_vista") is not None
+    assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
+
+
+def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
+    rels = provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    assert "drivers/x/foo/foo.sys" in rels  # has foo-rust crate
+    assert "ntoskrnl/ntoskrnl.exe" not in rels  # no ntoskrnl-rust crate in this repo
+    # x86 never stages — always empty (full ninja livecd can't ship stale cohab)
+    assert provenance.boot_set_cohab_rels(arm64_cohab_repo, "i386") == []
+
+
+def test_cohab_fresh_binary_not_stale(arm64_cohab_repo: Path):
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(rs, (1000, 1000))
+    os.utime(sysf, (2000, 2000))  # binary newer than its .rs == freshly rebuilt
+    assert provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64") == []
+
+
+def test_cohab_stale_binary_flagged(arm64_cohab_repo: Path):
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(sysf, (1000, 1000))
+    os.utime(rs, (2000, 2000))  # .rs newer == cohab flip not rebuilt
+    reasons = provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64")
+    assert any("foo.sys" in r and "stale" in r for r in reasons), reasons
+
+
+def test_cohab_missing_artifact_flagged(arm64_cohab_repo: Path):
+    (arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").unlink()
+    reasons = provenance.cohab_staleness_reasons(arm64_cohab_repo, "arm64")
+    assert any("foo.sys" in r and "absent" in r for r in reasons), reasons
+
+
+def test_cohab_stale_overrides_tier1_fresh(arm64_cohab_repo: Path):
+    """The crux: fingerprint matches the stamp (no source change since build), so
+    tier-1 would short-circuit to FRESH — but the cohab binary was never rebuilt,
+    so the net must still mark it stale (the exact advapi32 false-green)."""
+    sysf = arm64_cohab_repo / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys"
+    rs = arm64_cohab_repo / "sdk" / "lib" / "rust" / "foo-rust" / "src" / "lib.rs"
+    os.utime(sysf, (1000, 1000))
+    os.utime(rs, (2000, 2000))
+    v = provenance.check_staleness(arm64_cohab_repo, "arm64")
+    assert v.stale and not v.fresh, v.reasons
+    assert any("foo.sys" in r for r in v.reasons), v.reasons
 
 
 def test_discover_rust_targets(tmp_path: Path):
@@ -530,6 +617,140 @@ def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
     third._release_slot()
 
 
+# --- windows-host hostfwd-bind TOCTOU launch retry -------------------------
+class _Reader:
+    """Minimal proc.stderr stand-in (read() returns the captured bytes once)."""
+
+    def __init__(self, data: bytes = b""):
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+class _FakeProc:
+    """subprocess.Popen stand-in for _launch_qemu tests."""
+
+    def __init__(self, stderr: bytes = b""):
+        self.stderr = _Reader(stderr)
+
+
+def _launch_vm(backend: str = "windows-host"):
+    """A bare QemuVM carrying only what _launch_qemu touches."""
+    v = vm.QemuVM.__new__(vm.QemuVM)
+    v._backend = backend
+    v._proc = None
+    v._early_stderr = ""
+    return v
+
+
+def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch):
+    v = _launch_vm("windows-host")
+    monkeypatch.setattr(
+        v,
+        "_build_windows_cmd",
+        lambda: ["qemu", "-netdev", "user,id=n,hostfwd=tcp:0.0.0.0:1234-:7777"],
+    )
+    procs = [_FakeProc(), _FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    # first two attempts lose the port race, third launches clean (None = healthy)
+    seq = iter([vm.HOSTFWD_BIND_ERROR + " 'tcp:0.0.0.0:1234'", vm.HOSTFWD_BIND_ERROR, None])
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    cmd = v._launch_qemu()
+    assert "hostfwd=" in " ".join(cmd)
+    assert v._proc is procs[2]  # the healthy (3rd) attempt
+    assert discarded == [procs[0], procs[1]]  # first two torn down
+    assert len(launched) == 3
+
+
+def test_launch_qemu_healthy_first_try_no_retry(monkeypatch):
+    v = _launch_vm("windows-host")
+    monkeypatch.setattr(
+        v, "_build_windows_cmd", lambda: ["qemu", "-netdev", "user,hostfwd=tcp:0.0.0.0:9-:9"]
+    )
+    proc = _FakeProc()
+    launched: list = []
+    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: launched.append(proc) or proc)
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: None)
+    monkeypatch.setattr(
+        v, "_discard_failed_launch", lambda p: pytest.fail("healthy launch must not discard")
+    )
+    v._launch_qemu()
+    assert v._proc is proc
+    assert len(launched) == 1
+
+
+def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch):
+    # native (or any non-hostfwd) config: launch once, never poll for the bind race.
+    v = _launch_vm("native")
+    monkeypatch.setattr(v, "_build_native_cmd", lambda: ["qemu", "-M", "pc"])
+    proc = _FakeProc()
+    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
+    monkeypatch.setattr(
+        v, "_early_exit_stderr", lambda *a, **k: pytest.fail("must not poll a non-hostfwd cmd")
+    )
+    cmd = v._launch_qemu()
+    assert v._proc is proc
+    assert cmd == ["qemu", "-M", "pc"]
+
+
+def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch):
+    # QEMU dies early for some OTHER reason → not the flake: keep the proc (the normal
+    # start path surfaces it), stash stderr, do NOT retry.
+    v = _launch_vm("windows-host")
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
+    proc = _FakeProc()
+    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: "bad -drive: No such file")
+    monkeypatch.setattr(v, "_discard_failed_launch", lambda p: pytest.fail("must not retry"))
+    v._launch_qemu()
+    assert v._proc is proc
+    assert v._early_stderr == "bad -drive: No such file"
+
+
+def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr(vm, "HOSTFWD_LAUNCH_RETRIES", 2)
+    v = _launch_vm("windows-host")
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
+    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: vm.HOSTFWD_BIND_ERROR)
+    monkeypatch.setattr(v, "_discard_failed_launch", lambda p: None)
+    with pytest.raises(RuntimeError, match="hostfwd-bind failed after 2"):
+        v._launch_qemu()
+
+
+def test_early_exit_stderr_reports_exit_vs_healthy():
+    v = vm.QemuVM.__new__(vm.QemuVM)
+
+    class Exited:
+        stderr = _Reader(b"Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
+
+        def poll(self):
+            return 1
+
+    out = v._early_exit_stderr(Exited(), budget=0.3)  # type: ignore[arg-type]
+    assert "host forwarding" in (out or "")
+
+    class Alive:
+        stderr = None
+
+        def poll(self):
+            return None
+
+    alive = v._early_exit_stderr(Alive(), budget=0.15)  # type: ignore[arg-type]
+    assert alive is None
+
+
 # --- prune: idle-worktree GC eligibility gates -----------------------------
 from . import prune  # noqa: E402
 
@@ -695,7 +916,7 @@ def test_source_date_epoch_none_outside_git(tmp_path: Path):
 def test_config_defaults_when_no_overrides(tmp_path: Path):
     cfg = config_mod.load(tmp_path, environ={})
     assert cfg.get("qemu.backend") == "windows-host"
-    assert cfg.get("qemu.windows.accel") == "tcg"
+    assert cfg.get("qemu.windows.accel") == "tcg"  # whpx is opt-in (doesn't boot x86 cleanly yet)
     assert cfg.get("nonexistent.key", "fallback") == "fallback"
 
 
@@ -705,7 +926,7 @@ def test_config_local_file_deep_merges(tmp_path: Path):
     )
     cfg = config_mod.load(tmp_path, environ={})
     assert cfg.get("qemu.backend") == "windows-host"
-    assert cfg.get("qemu.windows.accel") == "whpx"
+    assert cfg.get("qemu.windows.accel") == "whpx"  # local override beats the tcg default
     # untouched sibling defaults survive the deep merge
     assert cfg.get("qemu.windows.host_addr") == "127.0.0.1"
 
@@ -802,17 +1023,36 @@ def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
     assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
-    # whpx: kvm->whpx (irqchip off) and KEEP -cpu host
+    # whpx: kvm->whpx (irqchip off) and ALSO drop -cpu host — it faults OVMF on FXSAVE in
+    # early firmware, so whpx must fall back to qemu's default cpu model.
     assert be_mod.rewrite_accel(base, "whpx") == [
         "-M",
         "pc",
         "-accel",
         "whpx,kernel-irqchip=off",
-        "-cpu",
-        "host",
         "-m",
         "512M",
     ]
+
+
+def test_backend_resolve_accel_per_arch():
+    # x86 honors the configured value...
+    assert be_mod.resolve_accel("i386", "whpx") == "whpx"
+    assert be_mod.resolve_accel("amd64", "whpx") == "whpx"
+    assert be_mod.resolve_accel("amd64", "tcg") == "tcg"
+    # ...arm64 is FORCED to tcg regardless (whpx is x86-only; the cpu model must survive)
+    assert be_mod.resolve_accel("arm64", "whpx") == "tcg"
+    assert be_mod.resolve_accel("arm64-uefi", "whpx") == "tcg"
+
+
+def test_backend_resolve_accel_probe_degrade():
+    # probe says DEFINITELY absent → x86 whpx degrades to tcg (fail-soft)
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=False) == "tcg"
+    # probe present or inconclusive → trust the configured whpx (don't degrade on a flaky probe)
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=True) == "whpx"
+    assert be_mod.resolve_accel("amd64", "whpx", whpx_ok=None) == "whpx"
+    # a probe result never upgrades an explicit tcg config
+    assert be_mod.resolve_accel("amd64", "tcg", whpx_ok=True) == "tcg"
 
 
 def test_backend_stage_media_paths_passthrough():

@@ -525,7 +525,7 @@ const TAG_IO_USER_BUFFER: u32 = 0x51746146; // 'bUu' tag placeholder
 
 // Constants from file level or needed locally
 const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
-const NonPagedPoolNxCacheAligned: u32 = 0x20000000; /* placeholder */
+const NonPagedPoolNxCacheAligned: u32 = 0x0204; /* placeholder */
 const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
 #[no_mangle]
 pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {

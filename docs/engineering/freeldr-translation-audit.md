@@ -1,8 +1,22 @@
 # FreeLDR + Boot DLLs C→Rust Translation Audit
 
-Last updated 2026-06-02. **Status: FreeLDR + all boot-DLLs flipped.**
+Last updated 2026-06-21. **Status: FreeLDR + all boot-DLLs flipped.**
 
-> **Ground-truth re-verified 2026-06-14** against `boot/freeldr/` + `sdk/lib/rust/freeldr-rust` + the `-cargo` crates — FreeLDR (now 89 `.rs` modules) + kdcom/bootvid/uefildr/rosload cargo-driven links all present; the only non-Rust left is `lib/strsafe_shim.c` (variadic shell, floor) and `boot/freeldr/bootsect/{fat.S,fat32.S}` (boot-sector asm reused to stamp the UEFI FAT image, floor — the pure-BIOS sectors were git-rm'd).
+**Translation: ~99% (methodology).** Measured from the tree on 2026-06-21:
+`freeldr-rust` is **89 `.rs` modules / ~74.8K LOC**, plus the boot-helper crates
+`cmlib-rust` (15 files / ~7.1K), `cmboot-rust` (1 file / ~2.8K), `cport-rust`
+(1 file / ~0.3K) — **~85K LOC of boot Rust total** across 106 files. The only
+non-Rust glue left in the booted UEFI path is `lib/strsafe_shim.c` (variadic
+`RtlStringCb*` shell Rust stable can't host — floor) and `arch/i386/drvmap.S`
+(16-bit `.code16`, clang can't assemble — floor, i386 rosload only). Outside the
+booted path, `boot/freeldr/bootsect/{fat.S,fat32.S}` (512-byte FAT VBR reused to
+stamp the UEFI `efisys.bin` image, floor — the pure-BIOS sectors were git-rm'd).
+The four boot binaries (`uefildr.efi` ×3 arch, `rosload.exe` i386+amd64,
+`kdcom.dll`, `bootvid.dll`) are all cargo-link-driven and cohab-flipped. "~99%"
+is by remaining-glue: 2 small irreducible files (variadic shim + 16-bit asm)
+against the whole boot body translated.
+
+> **Ground-truth re-verified 2026-06-21** against `boot/freeldr/` + `sdk/lib/rust/freeldr-rust` + the `-cargo`/boot-helper crates — FreeLDR (89 `.rs` modules / ~74.8K LOC, confirmed by `find … *.rs | wc -l`) + kdcom/bootvid/uefildr/rosload cargo-driven links all present and wired into the main cmake build. `cmboot.c` is **gone from disk** (translated to the `cmboot-rust` crate, linked via freeldr-rust). The only non-Rust left in the booted path is `lib/strsafe_shim.c` (variadic shell, floor) + `arch/i386/drvmap.S` (16-bit `.code16` gcc obj, floor); plus `boot/freeldr/bootsect/{fat.S,fat32.S}` (boot-sector asm reused to stamp the UEFI FAT image, floor — the pure-BIOS sectors were git-rm'd).
 This doc started (2026-05-08) as a pre-translation plan; it is now a
 *state* audit. The headline change since: **FreeLDR is translated and
 integrated** (89 Rust modules, cohabitation, all 3 arches boot green),
@@ -28,13 +42,13 @@ Companion to:
 
 ---
 
-## Current state (2026-06-01)
+## Current state (2026-06-21)
 
 | Component | Crate | Translated | Integrated (default cmake) | Smoke |
 |---|---|---|---|---|
-| **FreeLDR** (`uefildr.efi`) | `freeldr-rust` | ✅ 89 modules, 3-arch | ✅ cohabitation (3 `.a` variants) | ✅ all 3 arches boot via UEFI |
 | **peloader** (crown jewel) | `freeldr-rust` (`peloader.rs`) | ✅ | ✅ (within freeldr-rust) | ✅ kernel load is Rust→Rust |
-| **rosload** 2nd-stage | `freeldr-rust` (`libfreeldr_rust_rosload.a`) | ✅ 14 files | ✅ cohabitation | ✅ |
+| **rosload** 2nd-stage | `freeldr-rust` + `rosload-cargo` | ✅ | ✅ cargo-link (i386+amd64), cmake link retired | ✅ |
+| **cmboot / cmlib / cport** | `cmboot-rust`, `cmlib-rust`, `cport-rust` | ✅ | ✅ (linked via freeldr-rust; `cmboot.c` git-rm'd) | ✅ |
 | **arm64vid.sys** | `arm64vid-rust` | ✅ 3-arch | ✅ cohabitation | ✅ (UEFI GOP on every boot) |
 | **framebuf.dll** (GDI) | `framebuf-rust` | ✅ 3-arch | ✅ cohabitation | ✅ |
 | **kdcom.dll** | `kdcom-rust` | ✅ | ✅ cohabitation (kdrosdbg/CMakeLists) | ✅ 3 arches |
@@ -54,7 +68,7 @@ is what made flipping the whole of FreeLDR to one Rust crate tractable.
 
 ---
 
-## FreeLDR — DONE (`freeldr-rust`, 89 modules, 3-arch)
+## FreeLDR — DONE (`freeldr-rust`, 89 modules / ~74.8K LOC, 3-arch)
 
 `sdk/lib/rust/freeldr-rust/` builds three archives consumed by the
 cmake `uefildr` / `rosload` targets via cohabitation:
@@ -80,11 +94,17 @@ of the freeldr cmake `SOURCE` lists):
 | **ui** | `ui`, `tui`, `tuimenu`, `minitui`, `noui`, `video`, `vidfb`, `vgafont`, `directui` | ui/*.c (gui.c/directui stub **pruned**) |
 | **disk / arch hw** | `partition`, `ramdisk`, `drivemap`, `hwacpi`, `hwapm`, `hwdisk`, `hwpci`, `hwide`, `halstub`, `i386bug`, `i386idt`, `arm64_debug`, `arcemul`, `archwsup` | disk/*.c, arch/*/*.c |
 | **boot logic** | `custom`, `options`, `oslist`, `miscboot`, `linuxboot` | bootmgr support |
-| **shims** | `strsafe_shim` (**C kept** — variadic), `rosload_shims` | — |
+| **shims** | `strsafe_shim` (**C kept** — variadic), `rosload_shims`, `cmboot_shims` | — |
+| **cmboot/cmlib (registry hive)** | `cmboot-rust`, `cmlib-rust`, `cport-rust` (sibling crates) | cmboot.c (**git-rm'd**), cmlib, cportlib |
 
-**Notable kept-as-C:** `lib/strsafe_shim.c` — Rust stable cannot define
-variadic functions, so `RtlStringCbPrintfA` & friends forward to the C
-`ntstrsafe.h` inlines (see memory `feedback_degraded_variadic_stubs`).
+**Notable kept-as-C (the irreducible glue floor):**
+- `lib/strsafe_shim.c` — Rust stable cannot define variadic functions, so
+  `RtlStringCbPrintfA` & friends forward to the C `ntstrsafe.h` inlines (see
+  memory `feedback_degraded_variadic_stubs`). Still the only active `.c` in
+  `uefi.cmake`'s SOURCE list.
+- `arch/i386/drvmap.S` — 16-bit `.code16` drive-map asm; clang can't assemble
+  it, so it stays a gcc-built object (`drvmap_gcc.obj`) consumed by the i386
+  `rosload` cargo link. The **sole remaining cmake-built input** to rosload.
 
 ---
 
@@ -104,7 +124,8 @@ multi-part "BIOS prune" series:
 | `lib/fs/pxe.c` | ✅ kept + translated (`pxe.rs`) | — |
 
 **Still on disk but unused (cleanup candidates):**
-- `boot/freeldr/bootsect/` — FAT/ext/MBR bootsector asm (BIOS-only).
+- `boot/freeldr/bootsect/{fat.S,fat32.S}` — kept (reused to stamp the UEFI FAT
+  image, see Forward-path §3); the pure-BIOS sectors are already git-rm'd.
 - `drivers/base/{kdgdb,kdvm,kdrosdbg}` — alternate KD transports, still C.
 - Live filesystem table is `[Iso, Fat, Pxe]` (livecd ISO + ramdisk FAT
   + PXE net boot).
@@ -323,9 +344,13 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 
 - **Boot correctness.** Smoke is the source of truth; this doc tracks
   *translation* + *integration* status, not runtime correctness.
-- **The cargo-link PoC vs cohabitation tension.** kdcom/bootvid have
-  both a `-cargo` link PoC and an (unwired) staticlib. Until one is
-  chosen as canonical, "translated" ≠ "shipping."
+- **The cargo-link PoC vs cohabitation tension — RESOLVED (2026-06-04, still
+  true 2026-06-21).** All four boot binaries (`uefildr.efi`, `rosload.exe`,
+  `kdcom.dll`, `bootvid.dll`) are now cargo-link-driven and wired into the main
+  cmake build via `add_cargo_module`/`add_cargo_kernel_dll`; the cmake
+  `add_executable`/`add_library(MODULE)` links are retired. The body crates
+  (`*-rust` staticlibs) feed the cargo link, so "translated" == "shipping" for
+  the boot track.
 
 ---
 

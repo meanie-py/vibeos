@@ -1,6 +1,27 @@
 # ntdll cargo-driven build — C/asm header-dependency audit
 
-> **Ground-truth re-verified 2026-06-14** against `dll/ntdll/CMakeLists.txt` + code — still accurate: ntdll's own C/asm surface is exactly `dispatch/{i386,amd64,arm64}/dispatch.S` (asm, pre-expand/assemble-direct), generated `ntdll_stubs.c` (self-host spec2def), and the empty cohab stub TUs; everything heavy (librtl/libcntpr) is still reused as cmake-built `.a`.
+> **Status (2026-06-21): Phase 1 DONE on all 3 arches; Phase 2 (cmake-off) NOW LARGELY DONE — ntdll links ZERO cmake `.a`.**
+> The framing of this doc below was written when the heavy C libs (librtl / libcntpr / ntdllsys)
+> were still reused as cmake-built archives ("Bucket 2 — reuse-as-`.a`"). That is **no longer true
+> on `build-cache`/mainline**: the "WS1 cmake-off" batches (2026-06-20/21) flipped the entire
+> reuse-as-`.a` set into cargo. Per `sdk/lib/rust/ntdll-cargo/build.rs:154` the static-libs vector
+> is now empty — `// ntdll now links ZERO cmake .a`:
+>   - **`librtl.a` DROPPED 2026-06-20** — the whole `sdk/lib/rtl/*.c` surface is Rust (`rtl-rust`);
+>     its irreducible asm floor is assembled in-cargo (`rtl_asm` asm_archive + `rtl` c_from_compile_db).
+>   - **`librtl_vista.a` gone** — compiled in-cargo.
+>   - **`liblibcntpr.a` DROPPED on every arch** — `cnt-rust-lib` + an in-cargo C floor
+>     (`cntpr_residue`, now EMPTY as of the WS1 c_shim conversions) + `cntpr_asm` cover it;
+>     headerless `c_shims` (printf/scanf/dbgprint/CRT-LEAF files) replaced the
+>     compile_commands.json-driven residue.
+>   - **`libntdllsys.a` DROPPED** — Nt*/Zw* syscall stubs assembled in-cargo.
+> So "Phase 2 — full cmake removal" (below) is no longer future work; it has been substantially
+> executed. The header-dependency analysis below remains useful as the *record of how* each input
+> was made header-free, but treat the "deferred / reuse-as-`.a` / phase-2" language as historical.
+>
+> **Ground-truth re-verified 2026-06-21** against `sdk/lib/rust/ntdll-cargo/build.rs`,
+> `dll/ntdll/CMakeLists.txt`, and `dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`. ntdll's own
+> C/asm surface is exactly `dispatch.S` (asm, pre-expand/assemble-direct), generated `ntdll_stubs.c`
+> (self-host spec2def), the empty cohab stub TUs, and the in-cargo `c_shims`/asm floor.
 
 **Goal:** make cargo drive the `ntdll.dll` / `ntdll_vista.dll` build (mirroring
 the `ntoskrnl-cargo` PoC), compiling the remaining C + asm from cargo and
@@ -14,6 +35,12 @@ i386 build dir. Header counts are transitive closures pulled from
 `build-i386/.ninja_deps` (`ninja -t deps <obj>`).
 
 ## Status
+
+**Phase 2 (cmake-off) — ntdll links ZERO cmake `.a` as of 2026-06-21.** See the banner above;
+`ntdll-cargo/build.rs`'s `static_libs` vector is empty and every former reuse-as-`.a` (librtl,
+librtl_vista, libcntpr, ntdllsys) is now built in-cargo (rust libs + in-cargo C `c_shims` + asm
+archives). The remaining cmake involvement is producing the *sibling* rust libs and the
+`compile_commands.json` that the c_from_compile_db / windres replays reference.
 
 **Phase 1, ntdll.dll + ntdll_vista.dll — ALL 3 ARCHES DONE 2026-06-02**
 (branch `smlib-csrlib-client-flip`; ntdll.dll/vista i386 committed
@@ -112,16 +139,20 @@ That is the **entire** own-C/asm surface. The flip did the heavy lifting:
 all of ldr/rtl-um/dbg/etw/nt_0600 is Rust (`libntdll_rust.a`), the CSR/SM
 clients are Rust (`libcsrlib_rust.a` / `libsmlib_rust.a`).
 
-### Bucket 2 — reuse-as-`.a` (cmake builds; phase 1 leaves these alone)
+### Bucket 2 — formerly reuse-as-`.a`; **NOW ALL FLIPPED IN-CARGO (2026-06-21)**
 
-| Lib | Nature | Transitive headers (sample) | Notes |
+This bucket was the phase-1 "reuse cmake `.a`, defer to phase 2" set. As of the WS1 cmake-off
+batches it is **empty** — `ntdll-cargo/build.rs:154` `let static_libs: Vec<&str> = vec![];`.
+Status of each former member (kept for the record of how each was retired):
+
+| Lib | Nature | Transitive headers (sample) | Now |
 |---|---|--:|---|
-| `librtl` (rtl/rtl_um/rtl_vista) | C+Rust hybrid | heap.c **121**, actctx.c **128** | DEEP — reuse. Owned by rtl-priv track. |
-| `libcntpr` | C (CRT) | deep | reuse. Owned by libcntpr track (~17% Rust). |
-| `ntdllsys` | generated **asm** syscall stubs (`add_library(ntdllsys ${ntdllsys_asm})`) | n/a (spec2asm output) | reuse `.a`, or regenerate pre-expanded `.s` |
-| `setjmp` | asm | small | reuse or pre-expand |
-| `uuid` | pure data (`DEFINE_GUID`) | trivial | reuse or compile directly |
-| `${PSEH_LIB}` | DUMMY_PSEH | dead code | reuse (tiny) |
+| `librtl` (rtl/rtl_um/rtl_vista) | C+Rust hybrid | heap.c **121**, actctx.c **128** | **DROPPED 2026-06-20** — `.c` surface all Rust (`rtl-rust`); asm floor in-cargo (`rtl_asm` + `rtl` c_from_compile_db). `librtl_vista.a` also gone. |
+| `libcntpr` | C (CRT) | deep | **DROPPED every arch** — `cnt-rust-lib` + in-cargo C floor (now empty `cntpr_residue`, headerless c_shims) + `cntpr_asm`. |
+| `ntdllsys` | generated **asm** syscall stubs (`add_library(ntdllsys ${ntdllsys_asm})`) | n/a (spec2asm output) | **DROPPED** — Nt*/Zw* stubs assembled in-cargo. |
+| `setjmp` | asm | small | in-cargo asm floor |
+| `uuid` | pure data (`DEFINE_GUID`) | trivial | compiled directly |
+| `${PSEH_LIB}` | DUMMY_PSEH | dead code | in-cargo (tiny) |
 
 ### Bucket 3 — Rust `.a` (cargo already builds these)
 
@@ -135,10 +166,12 @@ clients are Rust (`libcsrlib_rust.a` / `libsmlib_rust.a`).
   — and that is the *same* macro-asm the kernel PoC already pre-expands. arm64
   `dispatch.S` has zero includes and assembles as-is. The C is either generated
   (spec2def, self-hosted) or our own header-free stubs.
-- **The deep headers (121–128) live entirely in the reuse-as-`.a` libs** —
-  irrelevant to phase 1 (cmake builds them). They define the *phase-2* scope and
-  overlap the rtl / libcntpr tracks, so phase 2 should follow those flips, not
-  lead them.
+- **The deep headers (121–128) lived entirely in the former reuse-as-`.a` libs** —
+  these defined the phase-2 scope. **Resolved (2026-06-21):** rtl's `.c` surface is now
+  Rust (so the heap.c/actctx.c 121–128 closures no longer touch any C compile in the ntdll
+  flow), and libcntpr's irreducible C floor was reduced to header-free `c_shims` + asm. The
+  deep-header risk never materialized in cargo because the bodies became Rust before they
+  needed a cc-rs include set.
 
 ## Link facts the engine must reproduce (from cmake)
 
@@ -181,10 +214,11 @@ embedding, and `.a` reuse all work as-is.
 4. Guard it in `vibeos-cli check --strict` like the existing `cargo_link` PoC
    (bit-rot gate) — produces a valid ntdll.dll PE without booting.
 
-**Phase 2 — full cmake removal** (later, follows rtl/cntpr tracks): cargo-compile
-the reuse-as-`.a` C bodies. This is where the 121–128-header closures bite;
-needs either an accepted SDK include set passed to cc-rs or header-shimming per
-file. Out of scope until librtl/libcntpr are further flipped.
+**Phase 2 — full cmake removal — DONE 2026-06-21** (no longer future work). The reuse-as-`.a`
+C bodies were not cargo-*compiled* with a heavy SDK include set as originally feared; instead the
+rtl/cntpr tracks flipped their `.c` bodies to Rust first, so what remained was only a header-free
+asm floor + a handful of headerless `c_shims` — all now in-cargo. ntdll links ZERO cmake `.a`. The
+121–128-header closures never bit because the bodies became Rust before they needed cc-rs includes.
 
 ## Open questions
 

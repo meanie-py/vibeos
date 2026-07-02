@@ -10,6 +10,14 @@ kernel drivers.
 **Last updated:** 2026-06-21. Built from a 9-agent family fan-out (full mini-scope
 for ≥5K modules, one-liner for the tail).
 
+**Translation: ~3% of this native-residue surface (by LOC).** Methodology: of the
+~295K C LOC mapped here, the landed work is **msgina** (~5.5K, done →
+`msgina-rust`, 14 .rs / ~7.3K) + **lsasrv** M0–M2 (~1.9K of 14.9K Rust →
+`lsasrv-rust`, 9 .rs / ~4.3K); ≈7.4K of ~295K ≈ **~2–3%**. **samsrv is still 0%**
+(no `samsrv-rust` crate yet — lsasrv is the active head of the LSA/SAM lane).
+Everything else here is unstarted; the bulk (~117 modules) is non-boot UI/applet/COM
+code with no smoke payoff.
+
 ## How the `.spec` surface decomposes (the residue, settled)
 
 `.spec` files ≈ exported DLLs (~467 deduped dirs) — NOT 1:1 with all modules (EXEs,
@@ -33,9 +41,9 @@ high-value set is small.
 ### 🟢 HIGH — do these
 | Module | LOC | Why |
 |---|---:|---|
-| **lsasrv** | 15K | The LSA *server* logic behind the already-Rust `lsass.exe` (which currently links it as a C importlib). Boot-critical. **`lsalib-rust`/`lsass-sys` give a big head start** on LPC + types. Completes the LSA logon path in Rust. |
-| **samsrv** | 16.5K | The SAM *server* (account DB) — the other half of the lsass spine. Boot-critical. Sequence **after lsasrv** (reuse its SD/SID + RPC-glue patterns; the 9.8K `samrpc.c` is the cost driver). |
-| **msgina** | 5.5K | The logon UI (GINA) — **smoke-visible / boot-relevant**; correctness here shows in the winlogon→desktop path. Watch the Wlx ABI + PSEH. |
+| **lsasrv** | 15K | 🔄 **IN FLIGHT — M0–M2 landed** (dssetup/privileges/registry/security/utils → `lsasrv-rust`, ~5/16 units, ~13%). The LSA *server* logic behind the already-Rust `lsass.exe` (which links it as a C importlib). Boot-critical. **`lsalib-rust`/`lsass-sys` gave the head start** on LPC + types. Remaining: database/policy/lookup/lsarpc/srm. |
+| **samsrv** | 16.5K | ⬜ **0% — not started** (no `samsrv-rust` yet). The SAM *server* (account DB) — the other half of the lsass spine. Boot-critical. Sequence **after lsasrv** (reuse its SD/SID + RPC-glue patterns; the 9.8K `samrpc.c` is the cost driver). |
+| **msgina** | 5.5K | ✅ **DONE** (`msgina-rust`, cohab flip landed). The logon UI (GINA) — smoke-visible / boot-relevant. |
 
 These three are the genuine prize: they finish the **boot/logon spine** (smss→wininit→lsass→lsasrv/samsrv; winlogon→msgina→LsaLogonUser), and two of them ride an already-Rust lane.
 
@@ -70,11 +78,15 @@ the LSA/SAM server spine, leaning on lsass-rust) → msgina (logon UI) → then 
 self-contained ones (apphelp/ntmarta/hid). Everything else defers behind a COM-vtable
 strategy and the higher-value native client DLLs from Part 1 (gdi32/userenv/…).
 
-> **Status:** **msgina ✅ landed** (`e69a7adaf82`). **lsasrv + samsrv** have a detailed
-> execution plan → **`lsa-sam-server-translation-plan.md`** (RPC-server cohab via the proven
-> svcctl/`midl-rt` pattern, per-file maps, differential-fuzz strategy for the SID/blob math,
-> milestones). Key finding: the MIDL-RPC-server-in-Rust cohab is **already a shipping pattern**
-> here (svcctl/winreg), and samsrv has **no in-module crypto** (delegated to advapi32).
+> **Status:** **msgina ✅ landed** (`e69a7adaf82`). **lsasrv 🔄 M0–M2 landed**
+> (`f9f54798af0` M1 substrate + privileges/utils; `00a7b6afc8f` M2 security.c;
+> `af3e0ba7e99` M2 registry.c — 5/16 units / ~13% Rust in `lsasrv-rust`; remaining
+> database/policy/lookup/lsarpc/srm/dssetup-stub). **samsrv ⬜ not started.** Both follow
+> the detailed execution plan → **`lsa-sam-server-translation-plan.md`** (RPC-server cohab
+> via the proven svcctl/`midl-rt` pattern, per-file maps, differential-fuzz strategy for the
+> SID/blob math, milestones). Key finding: the MIDL-RPC-server-in-Rust cohab is **already a
+> shipping pattern** here (svcctl/winreg), and samsrv has **no in-module crypto** (delegated
+> to advapi32).
 
 ---
 
@@ -90,7 +102,8 @@ verdicts assess translate-priority + difficulty + rustconv-fit, not skip-by-defa
 
 Security servers + security UI. The headline: **lsass.exe is already Rust** (`lsass-rust`/`lsass-sys`/`lsalib-rust`/`lsass-cargo`, full flip + cargo-driven link), but lsass.exe is only the thin exe body (`base/system/lsass/lsass.c`, 87 LOC → calls `LsapInitLsa()`+`ServiceInit()`). It links **lsasrv and samsrv as importlibs** — those two DLLs are still 100% C and contain the actual LSA/SAM logic. So lsasrv + samsrv are the natural next targets in the already-Rust lsass spine, and both are boot-critical (smss → wininit → lsass → lsasrv/samsrv init; winlogon → LsaLogonUser). Strong coordination angle: the lsass lane already owns the LPC/port substrate and `lsass-sys` FFI types, which lsasrv shares.
 
-### lsasrv — dll/win32/lsasrv
+### lsasrv — dll/win32/lsasrv  🔄 M0–M2 LANDED (~13% Rust)
+- **Status:** in flight — `lsasrv-rust` (9 .rs / ~4.3K LOC) has dssetup.rs, privileges, registry, security, utils cohab-flipped (5 source `.c` commented out in the cmake). ~11 C files remain active (database/policy/lookup/lsarpc/srm/authport/…).
 - **LOC / files:** 14929 C, 16 files
 - **Role:** Local Security Authority server DLL — LSA policy DB, privileges, account/SID lookup, logon-session mgmt, SRM (Security Reference Monitor) channel, auth-package host, the LSA RPC interface (lsarpc.idl) + dssetup. Loaded by lsass.exe.
 - **Origin:** ReactOS-native (Eric Kohl et al.)
@@ -183,7 +196,8 @@ The "Marta" provider behind advapi32's `GetNamedSecurityInfo`/`SetEntriesInAcl` 
 - **Verdict:** translate priority Low — non-functional shim, no consumer in vibeos; skip until everything real is done.
 - **rustconv-fit:** good (trivially — mostly stubs), but low value.
 
-### msgina — dll/win32/msgina
+### msgina — dll/win32/msgina  ✅ DONE (Rust cohab flip landed)
+- **Status:** translated → `msgina-rust` (14 .rs / ~7.3K LOC); C cohab-disabled in `msgina/CMakeLists.txt`. Boots through the winlogon→GINA→desktop path.
 - **LOC / files:** 5521 (7 .c + 1 .cpp), 2 headers.
 - **Role:** Graphical Identification aNd Authentication (GINA) — winlogon's logon UI: SAS dialogs, logon/lock/shutdown screens, LSA auth glue.
 - **Origin:** ReactOS-native (ReactOS GINA, GPL).

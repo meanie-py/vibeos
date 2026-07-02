@@ -1,0 +1,19 @@
+# samsrv-rust — the samsrv.dll C->Rust body translation (cohab with the still-C
+# .c via dll/win32/samsrv/CMakeLists.txt). #[no_mangle] extern "system" Samr*
+# server methods + SamI*/Samp* helpers + the SAMPR_HANDLE_rundown + the 18
+# SamIFree_SAMPR_* deallocators take over from the commented-out C TUs; the RPC
+# dispatch (sam-stub Rust + the generated sam_s glue) binds them by decorated
+# name. FFI substrate = samsrv-sys (SAMPR_*), lsasrv-sys (shared SD/SID/policy),
+# ntdll-sys (nt base).
+[package]
+name = "samsrv-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+samsrv-sys = { path = "../samsrv-sys" }
+lsasrv-sys = { path = "../lsasrv-sys" }
+ntdll-sys = { path = "../ntdll-sys" }

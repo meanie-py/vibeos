@@ -19,6 +19,18 @@ name = "acpica-sys"
 version = "0.1.0"
 
 [[package]]
+name = "advapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "advapi32-sys",
+ "ntdll-sys",
+]
+
+[[package]]
+name = "advapi32-sys"
+version = "0.1.0"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -119,6 +131,13 @@ dependencies = [
 
 [[package]]
 name = "bootvid-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "buslogic-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -446,6 +465,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdi32-rust"
+version = "0.1.0"
+dependencies = [
+ "win32k-sys",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +489,9 @@ dependencies = [
 [[package]]
 name = "generictable"
 version = "0.1.0"
+dependencies = [
+ "splaytree",
+]
 
 [[package]]
 name = "guids-rust"
@@ -713,6 +742,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ks-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "slist",
+]
+
+[[package]]
 name = "ksecdd-rust"
 version = "0.1.0"
 dependencies = [
@@ -785,6 +822,7 @@ version = "0.1.0"
 dependencies = [
  "lsasrv-sys",
  "ntdll-sys",
+ "samsrv-sys",
 ]
 
 [[package]]
@@ -1422,6 +1460,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sam-stub"
+version = "0.1.0"
+dependencies = [
+ "midl-rt",
+ "reactos-link",
+]
+
+[[package]]
+name = "samsrv-rust"
+version = "0.1.0"
+dependencies = [
+ "lsasrv-sys",
+ "ntdll-sys",
+ "samsrv-sys",
+]
+
+[[package]]
+name = "samsrv-sys"
+version = "0.1.0"
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1433,6 +1492,18 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
 ]
+
+[[package]]
+name = "secur32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "secur32-sys",
+]
+
+[[package]]
+name = "secur32-sys"
+version = "0.1.0"
 
 [[package]]
 name = "serial-rust"
@@ -1472,6 +1543,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell32-rust"
+version = "0.1.0"
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1480,9 +1555,6 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "skiplist-rust"
 version = "0.1.0"
-dependencies = [
- "ntdll-sys",
-]
 
 [[package]]
 name = "slist"
@@ -1701,6 +1773,20 @@ name = "usb-sys"
 version = "0.1.0"
 
 [[package]]
+name = "usbaudio-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbccgp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "usbd-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1718,6 +1804,48 @@ dependencies = [
 [[package]]
 name = "usbdex-rust"
 version = "0.1.0"
+
+[[package]]
+name = "usbehci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbhub-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbohci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbport-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbstor-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "usbuhci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "user32-rust"

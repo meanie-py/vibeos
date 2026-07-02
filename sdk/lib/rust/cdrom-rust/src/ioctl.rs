@@ -236,7 +236,7 @@ const TRACE_LEVEL_INFORMATION: u32 = 0x4;
 const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 0x40;  // was 256 (LLM-invented); bindgen-correct
 const CDROM_LOCK_IGNORE_VOLUME: u32 = 0x1;
 const IO_CDROM_EXCLUSIVE_LOCK: u32 = 0x100;
-const IOCTL_CDROM_EXCLUSIVE_ACCESS: u32 = 0x2D1000;
+const IOCTL_CDROM_EXCLUSIVE_ACCESS: u32 = 0x0002C05C;
 const STATUS_INVALID_DEVICE_STATE: i32 = 0xC0000184u32 as i32;
 
 // GUID is imported from ntkrnl_sys::ddk (same layout: Data1/2/3/4).
@@ -270,7 +270,7 @@ const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 0x00070000;
 const IOCTL_DISK_GET_DRIVE_GEOMETRY_EX: u32 = 0x000700A0;
 const IOCTL_CDROM_GET_DRIVE_GEOMETRY: u32 = 0x0002404C;
 const IOCTL_CDROM_GET_DRIVE_GEOMETRY_EX: u32 = 0x00024050;
-const IOCTL_STORAGE_READ_CAPACITY: u32 = 0x002D4540;
+const IOCTL_STORAGE_READ_CAPACITY: u32 = 0x002D5140;
 
 const MAXUSHORT: u16 = 0xFFFF;
 const MAXULONG: u32 = 0xFFFFFFFF;
@@ -288,7 +288,7 @@ const STORAGE_EVENT_DEVICE_OPERATION: u32 = 0x00000004; // unverified
 const TRACE_LEVEL_VERBOSE: u32 = 4; // unverified
 const TRACE_FLAG_MCN: u32 = 0x00000001; // unverified
 
-const IOCTL_STORAGE_EJECTION_CONTROL: u32 = 0; // TODO: value
+const IOCTL_STORAGE_EJECTION_CONTROL: u32 = 0x002D0940; // TODO: value
 const SecureMediaLock: i32 = 0;
 const SimpleMediaLock: i32 = 1;
 
@@ -329,8 +329,8 @@ const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x002D4808;
 const LOADING_MECHANISM_TRAY: u32 = 1; // assumed enum value
 const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011_u32 as i32;
 
-const IOCTL_STORAGE_RESERVE: u32 = 0;          // actual value unknown
-const IOCTL_STORAGE_RELEASE: u32 = 0;          // actual value unknown
+const IOCTL_STORAGE_RESERVE: u32 = 0x002D4810;          // actual value unknown
+const IOCTL_STORAGE_RELEASE: u32 = 0x002D4814;          // actual value unknown
 const SCSIOP_RESERVE_UNIT10: u8 = 0x56;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SCSIOP_RELEASE_UNIT10: u8 = 0x57;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SCSIOP_RESERVE_UNIT: u8 = 0x16;             // actual value unknown  // was 0 (LLM-invented); bindgen-correct
@@ -343,12 +343,12 @@ const NonPagedPoolNx: u32 = 0x200;           // POOL_TYPE NonPagedPoolNx (512)
 
 // PAGED_CODE();
 
-const IOCTL_STORAGE_PERSISTENT_RESERVE_IN: u32 = 0x0; // placeholder
-const IOCTL_STORAGE_PERSISTENT_RESERVE_OUT: u32 = 0x0; // placeholder
+const IOCTL_STORAGE_PERSISTENT_RESERVE_IN: u32 = 0x002D5018; // placeholder
+const IOCTL_STORAGE_PERSISTENT_RESERVE_OUT: u32 = 0x002DD01C; // placeholder
 const SCSIOP_PERSISTENT_RESERVE_IN: u8 = 0x5e; // placeholder
 const SCSIOP_PERSISTENT_RESERVE_OUT: u8 = 0x5f; // placeholder
 
-const IOCTL_DISK_VOLUMES_ARE_READY: u32 = 0x00074040;
+const IOCTL_DISK_VOLUMES_ARE_READY: u32 = 0x0007C220;
 
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
 const CDROM_VOLUME_VERIFY_CHECKED: u32 = 0x34;  // was 0x01 (LLM-invented); bindgen-correct
@@ -757,8 +757,8 @@ const DVD_TAG_READ_KEY: u32 = 0x524b4420; // "RBM "?? placeholder
 
 // Function translation
 
-const IOCTL_CDROM_READ_TOC: u32 = 0; // TODO: define correct IOCTL value
-const IOCTL_CDROM_GET_LAST_SESSION: u32 = 0; // TODO: define correct IOCTL value
+const IOCTL_CDROM_READ_TOC: u32 = 0x00024000; // TODO: define correct IOCTL value
+const IOCTL_CDROM_GET_LAST_SESSION: u32 = 0x00024038; // TODO: define correct IOCTL value
 const CDROM_READ_TOC_EX_FORMAT_SESSION: u8 = 0x1; // TODO: define correct value  // was 0 (LLM-invented); bindgen-correct
 const SCSIOP_READ_TOC: u8 = 0x43; // READ TOC opcode
 
@@ -2197,7 +2197,7 @@ pub unsafe extern "C" fn RequestValidateAacsBindingNonce(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestValidateExclusiveAccess(
+pub unsafe extern "system" fn RequestValidateExclusiveAccess(
     Request: WDFREQUEST,
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
@@ -2512,7 +2512,10 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleQueryPropertyRetrieveCachedData(
+// i386 ABI: declared extern "system" (stdcall) at cdrom.rs:91 block / called at cdrom.rs:2644.
+// Definition must match the decl or i386 link-fails on the `@16` decoration (cdecl def emits no
+// `@N`). Latent until arm64-love's CTL_CODE const fixes kept this call path alive past DCE.
+pub unsafe extern "system" fn RequestHandleQueryPropertyRetrieveCachedData(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     RequestParameters: *mut WDF_REQUEST_PARAMETERS,
@@ -3412,7 +3415,7 @@ pub unsafe extern "C" fn RequestGetScsiPassThroughCdb(Irp: PIRP) -> *mut CDB {
     const IOCTL_SCSI_PASS_THROUGH: u32 = 0x0004D004;
     const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x0004D014;
     const IOCTL_SCSI_PASS_THROUGH_EX: u32 = 0x0004D044;
-    const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0x0004D054;
+    const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0x0004D048;
 
     let mut cdb: *mut CDB = core::ptr::null_mut();
 
@@ -4791,7 +4794,7 @@ pub unsafe extern "C" fn RequestHandleSetHotPlugInfo(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleEventNotification(
+pub unsafe extern "system" fn RequestHandleEventNotification(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     RequestParameters: *mut WDF_REQUEST_PARAMETERS,
@@ -5994,7 +5997,7 @@ pub unsafe extern "C" fn RequestHandleAreVolumesReady(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestHandleVolumeOnline(
+pub unsafe extern "system" fn RequestHandleVolumeOnline(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: *mut core::ffi::c_void,
     RequestParameters: *mut core::ffi::c_void,

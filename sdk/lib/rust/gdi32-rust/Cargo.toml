@@ -1,0 +1,26 @@
+# gdi32-rust — Rust translation of win32ss/gdi/gdi32 (the usermode GDI client DLL).
+# staticlib → libgdi32_rust.a, cohab-linked into the cmake-built gdi32.dll with the
+# translated .c files commented out (per-file flip, like user32-rust / kernel32-rust).
+# User-mode DLL: builds for the STANDARD per-arch targets (i686/x86_64 gnu, aarch64
+# gnullvm) with i386 -sse,-sse2 (the user-mode no-SSE rule). Imports resolve at runtime
+# to win32k.sys (NtGdi* syscalls, via the win32ksys importlib), user32, kernel32, ntdll.
+#
+# First flip (Wave 0): objects/linedda.c (LineDDA) — a one-function pure-algorithm leaf
+# (Bresenham line walk + callback, zero syscalls). Proves the cohab link + i386 stdcall
+# export decoration (`_LineDDA@24`) + the LINEDDAPROC callback ABI before any bulk
+# translation. See docs/engineering/gdi32-translation-audit.md.
+
+[package]
+name = "gdi32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# win32k FFI surface (NtGdi*/Nt* fns, GDI struct layouts, handle-table types) — bindgen,
+# builds clean for the usermode targets, arch-consistent. The bulk-translated objects/
+# bodies marshal into win32k via this; Wave 0 (LineDDA, pure algorithm) does not use it
+# yet but the dependency is wired so later waves integrate without a Cargo.toml churn.
+win32k-sys = { path = "../win32k-sys" }

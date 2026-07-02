@@ -44,8 +44,14 @@ DEFAULTS: dict[str, Any] = {
             # Windows-visible scratch dir (WSL path) where media (ISO/OVMF/vars) is staged so
             # the Windows QEMU can read it natively. Cleaned per run.
             "staging_dir": "/mnt/c/temp/vibeos-qemu",
-            # "tcg" (works today, no reboot) or "whpx" (needs HypervisorPlatform + reboot;
-            # only in qemu-system-x86_64.exe). TCG already beats nested-KVM under concurrency.
+            # x86 accelerator: "tcg" (pure emulation, the working default) or "whpx" (Windows
+            # Hypervisor Platform hardware virt, only in qemu-system-x86_64.exe — much faster
+            # IF it booted). Resolved PER-ARCH at launch (backend.resolve_accel: arm64 always
+            # TCG; x86+whpx degrades to TCG when the host has no hypervisor). whpx is OPT-IN and
+            # the default stays "tcg" because whpx does not yet boot our x86 guests cleanly:
+            # i386 hangs at freeldr stack-switch, amd64 BUGCHECKs 0x9 at uniata DMA (both boot
+            # fine on tcg). See docs/engineering/windows-host-qemu-whpx-spike.md. Flip to "whpx"
+            # (here or VIBEOS_QEMU_WINDOWS_ACCEL=whpx) to continue that spike.
             "accel": "tcg",
             # Address the Windows QEMU uses to reach our WSL-side TCP listeners. 127.0.0.1
             # works via WSL2 localhost forwarding (the reliable Windows->WSL direction).

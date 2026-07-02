@@ -86,6 +86,14 @@ _CFGS = {
         # whose old dirty-volume constant mismatched FatSetFatEntry's check and
         # raised a spurious STATUS_FILE_CORRUPT_ERROR (0xC0000102) → BUGCHECK 0x1E
         # during the registry hive-create. Rebuilding+staging fastfat clears it.
+        # gdi32/user32 are the usermode GDI+windowing client DLLs (both being C→Rust
+        # cohab-translated, user32 100% Rust, gdi32 in progress). Same trap as
+        # win32k/kernel32: NOT in this set → `build --arch arm64` rebuilt neither, so
+        # mkramdisk staged an 8-day-STALE gdi32.dll (.text=0x27e10, the old C) and a
+        # stale user32.dll → arm64 gates false-greened the Rust gdi32/user32 (they
+        # were boot-exercised on i386+amd64 but the arm64 boot ran the C binaries).
+        # rust_gdi32/rust_user32 build the cohab staticlibs; the .dll targets relink
+        # them in. mkramdisk.sh already copies both (lines 232-233).
         ninja_targets=(
             "ntoskrnl",
             "hal",
@@ -93,7 +101,37 @@ _CFGS = {
             "win32k",
             "rust_kernel32",
             "dll/win32/kernel32/kernel32.dll",
+            "rust_gdi32",
+            "win32ss/gdi/gdi32/gdi32.dll",
+            "rust_user32",
+            "win32ss/user/user32/user32.dll",
+            # advapi32 is boot-critical on arm64 (lsass/services/winlogon link it) and
+            # its body is 100% Rust (advapi32-rust cohab). Same stale-.dll trap as
+            # gdi32/user32: NOT rebuilt by `build --clean --arch arm64` unless listed →
+            # the gate would stage a stale C advapi32.dll and false-green the Rust one.
+            "rust_advapi32",
+            "dll/win32/advapi32/advapi32.dll",
+            # shell32 is the usermode Shell client DLL (explorer.exe links it → boot-
+            # critical). Its wine-derived .c half is being C→Rust cohab-translated
+            # (shell32-rust staticlib). Same stale-DLL trap as gdi32/user32: NOT in this
+            # set → `build --arch arm64` wouldn't relink shell32.dll, so mkramdisk would
+            # stage a stale shell32 and the arm64 gate would false-green the Rust cohab.
+            # rust_shell32 builds the staticlib; the .dll target relinks it in.
+            # mkramdisk.sh already copies it (line 272).
+            "rust_shell32",
+            "dll/win32/shell32/shell32.dll",
             "fastfat",
+            # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
+            # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
+            # as fastfat above. It was NOT in this set, so the 2026-06-21 ramdisk.c->Rust
+            # cohab flip (1c492f8adb9, link-clean-only bar) was NEVER boot-exercised: the
+            # gate kept shipping the pre-flip STALE C ramdisk.sys and false-greened arm64
+            # while a clean build's Rust ramdisk-rust 0x64'd (garbage FSCTL/IOCTL consts).
+            # pl011 is the PL011 UART serial driver (Rust cohab, BLT-loaded) — same risk.
+            # These two + fastfat + arm64input/arm64vid (optional) = all 5 arm64
+            # boot-critical Rust-cohab drivers now actually rebuilt+staged by the gate.
+            "ramdisk",
+            "pl011",
             "netstack",
             "livecd_hives",
             "afd",
@@ -110,7 +148,13 @@ _CFGS = {
             "boot/freeldr/uefildr/uefildr.efi",
             "win32ss/win32k.sys",
             "dll/win32/kernel32/kernel32.dll",
+            "win32ss/gdi/gdi32/gdi32.dll",
+            "win32ss/user/user32/user32.dll",
+            "dll/win32/advapi32/advapi32.dll",
+            "dll/win32/shell32/shell32.dll",
             "drivers/filesystems/fastfat/fastfat.sys",
+            "drivers/storage/class/ramdisk/ramdisk.sys",
+            "drivers/serial/pl011/pl011.sys",
             "drivers/input/arm64input/arm64input.sys",
             "drivers/video/arm64vid/arm64vid.sys",
             "drivers/network/netstack/netstack.sys",

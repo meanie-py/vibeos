@@ -138,7 +138,7 @@ const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x00;
-const FSCTL_INVALIDATE_VOLUMES: u32 = 0x0009000C;
+const FSCTL_INVALIDATE_VOLUMES: u32 = 0x00090054;
 const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
 
 // Constant definitions needed (these would be provided by the assembly step)
@@ -151,7 +151,7 @@ const NTDDI_VERSION: u32 = 0x0A000000; // assume Windows 10 for compilation
 // Forward declarations for external functions not already available
 
 const FAT_NTC_VCB: u16 = 0x0501; // placeholder
-const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x2D4800;
+const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x002D0C14;
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x2D1080;
 const FILE_FLOPPY_DISKETTE: u32 = 0x04; // placeholder
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
@@ -164,7 +164,7 @@ const VCB_GOOD: VCB_CONDITION = 0; // placeholder for VcbGood
 const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
 const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
-const TAG_VPB: u32 = 0x70627661; // placeholder
+const TAG_VPB: u32 = 0x20425056; // placeholder
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====

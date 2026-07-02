@@ -64,6 +64,13 @@ pub struct _LUID {
     pub HighPart: LONG,
 }
 pub type LUID = _LUID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LIST_ENTRY {
+    pub Flink: *mut _LIST_ENTRY,
+    pub Blink: *mut _LIST_ENTRY,
+}
+pub type LIST_ENTRY = _LIST_ENTRY;
 pub type ACCESS_MASK = DWORD;
 pub type PSID = PVOID;
 pub const _SECURITY_IMPERSONATION_LEVEL_SecurityAnonymous: _SECURITY_IMPERSONATION_LEVEL = 0;
@@ -1424,6 +1431,16 @@ pub struct _LSA_DB_OBJECT {
 }
 pub type LSA_DB_OBJECT = _LSA_DB_OBJECT;
 pub type PLSA_DB_OBJECT = *mut _LSA_DB_OBJECT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LSAP_LOGON_CONTEXT {
+    pub Entry: LIST_ENTRY,
+    pub ClientProcessHandle: HANDLE,
+    pub ConnectionHandle: HANDLE,
+    pub TrustedCaller: BOOL,
+}
+pub type LSAP_LOGON_CONTEXT = _LSAP_LOGON_CONTEXT;
+pub type PLSAP_LOGON_CONTEXT = *mut _LSAP_LOGON_CONTEXT;
 pub const _DSROLE_MACHINE_ROLE_DsRole_RoleStandaloneWorkstation: _DSROLE_MACHINE_ROLE = 0;
 pub const _DSROLE_MACHINE_ROLE_DsRole_RoleMemberWorkstation: _DSROLE_MACHINE_ROLE = 1;
 pub const _DSROLE_MACHINE_ROLE_DsRole_RoleStandaloneServer: _DSROLE_MACHINE_ROLE = 2;
