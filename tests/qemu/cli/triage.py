@@ -32,27 +32,17 @@ KNOWN_FLAKES = [
         "code": "0xF4",
         "note": "known win32k/smss suspended-thread race; re-run to confirm",
     },
-    {
-        # winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot; it races
-        # explorer's csrss/win32k handoff so explorer never reaches _tWinMain
-        # (~1/3 i386 boots; also hits arm64 — see below). Root fix: gate the
-        # nettest spawn to the net-test config so plain smokes never spawn it.
-        # NOTE: this signature is listed BEFORE arm64_lpcexitthread_race and both
-        # can match an arm64 nettest wedge (it prints both markers); first-match
-        # wins, so an arm64 nettest hang is labeled here — that's correct, it IS
-        # the same root cause. Fixing this clears most arm64 occurrences too.
-        "name": "nettest_explorer_race",
-        "when": "hang",
-        "any": ["[WINLOGON] nettest.exe created"],
-        "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "winlogon nettest spawn races explorer handoff (i386 + arm64); "
-        "root fix: gate the spawn to the net-test config",
-    },
+    # RETIRED 2026-07-03 — nettest_explorer_race: winlogon spawned nettest.exe
+    # unconditionally every boot and raced explorer's csrss/win32k handoff
+    # (~1/3 i386 boots hung; arm64 variant too). Root fix landed: netstack.sys
+    # publishes NicPresent and winlogon gates the spawn on it, so plain smokes
+    # (no NIC) never spawn nettest — the marker "[WINLOGON] nettest.exe created"
+    # can no longer appear on a plain boot, so the signature is unreachable.
+    # Verify-gone: i386 smoke ×8 = 8/8 green; cold gate ×3 all-arch green.
     {
         # arm64: PspExitThread -> LpcExitThread System-thread-exit/timer race,
-        # intermittent on mainline. Distinct from the nettest race above (which
-        # matches first when nettest.exe is in the serial); this catches an arm64
-        # exit-path hang with no nettest marker present.
+        # intermittent on mainline. (Formerly listed after nettest_explorer_race,
+        # now retired; this catches an arm64 exit-path hang on its own.)
         "name": "arm64_lpcexitthread_race",
         "when": "hang",
         "any": ["LpcExitThread"],
