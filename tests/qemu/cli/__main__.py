@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
+    b.add_argument(
+        "--incremental",
+        action="store_true",
+        help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
+    )
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
     b.add_argument("--strict", action="store_true")
     b.add_argument(
