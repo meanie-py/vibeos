@@ -198,6 +198,15 @@ class ArchConfig:
     # The boot marker proves the kernel booted; this extra time lets
     # user-mode processes (SMSS, csrss, winlogon, explorer) finish.
     desktop_settle_seconds: float = 0.0
+    # Early-hang watchdog: if the boot emits serial, then goes SILENT this many
+    # seconds without reaching the marker, declare a wedge and fail fast instead
+    # of burning the full boot_timeout. 0 = disabled (wait the whole timeout).
+    # Set WELL above the longest legitimate inter-line gap on a healthy boot so a
+    # slow-but-progressing boot is never false-aborted (a healthy boot reaches the
+    # marker long before this anyway); the win is on genuine wedges that go quiet
+    # for minutes (e.g. the nettest/LpcExit hangs sit silent ~500s under the 540s
+    # arm64 timeout — this catches them in a fraction of that).
+    hang_silence_seconds: float = 0.0
     # Milestones expected to appear in the boot output (substring match).
     # Validated by test_milestones after wait_for_boot completes.
     # Order is informational — we report which milestones were reached / missed.
@@ -258,6 +267,11 @@ class Arm64Config(ArchConfig):
     # Brief settle after _tWinMain to let the taskbar/desktop draw before
     # screenshot/snapshot tests run.
     desktop_settle_seconds: float = 15.0
+    # aarch64-on-x86 TCG is the slowest boot; a healthy one reaches the marker
+    # well under 240s, so 240s of pure silence with no marker = a real wedge
+    # (nettest/LpcExit hangs sit silent ~520s under the 540s timeout → caught at
+    # ~240s, saving ~5min per wedged boot).
+    hang_silence_seconds: float = 240.0
     # Boot milestones for test_milestones. "IoInitSystem returning TRUE" is
     # silenced on arm64 (iomgr.rs::io_trace is a no-op for aarch64) so we
     # don't gate on it; the surrounding [SMSS]/[CSRSS] entries already prove
@@ -321,6 +335,10 @@ class I386Config(ArchConfig):
     # captures the rendered shell. 5s was too short — it screenshotted the bare
     # blue desktop before explorer built the tray.
     desktop_settle_seconds: float = 30.0
+    # Healthy i386 boot reaches the marker in ~60s; 120s of pure silence with no
+    # marker = wedged. Above the ~30s storage/EventLog gap so that flake is not
+    # false-tripped, well under the 360s timeout (saves ~4min per wedge).
+    hang_silence_seconds: float = 120.0
     required_milestones: list[str] = field(
         default_factory=lambda: [
             "[SMSS] _main entered",
@@ -416,6 +434,10 @@ class Amd64Config(ArchConfig):
     # the storm never gates the taskbar, and the smoke verdict is the serial
     # marker, not the screenshot, so an occasional early shot is only cosmetic.)
     desktop_settle_seconds: float = 30.0
+    # Healthy amd64 boot reaches the marker in ~60s; 120s of pure silence with no
+    # marker = wedged. Above the ~30s storage/EventLog gap (so that KNOWN_FLAKE is
+    # not false-tripped), well under the 360s timeout (saves ~4min per wedge).
+    hang_silence_seconds: float = 120.0
     required_milestones: list[str] = field(
         default_factory=lambda: [
             "[SMSS] _main entered",

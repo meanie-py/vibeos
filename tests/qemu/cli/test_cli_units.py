@@ -1528,3 +1528,60 @@ def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     rc = gate_mod.gate(_gate_args(arches="i386", retries=0), tmp_path)
     assert rc == 1
     assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+# --- smoke._watch: early-hang watchdog + net opt-in (no QEMU) ---------------
+
+from . import smoke as smoke_mod  # noqa: E402
+
+
+class _FakeSerial:
+    """Emits the given chunks once, then stays silent (returns "")."""
+
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+        self._i = 0
+
+    def read_available(self, timeout=0.5):
+        if self._i < len(self._chunks):
+            c = self._chunks[self._i]
+            self._i += 1
+            return c
+        time.sleep(0.02)  # mimic a quiet poll
+        return ""
+
+
+class _FakeVM:
+    def __init__(self, chunks, hang_silence):
+        self.serial = _FakeSerial(chunks)
+        self.config = type("Cfg", (), {"hang_silence_seconds": hang_silence})()
+
+
+def test_watch_early_hang_aborts_on_silence():
+    # boot emits once, then goes silent → watchdog trips well before `timeout`
+    vm = _FakeVM(["[SMSS] boot\n"], hang_silence=0.1)
+    t0 = time.monotonic()
+    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=30)  # type: ignore[arg-type]
+    assert outcome == "timeout"
+    assert diag["early_hang"] is True
+    assert diag["silent_s"] >= 0.1
+    assert time.monotonic() - t0 < 5, "must fail FAST, not wait the full timeout"
+
+
+def test_watch_reaches_marker_before_hang():
+    vm = _FakeVM(["boot\n", "[EXPLORER] _tWinMain entered\n"], hang_silence=0.1)
+    outcome, _buf, _diag = smoke_mod._watch(
+        vm,  # type: ignore[arg-type]
+        until="_tWinMain entered",
+        fail_on=None,
+        timeout=30,
+    )
+    assert outcome == "reached"
+
+
+def test_watch_no_early_hang_when_disabled():
+    # hang_silence=0 disables the watchdog → runs to the (short) deadline
+    vm = _FakeVM(["x\n"], hang_silence=0.0)
+    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=0.3)  # type: ignore[arg-type]
+    assert outcome == "timeout"
+    assert diag["early_hang"] is False
