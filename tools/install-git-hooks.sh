@@ -3,9 +3,9 @@
 # Install the repo's git hooks into the shared common git dir, so they apply to
 # the main checkout AND every linked worktree (hooks live in the common dir).
 #
-# Idempotent — safe to re-run. Run once per clone (the swarm onboarding does this;
-# see AGENTS.md "Mainline protection"). The marquee hook is the mainline-rewind
-# guard (tools/git-hooks/reference-transaction).
+# Idempotent — safe to re-run. Run once per clone (see AGENTS.md "Mainline
+# protection"). The marquee hook is the mainline-rewind guard
+# (tools/git-hooks/reference-transaction).
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"

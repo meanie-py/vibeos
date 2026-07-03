@@ -25,10 +25,10 @@ timeout = 300
 
 # --- dev tooling for the vibeos-cli tool surface ---------------------------
 # Covers the cli package (tests/qemu/cli) + the standalone tools/*.py scripts.
-# tools/rustconv and agent-swarm carry their OWN [tool.ruff]/[tool.pyright]
-# (installable sub-packages); ruff/pyright discover the nearest config per file,
-# so this block does NOT govern them. Policy is kept identical across all three
-# so `vibeos-cli check-tooling` lints the whole surface under one standard.
+# tools/rustconv carries its OWN [tool.ruff]/[tool.pyright] (installable
+# sub-package); ruff/pyright discover the nearest config per file, so this block
+# does NOT govern it. Policy is kept identical so `vibeos-cli check-tooling`
+# lints the whole surface under one standard.
 [tool.ruff]
 line-length = 100
 target-version = "py310"

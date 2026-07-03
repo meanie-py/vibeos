@@ -1,5 +1,12 @@
 # Agent Swarm Platform — Design & Build Plan
 
+> **2026-07-03 — the mattermost-based implementation (`agent-swarm/`, the
+> `mattermost-swarm` MCP server, `vibeos-cli swarm`) was removed from the tree**
+> ahead of a move to built-in agent swarms. Full removal is on the
+> `remove-swarm-tooling` PR; the pre-removal state is preserved on the
+> `swarm-archive` branch. This doc is retained as the **reference design** for the
+> replacement — nothing operational depends on it.
+
 **Status:** design → implementation (2026-06-14). Will refine during the build.
 **Absorbs:** the former `swarm-comms-plan.md` (messaging-layer subset); its transport
 analysis is now Appendix A. This is the single cohesive design.

@@ -25,8 +25,7 @@ rustconv = ["../templates/*", "../data/*"]
 rustconv = "rustconv.__main__:main"
 
 # --- dev tooling: ruff (lint+format) / pyright (types) / pytest -------------
-# Settings deliberately mirror agent-swarm/pyproject.toml so the whole
-# vibeos-cli tool surface lints under one cohesive policy.
+# One cohesive lint/format policy for the vibeos-cli tool surface.
 [tool.ruff]
 line-length = 100
 target-version = "py310"

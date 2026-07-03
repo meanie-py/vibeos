@@ -202,7 +202,7 @@ shells out for byte-level depth if it's installed (optional).
 ### Launch backend config (`native` vs `windows-host`)
 The smoke/boot runner picks a QEMU **backend** from layered config — committed
 `DEFAULTS` (in `config.py`) **<** a gitignored per-machine `<repo>/.vibeos-cli.local.json`
-**<** env (`VIBEOS_QEMU_*`). **Default is now `windows-host`** (the swarm runs on a Windows
+**<** env (`VIBEOS_QEMU_*`). **Default is now `windows-host`** (agents run on a Windows
 host — escapes WSL2 nested-virt contention). `native` (local `qemu-system-*` + Unix-socket
 QMP/serial + KVM/TCG) is the right choice on real Linux / CI — override via
 `VIBEOS_QEMU_BACKEND=native` or a `.vibeos-cli.local.json`. **`windows-host`** (WSL2 only) launches the *Windows* QEMU.exe via interop to
@@ -230,13 +230,13 @@ server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke 
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which
 lints the *kernel* source. Runs, over the whole vibeos-cli tool surface
-(`tools/rustconv` incl. semdiff, this `cli` package, the standalone `tools/*.py`
-scripts, and `agent-swarm`): **ruff** (lint, `E/F/I/UP/B/SIM/RUF`), **ruff
+(`tools/rustconv` incl. semdiff, this `cli` package, and the standalone
+`tools/*.py` scripts): **ruff** (lint, `E/F/I/UP/B/SIM/RUF`), **ruff
 format --check**, **pyright** (basic), and **pytest**. One line per check, tails
 the failing output, nonzero on any failure. `--no-types`/`--no-tests` for a fast
 lint-only pass. Run it before handing off a change to the tooling. Config lives
-per-package: `tools/rustconv/pyproject.toml` + `agent-swarm/pyproject.toml`
-(installable sub-pkgs) carry their own `[tool.ruff]`/`[tool.pyright]`; the cli +
+per-package: `tools/rustconv/pyproject.toml`
+(installable sub-pkg) carries its own `[tool.ruff]`/`[tool.pyright]`; the cli +
 `tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
 four so the surface lints under one standard.
 

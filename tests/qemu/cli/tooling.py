@@ -1,8 +1,8 @@
 """`vibeos-cli check-tooling` — the lint/type/test gate for our own Python tools.
 
 One front door over the whole vibeos-cli tool surface: the rustconv pipeline
-(incl. semdiff), the cli package itself, the standalone tools/*.py scripts, and
-the agent-swarm package. Runs ruff (lint), ruff format --check, pyright (types),
+(incl. semdiff), the cli package itself, and the standalone tools/*.py scripts.
+Runs ruff (lint), ruff format --check, pyright (types),
 and pytest — the same standard each package's pyproject configures.
 
 This is distinct from `vibeos-cli check` (which lints the *kernel* C/Rust source
@@ -22,16 +22,15 @@ _VBIN = Path(sys.executable).parent
 _RUFF = str(_VBIN / "ruff")
 _PYRIGHT = str(_VBIN / "pyright")
 
-# Surface roots. rustconv + agent-swarm carry their own [tool.ruff]/[tool.pyright];
-# the cli + tools/*.py use the repo-root config. ruff/pyright discover the nearest
-# config per file, so passing the paths is enough.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "agent-swarm"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "agent-swarm/agent_swarm"]
+# Surface roots. rustconv carries its own [tool.ruff]/[tool.pyright]; the cli +
+# tools/*.py use the repo-root config. ruff/pyright discover the nearest config
+# per file, so passing the paths is enough.
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
     (".", ".", "tests/qemu/cli/test_cli_units.py"),
-    ("agent-swarm", "agent-swarm", "."),
 ]
 
 
