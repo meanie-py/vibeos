@@ -5,8 +5,8 @@ The contended resource on this box is **CPU**, not the QEMU accelerator: a cold 
 (`ninja -j` over all cores) and a TCG/arm64 boot are both CPU-bound, so running them
 together starves the boot into a false `HANG_TIMEOUT`, and two `build --clean` on the
 SAME build dir corrupt each other. The per-arch QEMU slot cap in `vm.py` only covers
-*accelerated* same-arch boots; this module covers the CPU-bound class the swarm has been
-arbitrating by hand in #swarm ("taking the host" / "host free").
+*accelerated* same-arch boots; this module covers the CPU-bound class that otherwise
+has to be arbitrated by hand ("taking the host" / "host free").
 
 Two flock-based locks, both under a shared `/tmp` dir so every worktree sees them and the
 kernel auto-releases them when the holding process dies (no stale-lock cleanup needed):

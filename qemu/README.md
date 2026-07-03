@@ -69,7 +69,7 @@ from exhausting host KVM/RAM:
   other on `/dev/kvm` + the shared IDE path into false `HANG_TIMEOUT`s, so a
   second same-arch boot **queues automatically** instead of contending; an arm64
   (TCG) boot still runs in parallel with an x86 one. This is what makes it safe
-  to smoke without hand-coordinating same-arch boots in `#swarm`.
+  to smoke without hand-coordinating same-arch boots.
 - **Lifetime cap** — no QEMU outlives `VIBEOS_QEMU_MAX_LIFETIME` (default 1800 s);
   queue-wait doesn't count against it.
 - **Orphan reaping** — `reap.sh` culls QEMUs whose owning session died.

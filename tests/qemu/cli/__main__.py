@@ -140,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ct = sub.add_parser(
         "check-tooling",
-        help="lint/type/test gate for our own Python tools (rustconv, cli, tools, agent-swarm)",
+        help="lint/type/test gate for our own Python tools (rustconv, cli, tools)",
     )
     ct.add_argument("--no-types", action="store_true", help="skip pyright")
     ct.add_argument("--no-tests", action="store_true", help="skip pytest")
