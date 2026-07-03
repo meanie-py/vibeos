@@ -2,13 +2,13 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 #[no_mangle]
-pub unsafe extern "C" fn WSPCancelBlockingCall(
+pub unsafe extern "system" fn WSPCancelBlockingCall(
     lpErrno: LPINT,
 ) -> INT {
     unimplemented!("WSPCancelBlockingCall");
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetQOSByName(
+pub unsafe extern "system" fn WSPGetQOSByName(
     s: SOCKET,
     lpQOSName: LPWSABUF,
     lpQOS: LPQOS,
@@ -17,7 +17,7 @@ pub unsafe extern "C" fn WSPGetQOSByName(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPJoinLeaf(
+pub unsafe extern "system" fn WSPJoinLeaf(
     s: SOCKET,
     name: *const SOCKADDR,
     namelen: INT,
@@ -31,7 +31,7 @@ pub unsafe extern "C" fn WSPJoinLeaf(
     0 as SOCKET
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPAcceptEx(
+pub unsafe extern "system" fn WSPAcceptEx(
     sListenSocket: SOCKET,
     sAcceptSocket: SOCKET,
     lpOutputBuffer: PVOID,
@@ -44,7 +44,7 @@ pub unsafe extern "C" fn WSPAcceptEx(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPDisconnectEx(
+pub unsafe extern "system" fn WSPDisconnectEx(
     hSocket: SOCKET,
     lpOverlapped: LPOVERLAPPED,
     dwFlags: DWORD,
@@ -53,7 +53,7 @@ pub unsafe extern "C" fn WSPDisconnectEx(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetAcceptExSockaddrs(
+pub unsafe extern "system" fn WSPGetAcceptExSockaddrs(
     lpOutputBuffer: PVOID,
     dwReceiveDataLength: DWORD,
     dwLocalAddressLength: DWORD,

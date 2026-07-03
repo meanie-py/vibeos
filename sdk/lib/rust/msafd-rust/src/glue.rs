@@ -66,6 +66,10 @@ pub const WSAID_CONNECTEX: GUID = GUID { Data1: 0x25a207b9, Data2: 0xddf3, Data3
     Data4: [0x8e, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e] };
 pub const WSAID_DISCONNECTEX: GUID = GUID { Data1: 0x7fda2e11, Data2: 0x8630, Data3: 0x436f,
     Data4: [0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57] };
+// SO_DONTLINGER = ~SO_LINGER, SO_EXCLUSIVEADDRUSE = ~SO_REUSEADDR — bindgen skips these
+// (their #define is a `~`-expression, not a literal). Values per winsock2.h.
+pub const SO_DONTLINGER: u32 = !SO_LINGER;
+pub const SO_EXCLUSIVEADDRUSE: u32 = !SO_REUSEADDR;
 pub const IPPROTO_TCP: i32 = 6;
 pub const IPPROTO_UDP: i32 = 17;
 pub const IPPROTO_RAW: i32 = 255;
@@ -164,6 +168,18 @@ extern "system" {
 #[inline(always)] pub unsafe fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void {
     core::ptr::write_bytes(s as *mut u8, c as u8, n); s
 }
+// as_apc — reinterpret an `extern "system"` APC fn as ntdll-sys's PIO_APC_ROUTINE. bindgen
+// spells that type `extern "stdcall"`(i386)/`extern "C"`(x64/arm64); the msafd APC routines
+// are defined `extern "system"` (portable). The two are ABI-IDENTICAL per arch (system ==
+// stdcall on i386, == C on x64/arm64, exactly what PIO_APC_ROUTINE is), so transmuting the
+// fn pointer is a provably-safe no-op bit reinterpret — it only bridges the Rust type-spelling
+// mismatch Rust won't unify. Used at the NtDeviceIoControlFile ApcRoutine assignment sites.
+#[inline(always)] pub unsafe fn as_apc(
+    f: unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+) -> PIO_APC_ROUTINE {
+    core::mem::transmute(f)
+}
+
 // InterlockedIncrement/Decrement — atomic ±1 on a LONG (compiler intrinsic in C).
 #[inline(always)] pub unsafe fn InterlockedIncrement(addend: *mut LONG) -> LONG {
     (*(addend as *const core::sync::atomic::AtomicI32)).fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1
@@ -195,8 +211,8 @@ pub use crate::misc::dllmain::{
 // resolves the cross-module fn-pointer references.
 pub use crate::misc::dllmain::{
     WSPAccept, WSPAddressToString, WSPBind, WSPCleanup, WSPCloseSocket, WSPConnect, WSPConnectEx,
-    WSPDuplicateSocket, WSPGetPeerName, WSPGetSockName, WSPGetSockOpt, WSPIoctl, WSPListen,
-    WSPSelect, WSPShutdown, WSPSocket, WSPStartup, WSPStringToAddress,
+    WSPDuplicateSocket, WSPGetPeerName, WSPGetSockName, WSPGetSockOpt, WSPSetSockOpt, WSPIoctl,
+    WSPListen, WSPSelect, WSPShutdown, WSPSocket, WSPStartup, WSPStringToAddress,
 };
 pub use crate::misc::event::{WSPEnumNetworkEvents, WSPEventSelect};
 pub use crate::misc::sndrcv::{

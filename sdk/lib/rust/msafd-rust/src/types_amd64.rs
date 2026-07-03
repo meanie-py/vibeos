@@ -1070,7 +1070,7 @@ pub type LPWSAPROTOCOL_INFOW = *mut _WSAPROTOCOL_INFOW;
 pub type WSAPROTOCOL_INFO = WSAPROTOCOL_INFOA;
 pub type LPWSAPROTOCOL_INFO = LPWSAPROTOCOL_INFOA;
 pub type LPCONDITIONPROC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpCallerId: LPWSABUF,
         lpCallerData: LPWSABUF,
         lpSQOS: LPQOS,
@@ -1082,7 +1082,7 @@ pub type LPCONDITIONPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSAOVERLAPPED_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dwError: DWORD,
         cbTransferred: DWORD,
         lpOverlapped: LPWSAOVERLAPPED,
@@ -1397,9 +1397,9 @@ pub struct WSPData {
 pub type WSPDATA = WSPData;
 pub type LPWSPDATA = *mut WSPData;
 pub type LPBLOCKINGCALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(dwContext: DWORD_PTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(dwContext: DWORD_PTR) -> BOOL>;
 pub type LPWSPACCEPT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         addr: *mut sockaddr,
         addrlen: LPINT,
@@ -1408,9 +1408,9 @@ pub type LPWSPACCEPT = ::core::option::Option<
         lpErrno: LPINT,
     ) -> SOCKET,
 >;
-pub type LPWSAUSERAPC = ::core::option::Option<unsafe extern "C" fn(dwContext: DWORD_PTR)>;
+pub type LPWSAUSERAPC = ::core::option::Option<unsafe extern "system" fn(dwContext: DWORD_PTR)>;
 pub type LPWSPADDRESSTOSTRING = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpsaAddress: LPSOCKADDR,
         dwAddressLength: DWORD,
         lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -1420,7 +1420,7 @@ pub type LPWSPADDRESSTOSTRING = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPWSPASYNCSELECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         hWnd: HWND,
         wMsg: ::core::ffi::c_uint,
@@ -1429,7 +1429,7 @@ pub type LPWSPASYNCSELECT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPBIND = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *const sockaddr,
         namelen: ::core::ffi::c_int,
@@ -1437,13 +1437,13 @@ pub type LPWSPBIND = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPCANCELBLOCKINGCALL =
-    ::core::option::Option<unsafe extern "C" fn(lpErrno: LPINT) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(lpErrno: LPINT) -> ::core::ffi::c_int>;
 pub type LPWSPCLEANUP =
-    ::core::option::Option<unsafe extern "C" fn(lpErrno: LPINT) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(lpErrno: LPINT) -> ::core::ffi::c_int>;
 pub type LPWSPCLOSESOCKET =
-    ::core::option::Option<unsafe extern "C" fn(s: SOCKET, lpErrno: LPINT) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(s: SOCKET, lpErrno: LPINT) -> ::core::ffi::c_int>;
 pub type LPWSPCONNECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *const sockaddr,
         namelen: ::core::ffi::c_int,
@@ -1455,7 +1455,7 @@ pub type LPWSPCONNECT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPDUPLICATESOCKET = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         dwProcessId: DWORD,
         lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -1463,7 +1463,7 @@ pub type LPWSPDUPLICATESOCKET = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPENUMNETWORKEVENTS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         hEventObject: HANDLE,
         lpNetworkEvents: LPWSANETWORKEVENTS,
@@ -1471,7 +1471,7 @@ pub type LPWSPENUMNETWORKEVENTS = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPEVENTSELECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         hEventObject: HANDLE,
         lNetworkEvents: ::core::ffi::c_long,
@@ -1479,7 +1479,7 @@ pub type LPWSPEVENTSELECT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPGETOVERLAPPEDRESULT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpOverlapped: LPWSAOVERLAPPED,
         lpcbTransfer: LPDWORD,
@@ -1489,7 +1489,7 @@ pub type LPWSPGETOVERLAPPEDRESULT = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LPWSPGETPEERNAME = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *mut sockaddr,
         namelen: LPINT,
@@ -1497,7 +1497,7 @@ pub type LPWSPGETPEERNAME = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPGETSOCKNAME = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *mut sockaddr,
         namelen: LPINT,
@@ -1505,7 +1505,7 @@ pub type LPWSPGETSOCKNAME = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPGETSOCKOPT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         level: ::core::ffi::c_int,
         optname: ::core::ffi::c_int,
@@ -1515,10 +1515,10 @@ pub type LPWSPGETSOCKOPT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPGETQOSBYNAME = ::core::option::Option<
-    unsafe extern "C" fn(s: SOCKET, lpQOSName: LPWSABUF, lpQOS: LPQOS, lpErrno: LPINT) -> BOOL,
+    unsafe extern "system" fn(s: SOCKET, lpQOSName: LPWSABUF, lpQOS: LPQOS, lpErrno: LPINT) -> BOOL,
 >;
 pub type LPWSPIOCTL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         dwIoControlCode: DWORD,
         lpvInBuffer: LPVOID,
@@ -1533,7 +1533,7 @@ pub type LPWSPIOCTL = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPJOINLEAF = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *const sockaddr,
         namelen: ::core::ffi::c_int,
@@ -1546,14 +1546,14 @@ pub type LPWSPJOINLEAF = ::core::option::Option<
     ) -> SOCKET,
 >;
 pub type LPWSPLISTEN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         backlog: ::core::ffi::c_int,
         lpErrno: LPINT,
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPRECV = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpBuffers: LPWSABUF,
         dwBufferCount: DWORD,
@@ -1566,14 +1566,14 @@ pub type LPWSPRECV = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPRECVDISCONNECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpInboundDisconnectData: LPWSABUF,
         lpErrno: LPINT,
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPRECVFROM = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpBuffers: LPWSABUF,
         dwBufferCount: DWORD,
@@ -1588,7 +1588,7 @@ pub type LPWSPRECVFROM = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSELECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         nfds: ::core::ffi::c_int,
         readfds: *mut fd_set,
         writefds: *mut fd_set,
@@ -1598,7 +1598,7 @@ pub type LPWSPSELECT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSEND = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpBuffers: LPWSABUF,
         dwBufferCount: DWORD,
@@ -1611,14 +1611,14 @@ pub type LPWSPSEND = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSENDDISCONNECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpOutboundDisconnectData: LPWSABUF,
         lpErrno: LPINT,
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSENDTO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpBuffers: LPWSABUF,
         dwBufferCount: DWORD,
@@ -1633,7 +1633,7 @@ pub type LPWSPSENDTO = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSETSOCKOPT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         level: ::core::ffi::c_int,
         optname: ::core::ffi::c_int,
@@ -1643,10 +1643,10 @@ pub type LPWSPSETSOCKOPT = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSHUTDOWN = ::core::option::Option<
-    unsafe extern "C" fn(s: SOCKET, how: ::core::ffi::c_int, lpErrno: LPINT) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(s: SOCKET, how: ::core::ffi::c_int, lpErrno: LPINT) -> ::core::ffi::c_int,
 >;
 pub type LPWSPSOCKET = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         af: ::core::ffi::c_int,
         type_: ::core::ffi::c_int,
         protocol: ::core::ffi::c_int,
@@ -1657,7 +1657,7 @@ pub type LPWSPSOCKET = ::core::option::Option<
     ) -> SOCKET,
 >;
 pub type LPWSPSTRINGTOADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         AddressString: LPWSTR,
         AddressFamily: INT,
         lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -1667,18 +1667,18 @@ pub type LPWSPSTRINGTOADDRESS = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPWPUCLOSEEVENT =
-    ::core::option::Option<unsafe extern "C" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
 pub type LPWPUCLOSESOCKETHANDLE =
-    ::core::option::Option<unsafe extern "C" fn(s: SOCKET, lpErrno: LPINT) -> ::core::ffi::c_int>;
-pub type LPWPUCREATEEVENT = ::core::option::Option<unsafe extern "C" fn(lpErrno: LPINT) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(s: SOCKET, lpErrno: LPINT) -> ::core::ffi::c_int>;
+pub type LPWPUCREATEEVENT = ::core::option::Option<unsafe extern "system" fn(lpErrno: LPINT) -> HANDLE>;
 pub type LPWPUCREATESOCKETHANDLE = ::core::option::Option<
-    unsafe extern "C" fn(dwCatalogEntryId: DWORD, dwContext: DWORD_PTR, lpErrno: LPINT) -> SOCKET,
+    unsafe extern "system" fn(dwCatalogEntryId: DWORD, dwContext: DWORD_PTR, lpErrno: LPINT) -> SOCKET,
 >;
 pub type LPWPUFDISSET = ::core::option::Option<
-    unsafe extern "C" fn(s: SOCKET, fdset: *mut fd_set) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(s: SOCKET, fdset: *mut fd_set) -> ::core::ffi::c_int,
 >;
 pub type LPWPUGETPROVIDERPATH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpszProviderDllPath: *mut WCHAR,
         lpProviderDllPathLen: LPINT,
@@ -1686,13 +1686,13 @@ pub type LPWPUGETPROVIDERPATH = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWPUMODIFYIFSHANDLE = ::core::option::Option<
-    unsafe extern "C" fn(dwCatalogEntryId: DWORD, ProposedHandle: SOCKET, lpErrno: LPINT) -> SOCKET,
+    unsafe extern "system" fn(dwCatalogEntryId: DWORD, ProposedHandle: SOCKET, lpErrno: LPINT) -> SOCKET,
 >;
 pub type LPWPUPOSTMESSAGE = ::core::option::Option<
-    unsafe extern "C" fn(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL,
+    unsafe extern "system" fn(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL,
 >;
 pub type LPWPUQUERYBLOCKINGCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dwCatalogEntryId: DWORD,
         lplpfnCallback: *mut LPBLOCKINGCALLBACK,
         lpdwContext: PDWORD_PTR,
@@ -1700,10 +1700,10 @@ pub type LPWPUQUERYBLOCKINGCALLBACK = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWPUQUERYSOCKETHANDLECONTEXT = ::core::option::Option<
-    unsafe extern "C" fn(s: SOCKET, lpContext: PDWORD_PTR, lpErrno: LPINT) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(s: SOCKET, lpContext: PDWORD_PTR, lpErrno: LPINT) -> ::core::ffi::c_int,
 >;
 pub type LPWPUQUEUEAPC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpThreadId: LPWSATHREADID,
         lpfnUserApc: LPWSAUSERAPC,
         dwContext: DWORD_PTR,
@@ -1711,17 +1711,17 @@ pub type LPWPUQUEUEAPC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWPURESETEVENT =
-    ::core::option::Option<unsafe extern "C" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
 pub type LPWPUSETEVENT =
-    ::core::option::Option<unsafe extern "C" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hEvent: HANDLE, lpErrno: LPINT) -> BOOL>;
 pub type LPWPUOPENCURRENTTHREAD = ::core::option::Option<
-    unsafe extern "C" fn(lpThreadId: LPWSATHREADID, lpErrno: LPINT) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(lpThreadId: LPWSATHREADID, lpErrno: LPINT) -> ::core::ffi::c_int,
 >;
 pub type LPWPUCLOSETHREAD = ::core::option::Option<
-    unsafe extern "C" fn(lpThreadId: LPWSATHREADID, lpErrno: LPINT) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(lpThreadId: LPWSATHREADID, lpErrno: LPINT) -> ::core::ffi::c_int,
 >;
 pub type LPWPUCOMPLETEOVERLAPPEDREQUEST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpOverlapped: LPWSAOVERLAPPED,
         dwError: DWORD,
@@ -1730,7 +1730,7 @@ pub type LPWPUCOMPLETEOVERLAPPEDREQUEST = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSCENUMPROTOCOLS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpiProtocols: LPINT,
         lpProtocolBuffer: LPWSAPROTOCOL_INFOW,
         lpdwBufferLength: LPDWORD,
@@ -1738,10 +1738,10 @@ pub type LPWSCENUMPROTOCOLS = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSCDEINSTALLPROVIDER = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, lpErrno: LPINT) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(lpProviderId: LPGUID, lpErrno: LPINT) -> ::core::ffi::c_int,
 >;
 pub type LPWSCINSTALLPROVIDER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpszProviderDllPath: *const WCHAR,
         lpProtocolInfoList: LPWSAPROTOCOL_INFOW,
@@ -1750,7 +1750,7 @@ pub type LPWSCINSTALLPROVIDER = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSCGETPROVIDERPATH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpszProviderDllPath: *mut WCHAR,
         lpProviderDllPathLen: LPINT,
@@ -1758,7 +1758,7 @@ pub type LPWSCGETPROVIDERPATH = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSCINSTALLNAMESPACE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpszIdentifier: LPWSTR,
         lpszPathName: LPWSTR,
         dwNameSpace: DWORD,
@@ -1767,9 +1767,9 @@ pub type LPWSCINSTALLNAMESPACE = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPWSCUNINSTALLNAMESPACE =
-    ::core::option::Option<unsafe extern "C" fn(lpProviderId: LPGUID) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(lpProviderId: LPGUID) -> INT>;
 pub type LPWSCENABLENSPROVIDER =
-    ::core::option::Option<unsafe extern "C" fn(lpProviderId: LPGUID, fEnable: BOOL) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(lpProviderId: LPGUID, fEnable: BOOL) -> INT>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _WSPPROC_TABLE {
@@ -1806,9 +1806,9 @@ pub struct _WSPPROC_TABLE {
 }
 pub type WSPPROC_TABLE = _WSPPROC_TABLE;
 pub type LPWSPPROC_TABLE = *mut _WSPPROC_TABLE;
-pub type LPNSPCLEANUP = ::core::option::Option<unsafe extern "C" fn(lpProviderId: LPGUID) -> INT>;
+pub type LPNSPCLEANUP = ::core::option::Option<unsafe extern "system" fn(lpProviderId: LPGUID) -> INT>;
 pub type LPNSPLOOKUPSERVICEBEGIN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpqsRestrictions: LPWSAQUERYSETW,
         lpServiceClassInfo: LPWSASERVICECLASSINFOW,
@@ -1817,7 +1817,7 @@ pub type LPNSPLOOKUPSERVICEBEGIN = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPNSPLOOKUPSERVICENEXT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hLookup: HANDLE,
         dwControlFlags: DWORD,
         lpdwBufferLength: LPDWORD,
@@ -1825,7 +1825,7 @@ pub type LPNSPLOOKUPSERVICENEXT = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPNSPIOCTL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hLookup: HANDLE,
         dwControlCode: DWORD,
         lpvInBuffer: LPVOID,
@@ -1838,9 +1838,9 @@ pub type LPNSPIOCTL = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPNSPLOOKUPSERVICEEND =
-    ::core::option::Option<unsafe extern "C" fn(hLookup: HANDLE) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(hLookup: HANDLE) -> INT>;
 pub type LPNSPSETSERVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpServiceClassInfo: LPWSASERVICECLASSINFOW,
         lpqsRegInfo: LPWSAQUERYSETW,
@@ -1849,26 +1849,26 @@ pub type LPNSPSETSERVICE = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPNSPINSTALLSERVICECLASS = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, lpServiceClassInfo: LPWSASERVICECLASSINFOW) -> INT,
+    unsafe extern "system" fn(lpProviderId: LPGUID, lpServiceClassInfo: LPWSASERVICECLASSINFOW) -> INT,
 >;
 pub type LPNSPREMOVESERVICECLASS = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, lpServiceClassId: LPGUID) -> INT,
+    unsafe extern "system" fn(lpProviderId: LPGUID, lpServiceClassId: LPGUID) -> INT,
 >;
 pub type LPNSPGETSERVICECLASSINFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpdwBufSize: LPDWORD,
         lpServiceClassInfo: LPWSASERVICECLASSINFOW,
     ) -> INT,
 >;
 pub type LPNSPV2STARTUP = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, ppvClientSessionArg: *mut LPVOID) -> INT,
+    unsafe extern "system" fn(lpProviderId: LPGUID, ppvClientSessionArg: *mut LPVOID) -> INT,
 >;
 pub type LPNSPV2CLEANUP = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, pvClientSessionArg: LPVOID) -> INT,
+    unsafe extern "system" fn(lpProviderId: LPGUID, pvClientSessionArg: LPVOID) -> INT,
 >;
 pub type LPNSPV2LOOKUPSERVICEBEGIN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpqsRestrictions: LPWSAQUERYSET2W,
         dwControlFlags: DWORD,
@@ -1877,7 +1877,7 @@ pub type LPNSPV2LOOKUPSERVICEBEGIN = ::core::option::Option<
     ) -> INT,
 >;
 pub type LPNSPV2LOOKUPSERVICENEXTEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hAsyncCall: HANDLE,
         hLookup: HANDLE,
         dwControlFlags: DWORD,
@@ -1886,9 +1886,9 @@ pub type LPNSPV2LOOKUPSERVICENEXTEX = ::core::option::Option<
     ),
 >;
 pub type LPNSPV2LOOKUPSERVICEEND =
-    ::core::option::Option<unsafe extern "C" fn(hLookup: HANDLE) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(hLookup: HANDLE) -> INT>;
 pub type LPNSPV2SETSERVICEEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hAsyncCall: HANDLE,
         lpProviderId: LPGUID,
         lpqsRegInfo: LPWSAQUERYSET2W,
@@ -1898,7 +1898,7 @@ pub type LPNSPV2SETSERVICEEX = ::core::option::Option<
     ),
 >;
 pub type LPNSPV2CLIENTSESSIONRUNDOWN =
-    ::core::option::Option<unsafe extern "C" fn(lpProviderId: LPGUID, pvClientSessionArg: LPVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(lpProviderId: LPGUID, pvClientSessionArg: LPVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _WSPUPCALLTABLE {
@@ -1921,7 +1921,7 @@ pub struct _WSPUPCALLTABLE {
 pub type WSPUPCALLTABLE = _WSPUPCALLTABLE;
 pub type LPWSPUPCALLTABLE = *mut _WSPUPCALLTABLE;
 pub type LPWSPSTARTUP = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         wVersionRequested: WORD,
         lpWSPData: LPWSPDATA,
         lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -1948,7 +1948,7 @@ pub type NSP_ROUTINE = _NSP_ROUTINE;
 pub type PNSP_ROUTINE = *mut _NSP_ROUTINE;
 pub type LPNSP_ROUTINE = *mut _NSP_ROUTINE;
 pub type LPNSPSTARTUP = ::core::option::Option<
-    unsafe extern "C" fn(lpProviderId: LPGUID, lpnspRoutines: LPNSP_ROUTINE) -> INT,
+    unsafe extern "system" fn(lpProviderId: LPGUID, lpnspRoutines: LPNSP_ROUTINE) -> INT,
 >;
 #[repr(C)]
 pub struct _NSPV2_ROUTINE {
@@ -1969,7 +1969,7 @@ pub type LPNSPV2_ROUTINE = *mut _NSPV2_ROUTINE;
 pub type PCNSPV2_ROUTINE = *const NSPV2_ROUTINE;
 pub type LPCNSPV2_ROUTINE = *const NSPV2_ROUTINE;
 pub type LPWSCUPDATEPROVIDER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpProviderId: LPGUID,
         lpszProviderDllPath: *const WCHAR,
         lpProtocolInfoList: LPWSAPROTOCOL_INFOW,
@@ -1978,10 +1978,10 @@ pub type LPWSCUPDATEPROVIDER = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSCINSTALLQOSTEMPLATE = ::core::option::Option<
-    unsafe extern "C" fn(Guid: LPGUID, QosName: LPWSABUF, Qos: LPQOS) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(Guid: LPGUID, QosName: LPWSABUF, Qos: LPQOS) -> ::core::ffi::c_int,
 >;
 pub type LPWSCREMOVEQOSTEMPLATE = ::core::option::Option<
-    unsafe extern "C" fn(Guid: LPGUID, QosName: LPWSABUF) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(Guid: LPGUID, QosName: LPWSABUF) -> ::core::ffi::c_int,
 >;
 pub const _SOCKADDR_ADDRESS_INFO_SockaddrAddressInfoNormal: _SOCKADDR_ADDRESS_INFO = 0;
 pub const _SOCKADDR_ADDRESS_INFO_SockaddrAddressInfoWildcard: _SOCKADDR_ADDRESS_INFO = 1;
@@ -2019,7 +2019,7 @@ pub struct _SOCKADDR_INFO {
 pub type SOCKADDR_INFO = _SOCKADDR_INFO;
 pub type PSOCKADDR_INFO = *mut _SOCKADDR_INFO;
 pub type PWSH_ADDRESS_TO_STRING = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPSOCKADDR,
         arg2: INT,
         arg3: LPWSAPROTOCOL_INFOW,
@@ -2028,17 +2028,17 @@ pub type PWSH_ADDRESS_TO_STRING = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_ENUM_PROTOCOLS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPINT, arg2: LPWSTR, arg3: LPVOID, arg4: LPDWORD) -> INT,
+    unsafe extern "system" fn(arg1: LPINT, arg2: LPWSTR, arg3: LPVOID, arg4: LPDWORD) -> INT,
 >;
 pub type PWSH_GET_BROADCAST_SOCKADDR =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PSOCKADDR, arg3: PINT) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PSOCKADDR, arg3: PINT) -> INT>;
 pub type PWSH_GET_PROVIDER_GUID =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPWSTR, arg2: LPGUID) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPGUID) -> INT>;
 pub type PWSH_GET_SOCKADDR_TYPE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PSOCKADDR, arg2: DWORD, arg3: PSOCKADDR_INFO) -> INT,
+    unsafe extern "system" fn(arg1: PSOCKADDR, arg2: DWORD, arg3: PSOCKADDR_INFO) -> INT,
 >;
 pub type PWSH_GET_SOCKET_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: SOCKET,
         arg3: HANDLE,
@@ -2050,14 +2050,14 @@ pub type PWSH_GET_SOCKET_INFORMATION = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_GET_WILDCARD_SOCKADDR =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PSOCKADDR, arg3: PINT) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PSOCKADDR, arg3: PINT) -> INT>;
 pub type PWSH_GET_WINSOCK_MAPPING =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PWINSOCK_MAPPING, arg2: DWORD) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PWINSOCK_MAPPING, arg2: DWORD) -> DWORD>;
 pub type PWSH_GET_WSAPROTOCOL_INFO = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPWSTR, arg2: *mut LPWSAPROTOCOL_INFOW, arg3: LPDWORD) -> INT,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: *mut LPWSAPROTOCOL_INFOW, arg3: LPDWORD) -> INT,
 >;
 pub type PWSH_IOCTL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: SOCKET,
         arg3: HANDLE,
@@ -2074,7 +2074,7 @@ pub type PWSH_IOCTL = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_JOIN_LEAF = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: SOCKET,
         arg3: HANDLE,
@@ -2091,10 +2091,10 @@ pub type PWSH_JOIN_LEAF = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_NOTIFY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: SOCKET, arg3: HANDLE, arg4: HANDLE, arg5: DWORD) -> INT,
+    unsafe extern "system" fn(arg1: PVOID, arg2: SOCKET, arg3: HANDLE, arg4: HANDLE, arg5: DWORD) -> INT,
 >;
 pub type PWSH_OPEN_SOCKET = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PINT,
         arg2: PINT,
         arg3: PINT,
@@ -2104,7 +2104,7 @@ pub type PWSH_OPEN_SOCKET = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_OPEN_SOCKET2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PINT,
         arg2: PINT,
         arg3: PINT,
@@ -2116,7 +2116,7 @@ pub type PWSH_OPEN_SOCKET2 = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_SET_SOCKET_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: SOCKET,
         arg3: HANDLE,
@@ -2128,7 +2128,7 @@ pub type PWSH_SET_SOCKET_INFORMATION = ::core::option::Option<
     ) -> INT,
 >;
 pub type PWSH_STRING_TO_ADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPWSTR,
         arg2: DWORD,
         arg3: LPWSAPROTOCOL_INFOW,
@@ -3478,7 +3478,7 @@ pub type TRANSMIT_FILE_BUFFERS = _TRANSMIT_FILE_BUFFERS;
 pub type PTRANSMIT_FILE_BUFFERS = *mut _TRANSMIT_FILE_BUFFERS;
 pub type LPTRANSMIT_FILE_BUFFERS = *mut _TRANSMIT_FILE_BUFFERS;
 pub type LPFN_TRANSMITFILE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hSocket: SOCKET,
         hFile: HANDLE,
         nNumberOfBytesToWrite: DWORD,
@@ -3489,7 +3489,7 @@ pub type LPFN_TRANSMITFILE = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LPFN_ACCEPTEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         sListenSocket: SOCKET,
         sAcceptSocket: SOCKET,
         lpOutputBuffer: PVOID,
@@ -3501,7 +3501,7 @@ pub type LPFN_ACCEPTEX = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LPFN_GETACCEPTEXSOCKADDRS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpOutputBuffer: PVOID,
         dwReceiveDataLength: DWORD,
         dwLocalAddressLength: DWORD,
@@ -3534,7 +3534,7 @@ pub type TRANSMIT_PACKETS_ELEMENT = _TRANSMIT_PACKETS_ELEMENT;
 pub type PTRANSMIT_PACKETS_ELEMENT = *mut _TRANSMIT_PACKETS_ELEMENT;
 pub type LPTRANSMIT_PACKETS_ELEMENT = *mut _TRANSMIT_PACKETS_ELEMENT;
 pub type LPFN_TRANSMITPACKETS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hSocket: SOCKET,
         lpPacketArray: LPTRANSMIT_PACKETS_ELEMENT,
         nElementCount: DWORD,
@@ -3544,7 +3544,7 @@ pub type LPFN_TRANSMITPACKETS = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LPFN_CONNECTEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         name: *const sockaddr,
         namelen: ::core::ffi::c_int,
@@ -3555,7 +3555,7 @@ pub type LPFN_CONNECTEX = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LPFN_DISCONNECTEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpOverlapped: LPOVERLAPPED,
         dwFlags: DWORD,
@@ -3635,7 +3635,7 @@ pub type NLA_BLOB = _NLA_BLOB;
 pub type PNLA_BLOB = *mut _NLA_BLOB;
 pub type LPNLA_BLOB = *mut _NLA_BLOB;
 pub type LPFN_WSARECVMSG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         s: SOCKET,
         lpMsg: LPWSAMSG,
         lpdwNumberOfBytesRecvd: LPDWORD,
@@ -3772,4 +3772,4 @@ pub struct _MSAFD_CONNECT_APC_CONTEXT {
 pub type MSAFD_CONNECT_APC_CONTEXT = _MSAFD_CONNECT_APC_CONTEXT;
 pub type PMSAFD_CONNECT_APC_CONTEXT = *mut _MSAFD_CONNECT_APC_CONTEXT;
 pub type PASYNC_COMPLETION_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, IoStatusBlock: PIO_STATUS_BLOCK)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, IoStatusBlock: PIO_STATUS_BLOCK)>;

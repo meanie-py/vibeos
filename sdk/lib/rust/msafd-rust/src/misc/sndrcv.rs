@@ -8,7 +8,7 @@ extern "C" {
     fn TRACE(format: PCSTR, ...);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPAsyncSelect(
+pub unsafe extern "system" fn WSPAsyncSelect(
     Handle: SOCKET,
     hWnd: HWND,
     wMsg: UINT,
@@ -21,7 +21,7 @@ pub unsafe extern "C" fn WSPAsyncSelect(
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
-        *lpErrno = WSAENOTSOCK;
+        *lpErrno = WSAENOTSOCK as i32;
         return SOCKET_ERROR;
     }
 
@@ -37,20 +37,20 @@ pub unsafe extern "C" fn WSPAsyncSelect(
             0,
             core::ptr::null_mut(),
         );
-        return INVALID_SOCKET;
+        return INVALID_SOCKET as i32;
     }
 
     BlockMode = 1u8;
     SetSocketInformation(
         Socket,
         AFD_INFO_BLOCKING_MODE,
-        &mut BlockMode as *mut _ as PVOID,
+        &mut BlockMode as *mut _ as PBOOLEAN,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        None,
     );
-    (*(*Socket).SharedData).NonBlocking = 1u8;
+    (*(*Socket).SharedData).__bindgen_anon_1.set_NonBlocking(1u8);
 
     if (*(*Socket).SharedData).AsyncEvents != 0 {
         if WSPEventSelect(Handle, core::ptr::null_mut(), 0, lpErrno) == SOCKET_ERROR {
@@ -85,10 +85,10 @@ pub unsafe extern "C" fn WSPAsyncSelect(
         0,
     );
 
-    return ERROR_SUCCESS;
+    return ERROR_SUCCESS as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetOverlappedResult(
+pub unsafe extern "system" fn WSPGetOverlappedResult(
     Handle: SOCKET,
     lpOverlapped: LPWSAOVERLAPPED,
     lpdwBytes: LPDWORD,
@@ -105,33 +105,33 @@ pub unsafe extern "C" fn WSPGetOverlappedResult(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return 0;
     }
     if lpOverlapped.is_null() || lpdwBytes.is_null() || lpdwFlags.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return 0;
     }
 
     IoStatusBlock = lpOverlapped as PIO_STATUS_BLOCK;
-    Ret = GetOverlappedResult(Handle as HWND, lpOverlapped, lpdwBytes, fWait);
+    Ret = GetOverlappedResult(Handle as HANDLE, lpOverlapped, lpdwBytes, fWait);
 
     SleepEx(0, 1);
 
     if fWait == 0 && (*IoStatusBlock).__bindgen_anon_1.Status == STATUS_PENDING {
         if !lpErrno.is_null() {
-            *lpErrno = WSA_IO_INCOMPLETE;
+            *lpErrno = WSA_IO_INCOMPLETE as i32;
         }
         return 0;
     }
 
     if Ret != 0 {
-        SockReenableAsyncSelectEvent(Socket, FD_OOB);
-        SockReenableAsyncSelectEvent(Socket, FD_WRITE);
-        SockReenableAsyncSelectEvent(Socket, FD_READ);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_OOB as LONG);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_WRITE as LONG);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_READ as LONG);
     }
 
     match (*IoStatusBlock).__bindgen_anon_1.Status {
@@ -155,7 +155,7 @@ pub unsafe extern "C" fn WSPGetOverlappedResult(
     Ret
 }
 
-unsafe fn MsafdRecvAPC(
+unsafe extern "system" fn MsafdRecvAPC(
     ApcContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Reserved: ULONG,
@@ -172,15 +172,15 @@ unsafe fn MsafdRecvAPC(
     if (*IoStatusBlock).__bindgen_anon_1.Status == STATUS_RECEIVE_EXPEDITED
         || (*IoStatusBlock).__bindgen_anon_1.Status == STATUS_RECEIVE_PARTIAL_EXPEDITED
     {
-        SockReenableAsyncSelectEvent((*Context).lpSocket, FD_OOB);
+        SockReenableAsyncSelectEvent((*Context).lpSocket as PVOID, FD_OOB as LONG);
     } else {
-        SockReenableAsyncSelectEvent((*Context).lpSocket, FD_READ);
+        SockReenableAsyncSelectEvent((*Context).lpSocket as PVOID, FD_READ as LONG);
     }
 
-    if !(*Context).lpCompletionRoutine.is_null() {
-        ((*Context).lpCompletionRoutine)(
-            (*IoStatusBlock).__bindgen_anon_1.Status,
-            (*IoStatusBlock).Information,
+    if (*Context).lpCompletionRoutine.is_some() {
+        ((*Context).lpCompletionRoutine.unwrap())(
+            (*IoStatusBlock).__bindgen_anon_1.Status as u32,
+            (*IoStatusBlock).Information as u32,
             IoStatusBlock as LPWSAOVERLAPPED,
             0,
         );
@@ -189,7 +189,7 @@ unsafe fn MsafdRecvAPC(
     HeapFree(GlobalHeap, 0, ApcContext);
 }
 
-unsafe fn MsafdSendAPC(
+unsafe extern "system" fn MsafdSendAPC(
     ApcContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Reserved: ULONG,
@@ -198,16 +198,16 @@ unsafe fn MsafdSendAPC(
 
     TRACE!(b"MsafdSendAPC(%p %lx %lx)\n\0".as_ptr() as PCHAR, ApcContext, (*IoStatusBlock).__bindgen_anon_1.Status, (*IoStatusBlock).Information);
 
-    SockReenableAsyncSelectEvent((*Context).lpSocket, FD_WRITE);
+    SockReenableAsyncSelectEvent((*Context).lpSocket as PVOID, FD_WRITE as LONG);
 
     if (*Context).lpCompletionRoutine.is_some() {
-        ((*Context).lpCompletionRoutine.unwrap())((*IoStatusBlock).__bindgen_anon_1.Status, (*IoStatusBlock).Information, IoStatusBlock as LPWSAOVERLAPPED, 0);
+        ((*Context).lpCompletionRoutine.unwrap())((*IoStatusBlock).__bindgen_anon_1.Status as u32, (*IoStatusBlock).Information as u32, IoStatusBlock as LPWSAOVERLAPPED, 0);
     }
 
     HeapFree(GlobalHeap, 0, ApcContext);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPRecv(
+pub unsafe extern "system" fn WSPRecv(
     Handle: SOCKET,
     lpBuffers: LPWSABUF,
     dwBufferCount: DWORD,
@@ -221,11 +221,11 @@ pub unsafe extern "C" fn WSPRecv(
     let IOSB: PIO_STATUS_BLOCK;
     let mut DummyIOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut RecvInfo: AFD_RECV_INFO = core::mem::zeroed();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let APCContext: PMSAFD_RECV_APC_CONTEXT;
-    let mut APCFunction: PIO_APC_ROUTINE = core::ptr::null_mut();
+    let mut APCFunction: PIO_APC_ROUTINE = None;
     let mut Event: HANDLE = core::ptr::null_mut();
-    let SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let Socket: PSOCKET_INFORMATION;
     let NumberOfBytesRead: DWORD;
 
@@ -234,23 +234,23 @@ pub unsafe extern "C" fn WSPRecv(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
     if lpNumberOfBytesRead.is_null() && lpOverlapped.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return SOCKET_ERROR;
     }
     if (*Socket).SharedData.is_null() == false
-        && (*(*Socket).SharedData).OobInline != 0
+        && (*(*Socket).SharedData).__bindgen_anon_1.OobInline() != 0
         && !ReceiveFlags.is_null()
         && (*ReceiveFlags & MSG_OOB) != 0
     {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = WSAEINVAL as i32;
         }
         return SOCKET_ERROR;
     }
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn WSPRecv(
     RecvInfo.BufferArray = lpBuffers as PAFD_WSABUF;
     RecvInfo.BufferCount = dwBufferCount;
     RecvInfo.TdiFlags = 0;
-    RecvInfo.AfdFlags = if (*(*Socket).SharedData).NonBlocking != 0 {
+    RecvInfo.AfdFlags = if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         AFD_IMMEDIATE
     } else {
         0
@@ -300,20 +300,20 @@ pub unsafe extern "C" fn WSPRecv(
 
     if lpOverlapped.is_null() {
         APCContext = core::ptr::null_mut();
-        APCFunction = core::ptr::null_mut();
+        APCFunction = None;
         Event = SockEvent;
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as _);
             NtClose(SockEvent);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesRead);
+            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesRead) as i32;
         }
 
         IOSB = lpOverlapped as PIO_STATUS_BLOCK;
-        if !lpCompletionRoutine.is_null() {
+        if lpCompletionRoutine.is_some() {
             RecvInfo.AfdFlags |= AFD_SKIP_FIO;
-            APCFunction = core::ptr::addr_of!(MsafdRecvAPC) as PIO_APC_ROUTINE;
+            APCFunction = as_apc(MsafdRecvAPC);
             APCContext = HeapAlloc(
                 GlobalHeap,
                 0,
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn WSPRecv(
                     lpErrno,
                     0,
                     lpNumberOfBytesRead,
-                );
+                ) as i32;
             }
             (*APCContext).lpCompletionRoutine = lpCompletionRoutine;
             (*APCContext).lpOverlapped = lpOverlapped;
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn WSPRecv(
         } else {
             Event = (*lpOverlapped).hEvent;
 
-            APCFunction = core::ptr::null_mut();
+            APCFunction = None;
             if !Event.is_null() {
                 APCContext = core::ptr::null_mut();
             } else {
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn WSPRecv(
 
     if Status == STATUS_PENDING {
         TRACE!(b"Leaving (Pending)\n\0".as_ptr() as _);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     NumberOfBytesRead = (*IOSB).Information as DWORD;
@@ -395,16 +395,16 @@ pub unsafe extern "C" fn WSPRecv(
     }
 
     if !ReceiveFlags.is_null() && (*ReceiveFlags & MSG_OOB) != 0 {
-        SockReenableAsyncSelectEvent(Socket, FD_OOB);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_OOB as LONG);
     } else {
-        SockReenableAsyncSelectEvent(Socket, FD_READ);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_READ as LONG);
     }
 
     TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as _, Status, NumberOfBytesRead);
-    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesRead, lpNumberOfBytesRead);
+    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesRead, lpNumberOfBytesRead) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPRecvFrom(
+pub unsafe extern "system" fn WSPRecvFrom(
     Handle: SOCKET,
     lpBuffers: LPWSABUF,
     dwBufferCount: DWORD,
@@ -420,11 +420,11 @@ pub unsafe extern "C" fn WSPRecvFrom(
     let mut IOSB: PIO_STATUS_BLOCK;
     let mut DummyIOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut RecvInfo: AFD_RECV_INFO_UDP = core::mem::zeroed();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let mut APCContext: PMSAFD_RECV_APC_CONTEXT;
-    let mut APCFunction: PIO_APC_ROUTINE = core::ptr::null_mut();
+    let mut APCFunction: PIO_APC_ROUTINE = None;
     let mut Event: HANDLE = core::ptr::null_mut();
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let Socket: PSOCKET_INFORMATION;
     let mut NumberOfBytesRead: DWORD;
 
@@ -433,19 +433,19 @@ pub unsafe extern "C" fn WSPRecvFrom(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
     if lpNumberOfBytesRead.is_null() && lpOverlapped.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return SOCKET_ERROR;
     }
-    if (*Socket).SharedData != core::ptr::null_mut() && (*(*Socket).SharedData).OobInline != 0 && !ReceiveFlags.is_null() && (*ReceiveFlags & MSG_OOB) != 0 {
+    if (*Socket).SharedData != core::ptr::null_mut() && (*(*Socket).SharedData).__bindgen_anon_1.OobInline() != 0 && !ReceiveFlags.is_null() && (*ReceiveFlags & MSG_OOB) != 0 {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = WSAEINVAL as i32;
         }
         return SOCKET_ERROR;
     }
@@ -465,7 +465,7 @@ pub unsafe extern "C" fn WSPRecvFrom(
     }
 
     if (*(*Socket).SharedData).State == SocketOpen {
-        ((*(*Socket).HelperData).WSHGetWildcardSockaddr)(
+        ((*(*Socket).HelperData).WSHGetWildcardSockaddr.unwrap())(
             (*Socket).HelperContext,
             SocketAddress,
             SocketAddressLength,
@@ -495,13 +495,13 @@ pub unsafe extern "C" fn WSPRecvFrom(
     RecvInfo.BufferArray = lpBuffers as PAFD_WSABUF;
     RecvInfo.BufferCount = dwBufferCount;
     RecvInfo.TdiFlags = 0;
-    RecvInfo.AfdFlags = if (*(*Socket).SharedData).NonBlocking != 0 {
+    RecvInfo.AfdFlags = if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         AFD_IMMEDIATE
     } else {
         0
     };
     RecvInfo.AddressLength = SocketAddressLength;
-    RecvInfo.Address = SocketAddress;
+    RecvInfo.Address = SocketAddress as PVOID;
 
     if ReceiveFlags.is_null() || *ReceiveFlags == 0 {
         RecvInfo.TdiFlags |= TDI_RECEIVE_NORMAL;
@@ -521,25 +521,25 @@ pub unsafe extern "C" fn WSPRecvFrom(
 
     if lpOverlapped.is_null() {
         APCContext = core::ptr::null_mut();
-        APCFunction = core::ptr::null_mut();
+        APCFunction = None;
         Event = SockEvent;
         IOSB = &mut DummyIOSB;
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as *const i8);
             NtClose(SockEvent);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesRead);
+            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesRead) as i32;
         }
 
         IOSB = lpOverlapped as PIO_STATUS_BLOCK;
         if lpCompletionRoutine.is_some() {
             RecvInfo.AfdFlags |= AFD_SKIP_FIO;
-            APCFunction = MsafdRecvAPC as PIO_APC_ROUTINE;
+            APCFunction = as_apc(MsafdRecvAPC);
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_RECV_APC_CONTEXT>()) as PMSAFD_RECV_APC_CONTEXT;
             if APCContext.is_null() {
                 ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as *const i8);
                 NtClose(SockEvent);
-                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesRead);
+                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesRead) as i32;
             }
             (*APCContext).lpCompletionRoutine = lpCompletionRoutine;
             (*APCContext).lpOverlapped = lpOverlapped;
@@ -548,7 +548,7 @@ pub unsafe extern "C" fn WSPRecvFrom(
         } else {
             Event = (*lpOverlapped).hEvent;
             
-            APCFunction = core::ptr::null_mut();
+            APCFunction = None;
             if !Event.is_null() {
                 APCContext = core::ptr::null_mut();
             } else {
@@ -601,23 +601,23 @@ pub unsafe extern "C" fn WSPRecvFrom(
 
     if Status == STATUS_PENDING {
         TRACE!(b"Leaving (Pending)\n\0".as_ptr() as *const i8);
-        *lpErrno = WSA_IO_PENDING;
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        *lpErrno = WSA_IO_PENDING as i32;
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     NumberOfBytesRead = (*IOSB).Information as DWORD;
 
     if !ReceiveFlags.is_null() && (*ReceiveFlags & MSG_OOB) != 0 {
-        SockReenableAsyncSelectEvent(Socket, FD_OOB);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_OOB as LONG);
     } else {
-        SockReenableAsyncSelectEvent(Socket, FD_READ);
+        SockReenableAsyncSelectEvent(Socket as PVOID, FD_READ as LONG);
     }
 
     TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as *const i8, Status, NumberOfBytesRead);
-    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesRead, lpNumberOfBytesRead);
+    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesRead, lpNumberOfBytesRead) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPSend(
+pub unsafe extern "system" fn WSPSend(
     Handle: SOCKET,
     lpBuffers: LPWSABUF,
     dwBufferCount: DWORD,
@@ -633,9 +633,9 @@ pub unsafe extern "C" fn WSPSend(
     let mut SendInfo: AFD_SEND_INFO = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut APCContext: PMSAFD_SEND_APC_CONTEXT;
-    let mut APCFunction: PIO_APC_ROUTINE = core::ptr::null_mut();
+    let mut APCFunction: PIO_APC_ROUTINE = None;
     let mut Event: HANDLE = core::ptr::null_mut();
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let Socket: PSOCKET_INFORMATION;
     let mut NumberOfBytesSent: DWORD;
 
@@ -644,13 +644,13 @@ pub unsafe extern "C" fn WSPSend(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
     if lpNumberOfBytesSent.is_null() && lpOverlapped.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return SOCKET_ERROR;
     }
@@ -676,7 +676,7 @@ pub unsafe extern "C" fn WSPSend(
     SendInfo.BufferArray = lpBuffers as PAFD_WSABUF;
     SendInfo.BufferCount = dwBufferCount;
     SendInfo.TdiFlags = 0;
-    SendInfo.AfdFlags = if (*(*Socket).SharedData).NonBlocking != 0 {
+    SendInfo.AfdFlags = if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         AFD_IMMEDIATE
     } else {
         0
@@ -693,20 +693,20 @@ pub unsafe extern "C" fn WSPSend(
 
     if lpOverlapped.is_null() {
         APCContext = core::ptr::null_mut();
-        APCFunction = core::ptr::null_mut();
+        APCFunction = None;
         Event = SockEvent;
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as _);
             NtClose(SockEvent);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesSent);
+            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesSent) as i32;
         }
 
         IOSB = lpOverlapped as PIO_STATUS_BLOCK;
-        if !lpCompletionRoutine.is_null() {
+        if lpCompletionRoutine.is_some() {
             SendInfo.AfdFlags |= AFD_SKIP_FIO;
-            APCFunction = core::ptr::addr_of_mut!(MsafdSendAPC) as PIO_APC_ROUTINE;
+            APCFunction = as_apc(MsafdSendAPC);
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_SEND_APC_CONTEXT>())
                 as PMSAFD_SEND_APC_CONTEXT;
             if APCContext.is_null() {
@@ -717,7 +717,7 @@ pub unsafe extern "C" fn WSPSend(
                     lpErrno,
                     0,
                     lpNumberOfBytesSent,
-                );
+                ) as i32;
             }
             (*APCContext).lpCompletionRoutine = lpCompletionRoutine;
             (*APCContext).lpOverlapped = lpOverlapped;
@@ -727,7 +727,7 @@ pub unsafe extern "C" fn WSPSend(
         } else {
             Event = (*lpOverlapped).hEvent;
 
-            APCFunction = core::ptr::null_mut();
+            APCFunction = None;
             if !Event.is_null() {
                 APCContext = core::ptr::null_mut();
             } else {
@@ -737,7 +737,7 @@ pub unsafe extern "C" fn WSPSend(
 
         Event = (*lpOverlapped).hEvent;
         if !Event.is_null() {
-            if !lpCompletionRoutine.is_null() {
+            if lpCompletionRoutine.is_some() {
                 HeapFree(GetProcessHeap(), 0, APCContext as *mut _);
             }
             APCContext = core::ptr::null_mut();
@@ -771,18 +771,18 @@ pub unsafe extern "C" fn WSPSend(
 
     if Status == STATUS_PENDING {
         TRACE!(b"Leaving (Pending)\n\0".as_ptr() as _);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     NumberOfBytesSent = (*IOSB).Information as DWORD;
 
-    SockReenableAsyncSelectEvent(Socket, FD_WRITE);
+    SockReenableAsyncSelectEvent(Socket as PVOID, FD_WRITE as LONG);
 
     TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as _, Status, NumberOfBytesSent);
-    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent);
+    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPSendTo(
+pub unsafe extern "system" fn WSPSendTo(
     Handle: SOCKET,
     lpBuffers: LPWSABUF,
     dwBufferCount: DWORD,
@@ -798,12 +798,12 @@ pub unsafe extern "C" fn WSPSendTo(
     let mut IOSB: PIO_STATUS_BLOCK;
     let mut DummyIOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut SendInfo: AFD_SEND_INFO_UDP = core::mem::zeroed();
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let mut APCContext: PMSAFD_SEND_APC_CONTEXT;
-    let mut APCFunction: PIO_APC_ROUTINE = core::ptr::null_mut();
+    let mut APCFunction: PIO_APC_ROUTINE = None;
     let mut Event: HANDLE = core::ptr::null_mut();
     let RemoteAddress: PTRANSPORT_ADDRESS;
-    let SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let Socket: PSOCKET_INFORMATION;
     let NumberOfBytesSent: DWORD;
     let mut Buffer: [UCHAR; 128] = core::mem::zeroed();
@@ -813,13 +813,13 @@ pub unsafe extern "C" fn WSPSendTo(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
     if lpNumberOfBytesSent.is_null() && lpOverlapped.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return SOCKET_ERROR;
     }
@@ -839,18 +839,18 @@ pub unsafe extern "C" fn WSPSendTo(
     }
 
     if (*(*Socket).SharedData).State == SocketOpen {
-        let BindAddressLength: INT;
+        let mut BindAddressLength: INT;
         let BindAddress: PSOCKADDR;
         let BindError: INT;
 
         BindAddressLength = (*(*Socket).HelperData).MaxWSAddressLength;
-        BindAddress = HeapAlloc(GlobalHeap, 0, BindAddressLength as SIZE_T) as PSOCKADDR;
+        BindAddress = HeapAlloc(GlobalHeap, 0, BindAddressLength as usize) as PSOCKADDR;
         if BindAddress.is_null() {
             MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
-            return INVALID_SOCKET;
+            return INVALID_SOCKET as i32;
         }
 
-        ((*(*Socket).HelperData).WSHGetWildcardSockaddr)(
+        ((*(*Socket).HelperData).WSHGetWildcardSockaddr.unwrap())(
             (*Socket).HelperContext,
             BindAddress,
             core::ptr::addr_of_mut!(BindAddressLength),
@@ -877,7 +877,7 @@ pub unsafe extern "C" fn WSPSendTo(
     RemoteAddress = Buffer.as_mut_ptr() as PTRANSPORT_ADDRESS;
 
     if SocketAddressLength > (128 - core::mem::size_of::<TRANSPORT_ADDRESS>() as i32) {
-        *lpErrno = WSAEFAULT;
+        *lpErrno = WSAEFAULT as i32;
         return SOCKET_ERROR;
     }
 
@@ -886,36 +886,36 @@ pub unsafe extern "C" fn WSPSendTo(
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*RemoteAddress).Address[0].AddressType) as PVOID,
         SocketAddress as *const core::ffi::c_void,
-        SocketAddressLength as SIZE_T,
+        SocketAddressLength as usize,
     );
 
     SendInfo.BufferArray = lpBuffers as PAFD_WSABUF;
-    SendInfo.AfdFlags = if (*(*Socket).SharedData).NonBlocking != 0 { AFD_IMMEDIATE } else { 0 };
+    SendInfo.AfdFlags = if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 { AFD_IMMEDIATE } else { 0 };
     SendInfo.BufferCount = dwBufferCount;
-    SendInfo.TdiConnection.RemoteAddress = RemoteAddress;
+    SendInfo.TdiConnection.RemoteAddress = RemoteAddress as PVOID;
     SendInfo.TdiConnection.RemoteAddressLength = (*(*Socket).HelperData).MaxTDIAddressLength;
 
     if lpOverlapped.is_null() {
         APCContext = core::ptr::null_mut();
-        APCFunction = core::ptr::null_mut();
+        APCFunction = None;
         Event = SockEvent;
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as PCHAR);
             NtClose(SockEvent);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesSent);
+            return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesSent) as i32;
         }
 
         IOSB = lpOverlapped as PIO_STATUS_BLOCK;
-        if !lpCompletionRoutine.is_null() {
+        if lpCompletionRoutine.is_some() {
             SendInfo.AfdFlags |= AFD_SKIP_FIO;
-            APCFunction = MsafdSendAPC as PIO_APC_ROUTINE;
+            APCFunction = as_apc(MsafdSendAPC);
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_SEND_APC_CONTEXT>()) as PMSAFD_SEND_APC_CONTEXT;
             if APCContext.is_null() {
                 ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
                 NtClose(SockEvent);
-                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesSent);
+                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesSent) as i32;
             }
             (*APCContext).lpCompletionRoutine = lpCompletionRoutine;
             (*APCContext).lpOverlapped = lpOverlapped;
@@ -925,7 +925,7 @@ pub unsafe extern "C" fn WSPSendTo(
         } else {
             Event = (*lpOverlapped).hEvent;
 
-            APCFunction = core::ptr::null_mut();
+            APCFunction = None;
             if !Event.is_null() {
                 APCContext = core::ptr::null_mut();
             } else {
@@ -937,7 +937,7 @@ pub unsafe extern "C" fn WSPSendTo(
     }
 
     (*IOSB).Information = 0;
-    (*IOSB).u.__bindgen_anon_1.Status = STATUS_PENDING;
+    (*IOSB).__bindgen_anon_1.Status = STATUS_PENDING;
 
     Status = NtDeviceIoControlFile(
         Handle as HANDLE,
@@ -954,25 +954,25 @@ pub unsafe extern "C" fn WSPSendTo(
 
     if lpOverlapped.is_null() && Status == STATUS_PENDING {
         MsafdWaitForAlert(SockEvent);
-        Status = (*IOSB).u.__bindgen_anon_1.Status;
+        Status = (*IOSB).__bindgen_anon_1.Status;
     }
 
     NtClose(SockEvent);
 
     if Status == STATUS_PENDING {
         TRACE!(b"Leaving (Pending)\n\0".as_ptr() as PCHAR);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     NumberOfBytesSent = (*IOSB).Information as DWORD;
 
-    SockReenableAsyncSelectEvent(Socket, FD_WRITE);
+    SockReenableAsyncSelectEvent(Socket as PVOID, FD_WRITE as LONG);
 
     TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as PCHAR, Status, NumberOfBytesSent);
-    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent);
+    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPRecvDisconnect(
+pub unsafe extern "system" fn WSPRecvDisconnect(
     s: SOCKET,
     lpInboundDisconnectData: LPWSABUF,
     lpErrno: LPINT,
@@ -980,7 +980,7 @@ pub unsafe extern "C" fn WSPRecvDisconnect(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPSendDisconnect(
+pub unsafe extern "system" fn WSPSendDisconnect(
     s: SOCKET,
     lpOutboundDisconnectData: LPWSABUF,
     lpErrno: LPINT,

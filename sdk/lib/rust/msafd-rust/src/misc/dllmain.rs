@@ -88,7 +88,7 @@ pub static mut SockAsyncHelperAfdHandle: HANDLE = core::ptr::null_mut();
 pub static mut SockAsyncCompletionPort: HANDLE = core::ptr::null_mut();
 pub static mut SockAsyncSelectCalled: BOOLEAN = 0;
 #[no_mangle]
-pub unsafe extern "C" fn WSPSocket(
+pub unsafe extern "system" fn WSPSocket(
     AddressFamily: i32,
     SocketType: i32,
     Protocol: i32,
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn WSPSocket(
     let mut SizeOfPacket: USHORT;
     let mut SizeOfEA: ULONG;
     let mut AfdPacket: PAFD_CREATE_PACKET;
-    let mut Sock: HANDLE;
+    let mut Sock: HANDLE = core::ptr::null_mut();
     let mut Socket: PSOCKET_INFORMATION = core::ptr::null_mut();
     let mut EABuffer: PFILE_FULL_EA_INFORMATION = core::ptr::null_mut();
     let mut HelperData: PHELPER_DATA = core::ptr::null_mut();
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn WSPSocket(
 
     if !lpProtocolInfo.is_null() && (*lpProtocolInfo).dwServiceFlags3 != 0 && (*lpProtocolInfo).dwServiceFlags4 != 0 {
         if UlongToPtr((*lpProtocolInfo).dwServiceFlags3) == INVALID_HANDLE_VALUE {
-            Status = WSAEINVAL;
+            Status = (WSAEINVAL as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -146,7 +146,7 @@ pub unsafe extern "C" fn WSPSocket(
             }
         }
         if UlongToPtr((*lpProtocolInfo).dwServiceFlags4) == INVALID_HANDLE_VALUE {
-            Status = WSAEINVAL;
+            Status = (WSAEINVAL as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn WSPSocket(
                                    0,
                                    core::mem::size_of::<SOCK_SHARED_INFO>()) as PSOCK_SHARED_INFO;
         if SharedData.is_null() {
-            Status = WSAEINVAL;
+            Status = (WSAEINVAL as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -204,8 +204,8 @@ pub unsafe extern "C" fn WSPSocket(
         Protocol = (*SharedData).Protocol;
     }
 
-    if AddressFamily == AF_UNSPEC && SocketType == 0 && Protocol == 0 {
-        Status = WSAEINVAL;
+    if AddressFamily == (AF_UNSPEC as i32) && SocketType == 0 && Protocol == 0 {
+        Status = (WSAEINVAL as i32);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
@@ -229,24 +229,24 @@ pub unsafe extern "C" fn WSPSocket(
         }
     }
 
-    if AddressFamily == AF_UNSPEC {
-        AddressFamily = AF_INET;
+    if AddressFamily == (AF_UNSPEC as i32) {
+        AddressFamily = (AF_INET as i32);
     }
 
     if SocketType == 0 {
         match Protocol {
-            IPPROTO_TCP => SocketType = SOCK_STREAM,
-            IPPROTO_UDP => SocketType = SOCK_DGRAM,
-            IPPROTO_RAW => SocketType = SOCK_RAW,
+            IPPROTO_TCP => SocketType = (SOCK_STREAM as i32),
+            IPPROTO_UDP => SocketType = (SOCK_DGRAM as i32),
+            IPPROTO_RAW => SocketType = (SOCK_RAW as i32),
             _ => {
                 TRACE!(b"Unknown Protocol (%d). We will try SOCK_STREAM.\n\0".as_ptr() as *const i8, Protocol);
-                SocketType = SOCK_STREAM;
+                SocketType = (SOCK_STREAM as i32);
             }
         }
     }
 
     if Protocol == 0 {
-        match SocketType {
+        match SocketType as u32 {
             SOCK_STREAM => Protocol = IPPROTO_TCP,
             SOCK_DGRAM => Protocol = IPPROTO_UDP,
             SOCK_RAW => Protocol = IPPROTO_RAW,
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn WSPSocket(
                             core::ptr::addr_of_mut!(HelperData),
                             core::ptr::addr_of_mut!(HelperEvents));
 
-    if Status != NO_ERROR {
+    if Status != (NO_ERROR as i32) {
         ERR!(b"SockGetTdiName: Status %x\n\0".as_ptr() as *const i8, Status);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn WSPSocket(
 
     Socket = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCKET_INFORMATION>()) as PSOCKET_INFORMATION;
     if Socket.is_null() {
-        Status = WSAENOBUFS;
+        Status = (WSAENOBUFS as i32);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
@@ -329,7 +329,7 @@ pub unsafe extern "C" fn WSPSocket(
         (*Socket).SharedDataHandle = INVALID_HANDLE_VALUE;
         (*Socket).SharedData = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCK_SHARED_INFO>()) as PSOCK_SHARED_INFO;
         if (*Socket).SharedData.is_null() {
-            Status = WSAENOBUFS;
+            Status = (WSAENOBUFS as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -355,24 +355,24 @@ pub unsafe extern "C" fn WSPSocket(
         RtlZeroMemory((*Socket).SharedData as PVOID, core::mem::size_of::<SOCK_SHARED_INFO>());
         (*(*Socket).SharedData).State = SocketOpen;
         (*(*Socket).SharedData).RefCount = 1;
-        (*(*Socket).SharedData).Listening = 0u8;
+        (*(*Socket).SharedData).__bindgen_anon_1.set_Listening(0u8);
         (*(*Socket).SharedData).AddressFamily = AddressFamily;
         (*(*Socket).SharedData).SocketType = SocketType;
         (*(*Socket).SharedData).Protocol = Protocol;
         (*(*Socket).SharedData).SizeOfLocalAddress = (*HelperData).MaxWSAddressLength;
         (*(*Socket).SharedData).SizeOfRemoteAddress = (*HelperData).MaxWSAddressLength;
-        (*(*Socket).SharedData).UseDelayedAcceptance = (*HelperData).UseDelayedAcceptance;
+        (*(*Socket).SharedData).__bindgen_anon_1.set_UseDelayedAcceptance((*HelperData).UseDelayedAcceptance);
         (*(*Socket).SharedData).CreateFlags = dwFlags;
         (*(*Socket).SharedData).ServiceFlags1 = (*lpProtocolInfo).dwServiceFlags1;
         (*(*Socket).SharedData).ProviderFlags = (*lpProtocolInfo).dwProviderFlags;
-        (*(*Socket).SharedData).UseSAN = 0u8;
-        (*(*Socket).SharedData).NonBlocking = 0u8;
+        (*(*Socket).SharedData).__bindgen_anon_1.set_UseSAN(0u8);
+        (*(*Socket).SharedData).__bindgen_anon_1.set_NonBlocking(0u8);
         (*(*Socket).SharedData).RecvTimeout = INFINITE;
         (*(*Socket).SharedData).SendTimeout = INFINITE;
-        (*(*Socket).SharedData).OobInline = 0u8;
+        (*(*Socket).SharedData).__bindgen_anon_1.set_OobInline(0u8);
 
-        if (*(*Socket).SharedData).SocketType == SOCK_DGRAM ||
-           (*(*Socket).SharedData).SocketType == SOCK_RAW {
+        if (*(*Socket).SharedData).SocketType == SOCK_DGRAM as i32 ||
+           (*(*Socket).SharedData).SocketType == (SOCK_RAW as i32) {
             TRACE!(b"Connectionless socket\n\0".as_ptr() as *const i8);
             (*(*Socket).SharedData).ServiceFlags1 |= XP1_CONNECTIONLESS;
         }
@@ -395,7 +395,7 @@ pub unsafe extern "C" fn WSPSocket(
 
             CreateContext(Socket);
 
-            ((*Upcalls.lpWPUModifyIFSHandle).unwrap())((*Socket).ProtocolInfo.dwCatalogEntryId, Sock as SOCKET, lpErrno);
+            (Upcalls.lpWPUModifyIFSHandle.unwrap())((*Socket).ProtocolInfo.dwCatalogEntryId, Sock as SOCKET, lpErrno);
 
             TRACE!(b"Success %x\n\0".as_ptr() as *const i8, Sock);
 
@@ -409,7 +409,7 @@ pub unsafe extern "C" fn WSPSocket(
 
     EABuffer = HeapAlloc(GlobalHeap, 0, SizeOfEA as usize) as PFILE_FULL_EA_INFORMATION;
     if EABuffer.is_null() {
-        Status = WSAENOBUFS;
+        Status = (WSAENOBUFS as i32);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
@@ -437,17 +437,17 @@ pub unsafe extern "C" fn WSPSocket(
     (*EABuffer).NextEntryOffset = 0;
     (*EABuffer).Flags = 0;
     (*EABuffer).EaNameLength = AFD_PACKET_COMMAND_LENGTH as u8;
-    core::ptr::copy_nonoverlapping(AfdCommand.as_ptr(), (*EABuffer).EaName.as_mut_ptr() as *mut i8, (AFD_PACKET_COMMAND_LENGTH + 1) as usize);
+    core::ptr::copy_nonoverlapping(AfdCommand.as_ptr(), (*EABuffer).EaName.as_mut_ptr() as *mut u8, (AFD_PACKET_COMMAND_LENGTH + 1) as usize);
     (*EABuffer).EaValueLength = SizeOfPacket as u16;
 
     AfdPacket = ((*EABuffer).EaName.as_mut_ptr() as *mut i8).offset((*EABuffer).EaNameLength as isize + 1) as PAFD_CREATE_PACKET;
-    (*AfdPacket).SizeOfTransportName = TransportName.Length;
+    (*AfdPacket).SizeOfTransportName = (TransportName.Length as u32);
     core::ptr::copy_nonoverlapping(TransportName.Buffer, (*AfdPacket).TransportName.as_mut_ptr(), (TransportName.Length as usize + core::mem::size_of::<u16>()) / core::mem::size_of::<u16>());
     (*AfdPacket).GroupID = g;
 
     if ((*(*Socket).SharedData).ServiceFlags1 & XP1_CONNECTIONLESS) != 0 {
-        if SocketType != SOCK_DGRAM && SocketType != SOCK_RAW {
-            Status = WSAEINVAL;
+        if SocketType != (SOCK_DGRAM as i32) && SocketType != (SOCK_RAW as i32) {
+            Status = (WSAEINVAL as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -474,9 +474,9 @@ pub unsafe extern "C" fn WSPSocket(
     }
 
     if ((*(*Socket).SharedData).ServiceFlags1 & XP1_MESSAGE_ORIENTED) != 0 {
-        if SocketType == SOCK_STREAM {
+        if SocketType == (SOCK_STREAM as i32) {
             if ((*(*Socket).SharedData).ServiceFlags1 & XP1_PSEUDO_STREAM) == 0 {
-                Status = WSAEINVAL;
+                Status = (WSAEINVAL as i32);
                 'error: {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn WSPSocket(
         (*AfdPacket).EndpointFlags |= AFD_ENDPOINT_MESSAGE_ORIENTED;
     }
 
-    if SocketType == SOCK_RAW {
+    if SocketType == (SOCK_RAW as i32) {
         (*AfdPacket).EndpointFlags |= AFD_ENDPOINT_RAW;
     }
 
@@ -512,7 +512,7 @@ pub unsafe extern "C" fn WSPSocket(
                    WSA_FLAG_MULTIPOINT_D_ROOT |
                    WSA_FLAG_MULTIPOINT_D_LEAF)) != 0 {
         if ((*(*Socket).SharedData).ServiceFlags1 & XP1_SUPPORT_MULTIPOINT) == 0 {
-            Status = WSAEINVAL;
+            Status = (WSAEINVAL as i32);
             'error: {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
@@ -540,7 +540,7 @@ pub unsafe extern "C" fn WSPSocket(
         if (dwFlags & WSA_FLAG_MULTIPOINT_C_ROOT) != 0 {
             if (((*(*Socket).SharedData).ServiceFlags1 & XP1_MULTIPOINT_CONTROL_PLANE) == 0) ||
                ((dwFlags & WSA_FLAG_MULTIPOINT_C_LEAF) != 0) {
-                Status = WSAEINVAL;
+                Status = (WSAEINVAL as i32);
                 'error: {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
@@ -569,7 +569,7 @@ pub unsafe extern "C" fn WSPSocket(
         if (dwFlags & WSA_FLAG_MULTIPOINT_D_ROOT) != 0 {
             if (((*(*Socket).SharedData).ServiceFlags1 & XP1_MULTIPOINT_DATA_PLANE) == 0) ||
                ((dwFlags & WSA_FLAG_MULTIPOINT_D_LEAF) != 0) {
-                Status = WSAEINVAL;
+                Status = (WSAEINVAL as i32);
                 'error: {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
@@ -653,8 +653,8 @@ pub unsafe extern "C" fn WSPSocket(
                              core::ptr::addr_of_mut!(GroupData),
                              core::ptr::null_mut(),
                              None);
-        (*(*Socket).SharedData).GroupID = (*GroupData.u.s()).__bindgen_anon_1.LowPart;
-        (*(*Socket).SharedData).GroupType = (*GroupData.u.s()).__bindgen_anon_1.HighPart as i32;
+        (*(*Socket).SharedData).GroupID = GroupData.u.LowPart;
+        (*(*Socket).SharedData).GroupType = (GroupData.u.HighPart as i32 as u32);
     }
 
     GetSocketInformation(Socket,
@@ -680,40 +680,40 @@ pub unsafe extern "C" fn WSPSocket(
 
     CreateContext(Socket);
 
-    ((*Upcalls.lpWPUModifyIFSHandle).unwrap())((*Socket).ProtocolInfo.dwCatalogEntryId, Sock as SOCKET, lpErrno);
+    (Upcalls.lpWPUModifyIFSHandle.unwrap())((*Socket).ProtocolInfo.dwCatalogEntryId, Sock as SOCKET, lpErrno);
 
     TRACE!(b"Success %x\n\0".as_ptr() as *const i8, Sock);
 
     Sock as SOCKET
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPDuplicateSocket(
+pub unsafe extern "system" fn WSPDuplicateSocket(
     Handle: SOCKET,
     dwProcessId: DWORD,
     lpProtocolInfo: LPWSAPROTOCOL_INFOW,
     lpErrno: LPINT,
 ) -> INT {
     let mut hProcess: HANDLE;
-    let mut hDuplicatedSharedData: HANDLE;
-    let mut hDuplicatedHandle: HANDLE;
+    let mut hDuplicatedSharedData: HANDLE = core::ptr::null_mut();
+    let mut hDuplicatedHandle: HANDLE = core::ptr::null_mut();
     let Socket: PSOCKET_INFORMATION;
     let mut pSharedData: PSOCK_SHARED_INFO;
     let pOldSharedData: PSOCK_SHARED_INFO;
     let mut bDuplicated: DWORD;
 
     if Handle == INVALID_SOCKET as SOCKET {
-        return MsafdReturnWithErrno(STATUS_INVALID_PARAMETER, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_INVALID_PARAMETER, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
     hProcess = OpenProcess(PROCESS_DUP_HANDLE, 0, dwProcessId);
     if hProcess.is_null() {
-        return MsafdReturnWithErrno(STATUS_INVALID_PARAMETER, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_INVALID_PARAMETER, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
     if (*Socket).SharedDataHandle == INVALID_HANDLE_VALUE {
@@ -722,11 +722,11 @@ pub unsafe extern "C" fn WSPDuplicateSocket(
             core::ptr::null_mut(),
             PAGE_READWRITE | SEC_COMMIT,
             0,
-            (core::mem::size_of::<SOCK_SHARED_INFO>() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+            (((core::mem::size_of::<SOCK_SHARED_INFO>() + (PAGE_SIZE as usize) - 1) & (!(PAGE_SIZE as usize - 1))) as u32),
             core::ptr::null_mut(),
         );
         if (*Socket).SharedDataHandle == INVALID_HANDLE_VALUE {
-            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as i32);
         }
         pSharedData = MapViewOfFile(
             (*Socket).SharedDataHandle,
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn WSPDuplicateSocket(
     );
     if bDuplicated == 0 {
         NtClose(hProcess);
-        return MsafdReturnWithErrno(STATUS_ACCESS_DENIED, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_ACCESS_DENIED, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
     bDuplicated = DuplicateHandle(
         GetCurrentProcess(),
@@ -770,11 +770,11 @@ pub unsafe extern "C" fn WSPDuplicateSocket(
     );
     NtClose(hProcess);
     if bDuplicated == 0 {
-        return MsafdReturnWithErrno(STATUS_ACCESS_DENIED, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_ACCESS_DENIED, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
     if lpProtocolInfo.is_null() {
-        return MsafdReturnWithErrno(STATUS_ACCESS_VIOLATION, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_ACCESS_VIOLATION, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
     RtlCopyMemory(
@@ -820,31 +820,36 @@ pub unsafe extern "C" fn MsafdReturnWithErrno(
 }
 #[no_mangle]
 pub unsafe extern "C" fn TranslateNtStatusError(Status: NTSTATUS) -> INT {
+    // NOTE: these three NTSTATUS consts are missing from the central glue/types
+    // (ntdll_sys::nt / ntdll-sys constants). Values from sdk/include/psdk/ntstatus.h.
+    const STATUS_REMOTE_NOT_LISTENING: NTSTATUS = 0xC00000BCu32 as NTSTATUS;
+    const STATUS_LOCAL_DISCONNECT: NTSTATUS = 0xC000013Bu32 as NTSTATUS;
+    const STATUS_REMOTE_DISCONNECT: NTSTATUS = 0xC000013Cu32 as NTSTATUS;
     match Status {
-        STATUS_CANT_WAIT => WSAEWOULDBLOCK,
-        STATUS_TIMEOUT => WSAETIMEDOUT,
+        STATUS_CANT_WAIT => (WSAEWOULDBLOCK as i32),
+        STATUS_TIMEOUT => WSAETIMEDOUT as i32,
         STATUS_SUCCESS => NO_ERROR as INT,
-        STATUS_FILE_CLOSED => WSAECONNRESET,
-        STATUS_END_OF_FILE => WSAESHUTDOWN,
-        STATUS_PENDING => WSA_IO_PENDING,
-        STATUS_BUFFER_TOO_SMALL | STATUS_BUFFER_OVERFLOW => WSAEMSGSIZE,
-        STATUS_NO_MEMORY | STATUS_INSUFFICIENT_RESOURCES => WSAENOBUFS,
-        STATUS_INVALID_CONNECTION => WSAENOTCONN,
-        STATUS_PROTOCOL_NOT_SUPPORTED => WSAEAFNOSUPPORT,
-        STATUS_INVALID_ADDRESS => WSAEADDRNOTAVAIL,
-        STATUS_REMOTE_NOT_LISTENING | STATUS_REMOTE_DISCONNECT => WSAECONNREFUSED,
-        STATUS_NETWORK_UNREACHABLE => WSAENETUNREACH,
-        STATUS_HOST_UNREACHABLE => WSAEHOSTUNREACH,
-        STATUS_INVALID_PARAMETER => WSAEINVAL,
-        STATUS_CANCELLED => WSA_OPERATION_ABORTED,
-        STATUS_ADDRESS_ALREADY_EXISTS => WSAEADDRINUSE,
-        STATUS_LOCAL_DISCONNECT => WSAECONNABORTED,
-        STATUS_ACCESS_VIOLATION => WSAEFAULT,
-        STATUS_ACCESS_DENIED => WSAEACCES,
-        STATUS_NOT_IMPLEMENTED => WSAEOPNOTSUPP,
+        STATUS_FILE_CLOSED => WSAECONNRESET as i32,
+        STATUS_END_OF_FILE => WSAESHUTDOWN as i32,
+        STATUS_PENDING => WSA_IO_PENDING as i32,
+        STATUS_BUFFER_TOO_SMALL | STATUS_BUFFER_OVERFLOW => WSAEMSGSIZE as i32,
+        STATUS_NO_MEMORY | STATUS_INSUFFICIENT_RESOURCES => WSAENOBUFS as i32,
+        STATUS_INVALID_CONNECTION => WSAENOTCONN as i32,
+        STATUS_PROTOCOL_NOT_SUPPORTED => WSAEAFNOSUPPORT as i32,
+        STATUS_INVALID_ADDRESS => WSAEADDRNOTAVAIL as i32,
+        STATUS_REMOTE_NOT_LISTENING | STATUS_REMOTE_DISCONNECT => WSAECONNREFUSED as i32,
+        STATUS_NETWORK_UNREACHABLE => WSAENETUNREACH as i32,
+        STATUS_HOST_UNREACHABLE => WSAEHOSTUNREACH as i32,
+        STATUS_INVALID_PARAMETER => WSAEINVAL as i32,
+        STATUS_CANCELLED => WSA_OPERATION_ABORTED as i32,
+        STATUS_ADDRESS_ALREADY_EXISTS => WSAEADDRINUSE as i32,
+        STATUS_LOCAL_DISCONNECT => WSAECONNABORTED as i32,
+        STATUS_ACCESS_VIOLATION => WSAEFAULT as i32,
+        STATUS_ACCESS_DENIED => WSAEACCES as i32,
+        STATUS_NOT_IMPLEMENTED => WSAEOPNOTSUPP as i32,
         _ => {
             ERR!(b"MSAFD: Unhandled NTSTATUS value: 0x%x\n\0".as_ptr() as PCHAR, Status);
-            WSAENETDOWN
+            (WSAENETDOWN as i32)
         }
     }
 }
@@ -861,7 +866,7 @@ pub unsafe extern "C" fn MsafdWaitForAlert(hObject: HANDLE) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPCloseSocket(
+pub unsafe extern "system" fn WSPCloseSocket(
     Handle: SOCKET,
     lpErrno: LPINT,
 ) -> INT {
@@ -869,7 +874,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
     let mut Socket: PSOCKET_INFORMATION = core::ptr::null_mut();
     let mut CurrentSocket: PSOCKET_INFORMATION;
     let mut Status: NTSTATUS;
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let mut DisconnectInfo: AFD_DISCONNECT_INFO = core::mem::zeroed();
     let mut OldState: SOCKET_STATE;
     let mut LingerWait: LONG = -1;
@@ -878,7 +883,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
@@ -886,7 +891,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
     SleepEx(0, 1);
 
     if ((*Socket).HelperEvents & WSH_NOTIFY_CLOSE) != 0 {
-        Status = ((*(*Socket).HelperData).WSHNotify)(
+        Status = ((*(*Socket).HelperData).WSHNotify.unwrap())(
             (*Socket).HelperContext,
             (*Socket).Handle,
             (*Socket).TdiAddressHandle,
@@ -906,7 +911,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
     if (*(*Socket).SharedData).State == SocketClosed {
         WARN!(b"Socket is closing.\n\0".as_ptr() as *const i8);
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
@@ -935,7 +940,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
             let SleepWait: ULONG;
 
             SleepWait = 100;
-            LingerWait = (*(*Socket).SharedData).LingerData.l_linger * 1000;
+            LingerWait = ((((*(*Socket).SharedData).LingerData.l_linger * (1000 as i32 as i32) as u16)) as i32);
 
             while LingerWait != 0 {
                 if GetSocketInformation(
@@ -945,7 +950,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
                     &mut SendsInProgress,
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
-                    core::ptr::null_mut(),
+                    None,
                 ) != 0
                 {
                     LingerWait = 0;
@@ -957,12 +962,12 @@ pub unsafe extern "C" fn WSPCloseSocket(
                     break;
                 }
 
-                if (*(*Socket).SharedData).NonBlocking != 0 {
+                if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
                     WARN!(b"Would block!\n\0".as_ptr() as *const i8);
                     NtClose(SockEvent);
                     (*(*Socket).SharedData).State = OldState;
                     if !lpErrno.is_null() {
-                        *lpErrno = WSAEWOULDBLOCK;
+                        *lpErrno = (WSAEWOULDBLOCK as i32);
                     }
                     return SOCKET_ERROR;
                 }
@@ -981,8 +986,8 @@ pub unsafe extern "C" fn WSPCloseSocket(
                     AFD_DISCONNECT_ABORT
                 };
 
-                if (((DisconnectInfo.DisconnectType & AFD_DISCONNECT_SEND) != 0) && ((*(*Socket).SharedData).SendShutdown == 0))
-                    || (((DisconnectInfo.DisconnectType & AFD_DISCONNECT_ABORT) != 0) && ((*(*Socket).SharedData).ReceiveShutdown == 0))
+                if (((DisconnectInfo.DisconnectType & AFD_DISCONNECT_SEND) != 0) && ((*(*Socket).SharedData).__bindgen_anon_1.SendShutdown() == 0))
+                    || (((DisconnectInfo.DisconnectType & AFD_DISCONNECT_ABORT) != 0) && ((*(*Socket).SharedData).__bindgen_anon_1.ReceiveShutdown() == 0))
                 {
                     Status = NtDeviceIoControlFile(
                         Handle as HANDLE,
@@ -1033,7 +1038,7 @@ pub unsafe extern "C" fn WSPCloseSocket(
     NtClose(SockEvent);
 
     if (*Socket).SharedDataHandle != INVALID_HANDLE_VALUE {
-        UnmapViewOfFile((*Socket).SharedData as LPCVOID);
+        UnmapViewOfFile((*Socket).SharedData as PVOID);
         NtClose((*Socket).SharedDataHandle);
         (*Socket).SharedData = core::ptr::null_mut();
     }
@@ -1041,10 +1046,10 @@ pub unsafe extern "C" fn WSPCloseSocket(
         HeapFree(GlobalHeap, 0, (*Socket).SharedData as LPVOID);
     }
     HeapFree(GlobalHeap, 0, Socket as LPVOID);
-    MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut())
+    (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32)
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPBind(
+pub unsafe extern "system" fn WSPBind(
     Handle: SOCKET,
     SocketAddress: *const sockaddr,
     SocketAddressLength: i32,
@@ -1055,38 +1060,38 @@ pub unsafe extern "C" fn WSPBind(
     let mut Socket: PSOCKET_INFORMATION = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut SocketInfo: SOCKADDR_INFO = core::mem::zeroed();
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let mut connectSize: ULONG;
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
     if (*(*Socket).SharedData).State != SocketOpen {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = (WSAEINVAL as i32);
         }
         return SOCKET_ERROR;
     }
     if SocketAddress.is_null() || SocketAddressLength < (*(*Socket).SharedData).SizeOfLocalAddress as i32 {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = (WSAEINVAL as i32);
         }
         return SOCKET_ERROR;
     }
 
     ((*(*Socket).HelperData).WSHGetSockaddrType.unwrap())(
         SocketAddress as PSOCKADDR,
-        SocketAddressLength,
+        (SocketAddressLength as u32),
         &mut SocketInfo,
     );
 
-    if SocketInfo.AddressInfo == SockaddrAddressInfoBroadcast && (*(*Socket).SharedData).Broadcast == 0 {
+    if SocketInfo.AddressInfo == SockaddrAddressInfoBroadcast && (*(*Socket).SharedData).__bindgen_anon_1.Broadcast() == 0 {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEADDRNOTAVAIL;
+            *lpErrno = (WSAEADDRNOTAVAIL as i32);
         }
         return SOCKET_ERROR;
     }
@@ -1103,11 +1108,11 @@ pub unsafe extern "C" fn WSPBind(
         return SOCKET_ERROR;
     }
 
-    connectSize = FIELD_OFFSET!(AFD_BIND_DATA, Address.Address) + SocketAddressLength as ULONG;
+    connectSize = (FIELD_OFFSET!(AFD_BIND_DATA, Address.Address) + SocketAddressLength as usize) as ULONG;
 
-    BindData = HeapAlloc(GlobalHeap, 0, connectSize) as PAFD_BIND_DATA;
+    BindData = HeapAlloc(GlobalHeap, 0, (connectSize as usize)) as PAFD_BIND_DATA;
     if BindData.is_null() {
-        return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
     (*BindData).Address.TAAddressCount = 1;
@@ -1115,15 +1120,15 @@ pub unsafe extern "C" fn WSPBind(
     (*BindData).Address.Address[0].AddressType = (*SocketAddress).sa_family;
     core::ptr::copy_nonoverlapping(
         (*SocketAddress).sa_data.as_ptr(),
-        (*BindData).Address.Address[0].Address.as_mut_ptr(),
+        (*BindData).Address.Address[0].Address.as_mut_ptr() as *mut i8,
         SocketAddressLength as usize - core::mem::size_of::<u16>(),
     );
 
-    if (*(*Socket).SharedData).ExclusiveAddressUse != 0 {
+    if (*(*Socket).SharedData).__bindgen_anon_1.ExclusiveAddressUse() != 0 {
         (*BindData).ShareType = AFD_SHARE_EXCLUSIVE;
     } else if SocketInfo.EndpointInfo == SockaddrEndpointInfoWildcard {
         (*BindData).ShareType = AFD_SHARE_WILDCARD;
-    } else if (*(*Socket).SharedData).ReuseAddresses != 0 {
+    } else if (*(*Socket).SharedData).__bindgen_anon_1.ReuseAddresses() != 0 {
         (*BindData).ShareType = AFD_SHARE_REUSE;
     } else {
         (*BindData).ShareType = AFD_SHARE_UNIQUE;
@@ -1152,7 +1157,7 @@ pub unsafe extern "C" fn WSPBind(
 
     (*(*Socket).SharedData).SocketLastError = TranslateNtStatusError(Status);
     if Status != STATUS_SUCCESS {
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
     (*(*Socket).SharedData).State = SocketBound;
@@ -1175,10 +1180,10 @@ pub unsafe extern "C" fn WSPBind(
         }
     }
 
-    return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+    return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPListen(
+pub unsafe extern "system" fn WSPListen(
     Handle: SOCKET,
     Backlog: INT,
     lpErrno: LPINT,
@@ -1192,13 +1197,13 @@ pub unsafe extern "C" fn WSPListen(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
 
-    if (*(*Socket).SharedData).Listening != 0 {
-        return NO_ERROR;
+    if (*(*Socket).SharedData).__bindgen_anon_1.Listening() != 0 {
+        return (NO_ERROR as i32);
     }
 
     Status = NtCreateEvent(
@@ -1214,7 +1219,7 @@ pub unsafe extern "C" fn WSPListen(
     }
 
     ListenData.UseSAN = 0u8;
-    ListenData.UseDelayedAcceptance = (*(*Socket).SharedData).UseDelayedAcceptance;
+    ListenData.UseDelayedAcceptance = (*(*Socket).SharedData).__bindgen_anon_1.UseDelayedAcceptance();
     ListenData.Backlog = Backlog as ULONG;
 
     Status = NtDeviceIoControlFile(
@@ -1239,10 +1244,10 @@ pub unsafe extern "C" fn WSPListen(
 
     (*(*Socket).SharedData).SocketLastError = TranslateNtStatusError(Status);
     if Status != STATUS_SUCCESS {
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 
-    (*(*Socket).SharedData).Listening = 1u8;
+    (*(*Socket).SharedData).__bindgen_anon_1.set_Listening(1u8);
 
     if (*Socket).HelperEvents & WSH_NOTIFY_LISTEN != 0 {
         Status = ((*(*Socket).HelperData).WSHNotify.unwrap())(
@@ -1261,10 +1266,10 @@ pub unsafe extern "C" fn WSPListen(
         }
     }
 
-    return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+    return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPSelect(
+pub unsafe extern "system" fn WSPSelect(
     nfds: i32,
     readfds: *mut fd_set,
     writefds: *mut fd_set,
@@ -1281,7 +1286,7 @@ pub unsafe extern "C" fn WSPSelect(
     let mut i: ULONG;
     let mut j: ULONG = 0;
     let mut x: ULONG;
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut Socket: PSOCKET_INFORMATION;
     let mut Handle: SOCKET;
@@ -1316,7 +1321,7 @@ pub unsafe extern "C" fn WSPSelect(
     if HandleCount == 0 {
         WARN!(b"No handles! Returning SOCKET_ERROR\n\0".as_ptr() as *const i8, HandleCount);
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = (WSAEINVAL as i32);
         }
         return SOCKET_ERROR;
     }
@@ -1326,8 +1331,8 @@ pub unsafe extern "C" fn WSPSelect(
     TRACE!(b"HandleCount: %u BufferSize: %u\n\0".as_ptr() as *const i8, HandleCount, PollBufferSize);
 
     if timeout.is_null() {
-        Timeout.u.__bindgen_anon_1.LowPart = 0xFFFFFFFFu32;
-        Timeout.u.__bindgen_anon_1.HighPart = 0x7FFFFFFF;
+        Timeout.u.LowPart = 0xFFFFFFFFu32;
+        Timeout.u.HighPart = 0x7FFFFFFFu32 as i32;
         TRACE!(b"Infinite timeout\n\0".as_ptr() as *const i8);
     } else {
         Timeout = RtlEnlargedIntegerMultiply(
@@ -1336,7 +1341,7 @@ pub unsafe extern "C" fn WSPSelect(
         );
         if Timeout.QuadPart > 0 {
             if !lpErrno.is_null() {
-                *lpErrno = WSAEINVAL;
+                *lpErrno = (WSAEINVAL as i32);
             }
             return SOCKET_ERROR;
         }
@@ -1358,7 +1363,7 @@ pub unsafe extern "C" fn WSPSelect(
 
     if !NT_SUCCESS(Status) {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         ERR!(b"NtCreateEvent failed, 0x%08x\n\0".as_ptr() as *const i8, Status);
         return SOCKET_ERROR;
@@ -1368,7 +1373,7 @@ pub unsafe extern "C" fn WSPSelect(
 
     if PollBuffer.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         NtClose(SockEvent);
         return SOCKET_ERROR;
@@ -1378,7 +1383,7 @@ pub unsafe extern "C" fn WSPSelect(
 
     RtlZeroMemory(PollInfo as PVOID, PollBufferSize as usize);
 
-    (*PollInfo).Exclusive = 0u8;
+    (*PollInfo).Exclusive = (0u8 as _);
     (*PollInfo).Timeout = Timeout;
 
     i = 0;
@@ -1400,7 +1405,7 @@ pub unsafe extern "C" fn WSPSelect(
             if j >= HandleCount {
                 ERR!(b"Error while counting readfds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEFAULT;
+                    *lpErrno = (WSAEFAULT as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1410,7 +1415,7 @@ pub unsafe extern "C" fn WSPSelect(
             if Socket.is_null() {
                 ERR!(b"Invalid socket handle provided in readfds %d\n\0".as_ptr() as *const i8, (*readfds).fd_array[i as usize]);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAENOTSOCK;
+                    *lpErrno = (WSAENOTSOCK as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1434,7 +1439,7 @@ pub unsafe extern "C" fn WSPSelect(
             if j >= HandleCount {
                 ERR!(b"Error while counting writefds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEFAULT;
+                    *lpErrno = (WSAEFAULT as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1444,7 +1449,7 @@ pub unsafe extern "C" fn WSPSelect(
             if Socket.is_null() {
                 ERR!(b"Invalid socket handle provided in writefds %d\n\0".as_ptr() as *const i8, (*writefds).fd_array[i as usize]);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAENOTSOCK;
+                    *lpErrno = (WSAENOTSOCK as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1452,7 +1457,7 @@ pub unsafe extern "C" fn WSPSelect(
             }
             (*PollInfo).Handles[j as usize].Handle = (*writefds).fd_array[i as usize];
             (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_SEND;
-            if (*(*Socket).SharedData).NonBlocking != 0 {
+            if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
                 (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_CONNECT;
             }
             i += 1;
@@ -1472,7 +1477,7 @@ pub unsafe extern "C" fn WSPSelect(
             if j > HandleCount {
                 ERR!(b"Error while counting exceptfds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEFAULT;
+                    *lpErrno = (WSAEFAULT as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1482,17 +1487,17 @@ pub unsafe extern "C" fn WSPSelect(
             if Socket.is_null() {
                 TRACE!(b"Invalid socket handle provided in exceptfds %d\n\0".as_ptr() as *const i8, (*exceptfds).fd_array[i as usize]);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAENOTSOCK;
+                    *lpErrno = (WSAENOTSOCK as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
                 return SOCKET_ERROR;
             }
             (*PollInfo).Handles[j as usize].Handle = (*exceptfds).fd_array[i as usize];
-            if (*(*Socket).SharedData).OobInline == 0 {
+            if (*(*Socket).SharedData).__bindgen_anon_1.OobInline() == 0 {
                 (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_OOB_RECEIVE;
             }
-            if (*(*Socket).SharedData).NonBlocking != 0 {
+            if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
                 (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_CONNECT_FAIL;
             }
             i += 1;
@@ -1500,12 +1505,12 @@ pub unsafe extern "C" fn WSPSelect(
     }
 
     (*PollInfo).HandleCount = HandleCount;
-    PollBufferSize = FIELD_OFFSET(AFD_POLL_INFO, Handles) + (*PollInfo).HandleCount * core::mem::size_of::<AFD_HANDLE>() as ULONG;
+    PollBufferSize = FIELD_OFFSET!(AFD_POLL_INFO, Handles) as ULONG + (*PollInfo).HandleCount * core::mem::size_of::<AFD_HANDLE>() as ULONG;
 
     Status = NtDeviceIoControlFile(
         (*PollInfo).Handles[0].Handle as HANDLE,
         SockEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         &mut IOSB,
         IOCTL_AFD_SELECT,
@@ -1547,7 +1552,7 @@ pub unsafe extern "C" fn WSPSelect(
             if Socket.is_null() {
                 TRACE!(b"Invalid socket handle found %d\n\0".as_ptr() as *const i8, Handle);
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAENOTSOCK;
+                    *lpErrno = (WSAENOTSOCK as i32);
                 }
                 HeapFree(GlobalHeap, 0, PollBuffer);
                 NtClose(SockEvent);
@@ -1557,10 +1562,10 @@ pub unsafe extern "C" fn WSPSelect(
                 AFD_EVENT_RECEIVE | AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_ACCEPT | AFD_EVENT_CLOSE => {
                     TRACE!(b"Event %x on handle %x\n\0".as_ptr() as *const i8, Events, Handle);
                     if (Events & x) == AFD_EVENT_DISCONNECT || (Events & x) == AFD_EVENT_CLOSE {
-                        (*(*Socket).SharedData).SocketLastError = WSAECONNRESET;
+                        (*(*Socket).SharedData).SocketLastError = (WSAECONNRESET as i32);
                     }
                     if (Events & x) == AFD_EVENT_ABORT {
-                        (*(*Socket).SharedData).SocketLastError = WSAECONNABORTED;
+                        (*(*Socket).SharedData).SocketLastError = (WSAECONNABORTED as i32);
                     }
                     if !readfds.is_null() {
                         FD_SET(Handle, readfds);
@@ -1574,22 +1579,22 @@ pub unsafe extern "C" fn WSPSelect(
                 }
                 AFD_EVENT_CONNECT => {
                     TRACE!(b"Event %x on handle %x\n\0".as_ptr() as *const i8, Events, Handle);
-                    if !writefds.is_null() && (*(*Socket).SharedData).NonBlocking != 0 {
+                    if !writefds.is_null() && (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
                         FD_SET(Handle, writefds);
                     }
                 }
                 AFD_EVENT_OOB_RECEIVE => {
                     TRACE!(b"Event %x on handle %x\n\0".as_ptr() as *const i8, Events, Handle);
-                    if !readfds.is_null() && (*(*Socket).SharedData).OobInline != 0 {
+                    if !readfds.is_null() && (*(*Socket).SharedData).__bindgen_anon_1.OobInline() != 0 {
                         FD_SET(Handle, readfds);
                     }
-                    if !exceptfds.is_null() && (*(*Socket).SharedData).OobInline == 0 {
+                    if !exceptfds.is_null() && (*(*Socket).SharedData).__bindgen_anon_1.OobInline() == 0 {
                         FD_SET(Handle, exceptfds);
                     }
                 }
                 AFD_EVENT_CONNECT_FAIL => {
                     TRACE!(b"Event %x on handle %x\n\0".as_ptr() as *const i8, Events, Handle);
-                    if !exceptfds.is_null() && (*(*Socket).SharedData).NonBlocking != 0 {
+                    if !exceptfds.is_null() && (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
                         FD_SET(Handle, exceptfds);
                     }
                 }
@@ -1609,7 +1614,7 @@ pub unsafe extern "C" fn WSPSelect(
                 *lpErrno = 0;
             }
             _ => {
-                *lpErrno = WSAEINVAL;
+                *lpErrno = (WSAEINVAL as i32);
             }
         }
         TRACE!(b"*lpErrno = %x\n\0".as_ptr() as *const i8, *lpErrno);
@@ -1657,7 +1662,7 @@ pub unsafe extern "C" fn GetCurrentTimeInSeconds() -> DWORD {
     ((time_ll - u1970_ll) / 10000000u64) as DWORD
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPAccept(
+pub unsafe extern "system" fn WSPAccept(
     Handle: SOCKET,
     SocketAddress: *mut sockaddr,
     SocketAddressLength: LPINT,
@@ -1687,27 +1692,27 @@ pub unsafe extern "C" fn WSPAccept(
     let mut AcceptSocket: SOCKET;
     let mut AcceptSocketInfo: PSOCKET_INFORMATION;
     let mut ReceiveBuffer: [UCHAR; 0x1A] = core::mem::zeroed();
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
-        return SOCKET_ERROR;
+        return (SOCKET_ERROR as _);
     }
-    if (*(*Socket).SharedData).Listening == 0 {
+    if (*(*Socket).SharedData).__bindgen_anon_1.Listening() == 0 {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = (WSAEINVAL as i32);
         }
-        return SOCKET_ERROR;
+        return (SOCKET_ERROR as _);
     }
     if (!SocketAddress.is_null() && SocketAddressLength.is_null())
         || (!SocketAddressLength.is_null() && SocketAddress.is_null())
         || (!SocketAddressLength.is_null() && *SocketAddressLength < core::mem::size_of::<SOCKADDR>() as i32)
     {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return INVALID_SOCKET;
     }
@@ -1721,12 +1726,12 @@ pub unsafe extern "C" fn WSPAccept(
     );
 
     if !NT_SUCCESS(Status) {
-        return SOCKET_ERROR;
+        return (SOCKET_ERROR as _);
     }
 
     ListenReceiveData = ReceiveBuffer.as_mut_ptr() as PAFD_RECEIVED_ACCEPT_DATA;
 
-    if (*(*Socket).SharedData).NonBlocking != 0 {
+    if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         FD_ZERO(core::ptr::addr_of_mut!(ReadSet));
         FD_SET((*Socket).Handle, core::ptr::addr_of_mut!(ReadSet));
         Timeout.tv_sec = 0;
@@ -1742,22 +1747,22 @@ pub unsafe extern "C" fn WSPAccept(
         ) == SOCKET_ERROR
         {
             NtClose(SockEvent);
-            return SOCKET_ERROR;
+            return (SOCKET_ERROR as _);
         }
 
         if (*ReadSet.fd_array.as_ptr().add(0)) != (*Socket).Handle {
             NtClose(SockEvent);
             if !lpErrno.is_null() {
-                *lpErrno = WSAEWOULDBLOCK;
+                *lpErrno = (WSAEWOULDBLOCK as i32);
             }
-            return SOCKET_ERROR;
+            return (SOCKET_ERROR as _);
         }
     }
 
     Status = NtDeviceIoControlFile(
         (*Socket).Handle as HANDLE,
         SockEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(IOSB),
         IOCTL_AFD_WAIT_FOR_LISTEN,
@@ -1774,18 +1779,18 @@ pub unsafe extern "C" fn WSPAccept(
 
     if !NT_SUCCESS(Status) {
         NtClose(SockEvent);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as _;
     }
 
-    if !lpfnCondition.is_null() {
+    if lpfnCondition.is_some() {
         if ((*(*Socket).SharedData).ServiceFlags1 & XP1_CONNECT_DATA) != 0 {
             PendingAcceptData.SequenceNumber = (*ListenReceiveData).SequenceNumber;
-            PendingAcceptData.ReturnSize = 1u8;
+            PendingAcceptData.ReturnSize = (1u8 as u32);
 
             Status = NtDeviceIoControlFile(
                 (*Socket).Handle as HANDLE,
                 SockEvent,
-                core::ptr::null_mut(),
+                None,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!(IOSB),
                 IOCTL_AFD_GET_PENDING_CONNECT_DATA,
@@ -1802,7 +1807,7 @@ pub unsafe extern "C" fn WSPAccept(
 
             if !NT_SUCCESS(Status) {
                 NtClose(SockEvent);
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as _;
             }
 
             PendingDataLength = IOSB.Information as ULONG;
@@ -1810,15 +1815,15 @@ pub unsafe extern "C" fn WSPAccept(
             if PendingDataLength != 0 {
                 PendingData = HeapAlloc(GlobalHeap, 0, PendingDataLength as usize);
                 if PendingData.is_null() {
-                    return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+                    return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as _;
                 }
 
-                PendingAcceptData.ReturnSize = 0u8;
+                PendingAcceptData.ReturnSize = (0u8 as u32);
 
                 Status = NtDeviceIoControlFile(
                     (*Socket).Handle as HANDLE,
                     SockEvent,
-                    core::ptr::null_mut(),
+                    None,
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(IOSB),
                     IOCTL_AFD_GET_PENDING_CONNECT_DATA,
@@ -1835,7 +1840,7 @@ pub unsafe extern "C" fn WSPAccept(
 
                 if !NT_SUCCESS(Status) {
                     NtClose(SockEvent);
-                    return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                    return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as _;
                 }
             }
         }
@@ -1843,12 +1848,12 @@ pub unsafe extern "C" fn WSPAccept(
         if ((*(*Socket).SharedData).ServiceFlags1 & XP1_QOS_SUPPORTED) != 0 {
         }
 
-        CalleeID.buf = (*Socket).LocalAddress as PVOID;
-        CalleeID.len = (*(*Socket).SharedData).SizeOfLocalAddress;
+        CalleeID.buf = (*Socket).LocalAddress as *mut i8;
+        CalleeID.len = ((*(*Socket).SharedData).SizeOfLocalAddress as u32);
 
-        RemoteAddress = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCKADDR>());
+        RemoteAddress = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCKADDR>()) as PSOCKADDR;
         if RemoteAddress.is_null() {
-            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as _;
         }
 
         RtlCopyMemory(
@@ -1857,25 +1862,25 @@ pub unsafe extern "C" fn WSPAccept(
             core::mem::size_of::<SOCKADDR>(),
         );
 
-        CallerID.buf = RemoteAddress as PVOID;
+        CallerID.buf = RemoteAddress as *mut i8;
         CallerID.len = core::mem::size_of::<SOCKADDR>() as u32;
 
-        CallerData.buf = PendingData;
+        CallerData.buf = PendingData as *mut i8;
         CallerData.len = PendingDataLength;
 
-        if (*(*Socket).SharedData).UseDelayedAcceptance != 0 {
+        if (*(*Socket).SharedData).__bindgen_anon_1.UseDelayedAcceptance() != 0 {
             CalleeDataBuffer = HeapAlloc(GlobalHeap, 0, 4096);
             if CalleeDataBuffer.is_null() {
-                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+                return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as _;
             }
-            CalleeData.buf = CalleeDataBuffer;
+            CalleeData.buf = CalleeDataBuffer as *mut i8;
             CalleeData.len = 4096;
         } else {
             CalleeData.buf = core::ptr::null_mut();
             CalleeData.len = 0;
         }
 
-        CallBack = lpfnCondition(
+        CallBack = (lpfnCondition.unwrap()(
             core::ptr::addr_of_mut!(CallerID),
             if CallerData.buf.is_null() { core::ptr::null_mut() } else { core::ptr::addr_of_mut!(CallerData) },
             core::ptr::null_mut(),
@@ -1884,7 +1889,7 @@ pub unsafe extern "C" fn WSPAccept(
             if CalleeData.buf.is_null() { core::ptr::null_mut() } else { core::ptr::addr_of_mut!(CalleeData) },
             core::ptr::addr_of_mut!(GroupID),
             dwCallbackData,
-        );
+        ) as u32);
 
         if ((CallBack == CF_ACCEPT) && GroupID != 0) {
         }
@@ -1901,7 +1906,7 @@ pub unsafe extern "C" fn WSPAccept(
             Status = NtDeviceIoControlFile(
                 (*Socket).Handle as HANDLE,
                 SockEvent,
-                core::ptr::null_mut(),
+                None,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!(IOSB),
                 IOCTL_AFD_DEFER_ACCEPT,
@@ -1919,19 +1924,19 @@ pub unsafe extern "C" fn WSPAccept(
             NtClose(SockEvent);
 
             if !NT_SUCCESS(Status) {
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as _;
             }
 
             if CallBack == CF_REJECT {
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAECONNREFUSED;
+                    *lpErrno = (WSAECONNREFUSED as i32);
                 }
-                return SOCKET_ERROR;
+                return (SOCKET_ERROR as _);
             } else {
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAECONNREFUSED;
+                    *lpErrno = (WSAECONNREFUSED as i32);
                 }
-                return SOCKET_ERROR;
+                return (SOCKET_ERROR as _);
             }
         }
     }
@@ -1946,7 +1951,7 @@ pub unsafe extern "C" fn WSPAccept(
         lpErrno,
     );
     if AcceptSocket == INVALID_SOCKET {
-        return SOCKET_ERROR;
+        return (SOCKET_ERROR as _);
     }
 
     AcceptData.ListenHandle = AcceptSocket as HANDLE;
@@ -1955,7 +1960,7 @@ pub unsafe extern "C" fn WSPAccept(
     Status = NtDeviceIoControlFile(
         (*Socket).Handle as HANDLE,
         SockEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(IOSB),
         IOCTL_AFD_ACCEPT,
@@ -1974,19 +1979,19 @@ pub unsafe extern "C" fn WSPAccept(
     if !NT_SUCCESS(Status) {
         NtClose(SockEvent);
         WSPCloseSocket(AcceptSocket, lpErrno);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as _;
     }
 
     AcceptSocketInfo = GetSocketStructure(AcceptSocket);
     if AcceptSocketInfo.is_null() {
         NtClose(SockEvent);
         WSPCloseSocket(AcceptSocket, lpErrno);
-        return MsafdReturnWithErrno(STATUS_PROTOCOL_NOT_SUPPORTED, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(STATUS_PROTOCOL_NOT_SUPPORTED, lpErrno, 0, core::ptr::null_mut()) as _;
     }
 
     (*(*AcceptSocketInfo).SharedData).State = SocketConnected;
     (*(*AcceptSocketInfo).SharedData).ConnectTime = GetCurrentTimeInSeconds();
-    (*(*AcceptSocketInfo).SharedData).NonBlocking = (*(*Socket).SharedData).NonBlocking;
+    (*(*AcceptSocketInfo).SharedData).__bindgen_anon_1.set_NonBlocking((*(*Socket).SharedData).__bindgen_anon_1.NonBlocking());
 
     if !SocketAddress.is_null() {
         RtlCopyMemory(
@@ -2006,7 +2011,7 @@ pub unsafe extern "C" fn WSPAccept(
     TRACE!(b"Socket %x\n\0".as_ptr() as PCHAR, AcceptSocket);
 
     if Status == STATUS_SUCCESS && ((*Socket).HelperEvents & WSH_NOTIFY_ACCEPT) != 0 {
-        Status = ((*(*Socket).HelperData).WSHNotify)(
+        Status = ((*(*Socket).HelperData).WSHNotify.unwrap())(
             (*Socket).HelperContext,
             (*Socket).Handle,
             (*Socket).TdiAddressHandle,
@@ -2018,18 +2023,18 @@ pub unsafe extern "C" fn WSPAccept(
             if !lpErrno.is_null() {
                 *lpErrno = Status;
             }
-            return SOCKET_ERROR;
+            return (SOCKET_ERROR as _);
         }
     }
 
     if !lpErrno.is_null() {
-        *lpErrno = NO_ERROR;
+        *lpErrno = (NO_ERROR as i32);
     }
 
     return AcceptSocket;
 }
 
-unsafe fn MsafdConnectAPC(
+unsafe extern "system" fn MsafdConnectAPC(
     ApcContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Reserved: ULONG,
@@ -2054,7 +2059,7 @@ unsafe fn MsafdConnectAPC(
     SockReenableAsyncSelectEvent(Socket, FD_CONNECT);
 
     if (*IoStatusBlock).__bindgen_anon_1.Status == STATUS_SUCCESS && ((*Socket).HelperEvents & WSH_NOTIFY_CONNECT) != 0 {
-        ((*(*Socket).HelperData).WSHNotify)(
+        ((*(*Socket).HelperData).WSHNotify.unwrap())(
             (*Socket).HelperContext,
             (*Socket).Handle,
             (*Socket).TdiAddressHandle,
@@ -2062,7 +2067,7 @@ unsafe fn MsafdConnectAPC(
             WSH_NOTIFY_CONNECT,
         );
     } else if (*IoStatusBlock).__bindgen_anon_1.Status != STATUS_SUCCESS && ((*Socket).HelperEvents & WSH_NOTIFY_CONNECT_ERROR) != 0 {
-        ((*(*Socket).HelperData).WSHNotify)(
+        ((*(*Socket).HelperData).WSHNotify.unwrap())(
             (*Socket).HelperContext,
             (*Socket).Handle,
             (*Socket).TdiAddressHandle,
@@ -2074,7 +2079,7 @@ unsafe fn MsafdConnectAPC(
     HeapFree(GlobalHeap, 0, ApcContext);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPConnect(
+pub unsafe extern "system" fn WSPConnect(
     Handle: SOCKET,
     SocketAddress: *const sockaddr,
     SocketAddressLength: i32,
@@ -2103,7 +2108,7 @@ pub unsafe extern "C" fn WSPConnect(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2116,7 +2121,7 @@ pub unsafe extern "C" fn WSPConnect(
         BindAddressLength = (*(*Socket).HelperData).MaxWSAddressLength;
         BindAddress = HeapAlloc(GetProcessHeap(), 0, BindAddressLength as usize) as PSOCKADDR;
         if BindAddress.is_null() {
-            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, core::ptr::null_mut()) as i32);
         }
         let mut BindAddrLen = BindAddressLength;
         ((*(*Socket).HelperData).WSHGetWildcardSockaddr.unwrap())(
@@ -2203,7 +2208,7 @@ pub unsafe extern "C" fn WSPConnect(
                     }
                 }
 
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
             }
         }
     }
@@ -2219,7 +2224,7 @@ pub unsafe extern "C" fn WSPConnect(
 
     if connectionInfoSize > 128 {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2229,12 +2234,12 @@ pub unsafe extern "C" fn WSPConnect(
     (*ConnectInfo).RemoteAddress.Address[0].AddressType = (*SocketAddress).sa_family;
     core::ptr::copy_nonoverlapping(
         (*SocketAddress).sa_data.as_ptr(),
-        (*ConnectInfo).RemoteAddress.Address[0].Address.as_mut_ptr(),
+        (*ConnectInfo).RemoteAddress.Address[0].Address.as_mut_ptr() as *mut i8,
         SocketDataLength as usize,
     );
 
-    if (*(*Socket).SharedData).AsyncEvents & FD_CONNECT != 0 {
-        (*(*Socket).SharedData).AsyncDisabledEvents |= FD_CONNECT | FD_WRITE;
+    if (*(*Socket).SharedData).AsyncEvents & (FD_CONNECT as i32) != 0 {
+        (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_CONNECT | FD_WRITE) as i32;
     }
 
     if !lpCalleeData.is_null() {
@@ -2299,7 +2304,7 @@ pub unsafe extern "C" fn WSPConnect(
                     }
                 }
 
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
             }
         }
     }
@@ -2308,7 +2313,7 @@ pub unsafe extern "C" fn WSPConnect(
     (*ConnectInfo).UseSAN = 0u8;
     (*ConnectInfo).Unknown = 0;
 
-    if (*(*Socket).SharedData).NonBlocking != 0 {
+    if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_CONNECT_APC_CONTEXT>()) as PMSAFD_CONNECT_APC_CONTEXT;
         if APCContext.is_null() {
             ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as *const i8);
@@ -2354,11 +2359,11 @@ pub unsafe extern "C" fn WSPConnect(
                     }
                 }
 
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
             }
         }
         (*APCContext).lpSocket = Handle;
-        APCFunction = Some(MsafdConnectAPC);
+        APCFunction = as_apc(MsafdConnectAPC);
 
         IOSB = &mut (*APCContext).IoStatusBlock;
     }
@@ -2379,7 +2384,7 @@ pub unsafe extern "C" fn WSPConnect(
         0,
     );
 
-    if (*(*Socket).SharedData).NonBlocking != 0 {
+    if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         if Status == STATUS_PENDING {
             Status = STATUS_CANT_WAIT;
             'Leave: {
@@ -2423,7 +2428,7 @@ pub unsafe extern "C" fn WSPConnect(
                     }
                 }
 
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
             }
         } else {
             SleepEx(0, 1);
@@ -2477,7 +2482,7 @@ pub unsafe extern "C" fn WSPConnect(
                     }
                 }
 
-                return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+                return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
             }
         }
 
@@ -2547,11 +2552,11 @@ pub unsafe extern "C" fn WSPConnect(
             }
         }
 
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPConnectEx(
+pub unsafe extern "system" fn WSPConnectEx(
     Handle: SOCKET,
     SocketAddress: *const sockaddr,
     SocketAddressLength: INT,
@@ -2610,8 +2615,8 @@ pub unsafe extern "C" fn WSPConnectEx(
         SocketDataLength as usize,
     );
 
-    if ((*(*Socket).SharedData).AsyncEvents & FD_CONNECT) != 0 {
-        (*(*Socket).SharedData).AsyncDisabledEvents |= FD_CONNECT | FD_WRITE;
+    if ((*(*Socket).SharedData).AsyncEvents & (FD_CONNECT as i32)) != 0 {
+        (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_CONNECT | FD_WRITE) as i32;
     }
 
     IOSB = lpOverlapped as PIO_STATUS_BLOCK;
@@ -2620,7 +2625,7 @@ pub unsafe extern "C" fn WSPConnectEx(
     Status = NtDeviceIoControlFile(
         Handle as HANDLE,
         (*lpOverlapped).hEvent,
-        core::ptr::null_mut(),
+        None,
         if !(*lpOverlapped).hEvent.is_null() {
             core::ptr::null_mut()
         } else {
@@ -2637,7 +2642,7 @@ pub unsafe extern "C" fn WSPConnectEx(
         dwSendDataLength,
     );
 
-    SetLastError(TranslateNtStatusError(Status));
+    SetLastError((TranslateNtStatusError(Status) as u32));
 
     if Status == STATUS_SUCCESS {
         1
@@ -2646,7 +2651,7 @@ pub unsafe extern "C" fn WSPConnectEx(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPShutdown(
+pub unsafe extern "system" fn WSPShutdown(
     Handle: SOCKET,
     HowTo: INT,
     lpErrno: LPINT,
@@ -2655,14 +2660,14 @@ pub unsafe extern "C" fn WSPShutdown(
     let mut DisconnectInfo: AFD_DISCONNECT_INFO = core::mem::zeroed();
     let mut Socket: PSOCKET_INFORMATION = core::ptr::null_mut();
     let mut Status: NTSTATUS;
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
 
     TRACE!(b"Called\n\0".as_ptr() as *const i8);
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2679,19 +2684,19 @@ pub unsafe extern "C" fn WSPShutdown(
         return SOCKET_ERROR;
     }
 
-    match HowTo {
+    match HowTo as u32 {
         SD_RECEIVE => {
             DisconnectInfo.DisconnectType = AFD_DISCONNECT_RECV;
-            (*(*Socket).SharedData).ReceiveShutdown = 1u8;
+            (*(*Socket).SharedData).__bindgen_anon_1.set_ReceiveShutdown(1u8);
         }
         SD_SEND => {
             DisconnectInfo.DisconnectType = AFD_DISCONNECT_SEND;
-            (*(*Socket).SharedData).SendShutdown = 1u8;
+            (*(*Socket).SharedData).__bindgen_anon_1.set_SendShutdown(1u8);
         }
         SD_BOTH => {
             DisconnectInfo.DisconnectType = AFD_DISCONNECT_RECV | AFD_DISCONNECT_SEND;
-            (*(*Socket).SharedData).ReceiveShutdown = 1u8;
-            (*(*Socket).SharedData).SendShutdown = 1u8;
+            (*(*Socket).SharedData).__bindgen_anon_1.set_ReceiveShutdown(1u8);
+            (*(*Socket).SharedData).__bindgen_anon_1.set_SendShutdown(1u8);
         }
         _ => {}
     }
@@ -2721,10 +2726,10 @@ pub unsafe extern "C" fn WSPShutdown(
     NtClose(SockEvent);
 
     (*(*Socket).SharedData).SocketLastError = TranslateNtStatusError(Status);
-    MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut())
+    (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32)
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetSockName(
+pub unsafe extern "system" fn WSPGetSockName(
     Handle: SOCKET,
     Name: LPSOCKADDR,
     NameLength: LPINT,
@@ -2741,14 +2746,14 @@ pub unsafe extern "C" fn WSPGetSockName(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
 
     if Name.is_null() || NameLength.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2766,13 +2771,13 @@ pub unsafe extern "C" fn WSPGetSockName(
     }
 
     TdiAddressSize = core::mem::size_of::<TRANSPORT_ADDRESS>() as ULONG
-        + (*Socket).SharedData.SizeOfLocalAddress;
+        + ((*(*Socket).SharedData).SizeOfLocalAddress as u32);
     TdiAddress = HeapAlloc(GlobalHeap, 0, TdiAddressSize as usize) as PTDI_ADDRESS_INFO;
 
     if TdiAddress.is_null() {
         NtClose(SockEvent);
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOBUFS;
+            *lpErrno = (WSAENOBUFS as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2800,14 +2805,14 @@ pub unsafe extern "C" fn WSPGetSockName(
     NtClose(SockEvent);
 
     if NT_SUCCESS(Status) {
-        if *NameLength >= (*Socket).SharedData.SizeOfLocalAddress as INT {
+        if *NameLength >= (*(*Socket).SharedData).SizeOfLocalAddress as INT {
             (*Name).sa_family = (*SocketAddress).Address[0].AddressType;
             RtlCopyMemory(
                 (*Name).sa_data.as_mut_ptr() as PVOID,
                 (*SocketAddress).Address[0].Address.as_ptr() as PVOID,
                 (*SocketAddress).Address[0].AddressLength as usize,
             );
-            *NameLength = (*Socket).SharedData.SizeOfLocalAddress as INT;
+            *NameLength = (*(*Socket).SharedData).SizeOfLocalAddress as INT;
             TRACE!(
                 b"NameLength %d Address: %x Port %x\n\0".as_ptr() as PCHAR,
                 *NameLength,
@@ -2819,7 +2824,7 @@ pub unsafe extern "C" fn WSPGetSockName(
         } else {
             HeapFree(GlobalHeap, 0, TdiAddress as PVOID);
             if !lpErrno.is_null() {
-                *lpErrno = WSAEFAULT;
+                *lpErrno = (WSAEFAULT as i32);
             }
             return SOCKET_ERROR;
         }
@@ -2827,10 +2832,10 @@ pub unsafe extern "C" fn WSPGetSockName(
 
     HeapFree(GlobalHeap, 0, TdiAddress as PVOID);
 
-    MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut())
+    (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32)
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetPeerName(
+pub unsafe extern "system" fn WSPGetPeerName(
     s: SOCKET,
     Name: LPSOCKADDR,
     NameLength: LPINT,
@@ -2846,21 +2851,21 @@ pub unsafe extern "C" fn WSPGetPeerName(
     Socket = GetSocketStructure(s);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
 
     if (*Socket).SharedData.is_null() || (*(*Socket).SharedData).State != SocketConnected {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTCONN;
+            *lpErrno = (WSAENOTCONN as i32);
         }
         return SOCKET_ERROR;
     }
 
     if Name.is_null() || NameLength.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2878,13 +2883,13 @@ pub unsafe extern "C" fn WSPGetPeerName(
     }
 
     TdiAddressSize = core::mem::size_of::<TRANSPORT_ADDRESS>() as ULONG
-        + (*(*Socket).SharedData).SizeOfRemoteAddress;
+        + ((*(*Socket).SharedData).SizeOfRemoteAddress as u32);
     SocketAddress = HeapAlloc(GlobalHeap, 0, TdiAddressSize as usize) as PTRANSPORT_ADDRESS;
 
     if SocketAddress.is_null() {
         NtClose(SockEvent);
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOBUFS;
+            *lpErrno = (WSAENOBUFS as i32);
         }
         return SOCKET_ERROR;
     }
@@ -2914,7 +2919,7 @@ pub unsafe extern "C" fn WSPGetPeerName(
             (*Name).sa_family = (*SocketAddress).Address[0].AddressType;
             core::ptr::copy_nonoverlapping(
                 (*SocketAddress).Address[0].Address.as_ptr(),
-                (*Name).sa_data.as_mut_ptr(),
+                (*Name).sa_data.as_mut_ptr() as *mut u8,
                 (*SocketAddress).Address[0].AddressLength as usize,
             );
             *NameLength = (*(*Socket).SharedData).SizeOfRemoteAddress as INT;
@@ -2929,7 +2934,7 @@ pub unsafe extern "C" fn WSPGetPeerName(
         } else {
             HeapFree(GlobalHeap, 0, SocketAddress as LPVOID);
             if !lpErrno.is_null() {
-                *lpErrno = WSAEFAULT;
+                *lpErrno = (WSAEFAULT as i32);
             }
             return SOCKET_ERROR;
         }
@@ -2937,10 +2942,10 @@ pub unsafe extern "C" fn WSPGetPeerName(
 
     HeapFree(GlobalHeap, 0, SocketAddress as LPVOID);
 
-    return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+    return (MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPIoctl(
+pub unsafe extern "system" fn WSPIoctl(
     Handle: SOCKET,
     dwIoControlCode: DWORD,
     lpvInBuffer: LPVOID,
@@ -2983,12 +2988,12 @@ pub unsafe extern "C" fn WSPIoctl(
             } else {
                 NonBlocking = if *(lpvInBuffer as PULONG) != 0 { 1 } else { 0 };
                 if NonBlocking == 0 {
-                    if ((*Socket).SharedData.AsyncEvents & (!((*Socket).SharedData.AsyncDisabledEvents))) != 0 {
+                    if ((*(*Socket).SharedData).AsyncEvents & (!((*(*Socket).SharedData).AsyncDisabledEvents))) != 0 {
                         Errno = WSAEINVAL as INT;
                     } else if (*Socket).NetworkEvents != 0 {
                         Errno = WSAEINVAL as INT;
                     } else {
-                        (*Socket).SharedData.NonBlocking = if NonBlocking != 0 { 1 } else { 0 };
+                        (*(*Socket).SharedData).__bindgen_anon_1.set_NonBlocking(if NonBlocking != 0 { 1 } else { 0 });
                         NeedsCompletion = 0;
                         Errno = SetSocketInformation(
                             Socket,
@@ -3004,7 +3009,7 @@ pub unsafe extern "C" fn WSPIoctl(
                         }
                     }
                 } else {
-                    (*Socket).SharedData.NonBlocking = if NonBlocking != 0 { 1 } else { 0 };
+                    (*(*Socket).SharedData).__bindgen_anon_1.set_NonBlocking(if NonBlocking != 0 { 1 } else { 0 });
                     NeedsCompletion = 0;
                     Errno = SetSocketInformation(
                         Socket,
@@ -3050,10 +3055,10 @@ pub unsafe extern "C" fn WSPIoctl(
                 Errno = WSAEFAULT as INT;
             } else if cbOutBuffer < core::mem::size_of::<BOOL>() as DWORD {
                 Errno = WSAEINVAL as INT;
-            } else if (*Socket).SharedData.SocketType != SOCK_STREAM as INT {
+            } else if (*(*Socket).SharedData).SocketType != SOCK_STREAM as INT {
                 Errno = WSAEINVAL as INT;
             } else {
-                *(lpvOutBuffer as *mut BOOL) = if (*Socket).SharedData.OobInline == 0 { 1 } else { 0 };
+                *(lpvOutBuffer as *mut BOOL) = if (*(*Socket).SharedData).__bindgen_anon_1.OobInline() == 0 { 1 } else { 0 };
                 cbRet = core::mem::size_of::<BOOL>() as DWORD;
                 Errno = NO_ERROR as INT;
                 Ret = NO_ERROR as INT;
@@ -3125,7 +3130,7 @@ pub unsafe extern "C" fn WSPIoctl(
                     (*(lpvOutBuffer as *mut SOCKET_ADDRESS_LIST)).Address[0].iSockaddrLength =
                         core::mem::size_of::<SOCKADDR>() as INT;
                     (*(lpvOutBuffer as *mut SOCKET_ADDRESS_LIST)).Address[0].lpSockaddr =
-                        core::ptr::addr_of_mut!((*Socket).SharedData.WSLocalAddress);
+                        core::ptr::addr_of_mut!((*(*Socket).SharedData).WSLocalAddress);
 
                     Errno = NO_ERROR as INT;
                     Ret = NO_ERROR as INT;
@@ -3180,7 +3185,7 @@ pub unsafe extern "C" fn WSPIoctl(
     Ret
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPGetSockOpt(
+pub unsafe extern "system" fn WSPGetSockOpt(
     Handle: SOCKET,
     Level: INT,
     OptionName: INT,
@@ -3198,20 +3203,20 @@ pub unsafe extern "C" fn WSPGetSockOpt(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
     if OptionLength.is_null() || OptionValue.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
 
-    match Level {
+    match Level as u32 {
         SOL_SOCKET => {
-            match OptionName {
+            match OptionName as u32 {
                 SO_TYPE => {
                     Buffer = core::ptr::addr_of_mut!((*(*Socket).SharedData).SocketType) as PVOID;
                     BufferSize = core::mem::size_of::<INT>() as INT;
@@ -3228,19 +3233,19 @@ pub unsafe extern "C" fn WSPGetSockOpt(
                 }
 
                 SO_ACCEPTCONN => {
-                    BoolBuffer = (*(*Socket).SharedData).Listening;
+                    BoolBuffer = ((*(*Socket).SharedData).__bindgen_anon_1.Listening() as i32);
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
 
                 SO_BROADCAST => {
-                    BoolBuffer = (*(*Socket).SharedData).Broadcast;
+                    BoolBuffer = ((*(*Socket).SharedData).__bindgen_anon_1.Broadcast() as i32);
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
 
                 SO_DEBUG => {
-                    BoolBuffer = (*(*Socket).SharedData).Debug;
+                    BoolBuffer = ((*(*Socket).SharedData).__bindgen_anon_1.Debug() as i32);
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
@@ -3252,9 +3257,9 @@ pub unsafe extern "C" fn WSPGetSockOpt(
                 }
 
                 SO_LINGER => {
-                    if (*(*Socket).SharedData).SocketType == SOCK_DGRAM {
+                    if (*(*Socket).SharedData).SocketType == (SOCK_DGRAM as i32) {
                         if !lpErrno.is_null() {
-                            *lpErrno = WSAENOPROTOOPT;
+                            *lpErrno = (WSAENOPROTOOPT as i32);
                         }
                         return SOCKET_ERROR;
                     }
@@ -3263,7 +3268,7 @@ pub unsafe extern "C" fn WSPGetSockOpt(
                 }
 
                 SO_OOBINLINE => {
-                    BoolBuffer = if (*(*Socket).SharedData).OobInline != 0 { 1 } else { 0 };
+                    BoolBuffer = if (*(*Socket).SharedData).__bindgen_anon_1.OobInline() != 0 { 1 } else { 0 };
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
@@ -3283,24 +3288,24 @@ pub unsafe extern "C" fn WSPGetSockOpt(
                         if !lpErrno.is_null() {
                             *lpErrno = Errno;
                         }
-                        return if Errno == NO_ERROR { NO_ERROR } else { SOCKET_ERROR };
+                        return if Errno == (NO_ERROR as i32) { (NO_ERROR as i32) } else { SOCKET_ERROR };
                     }
                 }
 
                 SO_CONDITIONAL_ACCEPT => {
-                    BoolBuffer = if (*(*Socket).SharedData).UseDelayedAcceptance != 0 { 1 } else { 0 };
+                    BoolBuffer = if (*(*Socket).SharedData).__bindgen_anon_1.UseDelayedAcceptance() != 0 { 1 } else { 0 };
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
 
                 SO_REUSEADDR => {
-                    BoolBuffer = if (*(*Socket).SharedData).ReuseAddresses != 0 { 1 } else { 0 };
+                    BoolBuffer = if (*(*Socket).SharedData).__bindgen_anon_1.ReuseAddresses() != 0 { 1 } else { 0 };
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
 
                 SO_EXCLUSIVEADDRUSE => {
-                    BoolBuffer = if (*(*Socket).SharedData).ExclusiveAddressUse != 0 { 1 } else { 0 };
+                    BoolBuffer = if (*(*Socket).SharedData).__bindgen_anon_1.ExclusiveAddressUse() != 0 { 1 } else { 0 };
                     Buffer = core::ptr::addr_of_mut!(BoolBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<BOOL>() as INT;
                 }
@@ -3334,7 +3339,7 @@ pub unsafe extern "C" fn WSPGetSockOpt(
                 SO_GROUP_ID | SO_GROUP_PRIORITY | SO_MAX_MSG_SIZE | _ => {
                     DbgPrint(b"MSAFD: Get unknown optname %x\n\0".as_ptr() as PCHAR, OptionName);
                     if !lpErrno.is_null() {
-                        *lpErrno = WSAENOPROTOOPT;
+                        *lpErrno = (WSAENOPROTOOPT as i32);
                     }
                     return SOCKET_ERROR;
                 }
@@ -3342,7 +3347,7 @@ pub unsafe extern "C" fn WSPGetSockOpt(
 
             if *OptionLength < BufferSize {
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEFAULT;
+                    *lpErrno = (WSAEFAULT as i32);
                 }
                 *OptionLength = BufferSize;
                 return SOCKET_ERROR;
@@ -3354,7 +3359,7 @@ pub unsafe extern "C" fn WSPGetSockOpt(
 
         _ => {
             if !lpErrno.is_null() {
-                *lpErrno = WSAEINVAL;
+                *lpErrno = (WSAEINVAL as i32);
             }
             return SOCKET_ERROR;
         }
@@ -3375,13 +3380,13 @@ unsafe fn MsafdUpdateConnectionContext(
 
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = (WSAENOTSOCK as i32);
         }
         return SOCKET_ERROR;
     }
 
     if (*(*Socket).SharedData).State == SocketConnected {
-        return NO_ERROR;
+        return (NO_ERROR as i32);
     }
 
     Status = NtCreateEvent(
@@ -3394,7 +3399,7 @@ unsafe fn MsafdUpdateConnectionContext(
     if !NT_SUCCESS(Status) {
         'Quit: {
             if Status == STATUS_SUCCESS {
-                return NO_ERROR;
+                return (NO_ERROR as i32);
             }
             if !lpErrno.is_null() {
                 *lpErrno = TranslateNtStatusError(Status);
@@ -3424,7 +3429,7 @@ unsafe fn MsafdUpdateConnectionContext(
     if !NT_SUCCESS(Status) {
         'Quit: {
             if Status == STATUS_SUCCESS {
-                return NO_ERROR;
+                return (NO_ERROR as i32);
             }
             if !lpErrno.is_null() {
                 *lpErrno = TranslateNtStatusError(Status);
@@ -3456,7 +3461,7 @@ unsafe fn MsafdUpdateConnectionContext(
     if !NT_SUCCESS(Status) {
         'Quit: {
             if Status == STATUS_SUCCESS {
-                return NO_ERROR;
+                return (NO_ERROR as i32);
             }
             if !lpErrno.is_null() {
                 *lpErrno = TranslateNtStatusError(Status);
@@ -3488,7 +3493,7 @@ unsafe fn MsafdUpdateConnectionContext(
     NtClose(SockEvent);
 
     if Status == STATUS_SUCCESS {
-        return NO_ERROR;
+        return (NO_ERROR as i32);
     }
     if !lpErrno.is_null() {
         *lpErrno = TranslateNtStatusError(Status);
@@ -3496,7 +3501,7 @@ unsafe fn MsafdUpdateConnectionContext(
     return SOCKET_ERROR;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPStartup(
+pub unsafe extern "system" fn WSPStartup(
     wVersionRequested: WORD,
     lpWSPData: LPWSPDATA,
     lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -3505,18 +3510,18 @@ pub unsafe extern "C" fn WSPStartup(
 ) -> INT {
     let Status: NTSTATUS;
 
-    if ((LOBYTE(wVersionRequested) == 2 && HIBYTE(wVersionRequested) < 2) ||
-        LOBYTE(wVersionRequested) < 2)
+    if ((LOBYTE((wVersionRequested as usize)) == 2 && HIBYTE((wVersionRequested as usize)) < 2) ||
+        LOBYTE((wVersionRequested as usize)) < 2)
     {
         ERR!(b"WSPStartup NOT SUPPORTED for version 0x%X\n\0".as_ptr() as PCHAR, wVersionRequested);
-        return WSAVERNOTSUPPORTED;
+        return (WSAVERNOTSUPPORTED as i32);
     } else {
-        Status = NO_ERROR;
+        Status = (NO_ERROR as i32);
     }
 
     Upcalls = UpcallTable;
 
-    if Status == NO_ERROR {
+    if Status == (NO_ERROR as i32) {
         (*lpProcTable).lpWSPAccept = Some(WSPAccept);
         (*lpProcTable).lpWSPAddressToString = Some(WSPAddressToString);
         (*lpProcTable).lpWSPAsyncSelect = Some(WSPAsyncSelect);
@@ -3556,7 +3561,7 @@ pub unsafe extern "C" fn WSPStartup(
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPAddressToString(
+pub unsafe extern "system" fn WSPAddressToString(
     lpsaAddress: LPSOCKADDR,
     dwAddressLength: DWORD,
     lpProtocolInfo: LPWSAPROTOCOL_INFOW,
@@ -3571,26 +3576,30 @@ pub unsafe extern "C" fn WSPAddressToString(
 
     if lpsaAddress.is_null() || lpszAddressString.is_null() || lpdwAddressStringLength.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
 
-    match (*lpsaAddress).sa_family {
+    match (*lpsaAddress).sa_family as u32 {
         AF_INET => {
             if dwAddressLength < core::mem::size_of::<SOCKADDR_IN>() as DWORD {
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEINVAL;
+                    *lpErrno = (WSAEINVAL as i32);
                 }
                 return SOCKET_ERROR;
             }
             let sin_addr = (lpsaAddress as *const SOCKADDR_IN);
-            let addr = ntohl((*sin_addr).sin_addr.s_addr);
+            let addr = ntohl((*sin_addr).sin_addr.S_un.S_addr);
             let port = ntohs((*sin_addr).sin_port);
             
+            static FMT_IPV4: [u16; 15] = [
+                0x25, 0x75, 0x2e, 0x25, 0x75, 0x2e, 0x25, 0x75, 0x2e, 0x25, 0x75, 0x3a, 0x25,
+                0x75, 0x00,
+            ];
             swprintf(
                 buffer.as_mut_ptr(),
-                L"%u.%u.%u.%u:%u\0".as_ptr(),
+                FMT_IPV4.as_ptr(),
                 (addr >> 24 & 0xff) as u32,
                 (addr >> 16 & 0xff) as u32,
                 (addr >> 8 & 0xff) as u32,
@@ -3598,14 +3607,14 @@ pub unsafe extern "C" fn WSPAddressToString(
                 port as u32,
             );
 
-            p = wcschr(buffer.as_ptr(), L':' as u16);
+            p = wcschr(buffer.as_ptr(), 0x3a_u16);
             if (*sin_addr).sin_port == 0 {
                 *p = 0;
             }
         }
         _ => {
             if !lpErrno.is_null() {
-                *lpErrno = WSAEINVAL;
+                *lpErrno = (WSAEINVAL as i32);
             }
             return SOCKET_ERROR;
         }
@@ -3616,7 +3625,7 @@ pub unsafe extern "C" fn WSPAddressToString(
     if *lpdwAddressStringLength < size as DWORD {
         *lpdwAddressStringLength = size as DWORD;
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = (WSAEFAULT as i32);
         }
         return SOCKET_ERROR;
     }
@@ -3626,8 +3635,8 @@ pub unsafe extern "C" fn WSPAddressToString(
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPStringToAddress(
-    AddressString: LPWSTR,
+pub unsafe extern "system" fn WSPStringToAddress(
+    mut AddressString: LPWSTR,
     AddressFamily: INT,
     lpProtocolInfo: LPWSAPROTOCOL_INFOW,
     lpAddress: LPSOCKADDR,
@@ -3644,7 +3653,7 @@ pub unsafe extern "C" fn WSPStringToAddress(
 
     if lpAddressLength.is_null() || lpAddress.is_null() || AddressString.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEINVAL;
+            *lpErrno = (WSAEINVAL as i32);
         }
         return SOCKET_ERROR;
     }
@@ -3652,15 +3661,15 @@ pub unsafe extern "C" fn WSPStringToAddress(
     sockaddr = lpAddress as *mut SOCKADDR_IN;
 
     if !lpProtocolInfo.is_null() {
-        (*sockaddr).sin_family = (*lpProtocolInfo).iAddressFamily as u16;
+        (*sockaddr).sin_family = ((*lpProtocolInfo).iAddressFamily as u16 as i16);
     } else {
-        (*sockaddr).sin_family = AddressFamily as u16;
+        (*sockaddr).sin_family = (AddressFamily as u16 as i16);
     }
 
-    if AddressFamily == AF_INET {
+    if AddressFamily == (AF_INET as i32) {
         if *lpAddressLength < core::mem::size_of::<SOCKADDR_IN>() as INT {
             if !lpErrno.is_null() {
-                *lpErrno = WSAEFAULT;
+                *lpErrno = (WSAEFAULT as i32);
             }
         } else {
             bp = core::ptr::addr_of_mut!(AddressString);
@@ -3670,7 +3679,7 @@ pub unsafe extern "C" fn WSPStringToAddress(
                 ip_part = wcstol(*bp, bp, 10);
                 if ip_part < 0 || ip_part > 255 {
                     if !lpErrno.is_null() {
-                        *lpErrno = WSAEINVAL;
+                        *lpErrno = (WSAEINVAL as i32);
                     }
                     return SOCKET_ERROR;
                 }
@@ -3680,7 +3689,7 @@ pub unsafe extern "C" fn WSPStringToAddress(
                 }
                 if (**bp) != '.' as u16 {
                     if !lpErrno.is_null() {
-                        *lpErrno = WSAEINVAL;
+                        *lpErrno = (WSAEINVAL as i32);
                     }
                     return SOCKET_ERROR;
                 }
@@ -3690,7 +3699,7 @@ pub unsafe extern "C" fn WSPStringToAddress(
 
             if numdots != 3 {
                 if !lpErrno.is_null() {
-                    *lpErrno = WSAEINVAL;
+                    *lpErrno = (WSAEINVAL as i32);
                 }
                 return SOCKET_ERROR;
             }
@@ -3699,7 +3708,7 @@ pub unsafe extern "C" fn WSPStringToAddress(
                 *bp = (*bp).add(1);
                 if (**bp) < '0' as u16 || (**bp) > '9' as u16 {
                     if !lpErrno.is_null() {
-                        *lpErrno = WSAEINVAL;
+                        *lpErrno = (WSAEINVAL as i32);
                     }
                     return SOCKET_ERROR;
                 }
@@ -3709,12 +3718,12 @@ pub unsafe extern "C" fn WSPStringToAddress(
             }
 
             if !lpErrno.is_null() {
-                *lpErrno = NO_ERROR;
+                *lpErrno = (NO_ERROR as i32);
             }
             *lpAddressLength = core::mem::size_of::<SOCKADDR_IN>() as INT;
             memset(lpAddress as *mut core::ffi::c_void, 0, core::mem::size_of::<SOCKADDR_IN>());
-            (*sockaddr).sin_family = AF_INET as u16;
-            (*sockaddr).sin_addr.s_addr = inetaddr as u32;
+            (*sockaddr).sin_family = (AF_INET as u16 as i16);
+            (*sockaddr).sin_addr.S_un.S_addr = inetaddr as u32;
             (*sockaddr).sin_port = port;
         }
     }
@@ -3726,17 +3735,17 @@ pub unsafe extern "C" fn WSPStringToAddress(
     SOCKET_ERROR
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPCleanup(lpErrno: LPINT) -> INT {
+pub unsafe extern "system" fn WSPCleanup(lpErrno: LPINT) -> INT {
     
     TRACE!(b"Leaving.\n\0".as_ptr() as *const i8);
 
     if !lpErrno.is_null() {
-        *lpErrno = NO_ERROR;
+        *lpErrno = (NO_ERROR as i32);
     }
 
     0
 }
-unsafe fn MsafdInfoAPC(
+unsafe extern "system" fn MsafdInfoAPC(
     ApcContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
     Reserved: ULONG) {
@@ -3749,8 +3758,8 @@ unsafe fn MsafdInfoAPC(
 
     if (*Context).lpCompletionRoutine.is_some() {
         (*Context).lpCompletionRoutine.unwrap()(
-            (*IoStatusBlock).__bindgen_anon_1.Status,
-            (*IoStatusBlock).Information,
+            ((*IoStatusBlock).__bindgen_anon_1.Status as u32),
+            (*IoStatusBlock).Information as u32,
             (*Context).lpOverlapped,
             0
         );
@@ -3759,6 +3768,173 @@ unsafe fn MsafdInfoAPC(
     HeapFree(GlobalHeap, 0, (*Context).lpInfoData as LPVOID);
 
     HeapFree(GlobalHeap, 0, ApcContext);
+}
+// WSPSetSockOpt — faithful translation of dll/win32/msafd/misc/dllmain.c:WSPSetSockOpt.
+// Dropped by the per-function pass (never emitted a body); reconstructed here 1:1. SOL_SOCKET
+// options are handled locally (bitfields via __bindgen_anon_1 accessors, buffer sizes via
+// Set/GetSocketInformation); everything else + SO_KEEPALIVE/SO_DONTROUTE goes to the helper DLL.
+#[no_mangle]
+pub unsafe extern "system" fn WSPSetSockOpt(
+    s: SOCKET,
+    level: INT,
+    optname: INT,
+    optval: *const CHAR,
+    optlen: INT,
+    lpErrno: LPINT,
+) -> INT {
+    let Socket: PSOCKET_INFORMATION;
+    let Errno: INT;
+
+    Socket = GetSocketStructure(s);
+    if Socket.is_null() {
+        if !lpErrno.is_null() { *lpErrno = WSAENOTSOCK as INT; }
+        return SOCKET_ERROR;
+    }
+    if optval.is_null() && optlen != 0 {
+        if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+        return SOCKET_ERROR;
+    }
+
+    /* FIXME: We should handle some more cases here */
+    if level == SOL_SOCKET as INT {
+        match optname as u32 {
+            SO_BROADCAST => {
+                if (optlen as usize) < core::mem::size_of::<BOOL>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                (*(*Socket).SharedData).__bindgen_anon_1.set_Broadcast(if *optval != 0 { 1 } else { 0 });
+                return NO_ERROR as INT;
+            }
+            SO_OOBINLINE => {
+                if (optlen as usize) < core::mem::size_of::<BOOL>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                (*(*Socket).SharedData).__bindgen_anon_1.set_OobInline(if *optval != 0 { 1 } else { 0 });
+                return NO_ERROR as INT;
+            }
+            SO_DONTLINGER => {
+                if (optlen as usize) < core::mem::size_of::<BOOL>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                (*(*Socket).SharedData).LingerData.l_onoff = if *optval != 0 { 0 } else { 1 };
+                return NO_ERROR as INT;
+            }
+            SO_REUSEADDR => {
+                if (optlen as usize) < core::mem::size_of::<BOOL>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                (*(*Socket).SharedData).__bindgen_anon_1.set_ReuseAddresses(if *optval != 0 { 1 } else { 0 });
+                return NO_ERROR as INT;
+            }
+            SO_EXCLUSIVEADDRUSE => {
+                if (optlen as usize) < core::mem::size_of::<BOOL>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                (*(*Socket).SharedData).__bindgen_anon_1.set_ExclusiveAddressUse(if *optval != 0 { 1 } else { 0 });
+                return NO_ERROR as INT;
+            }
+            SO_LINGER => {
+                if (optlen as usize) < core::mem::size_of::<linger>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                RtlCopyMemory(
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).LingerData) as *mut core::ffi::c_void,
+                    optval as *const core::ffi::c_void,
+                    core::mem::size_of::<linger>(),
+                );
+                return NO_ERROR as INT;
+            }
+            SO_SNDBUF => {
+                if (optlen as usize) < core::mem::size_of::<ULONG>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                SetSocketInformation(Socket, AFD_INFO_SEND_WINDOW_SIZE, core::ptr::null_mut(),
+                    optval as PULONG, core::ptr::null_mut(), core::ptr::null_mut(), None);
+                GetSocketInformation(Socket, AFD_INFO_SEND_WINDOW_SIZE, core::ptr::null_mut(),
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).SizeOfSendBuffer),
+                    core::ptr::null_mut(), core::ptr::null_mut(), None);
+                return NO_ERROR as INT;
+            }
+            SO_RCVBUF => {
+                if (optlen as usize) < core::mem::size_of::<ULONG>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                /* FIXME: limit the packet receive buffer size — workaround for CORE-15804 */
+                if *(optval as PULONG) > 0x2000 {
+                    *(optval as *mut ULONG) = 0x2000;
+                }
+                SetSocketInformation(Socket, AFD_INFO_RECEIVE_WINDOW_SIZE, core::ptr::null_mut(),
+                    optval as PULONG, core::ptr::null_mut(), core::ptr::null_mut(), None);
+                GetSocketInformation(Socket, AFD_INFO_RECEIVE_WINDOW_SIZE, core::ptr::null_mut(),
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).SizeOfRecvBuffer),
+                    core::ptr::null_mut(), core::ptr::null_mut(), None);
+                return NO_ERROR as INT;
+            }
+            SO_UPDATE_CONNECT_CONTEXT => {
+                return MsafdUpdateConnectionContext(s, lpErrno);
+            }
+            SO_ERROR => {
+                if (optlen as usize) < core::mem::size_of::<INT>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                RtlCopyMemory(
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).SocketLastError) as *mut core::ffi::c_void,
+                    optval as *const core::ffi::c_void, core::mem::size_of::<INT>());
+                return NO_ERROR as INT;
+            }
+            SO_SNDTIMEO => {
+                if (optlen as usize) < core::mem::size_of::<DWORD>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                RtlCopyMemory(
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).SendTimeout) as *mut core::ffi::c_void,
+                    optval as *const core::ffi::c_void, core::mem::size_of::<DWORD>());
+                return NO_ERROR as INT;
+            }
+            SO_RCVTIMEO => {
+                if (optlen as usize) < core::mem::size_of::<DWORD>() {
+                    if !lpErrno.is_null() { *lpErrno = WSAEFAULT as INT; }
+                    return SOCKET_ERROR;
+                }
+                RtlCopyMemory(
+                    core::ptr::addr_of_mut!((*(*Socket).SharedData).RecvTimeout) as *mut core::ffi::c_void,
+                    optval as *const core::ffi::c_void, core::mem::size_of::<DWORD>());
+                return NO_ERROR as INT;
+            }
+            SO_KEEPALIVE | SO_DONTROUTE => {
+                /* These go directly to the helper dll — fall through to SendToHelper */
+            }
+            _ => {
+                /* Obviously this is a hack */
+                ERR!(b"MSAFD: Set unknown optname %x\n\0".as_ptr() as PCHAR, optname);
+                return NO_ERROR as INT;
+            }
+        }
+    }
+
+    // SendToHelper:
+    Errno = ((*(*Socket).HelperData).WSHSetSocketInformation.unwrap())(
+        (*Socket).HelperContext,
+        s,
+        (*Socket).TdiAddressHandle,
+        (*Socket).TdiConnectionHandle,
+        level,
+        optname,
+        optval as PCHAR,
+        optlen,
+    );
+    if !lpErrno.is_null() { *lpErrno = Errno; }
+    return if Errno == NO_ERROR as INT { NO_ERROR as INT } else { SOCKET_ERROR };
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetSocketInformation(
@@ -3773,11 +3949,11 @@ pub unsafe extern "C" fn GetSocketInformation(
     let mut IOSB: PIO_STATUS_BLOCK;
     let mut DummyIOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let InfoData: PAFD_INFO;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let APCContext: PMSAFD_INFO_APC_CONTEXT;
     let APCFunction: PIO_APC_ROUTINE;
     let mut Event: HANDLE = core::ptr::null_mut();
-    let SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
 
     InfoData = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<AFD_INFO>()) as PAFD_INFO;
     if InfoData.is_null() {
@@ -3808,7 +3984,7 @@ pub unsafe extern "C" fn GetSocketInformation(
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as PCHAR);
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, core::ptr::null_mut(), 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_SUCCESS, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);
         }
 
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_INFO_APC_CONTEXT>()) as PMSAFD_INFO_APC_CONTEXT;
@@ -3816,12 +3992,12 @@ pub unsafe extern "C" fn GetSocketInformation(
             ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
-            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);
         }
         (*APCContext).lpCompletionRoutine = CompletionRoutine;
         (*APCContext).lpOverlapped = Overlapped;
         (*APCContext).lpInfoData = InfoData;
-        APCFunction = Some(MsafdInfoAPC);
+        APCFunction = as_apc(MsafdInfoAPC);
 
         if CompletionRoutine.is_none() {
             Event = (*Overlapped).hEvent;
@@ -3854,13 +4030,13 @@ pub unsafe extern "C" fn GetSocketInformation(
 
     if Status == STATUS_SUCCESS {
         if !Ulong.is_null() {
-            *Ulong = (*InfoData).Information.Ulong;
+            *Ulong = *(*InfoData).Information.Ulong.as_ref();
         }
         if !LargeInteger.is_null() {
-            *LargeInteger = (*InfoData).Information.LargeInteger;
+            *LargeInteger = *(*InfoData).Information.LargeInteger.as_ref();
         }
         if !Boolean.is_null() {
-            *Boolean = (*InfoData).Information.Boolean;
+            *Boolean = *(*InfoData).Information.Boolean.as_ref();
         }
     }
 
@@ -3869,7 +4045,7 @@ pub unsafe extern "C" fn GetSocketInformation(
         HeapFree(GlobalHeap, 0, InfoData as LPVOID);
     }
 
-    MsafdReturnWithErrno(Status, core::ptr::null_mut(), 0, core::ptr::null_mut())
+    (MsafdReturnWithErrno(Status, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32)
 }
 #[no_mangle]
 pub unsafe extern "C" fn SetSocketInformation(
@@ -3884,11 +4060,11 @@ pub unsafe extern "C" fn SetSocketInformation(
     let IOSB: PIO_STATUS_BLOCK;
     let mut DummyIOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let InfoData: PAFD_INFO;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let APCContext: PMSAFD_INFO_APC_CONTEXT;
     let APCFunction: PIO_APC_ROUTINE;
     let mut Event: HANDLE = core::ptr::null_mut();
-    let SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
 
     InfoData = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<AFD_INFO>()) as PAFD_INFO;
     if InfoData.is_null() {
@@ -3910,18 +4086,18 @@ pub unsafe extern "C" fn SetSocketInformation(
     (*InfoData).InformationClass = AfdInformationClass;
 
     if !Ulong.is_null() {
-        (*InfoData).Information.Ulong = *Ulong;
+        *(*InfoData).Information.Ulong.as_mut() = *Ulong;
     }
     if !LargeInteger.is_null() {
-        (*InfoData).Information.LargeInteger = *LargeInteger;
+        *(*InfoData).Information.LargeInteger.as_mut() = *LargeInteger;
     }
     if !Boolean.is_null() {
-        (*InfoData).Information.Boolean = *Boolean;
+        *(*InfoData).Information.Boolean.as_mut() = *Boolean;
     }
 
     if Overlapped.is_null() {
         APCContext = core::ptr::null_mut();
-        APCFunction = core::ptr::null_mut();
+        APCFunction = None;
         Event = SockEvent;
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
@@ -3929,7 +4105,7 @@ pub unsafe extern "C" fn SetSocketInformation(
             TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as PCHAR);
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
-            return MsafdReturnWithErrno(STATUS_SUCCESS, core::ptr::null_mut(), 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_SUCCESS, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);
         }
 
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_INFO_APC_CONTEXT>()) as PMSAFD_INFO_APC_CONTEXT;
@@ -3937,14 +4113,14 @@ pub unsafe extern "C" fn SetSocketInformation(
             ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
-            return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut());
+            return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);
         }
         (*APCContext).lpCompletionRoutine = CompletionRoutine;
         (*APCContext).lpOverlapped = Overlapped;
         (*APCContext).lpInfoData = InfoData;
-        APCFunction = MsafdInfoAPC as PIO_APC_ROUTINE;
+        APCFunction = as_apc(MsafdInfoAPC);
 
-        if CompletionRoutine.is_null() {
+        if CompletionRoutine.is_none() {
             Event = (*Overlapped).hEvent;
         }
 
@@ -3974,11 +4150,11 @@ pub unsafe extern "C" fn SetSocketInformation(
     TRACE!(b"Status %lx\n\0".as_ptr() as PCHAR, Status);
 
     NtClose(SockEvent);
-    if APCFunction.is_null() {
+    if APCFunction.is_none() {
         HeapFree(GlobalHeap, 0, InfoData as LPVOID);
     }
 
-    MsafdReturnWithErrno(Status, core::ptr::null_mut(), 0, core::ptr::null_mut())
+    (MsafdReturnWithErrno(Status, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32)
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetSocketStructure(Handle: SOCKET) -> PSOCKET_INFORMATION {
@@ -4020,7 +4196,7 @@ pub unsafe extern "C" fn CreateContext(Socket: PSOCKET_INFORMATION) -> INT {
         return SOCKET_ERROR;
     }
 
-    ContextData.SharedData = *(*Socket).SharedData;
+    ContextData.SharedData = core::ptr::read((*Socket).SharedData);
     ContextData.SizeOfHelperData = 0;
     RtlCopyMemory(
         core::ptr::addr_of_mut!(ContextData.LocalAddress) as PVOID,
@@ -4054,7 +4230,7 @@ pub unsafe extern "C" fn CreateContext(Socket: PSOCKET_INFORMATION) -> INT {
     NtClose(SockEvent);
 
     if Status == STATUS_SUCCESS {
-        NO_ERROR
+        (NO_ERROR as i32)
     } else {
         SOCKET_ERROR
     }
@@ -4078,7 +4254,7 @@ pub unsafe extern "C" fn SockCreateOrReferenceAsyncThread() -> u8 {
             core::ptr::null_mut(),
             2,
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             DbgPrint(b"Failed to create completion port: 0x%08x\n\0".as_ptr() as PCHAR, Status);
             return 0u8;
         }
@@ -4121,11 +4297,11 @@ type LPTHREAD_START_ROUTINE = Option<unsafe extern "system" fn(LPVOID) -> DWORD>
 #[no_mangle]
 pub unsafe extern "system" fn SockAsyncThread(ThreadParam: PVOID) -> ULONG {
     let mut AsyncContext: PVOID = core::ptr::null_mut();
-    let mut AsyncCompletionRoutine: PASYNC_COMPLETION_ROUTINE = core::ptr::null_mut();
+    let mut AsyncCompletionRoutine: PASYNC_COMPLETION_ROUTINE = None;
     let mut IOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    SetThreadPriority(GetCurrentThread(), (THREAD_PRIORITY_ABOVE_NORMAL as i32));
 
     loop {
         Status = NtRemoveIoCompletion(
@@ -4137,7 +4313,7 @@ pub unsafe extern "system" fn SockAsyncThread(ThreadParam: PVOID) -> ULONG {
         );
 
         if NT_SUCCESS(Status) {
-            (AsyncCompletionRoutine)(AsyncContext, &mut IOSB);
+            (AsyncCompletionRoutine.unwrap())(AsyncContext, &mut IOSB);
         } else {
             Sleep(1000);
         }
@@ -4220,86 +4396,86 @@ pub unsafe extern "C" fn SockAsyncSelectCompletionRoutine(Context: PVOID, IoStat
     while x != 0 {
         match (*(*AsyncData).AsyncSelectInfo.Handles.as_ptr()).Events & x {
             AFD_EVENT_RECEIVE => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_READ)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_READ)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_READ as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_READ as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_READ, 0),
+                        WSAMAKESELECTREPLY(FD_READ, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_READ;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_READ as i32);
                 }
             }
 
             AFD_EVENT_OOB_RECEIVE => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_OOB)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_OOB)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_OOB as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_OOB as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_OOB, 0),
+                        WSAMAKESELECTREPLY(FD_OOB, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_OOB;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_OOB as i32);
                 }
             }
 
             AFD_EVENT_SEND => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_WRITE)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_WRITE)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_WRITE as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_WRITE as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_WRITE, 0),
+                        WSAMAKESELECTREPLY(FD_WRITE, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_WRITE;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_WRITE as i32);
                 }
             }
 
             AFD_EVENT_CONNECT | AFD_EVENT_CONNECT_FAIL => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_CONNECT)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_CONNECT)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_CONNECT as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_CONNECT as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_CONNECT, 0),
+                        WSAMAKESELECTREPLY(FD_CONNECT, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_CONNECT;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_CONNECT as i32);
                 }
             }
 
             AFD_EVENT_ACCEPT => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_ACCEPT)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_ACCEPT)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_ACCEPT as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_ACCEPT as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_ACCEPT, 0),
+                        WSAMAKESELECTREPLY(FD_ACCEPT, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_ACCEPT;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_ACCEPT as i32);
                 }
             }
 
             AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_CLOSE => {
-                if 0 != ((*(*Socket).SharedData).AsyncEvents & FD_CLOSE)
-                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & FD_CLOSE)
+                if 0 != ((*(*Socket).SharedData).AsyncEvents & (FD_CLOSE as i32))
+                    && 0 == ((*(*Socket).SharedData).AsyncDisabledEvents & (FD_CLOSE as i32))
                 {
-                    (Upcalls.lpWPUPostMessage)(
+                    (Upcalls.lpWPUPostMessage.unwrap())(
                         (*(*Socket).SharedData).hWnd,
                         (*(*Socket).SharedData).wMsg,
                         (*Socket).Handle,
-                        WSAMAKESELECTREPLY(FD_CLOSE, 0),
+                        WSAMAKESELECTREPLY(FD_CLOSE, 0) as _,
                     );
-                    (*(*Socket).SharedData).AsyncDisabledEvents |= FD_CLOSE;
+                    (*(*Socket).SharedData).AsyncDisabledEvents |= (FD_CLOSE as i32);
                 }
             }
 
@@ -4323,11 +4499,11 @@ pub unsafe extern "C" fn SockProcessAsyncSelect(Socket: PSOCKET_INFORMATION, Asy
     (*AsyncData).AsyncSelectInfo.Timeout.__bindgen_anon_1.HighPart = 0x7FFFFFFF;
     (*AsyncData).AsyncSelectInfo.Timeout.__bindgen_anon_1.LowPart = 0xFFFFFFFF;
     (*AsyncData).AsyncSelectInfo.HandleCount = 1;
-    (*AsyncData).AsyncSelectInfo.Exclusive = 1u8;
+    (*AsyncData).AsyncSelectInfo.Exclusive = (1u8 as _);
     (*AsyncData).AsyncSelectInfo.Handles[0].Handle = (*Socket).Handle;
     (*AsyncData).AsyncSelectInfo.Handles[0].Events = 0;
 
-    lNetworkEvents = (*(*Socket).SharedData).AsyncEvents & (!(*(*Socket).SharedData).AsyncDisabledEvents);
+    lNetworkEvents = ((((*(*Socket).SharedData).AsyncEvents & ((!(*(*Socket).SharedData).AsyncDisabledEvents) as u32 as u32) as i32)) as u32);
 
     if (lNetworkEvents & FD_READ) != 0 {
         (*AsyncData).AsyncSelectInfo.Handles[0].Events |= AFD_EVENT_RECEIVE;
@@ -4409,11 +4585,11 @@ pub unsafe extern "C" fn SockReenableAsyncSelectEvent(
 ) {
     let AsyncData: PASYNC_DATA;
 
-    if ((*(*Socket).SharedData).AsyncDisabledEvents & Event) == 0 {
+    if ((*(*Socket).SharedData).AsyncDisabledEvents & (Event as i32)) == 0 {
         return;
     }
 
-    (*(*Socket).SharedData).AsyncDisabledEvents &= !Event;
+    (*(*Socket).SharedData).AsyncDisabledEvents &= (!Event as i32);
 
     if ((*(*Socket).SharedData).AsyncEvents & (!(*(*Socket).SharedData).AsyncDisabledEvents)) == 0 {
         return;
@@ -4433,7 +4609,7 @@ pub unsafe extern "C" fn SockReenableAsyncSelectEvent(
 
     NtSetIoCompletion(
         SockAsyncCompletionPort,
-        core::ptr::addr_of!(SockProcessQueuedAsyncSelect) as PVOID,
+        SockProcessQueuedAsyncSelect as *const () as PVOID,
         AsyncData as PVOID,
         0,
         0,
@@ -8589,7 +8765,7 @@ pub unsafe extern "system" fn DllMain(
 //                     0 == (Socket->SharedData->AsyncDisabledEvents & FD_READ))
 //                 {
 //                     /* Make the Notification */
-//                     (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                     (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                                                Socket->SharedData->wMsg,
 //                                                Socket->Handle,
 //                                                WSAMAKESELECTREPLY(FD_READ, 0));
@@ -8603,7 +8779,7 @@ pub unsafe extern "system" fn DllMain(
 //                 0 == (Socket->SharedData->AsyncDisabledEvents & FD_OOB))
 //             {
 //                 /* Make the Notification */
-//                 (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                 (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                                            Socket->SharedData->wMsg,
 //                                            Socket->Handle,
 //                                            WSAMAKESELECTREPLY(FD_OOB, 0));
@@ -8617,7 +8793,7 @@ pub unsafe extern "system" fn DllMain(
 //                     0 == (Socket->SharedData->AsyncDisabledEvents & FD_WRITE))
 //                 {
 //                     /* Make the Notification */
-//                     (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                     (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                                                Socket->SharedData->wMsg,
 //                                                Socket->Handle,
 //                                                WSAMAKESELECTREPLY(FD_WRITE, 0));
@@ -8633,7 +8809,7 @@ pub unsafe extern "system" fn DllMain(
 //                     0 == (Socket->SharedData->AsyncDisabledEvents & FD_CONNECT))
 //                 {
 //                     /* Make the Notification */
-//                     (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                     (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                         Socket->SharedData->wMsg,
 //                         Socket->Handle,
 //                         WSAMAKESELECTREPLY(FD_CONNECT, 0));
@@ -8647,7 +8823,7 @@ pub unsafe extern "system" fn DllMain(
 //                     0 == (Socket->SharedData->AsyncDisabledEvents & FD_ACCEPT))
 //                 {
 //                     /* Make the Notification */
-//                     (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                     (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                                                Socket->SharedData->wMsg,
 //                                                Socket->Handle,
 //                                                WSAMAKESELECTREPLY(FD_ACCEPT, 0));
@@ -8663,7 +8839,7 @@ pub unsafe extern "system" fn DllMain(
 //                     0 == (Socket->SharedData->AsyncDisabledEvents & FD_CLOSE))
 //                 {
 //                     /* Make the Notification */
-//                     (Upcalls.lpWPUPostMessage)(Socket->SharedData->hWnd,
+//                     (Upcalls.lpWPUPostMessage.unwrap())(Socket->SharedData->hWnd,
 //                                                Socket->SharedData->wMsg,
 //                                                Socket->Handle,
 //                                                WSAMAKESELECTREPLY(FD_CLOSE, 0));

@@ -5,7 +5,7 @@ use core::ffi::c_void;
 // GetSocketStructure/MsafdReturnWithErrno/MsafdWaitForAlert/SetSocketInformation now come
 // from misc::dllmain via `use crate::glue::*` (re-exported there). ERR/TRACE stay macro-shims.
 #[no_mangle]
-pub unsafe extern "C" fn WSPEventSelect(
+pub unsafe extern "system" fn WSPEventSelect(
     Handle: SOCKET,
     hEventObject: WSAEVENT,
     lNetworkEvents: i32,
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn WSPEventSelect(
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
@@ -44,13 +44,13 @@ pub unsafe extern "C" fn WSPEventSelect(
     SetSocketInformation(
         Socket,
         AFD_INFO_BLOCKING_MODE,
-        core::ptr::addr_of!(BlockMode) as *const core::ffi::c_void,
-        core::ptr::null(),
-        core::ptr::null(),
-        core::ptr::null(),
-        core::ptr::null(),
+        core::ptr::addr_of!(BlockMode) as *mut u8,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        None,
     );
-    (*(*Socket).SharedData).NonBlocking = 1u8;
+    (*(*Socket).SharedData).__bindgen_anon_1.set_NonBlocking(1u8);
 
     if !(*Socket).EventObject.is_null() {
         (*(*Socket).SharedData).hWnd = core::ptr::null_mut();
@@ -62,42 +62,42 @@ pub unsafe extern "C" fn WSPEventSelect(
     EventSelectInfo.EventObject = hEventObject;
     EventSelectInfo.Events = 0;
 
-    if (lNetworkEvents & FD_READ) != 0 {
+    if (lNetworkEvents & FD_READ as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_RECEIVE;
     }
 
-    if (lNetworkEvents & FD_WRITE) != 0 {
+    if (lNetworkEvents & FD_WRITE as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_SEND;
     }
 
-    if (lNetworkEvents & FD_OOB) != 0 {
+    if (lNetworkEvents & FD_OOB as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_OOB_RECEIVE;
     }
 
-    if (lNetworkEvents & FD_ACCEPT) != 0 {
+    if (lNetworkEvents & FD_ACCEPT as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_ACCEPT;
     }
 
-    if (lNetworkEvents & FD_CONNECT) != 0 {
+    if (lNetworkEvents & FD_CONNECT as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_CONNECT | AFD_EVENT_CONNECT_FAIL;
     }
 
-    if (lNetworkEvents & FD_CLOSE) != 0 {
+    if (lNetworkEvents & FD_CLOSE as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_CLOSE;
     }
 
-    if (lNetworkEvents & FD_QOS) != 0 {
+    if (lNetworkEvents & FD_QOS as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_QOS;
     }
 
-    if (lNetworkEvents & FD_GROUP_QOS) != 0 {
+    if (lNetworkEvents & FD_GROUP_QOS as i32) != 0 {
         EventSelectInfo.Events |= AFD_EVENT_GROUP_QOS;
     }
 
     Status = NtDeviceIoControlFile(
         Handle as HANDLE,
         SockEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(IOSB),
         IOCTL_AFD_EVENT_SELECT,
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn WSPEventSelect(
 
     if Status != STATUS_SUCCESS {
         ERR!(b"Got status 0x%08x.\n\0".as_ptr(), Status);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     (*Socket).EventObject = hEventObject;
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn WSPEventSelect(
     return 0;
 }
 #[no_mangle]
-pub unsafe extern "C" fn WSPEnumNetworkEvents(
+pub unsafe extern "system" fn WSPEnumNetworkEvents(
     Handle: SOCKET,
     hEventObject: WSAEVENT,
     lpNetworkEvents: LPWSANETWORKEVENTS,
@@ -137,20 +137,20 @@ pub unsafe extern "C" fn WSPEnumNetworkEvents(
     let mut IOSB: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut Socket: PSOCKET_INFORMATION = core::ptr::null_mut();
     let mut Status: NTSTATUS;
-    let mut SockEvent: HANDLE;
+    let mut SockEvent: HANDLE = core::ptr::null_mut();
 
     TRACE!(b"Called (lpNetworkEvents %x)\n\0".as_ptr() as _, lpNetworkEvents);
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAENOTSOCK;
+            *lpErrno = WSAENOTSOCK as i32;
         }
         return SOCKET_ERROR;
     }
     if lpNetworkEvents.is_null() {
         if !lpErrno.is_null() {
-            *lpErrno = WSAEFAULT;
+            *lpErrno = WSAEFAULT as i32;
         }
         return SOCKET_ERROR;
     }
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn WSPEnumNetworkEvents(
     Status = NtDeviceIoControlFile(
         Handle as HANDLE,
         SockEvent,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         &mut IOSB,
         IOCTL_AFD_ENUM_NETWORK_EVENTS,
@@ -192,54 +192,54 @@ pub unsafe extern "C" fn WSPEnumNetworkEvents(
 
     if Status != STATUS_SUCCESS {
         ERR!(b"Status 0x%08x\n\0".as_ptr() as _, Status);
-        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut());
+        return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
     (*lpNetworkEvents).lNetworkEvents = 0;
 
     if EnumReq.PollEvents & AFD_EVENT_RECEIVE != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_READ;
+        (*lpNetworkEvents).lNetworkEvents |= FD_READ as i32;
         (*lpNetworkEvents).iErrorCode[FD_READ_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_READ_BIT as usize]);
     }
 
     if EnumReq.PollEvents & AFD_EVENT_SEND != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_WRITE;
+        (*lpNetworkEvents).lNetworkEvents |= FD_WRITE as i32;
         (*lpNetworkEvents).iErrorCode[FD_WRITE_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_WRITE_BIT as usize]);
     }
 
     if EnumReq.PollEvents & AFD_EVENT_OOB_RECEIVE != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_OOB;
+        (*lpNetworkEvents).lNetworkEvents |= FD_OOB as i32;
         (*lpNetworkEvents).iErrorCode[FD_OOB_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_OOB_BIT as usize]);
     }
 
     if EnumReq.PollEvents & AFD_EVENT_ACCEPT != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_ACCEPT;
+        (*lpNetworkEvents).lNetworkEvents |= FD_ACCEPT as i32;
         (*lpNetworkEvents).iErrorCode[FD_ACCEPT_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_ACCEPT_BIT as usize]);
     }
 
     if EnumReq.PollEvents & (AFD_EVENT_CONNECT | AFD_EVENT_CONNECT_FAIL) != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_CONNECT;
+        (*lpNetworkEvents).lNetworkEvents |= FD_CONNECT as i32;
         (*lpNetworkEvents).iErrorCode[FD_CONNECT_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_CONNECT_BIT as usize]);
     }
 
     if EnumReq.PollEvents & (AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_CLOSE) != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_CLOSE;
+        (*lpNetworkEvents).lNetworkEvents |= FD_CLOSE as i32;
         (*lpNetworkEvents).iErrorCode[FD_CLOSE_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_CLOSE_BIT as usize]);
     }
 
     if EnumReq.PollEvents & AFD_EVENT_QOS != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_QOS;
+        (*lpNetworkEvents).lNetworkEvents |= FD_QOS as i32;
         (*lpNetworkEvents).iErrorCode[FD_QOS_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_QOS_BIT as usize]);
     }
 
     if EnumReq.PollEvents & AFD_EVENT_GROUP_QOS != 0 {
-        (*lpNetworkEvents).lNetworkEvents |= FD_GROUP_QOS;
+        (*lpNetworkEvents).lNetworkEvents |= FD_GROUP_QOS as i32;
         (*lpNetworkEvents).iErrorCode[FD_GROUP_QOS_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_GROUP_QOS_BIT as usize]);
     }
 
     TRACE!(b"Leaving\n\0".as_ptr() as _);
 
-    MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, core::ptr::null_mut())
+    MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, core::ptr::null_mut()) as i32
 }
 
 

@@ -567,6 +567,7 @@ case "$DRIVER" in
     USERMODE=1
     BLOCKLIST_FUNCS=1
     BLOCKLIST_VARS=1   # msafd defines its own module globals (SockEvent/GlobalHeap/Upcalls/...)
+    CALLBACK_SYSTEM=1  # LPWSP*/upcall fn-ptr types -> extern "system" (match the "system" WSP defs)
     # MACRO_SIGNED left OFF: tried signed winsock consts to kill the Status=WSAExxx (i32=u32)
     # E0308 flood, but the translation mixes int/DWORD/handle loosely, so signed just traded
     # those for the reverse (u32-param = i32-const) set and NET-increased E0308 325->458. The
@@ -855,6 +856,18 @@ PYEOF
     # Strip `pub static [mut] Name: T;` extern-global lines (msafd owns these in the
     # translation). Leaves the surrounding `extern "C" { ... }` block valid even if emptied.
     sed -i -E '/^[[:space:]]*pub static (mut )?[A-Za-z_][A-Za-z0-9_]*:/d' "$FINAL"
+  fi
+  if [ "${CALLBACK_SYSTEM:-0}" = 1 ]; then
+    # Normalize fn-POINTER-TYPE calling conventions to the portable `extern "system"`.
+    # bindgen spells WINAPI/stdcall callbacks (LPWSP*, upcall-table members, ...) as
+    # `extern "stdcall"` on i386 and `extern "C"` on amd64/arm64. The translation defines the
+    # WSP entrypoints as `extern "system"` (the portable per-arch form, same ABI), and Rust
+    # does NOT unify "system" with a literal "stdcall"/"C" fn-pointer type -> E0308 on every
+    # WSPPROC_TABLE assignment. Rewriting the types to "system" (ABI-identical, same as what
+    # postprocess_bindgen.py does for the ntddk callback types) makes them unify on all arches.
+    # BLOCKLIST_FUNCS drops all fn *declarations*, so every remaining `extern "X" fn` is a
+    # fn-pointer TYPE -> a blanket rewrite is safe.
+    sed -i -E 's/extern "stdcall" fn/extern "system" fn/g; s/extern "C" fn/extern "system" fn/g' "$FINAL"
   fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }

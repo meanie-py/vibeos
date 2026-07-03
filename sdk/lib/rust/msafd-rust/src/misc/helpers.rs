@@ -13,7 +13,6 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
     fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    static GlobalHeap: *mut core::ffi::c_void;
     static HKEY_LOCAL_MACHINE: HKEY;
     fn ExpandEnvironmentStringsW(lpSrc: PWSTR, lpDst: PWSTR, nSize: u32) -> u32;
     fn GetProcAddress(hModule: HMODULE, lpProcName: *const i8) -> *mut core::ffi::c_void;
@@ -35,10 +34,10 @@ pub unsafe extern "C" fn SockGetTdiName(
     HelperDllData: *mut PHELPER_DATA,
     Events: PDWORD,
 ) -> INT {
-    let mut HelperData: PHELPER_DATA;
-    let mut Transports: PWSTR;
+    let mut HelperData: PHELPER_DATA = core::ptr::null_mut();
+    let mut Transports: PWSTR = core::ptr::null_mut();
     let mut Transport: PWSTR;
-    let mut Mapping: PWINSOCK_MAPPING;
+    let mut Mapping: PWINSOCK_MAPPING = core::ptr::null_mut();
     let mut Helpers: PLIST_ENTRY;
     let mut Status: INT;
 
@@ -72,7 +71,7 @@ pub unsafe extern "C" fn SockGetTdiName(
                     SocketType,
                     Protocol,
                     TransportName,
-                    HelperDllContext,
+                    HelperDllContext as *mut c_void,
                     Events,
                 );
             } else {
@@ -130,7 +129,7 @@ pub unsafe extern "C" fn SockGetTdiName(
                     SocketType,
                     Protocol,
                     TransportName,
-                    HelperDllContext,
+                    HelperDllContext as *mut c_void,
                     Events,
                 );
             } else {
@@ -169,7 +168,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
 
     if TransportKey.is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr());
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     wcscpy(TransportKey, b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0".as_ptr() as *const u16);
@@ -183,7 +182,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
 
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     let mut MappingSize: ULONG = 0;
@@ -191,14 +190,14 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
 
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     *Mapping = HeapAlloc(GlobalHeap, 0, MappingSize as usize) as PWINSOCK_MAPPING;
 
     if (*Mapping).is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr());
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     let Status = RegQueryValueExW(KeyHandle, b"M\0a\0p\0p\0i\0n\0g\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), *Mapping as LPBYTE, &mut MappingSize as PDWORD);
@@ -206,7 +205,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
         HeapFree(GlobalHeap, 0, *Mapping as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     RegCloseKey(KeyHandle);
@@ -215,7 +214,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
 #[no_mangle]
 pub unsafe extern "C" fn SockLoadTransportList(
     TransportList: *mut PWSTR
-) -> PINT {
+) -> INT {
     let mut TransportListSize: u32 = 0;
     let mut KeyHandle: HKEY = core::ptr::null_mut();
     let mut Status: i32;
@@ -232,7 +231,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
 
     if Status != 0 {
         ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     Status = RegQueryValueExW(
@@ -246,14 +245,14 @@ pub unsafe extern "C" fn SockLoadTransportList(
 
     if Status != 0 {
         ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     *TransportList = HeapAlloc(GlobalHeap, 0, TransportListSize as usize) as PWSTR;
 
     if (*TransportList).is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     Status = RegQueryValueExW(
@@ -268,7 +267,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
     if Status != 0 {
         ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, *TransportList as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     RegCloseKey(KeyHandle);
@@ -289,7 +288,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
 
     if HelperData.is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     let HelperKey: PWSTR = HeapAlloc(
@@ -301,7 +300,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     if HelperKey.is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     wcscpy(HelperKey, b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0\0".as_ptr() as PWSTR);
@@ -316,7 +315,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     if Status != 0 {
         ERR!(b"Error reading helper DLL parameters\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     let mut DataSize: u32 = core::mem::size_of::<u32>() as u32;
@@ -359,7 +358,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     if HelperDllName.is_null() {
         ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     let FullHelperDllName: PWSTR = HeapAlloc(GlobalHeap, 0, 512) as PWSTR;
@@ -368,7 +367,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
         ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, HelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     DataSize = 512;
@@ -386,12 +385,12 @@ pub unsafe extern "C" fn SockLoadHelperDll(
         HeapFree(GlobalHeap, 0, FullHelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     ExpandEnvironmentStringsW(HelperDllName, FullHelperDllName, 256);
 
-    (*HelperData).hInstance = LoadLibraryW(FullHelperDllName);
+    (*HelperData).hInstance = LoadLibraryW(FullHelperDllName) as HANDLE;
 
     HeapFree(GlobalHeap, 0, HelperDllName as *mut core::ffi::c_void);
     HeapFree(GlobalHeap, 0, FullHelperDllName as *mut core::ffi::c_void);
@@ -399,57 +398,57 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     if (*HelperData).hInstance.is_null() {
         ERR!(b"Error loading helper DLL\n\0".as_ptr() as *const i8);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
-        return WSAEINVAL;
+        return WSAEINVAL as INT;
     }
 
     RegCloseKey(KeyHandle);
 
     (*HelperData).WSHOpenSocket = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHOpenSocket\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHOpenSocket2 = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHOpenSocket2\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHJoinLeaf = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHJoinLeaf\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHNotify = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHNotify\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHGetSocketInformation = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHGetSocketInformation\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHSetSocketInformation = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHSetSocketInformation\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHGetSockaddrType = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHGetSockaddrType\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHGetWildcardSockaddr = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHGetWildcardSockaddr\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHGetBroadcastSockaddr = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHGetBroadcastSockaddr\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHAddressToString = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHAddressToString\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHStringToAddress = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHStringToAddress\0".as_ptr() as *const i8,
     ));
     (*HelperData).WSHIoctl = core::mem::transmute(GetProcAddress(
-        (*HelperData).hInstance,
+        (*HelperData).hInstance as HMODULE,
         b"WSHIoctl\0".as_ptr() as *const i8,
     ));
 
@@ -679,7 +678,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (TransportKey == NULL) {
 //         ERR("Buffer allocation failed\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Generate the right key name */
@@ -696,7 +695,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (Status) {
 //         ERR("Error reading transport mapping registry\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Find out how much space we need for the Mapping */
@@ -705,7 +704,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (Status) {
 //         ERR("Error reading transport mapping registry\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Allocate Memory for the Mapping */
@@ -714,7 +713,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (*Mapping == NULL) {
 //         ERR("Buffer allocation failed\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Read the Mapping */
@@ -724,7 +723,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (Status) {
 //         ERR("Error reading transport mapping registry\n");
 //         HeapFree(GlobalHeap, 0, *Mapping);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Close key and return */
@@ -752,7 +751,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (Status) {
 //         ERR("Error reading transport list registry\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Get the Transport List Size */
@@ -766,7 +765,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (Status) {
 //         ERR("Error reading transport list registry\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Allocate Memory for the Transport List */
@@ -775,7 +774,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (*TransportList == NULL) {
 //         ERR("Buffer allocation failed\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Get the Transports */
@@ -790,7 +789,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (Status) {
 //         ERR("Error reading transport list registry\n");
 //         HeapFree(GlobalHeap, 0, *TransportList);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Close key and return */
@@ -818,7 +817,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     /* Check for error */
 //     if (HelperData == NULL) {
 //         ERR("Buffer allocation failed\n");
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Allocate Space for the Helper DLL Key */
@@ -828,7 +827,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (HelperKey == NULL) {
 //         ERR("Buffer allocation failed\n");
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Generate the right key name */
@@ -845,7 +844,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (Status) {
 //         ERR("Error reading helper DLL parameters\n");
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Read Size of SockAddr Structures */
@@ -887,7 +886,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (HelperDllName == NULL) {
 //         ERR("Buffer allocation failed\n");
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     FullHelperDllName = HeapAlloc(GlobalHeap, 0, 512);
@@ -897,7 +896,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //         ERR("Buffer allocation failed\n");
 //         HeapFree(GlobalHeap, 0, HelperDllName);
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Get the name of the Helper DLL*/
@@ -915,7 +914,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //         HeapFree(GlobalHeap, 0, FullHelperDllName);
 //         HeapFree(GlobalHeap, 0, HelperDllName);
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Get the Full name, expanding Environment Strings */
@@ -932,7 +931,7 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 //     if (HelperData->hInstance == NULL) {
 //         ERR("Error loading helper DLL\n");
 //         HeapFree(GlobalHeap, 0, HelperData);
-//         return WSAEINVAL;
+//         return WSAEINVAL as INT;
 //     }
 //
 //     /* Close Key */

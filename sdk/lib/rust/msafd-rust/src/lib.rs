@@ -20,3 +20,15 @@ pub mod types; // winsock2/WSP + wsahelp + AFD shared.h + msafd-private struct l
 #[macro_use]
 pub mod glue; // #define consts / type aliases / macro shims the substrate needs
 pub mod misc; // the 5 translated translation units
+
+// staticlib (libmsafd_rust.a) needs a panic handler + eh personality (no_std cohab),
+// gated off for `cargo test` where std provides them. Mirrors afd-rust/cdfs-rust.
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
