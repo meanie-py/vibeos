@@ -2005,3 +2005,57 @@ Boot the LiveCD ISO from OVMF on the **i440fx `-M pc`** machine — *not* q35. i
 - **Boot device:** `-device ide-cd,drive=cd0,bootindex=0`. A bare `-cdrom` does **not** auto-boot — without an explicit `bootindex=0`, OVMF drops to the UEFI shell.
 - **Writable VARS pflash must be qcow2** (convert the raw OVMF VARS → qcow2) for QMP `savevm`/snapshot to work; a raw VARS pflash blocks snapshotting.
 - **Rebuild the ISO after touching the loader.** The LiveCD ISO's EFI El Torito entry loads `EFI/BOOT/boot<plat>.efi` (`EFI_PLATFORM_ID` ia32/x64/aa64), which folds in `uefildr` — re-run `ninja livecd` after `ninja uefildr` or you boot a **stale ISO**.
+
+### 9.12 A cross-thread `WaitForSingleObject(..., INFINITE)` on a cosmetic UI element is a boot-wedge — the win32k dialog-creation race behind the amd64 status-window hang
+
+**Symptom.** amd64 **cold** builds hung ~1-in-3 during winlogon init (i386/arm64 cold
+booted fine). Last boot marker was between `[WINLOGON] GinaInit returned` and
+`[WINLOGON] Init complete. Spawning explorer.exe...`, then dead. *Warm* amd64 builds
+booted green — the classic "cargo-incremental masks it, the clean build reveals it"
+(§North Star): the first genuinely-cold amd64 rebuild in a while (forced by the
+canonical-build-path cutover) exposed a latent race that stale objects had been hiding.
+
+**Localization technique (breadcrumb bracketing).** Because it was a *timing* race
+(same binary passed run 1, hung run 3), single-step DbgPrints both perturbed it and
+localized it. Bracket the suspect region with a print *before* and *after* each call;
+the last one printed on a hang names the blocking call. Here that walked it down to
+`msgina!GUIDisplayStatusMessage` → worker thread `StartupWindowThread` →
+`DialogBoxParamW` **entered but `WM_INITDIALOG` never dispatched**. (`gui.rs`.)
+
+**Root cause (two layers).**
+1. *win32k (the real defect, still open):* `DialogBoxParamW` on the winlogon desktop
+   occasionally never reaches `WM_INITDIALOG` — window/dialog creation stalls inside
+   win32k under amd64-cold timing. Would also bite any real dialog (SAS/logon) outside
+   autologon. **Tracked as an open win32k item; not yet root-caused.**
+2. *msgina/winlogon (the wedge amplifier, FIXED):* the status window is created on a
+   worker thread while the winlogon main thread blocks on
+   `WaitForSingleObject(StartupEvent, INFINITE)`, and `StartupEvent` is only signaled
+   from **inside `WM_INITDIALOG`**. So *any* failure to reach `WM_INITDIALOG` (the
+   win32k race, or the two pre-`return 0` early exits in the worker) hangs the entire
+   logon session **forever**. A cosmetic boot-splash must never be able to do that.
+
+**The reusable bug class.** `INFINITE` cross-thread waits where the wakeup lives on a
+*single* success path (one window message, one callback) are latent total-hangs: every
+error/early-return/race that skips that one path wedges the waiter permanently. Faithful
+C→Rust translations inherit this from upstream (ReactOS's C has the identical
+`INFINITE` + shallow-pointer-copy shape) — it only stays invisible while the substrate
+(here win32k) is reliable. When our translated substrate has a race the original didn't,
+these INFINITE waits convert a soft failure into a boot-blocker.
+
+**The fix (defensive, lifetime-correct).** In `GUIDisplayStatusMessage`:
+- **Bounded wait**, not `INFINITE` (`STATUS_WINDOW_TIMEOUT_MS = 20s`): on timeout the
+  session proceeds without the cosmetic splash instead of hanging.
+- **Deep-copy the title/message** (`DuplicateString`) into worker-owned heap before
+  releasing the caller — the originals are winlogon stack buffers
+  (`DisplayStatusMessage`'s `StatusMsg[]`), so a bounded wait that lets the caller
+  return-and-unwind would otherwise leave the worker reading freed stack (use-after-
+  scope). The worker frees them via `FreeStatusMsg`.
+- **Signal `StartupEvent` on *every* worker exit path** (both early `return 0`s), so a
+  pre-window failure releases the caller immediately rather than after the full timeout.
+- On timeout, do **not** close the event / free `msg` — the (possibly still-running)
+  worker owns them; a one-time boot-only leak beats a double-free.
+
+**Takeaway.** When a clean build newly-exposes a hang the warm build hid, suspect a
+race the stale objects were masking — and audit any `WaitForSingleObject(…, INFINITE)`
+whose signal sits on a lone happy path; make the wait bounded and the shared state
+owned by the side that outlives the wait.

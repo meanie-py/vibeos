@@ -72,6 +72,12 @@ pub type PLEGALNOTICEDATA = *mut _LEGALNOTICEDATA;
 
 pub const IDT_BAR: u32 = 1;
 
+// Bounded wait for the boot status window to come up (GUIDisplayStatusMessage).
+// Generous — the dialog normally initializes in milliseconds; this only caps the
+// pathological win32k dialog-creation race so winlogon can't hang the session.
+const STATUS_WINDOW_TIMEOUT_MS: DWORD = 20_000;
+const WAIT_OBJECT_0_LOCAL: DWORD = 0; // WAIT_OBJECT_0 (avoid glob-import ambiguity)
+
 #[repr(C)]
 pub struct _DLG_DATA {
     pub pgContext: PGINA_CONTEXT,
@@ -453,16 +459,26 @@ unsafe fn StartupWindowThread(lpParam: LPVOID) -> u32 {
     ) == 0
     {
         ERR!(b"Duplicating handle failed!\n".as_ptr() as *const i8);
-        HeapFree(GetProcessHeap(), 0, lpParam);
+        // Release the (INFINITE-)waiting caller BEFORE tearing down — otherwise a
+        // pre-window failure wedges winlogon forever (see FreeStatusMsg + the
+        // GUIDisplayStatusMessage bounded-wait note).
+        SetEvent((*msg).StartupEvent);
+        FreeStatusMsg(msg);
         return 0;
     }
 
     if SetThreadDesktop(hDesk) == 0 {
         ERR!(b"Setting thread desktop failed!\n".as_ptr() as *const i8);
-        HeapFree(GetProcessHeap(), 0, lpParam);
+        SetEvent((*msg).StartupEvent);
+        FreeStatusMsg(msg);
         return 0;
     }
 
+    // DialogBoxParamW blocks until EndDialog (the status window is persistent), so
+    // the caller is released from WM_INITDIALOG via SetEvent, NOT from here. If the
+    // dialog never reaches WM_INITDIALOG (a win32k window-creation race observed on
+    // amd64 cold builds — see the header note in GUIDisplayStatusMessage), this
+    // never returns; the caller's bounded wait keeps boot moving regardless.
     DialogBoxParamW(
         hDllInstance,
         IDD_STATUS as *const u16,
@@ -471,8 +487,24 @@ unsafe fn StartupWindowThread(lpParam: LPVOID) -> u32 {
         msg as LPARAM,
     );
 
-    HeapFree(GetProcessHeap(), 0, lpParam);
+    FreeStatusMsg(msg);
     1
+}
+
+/// Free a DISPLAYSTATUSMSG and the title/message copies it owns (see the deep-copy
+/// in GUIDisplayStatusMessage). The StartupEvent is owned by the caller, which
+/// closes it after its wait — not freed here.
+unsafe fn FreeStatusMsg(msg: PDISPLAYSTATUSMSG) {
+    if msg.is_null() {
+        return;
+    }
+    if !(*msg).pTitle.is_null() {
+        LocalFree((*msg).pTitle as HLOCAL);
+    }
+    if !(*msg).pMessage.is_null() {
+        LocalFree((*msg).pMessage as HLOCAL);
+    }
+    HeapFree(GetProcessHeap(), 0, msg as *mut core::ffi::c_void);
 }
 
 pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
@@ -509,8 +541,13 @@ pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
 
         (*msg).Context = pgContext;
         (*msg).dwOptions = dwOptions;
-        (*msg).pTitle = pTitle;
-        (*msg).pMessage = pMessage;
+        // Deep-copy the title/message: the caller passes stack buffers (winlogon's
+        // DisplayStatusMessage StatusMsg[]), and the bounded wait below lets the
+        // caller return — and unwind that stack — while the worker may still be
+        // creating the window. Owning heap copies removes the use-after-scope. The
+        // worker frees them via FreeStatusMsg.
+        (*msg).pTitle = DuplicateString(pTitle);
+        (*msg).pMessage = DuplicateString(pMessage);
         (*msg).hDesktop = hDesktop;
 
         (*msg).StartupEvent = CreateEventW(
@@ -520,7 +557,7 @@ pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
             core::ptr::null_mut(),
         );
         if (*msg).StartupEvent == core::ptr::null_mut() {
-            HeapFree(GetProcessHeap(), 0, msg as *mut core::ffi::c_void);
+            FreeStatusMsg(msg);
             return 0i32;
         }
 
@@ -534,11 +571,28 @@ pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
         );
         if Thread != core::ptr::null_mut() {
             CloseHandle(Thread);
-            WaitForSingleObject((*msg).StartupEvent, INFINITE);
-            CloseHandle((*msg).StartupEvent);
+            // BOUNDED wait, not INFINITE: the status window is cosmetic boot
+            // eye-candy, and a win32k dialog-creation race (observed on amd64 cold
+            // builds: DialogBoxParamW never dispatches WM_INITDIALOG, so the worker
+            // never SetEvents) must never wedge the whole logon session forever.
+            // On timeout we proceed; the worker owns msg + its string copies + the
+            // event and cleans up if/when the dialog ever completes (else a small,
+            // one-time, boot-only leak). The underlying win32k race is tracked
+            // separately (see docs/engineering — winlogon status-dialog hang).
+            let wr = WaitForSingleObject((*msg).StartupEvent, STATUS_WINDOW_TIMEOUT_MS);
+            if wr == WAIT_OBJECT_0_LOCAL {
+                CloseHandle((*msg).StartupEvent);
+            } else {
+                ERR!(
+                    b"WlxDisplayStatusMessage: status window timed out (0x%lx); proceeding\n\0"
+                        .as_ptr() as *const i8,
+                    wr,
+                );
+                // Leave StartupEvent + msg to the worker; do not close/free here.
+            }
             return 1i32;
         } else {
-            HeapFree(GetProcessHeap(), 0, msg as *mut core::ffi::c_void);
+            FreeStatusMsg(msg);
         }
 
         return 0i32;
