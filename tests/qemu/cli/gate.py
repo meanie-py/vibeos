@@ -1,0 +1,239 @@
+"""`vibeos-cli gate` — the parallel pre-land verdict driver.
+
+The North Star discipline is "gate smoke ×3 (all arches green) before landing".
+Historically that meant running `vibeos-cli smoke --arch <a>` three times by hand,
+serially — sum of every arch's boot time, plus a manual re-run every time the
+amd64 storage KNOWN_FLAKE (or an arm64/i386 documented flake) tripped. On the
+default `windows-host` TCG backend every per-run resource is already unique
+(staging subdir/ports/-name uid/reaper key are pid+port scoped — see
+tests/qemu/vm.py:892-902) and the per-arch cap is bypassed (vm.py:1295-1299), so
+concurrent same-arch AND cross-arch boots are collision-safe. The only thing that
+was serial was the *orchestrator* — i.e. the human. This driver removes that:
+
+  1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
+     are a separate follow-up, see docs/engineering). Opt out with --no-build.
+  2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
+  3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY / contended
+     HANG_TIMEOUT) triggers up to --retries concurrent fresh attempts; the arch
+     passes on the first green. A fresh regression (BUGCHECK / RUST_PANIC /
+     FAIL_MARKER / STALE_MEDIA / UNKNOWN) is NEVER retried — retrying would hide
+     it, which is exactly what the North Star forbids.
+  4. a results matrix — every arch's final verdict + attempt count + flake note.
+     Exit 0 only if every arch is ultimately green.
+
+Concurrency is safe to over-submit: each smoke subprocess self-throttles on the
+host CPU-lease pool (hostlock, DEFAULT_CPU_LEASES=4) and the global QEMU cap
+(vm.py QEMU_MAX_CONCURRENT=10). The executor just needs enough workers to not
+re-serialize; the harness does the real throttling.
+"""
+
+from __future__ import annotations
+
+import concurrent.futures as cf
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+from . import archcfg
+from .artifacts import Run, Stage
+
+# A failure with one of these classifications is a *documented* flake or a
+# host-contention timeout — safe to retry. Anything else (a BUGCHECK, a Rust
+# panic, a hit fail-marker, stale media, an unknown red) is treated as a real
+# regression and fails the arch immediately: retrying a regression away is the
+# anti-pattern the North Star exists to prevent.
+RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "HANG_TIMEOUT"}
+
+
+def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
+    """Run one `vibeos-cli smoke --arch <arch>` in its own artifact root so its
+    summary.json is locatable deterministically. Returns a compact result dict."""
+    root.mkdir(parents=True, exist_ok=True)
+    cmd = [str(repo / "vibeos-cli"), "smoke", "--arch", arch, *extra]
+    env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    summary = _read_summary(root)
+    verdict = summary.get("verdict", "FAIL" if proc.returncode else "OK")
+    classification = summary.get("classification", "") or ("" if proc.returncode == 0 else "FAIL")
+    return {
+        "arch": arch,
+        "verdict": verdict,
+        "classification": classification,
+        "ok": verdict in ("OK", "WARN"),
+        "retryable": classification in RETRYABLE,
+        "seconds": dt,
+        "run_dir": summary.get("_dir", str(root)),
+        "flake_rate": summary.get("flake_rate"),
+        "screenshot": summary.get("screenshot"),
+        "salient": _first_salient(summary),
+    }
+
+
+def _read_summary(root: Path) -> dict:
+    """The smoke subprocess writes <root>/<ts>-smoke-<arch>/summary.json. The root
+    is unique per attempt, so glob finds exactly one."""
+    hits = sorted(root.glob("*/summary.json"))
+    if not hits:
+        return {}
+    try:
+        data = json.loads(hits[-1].read_text())
+    except (OSError, ValueError):
+        return {}
+    data["_dir"] = str(hits[-1].parent)
+    return data
+
+
+def _first_salient(summary: dict) -> str:
+    for st in summary.get("stages", []):
+        if st.get("status") in ("fail", "warn"):
+            for s in st.get("salient", []):
+                return str(s)
+    return ""
+
+
+def _resolve_arches(raw: str | None) -> list[str]:
+    if not raw:
+        return ["i386", "amd64", "arm64"]
+    out: list[str] = []
+    for tok in raw.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        out.append(archcfg.base_arch(tok))
+    return out
+
+
+def gate(args, repo: Path) -> int:
+    arches = _resolve_arches(getattr(args, "arches", None))
+    retries = max(0, int(getattr(args, "retries", 2) or 0))
+    do_build = not getattr(args, "no_build", False)
+    smoke_extra: list[str] = []
+    if getattr(args, "no_net", False):
+        smoke_extra.append("--no-net")
+
+    run = Run("gate", "+".join(arches))
+    gate_root = run.dir
+
+    # --- phase 1: builds (serial — exclusive host CPU lease) ---
+    if do_build:
+        for arch in arches:
+            bt0 = time.monotonic()
+            cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
+            if getattr(args, "clean", False):
+                cmd.append("--clean")
+            cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
+            bdt = time.monotonic() - bt0
+            if cp.returncode != 0:
+                run.add(
+                    Stage(
+                        f"build:{arch}",
+                        exit=cp.returncode,
+                        seconds=bdt,
+                        status="fail",
+                        detail="build failed",
+                        salient=[f"vibeos-cli build --arch {arch} exited {cp.returncode}"],
+                    )
+                )
+                # a build failure is fatal for that arch; keep building the rest so
+                # the matrix is complete, but this arch won't smoke (filtered below).
+            else:
+                run.add(Stage(f"build:{arch}", seconds=bdt, status="ok", detail="built"))
+        built = {
+            s.name.split(":", 1)[1]
+            for s in run.stages
+            if s.name.startswith("build:") and s.status == "ok"
+        }
+        arches = [a for a in arches if a in built]
+        if not arches:
+            run.classification = "BUILD_FAIL"
+            return run.finalize(repo)
+
+    # --- phase 2: first-pass smokes, all arches in parallel ---
+    max_workers = min(len(arches) * (1 + retries), 12) or 1
+    results: dict[str, dict] = {}
+    with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        fut = {
+            ex.submit(_smoke_once, repo, a, gate_root / f"smoke-{a}-a1", smoke_extra): a
+            for a in arches
+        }
+        for f in cf.as_completed(fut):
+            r = f.result()
+            results[r["arch"]] = r
+
+        # --- phase 3: parallel flake-retries for retryable failures ---
+        pending = [a for a in arches if not results[a]["ok"] and results[a]["retryable"]]
+        if pending and retries > 0:
+            run.log(
+                f"flake-retry: {', '.join(pending)} "
+                f"({', '.join(results[a]['classification'] for a in pending)}) "
+                f"— up to {retries} parallel attempts each",
+                header="flake-retry",
+            )
+            retry_fut = {}
+            for a in pending:
+                for k in range(retries):
+                    root = gate_root / f"smoke-{a}-r{k + 1}"
+                    retry_fut[ex.submit(_smoke_once, repo, a, root, smoke_extra)] = a
+            # collect all retries; an arch passes on its first green attempt.
+            for f in cf.as_completed(retry_fut):
+                r = f.result()
+                a = r["arch"]
+                prev = results[a]
+                r["attempts"] = prev.get("attempts", 1) + 1
+                # keep the best: a green retry supersedes the failed first pass.
+                if r["ok"] and not prev["ok"]:
+                    r["recovered"] = True
+                    r["first_classification"] = prev.get("classification", "")
+                    results[a] = r
+                else:
+                    prev["attempts"] = r["attempts"]
+
+    # --- verdict matrix ---
+    for arch in _resolve_arches(getattr(args, "arches", None)):
+        r = results.get(arch)
+        if r is None:
+            continue  # build-failed arch already has its Stage
+        status = "ok" if r["ok"] else "fail"
+        bits = [r["verdict"] if r["ok"] else r.get("classification", "FAIL")]
+        att = r.get("attempts", 1)
+        if att > 1:
+            bits.append(f"{att} attempts")
+        if r.get("recovered"):
+            bits.append("recovered-after-flake")
+        if r.get("flake_rate"):
+            bits.append(f"flake {r['flake_rate']}")
+        detail = ", ".join(bits)
+        salient = []
+        if not r["ok"] and r.get("salient"):
+            salient.append(r["salient"])
+        if r["ok"] and r.get("recovered"):
+            first = r.get("first_classification") or "a flake"
+            salient.append(f"first pass was {first}; passed on retry")
+        run.add(
+            Stage(
+                f"smoke:{arch}",
+                seconds=r["seconds"],
+                status=status,
+                detail=detail,
+                salient=salient,
+            )
+        )
+        if not r["ok"] and not run.classification:
+            run.classification = r.get("classification", "FAIL")
+
+    run.extra["arches"] = arches
+    run.extra["matrix"] = {
+        a: {
+            "verdict": r["verdict"],
+            "classification": r["classification"],
+            "attempts": r.get("attempts", 1),
+            "recovered": bool(r.get("recovered")),
+            "run_dir": r["run_dir"],
+        }
+        for a, r in results.items()
+    }
+    return run.finalize(repo)

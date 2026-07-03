@@ -82,7 +82,14 @@ def per_arch_cap(arch: str) -> int:
     this serializes SAME-ARCH boots, which contend on /dev/kvm + the shared IDE
     path the global count is blind to (two i386/amd64 KVM guests starve each
     other into false HANG_TIMEOUTs). KVM arches default to 1 (strict serialize);
-    arm64 (TCG, no accelerator contention) defaults to 0 = uncapped."""
+    arm64 (TCG, no accelerator contention) defaults to 0 = uncapped.
+
+    NOTE: this cap only applies to backends that actually share an accelerator —
+    native+KVM and windows-host+WHPX. The DEFAULT windows-host TCG backend runs
+    each guest off-host with no shared accelerator/IDE, so _acquire_arch_slot()
+    early-returns BEFORE consulting this cap (vm.py, see its docstring) and
+    same-arch boots run in parallel. This function is still the source of the cap
+    value for the backends that need it."""
     base = arch.replace("-uefi", "").replace("-test", "")
     if base == "i386":
         return int(

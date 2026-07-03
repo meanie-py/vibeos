@@ -1430,3 +1430,101 @@ def test_canon_ensure_toolchain_missing(tmp_path, monkeypatch):
     repo.mkdir()
     monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
     assert canon_mod.ensure_toolchain(repo) is False
+
+
+# --- gate: parallel driver retry/verdict logic (no QEMU) -------------------
+
+from argparse import Namespace  # noqa: E402
+
+from . import gate as gate_mod  # noqa: E402
+
+
+def _gate_args(**kw):
+    base = dict(arches="i386,amd64,arm64", retries=2, no_build=True, clean=False, no_net=False)
+    base.update(kw)
+    return Namespace(**base)
+
+
+def _fake_smoke(mapping):
+    """Return a stand-in for gate._smoke_once. `mapping[arch]` is a list of
+    per-attempt verdicts, e.g. ['KNOWN_FLAKE', 'OK']. Attempt index derives from
+    the root dir suffix (a1 = first pass, r1/r2 = retries)."""
+    calls: dict[str, int] = {}
+
+    def fake(repo, arch, root, extra):
+        seq = mapping[arch]
+        name = root.name  # smoke-<arch>-a1 / smoke-<arch>-r1 ...
+        if name.endswith("-a1"):
+            idx = 0
+        else:
+            idx = 1 + int(name.rsplit("-r", 1)[1]) - 1
+        idx = min(idx, len(seq) - 1)
+        calls[f"{arch}:{name}"] = calls.get(f"{arch}:{name}", 0) + 1
+        verdict = seq[idx]
+        ok = verdict in ("OK", "WARN")
+        return {
+            "arch": arch,
+            "verdict": verdict if ok else "FAIL",
+            "classification": "" if ok else verdict,
+            "ok": ok,
+            "retryable": verdict in gate_mod.RETRYABLE,
+            "seconds": 0.01,
+            "run_dir": str(root),
+            "flake_rate": None,
+            "screenshot": None,
+            "salient": "" if ok else f"{verdict} detail",
+        }
+
+    fake.calls = calls
+    return fake
+
+
+def test_gate_all_green_no_retries(tmp_path, monkeypatch):
+    monkeypatch.setattr(gate_mod, "ARTIFACT_ROOT_UNUSED", None, raising=False)
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(), tmp_path)
+    assert rc == 0
+    # no retry dirs requested
+    assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_flake_recovers_on_retry(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE", "OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(), tmp_path)
+    assert rc == 0, "a documented flake that goes green on retry must pass the gate"
+    # amd64 was retried
+    assert any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_bugcheck_not_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["BUGCHECK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(), tmp_path)
+    assert rc == 1, "a real regression must fail the gate"
+    # a non-retryable classification must NOT trigger retries (would hide the bug)
+    assert not any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_flake_stays_red_if_all_retries_fail(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(retries=2), tmp_path)
+    assert rc == 1, "a flake that never recovers must still fail (hides nothing)"
+    # it DID retry (2 parallel attempts)
+    retry_calls = [k for k in fake.calls if k.startswith("amd64:") and "-r" in k]
+    assert len(retry_calls) == 2, fake.calls
+
+
+def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["KNOWN_FLAKE", "OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(arches="i386", retries=0), tmp_path)
+    assert rc == 1
+    assert not any("-r" in k for k in fake.calls), fake.calls

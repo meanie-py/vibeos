@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
+from . import gate as gate_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
 from . import smoke as smoke_mod
@@ -82,6 +83,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the folded netstack net-suite stage (amd64 only; default-on)",
     )
     s.set_defaults(fn=smoke_mod.smoke)
+
+    g = sub.add_parser(
+        "gate", help="parallel pre-land verdict: build+smoke all arches, auto-retry flakes"
+    )
+    g.add_argument(
+        "--arches",
+        default=None,
+        help="comma list (default i386,amd64,arm64); i386/amd64 alias to UEFI",
+    )
+    g.add_argument(
+        "--retries",
+        type=int,
+        default=2,
+        help="parallel retry attempts for a DOCUMENTED flake (default 2; 0 = none)",
+    )
+    g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
+    g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
+    g.add_argument("--no-net", action="store_true", help="skip the amd64 folded net stage")
+    g.set_defaults(fn=gate_mod.gate)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")
     arch_arg(bo)

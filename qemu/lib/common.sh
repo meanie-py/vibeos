@@ -32,8 +32,12 @@ QEMU_QUEUE_TIMEOUT_SECONDS="${VIBEOS_QEMU_QUEUE_TIMEOUT:-1800}"
 # automatically when the holding process (the QEMU that inherited the fd) dies.
 QEMU_SLOT_DIR="/tmp/vibeos-qemu-locks/slots"
 
-# Per-architecture concurrency SUB-cap, layered under the global pool. The
-# global cap bounds total host load (RAM/KVM); this bounds SAME-ARCH boots,
+# Per-architecture concurrency SUB-cap, layered under the global pool. NOTE:
+# this bash path serves the native/KVM gdb-debug toolkit (qemu/start.sh), where
+# the /dev/kvm contention below is real. The default windows-host TCG *smoke*
+# path (tests/qemu/vm.py) BYPASSES the equivalent cap entirely — off-host TCG
+# guests share no accelerator, so same-arch smokes run in parallel there.
+# The global cap bounds total host load (RAM/KVM); this bounds SAME-ARCH boots,
 # which contend on a shared resource the global count is blind to: two i386 (or
 # two amd64) KVM guests starve each other on /dev/kvm + the shared IDE/IO path
 # into false HANG_TIMEOUTs that look exactly like a boot regression (cost

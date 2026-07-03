@@ -106,6 +106,29 @@ all included), then auto-triage on failure.
   `FAIL_MARKER` / `KNOWN_FLAKE`), and symbolicates the faulting PC via the
   offline index. All in the summary — no manual objdump round-trip.
 
+### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
+**The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"
+done concurrently instead of by a serial human loop. It builds each arch (serial,
+still under the exclusive host CPU lease — `--no-build` to skip), then launches
+**all arches' smokes in parallel** (wall-clock goes sum→max), then for any arch
+that fails with a *documented* flake (`KNOWN_FLAKE` / `FLAKY` / contended
+`HANG_TIMEOUT`) launches up to `--retries` (default 2) concurrent fresh attempts
+and passes the arch on the first green.
+
+- **A fresh regression is never retried.** `BUGCHECK` / `RUST_PANIC` /
+  `FAIL_MARKER` / `STALE_MEDIA` / `UNKNOWN` fail the arch immediately — retrying
+  a regression away is exactly what the North Star forbids. Only the documented
+  flake classifications (see `triage.KNOWN_FLAKES`) are retry-eligible.
+- **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
+  subprocess that self-throttles on the host CPU-lease pool (`hostlock`, 4
+  leases) and the global QEMU cap (10); the per-arch serialize cap is bypassed on
+  the default windows-host TCG backend, so same-arch retries run in parallel too.
+- Exit 0 only if **every** arch is ultimately green. The summary carries a
+  per-arch `matrix` (verdict / classification / attempts / recovered / run_dir);
+  each arch's own `summary.json` lives under the gate's artifact dir.
+- Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
+  authorizes a push.
+
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so
 the fast path can't diverge from the real smoke (the q35-vs-pc misdiagnosis
