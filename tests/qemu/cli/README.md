@@ -49,9 +49,21 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--no-check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--no-check] [--strict] [--no-cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
+
+- **Fast local iteration:** `--incremental --no-check` is the inner-loop combo.
+  A warm build is dominated by two things that neither caching nor the compiler
+  touch: the **source-lint suite** (~53s, led by `scan_inline_flag_literals`
+  AST-walking every `.rs`) and **linking**. `--no-check` skips the source lints
+  (they're a gate concern, not an every-edit one); `--incremental` turns on rustc
+  incremental (a kernel `.rs` edit recompiles the ~13s `ntoskrnl-rust` crate in
+  ~5s instead), trading the Rust sccache wrapper (sccache + incremental are
+  mutually exclusive) — ccache for C/C++ stays on. **Both are LOCAL-only:**
+  incremental artifacts are non-reproducible and the lints gate correctness, so
+  the `gate`/CI path uses neither. Measured: warm i386 build ~97s → ~40s with the
+  combo (under load; the ratio holds quiet).
 
 - **Canonical build path (2026-07-03):** every build runs with the worktree
   bind-mounted at `/tmp/vibeos` (unprivileged userns — `tools/canon-run.sh`,

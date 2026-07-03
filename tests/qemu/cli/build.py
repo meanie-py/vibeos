@@ -398,6 +398,28 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
+    # --- fast-iterate: rustc incremental (opt-in; NOT for gate/determinism) ---
+    # On a kernel .rs edit, `ntoskrnl-rust` is ONE 451K-LOC crate → rustc recompiles
+    # the whole crate (measured ~13s vs ~5s with incremental). sccache CAN'T help a
+    # changed crate (input hash differs → miss), and sccache + incremental are mutually
+    # exclusive, so this trades the Rust sccache wrapper for rustc's within-crate reuse.
+    # ccache (C/C++) stays on. Incremental artifacts are non-reproducible, so this is a
+    # LOCAL fast-iterate lever only — the gate/CI path keeps sccache (default off).
+    incremental = getattr(args, "incremental", False) or os.environ.get(
+        "VIBEOS_RUST_INCREMENTAL", ""
+    ).lower() in ("1", "true", "yes")
+    if incremental and build_env is not None:
+        build_env["CARGO_INCREMENTAL"] = "1"
+        build_env["RUSTC_WRAPPER"] = ""  # disable sccache for rustc (incompatible)
+        build_env["CARGO_BUILD_RUSTC_WRAPPER"] = ""  # also override a config-set wrapper
+        run.add(
+            Stage(
+                "incremental",
+                status="warn",
+                detail="rustc INCREMENTAL on, Rust sccache OFF (fast-iterate; non-reproducible)",
+            )
+        )
+
     # --- generated-header barrier ---
     # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of
     # the psdk/xdk winnt.h generators — dep-edge rot that months of copied build
