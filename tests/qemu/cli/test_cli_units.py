@@ -366,19 +366,16 @@ def test_triage_hang_surfaces_tails():
 
 
 def test_triage_known_hang_flakes():
-    # nettest race (i386 + arm64): nettest spawned, explorer never reached _tWinMain
+    # nettest_explorer_race was RETIRED 2026-07-03 (root fix: winlogon gates the
+    # nettest.exe spawn on NIC presence). The marker can't appear on a plain boot,
+    # and the catalog entry is gone — so a nettest-signature hang now blocks as a
+    # plain HANG_TIMEOUT rather than being auto-retried.
     nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
     r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
-    assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "nettest_explorer_race"
+    assert r["classification"] == "HANG_TIMEOUT"
+    assert r["known_flake"] is None
 
-    # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
-    r2 = triage.classify(
-        nettest + "[EXPLORER] _tWinMain entered\n", reached=False, fail_marker=None, debugcon=None
-    )
-    assert r2["classification"] == "HANG_TIMEOUT" and r2["known_flake"] is None
-
-    # arm64 LpcExitThread race
+    # arm64 LpcExitThread race (still an active safety net)
     arm = "[PS] PspExitThread Image=System -> about to call LpcExitThread\n"
     r3 = triage.classify(arm, reached=False, fail_marker=None, debugcon=None)
     assert r3["classification"] == "KNOWN_FLAKE"
@@ -386,7 +383,7 @@ def test_triage_known_hang_flakes():
 
     # a hang-stage flake signature must NOT match a bugcheck (when-gated)
     r4 = triage.classify(
-        "BugCheck 0x7E\n[WINLOGON] nettest.exe created\n",
+        "BugCheck 0x7E\n[PS] ... LpcExitThread ...\n",
         reached=False,
         fail_marker=None,
         debugcon=None,
