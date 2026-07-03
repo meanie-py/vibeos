@@ -362,11 +362,11 @@ def test_triage_hang_surfaces_tails():
 
 
 def test_triage_known_hang_flakes():
-    # i386 nettest race: nettest spawned, explorer never reached _tWinMain
+    # nettest race (i386 + arm64): nettest spawned, explorer never reached _tWinMain
     nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
     r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
     assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "i386_nettest_explorer_race"
+    assert r["known_flake"] == "nettest_explorer_race"
 
     # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
     r2 = triage.classify(

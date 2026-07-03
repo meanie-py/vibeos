@@ -16,12 +16,13 @@ _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
 _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f]+)")
 
 # Documented intermittent flakes single-run gates have masked (see
-# docs/engineering/deterministic-builds-plan.md + tasks #42/#43). Matching one
-# re-labels a failure KNOWN_FLAKE so a *documented* flake is instantly told apart
-# from a fresh regression (an unmatched/unknown red still classifies and blocks).
+# docs/engineering/deterministic-builds-plan.md). Matching one re-labels a
+# failure KNOWN_FLAKE so a *documented* flake is instantly told apart from a
+# fresh regression (an unmatched/unknown red still classifies and blocks).
 # Each entry: `when` ("bugcheck"|"hang", default "bugcheck"), optional `code`,
 # `any` (all substrings present), `none` (all substrings ABSENT). Signatures are
-# specific; they RETIRE when the lane owner lands the root fix (verify-gone).
+# specific; RETIRE an entry (delete it) once its root fix lands and a re-gate
+# confirms the signature no longer appears (verify-gone).
 KNOWN_FLAKES = [
     {
         # cross-worktree _tWinMain 0xF4 race (smss-csrss/ntdll/win32k all hit it).
@@ -32,25 +33,31 @@ KNOWN_FLAKES = [
         "note": "known win32k/smss suspended-thread race; re-run to confirm",
     },
     {
-        # i386: winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot;
-        # it races explorer's csrss/win32k handoff so explorer never reaches
-        # _tWinMain (~1/3 i386 boots). Pre-existing (netstack-landed). Root fix:
-        # gate the nettest spawn to the net-test config (netstack owns).
-        "name": "i386_nettest_explorer_race",
+        # winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot; it races
+        # explorer's csrss/win32k handoff so explorer never reaches _tWinMain
+        # (~1/3 i386 boots; also hits arm64 — see below). Root fix: gate the
+        # nettest spawn to the net-test config so plain smokes never spawn it.
+        # NOTE: this signature is listed BEFORE arm64_lpcexitthread_race and both
+        # can match an arm64 nettest wedge (it prints both markers); first-match
+        # wins, so an arm64 nettest hang is labeled here — that's correct, it IS
+        # the same root cause. Fixing this clears most arm64 occurrences too.
+        "name": "nettest_explorer_race",
         "when": "hang",
         "any": ["[WINLOGON] nettest.exe created"],
         "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "i386 flake: winlogon nettest spawn races explorer handoff; netstack fix pending",
+        "note": "winlogon nettest spawn races explorer handoff (i386 + arm64); "
+        "root fix: gate the spawn to the net-test config",
     },
     {
         # arm64: PspExitThread -> LpcExitThread System-thread-exit/timer race,
-        # pre-existing intermittent on mainline (arm64-love's clock fix makes it
-        # deterministic, doesn't cause it). Root fix owned by arm64-love.
+        # intermittent on mainline. Distinct from the nettest race above (which
+        # matches first when nettest.exe is in the serial); this catches an arm64
+        # exit-path hang with no nettest marker present.
         "name": "arm64_lpcexitthread_race",
         "when": "hang",
         "any": ["LpcExitThread"],
         "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "arm64 flake: PspExitThread->LpcExitThread exit race; arm64-love fix pending",
+        "note": "arm64 flake: PspExitThread->LpcExitThread exit race",
     },
 ]
 
