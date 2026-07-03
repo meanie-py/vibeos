@@ -50,6 +50,9 @@ macro_rules! _countof { ($arr:expr) => { ($arr).len() }; }
 #[inline(always)] unsafe fn abs(x: core::ffi::c_int) -> core::ffi::c_int { x.wrapping_abs() }
 #[inline(always)] unsafe fn labs(x: core::ffi::c_long) -> core::ffi::c_long { x.wrapping_abs() }
 #[inline(always)] unsafe fn InitializeListHead(h: PLIST_ENTRY) { (*h).Flink = h; (*h).Blink = h; }
+#[inline(always)] unsafe fn gpsi_per_user() -> *mut _PERUSERSERVERINFO {
+    core::ptr::addr_of_mut!((*gpsi).__bindgen_padding_0) as *mut _PERUSERSERVERINFO
+}
 
 // File-static list heads (C: RTL_STATIC_LIST_HEAD self-ref). Null here; InitializeListHead'd
 // at the top of InitFontSupport before any font-list access (matches C static self-ref).
@@ -3216,13 +3219,13 @@ unsafe fn IntGdiCleanupPrivateFontsForProcessImpl() {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn IntIsFontRenderingEnabled() -> BOOL {
-    (((*( gpsi as *mut _PERUSERSERVERINFO)).BitsPixel > 8) && g_RenderingEnabled != 0) as BOOL
+    ((*gpsi_per_user()).BitsPixel > 8 && g_RenderingEnabled != 0) as BOOL
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn IntIsFontRenderingEnabled() -> BOOL {
-    (((*( gpsi as *mut _PERUSERSERVERINFO)).BitsPixel > 8) && g_RenderingEnabled != 0) as BOOL
+    ((*gpsi_per_user()).BitsPixel > 8 && g_RenderingEnabled != 0) as BOOL
 }
 
 #[cfg(target_arch = "x86")]

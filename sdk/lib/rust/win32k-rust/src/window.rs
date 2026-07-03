@@ -123,11 +123,13 @@ unsafe fn HEAD_cLockObj_mut(head: *mut THRDESKHEAD) -> *mut DWORD {
     (head as *mut u8).add(core::mem::size_of::<usize>()) as *mut DWORD
 }
 // SERVERINFO embeds PERUSERSERVERINFO at the tail (bindgen __bindgen_padding_0).
-// ptCursor sits 748 bytes into PERUSERSERVERINFO (aiSysMet[93]+argb*3[31]+hbrGray).
+#[inline(always)]
+unsafe fn SERVERINFO_per_user(psi: *const tagSERVERINFO) -> *const _PERUSERSERVERINFO {
+    core::ptr::addr_of!((*psi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
+}
 #[inline(always)]
 unsafe fn SERVERINFO_ptCursor(psi: *const tagSERVERINFO) -> POINTL {
-    let pad = core::ptr::addr_of!((*psi).__bindgen_padding_0) as *const u8;
-    *(pad.add(748) as *const POINTL)
+    (*SERVERINFO_per_user(psi)).ptCursor
 }
 
 // ---- FORCEINLINE / macro helpers reimplemented per-file (object.h, window.h, ntuser.h). ----
