@@ -48,7 +48,7 @@ When you learn something, route it to the right committed home — do **not** de
 | What you learned | Where it goes |
 |---|---|
 | A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md` (§1–8 translation bugs, §9 crash-hunting) |
-| Per-subsystem / driver / lib status | the relevant `docs/engineering/*-translation-audit.md` |
+| Per-subsystem / driver / lib status | `docs/engineering/rust-port-status.md` (the single source of truth for Rust-vs-C coverage; per-file history in `docs/engineering/archive/*-translation-audit.md`) |
 | A roadmap / strategy / design | `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` (or `docs/product/`) |
 | A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
 | An agent working / process rule | **this file** (`AGENTS.md`) |

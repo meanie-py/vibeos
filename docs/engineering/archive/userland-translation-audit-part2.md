@@ -1,3 +1,9 @@
+> ⚠️ **ARCHIVED 2026-07-03 — superseded by [`rust-port-status.md`](../rust-port-status.md).**
+> This per-surface audit is a point-in-time historical record. Its per-file counts were
+> measured ~2026-06-21 (before the last swarm wind-down) and are **stale** — several
+> "0% / in-progress" claims here are now done. For current Rust-vs-C coverage use the
+> status doc; this file is kept only for the detailed per-file mapping and history.
+
 # Userland Translation Audit — Part 2 (native residue)
 
 **Sequel to `userland-translation-audit.md`.** Part 1 deep-audited the 10 highest-value

@@ -24,7 +24,7 @@ The shim-elimination arc and the cargo-driven build arc for the
 The remaining cmake outputs the cargo PoC consumes are the ~30
 **cmake-built static libs** (`librtl.a`, `libhal.a`, `libcmlib.a`,
 …). That's its own translation arc — see
-[`static-libs-translation-audit.md`](static-libs-translation-audit.md).
+[`static-libs-translation-audit.md`](archive/static-libs-translation-audit.md).
 
 ## The cargo PoC's compile inputs (2026-05-09)
 
@@ -129,7 +129,7 @@ surface (milestones 9-16). What remains:
 
 - **The ~30 cmake-built static libs** (`librtl.a`, `libhal.a`,
   `libcmlib.a`, …) — collectively ~165K LOC of C/asm. Tracked in
-  [`static-libs-translation-audit.md`](static-libs-translation-audit.md).
+  [`static-libs-translation-audit.md`](archive/static-libs-translation-audit.md).
   The 17 already-Rust sibling rlibs in that list are mechanical
   build-system work; the 18 cmake-built C/asm libs are real
   translation arcs.
