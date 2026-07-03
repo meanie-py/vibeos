@@ -31,6 +31,13 @@ name = "advapi32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "afd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -921,6 +928,13 @@ name = "mountmgr-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "msafd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
 ]
 
 [[package]]

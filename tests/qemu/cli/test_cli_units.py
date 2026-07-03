@@ -362,13 +362,16 @@ def test_triage_hang_surfaces_tails():
 
 
 def test_triage_known_hang_flakes():
-    # nettest race (i386 + arm64): nettest spawned, explorer never reached _tWinMain
+    # nettest_explorer_race is RETIRED (root fix: winlogon gates the nettest.exe
+    # spawn on NIC presence, so plain smokes never spawn it). A hang whose serial
+    # somehow still carries the nettest marker now classifies as a plain
+    # HANG_TIMEOUT — no longer masked as an expected flake.
     nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
     r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
-    assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "nettest_explorer_race"
+    assert r["classification"] == "HANG_TIMEOUT"
+    assert r["known_flake"] is None
 
-    # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
+    # explorer reaching _tWinMain is a normal (non-flake) hang either way
     r2 = triage.classify(
         nettest + "[EXPLORER] _tWinMain entered\n", reached=False, fail_marker=None, debugcon=None
     )

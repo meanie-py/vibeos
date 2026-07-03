@@ -283,6 +283,41 @@ unsafe fn UpdateTcpIpInformation() {
     RegCloseKey(hKey);
 }
 
+/// True on a net-test boot. netstack.sys writes
+/// `HKLM\SYSTEM\CurrentControlSet\Services\netstack\NicPresent` = 1 in its
+/// DriverEntry iff a virtio-net NIC exists (the amd64-uefi-net / arm64-net
+/// configs). Plain smokes have no NIC → the value is 0/absent → this returns
+/// false and nettest.exe is never spawned, keeping its process creation off
+/// explorer's timing-critical csrss/win32k handoff (the `nettest_explorer_race`
+/// flake). netstack is a system-start driver, so the value is committed long
+/// before winlogon runs here.
+unsafe fn NetTestBootEnabled() -> bool {
+    let mut hKey: HKEY = null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        wstr!("SYSTEM\\CurrentControlSet\\Services\\netstack").as_ptr(),
+        0,
+        KEY_QUERY_VALUE,
+        &mut hKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return false;
+    }
+    let mut dwType: DWORD = 0;
+    let mut dwValue: DWORD = 0;
+    let mut dwSize: DWORD = size_of::<DWORD>() as DWORD;
+    let lError = RegQueryValueExW(
+        hKey,
+        wstr!("NicPresent").as_ptr(),
+        null_mut(),
+        &mut dwType,
+        &mut dwValue as *mut DWORD as LPBYTE,
+        &mut dwSize,
+    );
+    RegCloseKey(hKey);
+    lError == ERROR_SUCCESS as LONG && dwType == REG_DWORD && dwValue == 1
+}
+
 // Loads the user's preloaded keyboard layouts. Called on ARM64 (and disabled
 // behind `#if 0` on x86 in the C, hence #[allow(dead_code)] off the ARM64 path).
 #[allow(dead_code)]
@@ -732,8 +767,15 @@ pub unsafe extern "system" fn WinMain(
      * guaranteed usermode launch point. nettest does a real ws2_32 -> msafd ->
      * AFD -> netstack TCP+UDP round-trip and emits [NETTEST] markers to the debug
      * serial; tests/qemu/test_net.py asserts on them. It retries briefly then
-     * exits, so it is harmless on boots with no NIC. We do not wait on it. */
-    {
+     * exits, so it is harmless on boots with no NIC. We do not wait on it.
+     *
+     * Gated on NicPresent: even the process CREATION (loader + csrss handoff)
+     * contends with explorer's own csrss/win32k handoff, and on plain smoke
+     * explorer sometimes lost that race and never reached _tWinMain (the
+     * `nettest_explorer_race` flake). netstack.sys publishes NicPresent=1 only
+     * when a virtio-net NIC exists (net-test configs), so plain smokes — which
+     * have no NIC and no use for nettest anyway — never spawn it. */
+    if NetTestBootEnabled() {
         let mut Si: STARTUPINFOW = zeroed();
         let mut Pi: PROCESS_INFORMATION = zeroed();
         let mut NetTestPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -779,6 +821,11 @@ pub unsafe extern "system" fn WinMain(
                 GetLastError(),
             );
         }
+    } else {
+        DbgPrint(
+            b"[WINLOGON] no NIC (NicPresent!=1); skipping nettest.exe spawn\n\0".as_ptr()
+                as *const i8,
+        );
     }
 
     /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the

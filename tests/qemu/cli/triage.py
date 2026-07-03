@@ -32,19 +32,15 @@ KNOWN_FLAKES = [
         "code": "0xF4",
         "note": "known win32k/smss suspended-thread race; re-run to confirm",
     },
-    {
-        # winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot; it races
-        # explorer's csrss/win32k handoff so explorer never reaches _tWinMain
-        # (~1/3 i386 boots; also hits arm64). Root fix: gate the nettest spawn to
-        # the net-test config so plain smokes never spawn it.
-        "name": "nettest_explorer_race",
-        "when": "hang",
-        "any": ["[WINLOGON] nettest.exe created"],
-        "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "winlogon nettest spawn races explorer handoff (i386 + arm64); "
-        "root fix: gate the spawn to the net-test config",
-    },
-    # RETIRED 2026-07-03: arm64_lpcexitthread_race. The signature ("LpcExitThread"
+    # RETIRED 2026-07-03 — nettest_explorer_race: winlogon spawned nettest.exe
+    # unconditionally every boot and raced explorer's csrss/win32k handoff
+    # (~1/3 i386 boots hung; arm64 variant too). Root fix landed: netstack.sys
+    # publishes NicPresent and winlogon gates the spawn on it, so plain smokes
+    # (no NIC) never spawn nettest — the marker "[WINLOGON] nettest.exe created"
+    # can no longer appear on a plain boot, so the signature is unreachable.
+    # Verify-gone: i386 smoke ×8 = 8/8 green; cold gate ×3 all-arch green.
+    #
+    # RETIRED 2026-07-03 — arm64_lpcexitthread_race. The signature ("LpcExitThread"
     # in serial, no _tWinMain) was a broad catch-all — that UART trace fires on
     # every arm64 system-thread exit, so it matched any arm64 hang after an early
     # thread exit. Its deterministic root causes were fixed earlier (fastfat

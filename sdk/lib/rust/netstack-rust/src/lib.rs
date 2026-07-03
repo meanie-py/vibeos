@@ -41,7 +41,51 @@ pub mod tdisrvtest;
 pub mod icmptest;
 pub mod settest;
 
-use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
+use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, PVOID, RtlWriteRegistryValue, UNICODE_STRING};
+
+/// Compile-time ASCII -> UTF-16 (NUL-terminated) for the registry path/value
+/// names RtlWriteRegistryValue takes as PCWSTR.
+const fn wide<const N: usize>(s: &[u8]) -> [u16; N] {
+    let mut a = [0u16; N];
+    let mut i = 0;
+    while i < s.len() {
+        a[i] = s[i] as u16;
+        i += 1;
+    }
+    a
+}
+
+/// Publish whether a virtio-net NIC is present so usermode can gate net-only
+/// work on it. winlogon reads `HKLM\SYSTEM\CurrentControlSet\Services\netstack`
+/// value `NicPresent` and only spawns `nettest.exe` when it is 1. Plain smoke
+/// boots have no NIC → flag 0 → nettest is never spawned, keeping it off
+/// explorer's timing-critical csrss/win32k handoff (the `nettest_explorer_race`
+/// flake). The net-test configs (amd64-uefi-net / arm64-net) add the NIC → flag
+/// 1 → the `[NETTEST]` proof still runs. The signal is intrinsic to the machine
+/// (the NIC itself), so it needs no per-config media/boot-arg divergence — plain
+/// smoke and net boot the SAME image. Written synchronously here in DriverEntry
+/// (a cheap read-only PCI scan) so the value is committed long before winlogon
+/// (a much later usermode launch) ever reads it.
+unsafe fn publish_nic_presence() {
+    const RTL_REGISTRY_SERVICES: u32 = 1;
+    const REG_DWORD: u32 = 4;
+    static KEY: [u16; 9] = wide(b"netstack\0");
+    static VALUE: [u16; 11] = wide(b"NicPresent\0");
+    let present: u32 = pci::find_virtio_net().is_some() as u32;
+    serial::emit(core::format_args!(
+        "[NETSTACK] NicPresent={} (virtio-net {})\n",
+        present,
+        if present == 1 { "found" } else { "absent" }
+    ));
+    let _ = RtlWriteRegistryValue(
+        RTL_REGISTRY_SERVICES,
+        KEY.as_ptr(),
+        VALUE.as_ptr(),
+        REG_DWORD,
+        &present as *const u32 as PVOID,
+        core::mem::size_of::<u32>() as u32,
+    );
+}
 
 /// netstack.sys entry point. Registered as a system-start (Start=1), non-PnP
 /// kernel driver, so the kernel calls this unconditionally at boot. For M1 we
@@ -55,6 +99,10 @@ pub unsafe extern "system" fn DriverEntry(
     serial::emit(core::format_args!(
         "[NETSTACK] DriverEntry: netstack.sys loaded\n"
     ));
+    // Publish NIC presence for usermode (winlogon gates the nettest.exe spawn on
+    // it — see publish_nic_presence). Done first, before the self-test/engine
+    // touch the device, so the flag is committed regardless of what follows.
+    publish_nic_presence();
     // M1: blocking ARP round-trip self-test (creates + drops its own device).
     selftest::run();
     // M2/M3: spawn the persistent smoltcp poll-loop engine (DHCP/ping/echo/DNS).
