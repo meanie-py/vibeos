@@ -227,6 +227,32 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 ./vibeos-cli debug run-until $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
 
+### `gdb <verb> ...` — GDB over the **windows-host** backend (native-Python engine)
+The `debug` verbs above shell out to `qemu/*.sh`, which are **native-only** (Linux
+qemu, KVM — where software breakpoints don't reliably fire). `gdb` is the full
+Python port (`gdbengine.py`) that drives the **default windows-host TCG** QEMU,
+where breakpoints DO fire. It reuses the same `qemu/gdb-helpers/*.py` verbs (they
+run inside gdb, transport-agnostic); only the launch + gdb orchestration is
+re-owned in Python. QemuVM emits the gdbstub bound `0.0.0.0` on the Windows stack
+(`vm._gdb_args`), reached from WSL via `gdb_host = gateway_ip()` — the same
+inbound path as a slirp hostfwd.
+
+```bash
+RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
+./vibeos-cli gdb wait-for $RUN --pattern IoInitSystem --timeout 200
+./vibeos-cli gdb run-until $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck --then "bt 30"
+./vibeos-cli gdb inspect $RUN bt 30      # one-shot verb (bt/triage-bugcheck/dump-trapframe/...)
+./vibeos-cli gdb ps                      # list debug runs + liveness
+./vibeos-cli gdb stop $RUN
+```
+
+**CRITICAL gotcha (baked into the engine):** connecting to QEMU's gdbstub *halts
+the vCPUs*. So liveness (`status`/`ps`) checks the **Windows process + serial-file
+growth**, NEVER a socket connect to the stub — a connect-probe freezes the guest
+mid-boot (serial stuck at 0, PC parked in OVMF). Only `run-until`/`inspect` connect
+(they intend to halt, then `detach` resumes). The detached QEMU persists across CLI
+invocations (a separate Windows process); address it by run-id, kill by uid tag.
+
 ### `ps [--json]`
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.

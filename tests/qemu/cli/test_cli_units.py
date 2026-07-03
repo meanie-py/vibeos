@@ -21,6 +21,7 @@ from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
 from . import config as config_mod
+from . import gdbengine as ge_mod
 from . import lints, provenance, repro, triage
 from .artifacts import Run, Stage
 
@@ -880,6 +881,102 @@ def test_gdb_host_native_vs_windows(monkeypatch):
     assert _gdb_vm(backend="native").gdb_host == "127.0.0.1"
     monkeypatch.setattr(be_mod, "gateway_ip", lambda: "172.26.176.1")
     assert _gdb_vm(backend="windows-host").gdb_host == "172.26.176.1"
+
+
+# --- gdbengine: the Python gdb engine's pure logic (no QEMU) ---------------
+
+
+def test_gdbengine_gdb_arch_map():
+    assert ge_mod._gdb_arch("amd64") == "i386:x86-64"
+    assert ge_mod._gdb_arch("i386") == "i386"
+    assert ge_mod._gdb_arch("arm64") == "aarch64"
+
+
+def test_gdbengine_expand_verb():
+    assert ge_mod._expand_verb("bt 50") == "bt-tagged 50"
+    assert ge_mod._expand_verb("bt") == "bt-tagged"  # no trailing space
+    assert ge_mod._expand_verb("triage-bugcheck") == "triage-bugcheck"
+    assert ge_mod._expand_verb("dump-thread 0xffff") == "dump-thread 0xffff"
+    assert ge_mod._expand_verb("raw info registers rax") == "info registers rax"
+    with pytest.raises(ValueError, match="unknown verb"):
+        ge_mod._expand_verb("frobnicate")
+
+
+def test_gdbengine_all_helper_files_exist():
+    missing = [h for h in ge_mod.HELPER_FILES if not (ge_mod.GDB_HELPERS / h).is_file()]
+    assert missing == [], f"missing gdb helpers: {missing}"
+    # _helper_source_args emits a `source <path>` -ex pair per existing helper
+    args = ge_mod._helper_source_args()
+    assert args.count("-ex") == len(ge_mod.HELPER_FILES)
+
+
+def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    run = ge_mod.DebugRun(
+        run_id="amd64-xy",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="172.26.176.1",
+        gdb_port=54321,
+        serial_log="/mnt/c/x/serial.log",
+        kernel_image="/k/ntoskrnl.exe",
+        win_uid="vibeos-dbg-1-2",
+    )
+    run.save()
+    got = ge_mod.DebugRun.load("amd64-xy")
+    assert got.gdb_port == 54321 and got.win_uid == "vibeos-dbg-1-2" and got.arch == "amd64"
+
+
+def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
+    # qemu/runs/ is shared with the bash toolkit, whose manifest lacks our fields.
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    (tmp_path / "bash-run").mkdir()
+    (tmp_path / "bash-run" / "manifest.json").write_text('{"run_id":"bash-run","qemu_pid":9}')
+    with pytest.raises(ValueError, match="not a gdbengine run manifest"):
+        ge_mod.DebugRun.load("bash-run")
+
+
+def test_gdbengine_status_uses_process_liveness_not_gdb_connect(monkeypatch):
+    # Connecting to QEMU's gdbstub HALTS the guest — it wedged early boots (serial
+    # stuck at 0, PC parked in OVMF). status() must report liveness via the Windows
+    # process, never a socket connect to gdb_host:gdb_port. Guard against regressing.
+    seen = {"uid": None}
+    monkeypatch.setattr(ge_mod, "_win_alive", lambda uid: seen.__setitem__("uid", uid) or True)
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="1.2.3.4",
+        gdb_port=9,
+        serial_log="/does/not/exist",
+        kernel_image="/k",
+        win_uid="vibeos-dbg-1-9",
+    )
+    st = ge_mod.status(run)
+    assert st["alive"] is True and seen["uid"] == "vibeos-dbg-1-9"
+    assert "gdb_reachable" not in st  # the halting probe must stay gone
+    assert st["serial_bytes"] == 0
+    # tight-poll variant skips even the process query
+    assert "alive" not in ge_mod.status(run, check_alive=False)
+
+
+def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
+    # run_until must emit `break <sym>`, `bounded-continue <t>`, then each expanded verb.
+    captured = {}
+
+    def fake_run_gdb(run, verb_ex, *, timeout):
+        captured["ex"] = verb_ex
+        captured["timeout"] = timeout
+        return "BREAKPOINT HIT"
+
+    monkeypatch.setattr(ge_mod, "_run_gdb", fake_run_gdb)
+    run = ge_mod.DebugRun.__new__(ge_mod.DebugRun)
+    out = ge_mod.run_until(run, "KeBugCheckEx", timeout=30, then=["bt 10", "triage-bugcheck"])
+    ex = captured["ex"]
+    assert "break KeBugCheckEx" in ex and "bounded-continue 30" in ex
+    assert "bt-tagged 10" in ex and "triage-bugcheck" in ex
+    assert captured["timeout"] == 30 + 30  # in-gdb budget + teardown headroom
+    assert out == "BREAKPOINT HIT"
 
 
 def test_early_exit_stderr_reports_exit_vs_healthy():
