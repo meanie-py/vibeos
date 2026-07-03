@@ -374,11 +374,14 @@ def test_triage_known_hang_flakes():
     )
     assert r2["classification"] == "HANG_TIMEOUT" and r2["known_flake"] is None
 
-    # arm64 LpcExitThread race
+    # arm64_lpcexitthread_race is RETIRED (root cause = undersized arm64 kernel
+    # stack, fixed by the 0xC000 bump). An arm64 exit-path hang with the
+    # LpcExitThread trace but no nettest marker now classifies as a plain
+    # HANG_TIMEOUT (honest, no longer masked as an expected flake).
     arm = "[PS] PspExitThread Image=System -> about to call LpcExitThread\n"
     r3 = triage.classify(arm, reached=False, fail_marker=None, debugcon=None)
-    assert r3["classification"] == "KNOWN_FLAKE"
-    assert r3["known_flake"] == "arm64_lpcexitthread_race"
+    assert r3["classification"] == "HANG_TIMEOUT"
+    assert r3["known_flake"] is None
 
     # a hang-stage flake signature must NOT match a bugcheck (when-gated)
     r4 = triage.classify(

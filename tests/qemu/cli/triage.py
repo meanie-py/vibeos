@@ -35,12 +35,8 @@ KNOWN_FLAKES = [
     {
         # winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot; it races
         # explorer's csrss/win32k handoff so explorer never reaches _tWinMain
-        # (~1/3 i386 boots; also hits arm64 — see below). Root fix: gate the
-        # nettest spawn to the net-test config so plain smokes never spawn it.
-        # NOTE: this signature is listed BEFORE arm64_lpcexitthread_race and both
-        # can match an arm64 nettest wedge (it prints both markers); first-match
-        # wins, so an arm64 nettest hang is labeled here — that's correct, it IS
-        # the same root cause. Fixing this clears most arm64 occurrences too.
+        # (~1/3 i386 boots; also hits arm64). Root fix: gate the nettest spawn to
+        # the net-test config so plain smokes never spawn it.
         "name": "nettest_explorer_race",
         "when": "hang",
         "any": ["[WINLOGON] nettest.exe created"],
@@ -48,17 +44,19 @@ KNOWN_FLAKES = [
         "note": "winlogon nettest spawn races explorer handoff (i386 + arm64); "
         "root fix: gate the spawn to the net-test config",
     },
-    {
-        # arm64: PspExitThread -> LpcExitThread System-thread-exit/timer race,
-        # intermittent on mainline. Distinct from the nettest race above (which
-        # matches first when nettest.exe is in the serial); this catches an arm64
-        # exit-path hang with no nettest marker present.
-        "name": "arm64_lpcexitthread_race",
-        "when": "hang",
-        "any": ["LpcExitThread"],
-        "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "arm64 flake: PspExitThread->LpcExitThread exit race",
-    },
+    # RETIRED 2026-07-03: arm64_lpcexitthread_race. The signature ("LpcExitThread"
+    # in serial, no _tWinMain) was a broad catch-all — that UART trace fires on
+    # every arm64 system-thread exit, so it matched any arm64 hang after an early
+    # thread exit. Its deterministic root causes were fixed earlier (fastfat
+    # FILE_CORRUPT constants 65c82a286a0, 0xC2 double-free fddff701ac9, fastfat
+    # recursion 0x50 3b3f9744c0a); the residual intermittent exit-path hang was
+    # arm64's per-thread kernel stack being mis-sized at i386's 12KB while the
+    # 64-bit sibling amd64 uses 48KB (deep Rust stacks + no arm64 exception stack
+    # + no GUI large-stack switch on arm64 → intermittent guard-page overflow on
+    # the exit teardown). Fixed by bumping arm64 KERNEL_STACK_SIZE to 0xC000
+    # (xdk/arm64/ke.h + ARM3/helpers.rs + the stack-bounds sites). An arm64 exit
+    # hang now classifies HANG_TIMEOUT (still gate-retryable) — the honest signal,
+    # no longer masked as an expected flake.
 ]
 
 

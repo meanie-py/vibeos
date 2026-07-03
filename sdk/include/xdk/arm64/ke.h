@@ -42,11 +42,13 @@ $if (_WDMDDK_)
 
 #define PAUSE_PROCESSOR YieldProcessor();
 
-/* FIXME: Based on AMD64 but needed to compile apps */
-#define KERNEL_STACK_SIZE                   12288
-#define KERNEL_LARGE_STACK_SIZE             61440
+/* arm64 is 64-bit: use amd64's stack sizing, not i386's 12288 (the original
+ * port copied the i386 value here). Deep Rust kernel stacks + no dedicated arm64
+ * exception stack + no GUI large-stack switch on arm64 make an undersized base
+ * stack overflow intermittently on the thread-exit teardown path. */
+#define KERNEL_STACK_SIZE                   0xC000  /* 48KB, matches amd64 */
+#define KERNEL_LARGE_STACK_SIZE             0x12000 /* 72KB, matches amd64 */
 #define KERNEL_LARGE_STACK_COMMIT KERNEL_STACK_SIZE
-/* FIXME End */
 
 #define EXCEPTION_READ_FAULT    0
 #define EXCEPTION_WRITE_FAULT   1

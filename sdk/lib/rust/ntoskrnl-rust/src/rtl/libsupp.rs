@@ -65,7 +65,7 @@ const KERNEL_STACK_SIZE: ULONG = 0x3000;
 #[cfg(target_arch = "x86_64")]
 const KERNEL_STACK_SIZE: ULONG = 0xC000;
 #[cfg(target_arch = "aarch64")]
-const KERNEL_STACK_SIZE: ULONG = 0x3000;
+const KERNEL_STACK_SIZE: ULONG = 0xC000; // 48KB — matches xdk/arm64/ke.h (bumped from i386's 12KB)
 
 extern "system" {
     static mut NtGlobalFlag: ULONG;
