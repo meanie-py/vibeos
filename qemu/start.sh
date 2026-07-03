@@ -186,7 +186,16 @@ case "$ARCH" in
         # UEFI boot (system OVMF → uefildr.efi), mirroring vm.py Amd64UefiConfig.
         ISO="$(arch_build_dir amd64)/livecd.iso"
         [ -f "$ISO" ] || die "missing $ISO — run: ninja -C $(arch_build_dir amd64) livecd"
-        [ -r /dev/kvm ] || die "amd64 requires /dev/kvm but it's not readable; check kvm group membership"
+        # VIBEOS_NO_KVM=1 forces the TCG interpreter (breakpoints work; also
+        # reproduces TCG-timing-sensitive races the fast KVM path hides — e.g.
+        # the DcomLaunch control-pipe connect wedge). Mirrors the i386 branch.
+        AMD64_ACCEL=(-accel kvm -cpu host)
+        if [ -n "${VIBEOS_NO_KVM:-}" ]; then
+            AMD64_ACCEL=(-accel tcg -cpu max)
+            log_info "VIBEOS_NO_KVM set — using TCG (breakpoints work, TCG timing, slower boot)"
+        else
+            [ -r /dev/kvm ] || die "amd64 requires /dev/kvm but it's not readable; check kvm group membership (or set VIBEOS_NO_KVM=1 for TCG)"
+        fi
         OVMF_CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
         [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE — apt install ovmf"
         OVMF_VARS="$RUN_DIR/ovmf_vars.fd"
@@ -196,7 +205,7 @@ case "$ARCH" in
         SCRATCH_IMG="$RUN_DIR/scratch.img"
         dd if=/dev/zero of="$SCRATCH_IMG" bs=1M count=64 2>/dev/null
         QEMU_CMD=(
-            qemu-system-x86_64 -M pc -accel kvm -cpu host -m 512M
+            qemu-system-x86_64 -M pc "${AMD64_ACCEL[@]}" -m 512M
             -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
             -drive "if=pflash,format=raw,file=$OVMF_VARS"
             -drive "if=none,id=scratch,format=raw,file=$SCRATCH_IMG"

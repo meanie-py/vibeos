@@ -919,7 +919,35 @@ Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) wh
 **Real localization (2026-07-03, serial-only, 4-boot harvest):** the boot wedges iff **DcomLaunch (RPCSS — a `type=32` SERVICE_WIN32_SHARE_PROCESS hosted in svchost) fails its control-pipe connect-back to the SCM within the 30s `PipeTimeout`** (`base/system/services/database.c` `ScmWaitForServiceConnect` → `WaitForSingleObject(hControlPipe, 30000)`). Then **EventLog** (which needs RPCSS) is started next and cascade-wedges the whole boot *indefinitely* (>120s, past the harness deadline).
 **PERFECT discriminator (grep the serial):** `[SERVICES] ScmLoadService(DcomLaunch) done: 1053` (1053 = ERROR_SERVICE_REQUEST_TIMEOUT) **present ⟺ wedge**; **absent ⟺ green boot**. ~50% on amd64 (2/4), rarer on i386 (0/4 same batch). Use this to tell this documented flake apart from a fresh regression without GDB.
 **Latent contributor (present every boot, green or wedged, so NOT the direct trigger):** `[SVCHOST] …: SvchostCharLowerW failed for …\svchost.exe` — `LCMapStringW(LCMAP_LOWERCASE)` returns FALSE (NLS lower-casing broken), so svchost proceeds with an un-lowercased cmdline/service name; a candidate for flaky case-sensitive service-name matching. Worth fixing regardless (`base/services/svchost/globals.c:162`).
-**Next step (owed):** GDB/instrument the svchost↔SCM named-pipe handshake + RPCSS startup to see why DcomLaunch's connect races ~50% (does svchost fail to host RPCSS? does the pipe connect lose a race? does RPCSS init block?). The wedge is a lost-wakeup/deadlock (total system silence, not a spin), so a break-all + all-thread `bt` at the freeze should show the blocked SCM/EventLog thread and the object it waits on.
+**GDB characterization (2026-07-03, reproduced + inspected):** the wedge reproduces on the
+**TCG** interpreter but NOT on fast KVM (timing-sensitive — KVM connects in time). amd64's
+GDB path was KVM-only; added `VIBEOS_NO_KVM=1` TCG support to `qemu/start.sh` (mirrors i386).
+Recipe: `VIBEOS_NO_KVM=1 bash qemu/start.sh amd64 --gdb` → `wait-for … "ScmStartUserModeService(EventLog)"`
+→ if `_tWinMain` doesn't follow in ~60s it's wedged. At the freeze:
+- **`bt` / `sample-pc` → the (single) vCPU is parked in `KiIdleLoop`** with nothing runnable ⇒ a
+  **lost-wakeup deadlock** (some thread blocked forever, nothing to schedule).
+- **`KUSER_SHARED_DATA.InterruptTime` (amd64 VA `0xFFFFF78000000008`) IS advancing** across
+  samples ⇒ **the clock is alive, so *timed* waits would expire.** The blocked thread is therefore
+  in an **untimed/INFINITE wait** — consistent with a thread stuck in an RPC/ALPC call to the
+  **dead RPCSS** (DcomLaunch just failed its connect → no RPC endpoint) with no timeout.
+- **Tooling gap hit:** `qemu/inspect.sh <run> --command list-threads` FAILS on the Rust kernel —
+  the helper resolves `_EPROCESS`/`_KTHREAD` field offsets from DWARF, but the cargo-built
+  ntoskrnl's DWARF has **no `struct _EPROCESS`** (`ptype struct _EPROCESS` → "No struct type
+  named _EPROCESS"). So the thread-walk can't name the blocked thread yet.
+**Next step (owed), two independent angles:**
+1. **Pinpoint the blocked thread** — either add a raw-offset fallback to `list-threads.py` for the
+   Rust kernel (hardcode amd64 `_EPROCESS.{ActiveProcessLinks,ImageFileName,ThreadListHead}` +
+   `_KTHREAD` wait fields from the ntkrnl-sys `offset_of` asserts), or instrument SCM's
+   `ScmStartUserModeService`/`ScmWaitForServiceConnect` (`base/system/services/database.c`,
+   convert the `DPRINT`s to `DbgPrint`) to see the exact wedge line + whether EventLog's process
+   was even created.
+2. **The real root — why DcomLaunch/RPCSS fails its connect ~50%.** DcomLaunch dying is what
+   *triggers* the EventLog cascade-wedge; if RPCSS started reliably the boot would survive.
+   Instrument svchost's service-hosting + RPCSS `ServiceMain`/`StartServiceCtrlDispatcher`. The
+   always-failing `SvchostCharLowerW` (NLS) is a prime suspect for a case-sensitive service/DLL
+   name match that succeeds only ~50% depending on the registry key's stored case.
+   (A defensive mitigation regardless: give EventLog's RPCSS-dependent startup a bounded wait so a
+   dead RPCSS degrades to a slow/failed service instead of an indefinite boot hang.)
 
 ### arm64 0xF4 winlogon death right after `[WIN32K] shell ready`
 **Symptom:** arm64 only; deterministic BUGCHECK 0xF4 (critical-process death, P1=3, P2=winlogon EPROCESS) immediately after `shell ready` on the logoff KeUserModeCallback. amd64 immune.
