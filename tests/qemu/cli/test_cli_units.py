@@ -343,10 +343,14 @@ def test_triage_rust_panic():
 
 
 def test_triage_bugcheck_and_known_flake():
+    # tWinMain_0xF4_race was RETIRED 2026-07-03 (verify-gone by absence): a 0xF4 after
+    # _tWinMain no longer matches a known flake, so it BLOCKS as a plain BUGCHECK — a
+    # recurrence must surface, not be auto-retried.
     serial = "[EXPLORER] _tWinMain entered\nBugCheck 0xF4 (CRITICAL_OBJECT...)\n"
     r = triage.classify(serial, reached=False, fail_marker=None, debugcon=None)
-    assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "tWinMain_0xF4_race"
+    assert r["classification"] == "BUGCHECK"
+    assert r["bugcheck"] == "0xF4"
+    assert r["known_flake"] is None
     # a different bugcheck with no flake match stays BUGCHECK
     r2 = triage.classify("BugCheck 0x7E (foo)\n", reached=False, fail_marker=None, debugcon=None)
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"

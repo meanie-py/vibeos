@@ -24,14 +24,17 @@ _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f
 # specific; RETIRE an entry (delete it) once its root fix lands and a re-gate
 # confirms the signature no longer appears (verify-gone).
 KNOWN_FLAKES = [
-    {
-        # cross-worktree _tWinMain 0xF4 race (smss-csrss/ntdll/win32k all hit it).
-        "name": "tWinMain_0xF4_race",
-        "when": "bugcheck",
-        "any": ["[EXPLORER] _tWinMain"],
-        "code": "0xF4",
-        "note": "known win32k/smss suspended-thread race; re-run to confirm",
-    },
+    # RETIRED 2026-07-03: `tWinMain_0xF4_race` (0xF4 after `[EXPLORER] _tWinMain`).
+    # Did not reproduce in 36 desktop-reaching windows-host TCG boots (sequential +
+    # 3-wide contended) — under heavy contention boots die EARLIER at the
+    # service-startup storage stall / nettest handoff (separately-tracked flakes:
+    # nettest_explorer_race + the amd64-net EventLog/DcomLaunch stall), before ever
+    # reaching the post-explorer window this 0xF4 lived in. Gating the nettest spawn
+    # (landing separately) removes that shared explorer-handoff disruptor. With no
+    # live repro to root-cause and the signature verify-gone-by-absence, the entry is
+    # removed so any recurrence BLOCKS as a fresh BUGCHECK 0xF4 (we WANT to catch it)
+    # rather than being silently auto-retried. History: field-manual §"0xF4(0x3) at
+    # _tWinMain entered". Re-add a signature here only if a real recurrence is caught.
     {
         # winlogon.rs:728 spawns nettest.exe UNCONDITIONALLY every boot; it races
         # explorer's csrss/win32k handoff so explorer never reaches _tWinMain
