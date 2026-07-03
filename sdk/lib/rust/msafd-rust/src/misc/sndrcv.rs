@@ -783,7 +783,8 @@ pub unsafe extern "system" fn WSPSend(
     SockReenableAsyncSelectEvent(Socket as PVOID, FD_WRITE as LONG);
 
     TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as _, Status, NumberOfBytesSent);
-    return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent) as i32;
+    let __rv = MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent) as i32;
+    return __rv;
 }
 #[no_mangle]
 pub unsafe extern "system" fn WSPSendTo(

@@ -23,13 +23,28 @@ extern "C" {
     fn LostSocket(irp: PIRP) -> NTSTATUS;
     fn QueueUserModeIrp(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     fn TdiBuildConnectionInfo(out: *mut PTDI_CONNECTION_INFORMATION, addr: PTRANSPORT_ADDRESS) -> NTSTATUS;
-    fn TdiSend( req: *mut PIRP, obj: PFILE_OBJECT, flags: u32, buf: *mut u8, len: u32, complete: PIO_COMPLETION_ROUTINE, ctx: PVOID, ) -> NTSTATUS;
-    fn TdiSendDatagram( req: *mut PIRP, obj: PFILE_OBJECT, buf: *mut u8, len: u32, addr: PTDI_CONNECTION_INFORMATION, complete: PIO_COMPLETION_ROUTINE, ctx: PVOID, ) -> NTSTATUS;
-    fn UnlockAndMaybeComplete(fcb: PAFD_FCB, status: NTSTATUS, irp: PIRP, info: u32) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
-unsafe extern "system" fn SendComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn SendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    send_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn SendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    send_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn send_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -254,9 +269,9 @@ unsafe extern "system" fn SendComplete(
             core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
             (*FCB).Connection.Object,
             0,
-            (*FCB).Send.Window as *mut u8,
+            (*FCB).Send.Window,
             (*FCB).Send.BytesUsed as ULONG,
-            Some(core::mem::transmute(SendComplete as *const ())),
+            Some(SendComplete),
             FCB as PVOID,
         );
     } else {
@@ -267,7 +282,25 @@ unsafe extern "system" fn SendComplete(
 
     STATUS_SUCCESS
 }
-unsafe extern "system" fn PacketSocketSendComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn PacketSocketSendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    packet_socket_send_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn PacketSocketSendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    packet_socket_send_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn packet_socket_send_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -407,10 +440,10 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
                 Status = TdiSendDatagram(
                     core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
                     (*FCB).AddressFile.Object,
-                    (*(*SendReq).BufferArray.offset(0)).buf as *mut u8,
+                    (*(*SendReq).BufferArray.offset(0)).buf,
                     (*(*SendReq).BufferArray.offset(0)).len,
                     TargetAddress,
-                    Some(core::mem::transmute(PacketSocketSendComplete as *const ())),
+                    Some(PacketSocketSendComplete),
                     FCB as PVOID,
                 );
                 if Status != STATUS_PENDING {
@@ -579,9 +612,9 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
             core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
             (*FCB).Connection.Object,
             0,
-            (*FCB).Send.Window as *mut u8,
+            (*FCB).Send.Window,
             (*FCB).Send.BytesUsed,
-            Some(core::mem::transmute(SendComplete as *const ())),
+            Some(SendComplete),
             FCB as PVOID,
         );
     }
@@ -691,10 +724,10 @@ pub unsafe extern "system" fn AfdPacketSocketWriteData(
             Status = TdiSendDatagram(
                 core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
                 (*FCB).AddressFile.Object,
-                (*(*SendReq).BufferArray.offset(0)).buf as *mut u8,
+                (*(*SendReq).BufferArray.offset(0)).buf,
                 (*(*SendReq).BufferArray.offset(0)).len,
                 TargetAddress,
-                Some(core::mem::transmute(PacketSocketSendComplete as *const ())),
+                Some(PacketSocketSendComplete),
                 FCB as PVOID
             );
             if Status != STATUS_PENDING {

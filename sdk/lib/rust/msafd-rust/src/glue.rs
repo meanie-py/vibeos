@@ -79,8 +79,27 @@ pub const IPPROTO_RAW: i32 = 255;
 // --- NTSTATUS codes the ntdll-sys bindgen doesn't surface (AFD/TDI + misc) --------------
 pub const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as NTSTATUS;
 pub const STATUS_PROTOCOL_NOT_SUPPORTED: NTSTATUS = 0xC000A013u32 as NTSTATUS;
+// NOTE: STATUS_RECEIVE_PARTIAL was MISSING — without this const, `match Status {
+// STATUS_RECEIVE_PARTIAL => ... }` in sndrcv.rs was an irrefutable binding pattern
+// (matches ANY value), so every successful recv() set *ReceiveFlags=MSG_PARTIAL and
+// ws2_32 rejected it as WSAEMSGSIZE. (ntstatus.h: 0x4000000F.)
+pub const STATUS_RECEIVE_PARTIAL: NTSTATUS = 0x4000000F;
 pub const STATUS_RECEIVE_EXPEDITED: NTSTATUS = 0x40000010;
 pub const STATUS_RECEIVE_PARTIAL_EXPEDITED: NTSTATUS = 0x40000011;
+// More NTSTATUS values that were MISSING → their `match` arms in TranslateNtStatusError
+// were irrefutable binding patterns (catch-all), so every unmatched status returned
+// WSAECONNRESET and the intended per-status WSA mapping + default were dead code.
+// (ntstatus.h values.)
+pub const STATUS_FILE_CLOSED: NTSTATUS = 0xC0000128u32 as NTSTATUS;
+pub const STATUS_INVALID_CONNECTION: NTSTATUS = 0xC0000140u32 as NTSTATUS;
+pub const STATUS_ADDRESS_ALREADY_EXISTS: NTSTATUS = 0xC000020Au32 as NTSTATUS;
+pub const STATUS_NETWORK_UNREACHABLE: NTSTATUS = 0xC000023Cu32 as NTSTATUS;
+pub const STATUS_HOST_UNREACHABLE: NTSTATUS = 0xC000023Du32 as NTSTATUS;
+// Winsock ioctlsocket codes (winsock2.h _IOW/_IOR expansions) — same missing-const
+// binding-pattern bug in WSPIoctl's `match dwIoControlCode`.
+pub const FIONBIO: DWORD = 0x8004667E;
+pub const FIONREAD: DWORD = 0x4004667F;
+pub const SIOCATMARK: DWORD = 0x40047307;
 
 // --- AFD IOCTL codes (must match the Rust afd.sys receiver — validated round-trip) ------
 // _AFD_CONTROL_CODE(Op,Method) = (FILE_DEVICE_NETWORK=0x12 << 12) | (Op<<2) | Method.
@@ -186,6 +205,10 @@ extern "system" {
 #[inline(always)] pub unsafe fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void {
     core::ptr::write_bytes(s as *mut u8, c as u8, n); s
 }
+// kernel32 OutputDebugStringA — used by the #[panic_handler] in lib.rs to emit a
+// "[MSAFD] RUST PANIC" breadcrumb to the debug port before the loop{} spin.
+extern "system" { pub fn OutputDebugStringA(lpOutputString: *const i8); }
+
 // as_apc — reinterpret an `extern "system"` APC fn as ntdll-sys's PIO_APC_ROUTINE. bindgen
 // spells that type `extern "stdcall"`(i386)/`extern "C"`(x64/arm64); the msafd APC routines
 // are defined `extern "system"` (portable). The two are ABI-IDENTICAL per arch (system ==

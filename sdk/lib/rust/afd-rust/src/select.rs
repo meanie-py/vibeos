@@ -17,7 +17,6 @@ extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut u32) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
-    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Information: u32) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

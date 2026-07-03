@@ -24,7 +24,6 @@ use core::ffi::c_void;
 extern "C" {
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
-    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Info: ULONG_PTR) -> NTSTATUS;
     fn SocketStateUnlock(FCB: PAFD_FCB);
     fn KillSelectsForFCB(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT, Force: BOOLEAN);
     fn TdiDisassociateAddressFile(Object: PVOID) -> NTSTATUS;
@@ -83,7 +82,7 @@ pub unsafe extern "system" fn AfdGetDisconnectOptions(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as ULONG_PTR)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as UINT)
 }
 
 #[no_mangle]
@@ -214,7 +213,7 @@ pub unsafe extern "system" fn AfdGetDisconnectData(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as ULONG_PTR)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as UINT)
 }
 
 #[no_mangle]
@@ -721,7 +720,25 @@ unsafe fn AfdCloseSocket(
 
     STATUS_SUCCESS
 }
-unsafe fn DisconnectComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn DisconnectComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: *mut core::ffi::c_void,
+) -> NTSTATUS {
+    disconnect_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn DisconnectComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: *mut core::ffi::c_void,
+) -> NTSTATUS {
+    disconnect_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn disconnect_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -813,7 +830,7 @@ unsafe fn DoDisconnect(FCB: PAFD_FCB) -> NTSTATUS {
         (*FCB).Connection.Object as PVOID,
         core::ptr::addr_of_mut!((*FCB).DisconnectTimeout),
         (*FCB).DisconnectFlags,
-        Some(core::mem::transmute(DisconnectComplete as *const ())),
+        Some(DisconnectComplete),
         FCB as PVOID,
         (*FCB).ConnectCallInfo,
         (*FCB).ConnectReturnInfo,

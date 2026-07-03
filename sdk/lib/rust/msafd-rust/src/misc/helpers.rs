@@ -26,6 +26,94 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub static mut HelperDLLDatabaseLock: CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 pub static mut HelperDLLDatabaseListHead: LIST_ENTRY = LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() };
+
+const REG_TRANSPORTS: [u16; 11] = [
+    'T' as u16, 'r' as u16, 'a' as u16, 'n' as u16, 's' as u16,
+    'p' as u16, 'o' as u16, 'r' as u16, 't' as u16, 's' as u16, 0,
+];
+const REG_MAPPING: [u16; 8] = [
+    'M' as u16, 'a' as u16, 'p' as u16, 'p' as u16, 'i' as u16, 'n' as u16,
+    'g' as u16, 0,
+];
+const REG_MIN_SOCKADDR_LENGTH: [u16; 18] = [
+    'M' as u16, 'i' as u16, 'n' as u16, 'S' as u16, 'o' as u16, 'c' as u16,
+    'k' as u16, 'a' as u16, 'd' as u16, 'd' as u16, 'r' as u16, 'L' as u16,
+    'e' as u16, 'n' as u16, 'g' as u16, 't' as u16, 'h' as u16, 0,
+];
+const REG_MAX_SOCKADDR_LENGTH: [u16; 18] = [
+    'M' as u16, 'a' as u16, 'x' as u16, 'S' as u16, 'o' as u16, 'c' as u16,
+    'k' as u16, 'a' as u16, 'd' as u16, 'd' as u16, 'r' as u16, 'L' as u16,
+    'e' as u16, 'n' as u16, 'g' as u16, 't' as u16, 'h' as u16, 0,
+];
+const REG_USE_DELAYED_ACCEPTANCE: [u16; 21] = [
+    'U' as u16, 's' as u16, 'e' as u16, 'D' as u16, 'e' as u16, 'l' as u16,
+    'a' as u16, 'y' as u16, 'e' as u16, 'd' as u16, 'A' as u16, 'c' as u16,
+    'c' as u16, 'e' as u16, 'p' as u16, 't' as u16, 'a' as u16, 'n' as u16,
+    'c' as u16, 'e' as u16, 0,
+];
+const REG_HELPER_DLL_NAME: [u16; 14] = [
+    'H' as u16, 'e' as u16, 'l' as u16, 'p' as u16, 'e' as u16, 'r' as u16,
+    'D' as u16, 'l' as u16, 'l' as u16, 'N' as u16, 'a' as u16, 'm' as u16,
+    'e' as u16, 0,
+];
+
+const SERVICES_PREFIX: [u16; 35] = [
+    'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
+    '\\' as u16, 'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16,
+    'n' as u16, 't' as u16, 'C' as u16, 'o' as u16, 'n' as u16, 't' as u16,
+    'r' as u16, 'o' as u16, 'l' as u16, 'S' as u16, 'e' as u16, 't' as u16,
+    '\\' as u16, 'S' as u16, 'e' as u16, 'r' as u16, 'v' as u16, 'i' as u16,
+    'c' as u16, 'e' as u16, 's' as u16, '\\' as u16, 0,
+];
+const WINSOCK_SUFFIX: [u16; 20] = [
+    '\\' as u16, 'P' as u16, 'a' as u16, 'r' as u16, 'a' as u16, 'm' as u16,
+    'e' as u16, 't' as u16, 'e' as u16, 'r' as u16, 's' as u16, '\\' as u16,
+    'W' as u16, 'i' as u16, 'n' as u16, 'S' as u16, 'o' as u16, 'c' as u16,
+    'k' as u16, 0,
+];
+const WINSOCK_PARAMS_KEY: [u16; 53] = [
+    'S' as u16, 'Y' as u16, 'S' as u16, 'T' as u16, 'E' as u16, 'M' as u16,
+    '\\' as u16, 'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16,
+    'n' as u16, 't' as u16, 'C' as u16, 'o' as u16, 'n' as u16, 't' as u16,
+    'r' as u16, 'o' as u16, 'l' as u16, 'S' as u16, 'e' as u16, 't' as u16,
+    '\\' as u16, 'S' as u16, 'e' as u16, 'r' as u16, 'v' as u16, 'i' as u16,
+    'c' as u16, 'e' as u16, 's' as u16, '\\' as u16, 'W' as u16, 'i' as u16,
+    'n' as u16, 's' as u16, 'o' as u16, 'c' as u16, 'k' as u16, '\\' as u16,
+    'P' as u16, 'a' as u16, 'r' as u16, 'a' as u16, 'm' as u16, 'e' as u16,
+    't' as u16, 'e' as u16, 'r' as u16, 's' as u16, 0,
+];
+
+unsafe fn copy_wide_part(dest: &mut [u16], offset: &mut usize, src: *const u16, include_nul: bool) -> bool {
+    let mut i = 0usize;
+    loop {
+        let ch = *src.add(i);
+        if ch == 0 {
+            if include_nul {
+                if *offset >= dest.len() {
+                    return false;
+                }
+                dest[*offset] = 0;
+                *offset += 1;
+            }
+            return true;
+        }
+
+        if *offset >= dest.len() {
+            return false;
+        }
+        dest[*offset] = ch;
+        *offset += 1;
+        i += 1;
+    }
+}
+
+unsafe fn build_transport_winsock_key(buffer: &mut [u16], transport_name: *const u16) -> bool {
+    let mut offset = 0usize;
+    copy_wide_part(buffer, &mut offset, SERVICES_PREFIX.as_ptr(), false)
+        && copy_wide_part(buffer, &mut offset, transport_name, false)
+        && copy_wide_part(buffer, &mut offset, WINSOCK_SUFFIX.as_ptr(), true)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SockGetTdiName(
     AddressFamily: PINT,
@@ -106,7 +194,7 @@ pub unsafe extern "C" fn SockGetTdiName(
     }
 
     Transport = Transports;
-    while *Transports != 0 {
+    while *Transport != 0 {
         TRACE!(b"Transport: %S\n\0".as_ptr() as *const i8, Transports);
 
         Status = SockLoadTransportMapping(Transport, core::ptr::addr_of_mut!(Mapping));
@@ -168,21 +256,17 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
 
     TRACE!(b"TransportName %ws\n\0".as_ptr(), TransportName);
 
-    let TransportKey = HeapAlloc(GlobalHeap, 0, (54 + wcslen(TransportName)) * core::mem::size_of::<WCHAR>()) as PWSTR;
+    let mut TransportKeyBuffer = [0u16; 260];
+    let TransportKey = TransportKeyBuffer.as_mut_ptr();
 
-    if TransportKey.is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr());
+    if !build_transport_winsock_key(&mut TransportKeyBuffer, TransportName) {
+        ERR!(b"Transport key too long\n\0".as_ptr());
         return WSAEINVAL as INT;
     }
 
-    wcscpy(TransportKey, b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0".as_ptr() as *const u16);
-    wcscat(TransportKey, TransportName);
-    wcscat(TransportKey, b"\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\\\0W\0i\0n\0s\0o\0c\0k\0\0".as_ptr() as *const u16);
 
     let mut KeyHandle: HKEY = core::ptr::null_mut();
     let Status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, TransportKey as LPCWSTR, 0, KEY_READ, &mut KeyHandle);
-
-    HeapFree(GlobalHeap, 0, TransportKey as *mut core::ffi::c_void);
 
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
@@ -190,10 +274,11 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     }
 
     let mut MappingSize: ULONG = 0;
-    let Status = RegQueryValueExW(KeyHandle, b"M\0a\0p\0p\0i\0n\0g\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut MappingSize as PDWORD);
+    let Status = RegQueryValueExW(KeyHandle, REG_MAPPING.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut MappingSize as PDWORD);
 
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
+        RegCloseKey(KeyHandle);
         return WSAEINVAL as INT;
     }
 
@@ -204,11 +289,12 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
         return WSAEINVAL as INT;
     }
 
-    let Status = RegQueryValueExW(KeyHandle, b"M\0a\0p\0p\0i\0n\0g\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), *Mapping as LPBYTE, &mut MappingSize as PDWORD);
+    let Status = RegQueryValueExW(KeyHandle, REG_MAPPING.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), *Mapping as LPBYTE, &mut MappingSize as PDWORD);
 
     if Status != 0 {
         ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
         HeapFree(GlobalHeap, 0, *Mapping as *mut core::ffi::c_void);
+        RegCloseKey(KeyHandle);
         return WSAEINVAL as INT;
     }
 
@@ -227,7 +313,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
 
     Status = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0W\0i\0n\0s\0o\0c\0k\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as PWSTR,
+        WINSOCK_PARAMS_KEY.as_ptr(),
         0,
         KEY_READ,
         &mut KeyHandle
@@ -240,7 +326,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
 
     Status = RegQueryValueExW(
         KeyHandle,
-        b"T\0r\0a\0n\0s\0p\0o\0r\0t\0s\0\0\0".as_ptr() as PWSTR,
+        REG_TRANSPORTS.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -261,7 +347,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
 
     Status = RegQueryValueExW(
         KeyHandle,
-        b"T\0r\0a\0n\0s\0p\0o\0r\0t\0s\0\0\0".as_ptr() as PWSTR,
+        REG_TRANSPORTS.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         *TransportList as LPBYTE,
@@ -295,26 +381,18 @@ pub unsafe extern "C" fn SockLoadHelperDll(
         return WSAEINVAL as INT;
     }
 
-    let HelperKey: PWSTR = HeapAlloc(
-        GlobalHeap,
-        0,
-        (54 + wcslen(TransportName)) * core::mem::size_of::<u16>(),
-    ) as PWSTR;
+    let mut HelperKeyBuffer = [0u16; 260];
+    let HelperKey = HelperKeyBuffer.as_mut_ptr();
 
-    if HelperKey.is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
+    if !build_transport_winsock_key(&mut HelperKeyBuffer, TransportName) {
+        ERR!(b"Helper key too long\n\0".as_ptr());
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }
 
-    wcscpy(HelperKey, b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0\0".as_ptr() as PWSTR);
-    wcscat(HelperKey, TransportName);
-    wcscat(HelperKey, b"\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\\\0W\0i\0n\0s\0o\0c\0k\0\0\0".as_ptr() as PWSTR);
 
     let mut KeyHandle: HKEY = core::ptr::null_mut();
     let mut Status: i32 = RegOpenKeyExW(HKEY_LOCAL_MACHINE, HelperKey, 0, KEY_READ, &mut KeyHandle);
-
-    HeapFree(GlobalHeap, 0, HelperKey as *mut core::ffi::c_void);
 
     if Status != 0 {
         ERR!(b"Error reading helper DLL parameters\n\0".as_ptr() as *const i8);
@@ -326,7 +404,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     (*HelperData).MinWSAddressLength = 16;
     RegQueryValueExW(
         KeyHandle,
-        b"M\0i\0n\0S\0o\0c\0k\0a\0d\0d\0r\0L\0e\0n\0g\0t\0h\0\0\0".as_ptr() as PWSTR,
+        REG_MIN_SOCKADDR_LENGTH.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!((*HelperData).MinWSAddressLength) as LPBYTE,
@@ -336,7 +414,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     (*HelperData).MaxWSAddressLength = 16;
     RegQueryValueExW(
         KeyHandle,
-        b"M\0a\0x\0S\0o\0c\0k\0a\0d\0d\0r\0L\0e\0n\0g\0t\0h\0\0\0".as_ptr() as PWSTR,
+        REG_MAX_SOCKADDR_LENGTH.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!((*HelperData).MaxWSAddressLength) as LPBYTE,
@@ -350,7 +428,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     (*HelperData).UseDelayedAcceptance = 0u8;
     RegQueryValueExW(
         KeyHandle,
-        b"U\0s\0e\0D\0e\0l\0a\0y\0e\0d\0A\0c\0c\0e\0p\0t\0a\0n\0c\0e\0\0\0".as_ptr() as PWSTR,
+        REG_USE_DELAYED_ACCEPTANCE.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!((*HelperData).UseDelayedAcceptance) as LPBYTE,
@@ -377,7 +455,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     DataSize = 512;
     Status = RegQueryValueExW(
         KeyHandle,
-        b"H\0e\0l\0p\0e\0r\0D\0l\0l\0N\0a\0m\0e\0\0\0".as_ptr() as PWSTR,
+        REG_HELPER_DLL_NAME.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         HelperDllName as LPBYTE,
@@ -479,17 +557,22 @@ pub unsafe extern "C" fn SockIsTripleInMapping(
 
     Row = 0;
     while Row < (*Mapping).Rows {
+        // `Mapping` is a C flexible-array member (`WINSOCK_MAPPING_ROW Mapping[]`); bindgen
+        // types it as `[T; 1]`, so a bounds-checked `[Row]` index panics for Row >= 1 (real
+        // mappings have several rows). Under #[panic=abort] + the loop{} panic handler that
+        // panic is an infinite hang (not a crash). Access via pointer arithmetic instead.
+        let row = &*(*Mapping).Mapping.as_ptr().add(Row as usize);
         TRACE!(
             b"Examining: row %d: AF %d type %d proto %d\n\0".as_ptr() as PCHAR,
             Row,
-            (*Mapping).Mapping[Row as usize].AddressFamily as INT,
-            (*Mapping).Mapping[Row as usize].SocketType as INT,
-            (*Mapping).Mapping[Row as usize].Protocol as INT,
+            row.AddressFamily as INT,
+            row.SocketType as INT,
+            row.Protocol as INT,
         );
 
-        if ((*Mapping).Mapping[Row as usize].AddressFamily as INT == AddressFamily)
-            && ((*Mapping).Mapping[Row as usize].SocketType as INT == SocketType)
-            && ((*Mapping).Mapping[Row as usize].Protocol as INT == Protocol)
+        if (row.AddressFamily as INT == AddressFamily)
+            && (row.SocketType as INT == SocketType)
+            && (row.Protocol as INT == Protocol)
         {
             TRACE!(b"Found\n\0".as_ptr() as PCHAR);
             return 1;

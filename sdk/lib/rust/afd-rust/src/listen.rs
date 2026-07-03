@@ -100,7 +100,25 @@ unsafe fn SatisfyPreAccept(Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
     STATUS_SUCCESS
 }
-unsafe extern "system" fn ListenComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn ListenComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    listen_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn ListenComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    listen_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn listen_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -228,7 +246,7 @@ unsafe extern "system" fn ListenComplete(
             (*FCB).Connection.Object,
             core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionCallInfo),
             core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionReturnInfo),
-            Some(core::mem::transmute(ListenComplete as *const ())),
+            Some(ListenComplete),
             FCB as PVOID,
         );
 
@@ -322,7 +340,7 @@ pub unsafe extern "C" fn AfdListenSocket(
         (*FCB).Connection.Object,
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionCallInfo),
         core::ptr::addr_of_mut!((*FCB).ListenIrp.ConnectionReturnInfo),
-        Some(core::mem::transmute(ListenComplete as *const ())),
+        Some(ListenComplete),
         FCB as PVOID,
     );
 

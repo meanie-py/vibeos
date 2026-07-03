@@ -18,7 +18,6 @@ extern "C" {
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(FCB: PAFD_FCB);
     fn TaCopyTransportAddress(Address: PVOID) -> PVOID;
-    fn TdiReceiveDatagram( Request: *mut PIRP, AddressFile: PVOID, Flags: ULONG, Buffer: PVOID, Size: ULONG, AddressFrom: PVOID, Completion: PVOID, Context: PVOID, ) -> NTSTATUS;
     fn UnlockBuffers(BufferArray: PVOID, BufferCount: ULONG, UnlockExtra: BOOLEAN);
     fn UnlockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION);
 }
@@ -55,7 +54,7 @@ unsafe fn RefillSocketBuffer(FCB: PAFD_FCB) {
         TDI_RECEIVE_NORMAL as USHORT,
         (*FCB).Recv.Window.add((*FCB).Recv.Content as usize),
         (*FCB).Recv.Size - (*FCB).Recv.Content,
-        Some(core::mem::transmute(ReceiveComplete as *const ())),
+        Some(ReceiveComplete),
         FCB as PVOID,
     );
 }
@@ -303,7 +302,26 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ReceiveComplete(
+#[cfg(target_arch = "x86")]
+pub unsafe extern "stdcall" fn ReceiveComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    receive_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[no_mangle]
+#[cfg(not(target_arch = "x86"))]
+pub unsafe extern "C" fn ReceiveComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    receive_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn receive_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -616,7 +634,26 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PacketSocketRecvComplete(
+#[cfg(target_arch = "x86")]
+pub unsafe extern "stdcall" fn PacketSocketRecvComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    packet_socket_recv_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[no_mangle]
+#[cfg(not(target_arch = "x86"))]
+pub unsafe extern "C" fn PacketSocketRecvComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    packet_socket_recv_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn packet_socket_recv_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -782,12 +819,12 @@ pub unsafe extern "system" fn PacketSocketRecvComplete(
     if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && (*FCB).Recv.Content < (*FCB).Recv.Size {
         Status = TdiReceiveDatagram(
             core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
-            (*FCB).AddressFile.Object as PVOID,
+            (*FCB).AddressFile.Object,
             0,
-            (*FCB).Recv.Window as PVOID,
+            (*FCB).Recv.Window,
             (*FCB).Recv.Size,
-            (*FCB).AddressFrom as PVOID,
-            PacketSocketRecvComplete as PVOID,
+            (*FCB).AddressFrom,
+            Some(PacketSocketRecvComplete),
             FCB as PVOID,
         );
     }

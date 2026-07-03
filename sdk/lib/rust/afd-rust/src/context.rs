@@ -13,7 +13,6 @@ extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Force: BOOLEAN, Size: PULONG) -> PVOID;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
-    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: NTSTATUS, Irp: PIRP, Information: UINT) -> NTSTATUS;
 }
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetContext(

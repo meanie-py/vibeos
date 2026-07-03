@@ -26,6 +26,9 @@ pub mod misc; // the 5 translated translation units
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
+    unsafe {
+        crate::glue::OutputDebugStringA(b"[MSAFD] RUST PANIC\n\0".as_ptr() as *const i8);
+    }
     loop {}
 }
 

@@ -288,7 +288,16 @@ pub unsafe extern "system" fn WSPSocket(
         }
     }
 
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(DevName), b"\\Device\\Afd\\Endpoint\0".as_ptr() as *const u16);
+    // \Device\Afd\Endpoint as REAL UTF-16 (the L"..." literal). A byte-string-as-u16 cast
+    // mis-encodes it to ASCII pairs -> RtlInitUnicodeString over-scans / NtCreateFile gets a
+    // garbage device name (same bug class as the afd.sys \Device\Afd device-name fix).
+    static AFD_ENDPOINT: [u16; 21] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16,
+        b'\\' as u16, b'A' as u16, b'f' as u16, b'd' as u16,
+        b'\\' as u16, b'E' as u16, b'n' as u16, b'd' as u16, b'p' as u16, b'o' as u16, b'i' as u16,
+        b'n' as u16, b't' as u16, 0,
+    ];
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(DevName), AFD_ENDPOINT.as_ptr());
 
     Socket = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCKET_INFORMATION>()) as PSOCKET_INFORMATION;
     if Socket.is_null() {
@@ -1104,7 +1113,13 @@ pub unsafe extern "system" fn WSPBind(
         return SOCKET_ERROR;
     }
 
-    connectSize = (FIELD_OFFSET!(AFD_BIND_DATA, Address.Address) + SocketAddressLength as usize) as ULONG;
+    // C: FIELD_OFFSET(AFD_BIND_DATA, Address.Address[SocketAddressLength]) — the
+    // `[SocketAddressLength]` is a TA_ADDRESS array subscript (scale = sizeof(TA_ADDRESS)),
+    // NOT a byte offset. The translator dropped the scaling (`+ SocketAddressLength`), which
+    // under-allocates by 2 bytes and heap-overruns the inner Address[] copy below on every
+    // bind() — corrupting the process heap. Restore the array-subscript scaling.
+    connectSize = (FIELD_OFFSET!(AFD_BIND_DATA, Address.Address)
+        + SocketAddressLength as usize * core::mem::size_of::<TA_ADDRESS>()) as ULONG;
 
     BindData = HeapAlloc(GlobalHeap, 0, (connectSize as usize)) as PAFD_BIND_DATA;
     if BindData.is_null() {

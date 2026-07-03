@@ -15,7 +15,6 @@ extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut KPROCESSOR_MODE) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> i32;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
-    fn UnlockAndMaybeComplete(FCB: PAFD_FCB, Status: i32, Irp: PIRP, Information: usize) -> i32;
     fn TdiAssociateAddressFile(Handle: HANDLE, Object: PFILE_OBJECT) -> NTSTATUS;
     fn TdiOpenConnectionEndpointFile( DeviceName: *mut _UNICODE_STRING, Handle: *mut HANDLE, Object: *mut PFILE_OBJECT ) -> NTSTATUS;
 }
@@ -55,7 +54,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as usize)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as UINT)
 }
 
 #[no_mangle]
@@ -181,7 +180,7 @@ pub unsafe extern "system" fn AfdGetConnectData(
         BufferSize as usize,
     );
 
-    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as usize)
+    UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, BufferSize as UINT)
 }
 
 #[no_mangle]
@@ -376,7 +375,25 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status
 }
 
-unsafe extern "system" fn StreamSocketConnectSendComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn StreamSocketConnectSendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    stream_socket_connect_send_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn StreamSocketConnectSendComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    stream_socket_connect_send_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn stream_socket_connect_send_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -415,7 +432,25 @@ unsafe extern "system" fn StreamSocketConnectSendComplete(
 
     STATUS_SUCCESS
 }
-unsafe extern "system" fn StreamSocketConnectComplete(
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn StreamSocketConnectComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    stream_socket_connect_complete_impl(DeviceObject, Irp, Context)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn StreamSocketConnectComplete(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    stream_socket_connect_complete_impl(DeviceObject, Irp, Context)
+}
+
+unsafe fn stream_socket_connect_complete_impl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -568,7 +603,7 @@ unsafe extern "system" fn StreamSocketConnectComplete(
                 AFD_OVERLAPPED as u16,
                 sendBuffer as PCHAR,
                 sendBufferLength,
-                Some(core::mem::transmute(StreamSocketConnectSendComplete as *const ())),
+                Some(StreamSocketConnectSendComplete),
                 FCB as PVOID,
             );
 
@@ -715,7 +750,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
                                 (*FCB).Connection.Object,
                                 (*FCB).ConnectCallInfo,
                                 (*FCB).ConnectReturnInfo,
-                                Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
+                                Some(StreamSocketConnectComplete),
                                 FCB as PVOID,
                             );
                         }
@@ -781,7 +816,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
                                 (*FCB).Connection.Object,
                                 (*FCB).ConnectCallInfo,
                                 (*FCB).ConnectReturnInfo,
-                                Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
+                                Some(StreamSocketConnectComplete),
                                 FCB as PVOID,
                             );
                         }
@@ -960,7 +995,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
                                     (*FCB).Connection.Object,
                                     (*FCB).ConnectCallInfo,
                                     (*FCB).ConnectReturnInfo,
-                                    Some(core::mem::transmute(StreamSocketConnectComplete as *const ())),
+                                    Some(StreamSocketConnectComplete),
                                     FCB as PVOID,
                                 );
                             }
