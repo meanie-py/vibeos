@@ -19,12 +19,14 @@ const FO_NAMED_PIPE: ULONG = 0x00000080;
 // LockQueueIoCancelLock enum value
 const LockQueueIoCancelLock: ULONG = 7;
 
-// KERNEL_STACK_SIZE varies by architecture but is 12288 (0x3000) on i386/arm64
-// and 0xC000 on amd64
-#[cfg(target_arch = "x86_64")]
-const KERNEL_STACK_SIZE: ULONG_PTR = 0xC000;
-#[cfg(not(target_arch = "x86_64"))]
+// KERNEL_STACK_SIZE varies by architecture: 0x3000 (12KB) on i386, 0xC000 (48KB)
+// on the 64-bit arches amd64 and arm64. Must match the actual allocated stack
+// size (ARM3::helpers::KERNEL_STACK_SIZE) so DpcStack-KERNEL_STACK_SIZE computes
+// the correct low limit.
+#[cfg(target_arch = "x86")]
 const KERNEL_STACK_SIZE: ULONG_PTR = 0x3000;
+#[cfg(not(target_arch = "x86"))]
+const KERNEL_STACK_SIZE: ULONG_PTR = 0xC000;
 
 const STATUS_EA_LIST_INCONSISTENT: NTSTATUS = 0x80000014u32 as NTSTATUS;
 
