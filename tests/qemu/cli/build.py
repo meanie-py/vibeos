@@ -207,6 +207,20 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
             )
 
 
+def _ninja_jobs() -> list[str]:
+    """`-j N` args that cap ninja parallelism to leave host cores free for a concurrent
+    windows-host QEMU boot. The build runs in WSL and the boot's `qemu.exe` runs on the
+    Windows side, but they share the same physical CPU — and ninja's default is `nproc+2`
+    (34 on a 32-thread box), which oversubscribes AND starves a co-running boot into a
+    false HANG_TIMEOUT. Reserve cores (default 8) so build ∥ boot; VIBEOS_BUILD_CORE_RESERVE
+    tunes it, 0 = uncapped (ninja's own default). Pairs with hostlock's separate boot pool."""
+    reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "8"))
+    n = os.cpu_count() or 0
+    if reserve <= 0 or n <= reserve:
+        return []
+    return ["-j", str(n - reserve)]
+
+
 def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     """All declared ninja target paths (`ninja -t targets all`), for filtering the
     mkramdisk boot manifest down to buildable file targets. Plain subprocess (not
@@ -390,7 +404,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # dirs masked (winnt.h always pre-existed). Prime the generator targets as an
     # explicit barrier; warm trees no-op in ~1s.
     cp = run.run(
-        wrap(["ninja", "host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes"]),
+        wrap(["ninja", *_ninja_jobs(), "host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes"]),
         cwd=build_dir,
         env=build_env,
         stage="ninja-prime",
@@ -438,7 +452,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             header="cohab",
         )
     cp = run.run(
-        wrap(["ninja", *targets, *cohab]),
+        wrap(["ninja", *_ninja_jobs(), *targets, *cohab]),
         cwd=build_dir,
         env=build_env,
         stage="ninja",

@@ -87,10 +87,22 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--no-net]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
+
+- **Net suite (amd64) runs by default** and folds into the verdict — a netstack
+  regression turns the smoke red like any other, never hidden. It is a *second
+  full UEFI boot* (the virtio-net config), kept separate from the plain boot so
+  the desktop-reach North Star stays free of slirp/hostfwd flake; that isolation
+  is why it's an extra boot. `--no-net` skips it for fast local boot-only
+  iteration (an escape hatch, not the gate default).
+- **Early-hang watchdog:** a boot that emits serial then goes fully silent past a
+  safe threshold (`ArchConfig.hang_silence_seconds` — 120s x86 / 240s arm64) is
+  declared WEDGED and fails *fast* instead of burning the full `boot_timeout`
+  (saves ~4–5min on a genuinely wedged arm64/x86 boot). A slow-but-progressing
+  boot keeps emitting, so it is never false-tripped.
 
 - **Hard-fails on stale or missing media** — it will *not* silently boot the
   wrong binary. If you're bisecting and *want* the current media regardless, pass

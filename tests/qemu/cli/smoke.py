@@ -29,22 +29,33 @@ def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
     grepping full.log: if serial was still flowing at the deadline the box was
     making progress (host contention / slow TCG), not wedged."""
     fail_re = re.compile(fail_on) if fail_on else None
+    hang_silence = getattr(vm.config, "hang_silence_seconds", 0.0)
     buf = ""
     start = time.monotonic()
     deadline = start + timeout
     last_activity = start
-    while time.monotonic() < deadline:
+    early_hang = False
+    now = start
+    while now < deadline:
         chunk = vm.serial.read_available(timeout=0.5)
+        now = time.monotonic()
         if chunk:
             buf += chunk
-            last_activity = time.monotonic()
+            last_activity = now
             if until in buf:
                 return "reached", buf, {}
             if fail_re and fail_re.search(buf):
                 return "failmarker", buf, {}
+        elif hang_silence and buf and (now - last_activity) > hang_silence:
+            # Boot emitted serial, then went silent well past any legitimate
+            # inter-line gap on a healthy boot: a wedge. Fail fast instead of
+            # burning the rest of boot_timeout (arm64 wedges otherwise sit ~5min).
+            early_hang = True
+            break
     silent_s = time.monotonic() - last_activity
     last_line = next((ln for ln in reversed(buf.splitlines()) if ln.strip()), "")
-    return "timeout", buf, {"silent_s": silent_s, "last_line": last_line[:160]}
+    diag = {"silent_s": silent_s, "last_line": last_line[:160], "early_hang": early_hang}
+    return "timeout", buf, diag
 
 
 def _settle(vm: QemuVM, seconds: float) -> None:
@@ -161,6 +172,8 @@ def _one_boot(
                 )
             else:
                 hint = f"serial SILENT {silent_s:.0f}s before deadline — likely genuinely WEDGED"
+                if diag.get("early_hang"):
+                    hint += " (early-hang abort — failed fast, skipped the rest of boot_timeout)"
             last_line = diag.get("last_line", "")
             tail = f"; last serial: {last_line}" if last_line else ""
             tri["salient"].insert(0, f"timeout: {hint}{tail}")
@@ -296,9 +309,14 @@ def smoke(args, repo: Path) -> int:
     run.extra["runs"] = total
     run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
 
-    # M6: fold the netstack net-suite into the verdict. Only when boot is green
-    # (no point net-testing a broken boot) and only on amd64 (the virtio-net
-    # config). --no-net opts out for fast boot-only iteration.
+    # Fold the netstack net-suite into the verdict (amd64 only — the virtio-net
+    # config). ALWAYS run by default so a netstack regression turns the North Star
+    # red like any other regression — a net failure is flagged, never hidden. It
+    # is a SECOND full UEFI boot (NIC config), kept separate from the plain boot so
+    # the desktop-reach North Star verdict stays free of slirp/hostfwd flake; that
+    # isolation is the reason for the extra boot, not an accident. Only runs when
+    # the boot itself is green. `--no-net` skips it for fast local boot-only
+    # iteration (a dev escape hatch, not the gate default).
     if arch == "amd64" and npass == total and not getattr(args, "no_net", False):
         _net_stage(run, repo, arch)
 

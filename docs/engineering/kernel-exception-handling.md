@@ -11,7 +11,7 @@ Companion to:
   strategy this project would *eventually* extend
 - [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md) —
   validates that win32k can ship without this project landing first
-- [win32k-translation-audit.md](win32k-translation-audit.md) — same
+- [archive/win32k-translation-audit.md](archive/win32k-translation-audit.md) — same
 - `qemu/~temp-chat.md` — full pre-consolidation chat with code shapes
 - `qemu/~temp-chat-consolidated.md` §8 — the consolidated 1-week plan
 

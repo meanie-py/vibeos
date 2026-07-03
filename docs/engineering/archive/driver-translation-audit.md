@@ -1,3 +1,9 @@
+> ⚠️ **ARCHIVED 2026-07-03 — superseded by [`rust-port-status.md`](../rust-port-status.md).**
+> This per-surface audit is a point-in-time historical record. Its per-file counts were
+> measured ~2026-06-21 (before the last swarm wind-down) and are **stale** — several
+> "0% / in-progress" claims here are now done. For current Rust-vs-C coverage use the
+> status doc; this file is kept only for the detailed per-file mapping and history.
+
 # Driver Translation Audit
 
 > **Ground-truth re-verified 2026-06-21** against each driver's `CMakeLists.txt` + `sdk/lib/rust/*` crates (cohab `# replaced by Rust` markers + `add_cargo_module`/`add_cargo_kernel_dll` wiring) and `origin/master`. **A big driver wave landed since the 2026-06-17 rollup.** Corrections this pass: **classpnp / cdfs / cdrom are all LANDED on master** (cdrom shipped to mainline `c2839ebaf5b`) — no longer in-flight; **fastfat.sys is DONE** (fastfat-rust, full 34-`.c` cohab flip, boots arm64 to desktop ×3) — moved out of "candidate / not started"; and the **entire previously-"C-only" storage/HID set is now Rust-flipped on master**: storport-rust, storahci-rust, serial-rust, ramdisk-rust, hidclass-rust, hidusb-rust, kbdhid-rust, mouhid-rust all carry cohab markers and live crates. **btrfs/ext2/ntfs** stay DELETED (commit 14a0563b291, 2026-06-09; ~16 dead `baseaddress_{ubtrfs,uext2,untfs,shellbtrfs}` constants linger harmlessly in `sdk/cmake/baseaddress*.cmake`).

@@ -1,3 +1,9 @@
+> ⚠️ **ARCHIVED 2026-07-03 — superseded by [`rust-port-status.md`](../rust-port-status.md).**
+> This per-surface audit is a point-in-time historical record. Its per-file counts were
+> measured ~2026-06-21 (before the last swarm wind-down) and are **stale** — several
+> "0% / in-progress" claims here are now done. For current Rust-vs-C coverage use the
+> status doc; this file is kept only for the detailed per-file mapping and history.
+
 # ntoskrnl C→Rust Translation Audit
 
 > **Translation: ~100% of the ntoskrnl body (methodology below).** The shipping kernel links **zero ntoskrnl body C** — the only active `.c` in `ntos.cmake` is the 8-file, 1,037-LOC header-free CRT/SEH/asm-glue shim layer (each augments a Rust impl in a sibling rlib). Methodology: the active-source list in `ntos.cmake` contains 0 body `.c` (all subsystem dirs carry "# replaced by Rust" markers — 42 in `ntos.cmake`/`CMakeLists.txt`); `find sdk/lib/rust/ntoskrnl-rust/src -name '*.rs'` = **406 files / 451,190 LOC** vs an original C body of **268,513 LOC**; the irreducible glue is the 1,037-LOC shim layer + the in-cargo CRT floor. Honest caveat: "100%" = coverage at link (every body symbol resolves to Rust), not idiomation quality — the frontier is Stage-3 (Result/Drop-RAII) + runtime correctness.
