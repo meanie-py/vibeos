@@ -49,19 +49,28 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--no-check] [--strict] [--cache]`
+### `build --arch X [--clean] [--no-check] [--strict] [--no-cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 
+- **Canonical build path (2026-07-03):** every build runs with the worktree
+  bind-mounted at `/tmp/vibeos` (unprivileged userns — `tools/canon-run.sh`,
+  `canon.py`), so compiler argv + embedded paths + CMake caches are identical
+  from every worktree. A missing `build-<arch>` is auto-provisioned (fresh
+  configure, fast on cache hits); a legacy real-path one is auto-migrated (loud
+  `canonize` stage, one-time full rebuild). Raw ninja against a canonical dir:
+  `../tools/canon-run.sh ninja <target>` from inside it.
 - **Warm by default** (incremental — fast iteration). `--clean` is *cold*: nukes
   **every** discovered rust target dir + every `lib*_rust.a`, then rebuilds. The
   stamp records which mode was used; warm builds are flagged because cargo
   incremental *can mask regressions*.
-- **`--cache`** (opt-in; also `VIBEOS_BUILD_CACHE=1`) routes C/C++ through ccache
-  and Rust through sccache, keyed off `VIBEOS_ROOT` (the worktree-parent dir, so
-  hits are shared across worktrees for C/C++ and across the clean-smoke target
-  nuke for Rust). Reports a per-build hit-rate stage (also a determinism gauge).
-  Off by default while it's measured; design + status:
+- **Cache is MANDATORY** (disable with `--no-cache` / `VIBEOS_BUILD_CACHE=0`):
+  C/C++ through ccache, Rust through sccache, dirs keyed off `VIBEOS_ROOT` (the
+  worktree-parent). With the canonical path, hits are shared **across worktrees
+  for both languages** and across the clean-smoke target nuke (measured:
+  100%/100% on a `--clean` replay). Reports a per-build hit-rate stage (also a
+  determinism gauge). Also fires a detached ≤1/day hardlink-dedup of the cache
+  trees (`tools/dedup-build-cache.sh`). Design + status:
   `docs/engineering/build-cache-and-determinism-plan.md`.
 - **Strategy:** iterate warm; do a `--clean` build before you believe a green
   result or hand off. The clean build is the only one that proves a cold-link

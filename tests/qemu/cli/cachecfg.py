@@ -12,20 +12,20 @@ compiled in `vibeos`. Default: the repo's parent dir (which is that directory on
 this machine, `~/Projects/os-playground`). Override with the `VIBEOS_ROOT` env
 var; a machine that keeps everything under `~/.vibeos` points it there.
 
-First-landing scope (opt-in via `--cache` / `VIBEOS_BUILD_CACHE=1`):
+Scope (MANDATORY since 2026-07-03 — on unless `--no-cache` / `VIBEOS_BUILD_CACHE=0`):
   * **ccache for C/C++** — cross-worktree hits via `CCACHE_BASEDIR` + `nohashdir`
     (automatic path rewriting; the ReactOS tree already wires `RULE_LAUNCH_COMPILE
     ccache` behind `-DENABLE_CCACHE`, which `build.py` toggles on).
   * **sccache for Rust** — caches rustc across the smoke harness's target-dir
     nuke (`RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0`), **same-worktree**.
 
-Deliberately NOT done yet (see plan §"path normalization"): the
-`--remap-path-prefix` that would give cross-*worktree* Rust hits. This project
-sets load-bearing per-target `rustflags` in `sdk/lib/rust/.cargo/config.toml`
-(the i386 `-sse,-sse2` kernel guard); the `RUSTFLAGS` env var *replaces* those
-rather than merging (cargo uses env-flags XOR config-flags), so injecting a remap
-that way would silently put SSE back in the i386 kernel. Cross-worktree Rust is a
-follow-up that must thread the remap through config.toml, not the env.
+Cross-worktree path-independence (both languages) comes from the CANONICAL BUILD
+PATH: `vibeos-cli build` runs cmake/ninja/cargo with the worktree bind-mounted at
+/tmp/vibeos (see canon.py / tools/canon-run.sh), so compiler argv and embedded
+paths are identical from every worktree — that's what lets ccache AND sccache
+hit across worktrees with no remap flags. (The old det-remap
+`--remap-path-prefix` approach was removed 2026-07-03: sccache marks such
+invocations non-cacheable, which had silently disabled all Rust caching.)
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_MAXSIZE = "50G"
-_TRUEY = ("1", "true", "yes", "on")
+_FALSEY = ("0", "false", "no", "off")
 
 
 def vibeos_root(repo: Path) -> Path:
@@ -51,12 +51,15 @@ def vibeos_root(repo: Path) -> Path:
 
 
 def cache_enabled(args=None) -> bool:
-    """Opt-in for the first landing: `--cache` flag (tri-state) or
-    `VIBEOS_BUILD_CACHE=1`. Default off so a cache bug can't wedge every build."""
+    """Mandatory since 2026-07-03: caching is ON unless explicitly disabled via
+    `--no-cache` or `VIBEOS_BUILD_CACHE=0`. (i386 was proven codegen-safe 2026-06-15;
+    determinism rung 5 byte-identity holds on all 3 arches, so the original
+    "opt-in until amd64/arm64 validated" gate is met.) The flag (tri-state) beats
+    the env; the escape hatch stays so a cache bug can't wedge a build."""
     flag = getattr(args, "cache", None) if args is not None else None
     if flag is not None:
         return bool(flag)
-    return os.environ.get("VIBEOS_BUILD_CACHE", "").lower() in _TRUEY
+    return os.environ.get("VIBEOS_BUILD_CACHE", "").lower() not in _FALSEY
 
 
 @dataclass(frozen=True)

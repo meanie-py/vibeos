@@ -309,7 +309,14 @@ def _ninja_has_work(build_dir: Path, targets: list[str]) -> bool:
     not just the first, means a pending relink of any of them (win32k, fastfat,
     livecd_hives, uefildr…) is caught, not only ntoskrnl's. We treat ONLY a 'no
     work to do' as clean (plan §5/§20 'don't filter naively')."""
-    out = _run(["ninja", "-n", *targets], build_dir)
+    from . import canon
+
+    cmd = ["ninja", "-n", *targets]
+    if canon.is_canonical(build_dir):
+        # canonical build dirs bake /tmp/vibeos paths — ninja must run under the
+        # canon-run bind mount or every input stats as missing → phantom work
+        cmd = canon.wrap(build_dir.parent, cmd)
+    out = _run(cmd, build_dir)
     # ninja prints "ninja: no work to do." when clean. The reconfigure line
     # ("Re-running CMake...") is expected and not by itself staleness; we look
     # for actual build edges.
@@ -322,7 +329,11 @@ def _ninja_has_work(build_dir: Path, targets: list[str]) -> bool:
         s = line.strip()
         if not s or s.startswith("ninja:"):
             continue
-        if "Re-running CMake" in s or "Regenerating ninja files" in s:
+        if (
+            "Re-running CMake" in s
+            or "Regenerating ninja files" in s
+            or "Re-checking globbed directories" in s  # glob re-stat, not build work
+        ):
             continue
         return True
     return False

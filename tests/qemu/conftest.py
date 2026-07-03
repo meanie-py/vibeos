@@ -73,10 +73,16 @@ def _ensure_clean_rust_build(arch: str) -> None:
         lib_file.unlink()
         print(f"[pytest] Removed {lib_file}")
 
-    # Rebuild
+    # Rebuild. Canonical build dirs (cli.canon) bake /tmp/vibeos paths, so ninja
+    # must run under the canon-run bind mount; legacy dirs run ninja directly.
+    from .cli import canon
+
+    def _wrap(cmd: list[str]) -> list[str]:
+        return canon.wrap(PROJECT_DIR, cmd) if canon.is_canonical(build_dir) else cmd
+
     build_target = "livecd" if _base_arch(arch) in ("i386", "amd64") else "ntoskrnl"
     ninja = subprocess.run(
-        ["ninja", build_target],
+        _wrap(["ninja", build_target]),
         cwd=build_dir, capture_output=True, text=True, timeout=600,
     )
     if ninja.returncode != 0:
@@ -92,7 +98,7 @@ def _ensure_clean_rust_build(arch: str) -> None:
     # structural mirror of `ninja livecd`.
     if arch in ("arm64", "arm64-test"):
         subprocess.run(  # best-effort: targets absent on some branches
-            ["ninja", "arm64input", "arm64vid"],
+            _wrap(["ninja", "arm64input", "arm64vid"]),
             cwd=build_dir, capture_output=True, text=True, timeout=600,
         )
         refresh = subprocess.run(

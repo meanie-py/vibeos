@@ -1,9 +1,57 @@
 # Build Cache & Determinism Plan
 
-Status: **implemented + measured on i386, opt-in** (brainstormed + implemented 2026-06-14;
-real-tree measured 2026-06-15; lane = `build-cache` branch / `vibeos-wt-buildcache`).
-Headline: **sccache 100% Rust hits across the clean-smoke target nuke**, cache proven
-codegen-safe. Owner: build-cache lane. Prereq for nothing; unblocks faster iteration.
+Status: **MANDATORY (default-on) + canonical build path, 2026-07-03.** Original lane:
+brainstormed + implemented 2026-06-14, measured 2026-06-15, opt-in. Headline then:
+**sccache 100% Rust hits across the clean-smoke target nuke**, cache proven codegen-safe.
+
+## ⚡ 2026-07-03 update — mandatory cache + the CANONICAL BUILD PATH
+
+Two findings forced a redesign of the sharing story; both are now landed:
+
+1. **The det-remap rung-1 flag had silently disabled ALL Rust caching.** sccache
+   (0.8.2) marks any rustc invocation carrying `--remap-path-prefix` as
+   **non-cacheable** (`Non-cacheable reasons: --remap-path-prefix`, measured). So the
+   determinism remap that landed 2026-06-20 killed the sccache win validated
+   2026-06-15 — same lane, features in direct conflict, unnoticed because the cache
+   was opt-in and rarely on.
+2. **Per-worktree paths were the root of everything** — the remap flags, the
+   cross-worktree miss story, AND the cp -a + sed-repoint ceremony.
+
+**The fix: every worktree builds at ONE canonical absolute path.** `vibeos-cli build`
+(via `tools/canon-run.sh`) bind-mounts the worktree at `/tmp/vibeos` inside an
+unprivileged user+mount namespace and runs cmake/ninja/cargo there. Compiler argv,
+embedded paths, `getcwd()`, and CMake caches are then worktree-independent, so:
+
+- **sccache Rust hits cross-worktree with zero remap flags** (measured: 100% hit
+  compiling the same crate from a second worktree).
+- det-remap (`sdk/cmake/det-remap.toml.in` + the `--config` injection in
+  `add_cargo_module`) is **removed** — canonical paths supersede it, and byte-identity
+  across worktrees becomes automatic instead of remap-maintained.
+- a canonical build dir is **path-portable**: provisioning a worktree is a plain fresh
+  `cmake` configure (fast on cache hits) — `vibeos-cli build` auto-provisions a missing
+  `build-<arch>` and auto-migrates a legacy real-path one (loud `canonize` stage,
+  one-time full rebuild that repopulates the shared cache).
+- **cache is mandatory**: on unless `--no-cache` / `VIBEOS_BUILD_CACHE=0` (the
+  amd64/arm64 validation gate the opt-in was waiting on is met — determinism rung 5
+  byte-identity holds on all 3 arches).
+- disk-side sharing is automated: `vibeos-cli build` fires a detached, ≤1/day
+  `tools/dedup-build-cache.sh --apply` (hardlink byte-identical artifacts across the
+  ~100 per-consumer cargo target dirs + worktrees).
+
+Sharp edges (all handled in `tools/canon-run.sh` / `tests/qemu/cli/canon.py`):
+- **sccache server namespace affinity**: the server resolves paths in the namespace it
+  was spawned in; a stale server from another worktree's build would compile the wrong
+  sources. canon-run stops any live server on entry (race-free under hostlock).
+- `.build-tools/llvm-mingw` was a RELATIVE symlink that dangles under the mount —
+  `canon.ensure_toolchain()` heals it to absolute (and provisions it in fresh worktrees).
+- fresh trees exposed generated-header dep rot (RC/cc-rs compiles racing `psdk`/`xdk`
+  winnt.h generation) — masked for months by copied build dirs; `build` now primes
+  `host-tools asm psdk xdk bugcodes errcodes` as a barrier stage before the main ninja.
+- raw `cd build-<arch> && ninja` no longer works against a canonical build dir (its
+  baked paths only exist inside the mount): use `../tools/canon-run.sh ninja <target>`
+  or `vibeos-cli build`.
+
+Historical context below (the opt-in-era design; superseded where it conflicts).
 
 ## Implementation status (2026-06-14)
 

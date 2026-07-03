@@ -628,15 +628,13 @@ function(add_cargo_module _target _crate _output)
 
     set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 
-    # Determinism rung 1 (Rust path remap): generate a per-worktree cargo --config that
-    # maps THIS worktree's source root to a constant /vibeos token, so rustc-embedded
-    # paths (panic msgs, debug info, file!()) are byte-identical across worktrees building
-    # the same commit -> hardlink dedup actually works. Joined (not clobbered) with the
-    # per-triple i386 SSE-guard rustflags via target.'cfg(all())'. See
-    # docs/engineering/deterministic-builds-plan.md. Idempotent (configure-time, same path).
-    set(_det_remap "${CMAKE_BINARY_DIR}/det-remap.toml")
-    configure_file("${REACTOS_SOURCE_DIR}/sdk/cmake/det-remap.toml.in" "${_det_remap}" @ONLY)
-
+    # Determinism rung 1 (Rust paths): handled by the CANONICAL BUILD PATH now —
+    # every worktree builds bind-mounted at /tmp/vibeos (tools/canon-run.sh), so
+    # rustc-embedded paths are byte-identical across worktrees with NO remap flag.
+    # The old per-worktree `--config det-remap.toml` (--remap-path-prefix) was
+    # REMOVED 2026-07-03: sccache 0.8.2 marks any rustc invocation carrying
+    # --remap-path-prefix as non-cacheable, which silently disabled ALL Rust
+    # build caching. See docs/engineering/build-cache-and-determinism-plan.md.
     string(REGEX REPLACE "-cargo$" "" _bin "${_crate}")
     set(_cargo_exe "${_ws}/target/${_stem}/release/${_bin}.exe")
     set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
@@ -724,7 +722,6 @@ function(add_cargo_module _target _crate _output)
         # staticlib into the final PE, then the kind post-link runs.
         COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly
             cargo build --release
-                --config ${_det_remap}
                 --target ${_ws}/${_crate}/${_stem}.json
                 -Z build-std=core,alloc,compiler_builtins
                 -Z build-std-features=compiler-builtins-mem

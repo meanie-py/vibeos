@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -106,16 +106,25 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
 
 
 def _ccache_already_enabled(build_dir: Path) -> bool:
+    # Both spellings count: an interactive `-DENABLE_CCACHE=1` caches as
+    # UNINITIALIZED=1 (the canonize configure does this); option() sets BOOL=ON.
+    # Missing either → a needless full reconfigure on EVERY build.
     cache = build_dir / "CMakeCache.txt"
     if not cache.is_file():
         return False
     try:
-        return "ENABLE_CCACHE:BOOL=ON" in cache.read_text(errors="ignore")
+        text = cache.read_text(errors="ignore")
     except OSError:
         return False
+    return any(
+        line.startswith("ENABLE_CCACHE:") and line.split("=", 1)[-1] in ("ON", "1", "TRUE")
+        for line in text.splitlines()
+    )
 
 
-def _setup_cache(run: Run, repo: Path, build_dir: Path, cache: cachecfg.CacheEnv) -> dict | None:
+def _setup_cache(
+    run: Run, repo: Path, build_dir: Path, cache: cachecfg.CacheEnv, wrap=None
+) -> dict | None:
     """Prepare caches + return the env overlay for ninja, or None if setup failed
     hard (ccache reconfigure error). C/C++ caching needs `-DENABLE_CCACHE` baked
     into build.ninja (ReactOS wires `RULE_LAUNCH_COMPILE ccache` behind it); Rust
@@ -125,9 +134,8 @@ def _setup_cache(run: Run, repo: Path, build_dir: Path, cache: cachecfg.CacheEnv
     env = {**os.environ, **cache.env()}
 
     if cache.use_ccache and not _ccache_already_enabled(build_dir):
-        cp = run.run(
-            ["cmake", "-DENABLE_CCACHE=1", "."], cwd=build_dir, stage="ccache-config", timeout=600
-        )
+        cmd = ["cmake", "-DENABLE_CCACHE=1", "."]
+        cp = run.run(wrap(cmd) if wrap else cmd, cwd=build_dir, stage="ccache-config", timeout=600)
         if cp.returncode != 0:
             run.classification = "CMAKE_CONFIGURE_FAIL"
             run.add(
@@ -199,6 +207,56 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
             )
 
 
+def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
+    """All declared ninja target paths (`ninja -t targets all`), for filtering the
+    mkramdisk boot manifest down to buildable file targets. Plain subprocess (not
+    run.run) — the ~40K-line target list would bloat every full.log."""
+    try:
+        cp = subprocess.run(
+            wrap(["ninja", "-t", "targets", "all"]),
+            cwd=build_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
+
+
+_DEDUP_INTERVAL = 24 * 3600  # hardlink-dedup the cache trees at most daily
+
+
+def _maybe_dedup(run: Run, repo: Path) -> None:
+    """Opportunistic disk reclaim: hardlink byte-identical build artifacts across
+    the ~100 per-consumer cargo target dirs + worktrees (tools/dedup-build-cache.sh
+    — the deliberate price of per-crate target isolation; see that script's
+    header). Detached so the build verdict never waits on a multi-GB scan, and
+    throttled via a stamp under VIBEOS_ROOT. The script itself skips trees with
+    writes in the last 180s (live builds), so a detached run is safe."""
+    script = repo / "tools" / "dedup-build-cache.sh"
+    if not script.is_file():
+        return
+    stamp = cachecfg.vibeos_root(repo) / ".dedup-last"
+    try:
+        if stamp.is_file() and time.time() - stamp.stat().st_mtime < _DEDUP_INTERVAL:
+            return
+        stamp.touch()
+    except OSError:
+        return
+    log = run.dir / "dedup.log"
+    with open(log, "ab") as fh:
+        subprocess.Popen(
+            ["bash", str(script), "--apply"],
+            stdout=fh,
+            stderr=fh,
+            start_new_session=True,
+            cwd=repo,
+        )
+    run.add(Stage("dedup", status="ok", detail=f"detached, ≤1/day → {log}"))
+
+
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -206,7 +264,9 @@ def build(args, repo: Path) -> int:
     run = Run("build", arch)
     cold = bool(args.clean)
 
-    if not build_dir.is_dir():
+    if not build_dir.is_dir() and not canon.available():
+        # With userns available a missing build dir is auto-provisioned by the
+        # canonize stage below (fresh canonical configure, fast on cache hits).
         run.classification = "NO_BUILD_DIR"
         run.add(
             Stage(
@@ -227,7 +287,82 @@ def build(args, repo: Path) -> int:
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 
+def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str) -> bool | None:
+    """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
+    caches share across worktrees. Returns True → wrap build cmds in canon-run,
+    False → legacy real-path passthrough (userns unavailable), None → hard fail.
+
+    A legacy (real-path) build dir is nuked + fresh-configured canonically — a
+    LOUD one-time full rebuild that repopulates the shared cache; every later
+    build (any worktree) hits it."""
+    if canon.is_canonical(build_dir):
+        return True
+    if not canon.available():
+        run.add(
+            Stage(
+                "canon",
+                status="warn",
+                detail="userns unavailable — legacy real-path build (no cross-worktree cache)",
+            )
+        )
+        return False
+    if not canon.ensure_toolchain(repo):
+        run.classification = "CMAKE_CONFIGURE_FAIL"
+        run.add(
+            Stage(
+                "canonize",
+                status="fail",
+                detail="no llvm-mingw toolchain found",
+                salient=[".build-tools/llvm-mingw missing and no sibling llvm-mingw-* dir"],
+            )
+        )
+        return None
+    carried = canon.carried_options(build_dir)
+    fresh = not (build_dir / "CMakeCache.txt").is_file()
+    if build_dir.exists():
+        shutil.rmtree(build_dir)  # legacy caches bake real paths into every generated file
+    build_dir.mkdir(parents=True)
+    cp = run.run(
+        canon.wrap(repo, canon.configure_cmd(arch, carried)),
+        cwd=build_dir,
+        stage="canonize",
+        timeout=1800,
+    )
+    if cp.returncode != 0:
+        run.classification = "CMAKE_CONFIGURE_FAIL"
+        run.add(
+            Stage(
+                "canonize",
+                exit=cp.returncode,
+                status="fail",
+                detail="fresh canonical configure failed",
+                salient=[
+                    ln.strip() for ln in (cp.stdout + cp.stderr).splitlines() if "Error" in ln
+                ][:3],
+            )
+        )
+        return None
+    run.add(
+        Stage(
+            "canonize",
+            status="ok",
+            detail=(
+                f"{'fresh configure' if fresh else 'migrated legacy dir'} @ "
+                f"{canon.canon_path()}" + ("" if fresh else " (one-time full rebuild)")
+            ),
+        )
+    )
+    return True
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
+    wrapped = _maybe_canonize(run, repo, build_dir, arch)
+    if wrapped is None:
+        return run.finalize(repo)
+
+    def wrap(cmd: list[str]) -> list[str]:
+        return canon.wrap(repo, cmd) if wrapped else cmd
+
     if cold:
         _clean(run, repo, arch)
 
@@ -240,31 +375,74 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if sde:
         os.environ.setdefault("SOURCE_DATE_EPOCH", sde)
 
-    # --- build cache (opt-in: --cache / VIBEOS_BUILD_CACHE) ---
+    # --- build cache (mandatory; opt-out: --no-cache / VIBEOS_BUILD_CACHE=0) ---
     cache = cachecfg.make(repo)
     caching = cachecfg.cache_enabled(args)
     build_env: dict | None = None
     if caching:
-        build_env = _setup_cache(run, repo, build_dir, cache)
+        build_env = _setup_cache(run, repo, build_dir, cache, wrap=wrap)
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
+    # --- generated-header barrier ---
+    # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of
+    # the psdk/xdk winnt.h generators — dep-edge rot that months of copied build
+    # dirs masked (winnt.h always pre-existed). Prime the generator targets as an
+    # explicit barrier; warm trees no-op in ~1s.
+    cp = run.run(
+        wrap(["ninja", "host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes"]),
+        cwd=build_dir,
+        env=build_env,
+        stage="ninja-prime",
+        timeout=1800,
+    )
+    if cp.returncode != 0:
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        run.classification = cls
+        run.add(
+            Stage(
+                "ninja-prime",
+                exit=cp.returncode,
+                status="fail",
+                detail=cls,
+                salient=salient or ["see full log"],
+            )
+        )
+        return run.finalize(repo)
+    run.add(Stage("ninja-prime", status="ok", detail="generated headers"))
+
     # --- ninja the boot target(s) ---
-    # Force-build every Rust-cohab binary in the arm64 boot set, not just the
-    # archcfg.ninja_targets list — a cohab flip whose .sys/.dll someone forgot to
-    # add to ninja_targets would otherwise leave a STALE C binary that mkramdisk
-    # stages and the gate false-greens (fastfat/ramdisk/advapi32 class). Deriving
-    # the set from the actual boot manifest (mkramdisk REQUIRED_FILES) makes the
-    # build self-healing: no archcfg edit needed per flip. ninja dedups any rel
-    # already covered by a phony target. See provenance.boot_set_cohab_rels.
+    # arm64 (mkramdisk arches): force-build the ENTIRE boot manifest (mkramdisk
+    # REQUIRED_FILES — file paths are valid ninja targets), not just the curated
+    # ninja_targets list. Two bugs this kills: (a) the cohab-flip false-green —
+    # a Rust .sys/.dll missing from ninja_targets left a STALE C binary that
+    # mkramdisk staged (fastfat/ramdisk/advapi32 class); (b) the fresh-tree gap —
+    # a canonized/provisioned build-arm64 had never built smss.exe etc. at all
+    # (the curated list assumed a previously-full tree). Deriving from the boot
+    # manifest keeps it self-maintaining; ninja dedups anything a phony target
+    # already covers. x86 builds the full `livecd` DAG and needs neither.
     targets = list(cfg.ninja_targets)
-    cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
+    if cfg.needs_mkramdisk:
+        # Not every staged file is a ninja target (e.g. media/nls/l_intl.nls is
+        # copied by an aggregate rule) — intersect with the known target list or
+        # ninja hard-errors on the first unknown.
+        known = _ninja_known_targets(repo, build_dir, wrap, build_env)
+        cohab = [
+            r for r in provenance.mkramdisk_required_rels(repo) if r not in targets and r in known
+        ]
+    else:
+        cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
     if cohab:
         run.log(
-            "force-building cohab boot binaries (self-heal):\n" + "\n".join(cohab), header="cohab"
+            "force-building the boot-manifest set (self-heal):\n" + "\n".join(cohab),
+            header="cohab",
         )
     cp = run.run(
-        ["ninja", *targets, *cohab], cwd=build_dir, env=build_env, stage="ninja", timeout=1800
+        wrap(["ninja", *targets, *cohab]),
+        cwd=build_dir,
+        env=build_env,
+        stage="ninja",
+        timeout=3600,
     )
     if cp.returncode != 0:
         cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
@@ -284,7 +462,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # optional arch-specific targets (best-effort)
     if cfg.ninja_targets_optional:
         run.run(
-            ["ninja", *cfg.ninja_targets_optional],
+            wrap(["ninja", *cfg.ninja_targets_optional]),
             cwd=build_dir,
             env=build_env,
             stage="ninja-optional",
@@ -335,6 +513,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     stamp = provenance.make_stamp(repo, arch, cold=cold, ts=int(time.time()))
     stamp.write(build_dir)
     run.add(Stage("stamp", status="ok", detail="cold" if cold else "warm"))
+
+    # --- opportunistic hardlink dedup of cache trees (detached, throttled) ---
+    _maybe_dedup(run, repo)
     if not cold:
         run.add(
             Stage(

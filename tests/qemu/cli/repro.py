@@ -277,9 +277,9 @@ def _cmd_verify(args, repo: Path) -> int:
     plan.md §stale-cargo / task #41), so without removing them ninja would see the stale copy
     as current and skip the relink — a false "identical". Removing them forces a genuine relink.
 
-    NOTE: cross-WORKTREE byte-identity (the dedup payoff, which the rung-1 Rust remap enables)
-    is the stronger claim — run this in two worktrees on the same commit and `diff-dirs` their
-    build trees. This same-path build-twice proves the timestamp/date/path determinism holds."""
+    NOTE: cross-WORKTREE byte-identity (the dedup payoff) comes from the canonical build
+    path (cli.canon — every worktree builds at /tmp/vibeos), making it equivalent to this
+    same-path build-twice, which proves the timestamp/date/path determinism holds."""
     from . import archcfg
 
     base = archcfg.base_arch(args.arch)

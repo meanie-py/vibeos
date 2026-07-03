@@ -75,6 +75,8 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 
 ```bash
 ./vibeos-cli build  --arch i386 [--clean]   # warm by default; --clean = cold (nukes rust targets, proves cold-link)
+                                            # canonical-path + mandatory shared cache (ccache/sccache); auto-provisions
+                                            # a missing build dir, auto-migrates a legacy one (loud one-time rebuild)
 ./vibeos-cli smoke  --arch i386             # THE verdict — refuses to boot stale media (build first, or --allow-stale)
 ./vibeos-cli check                          # source lints, baseline-diff gate (0 NEW vs tools/lint-baseline/)
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest gate for OUR python (rustconv/cli/tools)
@@ -119,19 +121,19 @@ Why it matters (all are real incidents, not hypotheticals):
    an absolute path to the *main* repo root writes to the **main** checkout, not the
    worktree. Resolve `$W=<worktree toplevel>` once and prefix every file path with it.
    Never bare-path the main repo from a worktree session.
-3. **Give a worktree a `build-<arch>` by COPY + repoint — never symlink.** A symlinked
-   build dir, when `ninja` triggers a cmake reconfigure with CWD inside it, rewrites
-   *main's* `CMakeCache.txt` + generated files to the worktree path, corrupting main's
-   build for every other agent. Recipe: `cp -a /main/build-<arch> ./build-<arch>`, then
-   repoint **both** the trailing-slash file paths *and* the bare cache vars
-   (`CMAKE_HOME_DIRECTORY`/`*_SOURCE_DIR`) in **every** nested `CMakeCache.txt` +
-   `build.ninja` + `compile_commands.json` (including `host-tools/bin/`):
-   ```
-   grep -rlI -E "$MAIN(\$|[^-/])" build-<arch> | xargs -r sed -i -E "s#$MAIN([^-])#$WT\1#g; s#$MAIN\$#$WT#g"
-   ```
-   (`vibeos`-not-followed-by-`-` is worktree-safe.) Then `rm -rf host-tools` if its
-   stamp was invalidated, `cmake .`, `ninja`. Copy gitignored boot assets
-   (`qemu/boot.img ramdisk.img QEMU_EFI.fd efivars.fd`) from main.
+3. **Provision a worktree's `build-<arch>` with `./vibeos-cli build --arch <a>` — it's
+   just a fresh configure now.** Builds run at the CANONICAL PATH (`/tmp/vibeos`, a
+   per-build bind mount — see `tools/canon-run.sh`), so a build dir carries no
+   worktree-specific paths and a missing one is auto-provisioned by a fresh cmake
+   configure that's fast on shared-cache hits (ccache C/C++ + sccache Rust are
+   mandatory and shared across worktrees). The old `cp -a` + sed-repoint ceremony is
+   RETIRED — never symlink a build dir (a reconfigure through the symlink corrupts
+   main's tree), and never hand-copy one. Do still copy the gitignored arm64 boot
+   assets (`qemu/QEMU_EFI.fd efivars.fd`) from main for smoke/debug; `boot.img` +
+   `ramdisk.img` are rebuilt by the build's mkramdisk step. Raw ninja against a
+   canonical build dir needs the mount: `../tools/canon-run.sh ninja <target>` from
+   inside `build-<arch>/` (plain `ninja` fails loudly — its baked paths only exist
+   inside the mount).
 4. **`pip install -e` shadowing.** `python -m rustconv` resolves to the **main-repo**
    path baked into site-packages, not the worktree. To run worktree tool edits, prefix
    `PYTHONPATH=$W/tools/rustconv:$PYTHONPATH`; verify with
@@ -187,34 +189,32 @@ vibeos/                          # Git repo root (renamed from reactos/)
 
 ## Build Commands
 
-All build commands run from the respective build directory:
+**Builds run at the CANONICAL PATH** (`/tmp/vibeos` — a per-build bind mount, see
+`tools/canon-run.sh` and `docs/engineering/build-cache-and-determinism-plan.md`): build
+dirs bake `/tmp/vibeos/...` paths so caches share across worktrees. `./vibeos-cli build`
+handles this automatically (+ mandatory ccache/sccache, provisioning, lints). For raw
+ninja iteration, prefix with the wrapper — **plain `ninja` in a build dir fails loudly**
+(its baked paths only exist inside the mount):
 
 ```bash
 # ARM64
 cd build-arm64
-ninja              # Build everything
-ninja ntoskrnl     # Just the kernel
+../tools/canon-run.sh ninja            # Build everything
+../tools/canon-run.sh ninja ntoskrnl   # Just the kernel
 
-# amd64
+# amd64 / i386 (same pattern)
 cd build-amd64
-ninja              # Build everything
-ninja bootcd       # Boot CD ISO (bootcd.iso)
-ninja livecd       # Live CD ISO (livecd.iso)
-
-# i386
-cd build-i386
-ninja              # Build everything
-ninja livecd       # Live CD ISO (livecd.iso)
-ninja bootcd       # Boot CD ISO (bootcd.iso, for 2-stage install)
+../tools/canon-run.sh ninja livecd     # Live CD ISO (livecd.iso)
+../tools/canon-run.sh ninja bootcd     # Boot CD ISO (bootcd.iso)
 
 # Common patterns
-ninja -k0          # Continue past errors
-ninja <target>     # Any target — use: ninja -t targets all | grep <name>
+../tools/canon-run.sh ninja -k0        # Continue past errors
+../tools/canon-run.sh ninja <target>   # Any target — list: ... ninja -t targets all | grep <name>
 ```
 
 After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before building:
 ```bash
-cmake .            # Re-configure (from any build-*/ dir)
+../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
 ```
 
 ## Toolchain
@@ -316,8 +316,8 @@ cargo test -p slist-loom
 ### QEMU Kernel Tests (28 tests via serial dispatch loop)
 
 ```bash
-# 1. Build test kernel
-cd build-arm64 && cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl
+# 1. Build test kernel (canonical wrapper — see Build Commands)
+cd build-arm64 && ../tools/canon-run.sh sh -c 'cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl'
 cd ..
 
 # 2. Update ramdisk

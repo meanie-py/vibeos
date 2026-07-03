@@ -9,6 +9,19 @@ our accumulated Rust/C best-practice notes. Split out of `build-cache-and-determ
 > per-file gotchas. Exhaustive is fine (it's pull-context, zero standing cost). Keep the
 > *push* channel (AGENTS.md/MEMORY.md) free of this.
 
+## ⚠️ Update (2026-07-03): rung 1 re-implemented as the CANONICAL BUILD PATH; det-remap REMOVED
+
+The rung-1 Rust remap (`det-remap.toml` → `--remap-path-prefix=<root>=/vibeos`) turned out
+to make every rustc invocation **non-cacheable in sccache** (`Non-cacheable reasons:
+--remap-path-prefix`, measured on 0.8.2) — it had silently disabled all Rust build caching
+since it landed. It is now removed. Path-independence comes instead from building at a
+canonical path: `vibeos-cli build` bind-mounts the worktree at `/tmp/vibeos`
+(`tools/canon-run.sh`, unprivileged userns), so embedded paths are identical across
+worktrees *by construction* — same rung-1 property, plus cross-worktree cache hits (ccache
+AND sccache), no remap flags in any toolchain. The C `-ffile-prefix-map` in the top-level
+CMakeLists stays (its value is now the canonical path — worktree-independent). See
+`build-cache-and-determinism-plan.md` §2026-07-03 update.
+
 ## ⚠️ Strategy pivot (2026-06-21): determinism is NOT the disk lever — identical-artifact hardlink-dedup of the *cargo target tree* is
 
 The original priority-#1 framing below ("determinism unlocks cross-worktree dedup from 13 %

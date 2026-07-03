@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cache",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="ccache(C/C++)+sccache(Rust); default off → VIBEOS_BUILD_CACHE env",
+        help="ccache(C/C++)+sccache(Rust); ON by default (--no-cache / VIBEOS_BUILD_CACHE=0)",
     )
     b.set_defaults(fn=build_mod.build)
 

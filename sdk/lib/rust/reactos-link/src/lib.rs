@@ -957,13 +957,12 @@ impl Linker {
 
     /// Determinism (rung 1, cc-rs side): cc-rs compiles every shim/asm/stub with
     /// its ABSOLUTE source path (`repo_root.join(rel)`), which clang embeds into
-    /// `__FILE__`/assert strings + debug info — so two worktrees building the same
-    /// commit at different paths produce different bytes → zero hardlink dedup
-    /// (measured: ntoskrnl.exe carried `…/<worktree>/ntoskrnl/mm_lock_outlines.c`).
-    /// cmake's own C TUs already remap via `-ffile-prefix-map`, and the cargo Rust
-    /// objects via `--remap-path-prefix=<root>=/vibeos` (det-remap.toml) — these
-    /// cc-rs compiles were the one path missing it. Map this worktree's root to the
-    /// same `/vibeos` token so all three (cmake-C, rustc, cc-rs) agree.
+    /// `__FILE__`/assert strings + debug info. Under the canonical build path
+    /// (tools/canon-run.sh) `repo_root` is /tmp/vibeos for every worktree, so this
+    /// flag is identical everywhere; it maps to the `/vibeos` token to match
+    /// cmake's own C TUs (`-ffile-prefix-map` in the top-level CMakeLists). The
+    /// rustc-side remap (det-remap.toml) was removed 2026-07-03 — it made every
+    /// Rust compile non-cacheable in sccache; canonical paths replaced it.
     /// See docs/engineering/deterministic-builds-plan.md.
     fn apply_prefix_map(&self, b: &mut cc::Build) {
         b.flag(format!("-ffile-prefix-map={}=/vibeos", self.repo_root.display()));

@@ -482,11 +482,15 @@ def test_cache_enabled_flag_and_env(monkeypatch):
     from types import SimpleNamespace
 
     monkeypatch.delenv("VIBEOS_BUILD_CACHE", raising=False)
-    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is False  # default off
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is True  # mandatory default
     assert cachecfg.cache_enabled(SimpleNamespace(cache=True)) is True
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=False)) is False  # --no-cache opt-out
+    monkeypatch.setenv("VIBEOS_BUILD_CACHE", "0")
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is False  # env opt-out
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=True)) is True  # --cache beats env
     monkeypatch.setenv("VIBEOS_BUILD_CACHE", "1")
     assert cachecfg.cache_enabled(SimpleNamespace(cache=False)) is False  # --no-cache beats env
-    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is True  # env fallback
+    assert cachecfg.cache_enabled(SimpleNamespace(cache=None)) is True
 
 
 def test_cache_env_overlay_shape(tmp_path):
@@ -1340,3 +1344,89 @@ def test_hostlock_render_status_no_dir(tmp_path, monkeypatch):
     assert st["cpu_leases_held"] == 0 and st["cpu_leases_total"] >= 1
     out = hl_mod.render_status(st)
     assert "host broker" in out and "FREE" in out
+
+
+# --- canon: canonical build path detection, configure carry, toolchain heal ----
+
+from . import canon as canon_mod  # noqa: E402
+
+
+def test_canon_cmake_home_and_is_canonical(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIBEOS_CANON", raising=False)
+    bd = tmp_path / "build-i386"
+    bd.mkdir()
+    assert canon_mod.cmake_home(bd) is None
+    assert canon_mod.is_canonical(bd) is False
+    (bd / "CMakeCache.txt").write_text(
+        "ARCH:STRING=i386\nCMAKE_HOME_DIRECTORY:INTERNAL=/tmp/vibeos\n"
+    )
+    assert canon_mod.cmake_home(bd) == "/tmp/vibeos"
+    assert canon_mod.is_canonical(bd) is True
+    monkeypatch.setenv("VIBEOS_CANON", "/somewhere/else")
+    assert canon_mod.is_canonical(bd) is False
+
+
+def test_canon_carried_options(tmp_path):
+    bd = tmp_path / "build-i386"
+    bd.mkdir()
+    assert canon_mod.carried_options(bd) == []
+    (bd / "CMakeCache.txt").write_text(
+        "CMAKE_BUILD_TYPE:STRING=Debug\nREACTOS_TEST_KERNEL:BOOL=TRUE\n"
+        "SARCH:STRING=\nOARCH:STRING=pentium\nUNRELATED:BOOL=ON\n"
+    )
+    opts = canon_mod.carried_options(bd)
+    assert "-DCMAKE_BUILD_TYPE=Debug" in opts
+    assert "-DREACTOS_TEST_KERNEL=TRUE" in opts
+    assert "-DOARCH=pentium" in opts
+    assert not any(o.startswith("-DSARCH") for o in opts)  # empty value dropped
+    assert not any("UNRELATED" in o for o in opts)
+
+
+def test_canon_configure_cmd_shape(monkeypatch):
+    monkeypatch.delenv("VIBEOS_CANON", raising=False)
+    cmd = canon_mod.configure_cmd("i386", ["-DREACTOS_TEST_KERNEL=TRUE"])
+    assert cmd[0] == "cmake" and cmd[-1] == "/tmp/vibeos"
+    assert "-DARCH:STRING=i386" in cmd
+    assert "-DENABLE_CCACHE=1" in cmd
+    # carried opts come AFTER the Debug default so they win (cmake last -D wins)
+    assert cmd.index("-DREACTOS_TEST_KERNEL=TRUE") > cmd.index("-DCMAKE_BUILD_TYPE=Debug")
+
+
+def test_canon_wrap_argv(tmp_path):
+    argv = canon_mod.wrap(tmp_path, ["ninja", "livecd"])
+    assert argv[0] == "bash"
+    assert argv[1].endswith("tools/canon-run.sh")
+    assert argv[2:] == ["ninja", "livecd"]
+
+
+def test_canon_ensure_toolchain_heals_relative_symlink(tmp_path, monkeypatch):
+    parent = tmp_path
+    repo = parent / "vibeos"
+    (repo / ".build-tools").mkdir(parents=True)
+    tc = parent / "llvm-mingw-20250114"
+    tc.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(parent))
+    link = repo / ".build-tools" / "llvm-mingw"
+    # historical RELATIVE symlink — dangles under the canonical mount
+    link.symlink_to("../../llvm-mingw-20250114")
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert str(link.readlink()).startswith("/")  # now absolute
+    assert link.resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_fresh_worktree(tmp_path, monkeypatch):
+    parent = tmp_path
+    repo = parent / "vibeos-wt-x"
+    repo.mkdir()
+    tc = parent / "llvm-mingw-20250114"
+    tc.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(parent))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert (repo / ".build-tools" / "llvm-mingw").resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_missing(tmp_path, monkeypatch):
+    repo = tmp_path / "vibeos"
+    repo.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    assert canon_mod.ensure_toolchain(repo) is False
