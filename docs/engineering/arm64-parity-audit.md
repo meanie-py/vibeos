@@ -32,7 +32,7 @@ below are **real-hardware / expanded-driver** gaps, not boot blockers today.
   *overflowed* instead of being absorbed. The fix bumped it to amd64 parity (0xC000 / 0x12000)
   in `sdk/include/xdk/arm64/ke.h` in commit `26408b0f33a`.
   **🔴 TREE CONTRADICTS THIS (verified 2026-06-21):** `sdk/include/xdk/arm64/ke.h` on both
-  `build-cache` and mainline `continue-rust-port` currently reads `KERNEL_STACK_SIZE 12288`,
+  `build-cache` and mainline `master` currently reads `KERNEL_STACK_SIZE 12288`,
   `KERNEL_LARGE_STACK_SIZE 61440`, `KERNEL_LARGE_STACK_COMMIT = KERNEL_STACK_SIZE` — i.e. the
   **old undersized values are back**. `26408b0f33a` is an ancestor of mainline but came in via
   a merge *side* branch, and a later merge resolution silently dropped the ke.h hunk (the
