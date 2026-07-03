@@ -575,6 +575,71 @@ unsafe fn mib_ip_routetable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTST
     complete_query(irp, out_buf, out_len, as_bytes(&e))
 }
 
+/// Handle IOCTL_TCP_SET_INFORMATION_EX (METHOD_BUFFERED). Input is a
+/// TCP_REQUEST_SET_INFORMATION_EX (TDIObjectID + BufferSize + Buffer[]) in
+/// SystemBuffer. The transport's management writes ride here: iphlpapi route
+/// add/del (an IPRouteEntry on the IP entity) and wshtcpip sockopts. netstack's
+/// engine is authoritative for its own L2/L3 config (it DHCPs + self-routes), so
+/// we reprogram the default route when asked and acknowledge the rest cleanly —
+/// NOT failing, because AFD/wshtcpip flush these best-effort and a hard error
+/// would surface spuriously to setsockopt()/route callers.
+unsafe fn handle_set_info_ex(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
+    let dic = &(*stack).Parameters.DeviceIoControl;
+    let in_len = dic.InputBufferLength as usize;
+    let sysbuf = (*irp).AssociatedIrp.SystemBuffer as *const u8;
+
+    // TCP_REQUEST_SET_INFORMATION_EX header = TDIObjectID(20) + BufferSize(4).
+    const HDR: usize = core::mem::size_of::<TdiObjectId>() + core::mem::size_of::<u32>();
+    if sysbuf.is_null() || in_len < HDR {
+        complete_now(irp, STATUS_INVALID_PARAMETER, 0);
+        return STATUS_INVALID_PARAMETER;
+    }
+    let id = core::ptr::read_unaligned(sysbuf as *const TdiObjectId);
+    let buf_size =
+        core::ptr::read_unaligned(sysbuf.add(core::mem::size_of::<TdiObjectId>()) as *const u32)
+            as usize;
+    let buf = sysbuf.add(HDR);
+    let avail = in_len - HDR;
+
+    // Route programming: an IPRouteEntry on the IP network-layer entity.
+    if id.toi_class == INFO_CLASS_PROTOCOL
+        && id.toi_entity.tei_entity == CL_NL_ENTITY
+        && id.toi_id == IP_MIB_ARPTABLE_ENTRY_ID
+        && buf_size >= core::mem::size_of::<IpRouteEntry>()
+        && avail >= core::mem::size_of::<IpRouteEntry>()
+    {
+        let rte = core::ptr::read_unaligned(buf as *const IpRouteEntry);
+        // Only the default route (0.0.0.0/0) maps cleanly onto smoltcp's single
+        // default route; a more specific route is acked but not installed (slirp
+        // is a single-gateway mini-internet, so the default route is all the
+        // engine needs). gw octets come straight from the network-order in_addr.
+        if rte.ire_dest == 0 && rte.ire_mask == 0 {
+            let gw = rte.ire_gw.to_ne_bytes();
+            match rte.ire_type {
+                tdi::IP_FORWARD_ADD => {
+                    tditrans::post(tditrans::Cmd::SetDefaultRoute { gw, add: true })
+                }
+                tdi::IP_FORWARD_DEL => {
+                    tditrans::post(tditrans::Cmd::SetDefaultRoute { gw, add: false })
+                }
+                _ => {}
+            }
+        }
+        complete_now(irp, STATUS_SUCCESS, 0);
+        return STATUS_SUCCESS;
+    }
+
+    // Sockopts + any other well-formed SET: netstack doesn't plumb transport
+    // sockopts down to smoltcp yet (roadmap M12+), but acknowledge them so
+    // setsockopt(TCP_NODELAY / IP_TTL / ...) succeeds rather than erroring.
+    nsprint!(
+        "[NETSTACK] SET_INFO_EX ent={:#x} class={:#x} type={:#x} id={:#x} ({} bytes) acked\n",
+        id.toi_entity.tei_entity, id.toi_class, id.toi_type, id.toi_id, buf_size
+    );
+    complete_now(irp, STATUS_SUCCESS, 0);
+    STATUS_SUCCESS
+}
+
 /// Handle IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED) on \Device\Ip. Input and
 /// output share `AssociatedIrp.SystemBuffer`; the request header is parsed here,
 /// the actual echo + reply is plumbed cross-thread to the smoltcp worker (which
@@ -652,6 +717,14 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         && (*stack).Parameters.DeviceIoControl.IoControlCode == tdi::IOCTL_ICMP_ECHO_REQUEST
     {
         return handle_icmp_echo(irp, stack);
+    }
+
+    // Management-plane SET (route/sockopt programming) — METHOD_BUFFERED.
+    // iphlpapi's createIpForwardEntry/deleteIpForwardEntry + wshtcpip sockopts.
+    if (*stack).MajorFunction == IRP_MJ_DEVICE_CONTROL
+        && (*stack).Parameters.DeviceIoControl.IoControlCode == tdi::IOCTL_TCP_SET_INFORMATION_EX
+    {
+        return handle_set_info_ex(irp, stack);
     }
 
     match minor {

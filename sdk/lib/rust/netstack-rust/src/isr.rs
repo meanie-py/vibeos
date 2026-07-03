@@ -14,8 +14,14 @@
 //!
 //! The ISR/DPC touch ONLY the ISR status register + the event/DPC — never the
 //! Interface / SocketSet / queue descriptors — so the worker stays the sole owner
-//! of the smoltcp state at PASSIVE. amd64 only: `HalGetInterruptVector` is an
-//! arm64 stub, and there is no i386 net smoke config to validate against.
+//! of the smoltcp state at PASSIVE. x86 only (i386 + amd64): both use the same
+//! working x86 HAL `HalGetInterruptVector` + IOAPIC routing. arm64's
+//! `HalGetInterruptVector` is a stub returning 0, so it stays on polling.
+//!
+//! ABI note: the ISR (PKSERVICE_ROUTINE) and DPC (PKDEFERRED_ROUTINE) callbacks
+//! are NTAPI — cdecl on amd64, but **stdcall on i386** — so both are declared
+//! `extern "system"` (which resolves to the right convention per arch); a plain
+//! `extern "C"` would mis-decode the stack on i386.
 
 use alloc::boxed::Box;
 use core::ptr::null_mut;
@@ -23,8 +29,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
     HalGetInterruptVector, IoConnectInterrupt, KAFFINITY, KDPC, KEVENT, KSPIN_LOCK,
-    KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeSetEvent, PKINTERRUPT, PVOID, _KDPC,
-    _KINTERRUPT,
+    KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeSetEvent, PKDEFERRED_ROUTINE,
+    PKINTERRUPT, PKSERVICE_ROUTINE, PVOID, _KDPC, _KINTERRUPT,
 };
 
 use crate::device::{self, NetDev};
@@ -59,7 +65,7 @@ struct RxIsr {
 }
 
 /// Interrupt service routine (DIRQL). Ack the device, wake the worker on RX.
-unsafe extern "C" fn isr(_interrupt: *mut _KINTERRUPT, ctx: PVOID) -> u8 {
+unsafe extern "system" fn isr(_interrupt: *mut _KINTERRUPT, ctx: PVOID) -> u8 {
     let s = ctx as *mut RxIsr;
     let bits = device::ack_interrupt((*s).dev);
     if bits == 0 {
@@ -74,7 +80,7 @@ unsafe extern "C" fn isr(_interrupt: *mut _KINTERRUPT, ctx: PVOID) -> u8 {
 }
 
 /// DPC (DISPATCH). Signal the worker's RX event.
-unsafe extern "C" fn dpc(_dpc: *mut _KDPC, ctx: PVOID, _a1: PVOID, _a2: PVOID) {
+unsafe extern "system" fn dpc(_dpc: *mut _KDPC, ctx: PVOID, _a1: PVOID, _a2: PVOID) {
     let s = ctx as *mut RxIsr;
     RX_IRQS.fetch_add(1, Ordering::Relaxed);
     if FIRST_IRQ
@@ -100,7 +106,13 @@ pub unsafe fn connect(dev: *mut NetDev, interrupt_line: u32) -> *mut KEVENT {
         dev,
     }));
     KeInitializeEvent(&mut s.event, SYNCHRONIZATION_EVENT, 0);
-    KeInitializeDpc(&mut s.dpc, Some(dpc), s as *mut _ as PVOID);
+    // The NTAPI callback fn-pointer types are cdecl on amd64 but stdcall on i386;
+    // our `extern "system"` fns share that ABI but are nominally distinct from the
+    // bindgen `extern "C"`/`"stdcall"` alias, so bridge with a transmute (the same
+    // idiom engine.rs uses for PKSTART_ROUTINE / tdidev for PDRIVER_DISPATCH).
+    let dpc_routine: PKDEFERRED_ROUTINE = Some(core::mem::transmute(dpc as *const ()));
+    let isr_routine: PKSERVICE_ROUTINE = Some(core::mem::transmute(isr as *const ()));
+    KeInitializeDpc(&mut s.dpc, dpc_routine, s as *mut _ as PVOID);
 
     let mut irql: u8 = 0;
     let mut affinity: KAFFINITY = 0;
@@ -123,7 +135,7 @@ pub unsafe fn connect(dev: *mut NetDev, interrupt_line: u32) -> *mut KEVENT {
 
     let status = IoConnectInterrupt(
         &mut s.interrupt,
-        Some(isr),
+        isr_routine,
         s as *mut _ as PVOID,
         &mut s.spinlock,
         vector,

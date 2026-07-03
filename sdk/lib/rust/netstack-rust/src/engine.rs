@@ -19,6 +19,7 @@ use smoltcp::wire::{
 
 use ntkrnl_sys::ddk::{HANDLE, PVOID, PsCreateSystemThread};
 
+#[cfg(not(feature = "ndis"))]
 use crate::device::{self, VirtioPhy};
 use crate::serial::nsprint;
 use crate::time::{delay_ms, now};
@@ -64,22 +65,35 @@ pub fn start() {
 unsafe extern "system" fn worker(_context: PVOID) {
     nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
 
-    let dev = match device::bringup() {
-        Some(d) => d,
+    // Device backend: virtio-net (default) or — with `feature = "ndis"` — an NDIS
+    // protocol shim above a real miniport (M11). Both expose the same phy::Device
+    // surface, so the poll loop below is backend-agnostic.
+    #[cfg(not(feature = "ndis"))]
+    let mut phy = match device::bringup() {
+        Some(d) => VirtioPhy::new(d),
         None => {
             nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
             return;
         }
     };
-    let mut phy = VirtioPhy::new(dev);
+    #[cfg(feature = "ndis")]
+    let mut phy = match crate::ndisphy::bringup() {
+        Some(p) => p,
+        None => {
+            nsprint!("[NETSTACK] FAIL: M11 NDIS adapter bringup\n");
+            return;
+        }
+    };
     let mac = phy.mac();
     // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
     crate::netcfg::set_mac(mac);
 
-    // M10 (amd64): connect the virtio INTx so an arriving frame wakes this worker
-    // via an event instead of pure busy-polling. Null on any failure (or other
-    // arches) → the loop keeps the `delay_ms` poll fallback, no regression.
-    #[cfg(target_arch = "x86_64")]
+    // M10 (x86 — i386 + amd64): connect the virtio INTx so an arriving frame wakes
+    // this worker via an event instead of pure busy-polling. Null on any failure
+    // (or arm64) → the loop keeps the `delay_ms` poll fallback, no regression. The
+    // NDIS backend (M11) drives RX from ProtocolReceive instead, so this is gated
+    // to the virtio path.
+    #[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), not(feature = "ndis")))]
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = {
         phy.enable_interrupts();
         match crate::pci::find_virtio_net().and_then(crate::pci::read_interrupt_line) {
@@ -303,7 +317,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         // 10ms (TX completion / echo latency); when nothing is pending the RX
         // event (amd64) lets us idle far longer since a frame wakes us instantly.
         let pending = iface.poll_delay(ts, &sockets).map(|d| d.total_millis() as i64);
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), not(feature = "ndis")))]
         {
             if rx_event.is_null() {
                 delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
@@ -324,7 +338,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
         }
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "x86")), feature = "ndis"))]
         delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
     }
 }

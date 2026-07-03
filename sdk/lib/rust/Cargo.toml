@@ -12,6 +12,8 @@ members = [
     "rtl-heappage",
     "rtl-heapuser",
     "cdfs-rust",
+    "afd-rust",
+    "msafd-rust",
     "access",
     "avltable",
     "bitmap",

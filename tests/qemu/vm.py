@@ -589,6 +589,40 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
 
 
 @dataclass
+class I386UefiNetConfig(I386UefiConfig):
+    """i386-uefi + a virtio-net-pci NIC on a slirp user netdev.
+
+    The i386 sibling of Amd64UefiNetConfig — same slirp mini-internet, hostfwd /
+    guestfwd contract, and modern-only virtio device. Used to validate M10's
+    interrupt-driven RX on i386 (the x86 HAL HalGetInterruptVector + IOAPIC path
+    is shared with amd64). Not a default smoke config: net is its own signal.
+    """
+
+    arch: str = "i386-uefi-net"
+    ECHO_GUEST_PORT: int = 7777
+    echo_hostfwd_port: int = 0
+    TDI_SRV_GUEST_PORT: int = 8888
+    tdi_srv_hostfwd_port: int = 0
+    GUESTFWD_ADDR: str = "10.0.2.100"
+    GUESTFWD_PORT: int = 9999
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        self.echo_hostfwd_port = _free_tcp_port()
+        self.tdi_srv_hostfwd_port = _free_tcp_port()
+        return [
+            *super().qemu_args(work_dir),
+            "-device",
+            "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
+            "-netdev",
+            f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
+            f"-:{self.ECHO_GUEST_PORT}"
+            f",hostfwd=tcp:127.0.0.1:{self.tdi_srv_hostfwd_port}"
+            f"-:{self.TDI_SRV_GUEST_PORT}"
+            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+        ]
+
+
+@dataclass
 class Arm64TestKernelConfig(Arm64Config):
     """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options."""
 
@@ -706,6 +740,7 @@ ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64-test": Arm64TestKernelConfig,
     "arm64-net": Arm64NetConfig,
     "i386-uefi": I386UefiConfig,
+    "i386-uefi-net": I386UefiNetConfig,
     "amd64-uefi": Amd64UefiConfig,
     "amd64-uefi-net": Amd64UefiNetConfig,
 }

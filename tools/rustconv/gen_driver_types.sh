@@ -18,11 +18,12 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
 NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
+NTDLL_SYS="${SRC}/sdk/lib/rust/ntdll-sys/src"
 
 # --- per-driver config -------------------------------------------------------
 # WRAPPER_INC : header(s) the wrapper.h #includes (pulls in the private structs)
@@ -38,6 +39,17 @@ LANG_ARGS=()
 # (kept a single identity) and re-exported. Format: "crate_name:src_subdir". Only ACPI
 # bridges two -sys crates (ntkrnl-sys + acpica-sys), so it's the only user today.
 SYS_CRATES=()
+# USERMODE: usermode DLL crates (msafd) blocklist against ntdll-sys (the NDK/Native-API
+# bindgen) instead of ntkrnl-sys (the kernel-internal bindgen), and re-export
+# `pub use ntdll_sys::nt::*;` (PUBLIC — so the translated modules see NT base types via
+# `use crate::types::*`) instead of the private kernel `use ntkrnl_sys::ddk::*;` glob.
+# Only winsock/WSP/wsahelp/AFD/TDI/msafd-private structs become local. Default 0 = kernel.
+USERMODE=0
+# BLOCKLIST_FUNCS: drop ALL function declarations from the emitted types module. Needed for
+# usermode wrappers whose header (msafd.h) declares the WSP* prototypes the translation
+# itself #[no_mangle]-defines — emitting them here is redundant and risks name clashes under
+# the flat `use crate::types::*` glob. Default 0 = keep functions (kernel driver behaviour).
+BLOCKLIST_FUNCS=0
 case "$DRIVER" in
   acpi)
     # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
@@ -149,6 +161,27 @@ case "$DRIVER" in
     # #includes it too but the kernel bindgen doesn't, so allowlist it here for cdfs.
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' --allowlist-file '.*[/\\]cd\.h' --allowlist-file '.*ntddcdrm\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
+    ;;
+  afd)
+    # Ancillary Function Driver (drivers/network/afd) — the usermode Winsock→TDI
+    # bridge, keystone of the netstack→winsock vertical. Driver-PRIVATE structs
+    # (AFD_FCB, AFD_DEVICE_EXTENSION, AFD_TDI_OBJECT[_QELT], AFD_ACTIVE_POLL,
+    # AFD_STORED_DATAGRAM, AFD_DATA_WINDOW, AFD_MAPBUF, AFD_IN_FLIGHT_REQUEST) live in
+    # the driver's own include/afd.h. The usermode<->afd IOCTL-shared structs
+    # (AFD_RECV/SEND/POLL_INFO, AFD_WSABUF, AFD_HANDLE, AFD_EVENT_*, AFD_CONNECT_INFO,
+    # AFD_TDI_CONNECTION_INFORMATION) live in sdk/include/reactos/drivers/afd/shared.h
+    # (#included as <afd/shared.h>); the TDI connection helpers in
+    # tdihelpers/include/{tdiconn,tdi_proto}.h. Allowlist all of those local; tdi.h /
+    # ntifs.h kernel+TDI types stay on the single ntkrnl-sys ddk identity (blocklisted).
+    # afd.h also pulls winsock2.h/windef.h for SOCKADDR (shared.h's transport addresses).
+    DRIVER_DIR="${SRC}/drivers/network/afd/include"
+    EXTRA_INC=( -I"${SRC}/drivers/network/tdihelpers/include"
+                -I"${SRC}/sdk/include/reactos/drivers" )
+    WRAPPER_INC=$'#include "afd.h"'
+    ALLOW_FILES=( --allowlist-file '.*afd[/\\]include[/\\]afd\.h' --allowlist-file '.*afd[/\\]shared\.h'
+                  --allowlist-file '.*tdiconn\.h' --allowlist-file '.*tdi_proto\.h'
+                  --allowlist-file '.*tcpioctl\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 )
     ;;
   partmgr)
     # The partition manager (drivers/storage/partmgr). Driver-PRIVATE structs
@@ -507,6 +540,50 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  msafd)
+    # USERMODE Winsock service provider (dll/win32/msafd) — the rung ABOVE afd.sys in the
+    # netstack→winsock vertical: ws2_32's WSP* calls land here and become IOCTL_AFD_*
+    # DeviceIoControls down to afd.sys. NOT a kernel driver → USERMODE=1: blocklist against
+    # ntdll-sys (the NDK/Native-API bindgen) and re-export `pub use ntdll_sys::nt::*;` so the
+    # NT base types (HANDLE/ULONG/UNICODE_STRING/LARGE_INTEGER/NTSTATUS/IO_STATUS_BLOCK/...)
+    # keep a SINGLE identity shared with the translation (the misc/*.rs `use ntdll_sys::nt::*`).
+    # Only the winsock/WSP/wsahelp/AFD-shared/TDI/msafd-private structs become local.
+    #
+    # Wrapper = the real msafd.h (it sets NTOS_MODE_USER + pulls windef/winbase/ws2spi, the
+    # NDK exfuncs/iofuncs/obfuncs/rtlfuncs, wsahelp/tdi/afd-shared/mswsock, wine/debug, and
+    # the driver-private include/helpers.h — i.e. the whole msafd type surface). The local
+    # structs (SOCKET_INFORMATION/SOCKET_CONTEXT/ASYNC_DATA/MSAFD_*_APC_CONTEXT) live in
+    # msafd.h itself; HELPER_DATA/WSH_* in include/helpers.h + wsahelp.h; SOCK_SHARED_INFO +
+    # AFD_*_INFO IOCTL structs in afd/shared.h; WSPUPCALLTABLE/WSAPROTOCOL_INFOW/WSABUF/SOCKADDR
+    # in ws2spi.h/winsock2.h/ws2def.h; TRANSPORT_ADDRESS/TDI_* in tdi.h. Allowlist all of those;
+    # windef/winbase usermode structs (OVERLAPPED/SYSTEMTIME/FILETIME/SECURITY_ATTRIBUTES) are
+    # pulled automatically as transitive deps (anything ALSO in ntdll-sys stays blocklisted →
+    # single nt identity). BLOCKLIST_FUNCS=1: msafd.h declares the WSP* prototypes the
+    # translation #[no_mangle]-defines, so drop all fn decls from the type substrate.
+    # Version macros mirror the global usermode build (CMakeLists.txt: WINVER/_WIN32_WINNT/
+    # _WIN32_WINDOWS 0x502, _WIN32_IE 0x603, _SETUPAPI_VER 0x502); NTDDI forced to 0x05020400
+    # (WS03SP1) for the amd64 peb_teb.h ACTIVATION_CONTEXT_STACK reason (same as the 0x502
+    # driver siblings partmgr/fs_rec/pcix).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    BLOCKLIST_VARS=1   # msafd defines its own module globals (SockEvent/GlobalHeap/Upcalls/...)
+    CALLBACK_SYSTEM=1  # LPWSP*/upcall fn-ptr types -> extern "system" (match the "system" WSP defs)
+    # MACRO_SIGNED left OFF: tried signed winsock consts to kill the Status=WSAExxx (i32=u32)
+    # E0308 flood, but the translation mixes int/DWORD/handle loosely, so signed just traded
+    # those for the reverse (u32-param = i32-const) set and NET-increased E0308 325->458. The
+    # real fix is per-site casts in the modules, not a substrate const-type default.
+    DRIVER_DIR="${SRC}/dll/win32/msafd"
+    WRAPPER_INC=$'#include "msafd.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]msafd\.h'
+                  --allowlist-file '.*msafd[/\\]include[/\\]helpers\.h'
+                  --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]wsahelp\.h' --allowlist-file '.*afd[/\\]shared\.h'
+                  --allowlist-file '.*[/\\]mswsock\.h' --allowlist-file '.*[/\\]tdi\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
@@ -627,6 +704,18 @@ run_arch() {
   local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="
 
+  # Blocklist SOURCE + re-export glob: kernel drivers blocklist against the ntkrnl-sys
+  # kernel bindgen and resolve field types via the private `use ntkrnl_sys::ddk::*` glob.
+  # USERMODE crates (msafd) blocklist against the ntdll-sys NDK bindgen (bindgen_<arch> +
+  # the shared bindgen_common) and re-export `pub use ntdll_sys::nt::*;` PUBLICLY so the
+  # translated modules get NT base types via `use crate::types::*`.
+  local BLSRCS=( "$NTK" )
+  local REEXPORT_LINE='use ntkrnl_sys::ddk::*;'
+  if [ "${USERMODE:-0}" = 1 ]; then
+    BLSRCS=( "${NTDLL_SYS}/bindgen_${ARCH}.rs" "${NTDLL_SYS}/bindgen_common.rs" )
+    REEXPORT_LINE='pub use ntdll_sys::nt::*;'
+  fi
+
   # Blocklist = every type name the shared ntkrnl-sys bindgen already exports.
   # Same list is re-exported (types only) from this crate so the LLM-translated
   # modules find kernel types (DEVICE_OBJECT, IRP, CDB, ...) via `use crate::types::*`
@@ -638,7 +727,7 @@ run_arch() {
   # translated modules then get private structs from `crate::types` and kernel types
   # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
   local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
-  grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$NTK" | awk '{print $3}' | sort -u > "$TYPELIST"
+  grep -hoE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "${BLSRCS[@]}" | awk '{print $3}' | sort -u > "$TYPELIST"
   # UNBLOCK: types the shared ntkrnl-sys bindgen leaves OPAQUE (e.g. `_SCSI_REQUEST_BLOCK
   # { _address: u8 }`) — keeping them blocklisted resolves the driver's field accesses to the
   # useless opaque version. Re-allow them so THIS driver's bindgen (which includes scsi.h/srb.h)
@@ -673,16 +762,37 @@ run_arch() {
   sort -u "$TYPELIST" -o "$TYPELIST"
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
+  # BLOCKLIST_FUNCS: drop every function declaration (usermode wrappers re-declare the
+  # WSP* prototypes the translation defines — see the msafd case). Kernel drivers keep
+  # fns (e.g. afd's c_assert) so the default leaves FN_BL empty.
+  local FN_BL=()
+  if [ "${BLOCKLIST_FUNCS:-0}" = 1 ]; then FN_BL=( --blocklist-function '.*' ); fi
+  # BLOCKLIST_VARS: drop every extern `static` (global variable) declaration via a post-pass
+  # (see below). Usermode DLLs (msafd) define their own module globals (SockEvent/GlobalHeap/
+  # Upcalls/...) in the translation; bindgen re-emitting them as `pub static mut` collides
+  # (E0530 "let bindings cannot shadow statics") with the translation's local defs. NOTE: we
+  # do NOT use bindgen `--blocklist-var` — bindgen models #define constants as "vars" too, so
+  # `--blocklist-var '.*'` also nukes every winsock const (SOCKET_ERROR/FD_*/AF_*/...). The
+  # post-pass strips only `pub static` lines, leaving the consts intact.
+  # MACRO_SIGNED: emit #define integer macros as i32 instead of the u32 default. The Win32
+  # usermode API surface (WSA* error codes, AF_*/SOCK_*/SO_*/IPPROTO_*/FD_*/MSG_*) is `int`,
+  # so the translation stores them in INT (i32) locals and compares against i32 params — a
+  # u32 default floods E0308/E0277 across every winsock const use. The few genuinely-DWORD
+  # high-bit consts (INADDR_NONE, WSA_INFINITE, IN_CLASS*_NET, IOC_IN/INOUT) flip to negative
+  # i32 with the same bit pattern; those are re-forced to u32 by the post-pass below.
+  local MACRO_ARGS=()
+  if [ "${MACRO_SIGNED:-0}" = 1 ]; then MACRO_ARGS=( --default-macro-constant-type signed ); fi
 
   bindgen "$WRAPPER" \
     --use-core --no-layout-tests --no-doc-comments \
+    "${MACRO_ARGS[@]}" \
     "${ALLOW_FILES[@]}" \
-    "${BL[@]}" \
+    "${BL[@]}" "${FN_BL[@]}" \
     --raw-line '// @generated by tools/rustconv/gen_driver_types.sh — driver-private structs.' \
     --raw-line '#![allow(non_camel_case_types, non_snake_case, dead_code)]' \
-    --raw-line '// kernel field types resolved via private ddk glob (NOT re-exported: modules get' \
-    --raw-line '// common kernel types from driver_ddk, private structs from this crate::types).' \
-    --raw-line 'use ntkrnl_sys::ddk::*;' \
+    --raw-line '// base field types resolved via the sibling -sys glob below (kernel: private' \
+    --raw-line '// ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).' \
+    --raw-line "$REEXPORT_LINE" \
     "${SYS_USE[@]}" \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
@@ -722,6 +832,42 @@ open(final, "w").write("".join(out))
   # is re-bound with C linkage in the crate foundation). See strip_cpp_mangled_externs.py.
   if printf '%s\n' "${LANG_ARGS[@]}" | grep -q 'c++'; then
     python3 "$(dirname "$0")/strip_cpp_mangled_externs.py" "$FINAL" >/dev/null
+  fi
+  # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
+  # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
+  # used in u32 contexts (IN_ADDR.s_addr masks, DeviceIoControl ioctl codes, DWORD timeouts) —
+  # keeping them u32 avoids re-introducing E0308 on the address/ioctl/timeout paths. Bit
+  # pattern is identical; only the declared type changes. Families: INADDR_*, IN_CLASS*,
+  # IOC_* (winsock ioctl direction bits), SIO_* (built from IOC_*), WSA_INFINITE.
+  if [ "${MACRO_SIGNED:-0}" = 1 ]; then
+    python3 - "$FINAL" <<'PYEOF'
+import sys, re
+p = sys.argv[1]; s = open(p).read()
+# Re-declare the DWORD/IN_ADDR families as u32, wrapping any negative i32 literal back to
+# its unsigned bit pattern (WSA_INFINITE/INADDR_NONE = -1 -> 4294967295, IOC_IN -> 0x80000000).
+def fix(m):
+    return f"pub const {m.group(1)}: u32 = {int(m.group(2)) & 0xFFFFFFFF};"
+s = re.sub(r'pub const ((?:INADDR_|IN_CLASS|IOC_|SIO_)[A-Za-z0-9_]+|WSA_INFINITE): i32 = (-?\d+);',
+           fix, s)
+open(p, 'w').write(s)
+PYEOF
+  fi
+  if [ "${BLOCKLIST_VARS:-0}" = 1 ]; then
+    # Strip `pub static [mut] Name: T;` extern-global lines (msafd owns these in the
+    # translation). Leaves the surrounding `extern "C" { ... }` block valid even if emptied.
+    sed -i -E '/^[[:space:]]*pub static (mut )?[A-Za-z_][A-Za-z0-9_]*:/d' "$FINAL"
+  fi
+  if [ "${CALLBACK_SYSTEM:-0}" = 1 ]; then
+    # Normalize fn-POINTER-TYPE calling conventions to the portable `extern "system"`.
+    # bindgen spells WINAPI/stdcall callbacks (LPWSP*, upcall-table members, ...) as
+    # `extern "stdcall"` on i386 and `extern "C"` on amd64/arm64. The translation defines the
+    # WSP entrypoints as `extern "system"` (the portable per-arch form, same ABI), and Rust
+    # does NOT unify "system" with a literal "stdcall"/"C" fn-pointer type -> E0308 on every
+    # WSPPROC_TABLE assignment. Rewriting the types to "system" (ABI-identical, same as what
+    # postprocess_bindgen.py does for the ntddk callback types) makes them unify on all arches.
+    # BLOCKLIST_FUNCS drops all fn *declarations*, so every remaining `extern "X" fn` is a
+    # fn-pointer TYPE -> a blanket rewrite is safe.
+    sed -i -E 's/extern "stdcall" fn/extern "system" fn/g; s/extern "C" fn/extern "system" fn/g' "$FINAL"
   fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }

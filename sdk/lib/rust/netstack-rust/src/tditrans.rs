@@ -16,7 +16,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::phy::ChecksumCapabilities;
 use smoltcp::socket::{icmp, tcp, udp};
-use smoltcp::wire::{Icmpv4Packet, Icmpv4Repr, IpAddress};
+use smoltcp::wire::{Icmpv4Packet, Icmpv4Repr, IpAddress, Ipv4Address};
 
 use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
 use ntkrnl_sys::guards::IrqlGuard;
@@ -59,6 +59,10 @@ pub enum Cmd {
     /// getsockname: report the local address of a connection or address object
     /// into the IRP's MDL (out/out_len), then complete.
     QueryAddress { id: u64, irp: usize, out: usize, out_len: usize },
+    /// IOCTL_TCP_SET_INFORMATION_EX route programming (M9 item 4): add or remove
+    /// the IPv4 default route via `gw`. The dispatch acks the IRP synchronously;
+    /// this only reprograms the worker-owned interface routing table.
+    SetDefaultRoute { gw: [u8; 4], add: bool },
     Send { conn_id: u64, irp: usize, data: usize, len: usize },
     Receive { conn_id: u64, irp: usize, buf: usize, len: usize },
     Disconnect { conn_id: u64, irp: usize },
@@ -341,6 +345,16 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 }
             }
             unsafe { complete(irp, STATUS_SUCCESS, need) };
+        }
+        Cmd::SetDefaultRoute { gw, add } => {
+            if add {
+                let r = Ipv4Address::new(gw[0], gw[1], gw[2], gw[3]);
+                let _ = iface.routes_mut().add_default_ipv4_route(r);
+                nsprint!("[NETSTACK] route: default via {}.{}.{}.{}\n", gw[0], gw[1], gw[2], gw[3]);
+            } else {
+                iface.routes_mut().remove_default_ipv4_route();
+                nsprint!("[NETSTACK] route: default removed\n");
+            }
         }
         Cmd::Send { conn_id, irp, data, len } => {
             let handle = state.conn(conn_id).and_then(|c| c.handle);
