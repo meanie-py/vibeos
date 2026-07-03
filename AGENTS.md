@@ -59,7 +59,7 @@ When you learn something, route it to the right committed home — do **not** de
 
 ## Smoke Tests — The North Star
 
-The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `[EXPLORER] _tWinMain entered` + `shell ready`, which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. **All three arches (i386/amd64/arm64) use this same real marker** — arm64 is *not* idle-detection (that's outdated lore); it reaches `_tWinMain`/`shell ready` like x86, just slower because arm64 runs under TCG (no KVM in WSL2 for aarch64), so its boot timeout is larger (~540s vs ~360s). See `Arm64Config.boot_marker`/`required_milestones` in `tests/qemu/vm.py`. A screenshot is always saved for visual inspection.
+The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `[EXPLORER] _tWinMain entered` + `shell ready`, which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. **All three arches (i386/amd64/arm64) use this same real marker** — arm64 is *not* idle-detection (that's outdated lore); it reaches `_tWinMain`/`shell ready` like x86, just slower: the default smoke backend is **`windows-host` QEMU (the Windows `qemu-system-*.exe`) under TCG on all three arches** (see "Target Hardware"), and aarch64-on-x86 TCG is heavier than x86-on-x86, so arm64's boot timeout is larger (~540s vs ~360s). See `Arm64Config.boot_marker`/`required_milestones` in `tests/qemu/vm.py`. A screenshot is always saved for visual inspection.
 
 **Rules:**
 - **Never weaken a smoke test to make it pass.** If a test fails, fix the OS, not the test.
@@ -67,7 +67,7 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 - **Run smoke tests after any kernel/subsystem change** that touches boot paths (MM, KE, EX, IO, SE, OB, PS, CC, FSRTL, win32k, HAL).
 - **All 3 architectures must pass independently.**
 - **Always check the screenshot** — the test saves `qemu/<arch>_smoke.png` for visual inspection. **Caveat: the screenshot is captured at the boot marker (`shell ready`), *before* the taskbar finishes rendering — so a green run routinely shows bare wallpaper with no taskbar. An empty tray in the shot is NOT a failure signal; the `verdict` + boot duration are. Don't infer "explorer died" from a missing taskbar.**
-- **Serialize same-arch QEMU smokes on a shared host.** Two i386 (or two amd64) QEMU boots running concurrently on the same machine starve each other (KVM/IO/slot contention) and both stall into **false `HANG_TIMEOUT`s** — looks exactly like a real boot regression. A 2026-06-19 incident burned multiple hours: two agents gated i386 at once, both saw `HANG_TIMEOUT` + no-taskbar, and it was misattributed to a code bug (pseh-rust/kernel32-console) until a host-quiet re-gate came back 5/5 green at ~103s vs 3/3 fail at ~361s while contended. Before declaring an i386/amd64 smoke red, confirm no other agent is booting the same arch (`qemu/ps` / `./vibeos-cli ps`) so only one same-arch boot runs at a time. (The per-arch QEMU sub-cap now auto-serializes same-arch KVM boots — see below.)
+- **Same-arch QEMU smokes currently auto-serialize (a KVM-era holdover being revisited).** `per_arch_cap()` (tests/qemu/vm.py) caps i386/amd64 to one concurrent boot each. The *original* rationale was `/dev/kvm` + shared-IDE starvation between two KVM guests on the **native** backend (a 2026-06-19 incident burned hours: two agents gated i386 at once, both false-`HANG_TIMEOUT` + no-taskbar, misattributed to a code bug until a host-quiet re-gate came back 5/5 green ~103s vs 3/3 fail ~361s while contended). **⚠️ That rationale is stale under the default `windows-host` TCG backend** — there is no `/dev/kvm` and each `qemu.exe` has its own staged media, so there's no accelerator/IDE contention; the cap is slated to be lifted for windows-host (parallel same-arch on the 32-thread host). Until that lands, it still serializes, so a single-agent gate is unaffected; if you're on the `native`+KVM backend, the contention warning above still applies (`qemu/ps` / `./vibeos-cli ps` to check).
 
 ## `vibeos-cli` — The Build/Check/Smoke/Debug Front Door
 
@@ -294,7 +294,7 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
 On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus pointer — all in one tool call.
 
-Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch KVM boots (i386/amd64) auto-serialize** via a per-arch sub-cap — a second same-arch boot queues instead of starving `/dev/kvm` into a false `HANG_TIMEOUT`, so you no longer need to hand-coordinate same-arch smokes (cross-arch still runs in parallel; see `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
+Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch i386/amd64 boots currently auto-serialize** via a per-arch sub-cap (a KVM-era holdover — see the North Star note; being lifted for the `windows-host` TCG backend where there's no `/dev/kvm` to starve; cross-arch already runs in parallel; see `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
 ## Test Suite
 
@@ -347,7 +347,7 @@ pytest tests/qemu/test_smoke.py -v --arch i386 -k "sacred_primitives or no_unexp
 
 **IMPORTANT:** Cargo's incremental cache can mask regressions. Always run WITHOUT `--skip-clean-build` for final verification before committing. The clean build nukes `rust-kernel-target/` to ensure deterministic results.
 
-Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_client.py`/`debugcon.py`, boot media, KVM acceleration, resource caps, debugcon boot tracing, test lifecycle): `tests/qemu/cli/README.md`.
+Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_client.py`/`debugcon.py`, boot media, QEMU backends + acceleration (windows-host TCG default / native KVM / WHPX opt-in), resource caps, debugcon boot tracing, test lifecycle): `tests/qemu/cli/README.md`.
 
 ## Rust in the Kernel
 
@@ -518,7 +518,9 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 
 ## Target Hardware
 
-All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386). i386 and amd64 use KVM acceleration when `/dev/kvm` is available (WSL2 supports it). Real-hardware boot (e.g., Raspberry Pi for ARM64) is an aspirational target, not a current one.
+All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
+
+**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — much faster than TCG but **opt-in and shelved**: it doesn't yet boot our x86 guests cleanly (i386 hangs at freeldr stack-switch; amd64 BUGCHECKs 0x9 at uniata DMA — see `docs/engineering/windows-host-qemu-whpx-spike.md`). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real-hardware boot (e.g., Raspberry Pi for ARM64) is an aspirational target, not a current one.
 
 ## Notes
 Don't ask the user to run commands or install things after they have told you to debug something, just debug it.
