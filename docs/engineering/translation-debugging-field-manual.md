@@ -819,6 +819,42 @@ the recipe (3 blocks: 1 dispatch-EXCEPT, 1 triple-nested TRY/FINALLY+try_leave, 
 
 ---
 
+### Undefined const in a `match` arm → silent irrefutable catch-all
+
+A `match` arm that names a constant the translation **forgot to define** does not fail to
+compile — Rust parses the bare uppercase identifier as a **new binding pattern** (a
+catch-all that binds the scrutinee to that name), so **that arm matches everything** and
+every later arm is unreachable. The logic silently takes the "wrong" branch for all
+inputs; you get an `unreachable-pattern` *warning*, never an error.
+
+- **Real case:** msafd's status dispatch matched `STATUS_RECEIVE_PARTIAL`, which was never
+  defined → the arm became a catch-all → **every** recv completion was reported as
+  `MSG_PARTIAL` → ws2_32 returned `WSAEMSGSIZE` on all reads. (Same class hid
+  `STATUS_FILE_CLOSED`/`FIONBIO`.)
+- **Cause:** rustconv drops a `#define`/const the C `switch` relied on; the C `case FOO:`
+  becomes a Rust binding `FOO =>` instead of a value match.
+- **Fix / grep:** treat every `unreachable-pattern` warning as a *possible* undefined-const
+  bug, not lint noise. Scan match arms for bare `SCREAMING_CASE` identifiers that resolve to
+  a **binding**, not a path — `git grep -nE '^\s*[A-Z][A-Z0-9_]+\s*=>'` and confirm each name
+  is a real `const`/imported path. A value match must be `path::FOO =>` or a guarded
+  `x if x == FOO =>`.
+
+### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
+
+When a C size/offset uses an **array-subscripted** field — `FIELD_OFFSET(T, Addr.Address[N])`
+or `... + Addr.Address[n]`-style arithmetic — the `[N]` contributes `N * sizeof(elem)` to the
+computed size. A translation that keeps the field but **drops the subscript scaling**
+under-computes the allocation → the subsequent write overruns the block → **heap
+corruption** that manifests far away (a later `HeapAlloc`/free wedges or BUGCHECKs).
+
+- **Real case:** msafd `WSPBind` computed `connectSize` from `Address.Address[N]` but lost the
+  array-subscript scaling → a **2-byte heap overrun on every bind** → corrupted process heap
+  → a later `HeapAlloc` hung.
+- **Fix / grep:** any size derived from a `FIELD_OFFSET`/pointer-arith over an array member
+  must scale by the element count. Grep translated size math for a struct array field whose
+  `[N]` term vanished vs the C: compare each `*_size`/`connectSize`/`FIELD_OFFSET` against the
+  pristine C expression, element by element.
+
 ## Per-arch crash patterns (arm64 + amd64-only)
 
 Deterministic crashes that only fire on 64-bit (or only amd64, or only arm64) where i386's narrower pointers, lack of SSE, or different struct layout luck-mask a real bug.
