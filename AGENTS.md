@@ -416,7 +416,7 @@ Full reference (directory tree + line counts, size-verification `verify_sizes.py
 
 ### Cohabitation pattern (HAL)
 
-For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. See `docs/engineering/hal-translation-audit.md` for status and per-file mapping.
+For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. See `docs/engineering/rust-in-kernel.md` → "HAL ABI contract" for the durable ABI reference, and `docs/engineering/archive/hal-translation-audit.md` for the (closed) per-file mapping.
 
 ## rustconv — C-to-Rust Translation Pipeline
 

@@ -365,3 +365,107 @@ shim that defined both a cdecl and a stdcall twin of one name can't become two
 no_mangle fns. FIX: unify on ONE symbol (e.g. the stdcall `_X@N`) and switch the
 lone other-ABI caller's `extern "C"` decl to `extern "system"` (same op; only the
 stack-cleanup convention changes, and caller+callee just must agree).
+
+## Cohab link-resolution trap catalog
+
+A crate compiling with 0 errors ×3 arches is **necessary but not sufficient** for a cohab flip. The cohab *link* resolves the translated `.rs` against the surviving C objects, the module `.spec`/`.def`, and sibling modules (win32k, imm32, etc.) — a whole class of cross-TU issues the compiler cannot see because the other half lives outside the crate. **i386 is the strictest linker (decorated `_Name@N`): do the i386 cohab link first and iterate it to zero undefined symbols before handing to the ×3 gate.** The recurring traps:
+
+- **Spec FORWARDERS are not linkable internal symbols.** A `.spec` line `@ stdcall Foo(..) NtUserFoo` is resolved at *export* time by the `.def`; there is **no callable `_Foo@N`** inside the DLL. A translated body that calls `Foo(...)` via `extern "system" { fn Foo; }` → `undefined symbol _Foo@N`. **Fix:** route through the runtime target (the syscall/inline wrapper), not a direct extern. *Classify a name:* `grep "stdcall NAME" module.spec` — a trailing forward target (`… NtUserNAME`) ⇒ forwarder ⇒ wrap; no target ⇒ real own-export ⇒ keep the extern.
+- **Cross-TU DATA exports the still-C side reads by address.** If surviving C reads `&SOME_struct` from a TU you translated, the Rust file must define a `#[no_mangle] pub static SOME_struct: T` with the **exact C layout**, and any embedded function pointers `transmute`d to the C fn-ptr type (calling-convention-identical per arch). rustconv routinely **drops** these statics — re-add from the C. *Always grep the C consumer for the **active** (non-`#if 0`) reference* before assuming a symbol is cross-TU; a `#if 0`/comment-only reference means the Rust static stays a plain `pub static` (no `#[no_mangle]`).
+- **Runtime dispatch tables are not imports.** A `FN(name)` macro that expands to `gApiTable.pName` is a global function-pointer table filled at runtime by a *sibling* module — the DLL does **not** import the target library. A direct `extern "system" { fn Name; }` → undefined. **Fix:** mirror the table struct layout (field order up to the highest slot used; unused slots = pointer pads), `extern "C" { static gApiTable; }`, and inline wrappers that call through it.
+- **cdecl C helpers wrongly given stdcall.** A plain-cdecl C helper (`_name`, no `@N`) declared `extern "system"` asks the i386 linker for `_name@N` → undefined. **Fix:** `extern "C"`. (amd64/arm64 hide this — cdecl and stdcall are the same undecorated symbol there; only i386 catches the mismatch.)
+- **Inline/`__inline` header helpers have no exported symbol.** A `strsafe.h`-style `__inline` (e.g. `RtlStringCchCopyNW`) is not a real export — reimplement locally.
+- **MSVC intrinsics have no extern symbol on amd64/arm64.** `InterlockedExchange` and the `_Interlocked*` / `_byteswap*` / `_BitScan*` family are inline intrinsics on amd64/arm64 (only i386 ships the CRT stdcall export). A direct extern **links on i386, fails amd64/arm64**. **Fix:** `core::sync::atomic::Atomic*` (e.g. `AtomicI32::swap`). Scan each wave for these before the gate — **i386-green does NOT imply amd64-green.** (`memcpy`/`memset`/`strlen` are fine — compiler-rt provides them on all arches.)
+- **UNICODE macros vs the decorated generic export (i386).** `winuser.h`-style macros map `SetWindowLongPtrW`→`SetWindowLongW`, and generic `GetWindowLong`/`SendMessage`→the `…W` export. The generic decorated form has no symbol on i386 — cfg-split to the `…W` variant / a forwarder.
+
+**Takeaway:** the four "invisible on amd64/arm64, fatal on i386" classes (forwarders, cdecl-vs-stdcall, MSVC intrinsics, UNICODE macros) mean **i386 is the canary** — link it first, drive undefined-symbol count to zero, *then* scan explicitly for the intrinsic trap (which i386 hides) before the cross-arch gate.
+
+## HAL ABI contract (hal.spec)
+
+`hal/hal.spec` is **the** contract for anything importing from `hal.dll` (PnP/ACPI/video drivers, ntoskrnl). It must stay stable across the whole translation window — C and Rust both link against the same decorated export set.
+
+**Export surface:** 102 exports — **76 stdcall, 25 fastcall, 1 extern (data)**. Roughly half are untagged (all arches); the rest carry `-arch=` annotations (largest cohorts: `i386,arm,arm64` and `i386,x86_64`), so a symbol's very *existence* is per-arch — check the `.spec` `-arch=` tag before declaring an extern for it.
+
+**Internal surface:** ~144 `Halp*` declarations in `include/halp.h`. The cohab pattern requires each signature — calling convention, return type, parameter layout — to stay byte-identical between the surviving C and the incoming Rust, or the two halves silently disagree (per-arch ABI mismatches were real bugs).
+
+**Declaration rule (match the C header verbatim):**
+
+| C symbol kind | Rust `extern` ABI |
+|---|---|
+| NTAPI (`stdcall`) | `extern "system"` |
+| FASTCALL | `extern "fastcall"` |
+| pure cdecl | bare `extern "C"` |
+
+`extern "system"` resolves per-arch (i386 NTAPI = stdcall `_Name@N`; amd64/arm64 NTAPI = cdecl undecorated), so it is the correct default for NTAPI — but FASTCALL and cdecl must be spelled explicitly; do not blanket everything as `extern "system"`.
+
+**Verify before the flip:** `nm` the cargo/staticlib archive against the `.spec`-expected decoration. A mismatch links fine on amd64/arm64 and breaks i386.
+
+**The `.S` / NT-ABI boundary is not translatable residue.** The shared HAL asm (`systimer.S`, `trap.S`, `pic.S`, `apictrap.S`, `tsccal.S`) `#include`s `ks{386,amd64}.inc`, which `geninc` generates from the NT ABI headers — i.e. it depends on **NT struct field-offset definitions**, the *same* layout `ntkrnl-sys` bindgen mirrors into Rust. Porting the asm to `global_asm!` would not sever that dependency (Rust asm still needs the offsets via `offset_of!`). Treat this asm as the ABI boundary Rust consumes independently, not as C left to translate.
+
+**Per-arch KIRQL/CR8 gotcha (cohab class):** an IRQL constant hardcoded to the i386 value (`HIGH_LEVEL = 31`) writes a reserved bit via `mov cr8, 0x1F` on amd64 (KIRQL maps to CR8, 4 valid bits) → #GP, which exception dispatch mis-attributes to whatever function is running (looked like an MM BUGCHECK 0x1E). Any HAL constant touching CR8/IRQL must be per-arch (31 i386 / 15 amd64).
+
+## The kernel↔user boundary (ntdll)
+
+ntdll is unique among cohab targets: it is the **user-mode half of a kernel contract**. The kernel side is already Rust and smoke-green — translating ntdll's body must **not renegotiate the contract**. Three things are special.
+
+**1. Must-not-drift exports (kernel binds them by name).** At `PspMapSystemDll` the kernel resolves four ntdll exports from the `.spec` and stores their addresses in `KeUser*Dispatcher` / `PspSystemDllEntryPoint`. Their exact `.spec` decoration and ABI are **load-bearing** — a decoration drift silently mis-binds: `KiUserExceptionDispatcher`, `KiUserApcDispatcher`, `KiUserCallbackDispatcher`, `LdrInitializeThunk` (the first user instruction in every new thread). `nm` the cargo-built archive against the `.spec`-expected decoration **before** the cohab flip lands. (Same load-bearing-export class as the FreeLDR `PeLdr*` set.)
+
+**2. The trap trampolines stay asm (and carry non-upstream patches).** `dispatch/{i386,amd64,arm64}/dispatch.S` — the kernel→user trampolines — use ml64 SEH unwind pseudo-ops and exact kernel-built stack contracts that `global_asm!` can't cleanly express. **They stay asm by design.** Syscall stubs (`NtXxx`/`ZwXxx`) are spec2def-generated, not translated — ntdll-rust calls them as `extern "system"` FFI. **Critically — preserve the DUMMY_PSEH safety-net blocks bit-for-bit:** the i386/amd64 `dispatch.S` carry hand-added `#ifdef _USE_DUMMY_PSEH` blocks **not in upstream ReactOS** (the user-mode mirror of the kernel-side DUMMY_PSEH swallow — swallow continuable software exceptions via `ZwContinue`; pass hardware/noncontinuable to 2nd-chance via `ZwRaiseException`; skip the int3 byte on `STATUS_BREAKPOINT`). Because DUMMY_PSEH is always on for our build, the checked-in `.s` must include these blocks **unconditionally** — flag them so they aren't "cleaned up" as cruft.
+
+**3. Bootstrap hazard (dual-mode).** `LdrInitializeThunk`/`LdrpInit`/`LdrpInitializeProcess` run as the **first user instruction in every thread**, fabricated by the kernel as a fake user APC — i.e. they execute *before the process has its own runtime*. Translated bootstrap code cannot assume TLS, heap, or loader state is up yet; keep it allocation-free and self-contained the same way the C did.
+
+**Rule of thumb:** ntdll's PE *body* is fair game for translation, but the **contract surface** (the 4 named exports, the asm trampolines + their DUMMY_PSEH blocks, the spec2def syscall stubs) is fixed — translate around it, never through it.
+
+## RPC-server DLL cohabitation (widl `_s.c` → Rust stub)
+
+Pattern for flipping a **widl-generated RPC server DLL** (a `.idl` → `<iface>_s.c` marshalling stub plus a set of `#[no_mangle] extern "system"` server methods) from C to Rust. This is a **shipping, battle-tested** shape in this tree — it already drives **svcctl** (services.exe) and **winreg** (winlogon). Mirror those, don't invent.
+
+### The three-crate shape (per RPC module)
+
+| Crate | Kind | Role |
+|---|---|---|
+| **`<mod>-sys`** | rlib (bindgen) | The marshalled wire types. Bindgen `build-*/dll/win32/<mod>/<iface>_s.h` per-arch (allowlist the wire-type prefix), mirroring `sdk/lib/rust/lsass-sys/`. |
+| **`<iface>-stub`** | staticlib | The generated Rust RPC server stub that **replaces** `<iface>_s.c`. Its `build.rs` calls `reactos_link::generate_rpc_stub_rust("<idl>", "<iface>_s", "<c-target>")`. Deps `midl-rt`. Mirror `sdk/lib/rust/svcctl-stub/`. |
+| **`<mod>-rust`** | staticlib | The translated method bodies: `#[no_mangle] pub unsafe extern "system" fn FooXxx(...)` + `*_HANDLE_rundown` context-rundowns + `MIDL_user_allocate`/`MIDL_user_free`. Mirror `sdk/lib/rust/services-rust/src/rpcserver.rs`. |
+
+`tools/widl_to_rust.py` transliterates the widl `<iface>_s.c` → `.rs` against the `sdk/lib/rust/midl-rt/` substrate (ABI-asserted `repr(C)` mirrors of `MIDL_STUB_DESC`/`MIDL_SERVER_INFO`/`RPC_SERVER_INTERFACE`/`RPC_DISPATCH_TABLE`). `generate_rpc_stub_rust` reads the **compiled `_s.c.obj`** via `llvm-nm` to recover exact per-arch symbol decorations — this is what solves the i386 `@N` decoration problem automatically.
+
+**Cohab flip:** comment the translated `.c` bodies out of `dll/win32/<mod>/CMakeLists.txt`, **drop `${CMAKE_CURRENT_BINARY_DIR}/<iface>_s.c`** from the sources, link the three Rust staticlibs.
+
+### Non-obvious gotchas (all cost real debug time)
+
+- **This tree uses widl, not MS-MIDL.** `sdk/cmake/widl-support.cmake` `add_rpc_files` is the active generator; `midl-support.cmake` is dead. **Replace** the emitted `_s.c` with the Rust stub — do NOT keep it as compiled C.
+- **`MIDL_user_allocate`/`MIDL_user_free` ABI:** C names them lowercase, but `rpcndr.h` `#define`s lowercase→UPPERCASE. A Rust `#[no_mangle]` gets no macro expansion, so define + call the UPPERCASE names with `extern "system"` (`__RPC_USER` = stdcall, i386 `@4`).
+- **`*_HANDLE_rundown`** context-rundowns must exist (`extern "system"`, i386 `@4`) or the stub table won't link.
+- **`@ stub` spec entries** are genuinely-unimplemented — translate-as-stub returning `STATUS_NOT_IMPLEMENTED`; correct `_Name@N` on i386 via `#[no_mangle]` (never `#[export_name]`, which double-decorates).
+- **Link is the oracle for cross-file exports.** rustconv occasionally emits a cross-file C function as a *private* Rust fn (no `#[no_mangle]`) → undefined symbol at DLL link. A stale DLL can falsely boot green — always confirm `ninja <mod>` rc=0 **and** `undefined symbol` count 0 ×3. Fix: restore `#[no_mangle] pub extern "C"`.
+- **The lone DUMMY_PSEH site.** These modules typically have exactly one `_SEH2_EXCEPT` that validates a caller handle and **mutates an output in the except body** → must become dead code under `USE_DUMMY_PSEH`; validate the pointer/signature in safe Rust *before* the deref, never rely on the catch.
+
+**Reference files:** `tools/widl_to_rust.py` · `sdk/lib/rust/midl-rt/src/lib.rs` · `sdk/lib/rust/svcctl-stub/build.rs` · `sdk/lib/rust/services-rust/src/rpcserver.rs` · `sdk/lib/rust/reactos-link/src/lib.rs` (`generate_rpc_stub_rust`) · `sdk/cmake/widl-support.cmake`.
+
+### Differential-fuzz parity harness (`rtl-difftest` pattern)
+
+For the pure byte-math pieces of a translated module (SD/ACL/SID packing, RID arithmetic, array pack/unpack, bitfield encode) you can **prove bit-for-bit equivalence** vs the genuine compiled C — strictly better than C-anchoring, because it hits the translation goal *with* an oracle. Host crates (`cargo test`, **no QEMU**), `publish=false`, workspace members. Copy from `sdk/lib/rust/rtl-difftest/`.
+
+The 4 load-bearing tricks: (1) `build.rs` writes a wrapper TU: `#define Foo ref_Foo` for each public symbol, then `#include "<repo>/…/genuine.c"` verbatim → genuine & Rust coexist as `ref_Foo` vs `cabi::Foo`. (2) `cc::Build` with **`.cargo_metadata(false)` + emit each object as `cargo:rustc-link-arg=<obj>`** — a build-script `rustc-link-lib` does NOT reach integration tests; link-args do. (3) **Force widths in a minimal `refstub/`:** `typedef unsigned short WCHAR;` and `typedef int NTSTATUS;` (host `wchar_t` is 32-bit, host `long` is 64-bit). (4) **Minimal `refstub/`** replaces the genuine header chain; `scrape_protos()` (copy verbatim) auto-emits forward prototypes. `tests/diff.rs`: `extern "C" { fn ref_*(...) }`, an xorshift RNG, per-iter call both + `assert_eq!` on the return, every out-param, and the whole dest buffer. **Reference:** `sdk/lib/rust/rtl-difftest/{build.rs,tests/diff.rs,refstub/}` · `sdk/lib/rust/cnt-difftest/`.
+
+## cmake → cargo LINK cutover (spine binaries)
+
+Recipe for moving an **already-Rust-bodied but cmake-LINKED** binary (`add_executable`/`add_library` + `target_link_libraries` the Rust `.a` with `--allow-multiple-definition`) to a **cargo-driven link** via the shared `reactos-link` engine — mirroring `ntoskrnl-cargo` / `ntdll-cargo`. Validated across smss/csrss/csrsrv/winsrv/basesrv + lsass/winlogon/userinit/services.
+
+**Pick the right ModuleKind:**
+- **`Win32Exe { entry, subsystem }`** — user-mode win32 exe (lsass, userinit, winlogon, services). `--subsystem,windows:5.01` (GUI) or `console:5.01`, `--gc-sections`, no `-shared`. User-mode ⇒ `kernel_rust=false` (build the *standard* user rust target).
+- **`NativeExe`** — native-subsystem exe (smss, csrss): `native:5.01`, `_NtProcessStartup@4`/`NtProcessStartup` entry, per-arch explicit image base. Needs `.rust_user_target()`. On arm64 add `.stack_reserve(2MB)` — llvm-dlltool collapses delay-imports so deep `LdrpLoadDll` overflows the 1MB default.
+- **`Win32Dll { entry, image_base }`** with subsystem `native:5.01`/`console:5.01` — spine DLLs (csrsrv native; winsrv/basesrv console). `_DllMain@12`/`DllMain`, no `--gc-sections`.
+
+The float ABI of the empty cargo bin **shell** is irrelevant — only the body `.a`'s float ABI matters.
+
+**EXTRA_DEPENDS must be `.a` FILE PATHS, not cmake target names** whenever the producer lives in a directory configured *after* the consumer (`base/` configures before `dll/`, so a `base/`-module can't see a `dll/`-importlib *target* name — a file path edges order-independently). OBJECT-lib residue/resource targets already in scope (`<m>_c`, `<m>_res`) can be passed by target name.
+
+**Resource `.res`: windres-replay via `resource_from_rc`.** For a binary with a load-bearing `.res` (MANIFEST/dialogs/bitmaps/STRINGTABLEs — check the `.rc`; pure version info is omittable), compile it in-cargo with `Linker::resource_from_rc(rc_rel, res_target)`: it replays cmake's flag-exact `windres` command from `compile_commands.json` (positional in/out, NO `-o`; `current_dir = build-<arch>`). Keep a resource-only OBJECT lib alive so the windres entry stays in `compile_commands.json`.
+
+**Entry-point decoration depends on the UNICODE keyword** (read `set_module_type`): win32gui + UNICODE → `wWinMain` → entry `_wWinMainCRTStartup` (i386); win32gui WITHOUT UNICODE → `WinMain` (`_WinMain@16`) → `_WinMainCRTStartup`. Wrong entry → undefined `_wWinMain@16`/`_WinMain@16` at link.
+
+**Trap: arch-gated shim + reused C `.a` = silent stale link.** A cohab-flip shim gated `#if defined(__i386__)` combined with a reused C archive makes amd64/arm64 silently link *stale C*. Fix: `ninja -t clean <lib> && ninja <lib>` to prune the archive and expose the gap; add the missing `#else` branch. (`vibeos-cli build --clean` is RUST-only, so it can't re-archive C.) Once the residue moves to `c_from_compile_db`, staleness is moot — cargo recompiles the shim fresh every link.
+
+**Engine note:** spec2def `-a` takes **`x86_64`** for amd64, NOT `amd64` (an unknown token silently falls back to i386 `@N` decoration). Reference: `sdk/lib/rust/reactos-link/src/lib.rs`, `ntdll-cargo/build.rs`, `ntoskrnl-cargo/build.rs`.

@@ -242,7 +242,7 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
    ```
    This mirrors the C, which reinterprets the float's bits as a LONG and passes the LONG to the kernel anyway (`gxf_long worker; worker.f = a1; …(worker.l)…`). The cfg-split is mandatory: a plain `f32` param won't compile on i386, a plain `u32` param corrupts amd64/arm64.
 **Bonus (co-occurring): a `__forceinline`-from-a-header arithmetic helper is NOT a real export** — e.g. `RtlULongMult` (ntintsafe.h). Declaring it `extern` → undefined `_RtlULongMult@12` at link. Reimplement it locally as a small checked-arithmetic Rust fn (STATUS_SUCCESS / 0xC0000095 STATUS_INTEGER_OVERFLOW); see `win32k-rust/src/surface.rs` and gdi32 `font.rs`/`bitmap.rs`. (Sibling of "DDK FORCEINLINE exported only on i386" above, but here it's exported *nowhere*.)
-**Source:** gdi32 Wave 2 (`coord.rs`), Wave 2b (`font.rs`), Wave 3a (`path.rs`/`bitmap.rs`) — `docs/engineering/gdi32-translation-audit.md`.
+**Source:** gdi32 Wave 2 (`coord.rs`), Wave 2b (`font.rs`), Wave 3a (`path.rs`/`bitmap.rs`) — `docs/engineering/archive/gdi32-translation-audit.md`.
 
 ### cohab flip drops a `.spec`-exported symbol that was a hidden OBJ-LEVEL alias in the flipped `.c`
 **Symptom:** after a per-file cohab flip (`.c`→`.rs`), the DLL link fails with `undefined symbol: _Foo@N` for a symbol whose **literal name appears in NO `.c` file** — only in the `.spec` / a `.def`. The Rust crate compiles fine; it's a link-only break.
@@ -1282,6 +1282,32 @@ Lessons unique to translating win32k.sys (gdi/eng, gdi/ntgdi, gdi/dib, user/ntus
 
 ---
 
+## Translating a shared C runtime library (Rtl-class API bodies)
+
+Bugs that recur whenever you flip a C library whose functions are thin plumbing over syscalls, PEB/TEB accessors, and output-pointer contracts — i.e. any surface where the *shape* is "chain of `Zw*`/accessor calls" rather than a pure algorithm. A single flip routinely lets a *previously-unreached* code path run for the first time on a given arch, so the flip surfaces latent bugs in code that was already committed. Expect the flip to be correct and the downstream to be where the fault is.
+
+### Symptom → cause → fix catalog
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| **BUGCHECK 0x1E, write to VA 0** (`CR2=0`, page-table walk shows VA 0 `P=0`) after a flip reaches process/env init | An **accessor shim was left as a NULL stub** during translation. The C original does pure pointer arithmetic on a *child* structure's user-VA (`&((PPEB)base)->Field` — no deref, valid to compute in kernel), but the Rust/shim returned `NULL`, so the next `ZwWriteVirtualMemory` wrote to address 0. Uncatchable under DUMMY_PSEH. | Implement the real pointer arithmetic on the bindgen struct; never leave a "returns NULL for now" accessor stub in a booted path. Grep flipped libsupp/accessor shims for `-> ... { NULL }` / `return null_mut()`. |
+| **BUGCHECK 0x1E, new thread's user `Rsp`/`Sp` = a kernel-stack address** (trap frame: entry `Rip` correct ✓, `Rsp` points into kernel stack ✗) | Passed **the address of a struct instead of a field of it**. A C API param is mistyped as a pointer (`PINITIAL_TEB`) but the callee actually consumes it as `(ULONG_PTR)StackBase`; the faithful C caller passes `teb.StackBase`, but the translation passed `&teb`. The struct address is then used as a stack pointer → AV on first user-APC probe. | Match what the C *caller* passes (the field), not what the *signature* nominally types. When a param's declared type disagrees with its use, translate the use. |
+| **BUGCHECK 0x4C / 0x6B, `c000003a OBJECT_PATH_NOT_FOUND`** during smss/critical-process init; a registry `REG_EXPAND_SZ` path stays literally `%SystemRoot%\...` unexpanded | A **"NULL = use current-process default" contract was dropped**. The C function forwards a NULL `Environment`/context argument to a lower call that resolves NULL → `NtCurrentPeb()->ProcessParameters->Environment`. The translation re-implemented the lookup with a pure helper and mapped NULL → empty slice → every expansion silently no-ops. Historically misattributed to "upstream PnP/IDE-binding bug." | Preserve the NULL-means-default sentinel: NULL → resolve via the real PEB/context accessor, not `&[]`. Audit every translated function whose C body passes a possibly-NULL pointer straight through — the NULL has *meaning* downstream. |
+
+**Cross-cutting lesson:** all three bugs are *latent in code that already links and passes earlier smoke*. A flip that "advances the boot marker and then crashes" is usually correct — it just reached virgin territory. Diagnose the crash site, not the flip.
+
+**Stale fat-archive trap (build-system, same family):** if a flipped `.c` "links clean" suspiciously easily, suspect a zombie object. A cmake `ar` rule that *appends without truncating* leaves `lib*.a` accumulating `.obj`s of every previously-flipped file, which keep silently satisfying symbols that should now be undefined. Confirm with `rm lib*.a && ninja` then `ar t lib*.a | grep <should-be-gone>`.
+
+### Byte-diff verification methodology
+
+For **pointer-free / arch-neutral** translations (string, SID, ACL, SD, security, atom-table classes), don't rely on smoke — prove the Rust is bit-identical to the genuine C:
+
+- **Compile the *real* C as a reference TU** inside a host test crate's `build.rs` (not a hand-copy — the actual source file), applying a **SAL-neutralization block** (`#define`-away `_In_`/`_Out_`/…) and a `scrape_protos()` pass so call-before-definition C still compiles.
+- **Fuzz the Rust `#[no_mangle]` output byte-for-byte against the C** across generated inputs. Keep the pure logic in a `forbid(unsafe_code)` `core_rs`-style module so it's also Kani-verifiable; the `unsafe`/asm/FFI lives only in the thin `cabi` shim.
+- **When byte-diff is the wrong shape** — pure syscall plumbing (chains of `Zw*`), stateful allocators, anything with side effects rather than a computed output — smoke is the only net. Don't force a byte-diff harness onto it; ship the flip and let boot exercise it. (Heap-class allocators get their *own* behavioral/property/Kani track, never byte-diff.)
+
+Rule of thumb: **byte-diffable ⇔ pointer-free pure function.** If the function computes an output buffer from inputs with no VM/handle/PEB side effects, byte-diff it. Otherwise, smoke it. (A ready-made harness for this lives in `rust-in-kernel.md` → "Differential-fuzz parity harness".)
+
 ## 9. Kernel crash-hunting techniques (live BUGCHECK / hang / heap hunts)
 
 The *how-to-hunt* layer: techniques for chasing a live kernel crash (BUGCHECK, hang, heap
@@ -1891,3 +1917,43 @@ memories. When you solve a new translation bug, add a `### Symptom → Root caus
 entry to sections 1–8; when you discover a new live-crash-hunting technique, add it to
 section 9. Goal: the durable learning lives HERE in the repo, not only in per-session
 agent memory.*
+
+### 9.x x86 UEFI boot bring-up recipe (OVMF) + the three UEFI-only gotchas
+
+Non-obvious operational bits that make an x86 kernel boot under **UEFI (OVMF)** instead of legacy BIOS. These are latent in the C too — they only manifest once you actually boot via UEFI, so they bite whenever the UEFI boot path is touched or first enabled on an arch.
+
+#### Gotcha 1 — i386 PAE→non-PAE paging transition (triple-fault if mis-ordered)
+
+OVMF hands control to the loader with **paging ON and `CR4.PAE=1`**. A classic i386 kernel uses **non-PAE 2-level paging**. Doing `writecr3(PDE)` while `CR4.PAE=1` makes the MMU read the non-PAE PDE as a PAE PDPT → **instant triple-fault** (the #PF fires on the very next instruction fetch).
+
+Order the switch so PAE is cleared while paging is OFF:
+
+```
+1. if CR0.PG set  → clear CR0.PG      # paging off
+2. clear CR4.PAE                       # now safe to drop PAE
+3. writecr3(non-PAE PDE)
+4. set CR0.PG                          # paging back on
+```
+
+Steps 1–4 execute identity-mapped (loader + stack live in identity-mapped low memory), so they're safe with paging off. No-op on legacy BIOS (paging is already off at the equivalent point). Lives in the i386 `WinLdrSetProcessorContext`; the stock C `writecr3`/`writecr0` pair has **no PAE handling** — it's a latent bug that only shows under UEFI.
+
+#### Gotcha 2 — Synthetic ACPI 2.0 RSDP (else no keyboard/PS-2 input)
+
+Under UEFI the RSDP lives in **EFI-reclaim memory**, so a legacy BIOS-area RSDP scan (`0xE0000`–`0xFFFFF`) finds nothing → `AcpiInitializeTables` fails → no ACPI namespace → `PNP0303`/`PNP0F13` (PS/2 kbd/mouse) never enumerate → i8042prt gets no `AddDevice` → **no keyboard**.
+
+Fix (in `AcpiOsGetRootPointer`): keep the BIOS-area scan first (legacy path byte-for-byte unchanged); **on failure**, read the RSDT/XSDT physical address the bootloader recorded in the ARC tree — the `"ACPI BIOS"` multifunction-adapter Configuration Data at `\HARDWARE\DESCRIPTION\System\MultifunctionAdapter\N` (`CM_FULL_RESOURCE_DESCRIPTOR` → device-specific descriptor → trailing `ACPI_BIOS_DATA.RSDTAddress`, which holds the XSDT address on ACPI 2.0+) — and **synthesize a valid ACPI 2.0 RSDP** (correct 1.0 checksum + extended checksum) pointing at it. Arch-agnostic — arm64 takes the same fallback safely.
+
+**Diagnosis tell:** a working BIOS boot's serial shows `[[I8K]] AddDevice ... KBD ISR FIRED`. A broken UEFI boot has **zero `[[I8K]]` lines** and reports `Tables: [XSDT]` (vs BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.
+
+#### Gotcha 3 — freeldr-LOADED DLLs must not use raw-dylib for cross-DLL kernel-data imports
+
+A DLL that FreeLDR itself loads (e.g. `kdcom.dll`, `bootvid.dll`) must **not** use `#[link(kind="raw-dylib")]` for cross-DLL kernel-data imports. The 2nd `ntoskrnl.exe` import descriptor that raw-dylib emits **hangs FreeLDR's peloader**. Use the import lib's `__imp_` thunk instead.
+
+#### OVMF boot recipe (i440fx + ide-cd)
+
+Boot the LiveCD ISO from OVMF on the **i440fx `-M pc`** machine — *not* q35. i386 and amd64 share the same shape (no AHCI/SATA; the IDE driver serves the CD):
+
+- **Firmware:** i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 = `/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`.
+- **Boot device:** `-device ide-cd,drive=cd0,bootindex=0`. A bare `-cdrom` does **not** auto-boot — without an explicit `bootindex=0`, OVMF drops to the UEFI shell.
+- **Writable VARS pflash must be qcow2** (convert the raw OVMF VARS → qcow2) for QMP `savevm`/snapshot to work; a raw VARS pflash blocks snapshotting.
+- **Rebuild the ISO after touching the loader.** The LiveCD ISO's EFI El Torito entry loads `EFI/BOOT/boot<plat>.efi` (`EFI_PLATFORM_ID` ia32/x64/aa64), which folds in `uefildr` — re-run `ninja livecd` after `ninja uefildr` or you boot a **stale ISO**.

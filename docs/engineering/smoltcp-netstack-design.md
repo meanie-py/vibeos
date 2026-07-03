@@ -23,7 +23,7 @@ The earlier "usermode-winsock blocker root-caused to a *storage* driver" was sup
 true blockers were the amd64 kernel **timer-table base skew** (`38b63f15b74`) and a kernel32
 **`IsBad*Ptr` DUMMY_PSEH** regression (`b5f42d40421`: IsBad{Read,Write,String}Ptr reported every
 valid pointer as bad → ws2_32 `connect()` short-circuited to WSAEFAULT). Both fixed and landed.
-**Lane:** L4 (Rust-ecosystem-crate rewrite) of `docs/engineering/translation-banking-roadmap.md`
+**Lane:** L4 (Rust-ecosystem-crate rewrite) of `docs/engineering/archive/translation-banking-roadmap.md`
 **Goal:** Replace the ReactOS C TCP/IP protocol engine with the Rust **`smoltcp`** crate,
 reaching a **usable networked desktop in QEMU**, while keeping the Windows-compatible
 socket surface (ws2_32 → AFD) unchanged.
@@ -581,7 +581,7 @@ Remaining open:
   `vibeos-cli smoke --arch amd64` as the `net` stage
 - Storage 0x50 blocker: `docs/engineering/translation-debugging-field-manual.md` §9.9 +
   `drivers/network/netstack/CMakeLists.txt` comment (task 79)
-- Roadmap / lanes: `docs/engineering/translation-banking-roadmap.md` (L4)
+- Roadmap / lanes: `docs/engineering/archive/translation-banking-roadmap.md` (L4)
 - Driver cargo-cutover recipe: memory `project_device_driver_cargo_cutover`
 - DDK substrate for drivers: memory `feedback_driver_ddk_substrate`
 - smoltcp: <https://docs.rs/smoltcp> · phy::Device, socket::{tcp,udp,icmp,raw,dhcpv4,dns}

@@ -1,13 +1,17 @@
-# Rust Port Status — Consolidated Rollup (ground-truth)
+# Rust Port Status — Detailed Rollup (historical detail dump)
 
-**Date: 2026-06-21.** Branch `continue-rust-port` (== `master`, FF-synced).
+> **This is the old-details dump, not the live headline.** For the current as-built
+> status see **[rust-port-status.md](rust-port-status.md)**. This doc keeps the verbose
+> per-area detail, the measured snapshots, and superseded numbers we want on record but
+> don't want cluttering the live status — a graveyard of detail, kept on purpose. The
+> per-file reference lives in the `*-translation-audit.md` set.
 
-This is a **ground-truth rollup** measured from the tree (CMake source lists + cohab
-`# replaced by Rust` markers + Rust crate inventory). It supersedes the scattered status
-claims in the per-area `*-translation-audit.md` set for *headline* numbers; those docs remain
-the detailed per-file reference (all refreshed 2026-06-21 alongside this). Where they disagree
-with this rollup, **this rollup is the measured truth as of the date above** (re-measure before
-trusting later).
+**Snapshot date: 2026-06-21** (measured against mainline, then `continue-rust-port == master`;
+`continue-rust-port` has since been retired and `master` is the single mainline).
+
+This was a **ground-truth rollup** measured from the tree (CMake source lists + cohab
+`# replaced by Rust` markers + Rust crate inventory) as of the date above. Numbers here are a
+point-in-time snapshot — the live headline in `rust-port-status.md` is the current truth.
 
 Methodology: per module, count active (uncommented) `.c` still added to the build target vs
 `# replaced by Rust` markers vs the Rust crate's `.rs`/LOC. "Glue" = irreducible C that
