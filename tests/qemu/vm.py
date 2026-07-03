@@ -1387,9 +1387,19 @@ class QemuVM:
         while it waits behind an exclusive build."""
         if not hostlock.enabled() or not self._boot_is_tcg():
             return
-        self._cpu_lease_fd = hostlock.acquire_cpu_lease(
-            f"boot:{self.config.arch}", work_dir=str(self.work_dir)
-        )
+        # Route by scheduling domain: a windows-host boot runs as qemu.exe on the WINDOWS
+        # side, so it draws from the SEPARATE `bootcpu` pool and is NOT excluded by a WSL
+        # build's exclusive `cpuheavy` grant (the build leaves core headroom via its -j cap).
+        # A native TCG boot (arm64, or x86-degraded) runs in WSL and shares cores with the
+        # build, so it stays on `cpuheavy` where a cold build still excludes it.
+        if getattr(self, "_backend", "native") == "windows-host":
+            self._cpu_lease_fd = hostlock.acquire_boot_lease(
+                f"boot:{self.config.arch}", work_dir=str(self.work_dir)
+            )
+        else:
+            self._cpu_lease_fd = hostlock.acquire_cpu_lease(
+                f"boot:{self.config.arch}", work_dir=str(self.work_dir)
+            )
         if self._cpu_lease_fd is None:
             print(
                 f"[QemuVM] WARNING: host CPU lease timeout (boot:{self.config.arch}) — "
