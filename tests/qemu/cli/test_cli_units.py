@@ -728,6 +728,7 @@ def _launch_vm(backend: str = "windows-host"):
     v._backend = backend
     v._proc = None
     v._early_stderr = ""
+    v._gdb = False
     return v
 
 
@@ -814,6 +815,71 @@ def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
     monkeypatch.setattr(v, "_discard_failed_launch", lambda p: None)
     with pytest.raises(RuntimeError, match="hostfwd-bind failed after 2"):
         v._launch_qemu()
+
+
+def test_launch_qemu_retries_gdb_bind_race(monkeypatch):
+    # A windows-host gdbstub binds a Windows-stack port with the same pick-then-bind
+    # TOCTOU as a hostfwd → must be retried with a fresh port (no hostfwd present).
+    v = _launch_vm("windows-host")
+    v._gdb = True
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "-gdb", "tcp:0.0.0.0:1234"])
+    procs = [_FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    seq = iter([vm.GDB_BIND_ERROR + " on device 'tcp:0.0.0.0:1234'", None])
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    cmd = v._launch_qemu()
+    assert "-gdb" in cmd
+    assert v._proc is procs[1]  # healthy 2nd attempt
+    assert discarded == [procs[0]]  # first (raced) torn down
+
+
+def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
+    v = vm.QemuVM.__new__(vm.QemuVM)
+    v._backend = backend
+    v._gdb = gdb
+    v._gdb_wait = wait
+    v.gdb_port = None
+    return v
+
+
+def test_gdb_args_off_emits_nothing():
+    assert _gdb_vm(gdb=False)._gdb_args(win_stack=False) == []
+    assert _gdb_vm(gdb=False)._gdb_args(win_stack=True) == []  # even on the win path
+
+
+def test_gdb_args_native_binds_loopback():
+    v = _gdb_vm(gdb=True)
+    a = v._gdb_args(win_stack=False)
+    assert a[0] == "-gdb" and a[1].startswith("tcp:127.0.0.1:") and "-S" not in a
+    assert v.gdb_port is not None and str(v.gdb_port) in a[1]
+
+
+def test_gdb_args_wait_adds_dash_S():
+    assert _gdb_vm(gdb=True, wait=True)._gdb_args(win_stack=False)[-1] == "-S"
+
+
+def test_gdb_args_windows_binds_wildcard_on_windows_port(monkeypatch):
+    # windows-host: QEMU.exe is the gdb SERVER → bind 0.0.0.0 on a WINDOWS-picked port.
+    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 54321)
+    v = _gdb_vm(gdb=True, backend="windows-host")
+    assert v._gdb_args(win_stack=True) == ["-gdb", "tcp:0.0.0.0:54321"]
+    assert v.gdb_port == 54321
+
+
+def test_gdb_host_native_vs_windows(monkeypatch):
+    assert _gdb_vm(backend="native").gdb_host == "127.0.0.1"
+    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "172.26.176.1")
+    assert _gdb_vm(backend="windows-host").gdb_host == "172.26.176.1"
 
 
 def test_early_exit_stderr_reports_exit_vs_healthy():
