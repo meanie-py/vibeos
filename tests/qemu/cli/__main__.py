@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--no-net",
         action="store_true",
-        help="skip the folded netstack net-suite stage (amd64 only; default-on)",
+        help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",
     )
     s.set_defaults(fn=smoke_mod.smoke)
 
@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
     g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
-    g.add_argument("--no-net", action="store_true", help="skip the amd64 folded net stage")
+    g.add_argument("--no-net", action="store_true", help="skip the amd64 net stage (default-on)")
     g.set_defaults(fn=gate_mod.gate)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")

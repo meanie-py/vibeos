@@ -1531,3 +1531,106 @@ def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     rc = gate_mod.gate(_gate_args(arches="i386", retries=0), tmp_path)
     assert rc == 1
     assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+# --- smoke._watch: early-hang watchdog + net opt-in (no QEMU) ---------------
+
+from . import smoke as smoke_mod  # noqa: E402
+
+
+class _FakeSerial:
+    """Emits the given chunks once, then stays silent (returns "")."""
+
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+        self._i = 0
+
+    def read_available(self, timeout=0.5):
+        if self._i < len(self._chunks):
+            c = self._chunks[self._i]
+            self._i += 1
+            return c
+        time.sleep(0.02)  # mimic a quiet poll
+        return ""
+
+
+class _FakeVM:
+    def __init__(self, chunks, hang_silence):
+        self.serial = _FakeSerial(chunks)
+        self.config = type("Cfg", (), {"hang_silence_seconds": hang_silence})()
+
+
+def test_watch_early_hang_aborts_on_silence():
+    # boot emits once, then goes silent → watchdog trips well before `timeout`
+    vm = _FakeVM(["[SMSS] boot\n"], hang_silence=0.1)
+    t0 = time.monotonic()
+    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=30)  # type: ignore[arg-type]
+    assert outcome == "timeout"
+    assert diag["early_hang"] is True
+    assert diag["silent_s"] >= 0.1
+    assert time.monotonic() - t0 < 5, "must fail FAST, not wait the full timeout"
+
+
+def test_watch_reaches_marker_before_hang():
+    vm = _FakeVM(["boot\n", "[EXPLORER] _tWinMain entered\n"], hang_silence=0.1)
+    outcome, _buf, _diag = smoke_mod._watch(
+        vm,  # type: ignore[arg-type]
+        until="_tWinMain entered",
+        fail_on=None,
+        timeout=30,
+    )
+    assert outcome == "reached"
+
+
+def test_watch_no_early_hang_when_disabled():
+    # hang_silence=0 disables the watchdog → runs to the (short) deadline
+    vm = _FakeVM(["x\n"], hang_silence=0.0)
+    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=0.3)  # type: ignore[arg-type]
+    assert outcome == "timeout"
+    assert diag["early_hang"] is False
+
+
+# --- hostlock: build(cpuheavy) vs boot(bootcpu) pools are DECOUPLED --------
+
+
+def test_hostlock_build_exclusive_does_not_block_windows_host_boot(tmp_path, monkeypatch):
+    # A cold build grabs the WHOLE cpuheavy pool (exclusive host). A windows-host boot
+    # draws from the SEPARATE bootcpu pool, so it must NOT be blocked by that build.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    build_fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=4, timeout=0.0)
+    assert build_fds is not None and len(build_fds) == 4  # build owns all cpuheavy
+    boot_fd = hl_mod.acquire_boot_lease("boot:amd64", leases=4, timeout=0.3)
+    assert boot_fd is not None, "windows-host boot must run alongside an exclusive build"
+    hl_mod.release(boot_fd)
+    hl_mod.release_all(build_fds)
+
+
+def test_hostlock_boot_pool_throttles_boot_vs_boot(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    a = hl_mod.acquire_boot_lease("boot:i386", leases=2, timeout=0.0)
+    b = hl_mod.acquire_boot_lease("boot:amd64", leases=2, timeout=0.0)
+    assert a is not None and b is not None
+    assert hl_mod.acquire_boot_lease("boot:arm64", leases=2, timeout=0.3) is None  # pool full
+    hl_mod.release(a)
+    hl_mod.release(b)
+
+
+def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    st = hl_mod.status()
+    assert "bootcpu" in st and "boot_leases_total" in st
+    # render must not crash and should mention both pools
+    body = hl_mod.render_status(st)
+    assert "build(cpuheavy)" in body and "boot(windows-host)" in body
+
+
+def test_ninja_jobs_caps_and_reserves(monkeypatch):
+    monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 32)
+    monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
+    assert build_mod._ninja_jobs() == ["-j", "24"]
+    monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "0")
+    assert build_mod._ninja_jobs() == []  # uncapped
+    monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
+    monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 4)
+    assert build_mod._ninja_jobs() == []  # tiny host: don't cap below the reserve

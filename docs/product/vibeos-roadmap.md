@@ -16,7 +16,7 @@ Completed items: see [`vibeos-roadmap-complete.md`](vibeos-roadmap-complete.md)
 
 IO subsystem C→Rust activation is **substantially complete**. All iomgr/ and pnpmgr/ modules now active on all 3 arches. Remaining: ARM64 desktop rendering (SMSS not starting), amd64 taskbar regression (explorer shell UI not rendering). See status-update.md and engineering docs.
 
-### 0b. Finish ntoskrnl Translation — [`../engineering/ntoskrnl-translation-audit.md`](../engineering/ntoskrnl-translation-audit.md)
+### 0b. Finish ntoskrnl Translation — [`../engineering/rust-port-status.md`](../engineering/rust-port-status.md) (per-file history: [`archive/ntoskrnl-translation-audit.md`](../engineering/archive/ntoskrnl-translation-audit.md))
 
 **~52K lines of C remaining** across 70 files in 6 subsystems. Current kernel is ~344K lines Rust (~80%). After this phase: ~98% Rust.
 

@@ -20,8 +20,13 @@ kernel auto-releases them when the holding process dies (no stale-lock cleanup n
       its boot parallelism) but a build still excludes them all.
   A boot takes a permit iff its EFFECTIVE accelerator is `tcg` (CPU-bound emulation). KVM /
   WHPX boots are hardware-accelerated → they take none and stay on the per-arch QEMU cap.
-  (Note: with WHPX shelved, today's windows-host x86 boots ARE tcg, so they're covered too —
-  the physical CPU is shared between WSL and the Windows-host QEMU.)
+  **Only NATIVE-backend TCG boots use `cpuheavy`** (arm64, or x86-degraded) — those run in
+  WSL and genuinely share cores with a WSL build, so a build must still exclude them.
+- **`bootcpu`** — a SEPARATE pool of `VIBEOS_BOOT_CPU_LEASES` permits for **windows-host**
+  QEMU boots (`qemu.exe` on the Windows side). Because that's a different scheduling domain
+  from the WSL build, a build's exclusive `cpuheavy` grant must NOT block it — the build
+  instead leaves physical-core headroom via its `-j` cap (`VIBEOS_BUILD_CORE_RESERVE`), so
+  build ∥ boot. This pool throttles boot-vs-boot only.
 - **`builddir:<canonical-path>`** — exclusive per-build-dir lock. Cheap insurance that two
   builds never land on the same dir (the determinism-verify-vs-gate corruption class), held
   *under* the cpuheavy grant.
@@ -49,6 +54,12 @@ HOSTLOCK_DIR = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-lock
 # Pool size = max concurrent TCG boots (a build grabs ALL of them → exclusive). 4 suits a
 # ~32-core box (≈4×4 vCPU boots leaves headroom); raise/lower via the env.
 DEFAULT_CPU_LEASES = max(1, int(os.environ.get("VIBEOS_HOST_CPU_LEASES", "4")))
+# SEPARATE pool for windows-host QEMU boots. Those run on the WINDOWS side (qemu.exe) — a
+# different scheduling domain from the WSL-side build — so a build's writer-takes-all
+# `cpuheavy` grant must NOT exclude them; the build leaves physical-core headroom via its
+# `-j` cap instead (VIBEOS_BUILD_CORE_RESERVE), and this pool throttles boot-vs-boot only.
+# native TCG boots (arm64) stay on `cpuheavy` because they DO share WSL cores with the build.
+DEFAULT_BOOT_LEASES = max(1, int(os.environ.get("VIBEOS_BOOT_CPU_LEASES", str(DEFAULT_CPU_LEASES))))
 # Generous ceiling: a real cold build + queue is minutes; hitting an hour = a stuck holder.
 ACQUIRE_TIMEOUT = float(os.environ.get("VIBEOS_HOST_LOCK_TIMEOUT", "3600"))
 _POLL = 0.5
@@ -130,6 +141,26 @@ def release(fd: int | None) -> None:
 
 def _cpu_lease_files(leases: int) -> list[Path]:
     return [HOSTLOCK_DIR / f"cpuheavy-{i:02d}" for i in range(leases)]
+
+
+def _boot_lease_files(leases: int) -> list[Path]:
+    return [HOSTLOCK_DIR / f"bootcpu-{i:02d}" for i in range(leases)]
+
+
+def acquire_boot_lease(
+    kind: str,
+    *,
+    leases: int = DEFAULT_BOOT_LEASES,
+    timeout: float = ACQUIRE_TIMEOUT,
+    **extra: object,
+) -> int | None:
+    """Acquire one BOOT-pool permit (for a windows-host qemu.exe boot). SEPARATE from the
+    `cpuheavy` build pool, so a cold build's exclusive grant never excludes a windows-host
+    boot (they're different scheduling domains — Windows vs WSL). Throttles boot-vs-boot
+    only. Returns the held fd or None on timeout."""
+    return _acquire_one(
+        _boot_lease_files(leases), timeout, _self_meta(kind, boot_pool=True, **extra)
+    )
 
 
 def acquire_cpu_lease(
@@ -304,9 +335,12 @@ def status() -> dict:
         "dir": str(HOSTLOCK_DIR),
         "enabled": enabled(),
         "cpuheavy": [],
+        "bootcpu": [],
         "builddir": [],
         "cpu_leases_total": DEFAULT_CPU_LEASES,
         "cpu_leases_held": 0,
+        "boot_leases_total": DEFAULT_BOOT_LEASES,
+        "boot_leases_held": 0,
     }
     if not HOSTLOCK_DIR.is_dir():
         return out  # no lock dir yet → nothing held (keys above stay at their defaults)
@@ -327,10 +361,14 @@ def status() -> dict:
         }
         if p.name.startswith("cpuheavy-"):
             out["cpuheavy"].append(entry)
+        elif p.name.startswith("bootcpu-"):
+            out["bootcpu"].append(entry)
         elif p.name.startswith("builddir-"):
             out["builddir"].append(entry)
     out["cpu_leases_total"] = DEFAULT_CPU_LEASES
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
+    out["boot_leases_total"] = DEFAULT_BOOT_LEASES
+    out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])
     return out
 
 
@@ -338,7 +376,8 @@ def render_status(st: dict) -> str:
     """Human-readable host-broker summary (the `vibeos-cli host-status` body)."""
     lines = [
         f"host broker: {'ON' if st['enabled'] else 'OFF (VIBEOS_HOST_BROKER=0)'}  —  "
-        f"CPU leases {st['cpu_leases_held']}/{st['cpu_leases_total']} held"
+        f"build(cpuheavy) {st['cpu_leases_held']}/{st['cpu_leases_total']} · "
+        f"boot(windows-host) {st.get('boot_leases_held', 0)}/{st.get('boot_leases_total', 0)}"
     ]
     held_cpu = [e for e in st["cpuheavy"] if e["held"]]
     if not held_cpu:
@@ -355,6 +394,10 @@ def render_status(st: dict) -> str:
             tag = "EXCLUSIVE" if h.get("exclusive") else f"{n} permit{'s' if n > 1 else ''}"
             dead = "" if entries[0]["holder_alive"] else "  ⚠STALE(holder gone)"
             lines.append(f"  cpuheavy : {kind:<14} pid={pid} ({tag}){dead}  {h.get('cwd', '')}")
+    for e in (e for e in st.get("bootcpu", []) if e["held"]):
+        h = e["holder"]
+        dead = "" if e["holder_alive"] else "  ⚠STALE(holder gone)"
+        lines.append(f"  bootcpu  : {h.get('kind', '?')!s:<14} pid={h.get('pid', '?')}{dead}")
     for e in (e for e in st["builddir"] if e["held"]):
         h = e["holder"]
         lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
