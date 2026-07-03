@@ -469,3 +469,110 @@ The float ABI of the empty cargo bin **shell** is irrelevant — only the body `
 **Trap: arch-gated shim + reused C `.a` = silent stale link.** A cohab-flip shim gated `#if defined(__i386__)` combined with a reused C archive makes amd64/arm64 silently link *stale C*. Fix: `ninja -t clean <lib> && ninja <lib>` to prune the archive and expose the gap; add the missing `#else` branch. (`vibeos-cli build --clean` is RUST-only, so it can't re-archive C.) Once the residue moves to `c_from_compile_db`, staleness is moot — cargo recompiles the shim fresh every link.
 
 **Engine note:** spec2def `-a` takes **`x86_64`** for amd64, NOT `amd64` (an unknown token silently falls back to i386 `@N` decoration). Reference: `sdk/lib/rust/reactos-link/src/lib.rs`, `ntdll-cargo/build.rs`, `ntoskrnl-cargo/build.rs`.
+
+## Translating a standalone kernel `.sys` driver
+
+Translating a whole standalone driver (kbdclass, i8042prt, classpnp, cdrom, cdfs, arm64vid, framebuf, pci) is a different job from swapping one `.c` inside an existing DLL: the driver's types come from headers the shared `ntkrnl-sys` bindgen never sees, and an LLM pass leaves thousands of mechanical compile errors that collapse to ~15 systemic roots. This section is the front-to-back workflow for the **body crate** — get it to compile clean ×3 arches — which then feeds the cohab link (`### Device drivers — kernelmodedriver = KernelDll` and the trap catalog above).
+
+### Where every driver symbol comes from — the three substrate layers
+
+| Tier | What it is | Where it lives |
+|---|---|---|
+| **Kernel-internal** | `NTSTATUS`, `IRP`, `DEVICE_OBJECT`, `Io*`/`Ke*`/`Rtl*` fns | shared `ntkrnl-sys` (`base`, `ke`, `mm`, `ex`, `ob`, `rtl`, giant `ddk` bindgen) |
+| **Ordinary driver DDK** | `DO_*`, `IRP_MJ_*`, `FILE_DEVICE_*`, `RTL_REGISTRY_*`, `IoCompleteRequest`, `CONNECT_DATA`, `ctl_code()` | shared `ntkrnl-sys/src/driver_ddk.rs` |
+| **This driver's private headers** | `CLASS_DEVICE_EXTENSION`, `FUNCTIONAL_DEVICE_EXTENSION`, `TRANSFER_PACKET`, FCB/VCB/CCB, its `IOCTL_*` values | per-driver `types_*.rs` (bindgen'd) + a hand `<drv>_h.rs` |
+
+**The DDK tier is a real gap you must not re-shim per driver.** `ntkrnl-sys` bindgen runs over `ntoskrnl.h` (the *kernel-internal* master header), not `wdm.h`/`ntddk.h`, so plain-driver consts and FORCEINLINE helpers never land in `ntkrnl_sys::ddk`. That surface is hand-maintained in `sdk/lib/rust/ntkrnl-sys/src/driver_ddk.rs` (~250 lines: `DO_*`/`FILE_DEVICE_*`/`IRP_MJ_*`/`IRP_MN_*`/`RTL_REGISTRY_*` consts, `CONNECT_DATA`, a `const fn ctl_code(dev,func,method,access)`, enum re-exports, and macro/FORCEINLINE wrappers `IoCompleteRequest`→`IofCompleteRequest`, `IoCallDriver`→`IofCallDriver`). Two constraints:
+
+- **It must stay disjoint from `constants.rs`.** A driver globbing both hits E0659 on any overlap (`IRP_MJ_*`, `IO_*_INCREMENT` already in `constants.rs`). Compute the real overlap with a script and omit those from `driver_ddk.rs`; don't trust the doc comment.
+- **Both `constants.rs` and `driver_ddk.rs` must be in `config.HAND_WRITTEN_MODULES`** (`tools/rustconv/rustconv/config.py`) or the resolver's catalog never scans them and flags every DDK symbol unresolved. This one change dropped kbdclass's unresolved count 87→37, free, via `rustconv resolve`.
+
+Const values are **header-authoritative** — pull from `sdk/include/xdk/iotypes.h`, `rtlfuncs.h`, `ntbasedef.h`, `psdk/ntstatus.h`; never hand-guess a DDK/IOCTL value.
+
+### Private bindgen — `gen_driver_types.sh`
+
+The driver's own structs live in its private headers, not the shared bindgen. An LLM stubs them with `_dummy: [u8; 256]` placeholders — names compile, every field access fails (this regressed classpnp to 2000+ errors). Generate exact layouts with `tools/rustconv/gen_driver_types.sh <driver>` → `types_{i386,amd64,arm64}.rs` + a `#[path]`-dispatched `types.rs` (override with `OUT_CRATE_DIR=…`). The recipe it encodes, per driver:
+
+- **`ALLOW_FILES`** (`--allowlist-file '.*classp\.h'`) bounds emission to types defined in the driver's own headers.
+- **Blocklist every kernel type name** the shared bindgen already exports (grep `pub (struct|enum|type|union)` from `bindgen_<arch>.rs`) so kernel types keep a single identity. Each `types_<arch>.rs` does a **private** `use ntkrnl_sys::ddk::*;` to resolve blocklisted field types inside its structs — never `pub use` (re-exporting `ddk` collides E0659 with the modules' `driver_ddk::*` globs).
+- **Version + arch defines MUST match the driver's CMakeLists** — wrong NTDDI version emits/drops version-gated fields and shifts every offset:
+
+  | Driver | `_WIN32_WINNT` / `NTDDI_VERSION` |
+  |---|---|
+  | classpnp | `0x602` / `0x06020000` (Win8) |
+  | cdrom | `0x603` / `0x06030000` (Win8.1) |
+  | cdfs | `0x502` / `0x05020400` default |
+
+  Arch defines (msvctarget.h needs `_M_*`): **i386:** `-D_M_IX86 -D__i386__ -D_X86_`; **amd64:** `-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_`; **arm64:** `-D_WIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_`. Add `-I build-<arch>/sdk/include/reactos/mc` for generated `bugcodes.h` (arm64).
+
+- **`WRAPPER_INC` (not just `ALLOW_FILES`) must `#include` every header whose types you need.** The allowlist only *filters* parsed types — it can't emit a type the include graph never reaches (classpnp's `classp.h` doesn't transitively include `wmistr.h`/`ntddstor.h`, so `WNODE_*`/`STORAGE_*` were absent until added). Verify by the **typedef** name (`WNODE_ALL_DATA`), not the `_`-tag.
+- **`UNBLOCK` un-opaques a kernel struct the driver reaches into.** Some ddk types are opaque (`{ _address: u8 }`) so field access resolves to nothing (`_SCSI_REQUEST_BLOCK`). List them in `UNBLOCK="…"` → removed from the blocklist so the driver's own bindgen (which includes `scsi.h`/`srb.h`) emits the full struct into `types_*.rs`; then strip those names from the module's `ddk::{…}` imports so they re-point to `crate::types`. Expect a net partial each pass.
+
+**Grind guard: the compile-repair grind must NEVER edit `types_*.rs`** — those are the generated exact layouts; re-stubbing a struct there is the exact regression this tool prevents. Only fix imports/signatures/field-access in the *module* `.rs` files.
+
+### Consuming-crate import recipe (the `arm64input` template)
+
+Glob the small, mutually-disjoint hand modules; keep the giant bindgen `ddk` **selective**:
+
+```rust
+use ntkrnl_sys::{globals::*, constants::*, base::*, ke::*, mm::*, rtl::*, ex::*, ob::*};
+use ntkrnl_sys::driver_ddk::*;
+use ntkrnl_sys::ddk::{ /* ONLY ddk-unique names */
+    PDEVICE_OBJECT, PIRP, PIO_STACK_LOCATION,        // pointer aliases (NOT in base)
+    _UNICODE_STRING, _OBJECT_ATTRIBUTES, _GUID,       // bindgen `_`-structs
+    _EVENT_TYPE_NotificationEvent,                    // bare enum consts, VERBATIM
+};
+```
+
+- **Globbing `ddk::*` is fatal** — redefines every scalar (`NTSTATUS`/`ULONG`) `base` already provides → 100+ E0659. Always selective for `ddk`.
+- **Type identity matters.** A device-extension `UNICODE_STRING` field must be `ddk::_UNICODE_STRING` (not `base::UNICODE_STRING`) or every Rtl/Io call mismatches. `base` has no `KSPIN_LOCK` (it's `ddk` = `ULONG_PTR`).
+- **`ex::ExAllocatePoolWithTag` is a `<const N>` const-generic helper, not the 3-arg DDK runtime fn** — a driver calling `ExAllocatePoolWithTag(pool,size,tag)` gets E0747. Import it from `ddk` to shadow the `ex::*` glob.
+- The driver's private-header types (device extensions, `IOCTL_*` via `driver_ddk::ctl_code`, pool tags, GUIDs) go in a hand `<drv>_h.rs` that globs `base::*` and selective-imports only the `ddk` types it embeds.
+
+### Grinding the systemic compile errors
+
+Thousands of rustc errors reduce to ~15 roots. **Don't grind per-site.** Dispatch parallel read-only investigator subagents (one per rustc error family, analyze-and-propose-a-deterministic-patch), then apply the deterministic fixers under `tools/rustconv/`:
+
+| Fixer / action | Clears |
+|---|---|
+| `fix_type_casts.py` | E0308 width/sign (from the primary span's **`label`**, not `children`), `*mut↔*const`, fn-ABI mismatch |
+| `resolve_imports.py` | E0425/E0422/E0408 missing-imports — `_GUID{…}` literals, match-arm consts (an unimported const silently becomes a catch-all binding — a real bug) |
+| `harvest_consts.py` | E0425 undefined consts — add the driver's *private* header dir to `HEADER_DIRS`; `sizeof`/`FIELD_OFFSET` → `size_of`/`offset_of!` |
+| `fix_field_paths.py` | E0609 — `c2rust_unnamed`→`__bindgen_anon_N`, `ptr.Field`→`(*ptr).Field`, nested anon/union BFS |
+| `fix_bitfield_methods.py` | E0615 — bindgen bitfield `.X` read→`.X()`, `.X = v`→`.set_X(v)` |
+
+(Fixers live at `tools/rustconv/fix_*.py` and `tools/rustconv/{harvest_consts,resolve_imports}.py`.) Singular roots to fix by hand:
+
+- **Fabricated `NT_SUCCESS`/`NT_ASSERT` locals** with inconsistent sigs across files — delete, `use ntkrnl_sys::base::NT_SUCCESS`.
+- **ABI transmute target inference (the amd64/arm64 fix).** i386 repair bridges NTAPI-callback ABI with `transmute::<extern "system" fn, extern "stdcall" fn>(F)` — correct on i386 but hardcodes stdcall, breaking amd64 (NTAPI=cdecl). Drop the explicit target: `transmute::<SRC, _>(F)` lets rustc infer the arch-correct target from the bindgen field type. Keep the explicit `SRC` (forces fn-item→fn-ptr coercion; bare `transmute(F)` fails E0591).
+- **Dead version-gated code → `#[cfg(any())]`, don't delete.** A driver built at NTDDI_WIN8 compiles out its `#if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD)` fns but the LLM translated them → references to types that only exist higher. Gate the whole Rust fn with `#[cfg(any())]` (always-false, preserves source, mirrors the C `#if`).
+
+**Parallel per-file agents finish it.** After deterministic tooling plateaus, dispatch N subagents each owning a **disjoint** set of module `.rs` files, fixing rustc errors against the C ground truth (rule: *don't fabricate a kernel-API/macro signature — report it*). Fix the shared substrate centrally first; give each agent a private `CARGO_TARGET_DIR=/tmp/<name>`.
+
+### ⚠️ Cold `CARGO_TARGET_DIR` — the driver-crate false-green
+
+**`cargo check` in the default/warm target dir silently reuses stale per-crate artifacts and reports 0 errors on broken code** — especially after adding a module. An entire "classpnp compile-clean ×3" history was a warm false-green; a cold check exposed ~8 i386 + 83 amd64 + 101 arm64 errors. Rules: (1) every verification that matters uses a fresh per-arch `CARGO_TARGET_DIR=/tmp/fresh-<arch> cargo check -p <crate> --target <t>` — never trust a warm 0 (the cargo analogue of the smoke harness's stale-media refusal). (2) Don't run the per-arch cascade on ONE arch and trust it — `fix_type_casts` writes arch-specific casts (`as u64`) that break other arches on *shared* files; prefer `as _` over `as u64`/`as ULONG_PTR`.
+
+### bindgen blind spot: macro-spliced struct fields
+
+Distinct from an opaque `{ _address: u8 }` stub — here bindgen emits a **plausible-looking partial** struct. When a C struct pulls leading fields via a *layout macro*, bindgen parses only fields textually *after* the macro; the spliced fields vanish and the emitted `size_of` assertion is **self-consistent but wrong vs C** (it checks the Rust struct against bindgen's own mis-parse, not a C oracle, so it passes):
+
+```c
+typedef struct _PCI_COMMON_CONFIG {
+    PCI_COMMON_HEADER_LAYOUT      // 64-byte macro
+    UCHAR DeviceSpecific[192];
+} PCI_COMMON_CONFIG;              // real C sizeof = 256
+```
+→ bindgen emits `{ DeviceSpecific: [UCHAR; 192] }` and asserts `== 192`. **Heuristic:** a driver-private struct suspiciously small / field-less *and* whose C uses a `*_LAYOUT`/`*_HEADER` macro — assume dropped fields, size-check pass notwithstanding. **Fix locally in the crate** (don't wait on a bindgen regen): define the correct layout with the real header type, then overlay-read it, and shadow the broken `ddk` type by placing `use crate::shared::PCI_COMMON_CONFIG;` *after* the `use ntkrnl_sys::ddk::*;` glob.
+
+### Standalone cohab crate (staticlib template)
+
+For a driver built as its own `.sys` (vs a `.c`-in-DLL swap), the lightweight mechanism — proven on `arm64vid.sys`, template `sdk/lib/rust/arm64input-rust/` — is a **staticlib crate + a placeholder C stub**, independent of `add_cargo_module`:
+
+- New crate `<drv>-rust/`, `crate-type = ["staticlib"]`. Dep `ntkrnl-sys` (or `win32k-sys` for a GDI display driver — and *only* win32k-sys; a second direct ntkrnl-sys path builds it twice → E0432). Own `#[panic_handler]` + `rust_eh_personality` stub. Add to workspace `members`; no `extern crate` in the umbrella needed.
+- Cohab CMake mirrors `arm64input/CMakeLists.txt`: cargo-build custom command → copy `.a`; `add_library(<drv> MODULE rust_cohab_stub.c)`; comment `.c` sources `# replaced by Rust`; `target_link_libraries`. `rust_cohab_stub.c` is a one-liner `typedef int <drv>_cohab_placeholder;` (a MODULE needs ≥1 source). Keep the `.c` on disk.
+- **Per-arch `RUST_TARGET`** — select per-arch like `hal/halx86/CMakeLists.txt` (i386 `+ -C target-feature=-sse,-sse2`); don't arch-gate the crate.
+
+### Compile-clean ≠ complete — verify export & runtime coverage
+
+A driver crate can `cargo check` clean with a large fraction of exports **extern-stubbed rather than defined** — invisible until the cohab link fails with N undefined exports (classpnp compiled clean with 32 of 60 exports as unbodied `extern`, ~6,200 C LOC never translated). Before claiming done: **count `#[no_mangle]` definitions against the module `.spec`**; verify against **serial, not the smoke number** (arm64vid linked + booted "green" while BUGCHECK-0xB4'ing); confirm the `.sys` mtime is fresh + `nm` shows hundreds of Rust symbols. Watch for **tree-sitter truncation on huge C files** (rustconv hard-truncates at the first unparseable PSEH2 block — class.c stopped at ~line 3,800) — `#include`-back-split the `.c` before translating the tail.
