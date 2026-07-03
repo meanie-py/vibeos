@@ -41,6 +41,8 @@ pub const INVALID_HANDLE_VALUE: HANDLE = !0isize as HANDLE;
 // comes from ntdll_sys::nt — both resolve via the substrate glob, so NOT redefined here.)
 // IO_COMPLETION_ALL_ACCESS = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3 = 0x001F0003.
 pub const IO_COMPLETION_ALL_ACCESS: u32 = 0x001F0003;
+// HKEY_LOCAL_MACHINE = (HKEY)0x80000002 — a winreg.h macro constant, not a DLL import.
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002usize as HKEY;
 
 // --- SOCKET_STATE / IPPROTO bare-name aliases -------------------------------------------
 // bindgen constifies the enum with prefixed names (_SOCKET_STATE_SocketOpen /
@@ -139,6 +141,14 @@ pub const IOCTL_AFD_SUPER_CONNECT: u32 = afd_ctl(49, 3);
     core::slice::from_raw_parts(a as *const u8, 16) == core::slice::from_raw_parts(b as *const u8, 16)
 }
 
+// --- pointer/handle cast macros (HandleToUlong/UlongToPtr/UlongToHandle/IS_INTRESOURCE) --
+// C inline macros in basetsd.h/winuser.h — NOT DLL exports, so they must be inline here
+// (declaring them extern would produce undefined symbols at link).
+#[inline(always)] pub fn HandleToUlong(h: HANDLE) -> ULONG { (h as usize) as ULONG }
+#[inline(always)] pub fn UlongToPtr(ul: ULONG) -> PVOID { ul as usize as PVOID }
+#[inline(always)] pub fn UlongToHandle(ul: ULONG) -> HANDLE { ul as usize as HANDLE }
+#[inline(always)] pub fn IS_INTRESOURCE(ptr: LPVOID) -> BOOL { ((ptr as usize) >> 16 == 0) as BOOL }
+
 // --- fd_set macros (FD_ZERO / FD_SET) — operate on the winsock fd_set struct ------------
 #[inline(always)] pub unsafe fn FD_ZERO(set: *mut fd_set) { (*set).fd_count = 0; }
 #[inline(always)] pub unsafe fn FD_SET(fd: SOCKET, set: *mut fd_set) {
@@ -156,7 +166,15 @@ extern "system" {
     pub fn SleepEx(dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;
     pub fn GetOverlappedResult(hFile: HANDLE, lpOverlapped: LPOVERLAPPED,
         lpNumberOfBytesTransferred: LPDWORD, bWait: BOOL) -> BOOL;
-    pub fn RtlEnlargedIntegerMultiply(Multiplicand: LONG, Multiplier: LONG) -> LARGE_INTEGER;
+}
+// RtlConvertLongToLargeInteger / RtlEnlargedIntegerMultiply are ntdll exports ONLY on i386
+// (64-bit math helpers); on amd64/arm64 they're inlined (native 64-bit). Implement inline for
+// all arches (identical result). LARGE_INTEGER is a repr(C) 8-byte union == i64 layout.
+#[inline(always)] pub fn RtlConvertLongToLargeInteger(l: LONG) -> LARGE_INTEGER {
+    unsafe { core::mem::transmute::<i64, LARGE_INTEGER>(l as i64) }
+}
+#[inline(always)] pub fn RtlEnlargedIntegerMultiply(a: LONG, b: LONG) -> LARGE_INTEGER {
+    unsafe { core::mem::transmute::<i64, LARGE_INTEGER>((a as i64) * (b as i64)) }
 }
 // RtlCopyMemory/RtlZeroMemory/memset are NT header macros (memmove/memset); model as inline.
 #[inline(always)] pub unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {

@@ -2,21 +2,25 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn ERR(fmt: *const u8, ...);
-    fn TRACE(fmt: *const u8, ...);
+// stdcall kernel32/advapi32 imports -> extern "system" (i386 `_Name@N` decoration).
+extern "system" {
     fn HeapAlloc(heap: HANDLE, flags: DWORD, size: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, ptr: *mut core::ffi::c_void) -> BOOL;
     fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: *mut HKEY) -> LONG;
     fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD) -> LONG;
     fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn wcslen(s: *const u16) -> usize;
-    fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    static HKEY_LOCAL_MACHINE: HKEY;
     fn ExpandEnvironmentStringsW(lpSrc: PWSTR, lpDst: PWSTR, nSize: u32) -> u32;
     fn GetProcAddress(hModule: HMODULE, lpProcName: *const i8) -> *mut core::ffi::c_void;
     fn LoadLibraryW(lpLibFileName: PWSTR) -> HMODULE;
+}
+// cdecl C-runtime (msvcrt). ERR/TRACE are shadowed by the glue macros (dead decls).
+// HKEY_LOCAL_MACHINE is a glue const (winreg.h macro, not an import).
+extern "C" {
+    fn ERR(fmt: *const u8, ...);
+    fn TRACE(fmt: *const u8, ...);
+    fn wcslen(s: *const u16) -> usize;
+    fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
+    fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
 }
 
 // ---- file-scope preamble (translated) ----

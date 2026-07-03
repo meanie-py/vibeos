@@ -2,8 +2,12 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
-extern "C" {
+// HeapFree is stdcall kernel32 -> extern "system" (i386 `_HeapFree@12`). ERR/TRACE shadowed
+// by glue macros; SockReenableAsyncSelectEvent is msafd-internal (def is #[no_mangle] extern "C").
+extern "system" {
     fn HeapFree(heap: HANDLE, flags: DWORD, mem: LPVOID) -> BOOL;
+}
+extern "C" {
     fn SockReenableAsyncSelectEvent(socket: PVOID, event: LONG);
     fn TRACE(format: PCSTR, ...);
 }

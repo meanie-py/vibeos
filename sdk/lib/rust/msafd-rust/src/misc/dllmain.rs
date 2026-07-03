@@ -2,34 +2,21 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
-extern "C" {
+// stdcall Win32/ntdll/ws2_32 imports: `extern "system"` so i386 gets the `_Name@N`
+// decoration matching the DLL exports (extern "C" -> `_Name` cdecl -> undefined at link).
+// Heap*/GetProcessHeap/SleepEx come from glue (extern "system") via `use crate::glue::*`;
+// HandleToUlong/UlongToPtr/UlongToHandle/IS_INTRESOURCE are glue inline fns (not exports).
+extern "system" {
     fn ntohl(netlong: u32) -> u32;
     fn ntohs(netshort: u16) -> u16;
-    fn swprintf(buffer: LPWSTR, format: *const u16, ...) -> i32;
-    fn wcschr(s: *const u16, c: u16) -> *mut u16;
-    fn wcscpy(dest: LPWSTR, src: *const u16) -> LPWSTR;
-    fn wcslen(s: *const u16) -> usize;
-    fn memset(s: *mut core::ffi::c_void, c: core::ffi::c_int, n: usize) -> *mut core::ffi::c_void;
-    fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: core::ffi::c_int) -> core::ffi::c_long;
-    fn TRACE(fmt: *const i8, ...);
-    fn CreateFileMapping( hFile: HANDLE, lpFileMappingAttributes: LPVOID, flProtect: DWORD, dwMaximumSizeHigh: DWORD, dwMaximumSizeLow: DWORD, lpName: LPVOID, ) -> HANDLE;
+    fn CreateFileMappingW( hFile: HANDLE, lpFileMappingAttributes: LPVOID, flProtect: DWORD, dwMaximumSizeHigh: DWORD, dwMaximumSizeLow: DWORD, lpName: LPVOID, ) -> HANDLE;
     fn DuplicateHandle( hSourceProcessHandle: HANDLE, hSourceHandle: HANDLE, hTargetProcessHandle: HANDLE, lpTargetHandle: LPHANDLE, dwDesiredAccess: DWORD, bInheritHandle: DWORD, dwOptions: DWORD, ) -> DWORD;
     fn GetCurrentProcess() -> HANDLE;
-    fn HandleToUlong(h: HANDLE) -> DWORD;
-    fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> DWORD;
     fn MapViewOfFile( hFileMappingObject: HANDLE, dwDesiredAccess: DWORD, dwFileOffsetHigh: DWORD, dwFileOffsetLow: DWORD, dwNumberOfBytesToMap: usize, ) -> LPVOID;
     fn OpenProcess( dwDesiredAccess: DWORD, bInheritHandle: DWORD, dwProcessId: DWORD, ) -> HANDLE;
-    fn RtlConvertLongToLargeInteger(Long: i32) -> LARGE_INTEGER;
-    fn ERR(fmt: *const i8, ...);
-    fn UlongToPtr(ul: ULONG) -> PVOID;
-    fn UlongToHandle(ul: ULONG) -> HANDLE;
     fn UnmapViewOfFile(lpBaseAddress: PVOID) -> i32;
-    fn SockGetTdiName( AddressFamily: *mut i32, SocketType: *mut i32, Protocol: *mut i32, g: GROUP, dwFlags: DWORD, TransportName: *mut _UNICODE_STRING, HelperDLLContext: *mut PVOID, HelperData: *mut PHELPER_DATA, HelperEvents: *mut DWORD, ) -> INT;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> PVOID;
     fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-}
-extern "C" {
     fn WaitForSingleObjectEx(hObject: HANDLE, dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;
     fn GetSystemTimeAsFileTime(lpSystemTimeAsFileTime: *mut FILETIME);
     fn SystemTimeToFileTime(lpSystemTime: *const SYSTEMTIME, lpFileTime: *mut FILETIME) -> i32;
@@ -38,15 +25,24 @@ extern "C" {
     fn SetThreadPriority(hThread: HANDLE, nPriority: i32) -> i32;
     fn Sleep(dwMilliseconds: u32);
     fn DisableThreadLibraryCalls(hModule: HANDLE) -> BOOL;
-    fn GetProcessHeap() -> HANDLE;
     fn InitializeCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn DeleteCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn SleepEx(dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;
-    fn WARN(fmt: *const i8, ...);
     fn GetLastError() -> DWORD;
-    fn IS_INTRESOURCE(ptr: LPVOID) -> BOOL;
     fn PostQueuedCompletionStatus( CompletionPort: HANDLE, dwNumberOfBytesTransferred: DWORD, dwCompletionKey: ULONG_PTR, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
     fn SetEvent(hEvent: HANDLE) -> BOOL;
+}
+// cdecl C-runtime (msvcrt) + msafd-internal SockGetTdiName (its def is extern "C").
+extern "C" {
+    fn swprintf(buffer: LPWSTR, format: *const u16, ...) -> i32;
+    fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn wcscpy(dest: LPWSTR, src: *const u16) -> LPWSTR;
+    fn wcslen(s: *const u16) -> usize;
+    fn memset(s: *mut core::ffi::c_void, c: core::ffi::c_int, n: usize) -> *mut core::ffi::c_void;
+    fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: core::ffi::c_int) -> core::ffi::c_long;
+    fn TRACE(fmt: *const i8, ...);
+    fn ERR(fmt: *const i8, ...);
+    fn WARN(fmt: *const i8, ...);
+    fn SockGetTdiName( AddressFamily: *mut i32, SocketType: *mut i32, Protocol: *mut i32, g: GROUP, dwFlags: DWORD, TransportName: *mut _UNICODE_STRING, HelperDLLContext: *mut PVOID, HelperData: *mut PHELPER_DATA, HelperEvents: *mut DWORD, ) -> INT;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -717,7 +713,7 @@ pub unsafe extern "system" fn WSPDuplicateSocket(
     }
 
     if (*Socket).SharedDataHandle == INVALID_HANDLE_VALUE {
-        (*Socket).SharedDataHandle = CreateFileMapping(
+        (*Socket).SharedDataHandle = CreateFileMappingW(
             INVALID_HANDLE_VALUE,
             core::ptr::null_mut(),
             PAGE_READWRITE | SEC_COMMIT,
@@ -5133,7 +5129,7 @@ pub unsafe extern "system" fn DllMain(
 //     /* It is a not yet duplicated socket, so map the memory, copy the SharedData and free heap */
 //     if( Socket->SharedDataHandle == INVALID_HANDLE_VALUE )
 //     {
-//         Socket->SharedDataHandle = CreateFileMapping(INVALID_HANDLE_VALUE,
+//         Socket->SharedDataHandle = CreateFileMappingW(INVALID_HANDLE_VALUE,
 //                                                      NULL,
 //                                                      PAGE_READWRITE | SEC_COMMIT,
 //                                                      0,
