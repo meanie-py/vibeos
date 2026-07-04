@@ -275,12 +275,13 @@ OP_NAMES = {
     1: "gate-park", 2: "gate-satisfied", 3: "gate-signal",
     4: "pushlock-park", 5: "pushlock-satisfied", 6: "pushlock-wake",
     16: "ws-lock-EXCL", 17: "ws-unlock-EXCL",
-    32: "LOCKDEP-SELFDEADLOCK",
+    32: "LOCKDEP-SELFDEADLOCK", 33: "LOCKDEP-ABBA",
 }
 
-# lockdep §4 (feature = "lockdep"): held-lock modes.
-LOCKDEP_MAGIC = 0x4C4B4431  # 'LKD1'
-MODE_NAMES = {1: "shared", 2: "excl"}
+# lockdep §4 (feature = "lockdep"): held-lock modes / violation kinds.
+LOCKDEP_MAGIC = 0x4C4B4432  # 'LKD2' (Phase B layout: sites + edge table)
+MODE_NAMES = {1: "shared", 2: "excl", 3: "gmutex"}
+KIND_SELF, KIND_ABBA = 1, 2
 
 
 class VibeosFlightrecCmd(gdb.Command):
@@ -335,11 +336,14 @@ class VibeosFlightrecCmd(gdb.Command):
 
 
 class VibeosLockdepCmd(gdb.Command):
-    """vibeos-lockdep [held]: sync-instrumentation §4 self-deadlock detector.
+    """vibeos-lockdep [held|edges]: sync-instrumentation §4 deadlock detector.
 
-    Prints any recorded self-deadlock violations (a thread that blocked on a
-    pushlock it already holds — the Mm WS-pushlock wedge). With `held`, also
-    dumps every thread's currently-held pushlock set. Requires a --lockdep
+    Prints recorded violations — kind 1 SELF-DEADLOCK (a thread blocked on a
+    pushlock/gmutex it already holds — the Mm WS-pushlock wedge) and kind 2
+    ABBA (Phase B: a lock pair taken in both orders by different paths).
+    `held` also dumps every thread's currently-held lock set; `edges` dumps
+    the full observed lock-order graph (from→to instance pairs + acquire
+    sites — symbolize sites with qemu/addr2sym.sh). Requires a --lockdep
     build; on a normal build the VIBEOS_LOCKDEP symbol is absent."""
 
     def __init__(self):
@@ -354,55 +358,97 @@ class VibeosLockdepCmd(gdb.Command):
             )
         psz = DebugBlock.load().ptr_size
         ptr = "Q" if psz == 8 else "I"
-        magic, thread_slots, held_depth, dropped = struct.unpack("<IIII", _read(base, 16))
-        (vcount,) = struct.unpack("<Q", _read(base + 16, 8))
+        # header: magic, thread_slots, held_depth, edge_slots, dropped,
+        #         edges_dropped, edge_count, _pad (8×u32) + violation_count u64
+        (magic, thread_slots, held_depth, edge_slots, dropped, edrops,
+         ecount, _pad) = struct.unpack("<IIIIIIII", _read(base, 32))
+        (vcount,) = struct.unpack("<Q", _read(base + 32, 8))
+        if magic == 0x4C4B4431:
+            raise gdb.GdbError("LKD1 (Phase A) kernel — this decoder needs the LKD2 build")
         if magic not in (LOCKDEP_MAGIC, 0):
             raise gdb.GdbError(f"lockdep magic mismatch: {magic:#x}")
         if thread_slots == 0:
-            thread_slots, held_depth = 1024, 8  # pre-init defaults
-        print(f"lockdep: violations={vcount} thread-slot-drops={dropped} "
-              f"(slots={thread_slots} depth={held_depth} magic={magic:#x})")
+            thread_slots, held_depth, edge_slots = 1024, 8, 32768  # pre-init defaults
+        print(f"lockdep: violations={vcount} edges={ecount} "
+              f"(thread-slot-drops={dropped} edge-drops={edrops} "
+              f"slots={thread_slots} depth={held_depth} edge-slots={edge_slots})")
 
-        # header(24) + threads[thread_slots] ; ThreadHeld = ptr+u32+u32 + held[depth]*(ptr+u32+u32)
-        held_sz = psz + 8
+        # HeldLock = lock ptr + site ptr + mode u32 + pad u32
+        held_sz = 2 * psz + 8
         th_sz = psz + 8 + held_depth * held_sz
-        viol_off = 24 + thread_slots * th_sz
-        viol_fmt = f"<Q{ptr}{ptr}II"
+        HDR = 40
+        viol_off = HDR + thread_slots * th_sz
+        # Violation = seq u64 + thread,lock,lock2,thread2,site,site2 (6 ptr)
+        #             + held_mode,wanted_mode,kind,_pad (4 u32)
+        viol_fmt = f"<Q{ptr * 6}IIII"
         viol_sz = struct.calcsize(viol_fmt)
         NVIOL = 16  # LOCKDEP_VIOLATIONS
+        edge_off = viol_off + NVIOL * viol_sz
+
         shown = 0
         for i in range(NVIOL):
-            seq, thread, lock, held_mode, wanted_mode = struct.unpack(
+            (seq, thread, lock, lock2, thread2, site, site2,
+             held_mode, wanted_mode, kind, _p) = struct.unpack(
                 viol_fmt, _read(base + viol_off + i * viol_sz, viol_sz)
             )
             if seq == 0:
                 continue
-            print(
-                f"  *** SELF-DEADLOCK #{seq} thread={thread:#x} "
-                f"WAIT({MODE_NAMES.get(wanted_mode, wanted_mode)}) on pushlock={lock:#x} "
-                f"already held({MODE_NAMES.get(held_mode, held_mode)})"
-            )
+            if kind == KIND_ABBA:
+                print(
+                    f"  *** ABBA #{seq} thread={thread:#x} holds {lock2:#x}"
+                    f"({MODE_NAMES.get(held_mode, held_mode)}) acquiring {lock:#x}"
+                    f"({MODE_NAMES.get(wanted_mode, wanted_mode)}) site={site:#x}"
+                )
+                print(
+                    f"        reverse order seen: thread={thread2:#x} "
+                    f"took {lock:#x} before {lock2:#x} site={site2:#x}"
+                )
+            else:
+                print(
+                    f"  *** SELF-DEADLOCK #{seq} thread={thread:#x} "
+                    f"WAIT({MODE_NAMES.get(wanted_mode, wanted_mode)}) on lock={lock:#x} "
+                    f"already held({MODE_NAMES.get(held_mode, held_mode)}) site={site:#x}"
+                )
             shown += 1
         if shown == 0:
-            print("  no self-deadlock violations recorded")
+            print("  no violations recorded")
 
-        if arg.strip() == "held":
-            print("currently-held pushlock sets:")
-            thfmt = f"<{ptr}II"
+        mode = arg.strip()
+        if mode == "held":
+            print("currently-held lock sets:")
             for s in range(thread_slots):
-                th_base = base + 24 + s * th_sz
-                thread, overflow, _ = struct.unpack(thfmt, _read(th_base, psz + 8))
+                th_base = base + HDR + s * th_sz
+                thread, overflow, _ = struct.unpack(f"<{ptr}II", _read(th_base, psz + 8))
                 if thread == 0:
                     continue
                 locks = []
                 for h in range(held_depth):
                     hb = th_base + psz + 8 + h * held_sz
-                    lock, mode, _ = struct.unpack(thfmt, _read(hb, psz + 8))
+                    lock, site, hmode, _p = struct.unpack(
+                        f"<{ptr}{ptr}II", _read(hb, held_sz)
+                    )
                     if lock:
-                        locks.append(f"{lock:#x}({MODE_NAMES.get(mode, mode)})")
+                        st = f" site={site:#x}" if site else ""
+                        locks.append(f"{lock:#x}({MODE_NAMES.get(hmode, hmode)}{st})")
                 if locks or overflow:
                     ov = f" overflow={overflow}" if overflow else ""
                     print(f"  thread={thread:#x} holds {', '.join(locks) or '(none)'}{ov}")
+        elif mode == "edges":
+            # Edge = from,to,from_site,to_site,thread (5 ptr) + modes u32 + pad
+            efmt = f"<{ptr * 5}II"
+            esz = struct.calcsize(efmt)
+            print(f"lock-order graph ({ecount} edges):")
+            for s in range(edge_slots):
+                frm, to, fs, ts, thread, modes, _p = struct.unpack(
+                    efmt, _read(base + edge_off + s * esz, esz)
+                )
+                if frm == 0 or modes == 0:
+                    continue
+                fm, tm = (modes >> 8) & 0xFF, modes & 0xFF
+                print(
+                    f"  {frm:#x}({MODE_NAMES.get(fm, fm)}@{fs:#x}) -> "
+                    f"{to:#x}({MODE_NAMES.get(tm, tm)}@{ts:#x}) thr={thread:#x}"
+                )
 
 
 VibeosDebugBlockCmd()

@@ -1482,6 +1482,13 @@ pub unsafe fn _KeInitializeGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
 /// _KeAcquireGuardedMutexUnsafe — acquire guarded mutex (caller already in guarded region).
 #[inline]
 pub unsafe fn _KeAcquireGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    _KeAcquireGuardedMutexUnsafeSited(guarded_mutex, 0)
+}
+
+/// Sited variant: the gmutex.rs export wrappers pass their return address so
+/// lockdep names the true acquiring caller (sync-instrumentation §4).
+#[inline]
+pub unsafe fn _KeAcquireGuardedMutexUnsafeSited(guarded_mutex: ddk::PKGUARDED_MUTEX, site: usize) {
     if _InterlockedBitTestAndReset(
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
         GM_LOCK_BIT_V,
@@ -1490,11 +1497,13 @@ pub unsafe fn _KeAcquireGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) 
         KiAcquireGuardedMutex(guarded_mutex);
     }
     (*guarded_mutex).Owner = current_thread();
+    super::ex::lockdep_acquire(guarded_mutex as _, 3, site); // held now — gmutex
 }
 
 /// _KeReleaseGuardedMutexUnsafe — release guarded mutex (caller stays in guarded region).
 #[inline]
 pub unsafe fn _KeReleaseGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    super::ex::lockdep_release(guarded_mutex as _); // pop before we drop it
     (*guarded_mutex).Owner = core::ptr::null_mut();
 
     let old_value = _InterlockedExchangeAdd(
@@ -1520,6 +1529,12 @@ pub unsafe fn _KeReleaseGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) 
 /// _KeAcquireGuardedMutex — enter guarded region and acquire mutex.
 #[inline]
 pub unsafe fn _KeAcquireGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    _KeAcquireGuardedMutexSited(guarded_mutex, 0)
+}
+
+/// Sited variant — see _KeAcquireGuardedMutexUnsafeSited.
+#[inline]
+pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, site: usize) {
     KeEnterGuardedRegion();
     if _InterlockedBitTestAndReset(
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
@@ -1534,11 +1549,13 @@ pub unsafe fn _KeAcquireGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
         *kthread_kernel_apc_disable(thread);
     (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
         *kthread_special_apc_disable_ptr(thread);
+    super::ex::lockdep_acquire(guarded_mutex as _, 3, site); // held now — gmutex
 }
 
 /// _KeReleaseGuardedMutex — release mutex and leave guarded region.
 #[inline]
 pub unsafe fn _KeReleaseGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    super::ex::lockdep_release(guarded_mutex as _); // pop before we drop it
     (*guarded_mutex).Owner = core::ptr::null_mut();
 
     let old_value = _InterlockedExchangeAdd(
@@ -1565,6 +1582,15 @@ pub unsafe fn _KeReleaseGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
 /// _KeTryToAcquireGuardedMutex — try to acquire guarded mutex.
 #[inline]
 pub unsafe fn _KeTryToAcquireGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) -> BOOLEAN {
+    _KeTryToAcquireGuardedMutexSited(guarded_mutex, 0)
+}
+
+/// Sited variant — see _KeAcquireGuardedMutexUnsafeSited.
+#[inline]
+pub unsafe fn _KeTryToAcquireGuardedMutexSited(
+    guarded_mutex: ddk::PKGUARDED_MUTEX,
+    site: usize,
+) -> BOOLEAN {
     KeEnterGuardedRegion();
     if _InterlockedBitTestAndReset(
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
@@ -1577,6 +1603,8 @@ pub unsafe fn _KeTryToAcquireGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) -
             *kthread_kernel_apc_disable(thread);
         (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
             *kthread_special_apc_disable_ptr(thread);
+        // held now — but via TRY: held-set only, no order edges (can't park).
+        super::ex::lockdep_acquire_try(guarded_mutex as _, 3, site);
         1 // TRUE
     } else {
         KeLeaveGuardedRegion();

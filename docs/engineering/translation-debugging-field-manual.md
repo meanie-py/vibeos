@@ -2200,3 +2200,17 @@ held(excl)) — i.e. the "deterministically stranded HOLDER-STUCK threads on
 every green boot" open lead IS this self-deadlock, one thread per victim
 process. No separate mystery. Fix status unchanged (mechanism proven, PteFrame
 chain suspected); what changed is the cost of observing it: zero.
+
+**Phase B (same day): guarded mutexes joined the held-set, acquire SITES are
+captured, and the full lock-order graph is recorded** (instance-level A→B
+edges + ABBA reverse-order detection — sync-instrumentation-design §4 for the
+as-built). Two consequences for debugging:
+- The self-deadlock line now names its acquiring function directly:
+  `… already held(excl) site=fffff80003533242` → `addr2sym` →
+  `MiLockProcessWorkingSetUnsafe+0x22`. (Site = return address into the
+  caller of the export shim; runtime base solved from the shim-caller fit —
+  amd64 kernel loads at `0xfffff80003500000`, PE VA = site − base + 0x400000.)
+- `vibeos-lockdep edges` dumps the boot's entire observed lock-order graph
+  (~6.2K edges on amd64). Proof run verdict: **zero ABBA inversions** with
+  0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
+  consistent; the wedge family is entirely self-deadlock.

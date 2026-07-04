@@ -73,7 +73,7 @@ wedged gate then reads as either *lost wakeup* (`signals == waits-1` present)
 or *holder stuck* (no signal ever sent) — the discrimination that took the
 Mm-wedge lane days of KTHREAD.State spelunking. Tier 0 candidate.
 
-## 4. Lockdep-lite — Phase A BUILT + PROVEN LIVE 2026-07-04; Phase B (order graph) deferred
+## 4. Lockdep-lite — Phase A + Phase B BUILT + PROVEN LIVE 2026-07-04
 
 > **PROVEN:** first instrumented run (amd64, 4 boots, all green): 2–4
 > `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl)` per boot, and
@@ -126,10 +126,48 @@ opt-in):
   so the gate never inherits an instrumented kernel. Default off = zero cost
   (the tables and taps compile out).
 
-**Phase B (deferred): full lock-order graph.** Lock classes (site-of-init or
-address-range classing), held-*stack* pair recording (A→B edges), inversion
-detection with both stacks. Decide after Phase A has caught the WS wedge live
-and we see what the residual demand is.
+**Phase B (BUILT + PROVEN 2026-07-04, same day): instance-level lock-order
+graph + ABBA detection.** As built:
+
+- **Edge table** (32K slots, ~1.5 MB .bss): acquiring B while holding A
+  records the directed edge A→B — keyed on *instance addresses*, first-wins,
+  `modes` doubles as the Release-published flag. Instance-level (not
+  class-level) deliberately: exact, zero annotation burden, and the
+  address-ordered double-lock idiom yields only one direction per concrete
+  pair so it does not false-positive. A real amd64 boot records ~6.2K edges
+  (per-process locks multiply pairs); an 8K table saturated (49K dropped
+  inserts — counted, loud), 32K + a 32-probe window runs at 0 drops.
+- **ABBA check**: reverse-edge (B→A) lookup on every A→B sighting; the
+  report ring dedupes per unordered pair. Violation kind 2 carries both
+  locks, both threads, both acquire sites.
+- **Acquire sites**: `llvm.returnaddress(0)` captured in the
+  `#[inline(never)]` export shims (shim_exports.rs pushlocks, gmutex.rs
+  wrappers) — the ddk→shim funnel collapses `#[track_caller]`, so the shim's
+  return address is the only cheap true-caller signal. Direct-inline acquires
+  record site 0. Verified live: the WS self-deadlock reports
+  `site=MiLockProcessWorkingSetUnsafe+0x22` straight in the serial.
+- **Guarded mutexes tapped too** (mode 3): all five `_Ke*GuardedMutex*`
+  inline paths + the `KiAcquireGuardedMutex` park — brings
+  `AddressCreationLock` and friends into the same graph as the WS pushlocks.
+  `KeTryToAcquireGuardedMutex` records held-set only, NO edges (a try never
+  parks → try-reversed order cannot deadlock; recording it would be an ABBA
+  false-positive class).
+- **Decoder**: `vibeos-lockdep [held|edges]` (LKD2 layout, compile-time
+  layout assertions in lockdep.rs keep the hand-computed offsets honest);
+  `edges` dumps the entire observed lock-order graph offline.
+
+**Proof run (amd64, 2 boots + net suite, all green):** 6246 edges, 0 drops,
+self-deadlocks fire as in Phase A (now with named sites) — and **zero ABBA
+inversions**: with complete edge visibility, the boot's pushlock+gmutex
+ordering is instance-level consistent. The wedge family is entirely
+self-deadlock; no latent order-inversion deadlocks in the boot path. That
+clean bill is itself the Phase B finding.
+
+Known limits (documented, acceptable for a Tier-2 boot diagnostic):
+instance-level pairs grow monotonically with object churn (fine for a boot,
+would need classing for long uptimes); `ExConvertPushLockSharedToExclusive`
+leaves the recorded mode stale (shared) until release (label-only);
+`ExWaitOnPushLock` waiters are not park-checked.
 
 ## 5. Debugger data block — PLANNED, tiny effort, permanent payoff
 
