@@ -2176,3 +2176,55 @@ PteAddress (the "PFN state corruption" TODO in pfnlist.rs
 MiDecrementShareCount is adjacent evidence). Next session: flightrec-tap
 MiDecrementShareCount's PteFrame cascade or add a share-count trace on the
 pool page containing 0xfffff8a000421660-class addresses.
+
+**§9.13 addendum 2 (2026-07-04, flake-nettest-explorer, commit `4294ebcd0a8`): a
+SECOND confab in the same branch fixed; two PteFrame-residency sites ruled out.**
+Independent GDB repro on native TCG (`VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb`
+→ offline `PsActiveProcessHead` walk → `AddressCreationLock.Owner` → raw
+stack-scan) caught **csrss AND svchost** self-deadlocked simultaneously at
+`MiDecrementShareCount+0x71`, via two different top-level paths
+(`NtClose→LpcpDeletePort→MiUnmapViewOfSection` and
+`NtTerminateProcess→MmCleanProcessAddressSpace`) — confirms §9.13 and shows it's
+systemic, not LPC-specific. Disasm of the pre-fix build put `+0x71` at the
+**`OriginalPte` read**, not the `*PteAddress` read: 7 sites did
+`mmpte_software_*(&*(mmpfn_original_pte_long(Pfn) as PMMPTE))` — dereferencing
+`OriginalPte.Long` (a PTE VALUE) as a POINTER instead of reading the field
+(`&Pfn->OriginalPte`). Fixed to `&*mmpfn_original_pte_ptr(Pfn)` (pfnlist.rs
+533/534/772, pagfault.rs 577/1333/1509/1583). **This is a real, C-matching fix and
+removes one of the two pageable derefs — but it is NOT the whole root:** with it in,
+the flake stops hanging and instead **deterministically BUGCHECKs 0xBE**
+(ATTEMPTED_WRITE_TO_READONLY) at the `MI_WRITE_INVALID_PTE` write to `*PteAddress`
+(pfnlist.rs:773) — i.e. the prototype-PTE page is still non-resident, exactly the
+PteFrame-residency root §9.13 predicted. clean-no-fix = HANG, clean-with-fix =
+0xBE, 100%.
+Residency sites AUDITED CORRECT (rule out for next session):
+`MiInitializePfnForOtherProcess` bumps the parent PteFrame share
+(pfnlist.rs:861-865), and `MiCompleteProtoPteFault` bumps the page-table page
+share (`Pfn2->ShareCount++`, pagfault.rs:558-559 == C). So the premature release is
+elsewhere — a share on the proto-PTE pool page decremented too early, or PFN reuse
+leaving it unbacked. With the fix in, the failure is now a **deterministic 0xBE
+bugcheck** (not a hang), so `run-until KeBugCheckEx --then triage` + trap-frame is a
+faster catch than the census/hang recipe.
+
+**§9.13 addendum 3 (2026-07-04, same session, post-fix layer-2 catch REDIRECTS the
+hunt): the 0xBE is NOT in the ARM3 MiDecrementShareCount path — it's in the ROS
+section-RMAP path (`MmSharePageEntrySectionSegment` → `MmSetPageEntrySectionSegment`).**
+Caught the deterministic 0xBE live (`run-until KeBugCheckEx`, ~5 min TCG). 0xBE args:
+faulting write VA `0xfffff97fde280000`, PTE `0x17702021` = **Present + bit1(W)=0 =
+READ-ONLY** (not merely non-resident — the page is mapped, just read-only). Trap frame
+(0xBE arg3 = `0xfffff8800403e800`): `FaultAddress=Rdx=0xfffff97fde280000`,
+`ErrorCode=0x3` (write/present protection violation), faulting `Rip` in a NON-ntoskrnl
+module. Stack-scan from the TF's Rsp shows the ntoskrnl caller chain top =
+**`MmSharePageEntrySectionSegment+104` → `MmSetPageEntrySectionSegment`** (mm/section.rs:560
+→ `_MmSetPageEntrySectionSegment`), i.e. the SSE (Section Segment Entry) share-count
+write to the segment's page-table. So the deadlock (ARM3 MiDecrementShareCount) was
+masking a SECOND, distinct Mm bug: the ROS section page-table page the SSE write lands
+on is mapped read-only. Suspect: `_MmSetPageEntrySectionSegment`'s multi-level
+segment-page-table addressing computes a read-only-mapped (or wrong) target, OR the
+section page-table page is legitimately made R/O and the write should go via a writable
+alias. NOTE this is a different code family than the PteFrame/ARM3 residency chain
+addendum-2 pointed at — the layer-2 root is section-RMAP (`MmSharePageEntrySectionSegment`
+/ `MmSetPageEntrySectionSegment` / `_MmSetPageEntrySectionSegment`), not
+`MiDecrementShareCount`. Next: disasm the faulting write's addressing in
+`_MmSetPageEntrySectionSegment` (still C? — check sptab.c) and check whether
+`0xfffff97fde280000` is a valid segment-page-table VA or a confabbed address.
