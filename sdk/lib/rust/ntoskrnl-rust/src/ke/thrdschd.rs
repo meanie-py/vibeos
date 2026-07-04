@@ -94,8 +94,8 @@ const HIGH_PRIORITY: KPRIORITY = 31;
 const MAXULONG_PTR: usize = usize::MAX;
 
 const AdjustNone: UCHAR = 0;
-const AdjustBoost: UCHAR = 1;
-const AdjustUnwait: UCHAR = 2;
+const AdjustBoost: UCHAR = 0x02;
+const AdjustUnwait: UCHAR = 0x01;
 
 const DeferredReady: UCHAR = 7;
 const Ready: UCHAR = 1;

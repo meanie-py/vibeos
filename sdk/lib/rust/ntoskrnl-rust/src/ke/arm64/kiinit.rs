@@ -372,7 +372,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(KiSwapEvent) as *mut ntkrnl_sys::ddk::_KEVENT,
-        0, // SynchronizationEvent
+        1, // SynchronizationEvent (EVENT_TYPE: Notification=0, Synchronization=1)
         0u8,
     );
     InitializeListHead(core::ptr::addr_of_mut!(KiProcessInSwapListHead));

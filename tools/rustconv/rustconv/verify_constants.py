@@ -389,6 +389,13 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
         reactos_root / "ntoskrnl/include/internal/tag.h",
         reactos_root / "ntoskrnl/include/internal/io.h",
         reactos_root / "sdk/include/xdk/ketypes.h",
+        # ndk/ketypes.h holds the DISPATCHER enums (ADJUST_REASON, KTHREAD_STATE,
+        # KOBJECTS, KWAIT_REASON…). Its absence let a translated
+        # `const AdjustUnwait = 3` (header: 1) ship in ke/wait.rs and silently
+        # kill the unwait priority boost for every thread wakeup (found by the
+        # 2026-07-04 dispatcher audit). Keep it in the catalog so `--enums`
+        # catches dispatcher-enum drift.
+        reactos_root / "sdk/include/ndk/ketypes.h",
         reactos_root / "sdk/include/ndk/iotypes.h",
         reactos_root / "sdk/include/reactos/drivers/ntddrdsk.h",
     ]

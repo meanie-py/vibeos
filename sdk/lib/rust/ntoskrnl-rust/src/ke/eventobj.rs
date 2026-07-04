@@ -22,7 +22,7 @@ extern "C" {
 
 const EventNotificationObject: u8 = 0;
 const EventSynchronizationObject: u8 = 1;
-const EventPairObject: u8 = 2;
+const EventPairObject: u8 = 0x15;
 const NotificationEvent: u32 = 0;
 const SynchronizationEvent: u32 = 1;
 const WaitAll: u32 = 0;

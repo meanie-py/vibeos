@@ -369,8 +369,8 @@ const MUTANT_INCREMENT: LONG = 1;
 
 const LockQueueIoDatabaseLock: ULONG = 0x0000000A;
 
-const SynchronizationEvent: ULONG = 0;
-const NotificationEvent: ULONG = 1;
+const SynchronizationEvent: ULONG = 0x01;
+const NotificationEvent: ULONG = 0x00;
 
 const Executive: ULONG = 0;
 const UserRequest: ULONG = 6;

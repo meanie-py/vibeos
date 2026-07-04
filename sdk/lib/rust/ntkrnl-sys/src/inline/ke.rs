@@ -1726,6 +1726,7 @@ pub unsafe fn KxSingleThreadWait(
 pub unsafe fn KxDelayThreadWait(
     interval: *mut ddk::_LARGE_INTEGER,
     wait_mode: KPROCESSOR_MODE,
+    alertable: BOOLEAN,
     swappable: *mut BOOLEAN,
     due_time: *mut ddk::_LARGE_INTEGER,
     hand: *mut ULONG,
@@ -1742,7 +1743,12 @@ pub unsafe fn KxDelayThreadWait(
         core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
     (*timer).Header.WaitListHead.Blink =
         core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
-    (*thread).Alertable = if wait_mode == 1 /* UserMode */ { 1 } else { 0 };
+    // The C macro (ke_x.h KxDelayThreadWait) sets Thread->Alertable from the
+    // caller's Alertable local. This was mistranslated as (wait_mode==UserMode),
+    // which made every non-alertable user Sleep() alertable (spurious early
+    // STATUS_USER_APC wakes) and every alertable KernelMode delay non-alertable
+    // (KeAlertThread/user-APC wakeups test Thread->Alertable → lost wakeup).
+    (*thread).Alertable = alertable;
     kt_set_wait_mode(thread, wait_mode);
     (*thread).WaitReason = ddk::_KWAIT_REASON_DelayExecution as u8;
     (*kt_wait_list_entry(thread)).Flink = core::ptr::null_mut();

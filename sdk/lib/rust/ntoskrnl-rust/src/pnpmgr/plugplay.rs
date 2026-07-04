@@ -238,8 +238,8 @@ const DeviceClassChangeEvent: ULONG = 3;
 const DeviceInstallEvent: ULONG = 2;
 const TargetDeviceChangeEvent: ULONG = 0;
 
-const SynchronizationEvent: ULONG = 0;
-const UserRequest: ULONG = 1;
+const SynchronizationEvent: ULONG = 0x01;
+const UserRequest: ULONG = 0x06;
 const UserMode: KPROCESSOR_MODE = 1i8;
 
 const PowerDeviceD0: ULONG = 1;

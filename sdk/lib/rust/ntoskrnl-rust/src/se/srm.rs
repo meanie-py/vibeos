@@ -209,7 +209,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
         &mut SeLsaInitEvent,
         GENERIC_WRITE,
         &mut ObjectAttributes,
-        1, // NotificationEvent
+        0, // NotificationEvent (EVENT_TYPE: Notification=0, Synchronization=1)
         0u8,
     );
     if Status < 0 {
