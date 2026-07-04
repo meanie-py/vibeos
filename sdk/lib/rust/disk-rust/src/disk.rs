@@ -3524,7 +3524,7 @@ pub unsafe extern "system" fn DiskSetCacheInformation(
     }
 
     modeData = ExAllocatePoolWithTag(
-        0x200, // NonPagedPoolCacheAligned (placeholder)
+        0x204, // NonPagedPoolCacheAligned (placeholder)
         MODE_DATA_SIZE as SIZE_T,
         DISK_TAG_DISABLE_CACHE,
     ) as *mut MODE_PARAMETER_HEADER;
@@ -9944,7 +9944,7 @@ pub unsafe extern "C" fn DiskIoctlEnableFailurePrediction(
 
     // TracePrint first call: %p %p -> two pointer arguments
     TracePrint(
-        /*TRACE_LEVEL_INFORMATION*/ 0,
+        /*TRACE_LEVEL_INFORMATION*/ 4,
         /*TRACE_FLAG_IOCTL*/ 1,
         (b"DiskIoctlEnableFailurePrediction: DeviceObject %p Irp %p\n\0".as_ptr() as *const u8).cast(),
         DeviceObject as *mut core::ffi::c_void,
@@ -10985,7 +10985,7 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
     const TRACE_FLAG_IOCTL: u32 = 0; // placeholder
     const DISK_TAG_SMART: u32 = 0x61446353; // 'aDcS' (disk.h)
     const NonPagedPool: u32 = 0; // placeholder
-    const SynchronizationEvent: i32 = 0; // placeholder
+    const SynchronizationEvent: i32 = 0x01; // placeholder
 
     // Extern declarations for functions not in the available imports list.
     // CC must match the in-crate definitions exactly (extern "system" for NTAPI defs) —

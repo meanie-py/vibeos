@@ -92,8 +92,8 @@ const DbgExitThreadStateChange: ULONG = 8;
 #[allow(non_upper_case_globals)]
 const DbgExitProcessStateChange: ULONG = 9;
 
-const LPC_DEBUG_EVENT: i16 = 9;
-const LPC_EXCEPTION: i16 = 10;
+const LPC_DEBUG_EVENT: i16 = 0x08;
+const LPC_EXCEPTION: i16 = 0x07;
 
 const DBG_CONTINUE: NTSTATUS = 0x00010002;
 const DBG_EXCEPTION_HANDLED: NTSTATUS = 0x00010001;

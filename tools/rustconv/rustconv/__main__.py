@@ -155,6 +155,48 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
+def _gate_unextracted(scan, allow_partial: bool):
+    """Fail-loud gate: refuse to run a paid per-function translation over a
+    file whose bodies the scanner could only PARTIALLY extract (C++ methods —
+    explorer tier-B/C files surface 1-6 of dozens). AGENTS.md fail-loud rule:
+    surface + stop, let the caller opt into the partial explicitly."""
+    if not scan.unextracted:
+        return
+    is_cpp = scan.path.suffix.lower() in (".cpp", ".cxx", ".cc")
+    n = len(scan.unextracted)
+    total = len(scan.functions) + n
+    print(
+        f"\n\u26a0 {scan.path.name}: {n} function bodies NOT extractable "
+        f"(C++ methods) \u2014 only {len(scan.functions)}/{total} would be translated:",
+        file=sys.stderr,
+    )
+    for entry in scan.unextracted[:12]:
+        print(f"    {entry}", file=sys.stderr)
+    if n > 12:
+        print(f"    \u2026 and {n - 12} more", file=sys.stderr)
+    if not is_cpp:
+        # .c files: parse artifacts (PSEH macro blocks etc.) have always been
+        # dropped silently by the kernel pipeline — keep that path unblocked,
+        # just make the drop visible.
+        print("  (.c file: legacy behavior, proceeding without these)", file=sys.stderr)
+        return
+    if allow_partial:
+        print(
+            "  --allow-partial: proceeding with the extractable free-function "
+            "subset ONLY (deliberate partial).",
+            file=sys.stderr,
+        )
+        return
+    print(
+        "  HARD FAIL: this would silently under-translate the file. "
+        "Pass --allow-partial to translate the free-function subset "
+        "deliberately, or wait for the C++ method extraction path "
+        "(docs/engineering/explorer-rust-translation-plan.md).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def cmd_scan(args):
 
     path = resolve_c_path(args.file)
@@ -230,6 +272,7 @@ def cmd_submit(args):
         else parse_spec()
     )
     scan = scan_file(path)
+    _gate_unextracted(scan, getattr(args, "allow_partial", False))
     res = resolve(scan, catalog, spec)
 
     model = resolve_model(args.model)
@@ -320,7 +363,7 @@ def cmd_batch(args):
         print(f"Error: not a directory: {dir_path}", file=sys.stderr)
         sys.exit(1)
 
-    c_files = sorted(dir_path.glob("*.c"))
+    c_files = sorted([*dir_path.glob("*.c"), *dir_path.glob("*.cpp")])
     if args.exclude:
         exclude_stems = set(args.exclude)
         c_files = [f for f in c_files if f.stem not in exclude_stems]
@@ -344,6 +387,7 @@ def cmd_batch(args):
     resolves = {}
     for cf in c_files:
         scan = scan_file(cf)
+        _gate_unextracted(scan, getattr(args, "allow_partial", False))
         scans[cf.name] = scan
         res = resolve(scan, catalog, spec)
         resolves[cf.name] = res
@@ -914,7 +958,7 @@ def cmd_translate(args):
     if target_path.is_file():
         c_files = [target_path]
     elif target_path.is_dir():
-        c_files = sorted(target_path.glob("*.c"))
+        c_files = sorted([*target_path.glob("*.c"), *target_path.glob("*.cpp")])
         if args.exclude:
             exclude_stems = set(args.exclude)
             c_files = [f for f in c_files if f.stem not in exclude_stems]
@@ -985,6 +1029,7 @@ def cmd_translate(args):
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
+        _gate_unextracted(scan, getattr(args, "allow_partial", False))
         file_res = file_resolve(scan, catalog, spec)
         subsystem = c_file.parent.name
 
@@ -1500,7 +1545,7 @@ def cmd_estimate(args):
     if target.is_file():
         c_files = [target]
     elif target.is_dir():
-        c_files = sorted(target.glob("*.c"))
+        c_files = sorted([*target.glob("*.c"), *target.glob("*.cpp")])
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
@@ -1702,6 +1747,13 @@ def main():
     )
 
     # batch
+    p.add_argument(
+        "--allow-partial",
+        dest="allow_partial",
+        action="store_true",
+        help="Proceed when C++ bodies are unextractable (free-function subset only)",
+    )
+
     p = sub.add_parser("batch", help="Batch-submit entire subsystem directory")
     p.add_argument("directory", help="Subsystem directory (relative to ntoskrnl/ or absolute)")
     p.add_argument(
@@ -1710,6 +1762,13 @@ def main():
     p.add_argument(
         "--exclude", nargs="*", default=[], help="File stems to skip (e.g., obhandle ob_rust_shims)"
     )
+    p.add_argument(
+        "--allow-partial",
+        dest="allow_partial",
+        action="store_true",
+        help="Proceed when C++ bodies are unextractable (free-function subset only)",
+    )
+
     p.add_argument(
         "-s",
         "--subsystem",
@@ -1949,6 +2008,12 @@ def main():
         "(pass 1 of a two-pass cheap-model pipeline).",
     )
     p.add_argument("-o", "--output", help="Write Rust output to file (single file only)")
+    p.add_argument(
+        "--allow-partial",
+        dest="allow_partial",
+        action="store_true",
+        help="Proceed when C++ bodies are unextractable (free-function subset only)",
+    )
     p.add_argument("--fn", dest="fn", help="Translate only this function")
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(

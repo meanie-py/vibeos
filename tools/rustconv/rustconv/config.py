@@ -240,6 +240,15 @@ WINSRV_BINDGEN_FILES = {
 # own userinit-rust crate. See docs/engineering/smss-csrss-translation-audit.md.
 USERINIT_DIR = REACTOS_ROOT / "base" / "system" / "userinit"
 
+# explorer.exe — the desktop shell (taskbar/tray/start-menu/systray). Last
+# boot-path component still fully C++. Same user-mode GUI-exe substrate as
+# userinit (winsrv-sys Win32 superset, ntdll_sys::nt base). Own explorer-rust
+# crate; per-file cohabitation into the cmake-built explorer.exe. Most files are
+# ATL/WTL/COM-heavy (CWindowImpl/CComObject) — see
+# docs/engineering/explorer-rust-translation-plan.md for the tiered ordering
+# (leaf-procedural first, COM monsters last).
+SHELL_EXPLORER_DIR = REACTOS_ROOT / "base" / "shell" / "explorer"
+
 # winlogon.exe — the logon manager (winlogon → userinit → explorer). GINA-
 # independent LEAF files only (setup/environment/shutdown/screensaver/security);
 # the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c) and RPC
@@ -1337,6 +1346,30 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # explorer.exe — the desktop shell. Own explorer-rust crate on the winsrv-sys
+    # substrate (broad Win32 superset), generic user-mode addendum. Per-file
+    # cohabitation into the cmake-built explorer.exe. Leaf-procedural files first
+    # (util/settings/startup); the ATL/WTL/COM files need the vtable design in
+    # docs/engineering/explorer-rust-translation-plan.md before bulk translation.
+    "explorer": Target(
+        name="explorer",
+        source_dir=SHELL_EXPLORER_DIR,
+        output_crate=RUST_DIR / "explorer-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        # None ⇒ assembler namespaces by C parent dir; explorer's .cpp live flat
+        # under base/shell/explorer, so they land at explorer-rust/src/<stem>.rs.
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        winsrv_bindgen_files=WINSRV_BINDGEN_FILES,
+        sys_crate="winsrv_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # winlogon.exe — logon manager, GINA-independent leaf files. Self-contained
     # winlogon-sys substrate (WLSESSION/GINA layout size-asserted ×3). Generic
     # user-mode prompt addendum. Output to its own winlogon-rust crate.
@@ -1394,6 +1427,10 @@ def detect_target(c_path: Path) -> Target:
     # winlogon-sys substrate. Leaf files only — keep before base/system fallthrough.
     if "/base/system/winlogon" in posix:
         return TARGETS["winlogon"]
+    # explorer.exe (desktop shell). Own explorer-rust crate on the winsrv-sys
+    # substrate. Last boot-path component still fully C++.
+    if "/base/shell/explorer" in posix:
+        return TARGETS["explorer"]
     # ntdll.dll body (loader/dispatch/rtl-glue). Its own ntdll-rust crate
     # on the same user-mode substrate. Note: the shared rtl algorithms it
     # links (sdk/lib/rtl/*) are NOT routed here — those are the rtl-rust /

@@ -755,7 +755,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         );
         if !NT_SUCCESS(status) {
             TracePrint(
-                0, // TRACE_LEVEL_ERROR
+                2, // TRACE_LEVEL_ERROR
                 0, // TRACE_FLAG_GENERAL
                 b"RequestSetupMcnRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0"
                     .as_ptr()
@@ -1573,7 +1573,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
     if disabled != 0 {
         let fmt = b"DeviceInitializeMediaChangeDetection: Disabled due to hardware limitations for this device\n\0"
             .as_ptr() as *const i8;
-        TracePrint(0 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
+        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
     } else {
         disabled = DeviceIsMediaChangeDisabledForClass(DeviceExtension);
 
@@ -1584,7 +1584,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         };
         let fmt = b"DeviceInitializeMediaChangeDetection: MCN is %s\n\0"
             .as_ptr() as *const i8;
-        TracePrint(0 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, disabled_str);
+        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, disabled_str);
 
         status = DeviceMediaChangeDeviceInstanceOverride(
             DeviceExtension,
@@ -1594,7 +1594,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         if !NT_SUCCESS(status) {
             let fmt = b"DeviceInitializeMediaChangeDetection: Instance using default\n\0"
                 .as_ptr() as *const i8;
-            TracePrint(0 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
+            TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
         } else {
             let override_action = if instanceOverride != 0 {
                 b"Enabling\0".as_ptr() as *const i8
@@ -1603,7 +1603,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
             };
             let fmt = b"DeviceInitializeMediaChangeDetection: Instance override: %s MCN\n\0"
                 .as_ptr() as *const i8;
-            TracePrint(0 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, override_action);
+            TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, override_action);
             disabled = if instanceOverride == 0 { 1 } else { 0 }; // !instanceOverride
         }
 
@@ -1614,7 +1614,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         };
         let fmt = b"DeviceInitializeMediaChangeDetection: Instance MCN is %s\n\0"
             .as_ptr() as *const i8;
-        TracePrint(0 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, final_disabled_str);
+        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, final_disabled_str);
     }
 
     if disabled == 0 {
@@ -1648,7 +1648,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     );
     if !NT_SUCCESS(status) {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: Could not open device registry key [%lx]\n\0"
                 .as_ptr() as *const i8,
@@ -1674,7 +1674,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
 
     if !NT_SUCCESS(status) {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: subkey could not be created. %lx\n\0"
                 .as_ptr() as *const i8,
@@ -1708,7 +1708,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
 
     if alwaysEnable != 0 && alwaysDisable != 0 {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
                 .as_ptr() as *const i8,
@@ -1719,7 +1719,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         *Enabled = 0; // FALSE
     } else if alwaysDisable != 0 {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
                 .as_ptr() as *const i8,
@@ -1730,7 +1730,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         *Enabled = 0; // FALSE
     } else if alwaysEnable != 0 {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
                 .as_ptr() as *const i8,
@@ -1741,7 +1741,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         *Enabled = 1; // TRUE
     } else {
         TracePrint(
-            0u32, /* TRACE_LEVEL_INFORMATION */
+            4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
                 .as_ptr() as *const i8,

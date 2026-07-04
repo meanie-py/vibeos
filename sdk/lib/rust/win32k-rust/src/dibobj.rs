@@ -239,7 +239,7 @@ pub unsafe extern "system" fn CreateDIBPalette(
         }
 
         ppal = PALETTE_AllocPalette(
-            (0x4 /* PAL_BITFIELDS */ | PAL_DIBSECTION) as u32,
+            (0x2 /* PAL_BITFIELDS */ | PAL_DIBSECTION) as u32,
             0,
             core::ptr::null_mut(),
             flRedMask,

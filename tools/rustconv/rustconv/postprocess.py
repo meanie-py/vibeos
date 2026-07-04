@@ -1727,6 +1727,40 @@ def strip_user_inline_redeclarations(code: str) -> str:
     return code
 
 
+_UTF16_LITERAL_RE = re.compile(
+    r'"((?:[^"\\]|\\.)*?)"'  # a Rust string literal (group 1 = inner text)
+    r"\s*\.encode_utf16\(\)"
+    r"(?:\s*\.chain\(\s*core::iter::once\(0\)\s*\))?"  # optional NUL chain
+    r"\s*\.collect::<\s*Vec\s*<\s*u16\s*>\s*>\(\)"
+    r"(\s*\.as_ptr\(\))?"  # group 2 = trailing .as_ptr() (the dangling case)
+)
+
+
+def fix_utf16_vec_literals(code: str) -> str:
+    """User-mode GUI targets: rewrite the LLM's
+    `"Text\\0".encode_utf16().chain(once(0)).collect::<Vec<u16>>().as_ptr()`
+    into `w!("Text").as_ptr()`.
+
+    Two defects in one: (a) `Vec` is `alloc`/`std` — these crates are
+    `no_std` staticlibs, so it doesn't even compile; (b) worse, when it DID
+    compile the temporary `Vec` is dropped at the end of the statement, so
+    the `.as_ptr()` is an immediate use-after-free. `winsrv_sys::w!` builds a
+    `&'static [u16; N+1]` at compile time (NUL-terminated), so `.as_ptr()`
+    is sound. Only applied on user-mode targets (where `w!` is in scope) —
+    the kernel prompt never emits `encode_utf16` (kernel strings are bytes).
+    """
+
+    def repl(m: re.Match) -> str:
+        inner = m.group(1)
+        # w! adds the NUL, so strip a trailing literal \0 the model included.
+        if inner.endswith("\\0"):
+            inner = inner[:-2]
+        tail = m.group(2) or ""
+        return f'w!("{inner}"){tail}'
+
+    return _UTF16_LITERAL_RE.sub(repl, code)
+
+
 def strip_embedded_abspaths(code: str) -> str:
     """Determinism guard (deterministic-builds-plan.md rung 1).
 
@@ -1832,6 +1866,7 @@ def postprocess(
         code = collapse_sys_crate(code, sys_crate, sys_umbrella)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
+        code = fix_utf16_vec_literals(code)
     return code
 
 

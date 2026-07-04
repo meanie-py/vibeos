@@ -275,7 +275,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
                 b"DeviceClaimRelease: Failed to Claim device, status: 0x%X\n\x00".as_ptr()
             };
             TracePrint(
-                0x03 /* TRACE_LEVEL_FATAL */,
+                1 /* TRACE_LEVEL_FATAL */,
                 0x01 /* TRACE_FLAG_PNP */,
                 format_str as *const i8,
                 status,
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
     } else {
         let format_str = b"DeviceClaimRelease: Failed to create request, status: 0x%X\n\x00";
         TracePrint(
-            0x03 /* TRACE_LEVEL_FATAL */,
+            1 /* TRACE_LEVEL_FATAL */,
             0x01 /* TRACE_FLAG_PNP */,
             format_str.as_ptr() as *const i8,
             status,
@@ -1001,7 +1001,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     Function: Option<unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, usize)>,
 ) {
     // Constants with inline comment
-    const TRACE_LEVEL_INFORMATION: u32 = 0; // TRACE_LEVEL_INFORMATION
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // TRACE_LEVEL_INFORMATION
     const TRACE_FLAG_INIT: u32 = 0; // TRACE_FLAG_INIT
 
     PAGED_CODE();
@@ -1464,7 +1464,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
             && (*cd_read_header).C2ErrorData() != 0
         {
             TracePrint(
-                1u32, // TRACE_LEVEL_INFORMATION
+                4u32, // TRACE_LEVEL_INFORMATION
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: FDO %p GET_CONFIG shows ability to read C2 error bits\n\0".as_ptr()
                     as *const i8,
@@ -1512,7 +1512,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 
         if buffer.is_null() {
             TracePrint(
-                3u32, // TRACE_LEVEL_ERROR
+                2u32, // TRACE_LEVEL_ERROR
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: cannot allocate buffer, so not setting raw read info for FDO %p\n\0".as_ptr()
                     as *const i8,
@@ -1562,7 +1562,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
             }
 
             TracePrint(
-                1u32, // TRACE_LEVEL_INFORMATION
+                4u32, // TRACE_LEVEL_INFORMATION
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: FDO %p CDVD Capabilities buffer %p\n\0".as_ptr() as *const i8,
                 (*DeviceExtension).DeviceObject,
@@ -1606,7 +1606,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
         // After the attempt (regardless of success/fail if we haven't broken),
         // trace warning and free buffer.
         TracePrint(
-            4u32, // TRACE_LEVEL_WARNING
+            3u32, // TRACE_LEVEL_WARNING
             2u32, // TRACE_FLAG_IOCTL
             b"DeviceSetRawReadInfo: FDO %p failed %x byte mode sense, status %x\n\0".as_ptr() as *const i8,
             (*DeviceExtension).DeviceObject,
@@ -1638,7 +1638,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 
     if count == 6 {
         TracePrint(
-            4u32, // TRACE_LEVEL_WARNING
+            3u32, // TRACE_LEVEL_WARNING
             2u32, // TRACE_FLAG_IOCTL
             b"DeviceSetRawReadInfo: FDO %p couldn't get mode sense data\n\0".as_ptr() as *const i8,
             (*DeviceExtension).DeviceObject,

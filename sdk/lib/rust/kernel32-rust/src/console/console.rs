@@ -1152,7 +1152,7 @@ unsafe fn IntAllocConsole(
         Status = NtWaitForMultipleObjects(
             MAX_INIT_EVENTS,
             (*(*AllocConsoleRequest).ConsoleStartInfo).InitEvents.as_ptr() as *mut _,
-            0, // WaitAny
+            1, // WaitAny
             0, // FALSE
             core::ptr::null_mut(),
         );
@@ -2382,7 +2382,7 @@ unsafe fn IntAttachConsole(
         Status = NtWaitForMultipleObjects(
             MAX_INIT_EVENTS,
             (*(*AttachConsoleRequest).ConsoleStartInfo).InitEvents.as_ptr() as *mut _,
-            0, // WaitAny
+            1, // WaitAny
             0, // FALSE
             core::ptr::null_mut(),
         );

@@ -285,6 +285,12 @@ fn main() {
     };
 
     let mut linker = Linker::new(rust_target);
+    // sync-instrumentation §4 lockdep (Tier-2 opt-in): mirror ntoskrnl-cargo —
+    // same kernel-rust body, so the MP kernel gets the same instrumented build.
+    println!("cargo:rerun-if-env-changed=VIBEOS_LOCKDEP");
+    if env::var("VIBEOS_LOCKDEP").is_ok() {
+        linker = linker.rust_features(&["lockdep"]);
+    }
     linker = linker
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was

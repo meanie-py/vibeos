@@ -143,6 +143,18 @@ class CFunction:
     line_start: int
     line_end: int
     body_text: str  # raw C source of the function body
+    # C++ method support (explorer/shell translation): the owning class for
+    # out-of-line (`Cls::m`) and in-class method definitions. None for free
+    # functions. When set, `name` is the plain method name and the translation
+    # convention is `extern "C" fn <Cls>_<name>(this: *mut <Cls>, …)` — see
+    # docs/engineering/explorer-rust-translation-plan.md.
+    cpp_class: str | None = None
+    is_ctor: bool = False
+    is_dtor: bool = False
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.cpp_class}::{self.name}" if self.cpp_class else self.name
 
 
 @dataclass
@@ -172,6 +184,13 @@ class ScanResult:
     # comments). This is what the `translate` pipeline feeds through the LLM
     # as a synthetic preamble unit so the stitched .rs actually compiles.
     preamble_text: str = ""
+    # Function bodies the scanner SAW but could not extract — C++ methods
+    # (out-of-line `Class::m` qualified declarators, in-class definitions,
+    # ctors/dtors/operators). Entries are "name @ Lstart". A non-empty list
+    # means per-function translation would SILENTLY cover only part of the
+    # file (explorer tier-C files: 1-6 of dozens) — `translate`/`submit`
+    # hard-fail on it unless --allow-partial (fail-loud rule, AGENTS.md).
+    unextracted: list[str] = field(default_factory=list)
 
 
 def _extract_text(node, source: bytes) -> str:
@@ -278,10 +297,39 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
     if declarator is None:
         return None
 
+    cpp_class = None
+    is_ctor = False
+    is_dtor = False
+
     # Extract function name from declarator
     for child in declarator.children:
         if child.type == "identifier":
             name = _extract_text(child, source)
+        elif child.type == "field_identifier":
+            # In-class C++ method definition (`void m() {…}` inside a class
+            # body). Class name comes from the enclosing specifier below.
+            name = _extract_text(child, source)
+        elif child.type == "qualified_identifier":
+            # Out-of-line C++ method (`RET [CC] Cls::m(…)`). tree-sitter glues
+            # a calling-convention macro into the node text ("STDMETHODCALLTYPE
+            # CFoo::m") — take the last whitespace token before splitting.
+            qtext = _extract_text(child, source).split()[-1]
+            if "::" in qtext:
+                cpp_class, _, name = qtext.rpartition("::")
+                if name.startswith("~"):
+                    is_dtor = True
+                    name = name.lstrip("~")
+                elif name == cpp_class.rpartition("::")[2]:
+                    is_ctor = True
+                if name.startswith("operator"):
+                    return None  # operators stay unextracted (no C ABI shape)
+            else:
+                name = qtext
+        elif child.type == "destructor_name":
+            is_dtor = True
+            name = _extract_text(child, source).lstrip("~")
+        elif child.type == "operator_name":
+            return None  # operators stay unextracted (no C ABI shape)
         elif child.type == "parameter_list":
             for param_node in child.children:
                 if param_node.type == "parameter_declaration":
@@ -301,6 +349,22 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
     if name is None:
         return None
 
+    if cpp_class is None:
+        # In-class definition (field_identifier/identifier/destructor_name
+        # declarator with no `Cls::` prefix)? Ascend to the enclosing
+        # class/struct specifier for the owning class name.
+        anc = node.parent
+        while anc is not None:
+            if anc.type in ("class_specifier", "struct_specifier"):
+                for c in anc.children:
+                    if c.type == "type_identifier":
+                        cpp_class = _extract_text(c, source)
+                        break
+                break
+            anc = anc.parent
+        if cpp_class and name == cpp_class:
+            is_ctor = True
+
     # Count SEH blocks in body
     body_text = _extract_text(node, source)
     seh_count = body_text.count("_SEH2_TRY")
@@ -316,6 +380,9 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
         line_start=node.start_point[0] + 1,
         line_end=node.end_point[0] + 1,
         body_text=body_text,
+        cpp_class=cpp_class,
+        is_ctor=is_ctor,
+        is_dtor=is_dtor,
     )
 
 
@@ -739,6 +806,18 @@ def scan_file(path: Path) -> ScanResult:
             func = _parse_function(node, source, source_text)
             if func:
                 result.functions.append(func)
+            else:
+                # C++ method (qualified/field/destructor/operator declarator)
+                # or otherwise unparseable body — record it so callers can
+                # fail loud instead of silently under-translating the file.
+                decl_text = ""
+                for child in node.children:
+                    if child.type in ("function_declarator", "pointer_declarator"):
+                        decl_text = _extract_text(child, source).split("(")[0].strip()
+                        break
+                result.unextracted.append(
+                    f"{decl_text or '<unparsed>'} @ L{node.start_point[0] + 1}"
+                )
             # Collect identifiers from the function
             _collect_identifiers(node, source, result.identifiers)
             # Collect local-variable / parameter declarator names so the
@@ -824,6 +903,65 @@ def scan_file(path: Path) -> ScanResult:
     return result
 
 
+def extract_class_context(scan: ScanResult, class_name: str, max_chars: int = 8000) -> str | None:
+    """Return the class/struct definition for `class_name` with in-class method
+    BODIES stripped (declarations kept) — the field-layout/type context a
+    per-method translation prompt needs without re-sending every body.
+
+    Looks in the scanned .cpp first, then in sibling headers (explorer keeps
+    CAppBarManager in appbar.h, CTrayShowDesktopButton in traydeskbtn.h, …).
+    """
+
+    def _find_and_strip(source: bytes) -> str | None:
+        tree = Parser(CPP_LANG).parse(source)
+        hit = None
+
+        def find(node):
+            nonlocal hit
+            if hit is not None:
+                return
+            if node.type in ("class_specifier", "struct_specifier"):
+                for c in node.children:
+                    if c.type == "type_identifier" and _extract_text(c, source) == class_name:
+                        hit = node
+                        return
+            for c in node.children:
+                find(c)
+
+        find(tree.root_node)
+        if hit is None:
+            return None
+        cuts: list[tuple[int, int]] = []
+
+        def collect_bodies(node):
+            if node.type == "function_definition":
+                for c in node.children:
+                    if c.type == "compound_statement":
+                        cuts.append((c.start_byte, c.end_byte))
+                return
+            for c in node.children:
+                collect_bodies(c)
+
+        collect_bodies(hit)
+        text = source[hit.start_byte : hit.end_byte]
+        for s, e in sorted(cuts, reverse=True):
+            text = text[: s - hit.start_byte] + b";" + text[e - hit.start_byte :]
+        return text.decode("utf-8", errors="replace")
+
+    out = _find_and_strip(scan.raw_source.encode("utf-8"))
+    if out is None:
+        for header in sorted(scan.path.parent.glob("*.h")):
+            try:
+                out = _find_and_strip(header.read_text(errors="replace").encode("utf-8"))
+            except OSError:
+                continue
+            if out is not None:
+                break
+    if out is not None and len(out) > max_chars:
+        out = out[:max_chars] + "\n/* … class context truncated … */"
+    return out
+
+
 def print_scan_result(result: ScanResult) -> None:
     """Print scan results in human-readable form."""
     print(f"File: {result.path}")
@@ -845,10 +983,20 @@ def print_scan_result(result: ScanResult) -> None:
         static = "static " if f.is_static else ""
         seg = f"[{f.code_seg}] " if f.code_seg else ""
         seh = f" (SEH×{f.seh_count})" if f.seh_count else ""
+        kind = " [ctor]" if f.is_ctor else (" [dtor]" if f.is_dtor else "")
         params_str = ", ".join(f"{t} {n}" for t, n in f.params)
         print(
-            f"  {seg}{static}{f.return_type} {cc} {f.name}({params_str}){seh}"
+            f"  {seg}{static}{f.return_type} {cc} {f.display_name}({params_str}){seh}{kind}"
             f"  L{f.line_start}-{f.line_end}"
         )
+
+    if result.unextracted:
+        n = len(result.unextracted)
+        print(f"\n⚠ NOT extracted ({n}) — C++ method bodies the per-function")
+        print("  pipeline cannot reach yet (translate/submit hard-fail on these):")
+        for entry in result.unextracted[:20]:
+            print(f"    {entry}")
+        if n > 20:
+            print(f"    … and {n - 20} more")
 
     print(f"\nTotal identifiers: {len(result.identifiers)}")

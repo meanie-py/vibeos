@@ -790,7 +790,7 @@ pub unsafe extern "C" fn MmcDataFindFeaturePage(
 
             if temp > limit {
                 TracePrint(
-                    0x00000002, // TRACE_LEVEL_WARNING
+                    3, // TRACE_LEVEL_WARNING
                     0x00000010, // TRACE_FLAG_GENERAL
                     b"Feature %x exists, but not safe to access all its data.  returning NULL\n"
                         .as_ptr() as *const i8,
@@ -832,7 +832,7 @@ pub unsafe extern "C" fn MmcDataFindProfileInProfiles(
     // sanity check
     if (*ProfileHeader).Header.AdditionalLength % 2 != 0 {
         TracePrint(
-            2 /* TRACE_LEVEL_WARNING */,
+            3 /* TRACE_LEVEL_WARNING */,
             0x40 /* TRACE_FLAG_GENERAL */,
             b"Profile total length %x is not integral multiple of 4\n\0".as_ptr() as *const i8,
             (*ProfileHeader).Header.AdditionalLength as core::ffi::c_uint,

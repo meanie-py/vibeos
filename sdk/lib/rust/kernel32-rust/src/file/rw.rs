@@ -42,7 +42,7 @@ extern "system" {
 // wincon.h
 pub const ENABLE_PROCESSED_INPUT: DWORD = 0x0001;
 
-pub const STATUS_END_OF_FILE: NTSTATUS = 0x8000001Du32 as NTSTATUS;
+pub const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011_u32 as i32;
 pub const STATUS_PENDING: NTSTATUS = 0x00000103;
 
 #[no_mangle]

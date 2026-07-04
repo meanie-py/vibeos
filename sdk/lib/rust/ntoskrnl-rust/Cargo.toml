@@ -16,3 +16,8 @@ iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "i
 
 [features]
 default = []
+# sync-instrumentation §4 Tier-2: self-deadlock / recursive-pushlock detector.
+# Non-default (has an always-on push/pop cost on every pushlock op) — enabled
+# for a debug/repro build via cmake -DVIBEOS_LOCKDEP=ON. Forwards to the
+# ntkrnl-sys pushlock-inline taps so both crates light up together.
+lockdep = ["ntkrnl-sys/lockdep"]

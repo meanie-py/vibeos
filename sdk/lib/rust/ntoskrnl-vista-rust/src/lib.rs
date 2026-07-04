@@ -27,8 +27,8 @@ type PVOID = *mut core::ffi::c_void;
 
 // NTSTATUS constants (faithful to the C source).
 const STATUS_SUCCESS: NTSTATUS = 0;
-const STATUS_FT_READ_FROM_COPY: NTSTATUS = 0x4002_0006u32 as NTSTATUS;
-const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x8000_0010u32 as NTSTATUS;
+const STATUS_FT_READ_FROM_COPY: NTSTATUS = 0x40000035;
+const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016_u32 as i32;
 
 // io.c: TAG_IOWI 'IWOI'  (clang multichar → 0x49574F49, displays "IOWI").
 const TAG_IOWI: ULONG = 0x4957_4F49;

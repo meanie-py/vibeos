@@ -613,7 +613,7 @@ pub const MOUSE_I8042_HARDWARE: u32 = 0x80; // MOUSE_I8042_HARDWARE_PRESENT
 
 // ---- ntddk.h / kdfuncs.h: crash + debug-control ----
 pub const MANUALLY_INITIATED_CRASH: u32 = 0xDEADDEAD; // ntddk.h:5612
-pub const DBG_STATUS_SYSRQ: u32 = 6; // kdfuncs.h:74
+pub const DBG_STATUS_SYSRQ: u32 = 0x02; // kdfuncs.h:74
 
 // ---- winnt.h: registry access mask (NT5 value) ----
 pub const KEY_ALL_ACCESS: u32 = 0xF003F;

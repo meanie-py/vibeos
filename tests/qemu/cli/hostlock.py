@@ -75,9 +75,19 @@ def _slug(key: str) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
 
+# Shared-protocol version (T2, fleet-isolation program 2026-07-04): worktrees run
+# DIVERGENT tooling versions against the same lease files, so cross-version
+# behavior must be explicit. Readers treat a missing field as v0 and still
+# cooperate (never brick another lane), but WARN loudly — the dedup incident was
+# exactly old-code-in-another-lane operating on shared state with obsolete
+# semantics. Bump when lease semantics change incompatibly.
+PROTOCOL_VERSION = 1
+
+
 def _self_meta(kind: str, **extra: object) -> dict:
     """Holder identity written into the lock file so `host-status` can show who has it."""
     meta = {
+        "v": PROTOCOL_VERSION,
         "kind": kind,
         "pid": os.getpid(),
         "argv": " ".join(sys.argv)[:200],
@@ -358,6 +368,10 @@ def status() -> dict:
             "held": held,
             "holder": meta,
             "holder_alive": _pid_alive(int(meta["pid"])) if meta.get("pid") else None,
+            # protocol-version skew (T2): a live holder speaking a different lease
+            # protocol means another lane runs divergent tooling against this
+            # shared state — cooperate anyway, but surface it loudly.
+            "protocol_skew": bool(held and meta and meta.get("v", 0) != PROTOCOL_VERSION),
         }
         if p.name.startswith("cpuheavy-"):
             out["cpuheavy"].append(entry)
@@ -401,6 +415,18 @@ def render_status(st: dict) -> str:
     for e in (e for e in st["builddir"] if e["held"]):
         h = e["holder"]
         lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
+    skewed = [
+        e
+        for pool in ("cpuheavy", "bootcpu", "builddir")
+        for e in st.get(pool, [])
+        if e.get("protocol_skew")
+    ]
+    if skewed:
+        lines.append(
+            f"  ⚠ PROTOCOL SKEW: {len(skewed)} live holder(s) speak a different lease "
+            f"protocol (v{PROTOCOL_VERSION} here) — another lane runs divergent tooling; "
+            f"cooperate but expect surprises until it merges"
+        )
     lines.append("  (QEMU boots: `vibeos-cli ps`)")
     return "\n".join(lines)
 

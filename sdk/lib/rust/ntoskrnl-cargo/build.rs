@@ -297,6 +297,13 @@ fn main() {
         };
 
     let mut linker = Linker::new(rust_target);
+    // sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON
+    // plumbs VIBEOS_LOCKDEP=1 through add_cargo_module's env; kernel-rust is
+    // built with the pushlock self-deadlock detector. OFF by default.
+    println!("cargo:rerun-if-env-changed=VIBEOS_LOCKDEP");
+    if env::var("VIBEOS_LOCKDEP").is_ok() {
+        linker = linker.rust_features(&["lockdep"]);
+    }
     linker = linker
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was

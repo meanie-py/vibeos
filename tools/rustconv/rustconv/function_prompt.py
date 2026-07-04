@@ -408,6 +408,36 @@ def build_file_context(
     return "\n".join(parts)
 
 
+def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
+    """C++-method translation contract + the owning class's definition
+    (bodies stripped). The flat `Cls_method(this: *mut Cls, …)` convention is
+    the cohab ABI — see docs/engineering/explorer-rust-translation-plan.md."""
+    from .scanner import extract_class_context
+
+    cls = func.cpp_class
+    m = func.cpp_method
+    if cls is None:
+        return ""  # not a C++ method — no method contract to emit
+    lines = [
+        "\n## C++ Method → Free Function\n",
+        f"This C body is the C++ method `{cls}::{m}`. Translate it as a FREE function:\n",
+        '- Rust signature: `#[no_mangle] pub unsafe extern "C" fn '
+        f"{func.name}(this: *mut {cls}, …)`\n",
+        f"- `this: *mut {cls}` is the FIRST parameter; implicit member "
+        "access `m_x` (or `this->m_x`) becomes `(*this).m_x`.\n",
+        f"- Calls to sibling `{cls}` methods become calls to their "
+        f"`{cls}_<method>` free functions, passing `this`.\n",
+        "- Do NOT emit a Rust `impl` block or trait — keep the flat "
+        "#[no_mangle] convention (cohab ABI).\n",
+        f"- If the `{cls}` struct is not yet defined in the crate, assume "
+        f"`#[repr(C)] pub struct {cls} {{ … }}` matching the layout below.\n",
+    ]
+    ctx = extract_class_context(scan, cls)
+    if ctx:
+        lines.append(f"\n### Class definition (method bodies stripped)\n```cpp\n{ctx}\n```\n")
+    return "".join(lines)
+
+
 def build_function_prompt(
     func: FunctionDep,
     resolve: ResolveResult,
@@ -455,6 +485,10 @@ def build_function_prompt(
 
     # Header
     parts.append(f"## Translate: `{func.name}` from `{scan.path.name}`\n")
+
+    # C++ method → free-function convention + class layout context
+    if getattr(func, "cpp_class", None):
+        parts.append(_format_method_context(func, scan))
 
     # Export info
     export_info = _format_export_info(func, spec_exports)

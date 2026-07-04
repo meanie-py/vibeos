@@ -562,7 +562,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     const USBPORT_FLAG_LEGACY_SUPPORT: ULONG = 0x00040000;
     const USBPORT_MPFLAG_INTERRUPTS_ENABLED: ULONG = 0x00000001;
     const USBPORT_FLAG_HC_STARTED: ULONG = 0x00000020;
-    const Width32Bits: i32 = 1;
+    const Width32Bits: i32 = 0x02;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let Packet: PUSBPORT_REGISTRATION_PACKET;

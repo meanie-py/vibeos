@@ -110,10 +110,10 @@ unsafe fn AssignResourcesToConfiguration(
     const CmResourceTypeDma: ::core::ffi::c_int = 4;
     const CM_RESOURCE_INTERRUPT_LATCHED: ::core::ffi::c_int = 1;
     const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: ::core::ffi::c_int = 0;
-    const CM_RESOURCE_DMA_8: ::core::ffi::c_int = 0x0001;
-    const CM_RESOURCE_DMA_16: ::core::ffi::c_int = 0x0002;
-    const CM_RESOURCE_DMA_32: ::core::ffi::c_int = 0x0004;
-    const CM_RESOURCE_DMA_8_AND_16: ::core::ffi::c_int = 0x0008;
+    const CM_RESOURCE_DMA_8: ::core::ffi::c_int = 0x00;
+    const CM_RESOURCE_DMA_16: ::core::ffi::c_int = 0x01;
+    const CM_RESOURCE_DMA_32: ::core::ffi::c_int = 0x02;
+    const CM_RESOURCE_DMA_8_AND_16: ::core::ffi::c_int = 0x04;
     const FALSE: ::core::ffi::c_int = 0;
     const TRUE: ::core::ffi::c_int = 1;
 
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn MiniportFindAdapter(Miniport: PMINIPORT) -> NTSTATUS {
     const SP_RETURN_FOUND: ULONG = 1;
     const SP_RETURN_ERROR: ULONG = 2;
     const SP_RETURN_BAD_CONFIG: ULONG = 3;
-    const STATUS_ADAPTER_HARDWARE_ERROR: NTSTATUS = 0xC00000A1u32 as NTSTATUS;
+    const STATUS_ADAPTER_HARDWARE_ERROR: NTSTATUS = 0xC00000C2_u32 as i32;
     const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC0000182u32 as NTSTATUS;
     const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5u32 as NTSTATUS;
 

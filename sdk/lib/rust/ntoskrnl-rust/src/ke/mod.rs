@@ -23,6 +23,11 @@ pub mod profobj;
 pub mod queue;
 pub mod semphobj;
 pub mod spinlock;
+pub mod flightrec;
+pub mod synctrace;
+pub mod census;
+#[cfg(feature = "lockdep")]
+pub mod lockdep;
 pub mod thrdobj;
 pub mod thrdschd;
 pub mod time;

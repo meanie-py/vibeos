@@ -93,7 +93,7 @@ pub const IRQL_NOT_LESS_OR_EQUAL: u32 = 0x0000000A;
 pub const FLG_STOP_ON_EXCEPTION: u32 = 0x00000001;
 
 /// STATUS codes needed by kd64 (unique to globals — not in constants.rs).
-pub const STATUS_WAKE_SYSTEM_DEBUGGER: NTSTATUS = 0x40000029u32 as i32;
+pub const STATUS_WAKE_SYSTEM_DEBUGGER: NTSTATUS = 0x80000007_u32 as i32;
 
 /// Isa bus type (INTERFACE_TYPE enum value).
 pub const Isa: u32 = 1;

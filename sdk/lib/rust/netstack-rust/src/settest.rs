@@ -161,7 +161,7 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         in_len as u32,
         null_mut(),
         0,
-        0, // IRP_MJ_DEVICE_CONTROL
+        0, // InternalDeviceIoControl = FALSE (IRP_MJ_DEVICE_CONTROL)
         &mut event,
         &mut iosb,
     );

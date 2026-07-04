@@ -2341,7 +2341,7 @@ pub const HYPER_SPACE: ULONG_PTR = 0xFFFFF70000000000;
 pub const HYPER_SPACE_END: ULONG_PTR = 0xFFFFF77FFFFFFFFF;
 
 // LockQueueSystemSpaceLock — KSPIN_LOCK_QUEUE_NUMBER enum value
-pub const LockQueueSystemSpaceLock: ULONG = 4;
+pub const LockQueueSystemSpaceLock: ULONG = 0x03;
 
 // MM_SEGMENT_INDELETE
 pub const MM_SEGMENT_INDELETE: ULONG_PTR = 0x1;

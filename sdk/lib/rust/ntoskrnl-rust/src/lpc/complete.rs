@@ -288,7 +288,7 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
             0,
             &mut section_offset,
             core::ptr::addr_of_mut!((*connect_message).ClientView.ViewSize) as *mut SIZE_T,
-            1, // ViewUnmap
+            2, // ViewUnmap
             0,
             PAGE_READWRITE,
         );

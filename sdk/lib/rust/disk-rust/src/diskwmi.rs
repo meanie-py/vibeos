@@ -288,7 +288,7 @@ const SMART_CYL_LOW: u8 = 0x4F;
 const SMART_CYL_HI: u8 = 0xC2;
 const IRP_MJ_SCSI: u32 = 0x0F;
 
-const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0x2D14C0;
+const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0x002D1100;
 
 const TRACE_LEVEL_ERROR: u32 = 3;
 const TRACE_FLAG_WMI: u32 = 0x800;
@@ -370,8 +370,8 @@ unsafe fn DiskDisableSmart(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> NT
     DiskPerformSmartCommand(
         FdoExtension,
         0u32, // IOCTL_SCSI_MINIPORT_DISABLE_SMART
-        0u8,  // SMART_CMD
-        0u8,  // DISABLE_SMART
+        0xB0u8,  // SMART_CMD
+        0xD9u8,  // DISABLE_SMART
         0u8,
         0u8,
         &raw mut srbControl as *mut u8 as *mut SRB_IO_CONTROL,
@@ -482,8 +482,8 @@ pub unsafe extern "system" fn DiskReadSmartLog(
         status = DiskPerformSmartCommand(
             FdoExtension,
             0x0000002c, // IOCTL_SCSI_MINIPORT_READ_SMART_LOG (typical value)
-            0x85,       // SMART_CMD
-            0x30,       // SMART_READ_LOG
+            0xB0,       // SMART_CMD
+            0xD5,       // SMART_READ_LOG
             SectorCount,
             LogAddress,
             srbControl,
@@ -1422,8 +1422,8 @@ pub unsafe extern "C" fn DiskReadFailurePredictData(
                 status = DiskPerformSmartCommand(
                     FdoExtension,
                     0, // IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS (unknown)
-                    0, // SMART_CMD (unknown)
-                    0, // READ_ATTRIBUTES (unknown)
+                    0xB0, // SMART_CMD (unknown)
+                    0xD0, // READ_ATTRIBUTES (unknown)
                     0u8,
                     0u8,
                     outBuffer as *mut SRB_IO_CONTROL,

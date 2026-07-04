@@ -433,6 +433,7 @@ pub unsafe extern "C" fn _rs_KxSingleThreadWait(
 pub unsafe extern "C" fn _rs_KxDelayThreadWait(
     interval: PLARGE_INTEGER,
     wait_mode: i8,
+    alertable: BOOLEAN,
     swappable: *mut BOOLEAN,
     due_time: PLARGE_INTEGER,
     hand: *mut u32,
@@ -450,7 +451,9 @@ pub unsafe extern "C" fn _rs_KxDelayThreadWait(
     // InsertTailList loop, so pre-setting Timer.WaitListHead is correct.
     link_timer_block_full(timer, timer_block);
 
-    let alertable: BOOLEAN = if wait_mode == USER_MODE { 1 } else { 0 };
+    // ke_x.h's macro takes Alertable from the caller — deriving it from
+    // wait_mode (the old mistranslation) breaks non-alertable user Sleeps
+    // and alertable kernel delays. See inline/ke.rs KxDelayThreadWait.
     (*thread).Alertable = alertable;
     kt_set_wait_mode(thread, wait_mode);
     (*thread).WaitReason = DELAY_EXECUTION;

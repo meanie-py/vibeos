@@ -37,6 +37,7 @@ extern "C" {
     fn KxDelayThreadWait(
         Interval: PLARGE_INTEGER,
         WaitMode: KPROCESSOR_MODE,
+        Alertable: BOOLEAN,
         Swappable: *mut BOOLEAN,
         DueTime: PLARGE_INTEGER,
         Hand: *mut ULONG,
@@ -83,7 +84,7 @@ const QueueObject: u8 = 4;
 const WaitAny: u32 = 1;
 const WrMutex: u32 = 0x0000001D;
 const WrGuardedMutex: u32 = 35;
-const AdjustUnwait: u8 = 3;
+const AdjustUnwait: u8 = 0x01;
 const Waiting: u8 = 5;
 const Running: u8 = 2;
 
@@ -275,6 +276,15 @@ unsafe fn KiAcquireGuardedMutexImpl(GuardedMutex: PKGUARDED_MUTEX) {
             OldValue = NewValue;
         }
 
+        // lockdep §4: about to block on this gmutex — if we already hold it,
+        // that's a self-deadlock (records, print-free). Keyed on the MUTEX
+        // address (matching the acquire tap), not the per-wait gate.
+        #[cfg(feature = "lockdep")]
+        crate::ke::lockdep::lockdep_check_park(
+            ntkrnl_sys::mm::KeGetCurrentThread() as usize,
+            GuardedMutex as usize,
+            crate::ke::lockdep::MODE_GM,
+        );
         KeWaitForGate(
             core::ptr::addr_of_mut!((*GuardedMutex).Gate) as *mut _KGATE,
             _KWAIT_REASON_WrGuardedMutex,
@@ -429,7 +439,7 @@ pub unsafe extern "system" fn KeDelayExecutionThread(
         if (*Thread).WaitNext == 0 {
             loop {
                 *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
-                KxDelayThreadWait(Interval, WaitMode, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+                KxDelayThreadWait(Interval, WaitMode, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
                 KiAcquireDispatcherLockAtSynchLevel();
 
                 (*Thread).Preempted = 0u8;
@@ -492,7 +502,7 @@ pub unsafe extern "system" fn KeDelayExecutionThread(
         }
 
         (*Thread).WaitNext = 0u8;
-        KxDelayThreadWait(Interval, WaitMode, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+        KxDelayThreadWait(Interval, WaitMode, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
 
         loop {
             (*Thread).Preempted = 0u8;
@@ -549,7 +559,7 @@ pub unsafe extern "system" fn KeDelayExecutionThread(
             }
 
             *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
-            KxDelayThreadWait(Interval, WaitMode, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+            KxDelayThreadWait(Interval, WaitMode, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
             KiAcquireDispatcherLockAtSynchLevel();
         }
 

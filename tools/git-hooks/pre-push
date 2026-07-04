@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#
+# pre-push hook — GATE-BEFORE-LAND GUARD (T1.3, 2026-07-04).
+#
+# The North Star ("gate smoke ×3 before landing") used to be discipline; a lane
+# landed arm64 with i386-only validation and master sat at ~1/5 arm64 green for
+# a day. This hook makes it mechanism: a push that updates `master` must carry
+# a TREE that a green FULL `vibeos-cli gate` has stamped (the gate writes
+# $GIT_COMMON_DIR/vibeos-gate-stamp.json on all-arches-green over a clean tree).
+#
+# Allowed without a matching stamp:
+#   * pushes not touching master (lane branches)
+#   * deletions
+#   * docs-only deltas vs the stamped tree (docs/**, *.md)
+#   * VIBEOS_SKIP_GATE_CHECK=1 git push …   (escape hatch — use for emergencies
+#     and say so in your report; the point is that skipping is a CHOICE, loud
+#     and attributable, never a default)
+#
+# Lanes on older tooling (no stamp-writing gate.py yet): run a full
+# `./vibeos-cli gate` after merging current master, or use the escape hatch
+# once and merge soon. This hook lives in the COMMON git dir, so it guards
+# every worktree of this clone.
+
+[ "${VIBEOS_SKIP_GATE_CHECK:-}" = "1" ] && {
+    echo "pre-push: VIBEOS_SKIP_GATE_CHECK=1 — gate check SKIPPED (report this)" >&2
+    exit 0
+}
+
+remote="$1"
+
+# NOTE: the ref updates arrive on STDIN, but `python3 -` needs stdin for the
+# program text — so bash slurps the lines first and forwards them as argv.
+mapfile -t ref_lines || true
+
+exec python3 - "$remote" "${ref_lines[@]}" <<'PYEOF'
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+MAX_AGE_S = 24 * 3600
+FULL = {"i386", "amd64", "arm64"}
+ZERO = "0" * 40
+
+
+def git(*a):
+    return subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
+
+
+def fail(msg):
+    sys.stderr.write(
+        "\npre-push: BLOCKED — master requires a green full gate\n"
+        f"  {msg}\n"
+        "  fix:   ./vibeos-cli gate        (all 3 arches green mints the stamp)\n"
+        "  docs:  docs-only pushes pass automatically\n"
+        "  skip:  VIBEOS_SKIP_GATE_CHECK=1 git push …  (emergency only — report it)\n\n"
+    )
+    sys.exit(1)
+
+
+updates = []
+for line in sys.argv[2:]:
+    parts = line.split()
+    if len(parts) != 4:
+        continue
+    local_ref, local_sha, remote_ref, remote_sha = parts
+    if remote_ref == "refs/heads/master" and local_sha != ZERO:
+        updates.append(local_sha)
+
+if not updates:
+    sys.exit(0)
+
+common = Path(git("rev-parse", "--git-common-dir"))
+if not common.is_absolute():
+    common = Path(git("rev-parse", "--show-toplevel")) / common
+stamp_path = common / "vibeos-gate-stamp.json"
+if not stamp_path.is_file():
+    fail("no gate stamp found — no green full gate has run in this clone yet")
+try:
+    stamp = json.loads(stamp_path.read_text())
+except (OSError, ValueError) as e:
+    fail(f"gate stamp unreadable ({e})")
+
+age = time.time() - stamp.get("time", 0)
+if age > MAX_AGE_S:
+    fail(f"gate stamp is {age / 3600:.1f}h old (max 24h) — re-gate")
+if not FULL.issubset(set(stamp.get("arches", []))):
+    fail(f"stamp covers {stamp.get('arches')} — a FULL gate (all 3 arches) is required")
+
+for sha in updates:
+    tree = git("rev-parse", f"{sha}^{{tree}}")
+    if not tree:
+        fail(f"cannot resolve tree of {sha[:12]}")
+    if tree == stamp["tree"]:
+        continue  # exactly the gated content
+    # docs-only delta vs the gated tree is allowed
+    diff = git("diff", "--name-only", stamp["tree"], tree)
+    if not diff:
+        continue
+    paths = diff.splitlines()
+    nondocs = [p for p in paths if not (p.startswith("docs/") or p.endswith(".md"))]
+    if nondocs:
+        fail(
+            f"push tree {tree[:12]} != gated tree {stamp['tree'][:12]} and the delta "
+            f"is not docs-only (first: {nondocs[0]}, {len(nondocs)} paths)"
+        )
+
+sys.exit(0)
+PYEOF

@@ -1,0 +1,18 @@
+[package]
+name = "explorer-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libexplorer_rust.a, linked into the cmake-built explorer.exe
+# via per-file cohabitation (each translated .cpp is commented out of
+# base/shell/explorer/CMakeLists.txt with a `# replaced by Rust (…)` line;
+# the C++ stays on disk — translation philosophy). explorer.exe IS the smoke
+# boot marker (`[EXPLORER] _tWinMain entered` + `shell ready`), so every swap
+# gates on smoke ×3. Plan: docs/engineering/explorer-rust-translation-plan.md.
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }
+explorer-sys = { path = "../explorer-sys" }

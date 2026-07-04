@@ -157,11 +157,39 @@ Why it matters (all are real incidents, not hypotheticals):
 8. **Paid translation outputs go to `~/vibeos-rust-staging/`, never `/tmp`** (a reboot
    wipes `/tmp`; regenerating costs real API money). The durable per-function cache is
    also in-repo at `tools/rustconv/.responses/` (gitignored).
+9. **Fleet isolation law (2026-07-04 hardlink-dedup incident).** A tool may NEVER
+   mutate another worktree's files — not even "safe" dedup/hardlinking of
+   byte-identical content. Hardlinking live build/cargo trees failed BOTH ways:
+   in-place writers (spec2def, `cmake -E copy`, ccache-miss clang) truncated shared
+   inodes under a sibling's running `ld.lld` mmap (SIGBUS), and shared fingerprint/
+   timestamp mtimes silently defeated cargo invalidation (an edited build.rs whose
+   stale compiled script kept executing — false-green, no error anywhere). Sharing
+   belongs ONLY in content-addressed caches designed for it (ccache/sccache).
+   Fleet-scoped maintenance must be delete-only (`vibeos-cli prune`), run from ONE
+   pinned copy, under the host lock, and kill-switchable via a stamp OUTSIDE all
+   worktrees (a future-dated `$VIBEOS_ROOT/.dedup-last` is what actually stopped the
+   incident — root-level stamps reach every lane instantly, regardless of each
+   lane's code version; in-tree fixes propagate only at merge speed). `vibeos-cli
+   build` enforces the invariant mechanically: an `ISOLATION_FAIL` preflight refuses
+   to build a tree that shares inodes (build-* at links>1; cargo target at links>2 —
+   cargo hardlinks deps↔final internally).
 
 Build operational reality that interacts with the above: judge build success by
 **artifact existence** (`ls livecd.iso`), not reported exit code — `run_in_background`
 and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0` with no real
 artifacts; only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
+Two more rc-masking traps from the same family: piping `vibeos-cli` through `| tail`
+in a background shell swallows the exit code (its stdout is already bounded — don't
+pipe it; read `summary.json`), and shell **cwd persists between calls and drifts** —
+launch repo tools with an explicit `cd <repo-root> &&` or absolute paths (a build once
+"succeeded" (rc=0 via the pipe) having never run: `./vibeos-cli` didn't exist in the
+drifted cwd).
+
+**Landing is mechanized (2026-07-04):** a green FULL `vibeos-cli gate` on a clean tree
+mints a push stamp (`$GIT_COMMON_DIR/vibeos-gate-stamp.json`); the `pre-push` hook
+refuses updates to `master` whose tree doesn't match a fresh (<24h) stamp. Docs-only
+deltas pass automatically. Emergency override: `VIBEOS_SKIP_GATE_CHECK=1 git push`
+(loud — report every use). Partial-arch or dirty-tree gates never stamp.
 
 ## Directory Layout
 

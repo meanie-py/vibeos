@@ -83,7 +83,7 @@ pub const PT_IESPECIAL2: PIDLTYPE = 0xb1;
 pub const PT_SHARE: PIDLTYPE = 0xc3;
 // __REACTOS__ tags (pidl.h:107-141)
 pub const PT_FOLDERTYPEMASK: PIDLTYPE = 0x70;
-pub const PT_DESKTOP_REGITEM: PIDLTYPE = 0x1F; // SHDID_ROOT_REGITEM
+pub const PT_DESKTOP_REGITEM: PIDLTYPE = 0x1F; // ReactOS pidl.h desktop regitem PIDL type
 pub const PT_COMPUTER_REGITEM: PIDLTYPE = 0x2E;
 pub const PT_COMPUTER_DRIVE: PIDLTYPE = 0x2F;
 pub const PT_FS: PIDLTYPE = 0x30; // Win95 SHSimpleIDListFromPath

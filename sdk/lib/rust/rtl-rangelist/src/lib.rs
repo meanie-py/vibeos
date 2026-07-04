@@ -20,7 +20,7 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 // rangelist flag / status constants (fixed ntddk / ntstatus.h values).
 const RTL_RANGE_LIST_ADD_SHARED: ULONG = 0x0000_0001;
 const RTL_RANGE_SHARED: ULONG = 0x01;
-const STATUS_RANGE_NOT_FOUND: NTSTATUS = 0xC000_008C_u32 as i32;
+const STATUS_RANGE_NOT_FOUND: NTSTATUS = 0xC000028C_u32 as i32;
 
 /// `ROUND_DOWN(n, align)` — mirror C's `((ULONG_PTR)(n)) & ~((align) - 1)`.
 /// The `ULONG_PTR` cast truncates to pointer width on i386 (faithful per-arch).
