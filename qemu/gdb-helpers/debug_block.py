@@ -275,7 +275,12 @@ OP_NAMES = {
     1: "gate-park", 2: "gate-satisfied", 3: "gate-signal",
     4: "pushlock-park", 5: "pushlock-satisfied", 6: "pushlock-wake",
     16: "ws-lock-EXCL", 17: "ws-unlock-EXCL",
+    32: "LOCKDEP-SELFDEADLOCK",
 }
+
+# lockdep §4 (feature = "lockdep"): held-lock modes.
+LOCKDEP_MAGIC = 0x4C4B4431  # 'LKD1'
+MODE_NAMES = {1: "shared", 2: "excl"}
 
 
 class VibeosFlightrecCmd(gdb.Command):
@@ -329,7 +334,79 @@ class VibeosFlightrecCmd(gdb.Command):
             print(r)
 
 
+class VibeosLockdepCmd(gdb.Command):
+    """vibeos-lockdep [held]: sync-instrumentation §4 self-deadlock detector.
+
+    Prints any recorded self-deadlock violations (a thread that blocked on a
+    pushlock it already holds — the Mm WS-pushlock wedge). With `held`, also
+    dumps every thread's currently-held pushlock set. Requires a --lockdep
+    build; on a normal build the VIBEOS_LOCKDEP symbol is absent."""
+
+    def __init__(self):
+        super().__init__("vibeos-lockdep", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        try:
+            base = int(gdb.parse_and_eval("&VIBEOS_LOCKDEP"))
+        except gdb.error:
+            raise gdb.GdbError(
+                "VIBEOS_LOCKDEP symbol absent — build with `vibeos-cli build --lockdep`"
+            )
+        psz = DebugBlock.load().ptr_size
+        ptr = "Q" if psz == 8 else "I"
+        magic, thread_slots, held_depth, dropped = struct.unpack("<IIII", _read(base, 16))
+        (vcount,) = struct.unpack("<Q", _read(base + 16, 8))
+        if magic not in (LOCKDEP_MAGIC, 0):
+            raise gdb.GdbError(f"lockdep magic mismatch: {magic:#x}")
+        if thread_slots == 0:
+            thread_slots, held_depth = 1024, 8  # pre-init defaults
+        print(f"lockdep: violations={vcount} thread-slot-drops={dropped} "
+              f"(slots={thread_slots} depth={held_depth} magic={magic:#x})")
+
+        # header(24) + threads[thread_slots] ; ThreadHeld = ptr+u32+u32 + held[depth]*(ptr+u32+u32)
+        held_sz = psz + 8
+        th_sz = psz + 8 + held_depth * held_sz
+        viol_off = 24 + thread_slots * th_sz
+        viol_fmt = f"<Q{ptr}{ptr}II"
+        viol_sz = struct.calcsize(viol_fmt)
+        NVIOL = 16  # LOCKDEP_VIOLATIONS
+        shown = 0
+        for i in range(NVIOL):
+            seq, thread, lock, held_mode, wanted_mode = struct.unpack(
+                viol_fmt, _read(base + viol_off + i * viol_sz, viol_sz)
+            )
+            if seq == 0:
+                continue
+            print(
+                f"  *** SELF-DEADLOCK #{seq} thread={thread:#x} "
+                f"WAIT({MODE_NAMES.get(wanted_mode, wanted_mode)}) on pushlock={lock:#x} "
+                f"already held({MODE_NAMES.get(held_mode, held_mode)})"
+            )
+            shown += 1
+        if shown == 0:
+            print("  no self-deadlock violations recorded")
+
+        if arg.strip() == "held":
+            print("currently-held pushlock sets:")
+            thfmt = f"<{ptr}II"
+            for s in range(thread_slots):
+                th_base = base + 24 + s * th_sz
+                thread, overflow, _ = struct.unpack(thfmt, _read(th_base, psz + 8))
+                if thread == 0:
+                    continue
+                locks = []
+                for h in range(held_depth):
+                    hb = th_base + psz + 8 + h * held_sz
+                    lock, mode, _ = struct.unpack(thfmt, _read(hb, psz + 8))
+                    if lock:
+                        locks.append(f"{lock:#x}({MODE_NAMES.get(mode, mode)})")
+                if locks or overflow:
+                    ov = f" overflow={overflow}" if overflow else ""
+                    print(f"  thread={thread:#x} holds {', '.join(locks) or '(none)'}{ov}")
+
+
 VibeosDebugBlockCmd()
 VibeosSynctraceCmd()
 VibeosThreadsCmd()
 VibeosFlightrecCmd()
+VibeosLockdepCmd()

@@ -2176,3 +2176,27 @@ PteAddress (the "PFN state corruption" TODO in pfnlist.rs
 MiDecrementShareCount is adjacent evidence). Next session: flightrec-tap
 MiDecrementShareCount's PteFrame cascade or add a share-count trace on the
 pool page containing 0xfffff8a000421660-class addresses.
+
+**§9.13 addendum 2 (2026-07-04 day): the detector is now PERMANENT — lockdep
+Phase A (sync-instrumentation §4), one flag, fires on every boot.** The
+temporary `ws-lock-EXCL` flightrec tap above is superseded:
+
+```
+./vibeos-cli build --arch amd64 --lockdep     # -DVIBEOS_LOCKDEP=ON kernel
+./vibeos-cli smoke --arch amd64               # then grep the serial:
+[LOCKDEP]   SELF-DEADLOCK #1 thread=fffffa8001470040 WAIT(shared) on
+            pushlock=fffffa8001473c48 already held(excl)
+```
+
+Per-thread held-pushlock side table tapped at the `ExAcquirePushLock*` /
+`ExReleasePushLock*` inline funnel; the check runs at the `Exf*` PARK (about
+to block on a lock in your own held-set = the length-1 cycle); census prints
+recorded violations every scan; `vibeos-lockdep [held]` in gdb decodes the
+`VIBEOS_LOCKDEP` table offline. First instrumented run (4 boots, all green):
+**2–4 violations per boot, and the violation threads are EXACTLY the census
+STUCK threads** (svchost/setup.exe/rundll32/NETTEST, each on its own
+per-EPROCESS pushlock ≈ `Vm.WorkingSetMutex`, always WAIT(shared) against
+held(excl)) — i.e. the "deterministically stranded HOLDER-STUCK threads on
+every green boot" open lead IS this self-deadlock, one thread per victim
+process. No separate mystery. Fix status unchanged (mechanism proven, PteFrame
+chain suspected); what changed is the cost of observing it: zero.

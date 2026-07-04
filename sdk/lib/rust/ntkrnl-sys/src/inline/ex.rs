@@ -16,6 +16,43 @@ const EX_PUSH_LOCK_WAKING: usize = 0x4;
 const EX_PUSH_LOCK_SHARE_INC: usize = 0x10;
 
 // ============================================================================
+// Lockdep taps (sync-instrumentation §4, feature = "lockdep").
+//
+// The pushlock API is the single all-paths acquire/release funnel (fast CAS
+// here, slow park in Exf*), so tapping here gives lockdep a BALANCED per-thread
+// held-set covering every pushlock — including the Mm WS lock (which is just a
+// pushlock on Vm.WorkingSetMutex). The taps call ntoskrnl-rust's VibeosLockdep*
+// by link name (this crate sits below it in the dep graph — same shape as
+// VibeosFlightrecLog in inline/mm.rs). Zero cost when the feature is off.
+// ============================================================================
+#[cfg(feature = "lockdep")]
+extern "C" {
+    fn VibeosLockdepAcquire(thread: usize, lock: usize, mode: u32);
+    fn VibeosLockdepRelease(thread: usize, lock: usize);
+}
+
+/// Record a successful pushlock acquire in the current thread's held-set.
+/// `mode`: 1 = shared, 2 = exclusive.
+#[cfg(feature = "lockdep")]
+#[inline]
+unsafe fn lockdep_acquire(push_lock: ddk::PEX_PUSH_LOCK, mode: u32) {
+    VibeosLockdepAcquire(crate::mm::KeGetCurrentThread() as usize, push_lock as usize, mode);
+}
+#[cfg(not(feature = "lockdep"))]
+#[inline(always)]
+unsafe fn lockdep_acquire(_push_lock: ddk::PEX_PUSH_LOCK, _mode: u32) {}
+
+/// Drop a pushlock from the current thread's held-set on release.
+#[cfg(feature = "lockdep")]
+#[inline]
+unsafe fn lockdep_release(push_lock: ddk::PEX_PUSH_LOCK) {
+    VibeosLockdepRelease(crate::mm::KeGetCurrentThread() as usize, push_lock as usize);
+}
+#[cfg(not(feature = "lockdep"))]
+#[inline(always)]
+unsafe fn lockdep_release(_push_lock: ddk::PEX_PUSH_LOCK) {}
+
+// ============================================================================
 // Fast reference constants
 // ============================================================================
 
@@ -181,6 +218,7 @@ pub unsafe fn ExAcquirePushLockExclusive(push_lock: ddk::PEX_PUSH_LOCK) {
     if old & EX_PUSH_LOCK_LOCK != 0 {
         ddk::ExfAcquirePushLockExclusive(push_lock);
     }
+    lockdep_acquire(push_lock, 2); // held now (fast or slow path) — record excl
 }
 
 // ============================================================================
@@ -199,6 +237,7 @@ pub unsafe fn ExAcquirePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
     {
         ddk::ExfAcquirePushLockShared(push_lock);
     }
+    lockdep_acquire(push_lock, 1); // held now (fast or slow path) — record shared
 }
 
 // ============================================================================
@@ -209,6 +248,7 @@ pub unsafe fn ExAcquirePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
 #[inline]
 pub unsafe fn ExReleasePushLock(push_lock: ddk::PEX_PUSH_LOCK) {
     use core::sync::atomic::{AtomicUsize, Ordering};
+    lockdep_release(push_lock); // pop from held-set before we drop it
     let atomic = &*(push_lock as *const AtomicUsize);
     let old_value = atomic.load(Ordering::Relaxed);
 
@@ -238,6 +278,7 @@ pub unsafe fn ExReleasePushLock(push_lock: ddk::PEX_PUSH_LOCK) {
 #[inline]
 pub unsafe fn ExReleasePushLockExclusive(push_lock: ddk::PEX_PUSH_LOCK) {
     use core::sync::atomic::{AtomicUsize, Ordering};
+    lockdep_release(push_lock); // pop from held-set before we drop it
     let atomic = &*(push_lock as *const AtomicUsize);
     let old_value = atomic.fetch_sub(EX_PUSH_LOCK_LOCK, Ordering::SeqCst);
 
@@ -690,6 +731,7 @@ pub unsafe fn ExDoCallBack(
 /// ExReleasePushLockShared — fast path release of shared push lock.
 #[inline]
 pub unsafe fn ExReleasePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
+    lockdep_release(push_lock); // pop from held-set before we drop it
     let old_val = (EX_PUSH_LOCK_LOCK | EX_PUSH_LOCK_SHARE_INC) as usize;
     let current = ExpChangePushlock(push_lock, 0, old_val);
     if current != old_val {

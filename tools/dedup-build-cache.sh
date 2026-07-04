@@ -23,14 +23,45 @@
 #   intra-worktree cargo target:  9.7G -> 3.3G   (6.4 GiB)
 #   FULL FLEET cargo targets:     113 GiB reclaimable (60,899 files)
 #
-# SAFETY
+# SAFETY — READ BEFORE RUNNING (2026-07-04: both original safety claims fell)
 # ------
-# Cargo always emits artifacts via tempfile + atomic rename, never mutating a
-# file in place. So when a worktree later rebuilds, the rebuilt unit gets a NEW
-# inode (the hardlink breaks cleanly) — siblings sharing the old inode are
-# untouched. Worst case is a spurious rebuild (mtime disturbance), never wrong
-# output. Validated end-to-end: dedup -> warm i386 build -> smoke ✓ boot 83s.
-# Re-bloat after a warm build is partial (3.3G->4.9G here); re-run periodically.
+# This tool is ONLY safe on trees that stay IDLE until their next cold build.
+# It is NO LONGER invoked automatically (build.py's detached daily call is
+# disabled). Two independent failure modes were caught live on 2026-07-04:
+#
+#   1. (build-* trees — now excluded below) in-place O_TRUNC writers.
+#   2. (cargo target trees — the remaining scope) MTIME POISONING: cargo's
+#      invalidation is mtime-based, and dedup turns fingerprints,
+#      invoked.timestamp, build-script binaries and output captures into
+#      inodes SHARED across worktrees. A sibling worktree's build refreshes
+#      those mtimes; your cargo then sees "fingerprint newer than source",
+#      concludes fresh, and silently re-runs a STALE build script / reuses
+#      stale artifacts (observed: an edited build.rs whose old compiled binary
+#      kept executing — the edit never took effect, no error anywhere).
+#      "Worst case is a spurious rebuild" was exactly backwards: the worst
+#      case is a silently MISSING rebuild — false-green.
+#
+# The original claim (cargo emits via tempfile+rename, so rebuilds break links
+# cleanly) is true for the .a/.rlib artifacts but irrelevant: the DECISION to
+# rebuild depends on the shared-mtime state above. If you must reclaim disk on
+# live trees, use `vibeos-cli prune` (idle worktrees) instead. After a dedup,
+# a tree's next build should be COLD (`vibeos-cli build --clean`) to purge
+# poisoned fingerprints.
+# (Historical: validated dedup -> warm i386 build -> smoke boot 83s — that
+# validation predates understanding failure mode 2 and should not be trusted.)
+#
+# cmake `build-<arch>` trees are EXCLUDED (2026-07-04, hard lesson): the
+# atomic-rename story is FALSE there. spec2def/`cmake -E copy`/configure
+# outputs and ccache-MISS compiles (the real clang writes straight to the
+# output path) all open O_TRUNC IN PLACE — through a cross-worktree hardlink
+# that truncates the shared inode under a sibling's running `ld.lld` mmap →
+# SIGBUS (two amd64 builds died exactly this way: d3dx9 links, `clang: Bus
+# error`, while another worktree rebuilt the same deduped objs). The 180s
+# live-build guard below can't help: the hazard is the links LEFT BEHIND, not
+# dedup racing a build. If your build-* still carries old cross-tree links
+# (`find build-amd64 -type f -links +1`), break them:
+#   find build-<arch> -type f -links +1 -print0 | \
+#     xargs -0 -P8 -I{} sh -c 'cp -p "{}" "{}.t" && mv "{}.t" "{}"'
 #
 # ext4 has no reflink/CoW, so hardlink is the only mechanism here. util-linux
 # `hardlink` is required (`--ignore-time` is essential: identical artifacts are
@@ -46,14 +77,13 @@ set -euo pipefail
 
 APPLY=0
 FORCE=0
-TARGETS_ONLY=0
 RECENT_SECS=180   # treat a tree written in the last N seconds as a live build
 
 for a in "$@"; do
     case "$a" in
         --apply)        APPLY=1 ;;
         --force)        FORCE=1 ;;
-        --targets-only) TARGETS_ONLY=1 ;;
+        --targets-only) ;; # no-op: targets-only is now the ONLY mode (see SAFETY)
         -h|--help)      sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "unknown arg: $a" >&2; exit 2 ;;
     esac
@@ -70,8 +100,9 @@ now=$(date +%s)
 trees=()
 skipped=()
 for wt in "${worktrees[@]}"; do
+    # Cargo target trees ONLY — never cmake build-* (non-atomic writers; see
+    # SAFETY above). --targets-only kept as an accepted no-op for back-compat.
     cands=("$wt/sdk/lib/rust/target")
-    [ "$TARGETS_ONLY" -eq 1 ] || cands+=("$wt"/build-i386 "$wt"/build-amd64 "$wt"/build-arm64)
     for t in "${cands[@]}"; do
         [ -d "$t" ] || continue
         if [ "$FORCE" -eq 0 ]; then

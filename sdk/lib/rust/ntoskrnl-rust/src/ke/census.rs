@@ -143,6 +143,12 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
             SIGHTING_OVERFLOW.load(Relaxed),
         );
     }
+
+    // lockdep §4: surface any recorded self-deadlock, whether or not the census
+    // caught a >10s GateWait this scan — the violation IS the wedge's smoking
+    // gun and fires at the park, deterministically, before the >10s window.
+    #[cfg(feature = "lockdep")]
+    super::lockdep::lockdep_report();
 }
 
 /// One stuck-thread report line, with the synctrace verdict inputs inline.
@@ -214,6 +220,8 @@ unsafe extern "system" fn CensusThread(_ctx: PVOID) {
 pub unsafe extern "system" fn KiStartSyncCensus() {
     super::synctrace::synctrace_init();
     super::flightrec::flightrec_init();
+    #[cfg(feature = "lockdep")]
+    super::lockdep::lockdep_init();
     crate::debugblock::debug_block_stamp();
 
     let mut handle: HANDLE = core::ptr::null_mut();
