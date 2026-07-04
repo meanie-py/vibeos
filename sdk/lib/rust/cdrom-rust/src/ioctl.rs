@@ -569,7 +569,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
         let fmt = request.as_ref().unwrap().Format as u8;
         if fmt > DvdMaxDescriptor as u8 {
             TracePrint(
-                0x04, // TRACE_LEVEL_VERBOSE
+                5, // TRACE_LEVEL_VERBOSE
                 0x01, // TRACE_FLAG_IOCTL
                 c"READ_DVD_STRUCTURE format %x = %s (%x bytes)\n".as_ptr() as *const i8,
                 fmt as u32,
@@ -578,7 +578,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
             );
         } else {
             TracePrint(
-                0x04, // TRACE_LEVEL_VERBOSE
+                5, // TRACE_LEVEL_VERBOSE
                 0x01, // TRACE_FLAG_IOCTL
                 c"READ_DVD_STRUCTURE format %x = %s (%x bytes)\n".as_ptr() as *const i8,
                 fmt as u32,
@@ -599,7 +599,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
 
     if status >= 0 { // NT_SUCCESS(status)
         TracePrint(
-            0x02, // TRACE_LEVEL_INFORMATION
+            4, // TRACE_LEVEL_INFORMATION
             0x01,
             c"DvdDCCompletion - READ_STRUCTURE: descriptor format of %d\n".as_ptr() as *const i8,
             request.as_ref().unwrap().Format,
@@ -3205,7 +3205,7 @@ pub unsafe extern "C" fn RequestValidateDvdEndSession(
         if (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize)
             < core::mem::size_of::<DVD_SESSION_ID>()
         {
-            const TRACE_LEVEL_ERROR: u32 = 1; // TRACE_LEVEL_ERROR
+            const TRACE_LEVEL_ERROR: u32 = 2; // TRACE_LEVEL_ERROR
             const TRACE_FLAG_IOCTL: u32 = 0x0001; // TRACE_FLAG_IOCTL
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -6641,7 +6641,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
 
                     if audioInput.is_null() {
                         TracePrint(
-                            2, // TRACE_LEVEL_WARNING
+                            3, // TRACE_LEVEL_WARNING
                             1, // TRACE_FLAG_IOCTL (assumed value)
                             b"Mode Sense Page %d not found\n\0".as_ptr() as *const i8,
                             CDROM_AUDIO_CONTROL_PAGE as i32,

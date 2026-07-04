@@ -55,6 +55,9 @@ HELPER_FILES = [
     "list-threads.py",
     "sample-pc.py",
     "run-until-bp.py",
+    # DWARF-free decoders over VIBEOS_DEBUG_BLOCK (sync-instrumentation §5):
+    # vibeos-debug-block / vibeos-synctrace / vibeos-threads / vibeos-flightrec.
+    "debug_block.py",
 ]
 
 # gdb `set architecture` name per base arch (mirror qemu/lib/common.sh arch_gdb_name).

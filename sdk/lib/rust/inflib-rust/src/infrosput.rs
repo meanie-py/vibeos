@@ -71,7 +71,7 @@ struct IO_STATUS_BLOCK {
     Information:     usize,
 }
 
-const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x00002000;
+const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
 const FILE_NON_DIRECTORY_FILE:      u32 = 0x00000040;
 
 #[no_mangle]

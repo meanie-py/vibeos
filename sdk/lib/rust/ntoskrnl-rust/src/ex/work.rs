@@ -70,11 +70,11 @@ const HyperCriticalWorkQueue: WORK_QUEUE_TYPE = 2;
 const WinKdWorkerStart: ULONG = 1;
 const WinKdWorkerInitialized: ULONG = 2;
 
-const SynchronizationEvent: ULONG = 0;
-const NotificationEvent: ULONG = 1;
+const SynchronizationEvent: ULONG = 0x01;
+const NotificationEvent: ULONG = 0x00;
 const Executive: ULONG = 0;
 const WaitAny: ULONG = 1;
-const InsertApcEnvironment: ULONG = 2;
+const InsertApcEnvironment: ULONG = 0x03;
 
 #[no_mangle]
 pub static mut ExWorkerQueue: [EX_WORK_QUEUE; MaximumWorkQueue] = unsafe { core::mem::zeroed() };

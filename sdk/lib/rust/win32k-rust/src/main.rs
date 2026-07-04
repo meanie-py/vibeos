@@ -344,7 +344,7 @@ unsafe fn InitProcessCallback(Process: PEPROCESS) -> NTSTATUS {
     Status
 }
 
-const STATUS_ALREADY_WIN32: NTSTATUS = 0x40000004u32 as NTSTATUS;
+const STATUS_ALREADY_WIN32: NTSTATUS = 0x4000001B;
 
 unsafe fn ExitProcessCallback(Process: PEPROCESS) -> NTSTATUS {
     let ppiCurrent: PPROCESSINFO = PsGetProcessWin32Process(Process as _) as PPROCESSINFO;

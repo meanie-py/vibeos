@@ -22,7 +22,7 @@ pub unsafe extern "C" fn FltpRegisterContexts(
     const FLT_CONTEXT_END: ::core::ffi::c_int = -1;
     const MAX_CONTEXT_TYPES: ::core::ffi::c_int = 6;
     const FM_TAG_CONTEXT_REGISTA: ULONG = 0x67655243; // 'CReg'
-    const STATUS_FLT_INVALID_CONTEXT_REGISTRATION: NTSTATUS = 0xC01C0021u32 as NTSTATUS;
+    const STATUS_FLT_INVALID_CONTEXT_REGISTRATION: NTSTATUS = 0xC01C0017_u32 as i32;
 
     let mut ContextPtr: PCFLT_CONTEXT_REGISTRATION;
     let mut ContextHeader: PALLOCATE_CONTEXT_HEADER;

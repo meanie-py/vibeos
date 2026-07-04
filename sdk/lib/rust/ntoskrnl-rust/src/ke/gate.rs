@@ -146,6 +146,10 @@ unsafe fn KeWaitForGateImpl(
                 core::ptr::addr_of_mut!((*GateWaitBlock).WaitListEntry),
             );
 
+            // synctrace §3: this waiter is committed to parking (wait-list
+            // insert done, swap next) — count it before the locks drop.
+            super::synctrace::synctrace_wait_park(Gate as _, Thread as _);
+
             KiReleaseDispatcherObject(core::ptr::addr_of_mut!((*Gate).Header));
 
             KiSetThreadSwapBusy(Thread);
@@ -163,6 +167,8 @@ unsafe fn KeWaitForGateImpl(
             Status = KiSwapThread(Thread, KeGetCurrentPrcb()) as isize;
 
             if Status == STATUS_SUCCESS as isize {
+                // synctrace §3: the parked wait was satisfied.
+                super::synctrace::synctrace_wait_satisfied(Gate as _);
                 return;
             }
         }
@@ -198,6 +204,11 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
             core::ptr::null::<()>(),
         );
     }
+
+    // synctrace §3: count every signal intent (waiter woken, state banked, or
+    // no-op on an already-set gate) — the census compares this against
+    // waits_parked to discriminate lost-wakeup from holder-stuck.
+    super::synctrace::synctrace_signal(Gate as _, KeGetCurrentThread() as _);
 
     loop {
         OldIrql = KeRaiseIrqlToSynchLevel();

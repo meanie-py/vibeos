@@ -167,6 +167,7 @@ pub mod cc;
 pub mod config;
 pub mod dbgk;
 pub mod dbgprint;
+pub mod debugblock;
 pub mod ex;
 pub mod fsrtl;
 pub mod fstub;

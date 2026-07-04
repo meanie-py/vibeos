@@ -55,7 +55,10 @@ _SUFFIX_RE = re.compile(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
 # A comment segment that "looks like a flag annotation": just an UPPER_CASE name,
 # optionally followed by a short parenthetical / punctuation — NOT prose. This keeps
 # `/* NAME */`, `// NAME (grind had 0x2)` but rejects `// NULL / no '=' => -1`.
-_NAME_SEG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(.*\))?\s*$")
+# The parenthetical is a SINGLE paren group ([^()]*): the greedy `.*` used to make
+# `// NonPagedPoolNx (512) + CacheAligned (4)` parse as name=NonPagedPoolNx with one
+# giant parenthetical — an arithmetic-prose comment misread as an annotation (FP).
+_NAME_SEG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^()]*\))?\s*$")
 # Per-line suppression an agent adds after verifying a FP, e.g.
 #   PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)  // nolint: inline-literal (checked)
 # Bare `nolint` (no id) or scoped to this lint's ids both suppress; a `nolint` scoped to
@@ -97,6 +100,25 @@ def lit_value(s):
         return int(s, 16) if s.lower().startswith("0x") else int(s)
     except ValueError:
         return None
+
+
+def lit_values(node, src):
+    """All plausible interpretations of a literal node: {magnitude, and — when the
+    node sits under a unary minus — the 32/64-bit two's complements}. tree-sitter's
+    integer_literal EXCLUDES the sign, so `-1073741670` used to read as 0x3FFFFF66
+    and every negative NTSTATUS/HFILE_ERROR return was a false mismatch."""
+    raw = src[node.start_byte : node.end_byte].decode("utf8", "replace")
+    v = lit_value(raw)
+    if v is None:
+        return set()
+    vals = {v}
+    p = node.parent
+    if p is not None and p.type == "unary_expression":
+        ptxt = src[p.start_byte : p.end_byte].decode("utf8", "replace").lstrip()
+        if ptxt.startswith("-"):
+            vals.add((-v) & 0xFFFFFFFF)
+            vals.add((-v) & 0xFFFFFFFFFFFFFFFF)
+    return vals
 
 
 def add_headers(catalog, header_dir):
@@ -177,7 +199,17 @@ def scan_file(path, catalog):
                 (L for L in lits if L.start_point[0] == cline and L.start_byte < c.start_byte),
                 key=lambda n: n.start_byte,
             )
-            pairs = list(zip(row, names, strict=False))
+            if len(row) == 1 and len(names) >= 2 and all(n in catalog for n in names):
+                # ONE literal annotated by an |-list is a composite annotation
+                # (`const LPTR = 0x40; // LMEM_FIXED | LMEM_ZEROINIT`): compare
+                # against the OR of the names, not name-by-name positionally.
+                or_val = 0
+                for n in names:
+                    or_val |= catalog[n]
+                composite_ok = or_val in lit_values(row[0], src)
+                pairs = [] if composite_ok else list(zip(row, names, strict=False))
+            else:
+                pairs = list(zip(row, names, strict=False))
         else:
             # single name: the adjacent literal — the closest one touching the comment
             # (trailing `0x4 /* N */`, or leading `/* N */ 0x4`), same line only.
@@ -190,7 +222,7 @@ def scan_file(path, catalog):
             # If the correct value appears ANYWHERE among the line's candidates, the
             # flag is present and correct — don't be fooled by a nearer `0` in
             # `& FLAG) != 0 // FLAG` or `== 0`. Only the closest is the annotation.
-            if name in catalog and catalog[name] in [lit_value(txt(L)) for L in side]:
+            if name in catalog and any(catalog[name] in lit_values(L, src) for L in side):
                 pairs = []
             elif before:
                 pairs = [(max(before, key=lambda n: n.end_byte), name)]  # closest preceding
@@ -205,10 +237,21 @@ def scan_file(path, catalog):
             # table labeled by slot (not value==index) — a pure FP family here.
             if name.startswith("COLOR_"):
                 continue
-            lv = lit_value(txt(lit))
-            if lv is None or lv == catalog[name]:
-                continue
+            lvs = lit_values(lit, src)
             want = catalog[name]
+            # Negative CATALOG values (HFILE_ERROR = -1) must match the same
+            # two's-complement forms lit_values() produces for negative literals.
+            wants = {want} if want >= 0 else {want, want & 0xFFFFFFFF, want & 0xFFFFFFFFFFFFFFFF}
+            if not lvs or lvs & wants:
+                continue
+            lv = lit_value(txt(lit))
+            # A single-BIT flag contained in a composite mask is a correct
+            # annotation of one flag in an OR (GHND=0x42 /* GMEM_MOVEABLE */,
+            # UNW version-and-flags 9 /* UNW_FLAG_EHANDLER */): the literal
+            # includes the named bit. Enum-valued names (multi-bit or zero)
+            # keep exact matching — containment is meaningless for them.
+            if want and (want & (want - 1)) == 0 and lv is not None and lv & want == want:
+                continue
             # Skip the "value table labeled by index" pattern: a big literal (e.g. an
             # 0xRRGGBB color) annotated with a tiny enum/index name (COLOR_*, etc.).
             # The comment names which SLOT the value fills, not value==constant.

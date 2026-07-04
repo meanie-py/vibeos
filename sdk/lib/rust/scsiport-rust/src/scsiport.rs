@@ -559,7 +559,7 @@ pub unsafe extern "system" fn ScsiPortGetUncachedExtension(
 }
 
 // Provide the missing constant
-const DEVICE_DESCRIPTION_VERSION: u32 = 1;
+const DEVICE_DESCRIPTION_VERSION: u32 = 0x00;
 
 unsafe fn SpiAllocateCommonBuffer(
     DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION,
@@ -2495,15 +2495,15 @@ unsafe fn SpiParseDeviceInfo(
     const CmResourceTypeDma: u8 = 3; // placeholder
     const CmResourceTypeDeviceSpecific: u8 = 4; // placeholder
     const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1; // placeholder
-    const Latched: u32 = 0; // placeholder
-    const LevelSensitive: u32 = 1; // placeholder
+    const Latched: u32 = 0x01; // placeholder
+    const LevelSensitive: u32 = 0x00; // placeholder
     const Width8Bits: u32 = 0; // placeholder
     const Width16Bits: u32 = 1; // placeholder
     const Width32Bits: u32 = 2; // placeholder
-    const CM_RESOURCE_DMA_8: u32 = 1; // placeholder
-    const CM_RESOURCE_DMA_16: u32 = 2; // placeholder
-    const CM_RESOURCE_DMA_8_AND_16: u32 = 3; // placeholder
-    const CM_RESOURCE_DMA_32: u32 = 4; // placeholder
+    const CM_RESOURCE_DMA_8: u32 = 0x00; // placeholder
+    const CM_RESOURCE_DMA_16: u32 = 0x01; // placeholder
+    const CM_RESOURCE_DMA_8_AND_16: u32 = 0x04; // placeholder
+    const CM_RESOURCE_DMA_32: u32 = 0x02; // placeholder
 
     let KeyValueInformation: *mut KEY_VALUE_FULL_INFORMATION;
     let FullResource: *mut CM_FULL_RESOURCE_DESCRIPTOR;

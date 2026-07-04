@@ -532,6 +532,17 @@ pub unsafe fn MiIsPdeForAddressValid(address: PVOID) -> BOOLEAN {
 // Working set lock functions (FORCEINLINE from miarm.h)
 // ============================================================================
 
+// Flight-recorder tap (sync-instrumentation §1) — resolved at link time to
+// ntoskrnl-rust's exported VibeosFlightrecLog (this crate sits BELOW it in the
+// dep graph). EXCLUSIVE WS lock/unlock only: cheap, and a leaked WS lock that
+// strands a shared waiter is by definition exclusive. Ops must match
+// flightrec.rs OP_WS_LOCK_EXCL/OP_WS_UNLOCK_EXCL.
+extern "C" {
+    fn VibeosFlightrecLog(op: u32, object: usize, thread: usize, data: u32);
+}
+const OP_WS_LOCK_EXCL: u32 = 16;
+const OP_WS_UNLOCK_EXCL: u32 = 17;
+
 /// MiLockProcessWorkingSet — acquire exclusive working set lock.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
@@ -540,11 +551,23 @@ pub unsafe fn MiLockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETH
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
+    VibeosFlightrecLog(
+        OP_WS_LOCK_EXCL,
+        core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
+        thread as usize,
+        0,
+    );
 }
 
 /// MiUnlockProcessWorkingSet — release exclusive working set lock.
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    VibeosFlightrecLog(
+        OP_WS_UNLOCK_EXCL,
+        core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
+        thread as usize,
+        0,
+    );
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(0);
     ddk::ExReleasePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
@@ -581,12 +604,24 @@ pub unsafe fn MiLockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk
     );
     (*process).Vm.Flags.set_AcquiredUnsafe(1);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
+    VibeosFlightrecLog(
+        OP_WS_LOCK_EXCL,
+        core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
+        thread as usize,
+        1,
+    );
 }
 
 /// MiUnlockProcessWorkingSetUnsafe — release exclusive working set lock (unsafe variant).
 /// Matches C miarm.h:1289 — does NOT touch APC state (caller manages it).
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    VibeosFlightrecLog(
+        OP_WS_UNLOCK_EXCL,
+        core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
+        thread as usize,
+        1,
+    );
     (*process).Vm.Flags.set_AcquiredUnsafe(0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(0);
     ddk::ExReleasePushLockExclusive(
@@ -650,11 +685,23 @@ pub unsafe fn MiLockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
     super::ke::KeEnterGuardedRegion();
     ddk::ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     _ws_set_owns(thread, ws, true);
+    VibeosFlightrecLog(
+        OP_WS_LOCK_EXCL,
+        core::ptr::addr_of_mut!((*ws).WorkingSetMutex) as usize,
+        thread as usize,
+        2,
+    );
 }
 
 /// MiUnlockWorkingSet — release exclusive working set lock on MMSUPPORT.
 #[inline]
 pub unsafe fn MiUnlockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
+    VibeosFlightrecLog(
+        OP_WS_UNLOCK_EXCL,
+        core::ptr::addr_of_mut!((*ws).WorkingSetMutex) as usize,
+        thread as usize,
+        2,
+    );
     _ws_clear_owns(thread, ws, true);
     ddk::ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     super::ke::KeLeaveGuardedRegion();

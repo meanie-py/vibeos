@@ -249,7 +249,7 @@ pub const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x0000_0020;
 // FileStandardInformation (=5) in actctx.c.
 pub const FileBothDirectoryInformation: u32 = 3;
 pub const FileStandardInformation: u32 = 5;
-pub const FileEndOfFileInformation: u32 = 5;
+pub const FileEndOfFileInformation: u32 = 0x14;
 
 // ── comclass_threadingmodel — bindgen-style enum-variant names the
 //    draft uses. ───────────────────────────────────────────────────

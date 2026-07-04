@@ -80,7 +80,7 @@ unsafe fn StringCchCatW(psz_dest: LPWSTR, cch_dest: usize, psz_src: LPCWSTR) -> 
         i += 1;
     }
     if i >= cch_dest {
-        return -2147024774; // STRSAFE_E_INVALID_PARAMETER
+        return -2147024809; // STRSAFE_E_INVALID_PARAMETER (0x80070057)
     }
     let mut s = psz_src;
     while i < cch_dest - 1 && !s.is_null() && *s != 0 {

@@ -479,7 +479,7 @@ pub unsafe extern "C" fn FltpAttachFrame(
 #[no_mangle]
 pub unsafe extern "C" fn FltpStartingToDrainObject(Object: PVOID) -> NTSTATUS {
     const FLT_OBFL_DRAINING: core::ffi::c_long = 1;
-    const STATUS_FLT_DELETING_OBJECT: NTSTATUS = 0xC01C0009u32 as NTSTATUS;
+    const STATUS_FLT_DELETING_OBJECT: NTSTATUS = 0xC01C000B_u32 as i32;
     let Object = Object as PFLT_OBJECT;
     /*
      * Set the draining flag for the filter. This let's us force

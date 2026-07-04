@@ -39,8 +39,8 @@ pub unsafe extern "system" fn MmZeroPageThread() {
         KeWaitForMultipleObjects(
             1,
             wait_objects.as_mut_ptr(),
-            0, // WaitAny
-            0, // WrFreePage
+            1, // WaitAny (WAIT_TYPE: WaitAll=0, WaitAny=1 — harmless at Count=1 but a trap if a second wait object is added)
+            8, // WrFreePage
             0, // KernelMode
             0u8,
             core::ptr::null_mut(),
