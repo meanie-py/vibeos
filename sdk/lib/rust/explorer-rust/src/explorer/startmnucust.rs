@@ -1,389 +1,579 @@
-use core::ffi::c_void;
-use explorer_sys::*;
-use explorer_sys::com::*;
-use explorer_sys::externs::*;
-use explorer_sys::globals::*;
-use winsrv_sys::consts::*;
+//! startmnucust.cpp — the "Customize Classic Start Menu" dialog. A single
+//! DLGPROC (`CustomizeClassicProc`) hosting a TreeView of checkable
+//! advanced-start-menu options (each backed by a registry `Advanced` value via
+//! GetAdvancedBool/SetAdvancedDword) plus Add/Remove/Advanced/Clear buttons.
+//! Entry points `ShowCustomizeClassic()` (opens the modal dialog) and
+//! `ClearRecentAndMru()` are called from the already-Rust startmnu.rs; precomp.h
+//! already declares BOTH as `extern "C"`, so `#[no_mangle] extern "C"` replaces
+//! the C++ definitions with no header edit. DIALOG code — runs only on user
+//! action, NOT on the boot path (boot-safe: must link + not break the build).
+//!
+//! Modeling (mirrors trayprop.rs):
+//! - The DLGPROC is `extern "system"` (== CALLBACK: stdcall on i386, cdecl on
+//!   LLP64); `DialogBoxW(...)` = `DialogBoxParamW(..., 0)` (explorer_sys::externs).
+//! - CUSTOM_ENTRY's `FN_CUSTOM_GET`/`FN_CUSTOM_SET` are CALLBACK fn-pointers →
+//!   `extern "system"` fn types (definitions + type agree, so ABI-correct on all
+//!   arches). The static table is rebuilt by a plain `fn` each use — behaviorally
+//!   identical to the C++ `static const CUSTOM_ENTRY[]` (same fn pointers + wide
+//!   literals) and sidesteps the "raw pointers aren't Sync" static hazard.
+//! - TreeView_* are commctrl.h SendMessage macros → file-local inline helpers.
+//! - The TVITEMW / TVITEMEXW / TVINSERTSTRUCTW structs + TVM_*/TVI_*/TVIF_*/
+//!   TVIS_*/TVGN_*/TVS_CHECKBOXES constants are NOT in the winsrv/explorer-sys
+//!   substrate, so they are declared FILE-LOCAL (like syspager's private surface).
+//!   See the SUBSTRATE MANIFEST accompanying this file.
+
+#![allow(non_snake_case, non_upper_case_globals)]
+
+use core::ffi::{c_int, c_void};
+use core::ptr::{null, null_mut};
+
+use winsrv_sys::consts::{FAILED, SUCCEEDED};
 use winsrv_sys::w;
+// Types + user32/kernel32/advapi32 fns + WM_*/GWL_STYLE/KEY_WRITE/ERROR_SUCCESS/
+// SW_SHOWNORMAL/MAX_PATH/SMTO_ABORTIFHUNG/WM_SETTINGCHANGE/WM_NEXTDLGCTL consts,
+// LoadStringW/GetModuleHandleW/GetDlgItem/EnableWindow/GetFocus/EndDialog/
+// SendMessageW/SendMessageTimeoutW/FindFirstFileW/FindClose/RegOpenKeyExW/
+// RegCloseKey/GetWindowLongW/SetWindowLongW/WIN32_FIND_DATAW.
 use winsrv_sys::winsrv::*;
 
+use explorer_sys::externs::{
+    SHGetFolderPathW, SHRestricted, StringCbCatW, HKEY_CURRENT_USER, INVALID_HANDLE_VALUE,
+    REST_NOCONTROLPANEL, REST_NOFAVORITESMENU, REST_NONETWORKCONNECTIONS, REST_NORUN,
+    REST_NOSETFOLDERS, REST_NOSMMYDOCS, REST_NOSMMYPICS, REST_STARTMENULOGOFF,
+};
+use explorer_sys::server::ShellExecuteW;
+use explorer_sys::MAKEINTRESOURCEW;
+
+use crate::explorer::settings::g_TaskbarSettings;
+use crate::explorer::util::{GetAdvancedBool, SetAdvancedDword};
+
+// ===========================================================================
+// SUBSTRATE not in winsrv-sys / explorer-sys — declared FILE-LOCAL so this
+// staging module is self-contained. explorer.exe already links comctl32/user32/
+// shlwapi/shell32, so these resolve at link time.
+// ===========================================================================
+
+// ---- shlwapi.dll / shell32.dll (stdcall) gap-fill ------------------------
+extern "system" {
+    /// shlwapi.h `SHDeleteKeyW` — recursively delete a registry subkey.
+    fn SHDeleteKeyW(hkey: HKEY, pszSubKey: LPCWSTR) -> DWORD;
+    /// shlwapi.h `PathAppendW` — append `pszMore` to `pszPath` with a separator.
+    fn PathAppendW(pszPath: LPWSTR, pszMore: LPCWSTR) -> BOOL;
+    /// shlobj.h `SHAddToRecentDocs` — add/clear the Recent Documents list.
+    fn SHAddToRecentDocs(uFlags: UINT, pv: *const c_void);
+}
+/// user32.dll `wsprintfW` — __cdecl variadic (NOT stdcall).
 extern "C" {
-    fn ShellExecuteW( hwnd: HWND, lpOperation: PCWSTR, lpFile: PCWSTR, lpParameters: PCWSTR, lpDirectory: PCWSTR, nShowCmd: i32, ) -> DWORD_PTR;
-    fn SHGetFolderPathW(hwnd: HWND, csidl: i32, hToken: *mut core::ffi::c_void, dwFlags: DWORD, pszPath: *mut u16) -> HRESULT;
-    fn wsprintfW(buf: *mut u16, fmt: PCWSTR, ...) -> i32;
-    fn SHDeleteKeyW(hKey: HKEY, pszSubKey: PCWSTR) -> i32;
-    fn GetAdvancedBool(name: LPCWSTR, bDefaultValue: BOOL) -> BOOL;
-    fn SetAdvancedDword(name: PCWSTR, value: u8);
-    fn SHRestricted(rest: RESTRICTIONS) -> i32;
-    fn TRACE(fmt: *const i8, ...);
-    fn TreeView_InsertItem(hwnd: HWND, lpis: *const TV_INSERTSTRUCT) -> HTREEITEM;
-    fn DialogBoxW(hInstance: HINSTANCE, lpTemplateName: PCWSTR, hWndParent: HWND, lpDialogFunc: *const core::ffi::c_void) -> INT_PTR;
-    fn MAKEINTRESOURCEW(i: u16) -> PCWSTR;
-    fn SHAddToRecentDocs(uFlags: DWORD_PTR, pv: *const core::ffi::c_void);
+    fn wsprintfW(lpOut: LPWSTR, lpFmt: LPCWSTR, ...) -> c_int;
 }
 
-// ---- file-scope preamble (translated) ----
-pub const I_UNCHECKED: i32 = 1;
-
-pub const I_CHECKED: i32 = 2;
-
-pub static g_MruKeys: [PCWSTR; 4] = [
-    b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0I\0n\0t\0e\0r\0n\0e\0t\0 \0E\0x\0p\0l\0o\0r\0e\0r\0\\\0T\0y\0p\0e\0d\0U\0R\0L\0s\0\0\0".as_ptr() as PCWSTR,
-    b"E\0x\0p\0l\0o\0r\0e\0r\0\\\0R\0u\0n\0M\0R\0U\0\0\0".as_ptr() as PCWSTR,
-    b"E\0x\0p\0l\0o\0r\0e\0r\0\\\0C\0o\0m\0d\0l\0g\x003\x002\0\\\0O\0p\0e\0n\0S\0a\0v\0e\0M\0R\0U\0\0\0".as_ptr() as PCWSTR,
-    b"E\0x\0p\0l\0o\0r\0e\0r\0\\\0C\0o\0m\0d\0l\0g\x003\x002\0\\\0L\0a\0s\0t\0V\0i\0s\0i\0t\0e\0d\0M\0R\0U\0\0\0".as_ptr() as PCWSTR,
-];
-
-pub type FN_CUSTOM_GET = Option<unsafe extern "system" fn(entry: *const CUSTOM_ENTRY) -> BOOL>;
-pub type FN_CUSTOM_SET = Option<unsafe extern "system" fn(entry: *const CUSTOM_ENTRY, bValue: BOOL)>;
-
-#[repr(C)]
-pub struct CUSTOM_ENTRY {
-    pub id: LPARAM,
-    pub name: LPCWSTR,
-    pub bDefaultValue: BOOL,
-    pub fnGetValue: FN_CUSTOM_GET,
-    pub fnSetValue: FN_CUSTOM_SET,
-    pub policy1: RESTRICTIONS,
-    pub policy2: RESTRICTIONS,
+// GetWindowLongPtrW / SetWindowLongPtrW are C macros over the *LongW variants on
+// i386 (32-bit slot) and real imports on LLP64 — arch-split exactly like
+// syspager.rs. Only used here to OR TVS_CHECKBOXES into GWL_STYLE (fits 32 bits).
+#[cfg(not(target_arch = "x86"))]
+extern "system" {
+    fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) -> LONG_PTR;
+    fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) -> LONG_PTR;
 }
 
-pub static s_CustomEntries: [CUSTOM_ENTRY; 10] = [
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_DISPLAY_ADMINTOOLS,
-        name: b"S\0t\0a\0r\0t\0M\0e\0n\0u\0A\0d\0m\0i\0n\0T\0o\0o\0l\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: TRUE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: 0,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_DISPLAY_FAVORITES,
-        name: b"S\0t\0a\0r\0t\0M\0e\0n\0u\0F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOFAVORITESMENU,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_DISPLAY_LOG_OFF,
-        name: b"S\0t\0a\0r\0t\0M\0e\0n\0u\0L\0o\0g\0o\0f\0f\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_STARTMENULOGOFF,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_DISPLAY_RUN,
-        name: b"S\0t\0a\0r\0t\0M\0e\0n\0u\0R\0u\0n\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: TRUE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NORUN,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_EXPAND_MY_DOCUMENTS,
-        name: b"C\0a\0s\0c\0a\0d\0e\0M\0y\0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOSMMYDOCS,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_EXPAND_MY_PICTURES,
-        name: b"C\0a\0s\0c\0a\0d\0e\0M\0y\0P\0i\0c\0t\0u\0r\0e\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOSMMYPICS,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_EXPAND_CONTROL_PANEL,
-        name: b"C\0a\0s\0c\0a\0d\0e\0C\0o\0n\0t\0r\0o\0l\0P\0a\0n\0e\0l\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOSETFOLDERS,
-        policy2: REST_NOCONTROLPANEL,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_EXPAND_PRINTERS,
-        name: b"C\0a\0s\0c\0a\0d\0e\0P\0r\0i\0n\0t\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOSETFOLDERS,
-        policy2: 0,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_EXPAND_NET_CONNECTIONS,
-        name: b"C\0a\0s\0c\0a\0d\0e\0N\0e\0t\0w\0o\0r\0k\0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPCWSTR,
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetAdvanced),
-        fnSetValue: Some(CustomSetAdvanced),
-        policy1: REST_NOSETFOLDERS,
-        policy2: REST_NONETWORKCONNECTIONS,
-    },
-    CUSTOM_ENTRY {
-        id: IDS_ADVANCED_SMALL_START_MENU,
-        name: core::ptr::null(),
-        bDefaultValue: FALSE,
-        fnGetValue: Some(CustomGetSmallStartMenu),
-        fnSetValue: Some(CustomSetSmallStartMenu),
-        policy1: 0,
-        policy2: 0,
-    },
-];
+// ---- shlobj.h CSIDL / SHARD --------------------------------------------
+const CSIDL_PROGRAMS: c_int = 0x0002;
+const CSIDL_RECENT: c_int = 0x0008;
+const CSIDL_STARTMENU: c_int = 0x000b;
+const CSIDL_FLAG_CREATE: c_int = 0x8000;
+/// shlobj.h `SHARD_PIDL`.
+const SHARD_PIDL: UINT = 0x0000_0001;
 
+// ---- winuser.h -----------------------------------------------------------
+/// winuser.h `HWND_BROADCAST` == (HWND)0xFFFF.
+const HWND_BROADCAST: HWND = 0xFFFF_usize as HWND;
+
+// ---- base/shell/explorer/resource.h dialog / control / string IDs --------
+const IDD_CLASSICSTART_CUSTOMIZE: c_int = 9;
+
+const IDC_CLASSICSTART_SETTINGS: c_int = 1135;
+const IDC_CLASSICSTART_CLEAR: c_int = 1125;
+const IDC_CLASSICSTART_ADD: c_int = 1126;
+const IDC_CLASSICSTART_REMOVE: c_int = 1127;
+const IDC_CLASSICSTART_ADVANCED: c_int = 1128;
+
+// shell32.dll string-table IDs (loaded from shell32, not explorer.exe).
+const IDS_ADVANCED_DISPLAY_FAVORITES: LPARAM = 30466;
+const IDS_ADVANCED_DISPLAY_LOG_OFF: LPARAM = 30467;
+const IDS_ADVANCED_EXPAND_CONTROL_PANEL: LPARAM = 30468;
+const IDS_ADVANCED_EXPAND_MY_DOCUMENTS: LPARAM = 30469;
+const IDS_ADVANCED_EXPAND_PRINTERS: LPARAM = 30470;
+const IDS_ADVANCED_EXPAND_MY_PICTURES: LPARAM = 30472;
+const IDS_ADVANCED_EXPAND_NET_CONNECTIONS: LPARAM = 30473;
+const IDS_ADVANCED_DISPLAY_RUN: LPARAM = 30474;
+const IDS_ADVANCED_DISPLAY_ADMINTOOLS: LPARAM = 30476;
+const IDS_ADVANCED_SMALL_START_MENU: LPARAM = 30477;
+
+// ---- commctrl.h TreeView substrate --------------------------------------
+type HTREEITEM = *mut c_void;
+
+const TV_FIRST: UINT = 0x1100;
+const TVM_INSERTITEMW: UINT = TV_FIRST + 50;
+const TVM_GETNEXTITEM: UINT = TV_FIRST + 10;
+const TVM_GETITEMW: UINT = TV_FIRST + 62;
+
+const TVGN_ROOT: WPARAM = 0x0;
+const TVGN_NEXTVISIBLE: WPARAM = 0x6;
+
+const TVIF_TEXT: UINT = 0x1;
+const TVIF_PARAM: UINT = 0x4;
+const TVIF_STATE: UINT = 0x8;
+
+const TVIS_STATEIMAGEMASK: UINT = 0xF000;
+
+const TVS_CHECKBOXES: LONG = 0x0100;
+
+/// `TVI_ROOT` == (HTREEITEM)(ULONG_PTR)-0x10000.
+const TVI_ROOT: HTREEITEM = (-0x10000_isize) as usize as HTREEITEM;
+/// `TVI_LAST` == (HTREEITEM)(ULONG_PTR)-0xfffe.
+const TVI_LAST: HTREEITEM = (-0xfffe_isize) as usize as HTREEITEM;
+
+/// TreeView checkbox state indexes (use with INDEXTOSTATEIMAGEMASK).
+const I_UNCHECKED: UINT = 1;
+const I_CHECKED: UINT = 2;
+
+/// commctrl.h `INDEXTOSTATEIMAGEMASK(i)` == `(i) << 12`.
+#[inline]
+const fn INDEXTOSTATEIMAGEMASK(i: UINT) -> UINT {
+    i << 12
+}
+
+/// commctrl.h `tagTVITEMW` (exact layout).
 #[repr(C)]
-struct SHELLEXECUTEINFOW {
-    cbSize: DWORD,
-    fMask: ULONG,
+#[derive(Clone, Copy)]
+struct TVITEMW {
+    mask: UINT,
+    hItem: HTREEITEM,
+    state: UINT,
+    stateMask: UINT,
+    pszText: LPWSTR,
+    cchTextMax: c_int,
+    iImage: c_int,
+    iSelectedImage: c_int,
+    cChildren: c_int,
+    lParam: LPARAM,
+}
+
+/// commctrl.h `tagTVITEMEXW` (the larger union arm — sizes the insert struct).
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct TVITEMEXW {
+    mask: UINT,
+    hItem: HTREEITEM,
+    state: UINT,
+    stateMask: UINT,
+    pszText: LPWSTR,
+    cchTextMax: c_int,
+    iImage: c_int,
+    iSelectedImage: c_int,
+    cChildren: c_int,
+    lParam: LPARAM,
+    iIntegral: c_int,
+    uStateEx: UINT,
     hwnd: HWND,
-    lpVerb: PCWSTR,
-    lpFile: PCWSTR,
-    lpParameters: PCWSTR,
-    lpDirectory: PCWSTR,
-    nShow: i32,
-    hInstApp: HINSTANCE,
-    lpIDList: *mut core::ffi::c_void,
-    lpClass: PCWSTR,
-    hkeyClass: HKEY,
-    dwHotKey: DWORD,
-    hIcon: *mut core::ffi::c_void,
-    hProcess: *mut core::ffi::c_void,
+    iExpandedImage: c_int,
 }
 
-type DWORD = u32;
-type ULONG = u32;
-type HRESULT = i32;
+/// commctrl.h `tagTVINSERTSTRUCTW`. The `union { TVITEMEXW itemex; TV_ITEMW item }`
+/// is modeled as its largest arm (`TVITEMEXW`); the TVITEMW prefix (mask..lParam)
+/// aliases exactly, which is all the C++ touches.
+#[repr(C)]
+struct TVINSERTSTRUCTW {
+    hParent: HTREEITEM,
+    hInsertAfter: HTREEITEM,
+    item: TVITEMEXW,
+}
 
-const CSIDL_STARTMENU: i32 = 0x000b;
-#[no_mangle]
-pub unsafe extern "C" fn OnAddStartMenuItems(hDlg: HWND) {
+// TreeView_* commctrl.h macros → SendMessageW helpers.
+#[inline]
+unsafe fn TreeView_InsertItem(hwnd: HWND, lpis: *const TVINSERTSTRUCTW) -> HTREEITEM {
+    SendMessageW(hwnd, TVM_INSERTITEMW, 0, lpis as LPARAM) as HTREEITEM
+}
+#[inline]
+unsafe fn TreeView_GetNextItem(hwnd: HWND, hitem: HTREEITEM, code: WPARAM) -> HTREEITEM {
+    SendMessageW(hwnd, TVM_GETNEXTITEM, code, hitem as LPARAM) as HTREEITEM
+}
+#[inline]
+unsafe fn TreeView_GetRoot(hwnd: HWND) -> HTREEITEM {
+    TreeView_GetNextItem(hwnd, null_mut(), TVGN_ROOT)
+}
+#[inline]
+unsafe fn TreeView_GetNextVisible(hwnd: HWND, hitem: HTREEITEM) -> HTREEITEM {
+    TreeView_GetNextItem(hwnd, hitem, TVGN_NEXTVISIBLE)
+}
+#[inline]
+unsafe fn TreeView_GetItem(hwnd: HWND, pitem: *mut TVITEMW) -> BOOL {
+    SendMessageW(hwnd, TVM_GETITEMW, 0, pitem as LPARAM) as BOOL
+}
+
+// ===========================================================================
+// Add / Remove / Advanced start-menu-item handlers
+// ===========================================================================
+
+// TODO(upstream): Windows Explorer calls NewLinkHere / ConfigStartMenu directly.
+unsafe fn OnAddStartMenuItems(hDlg: HWND) {
     let mut szPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if SUCCEEDED(SHGetFolderPathW(
-        core::ptr::null_mut(),
+        null_mut(),
         CSIDL_PROGRAMS,
-        core::ptr::null_mut(),
+        null_mut(),
         0,
         szPath.as_mut_ptr(),
-    )) != 0
-    {
+    )) {
         let mut szCommand: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-        let prefix = ['a' as u16, 'p' as u16, 'p' as u16, 'w' as u16, 'i' as u16, 'z' as u16, '.' as u16, 'c' as u16, 'p' as u16, 'l' as u16, ',' as u16, 'N' as u16, 'e' as u16, 'w' as u16, 'L' as u16, 'i' as u16, 'n' as u16, 'k' as u16, 'H' as u16, 'e' as u16, 'r' as u16, 'e' as u16, ' ' as u16, 0];
-        core::ptr::copy_nonoverlapping(prefix.as_ptr(), szCommand.as_mut_ptr(), prefix.len());
-        
-        if SUCCEEDED(StringCchCatW(
+        // szCommand = L"appwiz.cpl,NewLinkHere "
+        let prefix = w!("appwiz.cpl,NewLinkHere ");
+        let plen = prefix.len() - 1; // exclude terminating NUL
+        szCommand[..plen].copy_from_slice(&prefix[..plen]);
+
+        // StringCchCatW(szCommand, _countof(szCommand), szPath) — cb = cch * 2.
+        if SUCCEEDED(StringCbCatW(
             szCommand.as_mut_ptr(),
-            MAX_PATH as usize,
+            (MAX_PATH as usize) * 2,
             szPath.as_ptr(),
-        )) != 0
-        {
+        )) {
             ShellExecuteW(
                 hDlg,
-                ['o' as u16, 'p' as u16, 'e' as u16, 'n' as u16, 0].as_ptr(),
-                ['r' as u16, 'u' as u16, 'n' as u16, 'd' as u16, 'l' as u16, 'l' as u16, '3' as u16, '2' as u16, '.' as u16, 'e' as u16, 'x' as u16, 'e' as u16, 0].as_ptr(),
+                w!("open").as_ptr(),
+                w!("rundll32.exe").as_ptr(),
                 szCommand.as_ptr(),
-                core::ptr::null(),
-                SW_SHOWNORMAL,
+                null(),
+                SW_SHOWNORMAL as c_int,
             );
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn OnRemoveStartmenuItems(hDlg: HWND) {
-    
+
+unsafe fn OnRemoveStartmenuItems(hDlg: HWND) {
     ShellExecuteW(
         hDlg,
-        b"o\0p\0e\0n\0\0\0".as_ptr() as PCWSTR,
-        b"r\0u\0n\0d\0l\0l\03\02\0.\0e\0x\0e\0\0\0".as_ptr() as PCWSTR,
-        b"a\0p\0p\0w\0i\0z\0.\0c\0p\0l\0,\0C\0o\0n\0f\0i\0g\0S\0t\0a\0r\0t\0M\0e\0n\0u\0\0\0".as_ptr() as PCWSTR,
-        core::ptr::null(),
-        SW_SHOWNORMAL,
+        w!("open").as_ptr(),
+        w!("rundll32.exe").as_ptr(),
+        w!("appwiz.cpl,ConfigStartMenu").as_ptr(),
+        null(),
+        SW_SHOWNORMAL as c_int,
     );
 }
 
-unsafe fn SUCCEEDED(hr: HRESULT) -> bool {
-    hr >= 0
-}
-#[no_mangle]
-pub unsafe extern "C" fn OnAdvancedStartMenuItems() {
+unsafe fn OnAdvancedStartMenuItems() {
     let mut szPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if SUCCEEDED(SHGetFolderPathW(
-        core::ptr::null_mut(),
+        null_mut(),
         CSIDL_STARTMENU,
-        core::ptr::null_mut(),
+        null_mut(),
         0,
         szPath.as_mut_ptr(),
     )) {
         ShellExecuteW(
-            core::ptr::null_mut(),
-            b"e\0x\0p\0l\0o\0r\0e\0\0\0".as_ptr() as PCWSTR,
+            null_mut(),
+            w!("explore").as_ptr(),
             szPath.as_ptr(),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            SW_SHOWNORMAL,
+            null(),
+            null(),
+            SW_SHOWNORMAL as c_int,
         );
     }
 }
+
+// ===========================================================================
+// Recent / MRU clearing
+// ===========================================================================
 
 unsafe fn RecentHasShortcut(hwnd: HWND) -> BOOL {
     let mut szPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if FAILED(SHGetFolderPathW(
         hwnd,
         CSIDL_RECENT | CSIDL_FLAG_CREATE,
-        core::ptr::null_mut(),
+        null_mut(),
         0,
         szPath.as_mut_ptr(),
     )) {
-        return FALSE;
+        return 0;
     }
 
+    // Find shortcut files in Recent.
     let mut find: WIN32_FIND_DATAW = core::mem::zeroed();
-    PathAppendW(szPath.as_mut_ptr(), b"*\0.\0l\0n\0k\0\0".as_ptr() as PCWSTR);
+    PathAppendW(szPath.as_mut_ptr(), w!("*.lnk").as_ptr());
     let hFind = FindFirstFileW(szPath.as_ptr(), &mut find);
     if hFind == INVALID_HANDLE_VALUE {
-        return FALSE;
+        return 0;
     }
 
     FindClose(hFind);
-    TRUE
+    1
 }
 
-unsafe fn HandleMruData(Delete: u8) -> u8 {
-    let mut i: u32 = 0;
-    while i < (core::mem::size_of_val(&g_MruKeys) / core::mem::size_of::<PCWSTR>()) as u32 {
+/// `g_MruKeys` (file-static). Keys not starting with 'S'[oftware] are relative
+/// to "Software\Microsoft\Windows\CurrentVersion".
+fn g_mru_keys() -> [LPCWSTR; 4] {
+    [
+        w!("Software\\Microsoft\\Internet Explorer\\TypedURLs").as_ptr(),
+        w!("Explorer\\RunMRU").as_ptr(),
+        w!("Explorer\\Comdlg32\\OpenSaveMRU").as_ptr(),
+        w!("Explorer\\Comdlg32\\LastVisitedMRU").as_ptr(),
+    ]
+}
+
+unsafe fn HandleMruData(Delete: BOOL) -> BOOL {
+    let keys = g_mru_keys();
+    for &key in keys.iter() {
         let mut szKey: [u16; 200] = [0; 200];
-        let pszKey_orig: PCWSTR = g_MruKeys[i as usize];
-        let mut pszKey: PCWSTR = pszKey_orig;
-        
-        if *pszKey_orig != 'S' as u16 {
+        let mut pszKey: LPCWSTR = key;
+        if *pszKey != b'S' as u16 {
+            // Keys not starting with S[oftware] are assumed relative to "SMWCV".
             wsprintfW(
                 szKey.as_mut_ptr(),
-                b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0%\0s\0\0\0".as_ptr() as PCWSTR,
-                pszKey_orig
+                w!("%s\\%s").as_ptr(),
+                w!("Software\\Microsoft\\Windows\\CurrentVersion").as_ptr(),
+                pszKey,
             );
             pszKey = szKey.as_ptr();
         }
 
-        let mut hKey: HKEY = core::ptr::null_mut();
+        let mut hKey: HKEY = null_mut();
         if Delete != 0 {
-            SHDeleteKeyW(0x80000001u32 as HKEY, pszKey);
-        } else if RegOpenKeyExW(0x80000001u32 as HKEY, pszKey, 0, KEY_WRITE, &mut hKey) == ERROR_SUCCESS {
+            SHDeleteKeyW(HKEY_CURRENT_USER, pszKey);
+        } else if RegOpenKeyExW(HKEY_CURRENT_USER, pszKey, 0, KEY_WRITE, &mut hKey)
+            == ERROR_SUCCESS as i32
+        {
             RegCloseKey(hKey);
-            return 1u8;
+            return 1;
         }
-        
-        i += 1;
     }
-    return 0u8;
+    0
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn ClearRecentAndMru() {
-    
-    SHAddToRecentDocs(0x00000001, core::ptr::null());
+    SHAddToRecentDocs(SHARD_PIDL, null());
     HandleMruData(1);
 }
 
 unsafe fn InitializeClearButton(hwnd: HWND) {
     let hWndClear = GetDlgItem(hwnd, IDC_CLASSICSTART_CLEAR);
-    let bHasData = (RecentHasShortcut(hwnd) != 0) || (HandleMruData(0u8) != 0);
-    if !bHasData && hWndClear == GetFocus() {
-        SendMessage(hwnd, WM_NEXTDLGCTL, 0, 0);
+    let bHasData: BOOL = (RecentHasShortcut(hwnd) != 0 || HandleMruData(0) != 0) as BOOL;
+    if bHasData == 0 && hWndClear == GetFocus() {
+        SendMessageW(hwnd, WM_NEXTDLGCTL, 0, 0);
     }
-    EnableWindow(hWndClear, if bHasData { 1 } else { 0 });
+    EnableWindow(hWndClear, bHasData);
 }
-unsafe fn CustomGetAdvanced(entry: *const CUSTOM_ENTRY) -> BOOL {
+
+// ===========================================================================
+// CUSTOM_ENTRY table — one checkable TreeView option per advanced setting
+// ===========================================================================
+
+/// `FN_CUSTOM_GET` — `BOOL CALLBACK (*)(const CUSTOM_ENTRY*)`.
+type FnCustomGet = unsafe extern "system" fn(*const CustomEntry) -> BOOL;
+/// `FN_CUSTOM_SET` — `VOID CALLBACK (*)(const CUSTOM_ENTRY*, BOOL)`.
+type FnCustomSet = unsafe extern "system" fn(*const CustomEntry, BOOL);
+
+/// `struct CUSTOM_ENTRY`. `policy1`/`policy2` are RESTRICTIONS (shlobj.h enum → u32);
+/// a zero policy means "no restriction" (SHRestricted(0) returns 0).
+#[repr(C)]
+struct CustomEntry {
+    id: LPARAM,
+    name: LPCWSTR,
+    bDefaultValue: BOOL,
+    fnGetValue: FnCustomGet,
+    fnSetValue: FnCustomSet,
+    policy1: u32,
+    policy2: u32,
+}
+
+unsafe extern "system" fn CustomGetAdvanced(entry: *const CustomEntry) -> BOOL {
     GetAdvancedBool((*entry).name, (*entry).bDefaultValue)
 }
-unsafe fn CustomSetAdvanced(entry: *const CUSTOM_ENTRY, bValue: u8) {
-    SetAdvancedDword((*entry).name, bValue);
-}
-unsafe fn CustomGetSmallStartMenu(entry: *const CUSTOM_ENTRY) -> u8 {
-    g_TaskbarSettings.sr.SmSmallIcons as u8
+
+unsafe extern "system" fn CustomSetAdvanced(entry: *const CustomEntry, bValue: BOOL) {
+    SetAdvancedDword((*entry).name, bValue as u32);
 }
 
-unsafe fn CustomSetSmallStartMenu(entry: *const CUSTOM_ENTRY, bValue: u8) {
-    g_TaskbarSettings.sr.SmSmallIcons = bValue;
+unsafe extern "system" fn CustomGetSmallStartMenu(_entry: *const CustomEntry) -> BOOL {
+    g_TaskbarSettings.sr.SmSmallIcons() as BOOL
 }
 
-unsafe fn AddCustomItem(hTreeView: HWND, entry: *const CUSTOM_ENTRY) {
+unsafe extern "system" fn CustomSetSmallStartMenu(_entry: *const CustomEntry, bValue: BOOL) {
+    g_TaskbarSettings.sr.set_SmSmallIcons(bValue as DWORD);
+}
+
+/// `s_CustomEntries[]` (file-static). Rebuilt per use — same fn pointers + wide
+/// literals as the C++ static table, so behaviorally identical.
+fn s_custom_entries() -> [CustomEntry; 10] {
+    [
+        CustomEntry {
+            id: IDS_ADVANCED_DISPLAY_ADMINTOOLS,
+            name: w!("StartMenuAdminTools").as_ptr(),
+            bDefaultValue: 1,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: 0,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_DISPLAY_FAVORITES,
+            name: w!("StartMenuFavorites").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOFAVORITESMENU,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_DISPLAY_LOG_OFF,
+            name: w!("StartMenuLogoff").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_STARTMENULOGOFF,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_DISPLAY_RUN,
+            name: w!("StartMenuRun").as_ptr(),
+            bDefaultValue: 1,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NORUN,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_EXPAND_MY_DOCUMENTS,
+            name: w!("CascadeMyDocuments").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOSMMYDOCS,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_EXPAND_MY_PICTURES,
+            name: w!("CascadeMyPictures").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOSMMYPICS,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_EXPAND_CONTROL_PANEL,
+            name: w!("CascadeControlPanel").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOSETFOLDERS,
+            policy2: REST_NOCONTROLPANEL,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_EXPAND_PRINTERS,
+            name: w!("CascadePrinters").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOSETFOLDERS,
+            policy2: 0,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_EXPAND_NET_CONNECTIONS,
+            name: w!("CascadeNetworkConnections").as_ptr(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetAdvanced,
+            fnSetValue: CustomSetAdvanced,
+            policy1: REST_NOSETFOLDERS,
+            policy2: REST_NONETWORKCONNECTIONS,
+        },
+        CustomEntry {
+            id: IDS_ADVANCED_SMALL_START_MENU,
+            name: null(),
+            bDefaultValue: 0,
+            fnGetValue: CustomGetSmallStartMenu,
+            fnSetValue: CustomSetSmallStartMenu,
+            policy1: 0,
+            policy2: 0,
+        },
+    ]
+}
+
+unsafe fn AddCustomItem(hTreeView: HWND, entry: *const CustomEntry) {
     if SHRestricted((*entry).policy1) != 0 || SHRestricted((*entry).policy2) != 0 {
-        TRACE!(b"%p: Restricted\n\0".as_ptr() as *const i8, (*entry).id);
-        return;
+        return; // Restricted. Don't show.
     }
 
-    let mut szText: [u16; MAX_PATH as usize] = core::mem::zeroed();
+    let mut szText: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     LoadStringW(
-        GetModuleHandleW(b"shell32.dll\0".as_ptr()),
-        (*entry).id as u32,
+        GetModuleHandleW(w!("shell32.dll").as_ptr()),
+        (*entry).id as UINT,
         szText.as_mut_ptr(),
-        MAX_PATH as i32,
+        MAX_PATH as c_int,
     );
 
     let bChecked = ((*entry).fnGetValue)(entry);
-    TRACE!(b"%p: %d\n\0".as_ptr() as *const i8, (*entry).id, bChecked as i32);
 
-    let mut Insert: TV_INSERTSTRUCT = core::mem::zeroed();
-    Insert.hParent = TVI_ROOT;
-    Insert.hInsertAfter = TVI_LAST;
-    Insert.item.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
-    Insert.item.pszText = szText.as_mut_ptr();
-    Insert.item.lParam = (*entry).id;
-    Insert.item.stateMask = TVIS_STATEIMAGEMASK;
-    Insert.item.state = INDEXTOSTATEIMAGEMASK(if bChecked != 0 { I_CHECKED } else { I_UNCHECKED });
-    TreeView_InsertItem(hTreeView, &mut Insert);
+    let mut ins: TVINSERTSTRUCTW = core::mem::zeroed();
+    ins.hParent = TVI_ROOT;
+    ins.hInsertAfter = TVI_LAST;
+    ins.item.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
+    ins.item.pszText = szText.as_mut_ptr();
+    ins.item.lParam = (*entry).id;
+    ins.item.stateMask = TVIS_STATEIMAGEMASK;
+    ins.item.state = INDEXTOSTATEIMAGEMASK(if bChecked != 0 { I_CHECKED } else { I_UNCHECKED });
+    TreeView_InsertItem(hTreeView, &ins);
 }
 
-const I_UNCHECKED: u32 = 1;
-const I_CHECKED: u32 = 2;
+// ===========================================================================
+// Dialog proc + entry point
+// ===========================================================================
 
-fn INDEXTOSTATEIMAGEMASK(i: u32) -> u32 {
-    i << 12
+unsafe fn set_checkbox_style(hTreeView: HWND) {
+    #[cfg(target_arch = "x86")]
+    {
+        let style = GetWindowLongW(hTreeView, GWL_STYLE);
+        SetWindowLongW(hTreeView, GWL_STYLE, style | TVS_CHECKBOXES);
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let style = GetWindowLongPtrW(hTreeView, GWL_STYLE);
+        SetWindowLongPtrW(hTreeView, GWL_STYLE, style | TVS_CHECKBOXES as LONG_PTR);
+    }
 }
 
 unsafe fn CustomizeClassic_OnInitDialog(hwnd: HWND) {
     InitializeClearButton(hwnd);
 
     let hTreeView = GetDlgItem(hwnd, IDC_CLASSICSTART_SETTINGS);
+    set_checkbox_style(hTreeView);
 
-    let style = GetWindowLongPtrW(hTreeView, GWL_STYLE);
-    SetWindowLongPtrW(hTreeView, GWL_STYLE, style | TVS_CHECKBOXES);
-
-    for entry in &s_CustomEntries {
-        AddCustomItem(hTreeView, entry);
+    let entries = s_custom_entries();
+    for entry in entries.iter() {
+        AddCustomItem(hTreeView, entry as *const CustomEntry);
     }
 }
 
-unsafe fn CustomizeClassic_OnOK(hwnd: HWND) -> i32 {
+unsafe fn CustomizeClassic_OnOK(hwnd: HWND) -> BOOL {
     let hTreeView = GetDlgItem(hwnd, IDC_CLASSICSTART_SETTINGS);
+    let entries = s_custom_entries();
 
     let mut hItem = TreeView_GetRoot(hTreeView);
     while !hItem.is_null() {
-        let mut item: TV_ITEM = core::mem::zeroed();
+        let mut item: TVITEMW = core::mem::zeroed();
         item.mask = TVIF_PARAM | TVIF_STATE;
         item.hItem = hItem;
         item.stateMask = TVIS_STATEIMAGEMASK;
         TreeView_GetItem(hTreeView, &mut item);
 
-        let bChecked = (item.state & INDEXTOSTATEIMAGEMASK(I_CHECKED)) != 0;
-        
-        for entry in &s_CustomEntries {
+        let bChecked: BOOL = ((item.state & INDEXTOSTATEIMAGEMASK(I_CHECKED)) != 0) as BOOL;
+        for entry in entries.iter() {
             if SHRestricted(entry.policy1) != 0 || SHRestricted(entry.policy2) != 0 {
                 continue;
             }
-
             if item.lParam == entry.id {
-                (entry.fnSetValue)(entry, if bChecked { 1u8 } else { 0u8 });
+                (entry.fnSetValue)(entry as *const CustomEntry, bChecked);
                 break;
             }
         }
@@ -395,42 +585,40 @@ unsafe fn CustomizeClassic_OnOK(hwnd: HWND) -> i32 {
         HWND_BROADCAST,
         WM_SETTINGCHANGE,
         0,
-        b"TraySettings\0".as_ptr() as LPARAM,
+        w!("TraySettings").as_ptr() as LPARAM,
         SMTO_ABORTIFHUNG,
         200,
-        core::ptr::null_mut()
+        null_mut(),
     );
-    
     1
 }
-#[no_mangle]
-pub unsafe extern "C" fn CustomizeClassicProc(hwnd: HWND, Message: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+
+unsafe extern "system" fn CustomizeClassicProc(
+    hwnd: HWND,
+    Message: UINT,
+    wParam: WPARAM,
+    _lParam: LPARAM,
+) -> INT_PTR {
     match Message {
         WM_INITDIALOG => {
             CustomizeClassic_OnInitDialog(hwnd);
             return 1;
         }
         WM_COMMAND => {
-            match (wParam & 0xFFFF) as u32 {
-                IDC_CLASSICSTART_ADD => {
-                    OnAddStartMenuItems(hwnd);
-                }
-                IDC_CLASSICSTART_REMOVE => {
-                    OnRemoveStartmenuItems(hwnd);
-                }
-                IDC_CLASSICSTART_ADVANCED => {
-                    OnAdvancedStartMenuItems();
-                }
+            match (wParam & 0xFFFF) as c_int {
+                IDC_CLASSICSTART_ADD => OnAddStartMenuItems(hwnd),
+                IDC_CLASSICSTART_REMOVE => OnRemoveStartmenuItems(hwnd),
+                IDC_CLASSICSTART_ADVANCED => OnAdvancedStartMenuItems(),
                 IDC_CLASSICSTART_CLEAR => {
                     ClearRecentAndMru();
                     InitializeClearButton(hwnd);
                 }
-                IDOK => {
+                x if x == IDOK as c_int => {
                     if CustomizeClassic_OnOK(hwnd) != 0 {
                         EndDialog(hwnd, IDOK as INT_PTR);
                     }
                 }
-                IDCANCEL => {
+                x if x == IDCANCEL as c_int => {
                     EndDialog(hwnd, IDCANCEL as INT_PTR);
                 }
                 _ => {}
@@ -441,326 +629,14 @@ pub unsafe extern "C" fn CustomizeClassicProc(hwnd: HWND, Message: u32, wParam: 
 
     0
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn ShowCustomizeClassic(hInst: HINSTANCE, hExplorer: HWND) {
-    
-    DialogBoxW(hInst, MAKEINTRESOURCEW(IDD_CLASSICSTART_CUSTOMIZE), hExplorer, CustomizeClassicProc as *const core::ffi::c_void);
+    explorer_sys::externs::DialogBoxParamW(
+        hInst,
+        MAKEINTRESOURCEW(IDD_CLASSICSTART_CUSTOMIZE as u16),
+        hExplorer,
+        Some(CustomizeClassicProc),
+        0,
+    );
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * PROJECT:     ReactOS Explorer
-//  * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
-//  * PURPOSE:     "Customize Start Menu" dialog
-//  * COPYRIGHT:   Copyright 2006-2007 Thomas Weidenmueller <w3seek@reactos.org>
-//  *              Copyright 2015 Robert Naumann <gonzomdx@gmail.com>
-//  *              Copyright 2024 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
-//  */
-//
-// #include "precomp.h"
-//
-// // TreeView checkbox state indexes (Use with INDEXTOSTATEIMAGEMASK macro)
-// #define I_UNCHECKED 1
-// #define I_CHECKED   2
-//
-// // TODO: Windows Explorer appears to be calling NewLinkHere / ConfigStartMenu directly for both items.
-// VOID OnAddStartMenuItems(HWND hDlg)
-// {
-//     WCHAR szPath[MAX_PATH];
-//
-//     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_PROGRAMS, NULL, 0, szPath)))
-//     {
-//         WCHAR szCommand[MAX_PATH] = L"appwiz.cpl,NewLinkHere ";
-//         if (SUCCEEDED(StringCchCatW(szCommand, _countof(szCommand), szPath)))
-//             ShellExecuteW(hDlg, L"open", L"rundll32.exe", szCommand, NULL, SW_SHOWNORMAL);
-//     }
-// }
-//
-// VOID OnRemoveStartmenuItems(HWND hDlg)
-// {
-//     ShellExecuteW(hDlg, L"open", L"rundll32.exe", L"appwiz.cpl,ConfigStartMenu", NULL, SW_SHOWNORMAL);
-// }
-//
-// VOID OnAdvancedStartMenuItems()
-// {
-//     WCHAR szPath[MAX_PATH];
-//
-//     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_STARTMENU, NULL, 0, szPath)))
-//     {
-//         ShellExecuteW(NULL, L"explore", szPath, NULL, NULL, SW_SHOWNORMAL);
-//     }
-// }
-//
-// static BOOL RecentHasShortcut(HWND hwnd)
-// {
-//     WCHAR szPath[MAX_PATH];
-//     if (FAILED(SHGetFolderPathW(hwnd, CSIDL_RECENT | CSIDL_FLAG_CREATE, NULL, 0, szPath)))
-//         return FALSE;
-//
-//     // Find shortcut files in Recent
-//     WIN32_FIND_DATAW find;
-//     PathAppendW(szPath, L"*.lnk");
-//     HANDLE hFind = FindFirstFileW(szPath, &find);
-//     if (hFind == INVALID_HANDLE_VALUE)
-//         return FALSE;
-//
-//     FindClose(hFind);
-//     return TRUE;
-// }
-//
-// static const PCWSTR g_MruKeys[] = 
-// {
-//     L"Software\\Microsoft\\Internet Explorer\\TypedURLs",
-//     L"Explorer\\RunMRU",
-//     L"Explorer\\Comdlg32\\OpenSaveMRU",
-//     L"Explorer\\Comdlg32\\LastVisitedMRU",
-// };
-//
-// static BOOL HandleMruData(BOOL Delete)
-// {
-//     for (UINT i = 0; i < _countof(g_MruKeys); ++i)
-//     {
-//         WCHAR szKey[200];
-//         PCWSTR pszKey = g_MruKeys[i];
-//         if (*pszKey != 'S') // Keys not starting with S[oftware] are assumed to be relative to "SMWCV"
-//         {
-//             wsprintfW(szKey, L"%s\\%s", L"Software\\Microsoft\\Windows\\CurrentVersion", pszKey);
-//             pszKey = szKey;
-//         }
-//
-//         HKEY hKey;
-//         if (Delete)
-//         {
-//             SHDeleteKeyW(HKEY_CURRENT_USER, pszKey);
-//         }
-//         else if (RegOpenKeyExW(HKEY_CURRENT_USER, pszKey, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS)
-//         {
-//             RegCloseKey(hKey);
-//             return TRUE;
-//         }
-//     }
-//     return FALSE;
-// }
-//
-// VOID ClearRecentAndMru()
-// {
-//     SHAddToRecentDocs(SHARD_PIDL, NULL);
-//     HandleMruData(TRUE);
-// }
-//
-// static VOID InitializeClearButton(HWND hwnd)
-// {
-//     HWND hWndClear = GetDlgItem(hwnd, IDC_CLASSICSTART_CLEAR);
-//     BOOL bHasData = RecentHasShortcut(hwnd) || HandleMruData(FALSE);
-//     if (!bHasData && hWndClear == GetFocus())
-//         SendMessage(hwnd, WM_NEXTDLGCTL, 0, FALSE);
-//     EnableWindow(hWndClear, bHasData);
-// }
-//
-// struct CUSTOM_ENTRY;
-//
-// typedef BOOL (__stdcall *FN_CUSTOM_GET)(const CUSTOM_ENTRY *entry);
-// typedef VOID (__stdcall *FN_CUSTOM_SET)(const CUSTOM_ENTRY *entry, BOOL bValue);
-//
-// struct CUSTOM_ENTRY
-// {
-//     LPARAM id;
-//     LPCWSTR name;
-//     BOOL bDefaultValue;
-//     FN_CUSTOM_GET fnGetValue;
-//     FN_CUSTOM_SET fnSetValue;
-//     RESTRICTIONS policy1, policy2;
-// };
-//
-// static BOOL __stdcall CustomGetAdvanced(const CUSTOM_ENTRY *entry)
-// {
-//     return GetAdvancedBool(entry->name, entry->bDefaultValue);
-// }
-//
-// static VOID __stdcall CustomSetAdvanced(const CUSTOM_ENTRY *entry, BOOL bValue)
-// {
-//     SetAdvancedDword(entry->name, bValue);
-// }
-//
-// static BOOL __stdcall CustomGetSmallStartMenu(const CUSTOM_ENTRY *entry)
-// {
-//     return g_TaskbarSettings.sr.SmSmallIcons;
-// }
-//
-// static VOID __stdcall CustomSetSmallStartMenu(const CUSTOM_ENTRY *entry, BOOL bValue)
-// {
-//     g_TaskbarSettings.sr.SmSmallIcons = bValue;
-// }
-//
-// static const CUSTOM_ENTRY s_CustomEntries[] =
-// {
-//     {
-//         IDS_ADVANCED_DISPLAY_ADMINTOOLS, L"StartMenuAdminTools", TRUE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//     },
-//     {
-//         IDS_ADVANCED_DISPLAY_FAVORITES, L"StartMenuFavorites", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOFAVORITESMENU,
-//     },
-//     {
-//         IDS_ADVANCED_DISPLAY_LOG_OFF, L"StartMenuLogoff", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_STARTMENULOGOFF,
-//     },
-//     {
-//         IDS_ADVANCED_DISPLAY_RUN, L"StartMenuRun", TRUE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NORUN,
-//     },
-//     {
-//         IDS_ADVANCED_EXPAND_MY_DOCUMENTS, L"CascadeMyDocuments", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOSMMYDOCS,
-//     },
-//     {
-//         IDS_ADVANCED_EXPAND_MY_PICTURES, L"CascadeMyPictures", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOSMMYPICS,
-//     },
-//     {
-//         IDS_ADVANCED_EXPAND_CONTROL_PANEL, L"CascadeControlPanel", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOSETFOLDERS, REST_NOCONTROLPANEL,
-//     },
-//     {
-//         IDS_ADVANCED_EXPAND_PRINTERS, L"CascadePrinters", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOSETFOLDERS,
-//     },
-//     {
-//         IDS_ADVANCED_EXPAND_NET_CONNECTIONS, L"CascadeNetworkConnections", FALSE,
-//         CustomGetAdvanced, CustomSetAdvanced,
-//         REST_NOSETFOLDERS, REST_NONETWORKCONNECTIONS,
-//     },
-//     {
-//         IDS_ADVANCED_SMALL_START_MENU, NULL, FALSE,
-//         CustomGetSmallStartMenu, CustomSetSmallStartMenu,
-//     },
-// };
-//
-// static VOID AddCustomItem(HWND hTreeView, const CUSTOM_ENTRY *entry)
-// {
-//     if (SHRestricted(entry->policy1) || SHRestricted(entry->policy2))
-//     {
-//         TRACE("%p: Restricted\n", entry->id);
-//         return; // Restricted. Don't show
-//     }
-//
-//     WCHAR szText[MAX_PATH];
-//     LoadStringW(GetModuleHandleW(L"shell32.dll"), entry->id, szText, _countof(szText));
-//
-//     BOOL bChecked = entry->fnGetValue(entry);
-//     TRACE("%p: %d\n", entry->id, bChecked);
-//
-//     TV_INSERTSTRUCT Insert = { TVI_ROOT, TVI_LAST, { TVIF_TEXT | TVIF_STATE | TVIF_PARAM } };
-//     Insert.item.pszText = szText;
-//     Insert.item.lParam = entry->id;
-//     Insert.item.stateMask = TVIS_STATEIMAGEMASK;
-//     Insert.item.state = INDEXTOSTATEIMAGEMASK(bChecked ? I_CHECKED : I_UNCHECKED);
-//     TreeView_InsertItem(hTreeView, &Insert);
-// }
-//
-// static void CustomizeClassic_OnInitDialog(HWND hwnd)
-// {
-//     InitializeClearButton(hwnd);
-//
-//     HWND hTreeView = GetDlgItem(hwnd, IDC_CLASSICSTART_SETTINGS);
-//
-//     DWORD_PTR style = GetWindowLongPtrW(hTreeView, GWL_STYLE);
-//     SetWindowLongPtrW(hTreeView, GWL_STYLE, style | TVS_CHECKBOXES);
-//
-//     for (auto& entry : s_CustomEntries)
-//     {
-//         AddCustomItem(hTreeView, &entry);
-//     }
-// }
-//
-// static BOOL CustomizeClassic_OnOK(HWND hwnd)
-// {
-//     HWND hTreeView = GetDlgItem(hwnd, IDC_CLASSICSTART_SETTINGS);
-//
-//     for (HTREEITEM hItem = TreeView_GetRoot(hTreeView);
-//          hItem != NULL;
-//          hItem = TreeView_GetNextVisible(hTreeView, hItem))
-//     {
-//         TV_ITEM item = { TVIF_PARAM | TVIF_STATE, hItem };
-//         item.stateMask = TVIS_STATEIMAGEMASK;
-//         TreeView_GetItem(hTreeView, &item);
-//
-//         BOOL bChecked = !!(item.state & INDEXTOSTATEIMAGEMASK(I_CHECKED));
-//         for (auto& entry : s_CustomEntries)
-//         {
-//             if (SHRestricted(entry.policy1) || SHRestricted(entry.policy2))
-//                 continue;
-//
-//             if (item.lParam == entry.id)
-//             {
-//                 TRACE("%p: %d\n", item.lParam, bChecked);
-//                 entry.fnSetValue(&entry, bChecked);
-//                 break;
-//             }
-//         }
-//     }
-//
-//     SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings",
-//                         SMTO_ABORTIFHUNG, 200, NULL);
-//     return TRUE;
-// }
-//
-// INT_PTR __stdcall CustomizeClassicProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
-// {
-//     switch (Message)
-//     {
-//         case WM_INITDIALOG:
-//             CustomizeClassic_OnInitDialog(hwnd);
-//             return TRUE;
-//         case WM_COMMAND:
-//             switch (LOWORD(wParam))
-//             {
-//                 case IDC_CLASSICSTART_ADD:
-//                     OnAddStartMenuItems(hwnd);
-//                     break;
-//                 case IDC_CLASSICSTART_REMOVE:
-//                     OnRemoveStartmenuItems(hwnd);
-//                     break;
-//                 case IDC_CLASSICSTART_ADVANCED:
-//                     OnAdvancedStartMenuItems();
-//                     break;
-//                 case IDC_CLASSICSTART_CLEAR:
-//                     ClearRecentAndMru();
-//                     InitializeClearButton(hwnd);
-//                     break;
-//                 case IDOK:
-//                     if (CustomizeClassic_OnOK(hwnd))
-//                         EndDialog(hwnd, IDOK);
-//                     break;
-//                 case IDCANCEL:
-//                     EndDialog(hwnd, IDCANCEL);
-//                     break;
-//             }
-//             break;
-//         default:
-//             break;
-//     }
-//
-//     return FALSE;
-// }
-//
-// VOID ShowCustomizeClassic(HINSTANCE hInst, HWND hExplorer)
-// {
-//     DialogBoxW(hInst, MAKEINTRESOURCEW(IDD_CLASSICSTART_CUSTOMIZE), hExplorer, CustomizeClassicProc);
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

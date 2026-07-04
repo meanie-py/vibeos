@@ -57,11 +57,9 @@ pub mod explorer {
     // trayprop.cpp — Taskbar & Start-Menu Properties dialog (3 WTL property
     // pages → flat DLGPROCs). Not boot-path (runs on user action).
     pub mod trayprop;
-    // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
-    // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
-    // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp
-    // stays compiled until then (phased swap; NOT a dodge — never yet green).
-    // pub mod startmnucust;
+    // startmnucust.cpp — "Customize Classic Start Menu" dialog (treeview of
+    // advanced options → registry Advanced values). Not boot-path.
+    pub mod startmnucust;
 }
 
 // USER-MODE no_std staticlib linked into a C++ exe that has its own CRT/EH;

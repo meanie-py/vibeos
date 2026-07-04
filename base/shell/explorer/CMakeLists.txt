@@ -17,7 +17,8 @@ list(APPEND SOURCE
     # startctxmnu.cpp — replaced by Rust (explorer-rust startctxmnu.rs); the
     # single-interface IContextMenu Start-button context menu.
     # startmnu.cpp — replaced by Rust (explorer-rust startmnu.rs)
-    startmnucust.cpp
+    # startmnucust.cpp — replaced by Rust (explorer-rust startmnucust.rs); the
+    # Customize Classic Start Menu treeview dialog.
     # startmnusite.cpp — replaced by Rust (explorer-rust startmnusite.rs); the
     # start-menu site COM object (IServiceProvider/ITrayPriv/IOleCommandTarget/
     # IMenuPopup on explorer_sys::com).
