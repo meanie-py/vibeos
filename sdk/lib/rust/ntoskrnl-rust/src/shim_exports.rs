@@ -1586,7 +1586,7 @@ pub unsafe extern "C" fn MmInitializeMdl(mdl: PMDL, base_va: PVOID, length: ULON
 // --- PFN reference counting (cdecl) ---
 
 /// MiIncrementPageTableReferences — uses OriginalPte.u.Soft.UsedPageTableEntries
-/// (bits 12-21 of OriginalPte at MMPFN offset 32), matching the C FORCEINLINE in miarm.h.
+/// from OriginalPte, matching the C FORCEINLINE in miarm.h.
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
@@ -1598,14 +1598,13 @@ pub unsafe extern "C" fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
     }
     #[cfg(not(target_arch = "x86"))]
     {
-        // 64-bit (3+ level paging): use OriginalPte.u.Soft.UsedPageTableEntries (bits 12-21),
-        // matching the C FORCEINLINE in miarm.h.
         use crate::ARM3::helpers::{mmpfn_used_page_table_entries, mmpfn_set_used_page_table_entries};
         let pde = ntkrnl_sys::mm::MiAddressToPde(address);
         let pfn = ntkrnl_sys::mm::MiGetPfnEntry(ntkrnl_sys::mm::PFN_FROM_PTE(pde));
         let val = mmpfn_used_page_table_entries(pfn);
         let new_val = val + 1;
         mmpfn_set_used_page_table_entries(pfn, new_val);
+        ASSERT!(new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32);
         new_val as u16
     }
 }

@@ -1155,27 +1155,12 @@ MiDecrementShareCount(IN PMMPFN Pfn1,
     if ((Pfn1->u3.e1.PageLocation != ActiveAndValid) &&
         (Pfn1->u3.e1.PageLocation != StandbyPageList))
     {
-#ifdef _M_ARM64
-        /* ARM64: PFN state tracking is incomplete — log and fixup instead of bugcheck.
-         * TODO: Fix the root cause of PFN state corruption. */
-        {
-            static ULONG PfnBadCount = 0;
-            if (PfnBadCount < 5)
-            {
-                DPRINT1("[PFN] PageLoc=%d for PFN 0x%lx (expected Active/Standby) — fixing up\n",
-                        Pfn1->u3.e1.PageLocation, PageFrameIndex);
-            }
-            PfnBadCount++;
-        }
-        Pfn1->u3.e1.PageLocation = ActiveAndValid;
-#else
         /* Otherwise we have PFN corruption */
         KeBugCheckEx(PFN_LIST_CORRUPT,
                      0x99,
                      PageFrameIndex,
                      Pfn1->u3.e1.PageLocation,
                      0);
-#endif
     }
 
     /* Page should at least have one reference */
@@ -1282,14 +1267,8 @@ MiDecrementReferenceCount(IN PMMPFN Pfn1,
     /* Nobody should still have reference to this page */
     if (Pfn1->u2.ShareCount != 0)
     {
-#ifdef _M_ARM64
-        DPRINT1("MiDecrementReferenceCount: PFN 0x%lx still has ShareCount=%d with RefCount=0\n",
-                PageFrameIndex, Pfn1->u2.ShareCount);
-        Pfn1->u2.ShareCount = 0;
-#else
         /* Otherwise something's really wrong */
         KeBugCheckEx(PFN_LIST_CORRUPT, 7, PageFrameIndex, Pfn1->u2.ShareCount, 0);
-#endif
     }
 
     /* And it should be lying on some page list */

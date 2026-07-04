@@ -1325,23 +1325,16 @@ pub unsafe fn mmpfn_set_original_pte(pfn: PMMPFN, val: MMPTE) {
 // Bit 11: RemovalRequested (bit 5 from miarm.h) -> actually shifted
 // Bit 12-13: CacheAttribute
 
-// InPageError is stored in u4 field as a separate flag
-// For simplicity, map in_page_error_u4 to bit manipulation on u4
-
-/// Get u4.InPageError (bit at MI_PTE_FRAME_BITS + 4 or similar)
-/// Actually, InPageError in u4 is stored at a fixed bit position.
-/// For simplicity, use the entire_frame bits above PteFrame.
+/// Get u4.InPageError.
 #[inline]
 pub unsafe fn mmpfn_in_page_error_u4(pfn: PMMPFN) -> bool {
-    // InPageError is stored as a flag in u4 EntireFrame field
-    // At bit position MI_PTE_FRAME_BITS + 4 (after PteFrame, VerifierAllocation, AweAllocation, MustBeCached)
-    false // placeholder — not commonly checked in practice
+    (*pfn).in_page_error()
 }
 
 /// Set u4.InPageError
 #[inline]
 pub unsafe fn mmpfn_set_in_page_error_u4(pfn: PMMPFN, val: bool) {
-    // placeholder
+    (*pfn).set_in_page_error(val);
 }
 
 /// Get page color from MMPFNENTRY (bits 4-7 of the entry u16)
@@ -1379,80 +1372,51 @@ pub unsafe fn mmpfn_set_mmpfnentry_raw(pfn: PMMPFN, val: u16) {
     *(p as *mut u16) = val;
 }
 
-/// Get priority from MMPFNENTRY (bits 11-13 or similar)
+/// Get u4.Priority.
 #[inline]
 pub unsafe fn mmpfn_priority(pfn: PMMPFN) -> ULONG {
-    // Priority is typically at bits 14-15 of mmpfnentry
-    let entry = mmpfn_mmpfnentry_raw(pfn);
-    ((entry >> 14) & 0x3) as ULONG
+    (*pfn).priority() as ULONG
 }
 
-/// Set priority
+/// Set u4.Priority.
 #[inline]
 pub unsafe fn mmpfn_set_priority(pfn: PMMPFN, val: ULONG) {
-    let mut entry = mmpfn_mmpfnentry_raw(pfn);
-    entry &= !(0x3 << 14);
-    entry |= ((val as u16) & 0x3) << 14;
-    mmpfn_set_mmpfnentry_raw(pfn, entry);
+    (*pfn).set_priority(val as u16);
 }
 
 /// Get RomPte flag from MMPFNENTRY
 #[inline]
 pub unsafe fn mmpfn_rom_pte(pfn: PMMPFN) -> bool {
-    let entry = mmpfn_mmpfnentry_raw(pfn);
-    (entry & (1 << 11)) != 0
+    (*pfn).rom()
 }
 
 /// Set RomPte flag
 #[inline]
 pub unsafe fn mmpfn_set_rom_pte(pfn: PMMPFN, val: bool) {
-    let mut entry = mmpfn_mmpfnentry_raw(pfn);
-    if val { entry |= 1 << 11; } else { entry &= !(1 << 11); }
-    mmpfn_set_mmpfnentry_raw(pfn, entry);
+    (*pfn).set_rom(val);
 }
 
-/// Get UsedPageTableEntries (64-bit only)
-/// C code uses Pfn->OriginalPte.u.Soft.UsedPageTableEntries — bits 12-21 of OriginalPte.
-/// NOT the dedicated ULONG at offset 28 (which exists in the struct but is unused by ReactOS).
-#[cfg(target_pointer_width = "64")]
+/// Get OriginalPte.u.Soft.UsedPageTableEntries.
+/// NOT the dedicated ULONG at offset 28 on 64-bit MMPFN.
 #[inline]
 pub unsafe fn mmpfn_used_page_table_entries(pfn: PMMPFN) -> ULONG {
-    let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
-    let original_pte = *(p as *const u64);
-    ((original_pte >> 12) & 0x3FF) as ULONG
+    (*mmpfn_original_pte_ptr(pfn)).soft_used_page_table_entries()
 }
 
-/// Set UsedPageTableEntries (64-bit only)
-/// C code uses Pfn->OriginalPte.u.Soft.UsedPageTableEntries — bits 12-21 of OriginalPte.
-/// NOT the dedicated ULONG at offset 28 (which exists in the struct but is unused by ReactOS).
-#[cfg(target_pointer_width = "64")]
+/// Set OriginalPte.u.Soft.UsedPageTableEntries.
+/// NOT the dedicated ULONG at offset 28 on 64-bit MMPFN.
 #[inline]
 pub unsafe fn mmpfn_set_used_page_table_entries(pfn: PMMPFN, val: ULONG) {
-    let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
-    let original_pte = *(p as *const u64);
-    let cleared = original_pte & !(0x3FF_u64 << 12);
-    let new_val = cleared | (((val as u64) & 0x3FF) << 12);
-    *(p as *mut u64) = new_val;
+    (*mmpfn_original_pte_ptr(pfn)).set_soft_used_page_table_entries(val);
 }
 
-/// On 32-bit, UsedPageTableEntries is stored in OriginalPte.u.Soft bits
-#[cfg(target_pointer_width = "32")]
-#[inline]
-pub unsafe fn mmpfn_used_page_table_entries(pfn: PMMPFN) -> ULONG {
-    // TODO: extract from OriginalPte soft bits
-    0
-}
-
-#[cfg(target_pointer_width = "32")]
-#[inline]
-pub unsafe fn mmpfn_set_used_page_table_entries(pfn: PMMPFN, val: ULONG) {
-    // TODO: store in OriginalPte soft bits
-}
-
-/// Get MMPTE.soft_page_file_low() — PageFileLow is bits 1-4 of the soft PTE
+/// Get MMPTE.u.Soft.PageFileLow.
 #[inline]
 pub fn mmpte_soft_page_file_low(pte: &MMPTE) -> ULONG {
-    ((pte.Long >> 1) & 0xF) as ULONG
+    #[cfg(target_arch = "aarch64")]
+    { ((pte.Long >> 6) & 0xF) as ULONG }
+    #[cfg(not(target_arch = "aarch64"))]
+    { ((pte.Long >> 1) & 0xF) as ULONG }
 }
 
 // NOTE: Cannot add impl MMPFN / impl MMPTE here because they are defined in

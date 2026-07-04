@@ -2104,3 +2104,74 @@ these INFINITE waits convert a soft failure into a boot-blocker.
 race the stale objects were masking — and audit any `WaitForSingleObject(…, INFINITE)`
 whose signal sits on a lone happy path; make the wait bounded and the shared state
 owned by the side that outlives the wait.
+
+### 9.13 amd64 BUGCHECK 0xBE (write to read-only) on a session/GDI view — the `/* ReactOS Hack */` in `MiUnlinkPageFromList` destroys a prototype page's protection across a standby round-trip
+
+**Symptom.** After the PFN-state cleanup landed, amd64 smoke deterministically
+`BUGCHECK 0x000000BE (0xfffff97fde280000, 0x…6021, …, 0xC)` — a write to a **read-only**
+session-space page (`0xfffff97f…` = win32k session view) that was created from a
+`PAGE_READWRITE` section. The PTE was present+accessed but not writable. i386/arm64 were green.
+
+**Root-cause technique (the decisive trace).** Session PTEs can't be read from a
+halted GDB context (the bugcheck CPU isn't in the target session; session space is
+unmapped there), so instrument the fault-completion path instead. Session-gated
+`dbg_print!` in `MiResolveProtoPteFault` (compute site) and `MiCompleteProtoPteFault`
+(consume site), logging the derived `Protection`, the `OriginalProtection` branch, and
+`Pfn1->OriginalPte`, for `Address >= 0xFFFFF90000000000`. The faulting page stood out
+against every healthy neighbour by exactly one field:
+```
+healthy:  Complete VA=…de290000 prot=4 origProt=1 origPTE=0x80   → MM_READWRITE ✓
+FAULTING: Complete VA=…de280000 prot=0 origProt=1 origPTE=0x00   → MM_NOACCESS ✗
+```
+`MiCompleteProtoPteFault`'s else-branch (`PointerPte.PageFileHigh != MI_PTE_LOOKUP_NEEDED`,
+i.e. a pure prototype-pointer PTE) reads protection from `Pfn1->OriginalPte`. Healthy
+first-fault (demand-zero) pages carry `OriginalPte=0x80` (`MM_READWRITE<<5`); the faulting
+page was a **transition** page (trimmed to standby, brought back — its Resolve `protoPTE`
+was a transition PTE `…882`, Transition=1/Prototype=0/Prot=RW) whose `OriginalPte` had been
+**zeroed to 0** → protection `MM_NOACCESS` → PTE mapped non-writable → first win32k/GDI write
+faults.
+
+**Root cause.** `MiUnlinkPageFromList` (pfnlist.rs) ends with a line the C literally labels
+`/* ReactOS Hack */`: `Pfn->OriginalPte.u.Long = 0`. That is correct only for *private*
+(modified-list) pages. **Standby/modified lists link via `u1.Flink`/`u2.Blink` (the
+`flink()`/`share_count()` accessors) — `OriginalPte` is NOT the list linkage for them; only
+the free/zeroed COLOR lists reuse `OriginalPte` as their Flink.** For a shared **prototype**
+page, `OriginalPte` holds the segment prototype PTE that encodes the page protection, and
+`MiCompleteProtoPteFault` reads it back every time the page is faulted in from transition.
+Zeroing it on the standby→active unlink discards the protection.
+
+**Fix.** Guard the hack so it skips prototype pages:
+```rust
+if !(*Pfn).prototype_pte() {
+    mmpfn_set_original_pte_long(Pfn, 0);   // the /* ReactOS Hack */ — private pages only
+}
+```
+(`sdk/lib/rust/ntoskrnl-rust/src/ARM3/pfnlist.rs`, `MiUnlinkPageFromList`.) Preserving
+`OriginalPte` for prototype pages is safe: any later free-list insertion overwrites it
+(`MiInsertPageInFreeList` sets it to `LIST_HEAD`; the color path re-links it), and
+`MiInitializePfn` re-sets it on re-init. **Verified:** the previously-faulting page then
+resolves `prot=4 origPTE=0x80`, no 0xBE, boot reaches `_tWinMain`; i386/arm64 gate-green.
+
+**Takeaway.** `OriginalPte` in this port is triple-duty (proto-template protection for active
+prototype pages / pagefile descriptor for private pages / color-list Flink for free pages).
+Any code that writes it must know which role the page is in. A blanket "hack" that zeroes it
+is a landmine for the prototype-page role.
+
+### 9.14 (OPEN LEAD) amd64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` at process-exit teardown — a WSLE page carries `u4.PteFrame == COLORED_LIST_HEAD`
+
+**Exposed by** the 9.13 fix (boot now reaches process exits it never used to).
+**Symptom.** Deterministic `BUGCHECK 0x0000004E (0x98, 0x01ffffffffffffff, 0, 0)` shortly
+after `_tWinMain`, during process teardown (rundll32/userenv/lsass exit). Subcode `0x98` =
+`MiDecrementShareCount` entry validation; `Pfn1=0`, `PageFrameIndex=0x01ffffffffffffff`.
+
+**Fingerprint.** `0x01ffffffffffffff == (1<<57)-1 == COLORED_LIST_HEAD` (amd64;
+`MI_PTE_FRAME_BITS=57`). The caller pattern `MiDecrementShareCount(MiGetPfnEntry(pte_frame), pte_frame)`
+with `MiGetPfnEntry(out-of-range)→null` matches the WS-array shrink path
+(`wslist.rs` `MiRemoveWsle`, the `pte_frame = (*Pfn).pte_frame()` site). So a WSLE-array
+backing page reaches teardown with its `u4.PteFrame` still holding the **free-color-list-head
+sentinel** — i.e. a page that is (or recently was) a free-list head is being torn down as an
+active WSLE page (a PFN-state double-accounting bug). Amd64-specific because the 57-bit
+`PteFrame` sentinel differs on i386 (`MI_PTE_FRAME_BITS=25`). This is the next item for the
+PFN-state-tracking completion work (`PFN-STATE-HANDOFF.md`); the grow path
+(`MiInitializePfnAndMakePteValid`) *does* set `PteFrame`, so suspect a page freed to a color
+list while still live as a WSLE page, or an init path that skips `PteFrame`.

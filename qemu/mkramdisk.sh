@@ -318,7 +318,9 @@ if [ -n "$L_INTL_NLS" ]; then
 fi
 
 # Fonts (loaded by IntLoadSystemFonts from \SystemRoot\Fonts\)
-mmd -i "$RAMDISK_IMG" ::reactos/Fonts 2>/dev/null || true  # may already exist under --refresh
+# Under --refresh, mmd can prompt on an existing directory when stdout is a tty.
+# Probe first so refresh stays non-interactive under vibeos-cli.
+mdir -i "$RAMDISK_IMG" ::reactos/Fonts >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::reactos/Fonts
 mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/FreeSans.ttf"                   ::reactos/Fonts/FreeSans.ttf
 # winlogon explicitly tries to load these names; without them
 # Failed to lock the DC + SYSTEMCUR(ARROW) cascades and the taskbar

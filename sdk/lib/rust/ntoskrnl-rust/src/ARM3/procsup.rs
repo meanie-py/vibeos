@@ -204,7 +204,6 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
             }
 
             MI_SET_PFN_DELETED(Pfn1);
-
             MiDecrementShareCount(Pfn1 as *mut _MMPFN, (PageFrameNumber) as _);
         }
 
@@ -681,11 +680,9 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
 
     OldIrql = MiAcquirePfnLock();
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let PointerPte = MiAddressToPte(PXE_BASE as PVOID);
-    #[cfg(all(not(target_arch = "aarch64"), target_arch = "x86_64"))]
-    let PointerPte = MiAddressToPte(PPE_BASE as PVOID);
-    #[cfg(all(not(target_arch = "aarch64"), not(target_arch = "x86_64")))]
+    #[cfg(all(not(target_arch = "x86_64"), not(target_arch = "aarch64")))]
     let PointerPte = MiAddressToPte(PDE_BASE as PVOID);
 
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
