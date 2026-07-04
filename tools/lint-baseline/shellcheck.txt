@@ -6,5 +6,5 @@ qemu/lib/common.sh:90:17: warning: SLOT_INDEX appears unused. Verify use (or exp
 qemu/lib/manifest.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
 qemu/lib/runid.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
 qemu/start.sh:175:18: warning: Use spaces, not commas, to separate array elements. [SC2054]
-qemu/start.sh:198:18: warning: Use spaces, not commas, to separate array elements. [SC2054]
+qemu/start.sh:207:18: warning: Use spaces, not commas, to separate array elements. [SC2054]
 qemu/start.sh:48:27: warning: LIVECD appears unused. Verify use (or export if used externally). [SC2034]
