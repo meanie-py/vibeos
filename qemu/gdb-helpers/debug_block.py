@@ -1,0 +1,334 @@
+# debug_block: decode VIBEOS_DEBUG_BLOCK — the kernel's exported, versioned
+# block of struct offsets + instrumentation-global addresses
+# (sdk/lib/rust/ntoskrnl-rust/src/debugblock.rs, sync-instrumentation §5).
+#
+# This is the DWARF-free path the Rust kernel needs: one symbol lookup, then
+# every KTHREAD/EPROCESS offset is data. Other helpers should prefer
+# `DebugBlock.load()` over hand-pinned offsets (which rot on layout changes —
+# the field-manual §9 pins were per-incident workarounds for exactly this).
+#
+# Also decodes the synctrace wait/signal table (§3) reachable through the
+# block: `vibeos-synctrace [addr]` prints counters for one object or every
+# populated slot.
+#
+# Usage (inside inspect.sh / any attached gdb):
+#   source debug_block.py
+#   vibeos-debug-block            # print the whole block
+#   vibeos-synctrace              # dump populated synctrace slots
+#   vibeos-synctrace 0xADDR       # counters for one object
+#   python db = DebugBlock.load(); print(hex(db.off("kthread_state")))
+
+import struct
+
+import gdb
+
+MAGIC = 0x3142_4456_5342_4956  # "VIBSVDB1" little-endian
+SUPPORTED_VERSIONS = (1,)
+
+# (name, kind) in exact struct order — kind: Q=u64, I=u32, P=ptr-sized atomic.
+# Append-only, mirroring debugblock.rs; bump SUPPORTED_VERSIONS on change.
+_FIELDS = [
+    ("magic", "Q"),
+    ("version", "I"),
+    ("size", "I"),
+    ("arch", "I"),
+    ("pointer_width", "I"),
+    ("kthread_size", "I"),
+    ("kthread_state", "I"),
+    ("kthread_wait_irql", "I"),
+    ("kthread_wait_reason", "I"),
+    ("kthread_kernel_stack", "I"),
+    ("kthread_stack_base", "I"),
+    ("kthread_gate_object", "I"),
+    ("kthread_wait_block", "I"),
+    ("kthread_thread_list_entry", "I"),
+    ("kthread_queue", "I"),
+    ("ethread_size", "I"),
+    ("ethread_cid", "I"),
+    ("ethread_thread_list_entry", "I"),
+    ("eprocess_size", "I"),
+    ("eprocess_unique_process_id", "I"),
+    ("eprocess_active_process_links", "I"),
+    ("eprocess_image_file_name", "I"),
+    ("eprocess_pcb_thread_list_head", "I"),
+    ("eprocess_thread_list_head", "I"),
+    ("kprcb_current_thread", "I"),
+    ("_pad", "I"),
+    ("ps_active_process_head", "P"),
+    ("ps_initial_system_process", "P"),
+    ("synctrace_table", "P"),
+    ("census_scan_count", "P"),
+    ("flightrec_ring", "P"),
+]
+
+ARCH_NAMES = {1: "i386", 2: "amd64", 3: "arm64"}
+
+
+def _read(addr, size):
+    return bytes(gdb.selected_inferior().read_memory(addr, size))
+
+
+class DebugBlock:
+    """Decoded VIBEOS_DEBUG_BLOCK. `off(name)` for offsets, `addr(name)` for
+    runtime-stamped global addresses (0 until Phase-1 ran)."""
+
+    def __init__(self, base, values):
+        self.base = base
+        self.values = values
+
+    @classmethod
+    def load(cls):
+        sym = gdb.lookup_global_symbol("VIBEOS_DEBUG_BLOCK")
+        if sym is not None:
+            base = int(sym.value().address)
+        else:
+            # Fall back to the minimal-symbol path (symbol-file loaded but no
+            # global symbol object — depends on how syms were added).
+            base = int(gdb.parse_and_eval("&VIBEOS_DEBUG_BLOCK"))
+        values = {}
+        pos = 0
+        # header first to learn pointer width
+        hdr = _read(base, 24)
+        magic, version, size, arch, ptr_width = struct.unpack("<QIIII", hdr)
+        if magic != MAGIC:
+            raise gdb.GdbError(
+                f"VIBEOS_DEBUG_BLOCK magic mismatch at {base:#x}: {magic:#x}"
+            )
+        if version not in SUPPORTED_VERSIONS:
+            raise gdb.GdbError(f"unsupported debug-block version {version}")
+        psz = ptr_width // 8
+        raw = _read(base, size)
+        for name, kind in _FIELDS:
+            if kind == "Q":
+                values[name] = struct.unpack_from("<Q", raw, pos)[0]
+                pos += 8
+            elif kind == "I":
+                values[name] = struct.unpack_from("<I", raw, pos)[0]
+                pos += 4
+            else:  # P — align then read pointer-sized
+                if pos % psz:
+                    pos += psz - (pos % psz)
+                fmt = "<Q" if psz == 8 else "<I"
+                values[name] = struct.unpack_from(fmt, raw, pos)[0]
+                pos += psz
+        return cls(base, values)
+
+    def off(self, name):
+        return self.values[name]
+
+    def addr(self, name):
+        return self.values[name]
+
+    @property
+    def ptr_size(self):
+        return self.values["pointer_width"] // 8
+
+
+class VibeosDebugBlockCmd(gdb.Command):
+    """vibeos-debug-block: print the decoded kernel debug block."""
+
+    def __init__(self):
+        super().__init__("vibeos-debug-block", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        db = DebugBlock.load()
+        v = db.values
+        print(f"VIBEOS_DEBUG_BLOCK @ {db.base:#x}")
+        print(
+            f"  version={v['version']} arch={ARCH_NAMES.get(v['arch'], v['arch'])}"
+            f" ptr={v['pointer_width']}b size={v['size']}"
+        )
+        for name, _ in _FIELDS:
+            if name in ("magic", "version", "size", "arch", "pointer_width", "_pad"):
+                continue
+            tag = "addr" if _ == "P" else "off"
+            print(f"  {name:34s} {tag}={v[name]:#x}")
+
+
+# ── synctrace table decoding (§3) ────────────────────────────────────
+# struct SyncTraceTable { magic u32; slot_count u32; dropped u32; _pad u32;
+#                         slots[slot_count] }
+# struct SyncTraceEntry { key usize; parked u32; satisfied u32; signals u32;
+#                         _pad u32; last_waiter usize; last_signaller usize }
+SYNCTRACE_MAGIC = 0x53545431  # 'STT1'
+
+
+def _synctrace_entries(db):
+    tbl = db.addr("synctrace_table")
+    if not tbl:
+        raise gdb.GdbError("synctrace_table address not stamped (pre-Phase-1?)")
+    psz = db.ptr_size
+    magic, slot_count, dropped, _ = struct.unpack("<IIII", _read(tbl, 16))
+    if magic not in (SYNCTRACE_MAGIC, 0):  # 0 = pre-init; counters still valid
+        raise gdb.GdbError(f"synctrace magic mismatch: {magic:#x}")
+    if slot_count == 0:
+        slot_count = 4096  # pre-init default (SYNCTRACE_SLOTS)
+    ptr = "Q" if psz == 8 else "I"
+    entry_fmt = f"<{ptr}IIII{ptr}{ptr}"
+    entry_size = struct.calcsize(entry_fmt)
+    raw = _read(tbl + 16, slot_count * entry_size)
+    out = []
+    for i in range(slot_count):
+        key, parked, sat, sig, _pad, lw, ls = struct.unpack_from(
+            entry_fmt, raw, i * entry_size
+        )
+        if key:
+            out.append((key, parked, sat, sig, lw, ls))
+    return dropped, out
+
+
+class VibeosSynctraceCmd(gdb.Command):
+    """vibeos-synctrace [addr]: wait/signal counters (all slots or one object)."""
+
+    def __init__(self):
+        super().__init__("vibeos-synctrace", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        db = DebugBlock.load()
+        dropped, entries = _synctrace_entries(db)
+        want = int(arg, 0) if arg.strip() else None
+        print(f"synctrace: {len(entries)} object(s), dropped={dropped}")
+        shown = 0
+        for key, parked, sat, sig, lw, ls in sorted(entries):
+            if want is not None and key != want:
+                continue
+            verdict = ""
+            if parked > sat:  # someone is (or was) parked unsatisfied
+                verdict = (
+                    " <== HOLDER-STUCK(no signal)"
+                    if sig == 0
+                    else (" <== LOST-WAKEUP(sig>=parked)" if sig >= parked else " <== UNDER-SIGNALLED")
+                )
+            print(
+                f"  obj={key:#x} parked={parked} sat={sat} sig={sig}"
+                f" last_waiter={lw:#x} last_sig={ls:#x}{verdict}"
+            )
+            shown += 1
+        if want is not None and shown == 0:
+            print(f"  no entry for {want:#x}")
+
+
+# ── offset-free process/thread walk (replaces hand-pinned walk-procs) ─
+KTHREAD_STATE_NAMES = {
+    0: "Initialized", 1: "Ready", 2: "Running", 3: "Standby", 4: "Terminated",
+    5: "Waiting", 6: "Transition", 7: "DeferredReady", 8: "GateWait",
+}
+
+
+def _ptr(db, addr):
+    raw = _read(addr, db.ptr_size)
+    return struct.unpack("<Q" if db.ptr_size == 8 else "<I", raw)[0]
+
+
+class VibeosThreadsCmd(gdb.Command):
+    """vibeos-threads [gatewait]: walk every process/thread via the debug
+    block (no DWARF, no hand-pinned offsets). Optional arg filters to
+    GateWait-state threads (the wedge signature)."""
+
+    def __init__(self):
+        super().__init__("vibeos-threads", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        db = DebugBlock.load()
+        only_gatewait = arg.strip().lower() == "gatewait"
+        head = db.addr("ps_active_process_head")
+        if not head:
+            raise gdb.GdbError("ps_active_process_head not stamped (pre-Phase-1?)")
+        plink = _ptr(db, head)
+        nprocs = 0
+        while plink and plink != head and nprocs < 512:
+            nprocs += 1
+            eproc = plink - db.off("eprocess_active_process_links")
+            img = _read(eproc + db.off("eprocess_image_file_name"), 16)
+            img = img.split(b"\0")[0].decode("ascii", "replace") or "?"
+            pid = _ptr(db, eproc + db.off("eprocess_unique_process_id"))
+            thead = eproc + db.off("eprocess_pcb_thread_list_head")
+            tlink = _ptr(db, thead)
+            rows = []
+            nthreads = 0
+            while tlink and tlink != thead and nthreads < 2048:
+                nthreads += 1
+                kt = tlink - db.off("kthread_thread_list_entry")
+                state = _read(kt + db.off("kthread_state"), 1)[0]
+                if not only_gatewait or state == 8:
+                    reason = _read(kt + db.off("kthread_wait_reason"), 1)[0]
+                    # CLIENT_ID = {UniqueProcess, UniqueThread} — tid is 2nd.
+                    tid = _ptr(db, kt + db.off("ethread_cid") + db.ptr_size)
+                    obj = _ptr(db, kt + db.off("kthread_gate_object"))
+                    rows.append(
+                        f"    tid={tid:<6} kthread={kt:#x} "
+                        f"{KTHREAD_STATE_NAMES.get(state, state)!s:<14} "
+                        f"reason={reason:<3} waitobj={obj:#x}"
+                    )
+                tlink = _ptr(db, tlink)
+            if rows or not only_gatewait:
+                print(f"{img} pid={pid} eprocess={eproc:#x} ({len(rows)} shown)")
+                for r in rows:
+                    print(r)
+            plink = _ptr(db, plink)
+
+
+# ── flight recorder decoding (§1) ────────────────────────────────────
+# struct FlightRecRing { cursor u64; entry_count u64; entries[] }
+# struct FlightRecEntry { seq u64; thread usize; object usize; opdata u64 }
+OP_NAMES = {
+    1: "gate-park", 2: "gate-satisfied", 3: "gate-signal",
+    4: "pushlock-park", 5: "pushlock-satisfied", 6: "pushlock-wake",
+}
+
+
+class VibeosFlightrecCmd(gdb.Command):
+    """vibeos-flightrec [N] [obj=0xADDR]: last N (default 64) sync events,
+    optionally filtered to one object."""
+
+    def __init__(self):
+        super().__init__("vibeos-flightrec", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        db = DebugBlock.load()
+        ring = db.addr("flightrec_ring")
+        if not ring:
+            raise gdb.GdbError("flightrec_ring not stamped (pre-Phase-1?)")
+        limit, want = 64, None
+        for tok in arg.split():
+            if tok.startswith("obj="):
+                want = int(tok[4:], 0)
+            else:
+                limit = int(tok, 0)
+        psz = db.ptr_size
+        cursor, entry_count = struct.unpack("<QQ", _read(ring, 16))
+        if entry_count == 0:
+            entry_count = 16 * 1024  # pre-init default (FLIGHTREC_ENTRIES)
+        ptrc = "Q" if psz == 8 else "I"
+        efmt = f"<Q{ptrc}{ptrc}Q"
+        esz = struct.calcsize(efmt)
+        span = min(cursor, entry_count)
+        print(f"flightrec: cursor={cursor} showing<= {limit}"
+              + (f" obj={want:#x}" if want else ""))
+        shown = 0
+        rows = []
+        back = 0
+        while back < span and shown < limit:
+            seq = cursor - back  # 1-based stored seq
+            slot = (seq - 1) % entry_count
+            raw = _read(ring + 16 + slot * esz, esz)
+            sseq, thread, obj, opdata = struct.unpack(efmt, raw)
+            back += 1
+            if sseq != seq:
+                continue  # torn/overwritten
+            if want is not None and obj != want:
+                continue
+            op = opdata & 0xFF
+            rows.append(
+                f"  seq={seq:<10} {OP_NAMES.get(op, op)!s:<20} obj={obj:#x}"
+                f" thr={thread:#x} data={opdata >> 8}"
+            )
+            shown += 1
+        for r in reversed(rows):
+            print(r)
+
+
+VibeosDebugBlockCmd()
+VibeosSynctraceCmd()
+VibeosThreadsCmd()
+VibeosFlightrecCmd()

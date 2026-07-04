@@ -22,7 +22,21 @@ be the instrumented build), Tier 2 opt-in (lockdep).
 
 ---
 
-## 1. Sync flight recorder (in-memory ring buffer) — PLANNED, highest value
+> **Status update 2026-07-04 (overnight build-out):** items **#1, #2, #3, #5
+> are BUILT** and wired (user-approved order 3→2→5→1). Implementation:
+> `ntoskrnl-rust/src/ke/synctrace.rs` (§3, wait/signal side-table, 4K slots,
+> tapped from ke/gate.rs + ex/pushlock.rs), `ke/census.rs` (§2, 10s-cadence
+> system thread, two-sighting GateWait detector, prints per-object counters +
+> lost-wakeup/holder-stuck verdict + the object's recent flight-recorder
+> events), `src/debugblock.rs` (§5, `VIBEOS_DEBUG_BLOCK` — offset_of!-computed
+> per-arch struct offsets + runtime-stamped instrumentation addresses;
+> decoder `qemu/gdb-helpers/debug_block.py` with `vibeos-debug-block` /
+> `vibeos-synctrace` / `vibeos-flightrec` commands), `ke/flightrec.rs` (§1,
+> 16K-entry lock-free ring, tapped from the synctrace accounting fns).
+> All Tier-0 always-on; every table is an all-zero .bss static (no image
+> cost); hooked at `ExpInitSystemPhase1` via `KiStartSyncCensus`.
+
+## 1. Sync flight recorder (in-memory ring buffer) — BUILT 2026-07-04 (see status box)
 
 Global lock-free ring (~64K entries, per-CPU sharded), recording every sync
 event: `{TSC, cpu, thread, op, object, caller-RA}` with op ∈ {acquire, release,

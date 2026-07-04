@@ -676,6 +676,11 @@ unsafe fn ExpInitSystemPhase1() -> BOOLEAN {
     ExpInitializeWorkerThreads();
     ExpInitializePushLocks();
 
+    // sync-instrumentation §2/§3: stamp the synctrace table header + start the
+    // wedge self-census watchdog (silent when healthy; on a wedge it prints
+    // the stuck threads + lost-wakeup/holder-stuck verdict to serial).
+    crate::ke::census::KiStartSyncCensus();
+
     if ExpInitializeEventImplementation() == 0 {
         return 0;
     }
