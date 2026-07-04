@@ -37,7 +37,7 @@ use ntkrnl_sys::driver_ddk::{
 // REG_DWORD (winnt) — not emitted into either bindgen module for i386.
 const REG_DWORD: ULONG = 4;
 // NTSTATUS codes not emitted into the driver bindgen module.
-const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC000000Eu32 as NTSTATUS;
+const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC00000C0_u32 as i32;
 const STATUS_CONFLICTING_ADDRESSES: NTSTATUS = 0xC0000018u32 as NTSTATUS;
 
 // ---- local #defines from id_ata.cpp (mirror part2) ----

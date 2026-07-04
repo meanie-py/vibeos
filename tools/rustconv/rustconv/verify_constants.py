@@ -694,11 +694,18 @@ def main():
     else:
         # Whole Rust kernel/driver workspace — IOCTL/FSCTL garbage consts live in the
         # driver crates (ramdisk, cdrom, fastfat, …), not just ntoskrnl-rust. Skip
-        # build output under target/.
+        # build output under target/. Skip bindgen-GENERATED files: they compile from
+        # the project's headers at the real NTDDI level, i.e. they ARE ground truth —
+        # when they disagree with this catalog's flat header parse it's the catalog
+        # picking a different #ifdef branch (IO_REPARSE_TAG_VALID_VALUES,
+        # MAXIMUM_PROC_PER_GROUP) or a cross-header generic-name collision
+        # (BITS_PER_ENTRY, DISPATCH_LENGTH), never a translation bug; "fixing" them
+        # would corrupt generated code (the PsQuotaTypes lesson, generalized).
         rs_files = sorted(
             p
             for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
             if "/target/" not in p.as_posix()
+            and not p.name.startswith(("bindgen_", "hal_bindgen_"))
         )
 
     total_mismatches = 0

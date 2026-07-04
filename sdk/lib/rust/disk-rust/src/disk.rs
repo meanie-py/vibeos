@@ -10985,7 +10985,7 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
     const TRACE_FLAG_IOCTL: u32 = 0; // placeholder
     const DISK_TAG_SMART: u32 = 0x61446353; // 'aDcS' (disk.h)
     const NonPagedPool: u32 = 0; // placeholder
-    const SynchronizationEvent: i32 = 0; // placeholder
+    const SynchronizationEvent: i32 = 0x01; // placeholder
 
     // Extern declarations for functions not in the available imports list.
     // CC must match the in-crate definitions exactly (extern "system" for NTAPI defs) —

@@ -4,7 +4,7 @@ use core::ffi::c_long;
 
 const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
-const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC000_0235u32 as NTSTATUS;
+const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5_u32 as i32;
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]

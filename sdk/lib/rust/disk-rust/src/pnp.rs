@@ -138,7 +138,7 @@ const PARTITION0_LIST_SIZE: ULONG = 4; // example constant
 const SENSE_BUFFER_SIZE_EX: SIZE_T = 18; // typical
 const SCSI_DISK_TIMEOUT: ULONG = 0x0A;
 const DISK_DEFAULT_FAILURE_POLLING_PERIOD: ULONG = 600;
-const NonPagedPoolNxCacheAligned: POOL_TYPE = 0; // use real value if known
+const NonPagedPoolNxCacheAligned: POOL_TYPE = 0x0204; // use real value if known
 const DISK_TAG_START: ULONG = 0x73446353;
 const MAX_SECTORS_PER_VERIFY: ULONG = 0x0100;
 const TRUE: BOOLEAN = 1;
@@ -148,7 +148,7 @@ const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = (0xC000009Au32 as i32);
 const STATUS_UNSUCCESSFUL: NTSTATUS = (0xC0000001u32 as i32);
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 const Executive: KWAIT_REASON = 0;
-const SynchronizationEvent: EVENT_TYPE = 0;
+const SynchronizationEvent: EVENT_TYPE = 0x01;
 
 // External declarations for symbols not in available imports
 unsafe extern "system" {
@@ -745,7 +745,7 @@ pub unsafe extern "system" fn DiskRemoveDevice(
 pub unsafe extern "system" fn DiskStartFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     // Unknown constants
     const APC_LEVEL: i32 = 1;
-    const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x2D1400;
+    const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x002D0C14;
     const TRACE_FLAG_PNP: u32 = 0x2;
     const DiskWriteCacheDefault: i32 = 0;
     const DiskWriteCacheDisable: i32 = 1;

@@ -83,7 +83,7 @@ pub static mut InfpHeap: *mut c_void = core::ptr::null_mut();
 static mut InfpHeapRefCount: i32 = 0;
 
 const HEAP_GROWABLE:               u32 = 0x00000002;
-const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x00002000;
+const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
 const FILE_NON_DIRECTORY_FILE:      u32 = 0x00000040;
 /// _FILE_INFORMATION_CLASS_FileStandardInformation = 5
 const FILE_INFORMATION_CLASS_STANDARD: i32 = 5;

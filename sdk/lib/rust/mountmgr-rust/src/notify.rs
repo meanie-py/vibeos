@@ -73,7 +73,7 @@ const NotificationEvent: u32 = 0;
 const Executive: u32 = 0;
 const FALSE: u8 = 0;
 
-const EventCategoryTargetDeviceChange: u32 = 2; // assumed from DDK, matches 0x2
+const EventCategoryTargetDeviceChange: u32 = 0x03; // assumed from DDK, matches 0x2
 
 const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016_u32 as i32;
 
