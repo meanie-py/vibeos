@@ -520,6 +520,15 @@ bash tools/verify_sacred_primitives.sh build-i386
 
 # Check ABI mismatches
 .venv/bin/python tools/rustconv/rustconv/verify_ffi.py
+
+# Silent-failure shapes: bare loop{} spins, unwrap/expect in kernel code,
+# swallowed Err arms (AST/tree-sitter; wired into `vibeos-cli check`, 0-NEW gate)
+.venv/bin/python tools/scan_silent_failures.py           # sweep no-std workspace
+# Suppress a sanctioned loud halt: // nolint: silent-failure (reason)
+
+# Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
+tools/coverage/run.sh amd64        # -> per-function exercised set + the
+                                   #    never-executed-rust.txt landmine registry
 ```
 
 `scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (almost always captures(none) or an ABI mismatch); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
