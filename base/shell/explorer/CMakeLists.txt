@@ -27,7 +27,8 @@ list(APPEND SOURCE
     # taskband.cpp — replaced by Rust (explorer-rust taskband.rs); the
     # multi-interface COM object template (IObjectWithSite/IDeskBand/
     # IPersistStream/IWinEventHandler/IOleCommandTarget on explorer_sys::com).
-    taskswnd.cpp
+    # taskswnd.cpp — replaced by Rust (explorer-rust taskswnd.rs); the
+    # task-switch / window-list toolbar (CTaskSwitchWnd + CHardErrorThread).
     # tbsite.cpp — replaced by Rust (explorer-rust tbsite.rs); CTrayBandSite,
     # the tray band site (wraps the shell RebarBandSite, hosts the task band).
     # trayclock.cpp — replaced by Rust (explorer-rust trayclock.rs); first

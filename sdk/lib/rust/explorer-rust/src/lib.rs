@@ -50,6 +50,10 @@ pub mod explorer {
     // CBalloonQueue/CNotifyToolbar helpers. IOleWindow window class; the
     // embedded CNotifyToolbar is a subclassed comctl32 toolbar.
     pub mod syspager;
+    // Tier C — taskswnd.cpp: CTaskSwitchWnd (task-switch / window-list toolbar)
+    // + CHardErrorThread. IOleWindow window class; embeds a subclassed comctl32
+    // toolbar (the task buttons) + a hard-error balloon thread.
+    pub mod taskswnd;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp
