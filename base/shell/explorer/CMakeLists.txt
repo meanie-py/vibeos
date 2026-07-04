@@ -8,7 +8,8 @@ list(APPEND SOURCE
     # appbar.cpp — replaced by Rust (folded into explorer-rust traywnd.rs);
     # CAppBarManager is a base class of CTrayWindow, translated with it.
     # desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
-    explorer.cpp
+    # explorer.cpp — replaced by Rust (explorer-rust explorer.rs); wWinMain (the
+    # process entry point) + the 4 process globals + CExplorerModule (ATL no-op).
     # notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
     # rshell.cpp — replaced by Rust (explorer-rust rshell.rs)
     # settings.cpp — replaced by Rust (explorer-rust settings.rs); the mangled

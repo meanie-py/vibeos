@@ -1,97 +1,159 @@
+//! explorer.cpp — the explorer.exe process entry point (`wWinMain`) plus the
+//! file-scope process globals and the two startup drivers (`StartWithDesktop`,
+//! `StartWithCommandLine`). This is THE boot-critical translation: if the
+//! entry point or the globals-flip is wrong, nothing boots.
+//!
+//! ENTRY POINT: the C++ `_tWinMain` is a tchar.h macro that expands to
+//! `wWinMain` in a UNICODE build, and the mingw CRT startup
+//! (`sdk/lib/crt/startup/crt0_w.c`) calls `wWinMain` (WINAPI = stdcall on i386,
+//! cdecl on amd64/arm64). So the Rust entry point is named `wWinMain`, NOT
+//! `_tWinMain` — same proven pattern as lsass-rust (`wWinMain`) and
+//! winlogon-rust (`WinMain`). `extern "system"` resolves to the correct
+//! per-arch decoration (`_wWinMain@16` on i386). A pure-Rust entry point works
+//! here; no C++ shell is needed (see SUBSTRATE MANIFEST in the handoff).
+//!
+//! GLOBALS FLIP: hExplorerInstance / hProcessHeap / hkExplorer /
+//! bExplorerIsShell were DEFINED in explorer.cpp and EXTERN-declared by
+//! explorer_sys::globals (for the sibling Rust modules) and by precomp.h (for
+//! the still-C++ trayntfy.cpp / traydeskbtn.cpp). This module now OWNS the
+//! real storage via `#[no_mangle] pub static mut`; the substrate extern block
+//! and the precomp.h externs resolve to these definitions at link. C++
+//! namespace-scope globals are unmangled, so plain `hExplorerInstance` etc.
+//! bind on all three arches. explorer_sys::globals needs NO change.
+
 use core::ffi::c_void;
 use explorer_sys::*;
 use explorer_sys::com::*;
 use explorer_sys::externs::*;
-use explorer_sys::globals::*;
-use explorer_sys::types::*;
 use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
+// Sibling explorer-rust entry points, referenced by crate path so the ABI is
+// type-checked (they are all `#[no_mangle] pub extern` — the linker sees one
+// symbol; the crate path just gives us the correct Rust signature).
+use crate::explorer::rshell::{InitRSHELL, _ShellDDEInit, _WinList_Init};
+use crate::explorer::traywnd::{CreateTrayWindow, TrayMessageLoop};
+use crate::explorer::desktop::{DesktopCreateWindow, DesktopDestroyShellWindow};
+use crate::explorer::startup::{
+    DoStartStartupItems, ProcessRunOnceItems, ProcessStartupItems, ReleaseStartupMutex,
+};
+use crate::explorer::settings::{g_TaskbarSettings, TaskbarSettings_Load};
+
+// C-library imports beyond the winsrv / explorer_sys surface. stdcall Win32 →
+// extern "system"; the DLL each resolves against (via explorer's importlibs) is
+// noted. OleInitialize/OleUninitialize are also declared in desktop.rs — a
+// different module, so no conflict (each is just an undefined reference the
+// same ole32 export satisfies).
 extern "system" {
-    fn SHGetShellKey(flags: u32, path: LPCWSTR, create: i32) -> HKEY;
-    fn SHGetValueW( hkey: HKEY, subkey: LPCWSTR, value: LPCWSTR, type_: *mut u32, data: *mut core::ffi::c_void, size: *mut u32, ) -> u32;
-    fn SHSetValueW( hkey: HKEY, subkey: LPCWSTR, value: LPCWSTR, type_: u32, data: *const core::ffi::c_void, size: u32, ) -> u32;
-    fn IsOS(os: u32) -> i32;
-    fn IsUserAnAdmin() -> i32;
-    fn IntToPtr(val: i32) -> *mut core::ffi::c_void;
-    fn SystemParametersInfo( action: u32, param: u32, data: *mut core::ffi::c_void, flags: u32, ) -> i32;
-    fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;
-    fn StrStrIW(pszFirst: LPCWSTR, pszSrch: LPCWSTR) -> LPWSTR;
-    fn CreateTrayWindow(ppTray: *mut *mut core::ffi::c_void);
-    fn DesktopCreateWindow(pTray: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn DesktopDestroyShellWindow(hShellDesktop: *mut core::ffi::c_void);
-    fn DoFinishStartupItems();
-    fn DoStartStartupItems(pTray: *mut core::ffi::c_void) -> i32;
-    fn FileIconInit(bFullInit: i32) -> i32;
-    fn InitCommonControls();
-    fn MessageBox(hWnd: *mut core::ffi::c_void, lpText: LPCWSTR, lpCaption: LPCWSTR, uType: u32) -> i32;
-    fn OleInitialize(pvReserved: *mut core::ffi::c_void) -> i32;
-    fn OleUninitialize();
-    fn ProcessRunOnceItems();
-    fn ProcessStartupItems();
-    fn ReleaseStartupMutex();
-    fn TrayMessageLoop(pTray: *mut core::ffi::c_void);
-    fn _ShellDDEInit(bInit: i32);
-    fn _WinList_Init();
-    fn _countof(arr: *const core::ffi::c_void) -> usize;
+    fn SHGetShellKey(flags: u32, path: LPCWSTR, create: BOOL) -> HKEY;      // shell32 (undoc)
+    fn IsOS(dwOS: u32) -> BOOL;                                             // shlwapi
+    fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;                       // shlwapi
+    fn StrStrIW(pszFirst: LPCWSTR, pszSrch: LPCWSTR) -> LPWSTR;            // shlwapi
+    fn SHFree(pv: *mut c_void);                                             // shell32
+    fn FileIconInit(bFullInit: BOOL) -> BOOL;                              // shell32 (undoc)
+    fn InitCommonControls();                                               // comctl32
+    fn OleInitialize(pvReserved: *mut c_void) -> HRESULT;                  // ole32
+    fn OleUninitialize();                                                  // ole32
+    fn SHExplorerParseCmdLine(pInfo: *mut EXPLORER_CMDLINE_PARSE_RESULTS) -> usize; // browseui
+    fn SHCreateFromDesktop(parseResults: *mut EXPLORER_CMDLINE_PARSE_RESULTS) -> BOOL; // browseui
 }
 
-// ---- file-scope preamble (translated) ----
+// ---------------------------------------------------------------------------
+// File-scope process globals (were `HINSTANCE hExplorerInstance;` etc. in
+// explorer.cpp). #[no_mangle] so explorer_sys::globals' extern block and the
+// still-C++ precomp.h externs bind to THIS storage. See module doc.
+// ---------------------------------------------------------------------------
+#[no_mangle]
 pub static mut hExplorerInstance: HINSTANCE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut hProcessHeap: HANDLE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut hkExplorer: HKEY = core::ptr::null_mut();
+#[no_mangle]
 pub static mut bExplorerIsShell: BOOL = 0;
 
-unsafe fn InitializeAtlModule(hInstance: HINSTANCE, bInitialize: BOOL) {
-    if bInitialize != 0 {
-        gModule.Init(ObjectMap, hInstance, core::ptr::null_mut());
-    } else {
-        gModule.Term();
-    }
+/// `EXPLORER_CMDLINE_PARSE_RESULTS` (browseui_undoc.h) — only strPath/pidlPath/
+/// pidlRoot are touched by StartWithCommandLine; the full layout is spelled out
+/// so `core::mem::zeroed()` and the field offsets match the C++ struct exactly.
+#[repr(C)]
+pub struct EXPLORER_CMDLINE_PARSE_RESULTS {
+    pub strPath: LPWSTR,
+    pub pidlPath: *mut c_void, // LPITEMIDLIST
+    pub dwFlags: DWORD,
+    pub nCmdShow: i32,
+    pub offset10_18: DWORD,
+    pub offset14_1C: DWORD,
+    pub offset18_20: DWORD,
+    pub offset1C_24: DWORD,
+    pub pidlRoot: *mut c_void, // LPITEMIDLIST
+    pub clsid: GUID,
+    pub guidInproc: GUID,
+}
+
+// SHGetShellKey flag bits + IsOS predicate used by InitializeServerAdminUI.
+const SHKEY_ROOT_HKCU: u32 = 0x8000_0001;
+const SHKEY_KEY_EXPLORER: u32 = 0x0000_0000;
+const OS_ANYSERVER: u32 = 29;
+const IDS_STARTUP_ERROR: u32 = 105; // base/shell/explorer/resource.h
+
+/// `CExplorerModule gModule;` / `CAtlWinModule gWinModule;` +
+/// `InitializeAtlModule`. For an EMPTY object map (BEGIN_OBJECT_MAP/
+/// END_OBJECT_MAP with no OBJECT_ENTRY) and no OBJECT_ENTRY_AUTO classes,
+/// `CComModule::Init` walks a terminator-only map and the empty `_AtlComModule`
+/// auto-map — registering nothing — and `Term` mirrors it: both are no-ops
+/// (verified against sdk/lib/atl/atlbase.h CComModule::Init/Term). The ATL
+/// runtime globals `_AtlBaseModule`/`_AtlComModule`/`_AtlWinModule` are
+/// `__declspec(selectany)` self-constructing (atlcore.h/atlbase.h), so they
+/// exist independent of explorer.cpp, and the tier-C window classes use the
+/// explorer_sys::server WndProc/registration substrate rather than ATL's
+/// CAtlWinModule thunk heap. Nothing outside explorer.cpp referenced
+/// `gModule`/`gWinModule` (grep-confirmed), so they need no Rust storage.
+/// This preserves observable behavior exactly.
+#[inline]
+unsafe fn InitializeAtlModule(_hInstance: HINSTANCE, _bInitialize: BOOL) {
+    // no-op — see doc comment.
 }
 
 unsafe fn InitializeServerAdminUI() {
-
-    const SHKEY_Root_HKCU: u32 = 0x80000001;
-    const SHKEY_Key_Explorer: u32 = 0x00000000;
-    const OS_ANYSERVER: u32 = 29;
-
     let hKey = SHGetShellKey(
-        SHKEY_Root_HKCU | SHKEY_Key_Explorer,
-        b"A\0d\0v\0a\0n\0c\0e\0d\0\0\0".as_ptr() as LPCWSTR,
+        SHKEY_ROOT_HKCU | SHKEY_KEY_EXPLORER,
+        w!("Advanced").as_ptr(),
         1,
     );
     if hKey.is_null() {
         return;
     }
 
-    let mut value: u32 = 0;
-    let mut size: u32 = core::mem::size_of::<u32>() as u32;
-    let mut type_: u32 = 0;
+    let mut value: DWORD = 0;
+    let mut size: DWORD = core::mem::size_of::<DWORD>() as DWORD;
+    let mut r#type: DWORD = 0;
     let error = SHGetValueW(
         hKey,
         core::ptr::null(),
-        b"S\0e\0r\0v\0e\0r\0A\0d\0m\0i\0n\0U\0I\0\0\0".as_ptr() as LPCWSTR,
-        &mut type_,
-        &mut value as *mut u32 as *mut core::ffi::c_void,
+        w!("ServerAdminUI").as_ptr(),
+        &mut r#type,
+        &mut value as *mut DWORD as *mut c_void,
         &mut size,
     );
-    if error != 0 || type_ != REG_DWORD || size != core::mem::size_of::<u32>() as u32 {
-        value = (IsOS(OS_ANYSERVER) != 0 && IsUserAnAdmin() != 0) as u32;
+    if error != ERROR_SUCCESS || r#type != REG_DWORD || size != core::mem::size_of::<DWORD>() as DWORD
+    {
+        // The value doesn't exist or is invalid — compute and apply a default.
+        value = (IsOS(OS_ANYSERVER) != 0 && IsUserAnAdmin() != 0) as DWORD;
         SHSetValueW(
             hKey,
             core::ptr::null(),
-            b"S\0e\0r\0v\0e\0r\0A\0d\0m\0i\0n\0U\0I\0\0\0".as_ptr() as LPCWSTR,
+            w!("ServerAdminUI").as_ptr(),
             REG_DWORD,
-            &value as *const u32 as *const core::ffi::c_void,
-            core::mem::size_of::<u32>() as u32,
+            &value as *const DWORD as *const c_void,
+            core::mem::size_of::<DWORD>() as DWORD,
         );
         if value != 0 {
-            SystemParametersInfo(
+            // TODO: RegInstallW RegServerAdmin tweaks from shell32's REGINST.
+            SystemParametersInfoW(
                 SPI_SETKEYBOARDCUES,
                 0,
-                IntToPtr(1),
+                1usize as *mut c_void, // IntToPtr(TRUE)
                 SPIF_SENDCHANGE | SPIF_UPDATEINIFILE,
             );
         }
@@ -99,35 +161,43 @@ unsafe fn InitializeServerAdminUI() {
     RegCloseKey(hKey);
 }
 
-unsafe fn SetShellReadyEvent(lpEventName: LPCWSTR) -> u8 {
-    let hEvent = OpenEventW(EVENT_MODIFY_STATE, 0u8, lpEventName);
+unsafe fn SetShellReadyEvent(lpEventName: LPCWSTR) -> BOOL {
+    let hEvent = OpenEventW(EVENT_MODIFY_STATE, 0, lpEventName);
     if !hEvent.is_null() {
         SetEvent(hEvent);
         CloseHandle(hEvent);
-        return 1u8;
+        return 1;
     }
-    0u8
+    0
 }
 
-unsafe fn HideMinimizedWindows(bHide: i32) {
+unsafe fn HideMinimizedWindows(bHide: BOOL) {
     let mut mm: MINIMIZEDMETRICS = core::mem::zeroed();
     mm.cbSize = core::mem::size_of::<MINIMIZEDMETRICS>() as u32;
-    if SystemParametersInfoW(SPI_GETMINIMIZEDMETRICS, core::mem::size_of::<MINIMIZEDMETRICS>() as u32, &mut mm as *mut _ as *mut core::ffi::c_void, 0) == 0 {
-        ERR!(b"SystemParametersInfoW failed with %lu\n\0".as_ptr() as *const i8, GetLastError());
-        return;
+    if SystemParametersInfoW(
+        SPI_GETMINIMIZEDMETRICS,
+        core::mem::size_of::<MINIMIZEDMETRICS>() as u32,
+        &mut mm as *mut _ as *mut c_void,
+        0,
+    ) == 0
+    {
+        return; // ERR("SystemParametersInfoW failed ...")
     }
     if bHide != 0 {
         mm.iArrange |= ARW_HIDE as i32;
     } else {
         mm.iArrange &= !(ARW_HIDE as i32);
     }
-    if SystemParametersInfoW(SPI_SETMINIMIZEDMETRICS, core::mem::size_of::<MINIMIZEDMETRICS>() as u32, &mut mm as *mut _ as *mut core::ffi::c_void, 0) == 0 {
-        ERR!(b"SystemParametersInfoW failed with %lu\n\0".as_ptr() as *const i8, GetLastError());
-    }
+    SystemParametersInfoW(
+        SPI_SETMINIMIZEDMETRICS,
+        core::mem::size_of::<MINIMIZEDMETRICS>() as u32,
+        &mut mm as *mut _ as *mut c_void,
+        0,
+    );
 }
 
-unsafe fn IsExplorerSystemShell() -> u8 {
-    let mut bIsSystemShell: u8 = 1;
+unsafe fn IsExplorerSystemShell() -> BOOL {
+    let mut bIsSystemShell: BOOL = 1; // Assume system shell by default.
     let mut szPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if GetModuleFileNameW(core::ptr::null_mut(), szPath.as_mut_ptr(), MAX_PATH) == 0 {
@@ -138,29 +208,31 @@ unsafe fn IsExplorerSystemShell() -> u8 {
 
     let mut hKeyWinlogon: HKEY = core::ptr::null_mut();
     if RegOpenKeyExW(
-        0x80000002u32 as HKEY,
-        ['S' as u16, 'o' as u16, 'f' as u16, 't' as u16, 'w' as u16, 'a' as u16, 'r' as u16, 'e' as u16, '\\' as u16, 'M' as u16, 'i' as u16, 'c' as u16, 'r' as u16, 'o' as u16, 's' as u16, 'o' as u16, 'f' as u16, 't' as u16, '\\' as u16, 'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 's' as u16, ' ' as u16, 'N' as u16, 'T' as u16, '\\' as u16, 'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16, 'n' as u16, 't' as u16, 'V' as u16, 'e' as u16, 'r' as u16, 's' as u16, 'i' as u16, 'o' as u16, 'n' as u16, '\\' as u16, 'W' as u16, 'i' as u16, 'n' as u16, 'l' as u16, 'o' as u16, 'g' as u16, 'o' as u16, 'n' as u16, 0].as_ptr(),
+        HKEY_LOCAL_MACHINE,
+        w!("Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon").as_ptr(),
         0,
         KEY_READ,
         &mut hKeyWinlogon,
     ) == ERROR_SUCCESS as i32
     {
-        let mut dwType: u32 = 0;
+        let mut dwType: DWORD = 0;
         let mut szShell: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-        let mut cbShell: u32 = core::mem::size_of_val(&szShell) as u32;
+        let mut cbShell: DWORD = core::mem::size_of_val(&szShell) as DWORD;
 
-        let Status = RegQueryValueExW(
+        // TODO: Add support for paths longer than MAX_PATH
+        let status = RegQueryValueExW(
             hKeyWinlogon,
-            ['S' as u16, 'h' as u16, 'e' as u16, 'l' as u16, 'l' as u16, 0].as_ptr(),
+            w!("Shell").as_ptr(),
             core::ptr::null_mut(),
             &mut dwType,
             szShell.as_mut_ptr() as LPBYTE,
             &mut cbShell,
         );
-        if Status == ERROR_SUCCESS as i32 {
-            if (dwType != REG_SZ && dwType != REG_EXPAND_SZ) || StrStrIW(szShell.as_ptr(), szExplorer).is_null() {
-                bIsSystemShell = 0;
-            }
+        if status == ERROR_SUCCESS as i32
+            && ((dwType != REG_SZ && dwType != REG_EXPAND_SZ)
+                || StrStrIW(szShell.as_ptr(), szExplorer).is_null())
+        {
+            bIsSystemShell = 0;
         }
 
         RegCloseKey(hKeyWinlogon);
@@ -169,7 +241,7 @@ unsafe fn IsExplorerSystemShell() -> u8 {
     bIsSystemShell
 }
 
-unsafe fn StartWithCommandLine(hInstance: HINSTANCE) -> i32 {
+unsafe fn StartWithCommandLine(_hInstance: HINSTANCE) -> i32 {
     let mut b: BOOL = 0;
     let mut parseResults: EXPLORER_CMDLINE_PARSE_RESULTS = core::mem::zeroed();
 
@@ -178,78 +250,87 @@ unsafe fn StartWithCommandLine(hInstance: HINSTANCE) -> i32 {
     }
 
     if !parseResults.strPath.is_null() {
-        SHFree(parseResults.strPath as *mut core::ffi::c_void);
+        SHFree(parseResults.strPath as *mut c_void);
     }
-
     if !parseResults.pidlPath.is_null() {
-        ILFree(parseResults.pidlPath as *mut core::ffi::c_void);
+        ILFree(parseResults.pidlPath);
     }
-
     if !parseResults.pidlRoot.is_null() {
-        ILFree(parseResults.pidlRoot as *mut core::ffi::c_void);
+        ILFree(parseResults.pidlRoot);
     }
 
     b
 }
 
 unsafe fn StartWithDesktop(hInstance: HINSTANCE) -> i32 {
-
-    const IDS_STARTUP_ERROR: u32 = 0;
-
-    InitializeAtlModule(hInstance, 1u8);
+    InitializeAtlModule(hInstance, 1);
 
     if RegOpenKeyW(
-        0x80000001u32 as HKEY,
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\0".as_ptr() as LPCWSTR,
+        HKEY_CURRENT_USER,
+        w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer").as_ptr(),
         core::ptr::addr_of_mut!(hkExplorer),
-    ) != ERROR_SUCCESS
+    ) != ERROR_SUCCESS as i32
     {
-        let mut Message: [u16; 256] = [0; 256];
-        LoadStringW(hInstance, IDS_STARTUP_ERROR, Message.as_mut_ptr(), 256);
-        MessageBox(core::ptr::null_mut(), Message.as_ptr(), core::ptr::null(), MB_ICONERROR);
+        let mut message: [u16; 256] = [0; 256];
+        LoadStringW(hInstance, IDS_STARTUP_ERROR, message.as_mut_ptr(), 256);
+        MessageBoxW(
+            core::ptr::null_mut(),
+            message.as_ptr(),
+            core::ptr::null(),
+            MB_ICONERROR,
+        );
         return 1;
     }
 
     hExplorerInstance = hInstance;
     hProcessHeap = GetProcessHeap();
 
-    g_TaskbarSettings.Load();
+    // g_TaskbarSettings.Load() — the ::Load method is settings.rs' free fn.
+    TaskbarSettings_Load(core::ptr::addr_of_mut!(g_TaskbarSettings));
 
     InitCommonControls();
     OleInitialize(core::ptr::null_mut());
 
+    /* Initialize shell dde support */
     _ShellDDEInit(1);
 
+    /* Initialize shell icons */
     FileIconInit(1);
 
+    /* Initialize CLSID_ShellWindows class */
     _WinList_Init();
 
     InitializeServerAdminUI();
 
+    /* Boot/test marker — taskbar (tray window) creation milestone. */
     OutputDebugStringA(b"[EXPLORER] taskbar: creating tray window\n\0".as_ptr() as *const i8);
-    let mut Tray: *mut core::ffi::c_void = core::ptr::null_mut();
-    CreateTrayWindow(core::ptr::addr_of_mut!(Tray));
+    // CComPtr<ITrayWindow> Tray; — raw pointer + explicit Release at scope end.
+    let mut Tray: *mut ITrayWindow = core::ptr::null_mut();
+    CreateTrayWindow(&mut Tray);
 
+    /* Hide minimized-window captions AND enable HSHELL_* notifications. */
     HideMinimizedWindows(1);
 
-    ProcessRunOnceItems();
+    ProcessRunOnceItems(); // Must run before the desktop is created
 
-    let mut hShellDesktop: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut hShellDesktop: HANDLE = core::ptr::null_mut();
     if !Tray.is_null() {
         hShellDesktop = DesktopCreateWindow(Tray);
     }
 
-    if SetShellReadyEvent(b"m\0s\0g\0i\0n\0a\0:\0 \0S\0h\0e\0l\0l\0R\0e\0a\0d\0y\0E\0v\0e\0n\0t\0\0".as_ptr() as LPCWSTR) == 0 {
-        SetShellReadyEvent(b"G\0l\0o\0b\0a\0l\0\\\0m\0s\0g\0i\0n\0a\0:\0 \0S\0h\0e\0l\0l\0R\0e\0a\0d\0y\0E\0v\0e\0n\0t\0\0".as_ptr() as LPCWSTR);
+    /* WinXP: notify msgina to hide the welcome screen */
+    if SetShellReadyEvent(w!("msgina: ShellReadyEvent").as_ptr()) == 0 {
+        SetShellReadyEvent(w!("Global\\msgina: ShellReadyEvent").as_ptr());
     }
 
-    if DoStartStartupItems(Tray) != 0 {
-        ProcessStartupItems();
-        DoFinishStartupItems();
+    if DoStartStartupItems(Tray as *mut c_void) != 0 {
+        ProcessStartupItems(0); // no-arg overload == ProcessStartupItems(FALSE)
+        ReleaseStartupMutex(); // DoFinishStartupItems() is a C++ inline over this
     }
-    ReleaseStartupMutex();
+    ReleaseStartupMutex(); // For ProcessRunOnceItems
 
     if !Tray.is_null() {
+        /* Boot/test marker — taskbar up, entering its message loop. */
         OutputDebugStringA(b"[EXPLORER] taskbar: entering message loop\n\0".as_ptr() as *const i8);
         TrayMessageLoop(Tray);
         HideMinimizedWindows(0);
@@ -264,319 +345,43 @@ unsafe fn StartWithDesktop(hInstance: HINSTANCE) -> i32 {
     RegCloseKey(hkExplorer);
     hkExplorer = core::ptr::null_mut();
 
-    InitializeAtlModule(hInstance, 0u8);
+    InitializeAtlModule(hInstance, 0);
+
+    // CComPtr<ITrayWindow> Tray destructor — release the CreateTrayWindow ref.
+    if !Tray.is_null() {
+        (*Tray).Release();
+    }
 
     0
 }
 
+/// `_tWinMain` (== `wWinMain` in a UNICODE build) — the process entry point the
+/// CRT startup calls. Named `wWinMain` so mingw's `crt0_w.c` binds it.
 #[no_mangle]
-pub unsafe extern "system" fn _tWinMain(
+pub unsafe extern "system" fn wWinMain(
     hInstance: HINSTANCE,
-    hPrevInstance: HINSTANCE,
-    lpCmdLine: LPTSTR,
-    nCmdShow: i32,
+    _hPrevInstance: HINSTANCE,
+    _lpCmdLine: LPWSTR,
+    _nCmdShow: i32,
 ) -> i32 {
+    /* Boot marker — proves EXPLORER user-mode code is running. The smoke
+     * harness (tests/qemu/vm.py) keys on this exact string. DO NOT change it. */
     OutputDebugStringA(b"[EXPLORER] _tWinMain entered\n\0".as_ptr() as *const i8);
 
+    /* Set our shutdown parameters: shut down very last, but before any TaskMgr
+     * instance (which has a shutdown level of 1). */
     SetProcessShutdownParameters(2, 0);
 
     InitRSHELL();
 
-    TRACE!(b"Explorer starting... Command line: %S\n\0".as_ptr() as *const i8, lpCmdLine);
+    // TRACE("Explorer starting... Command line: %S\n", lpCmdLine); — elided.
 
-    bExplorerIsShell = (GetShellWindow() == core::ptr::null_mut()) && (IsExplorerSystemShell() != 0);
+    bExplorerIsShell =
+        (GetShellWindow().is_null() && IsExplorerSystemShell() != 0) as BOOL;
 
     if bExplorerIsShell == 0 {
         return StartWithCommandLine(hInstance);
     }
 
-    return StartWithDesktop(hInstance);
+    StartWithDesktop(hInstance)
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * ReactOS Explorer
-//  *
-//  * Copyright 2006 - 2007 Thomas Weidenmueller <w3seek@reactos.org>
-//  *
-//  * This library is free software; you can redistribute it and/or
-//  * modify it under the terms of the GNU Lesser General Public
-//  * License as published by the Free Software Foundation; either
-//  * version 2.1 of the License, or (at your option) any later version.
-//  *
-//  * This library is distributed in the hope that it will be useful,
-//  * but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-//  * Lesser General Public License for more details.
-//  *
-//  * You should have received a copy of the GNU Lesser General Public
-//  * License along with this library; if not, write to the Free Software
-//  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-//  */
-//
-// #include "precomp.h"
-// #include <browseui_undoc.h>
-//
-// HINSTANCE hExplorerInstance;
-// HANDLE hProcessHeap;
-// HKEY hkExplorer = NULL;
-// BOOL bExplorerIsShell = FALSE;
-//
-// class CExplorerModule : public CComModule
-// {
-// public:
-// };
-//
-// BEGIN_OBJECT_MAP(ObjectMap)
-// END_OBJECT_MAP()
-//
-// CExplorerModule gModule;
-// CAtlWinModule   gWinModule;
-//
-// static VOID InitializeAtlModule(HINSTANCE hInstance, BOOL bInitialize)
-// {
-//     if (bInitialize)
-//     {
-//         gModule.Init(ObjectMap, hInstance, NULL);
-//     }
-//     else
-//     {
-//         gModule.Term();
-//     }
-// }
-//
-// static void
-// InitializeServerAdminUI()
-// {
-//     HKEY hKey = SHGetShellKey(SHKEY_Root_HKCU | SHKEY_Key_Explorer, L"Advanced", TRUE);
-//     if (!hKey)
-//         return;
-//
-//     DWORD value, size = sizeof(value), type;
-//     DWORD error = SHGetValueW(hKey, NULL, L"ServerAdminUI", &type, &value, &size);
-//     if (error || type != REG_DWORD || size != sizeof(value))
-//     {
-//         // The value doesn't exist or is invalid, calculate and apply a default value
-//         value = IsOS(OS_ANYSERVER) && IsUserAnAdmin();
-//         SHSetValueW(hKey, NULL, L"ServerAdminUI", REG_DWORD, &value, sizeof(value));
-//         if (value)
-//         {
-//             // TODO: Apply registry tweaks with RegInstallW; RegServerAdmin in the REGINST resource in shell32.
-//             SystemParametersInfo(SPI_SETKEYBOARDCUES, 0, IntToPtr(TRUE), SPIF_SENDCHANGE | SPIF_UPDATEINIFILE);
-//         }
-//     }
-//     RegCloseKey(hKey);
-// }
-//
-// static BOOL
-// SetShellReadyEvent(IN LPCWSTR lpEventName)
-// {
-//     HANDLE hEvent;
-//
-//     hEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, lpEventName);
-//     if (hEvent != NULL)
-//     {
-//         SetEvent(hEvent);
-//
-//         CloseHandle(hEvent);
-//         return TRUE;
-//     }
-//
-//     return FALSE;
-// }
-//
-// static VOID
-// HideMinimizedWindows(IN BOOL bHide)
-// {
-//     MINIMIZEDMETRICS mm;
-//
-//     mm.cbSize = sizeof(mm);
-//     if (!SystemParametersInfoW(SPI_GETMINIMIZEDMETRICS, sizeof(mm), &mm, 0))
-//     {
-//         ERR("SystemParametersInfoW failed with %lu\n", GetLastError());
-//         return;
-//     }
-//     if (bHide)
-//         mm.iArrange |= ARW_HIDE;
-//     else
-//         mm.iArrange &= ~ARW_HIDE;
-//     if (!SystemParametersInfoW(SPI_SETMINIMIZEDMETRICS, sizeof(mm), &mm, 0))
-//         ERR("SystemParametersInfoW failed with %lu\n", GetLastError());
-// }
-//
-// static BOOL
-// IsExplorerSystemShell()
-// {
-//     BOOL bIsSystemShell = TRUE; // Assume we are the system shell by default.
-//     WCHAR szPath[MAX_PATH];
-//
-//     if (!GetModuleFileNameW(NULL, szPath, _countof(szPath)))
-//         return FALSE;
-//
-//     LPWSTR szExplorer = PathFindFileNameW(szPath);
-//
-//     HKEY hKeyWinlogon;
-//     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-//                       L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
-//                       0, KEY_READ, &hKeyWinlogon) == ERROR_SUCCESS)
-//     {
-//         LSTATUS Status;
-//         DWORD dwType;
-//         WCHAR szShell[MAX_PATH];
-//         DWORD cbShell = sizeof(szShell);
-//
-//         // TODO: Add support for paths longer than MAX_PATH
-//         Status = RegQueryValueExW(hKeyWinlogon, L"Shell", 0, &dwType, (LPBYTE)szShell, &cbShell);
-//         if (Status == ERROR_SUCCESS)
-//         {
-//             if ((dwType != REG_SZ && dwType != REG_EXPAND_SZ) || !StrStrIW(szShell, szExplorer))
-//                 bIsSystemShell = FALSE;
-//         }
-//
-//         RegCloseKey(hKeyWinlogon);
-//     }
-//
-//     return bIsSystemShell;
-// }
-//
-// static INT
-// StartWithCommandLine(IN HINSTANCE hInstance)
-// {
-//     BOOL b = FALSE;
-//     EXPLORER_CMDLINE_PARSE_RESULTS parseResults = { 0 };
-//
-//     if (SHExplorerParseCmdLine(&parseResults))
-//         b = SHCreateFromDesktop(&parseResults);
-//
-//     if (parseResults.strPath)
-//         SHFree(parseResults.strPath);
-//
-//     if (parseResults.pidlPath)
-//         ILFree(parseResults.pidlPath);
-//
-//     if (parseResults.pidlRoot)
-//         ILFree(parseResults.pidlRoot);
-//
-//     return b;
-// }
-//
-// static INT
-// StartWithDesktop(IN HINSTANCE hInstance)
-// {
-//     InitializeAtlModule(hInstance, TRUE);
-//
-//     if (RegOpenKeyW(HKEY_CURRENT_USER,
-//         L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
-//         &hkExplorer) != ERROR_SUCCESS)
-//     {
-//         WCHAR Message[256];
-//         LoadStringW(hInstance, IDS_STARTUP_ERROR, Message, _countof(Message));
-//         MessageBox(NULL, Message, NULL, MB_ICONERROR);
-//         return 1;
-//     }
-//
-//     hExplorerInstance = hInstance;
-//     hProcessHeap = GetProcessHeap();
-//
-//     g_TaskbarSettings.Load();
-//
-//     InitCommonControls();
-//     OleInitialize(NULL);
-//
-//     /* Initialize shell dde support */
-//     _ShellDDEInit(TRUE);
-//
-//     /* Initialize shell icons */
-//     FileIconInit(TRUE);
-//
-//     /* Initialize CLSID_ShellWindows class */
-//     _WinList_Init();
-//
-//     InitializeServerAdminUI();
-//
-//     /* Boot/test marker — taskbar (tray window) creation milestone. */
-//     OutputDebugStringA("[EXPLORER] taskbar: creating tray window\n");
-//     CComPtr<ITrayWindow> Tray;
-//     CreateTrayWindow(&Tray);
-//
-//     /* This not only hides the minimized window captions in the bottom
-//     left screen corner, but is also needed in order to receive
-//     HSHELL_* notification messages (which are required for taskbar
-//     buttons to work right) */
-//     HideMinimizedWindows(TRUE);
-//
-//     ProcessRunOnceItems(); // Must be executed before the desktop is created
-//
-//     HANDLE hShellDesktop = NULL;
-//     if (Tray != NULL)
-//         hShellDesktop = DesktopCreateWindow(Tray);
-//
-//     /* WinXP: Notify msgina to hide the welcome screen */
-//     if (!SetShellReadyEvent(L"msgina: ShellReadyEvent"))
-//         SetShellReadyEvent(L"Global\\msgina: ShellReadyEvent");
-//
-//     if (DoStartStartupItems(Tray))
-//     {
-//         ProcessStartupItems();
-//         DoFinishStartupItems();
-//     }
-//     ReleaseStartupMutex(); // For ProcessRunOnceItems
-//
-//     if (Tray != NULL)
-//     {
-//         /* Boot/test marker — taskbar up, entering its message loop. */
-//         OutputDebugStringA("[EXPLORER] taskbar: entering message loop\n");
-//         TrayMessageLoop(Tray);
-//         HideMinimizedWindows(FALSE);
-//     }
-//
-//     if (hShellDesktop != NULL)
-//         DesktopDestroyShellWindow(hShellDesktop);
-//
-//     OleUninitialize();
-//
-//     RegCloseKey(hkExplorer);
-//     hkExplorer = NULL;
-//
-//     InitializeAtlModule(hInstance, FALSE);
-//
-//     return 0;
-// }
-//
-// INT WINAPI
-// _tWinMain(IN HINSTANCE hInstance,
-//           IN HINSTANCE hPrevInstance,
-//           IN LPTSTR lpCmdLine,
-//           IN INT nCmdShow)
-// {
-//     /* Boot marker — proves EXPLORER user-mode code is running.  Smoke
-//      * harness (tests/qemu/vm.py) keys on this string. */
-//     OutputDebugStringA("[EXPLORER] _tWinMain entered\n");
-//
-//     /*
-//     * Set our shutdown parameters: we want to shutdown the very last,
-//     * but before any TaskMgr instance (which has a shutdown level of 1).
-//     */
-//     SetProcessShutdownParameters(2, 0);
-//
-//     InitRSHELL();
-//
-//     TRACE("Explorer starting... Command line: %S\n", lpCmdLine);
-//
-//     bExplorerIsShell = (GetShellWindow() == NULL) && IsExplorerSystemShell();
-//
-//     if (!bExplorerIsShell)
-//     {
-//         return StartWithCommandLine(hInstance);
-//     }
-//
-//     return StartWithDesktop(hInstance);
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

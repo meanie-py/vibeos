@@ -64,6 +64,11 @@ pub mod explorer {
     // the taskbar core (ITrayWindow/IShellDesktopTray/IOleWindow/IContextMenu),
     // its CAppBarManager base, and the embedded start button. Creates everything.
     pub mod traywnd;
+    // explorer.cpp — wWinMain (the process ENTRY POINT) + CExplorerModule (ATL
+    // no-op) + the 4 process globals (hExplorerInstance/hProcessHeap/hkExplorer/
+    // bExplorerIsShell as #[no_mangle] statics — resolve explorer_sys::globals'
+    // externs + the still-C++ trayntfy/traydeskbtn precomp.h externs).
+    pub mod explorer;
 }
 
 // USER-MODE no_std staticlib linked into a C++ exe that has its own CRT/EH;
