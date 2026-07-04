@@ -473,6 +473,17 @@ def test_triage_known_hang_flakes():
     assert r4["classification"] == "BUGCHECK"  # bugcheck branch, hang sig ignored
 
 
+def test_triage_arm64_bugcheck_banner():
+    # ke/bug.c prints `*** BUGCHECK: 0xNN …` (the canonical Rust/arm64 banner);
+    # until 2026-07-04 the regex only knew `BugCheck 0xNN` / `*** STOP`, so a
+    # real arm64 0xF4 classified as HANG_TIMEOUT — which the old gate policy
+    # would then have auto-retried as a "flake".
+    serial = "*** BUGCHECK: 0x000000F4 (0x03, 0xfffffa00063809, 0xfffffa000638, 0xfffff8004)\n"
+    r = triage.classify(serial, reached=False, fail_marker=None, debugcon=None)
+    assert r["classification"] == "BUGCHECK"
+    assert r["bugcheck"] == "0x000000F4"
+
+
 def test_triage_kernel_panic_via_debugcon():
     # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
     # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)

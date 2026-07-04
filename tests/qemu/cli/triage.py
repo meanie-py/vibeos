@@ -10,7 +10,13 @@ import re
 import subprocess
 from pathlib import Path
 
-_BUGCHECK = re.compile(r"BugCheck\s+(0x[0-9A-Fa-f]+)|\*\*\* STOP:?\s*(0x[0-9A-Fa-f]+)")
+# Matches every banner spelling in the tree: x86 `BugCheck 0xNN`, the Rust/arm64
+# `*** BUGCHECK: 0xNN`, and `*** STOP: 0xNN`. The arm64 spelling was unmatched
+# until 2026-07-04 — a real 0xF4 classified as HANG_TIMEOUT (which the old gate
+# policy would then have auto-retried as a "flake").
+_BUGCHECK = re.compile(
+    r"BugCheck\s+(0x[0-9A-Fa-f]+)|\*\*\*\s*(?:STOP|BUGCHECK):?\s*(0x[0-9A-Fa-f]+)"
+)
 _RUST_PANIC = re.compile(r"RUST PANIC HIT.*?PANIC LOC:\s*(\S+)", re.S)
 _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
 # Kernel-mode Rust panic: the kernel-rust/rtl-rust panic handlers emit
