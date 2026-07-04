@@ -13,6 +13,20 @@ from pathlib import Path
 _BUGCHECK = re.compile(r"BugCheck\s+(0x[0-9A-Fa-f]+)|\*\*\* STOP:?\s*(0x[0-9A-Fa-f]+)")
 _RUST_PANIC = re.compile(r"RUST PANIC HIT.*?PANIC LOC:\s*(\S+)", re.S)
 _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
+# Kernel-mode Rust panic: the kernel-rust/rtl-rust panic handlers emit
+# `PANIC:<file>:<line>` to debugcon (port 0xE9) ONLY — serial goes silent, so
+# without this a deterministic kernel panic classifies as HANG_TIMEOUT (and a
+# HANG_TIMEOUT can be gate-retried as if it were host contention). Matched
+# against the RAW debugcon bytes, not the decoded milestone report (the report
+# truncates its Raw: line, which can cut the panic string in half).
+_KERNEL_PANIC = re.compile(r"PANIC:([^\s:]+):(\d+)")
+# Wedge self-reports from the in-kernel sync instrumentation (census watchdog,
+# ke/census.rs; [LOCKDEP] lands with the lockdep lane). These print to SERIAL on
+# any boot where threads are stuck >10s in a gate wait — evidence that a timeout
+# is a genuine wedge, not a slow/contended boot, and on green boots a trendable
+# health signal (e.g. the Mm WS self-deadlock strands eventlog every boot).
+_CENSUS_STUCK = re.compile(r"\[CENSUS\] STUCK\b")
+_LOCKDEP_HIT = re.compile(r"\[LOCKDEP\][^\n]*(?:DEADLOCK|VIOLATION)")
 _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f]+)")
 
 # Documented intermittent flakes single-run gates have masked (see
@@ -75,7 +89,69 @@ def _match_known_flake(serial: str, code: str | None, when: str) -> dict | None:
     return None
 
 
-def classify(serial: str, *, reached: bool, fail_marker: str | None, debugcon: str | None) -> dict:
+def wedge_evidence(serial: str) -> dict:
+    """Count sync-instrumentation self-reports in serial. Returns
+    {census_stuck, lockdep, lines} — lines carries the first few raw reports
+    for the summary. Zero-cost when the instrumentation isn't in the build."""
+    lines = [
+        ln.strip()
+        for ln in serial.splitlines()
+        if _CENSUS_STUCK.search(ln) or _LOCKDEP_HIT.search(ln)
+    ]
+    return {
+        "census_stuck": sum(1 for ln in lines if _CENSUS_STUCK.search(ln)),
+        "lockdep": sum(1 for ln in lines if _LOCKDEP_HIT.search(ln)),
+        "lines": lines[:3],
+    }
+
+
+def post_boot_check(serial: str, debugcon_raw: str | None = None) -> dict | None:
+    """Scan a boot that REACHED its marker (including the settle-window serial)
+    for fatal signals the marker race can hide: a BugCheck or Rust panic that
+    fired after the marker, or a kernel panic that only reached debugcon.
+    Returns a triage-shaped failure dict, or None if nothing fatal was seen.
+    (Without this, a crash during taskbar build / desktop settle is a false
+    green — the marker already matched before the crash.)"""
+    salient: list[str] = []
+    fields: dict = {}
+    mp = _RUST_PANIC.search(serial) or _RUST_PANIC2.search(serial)
+    if mp:
+        loc = mp.groups()[-1]
+        return {
+            "classification": "RUST_PANIC",
+            "salient": [f"RUST PANIC at {loc} (after boot marker)"],
+            "known_flake": None,
+            "panic_loc": loc,
+        }
+    kp = _KERNEL_PANIC.search(debugcon_raw or "")
+    if kp:
+        loc = f"{kp.group(1)}:{kp.group(2)}"
+        return {
+            "classification": "RUST_PANIC",
+            "salient": [f"KERNEL RUST PANIC at {loc} (debugcon, after boot marker)"],
+            "known_flake": None,
+            "panic_loc": loc,
+        }
+    mb = _BUGCHECK.search(serial)
+    if mb:
+        code = mb.group(1) or mb.group(2)
+        fields["bugcheck"] = code
+        salient.append(f"BugCheck {code} (after boot marker)")
+        line = next((ln.strip() for ln in serial.splitlines() if "BugCheck" in ln), "")
+        if line:
+            salient.append(line[:140])
+        return {"classification": "BUGCHECK", "salient": salient, "known_flake": None, **fields}
+    return None
+
+
+def classify(
+    serial: str,
+    *,
+    reached: bool,
+    fail_marker: str | None,
+    debugcon: str | None,
+    debugcon_raw: str | None = None,
+) -> dict:
     """Return {classification, salient[], known_flake, fields...}."""
     salient: list[str] = []
     fields: dict = {}
@@ -85,6 +161,16 @@ def classify(serial: str, *, reached: bool, fail_marker: str | None, debugcon: s
         loc = mp.groups()[-1]
         fields["panic_loc"] = loc
         salient.append(f"RUST PANIC at {loc}")
+        return {"classification": "RUST_PANIC", "salient": salient, "known_flake": None, **fields}
+
+    # Kernel-mode panic: reaches debugcon only (x86; silent on arm64). Checked
+    # before the hang branch so a deterministic kernel panic classifies as
+    # RUST_PANIC (never retried) instead of HANG_TIMEOUT (retryable).
+    kp = _KERNEL_PANIC.search(debugcon_raw or "")
+    if kp:
+        loc = f"{kp.group(1)}:{kp.group(2)}"
+        fields["panic_loc"] = loc
+        salient.append(f"KERNEL RUST PANIC at {loc} (debugcon)")
         return {"classification": "RUST_PANIC", "salient": salient, "known_flake": None, **fields}
 
     mb = _BUGCHECK.search(serial)
@@ -115,6 +201,19 @@ def classify(serial: str, *, reached: bool, fail_marker: str | None, debugcon: s
             salient += [f"debugcon: {ln}" for ln in tail]
         last = [ln for ln in serial.splitlines() if ln.strip()][-2:]
         salient += [f"serial tail: {ln[:120]}" for ln in last]
+        # Census/lockdep self-reports turn "timed out" into "wedge, self-confirmed
+        # by the kernel" — a real regression signature, never a contention retry.
+        ev = wedge_evidence(serial)
+        if ev["census_stuck"] or ev["lockdep"]:
+            fields["wedge_confirmed"] = True
+            fields["census_stuck"] = ev["census_stuck"]
+            fields["lockdep_hits"] = ev["lockdep"]
+            salient.insert(
+                0,
+                f"kernel self-report: {ev['census_stuck']} [CENSUS] STUCK, "
+                f"{ev['lockdep']} [LOCKDEP] — wedge CONFIRMED, not contention",
+            )
+            salient += ev["lines"][:2]
         # A hang whose serial matches a documented flake signature is labeled
         # KNOWN_FLAKE (told apart from a fresh regression); an unmatched hang
         # stays HANG_TIMEOUT and blocks as before.

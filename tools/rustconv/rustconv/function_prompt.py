@@ -416,11 +416,12 @@ def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
 
     cls = func.cpp_class
     m = func.cpp_method
+    if not cls or not m:  # not a C++ method — no method context to build
+        return ""
     lines = [
         "\n## C++ Method → Free Function\n",
-        f"This C body is the C++ method `{cls}::{m}`. "
-        "Translate it as a FREE function:\n",
-        "- Rust signature: `#[no_mangle] pub unsafe extern \"C\" fn "
+        f"This C body is the C++ method `{cls}::{m}`. Translate it as a FREE function:\n",
+        '- Rust signature: `#[no_mangle] pub unsafe extern "C" fn '
         f"{func.name}(this: *mut {cls}, …)`\n",
         f"- `this: *mut {cls}` is the FIRST parameter; implicit member "
         "access `m_x` (or `this->m_x`) becomes `(*this).m_x`.\n",
