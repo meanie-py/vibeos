@@ -2222,9 +2222,21 @@ masking a SECOND, distinct Mm bug: the ROS section page-table page the SSE write
 on is mapped read-only. Suspect: `_MmSetPageEntrySectionSegment`'s multi-level
 segment-page-table addressing computes a read-only-mapped (or wrong) target, OR the
 section page-table page is legitimately made R/O and the write should go via a writable
-alias. NOTE this is a different code family than the PteFrame/ARM3 residency chain
-addendum-2 pointed at — the layer-2 root is section-RMAP (`MmSharePageEntrySectionSegment`
-/ `MmSetPageEntrySectionSegment` / `_MmSetPageEntrySectionSegment`), not
-`MiDecrementShareCount`. Next: disasm the faulting write's addressing in
-`_MmSetPageEntrySectionSegment` (still C? — check sptab.c) and check whether
-`0xfffff97fde280000` is a valid segment-page-table VA or a confabbed address.
+alias. **§9.13 addendum 3 CORRECTED (2026-07-04, GDB disasm of the faulting Rip):** the
+`MmSharePageEntrySectionSegment`/`MmSetPageEntrySectionSegment` frames were a RED
+HERRING — they are the **page-fault handler** running ABOVE the faulting write, not the
+faulting code. Disassembling the trap-frame `Rip` (`0xfffff88004726806`, consistent
+across boots) shows `mov %eax,(%rdx)` writing to `Rdx=0xfffff97fde280000`, part of a
+**time/counter field copy with a divide-by-1000 (→ milliseconds)** — NOT Mm section
+page-table code. Walking `PsLoadedModuleList` shows the faulting Rip is in **NO loaded
+driver** (all drivers are at `0xfffff800...`; the fault is at `0xfffff880...`) → it's
+**SESSION SPACE = win32k**. So the real 0xBE: **win32k (session space) writes time data
+to a section view at `0xfffff97fde280000` that is mapped PRESENT-but-READ-ONLY**
+(PTE `0x1d3xx021`, W=0) — almost certainly the GDI/USER shared-info (`gpsi`/SERVERINFO)
+section whose *kernel* view should be R/W. Distinct win32k/section-protection bug,
+different subsystem from the ARM3/PteFrame chain, exposed once the OriginalPte fix
+removes the self-deadlock and the boot advances into win32k init. Instrumenting the Mm
+page-table write (`_MmSetPageEntrySectionSegment`, spt_bad gate on the PageTable ptr)
+did NOT fire — confirming the fault is elsewhere. NEXT: identify which win32k section
+maps at `0xfffff97fde280000` and why its kernel view is R/O (check the SEC_ protection /
+`MmMapViewInSessionSpace` / the gpsi section-create protection in the Rust win32k glue).
