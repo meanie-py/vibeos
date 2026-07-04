@@ -331,3 +331,53 @@ further explorer files be translated (and Tier C not until the msg-map path exis
      + IID_IShellDesktopTray locally with an all-zero GUID (QI-always-fails bug)
      — deleted; use explorer_sys::com. Added E_FAIL/E_INVALIDARG/… to the
      substrate. Links + boots i386.
+
+## Refined remaining-work map (2026-07-04, after clearing the self-contained files)
+
+8/22 files are Rust + booting i386 (util, notifyiconscust, rshell, shellservice,
+startmnu, startup, settings, desktop) across 3 committed checkpoints. The
+remaining 14 all need MORE than the tier-A/B patterns — re-triaged by their
+actual entanglement:
+
+- **appbar.cpp** — `CTrayWindow : public CAppBarManager`, so CAppBarManager is a
+  BASE CLASS of the still-C++ CTrayWindow. Its methods are Rust-translated but
+  the class LAYOUT must stay in appbar.h (C++ needs it to lay out CTrayWindow),
+  and C++ needs mangled entry points for the ctor, the *virtual* dtor, and
+  OnAppBarMessage (the 3 things CTrayWindow touches). New pattern: **Rust method
+  bodies on a C++-inherited base subobject** (appbar_shim.cpp with 3 forwards).
+  Blocked-ish: cleanest once CTrayWindow itself is Rust. Translated, inert.
+- **trayprop.cpp** — 3 `CPropertyPageImpl<>` WTL classes (message maps + dialog
+  procs). Needs the WTL substrate (below), not a tier-B pattern. One clean entry
+  point (`DisplayTrayProperties`, called from traywnd.cpp:562). Translated, inert.
+- **explorer.cpp** — wWinMain (the process ENTRY POINT) + `CExplorerModule :
+  CComModule` (ATL module). Self-contained but highest-risk (owns the process;
+  if wrong, nothing boots). Translated, inert. Do with care, probably last of
+  tier B, or after a couple tier-C wins build confidence.
+- **Tier C (10 files: traydeskbtn, startctxmnu, startmnusite, taskband, trayntfy,
+  tbsite, trayclock, syspager, taskswnd, traywnd)** — all ATL/WTL COM servers.
+  NOT yet translated (a ~$3–4 paid run once the substrate exists). Blocked on the
+  one genuinely-new piece:
+
+### The tier-C COM-server / WTL substrate (the last unbuilt foundation)
+
+Each tier-C class is `CComObjectRootEx + CWindowImpl<T> + CComCoClass + I<iface>`.
+Replacing ATL (per the decision in §3, hand-rolled #[repr(C)], no windows-rs):
+- **CComObjectRootEx → refcount+QI**: object header `{ lpVtbl, ref_: LONG, … }`;
+  AddRef/Release interlocked on ref_; a per-class QueryInterface walking a static
+  IID→interface-pointer table (the BEGIN_COM_MAP replacement). ks-rust
+  `filterfactory.rs` is the in-tree precedent to mirror.
+- **CWindowImpl → WndProc**: `Create()` registers the window class once + creates
+  the HWND; a per-class `WndProc` recovers `this` from GWLP_USERDATA (set on
+  WM_NCCREATE) and dispatches `match uMsg { … }` — the flat replacement for
+  BEGIN_MSG_MAP/MESSAGE_HANDLER (a Rust match is *more* natural than the macro).
+  **The WndProc is an arch-split callback** → the exact
+  `#[cfg] extern "C"/"stdcall"` pattern desktop.cpp already proved.
+- **CreateInstance factory**: `ShellObjectCreatorInit<T>` → HeapAlloc the object,
+  set lpVtbl + ref_=1, call Initialize(param), QI to riid (the new/delete pattern
+  desktop.cpp already proved).
+
+So tier C's hard parts (WndProc ABI, new/delete, QI vtables) are each already
+proven in isolation; the remaining work is assembling them into a reusable
+`explorer_sys::server` module + one proof file (**trayclock.cpp** — smallest full
+CWindowImpl+CComObjectRootEx+IOleWindow), then grinding the other 9 (traywnd
+last — everything plugs into it).
