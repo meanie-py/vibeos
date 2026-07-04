@@ -2148,3 +2148,31 @@ Total cost tonight: ~30 min. The identical conclusion previously took days.
 faulting VA/instruction (trap frame lives in the parked thread's stack above
 MmAccessFault) and check the MMPFN accessors, then either fix the layout bug
 or make the teardown path non-faultable like upstream.
+
+**§9.13 addendum (same night, ~04:15): faulting instruction pinned; MMPFN
+layout hypothesis RULED OUT.** Trap-frame extraction from the parked thread's
+stack (scan for Rip+SegCs=0x10 pattern; KTRAP_FRAME base = hit-0x168):
+`Rip = MiDecrementShareCount+0x71` — the same PC as the original csrss
+analysis — faulting on `temp_pte = *pointer_pte` with
+`rcx = PteAddress = 0xfffff8a000421660` (paged pool). Disasm shows the
+preceding `testb $0x8, 0x1a(%rax)` = PrototypePte bit test; audit of the
+hand-rolled MMPFN accessor layer (`ntkrnl-sys/src/mm.rs pfn_offsets` +
+`mmpfnentry()` @ U3+2) against THIS PORT's `ntoskrnl/include/internal/mm.h`
+shows the port's u3 is `{ USHORT ReferenceCount; MMPFNENTRY e1; }` —
+**ReferenceCount first** — so the accessors are CORRECT (bit positions match
+MMPFNENTRY: PrototypePte=bit3, PageLocation=bits8-10, CacheAttribute=12-13).
+The MEMORY open-item's "FIX (check first): MMPFN layout / accessor mis-decode"
+is therefore ruled out at instruction level.
+
+**Refined suspect:** the PFN *is* a genuine prototype PFN; its prototype-PTE
+page (paged pool) is simply NOT RESIDENT when share count hits 0. Upstream
+guarantees residency via the PteFrame share-count chain (every active PTE
+holds a share on the page containing it — MiDecrementShareCount cascades up
+via u4.PteFrame). So the real bug is that chain: either (a) the
+prototype-PTE pool page's share count is decremented too early / never taken
+(check MiResolveProtoPteFault + MiCompleteProtoPteFault's PteFrame
+bookkeeping in the Rust translation), or (b) PFN reuse leaves a stale
+PteAddress (the "PFN state corruption" TODO in pfnlist.rs
+MiDecrementShareCount is adjacent evidence). Next session: flightrec-tap
+MiDecrementShareCount's PteFrame cascade or add a share-count trace on the
+pool page containing 0xfffff8a000421660-class addresses.
