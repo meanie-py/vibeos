@@ -381,3 +381,48 @@ proven in isolation; the remaining work is assembling them into a reusable
 `explorer_sys::server` module + one proof file (**trayclock.cpp** — smallest full
 CWindowImpl+CComObjectRootEx+IOleWindow), then grinding the other 9 (traywnd
 last — everything plugs into it).
+
+### 2026-07-04 — tier-C substrate BUILT + first class (trayclock) BOOTS i386
+
+`explorer_sys::server` exists and is proven end-to-end (`0beb484e653`):
+- `register_class_once` (DECLARE_WND_CLASS_EX), `set/get_window_this` +
+  `wndproc_nccreate_this` (GWLP_USERDATA `this`-recovery — the CWindowImpl thunk
+  equivalent, chosen over ATL's machine-code thunk per the substrate research;
+  ARCH-SPLIT because i386 `SetWindowLongPtrW` is a macro→`SetWindowLongW` with no
+  import), `interlocked_increment/decrement` (core-atomic; `Interlocked*` are
+  intrinsics never in bindgen), uxtheme/ShellExecuteW/CTooltips-TTM surface +
+  theme/tooltip/locale constants. `IOleWindow` vtable + `IID_IOleWindow` added to
+  `explorer_sys::com`; `GetHideClock` → settings.rs (owns g_TaskbarSettings).
+- **trayclock.rs is the TEMPLATE** for the other tier-C classes: flat
+  `#[repr(C)]` lpVtbl-first object (`lpVtbl`/`ref_`/`m_hWnd` + members; layout is
+  FREE — the object is only ever touched via its interface ptr or its WndProc, so
+  ATL's multi-base layout is irrelevant); QI walks {IUnknown,IOleWindow}→the one
+  vtbl; `BEGIN_MSG_MAP`→flat `match uMsg` in an arch-split `extern "C"/"stdcall"`
+  WndProc (verified: links `_CTrayClockWnd_WindowProc@16` = correct i386 stdcall);
+  `ShellObjectCreatorInit<T>`→the factory (new ref=0 → AddRef → Initialize(args)
+  → QI → Release). cargo-check ×3 clean; explorer.exe links; **i386 smoke ✓ boot**.
+
+**Entanglement re-triage (which files are ATOMIC swaps vs blocked on traywnd):**
+A tier-C class is an independent atomic swap **iff** it's reached only through a
+`*_CreateInstance` COM factory (never embedded as a C++ member/base of a still-C++
+class). By that test:
+- **INDEPENDENT (fan-out targets, any order, traywnd last):** trayclock ✅DONE ·
+  trayntfy (`CTrayNotifyWnd_CreateInstance`) · syspager (`CSysPagerWnd_…`) ·
+  taskswnd (`CTaskSwitchWnd_…`) · taskband (`CTaskBand_…`) · tbsite
+  (`CTrayBandSite_…`) · startctxmnu (`CStartMenuBtnCtxMenu_…`) · startmnusite
+  (`CStartMenuSite_…`).
+- **ENTANGLED — embedded in the still-C++ CTrayWindow, so BLOCKED until traywnd
+  is Rust (or need the appbar-style mangled-method-shim):** traydeskbtn
+  (`CTrayShowDesktopButton` is a *member* of CTrayWindow — plain CWindowImpl, no
+  factory) · appbar (`CAppBarManager` is a *base* of CTrayWindow) · CStartButton
+  (member, lives in traywnd.cpp).
+
+**Per-file cost is dominated by central substrate expansion, not the class body:**
+each independent file needs its consumed/implemented COM interface vtables added
+to `explorer_sys::com` (e.g. startctxmnu → IShellFolder + IContextMenu + the PIDL/
+shell32 surface + CMINVOKECOMMANDINFOEX) — shared-file work that must be done
+centrally (subagents can't touch the substrate). The class body itself follows the
+trayclock template mechanically. Recommended order: trayntfy (consumes the Rust
+clock — validates the Rust-from-Rust layer) → the COM-only sites (taskband,
+tbsite, startmnusite, startctxmnu) → the monsters (syspager 1.6K, taskswnd 2.3K)
+→ traywnd (3.7K, last — unblocks the 3 entangled files).
