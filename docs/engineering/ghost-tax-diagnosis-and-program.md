@@ -315,7 +315,37 @@ before concluding code doesn't exist).
 
 ---
 
-## 5. Measuring whether this works
+## 5. Day-one field results (2026-07-04, the first hours of Tier 1)
+
+The new verdicts produced three real findings before this doc was even landed:
+
+1. **i386 has silently-stuck threads on every green boot too.** The very first
+   smoke through the health stage reported 3 `HOLDER-STUCK(no signal ever)`
+   threads (System pid=4, svchost…) on a green i386 boot; the ×3 gate then
+   showed `census_stuck: 5` on green i386 AND amd64. The Mm WS self-deadlock
+   class was documented as amd64-only; it is not. Trend this number — it must
+   drop to 0 when the Mm fix lands.
+2. **The triage regexes didn't know the kernel's own BUGCHECK banner.**
+   ke/bug.c prints `*** BUGCHECK: 0xNN`; the classifier only matched
+   `BugCheck 0xNN`/`*** STOP`, so a live arm64 0xF4 classified HANG_TIMEOUT —
+   which the pre-Tier-1 policy would have auto-retried as a flake. Fixed
+   (`7930f1f62d8`) within an hour of the new gate refusing to retry it.
+3. **arm64 is broken on mainline right now and nobody knew.** The explorer-rust
+   merge (`90fe9201f7a`, 12:24) landed with i386-only boot validation
+   ("shell boots i386"); no arm64 boot happened between the merge and the
+   first ×3 gate through this harness (15:42). Characterized: **~1/5 green**;
+   dominant face = silent wedge after `[mpr] wnetInit: EXIT` with
+   `[EXPLORER] _tWinMain` never printed (explorer.exe — now 100% fresh Rust —
+   dies/wedges during early init); secondary face = smss.exe killed by a wild
+   jump to a kernel VA (`PC=0xFFFFF8004219280C`, insn `msr spsr_el1, x1`,
+   BUGCHECK 0xF4). The merge's only non-explorer guest surface is
+   Cargo.toml/Cargo.lock (workspace shape — the documented CGU-reshuffle
+   trigger, §2.4/R50), so the candidates are an explorer arm64 translation bug
+   or a layout-tipped latent arm64 miscompile. Either way: this is D1+D3 in
+   one specimen — a 2-of-3-arches-validated landing, plus a gate whose old
+   retry policy could have kept it green.
+
+## 6. Measuring whether this works
 
 - **Ghost-tax rate**: re-run the commit classification (subject-line buckets,
   §1.1 method) monthly. Success = the debug+harness share falls back below
