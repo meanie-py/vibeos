@@ -10,7 +10,9 @@ list(APPEND SOURCE
     explorer.cpp
     # notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
     # rshell.cpp — replaced by Rust (explorer-rust rshell.rs)
-    settings.cpp
+    # settings.cpp — replaced by Rust (explorer-rust settings.rs); the mangled
+    # TaskbarSettings::Save/Load method entry points forward from settings_shim.cpp.
+    settings_shim.cpp
     # shellservice.cpp — replaced by Rust (explorer-rust shellservice.rs)
     startctxmnu.cpp
     # startmnu.cpp — replaced by Rust (explorer-rust startmnu.rs)

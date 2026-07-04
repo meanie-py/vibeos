@@ -454,13 +454,32 @@ pub mod externs {
         pub fn wnsprintfW(pszDest: LPWSTR, cchDest: i32, pszFmt: LPCWSTR, ...) -> i32;
     }
 
-    // shlwapi COM helper (exported by name) + shell32 policy query.
+    // shlwapi COM helper (exported by name) + shell32 policy query + the
+    // shlwapi registry-value convenience wrappers explorer settings use.
     extern "system" {
         pub fn IUnknown_SetSite(
             punk: *mut crate::com::IUnknown,
             punkSite: *mut crate::com::IUnknown,
         ) -> winsrv_sys::winsrv::HRESULT;
         pub fn SHRestricted(rest: u32) -> DWORD;
+        // LSTATUS return typed as DWORD so `== ERROR_SUCCESS` (a u32 const in
+        // the bindgen surface) needs no cast at the many call sites.
+        pub fn SHSetValueW(
+            hkey: winsrv_sys::winsrv::HKEY,
+            pszSubKey: LPCWSTR,
+            pszValue: LPCWSTR,
+            dwType: DWORD,
+            pvData: *const c_void,
+            cbData: DWORD,
+        ) -> DWORD;
+        pub fn SHGetValueW(
+            hkey: winsrv_sys::winsrv::HKEY,
+            pszSubKey: LPCWSTR,
+            pszValue: LPCWSTR,
+            pdwType: *mut DWORD,
+            pvData: *mut c_void,
+            pcbData: *mut DWORD,
+        ) -> DWORD;
     }
 
     // RESTRICTIONS values used by explorer (shlobj.h enum; implicit-increment

@@ -281,3 +281,30 @@ further explorer files be translated (and Tier C not until the msg-map path exis
   amd64/arm64 don't care (cdecl==stdcall decoration), so this is i386-only — same
   family as the kernel's #1 i386 crash cause. Every tier-B/C file has this same
   `extern "C"` Win32 block and will need the fix at integration.
+- **2026-07-04 — first TIER-B file integrated: settings.cpp (the shared-global +
+  method-shim pattern, the template for ALL tier C).** settings.cpp defines
+  `g_TaskbarSettings` (read by 8 still-C++ files) and `TaskbarSettings::Save/Load`
+  (called mangled from explorer.cpp wWinMain + traywnd.cpp). The cohab recipe,
+  proven end-to-end in the i386 binary:
+  1. **Shared mutable global**: Rust `#[no_mangle] pub static mut g_TaskbarSettings:
+     explorer_sys::types::TaskbarSettings` (exact C++ layout). Itanium ABI leaves
+     namespace-scope globals unmangled, so the 8 C++ `extern TaskbarSettings
+     g_TaskbarSettings;` referencers bind to the one Rust `_g_TaskbarSettings`
+     data symbol. Confirmed via nm.
+  2. **Mangled method entry points**: a tiny `settings_shim.cpp` defines
+     `TaskbarSettings::Save/Load` (the `__ZN15TaskbarSettings4SaveEv` symbols the
+     C++ callers need) forwarding to the flat Rust `TaskbarSettings_Save(this)`.
+     Same shim pattern as util_vararg.cpp — the general answer for "C++ method
+     called from still-C++ code."
+  Integration fixes on the raw translation: the LLM FABRICATED the TaskbarSettings
+  struct layout in the preamble global (no header → hallucinated
+  ScreenResolution/ShellSettings fields) — replaced with the real
+  explorer_sys::types mirror; bitfield writes (`.sr.SmSmallIcons = 0`) → the
+  `dwFlags` word (`= F_ALWAYSONTOP`); `dwValue as TrayIconsMode` (not a type) →
+  `as i32`; added shlwapi `SHGetValueW`/`SHSetValueW` externs (LSTATUS typed as
+  DWORD so `== ERROR_SUCCESS` needs no cast). cargo-check + explorer.exe link
+  clean ×3. **The fabricated-struct-when-header-absent defect is systemic** — every
+  tier-B/C class whose fields the LLM can't see will hallucinate; the fix is
+  authoring the real `#[repr(C)]` mirror (or, better, feeding the class header to
+  the translator — the scanner's extract_class_context already does this for
+  methods, so a preamble-context extension would close it).

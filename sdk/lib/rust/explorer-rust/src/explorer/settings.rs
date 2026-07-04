@@ -8,54 +8,30 @@ use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
-// ---- file-scope preamble (translated) ----
+// ---- file-scope global (settings.cpp: `TaskbarSettings g_TaskbarSettings;`) ----
+// The raw translation fabricated a bogus struct layout here (no header); the
+// real TaskbarSettings/TW_STRUCKRECTS2 live in explorer_sys::types with exact
+// C++ layout. #[no_mangle] so the 8 still-C++ files that `extern
+// TaskbarSettings g_TaskbarSettings;` bind to this one instance (Itanium ABI:
+// namespace-scope globals are unmangled).
+#[no_mangle]
 pub static mut g_TaskbarSettings: TaskbarSettings = TaskbarSettings {
-    sr: ScreenResolution {
+    bLock: 0,
+    bGroupButtons: 0,
+    bShowSeconds: 0,
+    bPreferDate: 0,
+    bHideInactiveIcons: 0,
+    bSmallIcons: 0,
+    eCompactTrayIcons: 0,
+    bShowDesktopButton: 0,
+    sr: TW_STRUCKRECTS2 {
         cbSize: 0,
-        iX: 0,
-        iY: 0,
+        Unknown: 0,
+        dwFlags: 0,
+        Position: 0,
+        Size: SIZE { cx: 0, cy: 0 },
+        Rect: RECT { left: 0, top: 0, right: 0, bottom: 0 },
     },
-    Shell: ShellSettings {
-        cbSize: 0,
-        fShowClock: 0,
-        fShowSeconds: 0,
-        fWeekdayTimeFormat: 0,
-        Margins: TrayMargins {
-            cxLeftWidth: 0,
-            cxRightWidth: 0,
-            cyTopHeight: 0,
-            cyBottomHeight: 0,
-        },
-    },
-    AutoHide: APPBARDATA {
-        cbSize: 0,
-        hWnd: core::ptr::null_mut(),
-        uCallbackMessage: 0,
-        uEdge: 0,
-        rc: RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        },
-        lParam: 0,
-    },
-    AlwaysOnTop: APPBARDATA {
-        cbSize: 0,
-        hWnd: core::ptr::null_mut(),
-        uCallbackMessage: 0,
-        uEdge: 0,
-        rc: RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        },
-        lParam: 0,
-    },
-    SmallIcons: 0,
-    HideClock: 0,
-    Locale: [0; 12],
 };
 
 #[no_mangle]
@@ -155,8 +131,8 @@ pub unsafe extern "C" fn TaskbarSettings_Load(this: *mut TaskbarSettings) -> BOO
     (*this).bSmallIcons = if dwRet == ERROR_SUCCESS { if dwValue != 0 { 1 } else { 0 } } else { 1 };
 
     dwRet = SHGetValueW(hkExplorer, w!("Advanced").as_ptr(), w!("CompactTrayIcons").as_ptr(), core::ptr::null_mut(), &mut dwValue as *mut _ as *mut _, &mut cbSize);
-    if dwRet == ERROR_SUCCESS && dwValue <= TIM_Max {
-        (*this).eCompactTrayIcons = dwValue as TrayIconsMode;
+    if dwRet == ERROR_SUCCESS && dwValue <= TIM_Max as u32 {
+        (*this).eCompactTrayIcons = dwValue as i32;
     } else {
         (*this).eCompactTrayIcons = TIM_Default;
     }
@@ -169,20 +145,16 @@ pub unsafe extern "C" fn TaskbarSettings_Load(this: *mut TaskbarSettings) -> BOO
 
     if dwRet != ERROR_SUCCESS || (*this).sr.cbSize != core::mem::size_of::<TW_STRUCKRECTS2>() as DWORD || cbSize != core::mem::size_of::<TW_STRUCKRECTS2>() as DWORD {
         (*this).sr.Position = ABE_BOTTOM;
-        (*this).sr.AutoHide = 0;
-        (*this).sr.AlwaysOnTop = 1;
-        (*this).sr.SmSmallIcons = 0;
-        (*this).sr.HideClock = 0;
+        // AutoHide=0, AlwaysOnTop=1, SmSmallIcons=0, HideClock=0 (bitfield union)
+        (*this).sr.dwFlags = TW_STRUCKRECTS2::F_ALWAYSONTOP;
         (*this).sr.Rect.left = 0;
         (*this).sr.Rect.top = 0;
         (*this).sr.Rect.bottom = 1;
         (*this).sr.Rect.right = 1;
         (*this).sr.Size.cx = 0;
         (*this).sr.Size.cy = 0;
-    } else {
-        if (*this).sr.Position > ABE_BOTTOM {
-            (*this).sr.Position = ABE_BOTTOM;
-        }
+    } else if (*this).sr.Position > ABE_BOTTOM {
+        (*this).sr.Position = ABE_BOTTOM;
     }
 
     1

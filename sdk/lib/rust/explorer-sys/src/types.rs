@@ -12,6 +12,7 @@ use winsrv_sys::winsrv::{BOOL, DWORD, LONG, RECT, SIZE};
 pub const TIM_Default: i32 = 0;
 pub const TIM_NeverCompact: i32 = 1;
 pub const TIM_AlwaysCompact: i32 = 2;
+pub const TIM_Max: i32 = TIM_AlwaysCompact;
 
 /// `TW_STRUCKRECTS2` (precomp.h `_TW_STUCKRECTS2`). The anonymous
 /// `union { DWORD dwFlags; struct{ bitfields } }` is represented as the
