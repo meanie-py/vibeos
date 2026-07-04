@@ -629,6 +629,221 @@ pub mod com {
     pub struct IOleCommandTargetImpl {
         pub lpVtbl: *const IOleCommandTargetImplVtbl,
     }
+
+    // --- start-menu site (startmnusite) implemented interfaces ---
+
+    pub static IID_IServiceProvider: IID = IID {
+        Data1: 0x6D51_40C1, Data2: 0x7436, Data3: 0x11CE,
+        Data4: [0x80, 0x34, 0x00, 0xAA, 0x00, 0x60, 0x09, 0xFA],
+    };
+    pub static IID_ITrayPriv: IID = IID {
+        Data1: 0x4622_AD10, Data2: 0xFF23, Data3: 0x11D0,
+        Data4: [0x8D, 0x34, 0x00, 0xA0, 0xC9, 0x0F, 0x27, 0x19],
+    };
+    /// `SID_SMenuPopup` — service id (== IMenuPopup's IID value).
+    pub static SID_SMenuPopup: GUID = GUID {
+        Data1: 0xD1E7_AFEB, Data2: 0x6A2E, Data3: 0x11D0,
+        Data4: [0x8C, 0x78, 0x00, 0xC0, 0x4F, 0xD9, 0x18, 0xB4],
+    };
+    /// `IID_IMenuPopup` value (also externed for consumers); inlined for QI.
+    pub static IID_IMenuPopup_VAL: IID = IID {
+        Data1: 0xD1E7_AFEB, Data2: 0x6A2E, Data3: 0x11D0,
+        Data4: [0x8C, 0x78, 0x00, 0xC0, 0x4F, 0xD9, 0x18, 0xB4],
+    };
+
+    /// IServiceProvider (servprov.idl) — IUnknown + QueryService.
+    #[repr(C)]
+    pub struct IServiceProviderVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IServiceProvider, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IServiceProvider) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IServiceProvider) -> ULONG,
+        pub QueryService: unsafe extern "system" fn(
+            *mut IServiceProvider,
+            *const GUID,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IServiceProvider {
+        pub lpVtbl: *const IServiceProviderVtbl,
+    }
+
+    /// ITrayPriv : IOleWindow (shlobj_undoc.h) — 8 slots.
+    #[repr(C)]
+    pub struct ITrayPrivVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut ITrayPriv, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut ITrayPriv) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut ITrayPriv) -> ULONG,
+        // IOleWindow
+        pub GetWindow: unsafe extern "system" fn(*mut ITrayPriv, *mut HWND) -> HRESULT,
+        pub ContextSensitiveHelp: unsafe extern "system" fn(*mut ITrayPriv, BOOL) -> HRESULT,
+        // ITrayPriv
+        pub Execute:
+            unsafe extern "system" fn(*mut ITrayPriv, *mut c_void, *const c_void) -> HRESULT,
+        pub Unknown: unsafe extern "system" fn(
+            *mut ITrayPriv,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+        ) -> HRESULT,
+        pub AppendMenu: unsafe extern "system" fn(*mut ITrayPriv, *mut winsrv_sys::winsrv::HMENU) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct ITrayPriv {
+        pub lpVtbl: *const ITrayPrivVtbl,
+    }
+
+    // --- start-button context menu (startctxmnu): IContextMenu (impl+consume)
+    //     + IShellFolder (consume). PIDL types opaque. ---
+
+    use winsrv_sys::winsrv::{HANDLE, HMENU, INT, LPCSTR, LPCWSTR, LPSTR, POINT, UINT_PTR};
+
+    pub type LPITEMIDLIST = *mut c_void;
+    pub type LPCITEMIDLIST = *const c_void;
+
+    pub static IID_IContextMenu: IID = IID {
+        Data1: 0x0002_14E4, Data2: 0x0000, Data3: 0x0000,
+        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+    pub static IID_IShellFolder: IID = IID {
+        Data1: 0x0002_14E6, Data2: 0x0000, Data3: 0x0000,
+        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+
+    /// IContextMenu : IUnknown (shobjidl.idl) — 6 slots. IMPLEMENTED + CONSUMED.
+    #[repr(C)]
+    pub struct IContextMenuVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IContextMenu, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IContextMenu) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IContextMenu) -> ULONG,
+        pub QueryContextMenu:
+            unsafe extern "system" fn(*mut IContextMenu, HMENU, UINT, UINT, UINT, UINT) -> HRESULT,
+        pub InvokeCommand:
+            unsafe extern "system" fn(*mut IContextMenu, *const CMINVOKECOMMANDINFO) -> HRESULT,
+        pub GetCommandString: unsafe extern "system" fn(
+            *mut IContextMenu,
+            UINT_PTR,
+            UINT,
+            *mut UINT,
+            LPSTR,
+            UINT,
+        ) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IContextMenu {
+        pub lpVtbl: *const IContextMenuVtbl,
+    }
+
+    /// IShellFolder : IUnknown (shobjidl.idl) — 13-slot CONSUMED vtbl. Only
+    /// BindToObject[5] + GetUIObjectOf[10] are called; the rest are ordered
+    /// placeholders so those two land at the right offsets.
+    #[repr(C)]
+    pub struct IShellFolderVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IShellFolder, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
+        pub ParseDisplayName: unsafe extern "system" fn(
+            *mut IShellFolder,
+            HWND,
+            *mut c_void,
+            *mut u16,
+            *mut ULONG,
+            *mut LPITEMIDLIST,
+            *mut ULONG,
+        ) -> HRESULT,
+        pub EnumObjects:
+            unsafe extern "system" fn(*mut IShellFolder, HWND, DWORD, *mut *mut c_void) -> HRESULT,
+        pub BindToObject: unsafe extern "system" fn(
+            *mut IShellFolder,
+            LPCITEMIDLIST,
+            *mut c_void,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub BindToStorage: unsafe extern "system" fn(
+            *mut IShellFolder,
+            LPCITEMIDLIST,
+            *mut c_void,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub CompareIDs:
+            unsafe extern "system" fn(*mut IShellFolder, isize, LPCITEMIDLIST, LPCITEMIDLIST) -> HRESULT,
+        pub CreateViewObject:
+            unsafe extern "system" fn(*mut IShellFolder, HWND, REFIID, *mut *mut c_void) -> HRESULT,
+        pub GetAttributesOf:
+            unsafe extern "system" fn(*mut IShellFolder, UINT, *const LPCITEMIDLIST, *mut ULONG) -> HRESULT,
+        pub GetUIObjectOf: unsafe extern "system" fn(
+            *mut IShellFolder,
+            HWND,
+            UINT,
+            *const LPCITEMIDLIST,
+            REFIID,
+            *mut UINT,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub GetDisplayNameOf:
+            unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut c_void) -> HRESULT,
+        pub SetNameOf: unsafe extern "system" fn(
+            *mut IShellFolder,
+            HWND,
+            LPCITEMIDLIST,
+            *const u16,
+            DWORD,
+            *mut LPITEMIDLIST,
+        ) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IShellFolder {
+        pub lpVtbl: *const IShellFolderVtbl,
+    }
+
+    /// CMINVOKECOMMANDINFO / …EX (shobjidl.idl). EX adds the wide/title/point
+    /// tail; startctxmnu reads the in ptr's lpVerb and builds an EX to forward.
+    #[repr(C)]
+    pub struct CMINVOKECOMMANDINFO {
+        pub cbSize: DWORD,
+        pub fMask: DWORD,
+        pub hwnd: HWND,
+        pub lpVerb: LPCSTR,
+        pub lpParameters: LPCSTR,
+        pub lpDirectory: LPCSTR,
+        pub nShow: INT,
+        pub dwHotKey: DWORD,
+        pub hIcon: HANDLE,
+    }
+    #[repr(C)]
+    pub struct CMINVOKECOMMANDINFOEX {
+        pub cbSize: DWORD,
+        pub fMask: DWORD,
+        pub hwnd: HWND,
+        pub lpVerb: LPCSTR,
+        pub lpParameters: LPCSTR,
+        pub lpDirectory: LPCSTR,
+        pub nShow: INT,
+        pub dwHotKey: DWORD,
+        pub hIcon: HANDLE,
+        pub lpTitle: LPCSTR,
+        pub lpVerbW: LPCWSTR,
+        pub lpParametersW: LPCWSTR,
+        pub lpDirectoryW: LPCWSTR,
+        pub lpTitleW: LPCWSTR,
+        pub ptInvoke: POINT,
+    }
+
+    pub const CMF_VERBSONLY: UINT = 0x0000_0002;
+    pub const CMIC_MASK_UNICODE: DWORD = 0x0000_4000;
+    pub const ID_SHELL_CMD_PROPERTIES: UINT = 401;
+    pub const ID_SHELL_CMD_OPEN_ALL_USERS: UINT = 402;
+    pub const ID_SHELL_CMD_EXPLORE_ALL_USERS: UINT = 403;
+    pub const ID_SHELL_CMD_FIRST: UINT = ID_SHELL_CMD_PROPERTIES;
+    pub const ID_SHELL_CMD_LAST: UINT = 413; // ID_SHELL_CMD_RESTORE_ALL
 }
 
 pub mod externs {
@@ -684,6 +899,13 @@ pub mod externs {
             phwnd: *mut winsrv_sys::winsrv::HWND,
         ) -> winsrv_sys::winsrv::HRESULT;
         pub fn SHRestricted(rest: u32) -> DWORD;
+        /// shell32 (undocshell) — invoke a shell folder item's default verb.
+        /// pShellFolder/pidl are opaque here (passed straight through).
+        pub fn SHInvokeDefaultCommand(
+            hwnd: winsrv_sys::winsrv::HWND,
+            pShellFolder: *mut c_void,
+            pidl: *const c_void,
+        ) -> winsrv_sys::winsrv::HRESULT;
         // LSTATUS return typed as DWORD so `== ERROR_SUCCESS` (a u32 const in
         // the bindgen surface) needs no cast at the many call sites.
         pub fn SHSetValueW(
@@ -719,6 +941,14 @@ pub mod externs {
     pub const REST_NOSMMYPICS: u32 = 0x4000_0050;
     /// shlobj.h `REST_HIDECLOCK` — tray clock policy (GetHideClock).
     pub const REST_HIDECLOCK: u32 = 0x4000_0070;
+    // startmnusite AppendMenu policy gates (RESTRICTIONS enum, shlobj.h).
+    pub const REST_NOCLOSE: u32 = 0x0000_0002;
+    pub const REST_NOFIND: u32 = 0x0000_0080;
+    pub const REST_NORECENTDOCSMENU: u32 = 0x4000_0003;
+    pub const REST_FORCESTARTMENULOGOFF: u32 = 0x4000_0032;
+    pub const REST_NOSMHELP: u32 = 0x4000_0043;
+    pub const REST_NODISCONNECT: u32 = 0x4100_0001;
+    pub const REST_NOSECURITY: u32 = 0x4100_0002;
 
     // comctl32 DPA (dynamic pointer array) — shellservice.cpp's HDPA of
     // started shell-service IOleCommandTargets.

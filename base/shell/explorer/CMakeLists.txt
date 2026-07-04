@@ -17,7 +17,9 @@ list(APPEND SOURCE
     startctxmnu.cpp
     # startmnu.cpp — replaced by Rust (explorer-rust startmnu.rs)
     startmnucust.cpp
-    startmnusite.cpp
+    # startmnusite.cpp — replaced by Rust (explorer-rust startmnusite.rs); the
+    # start-menu site COM object (IServiceProvider/ITrayPriv/IOleCommandTarget/
+    # IMenuPopup on explorer_sys::com).
     # startup.cpp — replaced by Rust (explorer-rust startup.rs)
     syspager.cpp
     # taskband.cpp — replaced by Rust (explorer-rust taskband.rs); the

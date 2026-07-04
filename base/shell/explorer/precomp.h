@@ -437,7 +437,9 @@ HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
  * (taskswnd.cpp) — the extern "C" makes it emit/consume the C symbol. */
 extern "C" HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tray, REFIID riid, void **ppv);
 
-HRESULT
+/* C linkage: called from Rust (explorer-rust startmnusite.rs SetSubMenu).
+ * Still C++ (traywnd.cpp). */
+extern "C" HRESULT
 Tray_OnStartMenuDismissed(ITrayWindow* Tray);
 
 /* Rust (explorer-rust util.rs) — C linkage; see the util.cpp block above. */

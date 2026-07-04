@@ -36,6 +36,9 @@ pub mod explorer {
     // MULTI-INTERFACE COM object (5 QI-reachable interfaces, one vtbl ptr each,
     // CONTAINING_RECORD recovery per interface).
     pub mod taskband;
+    // Tier C — startmnusite.cpp: CStartMenuSite (start-menu site COM object,
+    // IServiceProvider/ITrayPriv/IOleCommandTarget/IMenuPopup).
+    pub mod startmnusite;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp
