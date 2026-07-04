@@ -231,8 +231,9 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 ### Translated file re-declares C ENUM members as local consts with GUESSED values (SILENT scheduler/dispatcher deformation)
 **Symptom:** none, at first — the kernel boots and works, but a whole behavior block is dead or misrouted. Found 2026-07-04: `ke/wait.rs` had `const AdjustUnwait: u8 = 3` (header: **1**) so `KiUnwaitThread` stamped a value `KiDeferredReadyThread` matches against nothing → the unwait priority-boost/quantum-recharge block was dead code for EVERY thread wakeup since the translation landed; `ke/thrdschd.rs` had Boost/Unwait swapped-and-shifted (1/2 vs the header's 2/1) so `KeSetEventBoostPriority` wakes took the wrong branch (over-boost to ~15 + bogus decrement). Sibling hits in the same sweep: `ThreadedDpcObject=7` (collides with `GateObject`!), `EventPairObject=2` (=MutantObject), swapped `NotificationEvent`/`SynchronizationEvent` in four files (an event created with the wrong type wakes ONE waiter instead of ALL — a lost-wakeup landmine), `SynchronizationTimer=0` (=NotificationTimer), wrong `KAPC_ENVIRONMENT` values.
 **Root cause:** the translator re-declares enum members it needs as local `const NAME: T = <value>;` and *guesses* the value (often the intuitive-but-wrong one, or the value of a *different* enum's member with a similar name) instead of reading `ndk/ketypes.h`. Each file guesses independently, so setter and reader can disagree **while both compile clean and the reader is self-consistent within its own file**.
-**Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes `sdk/include/ndk/ketypes.h` (ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. Blind spots: inline literals at call sites (`KeInitializeEvent(e, 1, …)`) and names living in multiple enums (dropped as ambiguous). Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
-**Source:** 2026-07-04 dispatcher audit (`docs/engineering/sync-instrumentation-design.md` §8).
+**Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes the ndk type headers (ketypes/pstypes/obtypes/mmtypes/extypes/lpctypes/cmtypes: ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT, LPC_TYPE, PS_* pool/priority, MMVAD types, …). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. **Anything it reports resolved to exactly ONE header value** (the ambiguity rule drops multi-enum names) → a strong real-bug signal, not the usual `--enums` noise. **Two deliberate blind spots you must review by hand:** (a) `TAG_*` pool tags are SKIPPED (Rust `from_le_bytes` vs the checker's big-endian multichar disagree on byte order — the tags need a byte-order-aware check; drift there is cosmetic pool-dump display); (b) untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no `/* … */` comment) still escape — `scan_inline_flag_literals` only catches the commented ones. Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
+**Also caught by the same tool the same day** (once `pub const` / path-typed / suffixed-decimal parsing was added — the checker had been blind to ~27K `pub const`s): the **LPC message-type enum** shifted in `lpc/send.rs` (live `if MessageType < LPC_DATAGRAM || > LPC_CLIENT_DIED` validation window, csrss-CreateProcess reply path), `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killing the scheduler foreground boost, swapped Ps pool-quota/priority enums, wrong MMVAD types, ~10 wrong hand-written STATUS codes. 41 total in one sweep.
+**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/sync-instrumentation-design.md` §8).
 
 ### Hardcoded HIGH_LEVEL=31 on amd64 → `mov cr8, 0x1F` #GP at boot
 **Symptom:** BUGCHECK 0x1E with `c0000005` during boot-driver init / process create; reported faulting Rip unreliable (false symbol e.g. `MiAcquireExpansionLock+7`).
@@ -1493,6 +1494,24 @@ never moved.
   a stale *and* a fresh build (PE is section-padded), so adding several `nsprint!` calls didn't
   move the byte count. The only reliable signal is `strings … | grep <unique-marker>` (or a
   fresh source string in the binary), exactly like the kernel case above.
+
+- ✅ **STRUCTURALLY FIXED 2026-07-04** (after one more gate false-green: a kernel-constants
+  batch's i386+amd64 smokes passed on a **pre-fix ntoskrnl.exe inside a freshly-rolled ISO**
+  — 37 cargo-linked binaries stale on x86, 18 on arm64, including lsass/services/smss/
+  winlogon/csrss/win32k; only arm64's binary-vs-`.rs` staleness probe caught it). Two fixes:
+  1. **Build side (the root):** `add_cargo_module` (sdk/cmake/gcc.cmake) now DEPENDS on a
+     **whole-workspace glob** (`sdk/lib/rust/**.rs|toml` minus `target/`, cached in a global
+     property) — the workspace is one dependency graph, so any `.rs` edit re-runs every cargo
+     link (a cheap cargo freshness no-op for unaffected modules). This is the same medicine
+     `rust_kernel`'s DEPENDS got earlier; the cargo-LINK layer had been left on hand-listed
+     `BODY_CRATES` (for ntoskrnl: the one-file `kernel-rust` umbrella — hence no kernel edge).
+  2. **Detection net (defense-in-depth):** `cargo_link_staleness_reasons` in
+     `tests/qemu/cli/provenance.py` — self-maintaining scan of `add_cargo_module` call sites;
+     every boot-relevant cargo-linked artifact (CD manifest on x86, boot set on arm64) must be
+     NEWER than the newest workspace `.rs`/`.toml`. Gates both staleness tiers (the build
+     stamp is blind: a build RAN and re-stamped; ninja just did no work).
+  The hand recipes above remain useful for *cargo-internal* staleness (incremental-cache
+  masking — nuke the target dir), but the "ninja never re-ran the link" leg is closed.
 
 ### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
 

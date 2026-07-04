@@ -291,6 +291,78 @@ def test_cohab_stale_overrides_tier1_fresh(arm64_cohab_repo: Path):
     assert any("foo.sys" in r for r in v.reasons), v.reasons
 
 
+@pytest.fixture
+def cargo_link_repo(tmp_path: Path) -> Path:
+    """An x86 repo with one cargo-LINKED module (bar-cargo -> bar/bar.exe on the
+    livecd manifest) — the fixture for the cargo-link freshness net (the
+    2026-07-04 stale-ntoskrnl-inside-a-fresh-ISO class)."""
+    r = tmp_path / "repo"
+    ws = r / "sdk" / "lib" / "rust"
+    (ws / "bar-rust" / "src").mkdir(parents=True)
+    (ws / "bar-rust" / "Cargo.toml").write_text("[package]\nname = 'bar-rust'\n")
+    (ws / "bar-rust" / "src" / "lib.rs").write_text("// body\n")
+    (r / "bar").mkdir()
+    (r / "bar" / "CMakeLists.txt").write_text(
+        "add_cargo_module(bar bar-cargo bar.exe\n    KIND kernelexe\n    BODY_CRATE bar-rust)\n"
+        "add_cargo_kernel_dll(${_t} v-cargo ${_t}.dll)\n"  # variable output — must be skipped
+    )
+    (r / "build-amd64" / "bar").mkdir(parents=True)
+    (r / "build-amd64" / "bar" / "bar.exe").write_bytes(b"PE")
+    (r / "build-amd64" / "boot").mkdir()
+    (r / "build-amd64" / "boot" / "livecd.cmake.lst").write_text(
+        "reactos/system32/bar.exe=/tmp/vibeos/build-amd64/bar/bar.exe\n"
+        "/tmp/vibeos/build-amd64/boot/empty\n"
+    )
+    (r / "build-amd64" / "livecd.iso").write_bytes(b"ISO")
+    _git(r, "init", "-q")
+    _git(r, "config", "user.email", "t@t")
+    _git(r, "config", "user.name", "t")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "init")
+    provenance.make_stamp(r, "amd64", cold=True, ts=1).write(r / "build-amd64")
+    return r
+
+
+def test_cargo_module_rels_parsed(cargo_link_repo: Path):
+    rels = provenance.cargo_module_rels(cargo_link_repo)
+    assert rels == ["bar/bar.exe"]  # ${_t}.dll variable call site skipped
+
+
+def test_cargo_link_fresh_binary_not_stale(cargo_link_repo: Path):
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    crate = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust"
+    os.utime(crate / "src" / "lib.rs", (1000, 1000))
+    os.utime(crate / "Cargo.toml", (1000, 1000))  # .toml is a workspace src too
+    os.utime(exe, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+
+
+def test_cargo_link_stale_binary_flagged_x86(cargo_link_repo: Path):
+    """The crux of the 2026-07-04 incident: a fresh ISO around a stale cargo-linked
+    PE, on x86 (which the cohab net exempts). Tier-1 fingerprint matches the stamp,
+    so only this net can catch it."""
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    rs = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust" / "src" / "lib.rs"
+    os.utime(exe, (1000, 1000))
+    os.utime(rs, (2000, 2000))  # .rs newer == cargo link never re-ran
+    reasons = provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
+    assert any("bar.exe" in x and "stale" in x for x in reasons), reasons
+    v = provenance.check_staleness(cargo_link_repo, "amd64")
+    assert v.stale and not v.fresh, v.reasons
+
+
+def test_cargo_link_scope_excludes_off_media_modules(cargo_link_repo: Path):
+    """A cargo module NOT on the boot media (e.g. rosload on a UEFI-only arch)
+    must not block smoke when it goes stale — scope is the CD manifest."""
+    lst = cargo_link_repo / "build-amd64" / "boot" / "livecd.cmake.lst"
+    lst.write_text("/tmp/vibeos/build-amd64/boot/empty\n")  # bar.exe not on CD
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    rs = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust" / "src" / "lib.rs"
+    os.utime(exe, (1000, 1000))
+    os.utime(rs, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+
+
 def test_discover_rust_targets(tmp_path: Path):
     bd = tmp_path / "build-i386"
     (bd / "ntoskrnl" / "rust-kernel-target").mkdir(parents=True)

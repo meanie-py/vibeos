@@ -654,6 +654,24 @@ function(add_cargo_module _target _crate _output)
             ${_ws}/${_body_crate}/*.rs ${_ws}/${_body_crate}/Cargo.toml)
         list(APPEND _srcs ${_bsrcs})
     endforeach()
+    # …but BODY_CRATES alone is NOT sufficient: the workspace is ONE dependency
+    # graph (path deps + a single Cargo.lock), so any workspace .rs can be in
+    # this module's link closure via the body crate's transitive deps. The
+    # hand-listed body crates rotted exactly like the old rust_kernel file list
+    # (field-manual §9.6b) — worst case 2026-07-04: ntoskrnl's BODY_CRATE is the
+    # one-file kernel-rust umbrella, so kernel .rs edits rebuilt libkernel_rust.a
+    # but never re-ran the cargo LINK; warm gates staged a pre-fix ntoskrnl.exe
+    # and false-greened i386+amd64 smoke (arm64's binary-vs-.rs staleness probe
+    # was the only thing that caught it). Depend on every workspace source: an
+    # edit re-runs cargo, a cheap freshness no-op for unaffected modules. Globbed
+    # once per configure (cached in a global property — ~40 call sites).
+    get_property(_ws_srcs GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS)
+    if(NOT _ws_srcs)
+        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml)
+        list(FILTER _ws_srcs EXCLUDE REGEX "/target/")
+        set_property(GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS "${_ws_srcs}")
+    endif()
+    list(APPEND _srcs ${_ws_srcs})
 
     # Kind-specific post-link (cmake passes these as the target's POST_BUILD).
     set(_postlink)
