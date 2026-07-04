@@ -20,7 +20,9 @@ list(APPEND SOURCE
     startmnusite.cpp
     # startup.cpp — replaced by Rust (explorer-rust startup.rs)
     syspager.cpp
-    taskband.cpp
+    # taskband.cpp — replaced by Rust (explorer-rust taskband.rs); the
+    # multi-interface COM object template (IObjectWithSite/IDeskBand/
+    # IPersistStream/IWinEventHandler/IOleCommandTarget on explorer_sys::com).
     taskswnd.cpp
     tbsite.cpp
     # trayclock.cpp — replaced by Rust (explorer-rust trayclock.rs); first

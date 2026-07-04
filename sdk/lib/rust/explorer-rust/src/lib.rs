@@ -32,6 +32,10 @@ pub mod explorer {
     // substrate (CWindowImpl→WndProc, CComObjectRootEx→refcount+QI,
     // ShellObjectCreatorInit→factory, CTooltips→TTM_* wrappers).
     pub mod trayclock;
+    // Tier C — taskband.cpp: CTaskBand, the internal task band. TEMPLATE for the
+    // MULTI-INTERFACE COM object (5 QI-reachable interfaces, one vtbl ptr each,
+    // CONTAINING_RECORD recovery per interface).
+    pub mod taskband;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

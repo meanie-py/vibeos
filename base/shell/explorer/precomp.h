@@ -313,8 +313,11 @@ ShowCustomizeNotifyIcons(HINSTANCE, HWND);
  * taskband.cpp
  */
 
-extern const GUID CLSID_ITaskBand;  /* Internal Task Band CLSID */
-HRESULT CTaskBand_CreateInstance(IN ITrayWindow *Tray, HWND hWndStartButton, REFIID riid, void **ppv);
+extern const GUID CLSID_ITaskBand;  /* Internal Task Band CLSID (now a Rust
+                                     * #[no_mangle] static in taskband.rs). */
+/* taskband.cpp → Rust (explorer-rust taskband.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CTaskBand_CreateInstance(IN ITrayWindow *Tray, HWND hWndStartButton, REFIID riid, void **ppv);
 
 /*
  * tbsite.cpp
@@ -430,7 +433,9 @@ HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 #define TSWM_UPDATETASKBARPOS   (WM_USER + 2)
 
-HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tray, REFIID riid, void **ppv);
+/* C linkage: called from Rust (explorer-rust taskband.rs SetSite). Still C++
+ * (taskswnd.cpp) — the extern "C" makes it emit/consume the C symbol. */
+extern "C" HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tray, REFIID riid, void **ppv);
 
 HRESULT
 Tray_OnStartMenuDismissed(ITrayWindow* Tray);

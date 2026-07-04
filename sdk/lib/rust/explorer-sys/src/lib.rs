@@ -451,6 +451,184 @@ pub mod com {
             ppv: *mut *mut c_void,
         ) -> HRESULT;
     }
+
+    // =====================================================================
+    // IMPLEMENTED interfaces for the deskband/band-site tier-C COM servers
+    // (taskband, tbsite, …). These are spelled out as full vtables because
+    // the tier-C classes IMPLEMENT them (build a static vtbl of Rust fns).
+    // Slot order is the COM ABI (verified against psdk shobjidl.idl / objidl.idl
+    // / ocidl.idl + reactos shlobj_undoc.h) — NEVER reorder. IIDs are fixed
+    // GUIDs compared by value in QI (symbol identity irrelevant).
+    // =====================================================================
+
+    use winsrv_sys::winsrv::{COLORREF, LONG, WPARAM, LPARAM, CLSID};
+
+    pub static IID_IObjectWithSite: IID = IID {
+        Data1: 0xFC48_01A3, Data2: 0x2BA9, Data3: 0x11CF,
+        Data4: [0xA2, 0x29, 0x00, 0xAA, 0x00, 0x3D, 0x73, 0x52],
+    };
+    pub static IID_IDeskBand: IID = IID {
+        Data1: 0xEB0F_E172, Data2: 0x1A3A, Data3: 0x11D0,
+        Data4: [0x89, 0xB3, 0x00, 0xA0, 0xC9, 0x0A, 0x90, 0xAC],
+    };
+    pub static IID_IPersist: IID = IID {
+        Data1: 0x0000_010C, Data2: 0x0000, Data3: 0x0000,
+        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+    pub static IID_IPersistStream: IID = IID {
+        Data1: 0x0000_0109, Data2: 0x0000, Data3: 0x0000,
+        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+    pub static IID_IWinEventHandler: IID = IID {
+        Data1: 0xEA5F_2D61, Data2: 0xE008, Data3: 0x11CF,
+        Data4: [0x99, 0xCB, 0x00, 0xC0, 0x4F, 0xD6, 0x44, 0x97],
+    };
+    /// `IID_IBandSite` value (also externed from uuid for consumers); inlined
+    /// here for the taskband Exec CGID compare.
+    pub static IID_IBandSite_VAL: IID = IID {
+        Data1: 0x4CF5_04B0, Data2: 0xDE96, Data3: 0x11D0,
+        Data4: [0x8B, 0x3F, 0x00, 0xA0, 0xC9, 0x11, 0xE8, 0xE5],
+    };
+
+    /// `POINTL` (wtypes) + `DESKBANDINFO` (shobjidl.idl) — exact layout; the
+    /// band fills pdbi fields the band site reads.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct POINTL {
+        pub x: LONG,
+        pub y: LONG,
+    }
+    #[repr(C)]
+    pub struct DESKBANDINFO {
+        pub dwMask: DWORD,
+        pub ptMinSize: POINTL,
+        pub ptMaxSize: POINTL,
+        pub ptIntegral: POINTL,
+        pub ptActual: POINTL,
+        pub wszTitle: [u16; 256],
+        pub dwModeFlags: DWORD,
+        pub crBkgnd: COLORREF,
+    }
+    pub const DBIM_TITLE: DWORD = 0x0010;
+    pub const DBIMF_VARIABLEHEIGHT: DWORD = 0x0008;
+    pub const DBIF_VIEWMODE_VERTICAL: DWORD = 0x0001;
+    // GW_CHILD comes from winsrv consts. TB_GETBUTTONSIZE is comctl32-only.
+    pub const TB_GETBUTTONSIZE: UINT = 0x0400 + 58; // WM_USER+58
+
+    /// IObjectWithSite (ocidl) — IUnknown + SetSite + GetSite.
+    #[repr(C)]
+    pub struct IObjectWithSiteVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IObjectWithSite, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IObjectWithSite) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IObjectWithSite) -> ULONG,
+        pub SetSite: unsafe extern "system" fn(*mut IObjectWithSite, *mut IUnknown) -> HRESULT,
+        pub GetSite:
+            unsafe extern "system" fn(*mut IObjectWithSite, REFIID, *mut *mut c_void) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IObjectWithSite {
+        pub lpVtbl: *const IObjectWithSiteVtbl,
+    }
+
+    /// IDeskBand : IDockingWindow : IOleWindow (shobjidl) — 9 slots.
+    #[repr(C)]
+    pub struct IDeskBandVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IDeskBand, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IDeskBand) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IDeskBand) -> ULONG,
+        // IOleWindow
+        pub GetWindow: unsafe extern "system" fn(*mut IDeskBand, *mut HWND) -> HRESULT,
+        pub ContextSensitiveHelp: unsafe extern "system" fn(*mut IDeskBand, BOOL) -> HRESULT,
+        // IDockingWindow
+        pub ShowDW: unsafe extern "system" fn(*mut IDeskBand, BOOL) -> HRESULT,
+        pub CloseDW: unsafe extern "system" fn(*mut IDeskBand, DWORD) -> HRESULT,
+        pub ResizeBorderDW: unsafe extern "system" fn(
+            *mut IDeskBand,
+            *const RECT,
+            *mut IUnknown,
+            BOOL,
+        ) -> HRESULT,
+        // IDeskBand
+        pub GetBandInfo:
+            unsafe extern "system" fn(*mut IDeskBand, DWORD, DWORD, *mut DESKBANDINFO) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IDeskBand {
+        pub lpVtbl: *const IDeskBandVtbl,
+    }
+
+    /// IPersistStream : IPersist (objidl) — 8 slots (serves IID_IPersist too).
+    #[repr(C)]
+    pub struct IPersistStreamVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IPersistStream, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IPersistStream) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IPersistStream) -> ULONG,
+        // IPersist
+        pub GetClassID: unsafe extern "system" fn(*mut IPersistStream, *mut CLSID) -> HRESULT,
+        // IPersistStream
+        pub IsDirty: unsafe extern "system" fn(*mut IPersistStream) -> HRESULT,
+        pub Load: unsafe extern "system" fn(*mut IPersistStream, *mut c_void) -> HRESULT,
+        pub Save: unsafe extern "system" fn(*mut IPersistStream, *mut c_void, BOOL) -> HRESULT,
+        pub GetSizeMax: unsafe extern "system" fn(*mut IPersistStream, *mut c_void) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IPersistStream {
+        pub lpVtbl: *const IPersistStreamVtbl,
+    }
+
+    /// IWinEventHandler (shlobj_undoc) — IUnknown + OnWinEvent + IsWindowOwner.
+    #[repr(C)]
+    pub struct IWinEventHandlerVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IWinEventHandler, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IWinEventHandler) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IWinEventHandler) -> ULONG,
+        pub OnWinEvent: unsafe extern "system" fn(
+            *mut IWinEventHandler,
+            HWND,
+            UINT,
+            WPARAM,
+            LPARAM,
+            *mut LRESULT,
+        ) -> HRESULT,
+        pub IsWindowOwner: unsafe extern "system" fn(*mut IWinEventHandler, HWND) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IWinEventHandler {
+        pub lpVtbl: *const IWinEventHandlerVtbl,
+    }
+
+    /// IOleCommandTarget IMPLEMENTED vtbl (same ABI as the consumed one above,
+    /// but with a self-typed `this` for building a static vtable of Rust fns).
+    #[repr(C)]
+    pub struct IOleCommandTargetImplVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IOleCommandTargetImpl, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IOleCommandTargetImpl) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IOleCommandTargetImpl) -> ULONG,
+        pub QueryStatus: unsafe extern "system" fn(
+            *mut IOleCommandTargetImpl,
+            *const GUID,
+            ULONG,
+            *mut c_void,
+            *mut c_void,
+        ) -> HRESULT,
+        pub Exec: unsafe extern "system" fn(
+            *mut IOleCommandTargetImpl,
+            *const GUID,
+            DWORD,
+            DWORD,
+            *mut c_void,
+            *mut c_void,
+        ) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IOleCommandTargetImpl {
+        pub lpVtbl: *const IOleCommandTargetImplVtbl,
+    }
 }
 
 pub mod externs {
@@ -500,6 +678,10 @@ pub mod externs {
         pub fn IUnknown_SetSite(
             punk: *mut crate::com::IUnknown,
             punkSite: *mut crate::com::IUnknown,
+        ) -> winsrv_sys::winsrv::HRESULT;
+        pub fn IUnknown_GetWindow(
+            punk: *mut crate::com::IUnknown,
+            phwnd: *mut winsrv_sys::winsrv::HWND,
         ) -> winsrv_sys::winsrv::HRESULT;
         pub fn SHRestricted(rest: u32) -> DWORD;
         // LSTATUS return typed as DWORD so `== ERROR_SUCCESS` (a u32 const in
