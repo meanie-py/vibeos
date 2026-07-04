@@ -514,8 +514,21 @@ def test_triage_census_confirms_wedge():
 
 
 def test_triage_wedge_evidence_counts():
-    ev = triage.wedge_evidence("noise\n[CENSUS] STUCK a\n[LOCKDEP] SELF-DEADLOCK x\nnoise\n")
-    assert ev["census_stuck"] == 1 and ev["lockdep"] == 1
+    # real emission shapes from ke/lockdep.rs (Phase A SELF-DEADLOCK, Phase B ABBA);
+    # the "[LOCKDEP] N violation(s) recorded" header and reverse-order context
+    # lines are deliberately NOT counted as violations.
+    serial = (
+        "noise\n"
+        "[CENSUS] STUCK a\n"
+        "[LOCKDEP] 2 violation(s) recorded (thread-slot drops=0, edge drops=0, edges=6200):\n"
+        "[LOCKDEP]   SELF-DEADLOCK #1 thread=0xfff WAIT(shared) on lock=0xabc"
+        " already held(excl) site=0x123\n"
+        "[LOCKDEP]   ABBA #2 thr=0xfff holds 0xaaa(excl) acquiring 0xbbb(excl) site=0x456\n"
+        "[LOCKDEP]        reverse order seen: thr=0xeee took 0xbbb before 0xaaa site=0x789\n"
+        "noise\n"
+    )
+    ev = triage.wedge_evidence(serial)
+    assert ev["census_stuck"] == 1 and ev["lockdep"] == 2
     assert triage.wedge_evidence("clean boot\n") == {"census_stuck": 0, "lockdep": 0, "lines": []}
 
 

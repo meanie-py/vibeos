@@ -27,12 +27,15 @@ _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
 # truncates its Raw: line, which can cut the panic string in half).
 _KERNEL_PANIC = re.compile(r"PANIC:([^\s:]+):(\d+)")
 # Wedge self-reports from the in-kernel sync instrumentation (census watchdog,
-# ke/census.rs; [LOCKDEP] lands with the lockdep lane). These print to SERIAL on
-# any boot where threads are stuck >10s in a gate wait — evidence that a timeout
-# is a genuine wedge, not a slow/contended boot, and on green boots a trendable
+# ke/census.rs; lockdep Phase A+B, ke/lockdep.rs). These print to SERIAL on any
+# boot where threads are stuck >10s in a gate wait — evidence that a timeout is
+# a genuine wedge, not a slow/contended boot, and on green boots a trendable
 # health signal (e.g. the Mm WS self-deadlock strands eventlog every boot).
+# Lockdep violation records are `[LOCKDEP]   SELF-DEADLOCK #n …` (Phase A) and
+# `[LOCKDEP]   ABBA #n …` (Phase B); header/reverse-order lines are context,
+# not counted. Lockdep is feature-gated (build --lockdep), default OFF.
 _CENSUS_STUCK = re.compile(r"\[CENSUS\] STUCK\b")
-_LOCKDEP_HIT = re.compile(r"\[LOCKDEP\][^\n]*(?:DEADLOCK|VIOLATION)")
+_LOCKDEP_HIT = re.compile(r"\[LOCKDEP\][^\n]*(?:SELF-DEADLOCK|ABBA)")
 _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f]+)")
 
 # Documented intermittent flakes single-run gates have masked (see
