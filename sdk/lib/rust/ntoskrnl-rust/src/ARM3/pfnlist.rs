@@ -530,8 +530,8 @@ pub unsafe extern "system" fn MiInsertPageInList(
 
     list_name = (*list_head).ListName;
     if (list_name == StandbyPageList as u32) || (list_name == ModifiedPageList as u32) {
-        if (!mmpte_software_prototype(&*(mmpfn_original_pte_long(pfn1) as PMMPTE)))
-            && (mmpte_software_transition(&*(mmpfn_original_pte_long(pfn1) as PMMPTE)))
+        if (!mmpte_software_prototype(&*mmpfn_original_pte_ptr(pfn1)))
+            && (mmpte_software_transition(&*mmpfn_original_pte_ptr(pfn1)))
         {
             KeBugCheckEx(MEMORY_MANAGEMENT, 0x8888, 0, 0, 0);
         }
@@ -769,7 +769,7 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
             temp_pte.set_transition(true);
             temp_pte.set_valid(false);
             temp_pte.set_prototype(false);
-            temp_pte.set_soft_protection((mmpte_software_protection(&*(mmpfn_original_pte_long(Pfn1) as PMMPTE))) as ULONG);
+            temp_pte.set_soft_protection((mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1))) as ULONG);
             MI_WRITE_INVALID_PTE(pointer_pte, temp_pte);
         }
 

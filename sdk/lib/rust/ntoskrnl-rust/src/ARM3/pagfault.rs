@@ -574,7 +574,7 @@ unsafe fn MiCompleteProtoPteFault(
     DirtyPage = (false) as u8;
     if (StoreInstruction != 0) && ((Protection as ULONG & MM_WRITECOPY) != MM_WRITECOPY) {
         DirtyPage = (true) as u8;
-        ASSERT!(mmpte_software_prototype(&*(mmpfn_original_pte_long(Pfn1) as PMMPTE)) );
+        ASSERT!(mmpte_software_prototype(&*mmpfn_original_pte_ptr(Pfn1)) );
     }
 
     if !(*LockedProtoPfn).is_null() {
@@ -1330,7 +1330,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
         if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
             Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
             if ((*PointerPte).Long & PTE_READWRITE) == 0
-                && (mmpte_software_protection(&*(mmpfn_original_pte_long(Pfn1) as PMMPTE)) & MM_READWRITE) == 0
+                && (mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE) == 0
             {
                 KeBugCheckEx(
                     ATTEMPTED_WRITE_TO_READONLY_MEMORY,
@@ -1506,7 +1506,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
                         Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
                         if ((*PointerPte).Long & PTE_READWRITE) == 0
-                            && (mmpte_software_protection(&*(mmpfn_original_pte_long(Pfn1) as PMMPTE)) & MM_READWRITE) == 0
+                            && (mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE) == 0
                         {
                             KeBugCheckEx(
                                 ATTEMPTED_WRITE_TO_READONLY_MEMORY,
@@ -1580,7 +1580,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
                 Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
                 if !(TempPte.Long & PTE_READWRITE != 0)
-                    && !(mmpte_software_protection(&*(mmpfn_original_pte_long(Pfn1) as PMMPTE)) & MM_READWRITE != 0)
+                    && !(mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE != 0)
                     && (MI_IS_PAGE_COPY_ON_WRITE(&TempPte) == 0)
                 {
                     ASSERT!(IsSessionAddress == 0);
