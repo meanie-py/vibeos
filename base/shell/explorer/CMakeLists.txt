@@ -5,7 +5,8 @@ if(DBG)
 endif()
 
 list(APPEND SOURCE
-    appbar.cpp
+    # appbar.cpp — replaced by Rust (folded into explorer-rust traywnd.rs);
+    # CAppBarManager is a base class of CTrayWindow, translated with it.
     # desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
     explorer.cpp
     # notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
@@ -35,10 +36,14 @@ list(APPEND SOURCE
     # trayclock.cpp — replaced by Rust (explorer-rust trayclock.rs); first
     # tier-C CWindowImpl+CComObjectRootEx+IOleWindow class on explorer_sys::server.
     traydeskbtn.cpp
+    # traydeskbtn_shim.cpp — extern "C" bridge so Rust traywnd.rs can call the
+    # still-C++ CTrayShowDesktopButton (retires when traydeskbtn.cpp → Rust).
+    traydeskbtn_shim.cpp
     trayntfy.cpp
     # trayprop.cpp — replaced by Rust (explorer-rust trayprop.rs); the Taskbar &
     # Start-Menu Properties dialog (3 WTL property pages → flat DLGPROCs).
-    traywnd.cpp
+    # traywnd.cpp — replaced by Rust (explorer-rust traywnd.rs) — the taskbar
+    # core CTrayWindow + CAppBarManager base + embedded CStartButton.
     # util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
     # only the C-variadic FormatMenuString shell stays C++ (util_vararg.cpp).
     util_vararg.cpp

@@ -185,7 +185,9 @@ DECLARE_INTERFACE_(ITrayWindow, IUnknown)
 #define ITrayWindow_NotifyFullScreenToAppBars(p,a,b) (p)->lpVtbl->NotifyFullScreenToAppBars(p,a,b)
 #endif
 
-HRESULT CreateTrayWindow(ITrayWindow ** ppTray);
+/* traywnd.cpp → Rust (explorer-rust traywnd.rs); C linkage so the explorer.cpp
+ * caller (still C++) binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CreateTrayWindow(ITrayWindow ** ppTray);
 
 /* C linkage: called from Rust (explorer-rust startup.rs/desktop paths). */
 extern "C" {
@@ -426,7 +428,9 @@ static inline BOOL GetHideClock()
 
 #define NTNWM_REALIGN   (0x1)
 
-HRESULT CTrayNotifyWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* C linkage: called from Rust (explorer-rust traywnd.rs). Still C++
+ * (trayntfy.cpp) — the extern "C" makes it emit the C symbol. */
+extern "C" HRESULT CTrayNotifyWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 /* SysPagerWnd */
 /* syspager.cpp → Rust (explorer-rust syspager.rs); C linkage so the trayntfy.cpp

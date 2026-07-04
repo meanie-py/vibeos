@@ -60,6 +60,10 @@ pub mod explorer {
     // startmnucust.cpp — "Customize Classic Start Menu" dialog (treeview of
     // advanced options → registry Advanced values). Not boot-path.
     pub mod startmnucust;
+    // Tier C (mega-cluster) — traywnd.cpp + appbar.cpp + CStartButton: CTrayWindow,
+    // the taskbar core (ITrayWindow/IShellDesktopTray/IOleWindow/IContextMenu),
+    // its CAppBarManager base, and the embedded start button. Creates everything.
+    pub mod traywnd;
 }
 
 // USER-MODE no_std staticlib linked into a C++ exe that has its own CRT/EH;
