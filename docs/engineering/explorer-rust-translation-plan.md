@@ -1,8 +1,12 @@
 # explorer.exe → Rust Translation Plan
 
-**Status:** SCOPING (2026-07-03). No explorer code translated to Rust before this
-lane except the single PoC below (`util.cpp`). explorer.exe is the last boot-path
-component still fully C++ (`docs/engineering/rust-port-status.md` lists it at 0%).
+**Status:** ACTIVE (2026-07-04). util.cpp swap BOOTED (i386 smoke green); scanner
+extracts C++ methods. See the Status Log at the bottom for the current edge.
+*(§1–§6 below are the 2026-07-03 scoping — still the design of record, but two
+facts have moved: the scanner now extracts C++ methods (§2's "blindness" and
+§5's tier-B/C extraction blocker are FIXED), and the tier-A substrate
+(`explorer-sys`) + cohab link exist and boot. Tier C's remaining blocker is the
+COM-vtable/msgmap *object* design, not extraction.)*
 
 **TL;DR / GO-NO-GO:**
 - **Tier A (6 procedural files, ~1.3K LOC): GO today** after a small, bounded
@@ -205,3 +209,75 @@ land `util.cpp` alone and prove smoke ×3 still boots to desktop.** That closes 
 loop end-to-end (translate → substrate → cohab → link → boot) on the cheapest possible
 surface, and is the prerequisite for everything else. Only after that green should any
 further explorer files be translated (and Tier C not until the msg-map path exists).
+
+---
+
+## Status Log
+
+- **2026-07-03** — Scoped (this doc). util.cpp PoC translated ($0.09). `explorer`
+  target registered in rustconv config.
+- **2026-07-04 — util.cpp swap BOOTS.** `explorer-sys` created (com::IUnknown
+  lpVtbl types + IID_IUnknown + S_OK/S_FALSE, shlwapi/version.dll/msvcrt externs,
+  cohab globals extern block) and `explorer-rust` staticlib (both in the cargo
+  workspace, `cargo check` clean ×3 arches). util.rs integration fixes vs the raw
+  translation: BOOL returns u8→i32 (ABI), narrow-string→`w!` (encoding bug),
+  variadic `FormatMenuString` kept as C++ `va_start` shell (`util_vararg.cpp`) →
+  Rust `FormatMenuStringV` (stable Rust can't define C-variadic; rtl-diag
+  pattern). Cohab: util.cpp commented out of CMakeLists (advapi32-rust cmake
+  pattern: cargo custom command + `--allow-multiple-definition`, rust lib first),
+  util decls `extern "C"` in precomp.h. **i386 smoke green (1m19s, boot ✓).**
+  amd64/arm64 owed at the landing gate (amd64 baseline is ~50% red from an
+  unrelated Mm-wedge — another lane owns it).
+- **2026-07-04 — scanner extracts C++ methods** (user-directed "improve rustconv
+  rather than gate"). `_parse_function` now handles `qualified_identifier`
+  (out-of-line `Cls::m`, incl. glued STDMETHODCALLTYPE), `field_identifier`
+  (in-class), `destructor_name`, ctor detection, and ascends to the enclosing
+  class/struct for attribution; operators stay unextracted. Explorer coverage:
+  taskband 2→24, appbar 0→29, traywnd 21→149 (4 macro-mangled leftovers),
+  taskswnd 6→91, syspager 4→62; kernel .c files unchanged. `FunctionDep.name`
+  for methods is the unique target symbol (`Cls_method`, `Cls_ctor`/`_dtor`,
+  `_2` overload suffix) = the Rust `#[no_mangle]` name. Per-method prompts get a
+  method→free-fn contract block + the owning class definition with bodies
+  stripped (`extract_class_context`, sibling-.h aware). Fail-loud gate:
+  `translate`/`submit`/`batch` HARD FAIL on unextracted bodies in `.cpp`
+  (`--allow-partial` to override), warn-only on `.c` (PSEH parse artifacts were
+  always dropped; kernel pipeline stays unblocked). `estimate`/dir discovery now
+  globs `.cpp` (full dir: ~$3.4 Sonnet sync floor). rustconv pytest 78/78 green.
+  **Translation quality of method bodies is still unproven** — first live test =
+  a tier-B file (settings/appbar); the Rust-side `#[repr(C)]` class structs must
+  be authored/verified per class before its methods can link.
+- **2026-07-04 — Tier A translated + 6/7 files integrated** (total API spend
+  ~$0.42). explorer-sys grew the consumed-COM surface: vtables (orders verified
+  from psdk/reactos idl+headers via subagent research) for IMenuPopup chain /
+  IBanneredBar / IMenuBand / IInitializeObject / IBandSite / IOleCommandTarget /
+  ITrayWindow / IShellDesktopTray, IID/CLSID extern statics resolved from the
+  cmake `uuid` lib at link (verified real data symbols; IID_IShellDesktopTray
+  comes from traywnd.cpp), DPA_*, SHRestricted + REST_* values, strsafe/
+  HRESULT_FROM_WIN32/MAKEINTRESOURCEW/DialogBoxParamW gap-fill, wine TRACE!/
+  WARN!/ERR!/FIXME! no-op macros. precomp.h: extern "C" on all swapped decls +
+  TrayProcessMessages/TrayMessageLoop/CStartMenuSite_CreateInstance (called
+  from Rust). Raw-output defect classes fixed in integration (add to review
+  checklist): u8-vs-BOOL ABI on exported fns; narrow-vs-wide literals; zeroed
+  GUID stubs (CLSID_BandSiteMenu was [0,0,0,0] — silent bug); resource IDs
+  stubbed to 0 (IDD_NOTIFICATIONS_CUSTOMIZE); DialogBoxW/MAKEINTRESOURCEW
+  macros emitted as externs; FARPROC-Option call shapes. cargo check 0 errors
+  ×3 arches; notifyiconscust/rshell/shellservice/startmnu/startup .cpp swapped
+  out in CMakeLists. **startmnucust.rs translated but NOT integrated** (needs
+  TaskbarSettings/TW_STUCKRECTS2 bitfield mirror + treeview substrate;
+  startmnucust.cpp stays compiled — phased swap, tracked).
+- **2026-07-04 — i386 LINK gotcha (cargo-check can't catch it).** The 6-file
+  tier-A livecd link FAILED with 8 undefined symbols (`_SHGetFolderPathW`,
+  `_ExpandEnvironmentStringsW`, `_ShellExecuteExW`, `_IsUserAnAdmin`,
+  `_GetBinaryTypeW`, `_SUCCEEDED`, `_StringCbCatW`, `_ZeroMemory`). Root cause:
+  rustconv emits Win32 API imports as `extern "C"` (cdecl) blocks; on i386 that
+  decorates `_Name` but the import libs export stdcall `_Name@N` → unresolved.
+  cargo-check on the rlib PASSES (the reference is unresolved-but-legal until the
+  final exe link), so **the defect only appears at the explorer.exe link — always
+  do a targeted `ninja base/shell/explorer/explorer.exe` after integrating a
+  file, not just cargo check.** Fix: Win32 stdcall APIs → `extern "system"`;
+  drop re-declared inlines (`SUCCEEDED` from winsrv_sys::consts, `StringCbCatW`
+  from explorer_sys::externs); `ZeroMemory` is a macro → `RtlZeroMemory`; keep
+  genuine cdecl (`wcslen`/`wcscmp`) and DCE'd wine `TRACE`/`WARN` as `extern "C"`.
+  amd64/arm64 don't care (cdecl==stdcall decoration), so this is i386-only — same
+  family as the kernel's #1 i386 crash cause. Every tier-B/C file has this same
+  `extern "C"` Win32 block and will need the fix at integration.

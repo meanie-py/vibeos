@@ -88,6 +88,12 @@ SetWindowExStyle(IN HWND hWnd,
     return SHSetWindowBits(hWnd, GWL_EXSTYLE, dwStyleMask, dwStyle);
 }
 
+/* util.cpp is replaced by Rust (explorer-rust util.rs) — the definitions are
+ * #[no_mangle] extern "C", so the declarations must carry C linkage too.
+ * FormatMenuString keeps its C-variadic shell in util_vararg.cpp (also
+ * extern "C") forwarding to the Rust FormatMenuStringV. */
+extern "C" {
+
 HMENU
 LoadPopupMenu(IN HINSTANCE hInstance,
               IN LPCWSTR lpMenuName);
@@ -107,15 +113,18 @@ FormatMenuString(IN HMENU hMenu,
                  IN UINT uFlags,
                  ...);
 
-BOOL GetRegValue(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
 BOOL SetRegDword(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN DWORD dwValue);
 BOOL GetAdvancedBool(IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
 BOOL SetAdvancedDword(IN LPCWSTR pszValueName, IN DWORD dwValue);
+
+} /* extern "C" */
 
 /*
  *  rshell.c
  */
 
+/* rshell.cpp is replaced by Rust (explorer-rust rshell.rs) — C linkage. */
+extern "C" {
 VOID InitRSHELL(VOID);
 HRESULT WINAPI _CStartMenu_CreateInstance(REFIID riid, void **ppv);
 HANDLE WINAPI _SHCreateDesktop(IShellDesktopTray *ShellDesk);
@@ -124,6 +133,7 @@ BOOL WINAPI _WinList_Init(void);
 void WINAPI _ShellDDEInit(BOOL bInit);
 HRESULT WINAPI _CBandSiteMenu_CreateInstance(REFIID riid, void **ppv);
 HRESULT WINAPI _CBandSite_CreateInstance(LPUNKNOWN pUnkOuter, REFIID riid, void **ppv);
+} /* extern "C" */
 
 /*
  * traywnd.c
@@ -177,11 +187,14 @@ DECLARE_INTERFACE_(ITrayWindow, IUnknown)
 
 HRESULT CreateTrayWindow(ITrayWindow ** ppTray);
 
+/* C linkage: called from Rust (explorer-rust startup.rs/desktop paths). */
+extern "C" {
 VOID
 TrayProcessMessages(IN OUT ITrayWindow *Tray);
 
 VOID
 TrayMessageLoop(IN OUT ITrayWindow *Tray);
+} /* extern "C" */
 
 /*
  * settings.c
@@ -248,17 +261,25 @@ extern TaskbarSettings g_TaskbarSettings;
 /*
  * shellservice.cpp
  */
+/* shellservice.cpp is replaced by Rust (explorer-rust shellservice.rs). */
+extern "C" {
 HRESULT InitShellServices(HDPA * phdpa);
 HRESULT ShutdownShellServices(HDPA hdpa);
+} /* extern "C" */
 
 /*
  * startup.cpp
  */
 
+/* startup.cpp is replaced by Rust (explorer-rust startup.rs) — C linkage on
+ * the definitions; the no-arg ProcessStartupItems overload stays a C++
+ * inline wrapper (C++ allows one "C"-linkage function among overloads). */
+extern "C" {
 VOID ReleaseStartupMutex();
 VOID ProcessRunOnceItems();
 BOOL DoStartStartupItems(ITrayWindow *Tray);
 INT ProcessStartupItems(BOOL bRunOnce);
+} /* extern "C" */
 static inline INT ProcessStartupItems() { return ProcessStartupItems(FALSE); }
 static inline VOID DoFinishStartupItems() { ReleaseStartupMutex(); }
 
@@ -282,7 +303,8 @@ DesktopDestroyShellWindow(IN HANDLE hDesktop);
 /*
  * notifyiconscust.cpp
  */
-VOID
+/* notifyiconscust.cpp is replaced by Rust (explorer-rust notifyiconscust.rs). */
+extern "C" VOID
 ShowCustomizeNotifyIcons(HINSTANCE, HWND);
 
 /*
@@ -339,6 +361,8 @@ HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndO
 /*
  * startmnu.cpp
  */
+/* startmnu.cpp is replaced by Rust (explorer-rust startmnu.rs). */
+extern "C" {
 IMenuPopup*
 CreateStartMenu(IN ITrayWindow *Tray,
                 OUT IMenuBand **ppMenuBand,
@@ -349,19 +373,25 @@ UpdateStartMenu(IN OUT IMenuPopup *pMenuPopup,
                 IN HBITMAP hbmBanner  OPTIONAL,
                 IN BOOL bSmallIcons,
                 IN BOOL bRefresh);
+} /* extern "C" */
 
 /*
  * startmnucust.cpp
  */
+/* startmnucust.cpp is replaced by Rust (explorer-rust startmnucust.rs). */
+extern "C" {
 VOID
 ShowCustomizeClassic(HINSTANCE, HWND);
 VOID
 ClearRecentAndMru();
+} /* extern "C" */
 
 /*
 * startmnusite.cpp
 */
-HRESULT
+/* C linkage: called from Rust (explorer-rust startmnu.rs). The C++ reference
+ * param (const IID &) is ABI-identical to a pointer. */
+extern "C" HRESULT
 CStartMenuSite_CreateInstance(IN OUT ITrayWindow *Tray, const IID & riid, PVOID * ppv);
 
 /*
@@ -401,7 +431,8 @@ HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tr
 HRESULT
 Tray_OnStartMenuDismissed(ITrayWindow* Tray);
 
-HRESULT
+/* Rust (explorer-rust util.rs) — C linkage; see the util.cpp block above. */
+extern "C" HRESULT
 IsSameObject(IN IUnknown *punk1, IN IUnknown *punk2);
 
 #endif /* _EXPLORER_PRECOMP__H_ */

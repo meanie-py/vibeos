@@ -8,15 +8,15 @@ list(APPEND SOURCE
     appbar.cpp
     desktop.cpp
     explorer.cpp
-    notifyiconscust.cpp
-    rshell.cpp
+    # notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
+    # rshell.cpp — replaced by Rust (explorer-rust rshell.rs)
     settings.cpp
-    shellservice.cpp
+    # shellservice.cpp — replaced by Rust (explorer-rust shellservice.rs)
     startctxmnu.cpp
-    startmnu.cpp
+    # startmnu.cpp — replaced by Rust (explorer-rust startmnu.rs)
     startmnucust.cpp
     startmnusite.cpp
-    startup.cpp
+    # startup.cpp — replaced by Rust (explorer-rust startup.rs)
     syspager.cpp
     taskband.cpp
     taskswnd.cpp
@@ -26,13 +26,57 @@ list(APPEND SOURCE
     trayntfy.cpp
     trayprop.cpp
     traywnd.cpp
-    util.cpp
+    # util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
+    # only the C-variadic FormatMenuString shell stays C++ (util_vararg.cpp).
+    util_vararg.cpp
     precomp.h)
+
+# --- Rust cohabitation (explorer-rust) -------------------------------------
+# Build libexplorer_rust.a from the workspace crate (standard user-mode
+# per-arch targets, same pattern as advapi32-rust). The #[no_mangle] bodies
+# replace the commented-out .cpp TUs above; lld first-match
+# (--allow-multiple-definition) lets the staticlib's panic_handler/
+# eh_personality coexist with the C++ side. Plan:
+# docs/engineering/explorer-rust-translation-plan.md.
+set(EXPLORER_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(EXPLORER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-explorer-target")
+set(EXPLORER_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libexplorer_rust.a")
+if(ARCH STREQUAL "i386")
+    set(EXPLORER_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(EXPLORER_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(EXPLORER_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+file(GLOB_RECURSE EXPLORER_RUST_SRCS
+    "${EXPLORER_RUST_WORKSPACE_DIR}/explorer-rust/src/*.rs"
+    "${EXPLORER_RUST_WORKSPACE_DIR}/explorer-sys/src/*.rs")
+add_custom_command(
+    OUTPUT ${EXPLORER_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${EXPLORER_RUST_TARGET_DIR}
+        cargo build --release --target ${EXPLORER_RUST_TARGET}
+            -p explorer-rust
+            --manifest-path ${EXPLORER_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${EXPLORER_RUST_TARGET_DIR}/${EXPLORER_RUST_TARGET}/release/libexplorer_rust.a
+        ${EXPLORER_RUST_LIB}
+    DEPENDS ${EXPLORER_RUST_SRCS}
+            ${EXPLORER_RUST_WORKSPACE_DIR}/explorer-rust/Cargo.toml
+            ${EXPLORER_RUST_WORKSPACE_DIR}/explorer-sys/Cargo.toml
+    WORKING_DIRECTORY ${EXPLORER_RUST_WORKSPACE_DIR}
+    COMMENT "Building explorer-rust (${EXPLORER_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_explorer DEPENDS ${EXPLORER_RUST_LIB})
+# ----------------------------------------------------------------------------
 
 file(GLOB explorer_rc_deps res/*.*)
 add_rc_deps(explorer.rc ${explorer_rc_deps})
 add_executable(explorer ${SOURCE} explorer.rc)
-target_link_libraries(explorer uuid wine cpprt atl_classes)
+# EXPLORER_RUST_LIB first so its #[no_mangle] bodies win over any lingering C++.
+target_link_libraries(explorer ${EXPLORER_RUST_LIB} uuid wine cpprt atl_classes)
+target_link_options(explorer PRIVATE LINKER:--allow-multiple-definition)
+add_dependencies(explorer rust_explorer)
 set_module_type(explorer win32gui UNICODE)
 add_importlibs(explorer advapi32 gdi32 user32 comctl32 ole32 oleaut32 shell32 browseui shlwapi shdocvw version uxtheme msvcrt kernel32 ntdll)
 add_pch(explorer precomp.h SOURCE)
