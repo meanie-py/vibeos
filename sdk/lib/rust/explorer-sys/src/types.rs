@@ -48,6 +48,10 @@ impl TW_STRUCKRECTS2 {
         (self.dwFlags & Self::F_HIDECLOCK) >> 3
     }
     #[inline]
+    pub fn set_HideClock(&mut self, v: DWORD) {
+        self.dwFlags = (self.dwFlags & !Self::F_HIDECLOCK) | ((v & 1) << 3);
+    }
+    #[inline]
     pub fn AutoHide(&self) -> DWORD {
         self.dwFlags & Self::F_AUTOHIDE
     }

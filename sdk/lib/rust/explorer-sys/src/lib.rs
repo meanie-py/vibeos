@@ -31,6 +31,12 @@ pub use winsrv_sys;
 // Explorer-wide shared C++ types (TaskbarSettings, TW_STRUCKRECTS2, …).
 pub mod types;
 
+// ATL/WTL replacement substrate for the tier-C COM/window-server classes
+// (CWindowImpl→WndProc thunk, DECLARE_WND_CLASS_EX→register-once, uxtheme/
+// tooltip surface). See docs/engineering/explorer-rust-translation-plan.md
+// §"tier-C COM-server / WTL substrate".
+pub mod server;
+
 pub mod com {
     use super::c_void;
     use winsrv_sys::winsrv::{HRESULT, IID};
@@ -75,6 +81,34 @@ pub mod com {
         Data3: 0x0000,
         Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
     };
+
+    /// `IID_IOleWindow` — {00000114-0000-0000-C000-000000000046} (oleidl.h).
+    /// Well-known OLE IID; value-compared in QI (symbol identity irrelevant).
+    pub static IID_IOleWindow: IID = IID {
+        Data1: 0x0000_0114,
+        Data2: 0x0000,
+        Data3: 0x0000,
+        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+
+    /// IOleWindow (oleidl.h) — IUnknown + GetWindow + ContextSensitiveHelp.
+    /// explorer's tier-C window controls (trayclock, …) IMPLEMENT this, so the
+    /// full vtable is spelled out (implemented, not just consumed).
+    #[repr(C)]
+    pub struct IOleWindowVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IOleWindow, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IOleWindow) -> u32,
+        pub Release: unsafe extern "system" fn(*mut IOleWindow) -> u32,
+        pub GetWindow:
+            unsafe extern "system" fn(*mut IOleWindow, *mut winsrv_sys::winsrv::HWND) -> HRESULT,
+        pub ContextSensitiveHelp:
+            unsafe extern "system" fn(*mut IOleWindow, winsrv_sys::winsrv::BOOL) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IOleWindow {
+        pub lpVtbl: *const IOleWindowVtbl,
+    }
 
     /// IUnknown vtable — slot order is the COM ABI, never reorder.
     /// `extern "system"` = stdcall on i386, the one true COM convention.
@@ -501,6 +535,8 @@ pub mod externs {
     pub const REST_NOCURRENTUSERRUNONCE: u32 = 0x4000_0049;
     pub const REST_NOSMMYDOCS: u32 = 0x4000_004F;
     pub const REST_NOSMMYPICS: u32 = 0x4000_0050;
+    /// shlobj.h `REST_HIDECLOCK` — tray clock policy (GetHideClock).
+    pub const REST_HIDECLOCK: u32 = 0x4000_0070;
 
     // comctl32 DPA (dynamic pointer array) — shellservice.cpp's HDPA of
     // started shell-service IOleCommandTargets.

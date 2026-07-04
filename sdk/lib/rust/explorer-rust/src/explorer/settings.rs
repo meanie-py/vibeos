@@ -34,6 +34,15 @@ pub static mut g_TaskbarSettings: TaskbarSettings = TaskbarSettings {
     },
 };
 
+/// `GetHideClock()` (precomp.h static inline) — shared by the tier-C tray
+/// classes (trayclock/trayntfy/trayprop). Lives here because it reads
+/// `g_TaskbarSettings`, which this module owns. `sr.HideClock` is bit 3 of the
+/// TW_STRUCKRECTS2 flags word.
+#[inline]
+pub unsafe fn GetHideClock() -> BOOL {
+    (g_TaskbarSettings.sr.HideClock() != 0 || SHRestricted(REST_HIDECLOCK) != 0) as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn TaskbarSettings_Save(this: *mut TaskbarSettings) -> i32 {
     SHSetValueW(

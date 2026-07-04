@@ -400,8 +400,10 @@ CStartMenuSite_CreateInstance(IN OUT ITrayWindow *Tray, const IID & riid, PVOID 
  * trayntfy.c
  */
 
-/* TrayClockWnd */
-HRESULT CTrayClockWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* TrayClockWnd — replaced by Rust (explorer-rust trayclock.rs). C linkage so
+ * the trayntfy.cpp caller binds the Rust #[no_mangle] extern "C" factory
+ * (REFIID `const IID&` is ABI-identical to the Rust `*const IID`). */
+extern "C" HRESULT CTrayClockWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 static inline BOOL GetHideClock()
 {

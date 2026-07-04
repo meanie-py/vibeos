@@ -23,7 +23,8 @@ list(APPEND SOURCE
     taskband.cpp
     taskswnd.cpp
     tbsite.cpp
-    trayclock.cpp
+    # trayclock.cpp — replaced by Rust (explorer-rust trayclock.rs); first
+    # tier-C CWindowImpl+CComObjectRootEx+IOleWindow class on explorer_sys::server.
     traydeskbtn.cpp
     trayntfy.cpp
     trayprop.cpp

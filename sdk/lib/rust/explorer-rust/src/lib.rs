@@ -27,6 +27,11 @@ pub mod explorer {
     // Tier B — desktop.cpp: CDesktopThread (own desktop message-loop thread) +
     // the extern "C" DesktopCreateWindow/DesktopDestroyShellWindow entry points.
     pub mod desktop;
+    // Tier C (FIRST) — trayclock.cpp: CTrayClockWnd, the taskbar clock. The
+    // template class exercising the whole explorer_sys::server ATL/WTL
+    // substrate (CWindowImpl→WndProc, CComObjectRootEx→refcount+QI,
+    // ShellObjectCreatorInit→factory, CTooltips→TTM_* wrappers).
+    pub mod trayclock;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp
