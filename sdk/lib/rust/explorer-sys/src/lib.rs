@@ -844,6 +844,211 @@ pub mod com {
     pub const ID_SHELL_CMD_EXPLORE_ALL_USERS: UINT = 403;
     pub const ID_SHELL_CMD_FIRST: UINT = ID_SHELL_CMD_PROPERTIES;
     pub const ID_SHELL_CMD_LAST: UINT = 413; // ID_SHELL_CMD_RESTORE_ALL
+
+    // --- tray band site (tbsite): ITrayBandSite / IBandSiteStreamCallback
+    //     (implemented) + IStream / IDeskBarClient / IPersist (consumed). ---
+
+    use winsrv_sys::winsrv::{DWORD_PTR, LARGE_INTEGER, NMHDR, ULARGE_INTEGER};
+
+    pub static IID_IBandSiteHelper: IID = IID {
+        Data1: 0xD1E7_AFEA, Data2: 0x6A2E, Data3: 0x11D0,
+        Data4: [0x8C, 0x78, 0x00, 0xC0, 0x4F, 0xD9, 0x18, 0xB4],
+    };
+    pub static IID_IDeskBarClient: IID = IID {
+        Data1: 0xEB0F_E175, Data2: 0x1A3A, Data3: 0x11D0,
+        Data4: [0x89, 0xB3, 0x00, 0xA0, 0xC9, 0x0A, 0x90, 0xAC],
+    };
+
+    /// ITrayBandSite : IUnknown (precomp.h) — carries IBandSiteStreamCallback's
+    /// OnLoad/OnSave inline + the tray methods. 9 slots.
+    #[repr(C)]
+    pub struct ITrayBandSiteVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut ITrayBandSite, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut ITrayBandSite) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut ITrayBandSite) -> ULONG,
+        pub OnLoad: unsafe extern "system" fn(
+            *mut ITrayBandSite,
+            *mut IStream,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub OnSave:
+            unsafe extern "system" fn(*mut ITrayBandSite, *mut IUnknown, *mut IStream) -> HRESULT,
+        pub IsTaskBand: unsafe extern "system" fn(*mut ITrayBandSite, *mut IUnknown) -> HRESULT,
+        pub ProcessMessage: unsafe extern "system" fn(
+            *mut ITrayBandSite,
+            HWND,
+            UINT,
+            WPARAM,
+            LPARAM,
+            *mut LRESULT,
+        ) -> HRESULT,
+        pub AddContextMenus: unsafe extern "system" fn(
+            *mut ITrayBandSite,
+            HMENU,
+            UINT,
+            UINT,
+            UINT,
+            UINT,
+            *mut *mut IContextMenu,
+        ) -> HRESULT,
+        pub Lock: unsafe extern "system" fn(*mut ITrayBandSite, BOOL) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct ITrayBandSite {
+        pub lpVtbl: *const ITrayBandSiteVtbl,
+    }
+
+    /// IBandSiteStreamCallback : IUnknown (shlobj_undoc.h) — 5 slots.
+    #[repr(C)]
+    pub struct IBandSiteStreamCallbackVtbl {
+        pub QueryInterface: unsafe extern "system" fn(
+            *mut IBandSiteStreamCallback,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IBandSiteStreamCallback) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IBandSiteStreamCallback) -> ULONG,
+        pub OnLoad: unsafe extern "system" fn(
+            *mut IBandSiteStreamCallback,
+            *mut IStream,
+            REFIID,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        pub OnSave: unsafe extern "system" fn(
+            *mut IBandSiteStreamCallback,
+            *mut IUnknown,
+            *mut IStream,
+        ) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IBandSiteStreamCallback {
+        pub lpVtbl: *const IBandSiteStreamCallbackVtbl,
+    }
+
+    /// IStream : ISequentialStream : IUnknown (objidlbase.idl) — 14 slots
+    /// (Read/Seek/Release used; rest ordered for ABI). LARGE_INTEGER by value.
+    #[repr(C)]
+    pub struct IStreamVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IStream, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IStream) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IStream) -> ULONG,
+        pub Read:
+            unsafe extern "system" fn(*mut IStream, *mut c_void, ULONG, *mut ULONG) -> HRESULT,
+        pub Write:
+            unsafe extern "system" fn(*mut IStream, *const c_void, ULONG, *mut ULONG) -> HRESULT,
+        pub Seek: unsafe extern "system" fn(
+            *mut IStream,
+            LARGE_INTEGER,
+            DWORD,
+            *mut ULARGE_INTEGER,
+        ) -> HRESULT,
+        pub SetSize: unsafe extern "system" fn(*mut IStream, ULARGE_INTEGER) -> HRESULT,
+        pub CopyTo: unsafe extern "system" fn(
+            *mut IStream,
+            *mut IStream,
+            ULARGE_INTEGER,
+            *mut ULARGE_INTEGER,
+            *mut ULARGE_INTEGER,
+        ) -> HRESULT,
+        pub Commit: unsafe extern "system" fn(*mut IStream, DWORD) -> HRESULT,
+        pub Revert: unsafe extern "system" fn(*mut IStream) -> HRESULT,
+        pub LockRegion:
+            unsafe extern "system" fn(*mut IStream, ULARGE_INTEGER, ULARGE_INTEGER, DWORD) -> HRESULT,
+        pub UnlockRegion:
+            unsafe extern "system" fn(*mut IStream, ULARGE_INTEGER, ULARGE_INTEGER, DWORD) -> HRESULT,
+        pub Stat: unsafe extern "system" fn(*mut IStream, *mut c_void, DWORD) -> HRESULT,
+        pub Clone: unsafe extern "system" fn(*mut IStream, *mut *mut IStream) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IStream {
+        pub lpVtbl: *const IStreamVtbl,
+    }
+
+    /// IDeskBarClient : IOleWindow : IUnknown (shlobj.h) — 9 slots.
+    #[repr(C)]
+    pub struct IDeskBarClientVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IDeskBarClient, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IDeskBarClient) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IDeskBarClient) -> ULONG,
+        pub GetWindow: unsafe extern "system" fn(*mut IDeskBarClient, *mut HWND) -> HRESULT,
+        pub ContextSensitiveHelp: unsafe extern "system" fn(*mut IDeskBarClient, BOOL) -> HRESULT,
+        pub SetDeskBarSite: unsafe extern "system" fn(*mut IDeskBarClient, *mut IUnknown) -> HRESULT,
+        pub SetModeDBC: unsafe extern "system" fn(*mut IDeskBarClient, DWORD) -> HRESULT,
+        pub UIActivateDBC: unsafe extern "system" fn(*mut IDeskBarClient, DWORD) -> HRESULT,
+        pub GetSize: unsafe extern "system" fn(*mut IDeskBarClient, DWORD, *mut RECT) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IDeskBarClient {
+        pub lpVtbl: *const IDeskBarClientVtbl,
+    }
+
+    /// IPersist : IUnknown (objidl.idl) — 4 slots (GetClassID used).
+    #[repr(C)]
+    pub struct IPersistVtbl {
+        pub QueryInterface:
+            unsafe extern "system" fn(*mut IPersist, REFIID, *mut *mut c_void) -> HRESULT,
+        pub AddRef: unsafe extern "system" fn(*mut IPersist) -> ULONG,
+        pub Release: unsafe extern "system" fn(*mut IPersist) -> ULONG,
+        pub GetClassID:
+            unsafe extern "system" fn(*mut IPersist, *mut winsrv_sys::winsrv::CLSID) -> HRESULT,
+    }
+    #[repr(C)]
+    pub struct IPersist {
+        pub lpVtbl: *const IPersistVtbl,
+    }
+
+    /// VARIANT (oleauto) — only vt + bstrVal used; bstrVal at off 8.
+    #[repr(C)]
+    pub struct VARIANT {
+        pub vt: u16,
+        pub wReserved1: u16,
+        pub wReserved2: u16,
+        pub wReserved3: u16,
+        pub bstrVal: *mut u16,
+        pub _tail: *mut c_void,
+    }
+    /// BANDSITEINFO (shobjidl.idl).
+    #[repr(C)]
+    pub struct BANDSITEINFO {
+        pub dwMask: DWORD,
+        pub dwState: DWORD,
+        pub dwStyle: DWORD,
+    }
+    /// NMMOUSE (commctrl.h).
+    #[repr(C)]
+    pub struct NMMOUSE {
+        pub hdr: NMHDR,
+        pub dwItemSpec: DWORD_PTR,
+        pub dwItemData: DWORD_PTR,
+        pub pt: winsrv_sys::winsrv::POINT,
+        pub dwHitInfo: LPARAM,
+    }
+
+    // stream / band / rebar constants
+    pub const STREAM_SEEK_SET: DWORD = 0;
+    pub const STREAM_SEEK_CUR: DWORD = 1;
+    pub const STGM_READ: DWORD = 0;
+    pub const VT_BSTR: u16 = 8;
+    pub const DBID_BANDINFOCHANGED: DWORD = 0;
+    pub const DBID_DELAYINIT: DWORD = 4;
+    pub const DBID_FINISHINIT: DWORD = 5;
+    pub const DBID_SETWINDOWTHEME: DWORD = 6;
+    pub const BSIM_STYLE: DWORD = 0x0000_0002;
+    pub const BSIS_AUTOGRIPPER: DWORD = 0x0000_0000;
+    pub const BSIS_NOGRIPPER: DWORD = 0x0000_0001;
+    pub const BSIS_LOCKED: DWORD = 0x0000_0100;
+    pub const BSSF_UNDELETEABLE: DWORD = 0x0000_1000;
+    pub const RBHT_NOWHERE: UINT = 0x1;
+    pub const RBHT_CLIENT: UINT = 0x3;
+    pub const RBS_BANDBORDERS: DWORD = 0x400;
+    pub const DBC_HIDE: DWORD = 0;
+    pub const DBC_SHOW: DWORD = 1;
+    pub const NM_NCHITTEST: UINT = 0xFFFF_FFF2; // NM_FIRST-14
+    pub const RBN_MINMAX: UINT = 0xFFFF_FCAC; // RBN_FIRST-21
 }
 
 pub mod externs {
@@ -999,6 +1204,43 @@ pub mod externs {
     pub const IDS_PROPERTIES: UINT = 720;
     pub const IDS_OPEN_ALL_USERS: UINT = 718;
     pub const IDS_EXPLORE_ALL_USERS: UINT = 719;
+
+    // tray band site (tbsite): ole32 / oleaut32 / shlwapi. stdcall.
+    extern "system" {
+        pub fn OleLoadFromStream(
+            pStm: *mut crate::com::IStream,
+            riid: crate::com::REFIID,
+            ppvObj: *mut *mut c_void,
+        ) -> winsrv_sys::winsrv::HRESULT;
+        pub fn SysAllocString(psz: *const u16) -> *mut u16;
+        pub fn SysFreeString(bstr: *mut u16);
+        pub fn SHOpenRegStreamW(
+            hkey: winsrv_sys::winsrv::HKEY,
+            pszSubkey: LPCWSTR,
+            pszValue: LPCWSTR,
+            grfMode: DWORD,
+        ) -> *mut crate::com::IStream;
+        pub fn SHSetWindowBits(
+            hWnd: winsrv_sys::winsrv::HWND,
+            iType: i32,
+            dwMask: DWORD,
+            dwFlags: DWORD,
+        ) -> DWORD;
+        pub fn IUnknown_Exec(
+            punk: *mut crate::com::IUnknown,
+            pguidCmdGroup: *const winsrv_sys::winsrv::GUID,
+            nCmdID: DWORD,
+            nCmdexecopt: DWORD,
+            pvaIn: *mut c_void,
+            pvaOut: *mut c_void,
+        ) -> winsrv_sys::winsrv::HRESULT;
+        pub fn IUnknown_SetOwner(
+            punk: *mut crate::com::IUnknown,
+            pUnk: *mut crate::com::IUnknown,
+        ) -> winsrv_sys::winsrv::HRESULT;
+    }
+    /// shlobj.h RESTRICTIONS — deny rebar min/max ("moving band").
+    pub const REST_NOMOVINGBAND: u32 = 0x4000_0017;
 
     // version.dll
     extern "system" {

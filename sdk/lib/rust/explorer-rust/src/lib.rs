@@ -42,6 +42,10 @@ pub mod explorer {
     // Tier C — startctxmnu.cpp: CStartMenuBtnCtxMenu (Start-button context menu,
     // single-interface IContextMenu; consumes IShellFolder + PIDLs).
     pub mod startctxmnu;
+    // Tier C — tbsite.cpp: CTrayBandSite (tray band site; wraps the shell
+    // RebarBandSite, hosts the task band). ITrayBandSite/IBandSite/
+    // IBandSiteStreamCallback; consumes taskband + rshell band-site factories.
+    pub mod tbsite;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

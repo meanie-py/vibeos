@@ -376,6 +376,36 @@ Replacing ATL (per the decision in §3, hand-rolled #[repr(C)], no windows-rs):
   set lpVtbl + ref_=1, call Initialize(param), QI to riid (the new/delete pattern
   desktop.cpp already proved).
 
+### 2026-07-04 (overnight) — tier-C fan-out: 5 classes committed + booting
+
+Sequential grind + parallel subagent drafting (user green-lit an ambitious
+overnight run). Each class is an atomic per-class swap, cargo-check ×3 +
+i386 smoke `✓ boot`, committed clean:
+- **trayclock** (`0beb484`) — CWindowImpl+IOleWindow window class; the substrate.
+- **taskband** (`de29ed1`) — the MULTI-INTERFACE COM object template (5 QI
+  vtables: IObjectWithSite/IDeskBand/IPersistStream/IWinEventHandler/
+  IOleCommandTarget; one lpVtbl per iface, CONTAINING_RECORD recovery).
+- **startmnusite** (`cf7d13f`) — IServiceProvider/ITrayPriv/IOleCommandTarget/
+  IMenuPopup (IOleWindow shared across two vtbls). Full AppendMenu menu-pruning.
+- **startctxmnu** (`107d075`) — single-interface IContextMenu (consumes
+  IShellFolder+PIDLs). FIRST subagent-drafted file (Sonnet drafts .rs+manifest
+  to `~/vibeos-rust-staging/`, integrator adds substrate centrally + cohab +
+  boot). Compiled clean ×3 first try.
+- **tbsite** — CTrayBandSite (wraps shell RebarBandSite, hosts the task band;
+  ITrayBandSite/IBandSite/IBandSiteStreamCallback; stream-loads the task band by
+  CLSID). Subagent-drafted, integrating (the biggest so far; only fix needed was
+  disambiguating `IStream` — it exists in BOTH winsrv bindgen and our com).
+
+**Fan-out model that works:** the reusable substrate (COM vtables/IIDs/structs
+in `explorer_sys::com`, shell externs in `::externs`) MUST be added centrally by
+the integrator (subagents can't touch shared files); the class body follows the
+trayclock/taskband templates mechanically and a Sonnet subagent drafts it +
+emits a header-cited SUBSTRATE MANIFEST. Integrator: add substrate → cargo-check
+×3 → cohab (comment .cpp out, `extern "C"` the `*_CreateInstance` in precomp.h)
+→ build → i386 boot → commit. syspager + taskswnd drafting; traywnd (mega) last —
+it unblocks the entangled trio (traydeskbtn/appbar/CStartButton, embedded in
+CTrayWindow by value/base so they need traywnd Rust first).
+
 So tier C's hard parts (WndProc ABI, new/delete, QI vtables) are each already
 proven in isolation; the remaining work is assembling them into a reusable
 `explorer_sys::server` module + one proof file (**trayclock.cpp** — smallest full

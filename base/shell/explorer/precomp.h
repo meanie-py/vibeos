@@ -356,7 +356,9 @@ DECLARE_INTERFACE_(ITrayBandSite, IUnknown)
 #define ITrayBandSite_Lock(p,a)                         (p)->lpVtbl->Lock(p,a)
 #endif
 
-HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBand, OUT ITrayBandSite** pBandSite);
+/* tbsite.cpp → Rust (explorer-rust tbsite.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBand, OUT ITrayBandSite** pBandSite);
 
 /*
  * startctxmnu.cpp
