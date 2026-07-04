@@ -422,7 +422,123 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
     return True
 
 
+def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
+    """Footgun guard (the 2026-07-04 dedup incident, both failure modes): a
+    multi-link file inside a build tree means some cross-worktree hardlink
+    tool has fused this tree's artifacts with another's. In-place writers
+    (spec2def, `cmake -E copy`, ccache-MISS clang) then corrupt the sibling
+    through the shared inode — SIGBUS under a running ld.lld — and shared
+    mtimes silently defeat cargo invalidation (stale build scripts re-run
+    with no error anywhere). Refuse to build until the tree is private again.
+
+    Thresholds: cmake `build-<arch>` trees never legitimately hardlink →
+    `-links +1` fails. The cargo workspace target DOES hardlink internally
+    (deps/ ↔ final artifact, 2 links, same tree) → only `-links +2` fails
+    there (a 2-way cross-tree link slips through; the mass-dedup signature
+    is 3–60 links). See tools/dedup-build-cache.sh SAFETY for history."""
+    probes = [
+        (build_dir, "+1"),
+        (repo / "sdk" / "lib" / "rust" / "target", "+2"),
+    ]
+    hits: list[str] = []
+    for root, links in probes:
+        if not root.is_dir():
+            continue
+        try:
+            cp = subprocess.run(
+                ["find", str(root), "-type", "f", "-links", links, "-print", "-quit"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (OSError, subprocess.SubprocessError):
+            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
+            continue
+        hit = cp.stdout.strip()
+        if hit:
+            hits.append(f"{hit} (links {links.lstrip('+')}+)")
+    if not hits:
+        return True
+    run.classification = "ISOLATION_FAIL"
+    run.add(
+        Stage(
+            "isolation",
+            status="fail",
+            detail="build tree shares inodes with another worktree — refusing to build",
+            salient=[f"first hit: {h}" for h in hits]
+            + [
+                "fix: find <dir> -type f -links +N -print0 | xargs -0 -P8 -I{} "
+                'sh -c \'cp -p "{}" "{}.t" && mv "{}.t" "{}"\'  (or delete + rebuild)',
+                "cause: a cross-worktree hardlink dedup ran — see the SAFETY header of "
+                "tools/dedup-build-cache.sh",
+            ],
+        )
+    )
+    return False
+
+
+# T1.2 flag→artifact verification: a requested build feature must PROVE itself
+# in the output binary, and must be ABSENT when not requested — the --lockdep
+# flag was silently dead for 3 builds (canonize early-return) and only a manual
+# `llvm-nm` caught it. Table rows: (cache flag, requested?, artifact, symbol).
+_FLAG_SIGNATURES = [
+    (
+        "VIBEOS_LOCKDEP",
+        lambda args: bool(getattr(args, "lockdep", False)),
+        Path("ntoskrnl") / "ntoskrnl.exe",
+        "VIBEOS_LOCKDEP",
+    ),
+]
+
+
+def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
+    nm = repo / ".build-tools" / "llvm-mingw" / "bin" / "llvm-nm"
+    ok = True
+    for flag, wanted_fn, rel, symbol in _FLAG_SIGNATURES:
+        artifact = build_dir / rel
+        if not nm.is_file() or not artifact.is_file():
+            continue  # ninja already failed / non-standard tree; nothing to verify
+        wanted = wanted_fn(args)
+        try:
+            cp = subprocess.run(
+                [str(nm), str(artifact)], capture_output=True, text=True, timeout=120
+            )
+            present = any(ln.endswith(f" {symbol}") for ln in cp.stdout.splitlines())
+        except (OSError, subprocess.SubprocessError):
+            run.add(Stage("flag-verify", status="warn", detail=f"llvm-nm failed for {rel}"))
+            continue
+        if present == wanted:
+            run.add(
+                Stage(
+                    "flag-verify",
+                    status="ok",
+                    detail=f"{flag}={'ON' if wanted else 'OFF'} ↔ {symbol} "
+                    f"{'present' if present else 'absent'} in {rel.name}",
+                )
+            )
+        else:
+            ok = False
+            run.classification = run.classification or "FLAG_VERIFY_FAIL"
+            run.add(
+                Stage(
+                    "flag-verify",
+                    status="fail",
+                    detail=(
+                        f"{flag} requested but {symbol} ABSENT from {rel} — the flag is "
+                        f"silently dead (plumbing broke somewhere between cmake and cargo)"
+                        if wanted
+                        else f"{flag} OFF but {symbol} PRESENT in {rel} — instrumentation "
+                        f"leaked into a production build"
+                    ),
+                    salient=[f"artifact: {artifact}"],
+                )
+            )
+    return ok
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
+    if not _isolation_preflight(run, repo, build_dir):
+        return run.finalize(repo)
     wrapped = _maybe_canonize(run, repo, build_dir, arch, getattr(args, "lockdep", False))
     if wrapped is None:
         return run.finalize(repo)
@@ -547,6 +663,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
+
+    # --- flag→artifact verification (T1.2): requested features must PROVE
+    # themselves in the output; unrequested ones must be absent. ---
+    if not _verify_flag_artifacts(run, repo, build_dir, args):
+        return run.finalize(repo)
 
     # optional arch-specific targets (best-effort)
     if cfg.ninja_targets_optional:

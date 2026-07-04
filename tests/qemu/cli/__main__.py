@@ -15,6 +15,7 @@ from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
+from . import health as health_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
 from . import smoke as smoke_mod
@@ -201,6 +202,14 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")
     ps.set_defaults(fn=_ps)
+
+    he = sub.add_parser(
+        "health",
+        help="trailing per-arch pass rates from the durable ledger (rates > point samples)",
+    )
+    he.add_argument("--days", type=float, default=7, help="trailing window (default 7)")
+    he.add_argument("--json", action="store_true", help="raw ledger rows")
+    he.set_defaults(fn=health_mod.health)
 
     hs = sub.add_parser(
         "host-status", help="host CPU broker: who holds the build/boot lease (across worktrees)"

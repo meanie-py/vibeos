@@ -117,8 +117,47 @@ class Run:
             **self.extra,
         }
         (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        self._ledger_append(repo, summary, dur)
         self._print_summary(dur)
         return 0 if self.verdict in ("OK", "WARN") else 1
+
+    def _ledger_append(self, repo: Path | None, summary: dict, dur: float) -> None:
+        """T3 (fleet-isolation program): durable outcome ledger. /tmp run dirs
+        die on reboot, and gate verdicts are point samples — the ledger under
+        VIBEOS_ROOT survives both, so `vibeos-cli health` can show trailing
+        per-arch PASS RATES (a 100%→20% arch regression becomes visible data
+        within a day even when individual gates roll green). One JSON line per
+        finalized run; O_APPEND keeps concurrent lanes' writes whole. Never
+        fails the run."""
+        try:
+            if repo is None:
+                return
+            from . import cachecfg  # local import: avoid a cycle at module load
+
+            root = cachecfg.vibeos_root(repo)
+            if not root.is_dir():
+                return
+            head = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            ).stdout.strip()
+            row = {
+                "ts": int(time.time()),
+                "cmd": self.command,
+                "arch": self.arch,
+                "verdict": self.verdict,
+                "classification": self.classification,
+                "duration_ms": int(dur * 1000),
+                "head": head,
+                "worktree": Path(repo).name,
+            }
+            with open(root / "vibeos-ledger.jsonl", "a") as f:
+                f.write(json.dumps(row) + "\n")
+        except Exception:
+            pass  # the ledger is telemetry; it must never break a build/smoke
 
     def _glyph(self, st: Stage) -> str:
         return {"ok": "✓", "warn": "⚠", "fail": "✗", "skip": "·"}.get(st.status, "?")
