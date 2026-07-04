@@ -193,7 +193,7 @@ unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 core::mem::size_of_val(&MenuLineText),
                 b"%.*s%d%s\0".as_ptr() as PCHAR,
                 ptr.offset_from((UiTimeText).as_ptr() as *const i8) as i32,
-                UiTimeText,
+                UiTimeText.as_ptr(),
                 (*MenuInfo).MenuTimeRemaining,
                 ptr.offset(2),
             );
@@ -202,7 +202,7 @@ unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 MenuLineText.as_mut_ptr(),
                 core::mem::size_of_val(&MenuLineText),
                 b"%s %d\0".as_ptr() as PCHAR,
-                UiTimeText,
+                UiTimeText.as_ptr(),
                 (*MenuInfo).MenuTimeRemaining,
             );
         }

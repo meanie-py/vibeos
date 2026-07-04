@@ -20,6 +20,12 @@ Usage:
         --headers drivers/filesystems/cdfs
     python3 tools/scan_inline_flag_literals.py            # no paths -> sweep all rust
     python3 tools/scan_inline_flag_literals.py --lint     # terse (CLI baseline gate)
+    python3 tools/scan_inline_flag_literals.py --no-cache # force full re-scan (skip content cache)
+
+Results are cached per content-hash under tools/.cache/ (gitignored): a file's
+findings depend only on its bytes + the header catalog + this script, so an
+unchanged blob is never re-parsed. A header edit or a change to this file rolls
+the cache generation automatically. `--no-cache` / VIBEOS_SCAN_NO_CACHE=1 bypasses.
 
 Catalog = kernel headers verify_constants.py uses + sdk/include/{xdk,ndk,psdk} +
 ntoskrnl/include/internal + every *.h under each --headers dir (driver-local flags).
@@ -31,6 +37,9 @@ Bare `// nolint` or `// nolint: inline-literal` suppress; a `nolint` scoped to a
 tool does not. Prefer this (local, reviewable, refactor-stable) over the baseline.
 """
 
+import hashlib
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -39,7 +48,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
 from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
-from tree_sitter import Language, Parser  # noqa: E402
+from tree_sitter import Language, Parser, Query, QueryCursor  # noqa: E402
 
 DEFINE_RE = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
 _SUFFIX_RE = re.compile(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
@@ -125,23 +134,29 @@ def comment_names(text):
 
 
 # ── AST walk ─────────────────────────────────────────────────────────
-_PARSER = Parser(Language(tsr.language()))
+_LANG = Language(tsr.language())
+_PARSER = Parser(_LANG)
+# One native query pulls every integer_literal + comment in a single pass — an
+# order-of-magnitude cheaper than a Python-level recursive descent over the ~14M
+# nodes across the workspace (the `collect` recursion was ~17s of the ~35s sweep).
+_QUERY = Query(_LANG, "(integer_literal) @lit (line_comment) @c (block_comment) @c")
 
 
-def collect(node, lits, comments):
-    if node.type == "integer_literal":
-        lits.append(node)
-    elif node.type in ("line_comment", "block_comment"):
-        comments.append(node)
-    for c in node.children:
-        collect(c, lits, comments)
+def collect(root):
+    """(lits, comments) in source order, via the native tree-sitter query.
+
+    Sorted by start_byte so the result is byte-identical to a pre-order DFS —
+    the pairing logic below (and thus the finding order / baseline) is stable."""
+    caps = QueryCursor(_QUERY).captures(root)
+    lits = sorted(caps.get("lit", []), key=lambda n: n.start_byte)
+    comments = sorted(caps.get("c", []), key=lambda n: n.start_byte)
+    return lits, comments
 
 
 def scan_file(path, catalog):
     src = path.read_bytes()
     root = _PARSER.parse(src).root_node
-    lits, comments = [], []
-    collect(root, lits, comments)
+    lits, comments = collect(root)
 
     def txt(n):
         return src[n.start_byte : n.end_byte].decode("utf8", "replace")
@@ -207,18 +222,76 @@ def scan_file(path, catalog):
     return out
 
 
+# ── content-hash cache ───────────────────────────────────────────────
+# The gate re-runs this on a near-unchanged tree every build; re-parsing all
+# ~2400 .rs each time is wasteful. A file's findings are a pure function of
+# (its bytes, the catalog, this script's logic), so we cache per content-hash
+# and skip the tree-sitter parse+walk for any blob we've already scanned.
+# Keyed by a "generation" fingerprint (catalog + this file's source) so a header
+# edit or a logic change transparently invalidates. Failures degrade to a full
+# scan — the cache is an optimization, never a correctness dependency.
+_CACHE_VERSION = 1
+_CACHE_PATH = REPO / "tools" / ".cache" / "scan_inline_flag_literals.json"
+_CACHE_MAX_GENS = 4  # keep a few catalog generations (no-headers gate + ad-hoc --headers)
+
+
+def _generation_fp(catalog) -> str:
+    h = hashlib.sha1()
+    h.update(Path(__file__).read_bytes())  # logic version
+    h.update(repr(sorted(catalog.items())).encode())  # constant values
+    return h.hexdigest()
+
+
+def _load_cache(fp: str) -> dict:
+    """Return the {blob_sha: findings} entries for generation `fp`, or {}."""
+    try:
+        blob = json.loads(_CACHE_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    if blob.get("v") != _CACHE_VERSION:
+        return {}
+    for gen in blob.get("gens", []):
+        if gen.get("fp") == fp:
+            return gen.get("entries", {})
+    return {}
+
+
+def _save_cache(fp: str, entries: dict) -> None:
+    """Persist `entries` as generation `fp`, most-recent-first, LRU-capped.
+    Atomic (temp+replace); any failure is swallowed (best-effort cache)."""
+    try:
+        blob = json.loads(_CACHE_PATH.read_text())
+        if blob.get("v") != _CACHE_VERSION:
+            blob = {}
+    except (OSError, ValueError):
+        blob = {}
+    gens = [g for g in blob.get("gens", []) if g.get("fp") != fp]
+    gens.insert(0, {"fp": fp, "entries": entries})
+    out = {"v": _CACHE_VERSION, "gens": gens[:_CACHE_MAX_GENS]}
+    try:
+        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _CACHE_PATH.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(out))
+        os.replace(tmp, _CACHE_PATH)
+    except OSError:
+        pass
+
+
 def main():
     args = sys.argv[1:]
-    files, header_dirs, lint, i = [], [], False, 0
+    files, header_dirs, lint, no_cache, i = [], [], False, False, 0
     while i < len(args):
         if args[i] == "--headers":
             i += 1
             header_dirs.append(args[i])
         elif args[i] == "--lint":
             lint = True  # terse: only `file:line:` finding lines (for the CLI baseline gate)
+        elif args[i] == "--no-cache":
+            no_cache = True  # force a full re-scan (ignore the content-hash cache)
         else:
             files.append(args[i])
         i += 1
+    full_sweep = not files
     if not files:
         # No paths given → sweep the whole Rust workspace (broad catalog, no
         # driver --headers). This is how the CLI lint gate invokes it.
@@ -237,16 +310,34 @@ def main():
     for d in header_dirs:
         add_headers(catalog, d)
 
+    env_no_cache = os.environ.get("VIBEOS_SCAN_NO_CACHE", "").lower() in ("1", "true", "yes")
+    no_cache = no_cache or env_no_cache
+    fp = _generation_fp(catalog)
+    cache = {} if no_cache else _load_cache(fp)
+    seen: dict = {}  # every blob_sha encountered this run -> findings (for persistence)
+
     mismatches = 0
     for f in files:
         p = Path(f)
         if not p.exists() or "/tests/" in f or "/target/" in f:
             continue  # test fixtures use intentional non-canonical values
         try:
-            hits = scan_file(p, catalog)
-        except Exception as e:
-            print(f"{f}: parse error: {e}", file=sys.stderr)
+            raw = p.read_bytes()
+        except OSError as e:
+            print(f"{f}: read error: {e}", file=sys.stderr)
             continue
+        sha = hashlib.sha1(raw).hexdigest()
+        if sha in seen:
+            hits = seen[sha]
+        elif sha in cache:
+            hits = cache[sha]
+        else:
+            try:
+                hits = [list(t) for t in scan_file(p, catalog)]
+            except Exception as e:
+                print(f"{f}: parse error: {e}", file=sys.stderr)
+                continue
+        seen[sha] = hits
         for ln, lv, name, want, line_src in hits:
             print(
                 f"{f}:{ln}: literal {hex(lv)} tagged /* {name} */ but {name} = {hex(want)} ({want})"
@@ -254,6 +345,11 @@ def main():
             if not lint:  # terse mode emits ONLY finding lines (baseline-friendly)
                 print(f"    {line_src}")
             mismatches += 1
+    if not no_cache:
+        # Full sweep → persist exactly this run's blobs (drops stale entries so the
+        # cache can't grow without bound). Partial run (explicit files) → merge so a
+        # single-file scan doesn't evict the gate's warm full-sweep generation.
+        _save_cache(fp, seen if full_sweep else {**cache, **seen})
     if lint:
         return 1 if mismatches else 0
     if mismatches:

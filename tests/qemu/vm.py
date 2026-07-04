@@ -73,6 +73,11 @@ SLOT_DIR = LOCK_DIR / "slots"
 # QEMU exits immediately with "Could not set up host forwarding rule" (before any
 # guest code). Relaunch with a freshly-picked port a few times to ride out the race.
 HOSTFWD_BIND_ERROR = "Could not set up host forwarding rule"
+# QEMU's message when the gdbstub TCP bind loses the Windows-stack port race.
+GDB_BIND_ERROR = "Could not open gdbserver"
+# Any early-exit stderr matching one of these = a pick-then-bind TOCTOU on the
+# Windows stack → relaunch with a freshly-picked port (see _launch_qemu).
+BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
 
@@ -792,10 +797,24 @@ class QemuVM:
         *,
         backend: str = "native",
         windows: dict | None = None,
+        gdb: bool = False,
+        gdb_wait: bool = False,
     ) -> None:
         self.config = config
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        # Optional gdbstub. On windows-host QEMU.exe is the SERVER (gdb is the client),
+        # so — unlike QMP/serial, where the harness listens and QEMU dials back — the
+        # stub binds 0.0.0.0:<port> on the WINDOWS TCP stack and a WSL gdb connects to
+        # it via gateway_ip():<port> (transport-identical to a slirp hostfwd; see
+        # gdb_host/gdb_port + _build_windows_cmd). gdb_wait adds -S (halt at reset, for
+        # boot-from-zero debugging). Under the windows-host TCG backend software
+        # breakpoints fire reliably — the reason this path exists (they DON'T under
+        # native KVM; see qemu/start.sh). gdb_port is filled in at launch.
+        self._gdb = gdb
+        self._gdb_wait = gdb_wait
+        self.gdb_port: int | None = None
 
         # Launch backend: "native" (local qemu + Unix sockets + KVM/TCG — unchanged) or
         # "windows-host" (Windows QEMU.exe via interop + TCP transport + staged media — see
@@ -846,6 +865,35 @@ class QemuVM:
             return be.gateway_ip()
         return "127.0.0.1"
 
+    @property
+    def gdb_host(self) -> str:
+        """Address a WSL gdb dials to reach the gdbstub. Same reasoning as net_host
+        (the stub is server-side, so it's the inbound/hostfwd direction): windows-host
+        binds 0.0.0.0 on the Windows stack, reached from WSL via the gateway IP; native
+        binds WSL loopback."""
+        if self._backend == "windows-host":
+            from . import backend as be
+
+            return be.gateway_ip()
+        return "127.0.0.1"
+
+    def _gdb_args(self, win_stack: bool) -> list[str]:
+        """The `-gdb`/`-S` flags when a stub is requested, else []. Picks the port on
+        the stack QEMU binds it on: the Windows stack for windows-host (QEMU.exe is the
+        gdb SERVER, so it binds locally there), the WSL stack for native. Sets
+        self.gdb_port for gdb_host/callers to read."""
+        if not self._gdb:
+            return []
+        if win_stack:
+            from . import backend as be
+
+            self.gdb_port = be.windows_free_tcp_port()
+            bind = f"tcp:0.0.0.0:{self.gdb_port}"  # 0.0.0.0 so WSL reaches it via gateway
+        else:
+            self.gdb_port = _free_tcp_port()
+            bind = f"tcp:127.0.0.1:{self.gdb_port}"
+        return ["-gdb", bind, *(["-S"] if self._gdb_wait else [])]
+
     def _scratch_device_args(self) -> list[str]:
         """Scratch disk + (non-i386) its virtio device. i386: bare if=none (FreeLDR
         crashes on an unpartitioned BIOS-visible disk; savevm only needs a backend)."""
@@ -895,6 +943,7 @@ class QemuVM:
             *self._scratch_device_args(),
             "-monitor",
             "none",
+            *self._gdb_args(win_stack=False),
             *(
                 ["-debugcon", f"file:{self.debugcon_path}"]
                 if not self.config.arch.startswith("arm64")
@@ -918,6 +967,16 @@ class QemuVM:
         whpx_ok = be.whpx_available() if (configured == "whpx" and not is_arm64) else None
         accel = be.resolve_accel(self.config.arch, configured, whpx_ok)
         self._win_accel = accel  # read by _acquire_arch_slot (whpx contends like KVM)
+        if accel == "whpx":
+            # WHPX's kernel phase is fast (hardware virt), but the FIRMWARE phase is
+            # slow AND serial-silent: OVMF reads the livecd via ATAPI PIO, and every
+            # 2-byte port read is a VM exit — the uefildr file-load stretch runs
+            # 3-5 min with zero serial output (progress is visible only on debugcon).
+            # The x86 defaults (120s silence watchdog / 360s boot timeout) are tuned
+            # for TCG's fast port I/O and false-abort a healthy whpx boot, so scale
+            # both. See docs/engineering/windows-host-qemu-whpx-spike.md.
+            self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 420.0)
+            self.config.boot_timeout = max(self.config.boot_timeout, 900.0)
         # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
         # windows-host smokes across worktrees must not stomp each other's media — the per-arch
         # KVM slot does NOT serialize windows-host (it runs off-host and early-returns the slot),
@@ -969,7 +1028,11 @@ class QemuVM:
         # rewrite_accel is an x86 concept (swap KVM->whpx/tcg and drop the
         # KVM-only `-cpu host`); on arm64 it would DROP the required -cpu model,
         # so leave arm64's machine args untouched.
-        arch_args = staged_arch_args if is_arm64 else be.rewrite_accel(staged_arch_args, accel)
+        arch_args = (
+            staged_arch_args
+            if is_arm64
+            else be.rewrite_accel(staged_arch_args, accel, self.config.arch)
+        )
         # Net config (amd64-uefi-net): adapt the slirp fwds across the WSL<->Windows
         # boundary — hostfwd binds 0.0.0.0 (dialed via the gateway IP, see net_host) and
         # the `-cmd:cat` guestfwd echo is redirected to a chardev backed by a harness echo
@@ -1005,16 +1068,18 @@ class QemuVM:
             # debugcon = x86 ISA port 0xE9, absent on the arm64 `virt` machine
             # (mirror the native path's arm64 skip in _build_native_cmd).
             *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(self.debugcon_path)}"]),
+            *self._gdb_args(win_stack=True),
             *echo_chardev,
             *arch_args,
         ]
 
     def _launch_qemu(self) -> list[str]:
         """Build the qemu cmd and Popen it into self._proc; return the launched cmd.
-        On the windows-host backend with a slirp hostfwd, ride out the pick-then-bind
-        TOCTOU (HOSTFWD_BIND_ERROR) by relaunching with a freshly-picked port up to
-        HOSTFWD_LAUNCH_RETRIES times. Native / non-hostfwd configs launch exactly once
-        (no early-exit poll, so their healthy path pays no latency)."""
+        On the windows-host backend a slirp hostfwd OR the gdbstub binds a Windows-stack
+        port with a pick-then-bind TOCTOU; ride it out by relaunching with a freshly-
+        picked port up to HOSTFWD_LAUNCH_RETRIES times. Native / non-hostfwd / non-gdb
+        configs launch exactly once (no early-exit poll, so their healthy path pays no
+        latency)."""
         attempts = HOSTFWD_LAUNCH_RETRIES if self._backend == "windows-host" else 1
         last_stderr = ""
         for attempt in range(attempts):
@@ -1029,21 +1094,25 @@ class QemuVM:
                 stderr=subprocess.PIPE,
                 preexec_fn=os.setpgrp,
             )
-            if not (self._backend == "windows-host" and any("hostfwd=" in a for a in cmd)):
+            # A Windows-stack bind that can lose the port race: a hostfwd, or the gdbstub.
+            win_bind = self._backend == "windows-host" and (
+                any("hostfwd=" in a for a in cmd) or self._gdb
+            )
+            if not win_bind:
                 self._proc = proc
                 return cmd
             early = self._early_exit_stderr(proc)
             if early is None:
                 self._proc = proc  # still running at the deadline → healthy launch
                 return cmd
-            if HOSTFWD_BIND_ERROR in early:
+            if any(e in early for e in BIND_RACE_ERRORS):
                 # Lost the port race — discard this attempt and relaunch with a fresh
                 # port (the next _build_windows_cmd re-picks + re-binds).
                 self._discard_failed_launch(proc)
                 last_stderr = early
                 print(
-                    f"[QemuVM] hostfwd-bind race (attempt {attempt + 1}/{attempts}), "
-                    "retrying with a fresh Windows port"
+                    f"[QemuVM] Windows-port bind race (attempt {attempt + 1}/{attempts}), "
+                    "retrying with a fresh port"
                 )
                 continue
             # Exited early for some OTHER reason — not the flake. Stash stderr for the

@@ -1,0 +1,496 @@
+"""Native-Python GDB engine for the windows-host (and native) QEMU backend.
+
+The bash kernel-debug toolkit (qemu/start.sh + inspect.sh + run-until.sh) is
+native-only: it launches a *Linux* qemu, hardcodes `-gdb tcp:127.0.0.1`, and
+forces KVM (where software breakpoints don't reliably fire). This module is the
+full Python port — it drives the SAME proven gdb-python helpers (qemu/gdb-helpers/
+*.py, which are transport-agnostic) but owns the QEMU lifecycle and the
+gdb-multiarch orchestration in Python, so it works over the default windows-host
+TCG backend (breakpoints fire; QemuVM already emits a gdbstub — see vm.py
+_gdb_args / gdb_host).
+
+Model (mirrors the bash toolkit's run-id + manifest so `qemu/ps` etc. interop):
+  - `start(arch)` launches a DETACHED QEMU with the gdbstub + serial->file, writes
+    qemu/runs/<run-id>/manifest.json, returns a DebugRun. On windows-host the
+    QEMU.exe persists past this process (separate Windows process); we address it
+    later by run-id and kill it by its uid tag.
+  - `wait_for(run, pattern)` polls the serial log file.
+  - `run_until(run, brk, timeout, then=[...])` / `inspect(run, verb)` spawn
+    `gdb-multiarch -batch`, connect to gdb_host:gdb_port, source the helpers, and
+    run the verb — one batch per call (stateless, like inspect.sh).
+  - `stop(run)` / `status(run)` manage the run.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ..vm import PROJECT_DIR, get_arch_config
+from . import archcfg
+
+RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
+GDB_HELPERS = PROJECT_DIR / "qemu" / "gdb-helpers"
+GDB_BIN = "gdb-multiarch"
+
+# Sourced into every gdb batch, in dependency order (preamble first). Same set the
+# bash inspect.sh/run-until.sh source; they're pure gdb-python and transport-agnostic.
+HELPER_FILES = [
+    "preamble.gdb",
+    "find-kbase.py",
+    "bt-tagged.py",
+    "decode-bugcheck.py",
+    "dump-thread.py",
+    "dump-trapframe.py",
+    "pool-tag.py",
+    "identify-object.py",
+    "triage-bugcheck.py",
+    "walk-waitlist.py",
+    "list-threads.py",
+    "sample-pc.py",
+    "run-until-bp.py",
+]
+
+# gdb `set architecture` name per base arch (mirror qemu/lib/common.sh arch_gdb_name).
+_GDB_ARCH = {"i386": "i386", "amd64": "i386:x86-64", "arm64": "aarch64"}
+
+# --then / inspect verb -> the gdb command the helpers register (mirror run-until.sh
+# expand_then + inspect.sh). `{rest}` is the forwarded argument tail.
+_VERB_MAP = {
+    "bt": "bt-tagged {rest}",
+    "bt-all-cpus": "bt-tagged {rest}",
+    "regs": "info registers",
+    "decode-bugcheck": "decode-bugcheck",
+    "triage-bugcheck": "triage-bugcheck",
+    "walk-waitlist": "walk-waitlist {rest}",
+    "dump-thread": "dump-thread {rest}",
+    "dump-trapframe": "dump-trapframe {rest}",
+    "pool-tag": "pool-tag {rest}",
+    "identify-object": "identify-object {rest}",
+    "list-threads": "list-threads {rest}",
+    "sample-pc": "sample-pc {rest}",
+    "symbolicate-pc": "info symbol {rest}",
+    "regs-raw": "info registers {rest}",
+}
+
+
+def _gdb_arch(arch: str) -> str:
+    return _GDB_ARCH.get(arch, arch)
+
+
+def _kernel_image(arch: str) -> Path:
+    return PROJECT_DIR / f"build-{arch}" / "ntoskrnl" / "ntoskrnl.exe"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass
+class DebugRun:
+    run_id: str
+    arch: str  # base arch (i386/amd64/arm64) — for gdb arch + kernel image
+    backend: str
+    gdb_host: str
+    gdb_port: int
+    serial_log: str  # Linux-readable path (/mnt/... on windows-host) of the serial file
+    kernel_image: str
+    win_uid: str = ""  # windows-host: -name tag for be.kill_by_uid
+    qemu_pid: int = 0  # native: the local qemu pid
+    staging: str = ""
+    start_time: str = ""
+    kernel_runtime_base: str = ""  # cached kbase (filled by run_until on first find)
+    accel: str = "tcg"  # resolved accelerator; an i386 guest under whpx runs on
+    # qemu-system-x86_64.exe whose gdbstub speaks i386:x86-64 (see _run_gdb)
+
+    # ---- persistence ----
+    @property
+    def dir(self) -> Path:
+        return RUNS_DIR / self.run_id
+
+    def manifest_path(self) -> Path:
+        return self.dir / "manifest.json"
+
+    def save(self) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.manifest_path().write_text(json.dumps(asdict(self), indent=2))
+
+    @classmethod
+    def load(cls, run_id: str) -> DebugRun:
+        p = RUNS_DIR / run_id / "manifest.json"
+        if not p.is_file():
+            raise FileNotFoundError(f"no debug run '{run_id}' (looked at {p})")
+        data = json.loads(p.read_text())
+        # qemu/runs/ is shared with the bash toolkit, whose manifests have a different
+        # schema. Keep only our fields; a manifest missing our required ones (i.e. a
+        # bash-toolkit run) raises ValueError so callers can skip it.
+        fields = {k: data[k] for k in cls.__dataclass_fields__ if k in data}
+        try:
+            return cls(**fields)
+        except TypeError as e:
+            raise ValueError(f"'{run_id}' is not a gdbengine run manifest ({e})") from e
+
+
+def _win_alive(uid: str) -> bool:
+    """Is the detached Windows QEMU with this -name uid still running? Liveness MUST
+    be checked this way, NOT by connecting to the gdbstub: opening a TCP connection to
+    QEMU's gdbstub HALTS the vCPUs (it's waiting for the gdb client). A connect-probe
+    therefore freezes the guest mid-boot — which is exactly what wedged early runs
+    (serial stuck at 0, PC parked in OVMF). Only inspect()/run_until() may connect."""
+    import re
+
+    ps = (
+        "@(Get-CimInstance Win32_Process -Filter \"Name like 'qemu-system-%'\" "
+        f"| Where-Object {{ $_.CommandLine -like '*{uid}*' }}).Count"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout
+        return int(re.sub(r"\D", "", out) or "0") > 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+
+
+def _build_windows_cmd(
+    arch: str, config, win_cfg: dict, work_dir: Path, staging: Path, *, gdb_wait: bool
+) -> tuple[list[str], dict]:
+    """Assemble the DETACHED windows-host qemu cmd: gdbstub bound 0.0.0.0 on the
+    Windows stack, serial -> a staged file (readable across CLI invocations), media
+    staged + accel rewritten. Mirrors vm._build_windows_cmd but swaps the TCP dial-
+    back serial/QMP (which can't outlive the launching process) for -serial file:."""
+    from .. import backend as be
+
+    is_arm64 = arch.startswith("arm64")
+    configured = win_cfg.get("accel", "tcg")
+    whpx_ok = be.whpx_available() if (configured == "whpx" and not is_arm64) else None
+    accel = be.resolve_accel(arch, configured, whpx_ok)
+
+    scratch = staging / "scratch.qcow2"
+    subprocess.run(
+        ["qemu-img", "create", "-f", "qcow2", str(scratch), "64M"],
+        check=True,
+        capture_output=True,
+    )
+    serial_log = staging / "serial.log"
+    serial_log.write_bytes(b"")  # pre-create so wait_for can poll immediately
+    debugcon = staging / "debugcon.bin"
+    gdb_port = be.windows_free_tcp_port()
+    uid = f"vibeos-dbg-{os.getpid()}-{gdb_port}"
+    win_bin = be.windows_qemu_bin(config.qemu_bin, win_cfg["qemu_dir"], accel)
+
+    raw = config.qemu_args(work_dir)
+    staged = be.stage_media_paths(raw, staging)
+    arch_args = staged if is_arm64 else be.rewrite_accel(staged, accel, arch)
+
+    scratch_dev = [
+        "-drive",
+        f"file={scratch},format=qcow2,if=none,id=scratch",
+        *(
+            []
+            if arch.startswith("i386")
+            else [
+                "-device",
+                "virtio-blk-device,drive=scratch" if is_arm64 else "virtio-blk-pci,drive=scratch",
+            ]
+        ),
+    ]
+    scratch_dev = be.stage_media_paths(scratch_dev, staging)
+
+    cmd = [
+        win_bin,
+        "-name",
+        uid,
+        "-serial",
+        f"file:{be.win_path(serial_log)}",
+        "-monitor",
+        "none",
+        "-gdb",
+        f"tcp:0.0.0.0:{gdb_port}",
+        *(["-S"] if gdb_wait else []),
+        *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(debugcon)}"]),
+        *scratch_dev,
+        *arch_args,
+    ]
+    meta = {
+        "gdb_host": be.gateway_ip(),
+        "gdb_port": gdb_port,
+        "serial_log": str(serial_log),
+        "win_uid": uid,
+        "staging": str(staging),
+        "accel": accel,
+    }
+    return cmd, meta
+
+
+def start(
+    arch: str,
+    *,
+    backend: str,
+    win_cfg: dict,
+    gdb_wait: bool = False,
+) -> DebugRun:
+    """Launch a detached debug QEMU with a gdbstub; write + return the run manifest.
+    windows-host only for now (the whole point — native breakpoints don't fire under
+    KVM; the native port reuses this shell once its accel is forced to tcg)."""
+    if backend != "windows-host":
+        raise NotImplementedError(
+            f"gdbengine backend '{backend}' not supported yet (windows-host only); "
+            "for native use the bash toolkit (qemu/start.sh) until it is ported."
+        )
+    vm_arch = archcfg.vm_arch(arch)
+    config = get_arch_config(vm_arch)
+    run_id = f"{arch}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+    run_dir = RUNS_DIR / run_id
+    if run_dir.exists():
+        run_id = f"{run_id}-{os.getpid()}"
+        run_dir = RUNS_DIR / run_id
+    work_dir = run_dir / "work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    staging_root = Path(win_cfg.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+    staging = staging_root / f"dbg-{run_id}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    cmd, meta = _build_windows_cmd(arch, config, win_cfg, work_dir, staging, gdb_wait=gdb_wait)
+
+    launch_log = (run_dir / "launch.log").open("wb")
+    proc = subprocess.Popen(
+        cmd,
+        stdout=launch_log,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,  # detach: survives this CLI process exiting
+    )
+    run = DebugRun(
+        run_id=run_id,
+        arch=arch,
+        backend=backend,
+        gdb_host=meta["gdb_host"],
+        gdb_port=meta["gdb_port"],
+        serial_log=meta["serial_log"],
+        kernel_image=str(_kernel_image(arch)),
+        win_uid=meta["win_uid"],
+        qemu_pid=proc.pid,
+        staging=meta["staging"],
+        start_time=_now_iso(),
+        accel=meta.get("accel", "tcg"),
+    )
+    run.save()
+    (run_dir / "qemu_cmd.txt").write_text(" ".join(cmd))
+    return run
+
+
+def wait_for(run: DebugRun, pattern: str, timeout: float = 120.0) -> bool:
+    """Poll the serial log for a regex, up to `timeout`s. Returns True on match."""
+    import re
+
+    rx = re.compile(pattern)
+    log = Path(run.serial_log)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            text = log.read_text(errors="replace")
+        except OSError:
+            text = ""
+        if rx.search(text):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _helper_source_args() -> list[str]:
+    out: list[str] = []
+    for h in HELPER_FILES:
+        p = GDB_HELPERS / h
+        if p.is_file():
+            out += ["-ex", f"source {p}"]
+    return out
+
+
+def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
+    """Core: one `gdb-multiarch -batch` invocation — connect, source helpers, find
+    kbase (relocate symbols), then the caller's verb -ex commands, always detach+quit.
+    Returns combined stdout/stderr. The host timeout is a hard safety net."""
+    # An i386 guest under whpx runs on the 64-bit emulator (whpx lives only in
+    # qemu-system-x86_64.exe) — its gdbstub reports i386:x86-64 and sends 64-bit
+    # 'g' packets, so the i386 arch name would fail every register read.
+    gdb_arch = (
+        "i386:x86-64" if (run.arch == "i386" and run.accel == "whpx") else _gdb_arch(run.arch)
+    )
+    ex = [
+        "-ex",
+        f"set architecture {gdb_arch}",
+        "-ex",
+        f"file {run.kernel_image}",
+        "-ex",
+        f"target remote {run.gdb_host}:{run.gdb_port}",
+        # target remote may leave vCPUs running; force a stop so break/scan are stable.
+        "-ex",
+        "interrupt",
+        *_helper_source_args(),
+    ]
+    if run.kernel_runtime_base:
+        ex += ["-ex", f"find-kbase {run.kernel_runtime_base}"]
+    else:
+        ex += ["-ex", "find-kbase"]
+    ex += verb_ex
+    ex += ["-ex", "delete breakpoints", "-ex", "detach", "-ex", "quit"]
+
+    env = {**os.environ, "VIBEOS_ARCH": run.arch, "VIBEOS_KERNEL": run.kernel_image}
+    try:
+        cp = subprocess.run(
+            [GDB_BIN, "-batch", "-nx", *ex],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        return cp.stdout + cp.stderr
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b"") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        if isinstance(out, bytes):
+            out = out.decode(errors="replace")
+        return f"{out}\n=== gdb hard-timeout after {timeout}s ==="
+
+
+def _expand_verb(token: str) -> str:
+    """Map a verb token ('bt 50', 'triage-bugcheck', 'raw <gdb cmd>') to a gdb command."""
+    head, _, rest = token.partition(" ")
+    if head == "raw":
+        return rest
+    tmpl = _VERB_MAP.get(head)
+    if tmpl is None:
+        raise ValueError(f"unknown verb: {head}")
+    return tmpl.format(rest=rest).rstrip()
+
+
+def run_until(
+    run: DebugRun, brk: str, *, timeout: float = 180.0, then: list[str] | None = None
+) -> str:
+    """Set a breakpoint, bounded-continue until it hits (or the in-gdb budget lapses),
+    then run each `then` verb against the stopped target. Mirrors run-until.sh."""
+    verb_ex = ["-ex", f"break {brk}", "-ex", f"bounded-continue {timeout}"]
+    for t in then or []:
+        if not t:
+            continue
+        verb_ex += ["-ex", f"echo --- {t} ---\\n", "-ex", _expand_verb(t)]
+    # host net = the in-gdb budget + teardown headroom
+    return _run_gdb(run, verb_ex, timeout=timeout + 30)
+
+
+def inspect(run: DebugRun, verb: str, *, timeout: float = 60.0) -> str:
+    """Run a single inspection verb against the (already stopped/running) target."""
+    return _run_gdb(run, ["-ex", _expand_verb(verb)], timeout=timeout)
+
+
+def stop(run: DebugRun) -> None:
+    """Kill the debug QEMU and mark the run stopped."""
+    if run.backend == "windows-host" and run.win_uid:
+        from .. import backend as be
+
+        be.kill_by_uid(run.win_uid)
+    if run.staging:
+        shutil.rmtree(run.staging, ignore_errors=True)
+
+
+def status(run: DebugRun, *, check_alive: bool = True) -> dict:
+    """Liveness snapshot. Liveness = the Windows QEMU process being alive + serial-log
+    growth. It deliberately does NOT probe the gdbstub — connecting to it halts the
+    guest (see _win_alive). Pass check_alive=False to skip the (PowerShell) process
+    query when polling tightly for serial growth."""
+    log = Path(run.serial_log)
+    out = {
+        "run_id": run.run_id,
+        "arch": run.arch,
+        "backend": run.backend,
+        "gdb": f"{run.gdb_host}:{run.gdb_port}",
+        "serial_bytes": log.stat().st_size if log.is_file() else 0,
+        "serial_log": run.serial_log,
+    }
+    if check_alive:
+        out["alive"] = _win_alive(run.win_uid) if run.win_uid else False
+    return out
+
+
+def list_runs() -> list[str]:
+    if not RUNS_DIR.is_dir():
+        return []
+    return sorted(p.name for p in RUNS_DIR.iterdir() if (p / "manifest.json").is_file())
+
+
+# --- CLI handlers (`vibeos-cli gdb <verb>`) --------------------------------
+
+
+def _cfg(repo: Path):
+    from . import config as cli_config
+
+    cli_cfg = cli_config.load(repo)
+    return cli_cfg.get("qemu.backend", "native"), cli_cfg.get("qemu.windows", {})
+
+
+def cmd_start(args, repo: Path) -> int:
+    backend, win_cfg = _cfg(repo)
+    run = start(args.arch, backend=backend, win_cfg=win_cfg, gdb_wait=args.wait)
+    print(f"run-id : {run.run_id}")
+    print(f"gdb    : {run.gdb_host}:{run.gdb_port}  (gdb-multiarch target remote)")
+    print(f"serial : {run.serial_log}")
+    print(f"kernel : {run.kernel_image}")
+    print(f"\nnext: vibeos-cli gdb wait-for {run.run_id} --pattern '<marker>'")
+    print(f"      vibeos-cli gdb run-until {run.run_id} --break KeBugCheckEx")
+    print(f"      vibeos-cli gdb stop {run.run_id}")
+    return 0
+
+
+def cmd_status(args, repo: Path) -> int:
+    run = DebugRun.load(args.run_id)
+    print(json.dumps(status(run), indent=2))
+    return 0
+
+
+def cmd_wait_for(args, repo: Path) -> int:
+    run = DebugRun.load(args.run_id)
+    hit = wait_for(run, args.pattern, timeout=args.timeout)
+    print(f"{'HIT' if hit else 'MISS'}: {args.pattern!r} (timeout={args.timeout}s)")
+    return 0 if hit else 1
+
+
+def cmd_run_until(args, repo: Path) -> int:
+    run = DebugRun.load(args.run_id)
+    out = run_until(run, args.brk, timeout=args.timeout, then=args.then or [])
+    print(out)
+    return 0 if "BREAKPOINT HIT" in out else 1
+
+
+def cmd_inspect(args, repo: Path) -> int:
+    run = DebugRun.load(args.run_id)
+    print(inspect(run, " ".join(args.verb), timeout=args.timeout))
+    return 0
+
+
+def cmd_stop(args, repo: Path) -> int:
+    run = DebugRun.load(args.run_id)
+    stop(run)
+    print(f"stopped {run.run_id} (uid={run.win_uid})")
+    return 0
+
+
+def cmd_ps(args, repo: Path) -> int:
+    for rid in list_runs():
+        try:
+            st = status(DebugRun.load(rid))
+        except (OSError, ValueError):
+            continue
+        live = "up" if st.get("alive") else "down"
+        print(f"{rid:32} {live:5} gdb={st['gdb']:24} serial={st['serial_bytes']}B")
+    return 0

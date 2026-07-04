@@ -45,13 +45,16 @@ DEFAULTS: dict[str, Any] = {
             # the Windows QEMU can read it natively. Cleaned per run.
             "staging_dir": "/mnt/c/temp/vibeos-qemu",
             # x86 accelerator: "tcg" (pure emulation, the working default) or "whpx" (Windows
-            # Hypervisor Platform hardware virt, only in qemu-system-x86_64.exe — much faster
-            # IF it booted). Resolved PER-ARCH at launch (backend.resolve_accel: arm64 always
-            # TCG; x86+whpx degrades to TCG when the host has no hypervisor). whpx is OPT-IN and
-            # the default stays "tcg" because whpx does not yet boot our x86 guests cleanly:
-            # i386 hangs at freeldr stack-switch, amd64 BUGCHECKs 0x9 at uniata DMA (both boot
-            # fine on tcg). See docs/engineering/windows-host-qemu-whpx-spike.md. Flip to "whpx"
-            # (here or VIBEOS_QEMU_WINDOWS_ACCEL=whpx) to continue that spike.
+            # Hypervisor Platform hardware virt, only in qemu-system-x86_64.exe). Resolved
+            # PER-ARCH at launch (backend.resolve_accel: arm64 always TCG; x86+whpx degrades
+            # to TCG when the host has no hypervisor). Both x86 arches BOOT TO DESKTOP under
+            # whpx as of 2026-07-03 (the historical blockers — the i386 freeldr "stack-switch
+            # hang" and the amd64 uniata BUGCHECK 0x9 — are fixed: a Rust varargs bug and
+            # kernel-irqchip=on respectively; see
+            # docs/engineering/windows-host-qemu-whpx-spike.md). whpx stays OPT-IN
+            # (VIBEOS_QEMU_WINDOWS_ACCEL=whpx or set here) while it earns gate-grade
+            # reliability: its firmware CD-PIO phase is slow (vm.py scales the smoke
+            # timeouts) and repeat-stability hasn't been proven yet.
             "accel": "tcg",
             # Address the Windows QEMU uses to reach our WSL-side TCP listeners. 127.0.0.1
             # works via WSL2 localhost forwarding (the reliable Windows->WSL direction).
