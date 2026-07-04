@@ -291,13 +291,15 @@ VOID
 DisplayTrayProperties(IN HWND hwndOwner, IN HWND hwndTaskbar);
 
 /*
- * desktop.cpp
+ * desktop.cpp — replaced by Rust (explorer-rust desktop.rs). C linkage.
  */
+extern "C" {
 HANDLE
 DesktopCreateWindow(IN OUT ITrayWindow *Tray);
 
 VOID
 DesktopDestroyShellWindow(IN HANDLE hDesktop);
+} /* extern "C" */
 
 
 /*

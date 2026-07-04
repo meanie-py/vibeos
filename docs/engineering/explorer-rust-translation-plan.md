@@ -308,3 +308,26 @@ further explorer files be translated (and Tier C not until the msg-map path exis
   authoring the real `#[repr(C)]` mirror (or, better, feeding the class header to
   the translator — the scanner's extract_class_context already does this for
   methods, so a preamble-context extension would close it).
+- **2026-07-04 — second tier-B file: desktop.cpp (CDesktopThread + the
+  arch-split callback-ABI pattern every tier-C proc needs).** desktop.cpp runs
+  the desktop's own message-loop thread; DesktopCreateWindow/DestroyShellWindow
+  are its extern "C" entry points (no shim — free functions, not methods).
+  Reusable fixes:
+  1. **C++ `new`/`delete` of a now-Rust class** → Rust `CDesktopThread_new` =
+     HeapAlloc + `_ctor`, `_delete` = `_dtor` + HeapFree (the raw translation
+     used `Box::from_raw` — std, and mismatched the allocator: a UAF/no_std
+     bug). The operator-new/delete template for any heap-allocated tier-C class.
+  2. **Callback ABI is arch-split and needs cfg.** A fn passed to CreateThread
+     (or SetTimer/RegisterClass) must MATCH winsrv's bindgen fn-pointer type
+     EXACTLY, and bindgen spells it `extern "C"` on amd64/arm64 but
+     `extern "stdcall"` on i386 — and Rust treats "C"/"system"/"stdcall" as
+     distinct TYPES even where the ABI coincides, so no single spelling
+     type-checks on all three. Pattern: `#[cfg(not(target_arch="x86"))] extern
+     "C"` + `#[cfg(target_arch="x86")] extern "stdcall"` on the proc (thin
+     trampoline into a shared worker). **Every tier-C WndProc / timer / thread
+     proc hits this** — the flat match-based WndProc that replaces
+     BEGIN_MSG_MAP is exactly such a callback.
+  3. Local redefs with ZEROED IIDs: the translation re-declared IShellDesktopTray
+     + IID_IShellDesktopTray locally with an all-zero GUID (QI-always-fails bug)
+     — deleted; use explorer_sys::com. Added E_FAIL/E_INVALIDARG/… to the
+     substrate. Links + boots i386.

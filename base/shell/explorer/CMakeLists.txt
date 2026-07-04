@@ -6,7 +6,7 @@ endif()
 
 list(APPEND SOURCE
     appbar.cpp
-    desktop.cpp
+    # desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
     explorer.cpp
     # notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
     # rshell.cpp — replaced by Rust (explorer-rust rshell.rs)

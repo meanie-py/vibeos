@@ -24,6 +24,9 @@ pub mod explorer {
     // g_TaskbarSettings global (referenced by 8 still-C++ files). The mangled
     // ::Save/::Load entry points forward from settings_shim.cpp.
     pub mod settings;
+    // Tier B — desktop.cpp: CDesktopThread (own desktop message-loop thread) +
+    // the extern "C" DesktopCreateWindow/DesktopDestroyShellWindow entry points.
+    pub mod desktop;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

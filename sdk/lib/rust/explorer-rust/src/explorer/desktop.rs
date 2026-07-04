@@ -8,17 +8,33 @@ use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
-extern "C" {
-    fn CDesktopThread_new() -> *mut CDesktopThread;
-    fn CDesktopThread_delete(this: *mut CDesktopThread);
-    fn FAILED_UNEXPECTEDLY(hr: HRESULT) -> bool;
-}
+// _SHCreateDesktop / _SHDesktopMessageLoop are our own Rust (rshell.rs);
+// SUCCEEDED/FAILED_UNEXPECTEDLY come inline from the substrate. IShellDesktopTray
+// + IID_IShellDesktopTray are explorer_sys::com (the raw translation redefined
+// them locally with a ZEROED IID — a QueryInterface-always-fails bug).
+use crate::explorer::rshell::{_SHCreateDesktop, _SHDesktopMessageLoop};
 extern "system" {
     fn OleInitialize(pvReserved: LPVOID) -> i32;
     fn OleUninitialize();
-    fn _SHCreateDesktop(pSdt: *mut IShellDesktopTray) -> *mut core::ffi::c_void;
-    fn _SHDesktopMessageLoop(hDesktop: *mut core::ffi::c_void);
-    fn SUCCEEDED(hr: i32) -> i32;
+}
+
+// CDesktopThread is a Rust struct now, so its C++ `new`/`delete` become
+// HeapAlloc+ctor / dtor+HeapFree (DesktopCreateWindow uses these).
+#[no_mangle]
+pub unsafe extern "C" fn CDesktopThread_new() -> *mut CDesktopThread {
+    let p = HeapAlloc(hProcessHeap, 0, core::mem::size_of::<CDesktopThread>() as SIZE_T) as *mut CDesktopThread;
+    if !p.is_null() {
+        CDesktopThread_ctor(p);
+    }
+    p
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CDesktopThread_delete(this: *mut CDesktopThread) {
+    if !this.is_null() {
+        CDesktopThread_dtor(this);
+        HeapFree(hProcessHeap, 0, this as *mut core::ffi::c_void);
+    }
 }
 
 // ---- file-scope preamble (translated) ----
@@ -148,12 +164,11 @@ pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThr
 
     OleInitialize(core::ptr::null_mut());
 
-    hRet = ((*(*this).m_Tray).lpVtbl).QueryInterface(
-        (*this).m_Tray,
+    hRet = (*(*this).m_Tray).QueryInterface(
         &IID_IShellDesktopTray,
-        &mut pSdt as *mut *mut IShellDesktopTray as *mut *mut core::ffi::c_void
+        &mut pSdt as *mut *mut IShellDesktopTray as *mut *mut core::ffi::c_void,
     );
-    if SUCCEEDED(hRet) == 0 {
+    if !SUCCEEDED(hRet) {
         OleUninitialize();
         return dwResult;
     }
@@ -161,7 +176,7 @@ pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThr
     hDesktop = _SHCreateDesktop(pSdt);
     if hDesktop.is_null() {
         if !pSdt.is_null() {
-            ((*pSdt).lpVtbl).Release(pSdt);
+            (*pSdt).Release();
         }
         OleUninitialize();
         return dwResult;
@@ -169,7 +184,7 @@ pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThr
 
     if SetEvent((*this).m_hInitEvent) == 0 {
         if !pSdt.is_null() {
-            ((*pSdt).lpVtbl).Release(pSdt);
+            (*pSdt).Release();
         }
         OleUninitialize();
         return dwResult;
@@ -179,43 +194,27 @@ pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThr
     dwResult = 0;
 
     if !pSdt.is_null() {
-        ((*pSdt).lpVtbl).Release(pSdt);
+        (*pSdt).Release();
     }
     OleUninitialize();
     dwResult
 }
 
-#[repr(C)]
-struct IShellDesktopTray {
-    lpVtbl: *const IShellDesktopTrayVtbl,
-}
-
-#[repr(C)]
-struct IShellDesktopTrayVtbl {
-    QueryInterface: unsafe extern "system" fn(*mut IShellDesktopTray, *const GUID, *mut *mut core::ffi::c_void) -> i32,
-    AddRef: unsafe extern "system" fn(*mut IShellDesktopTray) -> u32,
-    Release: unsafe extern "system" fn(*mut IShellDesktopTray) -> u32,
-}
-
-#[repr(C)]
-struct GUID {
-    Data1: u32,
-    Data2: u16,
-    Data3: u16,
-    Data4: [u8; 8],
-}
-
-static IID_IShellDesktopTray: GUID = GUID {
-    Data1: 0,
-    Data2: 0,
-    Data3: 0,
-    Data4: [0; 8],
-};
-
+// Thread proc ABI must MATCH winsrv's LPTHREAD_START_ROUTINE fn-pointer type,
+// which bindgen spells differently per arch: `extern "C"` on amd64/arm64 but
+// `extern "stdcall"` on i386. Rust treats "system"/"C" as distinct types even
+// where the ABI is identical, so no single spelling satisfies CreateThread on
+// all three — cfg per arch. (Reusable pattern for every tier-C thread/window/
+// timer proc; see the plan doc.)
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "system" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
-    let pDesktopThread = lpParameter as *mut CDesktopThread;
-    CDesktopThread_DesktopThreadProc(pDesktopThread)
+pub unsafe extern "C" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
+    CDesktopThread_DesktopThreadProc(lpParameter as *mut CDesktopThread)
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
+    CDesktopThread_DesktopThreadProc(lpParameter as *mut CDesktopThread)
 }
 #[no_mangle]
 pub unsafe extern "C" fn DesktopCreateWindow(Tray: *mut ITrayWindow) -> *mut core::ffi::c_void {
@@ -223,7 +222,7 @@ pub unsafe extern "C" fn DesktopCreateWindow(Tray: *mut ITrayWindow) -> *mut cor
     let pDesktopThread = CDesktopThread_new();
 
     let hres = CDesktopThread_Initialize(pDesktopThread, Tray);
-    if FAILED_UNEXPECTEDLY(hres) {
+    if FAILED_UNEXPECTEDLY(hres) != 0 {
         CDesktopThread_delete(pDesktopThread);
         return core::ptr::null_mut();
     }
@@ -232,8 +231,9 @@ pub unsafe extern "C" fn DesktopCreateWindow(Tray: *mut ITrayWindow) -> *mut cor
 }
 #[no_mangle]
 pub unsafe extern "C" fn DesktopDestroyShellWindow(hDesktop: HANDLE) {
-    let pDesktopThread = hDesktop as *mut CDesktopThread;
-    Box::from_raw(pDesktopThread);
+    // Raw translation used Box::from_raw (std, and mismatched the HeapAlloc in
+    // CDesktopThread_new) — must be the matching delete.
+    CDesktopThread_delete(hDesktop as *mut CDesktopThread);
 }
 
 

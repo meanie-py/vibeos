@@ -41,6 +41,12 @@ pub mod com {
     /// winerror.h HRESULTs (not in the winsrv bindgen surface).
     pub const S_OK: HRESULT = 0;
     pub const S_FALSE: HRESULT = 1;
+    pub const E_NOTIMPL: HRESULT = 0x8000_4001u32 as HRESULT;
+    pub const E_FAIL: HRESULT = 0x8000_4005u32 as HRESULT;
+    pub const E_INVALIDARG: HRESULT = 0x8007_0057u32 as HRESULT;
+    pub const E_OUTOFMEMORY: HRESULT = 0x8007_000Eu32 as HRESULT;
+    pub const E_NOINTERFACE: HRESULT = 0x8000_4002u32 as HRESULT;
+    pub const E_POINTER: HRESULT = 0x8000_4003u32 as HRESULT;
 
     /// `FAILED_UNEXPECTEDLY(hr)` — wine/debug.h macro (FAILED + ERR log; the
     /// log side is compiled out like TRACE!). Returns BOOL to match C call
