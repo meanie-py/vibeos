@@ -431,32 +431,60 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
     mtimes silently defeat cargo invalidation (stale build scripts re-run
     with no error anywhere). Refuse to build until the tree is private again.
 
-    Thresholds: cmake `build-<arch>` trees never legitimately hardlink →
-    `-links +1` fails. The cargo workspace target DOES hardlink internally
-    (deps/ ↔ final artifact, 2 links, same tree) → only `-links +2` fails
-    there (a 2-way cross-tree link slips through; the mass-dedup signature
-    is 3–60 links). See tools/dedup-build-cache.sh SAFETY for history."""
-    probes = [
-        (build_dir, "+1"),
-        (repo / "sdk" / "lib" / "rust" / "target", "+2"),
-    ]
-    hits: list[str] = []
-    for root, links in probes:
-        if not root.is_dir():
-            continue
+    Thresholds: cmake outputs never legitimately hardlink → `-links +1`
+    fails. CARGO target dirs DO hardlink internally (deps/ ↔ final artifact,
+    2 links, same tree) → only `-links +2` fails there (a 2-way cross-tree
+    link slips through; the mass-dedup signature is 3+, observed up to 1003).
+    Cargo dirs are detected by their CACHEDIR.TAG marker — several nest
+    INSIDE build-<arch> (rust-kernel-target, rust-wmilib-target, …), so the
+    cmake scan prunes them and they get the cargo threshold instead. See
+    tools/dedup-build-cache.sh SAFETY for history."""
+
+    def _cargo_roots(root: Path) -> list[Path]:
         try:
             cp = subprocess.run(
-                ["find", str(root), "-type", "f", "-links", links, "-print", "-quit"],
+                ["find", str(root), "-name", "CACHEDIR.TAG"],
                 capture_output=True,
                 text=True,
                 timeout=300,
             )
         except (OSError, subprocess.SubprocessError):
+            return []
+        dirs = sorted(Path(ln).parent for ln in cp.stdout.splitlines() if ln.strip())
+        # keep only top-most roots (cargo stamps per-triple subdirs too)
+        tops: list[Path] = []
+        for d in dirs:
+            if not any(str(d).startswith(str(t) + os.sep) for t in tops):
+                tops.append(d)
+        return tops
+
+    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
+        cmd: list[str] = ["find", str(root)]
+        for p in prune:
+            cmd += ["-path", str(p), "-prune", "-o"]
+        cmd += ["-type", "f", "-links", links, "-print", "-quit"]
+        try:
+            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.SubprocessError):
             run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            continue
-        hit = cp.stdout.strip()
+            return None
+        return cp.stdout.strip() or None
+
+    hits: list[str] = []
+    if build_dir.is_dir():
+        nested_cargo = _cargo_roots(build_dir)
+        hit = _probe(build_dir, "+1", nested_cargo)  # cmake outputs: any sharing is foreign
         if hit:
-            hits.append(f"{hit} (links {links.lstrip('+')}+)")
+            hits.append(f"{hit} (links 2+ in a cmake tree)")
+        for c in nested_cargo:
+            hit = _probe(c, "+2", [])
+            if hit:
+                hits.append(f"{hit} (links 3+ in a cargo dir)")
+    ws = repo / "sdk" / "lib" / "rust" / "target"
+    if ws.is_dir():
+        hit = _probe(ws, "+2", [])
+        if hit:
+            hits.append(f"{hit} (links 3+ in a cargo dir)")
     if not hits:
         return True
     run.classification = "ISOLATION_FAIL"
