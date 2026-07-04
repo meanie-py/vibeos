@@ -22,7 +22,8 @@ list(APPEND SOURCE
     # start-menu site COM object (IServiceProvider/ITrayPriv/IOleCommandTarget/
     # IMenuPopup on explorer_sys::com).
     # startup.cpp — replaced by Rust (explorer-rust startup.rs)
-    syspager.cpp
+    # syspager.cpp — replaced by Rust (explorer-rust syspager.rs); systray icon
+    # pager (CSysPagerWnd + CIconWatcher/CBalloonQueue/CNotifyToolbar helpers).
     # taskband.cpp — replaced by Rust (explorer-rust taskband.rs); the
     # multi-interface COM object template (IObjectWithSite/IDeskBand/
     # IPersistStream/IWinEventHandler/IOleCommandTarget on explorer_sys::com).

@@ -46,6 +46,10 @@ pub mod explorer {
     // RebarBandSite, hosts the task band). ITrayBandSite/IBandSite/
     // IBandSiteStreamCallback; consumes taskband + rshell band-site factories.
     pub mod tbsite;
+    // Tier C — syspager.cpp: CSysPagerWnd (systray icon pager) + CIconWatcher/
+    // CBalloonQueue/CNotifyToolbar helpers. IOleWindow window class; the
+    // embedded CNotifyToolbar is a subclassed comctl32 toolbar.
+    pub mod syspager;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

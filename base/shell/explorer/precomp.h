@@ -427,7 +427,9 @@ static inline BOOL GetHideClock()
 HRESULT CTrayNotifyWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 /* SysPagerWnd */
-HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* syspager.cpp → Rust (explorer-rust syspager.rs); C linkage so the trayntfy.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 #include "traydeskbtn.h"
 
