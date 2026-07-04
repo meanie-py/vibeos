@@ -106,6 +106,8 @@ class DebugRun:
     staging: str = ""
     start_time: str = ""
     kernel_runtime_base: str = ""  # cached kbase (filled by run_until on first find)
+    accel: str = "tcg"  # resolved accelerator; an i386 guest under whpx runs on
+    # qemu-system-x86_64.exe whose gdbstub speaks i386:x86-64 (see _run_gdb)
 
     # ---- persistence ----
     @property
@@ -188,7 +190,7 @@ def _build_windows_cmd(
 
     raw = config.qemu_args(work_dir)
     staged = be.stage_media_paths(raw, staging)
-    arch_args = staged if is_arm64 else be.rewrite_accel(staged, accel)
+    arch_args = staged if is_arm64 else be.rewrite_accel(staged, accel, arch)
 
     scratch_dev = [
         "-drive",
@@ -225,6 +227,7 @@ def _build_windows_cmd(
         "serial_log": str(serial_log),
         "win_uid": uid,
         "staging": str(staging),
+        "accel": accel,
     }
     return cmd, meta
 
@@ -281,6 +284,7 @@ def start(
         qemu_pid=proc.pid,
         staging=meta["staging"],
         start_time=_now_iso(),
+        accel=meta.get("accel", "tcg"),
     )
     run.save()
     (run_dir / "qemu_cmd.txt").write_text(" ".join(cmd))
@@ -318,9 +322,15 @@ def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
     """Core: one `gdb-multiarch -batch` invocation — connect, source helpers, find
     kbase (relocate symbols), then the caller's verb -ex commands, always detach+quit.
     Returns combined stdout/stderr. The host timeout is a hard safety net."""
+    # An i386 guest under whpx runs on the 64-bit emulator (whpx lives only in
+    # qemu-system-x86_64.exe) — its gdbstub reports i386:x86-64 and sends 64-bit
+    # 'g' packets, so the i386 arch name would fail every register read.
+    gdb_arch = (
+        "i386:x86-64" if (run.arch == "i386" and run.accel == "whpx") else _gdb_arch(run.arch)
+    )
     ex = [
         "-ex",
-        f"set architecture {_gdb_arch(run.arch)}",
+        f"set architecture {gdb_arch}",
         "-ex",
         f"file {run.kernel_image}",
         "-ex",

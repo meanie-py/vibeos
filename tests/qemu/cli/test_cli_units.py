@@ -1273,9 +1273,20 @@ def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
     assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
-    # whpx: kvm->whpx (irqchip off) and ALSO drop -cpu host — it faults OVMF on FXSAVE in
-    # early firmware, so whpx must fall back to qemu's default cpu model.
-    assert be_mod.rewrite_accel(base, "whpx") == [
+    # whpx: kvm->whpx with PER-ARCH kernel-irqchip (amd64 needs the Hyper-V in-kernel
+    # APIC — QEMU's userspace APIC under irqchip=off zeroes guest CR8/IRQL on every VM
+    # exit, bugchecking amd64; i386's PIC HAL needs irqchip=off) and ALSO drop -cpu
+    # host — it faults OVMF on FXSAVE in early firmware, so whpx must fall back to
+    # qemu's default cpu model.
+    assert be_mod.rewrite_accel(base, "whpx", "amd64") == [
+        "-M",
+        "pc",
+        "-accel",
+        "whpx,kernel-irqchip=on",
+        "-m",
+        "512M",
+    ]
+    assert be_mod.rewrite_accel(base, "whpx", "i386-uefi") == [
         "-M",
         "pc",
         "-accel",

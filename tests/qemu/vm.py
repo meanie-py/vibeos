@@ -967,6 +967,16 @@ class QemuVM:
         whpx_ok = be.whpx_available() if (configured == "whpx" and not is_arm64) else None
         accel = be.resolve_accel(self.config.arch, configured, whpx_ok)
         self._win_accel = accel  # read by _acquire_arch_slot (whpx contends like KVM)
+        if accel == "whpx":
+            # WHPX's kernel phase is fast (hardware virt), but the FIRMWARE phase is
+            # slow AND serial-silent: OVMF reads the livecd via ATAPI PIO, and every
+            # 2-byte port read is a VM exit — the uefildr file-load stretch runs
+            # 3-5 min with zero serial output (progress is visible only on debugcon).
+            # The x86 defaults (120s silence watchdog / 360s boot timeout) are tuned
+            # for TCG's fast port I/O and false-abort a healthy whpx boot, so scale
+            # both. See docs/engineering/windows-host-qemu-whpx-spike.md.
+            self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 420.0)
+            self.config.boot_timeout = max(self.config.boot_timeout, 900.0)
         # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
         # windows-host smokes across worktrees must not stomp each other's media — the per-arch
         # KVM slot does NOT serialize windows-host (it runs off-host and early-returns the slot),
@@ -1018,7 +1028,11 @@ class QemuVM:
         # rewrite_accel is an x86 concept (swap KVM->whpx/tcg and drop the
         # KVM-only `-cpu host`); on arm64 it would DROP the required -cpu model,
         # so leave arm64's machine args untouched.
-        arch_args = staged_arch_args if is_arm64 else be.rewrite_accel(staged_arch_args, accel)
+        arch_args = (
+            staged_arch_args
+            if is_arm64
+            else be.rewrite_accel(staged_arch_args, accel, self.config.arch)
+        )
         # Net config (amd64-uefi-net): adapt the slirp fwds across the WSL<->Windows
         # boundary — hostfwd binds 0.0.0.0 (dialed via the gateway IP, see net_host) and
         # the `-cmd:cat` guestfwd echo is redirected to a chardev backed by a harness echo

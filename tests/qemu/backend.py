@@ -9,6 +9,7 @@ vm.py and only branches on the backend name; native behavior is left byte-for-by
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -50,21 +51,42 @@ def windows_qemu_bin(native_bin: str, qemu_dir: str, accel: str) -> str:
     return str(Path(qemu_dir) / f"{name}.exe")
 
 
-def rewrite_accel(args: list[str], accel: str) -> list[str]:
+def rewrite_accel(args: list[str], accel: str, arch: str = "amd64") -> list[str]:
     """Swap the KVM accelerator for the Windows one and drop the paired `-cpu host`.
-    `-accel kvm` -> `-accel <accel>` (whpx adds `kernel-irqchip=off`, required). `-cpu host`
-    is dropped for BOTH tcg and whpx: it's a KVM host-passthrough concept, and under WHPX it
-    actively breaks boot — `-cpu host` makes OVMF fault on FXSAVE in early firmware (the host
-    feature set WHPX exposes isn't what the 32/64-bit firmware expects), so WHPX falls back to
-    qemu's default model. Operates on a copy. (NB: even with this, whpx does not yet boot our
-    x86 guests cleanly — see docs/engineering/windows-host-qemu-whpx-spike.md; whpx is opt-in,
-    the default accel is tcg.)"""
+    `-accel kvm` -> `-accel <accel>` (whpx adds a PER-ARCH `kernel-irqchip` — see below).
+    `-cpu host` is dropped for BOTH tcg and whpx: it's a KVM host-passthrough concept, and
+    under WHPX it actively breaks boot — `-cpu host` makes OVMF fault on FXSAVE in early
+    firmware (the host feature set WHPX exposes isn't what the 32/64-bit firmware expects),
+    so WHPX falls back to qemu's default model. Operates on a copy.
+
+    kernel-irqchip is PER-ARCH (measured 2026-07-03, qemu v11-dev):
+
+      - amd64 needs `on` (Hyper-V's in-kernel APIC): with `off`, QEMU's userspace APIC
+        round-trips the TPR through a lazy cache (`vcpu->tpr` / `cpu_set_apic_tpr` in
+        qemu whpx-all.c) and the guest's CR8 is reset to the cached (stale, usually 0)
+        value on EVERY VM exit — measured in-guest as 1000/1000 CR8 writes lost across a
+        single port-I/O exit. amd64 NT keeps IRQL in CR8, so irqchip=off collapses every
+        raised IRQL and bugchecks 0x9 at the first asserting spinlock release
+        (historically "the uniata DMA bugcheck"). With `on`: 0/1000 lost, boots to
+        `shell ready`.
+      - i386 needs `off` (QEMU userspace PIC+APIC): our i386 UP kernel drives the legacy
+        8259 PIC and keeps IRQL in memory (immune to the CR8 bug); under irqchip=on it
+        wedges mid-boot (last serial: NETSTACK self-tests), under irqchip=off it boots
+        to explorer.
+
+    VIBEOS_WHPX_IRQCHIP overrides both for experiments.
+    See docs/engineering/windows-host-qemu-whpx-spike.md."""
     out: list[str] = []
     i = 0
     while i < len(args):
         a = args[i]
         if a == "-accel" and i + 1 < len(args):
-            out += ["-accel", "whpx,kernel-irqchip=off" if accel == "whpx" else accel]
+            if accel == "whpx":
+                default_irqchip = "off" if arch.startswith("i386") else "on"
+                irqchip = os.environ.get("VIBEOS_WHPX_IRQCHIP", default_irqchip)
+                out += ["-accel", f"whpx,kernel-irqchip={irqchip}"]
+            else:
+                out += ["-accel", accel]
             i += 2
             continue
         if a == "-cpu" and i + 1 < len(args):

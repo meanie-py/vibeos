@@ -225,7 +225,24 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
         )
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
 
-    vm.save_snapshot("ready")
+    try:
+        vm.save_snapshot("ready")
+    except RuntimeError as e:
+        # WHPX cannot savevm — the accelerator registers migration blockers
+        # ("State blocked due to non-migratable CPUID feature support, dirty
+        # memory tracking support, and XSAVE/XRSTOR support"). Degrade LOUDLY
+        # to no-per-test-snapshot isolation (restore_vm below already no-ops
+        # when the snapshot doesn't exist) instead of erroring the whole
+        # suite. Only for this known accelerator limitation; anything else
+        # still hard-fails. See docs/engineering/windows-host-qemu-whpx-spike.md.
+        if "State blocked" in str(e) and getattr(vm, "_win_accel", "") == "whpx":
+            print(
+                "[pytest] WARNING: savevm unsupported under WHPX (migration "
+                "blockers) — running WITHOUT per-test snapshot isolation; "
+                "tests share one live VM sequentially"
+            )
+        else:
+            raise
 
     yield vm
     vm.stop()
