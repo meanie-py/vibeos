@@ -36,11 +36,11 @@ list(APPEND SOURCE
     # the tray band site (wraps the shell RebarBandSite, hosts the task band).
     # trayclock.cpp — replaced by Rust (explorer-rust trayclock.rs); first
     # tier-C CWindowImpl+CComObjectRootEx+IOleWindow class on explorer_sys::server.
-    traydeskbtn.cpp
-    # traydeskbtn_shim.cpp — extern "C" bridge so Rust traywnd.rs can call the
-    # still-C++ CTrayShowDesktopButton (retires when traydeskbtn.cpp → Rust).
-    traydeskbtn_shim.cpp
-    trayntfy.cpp
+    # traydeskbtn.cpp — replaced by Rust (folded into explorer-rust trayntfy.rs);
+    # CTrayShowDesktopButton is embedded by value in CTrayNotifyWnd. The 7
+    # TrayShowDesktopButton_* extern "C" shims are now Rust #[no_mangle] exports,
+    # so traydeskbtn_shim.cpp is retired (deleted).
+    # trayntfy.cpp — replaced by Rust (explorer-rust trayntfy.rs); CTrayNotifyWnd.
     # trayprop.cpp — replaced by Rust (explorer-rust trayprop.rs); the Taskbar &
     # Start-Menu Properties dialog (3 WTL property pages → flat DLGPROCs).
     # traywnd.cpp — replaced by Rust (explorer-rust traywnd.rs) — the taskbar
