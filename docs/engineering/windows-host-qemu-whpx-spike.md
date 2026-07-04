@@ -128,6 +128,27 @@ boots to `shell ready` with this alone — no guest change.
   state — treat CR8 as suspect after any attach.
 - `-no-reboot` + `whpx`: a triple fault would exit QEMU (good for harness verdicts).
 
+## Remaining work — the amd64 net suite under whpx (13/15)
+
+With the savevm degrade in place the net suite runs: **13/15 pass** under whpx.
+The two failures are the INBOUND-connection tests (`test_tcp_echo_roundtrip`,
+`test_tdi_server_listen_accept` — host connects into the guest via slirp
+hostfwd; the outbound TCP/ICMP/DNS tests all pass, so the guest RX path works).
+Evidence so far:
+
+- One full-suite run: both failed at `s.recv()` timeout with the VM up and the
+  guest's echo listener announced.
+- A same-boot serial breadcrumb on a later run: `[NETSTACK] TDI server: LISTEN
+  did not complete 0xc00000b5` (STATUS_IO_TIMEOUT) — the guest-side TDI listen
+  endpoint itself sometimes fails to come up under whpx.
+- Isolated re-runs of just these two tests were blocked 3/3 by the
+  **pre-existing** amd64 service-startup wedge (`DcomLaunch done: 1053`
+  discriminator — the Mm pushlock lost-wakeup lane, ~50% on amd64 on ANY
+  accel), so a clean A/B against test-ordering hasn't landed yet. Re-run once
+  that lane's fix lands. Note: direct `pytest tests/qemu/test_net.py` needs
+  `--timeout 900` under whpx — the default 300s pytest-timeout kills the
+  session fixture during the slow whpx firmware phase.
+
 ## Perf notes (why we still want this)
 
 i386 whpx: firmware+freeldr PIO phase slow (~2-4 min), kernel-to-explorer fast;
