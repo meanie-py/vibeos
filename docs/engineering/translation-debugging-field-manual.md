@@ -2091,3 +2091,60 @@ these INFINITE waits convert a soft failure into a boot-blocker.
 race the stale objects were masking — and audit any `WaitForSingleObject(…, INFINITE)`
 whose signal sits on a lone happy path; make the wait bounded and the shared state
 owned by the side that outlives the wait.
+
+### 9.13 ✅ The Mm WS-pushlock SELF-DEADLOCK — PROVEN LIVE 2026-07-04 via the sync-instrumentation stack (2-line trace, ~30 min, no GDB archaeology)
+
+The amd64 service-startup wedge's hypothesized root cause (§9 wedge notes /
+MEMORY open-item: "a page fault inside the WS-locked teardown re-acquires the
+working-set lock") is now a **filmed mechanism**, captured the same night the
+instrumentation landed (`860452569ef` + the WS-lock tap):
+
+**What the census showed (every boot, even green ones):** 3–6 freshly-created
+processes (eventlog.exe, svchost, rundll32, setup.exe…) each have their FIRST
+thread permanently parked acquiring their own `EPROCESS.Vm.WorkingSetMutex`
+(+0x368 amd64; = ActiveProcessLinks+0xd8 + 0x290). Those processes never
+execute one user instruction — **eventlog.exe is silently dead on every boot**;
+historically services.exe wedged waiting on it via LPC, which is why the wedge
+read as "service-startup" and was probabilistic (~50%): the stranding is
+deterministic, the boot only died when a boot-critical thread was among the
+caught. (11/11 boots green after the 2026-07-04 constants campaign — the LPC
+STATUS/ViewUnmap fixes apparently de-fatalized the propagation — but the
+stranding itself persisted, invisible until the census.)
+
+**The 2-line proof** (`vibeos-flightrec obj=<stuck WS pushlock>` over the
+temporary `ws-lock-EXCL` tap on `MiLockProcessWorkingSet*`):
+```
+seq=170109  ws-lock-EXCL   thr=0xfffffa80012e4040  data=1   ; MiLockProcessWorkingSetUnsafe
+seq=170110  pushlock-park  thr=0xfffffa80012e4040           ; SAME thread parks on the SAME lock
+```
+And the parked thread's kernel stack (symbolicated via raw stack scan —
+`dump-thread.py`'s pinned offsets have rotted; use the debug block):
+```
+MmAccessFault+356 → MiLockProcessWorkingSetShared+47 → ExfAcquirePushLockShared+1077
+  → KeWaitForGate → KiSwapThread   (with MiDeletePte+788 on the stack)
+```
+I.e. **inside the WS-EXCLUSIVE(Unsafe) section, `MiDeletePte`-path code touched
+a pageable address → #PF → MmAccessFault re-acquires the WS lock SHARED →
+self-deadlock** (pushlocks are non-recursive). Matches the earlier csrss
+analysis (`MiDecrementShareCount+0x71` reading a pageable prototype PTE);
+upstream avoids it by running this under the PFN spinlock at DISPATCH
+(non-faultable). Suspect list unchanged: MMPFN accessor layout /
+`prototype_pte()`/`pte_address()` mis-decode sending the code down a
+pageable-deref branch, or genuinely pageable prototype PTEs that upstream's
+IRQL discipline tolerates.
+
+**Reusable recipe (the point of this entry):** for ANY stuck-thread report —
+1. Boot with `vibeos-cli gdb start <arch>`; wait for `[CENSUS] STUCK` (the
+   wedge self-reports; the report already contains the lost-wakeup vs
+   holder-stuck verdict + recent events).
+2. `vibeos-cli gdb inspect <run> "raw vibeos-synctrace"` → stuck object list.
+3. `... "raw vibeos-flightrec obj=0x..."` → who locked/signalled last.
+4. `... "raw vibeos-threads gatewait"` → all parked threads, offset-free.
+5. Stack-scan the parked KTHREAD (KernelStack via debug block) + `info symbol`.
+Total cost tonight: ~30 min. The identical conclusion previously took days.
+
+**Fix status:** NOT yet fixed — mechanism proven, faulting site bracketed
+(MiDeletePte path under `MiLockProcessWorkingSetUnsafe`). Next: pin the exact
+faulting VA/instruction (trap frame lives in the parked thread's stack above
+MmAccessFault) and check the MMPFN accessors, then either fix the layout bug
+or make the teardown path non-faultable like upstream.

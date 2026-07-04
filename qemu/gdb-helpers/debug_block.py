@@ -274,6 +274,7 @@ class VibeosThreadsCmd(gdb.Command):
 OP_NAMES = {
     1: "gate-park", 2: "gate-satisfied", 3: "gate-signal",
     4: "pushlock-park", 5: "pushlock-satisfied", 6: "pushlock-wake",
+    16: "ws-lock-EXCL", 17: "ws-unlock-EXCL",
 }
 
 

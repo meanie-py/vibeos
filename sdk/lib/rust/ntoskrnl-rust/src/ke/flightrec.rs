@@ -33,6 +33,19 @@ pub const OP_GATE_SIGNAL: u32 = 3;
 pub const OP_PL_PARK: u32 = 4;
 pub const OP_PL_SATISFIED: u32 = 5;
 pub const OP_PL_WAKE: u32 = 6;
+// Working-set EXCLUSIVE lock/unlock (from ntkrnl-sys inline/mm.rs via the
+// VibeosFlightrecLog extern below; data: 0=guarded 1=unsafe 2=mmsupport).
+// Exclusive-only: the fault path takes shared (too hot for the ring), and a
+// leaked WS lock that blocks a shared waiter is by definition exclusive.
+pub const OP_WS_LOCK_EXCL: u32 = 16;
+pub const OP_WS_UNLOCK_EXCL: u32 = 17;
+
+/// Link-time tap for crates below ntoskrnl-rust in the dep graph (ntkrnl-sys
+/// inlines can't `use` this crate — the dependency points the other way).
+#[no_mangle]
+pub extern "C" fn VibeosFlightrecLog(op: u32, object: usize, thread: usize, data: u32) {
+    flightrec_log(op, object, thread, data);
+}
 
 #[repr(C)]
 pub struct FlightRecEntry {
