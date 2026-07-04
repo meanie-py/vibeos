@@ -2201,8 +2201,12 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     extern "C" {
         fn ProbeForWritePointer(Address: *mut PVOID);
         fn ProbeForWriteSize_t(Address: *mut SIZE_T);
-        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
         static mut MmHighestPhysicalPage: PFN_NUMBER;
+    }
+    // ProbeForWrite's provider is Rust `extern "system"` (ex/exintrin.rs) — an
+    // extern "C" decl here would reference the wrong i386 decoration (_Name vs _Name@12).
+    extern "system" {
+        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     }
 
     let previous_mode = ExGetPreviousMode();
