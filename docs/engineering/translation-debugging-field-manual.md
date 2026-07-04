@@ -2177,7 +2177,45 @@ MiDecrementShareCount is adjacent evidence). Next session: flightrec-tap
 MiDecrementShareCount's PteFrame cascade or add a share-count trace on the
 pool page containing 0xfffff8a000421660-class addresses.
 
-**§9.13 addendum 2 (2026-07-04, flake-nettest-explorer, commit `4294ebcd0a8`): a
+**§9.13 addendum 2 (2026-07-04 day): the detector is now PERMANENT — lockdep
+Phase A (sync-instrumentation §4), one flag, fires on every boot.** The
+temporary `ws-lock-EXCL` flightrec tap above is superseded:
+
+```
+./vibeos-cli build --arch amd64 --lockdep     # -DVIBEOS_LOCKDEP=ON kernel
+./vibeos-cli smoke --arch amd64               # then grep the serial:
+[LOCKDEP]   SELF-DEADLOCK #1 thread=fffffa8001470040 WAIT(shared) on
+            pushlock=fffffa8001473c48 already held(excl)
+```
+
+Per-thread held-pushlock side table tapped at the `ExAcquirePushLock*` /
+`ExReleasePushLock*` inline funnel; the check runs at the `Exf*` PARK (about
+to block on a lock in your own held-set = the length-1 cycle); census prints
+recorded violations every scan; `vibeos-lockdep [held]` in gdb decodes the
+`VIBEOS_LOCKDEP` table offline. First instrumented run (4 boots, all green):
+**2–4 violations per boot, and the violation threads are EXACTLY the census
+STUCK threads** (svchost/setup.exe/rundll32/NETTEST, each on its own
+per-EPROCESS pushlock ≈ `Vm.WorkingSetMutex`, always WAIT(shared) against
+held(excl)) — i.e. the "deterministically stranded HOLDER-STUCK threads on
+every green boot" open lead IS this self-deadlock, one thread per victim
+process. No separate mystery. Fix status unchanged (mechanism proven, PteFrame
+chain suspected); what changed is the cost of observing it: zero.
+
+**Phase B (same day): guarded mutexes joined the held-set, acquire SITES are
+captured, and the full lock-order graph is recorded** (instance-level A→B
+edges + ABBA reverse-order detection — sync-instrumentation-design §4 for the
+as-built). Two consequences for debugging:
+- The self-deadlock line now names its acquiring function directly:
+  `… already held(excl) site=fffff80003533242` → `addr2sym` →
+  `MiLockProcessWorkingSetUnsafe+0x22`. (Site = return address into the
+  caller of the export shim; runtime base solved from the shim-caller fit —
+  amd64 kernel loads at `0xfffff80003500000`, PE VA = site − base + 0x400000.)
+- `vibeos-lockdep edges` dumps the boot's entire observed lock-order graph
+  (~6.2K edges on amd64). Proof run verdict: **zero ABBA inversions** with
+  0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
+  consistent; the wedge family is entirely self-deadlock.
+
+**§9.13 addendum 3 (2026-07-04, flake-nettest-explorer, commit `4294ebcd0a8`): a
 SECOND confab in the same branch fixed; two PteFrame-residency sites ruled out.**
 Independent GDB repro on native TCG (`VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb`
 → offline `PsActiveProcessHead` walk → `AddressCreationLock.Owner` → raw
@@ -2206,7 +2244,7 @@ leaving it unbacked. With the fix in, the failure is now a **deterministic 0xBE
 bugcheck** (not a hang), so `run-until KeBugCheckEx --then triage` + trap-frame is a
 faster catch than the census/hang recipe.
 
-**§9.13 addendum 3 (2026-07-04, same session, post-fix layer-2 catch REDIRECTS the
+**§9.13 addendum 4 (2026-07-04, same session, post-fix layer-2 catch REDIRECTS the
 hunt): the 0xBE is NOT in the ARM3 MiDecrementShareCount path — it's in the ROS
 section-RMAP path (`MmSharePageEntrySectionSegment` → `MmSetPageEntrySectionSegment`).**
 Caught the deterministic 0xBE live (`run-until KeBugCheckEx`, ~5 min TCG). 0xBE args:
@@ -2240,3 +2278,40 @@ page-table write (`_MmSetPageEntrySectionSegment`, spt_bad gate on the PageTable
 did NOT fire — confirming the fault is elsewhere. NEXT: identify which win32k section
 maps at `0xfffff97fde280000` and why its kernel view is R/O (check the SEC_ protection /
 `MmMapViewInSessionSpace` / the gpsi section-create protection in the Rust win32k glue).
+**§9.13 addendum 2 (2026-07-04 day): the detector is now PERMANENT — lockdep
+Phase A (sync-instrumentation §4), one flag, fires on every boot.** The
+temporary `ws-lock-EXCL` flightrec tap above is superseded:
+
+```
+./vibeos-cli build --arch amd64 --lockdep     # -DVIBEOS_LOCKDEP=ON kernel
+./vibeos-cli smoke --arch amd64               # then grep the serial:
+[LOCKDEP]   SELF-DEADLOCK #1 thread=fffffa8001470040 WAIT(shared) on
+            pushlock=fffffa8001473c48 already held(excl)
+```
+
+Per-thread held-pushlock side table tapped at the `ExAcquirePushLock*` /
+`ExReleasePushLock*` inline funnel; the check runs at the `Exf*` PARK (about
+to block on a lock in your own held-set = the length-1 cycle); census prints
+recorded violations every scan; `vibeos-lockdep [held]` in gdb decodes the
+`VIBEOS_LOCKDEP` table offline. First instrumented run (4 boots, all green):
+**2–4 violations per boot, and the violation threads are EXACTLY the census
+STUCK threads** (svchost/setup.exe/rundll32/NETTEST, each on its own
+per-EPROCESS pushlock ≈ `Vm.WorkingSetMutex`, always WAIT(shared) against
+held(excl)) — i.e. the "deterministically stranded HOLDER-STUCK threads on
+every green boot" open lead IS this self-deadlock, one thread per victim
+process. No separate mystery. Fix status unchanged (mechanism proven, PteFrame
+chain suspected); what changed is the cost of observing it: zero.
+
+**Phase B (same day): guarded mutexes joined the held-set, acquire SITES are
+captured, and the full lock-order graph is recorded** (instance-level A→B
+edges + ABBA reverse-order detection — sync-instrumentation-design §4 for the
+as-built). Two consequences for debugging:
+- The self-deadlock line now names its acquiring function directly:
+  `… already held(excl) site=fffff80003533242` → `addr2sym` →
+  `MiLockProcessWorkingSetUnsafe+0x22`. (Site = return address into the
+  caller of the export shim; runtime base solved from the shim-caller fit —
+  amd64 kernel loads at `0xfffff80003500000`, PE VA = site − base + 0x400000.)
+- `vibeos-lockdep edges` dumps the boot's entire observed lock-order graph
+  (~6.2K edges on amd64). Proof run verdict: **zero ABBA inversions** with
+  0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
+  consistent; the wedge family is entirely self-deadlock.

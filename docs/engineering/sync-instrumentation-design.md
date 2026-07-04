@@ -22,6 +22,10 @@ be the instrumented build), Tier 2 opt-in (lockdep).
 
 ---
 
+> **Status update 2026-07-04 (day 2):** item **#4 Phase A is BUILT** — see §4
+> for the as-built shape (per-thread held-pushlock set + self-deadlock-at-park
+> detector, feature-gated `lockdep`, `vibeos-cli build --lockdep`).
+>
 > **Status update 2026-07-04 (overnight build-out):** items **#1, #2, #3, #5
 > are BUILT** and wired (user-approved order 3→2→5→1). Implementation:
 > `ntoskrnl-rust/src/ke/synctrace.rs` (§3, wait/signal side-table, 4K slots,
@@ -69,12 +73,101 @@ wedged gate then reads as either *lost wakeup* (`signals == waits-1` present)
 or *holder stuck* (no signal ever sent) — the discrimination that took the
 Mm-wedge lane days of KTHREAD.State spelunking. Tier 0 candidate.
 
-## 4. Lockdep-lite — PLANNED, biggest lift
+## 4. Lockdep-lite — Phase A + Phase B BUILT + PROVEN LIVE 2026-07-04
 
-Record lock-class acquisition pairs (A held while acquiring B) in a static
-table; warn at first B→A inversion with both stacks. Converts "50% flaky
-wedge" into "deterministic boot-time warning". Needs lock classes + per-thread
-held-stack; do after #1–#3 prove the side-table plumbing.
+> **PROVEN:** first instrumented run (amd64, 4 boots, all green): 2–4
+> `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl)` per boot, and
+> the violation threads match the census STUCK threads exactly — the
+> "deterministically stranded HOLDER-STUCK threads on every green boot" open
+> lead is the WS self-deadlock, one thread per victim process (each on its own
+> per-EPROCESS `Vm.WorkingSetMutex`). See field-manual §9.13 addendum 2.
+
+Original plan: record lock-class acquisition pairs (A held while acquiring B)
+in a static table; warn at first B→A inversion with both stacks. Split into
+phases after #1–#3 proved the side-table plumbing:
+
+**Phase A (BUILT): per-thread held-pushlock set + self-deadlock-at-park
+detector.** The open amd64 WS-pushlock wedge is a *degenerate length-1 cycle*
+(thread blocks on a pushlock it already holds: WS excl teardown → fault →
+shared re-acquire), so the minimal lockdep — "am I about to park on a lock in
+my own held-set?" — already converts that ~50% flaky wedge into a
+deterministic, self-reporting violation. No lock classes needed.
+
+As built (`ntoskrnl-rust/src/ke/lockdep.rs`, feature = `lockdep`, Tier-2
+opt-in):
+
+- **Tap layer = the pushlock API funnel.** The FORCEINLINE
+  `ExAcquirePushLock{Exclusive,Shared}` / `ExReleasePushLock{,Exclusive,Shared}`
+  in `ntkrnl-sys/inline/ex.rs` record acquire (mode excl/shared) and release
+  into a per-thread held-set — balanced across fast CAS and `Exf*` slow paths,
+  and covering *every* pushlock in the kernel including the Mm WS lock (which
+  is just a pushlock at `Vm.WorkingSetMutex`). Taps call
+  `VibeosLockdep{Acquire,Release}` by link name (ntkrnl-sys sits below
+  ntoskrnl-rust — same shape as `VibeosFlightrecLog`).
+- **Detection at the park.** Both `Exf*AcquirePushLock*` park loops
+  (`ex/pushlock.rs`) call `lockdep_check_park(thread, lock, wanted_mode)` just
+  before `KeWaitForGate`; if the lock is already in the thread's held-set the
+  violation is recorded (atomic side-table write + flightrec op 32
+  `LOCKDEP-SELFDEADLOCK`) — **print-free on the hot path** (§1's Heisenbug
+  rule).
+- **Side table** `VIBEOS_LOCKDEP` (magic `LKD1`): all-zero .bss static, 1024
+  thread slots × 8 held entries, open-addressing on KTHREAD address with
+  free-on-empty slot recycling; 16-entry violation ring; relaxed atomics.
+- **Surfacing:** the §2 census prints `[LOCKDEP] SELF-DEADLOCK …` every scan
+  once a violation exists (fires at the park, so it lands in the smoke serial
+  well inside the HANG_TIMEOUT window); offline, `vibeos-lockdep [held]` in
+  `qemu/gdb-helpers/debug_block.py` decodes the table by symbol.
+- **Build toggle:** `./vibeos-cli build --arch X --lockdep` →
+  `-DVIBEOS_LOCKDEP=ON` → env `VIBEOS_LOCKDEP=1` on the kernel cargo drive →
+  `ntoskrnl-cargo`/`ntkrnlmp-cargo` build.rs add `--features lockdep` to the
+  *inner* `cargo build -p kernel-rust` (the body crate is not a cargo dep of
+  the bin crate, so an outer `--features` can't reach it). The flag is
+  per-build state: a plain (no-flag) build reconciles the cache back to OFF,
+  so the gate never inherits an instrumented kernel. Default off = zero cost
+  (the tables and taps compile out).
+
+**Phase B (BUILT + PROVEN 2026-07-04, same day): instance-level lock-order
+graph + ABBA detection.** As built:
+
+- **Edge table** (32K slots, ~1.5 MB .bss): acquiring B while holding A
+  records the directed edge A→B — keyed on *instance addresses*, first-wins,
+  `modes` doubles as the Release-published flag. Instance-level (not
+  class-level) deliberately: exact, zero annotation burden, and the
+  address-ordered double-lock idiom yields only one direction per concrete
+  pair so it does not false-positive. A real amd64 boot records ~6.2K edges
+  (per-process locks multiply pairs); an 8K table saturated (49K dropped
+  inserts — counted, loud), 32K + a 32-probe window runs at 0 drops.
+- **ABBA check**: reverse-edge (B→A) lookup on every A→B sighting; the
+  report ring dedupes per unordered pair. Violation kind 2 carries both
+  locks, both threads, both acquire sites.
+- **Acquire sites**: `llvm.returnaddress(0)` captured in the
+  `#[inline(never)]` export shims (shim_exports.rs pushlocks, gmutex.rs
+  wrappers) — the ddk→shim funnel collapses `#[track_caller]`, so the shim's
+  return address is the only cheap true-caller signal. Direct-inline acquires
+  record site 0. Verified live: the WS self-deadlock reports
+  `site=MiLockProcessWorkingSetUnsafe+0x22` straight in the serial.
+- **Guarded mutexes tapped too** (mode 3): all five `_Ke*GuardedMutex*`
+  inline paths + the `KiAcquireGuardedMutex` park — brings
+  `AddressCreationLock` and friends into the same graph as the WS pushlocks.
+  `KeTryToAcquireGuardedMutex` records held-set only, NO edges (a try never
+  parks → try-reversed order cannot deadlock; recording it would be an ABBA
+  false-positive class).
+- **Decoder**: `vibeos-lockdep [held|edges]` (LKD2 layout, compile-time
+  layout assertions in lockdep.rs keep the hand-computed offsets honest);
+  `edges` dumps the entire observed lock-order graph offline.
+
+**Proof run (amd64, 2 boots + net suite, all green):** 6246 edges, 0 drops,
+self-deadlocks fire as in Phase A (now with named sites) — and **zero ABBA
+inversions**: with complete edge visibility, the boot's pushlock+gmutex
+ordering is instance-level consistent. The wedge family is entirely
+self-deadlock; no latent order-inversion deadlocks in the boot path. That
+clean bill is itself the Phase B finding.
+
+Known limits (documented, acceptable for a Tier-2 boot diagnostic):
+instance-level pairs grow monotonically with object churn (fine for a boot,
+would need classing for long uptimes); `ExConvertPushLockSharedToExclusive`
+leaves the recorded mode stale (shared) until release (label-only);
+`ExWaitOnPushLock` waiters are not park-checked.
 
 ## 5. Debugger data block — PLANNED, tiny effort, permanent payoff
 

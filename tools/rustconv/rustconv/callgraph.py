@@ -31,6 +31,13 @@ class FunctionDep:
     seh_count: int = 0
     line_start: int = 0
     line_end: int = 0
+    # C++ method origin (explorer/shell translation). For methods `name` is
+    # the UNIQUE TARGET SYMBOL (`Cls_method`, `Cls_ctor`, `Cls_dtor`, with a
+    # _2/_3 suffix for overloads) — filesystem-safe, collision-free across
+    # classes in one file, and equal to the Rust #[no_mangle] name. The
+    # original C++ identity lives here for prompts/diagnostics.
+    cpp_class: str | None = None
+    cpp_method: str | None = None
 
 
 def _extract_text(node, source: bytes) -> str:
@@ -98,11 +105,29 @@ def extract_call_graph(scan: ScanResult, spec_exports: dict | None = None) -> li
 
     parser = Parser(C_LANG)
     deps: list[FunctionDep] = []
+    seen_names: dict[str, int] = {}
 
     for func in scan.functions:
         # Skip spurious tree-sitter parse artifacts
         if func.name in C_KEYWORDS:
             continue
+        # Unique target-symbol name. C++ methods get Cls_method (the Rust
+        # #[no_mangle] name); ctors/dtors get Cls_ctor/Cls_dtor; overloads
+        # (and same-named methods across classes are already split by the
+        # Cls_ prefix) get a _2/_3 suffix.
+        if func.cpp_class:
+            if func.is_ctor:
+                sym_name = f"{func.cpp_class}_ctor"
+            elif func.is_dtor:
+                sym_name = f"{func.cpp_class}_dtor"
+            else:
+                sym_name = f"{func.cpp_class}_{func.name}"
+        else:
+            sym_name = func.name
+        n = seen_names.get(sym_name, 0) + 1
+        seen_names[sym_name] = n
+        if n > 1:
+            sym_name = f"{sym_name}_{n}"
         # Parse the function body text to extract call targets and identifiers
         source = func.body_text.encode("utf-8")
         tree = parser.parse(source)
@@ -114,7 +139,7 @@ def extract_call_graph(scan: ScanResult, spec_exports: dict | None = None) -> li
         _collect_identifiers(tree.root_node, source, identifiers)
 
         dep = FunctionDep(
-            name=func.name,
+            name=sym_name,
             callees=callees,
             identifiers=identifiers,
             body_text=func.body_text,
@@ -127,6 +152,8 @@ def extract_call_graph(scan: ScanResult, spec_exports: dict | None = None) -> li
             seh_count=func.seh_count,
             line_start=func.line_start,
             line_end=func.line_end,
+            cpp_class=func.cpp_class,
+            cpp_method=func.name if func.cpp_class else None,
         )
         deps.append(dep)
 

@@ -455,6 +455,11 @@ fastcall_export! {
                 & ((1i32) << 1)
                 != 0
             {
+                // lockdep §4: about to block EXCLUSIVE — if we already hold
+                // this pushlock, that's a self-deadlock (records, print-free).
+                #[cfg(feature = "lockdep")]
+                crate::ke::lockdep::lockdep_check_park(
+                    ntkrnl_sys::mm::KeGetCurrentThread() as usize, PushLock as usize, 2);
                 // synctrace §3: account the block/wake on the PUSHLOCK address
                 // (the wake gate is a per-wait stack object — useless as a key).
                 crate::ke::synctrace::synctrace_pl_park(
@@ -594,6 +599,12 @@ fastcall_export! {
                 & ((1i32) << 1)
                 != 0
             {
+                // lockdep §4: about to block SHARED — if we already hold this
+                // pushlock, that's a self-deadlock (records, print-free). This
+                // is the Mm WS-pushlock wedge: excl teardown -> fault -> shared.
+                #[cfg(feature = "lockdep")]
+                crate::ke::lockdep::lockdep_check_park(
+                    ntkrnl_sys::mm::KeGetCurrentThread() as usize, PushLock as usize, 1);
                 // synctrace §3: account the block/wake on the PUSHLOCK address.
                 crate::ke::synctrace::synctrace_pl_park(
                     PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);

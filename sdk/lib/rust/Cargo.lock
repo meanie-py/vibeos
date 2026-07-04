@@ -423,6 +423,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "explorer-rust"
+version = "0.1.0"
+dependencies = [
+ "explorer-sys",
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
+name = "explorer-sys"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
 name = "fastfat-rust"
 version = "0.1.0"
 dependencies = [

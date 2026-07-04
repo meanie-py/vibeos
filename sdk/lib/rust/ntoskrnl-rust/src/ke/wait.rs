@@ -276,6 +276,15 @@ unsafe fn KiAcquireGuardedMutexImpl(GuardedMutex: PKGUARDED_MUTEX) {
             OldValue = NewValue;
         }
 
+        // lockdep §4: about to block on this gmutex — if we already hold it,
+        // that's a self-deadlock (records, print-free). Keyed on the MUTEX
+        // address (matching the acquire tap), not the per-wait gate.
+        #[cfg(feature = "lockdep")]
+        crate::ke::lockdep::lockdep_check_park(
+            ntkrnl_sys::mm::KeGetCurrentThread() as usize,
+            GuardedMutex as usize,
+            crate::ke::lockdep::MODE_GM,
+        );
         KeWaitForGate(
             core::ptr::addr_of_mut!((*GuardedMutex).Gate) as *mut _KGATE,
             _KWAIT_REASON_WrGuardedMutex,
